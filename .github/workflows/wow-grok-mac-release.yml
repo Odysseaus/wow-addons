@@ -136,10 +136,12 @@ jobs:
 
           Built from commit \`${SHA}\` via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What’s new in 0.1.9
-          - **Presence beats:** rewrite full valid prefix 1..k each beat so Forever can detect the bridge (fixes “Not connected” when only recent wavs were non-empty).
-          - **Capture window match:** do not attach to WoWGrok itself (bare “Wow” substring trap); skip wowgrok owners.
-          - Addon copy: replace stale “npm start” strings with Mac app / menu bar wording.
+          ### What’s new in 0.1.10
+          - **Quit full-tree teardown:** menu-bar Quit terminates supervisor → bridge → capture so Finder can trash/replace `/Applications/WoWGrok.app`.
+
+          ### Carry-forward from 0.1.9
+          - **Presence beats:** rewrite full valid prefix 1..k each beat so Forever can detect the bridge.
+          - **Capture window match:** do not attach to WoWGrok itself; skip wowgrok owners.
 
           ### Carry-forward from 0.1.6
           - **DMG layout:** drag \`WoWGrok.app\` to the Applications shortcut (create-dmg).
@@ -159,7 +161,7 @@ jobs:
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — presence + connect fix"
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — Quit kills process tree"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \

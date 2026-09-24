@@ -49,16 +49,31 @@ def _alert_screen_recording(msg: str) -> str:
     return "continue" if choice == 1 else "quit"
 
 
-def run_status_item(*, stop_event: Any, screen_ui: dict[str, Any]) -> int:
+def run_status_item(
+    *,
+    stop_event: Any,
+    screen_ui: dict[str, Any],
+    on_quit: Any | None = None,
+) -> int:
     """Block on the main thread with a menu bar item until Quit / stop_event.
 
     Must be called from the process main thread (AppKit requirement).
     Returns 0 so the supervisor treats a clean Quit as exit success.
+
+    If ``on_quit`` is provided, Quit / screen-recording quit call it (expected
+    to set ``stop_event`` and tear down capture) before ``rumps.quit_application``.
     """
     if not available():
         raise RuntimeError("menubar.run_status_item requires darwin + rumps")
 
     import rumps
+
+    def _do_quit() -> None:
+        if on_quit is not None:
+            on_quit()
+        else:
+            stop_event.set()
+        rumps.quit_application()
 
     class WoWGrokStatusApp(rumps.App):
         def __init__(self) -> None:
@@ -75,8 +90,7 @@ def run_status_item(*, stop_event: Any, screen_ui: dict[str, Any]) -> int:
             ]
 
         def _quit(self, _sender: Any = None) -> None:
-            stop_event.set()
-            rumps.quit_application()
+            _do_quit()
 
         @rumps.timer(0.2)
         def _tick(self, _sender: Any) -> None:
@@ -92,8 +106,7 @@ def run_status_item(*, stop_event: Any, screen_ui: dict[str, Any]) -> int:
                 result = "continue"
             screen_ui["result"] = result
             if result == "quit":
-                stop_event.set()
-                rumps.quit_application()
+                _do_quit()
             screen_ui["event"].set()
 
     WoWGrokStatusApp().run()

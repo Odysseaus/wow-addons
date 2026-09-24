@@ -47,7 +47,7 @@ On **first launch** the app will:
 1. Ask for your **xAI API key**. It is saved only in a local `config.json` next to the app (not uploaded, not put in the Lua addon).
 2. Auto-find your `Interface/AddOns` folder, or show a folder picker if none / several are found.
 3. **Copy** the main `WoWGrok` addon into that folder and **create** reply slots `WoWGrok_S001` … `WoWGrok_S200` as **top-level siblings** next to it (plus signal wav stubs). This can take about a minute — wait for the “done” dialog.
-4. Keep running as the **live bridge** (not a one-shot installer). After Done / OK, leave WoWGrok running while you play — look for the **WoWGrok** icon in the **menu bar** (quiet companion; no Dock icon). Quit from the menu bar when finished. Quitting stops capture and replies.
+4. Keep running as the **live bridge** (not a one-shot installer). After Done / OK, leave WoWGrok running while you play — look for the **WoWGrok** icon in the **menu bar** (quiet companion; no Dock icon). Quit from the menu bar when finished. Quit exits the menu bar, bridge, and capture together so `/Applications/WoWGrok.app` can be replaced.
 
 ### 3. Mac only — Gatekeeper + Screen Recording
 

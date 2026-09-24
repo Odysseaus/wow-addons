@@ -754,11 +754,68 @@ def main(argv: list[str] | None = None) -> int:
         threading.Thread(target=poll_loop, daemon=True).start()
         threading.Thread(target=presence_loop, daemon=True).start()
 
+    def stop_capture() -> None:
+        """Terminate capture child; wait ~3s then kill if needed; clear slot."""
+        p = capture_proc[0]
+        if p is None:
+            return
+        capture_proc[0] = None
+        if p.poll() is not None:
+            return
+        try:
+            p.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            p.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            try:
+                p.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                p.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+
+    def _kill_sibling_wowgrok_pids() -> None:
+        """Best-effort: terminate other frozen WoWGrok PIDs (orphaned capture).
+
+        Only targets processes whose command line contains ``sys.executable``.
+        Skips this process and its parent (live supervisor) so Quit can exit
+        cleanly; never touches unrelated apps.
+        """
+        if sys.platform != "darwin" or not getattr(sys, "frozen", False):
+            return
+        exe = sys.executable
+        skip = {os.getpid(), os.getppid()}
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-f", exe],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            return
+        for line in out.splitlines():
+            line = line.strip()
+            if not line.isdigit():
+                continue
+            pid = int(line)
+            if pid in skip:
+                continue
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+
     def on_sig(*_a: object) -> None:
         stop_event.set()
-        p = capture_proc[0]
-        if p and p.poll() is None:
-            p.terminate()
+        stop_capture()
+
+    def on_quit() -> None:
+        stop_event.set()
+        stop_capture()
 
     signal.signal(signal.SIGINT, on_sig)
     signal.signal(signal.SIGTERM, on_sig)
@@ -771,6 +828,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.once and not running:
                     break
             time.sleep(0.2)
+        stop_capture()
         return 0
 
     # Steady state: macOS menu bar companion (quiet; no spinning desktop popup).
@@ -784,10 +842,14 @@ def main(argv: list[str] | None = None) -> int:
             from . import menubar
 
             if menubar.available():
-                return menubar.run_status_item(
+                menubar.run_status_item(
                     stop_event=stop_event,
                     screen_ui=screen_ui,
+                    on_quit=on_quit,
                 )
+                stop_capture()
+                _kill_sibling_wowgrok_pids()
+                return 0
         except Exception as e:  # noqa: BLE001
             print(f"menubar unavailable ({e}); falling back to wait loop", flush=True)
 
@@ -802,8 +864,11 @@ def main(argv: list[str] | None = None) -> int:
                 screen_ui["result"] = "continue"
             if screen_ui.get("result") == "quit":
                 stop_event.set()
+                stop_capture()
             screen_ui["event"].set()
         time.sleep(0.2)
+    stop_capture()
+    _kill_sibling_wowgrok_pids()
     return 0
 
 
