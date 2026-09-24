@@ -134,6 +134,24 @@ def to_input_messages(history: list | None, inp: Any) -> list[dict]:
     return msgs
 
 
+def with_game_context_prefix(user_input: Any, system: str | None) -> Any:
+    """Fallback: prepend a short [Game context] block when resuming without instructions.
+
+    Prefer sending `instructions` every turn (see post_response). Use this only when
+    the API rejects instructions + previous_response_id together.
+    """
+    ctx = (system or "").strip()
+    if not ctx:
+        return user_input
+    block = "[Game context]\n" + ctx
+    if isinstance(user_input, str):
+        return block + "\n\n" + user_input if user_input else block
+    if isinstance(user_input, list):
+        return [{"role": "user", "content": block}] + list(user_input)
+    return user_input
+
+
+
 class XAIError(Exception):
     def __init__(self, message: str, status: int | None = None):
         super().__init__(message)
@@ -158,10 +176,12 @@ def post_response(
         "input": input,
         "store": True,
     }
+    # Always send instructions when provided — including resumed turns — so game
+    # context stays current (coords/zone change between messages).
+    if system:
+        body["instructions"] = system
     if previous_response_id:
         body["previous_response_id"] = previous_response_id
-    elif system:
-        body["instructions"] = system
 
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(

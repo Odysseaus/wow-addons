@@ -21,6 +21,17 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.14] - 2026-09-24
+
+### Added
+
+- **Game context:** the addon sends plain-text lines (Game / Character / Location / Position / Money / XP / Talents / Professions) with hello and again when the text changes. The bridge stores them in `state.json` and injects them into xAI `instructions` on every turn (including multi-turn). `/wow-grok context [on|off]` (alias `ctx`); config `gameContext` (default `true`).
+- **Shift-click link expansion:** with the WoWGrok input focused, shift-click inserts item/spell/quest links (`ChatFrameUtil.InsertLink`, fallback `ChatEdit_InsertLink`). On send (panel or `/ai`/`/grok`), links become `[Name]` plus a "Linked from the game" tooltip block.
+
+### Fixed
+
+- xAI multi-turn: `instructions` (game context) are now sent together with `previous_response_id`, so context no longer drops after the first reply.
+
 ## [0.3.0] - 2026-09-22
 
 First public release.

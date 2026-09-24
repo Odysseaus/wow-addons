@@ -56,5 +56,88 @@ class TestChatMissingKey(unittest.TestCase):
                 os.environ["XAI_API_KEY"] = prev
 
 
+
+class TestInstructionsEveryTurn(unittest.TestCase):
+    def test_post_response_sends_instructions_with_previous(self):
+        """instructions must go out even when previous_response_id is set."""
+        captured = {}
+
+        class FakeResp:
+            status = 200
+
+            def read(self):
+                return b'{"id": "resp_1", "output_text": "ok"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            import json
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return FakeResp()
+
+        import urllib.request
+        prev = urllib.request.urlopen
+        urllib.request.urlopen = fake_urlopen
+        try:
+            out = xai.post_response(
+                api_key="test-key",
+                input="hello again",
+                previous_response_id="resp_prev",
+                system="Character: Bob\nLocation: Elwynn",
+            )
+        finally:
+            urllib.request.urlopen = prev
+        self.assertEqual(out["id"], "resp_1")
+        self.assertEqual(captured["body"]["previous_response_id"], "resp_prev")
+        self.assertEqual(captured["body"]["instructions"], "Character: Bob\nLocation: Elwynn")
+        self.assertEqual(captured["body"]["input"], "hello again")
+
+    def test_post_response_instructions_only_on_first_turn(self):
+        captured = {}
+
+        class FakeResp:
+            status = 200
+
+            def read(self):
+                return b'{"id": "resp_2", "output_text": "hi"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            import json
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return FakeResp()
+
+        import urllib.request
+        prev = urllib.request.urlopen
+        urllib.request.urlopen = fake_urlopen
+        try:
+            xai.post_response(
+                api_key="test-key",
+                input="hi",
+                system="Game: Forever",
+            )
+        finally:
+            urllib.request.urlopen = prev
+        self.assertNotIn("previous_response_id", captured["body"])
+        self.assertEqual(captured["body"]["instructions"], "Game: Forever")
+
+    def test_with_game_context_prefix(self):
+        out = xai.with_game_context_prefix("ask", "Character: Bob")
+        self.assertTrue(out.startswith("[Game context]\nCharacter: Bob"))
+        self.assertIn("ask", out)
+        self.assertEqual(xai.with_game_context_prefix("ask", ""), "ask")
+        self.assertEqual(xai.with_game_context_prefix("ask", None), "ask")
+
+
+
 if __name__ == "__main__":
     unittest.main()

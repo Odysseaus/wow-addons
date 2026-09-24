@@ -199,6 +199,42 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as e:
             log("could not save transcripts:", e)
 
+    def set_context(job: dict) -> None:
+        """Store (or clear) game context from an inbound strip/outbox job."""
+        if "ctx" not in job:
+            return
+        text = str(job.get("ctx") or "").replace("\r", "").strip()[:2000]
+        prev = ((state.get("context") or {}).get("text")) or ""
+        if text == prev:
+            return
+        if text:
+            state["context"] = {
+                "text": text,
+                "at": int(time.time() * 1000),
+                "session": job.get("session") or "",
+            }
+        else:
+            state["context"] = None
+        save_state()
+        who = ""
+        if text:
+            for line in text.split("\n"):
+                if line.lower().startswith("character:"):
+                    who = line[:100]
+                    break
+            if not who:
+                who = (text.split("\n")[0] if text else "")[:100]
+        tag = f"#{job.get('id')}"
+        if job.get("session"):
+            tag += "@" + str(job["session"])
+        log(f"{tag} game context {'updated: ' + who if text else 'cleared'}")
+
+    def game_context() -> str:
+        if cfg.get("gameContext") is False:
+            return ""
+        ctx = state.get("context") or {}
+        return str(ctx.get("text") or "") if isinstance(ctx, dict) else ""
+
     def resolve_cwd(raw: str | None) -> str:
         return P.resolve_cwd(raw, default_cwd)
 
@@ -502,12 +538,14 @@ def main(argv: list[str] | None = None) -> int:
                         },
                     )
 
+                system = P.system_prompt(game_context())
                 result = xai.chat(
                     api_key=api_key,
                     model=cfg.get("model"),
                     api_base=cfg.get("apiBase"),
                     input=job.get("text") or "",
                     previous_response_id=prev_id,
+                    system=system or None,
                     history=hist,
                     on_progress=on_progress,
                     timeout=timeout_ms / 1000.0,
@@ -534,6 +572,8 @@ def main(argv: list[str] | None = None) -> int:
         threading.Thread(target=worker, daemon=True).start()
 
     def submit(job: dict) -> None:
+        if "ctx" in job:
+            set_context(job)
         if P.already_handled(state, job):
             return
         if job.get("forget"):
@@ -721,6 +761,24 @@ def main(argv: list[str] | None = None) -> int:
         + str(cap['cellPx']) + 'px)' if cap.get('enabled') else 'off'}"
     )
     print(f"  slots    : {slots}  parallel={max_parallel}")
+    if cfg.get("gameContext") is False:
+        print("  context  : off (gameContext in config.json)")
+    else:
+        ctx_preview = game_context()
+        if ctx_preview:
+            who = ""
+            for line in ctx_preview.split("\n"):
+                if line.lower().startswith("character:"):
+                    who = line[:100]
+                    break
+            if not who:
+                who = ctx_preview.split("\n")[0][:100]
+            print(f"  context  : {who}")
+        else:
+            print(
+                "  context  : none yet (the addon sends it with its hello; "
+                "/wow-grok context in game)"
+            )
     if not addon_installed():
         print(
             "  WARNING  : WoWGrok.toc not found under addonDir — "

@@ -84,6 +84,7 @@ def default_config() -> dict[str, Any]:
         "apiKey": "",
         "model": "grok-4-latest",
         "apiBase": "https://api.x.ai/v1",
+        "gameContext": True,
         "allowedTools": [],
         "pollMs": 750,
         "progressWriteMs": 3000,
