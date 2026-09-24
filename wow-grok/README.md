@@ -6,7 +6,7 @@ Chat with [xAI Grok](https://docs.x.ai/) from inside **World of Warcraft: Foreve
 
 This is **not** Grok Bot and **not** Claude Code. A small **Python** companion on your Mac or Windows PC talks to `https://api.x.ai/v1/responses` with **your** API key. Default model: `grok-4-latest`.
 
-Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho139.
+Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho139. **We rewrote the companion bridge in Python** (not a Node.js port of that project).
 
 ## What you get
 
