@@ -139,11 +139,11 @@ jobs:
           ### What’s new in 0.1.11
           - **Connect via presence:** Note the bridge when presence head>0 (don’t wait for the next 30s beat); Connect seeds from presence; CONNECT_WAIT 45s.
           - **Screen Recording TCC:** in-process CoreGraphics probe/request (ctypes) so macOS lists **WoWGrok** under Screen Recording — not osascript.
-          - **First-run sheet:** always show the Screen Recording sheet unless status is clearly granted (do not skip on unsure); call `request_screen_recording()` so Settings gets a WoWGrok row.
+          - **First-run sheet:** always show the Screen Recording sheet unless status is clearly granted (do not skip on unsure); call request_screen_recording() so Settings gets a WoWGrok row.
           - Quit + reopen after enabling remains required for the permission to stick.
 
           ### Carry-forward from 0.1.10
-          - **Quit full-tree teardown:** menu-bar Quit terminates supervisor → bridge → capture so Finder can trash/replace `/Applications/WoWGrok.app`.
+          - **Quit full-tree teardown:** menu-bar Quit terminates supervisor → bridge → capture so Finder can trash/replace /Applications/WoWGrok.app.
 
           ### Carry-forward from 0.1.9
           - **Presence beats:** rewrite full valid prefix 1..k each beat so Forever can detect the bridge.
