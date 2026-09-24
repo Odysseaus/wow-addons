@@ -26,7 +26,7 @@ Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho
 - An xAI API key from [console.x.ai](https://console.x.ai/) (Grok **API**, not a Grok Bot token)
 - **Bridge:** `WoWGrok.exe` (Windows) or `WoWGrok.app` (Mac) from Releases — **separate downloads**, not one shared installer
 
-**Mac:** drag `WoWGrok.app` from the DMG into **`/Applications`**, then launch from Applications. The Release build is unsigned — hold **Control** and click → **Open**, then **Open Anyway** in Privacy & Security if shown. A plain double-click often only shows **Done**. Also grant **Screen Recording**, then use the in-app **Quit WoWGrok** button and reopen so the permission sticks.
+**Mac:** drag `WoWGrok.app` from the DMG into **`/Applications`**, then launch from Applications. The Release build is unsigned — hold **Control** and click → **Open**, then **Open Anyway** in Privacy & Security if shown. A plain double-click often only shows **Done**. Grant **Screen Recording**, use **Quit WoWGrok** once if offered (permission stick only), reopen, then **keep the app open while you play Forever** — it is the live bridge, not a one-shot installer.
 
 ## Simple install
 
@@ -41,9 +41,10 @@ Full walkthrough: [docs/INSTALL-USERS.md](docs/INSTALL-USERS.md).
 3. **Enter your xAI API key** when asked — stored only in a local `config.json` (never uploaded, never written into Lua).
 4. **Pick or confirm** your WoW `Interface/AddOns` folder (auto-detect, or a folder picker).
 5. Wait while the **app creates** the main `WoWGrok` addon and reply slots `WoWGrok_S001`–`WoWGrok_S200` as top-level siblings in that folder (can take about a minute). Do **not** copy 200 folders yourself.
-6. **Mac only:** grant **Screen Recording** to `WoWGrok.app` under System Settings → Privacy & Security → Screen Recording.
-7. **Start Forever** (fully quit and relaunch WoW if it was already open — a `/reload` is not enough for new AddOns). At character select, enable **WoW Grok** and leave the slot entries enabled.
-8. **Type `/wow-grok` or `/grok` in game chat.**
+6. **Mac only:** grant **Screen Recording** to `WoWGrok.app` under System Settings → Privacy & Security → Screen Recording. If the app offers **Quit WoWGrok**, use that once so the permission sticks, then **reopen** from Applications.
+7. **Leave WoWGrok running while you play.** It is the live bridge (Dock icon / menu presence is normal), not a one-shot installer. Quitting it stops capture and in-game replies. After first-run Done / OK, the process keeps running until you quit.
+8. **Start Forever** (fully quit and relaunch WoW if it was already open — a `/reload` is not enough for new AddOns). At character select, enable **WoW Grok** and leave the slot entries enabled.
+9. **Type `/wow-grok` or `/grok` in game chat.**
 
 You never need Python, pip, npm, or a terminal for this path.
 

@@ -47,7 +47,7 @@ On **first launch** the app will:
 1. Ask for your **xAI API key**. It is saved only in a local `config.json` next to the app (not uploaded, not put in the Lua addon).
 2. Auto-find your `Interface/AddOns` folder, or show a folder picker if none / several are found.
 3. **Copy** the main `WoWGrok` addon into that folder and **create** reply slots `WoWGrok_S001` … `WoWGrok_S200` as **top-level siblings** next to it (plus signal wav stubs). This can take about a minute — wait for the “done” dialog.
-4. Start the bridge.
+4. Keep running as the **live bridge** (not a one-shot installer). After Done / OK, leave WoWGrok open while you play — Dock / menu presence is expected. Quitting it stops capture and replies.
 
 ### 3. Mac only — Gatekeeper + Screen Recording
 
@@ -56,15 +56,19 @@ Keep the app in **`/Applications`** (drag from the DMG). The Release build is **
 1. Hold **Control** and click `WoWGrok.app` in Applications → **Open** (plain double-click often only shows **Done** and will not launch).
 2. If still blocked: **System Settings → Privacy & Security** → **Open Anyway** (if shown).
 3. **Screen Recording:** System Settings → Privacy & Security → Screen Recording (or Screen & System Audio Recording) → enable **WoWGrok**.
-4. When the app offers **Quit WoWGrok**, click it, then reopen from Applications so the permission sticks (Force Quit should not be needed).
+4. When the app offers **Quit WoWGrok**, click it **only** so Screen Recording can stick, then reopen from Applications (Force Quit should not be needed). After that reopen, **leave WoWGrok running** for the whole Forever session.
 
-### 4. In game
+### 4. Keep the bridge running
+
+**WoWGrok.app / WoWGrok.exe stays running while you play.** It is the live companion bridge, not an installer that exits after setup. After first-run finishes, the process keeps running until you quit it. If you quit, in-game capture and replies stop until you launch it again.
+
+### 5. In game
 
 1. **Fully quit** World of Warcraft and relaunch it (`/reload` is not enough for new AddOns).
 2. At character select, enable **WoW Grok** (leave the `WoW Grok slot ###` entries enabled).
 3. **Type `/wow-grok` or `/grok` in game chat.**
 
-### 5. Cloud / GeForce Now
+### 6. Cloud / GeForce Now
 
 **Unsupported.** The app must share a machine with a normal local WoW install.
 
@@ -85,7 +89,7 @@ Keep the app in **`/Applications`** (drag from the DMG). The Release build is **
 |---------|-------------|
 | “Missing API key” | Re-run the app and paste the key, or set `XAI_API_KEY`. |
 | Addon / slots missing | Re-run the **WoWGrok** app so it reinstalls into AddOns; then fully quit/relaunch WoW. |
-| No replies in game | Confirm AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
+| No replies in game | Confirm **WoWGrok is still running** (it must stay open while you play), AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
 | Mac app won’t launch / only shows Done | Hold **Control** → click `WoWGrok.app` → **Open**; then **System Settings → Privacy & Security → Open Anyway** if shown. Plain double-click is unreliable for this unsigned build. |
 | Capture errors on Mac / screen-record prompt loops | Enable WoWGrok under Screen Recording, then **Quit and reopen** WoWGrok (toggle alone is not enough). v0.1.4+ stops re-asking until you reopen. Use windowed/borderless. |
 | Post-install dialog stuck (spinning) | Force Quit WoWGrok (install is already done), reopen; use v0.1.3+ which uses a dismissible Done / OK window. |
