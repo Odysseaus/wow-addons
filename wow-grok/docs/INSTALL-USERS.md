@@ -48,7 +48,7 @@ System Settings → Privacy & Security → Screen Recording → enable **WoWGrok
 
 1. **Fully quit** World of Warcraft and relaunch it (`/reload` is not enough for new AddOns).
 2. At character select, enable **WoW Grok** (leave the `WoW Grok slot ###` entries enabled).
-3. In game: `/wow-grok` or `/grok`.
+3. **Type `/wow-grok` or `/grok` in game chat.**
 
 ### 5. Cloud / GeForce Now
 
