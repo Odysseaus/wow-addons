@@ -136,15 +136,13 @@ jobs:
 
           Built from commit \`${SHA}\` via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What’s new in 0.1.6
-          - **DMG layout:** drag \`WoWGrok.app\` to the Applications shortcut (create-dmg), not a bare app-only volume.
-          - **Menu bar companion:** after first-run, a quiet status item (no spinning / empty desktop popup). Menu shows status + **Quit WoWGrok**. \`LSUIElement\` — no Dock icon in steady state.
-          - Look for the **WoWGrok** icon in the menu bar; leave it running while you play; Quit from the menu.
+          ### What’s new in 0.1.7
+          - **Screen Recording sheet:** only shown when TCC probe says permission is missing. If already granted, skip straight to the menu-bar bridge (no every-launch popup). If the probe is unsure, prefer Continue-without-capture rather than blocking.
 
-          ### Carry-forward from 0.1.5
-          - Quit button on Screen Recording guidance (primary-display dialogs).
-          - Install into **/Applications** from the DMG.
-          - Keep the app running while you play (live bridge, not a one-shot installer).
+          ### Carry-forward from 0.1.6
+          - **DMG layout:** drag \`WoWGrok.app\` to the Applications shortcut (create-dmg).
+          - **Menu bar companion:** quiet status item (Running + Quit); \`LSUIElement\`.
+          - Install into **/Applications**; keep running while you play.
 
           ### Install
           1. Quit any old WoWGrok process.
@@ -159,7 +157,7 @@ jobs:
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — menu bar + Applications DMG"
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — Screen Recording prompt gate"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \

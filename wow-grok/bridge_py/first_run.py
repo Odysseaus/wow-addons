@@ -124,14 +124,26 @@ def prompt_addons_dir(
 
 
 def prompt_mac_screen_recording() -> None:
-    """Tell the user to enable Screen Recording; offer Quit for a clean reopen.
+    """Tell the user to enable Screen Recording only when TCC is actually missing.
 
-    Returns after Continue, or exits the process (code 0) if the user clicks Quit
-    so the supervisor stops and macOS can apply the TCC toggle on next launch.
+    Probes once via capture_mac.probe_screen_recording. If already granted, returns
+    immediately so relaunch goes straight to the menu-bar bridge. If the probe is
+    unsure/errors, skip the modal (prefer Continue-without-capture) rather than
+    blocking every launch. Quit exits 0 so the supervisor stops and macOS can apply
+    a fresh TCC toggle on the next open.
     """
     if sys.platform != "darwin":
         return
     if not _gui_available():
+        return
+    try:
+        from .capture_mac import probe_screen_recording
+
+        status = probe_screen_recording()
+    except Exception:
+        # Unsure → do not block relaunch with a sheet.
+        return
+    if status != "denied":
         return
     try:
         choice = tk_util.show_screen_recording_dialog(
@@ -141,7 +153,7 @@ def prompt_mac_screen_recording() -> None:
             "2. Turn WoWGrok ON (it may only appear after this first launch).\n"
             "3. Click Quit WoWGrok below, then reopen it from Applications "
             "so the permission sticks.\n\n"
-            "SavedVariables /reload still works without capture.\n"
+            "Or choose Continue without capture — SavedVariables /reload still works.\n"
             "Launch WoWGrok from /Applications (not from the DMG)."
         )
         if choice == "quit":
