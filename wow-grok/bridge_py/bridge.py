@@ -773,6 +773,24 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(0.2)
         return 0
 
+    # Steady state: macOS menu bar companion (quiet; no spinning desktop popup).
+    # Headless / --once / --inject keep the wait loop below (or already returned).
+    if (
+        sys.platform == "darwin"
+        and not args.headless
+        and _can_gui()
+    ):
+        try:
+            from . import menubar
+
+            if menubar.available():
+                return menubar.run_status_item(
+                    stop_event=stop_event,
+                    screen_ui=screen_ui,
+                )
+        except Exception as e:  # noqa: BLE001
+            print(f"menubar unavailable ({e}); falling back to wait loop", flush=True)
+
     while not stop_event.is_set():
         if screen_ui.get("pending"):
             screen_ui["pending"] = False

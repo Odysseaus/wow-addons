@@ -26,7 +26,7 @@ Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho
 - An xAI API key from [console.x.ai](https://console.x.ai/) (Grok **API**, not a Grok Bot token)
 - **Bridge:** `WoWGrok.exe` (Windows) or `WoWGrok.app` (Mac) from Releases — **separate downloads**, not one shared installer
 
-**Mac:** drag `WoWGrok.app` from the DMG into **`/Applications`**, then launch from Applications. The Release build is unsigned — hold **Control** and click → **Open**, then **Open Anyway** in Privacy & Security if shown. A plain double-click often only shows **Done**. Grant **Screen Recording**, use **Quit WoWGrok** once if offered (permission stick only), reopen, then **keep the app open while you play Forever** — it is the live bridge, not a one-shot installer.
+**Mac:** the DMG shows **WoWGrok.app** plus an **Applications** shortcut — drag the app into Applications, then launch from there. The Release build is unsigned — hold **Control** and click → **Open**, then **Open Anyway** in Privacy & Security if shown. A plain double-click often only shows **Done**. Grant **Screen Recording**, use **Quit WoWGrok** once if offered (permission stick only), reopen, then **keep WoWGrok running while you play Forever** — look for the **menu bar** icon (quiet companion; no Dock icon). Quit from the menu bar. It is the live bridge, not a one-shot installer.
 
 ## Simple install
 
@@ -35,14 +35,14 @@ Full walkthrough: [docs/INSTALL-USERS.md](docs/INSTALL-USERS.md).
 1. **Download** the Mac or Windows executable from this project’s **Releases** (`WoWGrok.app` / `.dmg`, or `WoWGrok.exe` — separate builds).
 2. **Install / run**:
    - **Windows:** double-click `WoWGrok.exe` (you can keep it anywhere convenient).
-   - **Mac:** open the `.dmg`, **drag `WoWGrok.app` into `/Applications`**, then launch it from Applications (not from the DMG or Downloads). First open (unsigned):
+   - **Mac:** open the `.dmg` (app + **Applications** shortcut), **drag `WoWGrok.app` into Applications**, then launch from Applications (not from the DMG or Downloads). First open (unsigned):
      1. Hold **Control** and click `WoWGrok.app` → click **Open**.
      2. If macOS still blocks it, open **System Settings → Privacy & Security**, then click **Open Anyway** (if shown).
 3. **Enter your xAI API key** when asked — stored only in a local `config.json` (never uploaded, never written into Lua).
 4. **Pick or confirm** your WoW `Interface/AddOns` folder (auto-detect, or a folder picker).
 5. Wait while the **app creates** the main `WoWGrok` addon and reply slots `WoWGrok_S001`–`WoWGrok_S200` as top-level siblings in that folder (can take about a minute). Do **not** copy 200 folders yourself.
 6. **Mac only:** grant **Screen Recording** to `WoWGrok.app` under System Settings → Privacy & Security → Screen Recording. If the app offers **Quit WoWGrok**, use that once so the permission sticks, then **reopen** from Applications.
-7. **Leave WoWGrok running while you play.** It is the live bridge (Dock icon / menu presence is normal), not a one-shot installer. Quitting it stops capture and in-game replies. After first-run Done / OK, the process keeps running until you quit.
+7. **Leave WoWGrok running while you play.** After first-run, look for the **WoWGrok** icon in the **menu bar** (quiet companion; no Dock icon). It is the live bridge, not a one-shot installer. Quit from the menu bar (**Quit WoWGrok**) when you are done — quitting stops capture and in-game replies.
 8. **Start Forever** (fully quit and relaunch WoW if it was already open — a `/reload` is not enough for new AddOns). At character select, enable **WoW Grok** and leave the slot entries enabled.
 9. **Type `/wow-grok` or `/grok` in game chat.**
 

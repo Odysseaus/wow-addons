@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. wow-grok-mac-v0.1.2)'
+        description: 'Release tag (e.g. wow-grok-mac-v0.1.6)'
         required: true
         type: string
       prerelease:
@@ -32,7 +32,7 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install -U pip
-          pip install pillow pyinstaller
+          pip install pillow pyinstaller rumps
 
       - name: Build .app
         run: pyinstaller --noconfirm bridge_py/build_mac.spec
@@ -62,14 +62,65 @@ jobs:
           print("OK: supervisor present in bundle")
           PY
 
+      - name: Prove menubar + LSUIElement
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          app = Path("dist/WoWGrok.app")
+          plist = next(app.rglob("Info.plist"))
+          raw = plist.read_bytes()
+          # binary or XML plist — accept either form of the key
+          if b"LSUIElement" not in raw and b"lsuielement" not in raw.lower():
+              # try plutil
+              import subprocess, json
+              out = subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(plist)])
+              data = json.loads(out)
+              if not data.get("LSUIElement"):
+                  raise SystemExit(f"LSUIElement missing in {plist}: {data}")
+          print("OK: LSUIElement present in", plist)
+          needle = b"bridge_py.menubar"
+          found = any(needle in p.read_bytes() for p in app.rglob("*") if p.is_file() and p.stat().st_size < 80_000_000)
+          if not found:
+              # rumps string also acceptable evidence of menubar path
+              found = any(b"rumps" in p.read_bytes() for p in app.rglob("*") if p.is_file() and 1000 < p.stat().st_size < 80_000_000)
+          if not found:
+              raise SystemExit("menubar/rumps not found in bundle")
+          print("OK: menubar/rumps present in bundle")
+          PY
+
       - name: Zip .app
         run: |
           cd dist
           ditto -c -k --sequesterRsrc --keepParent WoWGrok.app WoWGrok-mac-arm64.zip
 
-      - name: Make DMG
+      - name: Make DMG (create-dmg drag-to-Applications)
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
-          hdiutil create -volname WoWGrok -srcfolder dist/WoWGrok.app -ov -format UDZO dist/WoWGrok.dmg
+          set -euo pipefail
+          brew install create-dmg
+          STAGE="dist/dmg-stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R dist/WoWGrok.app "$STAGE/"
+          rm -f dist/WoWGrok.dmg
+          # create-dmg may exit non-zero after a successful image (bless); accept if DMG exists
+          create-dmg \
+            --volname "WoWGrok" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "WoWGrok.app" 150 185 \
+            --hide-extension "WoWGrok.app" \
+            --app-drop-link 450 185 \
+            "dist/WoWGrok.dmg" \
+            "$STAGE/" || true
+          if [[ ! -f dist/WoWGrok.dmg ]]; then
+            echo "create-dmg failed; falling back to hdiutil of staged folder"
+            hdiutil create -volname WoWGrok -srcfolder "$STAGE" -ov -format UDZO dist/WoWGrok.dmg
+          fi
+          ls -la dist/WoWGrok.dmg
 
       - name: Create / update Release
         env:
@@ -81,36 +132,45 @@ jobs:
           set -euo pipefail
           SHA=$(git rev-parse --short HEAD)
           NOTES=$(cat <<MD
-          ## Fix
-          Frozen Mac app crashed after the “needs an xAI API key” info dialog with:
-          \`ModuleNotFoundError: No module named 'bridge_py.supervisor'\`
+          ## WoWGrok Mac ${TAG#wow-grok-mac-}
 
-          **${TAG}** bundles all \`bridge_py\` submodules (explicit hiddenimports + \`collect_submodules\` + freeze anchors in \`__main__\`).
+          Built from commit \`${SHA}\` via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          Built from commit \`${SHA}\` via GitHub Actions (macos-14).
+          ### What’s new in 0.1.6
+          - **DMG layout:** drag \`WoWGrok.app\` to the Applications shortcut (create-dmg), not a bare app-only volume.
+          - **Menu bar companion:** after first-run, a quiet status item (no spinning / empty desktop popup). Menu shows status + **Quit WoWGrok**. \`LSUIElement\` — no Dock icon in steady state.
+          - Look for the **WoWGrok** icon in the menu bar; leave it running while you play; Quit from the menu.
 
-          ## Install
+          ### Carry-forward from 0.1.5
+          - Quit button on Screen Recording guidance (primary-display dialogs).
+          - Install into **/Applications** from the DMG.
+          - Keep the app running while you play (live bridge, not a one-shot installer).
+
+          ### Install
           1. Quit any old WoWGrok process.
-          2. Replace with this DMG / zip.
-          3. Right-click → Open if Gatekeeper warns.
-          4. Enter API key → confirm AddOns → wait for slot install → Type \`/wow-grok\` or \`/grok\` in game chat.
+          2. Open the DMG → drag **WoWGrok.app** to **Applications** → eject.
+          3. Hold **Control** → click → **Open** if Gatekeeper warns (plain double-click often only shows Done).
+          4. Enter API key → confirm AddOns → wait for slot install.
+          5. Grant **Screen Recording**; use Quit from the menu once if offered so permission sticks, then reopen.
+          6. Leave WoWGrok running (menu bar) while you play. Type \`/wow-grok\` or \`/grok\` in game chat.
 
-          Unsigned / Apple Silicon arm64 (macos-14 runner).
+          Zip of \`.app\` is also attached for convenience.
           MD
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — menu bar + Applications DMG"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \
               wow-grok/dist/WoWGrok.dmg \
               --repo "${{ github.repository }}" --clobber
-            gh release edit "$TAG" --notes "$NOTES" --repo "${{ github.repository }}" "${PRE_FLAG[@]}"
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --repo "${{ github.repository }}" "${PRE_FLAG[@]}"
           else
             gh release create "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \
               wow-grok/dist/WoWGrok.dmg \
-              --title "WoW Grok Mac ${TAG#wow-grok-mac-} — supervisor bundle fix" \
+              --title "$TITLE" \
               --notes "$NOTES" \
               --repo "${{ github.repository }}" \
               "${PRE_FLAG[@]}"

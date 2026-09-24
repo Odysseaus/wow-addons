@@ -1,6 +1,8 @@
 # Install on Mac (players)
 
-Use the packaged **`WoWGrok.app`** (or `.dmg`) — no Node.js, npm, or Python required.
+Use the packaged **`.dmg`** (drag **WoWGrok.app** to the Applications shortcut) or the `.app` zip — no Node.js, npm, or Python required.
+
+After first-run, WoWGrok lives in the **menu bar** (quiet companion). Leave it running while you play; Quit from the menu.
 
 Full player steps: [INSTALL-USERS.md](INSTALL-USERS.md).
 

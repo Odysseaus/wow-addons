@@ -35,11 +35,13 @@ a = Analysis(
         'bridge_py.strip_codec',
         'bridge_py.supervisor',
         'bridge_py.tk_util',
+        'bridge_py.menubar',
         'bridge_py.xai',
+        'rumps',
         'PIL',
         'tkinter',
         '_tkinter',
-    ] + collect_submodules('bridge_py'),
+    ] + collect_submodules('bridge_py') + collect_submodules('rumps'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -85,6 +87,7 @@ app = BUNDLE(
     bundle_identifier='com.wowgrok.bridge',
     info_plist={
         'NSHighResolutionCapable': True,
+        'LSUIElement': True,  # menu-bar agent; no Dock icon in steady state
         'NSAppleEventsUsageDescription':
             'WoWGrok locates the World of Warcraft window for pixel-strip capture.',
     },

@@ -27,7 +27,7 @@ Get the build for your OS from the project **Releases** page:
 | OS | File |
 |----|------|
 | Windows | `WoWGrok.exe` |
-| Mac | `WoWGrok.app` (or `.dmg`) |
+| Mac | `.dmg` (app + Applications shortcut) or `WoWGrok.app` zip |
 
 ### 2. Install and run the app
 
@@ -35,8 +35,8 @@ Get the build for your OS from the project **Releases** page:
 
 **Mac:**
 
-1. Open the `.dmg` (or unzip the release).
-2. **Drag `WoWGrok.app` into `/Applications`** (Finder sidebar → Applications).
+1. Open the `.dmg` (Finder shows **WoWGrok.app** and an **Applications** shortcut) — or unzip the release.
+2. **Drag `WoWGrok.app` onto the Applications shortcut** (or into `/Applications`).
 3. Eject the DMG. Always launch from **Applications**, not from the DMG or Downloads.
 4. First open (unsigned build) — a plain double-click often only shows **Done** and does **not** launch:
    - Hold **Control** and click `WoWGrok.app` → click **Open**.
@@ -47,7 +47,7 @@ On **first launch** the app will:
 1. Ask for your **xAI API key**. It is saved only in a local `config.json` next to the app (not uploaded, not put in the Lua addon).
 2. Auto-find your `Interface/AddOns` folder, or show a folder picker if none / several are found.
 3. **Copy** the main `WoWGrok` addon into that folder and **create** reply slots `WoWGrok_S001` … `WoWGrok_S200` as **top-level siblings** next to it (plus signal wav stubs). This can take about a minute — wait for the “done” dialog.
-4. Keep running as the **live bridge** (not a one-shot installer). After Done / OK, leave WoWGrok open while you play — Dock / menu presence is expected. Quitting it stops capture and replies.
+4. Keep running as the **live bridge** (not a one-shot installer). After Done / OK, leave WoWGrok running while you play — look for the **WoWGrok** icon in the **menu bar** (quiet companion; no Dock icon). Quit from the menu bar when finished. Quitting stops capture and replies.
 
 ### 3. Mac only — Gatekeeper + Screen Recording
 
@@ -60,7 +60,7 @@ Keep the app in **`/Applications`** (drag from the DMG). The Release build is **
 
 ### 4. Keep the bridge running
 
-**WoWGrok.app / WoWGrok.exe stays running while you play.** It is the live companion bridge, not an installer that exits after setup. After first-run finishes, the process keeps running until you quit it. If you quit, in-game capture and replies stop until you launch it again.
+**WoWGrok.app / WoWGrok.exe stays running while you play.** It is the live companion bridge, not an installer that exits after setup. On **Mac**, after first-run look for the **WoWGrok** icon in the **menu bar** and leave it there while you play; use **Quit WoWGrok** from that menu when you are done. If you quit, in-game capture and replies stop until you launch it again.
 
 ### 5. In game
 
@@ -89,7 +89,7 @@ Keep the app in **`/Applications`** (drag from the DMG). The Release build is **
 |---------|-------------|
 | “Missing API key” | Re-run the app and paste the key, or set `XAI_API_KEY`. |
 | Addon / slots missing | Re-run the **WoWGrok** app so it reinstalls into AddOns; then fully quit/relaunch WoW. |
-| No replies in game | Confirm **WoWGrok is still running** (it must stay open while you play), AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
+| No replies in game | Confirm **WoWGrok is still running** (Mac: menu bar icon; it must stay up while you play), AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
 | Mac app won’t launch / only shows Done | Hold **Control** → click `WoWGrok.app` → **Open**; then **System Settings → Privacy & Security → Open Anyway** if shown. Plain double-click is unreliable for this unsigned build. |
 | Capture errors on Mac / screen-record prompt loops | Enable WoWGrok under Screen Recording, then **Quit and reopen** WoWGrok (toggle alone is not enough). v0.1.4+ stops re-asking until you reopen. Use windowed/borderless. |
 | Post-install dialog stuck (spinning) | Force Quit WoWGrok (install is already done), reopen; use v0.1.3+ which uses a dismissible Done / OK window. |
