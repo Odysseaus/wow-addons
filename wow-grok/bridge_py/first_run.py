@@ -126,6 +126,40 @@ def prompt_addons_dir(
             root.destroy()
 
 
+
+def prompt_mac_screen_recording() -> None:
+    """Tell the user to enable Screen Recording before capture starts.
+
+    The app only appears in the macOS list after it has launched once; enabling
+    it usually requires Quit and reopen. Use a plain messagebox here (short,
+    before capture) so the later install progress window is already closed.
+    """
+    if sys.platform != "darwin":
+        return
+    if not _gui_available():
+        return
+    try:
+        _, _, messagebox, _ = _tk()
+        root = _ensure_root()
+        try:
+            messagebox.showinfo(
+                "WoW Grok — Screen Recording",
+                "Mac capture needs Screen Recording permission for WoWGrok.\n\n"
+                "1. Open System Settings → Privacy & Security → Screen Recording.\n"
+                "2. Enable WoWGrok (it may only appear after this first launch).\n"
+                "3. If macOS asks, Quit and reopen WoWGrok.\n\n"
+                "Then fully quit and relaunch World of Warcraft, enable WoW Grok "
+                "at character select, and type /wow-grok or /grok in chat.\n\n"
+                "You can click OK now and keep going — Force Quit is safe if a "
+                "dialog ever sticks.",
+                parent=root,
+            )
+        finally:
+            root.destroy()
+    except Exception:
+        pass
+
+
 def ensure_first_run_config(
     *,
     headless: bool = False,
@@ -211,9 +245,11 @@ def ensure_first_run_config(
     from .install_addon import InstallError, ensure_game_files
 
     use_gui = (not headless) and _gui_available()
+    install_ok = True
     try:
         ensure_game_files(cfg, gui=use_gui)
     except InstallError as e:
+        install_ok = False
         print(f"Could not install addon/slots: {e}", file=sys.stderr)
         if headless:
             sys.exit(2)
@@ -223,5 +259,8 @@ def ensure_first_run_config(
             "Re-run the WoWGrok app after fixing the AddOns path.",
             file=sys.stderr,
         )
+
+    if install_ok and use_gui and sys.platform == "darwin":
+        prompt_mac_screen_recording()
 
     return cfg

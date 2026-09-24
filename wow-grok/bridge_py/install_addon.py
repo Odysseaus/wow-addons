@@ -66,12 +66,100 @@ def install_main_addon(addons: Path) -> int:
     return written
 
 
+def _install_progress_ui():
+    """Non-modal progress window with an always-clickable OK when done.
+
+    Avoids ``messagebox.showinfo`` after a long install: on macOS that pattern
+    often freezes (spinning beachball) when Screen Recording / other sheets
+    appear, leaving the user unable to dismiss the dialog.
+    """
+    import tkinter as tk
+
+    root = tk.Tk()
+    root.title("WoW Grok")
+    root.resizable(False, False)
+    try:
+        root.attributes("-topmost", True)
+    except Exception:
+        pass
+
+    status = tk.StringVar(
+        value=(
+            "Installing the WoW Grok addon and reply slots into your "
+            "AddOns folder.\n\nThis can take about a minute — please wait."
+        )
+    )
+    lbl = tk.Label(
+        root,
+        textvariable=status,
+        justify="left",
+        wraplength=420,
+        padx=16,
+        pady=12,
+    )
+    lbl.pack(fill="both", expand=True)
+
+    btn = tk.Button(root, text="OK", width=10, state="disabled")
+    btn.pack(pady=(0, 12))
+
+    closed = {"done": False}
+
+    def close() -> None:
+        closed["done"] = True
+        try:
+            root.destroy()
+        except Exception:
+            pass
+
+    btn.configure(command=close)
+    root.protocol("WM_DELETE_WINDOW", close)
+
+    # Center roughly
+    root.update_idletasks()
+    w, h = 460, 160
+    try:
+        sw = root.winfo_screenwidth()
+        sh = root.winfo_screenheight()
+        root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 3}")
+    except Exception:
+        root.geometry(f"{w}x{h}")
+
+    def pump() -> None:
+        try:
+            root.update_idletasks()
+            root.update()
+        except Exception:
+            pass
+
+    def set_done(msg: str) -> None:
+        status.set(msg)
+        btn.configure(state="normal")
+        try:
+            btn.focus_set()
+        except Exception:
+            pass
+        pump()
+
+    def wait_ok() -> None:
+        """Block until OK / window close, while keeping the UI alive."""
+        import time
+
+        while not closed["done"]:
+            try:
+                root.update()
+            except tk.TclError:
+                break
+            time.sleep(0.05)
+
+    return root, pump, set_done, wait_ok, close
+
+
 def ensure_game_files(cfg: dict, *, gui: bool = False) -> tuple[int, int, int]:
     """Install main addon + reply slots into ``cfg['addonDir']``.
 
     Returns ``(main_written, slots_made, slots_kept)``.
     Does not call ``sys.exit`` — raises :class:`InstallError` on failure.
-    When ``gui`` is True and install work is needed, shows brief tk dialogs.
+    When ``gui`` is True and install work is needed, shows a dismissible progress window.
     """
     addons_raw = cfg.get("addonDir") or ""
     if not addons_raw:
@@ -84,63 +172,51 @@ def ensure_game_files(cfg: dict, *, gui: bool = False) -> tuple[int, int, int]:
     need_slots = not (addons / "WoWGrok_S001" / "Inbox.lua").is_file()
     show_ui = bool(gui) and (need_main or need_slots)
 
-    root = None
-    messagebox = None
+    ui = None
     if show_ui:
         try:
-            import tkinter as tk
-            from tkinter import messagebox as mb
-
-            messagebox = mb
-            root = tk.Tk()
-            root.withdraw()
-            try:
-                root.attributes("-topmost", True)
-            except Exception:
-                pass
-            messagebox.showinfo(
-                "WoW Grok — installing",
-                "Installing the WoW Grok addon and reply slots into your "
-                "AddOns folder.\n\nThis can take about a minute — please wait.",
-                parent=root,
-            )
-            root.update()
+            ui = _install_progress_ui()
+            ui[1]()  # pump once so the window appears before the long copy
         except Exception:
             show_ui = False
-            if root is not None:
-                try:
-                    root.destroy()
-                except Exception:
-                    pass
-                root = None
-            messagebox = None
+            ui = None
 
     main_written = made = kept = 0
-    ok = False
+    err: Exception | None = None
     try:
         main_written = install_main_addon(addons)
+        if ui is not None:
+            ui[1]()
         made, kept = slots_mod.install_slots(cfg)
-        ok = True
+        if ui is not None:
+            ui[1]()
     except slots_mod.InstallError as e:
-        raise InstallError(str(e)) from e
+        err = InstallError(str(e))
     except Exception as e:
-        raise InstallError(str(e)) from e
-    finally:
-        if show_ui and root is not None:
-            if ok and messagebox is not None:
-                try:
-                    messagebox.showinfo(
-                        "WoW Grok — install done",
-                        "Addon and reply slots are installed.\n\n"
-                        "Fully quit World of Warcraft (not just /reload) and "
-                        "relaunch it, then enable WoW Grok at character select.",
-                        parent=root,
-                    )
-                except Exception:
-                    pass
+        err = InstallError(str(e))
+
+    if ui is not None:
+        _root, pump, set_done, wait_ok, close = ui
+        try:
+            if err is None:
+                set_done(
+                    "Addon and reply slots are installed.\n\n"
+                    "Fully quit World of Warcraft (not just /reload) and "
+                    "relaunch it, then enable WoW Grok at character select.\n\n"
+                    "Click OK to continue."
+                )
+            else:
+                set_done(
+                    f"Install failed:\n\n{err}\n\n"
+                    "Click OK, fix the AddOns path if needed, and re-run WoWGrok."
+                )
+            wait_ok()
+        except Exception:
             try:
-                root.destroy()
+                close()
             except Exception:
                 pass
 
+    if err is not None:
+        raise err
     return main_written, made, kept
