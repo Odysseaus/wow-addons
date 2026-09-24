@@ -4,9 +4,9 @@ Chat with [xAI Grok](https://docs.x.ai/) from inside **World of Warcraft: Foreve
 
 > **Screenshot:** coming after live testing. See [docs/screenshot-placeholder.md](docs/screenshot-placeholder.md).
 
-This is **not** Grok Bot and **not** Claude Code. A small **Python** companion on your Mac or Windows PC talks to `https://api.x.ai/v1/responses` with **your** API key. Default model: `grok-4-latest`.
+This is **not** Grok Bot and **not** Claude Code. A packaged companion app on your Mac or Windows PC talks to `https://api.x.ai/v1/responses` with **your** API key. Default model: `grok-4-latest`.
 
-Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho139. **We rewrote the companion bridge in Python** (not a Node.js port of that project).
+Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho139. **We rewrote the companion bridge in Python** (not a Node.js port of that project). Players use the executable only — no Python, pip, or Node required.
 
 ## What you get
 
@@ -24,56 +24,32 @@ Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho
 - Windows or macOS
 - World of Warcraft: Forever (or a matching classic / beta flavor folder), **windowed or borderless** (exclusive fullscreen blocks capture)
 - An xAI API key from [console.x.ai](https://console.x.ai/) (Grok **API**, not a Grok Bot token)
-- **Bridge:** packaged `WoWGrok.exe` (Windows) or `WoWGrok.app` (Mac) when Releases ship — until then, Python 3.10+ from source (below). **You do not need Node.js.**
+- **Bridge:** `WoWGrok.exe` (Windows) or `WoWGrok.app` (Mac) from Releases — **separate downloads**, not one shared installer
 
-Mac needs **Screen Recording** permission for the bridge (System Settings → Privacy & Security → Screen Recording).
+Mac needs **Screen Recording** permission for the app (System Settings → Privacy & Security → Screen Recording).
 
 ## Simple install
 
 Full walkthrough: [docs/INSTALL-USERS.md](docs/INSTALL-USERS.md).
 
-### 1. Get the project
+### 1. Download the app
 
-Clone or download this folder from the repo:
+Get **either** `WoWGrok.exe` (Windows) **or** `WoWGrok.app` (Mac) from this project’s **Releases**. Mac and Windows are separate builds.
 
-`https://github.com/Odysseaus/wow-addons/tree/main/wow-grok`
+### 2. Run it once
 
-### 2. Install the addon + reply slots
+Double-click the app. On first launch it will:
 
-Copy into your client’s `Interface/AddOns` (examples — adjust the flavor folder if needed):
+1. Ask for your **xAI API key** — stored only in a local `config.json` next to the app (never uploaded, never written into Lua).
+2. Auto-detect or let you pick your WoW `Interface/AddOns` folder.
+3. **Install** the `WoWGrok` addon and reply slots `WoWGrok_S001`–`WoWGrok_S200` as top-level siblings in that folder (can take about a minute).
+4. Start the bridge.
 
-| Platform | Typical AddOns folder |
-|---|---|
-| Mac | `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns` |
-| Windows | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns` |
+You never need to copy files by hand, and you never need Python / pip / npm.
 
-- Copy `addon/WoWGrok` → `…/AddOns/WoWGrok`
-- Reply slots `WoWGrok_S001` … `WoWGrok_S200` must sit as **top-level** siblings next to `WoWGrok` (WoW will not load nested AddOns). Create them with:
+### 3. Mac: Screen Recording
 
-```bash
-python -m bridge_py --install-slots
-```
-
-(First bridge launch can also auto-detect `Interface/AddOns`, or show a folder picker if it finds none / several.)
-
-### 3. Run the bridge
-
-**When binaries ship (Releases):** run `WoWGrok.exe` or open `WoWGrok.app`. Mac and Windows are **separate** downloads — not one shared installer.
-
-**From source (interim):**
-
-```bash
-cd wow-grok
-python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
-pip install pillow
-python -m bridge_py
-```
-
-On first launch:
-
-1. Enter your **xAI API key** — stored only in local `bridge_py/config.json` on that machine (never uploaded, never written into Lua, never committed).
-2. Confirm or pick the WoW `Interface/AddOns` folder if asked.
+Grant **Screen Recording** to `WoWGrok.app` under System Settings → Privacy & Security → Screen Recording.
 
 ### 4. In game
 
@@ -81,13 +57,17 @@ On first launch:
 2. At character select, enable **WoW Grok** (leave the slot entries enabled).
 3. Type `/wow-grok` or `/grok`.
 
+### 5. Cloud / GeForce Now
+
+**Unsupported.** Use a local WoW install on the same PC as the app.
+
 ## How it works (short)
 
 WoW addons cannot open the network. **Out:** the addon draws your message as a strip of colored pixels; the bridge captures that corner and decodes it. **In:** the bridge writes replies into the slot AddOns and the game loads a fresh one. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Packaging
+## Developers / from source
 
-Separate Windows `.exe` and Mac `.app` / `.dmg` builds — see [bridge_py/packaging.md](bridge_py/packaging.md).
+Building from source, running tests, and packaging: [docs/DEV.md](docs/DEV.md).
 
 ## License
 

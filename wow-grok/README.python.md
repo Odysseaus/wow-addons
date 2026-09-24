@@ -1,30 +1,17 @@
-# WoW Grok — Python bridge (draft)
+# WoW Grok — Python bridge (developers)
 
 This is the **Python rewrite** of the companion bridge (`bridge_py/`). The Lua addon under `addon/WoWGrok/` is unchanged. The Node bridge under `bridge/` remains until cutover.
 
-**For players:** see **[docs/INSTALL-USERS.md](docs/INSTALL-USERS.md)** (Mac + Windows, no Node required).  
+**Players:** use the packaged app — [docs/INSTALL-USERS.md](docs/INSTALL-USERS.md) (no Python / pip / npm).  
+**Developers / from source:** [docs/DEV.md](docs/DEV.md).  
 **GeForce Now / cloud WoW is not supported.**
-
-## Quick start (developers)
 
 ```bash
 cd wow-grok
-python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install pillow
 python -m bridge_py --help
 python -m unittest discover -s bridge_py/tests -v
-```
-
-First real run opens a local popup for your xAI API key and AddOns folder; values go only into `bridge_py/config.json` on your machine.
-
-## Layout
-
-```
-bridge_py/          Python package (supervisor, protocol, xAI, capture stubs)
-addon/WoWGrok/      Lua addon (unchanged)
-bridge/             Node bridge (legacy until cutover)
-docs/INSTALL-USERS.md
-bridge_py/packaging.md
 ```
 
 ## Packaging

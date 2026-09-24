@@ -69,3 +69,8 @@ Milestone: `bridge_py/` package alongside Node bridge. First-run tkinter API key
 - Frozen re-entry: `--run-capture-mac` / `--run-capture-win` from `__main__.py`.
 - Packaging: `build_mac.spec`, `build_win.spec`, `scripts/build_*.sh|ps1`, Linux smoke `WoWGrokLinuxSmoke --help`.
 - Tests: 24 unit (16 prior + strip decode). Live Mac/Win capture still Mac/Win-only.
+
+## First-run installs addon + slots (2026-09-24)
+
+Hard product requirement: packaged `.app` / `.exe` on first GUI run prompts for API key + AddOns, then **copies** `WoWGrok` and creates `WoWGrok_S001`–`S200` as top-level siblings (via `install_addon.ensure_game_files` → `install_slots`). Users never need python/pip/npm. README + INSTALL-USERS are executable-only; from-source in `docs/DEV.md`. Unit tests: **27** (incl. tempdir install). Scrubbed tree synced to `/tmp/wow-addons/wow-grok` for parent push.
+

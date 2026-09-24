@@ -28,6 +28,12 @@ def _ensure_root():
     return root
 
 
+def _gui_available() -> bool:
+    if sys.platform in ("darwin", "win32"):
+        return True
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
 def prompt_api_key(parent=None) -> str | None:
     """Ask for xAI API key. Returns key or None if cancelled. Never logs the value."""
     tk, _, messagebox, simpledialog = _tk()
@@ -127,6 +133,9 @@ def ensure_first_run_config(
 ) -> dict[str, Any]:
     """Load or create config; prompt for API key + AddOns if needed.
 
+    After addonDir + apiKey are set and config is saved, installs the main
+    addon and reply slots into Interface/AddOns (GUI shows progress dialogs).
+
     headless: skip UI (CLI --wow / env only); exit 2 if incomplete.
     """
     cfg = cfgmod.load_config()
@@ -197,4 +206,22 @@ def ensure_first_run_config(
         cfg["apiKey"] = key
 
     cfgmod.save_config(cfg)
+
+    # Copy main addon + create WoWGrok_S001–S200 next to it (idempotent).
+    from .install_addon import InstallError, ensure_game_files
+
+    use_gui = (not headless) and _gui_available()
+    try:
+        ensure_game_files(cfg, gui=use_gui)
+    except InstallError as e:
+        print(f"Could not install addon/slots: {e}", file=sys.stderr)
+        if headless:
+            sys.exit(2)
+        # GUI path: warn but still return config so bridge can start;
+        # bridge banner will remind the user to re-run the app.
+        print(
+            "Re-run the WoWGrok app after fixing the AddOns path.",
+            file=sys.stderr,
+        )
+
     return cfg

@@ -9,12 +9,20 @@ from . import config as cfgmod
 from .protocol import SILENT_WAV, pad3
 
 
+class InstallError(Exception):
+    """Raised when reply slots cannot be installed (library callers)."""
+
+
 def install_slots(cfg: dict | None = None) -> tuple[int, int]:
+    """Create slot addons + signal wav stubs under ``cfg['addonDir']``.
+
+    Returns ``(made, kept)``. Raises :class:`InstallError` instead of
+    ``sys.exit`` so library callers (first-run install) can handle errors.
+    """
     if cfg is None:
         cfg = cfgmod.load_config()
     if not cfg:
-        print("No config.json — run the bridge once to create it.", file=sys.stderr)
-        sys.exit(1)
+        raise InstallError("No config.json — run the bridge once to create it.")
     addons = Path(cfg["addonDir"])
     n = int(cfg.get("slots") or 200)
     act = int(cfg.get("actMax") or 60)
@@ -22,8 +30,7 @@ def install_slots(cfg: dict | None = None) -> tuple[int, int]:
     iface = str(cfg.get("tocInterface") or "16001")
 
     if not (addons / "WoWGrok" / "WoWGrok.toc").exists():
-        print(f"WoWGrok addon not found under {addons}", file=sys.stderr)
-        sys.exit(1)
+        raise InstallError(f"WoWGrok addon not found under {addons}")
 
     made = 0
     kept = 0
@@ -78,7 +85,11 @@ def install_slots(cfg: dict | None = None) -> tuple[int, int]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Install WoWGrok reply-slot addons")
     ap.parse_args(argv)
-    install_slots()
+    try:
+        install_slots()
+    except InstallError as e:
+        print(str(e), file=sys.stderr)
+        return 1
     return 0
 
 

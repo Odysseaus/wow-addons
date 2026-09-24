@@ -1,10 +1,12 @@
-# Install WoW Grok (simple — no Node.js)
+# Install WoW Grok (players — executable only)
 
-Chat with **xAI Grok** from inside **World of Warcraft: Forever** using the Python bridge.
+Chat with **xAI Grok** from inside **World of Warcraft: Forever** using the packaged companion app.
 
 > **Not supported:** GeForce Now, Shadow, or any cloud/streaming WoW. The bridge must run on the **same Mac or Windows PC** that has a normal WoW install (it reads your screen strip and writes AddOn files).
 
-This guide is for the **Python** package (`bridge_py/`). The older Node bridge still works if you already use it; you do **not** need Node for the Python path.
+You do **not** need Python, pip, npm, or a terminal. Download the app, run it, play.
+
+Building from source is documented separately in [DEV.md](DEV.md).
 
 ---
 
@@ -12,110 +14,53 @@ This guide is for the **Python** package (`bridge_py/`). The older Node bridge s
 
 1. A local Forever / WoW install (Retail, Classic, Classic Era, Beta / Forever flavor folders are fine).
 2. An **xAI API key** from [https://console.x.ai/](https://console.x.ai/) (kept only on your machine).
-3. Either:
-   - **Easy (later):** a downloaded `WoWGrok.exe` (Windows) or `WoWGrok.app` (Mac), **or**
-   - **From source now:** Python 3.10+ on your computer.
-
-Mac and Windows use **separate** apps — there is no single shared installer file.
+3. **`WoWGrok.exe` (Windows) or `WoWGrok.app` (Mac)** from Releases — **separate** downloads; there is no single shared installer.
 
 ---
 
-## Mac (from source)
+## Install steps
 
-1. Download or clone this `wow-grok` repo.
-2. Open Terminal in the repo folder:
+### 1. Download
 
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install pillow
-   # optional: pip install -e .
-   ```
+Get the build for your OS from the project **Releases** page:
 
-3. Copy the addon into WoW (first run can also point at AddOns):
+| OS | File |
+|----|------|
+| Windows | `WoWGrok.exe` |
+| Mac | `WoWGrok.app` (or `.dmg`) |
 
-   ```bash
-   # Example Forever / classic beta path — adjust if yours differs
-   cp -R addon/WoWGrok "/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/"
-   ```
+### 2. Run the app
 
-4. Start the bridge:
+Double-click `WoWGrok.exe` or open `WoWGrok.app`.
 
-   ```bash
-   python -m bridge_py
-   ```
+On **first launch** the app will:
 
-5. **First launch**
-   - A popup asks for your **xAI API key**. It is saved only in `bridge_py/config.json` on this Mac (not uploaded, not put in the Lua addon).
-   - If WoW isn’t auto-found, pick your `Interface/AddOns` folder (or the `_classic_beta_` / `_forever_` client folder).
+1. Ask for your **xAI API key**. It is saved only in a local `config.json` next to the app (not uploaded, not put in the Lua addon).
+2. Auto-find your `Interface/AddOns` folder, or show a folder picker if none / several are found.
+3. **Copy** the main `WoWGrok` addon into that folder and **create** reply slots `WoWGrok_S001` … `WoWGrok_S200` as **top-level siblings** next to it (plus signal wav stubs). This can take about a minute — wait for the “done” dialog.
+4. Start the bridge.
 
-6. Grant **Screen Recording** to Terminal (or `WoWGrok.app` when packaged):  
-   System Settings → Privacy & Security → Screen Recording.
+### 3. Mac only — Screen Recording
 
-7. Fully quit and relaunch WoW. At character select, enable **WoW Grok** (leave the `WoW Grok slot ###` entries enabled).
+System Settings → Privacy & Security → Screen Recording → enable **WoWGrok**.
 
-8. In game: `/wow-grok` or `/grok`.
+### 4. In game
 
-If slots were not created yet:
+1. **Fully quit** World of Warcraft and relaunch it (`/reload` is not enough for new AddOns).
+2. At character select, enable **WoW Grok** (leave the `WoW Grok slot ###` entries enabled).
+3. In game: `/wow-grok` or `/grok`.
 
-```bash
-python -m bridge_py --install-slots
-```
+### 5. Cloud / GeForce Now
 
-then restart WoW again.
-
----
-
-## Windows (from source)
-
-1. Download or clone this `wow-grok` repo.
-2. In PowerShell in the repo folder:
-
-   ```powershell
-   py -3 -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   pip install pillow
-   ```
-
-3. Copy `addon\WoWGrok` into your WoW `Interface\AddOns` folder  
-   (typical Forever path under `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns`).
-
-4. Start:
-
-   ```powershell
-   python -m bridge_py
-   ```
-
-5. First launch: enter your xAI API key (stored only in local `bridge_py\config.json`) and confirm/pick AddOns if asked.
-
-6. Fully quit and relaunch WoW; enable **WoW Grok**; use `/wow-grok` in game.
-
-Slots:
-
-```powershell
-python -m bridge_py --install-slots
-```
-
-Capture uses the existing `bridge\capture.ps1` helper for this milestone.
-
----
-
-## Packaged apps (when available)
-
-| OS | File | Notes |
-|----|------|--------|
-| Windows | `WoWGrok.exe` | Double-click; keep capture.ps1 available as documented in packaging. |
-| Mac | `WoWGrok.app` / `.dmg` | Grant Screen Recording to the app. |
-
-Builders: see `bridge_py/packaging.md` (PyInstaller commands — run on Mac for Mac, on Windows for Windows).
+**Unsupported.** The app must share a machine with a normal local WoW install.
 
 ---
 
 ## Privacy of your API key
 
-- Stored in **local** `config.json` next to the bridge (or next to the frozen exe).
+- Stored in **local** `config.json` next to the app (or next to the frozen exe).
 - **Never** sent to the WoW addon / Lua.
-- **Never** committed to git (repo ignores `**/config.json`).
+- **Never** committed to git.
 - You can instead set environment variable `XAI_API_KEY` and leave `apiKey` empty in config.
 
 ---
@@ -124,9 +69,10 @@ Builders: see `bridge_py/packaging.md` (PyInstaller commands — run on Mac for 
 
 | Problem | What to try |
 |---------|-------------|
-| “Missing API key” | Re-run the bridge and paste the key, or set `XAI_API_KEY`. |
-| No replies in game | Confirm AddOns path, slots installed, WoW fully restarted, addon enabled. |
-| Capture errors on Mac | Screen Recording permission; use windowed/borderless (not exclusive fullscreen). |
+| “Missing API key” | Re-run the app and paste the key, or set `XAI_API_KEY`. |
+| Addon / slots missing | Re-run the **WoWGrok** app so it reinstalls into AddOns; then fully quit/relaunch WoW. |
+| No replies in game | Confirm AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
+| Capture errors on Mac | Screen Recording permission for the app; use windowed/borderless (not exclusive fullscreen). |
 | Cloud / GeForce Now | Unsupported — use a local install. |
 
-More detail (Node-era docs still useful for architecture): `docs/ARCHITECTURE.md`, `docs/CONFIGURATION.md`.
+More detail: [ARCHITECTURE.md](ARCHITECTURE.md), [CONFIGURATION.md](CONFIGURATION.md). Developers: [DEV.md](DEV.md).

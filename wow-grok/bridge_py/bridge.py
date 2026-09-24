@@ -651,9 +651,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"  slots    : {slots}  parallel={max_parallel}")
     if not addon_installed():
-        print("  WARNING  : WoWGrok.toc not found under addonDir — copy addon then restart WoW")
+        print(
+            "  WARNING  : WoWGrok.toc not found under addonDir — "
+            "re-run the WoWGrok app to install the addon, then fully quit/relaunch WoW"
+        )
     elif not slots_installed():
-        print("  WARNING  : slots missing — run: python -m bridge_py.install_slots")
+        print(
+            "  WARNING  : reply slots missing — "
+            "re-run the WoWGrok app to install slots, then fully quit/relaunch WoW"
+        )
 
     if args.inject is not None:
         submit(

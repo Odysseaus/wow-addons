@@ -26,6 +26,8 @@ a = Analysis(
         'bridge_py.strip_codec',
         'bridge_py.config',
         'bridge_py.first_run',
+        'bridge_py.install_addon',
+        'bridge_py.install_slots',
         'bridge_py.protocol',
         'bridge_py.xai',
         'PIL',
