@@ -8,8 +8,21 @@ import time
 from typing import Sequence
 
 
+def _bridge_command(bridge_argv: Sequence[str] | None) -> list[str]:
+    """Build argv to run the bridge as a child process.
+
+    Frozen PyInstaller apps are not a CPython interpreter: ``exe -m package``
+    does not work and exits immediately (silent when console=False). Re-invoke
+    the same binary with ``--no-supervisor`` instead.
+    """
+    args = list(bridge_argv or [])
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--no-supervisor", *args]
+    return [sys.executable, "-m", "bridge_py.bridge", *args]
+
+
 def run_supervised(bridge_argv: Sequence[str] | None = None) -> int:
-    """Spawn bridge as a child of this interpreter; restart after 3s on crash."""
+    """Spawn bridge as a child; restart after 3s on crash."""
     stopping = {"v": False}
     child: dict[str, subprocess.Popen | None] = {"p": None}
 
@@ -27,8 +40,7 @@ def run_supervised(bridge_argv: Sequence[str] | None = None) -> int:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
-    # Import-run in-process when possible would block restart; always subprocess.
-    cmd = [sys.executable, "-m", "bridge_py.bridge", *(bridge_argv or [])]
+    cmd = _bridge_command(bridge_argv)
     while True:
         child["p"] = subprocess.Popen(cmd)
         code = child["p"].wait()

@@ -16,9 +16,21 @@ LOG_NAME = "bridge.log"
 
 
 def runtime_dir() -> Path:
-    """Directory for config/state next to frozen exe, else package dir."""
+    """Directory for config/state.
+
+    - Dev: package dir (``bridge_py/``)
+    - Frozen Windows one-file: next to the ``.exe``
+    - Frozen macOS ``.app``: ``~/Library/Application Support/WoWGrok``
+      (``Contents/MacOS`` is not writable / wrong place for user data)
+    """
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
+        exe = Path(sys.executable).resolve()
+        # …/WoWGrok.app/Contents/MacOS/WoWGrok
+        if sys.platform == "darwin" and exe.parent.name == "MacOS":
+            support = Path.home() / "Library" / "Application Support" / "WoWGrok"
+            support.mkdir(parents=True, exist_ok=True)
+            return support
+        return exe.parent
     return PACKAGE_DIR
 
 
