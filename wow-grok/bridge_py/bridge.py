@@ -1110,7 +1110,7 @@ def main(argv: list[str] | None = None) -> int:
         stop_capture()
         return 0
 
-    # Steady state: macOS menu bar companion (quiet; no spinning desktop popup).
+    # Steady state: macOS menu bar / Windows tray companion (quiet; no console spam).
     # Headless / --once / --inject keep the wait loop below (or already returned).
     if (
         sys.platform == "darwin"
@@ -1131,6 +1131,26 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
         except Exception as e:  # noqa: BLE001
             print(f"menubar unavailable ({e}); falling back to wait loop", flush=True)
+
+    if (
+        sys.platform == "win32"
+        and not args.headless
+        and _can_gui()
+    ):
+        try:
+            from . import tray_win
+
+            if tray_win.available():
+                tray_win.run_status_item(
+                    stop_event=stop_event,
+                    screen_ui=screen_ui,
+                    on_quit=on_quit,
+                )
+                stop_capture()
+                _kill_sibling_wowgrok_pids()
+                return 0
+        except Exception as e:  # noqa: BLE001
+            print(f"tray_win unavailable ({e}); falling back to wait loop", flush=True)
 
     while not stop_event.is_set():
         if screen_ui.get("pending"):
