@@ -137,6 +137,7 @@ jobs:
           Built from commit \`${SHA}\` via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
           ### What’s new in 0.1.11
+          - **Connect via presence:** Note the bridge when presence head>0 (don’t wait for the next 30s beat); Connect seeds from presence; CONNECT_WAIT 45s.
           - **Screen Recording TCC:** in-process CoreGraphics probe/request (ctypes) so macOS lists **WoWGrok** under Screen Recording — not osascript.
           - **First-run sheet:** always show the Screen Recording sheet unless status is clearly `granted` (do not skip on unsure); call `request_screen_recording()` so Settings gets a WoWGrok row.
           - Quit + reopen after enabling remains required for the permission to stick.

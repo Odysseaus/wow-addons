@@ -34,7 +34,7 @@ local STRIP_SECONDS = 40 -- max per message; it leaves the strip as soon as the 
 local POLL_SCHEDULE = { 5, 10, 16, 24, 34, 46, 60, 80, 100, 130, 160, 200, 240, 300 }
 local POLL_TAIL = 60
 local TICK_SECONDS = 2
-local CONNECT_WAIT = 15 -- seconds the Connect button waits for the bridge before giving up
+local CONNECT_WAIT = 45 -- seconds the Connect button waits for the bridge before giving up
 local IDLE_POLL_SECONDS = 600 -- without the sound channel, spend one slot this often while idle to check the bridge
 local RS, US = "\30", "\31" -- record / unit separators in the strip payload
 
@@ -423,7 +423,13 @@ end
 
 local function PollPresence()
 	if not signalAvailable or not db.settings.signal then return end
-	run.presence = run.presence or { last = FindPresenceHead() }
+	-- If a valid presence prefix already exists, the bridge is alive now — do not
+	-- wait for the next 30s beat (Connect only waits a short window).
+	if not run.presence then
+		local head = FindPresenceHead()
+		run.presence = { last = head, beats = 0 }
+		if head > 0 then NotedBridge() end
+	end
 	local p = run.presence
 	for _ = 1, 3 do
 		local k = (p.last % PRESENCE_MAX) + 1
@@ -505,6 +511,15 @@ function WoWGrok.Connect()
 	run.pixelFailed = nil
 	run.connectFailed = nil
 	run.connectingAt = GetTime()
+	-- Presence files alone prove the bridge (capture/TCC may be down).
+	if PresenceWorks() then
+		local head = FindPresenceHead()
+		if head > 0 then
+			run.presence = run.presence or { last = head, beats = 0 }
+			if head > (run.presence.last or 0) then run.presence.last = head end
+			NotedBridge()
+		end
+	end
 	WoWGrok.SayHello()
 end
 
