@@ -1,0 +1,150 @@
+# Build WoWGrok.exe on Windows and attach to a GitHub Release.
+name: wow-grok-win-release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. wow-grok-win-v0.1.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as prerelease'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: wow-grok
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        shell: bash
+        run: |
+          python -m pip install -U pip
+          pip install pillow certifi pyinstaller pystray
+
+      - name: Inject version from tag
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          VER="${TAG#wow-grok-win-v}"
+          if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Could not parse semver from tag=$TAG (got VER=$VER)" >&2
+            exit 1
+          fi
+          echo "Injecting __version__=$VER"
+          python - <<PY
+          from pathlib import Path
+          import re
+          ver = "$VER"
+          init = Path("bridge_py/__init__.py")
+          text = init.read_text(encoding="utf-8")
+          text2 = re.sub(
+              r'__version__\s*=\s*["\'][^"\']+["\']',
+              f'__version__ = "{ver}"',
+              text,
+          )
+          if f'__version__ = "{ver}"' not in text2:
+              raise SystemExit("version inject failed")
+          init.write_text(text2, encoding="utf-8")
+          print("OK: injected", ver)
+          PY
+
+      - name: Build .exe
+        shell: bash
+        run: pyinstaller --noconfirm bridge_py/build_win.spec
+
+      - name: Prove tray + ssl modules in freeze archive
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          exe = Path("dist/WoWGrok.exe")
+          if not exe.is_file():
+              raise SystemExit(f"missing {exe}")
+          size = exe.stat().st_size
+          print("exe bytes", size)
+          if size < 5_000_000:
+              raise SystemExit("exe suspiciously small")
+          # onefile stores archive after bootloader; string scan is enough for gate
+          data = exe.read_bytes()
+          for needle in (b"tray_win", b"pystray", b"ssl_certs", b"certifi"):
+              if needle not in data:
+                  raise SystemExit(f"missing {needle!r} in exe")
+              print("OK found", needle.decode())
+          PY
+
+      - name: SSL smoke (frozen exe)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Windowed (console=False) exe still returns a process exit code.
+          set +e
+          ./dist/WoWGrok.exe --ssl-smoke
+          rc=$?
+          set -e
+          echo "ssl-smoke exit=$rc"
+          if [[ "$rc" -ne 0 ]]; then
+            echo "SSL smoke failed (want 0 = HTTPS auth error, not CERTIFICATE_VERIFY_FAILED)" >&2
+            exit "$rc"
+          fi
+
+      - name: Create / update Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          PRE: ${{ inputs.prerelease }}
+        working-directory: .
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse --short HEAD)
+          NOTES=$(cat <<MD
+          ## WoWGrok Windows ${TAG#wow-grok-win-}
+
+          Built from commit ${SHA} via GitHub Actions (windows-latest, unsigned).
+
+          ### First Win ship
+          - Frozen \`WoWGrok.exe\` bridge (PyInstaller one-file)
+          - System tray: **Running** + **Quit** (pystray) — required, not deferred
+          - SSL/certifi parity with Mac \`wow-grok-mac-v0.1.18\` (\`ssl_certs.configure\` + certifi CA)
+          - Frozen \`--ssl-smoke\` gate (HTTPS auth error, not CERTIFICATE_VERIFY_FAILED)
+
+          ### Install
+          1. Download \`WoWGrok.exe\` (SmartScreen may warn — unsigned first drop).
+          2. Double-click; enter xAI API key; confirm AddOns folder.
+          3. Leave running (tray icon) while you play Forever. Quit from the tray menu.
+
+          Odysseaus retests on myPc after this asset lands.
+          MD
+          )
+          PRE_FLAG=()
+          if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
+          TITLE="WoW Grok Windows ${TAG#wow-grok-win-} — tray + SSL"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              wow-grok/dist/WoWGrok.exe \
+              --repo "${{ github.repository }}" --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --repo "${{ github.repository }}" ${PRE_FLAG[@]+"${PRE_FLAG[@]}"}
+          else
+            gh release create "$TAG" \
+              wow-grok/dist/WoWGrok.exe \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --repo "${{ github.repository }}" \
+              ${PRE_FLAG[@]+"${PRE_FLAG[@]}"}
+          fi

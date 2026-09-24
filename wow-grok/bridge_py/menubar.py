@@ -3,7 +3,7 @@
 On darwin with rumps available, the bridge main thread runs a status item
 instead of a blank wait loop. First-run / install still use Tk beforehand.
 
-Windows system tray: not in this release (optional future stub).
+Windows system tray: see tray_win.py (Running + Quit).
 """
 from __future__ import annotations
 
