@@ -1,0 +1,27 @@
+{
+  "addonDir": "/Applications/World of Warcraft/_classic_beta_/Interface/AddOns",
+  "savedVariablesFile": "/Applications/World of Warcraft/_classic_beta_/WTF/Account/YOUR_ACCOUNT/SavedVariables/WoWGrok.lua",
+  "inboxFile": "/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/WoWGrok/Inbox.lua",
+  "defaultCwd": "/path/to/your/project",
+  "tocInterface": "16001",
+  "slots": 200,
+  "actMax": 60,
+  "presenceMax": 2000,
+  "presenceIntervalMs": 30000,
+  "maxParallel": 3,
+  "capture": {
+    "enabled": true,
+    "processName": "WowB",
+    "cellPx": 4,
+    "cellsPerRow": 200,
+    "maxRows": 48,
+    "intervalMs": 250
+  },
+  "apiKey": "",
+  "model": "grok-4-latest",
+  "apiBase": "https://api.x.ai/v1",
+  "allowedTools": [],
+  "pollMs": 750,
+  "progressWriteMs": 3000,
+  "timeoutMs": 1800000
+}

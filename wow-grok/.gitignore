@@ -1,0 +1,38 @@
+# machine-specific / runtime state
+bridge/config.json
+bridge/state.json
+bridge/transcripts.json
+bridge/bridge.log
+*.tmp
+
+# tooling
+node_modules/
+tests/tmp/
+
+# OS / local artifacts
+.DS_Store
+Thumbs.db
+*.zip
+
+# secrets — never commit API keys
+**/config.json
+.env
+.env.*
+*.pem
+xai-*.json
+
+# Python bridge
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+*.spec
+.pytest_cache/
+.mypy_cache/
+bridge_py/state.json
+bridge_py/transcripts.json
+bridge_py/bridge.log
+bridge_py/*.tmp

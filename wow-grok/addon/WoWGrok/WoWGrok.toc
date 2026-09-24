@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: WoW Grok
+## Notes: Talk to your xAI Grok (API chat) from inside the game. Needs the companion bridge (see README).
+## Author: chelinho139
+## Version: 0.3.0
+## SavedVariables: WoWGrokDB
+
+Codec.lua
+Inbox.lua
+WoWGrok.lua

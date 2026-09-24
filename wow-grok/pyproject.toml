@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wow-grok"
+version = "0.1.0"
+description = "Chat with xAI Grok from World of Warcraft: Forever (Python bridge)"
+readme = "README.python.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Odysseaus" }]
+dependencies = [
+  "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pyinstaller>=6.0.0",
+]
+
+[project.scripts]
+wow-grok = "bridge_py.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["bridge_py*"]
+
+[tool.setuptools.package-data]
+bridge_py = ["config.example.json"]
