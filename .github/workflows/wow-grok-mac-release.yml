@@ -1,0 +1,117 @@
+# Build WoWGrok.app on macOS and attach to a GitHub Release.
+name: wow-grok-mac-release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. wow-grok-mac-v0.1.2)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as prerelease'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: wow-grok
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install pillow pyinstaller
+
+      - name: Build .app
+        run: pyinstaller --noconfirm bridge_py/build_mac.spec
+
+      - name: Prove supervisor is in the bundle
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          app = Path("dist/WoWGrok.app")
+          needle = b"bridge_py.supervisor"
+          hits = list(app.rglob("*supervisor*"))
+          print("path hits:", hits)
+          found = False
+          for p in app.rglob("*"):
+              if not p.is_file() or p.stat().st_size > 80_000_000:
+                  continue
+              try:
+                  data = p.read_bytes()
+              except OSError:
+                  continue
+              if needle in data:
+                  print("found", needle.decode(), "in", p)
+                  found = True
+                  break
+          if not found and not hits:
+              raise SystemExit("supervisor module not found in bundle")
+          print("OK: supervisor present in bundle")
+          PY
+
+      - name: Zip .app
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent WoWGrok.app WoWGrok-mac-arm64.zip
+
+      - name: Make DMG
+        run: |
+          hdiutil create -volname WoWGrok -srcfolder dist/WoWGrok.app -ov -format UDZO dist/WoWGrok.dmg
+
+      - name: Create / update Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          PRE: ${{ inputs.prerelease }}
+        working-directory: .
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse --short HEAD)
+          NOTES=$(cat <<MD
+          ## Fix
+          Frozen Mac app crashed after the “needs an xAI API key” info dialog with:
+          \`ModuleNotFoundError: No module named 'bridge_py.supervisor'\`
+
+          **${TAG}** bundles all \`bridge_py\` submodules (explicit hiddenimports + \`collect_submodules\` + freeze anchors in \`__main__\`).
+
+          Built from commit \`${SHA}\` via GitHub Actions (macos-14).
+
+          ## Install
+          1. Quit any old WoWGrok process.
+          2. Replace with this DMG / zip.
+          3. Right-click → Open if Gatekeeper warns.
+          4. Enter API key → confirm AddOns → wait for slot install → Type \`/wow-grok\` or \`/grok\` in game chat.
+
+          Unsigned / Apple Silicon arm64 (macos-14 runner).
+          MD
+          )
+          PRE_FLAG=()
+          if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              wow-grok/dist/WoWGrok-mac-arm64.zip \
+              wow-grok/dist/WoWGrok.dmg \
+              --repo "${{ github.repository }}" --clobber
+            gh release edit "$TAG" --notes "$NOTES" --repo "${{ github.repository }}" "${PRE_FLAG[@]}"
+          else
+            gh release create "$TAG" \
+              wow-grok/dist/WoWGrok-mac-arm64.zip \
+              wow-grok/dist/WoWGrok.dmg \
+              --title "WoW Grok Mac ${TAG#wow-grok-mac-} — supervisor bundle fix" \
+              --notes "$NOTES" \
+              --repo "${{ github.repository }}" \
+              "${PRE_FLAG[@]}"
+          fi
