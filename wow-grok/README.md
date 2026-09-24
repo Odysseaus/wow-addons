@@ -26,15 +26,19 @@ Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho
 - An xAI API key from [console.x.ai](https://console.x.ai/) (Grok **API**, not a Grok Bot token)
 - **Bridge:** `WoWGrok.exe` (Windows) or `WoWGrok.app` (Mac) from Releases — **separate downloads**, not one shared installer
 
-Mac needs **Screen Recording** permission for the app (System Settings → Privacy & Security → Screen Recording).
+**Mac Gatekeeper:** the Release build is unsigned. Hold **Control** and click `WoWGrok.app` → **Open**, then use **System Settings → Privacy & Security → Open Anyway** if shown. A plain double-click often only shows **Done** and will not launch. Also grant **Screen Recording** (same Privacy & Security pane).
 
 ## Simple install
 
 Full walkthrough: [docs/INSTALL-USERS.md](docs/INSTALL-USERS.md).
 
-1. **Download** the Mac or Windows executable from this project’s **Releases** (`WoWGrok.app` or `WoWGrok.exe` — separate builds).
-2. **Run** it (double-click).
-3. **Enter your xAI API key** when asked — stored only in a local `config.json` next to the app (never uploaded, never written into Lua).
+1. **Download** the Mac or Windows executable from this project’s **Releases** (`WoWGrok.app` / `.dmg`, or `WoWGrok.exe` — separate builds).
+2. **Run** it:
+   - **Windows:** double-click `WoWGrok.exe`.
+   - **Mac (unsigned):** do **not** rely on a plain double-click — that often only shows **Done** and never launches. Instead:
+     1. Hold **Control** and click `WoWGrok.app` → click **Open**.
+     2. If macOS still blocks it, open **System Settings → Privacy & Security**, then click **Open Anyway** (if shown).
+3. **Enter your xAI API key** when asked — stored only in a local `config.json` (never uploaded, never written into Lua).
 4. **Pick or confirm** your WoW `Interface/AddOns` folder (auto-detect, or a folder picker).
 5. Wait while the **app creates** the main `WoWGrok` addon and reply slots `WoWGrok_S001`–`WoWGrok_S200` as top-level siblings in that folder (can take about a minute). Do **not** copy 200 folders yourself.
 6. **Mac only:** grant **Screen Recording** to `WoWGrok.app` under System Settings → Privacy & Security → Screen Recording.

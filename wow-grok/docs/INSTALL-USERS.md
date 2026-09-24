@@ -31,7 +31,12 @@ Get the build for your OS from the project **Releases** page:
 
 ### 2. Run the app
 
-Double-click `WoWGrok.exe` or open `WoWGrok.app`.
+**Windows:** double-click `WoWGrok.exe`.
+
+**Mac (unsigned build):** a plain double-click often only shows **Done** and does **not** launch the app. First-open steps:
+
+1. Hold **Control** and click `WoWGrok.app` → click **Open**.
+2. If macOS still blocks it, open **System Settings → Privacy & Security** and click **Open Anyway** (if shown).
 
 On **first launch** the app will:
 
@@ -40,9 +45,13 @@ On **first launch** the app will:
 3. **Copy** the main `WoWGrok` addon into that folder and **create** reply slots `WoWGrok_S001` … `WoWGrok_S200` as **top-level siblings** next to it (plus signal wav stubs). This can take about a minute — wait for the “done” dialog.
 4. Start the bridge.
 
-### 3. Mac only — Screen Recording
+### 3. Mac only — Gatekeeper + Screen Recording
 
-System Settings → Privacy & Security → Screen Recording → enable **WoWGrok**.
+The Release `WoWGrok.app` is **unsigned**.
+
+1. Hold **Control** and click `WoWGrok.app` → **Open** (plain double-click often only shows **Done** and will not launch).
+2. If still blocked: **System Settings → Privacy & Security** → **Open Anyway** (if shown).
+3. **Screen Recording:** System Settings → Privacy & Security → Screen Recording → enable **WoWGrok**.
 
 ### 4. In game
 
@@ -72,6 +81,7 @@ System Settings → Privacy & Security → Screen Recording → enable **WoWGrok
 | “Missing API key” | Re-run the app and paste the key, or set `XAI_API_KEY`. |
 | Addon / slots missing | Re-run the **WoWGrok** app so it reinstalls into AddOns; then fully quit/relaunch WoW. |
 | No replies in game | Confirm AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
+| Mac app won’t launch / only shows Done | Hold **Control** → click `WoWGrok.app` → **Open**; then **System Settings → Privacy & Security → Open Anyway** if shown. Plain double-click is unreliable for this unsigned build. |
 | Capture errors on Mac | Screen Recording permission for the app; use windowed/borderless (not exclusive fullscreen). |
 | Cloud / GeForce Now | Unsupported — use a local install. |
 
