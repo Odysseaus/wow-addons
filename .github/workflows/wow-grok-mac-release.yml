@@ -134,10 +134,10 @@ jobs:
           NOTES=$(cat <<MD
           ## WoWGrok Mac ${TAG#wow-grok-mac-}
 
-          Built from commit \`${SHA}\` via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
+          Built from commit ${SHA} via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What’s new in 0.1.11
-          - **Connect via presence:** Note the bridge when presence head>0 (don’t wait for the next 30s beat); Connect seeds from presence; CONNECT_WAIT 45s.
+          ### What's new in 0.1.11
+          - **Connect via presence:** Note the bridge when presence head>0 (do not wait for the next 30s beat); Connect seeds from presence; CONNECT_WAIT 45s.
           - **Screen Recording TCC:** in-process CoreGraphics probe/request (ctypes) so macOS lists **WoWGrok** under Screen Recording — not osascript.
           - **First-run sheet:** always show the Screen Recording sheet unless status is clearly granted (do not skip on unsure); call request_screen_recording() so Settings gets a WoWGrok row.
           - Quit + reopen after enabling remains required for the permission to stick.
@@ -150,8 +150,8 @@ jobs:
           - **Capture window match:** do not attach to WoWGrok itself; skip wowgrok owners.
 
           ### Carry-forward from 0.1.6
-          - **DMG layout:** drag \`WoWGrok.app\` to the Applications shortcut (create-dmg).
-          - **Menu bar companion:** quiet status item (Running + Quit); \`LSUIElement\`.
+          - **DMG layout:** drag WoWGrok.app to the Applications shortcut (create-dmg).
+          - **Menu bar companion:** quiet status item (Running + Quit); LSUIElement.
           - Install into **/Applications**; keep running while you play.
 
           ### Install
@@ -160,9 +160,9 @@ jobs:
           3. Hold **Control** → click → **Open** if Gatekeeper warns (plain double-click often only shows Done).
           4. Enter API key → confirm AddOns → wait for slot install.
           5. Grant **Screen Recording**; use Quit from the menu once if offered so permission sticks, then reopen.
-          6. Leave WoWGrok running (menu bar) while you play. Type \`/wow-grok\` or \`/grok\` in game chat.
+          6. Leave WoWGrok running (menu bar) while you play. Type /wow-grok or /grok in game chat.
 
-          Zip of \`.app\` is also attached for convenience.
+          Zip of .app is also attached for convenience.
           MD
           )
           PRE_FLAG=()
