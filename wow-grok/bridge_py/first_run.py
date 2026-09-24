@@ -124,33 +124,45 @@ def prompt_addons_dir(
 
 
 def prompt_mac_screen_recording() -> None:
-    """Tell the user to enable Screen Recording only when TCC is actually missing.
+    """Show the Screen Recording sheet unless permission is clearly granted.
 
-    Probes once via capture_mac.probe_screen_recording. If already granted, returns
-    immediately so relaunch goes straight to the menu-bar bridge. If the probe is
-    unsure/errors, skip the modal (prefer skipping the modal) rather than
-    blocking every launch. Quit exits 0 so the supervisor stops and macOS can apply
-    a fresh TCC toggle on the next open.
+    Probes once via in-process ``capture_mac.probe_screen_recording``. If status
+    is ``granted``, return immediately so relaunch goes straight to the menu-bar
+    bridge. For ``denied``, ``unsure``, probe errors, or import failure — show the
+    modal (do **not** skip on unsure). Before/while presenting the sheet, call
+    ``request_screen_recording()`` so macOS creates a Screen Recording row for
+    WoWGrok. Quit exits 0 so the supervisor stops and macOS can apply a fresh
+    TCC toggle on the next open.
     """
     if sys.platform != "darwin":
         return
     if not _gui_available():
         return
+    status = "unsure"
+    request = None
     try:
-        from .capture_mac import probe_screen_recording
+        from .capture_mac import probe_screen_recording, request_screen_recording
 
+        request = request_screen_recording
         status = probe_screen_recording()
     except Exception:
-        # Unsure → do not block relaunch with a sheet.
+        # Import / probe failure → still show the sheet (treat as not granted).
+        status = "unsure"
+    if status == "granted":
         return
-    if status != "denied":
-        return
+    # Real in-process screen access so TCC lists WoWGrok under Screen Recording.
+    if request is not None:
+        try:
+            request()
+        except Exception:
+            pass
     try:
         choice = tk_util.show_screen_recording_dialog(
             "Mac capture needs Screen Recording permission for WoWGrok.\n\n"
             "1. Open System Settings → Privacy & Security → Screen Recording "
             "(or Screen & System Audio Recording).\n"
-            "2. Turn WoWGrok ON (it may only appear after this first launch).\n"
+            "2. Turn WoWGrok ON (it should appear after this first launch — "
+            "WoWGrok requests access in-process so a Settings row is created).\n"
             "3. Click Quit WoWGrok below, then reopen it from Applications "
             "so the permission sticks.\n\n"
             "Or choose Continue — SavedVariables /reload still works without capture.\n"

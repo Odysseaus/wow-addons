@@ -79,7 +79,7 @@ Grant **Screen Recording** to the frozen app (or Terminal if running from source
 
 System Settings → Privacy & Security → Screen Recording
 
-Without it, `capture_mac.py` fails with a clear error; SavedVariables `/reload` fallback may still work.
+First launch requests access **in-process** (CoreGraphics via ctypes) so a **WoWGrok** row appears in Settings; enable it, then Quit and reopen. Without it, `capture_mac.py` fails with a clear error; SavedVariables `/reload` fallback may still work.
 
 ### DMG (drag to Applications)
 

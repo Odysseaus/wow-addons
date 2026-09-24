@@ -55,8 +55,8 @@ Keep the app in **`/Applications`** (drag from the DMG). The Release build is **
 
 1. Hold **Control** and click `WoWGrok.app` in Applications → **Open** (plain double-click often only shows **Done** and will not launch).
 2. If still blocked: **System Settings → Privacy & Security** → **Open Anyway** (if shown).
-3. **Screen Recording:** System Settings → Privacy & Security → Screen Recording (or Screen & System Audio Recording) → enable **WoWGrok**.
-4. When the app offers **Quit WoWGrok**, click it **only** so Screen Recording can stick, then reopen from Applications (Force Quit should not be needed). After that reopen, **leave WoWGrok running** for the whole Forever session.
+3. **Screen Recording:** On first launch WoWGrok may show an in-app sheet and request access so a **WoWGrok** row appears under System Settings → Privacy & Security → Screen Recording (or Screen & System Audio Recording). Turn **WoWGrok** ON.
+4. When the app offers **Quit WoWGrok**, click it so Screen Recording can stick, then reopen from Applications (Force Quit should not be needed). After that reopen, **leave WoWGrok running** for the whole Forever session.
 
 ### 4. Keep the bridge running
 
@@ -91,7 +91,7 @@ Keep the app in **`/Applications`** (drag from the DMG). The Release build is **
 | Addon / slots missing | Re-run the **WoWGrok** app so it reinstalls into AddOns; then fully quit/relaunch WoW. |
 | No replies in game | Confirm **WoWGrok is still running** (Mac: menu bar icon; it must stay up while you play), AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
 | Mac app won’t launch / only shows Done | Hold **Control** → click `WoWGrok.app` → **Open**; then **System Settings → Privacy & Security → Open Anyway** if shown. Plain double-click is unreliable for this unsigned build. |
-| Capture errors on Mac / screen-record prompt loops | Enable WoWGrok under Screen Recording, then **Quit and reopen** WoWGrok (toggle alone is not enough). v0.1.7+ skips the first-run Screen Recording sheet when permission is already granted. Use windowed/borderless. |
+| Capture errors on Mac / screen-record prompt loops | Enable **WoWGrok** under Screen Recording, then **Quit and reopen** WoWGrok (toggle alone is not enough). First launch may prompt Screen Recording and must create a WoWGrok row in System Settings; the in-app sheet shows unless permission is already granted (v0.1.11+). Use windowed/borderless. |
 | Post-install dialog stuck (spinning) | Force Quit WoWGrok (install is already done), reopen; use v0.1.3+ which uses a dismissible Done / OK window. |
 | Cloud / GeForce Now | Unsupported — use a local install. |
 

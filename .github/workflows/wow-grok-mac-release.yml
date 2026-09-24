@@ -136,7 +136,12 @@ jobs:
 
           Built from commit \`${SHA}\` via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What’s new in 0.1.10
+          ### What’s new in 0.1.11
+          - **Screen Recording TCC:** in-process CoreGraphics probe/request (ctypes) so macOS lists **WoWGrok** under Screen Recording — not osascript.
+          - **First-run sheet:** always show the Screen Recording sheet unless status is clearly `granted` (do not skip on unsure); call `request_screen_recording()` so Settings gets a WoWGrok row.
+          - Quit + reopen after enabling remains required for the permission to stick.
+
+          ### Carry-forward from 0.1.10
           - **Quit full-tree teardown:** menu-bar Quit terminates supervisor → bridge → capture so Finder can trash/replace `/Applications/WoWGrok.app`.
 
           ### Carry-forward from 0.1.9
@@ -161,7 +166,7 @@ jobs:
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — Quit kills process tree"
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — Screen Recording TCC (in-process)"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \

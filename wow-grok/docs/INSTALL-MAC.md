@@ -6,6 +6,6 @@ After first-run, WoWGrok lives in the **menu bar** (quiet companion). Leave it r
 
 Full player steps: [INSTALL-USERS.md](INSTALL-USERS.md).
 
-Grant **Screen Recording** to the app under System Settings → Privacy & Security → Screen Recording.
+Grant **Screen Recording** to the app under System Settings → Privacy & Security → Screen Recording. First launch may prompt and must list **WoWGrok** in that Settings pane; enable it, then **Quit and reopen** from Applications.
 
 Developers / from source: [DEV.md](DEV.md).
