@@ -5,6 +5,14 @@ import argparse
 import importlib
 import sys
 
+# CA bundle for frozen/non-frozen HTTPS (urllib + children).
+try:
+    from . import ssl_certs as _ssl_certs
+
+    _ssl_certs.configure()
+except Exception:
+    pass
+
 # Freeze anchors: importlib lazy loads are invisible to PyInstaller analysis.
 from . import bridge as _freeze_bridge  # noqa: F401
 from . import supervisor as _freeze_supervisor  # noqa: F401

@@ -91,6 +91,7 @@ Keep the app in **`/Applications`** (drag from the DMG). The Release build is **
 | Addon / slots missing | Re-run the **WoWGrok** app so it reinstalls into AddOns; then fully quit/relaunch WoW. |
 | No replies in game | Confirm **WoWGrok is still running** (Mac: menu bar icon; it must stay up while you play), AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
 | Mac app won’t launch / only shows Done | Hold **Control** → click `WoWGrok.app` → **Open**; then **System Settings → Privacy & Security → Open Anyway** if shown. Plain double-click is unreliable for this unsigned build. |
+| xAI SSL / CERTIFICATE_VERIFY_FAILED on Mac | Use **v0.1.13+** (bundles certifi CA store in the frozen .app). Quit old WoWGrok, replace the app, reopen. |
 | Capture errors on Mac / screen-record prompt loops | Enable **WoWGrok** under Screen Recording, then **Quit and reopen** WoWGrok (toggle alone is not enough). First launch may prompt Screen Recording and must create a WoWGrok row in System Settings; the in-app sheet shows unless a real capture probe says granted (v0.1.12+; window-list alone is not enough). Use windowed/borderless. |
 | Post-install dialog stuck (spinning) | Force Quit WoWGrok (install is already done), reopen; use v0.1.3+ which uses a dismissible Done / OK window. |
 | Cloud / GeForce Now | Unsupported — use a local install. |

@@ -4,7 +4,7 @@
 # Output: dist\WoWGrok.exe
 
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 SPECDIR = Path(SPECPATH).resolve()
 ROOT = SPECDIR.parent
@@ -19,7 +19,7 @@ a = Analysis(
         (str(SPECDIR / 'config.example.json'), 'bridge_py'),
         (str(SPECDIR / 'capture.ps1'), 'bridge'),
         (str(ROOT / 'addon' / 'WoWGrok'), 'addon/WoWGrok'),
-    ],
+    ] + collect_data_files('certifi'),
     hiddenimports=[
         'bridge_py',
         'bridge_py.__main__',
@@ -36,6 +36,8 @@ a = Analysis(
         'bridge_py.supervisor',
         'bridge_py.tk_util',
         'bridge_py.xai',
+        'bridge_py.ssl_certs',
+        'certifi',
         'PIL',
         'tkinter',
         '_tkinter',

@@ -18,7 +18,7 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate
 source .venv/bin/activate
 pip install -U pip
-pip install pillow pyinstaller rumps
+pip install pillow certifi pyinstaller rumps
 # or: pip install -e ".[dev]"
 # rumps is macOS-only (menu bar status item); skip on Windows/Linux
 ```
@@ -32,7 +32,7 @@ Frozen capture re-entry: the bridge spawns `WoWGrok --run-capture-mac …` / `--
 ```powershell
 cd path\to\wow-grok
 .\.venv\Scripts\Activate.ps1
-pip install pillow pyinstaller
+pip install pillow certifi pyinstaller
 pyinstaller --noconfirm bridge_py\build_win.spec
 # Output: dist\WoWGrok.exe
 ```
@@ -56,7 +56,7 @@ pyinstaller --name WoWGrok --onedir --console --collect-submodules bridge_py bri
 ```bash
 cd /path/to/wow-grok
 source .venv/bin/activate
-pip install pillow pyinstaller rumps
+pip install pillow certifi pyinstaller rumps
 pyinstaller --noconfirm bridge_py/build_mac.spec
 # Output: dist/WoWGrok.app (LSUIElement menu-bar agent; no Dock icon)
 ```

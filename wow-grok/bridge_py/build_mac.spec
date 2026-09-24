@@ -5,7 +5,7 @@
 
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 SPECDIR = Path(SPECPATH).resolve()
 ROOT = SPECDIR.parent
@@ -19,7 +19,7 @@ a = Analysis(
     datas=[
         (str(SPECDIR / 'config.example.json'), 'bridge_py'),
         (str(ROOT / 'addon' / 'WoWGrok'), 'addon/WoWGrok'),
-    ],
+    ] + collect_data_files('certifi'),
     hiddenimports=[
         'bridge_py',
         'bridge_py.__main__',
@@ -37,6 +37,8 @@ a = Analysis(
         'bridge_py.tk_util',
         'bridge_py.menubar',
         'bridge_py.xai',
+        'bridge_py.ssl_certs',
+        'certifi',
         'rumps',
         'PIL',
         'tkinter',
@@ -86,8 +88,8 @@ app = BUNDLE(
     icon=None,
     bundle_identifier='com.wowgrok.bridge',
     info_plist={
-        'CFBundleShortVersionString': '0.1.12',
-        'CFBundleVersion': '0.1.12',
+        'CFBundleShortVersionString': '0.1.13',
+        'CFBundleVersion': '0.1.13',
         'NSHighResolutionCapable': True,
         'LSUIElement': True,  # menu-bar agent; no Dock icon in steady state
         'NSAppleEventsUsageDescription':

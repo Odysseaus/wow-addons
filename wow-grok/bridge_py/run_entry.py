@@ -48,6 +48,14 @@ def _install_excepthook() -> None:
 
 _install_excepthook()
 
+# Frozen Mac apps lack a system CA store; configure before any HTTPS.
+try:
+    from bridge_py import ssl_certs as _ssl_certs
+
+    _ssl_certs.configure()
+except Exception:
+    pass
+
 from bridge_py.__main__ import main
 
 if __name__ == "__main__":

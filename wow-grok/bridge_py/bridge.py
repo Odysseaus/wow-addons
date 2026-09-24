@@ -19,7 +19,13 @@ from typing import Any
 
 from . import config as cfgmod
 from . import protocol as P
+from . import ssl_certs as _ssl_certs
 from . import xai
+
+try:
+    _ssl_certs.configure()
+except Exception:
+    pass
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -144,6 +150,15 @@ def main(argv: list[str] | None = None) -> int:
         "intervalMs": 250,
         **(cfg.get("capture") or {}),
     }
+    # Example placeholder WowB: re-detect from addonDir client (Mac Forever is not WowB).
+    if sys.platform == "darwin" and cap.get("processName") == "WowB" and cfg.get("addonDir"):
+        try:
+            from . import setup_detect
+
+            client = Path(cfg["addonDir"]).resolve().parent.parent
+            cap["processName"] = setup_detect.detect_process_name(client)
+        except Exception:
+            pass
     act_max = int(cfg.get("actMax") or 60)
     presence_max = int(cfg.get("presenceMax") or 2000)
     poll_ms = int(cfg.get("pollMs") or 750)

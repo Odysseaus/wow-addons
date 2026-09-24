@@ -1,4 +1,5 @@
 Pillow>=10.0.0
+certifi>=2024.0.0
 # optional / packaging:
 # pyinstaller>=6.0.0
 # rumps>=0.4.0  # macOS menu bar only
