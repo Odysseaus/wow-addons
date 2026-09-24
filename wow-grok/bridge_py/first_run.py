@@ -128,7 +128,7 @@ def prompt_mac_screen_recording() -> None:
 
     Probes once via capture_mac.probe_screen_recording. If already granted, returns
     immediately so relaunch goes straight to the menu-bar bridge. If the probe is
-    unsure/errors, skip the modal (prefer Continue-without-capture) rather than
+    unsure/errors, skip the modal (prefer skipping the modal) rather than
     blocking every launch. Quit exits 0 so the supervisor stops and macOS can apply
     a fresh TCC toggle on the next open.
     """
@@ -153,7 +153,7 @@ def prompt_mac_screen_recording() -> None:
             "2. Turn WoWGrok ON (it may only appear after this first launch).\n"
             "3. Click Quit WoWGrok below, then reopen it from Applications "
             "so the permission sticks.\n\n"
-            "Or choose Continue without capture — SavedVariables /reload still works.\n"
+            "Or choose Continue — SavedVariables /reload still works without capture.\n"
             "Launch WoWGrok from /Applications (not from the DMG)."
         )
         if choice == "quit":

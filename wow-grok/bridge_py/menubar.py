@@ -43,7 +43,7 @@ def _alert_screen_recording(msg: str) -> str:
     choice = rumps.alert(
         title="WoW Grok — Screen Recording",
         message=body,
-        ok="Continue without capture",
+        ok="Continue",
         cancel="Quit WoWGrok",
     )
     return "continue" if choice == 1 else "quit"

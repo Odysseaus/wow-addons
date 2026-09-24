@@ -139,7 +139,7 @@ def show_screen_recording_dialog(body: str, *, title: str = "WoW Grok — Screen
         except Exception:
             pass
 
-    tk.Button(btns, text="Continue without capture", width=22, command=lambda: finish("continue")).pack(
+    tk.Button(btns, text="Continue", width=14, command=lambda: finish("continue")).pack(
         side="left"
     )
     tk.Button(btns, text="Quit WoWGrok", width=14, command=lambda: finish("quit")).pack(side="right")
