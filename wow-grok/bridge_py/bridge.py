@@ -34,6 +34,32 @@ REPO = HERE.parent
 CAPTURE_PERMISSION_EXIT = 42
 
 
+def capture_spawn_blocked(cap: dict) -> str | None:
+    """Return a short reason if capture must not spawn, else None."""
+    if not cap.get("enabled"):
+        return "disabled"
+    if cap.get("permissionPaused"):
+        return "permissionPaused"
+    return None
+
+
+def mark_capture_permission_paused(cfg: dict) -> None:
+    """Persist capture.permissionPaused so later launches never spawn capture.
+
+    Cleared only when the user sets capture.permissionPaused to false in
+    config.json (Quit + edit). Do not clear on probe=granted (false positives).
+    """
+    cap = cfg.setdefault("capture", {})
+    if cap.get("permissionPaused"):
+        return
+    cap["permissionPaused"] = True
+    try:
+        cfgmod.save_config(cfg)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+
 def _notify_mac_screen_recording(msg: str) -> str:
     """One guided dialog on the primary display. Returns ``quit`` or ``continue``."""
     if sys.platform != "darwin":
@@ -638,7 +664,15 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     def start_capture() -> None:
-        if not cap.get("enabled"):
+        blocked = capture_spawn_blocked(cap)
+        if blocked == "disabled":
+            return
+        if blocked == "permissionPaused":
+            log(
+                "capture: permissionPaused in config — not spawning capture "
+                "(presence / Connect-only mode). Clear capture.permissionPaused "
+                "in config.json after enabling Screen Recording, then Quit+reopen."
+            )
             return
         cap_args = [
             "--cell",
@@ -718,10 +752,14 @@ def main(argv: list[str] | None = None) -> int:
                     if stop_event.is_set():
                         break
                     if rc == CAPTURE_PERMISSION_EXIT:
+                        mark_capture_permission_paused(cfg)
+                        cap["permissionPaused"] = True
                         log(
-                            "capture paused (Screen Recording). "
-                            "Enable WoWGrok, Quit and reopen — not restarting capture. "
-                            "Presence / Connect keep running without the pixel path."
+                            "capture paused (Screen Recording); saved "
+                            "capture.permissionPaused=true — will not spawn capture "
+                            "on next launch. Presence / Connect keep running without "
+                            "the pixel path. Clear the flag in config.json after "
+                            "enabling Screen Recording, then Quit+reopen."
                         )
                         if not guided["shown"]:
                             guided["shown"] = True
@@ -762,11 +800,19 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  project  : {default_cwd}  ({default_src})")
     print(f"  model    : {cfg.get('model') or xai.DEFAULT_MODEL}")
     print(f"  api key  : {key_src}")
-    print(
-        f"  capture  : {'on (' + cap_proc + ', ' + str(cap['processName']) + ', '
-        + str(cap['cellsPerRow']) + 'x' + str(cap['maxRows']) + ' cells of '
-        + str(cap['cellPx']) + 'px)' if cap.get('enabled') else 'off'}"
-    )
+    if not cap.get("enabled"):
+        cap_label = "off"
+    elif cap.get("permissionPaused"):
+        cap_label = (
+            "paused (permissionPaused — presence/Connect only; no capture spawn)"
+        )
+    else:
+        cap_label = (
+            "on (" + cap_proc + ", " + str(cap["processName"]) + ", "
+            + str(cap["cellsPerRow"]) + "x" + str(cap["maxRows"]) + " cells of "
+            + str(cap["cellPx"]) + "px)"
+        )
+    print(f"  capture  : {cap_label}")
     print(f"  slots    : {slots}  parallel={max_parallel}")
     if cfg.get("gameContext") is False:
         print("  context  : off (gameContext in config.json)")

@@ -155,11 +155,23 @@ def prompt_mac_screen_recording(cfg: dict[str, Any] | None = None) -> None:
     Once screenRecordingOnboarded is set, probe at most once per launch and
     never call request_screen_recording again (avoids TCC spam after unsigned
     app replace). Capture still exits 42 on permission failure.
+
+    If capture.permissionPaused is set (persisted after exit 42), skip the CG
+    probe/request entirely — do not clear that flag on probe=granted.
     """
     if sys.platform != "darwin":
         return
     if not _gui_available():
         _append_bridge_log("[screen-recording] skip: no GUI available")
+        return
+
+    cap = (cfg or {}).get("capture") or {}
+    if cap.get("permissionPaused"):
+        _append_bridge_log(
+            "[screen-recording] skip probe/request: capture.permissionPaused "
+            "(presence/Connect-only). Clear the flag in config.json after "
+            "enabling Screen Recording, then Quit+reopen."
+        )
         return
 
     onboarded = bool(cfg.get("screenRecordingOnboarded")) if cfg else False

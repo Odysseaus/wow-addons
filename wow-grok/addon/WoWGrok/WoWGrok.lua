@@ -521,6 +521,10 @@ function WoWGrok.Connect()
 	run.pixelFailed = nil
 	run.connectFailed = nil
 	run.connectingAt = GetTime()
+	-- Always queue a slot poll: presence sound-index can fail while files are healthy,
+	-- and pixel Hello is dead when capture/TCC is paused. Tick honors wantConnectSlot.
+	run.wantConnectSlot = true
+	print("|cff88ccffWoW Grok|r Connect: wantConnectSlot + Hello (presence/slot poll)")
 	-- Presence files alone prove the bridge (capture/TCC may be down).
 	if PresenceWorks() then
 		local head = FindPresenceHead()
@@ -593,14 +597,19 @@ local function SelfTestSignals()
 		signalStats.selftest = "PlaySoundFile missing"
 		return
 	end
-	local emptyLooksValid = SoundValid("Interface\\AddOns\\WoWGrok\\ctl\\empty.wav")
-	local validLooksValid = SoundValid("Interface\\AddOns\\WoWGrok\\ctl\\valid.wav")
+	local emptyLooksValid = SoundValid("Interface\AddOns\WoWGrok\ctl\empty.wav")
+	local validLooksValid = SoundValid("Interface\AddOns\WoWGrok\ctl\valid.wav")
 	if emptyLooksValid then
 		signalAvailable = false
 		signalStats.selftest = "an empty file reports as playable"
 	elseif not validLooksValid then
-		signalAvailable = false
-		signalStats.selftest = "a valid file reports as unplayable (files not indexed? restart WoW)"
+		-- ctl files may not be sound-indexed yet; a real presence beat still proves the channel.
+		if SoundValid(PresencePath(1)) then
+			signalStats.selftest = "ctl not indexed; presence/0001 ok"
+		else
+			signalAvailable = false
+			signalStats.selftest = "a valid file reports as unplayable (files not indexed? restart WoW)"
+		end
 	else
 		signalStats.selftest = "passed"
 	end
@@ -758,6 +767,11 @@ local function Tick()
 	if not db then return end
 	local now = GetTime()
 	PollPresence()
+	-- Connect button queued a slot poll (presence sound-index may have failed).
+	if run.wantConnectSlot then
+		run.wantConnectSlot = nil
+		TryLoadSlot("connect")
+	end
 	-- Without presence beats, the only evidence is a slot read; spend one every
 	-- IDLE_POLL_SECONDS while idle so the light still reflects reality (and stays
 	-- green while the bridge is up: BridgeState allows for this interval).

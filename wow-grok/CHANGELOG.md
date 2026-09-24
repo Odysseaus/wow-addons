@@ -21,6 +21,17 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.16] - 2026-09-24
+
+### Fixed
+
+- **Persist capture pause:** on capture exit 42, save `capture.permissionPaused=true` so the next launch never spawns capture (stops the system Screen Recording sheet when Forever appears). Clear the flag in `config.json` after enabling Screen Recording, then Quit and reopen. First-run skips the CG probe/request while paused (does not clear on probe=granted).
+- **Connect hardening:** SelfTest falls back to `presence/0001` when ctl files are not sound-indexed; Connect sets `wantConnectSlot` so Tick polls a reply slot even when presence sound-index fails or pixel Hello is dead.
+
+### Changed
+
+- Still includes 0.1.15 TCC exit-42 treatment and presence-without-capture.
+
 ## [0.1.15] - 2026-09-24
 
 ### Fixed

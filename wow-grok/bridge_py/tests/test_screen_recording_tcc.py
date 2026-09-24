@@ -382,5 +382,72 @@ class TestCocoaToTkAndClamp(unittest.TestCase):
         self.assertGreaterEqual(y, 22 + 24)
 
 
+
+class TestCapturePermissionPaused(unittest.TestCase):
+    def test_spawn_blocked_when_permission_paused(self):
+        from bridge_py import bridge
+
+        self.assertEqual(
+            bridge.capture_spawn_blocked({"enabled": True, "permissionPaused": True}),
+            "permissionPaused",
+        )
+        self.assertEqual(
+            bridge.capture_spawn_blocked({"enabled": False, "permissionPaused": True}),
+            "disabled",
+        )
+        self.assertIsNone(
+            bridge.capture_spawn_blocked({"enabled": True, "permissionPaused": False})
+        )
+        self.assertIsNone(bridge.capture_spawn_blocked({"enabled": True}))
+
+    def test_mark_persists_permission_paused(self):
+        from bridge_py import bridge
+
+        cfg = {"capture": {"enabled": True}}
+        with mock.patch.object(bridge.cfgmod, "save_config") as save:
+            bridge.mark_capture_permission_paused(cfg)
+            bridge.mark_capture_permission_paused(cfg)  # idempotent
+        self.assertTrue(cfg["capture"]["permissionPaused"])
+        save.assert_called_once()
+
+    def test_first_run_skips_probe_when_permission_paused(self):
+        from bridge_py import first_run
+
+        cfg = {"capture": {"permissionPaused": True}}
+        with mock.patch.object(sys, "platform", "darwin"), mock.patch.object(
+            first_run, "_gui_available", return_value=True
+        ), mock.patch(
+            "bridge_py.capture_mac.probe_screen_recording"
+        ) as probe, mock.patch(
+            "bridge_py.capture_mac.request_screen_recording"
+        ) as req, mock.patch.object(
+            first_run.tk_util, "show_screen_recording_dialog"
+        ) as dlg, mock.patch.object(
+            first_run, "_append_bridge_log"
+        ) as log:
+            first_run.prompt_mac_screen_recording(cfg)
+        probe.assert_not_called()
+        req.assert_not_called()
+        dlg.assert_not_called()
+        self.assertTrue(
+            any("permissionPaused" in str(c) for c in log.call_args_list)
+        )
+
+    def test_first_run_does_not_clear_paused_on_granted_probe(self):
+        """Regression: probe=granted must not clear permissionPaused (we skip probe)."""
+        from bridge_py import first_run
+
+        cfg = {
+            "capture": {"permissionPaused": True},
+            "screenRecordingOnboarded": True,
+        }
+        with mock.patch.object(sys, "platform", "darwin"), mock.patch.object(
+            first_run, "_gui_available", return_value=True
+        ), mock.patch.object(first_run, "_append_bridge_log"):
+            first_run.prompt_mac_screen_recording(cfg)
+        self.assertTrue(cfg["capture"]["permissionPaused"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
