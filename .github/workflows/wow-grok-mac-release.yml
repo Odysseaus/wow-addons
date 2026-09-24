@@ -136,16 +136,16 @@ jobs:
 
           Built from commit ${SHA} via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What is new in 0.1.13
-          - **SSL CA fix for frozen .app:** bundles certifi cacert.pem and configures SSL_CERT_FILE / REQUESTS_CA_BUNDLE plus ssl default HTTPS context before any xAI call. Fixes CERTIFICATE_VERIFY_FAILED on Mac after Connect/Ready.
-          - If capture.processName is still the example placeholder WowB, re-detect from the AddOns client folder on startup (Mac).
+          ### What is new in 0.1.14
+          - Game context: character, zone, coords, money, XP, talents, professions sent with hello and when they change; bridge injects into xAI instructions every turn. /wow-grok context [on|off]; config gameContext default true.
+          - Shift-click link expansion into focused WoWGrok input; ExpandLinks on send (panel or /ai / /grok).
+          - xAI multi-turn: instructions sent with previous_response_id so context does not drop after turn 1.
+
+          ### Carry-forward from 0.1.13
+          - SSL CA fix for frozen .app (certifi); WowB placeholder re-detect on Mac.
 
           ### Carry-forward from 0.1.12
-          - Screen Recording TCC: real in-process 1x1 capture probe; NSScreenCaptureUsageDescription; first-run dialogs centered on pointer/primary work area.
-
-          ### Carry-forward from 0.1.11
-          - Connect via presence (Note bridge when head>0; CONNECT_WAIT 45s).
-          - In-process CoreGraphics TCC attribution to WoWGrok.
+          - Screen Recording TCC probe + centered first-run dialogs.
 
           ### Install
           1. Quit any old WoWGrok process.
@@ -160,7 +160,7 @@ jobs:
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — SSL CA fix for frozen xAI"
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — game context + shift-click links"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \
