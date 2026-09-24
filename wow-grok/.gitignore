@@ -30,6 +30,8 @@ venv/
 dist/
 build/
 *.spec
+!bridge_py/build_mac.spec
+!bridge_py/build_win.spec
 .pytest_cache/
 .mypy_cache/
 bridge_py/state.json
