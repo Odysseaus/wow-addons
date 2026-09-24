@@ -274,27 +274,27 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     def presence_beat() -> None:
-        if not (Path(cfg["addonDir"]) / "WoWGrok" / "presence").exists():
+        """Flip presence/NNNN.wav so the addon can hear the bridge.
+
+        The addon binary-searches for a contiguous valid prefix 1..k. We must
+        rewrite the whole prefix each beat — if state.presence advances after
+        files were wiped (or after a wrap emptied low numbers), writing only
+        the current k leaves 1..(k-1) empty and FindPresenceHead returns 0.
+        """
+        presence_dir = Path(cfg["addonDir"]) / "WoWGrok" / "presence"
+        if not presence_dir.exists():
             return
         state["presence"] = ((state.get("presence") or 0) % presence_max) + 1
         k = state["presence"]
-        try:
-            atomic_write(
-                Path(cfg["addonDir"]) / "WoWGrok" / "presence" / f"{str(k).zfill(4)}.wav",
-                P.SILENT_WAV,
-            )
-        except OSError:
-            pass
+        for i in range(1, k + 1):
+            try:
+                atomic_write(presence_dir / f"{str(i).zfill(4)}.wav", P.SILENT_WAV)
+            except OSError:
+                pass
         for j in range(1, 51):
             n = ((k - 1 + j) % presence_max) + 1
             try:
-                atomic_write(
-                    Path(cfg["addonDir"])
-                    / "WoWGrok"
-                    / "presence"
-                    / f"{str(n).zfill(4)}.wav",
-                    b"",
-                )
+                atomic_write(presence_dir / f"{str(n).zfill(4)}.wav", b"")
             except OSError:
                 pass
         save_state()

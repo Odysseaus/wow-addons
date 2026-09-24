@@ -1240,7 +1240,7 @@ function WoWGrok.UpdateStatus()
 		elseif run.connectingAt then
 			s = "Connecting to the bridge..."
 		elseif run.connectFailed then
-			s = "No answer from the bridge. Is it running (npm start)? Connect tries again"
+			s = "No answer from the bridge. Is WoWGrok running (menu bar icon)? Connect tries again"
 		elseif WoWGrok.BridgeState() == "stale" then
 			s = "Bridge not seen for a while - click Reconnect"
 		else
@@ -1375,7 +1375,7 @@ function WoWGrok.Render()
 			if run.restoring then
 				Place("system", "Connecting to the bridge and restoring your chats...", "", true)
 			elseif not WoWGrok.IsConnected() then
-				Place("system", "Not connected to the bridge. Start it (npm start in the wow-grok folder, or wow-grok in your project), then click Connect below.", "", true)
+				Place("system", "Not connected to the bridge. Keep WoWGrok.app running (menu bar icon), then click Connect below.", "", true)
 			else
 				Place("system", "Click the box below and type to start. /wow-grok help lists the commands; /ai <text> and /r work from the game chat too.", "", true)
 			end
@@ -1971,7 +1971,7 @@ local function BuildUI()
 	connect:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText("Connect to the bridge")
-		GameTooltip:AddLine("The bridge must be running on this PC (npm start in wow-grok, or wow-grok in your project). The light turns green once it answers.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("WoWGrok.app must be running on this Mac (look for the menu bar icon). The light turns green once it answers.", 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
 	connect:SetScript("OnLeave", function() GameTooltip:Hide() end)

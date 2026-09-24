@@ -125,7 +125,7 @@ def find_wow_window(process_name: str) -> dict[str, Any] | None:
     add("WowB")
     add("World of Warcraft")
     add("WowClassic")
-    add("Wow")
+    # bare "Wow" substring-matches WoWGrok — omit it
 
     want_json = json.dumps(want)
     jxa = f"""
@@ -144,6 +144,7 @@ if (!cfArr) {{
     var owner = w.kCGWindowOwnerName || '';
     if ((w.kCGWindowLayer || 0) !== 0) continue;
     var low = String(owner).toLowerCase();
+    if (low.indexOf('wowgrok') >= 0) continue;
     var ok = false;
     for (var j = 0; j < want.length; j++) {{
       if (low === want[j] || low.indexOf(want[j]) >= 0 || want[j].indexOf(low) >= 0) {{ ok = true; break; }}
