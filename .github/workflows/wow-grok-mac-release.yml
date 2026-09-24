@@ -34,6 +34,49 @@ jobs:
           python -m pip install -U pip
           pip install pillow pyinstaller rumps certifi
 
+      - name: Inject version from tag into Info.plist sources
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # tag like wow-grok-mac-v0.1.15 → 0.1.15
+          VER="${TAG#wow-grok-mac-v}"
+          if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Could not parse semver from tag=$TAG (got VER=$VER)" >&2
+            exit 1
+          fi
+          echo "Injecting CFBundle version $VER"
+          python - <<PY
+          from pathlib import Path
+          import re
+          ver = "$VER"
+          spec = Path("bridge_py/build_mac.spec")
+          text = spec.read_text(encoding="utf-8")
+          text2 = re.sub(
+              r"(['\"]CFBundleShortVersionString['\"]\s*:\s*['\"])([^'\"]+)(['\"])",
+              rf"\g<1>{ver}\g<3>",
+              text,
+          )
+          text2 = re.sub(
+              r"(['\"]CFBundleVersion['\"]\s*:\s*['\"])([^'\"]+)(['\"])",
+              rf"\g<1>{ver}\g<3>",
+              text2,
+          )
+          if ver not in text2:
+              raise SystemExit("version inject failed for build_mac.spec")
+          spec.write_text(text2, encoding="utf-8")
+          init = Path("bridge_py/__init__.py")
+          init.write_text(
+              re.sub(
+                  r'__version__\s*=\s*["\'][^"\']+["\']',
+                  f'__version__ = "{ver}"',
+                  init.read_text(encoding="utf-8"),
+              ),
+              encoding="utf-8",
+          )
+          print("OK: injected", ver)
+          PY
+
       - name: Build .app
         run: pyinstaller --noconfirm bridge_py/build_mac.spec
 
@@ -88,6 +131,27 @@ jobs:
           print("OK: menubar/rumps present in bundle")
           PY
 
+      - name: Prove Info.plist version matches tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          VER="${TAG#wow-grok-mac-v}"
+          python <<PY
+          import json, subprocess, sys
+          from pathlib import Path
+          ver = "$VER"
+          plist = next(Path("dist/WoWGrok.app").rglob("Info.plist"))
+          out = subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(plist)])
+          data = json.loads(out)
+          short = str(data.get("CFBundleShortVersionString") or "")
+          build = str(data.get("CFBundleVersion") or "")
+          print("plist", plist, "Short=", short, "Version=", build)
+          if short != ver or build != ver:
+              raise SystemExit(f"plist version mismatch: want {ver}, got Short={short} Version={build}")
+          print("OK: Info.plist is", ver)
+          PY
+
       - name: Zip .app
         run: |
           cd dist
@@ -136,23 +200,21 @@ jobs:
 
           Built from commit ${SHA} via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What is new in 0.1.14
-          - Game context: character, zone, coords, money, XP, talents, professions sent with hello and when they change; bridge injects into xAI instructions every turn. /wow-grok context [on|off]; config gameContext default true.
-          - Shift-click link expansion into focused WoWGrok input; ExpandLinks on send (panel or /ai / /grok).
-          - xAI multi-turn: instructions sent with previous_response_id so context does not drop after turn 1.
+          ### What is new in 0.1.15
+          - Capture: treat screencapture could not create image from rect (and related TCC / empty-capture failures) as permanent Screen Recording denial (exit 42). No sleep-and-retry loop that spammed Open System Settings / Deny after an unsigned app replace.
+          - Bridge: still does not restart capture on exit 42; harder backoff if capture flaps for other reasons. Presence / Connect keep running when capture is paused.
+          - First-run: when screenRecordingOnboarded is set, probe at most once and do not call request_screen_recording again every launch.
+          - Version: CFBundleShortVersionString and CFBundleVersion are injected from the release tag (fixes 0.1.14 zip still showing 0.1.13).
 
-          ### Carry-forward from 0.1.13
-          - SSL CA fix for frozen .app (certifi); WowB placeholder re-detect on Mac.
-
-          ### Carry-forward from 0.1.12
-          - Screen Recording TCC probe + centered first-run dialogs.
+          ### Carry-forward from 0.1.14
+          - Game context + shift-click link expansion; xAI instructions with previous_response_id.
 
           ### Install
           1. Quit any old WoWGrok process.
           2. Open the DMG, drag WoWGrok.app to Applications, then eject.
           3. Hold Control, click, Open if Gatekeeper warns.
           4. Enter API key, confirm AddOns, wait for slot install.
-          5. When the Screen Recording sheet appears, enable WoWGrok in System Settings, Quit from the sheet, then reopen.
+          5. If Screen Recording is off or stuck after an upgrade: System Settings, Privacy and Security, Screen Recording, enable WoWGrok, then Quit WoWGrok completely and reopen. Connect still works via presence without capture.
           6. Leave WoWGrok running (menu bar) while you play. Type /wow-grok or /grok in game chat.
 
           Zip of .app is also attached for convenience.
@@ -160,7 +222,7 @@ jobs:
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — game context + shift-click links"
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — capture TCC spam + Connect reliability"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \
