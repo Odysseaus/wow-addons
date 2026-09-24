@@ -99,6 +99,96 @@ class TestProbeScreenRecording(unittest.TestCase):
         self.assertEqual(code, capture_mac.PERMISSION_EXIT)
 
 
+class TestCapturePermissionFailure(unittest.TestCase):
+    def test_could_not_create_image_from_rect(self):
+        from bridge_py import capture_mac
+
+        self.assertTrue(
+            capture_mac.is_capture_permission_failure(
+                "could not create image from rect"
+            )
+        )
+        self.assertTrue(
+            capture_mac.is_capture_permission_failure(
+                "RuntimeError: could not create image from rect"
+            )
+        )
+
+    def test_empty_and_denied_strings(self):
+        from bridge_py import capture_mac
+
+        for msg in (
+            "screencapture produced no image (grant Screen Recording to Terminal)",
+            "Screen Recording blocked window list",
+            "permission denied",
+            "not authorized to capture the screen",
+            "screencapture failed",
+        ):
+            self.assertTrue(
+                capture_mac.is_capture_permission_failure(msg), msg
+            )
+
+    def test_unrelated_errors_not_permission(self):
+        from bridge_py import capture_mac
+
+        for msg in (
+            "",
+            "waiting for Forever window",
+            "Pillow required",
+            "timeout connecting to xAI",
+            "no valid strip in image",
+        ):
+            self.assertFalse(
+                capture_mac.is_capture_permission_failure(msg), msg
+            )
+
+    def test_live_loop_exits_immediately_on_create_image_from_rect(self):
+        from bridge_py import capture_mac
+
+        args = mock.Mock(
+            cells=200, cell=4, max_rows=48, interval_ms=250, process_name="WowB"
+        )
+        with mock.patch.object(
+            capture_mac, "probe_screen_recording", return_value="granted"
+        ), mock.patch.object(
+            capture_mac, "backing_scale_factor", return_value=2.0
+        ), mock.patch.object(
+            capture_mac,
+            "find_wow_window",
+            return_value={"name": "WowB", "x": 0, "y": 0, "w": 800, "h": 600},
+        ), mock.patch.object(
+            capture_mac,
+            "capture_region",
+            side_effect=RuntimeError("could not create image from rect"),
+        ), mock.patch.object(capture_mac, "emit"):
+            code = capture_mac.live_loop(args)
+        self.assertEqual(code, capture_mac.PERMISSION_EXIT)
+
+    def test_live_loop_exits_on_produced_no_image(self):
+        from bridge_py import capture_mac
+
+        args = mock.Mock(
+            cells=200, cell=4, max_rows=48, interval_ms=250, process_name="WowB"
+        )
+        with mock.patch.object(
+            capture_mac, "probe_screen_recording", return_value="granted"
+        ), mock.patch.object(
+            capture_mac, "backing_scale_factor", return_value=1.0
+        ), mock.patch.object(
+            capture_mac,
+            "find_wow_window",
+            return_value={"name": "WowB", "x": 0, "y": 0, "w": 800, "h": 600},
+        ), mock.patch.object(
+            capture_mac,
+            "capture_region",
+            side_effect=RuntimeError(
+                "screencapture produced no image (grant Screen Recording)"
+            ),
+        ), mock.patch.object(capture_mac, "emit"):
+            code = capture_mac.live_loop(args)
+        self.assertEqual(code, capture_mac.PERMISSION_EXIT)
+
+
 class TestPromptMacScreenRecording(unittest.TestCase):
     def test_granted_skips_dialog_and_requests_when_not_onboarded(self):
         from bridge_py import first_run
@@ -132,6 +222,26 @@ class TestPromptMacScreenRecording(unittest.TestCase):
             first_run, "_gui_available", return_value=True
         ), mock.patch(
             "bridge_py.capture_mac.probe_screen_recording", return_value="granted"
+        ), mock.patch(
+            "bridge_py.capture_mac.request_screen_recording"
+        ) as req, mock.patch.object(
+            first_run.tk_util, "show_screen_recording_dialog"
+        ) as dlg, mock.patch.object(
+            first_run, "_append_bridge_log"
+        ):
+            first_run.prompt_mac_screen_recording(cfg)
+        req.assert_not_called()
+        dlg.assert_not_called()
+
+    def test_onboarded_denied_skips_request_and_dialog(self):
+        """Unsigned-upgrade case: do not re-request TCC every launch when onboarded."""
+        from bridge_py import first_run
+
+        cfg = {"screenRecordingOnboarded": True}
+        with mock.patch.object(sys, "platform", "darwin"), mock.patch.object(
+            first_run, "_gui_available", return_value=True
+        ), mock.patch(
+            "bridge_py.capture_mac.probe_screen_recording", return_value="denied"
         ), mock.patch(
             "bridge_py.capture_mac.request_screen_recording"
         ) as req, mock.patch.object(

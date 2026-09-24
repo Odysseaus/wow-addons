@@ -21,6 +21,19 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.15] - 2026-09-24
+
+### Fixed
+
+- **Capture TCC spam:** `screencapture` failures such as `could not create image from rect`, empty capture, and permission-denied strings now exit capture with code 42 (permanent Screen Recording failure) instead of sleep-and-retry. The bridge still does not restart capture on 42, which stops macOS "Open System Settings / Deny" loops after an unsigned app replace.
+- **First-run probe:** when `screenRecordingOnboarded` is set, probe at most once and do not call `request_screen_recording` again every launch.
+- **Connect without capture:** presence beats keep running when capture is paused (exit 42), so Connect works via SavedVariables without the pixel path.
+- **Mac Info.plist version:** release workflow injects `CFBundleShortVersionString` / `CFBundleVersion` from the tag (0.1.14 zips still said 0.1.13).
+
+### Changed
+
+- Capture flap restart backoff doubles up to 60s for non-permission exits.
+
 ## [0.1.14] - 2026-09-24
 
 ### Added

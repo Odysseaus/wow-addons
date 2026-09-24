@@ -698,6 +698,8 @@ def main(argv: list[str] | None = None) -> int:
 
         def loop() -> None:
             guided = {"shown": False}
+            # Non-permission exit flap backoff (5s → 10s → 20s … cap 60s).
+            restart_delay = 5.0
             while not stop_event.is_set():
                 try:
                     proc = subprocess.Popen(
@@ -718,7 +720,8 @@ def main(argv: list[str] | None = None) -> int:
                     if rc == CAPTURE_PERMISSION_EXIT:
                         log(
                             "capture paused (Screen Recording). "
-                            "Enable WoWGrok, Quit and reopen — not restarting capture."
+                            "Enable WoWGrok, Quit and reopen — not restarting capture. "
+                            "Presence / Connect keep running without the pixel path."
                         )
                         if not guided["shown"]:
                             guided["shown"] = True
@@ -733,11 +736,15 @@ def main(argv: list[str] | None = None) -> int:
                             if screen_ui.get("result") == "quit":
                                 stop_event.set()
                         break
-                    log(f"capture exited ({rc}); restarting in 5 s")
-                    time.sleep(5)
+                    log(
+                        f"capture exited ({rc}); restarting in {int(restart_delay)} s"
+                    )
+                    time.sleep(restart_delay)
+                    restart_delay = min(restart_delay * 2, 60.0)
                 except Exception as e:  # noqa: BLE001
                     log("capture spawn error:", e)
-                    time.sleep(5)
+                    time.sleep(restart_delay)
+                    restart_delay = min(restart_delay * 2, 60.0)
 
         threading.Thread(target=loop, daemon=True).start()
 

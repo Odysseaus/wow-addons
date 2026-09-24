@@ -1,0 +1,240 @@
+# Build WoWGrok.app on macOS and attach to a GitHub Release.
+name: wow-grok-mac-release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. wow-grok-mac-v0.1.6)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as prerelease'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: wow-grok
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install pillow pyinstaller rumps certifi
+
+      - name: Inject version from tag into Info.plist sources
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # tag like wow-grok-mac-v0.1.15 → 0.1.15
+          VER="${TAG#wow-grok-mac-v}"
+          if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Could not parse semver from tag=$TAG (got VER=$VER)" >&2
+            exit 1
+          fi
+          echo "Injecting CFBundle version $VER"
+          python - <<PY
+          from pathlib import Path
+          import re
+          ver = "$VER"
+          spec = Path("bridge_py/build_mac.spec")
+          text = spec.read_text(encoding="utf-8")
+          text2 = re.sub(
+              r"(['\"]CFBundleShortVersionString['\"]\s*:\s*['\"])([^'\"]+)(['\"])",
+              rf"\g<1>{ver}\g<3>",
+              text,
+          )
+          text2 = re.sub(
+              r"(['\"]CFBundleVersion['\"]\s*:\s*['\"])([^'\"]+)(['\"])",
+              rf"\g<1>{ver}\g<3>",
+              text2,
+          )
+          if ver not in text2:
+              raise SystemExit("version inject failed for build_mac.spec")
+          spec.write_text(text2, encoding="utf-8")
+          init = Path("bridge_py/__init__.py")
+          init.write_text(
+              re.sub(
+                  r'__version__\s*=\s*["\'][^"\']+["\']',
+                  f'__version__ = "{ver}"',
+                  init.read_text(encoding="utf-8"),
+              ),
+              encoding="utf-8",
+          )
+          print("OK: injected", ver)
+          PY
+
+      - name: Build .app
+        run: pyinstaller --noconfirm bridge_py/build_mac.spec
+
+      - name: Prove supervisor is in the bundle
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          app = Path("dist/WoWGrok.app")
+          needle = b"bridge_py.supervisor"
+          hits = list(app.rglob("*supervisor*"))
+          print("path hits:", hits)
+          found = False
+          for p in app.rglob("*"):
+              if not p.is_file() or p.stat().st_size > 80_000_000:
+                  continue
+              try:
+                  data = p.read_bytes()
+              except OSError:
+                  continue
+              if needle in data:
+                  print("found", needle.decode(), "in", p)
+                  found = True
+                  break
+          if not found and not hits:
+              raise SystemExit("supervisor module not found in bundle")
+          print("OK: supervisor present in bundle")
+          PY
+
+      - name: Prove menubar + LSUIElement
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          app = Path("dist/WoWGrok.app")
+          plist = next(app.rglob("Info.plist"))
+          raw = plist.read_bytes()
+          # binary or XML plist — accept either form of the key
+          if b"LSUIElement" not in raw and b"lsuielement" not in raw.lower():
+              # try plutil
+              import subprocess, json
+              out = subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(plist)])
+              data = json.loads(out)
+              if not data.get("LSUIElement"):
+                  raise SystemExit(f"LSUIElement missing in {plist}: {data}")
+          print("OK: LSUIElement present in", plist)
+          needle = b"bridge_py.menubar"
+          found = any(needle in p.read_bytes() for p in app.rglob("*") if p.is_file() and p.stat().st_size < 80_000_000)
+          if not found:
+              # rumps string also acceptable evidence of menubar path
+              found = any(b"rumps" in p.read_bytes() for p in app.rglob("*") if p.is_file() and 1000 < p.stat().st_size < 80_000_000)
+          if not found:
+              raise SystemExit("menubar/rumps not found in bundle")
+          print("OK: menubar/rumps present in bundle")
+          PY
+
+      - name: Prove Info.plist version matches tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          VER="${TAG#wow-grok-mac-v}"
+          python <<PY
+          import json, subprocess, sys
+          from pathlib import Path
+          ver = "$VER"
+          plist = next(Path("dist/WoWGrok.app").rglob("Info.plist"))
+          out = subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(plist)])
+          data = json.loads(out)
+          short = str(data.get("CFBundleShortVersionString") or "")
+          build = str(data.get("CFBundleVersion") or "")
+          print("plist", plist, "Short=", short, "Version=", build)
+          if short != ver or build != ver:
+              raise SystemExit(f"plist version mismatch: want {ver}, got Short={short} Version={build}")
+          print("OK: Info.plist is", ver)
+          PY
+
+      - name: Zip .app
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent WoWGrok.app WoWGrok-mac-arm64.zip
+
+      - name: Make DMG (create-dmg drag-to-Applications)
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          set -euo pipefail
+          brew install create-dmg
+          STAGE="dist/dmg-stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R dist/WoWGrok.app "$STAGE/"
+          rm -f dist/WoWGrok.dmg
+          # create-dmg may exit non-zero after a successful image (bless); accept if DMG exists
+          create-dmg \
+            --volname "WoWGrok" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "WoWGrok.app" 150 185 \
+            --hide-extension "WoWGrok.app" \
+            --app-drop-link 450 185 \
+            "dist/WoWGrok.dmg" \
+            "$STAGE/" || true
+          if [[ ! -f dist/WoWGrok.dmg ]]; then
+            echo "create-dmg failed; falling back to hdiutil of staged folder"
+            hdiutil create -volname WoWGrok -srcfolder "$STAGE" -ov -format UDZO dist/WoWGrok.dmg
+          fi
+          ls -la dist/WoWGrok.dmg
+
+      - name: Create / update Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          PRE: ${{ inputs.prerelease }}
+        working-directory: .
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse --short HEAD)
+          NOTES=$(cat <<MD
+          ## WoWGrok Mac ${TAG#wow-grok-mac-}
+
+          Built from commit ${SHA} via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
+
+          ### What is new in 0.1.15
+          - Capture: treat screencapture could not create image from rect (and related TCC / empty-capture failures) as permanent Screen Recording denial (exit 42). No sleep-and-retry loop that spammed Open System Settings / Deny after an unsigned app replace.
+          - Bridge: still does not restart capture on exit 42; harder backoff if capture flaps for other reasons. Presence / Connect keep running when capture is paused.
+          - First-run: when screenRecordingOnboarded is set, probe at most once and do not call request_screen_recording again every launch.
+          - Version: CFBundleShortVersionString and CFBundleVersion are injected from the release tag (fixes 0.1.14 zip still showing 0.1.13).
+
+          ### Carry-forward from 0.1.14
+          - Game context + shift-click link expansion; xAI instructions with previous_response_id.
+
+          ### Install
+          1. Quit any old WoWGrok process.
+          2. Open the DMG, drag WoWGrok.app to Applications, then eject.
+          3. Hold Control, click, Open if Gatekeeper warns.
+          4. Enter API key, confirm AddOns, wait for slot install.
+          5. If Screen Recording is off or stuck after an upgrade: System Settings, Privacy and Security, Screen Recording, enable WoWGrok, then Quit WoWGrok completely and reopen. Connect still works via presence without capture.
+          6. Leave WoWGrok running (menu bar) while you play. Type /wow-grok or /grok in game chat.
+
+          Zip of .app is also attached for convenience.
+          MD
+          )
+          PRE_FLAG=()
+          if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — capture TCC spam + Connect reliability"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              wow-grok/dist/WoWGrok-mac-arm64.zip \
+              wow-grok/dist/WoWGrok.dmg \
+              --repo "${{ github.repository }}" --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --repo "${{ github.repository }}" ${PRE_FLAG[@]+"${PRE_FLAG[@]}"}
+          else
+            gh release create "$TAG" \
+              wow-grok/dist/WoWGrok-mac-arm64.zip \
+              wow-grok/dist/WoWGrok.dmg \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --repo "${{ github.repository }}" \
+              ${PRE_FLAG[@]+"${PRE_FLAG[@]}"}
+          fi

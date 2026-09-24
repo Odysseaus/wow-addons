@@ -240,6 +240,37 @@ def request_screen_recording() -> str:
     return probe_screen_recording()
 
 
+def is_capture_permission_failure(msg: str) -> bool:
+    """True when *msg* indicates Screen Recording / TCC / screencapture denial.
+
+    Used by :func:`live_loop` to exit permanently (code 42) instead of
+    sleep-and-retry, which re-triggers macOS "Open System Settings" spam —
+    especially after an unsigned app replace that thrash-resets TCC.
+
+    Exact match class (immediate exit): ``could not create image from rect``.
+    Also empty capture, permission denied, window-list blocked, etc.
+    """
+    low = (msg or "").lower()
+    if not low.strip():
+        return False
+    needles = (
+        "could not create image from rect",
+        "screen recording",
+        "null_list",
+        "blocked window list",
+        "produced no image",
+        "permission denied",
+        "not authorized to capture",
+        "not permitted to capture",
+        "capture permission",
+        "screencapture failed",
+        "failed to capture",
+        "unable to capture",
+        "cannot capture",
+    )
+    return any(n in low for n in needles)
+
+
 def _permission_error(msg: str) -> int:
     emit(
         {
@@ -383,6 +414,9 @@ def live_loop(args: argparse.Namespace) -> int:
     last_warn = 0.0
     attached_name = ""
     told_scale = False
+    # Consecutive strip-capture failures of the TCC/permission class (non-exact).
+    # Exact "could not create image from rect" exits immediately (count unused).
+    perm_fail_streak = 0
     cap_w = args.cells * args.cell
     cap_h = args.max_rows * args.cell
 
@@ -439,6 +473,7 @@ def live_loop(args: argparse.Namespace) -> int:
                     }
                 )
             capture_region(win["x"], win["y"], cap_w, cap_h, dest)
+            perm_fail_streak = 0
             got = _decode_captured(dest, args.cell, args.cells, args.max_rows, declared_scale)
             if not told_scale:
                 told_scale = True
@@ -463,19 +498,41 @@ def live_loop(args: argparse.Namespace) -> int:
                     emit({"id": msg["id"], "text": msg["text"]})
         except Exception as e:  # noqa: BLE001
             m = str(e)
-            # Any Screen Recording / TCC failure: stop permanently (bridge will not
-            # restart). Do not sleep-and-retry — that re-triggers the system sheet.
+            # Screen Recording / TCC / screencapture denial: stop permanently
+            # (bridge will not restart). Do not sleep-and-retry — that re-triggers
+            # the system "Open System Settings / Deny" sheet (unsigned-replace TCC thrash).
             low = m.lower()
-            if (
-                "screen recording" in low
-                or "null_list" in low
-                or "blocked window list" in low
-                or "produced no image" in low
-            ):
-                return _permission_error(
-                    m
-                    + " Enable WoWGrok under Screen Recording, then Quit and reopen WoWGrok."
-                )
+            exact_rect = "could not create image from rect" in low
+            if exact_rect or is_capture_permission_failure(m):
+                perm_fail_streak += 1
+                # Prefer immediate exit on the known screencapture TCC string;
+                # other permission-class failures exit after 1–2 consecutive hits.
+                if exact_rect or perm_fail_streak >= 2 or (
+                    perm_fail_streak >= 1
+                    and any(
+                        n in low
+                        for n in (
+                            "screen recording",
+                            "null_list",
+                            "blocked window list",
+                            "produced no image",
+                            "permission denied",
+                            "not authorized to capture",
+                            "not permitted to capture",
+                        )
+                    )
+                ):
+                    return _permission_error(
+                        m
+                        + " Enable WoWGrok under Screen Recording, then Quit and reopen WoWGrok."
+                    )
+                now = time.time()
+                if now - last_warn > 5:
+                    last_warn = now
+                    emit({"error": m + " (permission-class; one more will stop capture)"})
+                time.sleep(1)
+                continue
+            perm_fail_streak = 0
             now = time.time()
             if now - last_warn > 15:
                 last_warn = now
