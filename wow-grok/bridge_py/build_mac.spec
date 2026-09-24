@@ -86,9 +86,13 @@ app = BUNDLE(
     icon=None,
     bundle_identifier='com.wowgrok.bridge',
     info_plist={
+        'CFBundleShortVersionString': '0.1.12',
+        'CFBundleVersion': '0.1.12',
         'NSHighResolutionCapable': True,
         'LSUIElement': True,  # menu-bar agent; no Dock icon in steady state
         'NSAppleEventsUsageDescription':
             'WoWGrok locates the World of Warcraft window for pixel-strip capture.',
+        'NSScreenCaptureUsageDescription':
+            'WoWGrok captures a small strip of the World of Warcraft window so Grok can read in-game chat.',
     },
 )

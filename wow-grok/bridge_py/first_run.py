@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -14,12 +15,13 @@ from . import tk_util
 def _tk():
     """Lazy import so headless / servers without tkinter still load the package."""
     import tkinter as tk
-    from tkinter import filedialog, messagebox, simpledialog
-    return tk, filedialog, messagebox, simpledialog
+    from tkinter import filedialog
+
+    return tk, filedialog
 
 
 def _ensure_root():
-    tk, _, _, _ = _tk()
+    tk, _ = _tk()
     root = tk.Tk()
     return tk_util.prepare_dialog_root(root)
 
@@ -30,35 +32,41 @@ def _gui_available() -> bool:
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
+def _append_bridge_log(line: str) -> None:
+    """Append one line to Application Support / package bridge.log."""
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    text = f"{stamp} {line}\n"
+    try:
+        path = cfgmod.log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(text)
+    except Exception as e:  # noqa: BLE001 — still surface on stderr
+        print(f"[bridge.log write failed] {e}: {line}", file=sys.stderr)
+
+
 def prompt_api_key(parent=None) -> str | None:
     """Ask for xAI API key. Returns key or None if cancelled. Never logs the value."""
-    tk, _, messagebox, simpledialog = _tk()
-    own = parent is None
-    root = parent or _ensure_root()
-    try:
-        messagebox.showinfo(
-            "WoW Grok — API key",
-            "WoW Grok needs an xAI API key to chat with Grok.\n\n"
-            "Your key is stored ONLY in a local config.json on this computer "
-            "(next to the bridge). It is never uploaded, never sent to the WoW "
-            "addon, and never written into Lua.\n\n"
-            "Get a key at https://console.x.ai/",
-            parent=root,
-        )
-        key = simpledialog.askstring(
-            "WoW Grok — xAI API key",
-            "Paste your xAI API key (starts with xai-…):\n"
-            "(Stored locally only in config.json — not uploaded, not in the addon.)",
-            parent=root,
-            show="*",
-        )
-        if key is None:
-            return None
-        key = key.strip()
-        return key or None
-    finally:
-        if own:
-            root.destroy()
+    # parent kept for API compat; custom dialogs own their roots
+    _ = parent
+    tk_util.show_info_dialog(
+        "WoW Grok — API key",
+        "WoW Grok needs an xAI API key to chat with Grok.\n\n"
+        "Your key is stored ONLY in a local config.json on this computer "
+        "(next to the bridge). It is never uploaded, never sent to the WoW "
+        "addon, and never written into Lua.\n\n"
+        "Get a key at https://console.x.ai/",
+    )
+    key = tk_util.ask_string_dialog(
+        "WoW Grok — xAI API key",
+        "Paste your xAI API key (starts with xai-…):\n"
+        "(Stored locally only in config.json — not uploaded, not in the addon.)",
+        show="*",
+    )
+    if key is None:
+        return None
+    key = key.strip()
+    return key or None
 
 
 def prompt_addons_dir(
@@ -66,40 +74,41 @@ def prompt_addons_dir(
     parent=None,
 ) -> Path | None:
     """Pick Interface/AddOns (or WoW root). Returns normalized AddOns path."""
-    tk, filedialog, messagebox, _ = _tk()
+    tk, filedialog = _tk()
     own = parent is None
     root = parent or _ensure_root()
     try:
         candidates = candidates if candidates is not None else setup_detect.find_existing_addons()
         if len(candidates) == 1:
-            if messagebox.askyesno(
+            if tk_util.ask_yes_no(
                 "WoW Grok — AddOns folder",
                 f"Found World of Warcraft AddOns at:\n\n{candidates[0]}\n\nUse this folder?",
-                parent=root,
             ):
                 return candidates[0]
         elif len(candidates) > 1:
-            # Simple chooser via numbered message + folder dialog fallback
             listing = "\n".join(f"  {i+1}. {c}" for i, c in enumerate(candidates[:12]))
-            messagebox.showinfo(
+            tk_util.show_info_dialog(
                 "WoW Grok — multiple AddOns folders",
                 "Several World of Warcraft AddOns folders were found:\n\n"
                 f"{listing}\n\n"
                 "Next you will pick the correct Interface/AddOns folder "
                 "(or the WoW client / flavor folder).",
-                parent=root,
             )
         else:
-            messagebox.showinfo(
+            tk_util.show_info_dialog(
                 "WoW Grok — locate AddOns",
                 "Could not auto-find World of Warcraft.\n\n"
                 "Select your Interface/AddOns folder, or the WoW client folder "
                 "(e.g. …/World of Warcraft/_classic_beta_).\n\n"
                 "GeForce Now / cloud WoW is NOT supported — the bridge must run "
                 "on the same PC as a local WoW install.",
-                parent=root,
             )
 
+        # Native folder dialog — parent root already centered via prepare_dialog_root
+        try:
+            root.update_idletasks()
+        except Exception:
+            pass
         chosen = filedialog.askdirectory(
             parent=root,
             title="Select WoW Interface/AddOns (or WoW client folder)",
@@ -109,53 +118,91 @@ def prompt_addons_dir(
             return None
         normalized = setup_detect.normalize_addons_selection(chosen)
         if not normalized:
-            messagebox.showerror(
+            tk_util.show_info_dialog(
                 "WoW Grok",
                 "That path does not look like Interface/AddOns or a WoW client folder.\n"
                 "Expected …/Interface/AddOns or …/_classic_beta_ (etc).",
-                parent=root,
             )
             return None
         return normalized
     finally:
         if own:
-            root.destroy()
+            try:
+                root.destroy()
+            except Exception:
+                pass
 
 
+def _mark_screen_recording_onboarded(cfg: dict[str, Any] | None) -> None:
+    if cfg is None:
+        return
+    try:
+        cfg["screenRecordingOnboarded"] = True
+        cfgmod.save_config(cfg)
+    except Exception as e:  # noqa: BLE001
+        _append_bridge_log(f"[screen-recording] failed to save onboarded flag: {e}")
 
-def prompt_mac_screen_recording() -> None:
+
+def prompt_mac_screen_recording(cfg: dict[str, Any] | None = None) -> None:
     """Show the Screen Recording sheet unless permission is clearly granted.
 
-    Probes once via in-process ``capture_mac.probe_screen_recording``. If status
-    is ``granted``, return immediately so relaunch goes straight to the menu-bar
-    bridge. For ``denied``, ``unsure``, probe errors, or import failure — show the
-    modal (do **not** skip on unsure). Before/while presenting the sheet, call
-    ``request_screen_recording()`` so macOS creates a Screen Recording row for
-    WoWGrok. Quit exits 0 so the supervisor stops and macOS can apply a fresh
-    TCC toggle on the next open.
+    Probes via a real in-process 1×1 capture (not window-list alone). Always
+    logs probe/request/status/choice to bridge.log. If not clearly granted after
+    request, always shows the in-app sheet (do not skip on unsure). On first
+    launch after a wipe (no screenRecordingOnboarded), always performs a real
+    request so macOS can create a Screen Recording row for WoWGrok.
     """
     if sys.platform != "darwin":
         return
     if not _gui_available():
+        _append_bridge_log("[screen-recording] skip: no GUI available")
         return
+
+    onboarded = bool(cfg.get("screenRecordingOnboarded")) if cfg else False
     status = "unsure"
     request = None
+    probe = None
     try:
         from .capture_mac import probe_screen_recording, request_screen_recording
 
         request = request_screen_recording
-        status = probe_screen_recording()
-    except Exception:
-        # Import / probe failure → still show the sheet (treat as not granted).
+        probe = probe_screen_recording
+        status = probe()
+        _append_bridge_log(f"[screen-recording] probe={status} onboarded={onboarded}")
+    except Exception as e:  # noqa: BLE001
         status = "unsure"
-    if status == "granted":
-        return
-    # Real in-process screen access so TCC lists WoWGrok under Screen Recording.
-    if request is not None:
+        _append_bridge_log(f"[screen-recording] probe import/error: {e!r} → unsure")
+
+    # After wipe / first launch: always request once even if probe looked granted
+    # (old window-list probe could false-positive). Also request when not granted.
+    if request is not None and (not onboarded or status != "granted"):
         try:
-            request()
-        except Exception:
-            pass
+            req_status = request()
+            _append_bridge_log(f"[screen-recording] request={req_status}")
+            status = req_status
+            if probe is not None:
+                try:
+                    status = probe()
+                    _append_bridge_log(f"[screen-recording] probe_after_request={status}")
+                except Exception as e:  # noqa: BLE001
+                    _append_bridge_log(f"[screen-recording] probe_after_request error: {e!r}")
+        except Exception as e:  # noqa: BLE001
+            status = "unsure"
+            _append_bridge_log(f"[screen-recording] request error: {e!r} → unsure")
+
+    if status == "granted":
+        _append_bridge_log("[screen-recording] granted — skip sheet")
+        _mark_screen_recording_onboarded(cfg)
+        return
+
+    # User previously chose Continue without grant — do not re-nag every launch,
+    # but we already requested above when not granted.
+    if onboarded and status != "granted":
+        _append_bridge_log(
+            f"[screen-recording] not granted ({status}) but onboarded — skip sheet"
+        )
+        return
+
     try:
         choice = tk_util.show_screen_recording_dialog(
             "Mac capture needs Screen Recording permission for WoWGrok.\n\n"
@@ -168,10 +215,14 @@ def prompt_mac_screen_recording() -> None:
             "Or choose Continue — SavedVariables /reload still works without capture.\n"
             "Launch WoWGrok from /Applications (not from the DMG)."
         )
+        _append_bridge_log(f"[screen-recording] sheet_choice={choice} status={status}")
         if choice == "quit":
             sys.exit(0)
-    except Exception:
-        pass
+        # Continue: remember so we do not re-sheet every launch
+        _mark_screen_recording_onboarded(cfg)
+    except Exception as e:  # noqa: BLE001
+        _append_bridge_log(f"[screen-recording] sheet error: {e!r}")
+        raise
 
 
 def ensure_first_run_config(
@@ -240,7 +291,6 @@ def ensure_first_run_config(
             )
             sys.exit(2)
         if os.environ.get("DISPLAY") is None and sys.platform.startswith("linux"):
-            # No display: cannot show tk popup
             print(
                 "Missing xAI API key and no display for first-run UI. "
                 "Set XAI_API_KEY or write apiKey into bridge_py/config.json.",
@@ -255,7 +305,6 @@ def ensure_first_run_config(
 
     cfgmod.save_config(cfg)
 
-    # Copy main addon + create WoWGrok_S001–S200 next to it (idempotent).
     from .install_addon import InstallError, ensure_game_files
 
     use_gui = (not headless) and _gui_available()
@@ -267,14 +316,12 @@ def ensure_first_run_config(
         print(f"Could not install addon/slots: {e}", file=sys.stderr)
         if headless:
             sys.exit(2)
-        # GUI path: warn but still return config so bridge can start;
-        # bridge banner will remind the user to re-run the app.
         print(
             "Re-run the WoWGrok app after fixing the AddOns path.",
             file=sys.stderr,
         )
 
     if install_ok and use_gui and sys.platform == "darwin":
-        prompt_mac_screen_recording()
+        prompt_mac_screen_recording(cfg)
 
     return cfg

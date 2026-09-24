@@ -136,30 +136,24 @@ jobs:
 
           Built from commit ${SHA} via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What's new in 0.1.11
-          - **Connect via presence:** Note the bridge when presence head>0 (do not wait for the next 30s beat); Connect seeds from presence; CONNECT_WAIT 45s.
-          - **Screen Recording TCC:** in-process CoreGraphics probe/request (ctypes) so macOS lists **WoWGrok** under Screen Recording — not osascript.
-          - **First-run sheet:** always show the Screen Recording sheet unless status is clearly granted (do not skip on unsure); call request_screen_recording() so Settings gets a WoWGrok row.
-          - Quit + reopen after enabling remains required for the permission to stick.
+          ### What's new in 0.1.12
+          - **Screen Recording TCC row:** real in-process 1x1 capture probe (CGWindowListCreateImage), not a window-list false positive. Info.plist includes NSScreenCaptureUsageDescription so macOS can list WoWGrok under Screen Recording. First-run always requests once after a wipe and logs probe/request/sheet to bridge.log.
+          - **First-run dialogs:** custom centered OK / Yes-No / API-key dialogs on the pointer or primary work area (ultrawide-safe). Native messagebox/simpledialog no longer used for those prompts — Done/OK stays on-screen.
+          - After enabling Screen Recording, Quit WoWGrok and reopen so the permission sticks.
+
+          ### Carry-forward from 0.1.11
+          - Connect via presence (Note bridge when head>0; CONNECT_WAIT 45s).
+          - In-process CoreGraphics TCC attribution to WoWGrok.
 
           ### Carry-forward from 0.1.10
-          - **Quit full-tree teardown:** menu-bar Quit terminates supervisor → bridge → capture so Finder can trash/replace /Applications/WoWGrok.app.
-
-          ### Carry-forward from 0.1.9
-          - **Presence beats:** rewrite full valid prefix 1..k each beat so Forever can detect the bridge.
-          - **Capture window match:** do not attach to WoWGrok itself; skip wowgrok owners.
-
-          ### Carry-forward from 0.1.6
-          - **DMG layout:** drag WoWGrok.app to the Applications shortcut (create-dmg).
-          - **Menu bar companion:** quiet status item (Running + Quit); LSUIElement.
-          - Install into **/Applications**; keep running while you play.
+          - Quit full-tree teardown so Finder can replace /Applications/WoWGrok.app.
 
           ### Install
-          1. Quit any old WoWGrok process.
-          2. Open the DMG → drag **WoWGrok.app** to **Applications** → eject.
-          3. Hold **Control** → click → **Open** if Gatekeeper warns (plain double-click often only shows Done).
+          1. Quit any old WoWGrok process. Prefer a clean wipe of the old app if upgrading from 0.1.11 Screen Recording issues.
+          2. Open the DMG → drag WoWGrok.app to Applications → eject.
+          3. Hold Control → click → Open if Gatekeeper warns.
           4. Enter API key → confirm AddOns → wait for slot install.
-          5. Grant **Screen Recording**; use Quit from the menu once if offered so permission sticks, then reopen.
+          5. When the Screen Recording sheet appears, enable WoWGrok in System Settings, Quit from the sheet, then reopen.
           6. Leave WoWGrok running (menu bar) while you play. Type /wow-grok or /grok in game chat.
 
           Zip of .app is also attached for convenience.
@@ -167,7 +161,7 @@ jobs:
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — Connect presence + Screen Recording TCC"
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — Screen Recording TCC + dialog centering"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \

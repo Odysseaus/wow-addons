@@ -9,10 +9,11 @@ sampled at cellPx * scale via Pillow (see strip_codec).
 **Screen Recording permission (required):**
   System Settings → Privacy & Security → Screen Recording → enable WoWGrok.app
   (or Terminal/iTerm when running from source) — then Quit and reopen the app.
-  Probe/request use in-process CoreGraphics so TCC attributes to WoWGrok, not osascript.
-Without it, CGWindowListCopyWindowInfo returns null and screencapture may
-produce an empty image. SavedVariables `/reload` fallback in the bridge still
-works when capture is blocked.
+  Probe/request use a real in-process 1×1 capture (CGWindowListCreateImage) so
+  TCC attributes to WoWGrok and creates a Settings row — a non-null window list
+  alone is NOT treated as granted. Info.plist must include
+  NSScreenCaptureUsageDescription. SavedVariables `/reload` fallback still works
+  when capture is blocked.
 
 On non-macOS, `--test-image` still decodes synthetic PNGs (unit tests). Live
 capture refuses to run off darwin. Prefer stdlib + Pillow; no pyobjc.
@@ -49,14 +50,8 @@ _kCGWindowListOptionOnScreenOnly = 1 << 0  # 1
 _kCGNullWindowID = 0
 
 
-def _cg_window_list_copy() -> object | None:
-    """In-process ``CGWindowListCopyWindowInfo`` via ctypes (no pyobjc).
-
-    Runs as *this* process (WoWGrok.app when frozen), so TCC attributes Screen
-    Recording to WoWGrok — unlike osascript/JXA which probes as osascript.
-    Returns the CFArrayRef pointer (c_void_p value) or None if NULL / load fail.
-    Caller must CFRelease a non-null return.
-    """
+def _load_cg_cf() -> tuple[object, object]:
+    """Load CoreGraphics + CoreFoundation CDLLs."""
     import ctypes
     import ctypes.util
 
@@ -66,13 +61,23 @@ def _cg_window_list_copy() -> object | None:
     cf_path = ctypes.util.find_library("CoreFoundation") or (
         "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
     )
-    cg = ctypes.CDLL(cg_path)
-    cf = ctypes.CDLL(cf_path)
+    return ctypes.CDLL(cg_path), ctypes.CDLL(cf_path)
+
+
+def _cg_window_list_copy() -> object | None:
+    """In-process ``CGWindowListCopyWindowInfo`` via ctypes (no pyobjc).
+
+    NOTE: a non-null window list is **not** proof of Screen Recording on modern
+    macOS — use :func:`_cg_capture_1x1` / :func:`probe_screen_recording` instead.
+    Kept for diagnostics / tests. Caller must ``release()`` a non-null return.
+    """
+    import ctypes
+
+    cg, cf = _load_cg_cf()
     cg.CGWindowListCopyWindowInfo.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
     cg.CGWindowListCopyWindowInfo.restype = ctypes.c_void_p
     cf.CFRelease.argtypes = [ctypes.c_void_p]
     cf.CFRelease.restype = None
-    # Stash CFRelease on the pointer object for the caller via a small wrapper.
     ptr = cg.CGWindowListCopyWindowInfo(
         _kCGWindowListOptionOnScreenOnly, _kCGNullWindowID
     )
@@ -94,40 +99,143 @@ def _cg_window_list_copy() -> object | None:
     return _CFArray(ptr, cf)
 
 
+def _cg_capture_1x1() -> str:
+    """Attempt a tiny in-process screen capture (triggers TCC for this process).
+
+    Uses ``CGWindowListCreateImage`` of a 1×1 rect. Returns:
+      - ``granted`` — non-null CGImage with width/height >= 1
+      - ``denied`` — NULL image (Screen Recording blocked / not determined)
+      - ``unsure`` — ctypes / framework load failure
+
+    A non-null ``CGWindowListCopyWindowInfo`` alone must never be treated as granted.
+    """
+    import ctypes
+
+    class CGPoint(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+    class CGSize(ctypes.Structure):
+        _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+
+    class CGRect(ctypes.Structure):
+        _fields_ = [("origin", CGPoint), ("size", CGSize)]
+
+    try:
+        cg, cf = _load_cg_cf()
+    except Exception:  # noqa: BLE001
+        return "unsure"
+
+    # kCGWindowImageDefault = 0; capture on-screen windows including desktop
+    kCGWindowImageDefault = 0
+    cg.CGWindowListCreateImage.argtypes = [
+        CGRect,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+    ]
+    cg.CGWindowListCreateImage.restype = ctypes.c_void_p
+    cg.CGImageGetWidth.argtypes = [ctypes.c_void_p]
+    cg.CGImageGetWidth.restype = ctypes.c_size_t
+    cg.CGImageGetHeight.argtypes = [ctypes.c_void_p]
+    cg.CGImageGetHeight.restype = ctypes.c_size_t
+    cf.CFRelease.argtypes = [ctypes.c_void_p]
+    cf.CFRelease.restype = None
+
+    rect = CGRect(CGPoint(0.0, 0.0), CGSize(1.0, 1.0))
+    try:
+        img = cg.CGWindowListCreateImage(
+            rect,
+            _kCGWindowListOptionOnScreenOnly,
+            _kCGNullWindowID,
+            kCGWindowImageDefault,
+        )
+    except Exception:  # noqa: BLE001
+        return "unsure"
+    if not img:
+        return "denied"
+    try:
+        w = int(cg.CGImageGetWidth(img))
+        h = int(cg.CGImageGetHeight(img))
+    except Exception:  # noqa: BLE001
+        try:
+            cf.CFRelease(img)
+        except Exception:  # noqa: BLE001
+            pass
+        return "unsure"
+    try:
+        cf.CFRelease(img)
+    except Exception:  # noqa: BLE001
+        pass
+    if w >= 1 and h >= 1:
+        return "granted"
+    return "denied"
+
+
+def _screencapture_1x1_probe() -> str:
+    """Fallback: ``screencapture -x -R`` of 1×1 must produce a non-empty PNG."""
+    import tempfile
+
+    dest = Path(tempfile.gettempdir()) / "wow-grok-tcc-probe.png"
+    try:
+        if dest.exists():
+            dest.unlink()
+    except OSError:
+        pass
+    try:
+        r = subprocess.run(
+            ["screencapture", "-x", "-t", "png", "-R", "0,0,1,1", str(dest)],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return "unsure"
+    if r.returncode != 0:
+        return "denied"
+    try:
+        if dest.is_file() and dest.stat().st_size >= 50:
+            return "granted"
+    except OSError:
+        return "unsure"
+    return "denied"
+
+
 def probe_screen_recording() -> str:
-    """One-shot in-process CGWindowList probe for *this* app's TCC state.
+    """Real in-process capture probe for *this* app's Screen Recording TCC.
 
     Returns:
-      - ``granted`` — CoreGraphics returned a non-null window list
-      - ``denied`` — CoreGraphics returned NULL (Screen Recording blocked)
-      - ``unsure`` — library load / ctypes failure (never treat osascript success
-        as granted for WoWGrok)
+      - ``granted`` — tiny ``CGWindowListCreateImage`` (or screencapture fallback)
+        produced a real image
+      - ``denied`` — capture returned NULL / empty (blocked or not determined)
+      - ``unsure`` — framework load / tool failure
 
-    Never call this in a tight loop — each real screen-access attempt can
-    re-trigger the TCC sheet. Prefer ``request_screen_recording`` once at first run.
+    **Never** treat a non-null ``CGWindowListCopyWindowInfo`` alone as granted —
+    modern macOS often returns a window list without Screen Recording, which
+    previously skipped the first-run sheet and never created a Settings row.
+
+    Never call in a tight loop — each real capture can re-trigger the TCC sheet.
     """
     if sys.platform != "darwin":
         return "unsure"
     try:
-        arr = _cg_window_list_copy()
-    except Exception:  # noqa: BLE001 — load / ABI failure
-        return "unsure"
-    if arr is None:
-        return "denied"
-    try:
-        arr.release()
+        status = _cg_capture_1x1()
     except Exception:  # noqa: BLE001
-        pass
-    return "granted"
+        status = "unsure"
+    if status != "unsure":
+        return status
+    try:
+        return _screencapture_1x1_probe()
+    except Exception:  # noqa: BLE001
+        return "unsure"
 
 
 def request_screen_recording() -> str:
-    """Perform a real in-process screen-access attempt so macOS lists WoWGrok.
+    """Real in-process capture so macOS creates a Screen Recording row for WoWGrok.
 
-    Uses the same CoreGraphics ``CGWindowListCopyWindowInfo`` call as the probe.
-    This may surface the system TCC prompt once and should create a Screen
-    Recording row for WoWGrok.app under System Settings. Returns the resulting
-    status (``granted`` / ``denied`` / ``unsure``). Do not call in a tight loop.
+    Calls the same 1×1 ``CGWindowListCreateImage`` path as the probe (with
+    screencapture fallback). May surface the system TCC prompt once when
+    ``NSScreenCaptureUsageDescription`` is present in Info.plist. Returns
+    ``granted`` / ``denied`` / ``unsure``. Do not call in a tight loop.
     """
     return probe_screen_recording()
 
