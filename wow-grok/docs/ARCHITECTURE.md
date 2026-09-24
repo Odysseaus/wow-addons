@@ -1,3 +1,5 @@
+> **Note:** The companion is now Python (`bridge_py/`). Node paths below are historical / conceptual.
+
 # Architecture
 
 Two processes that can't talk to each other directly, and how they do anyway.

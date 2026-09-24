@@ -1,8 +1,8 @@
 # machine-specific / runtime state
-bridge/config.json
-bridge/state.json
-bridge/transcripts.json
-bridge/bridge.log
+bridge_py/config.json
+bridge_py/state.json
+bridge_py/transcripts.json
+bridge_py/bridge.log
 *.tmp
 
 # tooling

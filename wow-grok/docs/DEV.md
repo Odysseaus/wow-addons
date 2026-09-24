@@ -44,3 +44,8 @@ Both `build_mac.spec` and `build_win.spec` bundle `addon/WoWGrok` so first-run c
 
 - [README.python.md](../README.python.md) — short Python-bridge pointer
 - Platform-specific legacy notes: [INSTALL-MAC.md](INSTALL-MAC.md), [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)
+
+## History
+
+An earlier Node.js companion (`bridge/`, `setup.js`, `npm`) was removed; the shipped bridge is **Python-only** (`bridge_py/`). Upstream inspiration remains MIT [wow-claude](https://github.com/chelinho139/wow-claude).
+

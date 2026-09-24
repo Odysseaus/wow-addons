@@ -16,7 +16,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(SPECDIR / 'config.example.json'), 'bridge_py'),
-        (str(ROOT / 'bridge' / 'capture.ps1'), 'bridge'),
+        (str(SPECDIR / 'capture.ps1'), 'bridge'),
         (str(ROOT / 'addon' / 'WoWGrok'), 'addon/WoWGrok'),
     ],
     hiddenimports=[

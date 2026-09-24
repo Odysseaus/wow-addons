@@ -1,4 +1,4 @@
-"""Windows pixel-strip capture: delegate to bridge/capture.ps1.
+"""Windows pixel-strip capture: delegate to bridge_py/capture.ps1.
 
 Stdout: one JSON object per line (same protocol as capture.ps1 / capture_mac).
 Also supports --test-image via strip_codec (pure Python) for decode-only tests
@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
         emit(
             {
                 "error": "capture.ps1 not found next to bridge_py / bridge / frozen exe. "
-                "Copy bridge/capture.ps1 alongside the frozen exe or bake it with "
+                "Copy bridge_py/capture.ps1 alongside the frozen exe or bake it with "
                 "--add-data (see bridge_py/packaging.md)."
             }
         )

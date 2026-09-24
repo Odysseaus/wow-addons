@@ -40,8 +40,8 @@ Helper: `bridge_py\scripts\build_win.ps1`
 
 Notes:
 
-- Spec embeds `bridge/capture.ps1` (`capture_win` looks under `_MEIPASS/bridge/` and next to the exe).
-- Users still need the Lua addon under `Interface/AddOns/WoWGrok` (`--install-slots` creates **WoWGrok_S001–S200** top-level siblings).
+- Spec embeds `bridge_py/capture.ps1` (`capture_win` looks under `_MEIPASS/bridge/` and next to the exe).
+- The frozen app installs the Lua addon and **WoWGrok_S001–S200** on first run; `capture.ps1` is baked from `bridge_py/capture.ps1`.
 - Real Windows builds need the Helper / OMEN machine — this Linux box only runs a Linux freeze smoke.
 
 Optional onedir:
