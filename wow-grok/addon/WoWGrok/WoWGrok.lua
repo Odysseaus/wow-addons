@@ -535,7 +535,7 @@ function WoWGrok.IsConnected()
 	if not db then return false end
 	-- Explicit reload mode: never gate on the pixel light.
 	if db.settings.mode ~= "pixel" then return true end
-	-- capturePaused: still require bridgeSeen (via slot/Inbox) so Connect stays available
+	-- capturePaused: require bridgeSeen (via slot LoadAddOn) so Connect stays available
 	-- until the bridge is marked; Send works once seen (slots/Inbox path).
 	if run.capturePaused then
 		return run.bridgeSeen ~= nil
@@ -561,11 +561,10 @@ function WoWGrok.Connect()
 	end
 	if UseReloadTransport() then
 		-- Capture paused / reload: still LoadAddOn a reply slot so bridgeSeen + replies
-		-- land (main Inbox.lua loadfile is often blocked). Do not only mark presence.
+		-- land (no loadfile — Forever has none). Tick honors wantConnectSlot.
 		run.awaitingCaptureHint = nil
 		if db and db.settings.mode == "pixel" then
 			run.wantConnectSlot = true
-			-- Keep connectingAt so status shows Connecting until slot lands (Tick).
 			print("|cff88ccffWoW Grok|r Connect: capturePaused — wantConnectSlot (Tick loads slot)")
 			WoWGrok.SayHello()
 		else
@@ -894,11 +893,10 @@ local function Tick()
 		run.lastIdlePoll = now
 		TryLoadSlot("idle")
 	end
-	-- capturePaused + never seen bridge: poll slots so light turns green without Connect.
+	-- capturePaused + never seen bridge: poll slots so light turns green (no loadfile).
 	if run.capturePaused and not run.bridgeSeen
 		and now - (run.lastPausedSeenPoll or 0) >= 2 then
 		run.lastPausedSeenPoll = now
-		ProcessInbox()
 		TryLoadSlot("capturePausedSeen")
 	end
 	WoWGrok.UpdateDot()
@@ -1041,20 +1039,9 @@ end
 -- Without this, WoWGrok_Inbox stays at ADDON_LOADED snapshot and capture-paused
 -- replies never appear until a full ReloadUI.
 PullInboxFromDisk = function()
-	local path = "Interface\\AddOns\\WoWGrok\\Inbox.lua"
-	local chunk, err = loadfile(path)
-	if not chunk then
-		return false
-	end
-	local ok, ret = pcall(chunk)
-	if not ok then
-		return false
-	end
-	-- Inbox.lua assigns WoWGrok_Inbox globally; prefer that, else return value.
-	if type(WoWGrok_Inbox) ~= "table" and type(ret) == "table" then
-		WoWGrok_Inbox = ret
-	end
-	return type(WoWGrok_Inbox) == "table"
+	-- Forever (and retail) do not expose loadfile. Calling it errors and breaks Tick.
+	-- Mid-session replies come from slot LoadAddOn only; main Inbox is ADDON_LOADED snapshot.
+	return false
 end
 
 ProcessInbox = function()
@@ -1750,7 +1737,7 @@ function WoWGrok.UpdateStatus()
 		s = "Connecting to the bridge..."
 	else
 		if run.capturePaused then
-			s = "Ready (capture paused — slots/Inbox; click Connect if light is grey)"
+			s = "Ready (capture paused — chat uses reload/SV)"
 		else
 			s = "Ready"
 		end

@@ -27,6 +27,8 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - **Lua forward-decl:** `UseReloadTransport` declared before `ArmAutoRefresh` (nil@245 / classic local-before-def).
 - **Product lock — Send never ReloadUI:** Send always queues SV outbox + pixel outbound/RefreshStrip; status hints Reload when capture paused. `ArmAutoRefresh` / keyCatcher no longer auto-`ReloadUI`. Reload button, `/wow-grok reload`, and combat-deferred reload remain.
 - **SayHello under capturePaused:** still paints pixel hello for restore (does not early-return solely on `UseReloadTransport` when only paused).
+- **No loadfile/loadstring:** `PullInboxFromDisk` is a no-op (Forever has no `loadfile` — calling it nil-crashed Tick). Mid-session replies = `TryLoadSlot` only.
+- **Connect + grey light while capturePaused:** Connect sets `wantConnectSlot`; Tick polls slots every 2s when paused and `bridgeSeen` is nil; `IsConnected` requires `bridgeSeen` when paused so Connect stays clickable.
 - **Connect + grey light while capturePaused:** Connect still sets `wantConnectSlot` (does not early-return without a slot poll); Tick polls slots every 2s when paused and `bridgeSeen` is nil so presence/Inbox/slots mark the bridge without ReloadUI.
 - **Inbox without ReloadUI:** `PullInboxFromDisk` in `ProcessInbox`; Tick re-pulls every 2s while pending so capture-paused replies land without thrashing Reload.
 - **Reload button:** shown only in explicit reload mode (hidden in pixel / capturePaused). Send status no longer nags "press Reload".
