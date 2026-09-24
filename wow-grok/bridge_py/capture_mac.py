@@ -240,6 +240,47 @@ def request_screen_recording() -> str:
     return probe_screen_recording()
 
 
+
+
+def resume_smoke_ok() -> bool:
+    """True when a real (non-1x1) capture produces an image — safer than probe alone.
+
+    Used before clearing/avoiding permissionPaused spawn. Does not call
+    request_screen_recording (stays quiet). Non-darwin → True for tests.
+    """
+    if sys.platform != "darwin":
+        return True
+    try:
+        # Prefer in-process CG of a 64x64 corner (stronger than 1x1 probe false positives).
+        import ctypes
+        import ctypes.util
+
+        cg_path = ctypes.util.find_library("CoreGraphics")
+        if not cg_path:
+            return False
+        cg = ctypes.CDLL(cg_path)
+        # Reuse tiny helper path via _cg_capture_1x1 is too weak; try screencapture 64x64.
+        import tempfile
+        dest = Path(tempfile.gettempdir()) / "wow-grok-resume-smoke.png"
+        try:
+            if dest.exists():
+                dest.unlink()
+        except OSError:
+            pass
+        r = subprocess.run(
+            ["screencapture", "-x", "-t", "png", "-R", "0,0,64,64", str(dest)],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        if r.returncode != 0:
+            return False
+        if dest.is_file() and dest.stat().st_size >= 200:
+            return True
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
 def is_capture_permission_failure(msg: str) -> bool:
     """True when *msg* indicates Screen Recording / TCC / screencapture denial.
 

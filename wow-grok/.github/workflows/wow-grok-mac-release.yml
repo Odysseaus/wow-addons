@@ -39,7 +39,7 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          # tag like wow-grok-mac-v0.1.16 → 0.1.16
+          # tag like wow-grok-mac-v0.1.17 → 0.1.17
           VER="${TAG#wow-grok-mac-v}"
           if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Could not parse semver from tag=$TAG (got VER=$VER)" >&2
@@ -200,13 +200,14 @@ jobs:
 
           Built from commit ${SHA} via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What is new in 0.1.16
-          - Persist capture pause: on exit 42, save capture.permissionPaused=true so the next launch never spawns capture. Stops the system Screen Recording sheet when Forever launches. Clear the flag in Application Support/WoWGrok/config.json after enabling Screen Recording, then Quit and reopen. First-run skips the CG probe/request while paused (does not clear on probe=granted).
-          - Connect hardening: SelfTest falls back to presence/0001 when ctl files are not sound-indexed; Connect sets wantConnectSlot so Tick polls a reply slot if presence sound-index fails (pixel Hello stays dead when capture is paused).
-          - Still includes 0.1.15 TCC exit 42 (could not create image from rect and related denials).
+          ### What is new in 0.1.17
+          - Auto reload/SV when capture is paused: Connect and chat use SavedVariables plus ReloadUI without a manual mode flip. The bridge advertises capturePaused in Inbox; capture does not spawn and does not spam Screen Recording while permissionPaused.
+          - Stuck-pending fix: if the bridge already finished a job but the UI still waits, Inbox delivery recovers (outbox/pendingBackup match, re-publish of already-handled replies, re-queue when pendingId disagrees with outbox). Typing a new message cancels a stuck pending and sends.
+          - Reload-mode Connect marks presence (not SafeReload-only). After send-reload, status tells you to press Refresh or Enter to read Inbox; auto-refresh wait is shorter (max 8s) on this path.
+          - Capture stays off until a real resume smoke succeeds after you enable Screen Recording and clear permissionPaused, then Quit and reopen. probe=granted alone never clears the pause.
 
-          ### Carry-forward from 0.1.15 / 0.1.14
-          - Capture exit 42; presence without capture; CFBundle version inject from tag.
+          ### Carry-forward from 0.1.16 / 0.1.15
+          - Persist capture.permissionPaused; Connect presence and wantConnectSlot; TCC exit 42; CFBundle version inject from tag.
           - Game context + shift-click link expansion; xAI instructions with previous_response_id.
 
           ### Install
@@ -214,7 +215,7 @@ jobs:
           2. Open the DMG, drag WoWGrok.app to Applications, then eject.
           3. Hold Control, click, Open if Gatekeeper warns.
           4. Enter API key, confirm AddOns, wait for slot install.
-          5. If Screen Recording is off or stuck after an upgrade: System Settings, Privacy and Security, Screen Recording, enable WoWGrok, then set capture.permissionPaused to false in config.json if it was saved, Quit WoWGrok completely and reopen. Connect still works via presence or slot poll without capture.
+          5. Chat works while Screen Recording is stuck or paused (reload/SV path). To restore pixel capture later: System Settings, Privacy and Security, Screen Recording, enable WoWGrok, set capture.permissionPaused to false in Application Support/WoWGrok/config.json, Quit WoWGrok completely and reopen. If capture still fails, pause re-sets quietly.
           6. Leave WoWGrok running (menu bar) while you play. Type /wow-grok or /grok in game chat.
 
           Zip of .app is also attached for convenience.
@@ -222,7 +223,7 @@ jobs:
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — persist capture pause + Connect slot poll"
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — auto reload/SV when capture paused"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \

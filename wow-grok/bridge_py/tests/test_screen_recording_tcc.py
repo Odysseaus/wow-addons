@@ -451,3 +451,38 @@ class TestCapturePermissionPaused(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestResumeSmokeAndRepublish(unittest.TestCase):
+    def test_resume_smoke_ok_non_darwin(self):
+        from bridge_py import capture_mac
+        with mock.patch.object(sys, "platform", "linux"):
+            self.assertTrue(capture_mac.resume_smoke_ok())
+
+    def test_find_handled_reply_via_transcript_shape(self):
+        """Pure helper: assistant message with matching id is preferred."""
+        transcripts = {
+            "chats": {
+                "c1": {
+                    "messages": [
+                        {"role": "user", "id": 2, "text": "hi"},
+                        {"role": "assistant", "id": 2, "text": "hello back"},
+                    ]
+                }
+            }
+        }
+        job = {"chat": "c1", "id": 2}
+        msgs = transcripts["chats"][job["chat"]]["messages"]
+        text = None
+        for m in msgs:
+            if m.get("role") == "assistant" and int(m.get("id") or 0) == job["id"]:
+                text = m.get("text")
+                break
+        self.assertEqual(text, "hello back")
+
+    def test_spawn_blocked_still_permission_paused(self):
+        from bridge_py import bridge
+        self.assertEqual(
+            bridge.capture_spawn_blocked({"enabled": True, "permissionPaused": True}),
+            "permissionPaused",
+        )

@@ -21,6 +21,17 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.17] - 2026-09-24
+
+### Fixed
+- **Auto reload/SV when capture paused:** bridge advertises `capturePaused` in Inbox/slots; addon uses reload transport for Send without a manual mode flip. Capture does not spawn while `permissionPaused`; resume requires a real capture smoke (probe=granted alone never clears pause).
+- **Stuck pending after successful bridge job:** ApplyReplies recovers `pendingId` from outbox/`pendingBackup`; already-handled outbox jobs re-publish the transcript reply to Inbox; login re-queues outbox when `pendingId` disagrees with outbox id.
+- **Reload-mode Send no longer feels like bare /reload:** on Send while pending, ProcessInbox first (clears when Inbox already done); new typed text cancels stuck pending and sends. Connect in reload/capture-paused marks presence (does not only SafeReload).
+- **UX:** clearer status after send-reload; shorter auto-refresh interval (max 8s) on reload transport so the second Refresh is prompt.
+
+### Carry-forward
+- Connect/presence from 0.1.16; TCC exit 42 + permissionPaused persist from 0.1.15/0.1.16.
+
 ## [0.1.16] - 2026-09-24
 
 ### Fixed

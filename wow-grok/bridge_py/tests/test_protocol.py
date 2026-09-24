@@ -248,3 +248,15 @@ class TestContextFlag(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLuaTableCapturePaused(unittest.TestCase):
+    def test_emits_capture_paused_when_set(self):
+        from bridge_py import protocol as P
+        body = P.lua_table("WoWGrok_Inbox", [], {"cwd": "/", "capturePaused": True})
+        self.assertIn("capturePaused = true", body)
+
+    def test_omits_capture_paused_when_unset(self):
+        from bridge_py import protocol as P
+        body = P.lua_table("WoWGrok_Inbox", [], {"cwd": "/"})
+        self.assertNotIn("capturePaused", body)

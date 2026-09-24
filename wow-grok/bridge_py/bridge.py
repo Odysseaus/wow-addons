@@ -266,7 +266,13 @@ def main(argv: list[str] | None = None) -> int:
 
     def slot_file(global_name: str, records: list) -> str:
         return P.lua_table(
-            global_name, records, {"cwd": default_cwd, "restore": pending_restore}
+            global_name,
+            records,
+            {
+                "cwd": default_cwd,
+                "restore": pending_restore,
+                "capturePaused": bool(cap.get("permissionPaused")),
+            },
         )
 
     def addon_installed() -> bool:
@@ -597,10 +603,64 @@ def main(argv: list[str] | None = None) -> int:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def find_handled_reply_text(job: dict) -> str | None:
+        """Return assistant text for an already-handled job from transcripts."""
+        chat_id = job.get("chat") or ""
+        jid = int(job.get("id") or 0)
+        c = (transcripts.get("chats") or {}).get(chat_id) or {}
+        msgs = list(c.get("messages") or [])
+        # Prefer assistant row with same id; else assistant after user with that id.
+        for m in msgs:
+            if m.get("role") == "assistant" and int(m.get("id") or 0) == jid:
+                return str(m.get("text") or "")
+        for i, m in enumerate(msgs):
+            if m.get("role") == "user" and int(m.get("id") or 0) == jid:
+                for n in msgs[i + 1 :]:
+                    if n.get("role") == "assistant":
+                        return str(n.get("text") or "")
+                break
+        # Fallback: state history pairs (no ids) — last assistant for this sess key
+        sk = P.sess_key(job)
+        hist = (state.get("history") or {}).get(sk) or []
+        for m in reversed(hist):
+            if m.get("role") == "assistant":
+                return str(m.get("content") or m.get("text") or "")
+        return None
+
+    def republish_handled_reply(job: dict) -> None:
+        """Re-write Inbox/slots for an already-handled outbox id (stuck pending)."""
+        text = find_handled_reply_text(job)
+        if text is None:
+            text = (
+                "(WoWGrok already handled this message earlier; reply was missing "
+                "from Inbox — try sending again if this is empty.)"
+            )
+        key = P.chat_key(job)
+        publish(
+            key,
+            {
+                "chat": job.get("chat") or "",
+                "id": job["id"],
+                "status": "done",
+                "text": text,
+                "cwd": job.get("cwd") or "",
+                "session": (state.get("sessions") or {}).get(P.sess_key(job))
+                or (state.get("sessions") or {}).get(key)
+                or "",
+            },
+            urgent=True,
+        )
+        signal_wav("sig", job["id"], True)
+        log(
+            f"re-publish handled #{job['id']}"
+            f"{'@' + job['session'] if job.get('session') else ''} for Inbox"
+        )
+
     def submit(job: dict) -> None:
         if "ctx" in job:
             set_context(job)
         if P.already_handled(state, job):
+            republish_handled_reply(job)
             return
         if job.get("forget"):
             P.mark_handled(state, job)
@@ -669,10 +729,35 @@ def main(argv: list[str] | None = None) -> int:
             return
         if blocked == "permissionPaused":
             log(
-                "capture: permissionPaused in config — not spawning capture "
-                "(presence / Connect-only mode). Clear capture.permissionPaused "
-                "in config.json after enabling Screen Recording, then Quit+reopen."
+                "capture: permissionPaused — not spawning (presence/Connect + "
+                "reload chat). Capture stays off until a real resume smoke succeeds "
+                "after you enable Screen Recording and clear the flag, then Quit+reopen."
             )
+            try:
+                publish_now()
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        # Explicit clear of permissionPaused is not enough — require real smoke.
+        smoke_ok = True
+        if sys.platform == "darwin":
+            try:
+                from .capture_mac import resume_smoke_ok
+
+                smoke_ok = bool(resume_smoke_ok())
+            except Exception:  # noqa: BLE001
+                smoke_ok = False
+        if not smoke_ok:
+            mark_capture_permission_paused(cfg)
+            cap["permissionPaused"] = True
+            log(
+                "capture: resume smoke failed — re-set permissionPaused, not spawning "
+                "(probe=granted alone is not enough)"
+            )
+            try:
+                publish_now()
+            except Exception:  # noqa: BLE001
+                pass
             return
         cap_args = [
             "--cell",
@@ -804,7 +889,7 @@ def main(argv: list[str] | None = None) -> int:
         cap_label = "off"
     elif cap.get("permissionPaused"):
         cap_label = (
-            "paused (permissionPaused — presence/Connect only; no capture spawn)"
+            "paused — presence/Connect + reload chat (capture off until smoke ok)"
         )
     else:
         cap_label = (
@@ -861,6 +946,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         poll_saved_variables()
+        if cap.get("permissionPaused"):
+            try:
+                publish_now()
+                log("inbox: advertised capturePaused=true for reload transport")
+            except Exception:  # noqa: BLE001
+                pass
         start_capture()
         presence_beat()
 
