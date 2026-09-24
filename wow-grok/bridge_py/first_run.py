@@ -124,35 +124,28 @@ def prompt_addons_dir(
 
 
 def prompt_mac_screen_recording() -> None:
-    """Tell the user to enable Screen Recording before capture starts.
+    """Tell the user to enable Screen Recording; offer Quit for a clean reopen.
 
-    The app only appears in the macOS list after it has launched once; enabling
-    it usually requires Quit and reopen. Use a plain messagebox here (short,
-    before capture) so the later install progress window is already closed.
+    Returns after Continue, or exits the process (code 0) if the user clicks Quit
+    so the supervisor stops and macOS can apply the TCC toggle on next launch.
     """
     if sys.platform != "darwin":
         return
     if not _gui_available():
         return
     try:
-        _, _, messagebox, _ = _tk()
-        root = _ensure_root()
-        try:
-            messagebox.showinfo(
-                "WoW Grok — Screen Recording",
-                "Mac capture needs Screen Recording permission for WoWGrok.\n\n"
-                "1. Open System Settings → Privacy & Security → Screen Recording "
-                "(or Screen & System Audio Recording).\n"
-                "2. Enable WoWGrok (it may only appear after this first launch).\n"
-                "3. Quit WoWGrok completely and reopen it so the permission sticks.\n\n"
-                "Until you quit and reopen, macOS may keep asking to record the screen "
-                "— that is normal. SavedVariables /reload still works without capture.\n\n"
-                "Then fully quit and relaunch World of Warcraft, enable WoW Grok "
-                "at character select, and type /wow-grok or /grok in chat.",
-                parent=root,
-            )
-        finally:
-            root.destroy()
+        choice = tk_util.show_screen_recording_dialog(
+            "Mac capture needs Screen Recording permission for WoWGrok.\n\n"
+            "1. Open System Settings → Privacy & Security → Screen Recording "
+            "(or Screen & System Audio Recording).\n"
+            "2. Turn WoWGrok ON (it may only appear after this first launch).\n"
+            "3. Click Quit WoWGrok below, then reopen it from Applications "
+            "so the permission sticks.\n\n"
+            "SavedVariables /reload still works without capture.\n"
+            "Launch WoWGrok from /Applications (not from the DMG)."
+        )
+        if choice == "quit":
+            sys.exit(0)
     except Exception:
         pass
 

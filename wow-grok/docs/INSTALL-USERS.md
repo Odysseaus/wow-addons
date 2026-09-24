@@ -29,14 +29,18 @@ Get the build for your OS from the project **Releases** page:
 | Windows | `WoWGrok.exe` |
 | Mac | `WoWGrok.app` (or `.dmg`) |
 
-### 2. Run the app
+### 2. Install and run the app
 
 **Windows:** double-click `WoWGrok.exe`.
 
-**Mac (unsigned build):** a plain double-click often only shows **Done** and does **not** launch the app. First-open steps:
+**Mac:**
 
-1. Hold **Control** and click `WoWGrok.app` → click **Open**.
-2. If macOS still blocks it, open **System Settings → Privacy & Security** and click **Open Anyway** (if shown).
+1. Open the `.dmg` (or unzip the release).
+2. **Drag `WoWGrok.app` into `/Applications`** (Finder sidebar → Applications).
+3. Eject the DMG. Always launch from **Applications**, not from the DMG or Downloads.
+4. First open (unsigned build) — a plain double-click often only shows **Done** and does **not** launch:
+   - Hold **Control** and click `WoWGrok.app` → click **Open**.
+   - If macOS still blocks it, open **System Settings → Privacy & Security** and click **Open Anyway** (if shown).
 
 On **first launch** the app will:
 
@@ -47,11 +51,12 @@ On **first launch** the app will:
 
 ### 3. Mac only — Gatekeeper + Screen Recording
 
-The Release `WoWGrok.app` is **unsigned**.
+Keep the app in **`/Applications`** (drag from the DMG). The Release build is **unsigned**.
 
-1. Hold **Control** and click `WoWGrok.app` → **Open** (plain double-click often only shows **Done** and will not launch).
+1. Hold **Control** and click `WoWGrok.app` in Applications → **Open** (plain double-click often only shows **Done** and will not launch).
 2. If still blocked: **System Settings → Privacy & Security** → **Open Anyway** (if shown).
-3. **Screen Recording:** System Settings → Privacy & Security → Screen Recording → enable **WoWGrok**.
+3. **Screen Recording:** System Settings → Privacy & Security → Screen Recording (or Screen & System Audio Recording) → enable **WoWGrok**.
+4. When the app offers **Quit WoWGrok**, click it, then reopen from Applications so the permission sticks (Force Quit should not be needed).
 
 ### 4. In game
 

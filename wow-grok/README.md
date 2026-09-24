@@ -26,16 +26,16 @@ Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho
 - An xAI API key from [console.x.ai](https://console.x.ai/) (Grok **API**, not a Grok Bot token)
 - **Bridge:** `WoWGrok.exe` (Windows) or `WoWGrok.app` (Mac) from Releases — **separate downloads**, not one shared installer
 
-**Mac Gatekeeper:** the Release build is unsigned. Hold **Control** and click `WoWGrok.app` → **Open**, then use **System Settings → Privacy & Security → Open Anyway** if shown. A plain double-click often only shows **Done** and will not launch. Also grant **Screen Recording** (same Privacy & Security pane).
+**Mac:** drag `WoWGrok.app` from the DMG into **`/Applications`**, then launch from Applications. The Release build is unsigned — hold **Control** and click → **Open**, then **Open Anyway** in Privacy & Security if shown. A plain double-click often only shows **Done**. Also grant **Screen Recording**, then use the in-app **Quit WoWGrok** button and reopen so the permission sticks.
 
 ## Simple install
 
 Full walkthrough: [docs/INSTALL-USERS.md](docs/INSTALL-USERS.md).
 
 1. **Download** the Mac or Windows executable from this project’s **Releases** (`WoWGrok.app` / `.dmg`, or `WoWGrok.exe` — separate builds).
-2. **Run** it:
-   - **Windows:** double-click `WoWGrok.exe`.
-   - **Mac (unsigned):** do **not** rely on a plain double-click — that often only shows **Done** and never launches. Instead:
+2. **Install / run**:
+   - **Windows:** double-click `WoWGrok.exe` (you can keep it anywhere convenient).
+   - **Mac:** open the `.dmg`, **drag `WoWGrok.app` into `/Applications`**, then launch it from Applications (not from the DMG or Downloads). First open (unsigned):
      1. Hold **Control** and click `WoWGrok.app` → click **Open**.
      2. If macOS still blocks it, open **System Settings → Privacy & Security**, then click **Open Anyway** (if shown).
 3. **Enter your xAI API key** when asked — stored only in a local `config.json` (never uploaded, never written into Lua).

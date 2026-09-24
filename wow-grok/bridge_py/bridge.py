@@ -28,32 +28,24 @@ REPO = HERE.parent
 CAPTURE_PERMISSION_EXIT = 42
 
 
-def _notify_mac_screen_recording(msg: str) -> None:
-    """One guided dialog; do not call CG/screencapture from here."""
+def _notify_mac_screen_recording(msg: str) -> str:
+    """One guided dialog on the primary display. Returns ``quit`` or ``continue``."""
     if sys.platform != "darwin":
-        return
+        return "continue"
     try:
         from . import tk_util
-        import tkinter as tk
-        from tkinter import messagebox
 
-        root = tk.Tk()
-        tk_util.prepare_dialog_root(root)
-        messagebox.showinfo(
-            "WoW Grok — Screen Recording",
+        return tk_util.show_screen_recording_dialog(
             "Screen capture is paused so macOS stops asking repeatedly.\n\n"
             f"{msg}\n\n"
             "1. System Settings → Privacy & Security → Screen Recording "
             "(or Screen & System Audio Recording)\n"
             "2. Turn WoWGrok ON\n"
-            "3. Quit WoWGrok completely (Cmd+Q or Force Quit), then reopen it\n\n"
-            "SavedVariables /reload still works without capture. "
-            "Click OK to keep the bridge running without screen capture.",
-            parent=root,
+            "3. Click Quit WoWGrok, then reopen from /Applications\n\n"
+            "SavedVariables /reload still works without capture."
         )
-        root.destroy()
     except Exception:
-        pass
+        return "continue"
 
 
 
@@ -582,6 +574,14 @@ def main(argv: list[str] | None = None) -> int:
         if job:
             submit(job)
 
+    # Screen-recording UI must run on the main thread (Tk is not thread-safe).
+    screen_ui: dict[str, Any] = {
+        "pending": False,
+        "msg": "",
+        "result": "continue",
+        "event": threading.Event(),
+    }
+
     def start_capture() -> None:
         if not cap.get("enabled"):
             return
@@ -667,9 +667,16 @@ def main(argv: list[str] | None = None) -> int:
                         )
                         if not guided["shown"]:
                             guided["shown"] = True
-                            _notify_mac_screen_recording(
+                            screen_ui["msg"] = (
                                 "WoWGrok could not use Screen Recording in this process."
                             )
+                            screen_ui["result"] = "continue"
+                            screen_ui["event"].clear()
+                            screen_ui["pending"] = True
+                            # Wait for main thread to show the dialog
+                            screen_ui["event"].wait(timeout=600)
+                            if screen_ui.get("result") == "quit":
+                                stop_event.set()
                         break
                     log(f"capture exited ({rc}); restarting in 5 s")
                     time.sleep(5)
@@ -767,7 +774,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     while not stop_event.is_set():
-        time.sleep(0.5)
+        if screen_ui.get("pending"):
+            screen_ui["pending"] = False
+            try:
+                screen_ui["result"] = _notify_mac_screen_recording(
+                    str(screen_ui.get("msg") or "")
+                )
+            except Exception:
+                screen_ui["result"] = "continue"
+            if screen_ui.get("result") == "quit":
+                stop_event.set()
+            screen_ui["event"].set()
+        time.sleep(0.2)
     return 0
 
 
