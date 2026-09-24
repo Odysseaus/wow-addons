@@ -36,3 +36,13 @@ bridge_py/state.json
 bridge_py/transcripts.json
 bridge_py/bridge.log
 bridge_py/*.tmp
+
+# Python / PyInstaller
+.venv/
+bridge_py/dist-linux-smoke/
+bridge_py/build-linux-smoke/
+dist/
+build/
+*.spec.bak
+__pycache__/
+*.pyc

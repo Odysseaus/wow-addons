@@ -61,3 +61,11 @@ Then fully quit/relaunch WoW, enable **WoW Grok**, `/wow-grok` in game.
 
 Milestone: `bridge_py/` package alongside Node bridge. First-run tkinter API key + AddOns picker, protocol/xai ports, supervisor, capture stubs, INSTALL-USERS + packaging docs, unit tests (16). No `gh` publish yet — ready for scrub then public repo **wow-grok** under Odysseaus’s GitHub. Node README kept until cutover (`README.python.md` + `docs/INSTALL-USERS.md`).
 
+## Python capture + packaging (2026-09-24)
+
+- `bridge_py/strip_codec.py` — encode/decode + Pillow render; Retina scale sampling.
+- `bridge_py/capture_mac.py` — real osascript/CoreGraphics + screencapture path (Screen Recording documented); `--test-image` works on Linux.
+- `bridge_py/capture_win.py` — delegates to `capture.ps1` with correct `-Cell` params; `--test-image` via strip_codec.
+- Frozen re-entry: `--run-capture-mac` / `--run-capture-win` from `__main__.py`.
+- Packaging: `build_mac.spec`, `build_win.spec`, `scripts/build_*.sh|ps1`, Linux smoke `WoWGrokLinuxSmoke --help`.
+- Tests: 24 unit (16 prior + strip decode). Live Mac/Win capture still Mac/Win-only.

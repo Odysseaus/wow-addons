@@ -2,11 +2,26 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
+
+
+def _load(name: str):
+    """Import bridge_py.<name> whether we were started via -m or a frozen script."""
+    if __package__:
+        return importlib.import_module(f".{name}", __package__)
+    return importlib.import_module(f"bridge_py.{name}")
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+
+    # Frozen one-file re-entry: bridge spawns this exe with --run-capture-*
+    if argv and argv[0] == "--run-capture-mac":
+        return _load("capture_mac").main(argv[1:])
+    if argv and argv[0] == "--run-capture-win":
+        return _load("capture_win").main(argv[1:])
+
     ap = argparse.ArgumentParser(
         prog="python -m bridge_py",
         description="WoW Grok Python bridge (supervisor + first-run UI)",
@@ -15,8 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-h", "--help", action="store_true")
     ap.add_argument("--no-supervisor", action="store_true")
     ap.add_argument("--install-slots", action="store_true")
-    # Forward unknown to bridge
-    known, rest = ap.parse_known_args(argv)
+    known, _rest = ap.parse_known_args(argv)
 
     if known.help:
         print(
@@ -35,21 +49,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if known.install_slots:
-        from .install_slots import main as slots_main
+        return _load("install_slots").main([])
 
-        return slots_main([])
-
-    # Strip our flags from rest for bridge
-    bridge_argv = [a for a in argv if a not in ("--no-supervisor", "--install-slots", "-h", "--help")]
+    bridge_argv = [
+        a for a in argv if a not in ("--no-supervisor", "--install-slots", "-h", "--help")
+    ]
 
     if known.no_supervisor:
-        from .bridge import main as bridge_main
+        return _load("bridge").main(bridge_argv)
 
-        return bridge_main(bridge_argv)
-
-    from .supervisor import run_supervised
-
-    return run_supervised(bridge_argv)
+    return _load("supervisor").run_supervised(bridge_argv)
 
 
 if __name__ == "__main__":

@@ -552,38 +552,29 @@ def main(argv: list[str] | None = None) -> int:
     def start_capture() -> None:
         if not cap.get("enabled"):
             return
+        cap_args = [
+            "--cell",
+            str(cap["cellPx"]),
+            "--cells",
+            str(cap["cellsPerRow"]),
+            "--max-rows",
+            str(cap["maxRows"]),
+            "--interval-ms",
+            str(cap["intervalMs"]),
+            "--process-name",
+            str(cap["processName"]),
+        ]
+        frozen = getattr(sys, "frozen", False)
         if sys.platform == "darwin":
-            cmd = [
-                sys.executable,
-                "-m",
-                "bridge_py.capture_mac",
-                "--cell",
-                str(cap["cellPx"]),
-                "--cells",
-                str(cap["cellsPerRow"]),
-                "--max-rows",
-                str(cap["maxRows"]),
-                "--interval-ms",
-                str(cap["intervalMs"]),
-                "--process-name",
-                str(cap["processName"]),
-            ]
+            if frozen:
+                cmd = [sys.executable, "--run-capture-mac", *cap_args]
+            else:
+                cmd = [sys.executable, "-m", "bridge_py.capture_mac", *cap_args]
         elif sys.platform == "win32":
-            cmd = [
-                sys.executable,
-                "-m",
-                "bridge_py.capture_win",
-                "--cell",
-                str(cap["cellPx"]),
-                "--cells",
-                str(cap["cellsPerRow"]),
-                "--max-rows",
-                str(cap["maxRows"]),
-                "--interval-ms",
-                str(cap["intervalMs"]),
-                "--process-name",
-                str(cap["processName"]),
-            ]
+            if frozen:
+                cmd = [sys.executable, "--run-capture-win", *cap_args]
+            else:
+                cmd = [sys.executable, "-m", "bridge_py.capture_win", *cap_args]
         else:
             log("capture: unsupported platform; SavedVariables poll only")
             return
