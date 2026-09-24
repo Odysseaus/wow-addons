@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from . import install_slots as slots_mod
+from . import tk_util
 
 # Bundle files to copy. Inbox.lua is owned by the bridge at runtime — never
 # overwrite an existing one.
@@ -114,15 +115,13 @@ def _install_progress_ui():
     btn.configure(command=close)
     root.protocol("WM_DELETE_WINDOW", close)
 
-    # Center roughly
     root.update_idletasks()
     w, h = 460, 160
     try:
-        sw = root.winfo_screenwidth()
-        sh = root.winfo_screenheight()
-        root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 3}")
-    except Exception:
         root.geometry(f"{w}x{h}")
+    except Exception:
+        pass
+    tk_util.center_on_pointer(root, width=w, height=h)
 
     def pump() -> None:
         try:

@@ -24,6 +24,39 @@ from . import xai
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 
+# capture_mac exits with this when Screen Recording / TCC is unavailable.
+CAPTURE_PERMISSION_EXIT = 42
+
+
+def _notify_mac_screen_recording(msg: str) -> None:
+    """One guided dialog; do not call CG/screencapture from here."""
+    if sys.platform != "darwin":
+        return
+    try:
+        from . import tk_util
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        tk_util.prepare_dialog_root(root)
+        messagebox.showinfo(
+            "WoW Grok — Screen Recording",
+            "Screen capture is paused so macOS stops asking repeatedly.\n\n"
+            f"{msg}\n\n"
+            "1. System Settings → Privacy & Security → Screen Recording "
+            "(or Screen & System Audio Recording)\n"
+            "2. Turn WoWGrok ON\n"
+            "3. Quit WoWGrok completely (Cmd+Q or Force Quit), then reopen it\n\n"
+            "SavedVariables /reload still works without capture. "
+            "Click OK to keep the bridge running without screen capture.",
+            parent=root,
+        )
+        root.destroy()
+    except Exception:
+        pass
+
+
+
 
 def inside_repo(dir_path: str) -> bool:
     try:
@@ -595,6 +628,9 @@ def main(argv: list[str] | None = None) -> int:
                 if ev.get("warn"):
                     log("capture:", ev["warn"])
                     continue
+                if ev.get("permission") == "screen_recording" or ev.get("permission") == "screen_recording_denied":
+                    log("capture permission:", ev.get("error") or "Screen Recording required")
+                    continue
                 if ev.get("error"):
                     log("capture error:", ev["error"])
                     continue
@@ -606,6 +642,7 @@ def main(argv: list[str] | None = None) -> int:
                         submit(job)
 
         def loop() -> None:
+            guided = {"shown": False}
             while not stop_event.is_set():
                 try:
                     proc = subprocess.Popen(
@@ -619,10 +656,22 @@ def main(argv: list[str] | None = None) -> int:
                     t = threading.Thread(target=reader, args=(proc,), daemon=True)
                     t.start()
                     proc.wait()
+                    rc = proc.returncode
                     capture_proc[0] = None
                     if stop_event.is_set():
                         break
-                    log(f"capture exited ({proc.returncode}); restarting in 5 s")
+                    if rc == CAPTURE_PERMISSION_EXIT:
+                        log(
+                            "capture paused (Screen Recording). "
+                            "Enable WoWGrok, Quit and reopen — not restarting capture."
+                        )
+                        if not guided["shown"]:
+                            guided["shown"] = True
+                            _notify_mac_screen_recording(
+                                "WoWGrok could not use Screen Recording in this process."
+                            )
+                        break
+                    log(f"capture exited ({rc}); restarting in 5 s")
                     time.sleep(5)
                 except Exception as e:  # noqa: BLE001
                     log("capture spawn error:", e)

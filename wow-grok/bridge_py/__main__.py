@@ -13,6 +13,7 @@ from . import install_addon as _freeze_install_addon  # noqa: F401
 from . import install_slots as _freeze_install_slots  # noqa: F401
 from . import setup_detect as _freeze_setup_detect  # noqa: F401
 from . import capture_mac as _freeze_capture_mac  # noqa: F401
+from . import tk_util as _freeze_tk_util  # noqa: F401
 
 
 def _load(name: str):

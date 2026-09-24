@@ -34,6 +34,7 @@ a = Analysis(
         'bridge_py.setup_detect',
         'bridge_py.strip_codec',
         'bridge_py.supervisor',
+        'bridge_py.tk_util',
         'bridge_py.xai',
         'PIL',
         'tkinter',

@@ -30,8 +30,10 @@ def _install_excepthook() -> None:
             import tkinter as tk
             from tkinter import messagebox
 
+            from bridge_py import tk_util
+
             root = tk.Tk()
-            root.withdraw()
+            tk_util.prepare_dialog_root(root)
             msg = "WoW Grok hit an unexpected error and must close.\n\n" + text[-1500:]
             if path is not None:
                 msg += f"\n\nDetails saved to:\n{path}"

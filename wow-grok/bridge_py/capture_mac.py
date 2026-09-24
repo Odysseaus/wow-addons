@@ -39,6 +39,48 @@ def emit(obj: dict) -> None:
     sys.stdout.flush()
 
 
+# Bridge treats this exit code as "do not restart capture" (TCC / Screen Recording).
+PERMISSION_EXIT = 42
+
+
+def probe_screen_recording() -> str:
+    """One-shot CGWindowList probe.
+
+    Returns ``granted`` if the API returned a list (may be empty), ``denied`` if
+    macOS blocked the call (NULL). Never call this in a tight loop — each probe
+    can re-trigger the TCC “record this computer’s screen” sheet.
+    """
+    jxa = """
+ObjC.import('CoreGraphics');
+var opts = $.kCGWindowListOptionOnScreenOnly;
+var cfArr = $.CGWindowListCopyWindowInfo(opts, $.kCGNullWindowID);
+if (!cfArr) {
+  'DENIED';
+} else {
+  'GRANTED';
+}
+"""
+    try:
+        out = _run_osascript(["-l", "JavaScript", "-e", jxa], timeout_ms=2500)
+    except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        # Treat hard failures like denial so we stop hammering TCC.
+        return "denied"
+    if out.strip().upper() == "DENIED":
+        return "denied"
+    return "granted"
+
+
+def _permission_error(msg: str) -> int:
+    emit(
+        {
+            "permission": "screen_recording",
+            "error": msg,
+        }
+    )
+    return PERMISSION_EXIT
+
+
+
 def _run_osascript(args: list[str], timeout_ms: int = 2500) -> str:
     r = subprocess.run(
         ["osascript", *args],
@@ -120,7 +162,7 @@ if (!cfArr) {{
     if out == "NULL_LIST":
         raise RuntimeError(
             "Screen Recording blocked window list — System Settings → Privacy & Security "
-            "→ Screen Recording → enable Terminal (or iTerm / WoWGrok.app), then restart the bridge"
+            "→ Screen Recording → enable WoWGrok.app, then Quit and reopen WoWGrok"
         )
     if not out:
         return None
@@ -170,17 +212,27 @@ def live_loop(args: argparse.Namespace) -> int:
     last_warn = 0.0
     attached_name = ""
     told_scale = False
-    last_err = ""
-    last_err_at = 0.0
     cap_w = args.cells * args.cell
     cap_h = args.max_rows * args.cell
+
+    # Probe ONCE. Retrying CGWindowList / screencapture while TCC is pending or
+    # while the toggle is on but the process has not been restarted re-shows the
+    # macOS “record this computer’s screen” sheet in a loop.
+    status = probe_screen_recording()
+    if status == "denied":
+        return _permission_error(
+            "Screen Recording is not available to this WoWGrok process. "
+            "System Settings → Privacy & Security → Screen Recording → enable WoWGrok, "
+            "then Quit WoWGrok completely and reopen it. "
+            "(SavedVariables /reload still works without capture.)"
+        )
+
     declared_scale = backing_scale_factor()
     emit(
         {
             "info": (
                 f"experimental mac capture; backingScaleFactor={declared_scale}; "
-                f"region {cap_w}x{cap_h} points; looking for '{args.process_name}'. "
-                "Requires Screen Recording permission."
+                f"region {cap_w}x{cap_h} points; looking for '{args.process_name}'."
             )
         }
     )
@@ -239,10 +291,22 @@ def live_loop(args: argparse.Namespace) -> int:
                     emit({"id": msg["id"], "text": msg["text"]})
         except Exception as e:  # noqa: BLE001
             m = str(e)
+            # Any Screen Recording / TCC failure: stop permanently (bridge will not
+            # restart). Do not sleep-and-retry — that re-triggers the system sheet.
+            low = m.lower()
+            if (
+                "screen recording" in low
+                or "null_list" in low
+                or "blocked window list" in low
+                or "produced no image" in low
+            ):
+                return _permission_error(
+                    m
+                    + " Enable WoWGrok under Screen Recording, then Quit and reopen WoWGrok."
+                )
             now = time.time()
-            if m != last_err or now - last_err_at > 15:
-                last_err = m
-                last_err_at = now
+            if now - last_warn > 15:
+                last_warn = now
                 emit({"error": m})
             time.sleep(3)
             continue

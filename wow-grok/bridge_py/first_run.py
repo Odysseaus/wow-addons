@@ -8,6 +8,7 @@ from typing import Any
 
 from . import config as cfgmod
 from . import setup_detect
+from . import tk_util
 
 
 def _tk():
@@ -20,12 +21,7 @@ def _tk():
 def _ensure_root():
     tk, _, _, _ = _tk()
     root = tk.Tk()
-    root.withdraw()
-    try:
-        root.attributes("-topmost", True)
-    except Exception:
-        pass
-    return root
+    return tk_util.prepare_dialog_root(root)
 
 
 def _gui_available() -> bool:
@@ -145,13 +141,14 @@ def prompt_mac_screen_recording() -> None:
             messagebox.showinfo(
                 "WoW Grok — Screen Recording",
                 "Mac capture needs Screen Recording permission for WoWGrok.\n\n"
-                "1. Open System Settings → Privacy & Security → Screen Recording.\n"
+                "1. Open System Settings → Privacy & Security → Screen Recording "
+                "(or Screen & System Audio Recording).\n"
                 "2. Enable WoWGrok (it may only appear after this first launch).\n"
-                "3. If macOS asks, Quit and reopen WoWGrok.\n\n"
+                "3. Quit WoWGrok completely and reopen it so the permission sticks.\n\n"
+                "Until you quit and reopen, macOS may keep asking to record the screen "
+                "— that is normal. SavedVariables /reload still works without capture.\n\n"
                 "Then fully quit and relaunch World of Warcraft, enable WoW Grok "
-                "at character select, and type /wow-grok or /grok in chat.\n\n"
-                "You can click OK now and keep going — Force Quit is safe if a "
-                "dialog ever sticks.",
+                "at character select, and type /wow-grok or /grok in chat.",
                 parent=root,
             )
         finally:

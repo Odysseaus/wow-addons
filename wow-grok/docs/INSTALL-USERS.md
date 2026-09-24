@@ -82,7 +82,7 @@ The Release `WoWGrok.app` is **unsigned**.
 | Addon / slots missing | Re-run the **WoWGrok** app so it reinstalls into AddOns; then fully quit/relaunch WoW. |
 | No replies in game | Confirm AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
 | Mac app won’t launch / only shows Done | Hold **Control** → click `WoWGrok.app` → **Open**; then **System Settings → Privacy & Security → Open Anyway** if shown. Plain double-click is unreliable for this unsigned build. |
-| Capture errors on Mac | Screen Recording permission for the app (it may only appear in the list after first launch — enable it, Quit and reopen WoWGrok if macOS asks); use windowed/borderless (not exclusive fullscreen). |
+| Capture errors on Mac / screen-record prompt loops | Enable WoWGrok under Screen Recording, then **Quit and reopen** WoWGrok (toggle alone is not enough). v0.1.4+ stops re-asking until you reopen. Use windowed/borderless. |
 | Post-install dialog stuck (spinning) | Force Quit WoWGrok (install is already done), reopen; use v0.1.3+ which uses a dismissible Done / OK window. |
 | Cloud / GeForce Now | Unsupported — use a local install. |
 
