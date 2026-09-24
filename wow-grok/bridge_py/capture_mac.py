@@ -2,8 +2,9 @@
 
 Strategy: osascript (JXA + CoreGraphics) locates the Forever / World of Warcraft
 window (including kCGWindowNumber). Live strip capture prefers in-process
-``CGWindowListCreateImage`` keyed by that window id; ``screencapture -R`` is a
-fallback only. Retina: macOS reports window bounds in points; the PNG may be in
+``CGWindowListCreateImage`` keyed by that window id; ``screencapture -l``
+(window id + Pillow crop) is preferred alongside CG for fullscreen/ultrawide;
+``screencapture -R`` is last resort. Retina: macOS reports window bounds in points; the PNG may be in
 pixels. If backingScaleFactor is 2 (or the PNG is 2× the requested point size),
 cells are sampled at cellPx * scale via Pillow (see strip_codec).
 
@@ -51,6 +52,8 @@ _kCGWindowListOptionOnScreenOnly = 1 << 0  # 1
 _kCGWindowListOptionIncludingWindow = 1 << 3  # 8
 _kCGNullWindowID = 0
 _kCGWindowImageDefault = 0
+# Ignore window framing/shadow so fullscreen/ultrawide bounds align with content.
+_kCGWindowImageBoundsIgnoreFraming = 1 << 0  # 1
 
 
 def _load_cg_cf() -> tuple[object, object]:
@@ -245,49 +248,68 @@ def request_screen_recording() -> str:
 
 
 
-def resume_smoke_ok(process_name: str = "WowB") -> bool:
-    """True when a CG strip of the WoW window captures successfully.
+def resume_smoke(process_name: str = "WowB") -> tuple[bool, str]:
+    """Try capture strategies for a ≥32×32 smoke of the WoW window.
 
-    Aligns with the live path (in-process window-id capture), not a desktop
-    ``screencapture`` corner. Used before clearing permissionPaused / spawning.
-    No WoW window → False (do not flap). Non-darwin → True for tests.
+    Returns ``(ok, reason)``. Reason is logged by the bridge on failure.
+    Order: CG strip → CG full+crop → screencapture -l + crop → screencapture -R.
+    No WoW window / no id → False with reason. Non-darwin → (True, "non-darwin").
     Does not call request_screen_recording (stays quiet).
     """
     if sys.platform != "darwin":
-        return True
+        return True, "non-darwin"
     try:
         win = find_wow_window(process_name)
-    except Exception:  # noqa: BLE001
-        return False
-    if not win or not win.get("id"):
-        return False
+    except Exception as e:  # noqa: BLE001
+        return False, f"find_wow_window error: {e}"
+    if not win:
+        return False, "no WoW window"
+    wid = win.get("id")
+    if not wid:
+        return False, f"no window id (name={win.get('name')!r})"
     dest = Path(tempfile.gettempdir()) / "wow-grok-resume-smoke.png"
     try:
         if dest.exists():
             dest.unlink()
     except OSError:
         pass
-    try:
-        capture_strip_cg(
-            int(win["id"]),
-            float(win["x"]),
-            float(win["y"]),
-            64.0,
-            64.0,
-            dest,
-        )
-    except Exception:  # noqa: BLE001
-        return False
-    try:
-        if not dest.is_file() or dest.stat().st_size < 50:
-            return False
-        from PIL import Image
+    errors: list[str] = []
+    for name, fn in (
+        ("cg-strip", lambda: capture_strip_cg(int(wid), float(win["x"]), float(win["y"]), 64.0, 64.0, dest)),
+        ("cg-full-crop", lambda: capture_window_cg_crop(int(wid), 64.0, 64.0, dest)),
+        ("screencapture-l", lambda: capture_window_cli_crop(int(wid), 64.0, 64.0, dest)),
+        ("screencapture-R", lambda: capture_region(float(win["x"]), float(win["y"]), 64.0, 64.0, dest)),
+    ):
+        try:
+            if dest.exists():
+                try:
+                    dest.unlink()
+                except OSError:
+                    pass
+            fn()
+            if not dest.is_file() or dest.stat().st_size < 50:
+                errors.append(f"{name}: empty file")
+                continue
+            from PIL import Image
 
-        with Image.open(dest) as im:
-            w, h = im.size
-        return w >= 32 and h >= 32
-    except Exception:  # noqa: BLE001
-        return False
+            with Image.open(dest) as im:
+                w, h = im.size
+            if w >= 32 and h >= 32:
+                return True, f"ok via {name} {w}x{h}"
+            errors.append(f"{name}: size {w}x{h}")
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{name}: {e}")
+    return False, "; ".join(errors) if errors else "all strategies failed"
+
+
+def resume_smoke_ok(process_name: str = "WowB") -> bool:
+    """True when :func:`resume_smoke` succeeds (compat wrapper)."""
+    ok, _reason = resume_smoke(process_name)
+    return ok
+
+
+# Last failure reason from resume_smoke (bridge may also call resume_smoke directly).
+_last_resume_smoke_reason: str = ""
 
 
 def is_capture_permission_failure(msg: str) -> bool:
@@ -435,7 +457,7 @@ def find_wow_window(process_name: str) -> dict[str, Any] | None:
     add("WowB")
     add("World of Warcraft")
     add("WowClassic")
-    # bare "Wow" substring-matches WoWGrok — omit it
+    add("Wow")  # exact owner often "Wow"; JXA skips wowgrok before matching
 
     want_json = json.dumps(want)
     jxa = f"""
@@ -460,7 +482,7 @@ if (!cfArr) {{
       if (low === want[j] || low.indexOf(want[j]) >= 0 || want[j].indexOf(low) >= 0) {{ ok = true; break; }}
     }}
     if (!ok) {{
-      if (low.indexOf('warcraft') < 0 && low.indexOf('wowb') < 0) continue;
+      if (low !== 'wow' && low.indexOf('warcraft') < 0 && low.indexOf('wowb') < 0) continue;
     }}
     var b = w.kCGWindowBounds || {{}};
     if (!(b.Width > 100 && b.Height > 100)) continue;
@@ -666,6 +688,14 @@ def capture_strip_cg(
         _kCGWindowImageDefault,
     )
     if not img:
+        # Retry with BoundsIgnoreFraming (helps some fullscreen / borderless windows).
+        img = cg.CGWindowListCreateImage(
+            rect,
+            _kCGWindowListOptionIncludingWindow,
+            ctypes.c_uint32(int(window_id)),
+            _kCGWindowImageBoundsIgnoreFraming,
+        )
+    if not img:
         raise RuntimeError(
             "CGWindowListCreateImage returned null (Screen Recording / window capture)"
         )
@@ -686,6 +716,142 @@ def capture_strip_cg(
             cf.CFRelease(img)
         except Exception:  # noqa: BLE001
             pass
+
+
+def capture_window_cg_crop(
+    window_id: int,
+    strip_w: float,
+    strip_h: float,
+    dest: str | Path,
+) -> None:
+    """CG full-window capture (CGRectNull) then Pillow-crop top-left strip → *dest*."""
+    import ctypes
+
+    if not window_id:
+        raise RuntimeError("capture_window_cg_crop requires a non-zero window id")
+    CGPoint, CGSize, CGRect = _cg_rect_types()
+    try:
+        cg, cf = _load_cg_cf()
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"CoreGraphics load failed: {e}") from e
+
+    cg.CGWindowListCreateImage.argtypes = [
+        CGRect,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+    ]
+    cg.CGWindowListCreateImage.restype = ctypes.c_void_p
+    cf.CFRelease.argtypes = [ctypes.c_void_p]
+    cf.CFRelease.restype = None
+
+    # CGRectNull = infinite rect → capture whole window
+    null_rect = CGRect(CGPoint(0.0, 0.0), CGSize(0.0, 0.0))
+    # On Apple platforms CGRectNull has origin ±inf; use a large bounds via IncludingWindow
+    # with null-like size 0,0 often still works; prefer explicit null constants when present.
+    try:
+        # CGRectNull is {{+inf,+inf},{-inf,-inf}} — approximate via c_double inf
+        inf = float("inf")
+        null_rect = CGRect(CGPoint(inf, inf), CGSize(-inf, -inf))
+    except Exception:  # noqa: BLE001
+        pass
+
+    img = None
+    for image_opts in (_kCGWindowImageDefault, _kCGWindowImageBoundsIgnoreFraming):
+        img = cg.CGWindowListCreateImage(
+            null_rect,
+            _kCGWindowListOptionIncludingWindow,
+            ctypes.c_uint32(int(window_id)),
+            image_opts,
+        )
+        if img:
+            break
+    if not img:
+        raise RuntimeError(
+            "CGWindowListCreateImage(full) returned null (Screen Recording / window capture)"
+        )
+    tmp = Path(dest).with_suffix(".full.png")
+    try:
+        _cg_image_to_png(cg, cf, img, tmp)
+    finally:
+        try:
+            cf.CFRelease(img)
+        except Exception:  # noqa: BLE001
+            pass
+    _pillow_crop_top_left(tmp, float(strip_w), float(strip_h), Path(dest))
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+
+
+def capture_window_cli_crop(
+    window_id: int,
+    strip_w: float,
+    strip_h: float,
+    dest: str | Path,
+) -> None:
+    """``screencapture -l <windowID>`` then Pillow-crop top-left strip → *dest*.
+
+    Preferred for fullscreen/ultrawide WoW where CG strip or ``-R`` may fail in-app
+    while ``-l`` still works (Terminal verified on 3440×1440 id=7472).
+    """
+    if not window_id:
+        raise RuntimeError("capture_window_cli_crop requires a non-zero window id")
+    dest_p = Path(dest)
+    full = dest_p.with_suffix(".win.png")
+    try:
+        if full.exists():
+            full.unlink()
+    except OSError:
+        pass
+    r = subprocess.run(
+        ["screencapture", "-x", "-t", "png", "-l", str(int(window_id)), str(full)],
+        capture_output=True,
+        text=True,
+        timeout=12,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(
+            (r.stderr or r.stdout or "screencapture -l failed").strip()
+            or "screencapture -l failed"
+        )
+    if not full.is_file() or full.stat().st_size < 50:
+        raise RuntimeError(
+            "screencapture -l produced no image (grant Screen Recording to WoWGrok / Terminal)"
+        )
+    try:
+        _pillow_crop_top_left(full, float(strip_w), float(strip_h), dest_p)
+    finally:
+        try:
+            full.unlink()
+        except OSError:
+            pass
+
+
+def _pillow_crop_top_left(
+    src: Path, strip_w: float, strip_h: float, dest: Path
+) -> None:
+    """Crop top-left *strip_w*×*strip_h* points (approx px) from *src* PNG → *dest*."""
+    from PIL import Image
+
+    with Image.open(src) as im:
+        im = im.convert("RGB")
+        # Retina: full window capture is often 2× points; take a generous crop then
+        # let strip_codec infer scale. Prefer at least strip size in pixels.
+        cw = max(int(round(strip_w)), 64)
+        ch = max(int(round(strip_h)), 64)
+        # If image is much larger than requested (Retina), crop 2× the point size.
+        if im.width >= cw * 2 and im.height >= ch * 2:
+            cw, ch = cw * 2, ch * 2
+        cw = min(cw, im.width)
+        ch = min(ch, im.height)
+        if cw < 32 or ch < 32:
+            raise RuntimeError(f"crop source too small: {im.width}x{im.height}")
+        cropped = im.crop((0, 0, cw, ch))
+        cropped.save(dest, format="PNG")
+    if not dest.is_file() or dest.stat().st_size < 50:
+        raise RuntimeError("Pillow crop produced no image")
 
 
 def capture_region(x: float, y: float, w: float, h: float, dest: str | Path) -> None:
@@ -745,7 +911,7 @@ def live_loop(args: argparse.Namespace) -> int:
     emit(
         {
             "info": (
-                f"experimental mac capture; CG window strip first, screencapture fallback; "
+                f"experimental mac capture; CG strip / CG-full-crop / screencapture -l / -R; "
                 f"backingScaleFactor={declared_scale}; "
                 f"region {cap_w}x{cap_h} points; looking for '{args.process_name}'."
             )
@@ -784,63 +950,86 @@ def live_loop(args: argparse.Namespace) -> int:
                     }
                 )
 
-            # Prefer in-process CG window strip; screencapture -R is fallback only.
-            cg_tried = False
-            cg_err: Exception | None = None
-            cli_err: Exception | None = None
+            # Strategies (order): CG strip → CG full+crop → screencapture -l + crop
+            # → screencapture -R. Prefer -l for fullscreen/ultrawide (Terminal-proven).
+            # Do NOT exit 42 on a single CLI-rect failure if other strategies remain.
+            strategy_errs: list[tuple[str, Exception]] = []
             captured = False
+            via = ""
             wid = win.get("id")
+            strategies: list[tuple[str, object]] = []
             if wid:
-                cg_tried = True
-                try:
-                    capture_strip_cg(
-                        int(wid),
-                        float(win["x"]),
-                        float(win["y"]),
-                        float(cap_w),
-                        float(cap_h),
-                        dest,
+                strategies.append(
+                    (
+                        "cg-strip",
+                        lambda: capture_strip_cg(
+                            int(wid),
+                            float(win["x"]),
+                            float(win["y"]),
+                            float(cap_w),
+                            float(cap_h),
+                            dest,
+                        ),
                     )
-                    captured = True
-                except Exception as e:  # noqa: BLE001
-                    cg_err = e
-
-            if not captured:
-                try:
-                    capture_region(win["x"], win["y"], cap_w, cap_h, dest)
-                    captured = True
-                except Exception as e:  # noqa: BLE001
-                    cli_err = e
-
-            if not captured:
-                # Exit 42 only when BOTH CG (if tried) and CLI fail permission-class.
-                # screencapture "could not create image from rect" alone is NOT exit 42
-                # when CG was not tried or when CG has not also failed that class.
-                msgs = []
-                if cg_err is not None:
-                    msgs.append(f"cg: {cg_err}")
-                if cli_err is not None:
-                    msgs.append(f"cli: {cli_err}")
-                combined = " | ".join(msgs) if msgs else "strip capture failed"
-                cg_perm = cg_tried and cg_err is not None and is_capture_permission_failure(
-                    str(cg_err)
                 )
-                cli_perm = cli_err is not None and is_capture_permission_failure(str(cli_err))
-                # NULL_LIST / blocked window list from find is raised earlier; here:
-                if cg_tried and cg_perm and cli_perm:
-                    return _permission_error(
-                        combined
-                        + " Enable WoWGrok under Screen Recording, then Quit and reopen WoWGrok."
+                strategies.append(
+                    (
+                        "cg-full-crop",
+                        lambda: capture_window_cg_crop(
+                            int(wid), float(cap_w), float(cap_h), dest
+                        ),
                     )
-                # Window-list / true TCC strings without a usable CG path still exit.
+                )
+                strategies.append(
+                    (
+                        "screencapture-l",
+                        lambda: capture_window_cli_crop(
+                            int(wid), float(cap_w), float(cap_h), dest
+                        ),
+                    )
+                )
+            strategies.append(
+                (
+                    "screencapture-R",
+                    lambda: capture_region(
+                        win["x"], win["y"], cap_w, cap_h, dest
+                    ),
+                )
+            )
+            for name, fn in strategies:
+                try:
+                    if dest.exists():
+                        try:
+                            dest.unlink()
+                        except OSError:
+                            pass
+                    fn()  # type: ignore[operator]
+                    if dest.is_file() and dest.stat().st_size >= 50:
+                        captured = True
+                        via = name
+                        break
+                    strategy_errs.append(
+                        (name, RuntimeError("produced empty image"))
+                    )
+                except Exception as e:  # noqa: BLE001
+                    strategy_errs.append((name, e))
+
+            if not captured:
+                msgs = [f"{n}: {e}" for n, e in strategy_errs]
+                combined = " | ".join(msgs) if msgs else "strip capture failed"
+                # Hard TCC only when ALL tried strategies fail permission-class,
+                # or a true window-list block appears.
+                perm_hits = [
+                    (n, e)
+                    for n, e in strategy_errs
+                    if is_capture_permission_failure(str(e))
+                ]
                 hard = False
-                for err in (cg_err, cli_err):
-                    if err is None:
-                        continue
-                    low = str(err).lower()
+                for _n, e in strategy_errs:
+                    low = str(e).lower()
                     if any(
-                        n in low
-                        for n in (
+                        x in low
+                        for x in (
                             "null_list",
                             "blocked window list",
                             "not authorized to capture",
@@ -850,11 +1039,24 @@ def live_loop(args: argparse.Namespace) -> int:
                     ):
                         hard = True
                         break
-                if hard and (cli_perm or cg_perm):
-                    return _permission_error(
-                        combined
-                        + " Enable WoWGrok under Screen Recording, then Quit and reopen WoWGrok."
-                    )
+                all_perm = bool(strategy_errs) and len(perm_hits) == len(strategy_errs)
+                # Soften: single CLI-rect alone must not permanent-pause.
+                only_rect = (
+                    len(strategy_errs) == 1
+                    and "could not create image from rect" in str(strategy_errs[0][1]).lower()
+                )
+                if (hard or all_perm) and not only_rect and len(strategies) >= 2:
+                    # Require exhausting multiple strategies before exit 42.
+                    if all_perm and len(perm_hits) >= 2:
+                        return _permission_error(
+                            combined
+                            + " Enable WoWGrok under Screen Recording, then Quit and reopen WoWGrok."
+                        )
+                    if hard and all_perm:
+                        return _permission_error(
+                            combined
+                            + " Enable WoWGrok under Screen Recording, then Quit and reopen WoWGrok."
+                        )
                 perm_fail_streak += 1
                 now = time.time()
                 if now - last_warn > 5:
@@ -862,15 +1064,11 @@ def live_loop(args: argparse.Namespace) -> int:
                     emit(
                         {
                             "error": combined
-                            + (
-                                " (CG+CLI permission-class; will stop if both keep failing)"
-                                if cg_tried
-                                else " (CLI fallback; CG not tried — not treating as permanent TCC yet)"
-                            )
+                            + " (strategies exhausted this tick; soft-retry, not exit 42 yet)"
                         }
                     )
-                # Soft retry — do not exit 42 on CLI rect alone when CG was not tried.
-                time.sleep(2 if not cg_tried else 1)
+                # Soft retry — do not exit 42 on CLI rect alone.
+                time.sleep(1)
                 continue
 
             perm_fail_streak = 0
@@ -878,7 +1076,6 @@ def live_loop(args: argparse.Namespace) -> int:
             got = _decode_captured(dest, args.cell, args.cells, args.max_rows, scale_hint)
             if not told_scale:
                 told_scale = True
-                via = "cg-window" if (cg_tried and cg_err is None) else "screencapture"
                 emit(
                     {
                         "info": (

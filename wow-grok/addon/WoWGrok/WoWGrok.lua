@@ -211,6 +211,18 @@ end
 -- Reload plumbing (fallback path)
 ---------------------------------------------------------------------------
 
+
+local function AddonVersion()
+	local v
+	if C_AddOns and C_AddOns.GetAddOnMetadata then
+		v = C_AddOns.GetAddOnMetadata("WoWGrok", "Version")
+	elseif GetAddOnMetadata then
+		v = GetAddOnMetadata("WoWGrok", "Version")
+	end
+	if v and v ~= "" then return v end
+	return "?"
+end
+
 local function SafeReload()
 	if InCombatLockdown() then
 		WoWGrok.reloadAfterCombat = true
@@ -222,6 +234,9 @@ local function SafeReload()
 	ReloadUI()
 end
 
+-- Forward decl: ArmAutoRefresh runs before the real definition below.
+local UseReloadTransport
+
 -- ReloadUI() only works from a hardware event (a keypress or click), never from
 -- a timer. So the automatic reload piggybacks on the player's own next keypress
 -- once the interval has elapsed. The key still reaches the game normally.
@@ -229,35 +244,16 @@ local keyCatcher = CreateFrame("Frame", "WoWGrokKeyCatcher", UIParent)
 keyCatcher:Hide()
 keyCatcher:EnableKeyboard(true)
 keyCatcher:SetScript("OnKeyDown", function(self, key)
-	if db and AnyPending() and db.settings.autoRefresh
-		and GetTime() >= (WoWGrok.nextAutoRefresh or 0)
-		and not InCombatLockdown() then
-		self:Hide()
-		ReloadUI()
-	end
+	-- Product lock: never ReloadUI from the key catcher (was auto-refresh flush).
+	self:Hide()
 end)
 
 -- Arm the keypress reload. In pixel mode this is only used once the slot pool
 -- is exhausted (a reload frees every slot) or the slots are not installed.
 function WoWGrok.ArmAutoRefresh()
-	keyCatcher:Hide()
-	if not AnyPending() or not db.settings.autoRefresh then return end
-	if not UseReloadTransport() then return end
-	-- Propagation can't be changed in combat. Never show the catcher without it,
-	-- or it would eat every keypress. PLAYER_REGEN_ENABLED re-arms after combat.
-	if not keyCatcher.propagates then
-		if InCombatLockdown() or not keyCatcher.SetPropagateKeyboardInput then return end
-		keyCatcher:SetPropagateKeyboardInput(true)
-		keyCatcher.propagates = true
-	end
-	-- Short interval when capture paused / reload transport so the second
-	-- Refresh after send-reload is not a long wait (Inbox may land after the first reload).
-	local wait = db.settings.interval or 20
-	if run.capturePaused or db.settings.mode ~= "pixel" then
-		wait = math.min(wait, 8)
-	end
-	WoWGrok.nextAutoRefresh = GetTime() + wait
-	keyCatcher:Show()
+	-- Product lock: never auto-ReloadUI (keyCatcher path removed). Only the Reload button
+	-- / slash reload may call SafeReload. Capture-paused sends flush via manual Reload.
+	if keyCatcher then keyCatcher:Hide() end
 end
 
 ---------------------------------------------------------------------------
@@ -438,7 +434,7 @@ local function NoteCaptureResumed()
 end
 
 -- Reload/SV path: explicit mode, capture paused (bridge signal), or pixel path dead.
-local function UseReloadTransport()
+function UseReloadTransport()
 	if not db then return true end
 	if db.settings.mode ~= "pixel" then return true end
 	if run.capturePaused or run.pixelFailed or run.slotsExhausted or run.slotsMissing then
@@ -537,8 +533,13 @@ end
 -- transport has no idea whether the bridge is there, so it never gates.
 function WoWGrok.IsConnected()
 	if not db then return false end
-	-- Reload transport never gates on the pixel light.
-	if db.settings.mode ~= "pixel" or run.capturePaused then return true end
+	-- Explicit reload mode: never gate on the pixel light.
+	if db.settings.mode ~= "pixel" then return true end
+	-- capturePaused: still require bridgeSeen (via slot/Inbox) so Connect stays available
+	-- until the bridge is marked; Send works once seen (slots/Inbox path).
+	if run.capturePaused then
+		return run.bridgeSeen ~= nil
+	end
 	if run.awaitingCaptureHint then return false end
 	return WoWGrok.BridgeState() == "ok" and not run.pixelFailed
 end
@@ -559,10 +560,18 @@ function WoWGrok.Connect()
 		end
 	end
 	if UseReloadTransport() then
-		-- Reload/SV: mark connected via presence; Refresh/Enter reads Inbox.
+		-- Capture paused / reload: still LoadAddOn a reply slot so bridgeSeen + replies
+		-- land (main Inbox.lua loadfile is often blocked). Do not only mark presence.
 		run.awaitingCaptureHint = nil
-		run.connectingAt = nil
-		print("|cff88ccffWoW Grok|r Connect: presence/reload chat (capture paused or reload mode)")
+		if db and db.settings.mode == "pixel" then
+			run.wantConnectSlot = true
+			-- Keep connectingAt so status shows Connecting until slot lands (Tick).
+			print("|cff88ccffWoW Grok|r Connect: capturePaused — wantConnectSlot (Tick loads slot)")
+			WoWGrok.SayHello()
+		else
+			run.connectingAt = nil
+			print("|cff88ccffWoW Grok|r Connect: presence/reload chat (reload mode)")
+		end
 		WoWGrok.Render()
 		return
 	end
@@ -866,6 +875,8 @@ local function TryLoadSlot(why)
 	WoWGrok.Render()
 end
 
+local ProcessInbox
+local PullInboxFromDisk
 local function Tick()
 	if not db then return end
 	local now = GetTime()
@@ -882,6 +893,13 @@ local function Tick()
 		and now - (run.lastIdlePoll or -1e9) >= IDLE_POLL_SECONDS then
 		run.lastIdlePoll = now
 		TryLoadSlot("idle")
+	end
+	-- capturePaused + never seen bridge: poll slots so light turns green without Connect.
+	if run.capturePaused and not run.bridgeSeen
+		and now - (run.lastPausedSeenPoll or 0) >= 2 then
+		run.lastPausedSeenPoll = now
+		ProcessInbox()
+		TryLoadSlot("capturePausedSeen")
 	end
 	WoWGrok.UpdateDot()
 	WoWGrok.CheckConnection()
@@ -944,6 +962,26 @@ local function Tick()
 		WoWGrok.UpdateStatus()
 	end
 	if not AnyPending() then return end
+	-- Capture paused: bridge writes slot Inbox.lua files; LoadAddOn a fresh slot.
+	-- (loadfile of main Inbox.lua is often blocked; slots are the live path.)
+	if run.capturePaused and now - (run.lastInboxPull or 0) >= 2 then
+		run.lastInboxPull = now
+		ProcessInbox()
+		if AnyPending() then
+			TryLoadSlot("capturePaused")
+		end
+		if not AnyPending() then
+			WoWGrok.Render()
+			return
+		end
+	elseif now - (run.lastInboxPull or 0) >= 2 then
+		run.lastInboxPull = now
+		ProcessInbox()
+		if not AnyPending() then
+			WoWGrok.Render()
+			return
+		end
+	end
 	local moved = false
 	for _, c in ipairs(db.chats) do
 		if c.pendingId and PollActivity(c) then moved = true end
@@ -998,7 +1036,29 @@ local function RequeueStaleOutbox()
 	return fixed
 end
 
-local function ProcessInbox()
+
+-- Re-read Inbox.lua from disk (bridge updates the file without ReloadUI).
+-- Without this, WoWGrok_Inbox stays at ADDON_LOADED snapshot and capture-paused
+-- replies never appear until a full ReloadUI.
+PullInboxFromDisk = function()
+	local path = "Interface\\AddOns\\WoWGrok\\Inbox.lua"
+	local chunk, err = loadfile(path)
+	if not chunk then
+		return false
+	end
+	local ok, ret = pcall(chunk)
+	if not ok then
+		return false
+	end
+	-- Inbox.lua assigns WoWGrok_Inbox globally; prefer that, else return value.
+	if type(WoWGrok_Inbox) ~= "table" and type(ret) == "table" then
+		WoWGrok_Inbox = ret
+	end
+	return type(WoWGrok_Inbox) == "table"
+end
+
+ProcessInbox = function()
+	PullInboxFromDisk()
 	local inbox = WoWGrok_Inbox
 	if type(inbox) ~= "table" then return end
 	if type(inbox.cwd) == "string" and inbox.cwd ~= "" then run.bridgeCwd = inbox.cwd end
@@ -1268,12 +1328,10 @@ function WoWGrok.Send(text, allow)
 				db.pendingBackup = nil
 				-- fall through to normal send below
 			else
-				-- Empty Enter/Refresh while pending: check Inbox via reload/slot.
-				if UseReloadTransport() then
-					SafeReload()
-				else
-					TryLoadSlot("manual")
-				end
+				-- Empty Enter while pending: pull slots/Inbox without ReloadUI.
+				TryLoadSlot("manual")
+				ProcessInbox()
+				WoWGrok.Render()
 				return
 			end
 		end
@@ -1335,18 +1393,23 @@ function WoWGrok.Send(text, allow)
 	end
 	db.settings.shown = true
 
-	if UseReloadTransport() then
-		-- Capture paused / reload mode / pixel dead: flush SV outbox via ReloadUI.
-		SafeReload()
-	else
-		run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, ctx = ctx, sentAt = GetTime() }
-		run.sentAt = GetTime()
-		run.polls = 0
-		StartActivity(c, id)
-		ScheduleNextPoll()
+	-- Product lock: Send never ReloadUI. Always queue SV outbox (above) + outbound;
+	-- paint strip in pixel mode so capture can pick it up when smoke clears.
+	-- If capture paused / reload mode: status hints Reload button — never auto-reload.
+	run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, ctx = ctx, sentAt = GetTime() }
+	run.sentAt = GetTime()
+	run.polls = 0
+	StartActivity(c, id)
+	ScheduleNextPoll()
+	if db.settings.mode == "pixel" then
 		RefreshStrip()
-		WoWGrok.Render()
 	end
+	if UseReloadTransport() and ui.status then
+		ui.status:SetText(run.capturePaused
+			and ("Queued #" .. id .. " (capture paused — bridge via SavedVariables)")
+			or ("Queued #" .. id))
+	end
+	WoWGrok.Render()
 end
 
 -- Forget: a record with no text telling the bridge a chat was deleted, so it drops
@@ -1376,7 +1439,10 @@ end
 -- The game context always rides on hello (empty when turned off), so the bridge's
 -- copy is brought in line at every login and Connect.
 function WoWGrok.SayHello()
-	if UseReloadTransport() then return end
+	-- Prefer pixel hello even under capturePaused (restore). Do not early-return solely
+	-- because UseReloadTransport() is true when only capturePaused is set.
+	if not db or db.settings.mode ~= "pixel" then return end
+	if run.pixelFailed or run.slotsExhausted or run.slotsMissing then return end
 	local now = GetTime()
 	if run.lastHelloAt and now - run.lastHelloAt < 60 then return end
 	run.lastHelloAt = now
@@ -1638,13 +1704,19 @@ function WoWGrok.UpdateStatus()
 		local id = c.pendingId
 		local elapsed = run.sentAt and (GetTime() - run.sentAt) or 0
 		local rec = run.outbound[id]
-		if mode == "pixel" then
+		-- capturePaused still uses settings.mode "pixel" but transport is slots/Inbox.
+		if run.capturePaused then
+			s = "Waiting for #" .. id .. " via slots (capture paused)"
+			if (run.polls or 0) > 0 then
+				s = s .. " — checked " .. run.polls .. "x"
+			end
+		elseif mode == "pixel" then
 			if run.slotsMissing then
-				s = "Reply slots not installed (run install-slots.js, restart WoW). Using reload instead: Enter or Refresh"
+				s = "Reply slots not installed. Quit+reopen WoWGrok app, then fully quit/relaunch Forever"
 			elseif run.slotsExhausted then
-				s = "Slot pool used up this session - next keypress reloads to free it"
+				s = "Slot pool used up this session — press the Reload button once to free slots"
 			elseif run.pixelFailed then
-				s = "Bridge didn't see #" .. id .. " after " .. STRIP_TRIES .. " tries - next keypress switches to the reload path (or /wow-grok reload)"
+				s = "Bridge didn't see #" .. id .. " after " .. STRIP_TRIES .. " strip tries — click Connect or /wow-grok resend"
 			elseif c.progress or (run.act and run.act[c.id] and run.act[c.id].count > 0) then
 				s = "Grok is working on #" .. id .. " - " .. ActivityLine(c)
 			elseif rec and not rec.acked then
@@ -1654,20 +1726,11 @@ function WoWGrok.UpdateStatus()
 			else
 				s = "Waiting for #" .. id .. " (checked " .. (run.polls or 0) .. "x)"
 				if elapsed > 45 then
-					s = s .. " - no sign of the bridge. Is the bridge running? /wow-grok resend"
+					s = s .. " - click Connect (bridge may be up but unread)"
 				end
 			end
 		else
-			-- Reload / capture-paused path: first reload flushes outbox; second checks Inbox.
-			s = "Waiting for reply #" .. id .. " — press Refresh or Enter to read Inbox"
-			if run.capturePaused then
-				s = s .. " (capture paused; reload chat)"
-			end
-			if db.settings.autoRefresh then
-				local w = db.settings.interval or 20
-				if run.capturePaused or mode ~= "pixel" then w = math.min(w, 8) end
-				s = s .. "; auto reload on next keypress after " .. w .. "s"
-			end
+			s = "Waiting for reply #" .. id
 		end
 	elseif not WoWGrok.IsConnected() then
 		if run.connectingAt and run.sendOnConnect then
@@ -1687,7 +1750,7 @@ function WoWGrok.UpdateStatus()
 		s = "Connecting to the bridge..."
 	else
 		if run.capturePaused then
-			s = "Ready (capture paused — chat uses reload/SV)"
+			s = "Ready (capture paused — slots/Inbox; click Connect if light is grey)"
 		else
 			s = "Ready"
 		end
@@ -1700,6 +1763,7 @@ function WoWGrok.UpdateStatus()
 		local t = c and Display(c.name) or "Grok"
 		local folder = FolderName(ChatFolder(c))
 		if folder ~= "" then t = t .. "  |cff888888" .. Display(folder) .. "|r" end
+		t = t .. "  |cff666666v" .. AddonVersion() .. "|r"
 		ui.title:SetText(t)
 	end
 	local cwdText
@@ -1712,9 +1776,10 @@ function WoWGrok.UpdateStatus()
 	end
 	local modeLabel = mode
 	if run.capturePaused and mode == "pixel" then modeLabel = "pixel+reload (capture paused)" end
-	ui.cwd:SetText("cwd: " .. cwdText .. "   mode: " .. modeLabel)
+	ui.cwd:SetText("v" .. AddonVersion() .. "   cwd: " .. cwdText .. "   mode: " .. modeLabel)
 	if ui.resend then ui.resend:SetShown(c and c.pendingId ~= nil and mode == "pixel") end
-	if ui.refresh then ui.refresh:SetShown(UseReloadTransport()) end
+	-- Reload button only in explicit reload mode (not capturePaused pixel). Product lock.
+	if ui.refresh then ui.refresh:SetShown(db.settings.mode ~= "pixel") end
 	WoWGrok.UpdateMini()
 end
 
@@ -2170,7 +2235,7 @@ local function BuildUI()
 
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	title:SetPoint("LEFT", dotHolder, "RIGHT", 6, 0)
-	title:SetText("WoW Grok")
+	title:SetText("WoW Grok v" .. AddonVersion())
 	ui.title = title
 
 	local status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")

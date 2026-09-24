@@ -21,6 +21,22 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.19] - 2026-09-24
+
+### Fixed
+- **Lua forward-decl:** `UseReloadTransport` declared before `ArmAutoRefresh` (nil@245 / classic local-before-def).
+- **Product lock — Send never ReloadUI:** Send always queues SV outbox + pixel outbound/RefreshStrip; status hints Reload when capture paused. `ArmAutoRefresh` / keyCatcher no longer auto-`ReloadUI`. Reload button, `/wow-grok reload`, and combat-deferred reload remain.
+- **SayHello under capturePaused:** still paints pixel hello for restore (does not early-return solely on `UseReloadTransport` when only paused).
+- **Connect + grey light while capturePaused:** Connect still sets `wantConnectSlot` (does not early-return without a slot poll); Tick polls slots every 2s when paused and `bridgeSeen` is nil so presence/Inbox/slots mark the bridge without ReloadUI.
+- **Inbox without ReloadUI:** `PullInboxFromDisk` in `ProcessInbox`; Tick re-pulls every 2s while pending so capture-paused replies land without thrashing Reload.
+- **Reload button:** shown only in explicit reload mode (hidden in pixel / capturePaused). Send status no longer nags "press Reload".
+- **Visible addon version:** panel title + cwd line show `GetAddOnMetadata` Version.
+- **Mac capture strategies:** CG strip → CG full-window + Pillow crop → **`screencapture -l` window id + crop** (preferred for fullscreen/ultrawide) → `screencapture -R` last. Soften exit 42 until strategies exhausted with permission-class failures. Resume smoke returns/logs failure reason; bridge logs it each attempt.
+- **Window match:** owner exact `Wow` (id from JXA) recognized.
+
+### Carry-forward
+- NoteCaptureResumed / permissionPaused persist / Connect presence from 0.1.16–0.1.18.
+
 ## [0.1.18] - 2026-09-24
 
 ### Fixed

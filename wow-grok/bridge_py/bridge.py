@@ -755,21 +755,23 @@ def main(argv: list[str] | None = None) -> int:
             return
         # Explicit clear of permissionPaused is not enough — require real smoke.
         smoke_ok = True
+        smoke_reason = ""
         if sys.platform == "darwin":
             try:
-                from .capture_mac import resume_smoke_ok
+                from .capture_mac import resume_smoke
 
-                smoke_ok = bool(
-                    resume_smoke_ok(str(cap.get("processName") or "WowB"))
+                smoke_ok, smoke_reason = resume_smoke(
+                    str(cap.get("processName") or "WowB")
                 )
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
                 smoke_ok = False
+                smoke_reason = f"exception: {e}"
         if not smoke_ok:
             mark_capture_permission_paused(cfg)
             cap["permissionPaused"] = True
             log(
                 "capture: resume smoke failed — re-set permissionPaused, not spawning "
-                "(probe=granted alone is not enough)"
+                f"(reason: {smoke_reason or 'unknown'}; probe=granted alone is not enough)"
             )
             try:
                 publish_now()
@@ -1003,19 +1005,22 @@ def main(argv: list[str] | None = None) -> int:
                 if sys.platform != "darwin":
                     continue
                 try:
-                    from .capture_mac import resume_smoke_ok
+                    from .capture_mac import resume_smoke
 
-                    ok = bool(
-                        resume_smoke_ok(str(cap.get("processName") or "WowB"))
+                    ok, reason = resume_smoke(
+                        str(cap.get("processName") or "WowB")
                     )
-                except Exception:  # noqa: BLE001
-                    ok = False
+                except Exception as e:  # noqa: BLE001
+                    ok, reason = False, f"exception: {e}"
                 if not ok:
+                    log(
+                        f"capture: resume smoke still failing (reason: {reason})"
+                    )
                     continue
                 if clear_capture_permission_paused(cfg):
                     log(
                         "capture: resume smoke OK — cleared permissionPaused, "
-                        "publishing without capturePaused, spawning capture"
+                        f"publishing without capturePaused, spawning capture ({reason})"
                     )
                 else:
                     cap["permissionPaused"] = False
