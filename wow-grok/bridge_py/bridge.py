@@ -46,8 +46,9 @@ def capture_spawn_blocked(cap: dict) -> str | None:
 def mark_capture_permission_paused(cfg: dict) -> None:
     """Persist capture.permissionPaused so later launches never spawn capture.
 
-    Cleared only when the user sets capture.permissionPaused to false in
-    config.json (Quit + edit). Do not clear on probe=granted (false positives).
+    Cleared by :func:`clear_capture_permission_paused` after resume smoke OK,
+    or when the user sets the flag false in config.json. Do not clear on
+    probe=granted alone (false positives).
     """
     cap = cfg.setdefault("capture", {})
     if cap.get("permissionPaused"):
@@ -57,6 +58,19 @@ def mark_capture_permission_paused(cfg: dict) -> None:
         cfgmod.save_config(cfg)
     except Exception:  # noqa: BLE001
         pass
+
+
+def clear_capture_permission_paused(cfg: dict) -> bool:
+    """Clear permissionPaused and save. Returns True if it was set."""
+    cap = cfg.setdefault("capture", {})
+    if not cap.get("permissionPaused"):
+        return False
+    cap["permissionPaused"] = False
+    try:
+        cfgmod.save_config(cfg)
+    except Exception:  # noqa: BLE001
+        pass
+    return True
 
 
 
@@ -730,8 +744,9 @@ def main(argv: list[str] | None = None) -> int:
         if blocked == "permissionPaused":
             log(
                 "capture: permissionPaused — not spawning (presence/Connect + "
-                "reload chat). Capture stays off until a real resume smoke succeeds "
-                "after you enable Screen Recording and clear the flag, then Quit+reopen."
+                "reload chat). A slow resume smoke (CG window strip) will clear the "
+                "flag and spawn capture when the game window is capturable again; "
+                "or clear capture.permissionPaused in config.json and Quit+reopen."
             )
             try:
                 publish_now()
@@ -744,7 +759,9 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 from .capture_mac import resume_smoke_ok
 
-                smoke_ok = bool(resume_smoke_ok())
+                smoke_ok = bool(
+                    resume_smoke_ok(str(cap.get("processName") or "WowB"))
+                )
             except Exception:  # noqa: BLE001
                 smoke_ok = False
         if not smoke_ok:
@@ -970,6 +987,46 @@ def main(argv: list[str] | None = None) -> int:
 
         threading.Thread(target=poll_loop, daemon=True).start()
         threading.Thread(target=presence_loop, daemon=True).start()
+
+        def resume_watch_loop() -> None:
+            """Slow (~45s) smoke: clear permissionPaused and spawn capture once."""
+            interval = 45.0
+            while not stop_event.is_set():
+                # Wait first so we do not race start_capture's initial skip.
+                stop_event.wait(interval)
+                if stop_event.is_set():
+                    break
+                if not cap.get("permissionPaused"):
+                    continue
+                if capture_proc[0] is not None:
+                    continue
+                if sys.platform != "darwin":
+                    continue
+                try:
+                    from .capture_mac import resume_smoke_ok
+
+                    ok = bool(
+                        resume_smoke_ok(str(cap.get("processName") or "WowB"))
+                    )
+                except Exception:  # noqa: BLE001
+                    ok = False
+                if not ok:
+                    continue
+                if clear_capture_permission_paused(cfg):
+                    log(
+                        "capture: resume smoke OK — cleared permissionPaused, "
+                        "publishing without capturePaused, spawning capture"
+                    )
+                else:
+                    cap["permissionPaused"] = False
+                try:
+                    publish_now()
+                except Exception:  # noqa: BLE001
+                    pass
+                start_capture()
+
+        if sys.platform == "darwin":
+            threading.Thread(target=resume_watch_loop, daemon=True).start()
 
     def stop_capture() -> None:
         """Terminate capture child; wait ~3s then kill if needed; clear slot."""

@@ -429,6 +429,14 @@ local function NoteCapturePaused()
 	run.awaitingCaptureHint = nil
 end
 
+-- Bridge recovered (Inbox/slot omits capturePaused): leave reload transport in pixel mode.
+local function NoteCaptureResumed()
+	if not db or db.settings.mode ~= "pixel" then return end
+	if run.capturePaused then
+		run.capturePaused = nil
+	end
+end
+
 -- Reload/SV path: explicit mode, capture paused (bridge signal), or pixel path dead.
 local function UseReloadTransport()
 	if not db then return true end
@@ -842,7 +850,13 @@ local function TryLoadSlot(why)
 		NotedBridge(GetTime() - (time() - data.now))
 	end
 	if type(data) == "table" and type(data.cwd) == "string" and data.cwd ~= "" then run.bridgeCwd = data.cwd end
-	if type(data) == "table" and data.capturePaused then NoteCapturePaused() end
+	if type(data) == "table" then
+		if data.capturePaused then
+			NoteCapturePaused()
+		else
+			NoteCaptureResumed()
+		end
+	end
 	run.awaitingCaptureHint = nil
 	local matched = ApplyReplies(type(data) == "table" and data.replies or nil)
 	if type(data) == "table" and data.restore then ImportRestore(data.restore) end
@@ -988,7 +1002,11 @@ local function ProcessInbox()
 	local inbox = WoWGrok_Inbox
 	if type(inbox) ~= "table" then return end
 	if type(inbox.cwd) == "string" and inbox.cwd ~= "" then run.bridgeCwd = inbox.cwd end
-	if inbox.capturePaused then NoteCapturePaused() end
+	if inbox.capturePaused then
+		NoteCapturePaused()
+	else
+		NoteCaptureResumed()
+	end
 	ApplyReplies(inbox.replies)
 	if inbox.restore then ImportRestore(inbox.restore) end
 end

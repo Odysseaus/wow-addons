@@ -21,6 +21,16 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.18] - 2026-09-24
+
+### Fixed
+- **Pixel Send restored (no ReloadUI on healthy path):** live mac capture prefers in-process `CGWindowListCreateImage` for the WoW window strip (by `kCGWindowNumber`); `screencapture -R` is fallback only. Exit 42 only when both CG and CLI fail permission-class errors — CLI `could not create image from rect` alone no longer permanent-pauses when CG was not tried or CG works.
+- **Resume smoke matches live path:** `resume_smoke_ok` CG-captures ≥64×64 of the WoW window (not desktop screencapture). Bridge slow resume watcher (~45s) clears `permissionPaused`, republishes without `capturePaused`, and spawns capture once smoke passes. Probe=granted still never clears pause alone.
+- **Addon:** `NoteCaptureResumed` clears `run.capturePaused` when Inbox/slot data omits `capturePaused`, so Send returns to the pixel strip without ReloadUI/Reload button.
+
+### Carry-forward
+- 0.1.17 reload-transport UX while truly paused; Connect/presence without capture; TCC pause persist.
+
 ## [0.1.17] - 2026-09-24
 
 ### Fixed

@@ -143,6 +143,7 @@ class TestCapturePermissionFailure(unittest.TestCase):
             )
 
     def test_live_loop_exits_immediately_on_create_image_from_rect(self):
+        """Both CG and CLI permission-class → exit 42."""
         from bridge_py import capture_mac
 
         args = mock.Mock(
@@ -155,7 +156,15 @@ class TestCapturePermissionFailure(unittest.TestCase):
         ), mock.patch.object(
             capture_mac,
             "find_wow_window",
-            return_value={"name": "WowB", "x": 0, "y": 0, "w": 800, "h": 600},
+            return_value={
+                "name": "WowB", "id": 42, "x": 0, "y": 0, "w": 800, "h": 600
+            },
+        ), mock.patch.object(
+            capture_mac,
+            "capture_strip_cg",
+            side_effect=RuntimeError(
+                "CGWindowListCreateImage returned null (Screen Recording / window capture)"
+            ),
         ), mock.patch.object(
             capture_mac,
             "capture_region",
@@ -165,6 +174,7 @@ class TestCapturePermissionFailure(unittest.TestCase):
         self.assertEqual(code, capture_mac.PERMISSION_EXIT)
 
     def test_live_loop_exits_on_produced_no_image(self):
+        """CG null + CLI empty image → exit 42."""
         from bridge_py import capture_mac
 
         args = mock.Mock(
@@ -177,7 +187,15 @@ class TestCapturePermissionFailure(unittest.TestCase):
         ), mock.patch.object(
             capture_mac,
             "find_wow_window",
-            return_value={"name": "WowB", "x": 0, "y": 0, "w": 800, "h": 600},
+            return_value={
+                "name": "WowB", "id": 7, "x": 0, "y": 0, "w": 800, "h": 600
+            },
+        ), mock.patch.object(
+            capture_mac,
+            "capture_strip_cg",
+            side_effect=RuntimeError(
+                "CGWindowListCreateImage produced no image (Screen Recording denied)"
+            ),
         ), mock.patch.object(
             capture_mac,
             "capture_region",
@@ -446,6 +464,136 @@ class TestCapturePermissionPaused(unittest.TestCase):
         ), mock.patch.object(first_run, "_append_bridge_log"):
             first_run.prompt_mac_screen_recording(cfg)
         self.assertTrue(cfg["capture"]["permissionPaused"])
+
+
+
+class TestCgFirstStripAndResumeSmoke(unittest.TestCase):
+    def test_parse_wow_window_hit_includes_id(self):
+        from bridge_py import capture_mac
+
+        hit = capture_mac.parse_wow_window_hit("Wow\t0\t0\t3440\t1440\t12345")
+        self.assertEqual(
+            hit,
+            {"name": "Wow", "x": 0, "y": 0, "w": 3440, "h": 1440, "id": 12345},
+        )
+        no_id = capture_mac.parse_wow_window_hit("Wow\t1\t2\t800\t600")
+        self.assertEqual(
+            no_id, {"name": "Wow", "x": 1, "y": 2, "w": 800, "h": 600}
+        )
+        self.assertIsNone(capture_mac.parse_wow_window_hit("short"))
+
+    def test_live_loop_cg_success_ignores_cli_rect_failure(self):
+        """CG strip OK → no exit 42 even if capture_region would fail."""
+        from bridge_py import capture_mac
+        from pathlib import Path
+        import tempfile
+
+        args = mock.Mock(
+            cells=200, cell=4, max_rows=48, interval_ms=50, process_name="WowB"
+        )
+        calls = {"n": 0}
+
+        def cg_ok(wid, x, y, w, h, dest):
+            Path(dest).write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 300)
+
+        def decode_fake(dest, cell, cells, max_rows, scale_hint):
+            calls["n"] += 1
+            # Prove CG path ran; SystemExit bypasses except Exception (not exit 42).
+            raise SystemExit(0)
+
+        with mock.patch.object(
+            capture_mac, "probe_screen_recording", return_value="granted"
+        ), mock.patch.object(
+            capture_mac, "backing_scale_factor", return_value=1.0
+        ), mock.patch.object(
+            capture_mac, "backing_scale_for_window", return_value=1.0
+        ), mock.patch.object(
+            capture_mac,
+            "find_wow_window",
+            return_value={
+                "name": "Wow", "id": 99, "x": 0, "y": 0, "w": 3440, "h": 1440
+            },
+        ), mock.patch.object(
+            capture_mac, "capture_strip_cg", side_effect=cg_ok
+        ), mock.patch.object(
+            capture_mac,
+            "capture_region",
+            side_effect=RuntimeError("could not create image from rect"),
+        ), mock.patch.object(
+            capture_mac, "_decode_captured", side_effect=decode_fake
+        ), mock.patch.object(capture_mac, "emit"), mock.patch.object(
+            capture_mac.time, "sleep"
+        ):
+            with self.assertRaises(SystemExit) as cm:
+                capture_mac.live_loop(args)
+        self.assertEqual(cm.exception.code, 0)
+        self.assertGreaterEqual(calls["n"], 1)
+
+    def test_live_loop_cg_null_and_cli_rect_exits_42(self):
+        from bridge_py import capture_mac
+
+        args = mock.Mock(
+            cells=200, cell=4, max_rows=48, interval_ms=250, process_name="WowB"
+        )
+        with mock.patch.object(
+            capture_mac, "probe_screen_recording", return_value="granted"
+        ), mock.patch.object(
+            capture_mac, "backing_scale_factor", return_value=1.0
+        ), mock.patch.object(
+            capture_mac,
+            "find_wow_window",
+            return_value={
+                "name": "Wow", "id": 1, "x": 0, "y": 0, "w": 800, "h": 600
+            },
+        ), mock.patch.object(
+            capture_mac,
+            "capture_strip_cg",
+            side_effect=RuntimeError("CGWindowListCreateImage returned null"),
+        ), mock.patch.object(
+            capture_mac,
+            "capture_region",
+            side_effect=RuntimeError("could not create image from rect"),
+        ), mock.patch.object(capture_mac, "emit"):
+            code = capture_mac.live_loop(args)
+        self.assertEqual(code, capture_mac.PERMISSION_EXIT)
+
+    def test_resume_smoke_ok_no_window_false_on_darwin(self):
+        from bridge_py import capture_mac
+
+        with mock.patch.object(sys, "platform", "darwin"), mock.patch.object(
+            capture_mac, "find_wow_window", return_value=None
+        ):
+            self.assertFalse(capture_mac.resume_smoke_ok("WowB"))
+
+    def test_resume_smoke_ok_cg_strip_true(self):
+        from bridge_py import capture_mac
+        from pathlib import Path
+
+        def cg_ok(wid, x, y, w, h, dest):
+            Path(dest).write_bytes(b"\x89PNG" + b"x" * 400)
+            # Pillow open needs a real image — mock open path via writing minimal valid PNG
+            from PIL import Image
+
+            Image.new("RGB", (64, 64), (1, 2, 3)).save(dest)
+
+        with mock.patch.object(sys, "platform", "darwin"), mock.patch.object(
+            capture_mac,
+            "find_wow_window",
+            return_value={
+                "name": "Wow", "id": 5, "x": 0, "y": 0, "w": 800, "h": 600
+            },
+        ), mock.patch.object(capture_mac, "capture_strip_cg", side_effect=cg_ok):
+            self.assertTrue(capture_mac.resume_smoke_ok("WowB"))
+
+    def test_clear_capture_permission_paused(self):
+        from bridge_py import bridge
+
+        cfg = {"capture": {"permissionPaused": True, "enabled": True}}
+        with mock.patch.object(bridge.cfgmod, "save_config") as save:
+            self.assertTrue(bridge.clear_capture_permission_paused(cfg))
+            self.assertFalse(bridge.clear_capture_permission_paused(cfg))
+        self.assertFalse(cfg["capture"]["permissionPaused"])
+        save.assert_called_once()
 
 
 
