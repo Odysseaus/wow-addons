@@ -4,6 +4,7 @@
 # Output: dist\WoWGrok.exe
 
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules
 
 SPECDIR = Path(SPECPATH).resolve()
 ROOT = SPECDIR.parent
@@ -21,17 +22,23 @@ a = Analysis(
     ],
     hiddenimports=[
         'bridge_py',
+        'bridge_py.__main__',
         'bridge_py.bridge',
+        'bridge_py.capture_mac',
         'bridge_py.capture_win',
-        'bridge_py.strip_codec',
         'bridge_py.config',
         'bridge_py.first_run',
         'bridge_py.install_addon',
         'bridge_py.install_slots',
         'bridge_py.protocol',
+        'bridge_py.setup_detect',
+        'bridge_py.strip_codec',
+        'bridge_py.supervisor',
         'bridge_py.xai',
         'PIL',
-    ],
+        'tkinter',
+        '_tkinter',
+    ] + collect_submodules('bridge_py'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

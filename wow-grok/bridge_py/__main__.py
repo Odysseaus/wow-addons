@@ -5,6 +5,15 @@ import argparse
 import importlib
 import sys
 
+# Freeze anchors: importlib lazy loads are invisible to PyInstaller analysis.
+from . import bridge as _freeze_bridge  # noqa: F401
+from . import supervisor as _freeze_supervisor  # noqa: F401
+from . import first_run as _freeze_first_run  # noqa: F401
+from . import install_addon as _freeze_install_addon  # noqa: F401
+from . import install_slots as _freeze_install_slots  # noqa: F401
+from . import setup_detect as _freeze_setup_detect  # noqa: F401
+from . import capture_mac as _freeze_capture_mac  # noqa: F401
+
 
 def _load(name: str):
     """Import bridge_py.<name> whether we were started via -m or a frozen script."""
