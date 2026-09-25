@@ -1,6 +1,6 @@
 # Windows packaging plan — system tray + SSL (post Mac feature green)
 
-**Status:** planned only — do **not** start packaging until Odysseaus greens game-context / shift-click links on Mac (or says skip-ahead).  
+**Status:** shipping (win 0.1.0+; align 0.1.23) only — do **not** start packaging until Odysseaus greens game-context / shift-click links on Mac (or says skip-ahead).  
 **Locked requirement (2026-09-24):** first public `WoWGrok.exe` **must** include a system tray companion (Running + Quit), mirroring Mac menubar (`rumps` / LSUIElement). Not deferred.
 
 ## Goals for Windows Helper / first Win release
