@@ -55,8 +55,23 @@ Keep the app in **`/Applications`** (drag from the DMG). The Release build is **
 
 1. Hold **Control** and click `WoWGrok.app` in Applications → **Open** (plain double-click often only shows **Done** and will not launch).
 2. If still blocked: **System Settings → Privacy & Security** → **Open Anyway** (if shown).
-3. **Screen Recording:** On first launch WoWGrok may show an in-app sheet and request access so a **WoWGrok** row appears under System Settings → Privacy & Security → Screen Recording (or Screen & System Audio Recording). Turn **WoWGrok** ON.
+3. **Screen Recording (first install):** On first launch WoWGrok may show an in-app sheet and request access so a **WoWGrok** row appears under System Settings → Privacy & Security → Screen Recording (or Screen & System Audio Recording). Turn **WoWGrok** ON.
 4. When the app offers **Quit WoWGrok**, click it so Screen Recording can stick, then reopen from Applications (Force Quit should not be needed). After that reopen, **leave WoWGrok running** for the whole Forever session.
+
+#### Upgrading / replacing the app (every new DMG)
+
+macOS treats each new unsigned **WoWGrok.app** binary as a **different identity**. After you replace the app:
+
+1. Quit WoWGrok fully (menu-bar Quit).
+2. Drag the new app onto Applications (replace).
+3. **Required — Screen Recording remove and re-add** (do **not** rely on Leave Enabled alone):
+   - System Settings → Privacy & Security → Screen Recording (or Screen & System Audio Recording).
+   - Remove the old **WoWGrok** row (−), or turn it off and remove it.
+   - Launch the new app so it requests access again (or add with **+**).
+   - Turn **WoWGrok** **ON** for the new binary → Quit → reopen from Applications.
+4. Only after that: Forever `/reload` if the AddOn version changed → Connect → smoke Send.
+
+Leaving the old toggle on without remove/re-add often breaks capture after an upgrade.
 
 ### 4. Keep the bridge running
 
@@ -92,7 +107,7 @@ Keep the app in **`/Applications`** (drag from the DMG). The Release build is **
 | No replies in game | Confirm **WoWGrok is still running** (Mac: menu bar icon; it must stay up while you play), AddOns path, WoW fully restarted, addon + slots enabled, windowed/borderless. |
 | Mac app won’t launch / only shows Done | Hold **Control** → click `WoWGrok.app` → **Open**; then **System Settings → Privacy & Security → Open Anyway** if shown. Plain double-click is unreliable for this unsigned build. |
 | xAI SSL / CERTIFICATE_VERIFY_FAILED on Mac | Use **v0.1.13+** (bundles certifi CA store in the frozen .app). Quit old WoWGrok, replace the app, reopen. |
-| Capture errors on Mac / screen-record prompt loops | Enable **WoWGrok** under Screen Recording, then **Quit and reopen** WoWGrok (toggle alone is not enough). v0.1.15+ stops the Settings spam loop when screencapture fails after an unsigned upgrade (capture exits; Connect/presence still work). v0.1.16+ also persists `capture.permissionPaused` so capture never re-spawns (no system Screen Recording sheet on Forever launch). **v0.1.18+** clears pause automatically after a CG window-strip resume smoke (or clear the flag in Application Support config.json). Probe=granted alone never clears pause. First launch may prompt Screen Recording and must create a WoWGrok row in System Settings; the in-app sheet shows unless a real capture probe says granted (v0.1.12+; window-list alone is not enough). Use windowed/borderless (not exclusive fullscreen). |
+| Capture errors on Mac / screen-record prompt loops | After any **app replace**, **remove and re-add** WoWGrok under Screen Recording (do not rely on Leave Enabled), then **Quit and reopen**. Toggle alone is not enough. v0.1.15+ stops the Settings spam loop when screencapture fails after an unsigned upgrade (capture exits; Connect/presence still work). v0.1.16+ also persists `capture.permissionPaused` so capture never re-spawns (no system Screen Recording sheet on Forever launch). **v0.1.18+** clears pause automatically after a CG window-strip resume smoke (or clear the flag in Application Support config.json). Probe=granted alone never clears pause. First launch may prompt Screen Recording and must create a WoWGrok row in System Settings; the in-app sheet shows unless a real capture probe says granted (v0.1.12+; window-list alone is not enough). Use windowed/borderless (not exclusive fullscreen). |
 | Post-install dialog stuck (spinning) | Force Quit WoWGrok (install is already done), reopen; use v0.1.3+ which uses a dismissible Done / OK window. |
 | Cloud / GeForce Now | Unsupported — use a local install. |
 

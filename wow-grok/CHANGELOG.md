@@ -14,6 +14,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Default config is `webSearch: true`, `xSearch: false`; startup banner shows `tools: web_search` and Responses tools contain only `[{"type": "web_search"}]` by default.
 - Existing **0.1.24** Mac users: set `"xSearch": false` in `~/Library/Application Support/WoWGrok/config.json`, then restart WoWGrok.
 
+### Notes
+
+- **Mac upgrade:** after replacing `WoWGrok.app`, **remove and re-add** Screen Recording for the new binary (System Settings → Privacy & Security → Screen Recording). Do not rely on Leave Enabled. See [INSTALL-MAC.md](docs/INSTALL-MAC.md).
+
 ## [Unreleased]
 
 ### Changed
