@@ -80,7 +80,6 @@ def default_config() -> dict[str, Any]:
             "cellsPerRow": 200,
             "maxRows": 48,
             "intervalMs": 250,
-            "permissionPaused": False,
         },
         "apiKey": "",
         "model": "grok-4-latest",

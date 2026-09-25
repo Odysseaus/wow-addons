@@ -1,6 +1,11 @@
-# WoWGrok 0.1.19 (box tree)
+# WoW Grok — summary
 
-## Fixes
-- Lua: forward-decl `UseReloadTransport`; Send/ArmAutoRefresh never ReloadUI; SayHello under capturePaused; visible Version in panel.
-- Capture: multi-strategy with `screencapture -l` + crop; resume smoke reason logged; exit 42 softened.
-- Versions: pyproject, `__init__`, toc, `build_mac.spec`, CHANGELOG → **0.1.19**.
+Public path: `Odysseaus/wow-addons` → `wow-grok/`.
+
+Companion bridge is **Python** (`bridge_py/`). Lua addon under `addon/WoWGrok/`. Node.js bridge retired.
+
+- First-run GUI: API key → AddOns picker → installs `WoWGrok` + `WoWGrok_S001`–`S200`
+- Packaging: Mac `.app` / Windows `.exe` (separate builds); see `bridge_py/packaging.md`
+- Player docs: executable-only (`README.md`, `docs/INSTALL-USERS.md`)
+- Tests: `python -m unittest discover -s bridge_py/tests -v`
+- Mac test build: GitHub release `wow-grok-mac-v0.1.6`

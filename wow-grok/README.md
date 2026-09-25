@@ -2,9 +2,7 @@
 
 Chat with [xAI Grok](https://docs.x.ai/) from inside **World of Warcraft: Forever**. Send a task, keep questing, get pinged in-game when the answer lands.
 
-<p align="center">
-  <img src="docs/screenshot.png" alt="WoW Grok chat window in World of Warcraft: Forever — level 20 dungeon recommendations" width="900">
-</p>
+> **Screenshot:** coming after live testing. See [docs/screenshot-placeholder.md](docs/screenshot-placeholder.md).
 
 This is **not** Grok Bot and **not** Claude Code. A packaged companion app on your Mac or Windows PC talks to `https://api.x.ai/v1/responses` with **your** API key. Default model: `grok-4-latest`.
 

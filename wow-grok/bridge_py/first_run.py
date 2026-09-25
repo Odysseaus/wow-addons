@@ -151,27 +151,11 @@ def prompt_mac_screen_recording(cfg: dict[str, Any] | None = None) -> None:
     request, always shows the in-app sheet (do not skip on unsure). On first
     launch after a wipe (no screenRecordingOnboarded), always performs a real
     request so macOS can create a Screen Recording row for WoWGrok.
-
-    Once screenRecordingOnboarded is set, probe at most once per launch and
-    never call request_screen_recording again (avoids TCC spam after unsigned
-    app replace). Capture still exits 42 on permission failure.
-
-    If capture.permissionPaused is set (persisted after exit 42), skip the CG
-    probe/request entirely — do not clear that flag on probe=granted.
     """
     if sys.platform != "darwin":
         return
     if not _gui_available():
         _append_bridge_log("[screen-recording] skip: no GUI available")
-        return
-
-    cap = (cfg or {}).get("capture") or {}
-    if cap.get("permissionPaused"):
-        _append_bridge_log(
-            "[screen-recording] skip probe/request: capture.permissionPaused "
-            "(presence/Connect-only). Clear the flag in config.json after "
-            "enabling Screen Recording, then Quit+reopen."
-        )
         return
 
     onboarded = bool(cfg.get("screenRecordingOnboarded")) if cfg else False
@@ -189,11 +173,9 @@ def prompt_mac_screen_recording(cfg: dict[str, Any] | None = None) -> None:
         status = "unsure"
         _append_bridge_log(f"[screen-recording] probe import/error: {e!r} → unsure")
 
-    # After wipe / first launch only: request once so macOS can create a Settings
-    # row (even if probe looked granted — old window-list probe false-positived).
-    # When already onboarded: probe at most once for logging; never call
-    # request_screen_recording again (unsigned-replace TCC thrash / sheet spam).
-    if request is not None and not onboarded:
+    # After wipe / first launch: always request once even if probe looked granted
+    # (old window-list probe could false-positive). Also request when not granted.
+    if request is not None and (not onboarded or status != "granted"):
         try:
             req_status = request()
             _append_bridge_log(f"[screen-recording] request={req_status}")
@@ -207,18 +189,14 @@ def prompt_mac_screen_recording(cfg: dict[str, Any] | None = None) -> None:
         except Exception as e:  # noqa: BLE001
             status = "unsure"
             _append_bridge_log(f"[screen-recording] request error: {e!r} → unsure")
-    elif onboarded:
-        _append_bridge_log(
-            f"[screen-recording] onboarded — skip request (probe={status})"
-        )
 
     if status == "granted":
         _append_bridge_log("[screen-recording] granted — skip sheet")
         _mark_screen_recording_onboarded(cfg)
         return
 
-    # User previously chose Continue (or was marked onboarded) — do not re-nag
-    # every launch. Capture exit 42 still shows the guided dialog from the bridge.
+    # User previously chose Continue without grant — do not re-nag every launch,
+    # but we already requested above when not granted.
     if onboarded and status != "granted":
         _append_bridge_log(
             f"[screen-recording] not granted ({status}) but onboarded — skip sheet"

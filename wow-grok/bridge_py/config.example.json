@@ -15,8 +15,7 @@
     "cellPx": 4,
     "cellsPerRow": 200,
     "maxRows": 48,
-    "intervalMs": 250,
-    "permissionPaused": false
+    "intervalMs": 250
   },
   "apiKey": "",
   "model": "grok-4-latest",

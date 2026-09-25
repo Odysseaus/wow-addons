@@ -4,7 +4,7 @@ Build **separate** binaries per OS. There is **no** single shared installer that
 
 | Platform | Artifact | Build machine |
 |----------|----------|---------------|
-| Windows  | `WoWGrok.exe` (one-file) | **Windows Helper / OMEN** or **GitHub Actions `windows-latest`** (required for a real Win binary) |
+| Windows  | `WoWGrok.exe` (one-file) | **Windows Helper / OMEN** (required for a real Win binary) |
 | macOS    | `WoWGrok.app` and/or `.dmg` | a Mac |
 | Linux    | smoke-only one-file (CI / this box) | any Linux — proves freeze; **not** a ship target |
 
@@ -18,7 +18,7 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate
 source .venv/bin/activate
 pip install -U pip
-pip install pillow certifi pyinstaller rumps  # Win: add pystray; skip rumps
+pip install pillow certifi pyinstaller rumps
 # or: pip install -e ".[dev]"
 # rumps is macOS-only (menu bar status item); skip on Windows/Linux
 ```
@@ -32,7 +32,7 @@ Frozen capture re-entry: the bridge spawns `WoWGrok --run-capture-mac …` / `--
 ```powershell
 cd path\to\wow-grok
 .\.venv\Scripts\Activate.ps1
-pip install pillow certifi pyinstaller pystray
+pip install pillow certifi pyinstaller
 pyinstaller --noconfirm bridge_py\build_win.spec
 # Output: dist\WoWGrok.exe
 ```
@@ -43,8 +43,7 @@ Notes:
 
 - Spec embeds `bridge_py/capture.ps1` (`capture_win` looks under `_MEIPASS/bridge/` and next to the exe).
 - The frozen app installs the Lua addon and **WoWGrok_S001–S200** on first run; `capture.ps1` is baked from `bridge_py/capture.ps1`.
-- Spec uses `console=False` + `pystray` tray (Running + Quit) and certifi CA data.
-- Real Windows builds need Helper / OMEN **or** `.github/workflows/wow-grok-win-release.yml` — this Linux box only runs a Linux freeze smoke.
+- Real Windows builds need the Helper / OMEN machine — this Linux box only runs a Linux freeze smoke.
 
 Optional onedir:
 
@@ -57,7 +56,7 @@ pyinstaller --name WoWGrok --onedir --console --collect-submodules bridge_py bri
 ```bash
 cd /path/to/wow-grok
 source .venv/bin/activate
-pip install pillow certifi pyinstaller rumps  # Win: add pystray; skip rumps
+pip install pillow certifi pyinstaller rumps
 pyinstaller --noconfirm bridge_py/build_mac.spec
 # Output: dist/WoWGrok.app (LSUIElement menu-bar agent; no Dock icon)
 ```
