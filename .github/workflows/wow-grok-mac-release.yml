@@ -200,30 +200,24 @@ jobs:
 
           Built from commit ${SHA} via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What is new in 0.1.17
-          - Auto reload/SV when capture is paused: Connect and chat use SavedVariables plus ReloadUI without a manual mode flip. The bridge advertises capturePaused in Inbox; capture does not spawn and does not spam Screen Recording while permissionPaused.
-          - Stuck-pending fix: if the bridge already finished a job but the UI still waits, Inbox delivery recovers (outbox/pendingBackup match, re-publish of already-handled replies, re-queue when pendingId disagrees with outbox). Typing a new message cancels a stuck pending and sends.
-          - Reload-mode Connect marks presence (not SafeReload-only). After send-reload, status tells you to press Refresh or Enter to read Inbox; auto-refresh wait is shorter (max 8s) on this path.
-          - Capture stays off until a real resume smoke succeeds after you enable Screen Recording and clear permissionPaused, then Quit and reopen. probe=granted alone never clears the pause.
-
-          ### Carry-forward from 0.1.16 / 0.1.15
-          - Persist capture.permissionPaused; Connect presence and wantConnectSlot; TCC exit 42; CFBundle version inject from tag.
-          - Game context + shift-click link expansion; xAI instructions with previous_response_id.
+          ### Product path (v0.1.20+)
+          - Trunk: 0.1.13 pixel Send + strip SetScale(768 / physH).
+          - Plus game context + shift-click link expansion (from 0.1.14).
+          - Not included: 0.1.15–0.1.19 reload-on-send / capturePaused chat UX.
 
           ### Install
           1. Quit any old WoWGrok process.
           2. Open the DMG, drag WoWGrok.app to Applications, then eject.
           3. Hold Control, click, Open if Gatekeeper warns.
           4. Enter API key, confirm AddOns, wait for slot install.
-          5. Chat works while Screen Recording is stuck or paused (reload/SV path). To restore pixel capture later: System Settings, Privacy and Security, Screen Recording, enable WoWGrok, set capture.permissionPaused to false in Application Support/WoWGrok/config.json, Quit WoWGrok completely and reopen. If capture still fails, pause re-sets quietly.
-          6. Leave WoWGrok running (menu bar) while you play. Type /wow-grok or /grok in game chat.
+          5. Leave WoWGrok running (menu bar) while you play. Type /wow-grok or /grok in game chat. /reload once after AddOn update if needed.
 
           Zip of .app is also attached for convenience.
           MD
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — auto reload/SV when capture paused"
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — trunk 0.1.13 + context/links"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \
