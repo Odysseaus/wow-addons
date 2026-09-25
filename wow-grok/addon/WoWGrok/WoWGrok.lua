@@ -156,7 +156,6 @@ local function InitDB()
 	local s = db.settings
 	if s.autoRefresh == nil then s.autoRefresh = true end
 	if s.signal == nil then s.signal = true end
-	if s.context == nil then s.context = true end -- tell the agent about the character, zone, etc.
 	s.echo = s.echo or "full" -- how much of each reply to print in the game chat
 	s.mode = s.mode or "pixel"
 	s.interval = s.interval or 20
@@ -311,19 +310,10 @@ local function ShowStrip(id, payload)
 	run.stripShown = true
 end
 
--- Record: session, chat, id, cwd, flags, name, [context,] text. Several records
--- per frame. The context field is only present when the flags carry "c", so the
--- bridge can tell it from a separator inside the text.
+-- Record: session, chat, id, cwd, flags, name, text. Several records per frame.
 local function RecordFor(id, rec)
 	local name = (rec.name or ""):gsub("[\30\31]", " ")
-	local flags = rec.flags or ""
-	local fields = { db.session, rec.chat, tostring(id), rec.cwd, flags, name }
-	if rec.ctx ~= nil then
-		fields[5] = flags == "" and "c" or (flags .. ";c")
-		table.insert(fields, (rec.ctx:gsub("[\30\31]", " ")))
-	end
-	table.insert(fields, rec.text)
-	return table.concat(fields, US)
+	return table.concat({ db.session, rec.chat, tostring(id), rec.cwd, rec.flags or "", name, rec.text }, US)
 end
 
 -- Redraw the strip from every outbound message the bridge hasn't acknowledged.
@@ -644,17 +634,10 @@ end
 
 local Finish -- defined below
 
--- The bridge has read this record: whatever game context rode on it is now
--- what the bridge knows, so later messages only carry it again if it changes.
-local function NoteAcked(rec)
-	rec.acked = true
-	if rec.ctx ~= nil then run.contextSent = rec.ctx end
-end
-
 local function MarkAcked(id)
 	local rec = run.outbound[id]
 	if rec and not rec.acked then
-		NoteAcked(rec)
+		rec.acked = true
 		RefreshStrip()
 	end
 	NotedBridge()
@@ -785,7 +768,7 @@ local function Tick()
 	end
 	for id, rec in pairs(run.outbound) do
 		if not rec.acked and CheckSignal("ack", id) then
-			NoteAcked(rec)
+			rec.acked = true
 			changed = true
 			NotedBridge()
 		end
@@ -793,7 +776,7 @@ local function Tick()
 		-- A forget is the same, but the bridge must have been seen a moment after
 		-- the record went up, so it had a chance to read it.
 		if (rec.hello or rec.forget) and not rec.acked and run.bridgeSeen and run.bridgeSeen >= rec.sentAt + (rec.forget and 2 or 0) then
-			NoteAcked(rec)
+			rec.acked = true
 			changed = true
 		end
 		if rec.acked then
@@ -874,17 +857,12 @@ Finish = function(chat, role, text, denied)
 end
 
 ---------------------------------------------------------------------------
--- Game context and links
+-- Shift-click link expansion (for the agent)
 ---------------------------------------------------------------------------
+-- The agent only sees text, so item/spell/quest links the player shift-clicks
+-- into the message are expanded to [Name] plus their tooltip. Every game API
+-- here is optional: whatever the client lacks is left out.
 
--- The agent only sees text, so two things about the game are spelled out for it:
--- who is asking (the character, where they are; sent with the hello and again
--- when it changes, and put into the agent's system prompt by the bridge), and
--- what the player shift-clicked into the message (item, spell and quest links
--- are meaningless markup to the agent; their tooltips are what the player sees).
--- Every game API here is optional: whatever the client lacks is left out.
-
-local CONTEXT_MAX = 700 -- bytes of context per record; the strip has ~3.2 KB for everything
 local LINK_LINES_MAX = 30 -- tooltip lines kept per link
 local LINK_BYTES_MAX = 900 -- bytes kept per link
 
@@ -893,126 +871,6 @@ local function Try(fn, ...)
 	if type(fn) ~= "function" then return nil end
 	local ok, a, b, c, d, e, f, g = pcall(fn, ...)
 	if ok then return a, b, c, d, e, f, g end
-end
-
-local function Money(copper)
-	copper = tonumber(copper) or 0
-	local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
-	if g > 0 then return g .. "g " .. s .. "s " .. c .. "c" end
-	if s > 0 then return s .. "s " .. c .. "c" end
-	return c .. "c"
-end
-
--- A few lines about the game and the character, as the bridge will show them to the agent.
-function WoWGrok.GameContext()
-	local lines = {}
-	local version, build, _, toc = Try(GetBuildInfo)
-	toc = tonumber(toc)
-	local game = "World of Warcraft"
-	if toc and toc >= 16000 and toc < 20000 then game = "World of Warcraft: Forever" end
-	local client = ""
-	if version then
-		client = " (client " .. tostring(version) .. (build and ("." .. tostring(build)) or "") .. (toc and (", interface " .. toc) or "") .. ")"
-	end
-	table.insert(lines, "Game: " .. game .. client)
-
-	local name = Try(UnitName, "player")
-	if name then
-		local realm = Try(GetRealmName)
-		local level = Try(UnitLevel, "player")
-		local race = Try(UnitRace, "player")
-		local class = Try(UnitClass, "player")
-		local faction = Try(UnitFactionGroup, "player")
-		local guild = Try(GetGuildInfo, "player")
-		local who = "Character: " .. tostring(name) .. (realm and (" on " .. tostring(realm)) or "")
-		local desc = {}
-		if level then table.insert(desc, "level " .. tostring(level)) end
-		if race then table.insert(desc, tostring(race)) end
-		if class then table.insert(desc, tostring(class)) end
-		if #desc > 0 then who = who .. ", " .. table.concat(desc, " ") end
-		if faction then who = who .. " (" .. tostring(faction) .. ")" end
-		if guild then who = who .. ", guild <" .. tostring(guild) .. ">" end
-		table.insert(lines, who)
-	end
-
-	local zone = Try(GetZoneText)
-	local sub = Try(GetSubZoneText)
-	if zone and zone ~= "" then
-		table.insert(lines, "Location: " .. zone .. ((sub and sub ~= "" and sub ~= zone) and (" - " .. sub) or ""))
-	end
-
-	-- Map coordinates, as the minimap shows them (0-100 across the current map;
-	-- addons get no world x/y/z). Modern C_Map first, the vanilla call as fallback.
-	local x, y, mapName
-	local mapId = Try(C_Map and C_Map.GetBestMapForUnit, "player")
-	if type(mapId) == "number" then
-		local pos = Try(C_Map.GetPlayerMapPosition, mapId, "player")
-		if type(pos) == "table" and type(pos.x) == "number" and type(pos.y) == "number" then x, y = pos.x, pos.y end
-		local info = Try(C_Map.GetMapInfo, mapId)
-		if type(info) == "table" and type(info.name) == "string" then mapName = info.name end
-	end
-	if not x then
-		local px, py = Try(GetPlayerMapPosition, "player")
-		if type(px) == "number" and type(py) == "number" then x, y = px, py end
-	end
-	if x and y and (x > 0 or y > 0) then
-		local where = (mapName and mapName ~= zone) and (" on " .. mapName) or ""
-		table.insert(lines, string.format("Position: %.1f, %.1f%s%s", x * 100, y * 100, where, mapId and (" (map " .. mapId .. ")") or ""))
-	end
-
-	local progress = {}
-	local copper = Try(GetMoney)
-	if copper then table.insert(progress, "Money: " .. Money(copper)) end
-	local xp, xpMax = Try(UnitXP, "player"), Try(UnitXPMax, "player")
-	if type(xp) == "number" and type(xpMax) == "number" and xpMax > 0 then
-		table.insert(progress, "XP: " .. xp .. "/" .. xpMax)
-	end
-	if #progress > 0 then table.insert(lines, table.concat(progress, "; ")) end
-
-	-- Classic-style talent tabs: name, icon, points spent.
-	local tabs = Try(GetNumTalentTabs)
-	if type(tabs) == "number" and tabs > 0 then
-		local parts = {}
-		for i = 1, tabs do
-			local tname, _, points = Try(GetTalentTabInfo, i)
-			if type(tname) == "string" and type(points) == "number" then
-				table.insert(parts, tname .. " " .. points)
-			end
-		end
-		if #parts > 0 then table.insert(lines, "Talents: " .. table.concat(parts, " / ")) end
-	end
-
-	-- Skill lines under the Professions and Secondary Skills headers.
-	local n = Try(GetNumSkillLines)
-	if type(n) == "number" then
-		local header, parts = nil, {}
-		local wanted = { [TRADE_SKILLS or "Professions"] = true, [SECONDARY_SKILLS or "Secondary Skills"] = true }
-		for i = 1, n do
-			local sname, isHeader, _, rank, _, _, maxRank = Try(GetSkillLineInfo, i)
-			if type(sname) == "string" then
-				if isHeader then
-					header = sname
-				elseif header and wanted[header] then
-					table.insert(parts, sname .. (rank and (" " .. tostring(rank) .. (maxRank and ("/" .. tostring(maxRank)) or "")) or ""))
-				end
-			end
-		end
-		if #parts > 0 then table.insert(lines, "Professions: " .. table.concat(parts, ", ")) end
-	end
-
-	local s = table.concat(lines, "\n"):gsub("[\30\31]", " ")
-	if #s > CONTEXT_MAX then s = s:sub(1, CONTEXT_MAX) end
-	return s
-end
-
--- The context to put on the next record, or nil when the bridge already has
--- it (or it wouldn't fit next to this message; it goes with a later one).
--- "" when the setting is off, so the bridge drops what it had.
-local function ContextToSend(room)
-	local ctx = db.settings.context and WoWGrok.GameContext() or ""
-	if ctx == (run.contextSent or "") then return nil end
-	if room and #ctx > room then return nil end
-	return ctx
 end
 
 -- Read a link's tooltip off a hidden GameTooltip, one line per row.
@@ -1117,8 +975,6 @@ function WoWGrok.Send(text, allow)
 		WoWGrok.Render()
 		return
 	end
-	-- The game context rides along when the bridge doesn't have this version yet.
-	local ctx = ContextToSend(limit - #text)
 
 	db.lastSeq = db.lastSeq + 1
 	local id = db.lastSeq
@@ -1134,7 +990,6 @@ function WoWGrok.Send(text, allow)
 		chat = c.id,
 		text = ToHex(text),
 		cwd = ToHex(c.cwd),
-		ctx = ctx and ToHex(ctx) or nil,
 		newSession = newSession,
 		t = time(),
 	}
@@ -1154,7 +1009,7 @@ function WoWGrok.Send(text, allow)
 	db.settings.shown = true
 
 	if db.settings.mode == "pixel" then
-		run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, ctx = ctx, sentAt = GetTime() }
+		run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, sentAt = GetTime() }
 		run.sentAt = GetTime()
 		run.polls = 0
 		StartActivity(c, id)
@@ -1190,8 +1045,6 @@ end
 -- Hello: a record with no text that just announces our session token. The bridge
 -- acks it, offers a restore if our saved data is fresh, and refreshes the slots,
 -- so the status light and any lost chats come back before the first message.
--- The game context always rides on hello (empty when turned off), so the bridge's
--- copy is brought in line at every login and Connect.
 function WoWGrok.SayHello()
 	if db.settings.mode ~= "pixel" then return end
 	local now = GetTime()
@@ -1199,8 +1052,7 @@ function WoWGrok.SayHello()
 	run.lastHelloAt = now
 	db.lastSeq = db.lastSeq + 1
 	local c = ActiveChat()
-	local ctx = db.settings.context and WoWGrok.GameContext() or ""
-	run.outbound[db.lastSeq] = { chat = c and c.id or "", cwd = c and c.cwd or "", flags = "h", name = c and c.name or "", text = "", ctx = ctx, sentAt = now, hello = true }
+	run.outbound[db.lastSeq] = { chat = c and c.id or "", cwd = c and c.cwd or "", flags = "h", name = c and c.name or "", text = "", sentAt = now, hello = true }
 	run.helloPollAt = now + 5
 	-- Deletions the bridge never confirmed ride along with the hello.
 	for id in pairs(db.forget) do SendForget(id) end
@@ -1888,6 +1740,7 @@ hooksecurefunc("SetItemRef", function(link)
 	if action == "reply" and ui.input then ui.input:SetFocus() end
 end)
 
+
 -- Shift-clicking an item, spell, quest or name puts its link into the chat box
 -- being typed in. Blizzard's insert function only knows its own boxes, so when
 -- ours has the keyboard, take the link too. With no box focused the shift-click
@@ -2432,7 +2285,6 @@ local HELP = table.concat({
 	"/wow-grok delete                 delete the current chat",
 	"/wow-grok cd <folder>            project folder label for this chat (relative to the bridge's folder; no folder = back to default). Right-clicking the chat in the left panel and picking Folder does the same",
 	"/wow-grok reset                  next message in this chat starts a fresh Grok conversation",
-	"/wow-grok context [on|off]       show / toggle game context sent to Grok (character, zone, …)",
 	"/wow-grok mode pixel             no-reload transport (default)",
 	"/wow-grok mode reload            fallback transport: a /reload per step",
 	"/wow-grok resend                 show the strip again if the bridge missed it",
@@ -2515,22 +2367,6 @@ SlashCmdList["WOWGROK"] = function(msg)
 	elseif cmd == "reset" then
 		c.resetNext = true
 		AddHistory(c, "system", "Next message starts a fresh Grok conversation in " .. c.cwd)
-		WoWGrok.Render()
-		WoWGrok.Toggle(true)
-	elseif (cmd == "context" or cmd == "ctx") and (rest == "" or rest:lower() == "on" or rest:lower() == "off") then
-		rest = rest:lower()
-		if rest == "on" or rest == "off" then
-			s.context = rest == "on"
-			-- Make sure the next record carries the change, hello throttle or not.
-			run.contextSent = nil
-			run.lastHelloAt = nil
-			if WoWGrok.IsConnected() then WoWGrok.SayHello() end
-		end
-		local ctx = WoWGrok.GameContext()
-		AddHistory(c, "system", (s.context
-			and "Game context is ON: the agent is told this with each message (it goes into its system prompt, so unrelated projects are unaffected by anything but a few lines). /wow-grok context off to stop.\n\n"
-			or "Game context is OFF: the agent is told nothing about the game. /wow-grok context on to send this:\n\n") .. ctx
-			.. "\n\nTip: click the input box, then shift-click an item, spell or quest to link it into your message; the agent gets its tooltip.")
 		WoWGrok.Render()
 		WoWGrok.Toggle(true)
 	elseif cmd == "mode" then

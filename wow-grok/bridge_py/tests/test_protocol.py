@@ -19,23 +19,19 @@ class TestFlagsAndJobs(unittest.TestCase):
     def test_parse_flags(self):
         self.assertEqual(
             P.parse_flags(""),
-            {"newSession": False, "hello": False, "forget": False, "context": False, "allow": []},
+            {"newSession": False, "hello": False, "forget": False, "allow": []},
         )
         self.assertEqual(
             P.parse_flags("n"),
-            {"newSession": True, "hello": False, "forget": False, "context": False, "allow": []},
+            {"newSession": True, "hello": False, "forget": False, "allow": []},
         )
         self.assertEqual(
             P.parse_flags("h"),
-            {"newSession": False, "hello": True, "forget": False, "context": False, "allow": []},
+            {"newSession": False, "hello": True, "forget": False, "allow": []},
         )
         self.assertEqual(
             P.parse_flags("d"),
-            {"newSession": False, "hello": False, "forget": True, "context": False, "allow": []},
-        )
-        self.assertEqual(
-            P.parse_flags("c"),
-            {"newSession": False, "hello": False, "forget": False, "context": True, "allow": []},
+            {"newSession": False, "hello": False, "forget": True, "allow": []},
         )
         self.assertEqual(
             P.parse_flags("n;allow=WebSearch, Bash(git:*),"),
@@ -43,7 +39,6 @@ class TestFlagsAndJobs(unittest.TestCase):
                 "newSession": True,
                 "hello": False,
                 "forget": False,
-                "context": False,
                 "allow": ["WebSearch", "Bash(git:*)"],
             },
         )
@@ -185,65 +180,6 @@ class TestSilentWav(unittest.TestCase):
     def test_wav(self):
         self.assertEqual(len(P.SILENT_WAV), 124)
         self.assertTrue(P.SILENT_WAV.startswith(b"RIFF"))
-
-
-
-class TestContextFlag(unittest.TestCase):
-    def test_jobs_with_ctx(self):
-        # session, chat, id, cwd, flags, name, ctx, text
-        rec = "\x1f".join(
-            ["sess", "c1", "9", "realms", "h;c", "Chat 1", "Character: Bob\nLocation: Elwynn", "hi"]
-        )
-        jobs = P.jobs_from_strip(9, rec)
-        self.assertEqual(len(jobs), 1)
-        self.assertTrue(jobs[0]["context"])
-        self.assertTrue(jobs[0]["hello"])
-        self.assertEqual(jobs[0]["ctx"], "Character: Bob\nLocation: Elwynn")
-        self.assertEqual(jobs[0]["text"], "hi")
-        self.assertEqual(jobs[0]["name"], "Chat 1")
-
-    def test_jobs_without_ctx_flag_keeps_text(self):
-        # no c flag: field 6 is start of text even if 8 parts somehow
-        rec = "\x1f".join(["sess", "c1", "9", "", "", "My chat", "hello"])
-        jobs = P.jobs_from_strip(9, rec)
-        self.assertEqual(jobs[0]["text"], "hello")
-        self.assertNotIn("ctx", jobs[0])
-        self.assertFalse(jobs[0]["context"])
-
-    def test_jobs_empty_ctx_clears(self):
-        rec = "\x1f".join(["sess", "c1", "2", "", "c", "n", "", "msg"])
-        jobs = P.jobs_from_strip(2, rec)
-        self.assertEqual(jobs[0]["ctx"], "")
-        self.assertEqual(jobs[0]["text"], "msg")
-
-    def test_outbox_ctx(self):
-        def hex_enc(s: str) -> str:
-            return s.encode("utf-8").hex()
-
-        src = (
-            'WoWGrokDB = {\n["outbox"] = {\n'
-            '["id"] = 3,\n["session"] = "s1",\n["chat"] = "c1",\n'
-            f'["text"] = "{hex_enc("hi")}",\n'
-            f'["cwd"] = "{hex_enc("x")}",\n'
-            f'["ctx"] = "{hex_enc("Game: Forever")}",\n'
-            "},\n}"
-        )
-        job = P.parse_outbox(src)
-        self.assertEqual(job["ctx"], "Game: Forever")
-        self.assertEqual(job["text"], "hi")
-
-    def test_system_prompt(self):
-        self.assertEqual(P.system_prompt(""), "")
-        self.assertEqual(P.system_prompt(None), "")
-        sp = P.system_prompt("Character: Bob\nLocation: Elwynn")
-        self.assertIn("WoWGrok", sp)
-        self.assertIn("Character: Bob", sp)
-        self.assertIn("Linked from the game", sp)
-        # primer unused/empty by default
-        self.assertEqual(sp, P.system_prompt("Character: Bob\nLocation: Elwynn", ""))
-        with_primer = P.system_prompt("Character: Bob", "PRIMER_BODY")
-        self.assertIn("PRIMER_BODY", with_primer)
-
 
 
 if __name__ == "__main__":

@@ -21,27 +21,22 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
-## [0.1.20] - 2026-09-24
+## [0.1.21] - 2026-09-24
 
 ### Added
 
-- Mac release based on **0.1.13** trunk plus **game context** and **shift-click link expansion** from 0.1.14 only (no reload-on-send / capturePaused UX from 0.1.15–0.1.19).
-- Panel title shows AddOn version via `GetAddOnMetadata` (e.g. `WoW Grok v0.1.20`).
+- Mac release based on **0.1.13** trunk plus **shift-click link expansion** and **panel version title** only (from 0.1.20 BuildUI / ExpandLinks path).
+- Panel title shows AddOn version via `GetAddOnMetadata` / `C_AddOns.GetAddOnMetadata` (e.g. `WoW Grok v0.1.21`).
+- Shift-click ExpandLinks: with the WoWGrok input focused, InsertLink hooks insert item/spell/quest links; on Send, links become `[Name]` plus a "Linked from the game" tooltip block.
+
+### Changed
+
+- Bridge/app capture path restored from **0.1.19** (`capture_mac.py` CG strip / `screencapture -l`, `permissionPaused` resume smoke) without game-context protocol extras.
 
 ### Notes
 
-- Keeps 0.1.13 pixel Send path and strip `SetScale(768 / physH)`.
-
-## [0.1.14] - 2026-09-24
-
-### Added
-
-- **Game context:** the addon sends plain-text lines (Game / Character / Location / Position / Money / XP / Talents / Professions) with hello and again when the text changes. The bridge stores them in `state.json` and injects them into xAI `instructions` on every turn (including multi-turn). `/wow-grok context [on|off]` (alias `ctx`); config `gameContext` (default `true`).
-- **Shift-click link expansion:** with the WoWGrok input focused, shift-click inserts item/spell/quest links (`ChatFrameUtil.InsertLink`, fallback `ChatEdit_InsertLink`). On send (panel or `/ai`/`/grok`), links become `[Name]` plus a "Linked from the game" tooltip block.
-
-### Fixed
-
-- xAI multi-turn: `instructions` (game context) are now sent together with `previous_response_id`, so context no longer drops after the first reply.
+- Keeps 0.1.13 pixel Send path, 7-field RecordFor (no ctx), and strip `SetScale(768 / physH)`.
+- **Not included:** `GameContext` / `ContextToSend` / RecordFor ctx / hello ctx / `/wow-grok context` / SafeReload-on-Send / loadfile Inbox / SetScale(1) / capturePaused chat UX from 0.1.14–0.1.20.
 
 ## [0.3.0] - 2026-09-22
 

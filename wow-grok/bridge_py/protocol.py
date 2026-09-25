@@ -123,7 +123,6 @@ def parse_flags(flags: str | None) -> dict:
         "newSession": False,
         "hello": False,
         "forget": False,
-        "context": False,
         "allow": [],
     }
     for tok in str(flags or "").split(";"):
@@ -133,8 +132,6 @@ def parse_flags(flags: str | None) -> dict:
             out["hello"] = True
         elif tok == "d":
             out["forget"] = True
-        elif tok == "c":
-            out["context"] = True
         elif tok.startswith("allow="):
             out["allow"].extend(
                 s for s in (x.strip() for x in tok[6:].split(",")) if s
@@ -147,21 +144,18 @@ def jobs_from_strip(header_id: int, payload: str) -> list[dict]:
     for rec in str(payload).split("\x1e"):
         p = rec.split("\x1f")
         if len(p) >= 7 and p[2].isdigit():
-            flags = parse_flags(p[4])
-            with_ctx = flags.get("context") and len(p) >= 8
-            job = {
-                "session": p[0],
-                "chat": p[1],
-                "id": int(p[2]),
-                "cwd": p[3],
-                **flags,
-                "name": p[5],
-                "text": "\x1f".join(p[7 if with_ctx else 6 :]),
-                "via": "pixel",
-            }
-            if with_ctx:
-                job["ctx"] = p[6]
-            jobs.append(job)
+            jobs.append(
+                {
+                    "session": p[0],
+                    "chat": p[1],
+                    "id": int(p[2]),
+                    "cwd": p[3],
+                    **parse_flags(p[4]),
+                    "name": p[5],
+                    "text": "\x1f".join(p[6:]),
+                    "via": "pixel",
+                }
+            )
         elif len(p) == 6 and p[2].isdigit():
             jobs.append(
                 {
@@ -208,7 +202,7 @@ def parse_outbox(src: str | None) -> dict | None:
     cwd_m = re.search(r'\["cwd"\]\s*=\s*"([0-9a-fA-F]*)"', b)
     sess_m = re.search(r'\["session"\]\s*=\s*"([0-9a-zA-Z]*)"', b)
     chat_m = re.search(r'\["chat"\]\s*=\s*"([0-9a-zA-Z]*)"', b)
-    job = {
+    return {
         "id": id_,
         "session": (sess_m.group(1) if sess_m else "") or "",
         "chat": (chat_m.group(1) if chat_m else "") or "",
@@ -217,40 +211,6 @@ def parse_outbox(src: str | None) -> dict | None:
         "newSession": bool(re.search(r'\["newSession"\]\s*=\s*true', b)),
         "via": "reload",
     }
-    ctx_m = re.search(r'\["ctx"\]\s*=\s*"([0-9a-fA-F]*)"', b)
-    if ctx_m:
-        job["ctx"] = from_hex(ctx_m.group(1))
-    return job
-
-
-def system_prompt(ctx: str | None, primer: str = "") -> str:
-    """Build the xAI instructions / system prompt from game context.
-
-    Primer is accepted for API parity with wow-ai but unused for now (empty).
-    Empty context returns "" so injection is a no-op.
-    """
-    text = str(ctx or "").strip()
-    if not text:
-        return ""
-    lines = [
-        "The user is talking to you from inside World of Warcraft through the WoWGrok addon. They type in a small in-game window and your reply is shown there as plain text (markdown is not rendered), so keep replies compact and formatting simple.",
-        "",
-        "Their in-game situation when the message was written, as reported by the addon:",
-        text,
-        "",
-        'Use this when the request is about the game or the character (questions, macros, addon code, gear advice); ignore it when the task is unrelated. Items, spells or quests the player shift-clicked into a message appear as [Name] in the text, with their tooltip in a "Linked from the game" block at the end of the message.',
-    ]
-    ref = str(primer or "").strip()
-    if ref:
-        lines.extend(
-            [
-                "",
-                "Reference for writing addons and macros for this client. Follow it when the task is about WoW, and check anything it marks as uncertain against the Blizzard UI source it names:",
-                "",
-                ref,
-            ]
-        )
-    return "\n".join(lines)
 
 
 def rule_for(d: dict) -> str:
@@ -351,6 +311,8 @@ def lua_table(global_name: str, records: list, opts: dict | None = None) -> str:
             )
         lines.append("\t\t},")
     lines.append("\t},")
+    if opts.get("capturePaused"):
+        lines.append("\tcapturePaused = true,")
     restore = opts.get("restore")
     if restore:
         lines.append("\trestore = {")

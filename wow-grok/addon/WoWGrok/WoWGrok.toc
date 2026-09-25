@@ -2,7 +2,7 @@
 ## Title: WoW Grok
 ## Notes: Talk to your xAI Grok (API chat) from inside the game. Needs the companion bridge (see README).
 ## Author: chelinho139
-## Version: 0.1.20
+## Version: 0.1.21
 ## SavedVariables: WoWGrokDB
 
 Codec.lua

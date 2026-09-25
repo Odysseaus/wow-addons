@@ -11,7 +11,6 @@ Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho
 ## What you get
 
 - In-game window via `/wow-grok` or `/grok` (also `/ai`, `/ask`)
-- **Game context** — character, zone, coords, money, XP, talents, professions sent with hello and when they change (`/wow-grok context [on|off]`; bridge `gameContext`)
 - **Shift-click links** — with the WoWGrok input focused, shift-click items/spells/quests to insert links; tooltips expand on send
 - Multiple chats with persistent Grok conversations
 - Status light, progress, and reply recovery if the beta client wipes addon data
