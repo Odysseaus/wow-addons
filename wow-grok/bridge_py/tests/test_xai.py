@@ -141,6 +141,9 @@ class TestInstructionsEveryTurn(unittest.TestCase):
 
 
 class TestResponseTools(unittest.TestCase):
+    def test_response_tools_defaults_to_web_only(self):
+        self.assertEqual(xai.response_tools(), [{"type": "web_search"}])
+
     def test_response_tools_both_enabled(self):
         tools = xai.response_tools(web_search=True, x_search=True)
         self.assertEqual(tools, [{"type": "web_search"}, {"type": "x_search"}])

@@ -23,7 +23,7 @@
   "apiBase": "https://api.x.ai/v1",
   "gameContext": true,
   "webSearch": true,
-  "xSearch": true,
+  "xSearch": false,
   "allowedTools": [],
   "pollMs": 750,
   "progressWriteMs": 3000,

@@ -87,7 +87,7 @@ def default_config() -> dict[str, Any]:
         "apiBase": "https://api.x.ai/v1",
         "gameContext": True,
         "webSearch": True,
-        "xSearch": True,
+        "xSearch": False,
         "allowedTools": [],
         "pollMs": 750,
         "progressWriteMs": 3000,

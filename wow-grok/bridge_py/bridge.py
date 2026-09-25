@@ -587,7 +587,7 @@ def main(argv: list[str] | None = None) -> int:
                 system = P.system_prompt(game_context())
                 tools = xai.response_tools(
                     web_search=bool(cfg.get("webSearch", True)),
-                    x_search=bool(cfg.get("xSearch", True)),
+                    x_search=bool(cfg.get("xSearch", False)),
                 )
                 result = xai.chat(
                     api_key=api_key,
@@ -911,7 +911,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  api key  : {key_src}")
     _tools = xai.response_tools(
         web_search=bool(cfg.get("webSearch", True)),
-        x_search=bool(cfg.get("xSearch", True)),
+        x_search=bool(cfg.get("xSearch", False)),
     )
     _tools_label = ",".join(t.get("type", "?") for t in _tools) if _tools else "(none)"
     print(f"  tools    : {_tools_label}")

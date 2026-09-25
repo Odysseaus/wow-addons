@@ -11,6 +11,11 @@ from bridge_py import config as cfgmod
 
 
 class TestRuntimeDir(unittest.TestCase):
+    def test_default_search_config_is_web_only(self):
+        defaults = cfgmod.default_config()
+        self.assertTrue(defaults["webSearch"])
+        self.assertFalse(defaults["xSearch"])
+
     def test_frozen_macos_app_uses_application_support(self):
         fake_exe = Path("/Applications/WoWGrok.app/Contents/MacOS/WoWGrok")
         with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(

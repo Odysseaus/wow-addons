@@ -2,6 +2,18 @@
 
 All notable changes to this project are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.25] - 2026-09-25
+
+### Product pin (Mac)
+
+- **Product 0.1.25** = **app/bridge 0.1.25** with xAI server-side `web_search` enabled by default and `x_search` disabled by default; AddOn content unchanged from 0.1.24 except toc Version → 0.1.25; capture unchanged.
+- **Capture unchanged** from working 0.1.24 / 0.1.19 lineage — md5 `b75395986a768269a8f4ae5594709159`.
+
+### Changed
+
+- Default config is `webSearch: true`, `xSearch: false`; startup banner shows `tools: web_search` and Responses tools contain only `[{"type": "web_search"}]` by default.
+- Existing **0.1.24** Mac users: set `"xSearch": false` in `~/Library/Application Support/WoWGrok/config.json`, then restart WoWGrok.
+
 ## [Unreleased]
 
 ### Changed

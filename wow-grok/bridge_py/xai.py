@@ -159,7 +159,7 @@ class XAIError(Exception):
         self.message = message
 
 
-def response_tools(*, web_search: bool = True, x_search: bool = True) -> list[dict]:
+def response_tools(*, web_search: bool = True, x_search: bool = False) -> list[dict]:
     """Build xAI server-side tools list for POST /v1/responses (omit disabled)."""
     tools: list[dict] = []
     if web_search:
