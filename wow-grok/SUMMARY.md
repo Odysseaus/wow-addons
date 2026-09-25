@@ -8,4 +8,4 @@ Companion bridge is **Python** (`bridge_py/`). Lua addon under `addon/WoWGrok/`.
 - Packaging: Mac `.app` / Windows `.exe` (separate builds); see `bridge_py/packaging.md`
 - Player docs: executable-only (`README.md`, `docs/INSTALL-USERS.md`)
 - Tests: `python -m unittest discover -s bridge_py/tests -v`
-- Mac test build: GitHub release `wow-grok-mac-v0.1.6`
+- Mac test build: GitHub release `wow-grok-mac-v0.1.21`

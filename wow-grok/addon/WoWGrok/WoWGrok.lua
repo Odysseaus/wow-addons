@@ -857,6 +857,86 @@ Finish = function(chat, role, text, denied)
 end
 
 ---------------------------------------------------------------------------
+-- Shift-click link expansion (for the agent)
+---------------------------------------------------------------------------
+-- The agent only sees text, so item/spell/quest links the player shift-clicks
+-- into the message are expanded to [Name] plus their tooltip. Every game API
+-- here is optional: whatever the client lacks is left out.
+
+local LINK_LINES_MAX = 30 -- tooltip lines kept per link
+local LINK_BYTES_MAX = 900 -- bytes kept per link
+
+-- Call a game API that may not exist or may throw, and get its returns or nothing.
+local function Try(fn, ...)
+	if type(fn) ~= "function" then return nil end
+	local ok, a, b, c, d, e, f, g = pcall(fn, ...)
+	if ok then return a, b, c, d, e, f, g end
+end
+
+-- Read a link's tooltip off a hidden GameTooltip, one line per row.
+local scanTip
+local function TooltipLines(payload)
+	if not scanTip then
+		scanTip = CreateFrame("GameTooltip", "WoWGrokScanTip", UIParent, "GameTooltipTemplate")
+	end
+	scanTip:SetOwner(UIParent, "ANCHOR_NONE")
+	scanTip:ClearLines()
+	local lines = {}
+	if pcall(scanTip.SetHyperlink, scanTip, payload) then
+		for i = 1, math.min(scanTip:NumLines() or 0, LINK_LINES_MAX) do
+			local left = _G["WoWGrokScanTipTextLeft" .. i]
+			local right = _G["WoWGrokScanTipTextRight" .. i]
+			local l = Trim(tostring((left and left:GetText()) or ""))
+			local r = Trim(tostring((right and right:IsShown() and right:GetText()) or ""))
+			if r ~= "" then l = l .. "  " .. r end
+			if l ~= "" then table.insert(lines, l) end
+		end
+	end
+	scanTip:Hide()
+	return lines
+end
+
+-- What a link is, in words: "item 2140 (Uncommon)", "spell 1978", "quest 176".
+local function DescribeLink(payload)
+	local kind, id = payload:match("^(%a+):(%d+)")
+	if not kind then return payload:match("^(%a+)") or "link" end
+	local s = kind .. " " .. id
+	if kind == "item" then
+		local _, _, quality = Try((C_Item and C_Item.GetItemInfo) or GetItemInfo, payload)
+		local desc = type(quality) == "number" and _G["ITEM_QUALITY" .. quality .. "_DESC"]
+		if desc then s = s .. " (" .. desc .. ")" end
+	end
+	return s
+end
+
+-- Turn the links in a message into text the agent can use: each becomes [Name]
+-- in place, and a block at the end lists what the tooltip says about it.
+-- Returns the new text and the number of links found.
+function WoWGrok.ExpandLinks(text)
+	local links, seen = {}, {}
+	local function Take(payload, name)
+		if not seen[payload] then
+			seen[payload] = true
+			table.insert(links, { payload = payload, name = name })
+		end
+		return "[" .. name .. "]"
+	end
+	-- Coloured links first (|cAARRGGBB|H...|h[Name]|h|r), then bare ones.
+	local out = text:gsub("|c%x%x%x%x%x%x%x%x|H([^|]+)|h%[([^%]]*)%]|h|r", Take)
+	out = out:gsub("|H([^|]+)|h%[([^%]]*)%]|h", Take)
+	if #links == 0 then return text, 0 end
+	local blocks = {}
+	for _, l in ipairs(links) do
+		local head = "[" .. l.name .. "] " .. DescribeLink(l.payload)
+		local body = table.concat(TooltipLines(l.payload), "\n  ")
+		local block = body ~= "" and (head .. "\n  " .. body) or head
+		if #block > LINK_BYTES_MAX then block = block:sub(1, LINK_BYTES_MAX) .. "..." end
+		table.insert(blocks, block)
+	end
+	return out .. "\n\n--- Linked from the game ---\n" .. table.concat(blocks, "\n"), #links
+end
+
+---------------------------------------------------------------------------
 -- Sending
 ---------------------------------------------------------------------------
 
@@ -886,9 +966,12 @@ function WoWGrok.Send(text, allow)
 		WoWGrok.Toggle(true)
 		return
 	end
+	-- Shift-clicked links become [Name] plus their tooltip, which is what the agent can read.
+	local links
+	text, links = WoWGrok.ExpandLinks(text)
 	local limit = Codec.MAX_PAYLOAD - 300
 	if #text > limit then
-		AddHistory(c, "system", "That message is too long for one send (" .. #text .. " chars, max ~" .. limit .. "). Split it up.")
+		AddHistory(c, "system", "That message is too long for one send (" .. #text .. " chars, max ~" .. limit .. "). Split it up." .. (links > 0 and " Each linked item adds its tooltip to the message." or ""))
 		WoWGrok.Render()
 		return
 	end
@@ -1657,6 +1740,26 @@ hooksecurefunc("SetItemRef", function(link)
 	if action == "reply" and ui.input then ui.input:SetFocus() end
 end)
 
+
+-- Shift-clicking an item, spell, quest or name puts its link into the chat box
+-- being typed in. Blizzard's insert function only knows its own boxes, so when
+-- ours has the keyboard, take the link too. With no box focused the shift-click
+-- keeps its normal meaning (splitting a stack, for one).
+--
+-- On this client (modern UI code, Blizzard_ChatFrameUtil) every shift-click
+-- ends in ChatFrameUtil.InsertLink; ChatEdit_InsertLink is the older global
+-- name, hooked only where the new one is missing so one click inserts once.
+local function TakeLink(text)
+	if text and text ~= "" and ui.input and ui.input:HasFocus() then
+		ui.input:Insert(text)
+	end
+end
+if type(ChatFrameUtil) == "table" and type(ChatFrameUtil.InsertLink) == "function" then
+	hooksecurefunc(ChatFrameUtil, "InsertLink", TakeLink)
+elseif type(ChatEdit_InsertLink) == "function" then
+	hooksecurefunc("ChatEdit_InsertLink", TakeLink)
+end
+
 ---------------------------------------------------------------------------
 -- UI
 ---------------------------------------------------------------------------
@@ -1725,7 +1828,9 @@ local function BuildUI()
 
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	title:SetPoint("LEFT", dotHolder, "RIGHT", 6, 0)
-	title:SetText("WoW Grok")
+	local ver = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata("WoWGrok", "Version"))
+		or (GetAddOnMetadata and GetAddOnMetadata("WoWGrok", "Version")) or ""
+	title:SetText(ver ~= "" and ("WoW Grok  |cff888888v" .. ver .. "|r") or "WoW Grok")
 	ui.title = title
 
 	local status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")

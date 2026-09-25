@@ -311,6 +311,8 @@ def lua_table(global_name: str, records: list, opts: dict | None = None) -> str:
             )
         lines.append("\t\t},")
     lines.append("\t},")
+    if opts.get("capturePaused"):
+        lines.append("\tcapturePaused = true,")
     restore = opts.get("restore")
     if restore:
         lines.append("\trestore = {")

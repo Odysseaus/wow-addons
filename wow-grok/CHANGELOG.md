@@ -21,6 +21,23 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.21] - 2026-09-24
+
+### Added
+
+- Mac release based on **0.1.13** trunk plus **shift-click link expansion** and **panel version title** only (from 0.1.20 BuildUI / ExpandLinks path).
+- Panel title shows AddOn version via `GetAddOnMetadata` / `C_AddOns.GetAddOnMetadata` (e.g. `WoW Grok v0.1.21`).
+- Shift-click ExpandLinks: with the WoWGrok input focused, InsertLink hooks insert item/spell/quest links; on Send, links become `[Name]` plus a "Linked from the game" tooltip block.
+
+### Changed
+
+- Bridge/app capture path restored from **0.1.19** (`capture_mac.py` CG strip / `screencapture -l`, `permissionPaused` resume smoke) without game-context protocol extras.
+
+### Notes
+
+- Keeps 0.1.13 pixel Send path, 7-field RecordFor (no ctx), and strip `SetScale(768 / physH)`.
+- **Not included:** `GameContext` / `ContextToSend` / RecordFor ctx / hello ctx / `/wow-grok context` / SafeReload-on-Send / loadfile Inbox / SetScale(1) / capturePaused chat UX from 0.1.14–0.1.20.
+
 ## [0.3.0] - 2026-09-22
 
 First public release.

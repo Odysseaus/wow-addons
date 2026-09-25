@@ -34,6 +34,46 @@ REPO = HERE.parent
 CAPTURE_PERMISSION_EXIT = 42
 
 
+def capture_spawn_blocked(cap: dict) -> str | None:
+    """Return a short reason if capture must not spawn, else None."""
+    if not cap.get("enabled"):
+        return "disabled"
+    if cap.get("permissionPaused"):
+        return "permissionPaused"
+    return None
+
+
+def mark_capture_permission_paused(cfg: dict) -> None:
+    """Persist capture.permissionPaused so later launches never spawn capture.
+
+    Cleared by :func:`clear_capture_permission_paused` after resume smoke OK,
+    or when the user sets the flag false in config.json. Do not clear on
+    probe=granted alone (false positives).
+    """
+    cap = cfg.setdefault("capture", {})
+    if cap.get("permissionPaused"):
+        return
+    cap["permissionPaused"] = True
+    try:
+        cfgmod.save_config(cfg)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def clear_capture_permission_paused(cfg: dict) -> bool:
+    """Clear permissionPaused and save. Returns True if it was set."""
+    cap = cfg.setdefault("capture", {})
+    if not cap.get("permissionPaused"):
+        return False
+    cap["permissionPaused"] = False
+    try:
+        cfgmod.save_config(cfg)
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
+
 def _notify_mac_screen_recording(msg: str) -> str:
     """One guided dialog on the primary display. Returns ``quit`` or ``continue``."""
     if sys.platform != "darwin":
@@ -204,7 +244,13 @@ def main(argv: list[str] | None = None) -> int:
 
     def slot_file(global_name: str, records: list) -> str:
         return P.lua_table(
-            global_name, records, {"cwd": default_cwd, "restore": pending_restore}
+            global_name,
+            records,
+            {
+                "cwd": default_cwd,
+                "restore": pending_restore,
+                "capturePaused": bool(cap.get("permissionPaused")),
+            },
         )
 
     def addon_installed() -> bool:
@@ -598,7 +644,45 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     def start_capture() -> None:
-        if not cap.get("enabled"):
+        blocked = capture_spawn_blocked(cap)
+        if blocked == "disabled":
+            return
+        if blocked == "permissionPaused":
+            log(
+                "capture: permissionPaused — not spawning (presence/Connect + "
+                "reload chat). A slow resume smoke (CG window strip) will clear the "
+                "flag and spawn capture when the game window is capturable again; "
+                "or clear capture.permissionPaused in config.json and Quit+reopen."
+            )
+            try:
+                publish_now()
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        # Explicit clear of permissionPaused is not enough — require real smoke.
+        smoke_ok = True
+        smoke_reason = ""
+        if sys.platform == "darwin":
+            try:
+                from .capture_mac import resume_smoke
+
+                smoke_ok, smoke_reason = resume_smoke(
+                    str(cap.get("processName") or "WowB")
+                )
+            except Exception as e:  # noqa: BLE001
+                smoke_ok = False
+                smoke_reason = f"exception: {e}"
+        if not smoke_ok:
+            mark_capture_permission_paused(cfg)
+            cap["permissionPaused"] = True
+            log(
+                "capture: resume smoke failed — re-set permissionPaused, not spawning "
+                f"(reason: {smoke_reason or 'unknown'}; probe=granted alone is not enough)"
+            )
+            try:
+                publish_now()
+            except Exception:  # noqa: BLE001
+                pass
             return
         cap_args = [
             "--cell",
@@ -658,6 +742,8 @@ def main(argv: list[str] | None = None) -> int:
 
         def loop() -> None:
             guided = {"shown": False}
+            # Non-permission exit flap backoff (5s → 10s → 20s … cap 60s).
+            restart_delay = 5.0
             while not stop_event.is_set():
                 try:
                     proc = subprocess.Popen(
@@ -676,9 +762,14 @@ def main(argv: list[str] | None = None) -> int:
                     if stop_event.is_set():
                         break
                     if rc == CAPTURE_PERMISSION_EXIT:
+                        mark_capture_permission_paused(cfg)
+                        cap["permissionPaused"] = True
                         log(
-                            "capture paused (Screen Recording). "
-                            "Enable WoWGrok, Quit and reopen — not restarting capture."
+                            "capture paused (Screen Recording); saved "
+                            "capture.permissionPaused=true — will not spawn capture "
+                            "on next launch. Presence / Connect keep running without "
+                            "the pixel path. Clear the flag in config.json after "
+                            "enabling Screen Recording, then Quit+reopen."
                         )
                         if not guided["shown"]:
                             guided["shown"] = True
@@ -693,11 +784,15 @@ def main(argv: list[str] | None = None) -> int:
                             if screen_ui.get("result") == "quit":
                                 stop_event.set()
                         break
-                    log(f"capture exited ({rc}); restarting in 5 s")
-                    time.sleep(5)
+                    log(
+                        f"capture exited ({rc}); restarting in {int(restart_delay)} s"
+                    )
+                    time.sleep(restart_delay)
+                    restart_delay = min(restart_delay * 2, 60.0)
                 except Exception as e:  # noqa: BLE001
                     log("capture spawn error:", e)
-                    time.sleep(5)
+                    time.sleep(restart_delay)
+                    restart_delay = min(restart_delay * 2, 60.0)
 
         threading.Thread(target=loop, daemon=True).start()
 
@@ -715,11 +810,19 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  project  : {default_cwd}  ({default_src})")
     print(f"  model    : {cfg.get('model') or xai.DEFAULT_MODEL}")
     print(f"  api key  : {key_src}")
-    print(
-        f"  capture  : {'on (' + cap_proc + ', ' + str(cap['processName']) + ', '
-        + str(cap['cellsPerRow']) + 'x' + str(cap['maxRows']) + ' cells of '
-        + str(cap['cellPx']) + 'px)' if cap.get('enabled') else 'off'}"
-    )
+    if not cap.get("enabled"):
+        cap_label = "off"
+    elif cap.get("permissionPaused"):
+        cap_label = (
+            "paused — presence/Connect + reload chat (capture off until smoke ok)"
+        )
+    else:
+        cap_label = (
+            "on (" + cap_proc + ", " + str(cap["processName"]) + ", "
+            + str(cap["cellsPerRow"]) + "x" + str(cap["maxRows"]) + " cells of "
+            + str(cap["cellPx"]) + "px)"
+        )
+    print(f"  capture  : {cap_label}")
     print(f"  slots    : {slots}  parallel={max_parallel}")
     if not addon_installed():
         print(
@@ -750,6 +853,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         poll_saved_variables()
+        if cap.get("permissionPaused"):
+            try:
+                publish_now()
+                log("inbox: advertised capturePaused=true for reload transport")
+            except Exception:  # noqa: BLE001
+                pass
         start_capture()
         presence_beat()
 
@@ -768,6 +877,49 @@ def main(argv: list[str] | None = None) -> int:
 
         threading.Thread(target=poll_loop, daemon=True).start()
         threading.Thread(target=presence_loop, daemon=True).start()
+
+        def resume_watch_loop() -> None:
+            """Slow (~45s) smoke: clear permissionPaused and spawn capture once."""
+            interval = 45.0
+            while not stop_event.is_set():
+                # Wait first so we do not race start_capture's initial skip.
+                stop_event.wait(interval)
+                if stop_event.is_set():
+                    break
+                if not cap.get("permissionPaused"):
+                    continue
+                if capture_proc[0] is not None:
+                    continue
+                if sys.platform != "darwin":
+                    continue
+                try:
+                    from .capture_mac import resume_smoke
+
+                    ok, reason = resume_smoke(
+                        str(cap.get("processName") or "WowB")
+                    )
+                except Exception as e:  # noqa: BLE001
+                    ok, reason = False, f"exception: {e}"
+                if not ok:
+                    log(
+                        f"capture: resume smoke still failing (reason: {reason})"
+                    )
+                    continue
+                if clear_capture_permission_paused(cfg):
+                    log(
+                        "capture: resume smoke OK — cleared permissionPaused, "
+                        f"publishing without capturePaused, spawning capture ({reason})"
+                    )
+                else:
+                    cap["permissionPaused"] = False
+                try:
+                    publish_now()
+                except Exception:  # noqa: BLE001
+                    pass
+                start_capture()
+
+        if sys.platform == "darwin":
+            threading.Thread(target=resume_watch_loop, daemon=True).start()
 
     def stop_capture() -> None:
         """Terminate capture child; wait ~3s then kill if needed; clear slot."""

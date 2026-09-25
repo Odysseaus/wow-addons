@@ -136,16 +136,11 @@ jobs:
 
           Built from commit ${SHA} via GitHub Actions (macos-14, Apple Silicon arm64, unsigned).
 
-          ### What is new in 0.1.13
-          - **SSL CA fix for frozen .app:** bundles certifi cacert.pem and configures SSL_CERT_FILE / REQUESTS_CA_BUNDLE plus ssl default HTTPS context before any xAI call. Fixes CERTIFICATE_VERIFY_FAILED on Mac after Connect/Ready.
-          - If capture.processName is still the example placeholder WowB, re-detect from the AddOns client folder on startup (Mac).
-
-          ### Carry-forward from 0.1.12
-          - Screen Recording TCC: real in-process 1x1 capture probe; NSScreenCaptureUsageDescription; first-run dialogs centered on pointer/primary work area.
-
-          ### Carry-forward from 0.1.11
-          - Connect via presence (Note bridge when head>0; CONNECT_WAIT 45s).
-          - In-process CoreGraphics TCC attribution to WoWGrok.
+          ### Product path (v0.1.21)
+          - Trunk: **0.1.13** pixel Send + strip SetScale(768 / physH); RecordFor still 7-field (no ctx).
+          - Plus: panel version title + **shift-click ExpandLinks** only (from 0.1.20 BuildUI / ExpandLinks).
+          - Bridge/app capture: **0.1.19** capture_mac (CG strip / screencapture -l) + permissionPaused resume smoke.
+          - **Not included:** GameContext / ContextToSend / RecordFor ctx / hello ctx / `/wow-grok context` / SafeReload-on-Send / loadfile Inbox / SetScale(1) / capturePaused chat UX from 0.1.14–0.1.20.
 
           ### Install
           1. Quit any old WoWGrok process.
@@ -160,7 +155,7 @@ jobs:
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-} — SSL CA fix for frozen xAI"
+          TITLE="WoW Grok Mac ${TAG#wow-grok-mac-v} — trunk 0.1.13 + links + 0.1.19 capture"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok-mac-arm64.zip \
