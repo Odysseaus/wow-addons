@@ -139,5 +139,94 @@ class TestInstructionsEveryTurn(unittest.TestCase):
 
 
 
+
+class TestResponseTools(unittest.TestCase):
+    def test_response_tools_both_enabled(self):
+        tools = xai.response_tools(web_search=True, x_search=True)
+        self.assertEqual(tools, [{"type": "web_search"}, {"type": "x_search"}])
+
+    def test_response_tools_x_only(self):
+        tools = xai.response_tools(web_search=False, x_search=True)
+        self.assertEqual(tools, [{"type": "x_search"}])
+
+    def test_response_tools_web_only(self):
+        tools = xai.response_tools(web_search=True, x_search=False)
+        self.assertEqual(tools, [{"type": "web_search"}])
+
+    def test_response_tools_none(self):
+        self.assertEqual(xai.response_tools(web_search=False, x_search=False), [])
+
+
+class TestPostResponseTools(unittest.TestCase):
+    def _fake_urlopen(self, captured):
+        class FakeResp:
+            status = 200
+
+            def read(self):
+                return b'{"id": "resp_t", "output_text": "ok"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            import json
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return FakeResp()
+
+        return fake_urlopen
+
+    def test_post_response_includes_tools_when_enabled(self):
+        captured = {}
+        import urllib.request
+        prev = urllib.request.urlopen
+        urllib.request.urlopen = self._fake_urlopen(captured)
+        try:
+            tools = xai.response_tools(web_search=True, x_search=True)
+            xai.post_response(api_key="test-key", input="hi", tools=tools)
+        finally:
+            urllib.request.urlopen = prev
+        self.assertEqual(
+            captured["body"]["tools"],
+            [{"type": "web_search"}, {"type": "x_search"}],
+        )
+
+    def test_post_response_omits_tools_when_none(self):
+        captured = {}
+        import urllib.request
+        prev = urllib.request.urlopen
+        urllib.request.urlopen = self._fake_urlopen(captured)
+        try:
+            xai.post_response(api_key="test-key", input="hi", tools=None)
+        finally:
+            urllib.request.urlopen = prev
+        self.assertNotIn("tools", captured["body"])
+
+    def test_post_response_omits_tools_when_empty(self):
+        captured = {}
+        import urllib.request
+        prev = urllib.request.urlopen
+        urllib.request.urlopen = self._fake_urlopen(captured)
+        try:
+            xai.post_response(api_key="test-key", input="hi", tools=[])
+        finally:
+            urllib.request.urlopen = prev
+        self.assertNotIn("tools", captured["body"])
+
+    def test_chat_passes_tools(self):
+        captured = {}
+        import urllib.request
+        prev = urllib.request.urlopen
+        urllib.request.urlopen = self._fake_urlopen(captured)
+        try:
+            tools = [{"type": "x_search"}]
+            xai.chat(api_key="test-key", input="hi", tools=tools)
+        finally:
+            urllib.request.urlopen = prev
+        self.assertEqual(captured["body"]["tools"], [{"type": "x_search"}])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -585,6 +585,10 @@ def main(argv: list[str] | None = None) -> int:
                     )
 
                 system = P.system_prompt(game_context())
+                tools = xai.response_tools(
+                    web_search=bool(cfg.get("webSearch", True)),
+                    x_search=bool(cfg.get("xSearch", True)),
+                )
                 result = xai.chat(
                     api_key=api_key,
                     model=cfg.get("model"),
@@ -593,6 +597,7 @@ def main(argv: list[str] | None = None) -> int:
                     previous_response_id=prev_id,
                     system=system or None,
                     history=hist,
+                    tools=tools or None,
                     on_progress=on_progress,
                     timeout=timeout_ms / 1000.0,
                 )
@@ -904,6 +909,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  project  : {default_cwd}  ({default_src})")
     print(f"  model    : {cfg.get('model') or xai.DEFAULT_MODEL}")
     print(f"  api key  : {key_src}")
+    _tools = xai.response_tools(
+        web_search=bool(cfg.get("webSearch", True)),
+        x_search=bool(cfg.get("xSearch", True)),
+    )
+    _tools_label = ",".join(t.get("type", "?") for t in _tools) if _tools else "(none)"
+    print(f"  tools    : {_tools_label}")
     if not cap.get("enabled"):
         cap_label = "off"
     elif cap.get("permissionPaused"):

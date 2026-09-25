@@ -21,6 +21,24 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.24] - 2026-09-25
+
+### Product pin (Mac)
+
+- **Product 0.1.24** = **app/bridge 0.1.24** (xAI server-side `web_search` + `x_search` on Responses) + **AddOn GameContext content from 0.1.23** (toc Version stamp only → 0.1.24 so footer matches DMG) + **capture from 0.1.19** (same as 0.1.22/0.1.23 — CG strip / `screencapture -l`).
+- **Capture unchanged** from working **0.1.23 / 0.1.22 / 0.1.19** — md5 `b75395986a768269a8f4ae5594709159`. **NOT** the broken **0.1.20 / 0.1.21** Mac capture changes.
+- **Codec.lua / Inbox.lua / SetScale / pixel Send shape** identical to **0.1.23** (no Send→ReloadUI).
+
+### Added
+
+- xAI Responses tools: `web_search` and `x_search` attached to `POST /v1/responses` when enabled. Client still receives final `output_text` / message content; existing `extract_text` unchanged.
+- Config toggles **`webSearch`** / **`xSearch`** (default **true**). Disable without rebuild: set either to `false` in `~/Library/Application Support/WoWGrok/config.json` (Mac) or next to the exe (Windows), then restart the app. Startup banner logs `tools: web_search,x_search` or `tools: (none)`.
+
+### Notes
+
+- Search can increase latency (existing `timeoutMs` default 1800000 still applies) and cost (X Search billed per posts/profiles looked up).
+- Bridge `__init__` / pyproject / `build_mac.spec` CFBundle / toc Version → **0.1.24**.
+
 ## [0.1.23] - 2026-09-24
 
 ### Product pin (Mac)
