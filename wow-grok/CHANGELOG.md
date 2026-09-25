@@ -21,6 +21,29 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.22] - 2026-09-24
+
+### Product pin (Mac)
+
+- **Product 0.1.22** = **AddOn 0.1.22** (version title/footer + shift-click TakeLink/ExpandLinks) + **app/bridge capture stack from wow-grok-mac-v0.1.19** (CG strip / `screencapture -l` / permissionPaused resume).
+- **NOT** the broken **0.1.20 / 0.1.21** Mac app builds. Reinstalling this DMG does **not** bring back 0.1.21 rect-capture.
+
+### Added
+
+- Panel title + footer show AddOn version via `GetAddOnMetadata` / `C_AddOns.GetAddOnMetadata` (e.g. `WoW Grok v0.1.22`).
+- Shift-click **TakeLink** / **ExpandLinks**: InsertLink hooks (frame shown) + debounce; on Send, links become `[Name]` plus a "Linked from the game" tooltip block.
+
+### Changed
+
+- Branch cut from **wow-grok-mac-v0.1.19** (known-good capture). AddOn replaced with live-patched 0.1.22 (pure 0.1.13 strip/Send/Codec/`SetScale(768/physH)` + version + links).
+- Bridge `__init__` / pyproject / `build_mac.spec` CFBundle / workflow Info.plist inject → **0.1.22** so the DMG is clearly 0.1.22 while capture code remains the 0.1.19 stack.
+- **Supersedes** broken Mac apps **0.1.20** and **0.1.21**.
+
+### Notes
+
+- Keeps 0.1.13 pixel Send path, 7-field RecordFor (no ctx), and strip `SetScale(768 / physH)`.
+- **Not included:** `GameContext` / `ContextToSend` / RecordFor ctx / hello ctx / `/wow-grok context` / SafeReload-on-Send / loadfile Inbox / SetScale(1) / capturePaused chat UX from 0.1.14–0.1.21.
+
 ## [0.1.19] - 2026-09-24
 
 ### Fixed

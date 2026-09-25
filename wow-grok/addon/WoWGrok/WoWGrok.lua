@@ -156,7 +156,6 @@ local function InitDB()
 	local s = db.settings
 	if s.autoRefresh == nil then s.autoRefresh = true end
 	if s.signal == nil then s.signal = true end
-	if s.context == nil then s.context = true end -- tell the agent about the character, zone, etc.
 	s.echo = s.echo or "full" -- how much of each reply to print in the game chat
 	s.mode = s.mode or "pixel"
 	s.interval = s.interval or 20
@@ -211,18 +210,6 @@ end
 -- Reload plumbing (fallback path)
 ---------------------------------------------------------------------------
 
-
-local function AddonVersion()
-	local v
-	if C_AddOns and C_AddOns.GetAddOnMetadata then
-		v = C_AddOns.GetAddOnMetadata("WoWGrok", "Version")
-	elseif GetAddOnMetadata then
-		v = GetAddOnMetadata("WoWGrok", "Version")
-	end
-	if v and v ~= "" then return v end
-	return "?"
-end
-
 local function SafeReload()
 	if InCombatLockdown() then
 		WoWGrok.reloadAfterCombat = true
@@ -234,9 +221,6 @@ local function SafeReload()
 	ReloadUI()
 end
 
--- Forward decl: ArmAutoRefresh runs before the real definition below.
-local UseReloadTransport
-
 -- ReloadUI() only works from a hardware event (a keypress or click), never from
 -- a timer. So the automatic reload piggybacks on the player's own next keypress
 -- once the interval has elapsed. The key still reaches the game normally.
@@ -244,16 +228,29 @@ local keyCatcher = CreateFrame("Frame", "WoWGrokKeyCatcher", UIParent)
 keyCatcher:Hide()
 keyCatcher:EnableKeyboard(true)
 keyCatcher:SetScript("OnKeyDown", function(self, key)
-	-- Product lock: never ReloadUI from the key catcher (was auto-refresh flush).
-	self:Hide()
+	if db and AnyPending() and db.settings.autoRefresh
+		and GetTime() >= (WoWGrok.nextAutoRefresh or 0)
+		and not InCombatLockdown() then
+		self:Hide()
+		ReloadUI()
+	end
 end)
 
 -- Arm the keypress reload. In pixel mode this is only used once the slot pool
 -- is exhausted (a reload frees every slot) or the slots are not installed.
 function WoWGrok.ArmAutoRefresh()
-	-- Product lock: never auto-ReloadUI (keyCatcher path removed). Only the Reload button
-	-- / slash reload may call SafeReload. Capture-paused sends flush via manual Reload.
-	if keyCatcher then keyCatcher:Hide() end
+	keyCatcher:Hide()
+	if not AnyPending() or not db.settings.autoRefresh then return end
+	if db.settings.mode == "pixel" and not (run.slotsExhausted or run.slotsMissing or run.pixelFailed) then return end
+	-- Propagation can't be changed in combat. Never show the catcher without it,
+	-- or it would eat every keypress. PLAYER_REGEN_ENABLED re-arms after combat.
+	if not keyCatcher.propagates then
+		if InCombatLockdown() or not keyCatcher.SetPropagateKeyboardInput then return end
+		keyCatcher:SetPropagateKeyboardInput(true)
+		keyCatcher.propagates = true
+	end
+	WoWGrok.nextAutoRefresh = GetTime() + db.settings.interval
+	keyCatcher:Show()
 end
 
 ---------------------------------------------------------------------------
@@ -313,19 +310,10 @@ local function ShowStrip(id, payload)
 	run.stripShown = true
 end
 
--- Record: session, chat, id, cwd, flags, name, [context,] text. Several records
--- per frame. The context field is only present when the flags carry "c", so the
--- bridge can tell it from a separator inside the text.
+-- Record: session, chat, id, cwd, flags, name, text. Several records per frame.
 local function RecordFor(id, rec)
 	local name = (rec.name or ""):gsub("[\30\31]", " ")
-	local flags = rec.flags or ""
-	local fields = { db.session, rec.chat, tostring(id), rec.cwd, flags, name }
-	if rec.ctx ~= nil then
-		fields[5] = flags == "" and "c" or (flags .. ";c")
-		table.insert(fields, (rec.ctx:gsub("[\30\31]", " ")))
-	end
-	table.insert(fields, rec.text)
-	return table.concat(fields, US)
+	return table.concat({ db.session, rec.chat, tostring(id), rec.cwd, rec.flags or "", name, rec.text }, US)
 end
 
 -- Redraw the strip from every outbound message the bridge hasn't acknowledged.
@@ -417,30 +405,6 @@ local function NotedBridge(at)
 	at = at or GetTime()
 	if not run.bridgeSeen or at > run.bridgeSeen then run.bridgeSeen = at end
 	run.pixelFailed = nil
-	-- Do not clear run.capturePaused here — only the bridge signal (or mode) controls it.
-end
-
-local function NoteCapturePaused()
-	run.capturePaused = true
-	run.awaitingCaptureHint = nil
-end
-
--- Bridge recovered (Inbox/slot omits capturePaused): leave reload transport in pixel mode.
-local function NoteCaptureResumed()
-	if not db or db.settings.mode ~= "pixel" then return end
-	if run.capturePaused then
-		run.capturePaused = nil
-	end
-end
-
--- Reload/SV path: explicit mode, capture paused (bridge signal), or pixel path dead.
-function UseReloadTransport()
-	if not db then return true end
-	if db.settings.mode ~= "pixel" then return true end
-	if run.capturePaused or run.pixelFailed or run.slotsExhausted or run.slotsMissing then
-		return true
-	end
-	return false
 end
 
 local function PresencePath(k)
@@ -532,25 +496,22 @@ end
 -- until then the Connect button takes the Send button's place. The reload
 -- transport has no idea whether the bridge is there, so it never gates.
 function WoWGrok.IsConnected()
-	if not db then return false end
-	-- Explicit reload mode: never gate on the pixel light.
-	if db.settings.mode ~= "pixel" then return true end
-	-- capturePaused: require bridgeSeen (via slot LoadAddOn) so Connect stays available
-	-- until the bridge is marked; Send works once seen (slots/Inbox path).
-	if run.capturePaused then
-		return run.bridgeSeen ~= nil
-	end
-	if run.awaitingCaptureHint then return false end
+	if not db or db.settings.mode ~= "pixel" then return true end
 	return WoWGrok.BridgeState() == "ok" and not run.pixelFailed
 end
 
 -- Connect button: say hello to the bridge (it acks, refreshes the slots and
 -- offers a restore), ignoring SayHello's throttle so a click always does something.
 function WoWGrok.Connect()
+	if db.settings.mode ~= "pixel" then
+		SafeReload()
+		return
+	end
+	run.lastHelloAt = nil
+	run.pixelFailed = nil
 	run.connectFailed = nil
 	run.connectingAt = GetTime()
-	-- Presence marks the bridge alive (reload mode and capture-paused must NOT
-	-- only SafeReload — that skipped the green light and confused Connect).
+	-- Presence files alone prove the bridge (capture/TCC may be down).
 	if PresenceWorks() then
 		local head = FindPresenceHead()
 		if head > 0 then
@@ -559,28 +520,6 @@ function WoWGrok.Connect()
 			NotedBridge()
 		end
 	end
-	if UseReloadTransport() then
-		-- Capture paused / reload: still LoadAddOn a reply slot so bridgeSeen + replies
-		-- land (no loadfile — Forever has none). Tick honors wantConnectSlot.
-		run.awaitingCaptureHint = nil
-		if db and db.settings.mode == "pixel" then
-			run.wantConnectSlot = true
-			print("|cff88ccffWoW Grok|r Connect: capturePaused — wantConnectSlot (Tick loads slot)")
-			WoWGrok.SayHello()
-		else
-			run.connectingAt = nil
-			print("|cff88ccffWoW Grok|r Connect: presence/reload chat (reload mode)")
-		end
-		WoWGrok.Render()
-		return
-	end
-	run.lastHelloAt = nil
-	run.pixelFailed = nil
-	-- Always queue a slot poll: presence sound-index can fail while files are healthy,
-	-- and pixel Hello is dead when capture/TCC is paused. Tick honors wantConnectSlot.
-	run.wantConnectSlot = true
-	run.awaitingCaptureHint = true
-	print("|cff88ccffWoW Grok|r Connect: wantConnectSlot + Hello (presence/slot poll)")
 	WoWGrok.SayHello()
 end
 
@@ -644,19 +583,14 @@ local function SelfTestSignals()
 		signalStats.selftest = "PlaySoundFile missing"
 		return
 	end
-	local emptyLooksValid = SoundValid("Interface\AddOns\WoWGrok\ctl\empty.wav")
-	local validLooksValid = SoundValid("Interface\AddOns\WoWGrok\ctl\valid.wav")
+	local emptyLooksValid = SoundValid("Interface\\AddOns\\WoWGrok\\ctl\\empty.wav")
+	local validLooksValid = SoundValid("Interface\\AddOns\\WoWGrok\\ctl\\valid.wav")
 	if emptyLooksValid then
 		signalAvailable = false
 		signalStats.selftest = "an empty file reports as playable"
 	elseif not validLooksValid then
-		-- ctl files may not be sound-indexed yet; a real presence beat still proves the channel.
-		if SoundValid(PresencePath(1)) then
-			signalStats.selftest = "ctl not indexed; presence/0001 ok"
-		else
-			signalAvailable = false
-			signalStats.selftest = "a valid file reports as unplayable (files not indexed? restart WoW)"
-		end
+		signalAvailable = false
+		signalStats.selftest = "a valid file reports as unplayable (files not indexed? restart WoW)"
 	else
 		signalStats.selftest = "passed"
 	end
@@ -700,91 +634,30 @@ end
 
 local Finish -- defined below
 
--- The bridge has read this record: whatever game context rode on it is now
--- what the bridge knows, so later messages only carry it again if it changes.
-local function NoteAcked(rec)
-	rec.acked = true
-	if rec.ctx ~= nil then run.contextSent = rec.ctx end
-end
-
 local function MarkAcked(id)
 	local rec = run.outbound[id]
 	if rec and not rec.acked then
-		NoteAcked(rec)
+		rec.acked = true
 		RefreshStrip()
 	end
 	NotedBridge()
 end
 
 -- Dispatch a list of reply records to the chats waiting for them.
--- Recover pendingId from outbox/pendingBackup when SV dropped it (stuck Inbox).
-local function HistoryHasId(chat, id)
-	if not chat or not id then return false end
-	for _, m in ipairs(chat.history or {}) do
-		if m.id == id then return true end
-	end
-	return false
-end
-
-local function EnsurePendingFromOutbox(c, r)
-	if not c or not r or c.pendingId then return end
-	local rid = tonumber(r.id)
-	if not rid then return end
-	local ob = db and db.outbox
-	if type(ob) == "table" and tonumber(ob.id) == rid then
-		if not ob.chat or ob.chat == "" or ob.chat == r.chat or ob.chat == c.id then
-			c.pendingId = rid
-			return
-		end
-	end
-	local pb = db and db.pendingBackup
-	if type(pb) == "table" and tonumber(pb.id) == rid then
-		if pb.chat == c.id or pb.chat == r.chat then
-			c.pendingId = rid
-		end
-	end
-end
-
-local function EnsureUserHistoryForReply(c, r)
-	if not c or not r or HistoryHasId(c, r.id) then return end
-	local text
-	local pb = db and db.pendingBackup
-	if type(pb) == "table" and tonumber(pb.id) == tonumber(r.id) and pb.text then
-		text = pb.text
-	end
-	if (not text or text == "") and db and type(db.outbox) == "table" and tonumber(db.outbox.id) == tonumber(r.id) then
-		text = FromHex(db.outbox.text or "")
-	end
-	if text and text ~= "" then
-		AddHistory(c, "user", text, tonumber(r.id))
-	end
-end
-
 local function ApplyReplies(replies)
 	local matched = false
 	for _, r in ipairs(replies or {}) do
 		local c = FindChat(r.chat)
-		if c then
-			EnsurePendingFromOutbox(c, r)
-			if c.pendingId and r.id == c.pendingId then
-				matched = true
-				MarkAcked(r.id)
-				local denied = type(r.denied) == "table" and #r.denied > 0 and r.denied or nil
-				if r.status == "done" then
-					EnsureUserHistoryForReply(c, r)
-					Finish(c, "grok", r.text or "", denied)
-					if db and db.pendingBackup and tonumber(db.pendingBackup.id) == tonumber(r.id) then
-						db.pendingBackup = nil
-					end
-				elseif r.status == "error" then
-					EnsureUserHistoryForReply(c, r)
-					Finish(c, "system", "Bridge error: " .. tostring(r.text), denied)
-					if db and db.pendingBackup and tonumber(db.pendingBackup.id) == tonumber(r.id) then
-						db.pendingBackup = nil
-					end
-				elseif r.status == "working" then
-					c.progress = r.text
-				end
+		if c and c.pendingId and r.id == c.pendingId then
+			matched = true
+			MarkAcked(r.id)
+			local denied = type(r.denied) == "table" and #r.denied > 0 and r.denied or nil
+			if r.status == "done" then
+				Finish(c, "grok", r.text or "", denied)
+			elseif r.status == "error" then
+				Finish(c, "system", "Bridge error: " .. tostring(r.text), denied)
+			elseif r.status == "working" then
+				c.progress = r.text
 			end
 		end
 	end
@@ -833,7 +706,6 @@ local function TryLoadSlot(why)
 	local name = FreeSlot()
 	if not name then
 		run.slotsExhausted = true
-		run.awaitingCaptureHint = nil
 		WoWGrok.ArmAutoRefresh()
 		WoWGrok.UpdateStatus()
 		return
@@ -844,7 +716,6 @@ local function TryLoadSlot(why)
 		run.slotError = reason
 		if reason == "MISSING" or reason == "DISABLED" then
 			run.slotsMissing = true
-			run.awaitingCaptureHint = nil
 			WoWGrok.ArmAutoRefresh()
 		end
 		WoWGrok.UpdateStatus()
@@ -858,14 +729,6 @@ local function TryLoadSlot(why)
 		NotedBridge(GetTime() - (time() - data.now))
 	end
 	if type(data) == "table" and type(data.cwd) == "string" and data.cwd ~= "" then run.bridgeCwd = data.cwd end
-	if type(data) == "table" then
-		if data.capturePaused then
-			NoteCapturePaused()
-		else
-			NoteCaptureResumed()
-		end
-	end
-	run.awaitingCaptureHint = nil
 	local matched = ApplyReplies(type(data) == "table" and data.replies or nil)
 	if type(data) == "table" and data.restore then ImportRestore(data.restore) end
 	if why == "signal" and not matched then
@@ -874,17 +737,10 @@ local function TryLoadSlot(why)
 	WoWGrok.Render()
 end
 
-local ProcessInbox
-local PullInboxFromDisk
 local function Tick()
 	if not db then return end
 	local now = GetTime()
 	PollPresence()
-	-- Connect button queued a slot poll (presence sound-index may have failed).
-	if run.wantConnectSlot then
-		run.wantConnectSlot = nil
-		TryLoadSlot("connect")
-	end
 	-- Without presence beats, the only evidence is a slot read; spend one every
 	-- IDLE_POLL_SECONDS while idle so the light still reflects reality (and stays
 	-- green while the bridge is up: BridgeState allows for this interval).
@@ -892,12 +748,6 @@ local function Tick()
 		and now - (run.lastIdlePoll or -1e9) >= IDLE_POLL_SECONDS then
 		run.lastIdlePoll = now
 		TryLoadSlot("idle")
-	end
-	-- capturePaused + never seen bridge: poll slots so light turns green (no loadfile).
-	if run.capturePaused and not run.bridgeSeen
-		and now - (run.lastPausedSeenPoll or 0) >= 2 then
-		run.lastPausedSeenPoll = now
-		TryLoadSlot("capturePausedSeen")
 	end
 	WoWGrok.UpdateDot()
 	WoWGrok.CheckConnection()
@@ -918,7 +768,7 @@ local function Tick()
 	end
 	for id, rec in pairs(run.outbound) do
 		if not rec.acked and CheckSignal("ack", id) then
-			NoteAcked(rec)
+			rec.acked = true
 			changed = true
 			NotedBridge()
 		end
@@ -926,7 +776,7 @@ local function Tick()
 		-- A forget is the same, but the bridge must have been seen a moment after
 		-- the record went up, so it had a chance to read it.
 		if (rec.hello or rec.forget) and not rec.acked and run.bridgeSeen and run.bridgeSeen >= rec.sentAt + (rec.forget and 2 or 0) then
-			NoteAcked(rec)
+			rec.acked = true
 			changed = true
 		end
 		if rec.acked then
@@ -960,26 +810,6 @@ local function Tick()
 		WoWGrok.UpdateStatus()
 	end
 	if not AnyPending() then return end
-	-- Capture paused: bridge writes slot Inbox.lua files; LoadAddOn a fresh slot.
-	-- (loadfile of main Inbox.lua is often blocked; slots are the live path.)
-	if run.capturePaused and now - (run.lastInboxPull or 0) >= 2 then
-		run.lastInboxPull = now
-		ProcessInbox()
-		if AnyPending() then
-			TryLoadSlot("capturePaused")
-		end
-		if not AnyPending() then
-			WoWGrok.Render()
-			return
-		end
-	elseif now - (run.lastInboxPull or 0) >= 2 then
-		run.lastInboxPull = now
-		ProcessInbox()
-		if not AnyPending() then
-			WoWGrok.Render()
-			return
-		end
-	end
 	local moved = false
 	for _, c in ipairs(db.chats) do
 		if c.pendingId and PollActivity(c) then moved = true end
@@ -997,63 +827,10 @@ local function Tick()
 end
 
 -- Pull whatever bridge.js last wrote into Inbox.lua (the reload path).
--- If UI pendingId disagrees with db.outbox (stale already-handled outbox), rebuild
--- outbox from the pending user message so the bridge can (re)submit / republish.
-local function RequeueStaleOutbox()
-	local fixed = false
-	for _, ch in ipairs(db.chats or {}) do
-		if ch.pendingId then
-			local ob = db.outbox
-			if not ob or tonumber(ob.id) ~= tonumber(ch.pendingId) or (ob.chat and ob.chat ~= "" and ob.chat ~= ch.id) then
-				local text
-				for i = #ch.history, 1, -1 do
-					local m = ch.history[i]
-					if m.id == ch.pendingId and m.role == "user" then
-						text = m.text
-						break
-					end
-				end
-				if (not text or text == "") and db.pendingBackup and tonumber(db.pendingBackup.id) == tonumber(ch.pendingId) then
-					text = db.pendingBackup.text
-				end
-				if text and text ~= "" then
-					db.outbox = {
-						id = ch.pendingId,
-						session = db.session,
-						chat = ch.id,
-						text = ToHex(text),
-						cwd = ToHex(ch.cwd or ""),
-						t = time(),
-					}
-					db.pendingBackup = { chat = ch.id, id = ch.pendingId, text = text }
-					fixed = true
-				end
-			end
-		end
-	end
-	return fixed
-end
-
-
--- Re-read Inbox.lua from disk (bridge updates the file without ReloadUI).
--- Without this, WoWGrok_Inbox stays at ADDON_LOADED snapshot and capture-paused
--- replies never appear until a full ReloadUI.
-PullInboxFromDisk = function()
-	-- Forever (and retail) do not expose loadfile. Calling it errors and breaks Tick.
-	-- Mid-session replies come from slot LoadAddOn only; main Inbox is ADDON_LOADED snapshot.
-	return false
-end
-
-ProcessInbox = function()
-	PullInboxFromDisk()
+local function ProcessInbox()
 	local inbox = WoWGrok_Inbox
 	if type(inbox) ~= "table" then return end
 	if type(inbox.cwd) == "string" and inbox.cwd ~= "" then run.bridgeCwd = inbox.cwd end
-	if inbox.capturePaused then
-		NoteCapturePaused()
-	else
-		NoteCaptureResumed()
-	end
 	ApplyReplies(inbox.replies)
 	if inbox.restore then ImportRestore(inbox.restore) end
 end
@@ -1079,18 +856,14 @@ Finish = function(chat, role, text, denied)
 	WoWGrok.Notify(chat, text)
 end
 
----------------------------------------------------------------------------
--- Game context and links
----------------------------------------------------------------------------
 
--- The agent only sees text, so two things about the game are spelled out for it:
--- who is asking (the character, where they are; sent with the hello and again
--- when it changes, and put into the agent's system prompt by the bridge), and
--- what the player shift-clicked into the message (item, spell and quest links
--- are meaningless markup to the agent; their tooltips are what the player sees).
--- Every game API here is optional: whatever the client lacks is left out.
+---------------------------------------------------------------------------
+-- Shift-click link expansion (for the agent)
+---------------------------------------------------------------------------
+-- The agent only sees text, so item/spell/quest links the player shift-clicks
+-- into the message are expanded to [Name] plus their tooltip. Every game API
+-- here is optional: whatever the client lacks is left out.
 
-local CONTEXT_MAX = 700 -- bytes of context per record; the strip has ~3.2 KB for everything
 local LINK_LINES_MAX = 30 -- tooltip lines kept per link
 local LINK_BYTES_MAX = 900 -- bytes kept per link
 
@@ -1099,126 +872,6 @@ local function Try(fn, ...)
 	if type(fn) ~= "function" then return nil end
 	local ok, a, b, c, d, e, f, g = pcall(fn, ...)
 	if ok then return a, b, c, d, e, f, g end
-end
-
-local function Money(copper)
-	copper = tonumber(copper) or 0
-	local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
-	if g > 0 then return g .. "g " .. s .. "s " .. c .. "c" end
-	if s > 0 then return s .. "s " .. c .. "c" end
-	return c .. "c"
-end
-
--- A few lines about the game and the character, as the bridge will show them to the agent.
-function WoWGrok.GameContext()
-	local lines = {}
-	local version, build, _, toc = Try(GetBuildInfo)
-	toc = tonumber(toc)
-	local game = "World of Warcraft"
-	if toc and toc >= 16000 and toc < 20000 then game = "World of Warcraft: Forever" end
-	local client = ""
-	if version then
-		client = " (client " .. tostring(version) .. (build and ("." .. tostring(build)) or "") .. (toc and (", interface " .. toc) or "") .. ")"
-	end
-	table.insert(lines, "Game: " .. game .. client)
-
-	local name = Try(UnitName, "player")
-	if name then
-		local realm = Try(GetRealmName)
-		local level = Try(UnitLevel, "player")
-		local race = Try(UnitRace, "player")
-		local class = Try(UnitClass, "player")
-		local faction = Try(UnitFactionGroup, "player")
-		local guild = Try(GetGuildInfo, "player")
-		local who = "Character: " .. tostring(name) .. (realm and (" on " .. tostring(realm)) or "")
-		local desc = {}
-		if level then table.insert(desc, "level " .. tostring(level)) end
-		if race then table.insert(desc, tostring(race)) end
-		if class then table.insert(desc, tostring(class)) end
-		if #desc > 0 then who = who .. ", " .. table.concat(desc, " ") end
-		if faction then who = who .. " (" .. tostring(faction) .. ")" end
-		if guild then who = who .. ", guild <" .. tostring(guild) .. ">" end
-		table.insert(lines, who)
-	end
-
-	local zone = Try(GetZoneText)
-	local sub = Try(GetSubZoneText)
-	if zone and zone ~= "" then
-		table.insert(lines, "Location: " .. zone .. ((sub and sub ~= "" and sub ~= zone) and (" - " .. sub) or ""))
-	end
-
-	-- Map coordinates, as the minimap shows them (0-100 across the current map;
-	-- addons get no world x/y/z). Modern C_Map first, the vanilla call as fallback.
-	local x, y, mapName
-	local mapId = Try(C_Map and C_Map.GetBestMapForUnit, "player")
-	if type(mapId) == "number" then
-		local pos = Try(C_Map.GetPlayerMapPosition, mapId, "player")
-		if type(pos) == "table" and type(pos.x) == "number" and type(pos.y) == "number" then x, y = pos.x, pos.y end
-		local info = Try(C_Map.GetMapInfo, mapId)
-		if type(info) == "table" and type(info.name) == "string" then mapName = info.name end
-	end
-	if not x then
-		local px, py = Try(GetPlayerMapPosition, "player")
-		if type(px) == "number" and type(py) == "number" then x, y = px, py end
-	end
-	if x and y and (x > 0 or y > 0) then
-		local where = (mapName and mapName ~= zone) and (" on " .. mapName) or ""
-		table.insert(lines, string.format("Position: %.1f, %.1f%s%s", x * 100, y * 100, where, mapId and (" (map " .. mapId .. ")") or ""))
-	end
-
-	local progress = {}
-	local copper = Try(GetMoney)
-	if copper then table.insert(progress, "Money: " .. Money(copper)) end
-	local xp, xpMax = Try(UnitXP, "player"), Try(UnitXPMax, "player")
-	if type(xp) == "number" and type(xpMax) == "number" and xpMax > 0 then
-		table.insert(progress, "XP: " .. xp .. "/" .. xpMax)
-	end
-	if #progress > 0 then table.insert(lines, table.concat(progress, "; ")) end
-
-	-- Classic-style talent tabs: name, icon, points spent.
-	local tabs = Try(GetNumTalentTabs)
-	if type(tabs) == "number" and tabs > 0 then
-		local parts = {}
-		for i = 1, tabs do
-			local tname, _, points = Try(GetTalentTabInfo, i)
-			if type(tname) == "string" and type(points) == "number" then
-				table.insert(parts, tname .. " " .. points)
-			end
-		end
-		if #parts > 0 then table.insert(lines, "Talents: " .. table.concat(parts, " / ")) end
-	end
-
-	-- Skill lines under the Professions and Secondary Skills headers.
-	local n = Try(GetNumSkillLines)
-	if type(n) == "number" then
-		local header, parts = nil, {}
-		local wanted = { [TRADE_SKILLS or "Professions"] = true, [SECONDARY_SKILLS or "Secondary Skills"] = true }
-		for i = 1, n do
-			local sname, isHeader, _, rank, _, _, maxRank = Try(GetSkillLineInfo, i)
-			if type(sname) == "string" then
-				if isHeader then
-					header = sname
-				elseif header and wanted[header] then
-					table.insert(parts, sname .. (rank and (" " .. tostring(rank) .. (maxRank and ("/" .. tostring(maxRank)) or "")) or ""))
-				end
-			end
-		end
-		if #parts > 0 then table.insert(lines, "Professions: " .. table.concat(parts, ", ")) end
-	end
-
-	local s = table.concat(lines, "\n"):gsub("[\30\31]", " ")
-	if #s > CONTEXT_MAX then s = s:sub(1, CONTEXT_MAX) end
-	return s
-end
-
--- The context to put on the next record, or nil when the bridge already has
--- it (or it wouldn't fit next to this message; it goes with a later one).
--- "" when the setting is off, so the bridge drops what it had.
-local function ContextToSend(room)
-	local ctx = db.settings.context and WoWGrok.GameContext() or ""
-	if ctx == (run.contextSent or "") then return nil end
-	if room and #ctx > room then return nil end
-	return ctx
 end
 
 -- Read a link's tooltip off a hidden GameTooltip, one line per row.
@@ -1294,34 +947,14 @@ function WoWGrok.Send(text, allow)
 	if not c then return end
 	text = Trim(text or "")
 	if c.pendingId then
-		-- First: apply Inbox if the bridge already finished (clears stuck pending).
-		ProcessInbox()
-		if not c.pendingId then
-			-- Pending cleared by Inbox — fall through to send new text if any.
-			if text == "" then
-				WoWGrok.Render()
-				return
-			end
+		-- Typing while waiting: keep the draft, and check for the reply.
+		if text ~= "" then c.draft = text end
+		if db.settings.mode == "pixel" and not (run.slotsExhausted or run.slotsMissing) then
+			TryLoadSlot("manual")
 		else
-			-- Still pending. New typed text: cancel stuck wait and send the new message
-			-- (reload-mode used to only SafeReload — felt like Send=/reload with no outbox).
-			if text ~= "" then
-				AddHistory(c, "system", "Gave up waiting on #" .. c.pendingId .. " — sending your new message")
-				run.outbound[c.pendingId] = nil
-				if run.act then run.act[c.id] = nil end
-				c.pendingId = nil
-				c.progress = nil
-				c.draft = nil
-				db.pendingBackup = nil
-				-- fall through to normal send below
-			else
-				-- Empty Enter while pending: pull slots/Inbox without ReloadUI.
-				TryLoadSlot("manual")
-				ProcessInbox()
-				WoWGrok.Render()
-				return
-			end
+			SafeReload()
 		end
+		return
 	end
 	if text == "" then return end
 	if not WoWGrok.IsConnected() then
@@ -1343,8 +976,6 @@ function WoWGrok.Send(text, allow)
 		WoWGrok.Render()
 		return
 	end
-	-- The game context rides along when the bridge doesn't have this version yet.
-	local ctx = ContextToSend(limit - #text)
 
 	db.lastSeq = db.lastSeq + 1
 	local id = db.lastSeq
@@ -1360,11 +991,9 @@ function WoWGrok.Send(text, allow)
 		chat = c.id,
 		text = ToHex(text),
 		cwd = ToHex(c.cwd),
-		ctx = ctx and ToHex(ctx) or nil,
 		newSession = newSession,
 		t = time(),
 	}
-	db.pendingBackup = { chat = c.id, id = id, text = text }
 	c.pendingId = id
 	c.draft = nil
 	c.progress = nil
@@ -1380,23 +1009,17 @@ function WoWGrok.Send(text, allow)
 	end
 	db.settings.shown = true
 
-	-- Product lock: Send never ReloadUI. Always queue SV outbox (above) + outbound;
-	-- paint strip in pixel mode so capture can pick it up when smoke clears.
-	-- If capture paused / reload mode: status hints Reload button — never auto-reload.
-	run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, ctx = ctx, sentAt = GetTime() }
-	run.sentAt = GetTime()
-	run.polls = 0
-	StartActivity(c, id)
-	ScheduleNextPoll()
 	if db.settings.mode == "pixel" then
+		run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, sentAt = GetTime() }
+		run.sentAt = GetTime()
+		run.polls = 0
+		StartActivity(c, id)
+		ScheduleNextPoll()
 		RefreshStrip()
+		WoWGrok.Render()
+	else
+		SafeReload()
 	end
-	if UseReloadTransport() and ui.status then
-		ui.status:SetText(run.capturePaused
-			and ("Queued #" .. id .. " (capture paused — bridge via SavedVariables)")
-			or ("Queued #" .. id))
-	end
-	WoWGrok.Render()
 end
 
 -- Forget: a record with no text telling the bridge a chat was deleted, so it drops
@@ -1423,20 +1046,14 @@ end
 -- Hello: a record with no text that just announces our session token. The bridge
 -- acks it, offers a restore if our saved data is fresh, and refreshes the slots,
 -- so the status light and any lost chats come back before the first message.
--- The game context always rides on hello (empty when turned off), so the bridge's
--- copy is brought in line at every login and Connect.
 function WoWGrok.SayHello()
-	-- Prefer pixel hello even under capturePaused (restore). Do not early-return solely
-	-- because UseReloadTransport() is true when only capturePaused is set.
-	if not db or db.settings.mode ~= "pixel" then return end
-	if run.pixelFailed or run.slotsExhausted or run.slotsMissing then return end
+	if db.settings.mode ~= "pixel" then return end
 	local now = GetTime()
 	if run.lastHelloAt and now - run.lastHelloAt < 60 then return end
 	run.lastHelloAt = now
 	db.lastSeq = db.lastSeq + 1
 	local c = ActiveChat()
-	local ctx = db.settings.context and WoWGrok.GameContext() or ""
-	run.outbound[db.lastSeq] = { chat = c and c.id or "", cwd = c and c.cwd or "", flags = "h", name = c and c.name or "", text = "", ctx = ctx, sentAt = now, hello = true }
+	run.outbound[db.lastSeq] = { chat = c and c.id or "", cwd = c and c.cwd or "", flags = "h", name = c and c.name or "", text = "", sentAt = now, hello = true }
 	run.helloPollAt = now + 5
 	-- Deletions the bridge never confirmed ride along with the hello.
 	for id in pairs(db.forget) do SendForget(id) end
@@ -1691,19 +1308,13 @@ function WoWGrok.UpdateStatus()
 		local id = c.pendingId
 		local elapsed = run.sentAt and (GetTime() - run.sentAt) or 0
 		local rec = run.outbound[id]
-		-- capturePaused still uses settings.mode "pixel" but transport is slots/Inbox.
-		if run.capturePaused then
-			s = "Waiting for #" .. id .. " via slots (capture paused)"
-			if (run.polls or 0) > 0 then
-				s = s .. " — checked " .. run.polls .. "x"
-			end
-		elseif mode == "pixel" then
+		if mode == "pixel" then
 			if run.slotsMissing then
-				s = "Reply slots not installed. Quit+reopen WoWGrok app, then fully quit/relaunch Forever"
+				s = "Reply slots not installed (run install-slots.js, restart WoW). Using reload instead: Enter or Refresh"
 			elseif run.slotsExhausted then
-				s = "Slot pool used up this session — press the Reload button once to free slots"
+				s = "Slot pool used up this session - next keypress reloads to free it"
 			elseif run.pixelFailed then
-				s = "Bridge didn't see #" .. id .. " after " .. STRIP_TRIES .. " strip tries — click Connect or /wow-grok resend"
+				s = "Bridge didn't see #" .. id .. " after " .. STRIP_TRIES .. " tries - next keypress switches to the reload path (or /wow-grok reload)"
 			elseif c.progress or (run.act and run.act[c.id] and run.act[c.id].count > 0) then
 				s = "Grok is working on #" .. id .. " - " .. ActivityLine(c)
 			elseif rec and not rec.acked then
@@ -1713,11 +1324,14 @@ function WoWGrok.UpdateStatus()
 			else
 				s = "Waiting for #" .. id .. " (checked " .. (run.polls or 0) .. "x)"
 				if elapsed > 45 then
-					s = s .. " - click Connect (bridge may be up but unread)"
+					s = s .. " - no sign of the bridge. Is the bridge running? /wow-grok resend"
 				end
 			end
 		else
-			s = "Waiting for reply #" .. id
+			s = "Waiting for reply #" .. id .. ". Enter or Refresh checks now"
+			if db.settings.autoRefresh then
+				s = s .. "; auto on next keypress after " .. db.settings.interval .. "s"
+			end
 		end
 	elseif not WoWGrok.IsConnected() then
 		if run.connectingAt and run.sendOnConnect then
@@ -1736,21 +1350,19 @@ function WoWGrok.UpdateStatus()
 	elseif run.restoring then
 		s = "Connecting to the bridge..."
 	else
-		if run.capturePaused then
-			s = "Ready (capture paused — chat uses reload/SV)"
-		else
-			s = "Ready"
-		end
+		s = "Ready"
 	end
 	ui.status:SetText(s)
 	run.statusText = s
 	WoWGrok.UpdateDot()
 	WoWGrok.UpdateConnect()
+	local addonVer = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata("WoWGrok", "Version"))
+		or (GetAddOnMetadata and GetAddOnMetadata("WoWGrok", "Version")) or ""
 	if ui.title then
 		local t = c and Display(c.name) or "Grok"
 		local folder = FolderName(ChatFolder(c))
 		if folder ~= "" then t = t .. "  |cff888888" .. Display(folder) .. "|r" end
-		t = t .. "  |cff666666v" .. AddonVersion() .. "|r"
+		if addonVer ~= "" then t = t .. "  |cff888888v" .. addonVer .. "|r" end
 		ui.title:SetText(t)
 	end
 	local cwdText
@@ -1761,12 +1373,9 @@ function WoWGrok.UpdateStatus()
 	else
 		cwdText = "(bridge default - start the bridge in a folder, or right-click the chat and pick Folder)"
 	end
-	local modeLabel = mode
-	if run.capturePaused and mode == "pixel" then modeLabel = "pixel+reload (capture paused)" end
-	ui.cwd:SetText("v" .. AddonVersion() .. "   cwd: " .. cwdText .. "   mode: " .. modeLabel)
+	ui.cwd:SetText("cwd: " .. cwdText .. "   mode: " .. mode .. (addonVer ~= "" and ("   v" .. addonVer) or ""))
 	if ui.resend then ui.resend:SetShown(c and c.pendingId ~= nil and mode == "pixel") end
-	-- Reload button only in explicit reload mode (not capturePaused pixel). Product lock.
-	if ui.refresh then ui.refresh:SetShown(db.settings.mode ~= "pixel") end
+	if ui.refresh then ui.refresh:SetShown(mode ~= "pixel" or run.slotsExhausted or run.slotsMissing or run.pixelFailed or false) end
 	WoWGrok.UpdateMini()
 end
 
@@ -2135,22 +1744,23 @@ hooksecurefunc("SetItemRef", function(link)
 	if action == "reply" and ui.input then ui.input:SetFocus() end
 end)
 
--- Shift-clicking an item, spell, quest or name puts its link into the chat box
--- being typed in. Blizzard's insert function only knows its own boxes, so when
--- ours has the keyboard, take the link too. With no box focused the shift-click
--- keeps its normal meaning (splitting a stack, for one).
---
--- On this client (modern UI code, Blizzard_ChatFrameUtil) every shift-click
--- ends in ChatFrameUtil.InsertLink; ChatEdit_InsertLink is the older global
--- name, hooked only where the new one is missing so one click inserts once.
+-- Shift-clicking an item, spell, quest or name puts its link into the WoWGrok
+-- edit box when our window is open. Blizzard only knows its own chat edits.
+-- Hook both modern and legacy insert paths; debounce so one click inserts once.
+local takeLinkAt = 0
 local function TakeLink(text)
-	if text and text ~= "" and ui.input and ui.input:HasFocus() then
-		ui.input:Insert(text)
-	end
+	if not text or text == "" or not ui.input then return end
+	if not (ui.frame and ui.frame:IsShown()) then return end
+	local now = GetTime and GetTime() or 0
+	if now > 0 and (now - takeLinkAt) < 0.05 then return end
+	takeLinkAt = now
+	ui.input:Insert(text)
+	ui.input:SetFocus()
 end
 if type(ChatFrameUtil) == "table" and type(ChatFrameUtil.InsertLink) == "function" then
 	hooksecurefunc(ChatFrameUtil, "InsertLink", TakeLink)
-elseif type(ChatEdit_InsertLink) == "function" then
+end
+if type(ChatEdit_InsertLink) == "function" then
 	hooksecurefunc("ChatEdit_InsertLink", TakeLink)
 end
 
@@ -2222,7 +1832,9 @@ local function BuildUI()
 
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	title:SetPoint("LEFT", dotHolder, "RIGHT", 6, 0)
-	title:SetText("WoW Grok v" .. AddonVersion())
+	local ver = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata("WoWGrok", "Version"))
+		or (GetAddOnMetadata and GetAddOnMetadata("WoWGrok", "Version")) or ""
+	title:SetText(ver ~= "" and ("WoW Grok  |cff888888v" .. ver .. "|r") or "WoW Grok")
 	ui.title = title
 
 	local status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2677,7 +2289,6 @@ local HELP = table.concat({
 	"/wow-grok delete                 delete the current chat",
 	"/wow-grok cd <folder>            project folder label for this chat (relative to the bridge's folder; no folder = back to default). Right-clicking the chat in the left panel and picking Folder does the same",
 	"/wow-grok reset                  next message in this chat starts a fresh Grok conversation",
-	"/wow-grok context [on|off]       show / toggle game context sent to Grok (character, zone, …)",
 	"/wow-grok mode pixel             no-reload transport (default)",
 	"/wow-grok mode reload            fallback transport: a /reload per step",
 	"/wow-grok resend                 show the strip again if the bridge missed it",
@@ -2760,22 +2371,6 @@ SlashCmdList["WOWGROK"] = function(msg)
 	elseif cmd == "reset" then
 		c.resetNext = true
 		AddHistory(c, "system", "Next message starts a fresh Grok conversation in " .. c.cwd)
-		WoWGrok.Render()
-		WoWGrok.Toggle(true)
-	elseif (cmd == "context" or cmd == "ctx") and (rest == "" or rest:lower() == "on" or rest:lower() == "off") then
-		rest = rest:lower()
-		if rest == "on" or rest == "off" then
-			s.context = rest == "on"
-			-- Make sure the next record carries the change, hello throttle or not.
-			run.contextSent = nil
-			run.lastHelloAt = nil
-			if WoWGrok.IsConnected() then WoWGrok.SayHello() end
-		end
-		local ctx = WoWGrok.GameContext()
-		AddHistory(c, "system", (s.context
-			and "Game context is ON: the agent is told this with each message (it goes into its system prompt, so unrelated projects are unaffected by anything but a few lines). /wow-grok context off to stop.\n\n"
-			or "Game context is OFF: the agent is told nothing about the game. /wow-grok context on to send this:\n\n") .. ctx
-			.. "\n\nTip: click the input box, then shift-click an item, spell or quest to link it into your message; the agent gets its tooltip.")
 		WoWGrok.Render()
 		WoWGrok.Toggle(true)
 	elseif cmd == "mode" then
@@ -2915,15 +2510,7 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 		BuildUI()
 		run = { outbound = {} }
 		SelfTestSignals()
-		-- Apply Inbox first so a done reply clears pending before we treat it as stuck.
 		ProcessInbox()
-		if RequeueStaleOutbox() then
-			-- Outbox repaired in memory; next reload flushes to the bridge.
-			local ac = ActiveChat()
-			if ac then
-				AddHistory(ac, "system", "Re-queued stuck outbox to match pending message")
-			end
-		end
 		if AnyPending() then
 			-- Still waiting after a reload: resume polling with a fresh slot pool.
 			run.sentAt = GetTime()
