@@ -156,6 +156,7 @@ local function InitDB()
 	local s = db.settings
 	if s.autoRefresh == nil then s.autoRefresh = true end
 	if s.signal == nil then s.signal = true end
+	if s.context == nil then s.context = true end
 	s.echo = s.echo or "full" -- how much of each reply to print in the game chat
 	s.mode = s.mode or "pixel"
 	s.interval = s.interval or 20
@@ -313,7 +314,15 @@ end
 -- Record: session, chat, id, cwd, flags, name, text. Several records per frame.
 local function RecordFor(id, rec)
 	local name = (rec.name or ""):gsub("[\30\31]", " ")
-	return table.concat({ db.session, rec.chat, tostring(id), rec.cwd, rec.flags or "", name, rec.text }, US)
+	local flags = rec.flags or ""
+	local fields = { db.session, rec.chat, tostring(id), rec.cwd, flags, name }
+	-- Optional 8th field: game context. Flag "c" tells the bridge the next field is ctx.
+	if rec.ctx ~= nil then
+		fields[5] = flags == "" and "c" or (flags .. ";c")
+		table.insert(fields, (rec.ctx:gsub("[\30\31]", " ")))
+	end
+	table.insert(fields, rec.text)
+	return table.concat(fields, US)
 end
 
 -- Redraw the strip from every outbound message the bridge hasn't acknowledged.
@@ -634,10 +643,17 @@ end
 
 local Finish -- defined below
 
+-- The bridge has read this record: whatever game context rode on it is now
+-- what the bridge knows, so later strip sends can omit an unchanged copy.
+local function NoteAcked(rec)
+	rec.acked = true
+	if rec.ctx ~= nil then run.contextSent = rec.ctx end
+end
+
 local function MarkAcked(id)
 	local rec = run.outbound[id]
 	if rec and not rec.acked then
-		rec.acked = true
+		NoteAcked(rec)
 		RefreshStrip()
 	end
 	NotedBridge()
@@ -874,6 +890,139 @@ local function Try(fn, ...)
 	if ok then return a, b, c, d, e, f, g end
 end
 
+-- Cap ambient game context bytes; the strip has ~3.2 KB for everything.
+local CONTEXT_MAX = 650
+
+local function Money(copper)
+	copper = tonumber(copper) or 0
+	local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
+	if g > 0 then return g .. "g " .. s .. "s " .. c .. "c" end
+	if s > 0 then return s .. "s " .. c .. "c" end
+	return c .. "c"
+end
+
+-- A few lean lines about the game and the character for the agent's system prompt.
+-- Prefer zone / instance / party / quests over heavy talent or profession dumps.
+function WoWGrok.GameContext()
+	local lines = {}
+	local version, build, _, toc = Try(GetBuildInfo)
+	toc = tonumber(toc)
+	local game = "World of Warcraft"
+	if toc and toc >= 16000 and toc < 20000 then game = "World of Warcraft: Forever" end
+	local client = ""
+	if version then
+		client = " (client " .. tostring(version) .. (build and ("." .. tostring(build)) or "") .. (toc and (", interface " .. toc) or "") .. ")"
+	end
+	table.insert(lines, "Game: " .. game .. client)
+
+	local name = Try(UnitName, "player")
+	if name then
+		local realm = Try(GetRealmName)
+		local level = Try(UnitLevel, "player")
+		local race = Try(UnitRace, "player")
+		local class = Try(UnitClass, "player")
+		local faction = Try(UnitFactionGroup, "player")
+		local guild = Try(GetGuildInfo, "player")
+		local who = "Character: " .. tostring(name) .. (realm and (" on " .. tostring(realm)) or "")
+		local desc = {}
+		if level then table.insert(desc, "level " .. tostring(level)) end
+		if race then table.insert(desc, tostring(race)) end
+		if class then table.insert(desc, tostring(class)) end
+		if #desc > 0 then who = who .. ", " .. table.concat(desc, " ") end
+		if faction then who = who .. " (" .. tostring(faction) .. ")" end
+		if guild then who = who .. ", guild <" .. tostring(guild) .. ">" end
+		table.insert(lines, who)
+	end
+
+	local zone = Try(GetZoneText)
+	local sub = Try(GetSubZoneText)
+	if zone and zone ~= "" then
+		table.insert(lines, "Location: " .. zone .. ((sub and sub ~= "" and sub ~= zone) and (" - " .. sub) or ""))
+	end
+
+	-- Instance / difficulty when in one.
+	local inInst, instType = Try(IsInInstance)
+	if inInst then
+		local iname, _, difficultyName = Try(GetInstanceInfo)
+		local bit = "Instance"
+		if type(instType) == "string" and instType ~= "" then bit = bit .. " (" .. instType .. ")" end
+		if type(iname) == "string" and iname ~= "" then bit = bit .. ": " .. iname end
+		if type(difficultyName) == "string" and difficultyName ~= "" then bit = bit .. " [" .. difficultyName .. "]" end
+		table.insert(lines, bit)
+	end
+
+	-- Map coordinates when cheap (modern C_Map first, vanilla fallback).
+	local x, y, mapName
+	local mapId = Try(C_Map and C_Map.GetBestMapForUnit, "player")
+	if type(mapId) == "number" then
+		local pos = Try(C_Map.GetPlayerMapPosition, mapId, "player")
+		if type(pos) == "table" and type(pos.x) == "number" and type(pos.y) == "number" then x, y = pos.x, pos.y end
+		local info = Try(C_Map.GetMapInfo, mapId)
+		if type(info) == "table" and type(info.name) == "string" then mapName = info.name end
+	end
+	if not x then
+		local px, py = Try(GetPlayerMapPosition, "player")
+		if type(px) == "number" and type(py) == "number" then x, y = px, py end
+	end
+	if x and y and (x > 0 or y > 0) then
+		local where = (mapName and mapName ~= zone) and (" on " .. mapName) or ""
+		table.insert(lines, string.format("Position: %.1f, %.1f%s%s", x * 100, y * 100, where, mapId and (" (map " .. mapId .. ")") or ""))
+	end
+
+	local progress = {}
+	local copper = Try(GetMoney)
+	if copper then table.insert(progress, "Money: " .. Money(copper)) end
+	local xp, xpMax = Try(UnitXP, "player"), Try(UnitXPMax, "player")
+	if type(xp) == "number" and type(xpMax) == "number" and xpMax > 0 then
+		table.insert(progress, "XP: " .. xp .. "/" .. xpMax)
+	end
+	if #progress > 0 then table.insert(lines, table.concat(progress, "; ")) end
+
+	-- Party / raid size and a few member class lines (keep short).
+	local nGroup = Try(GetNumGroupMembers)
+	if type(nGroup) ~= "number" or nGroup <= 0 then
+		nGroup = Try(GetNumPartyMembers)
+		if type(nGroup) == "number" and nGroup > 0 then nGroup = nGroup + 1 end -- include self in classic party count
+	end
+	if type(nGroup) == "number" and nGroup > 1 then
+		local inRaid = Try(IsInRaid)
+		local label = inRaid and "Raid" or "Party"
+		local parts = {}
+		local maxShow = math.min(nGroup, 5)
+		for i = 1, maxShow do
+			local unit = inRaid and ("raid" .. i) or (i == 1 and "player" or ("party" .. (i - 1)))
+			local uname = Try(UnitName, unit)
+			local _, uclass = Try(UnitClass, unit)
+			if uname then
+				table.insert(parts, tostring(uname) .. (uclass and (" (" .. tostring(uclass) .. ")") or ""))
+			end
+		end
+		local more = nGroup > maxShow and (" +" .. (nGroup - maxShow) .. " more") or ""
+		table.insert(lines, label .. " " .. nGroup .. ": " .. table.concat(parts, ", ") .. more)
+	end
+
+	-- Up to ~5 quest titles if the quest log API exists.
+	local nQuest = Try(GetNumQuestLogEntries)
+	if type(nQuest) == "number" and nQuest > 0 then
+		local titles = {}
+		for i = 1, nQuest do
+			if #titles >= 5 then break end
+			local qtitle, level, _, isHeader, isCollapsed, isComplete = Try(GetQuestLogTitle, i)
+			if type(qtitle) == "string" and not isHeader then
+				local tag = ""
+				if isComplete == 1 then tag = " [done]"
+				elseif isComplete == -1 then tag = " [failed]" end
+				table.insert(titles, qtitle .. tag)
+			end
+		end
+		if #titles > 0 then table.insert(lines, "Quests: " .. table.concat(titles, "; ")) end
+	end
+
+	local s = table.concat(lines, "\n"):gsub("[\30\31]", " ")
+	if #s > CONTEXT_MAX then s = s:sub(1, CONTEXT_MAX) end
+	return s
+end
+
 -- Read a link's tooltip off a hidden GameTooltip, one line per row.
 local scanTip
 local function TooltipLines(payload)
@@ -977,6 +1126,15 @@ function WoWGrok.Send(text, allow)
 		return
 	end
 
+	-- Always compute context when enabled; "" when off so the bridge can clear.
+	-- Outbox (SV side channel) always carries it; the strip only attaches when it fits.
+	local ctxAlways = (db.settings.context and WoWGrok.GameContext()) or ""
+	local room = limit - #text
+	local ctxStrip = nil
+	if ctxAlways ~= "" and (#ctxAlways + 32) <= room and ctxAlways ~= (run.contextSent or "") then
+		ctxStrip = ctxAlways
+	end
+
 	db.lastSeq = db.lastSeq + 1
 	local id = db.lastSeq
 	local tokens = {}
@@ -991,6 +1149,7 @@ function WoWGrok.Send(text, allow)
 		chat = c.id,
 		text = ToHex(text),
 		cwd = ToHex(c.cwd),
+		ctx = ToHex(ctxAlways),
 		newSession = newSession,
 		t = time(),
 	}
@@ -1010,7 +1169,7 @@ function WoWGrok.Send(text, allow)
 	db.settings.shown = true
 
 	if db.settings.mode == "pixel" then
-		run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, sentAt = GetTime() }
+		run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, ctx = ctxStrip, sentAt = GetTime() }
 		run.sentAt = GetTime()
 		run.polls = 0
 		StartActivity(c, id)
@@ -1081,6 +1240,7 @@ function WoWGrok.Resend()
 		end
 	end
 	if not text then return end
+	-- Omit ctx on resend strip to avoid overflow; outbox already carried it on the original send.
 	run.outbound[c.pendingId] = { chat = c.id, cwd = c.cwd, flags = "", name = c.name, text = text, sentAt = GetTime() }
 	run.sentAt = GetTime()
 	run.polls = 0
@@ -2289,6 +2449,7 @@ local HELP = table.concat({
 	"/wow-grok delete                 delete the current chat",
 	"/wow-grok cd <folder>            project folder label for this chat (relative to the bridge's folder; no folder = back to default). Right-clicking the chat in the left panel and picking Folder does the same",
 	"/wow-grok reset                  next message in this chat starts a fresh Grok conversation",
+	"/wow-grok context [on|off]       show / toggle game context sent to Grok (character, zone, …)",
 	"/wow-grok mode pixel             no-reload transport (default)",
 	"/wow-grok mode reload            fallback transport: a /reload per step",
 	"/wow-grok resend                 show the strip again if the bridge missed it",
@@ -2371,6 +2532,19 @@ SlashCmdList["WOWGROK"] = function(msg)
 	elseif cmd == "reset" then
 		c.resetNext = true
 		AddHistory(c, "system", "Next message starts a fresh Grok conversation in " .. c.cwd)
+		WoWGrok.Render()
+		WoWGrok.Toggle(true)
+	elseif (cmd == "context" or cmd == "ctx") and (rest == "" or rest:lower() == "on" or rest:lower() == "off") then
+		rest = rest:lower()
+		if rest == "on" or rest == "off" then
+			s.context = rest == "on"
+			run.contextSent = nil
+		end
+		local ctx = WoWGrok.GameContext()
+		AddHistory(c, "system", (s.context
+			and "Game context is ON: the agent is told this with each message (it goes into its system prompt, so unrelated projects are unaffected by anything but a few lines). /wow-grok context off to stop.\n\n"
+			or "Game context is OFF: the agent is told nothing about the game. /wow-grok context on to send this:\n\n") .. ctx
+			.. "\n\nTip: click the input box, then shift-click an item, spell or quest to link it into your message; the agent gets its tooltip.")
 		WoWGrok.Render()
 		WoWGrok.Toggle(true)
 	elseif cmd == "mode" then

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wow-grok"
-version = "0.1.22"
+version = "0.1.23"
 description = "Chat with xAI Grok from World of Warcraft: Forever (Python bridge)"
 readme = "README.python.md"
 license = { text = "MIT" }

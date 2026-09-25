@@ -21,6 +21,24 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - On clients where the sound-file self-test fails (an empty `.wav` reports as playable), the addon can't hear the bridge's 30-second presence beats, and the status light went yellow 90 s after every reply, so each new message needed a Reconnect click and burned a slot. In that mode the light now allows for the 10-minute idle slot poll (green up to 12 min without news, "down" after 22), so it stays green while the bridge is running.
 - A message sent while the light is not green is now sent automatically once the bridge answers the reconnect, instead of waiting for a second click on Send.
 
+## [0.1.23] - 2026-09-24
+
+### Product pin (Mac)
+
+- **Product 0.1.23** = **AddOn 0.1.23** (ambient **GameContext** + version stamp + shift-click ExpandLinks/TakeLink) + **app/bridge capture stack from wow-grok-mac-v0.1.19** (same as **0.1.22** — CG strip / `screencapture -l` / permissionPaused resume).
+- **Capture unchanged** from working **0.1.22 / 0.1.19** — **NOT** the broken **0.1.20 / 0.1.21** Mac capture changes.
+- **Codec.lua / Inbox.lua / SetScale / pixel Send shape** identical to **0.1.22**.
+
+### Added
+
+- Ambient **GameContext** on the AddOn outbox: zone / instance / quest / party-ish hints, capped (~650 chars).
+- Safe transport: always keep a capped ctx on the SavedVariables outbox; strip attaches ctx only if it fits with headroom; never drops user text; **no huge hello-ctx**.
+
+### Changed
+
+- Keeps AddOn version stamp (title/footer) and shift-click ExpandLinks/TakeLink from 0.1.22.
+- Bridge `__init__` / pyproject / `build_mac.spec` CFBundle → **0.1.23** so the DMG is clearly 0.1.23 while capture code remains the 0.1.19 stack (md5 `b7539598…`).
+
 ## [0.1.22] - 2026-09-24
 
 ### Product pin (Mac)
