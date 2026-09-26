@@ -83,6 +83,10 @@ Leaving the old toggle on without remove/re-add often breaks capture after an up
 2. At character select, enable **WoW Grok** (leave the `WoW Grok slot ###` entries enabled).
 3. **Type `/wow-grok` or `/grok` in game chat.**
 
+#### Game context
+
+When context is on (`/wow-grok context`), the panel’s context area feeds Grok a short ambient snapshot with your messages. **Right now it only works for location, money, and XP.** Do not expect talents, professions, or other fields to be accurate yet. Toggle with `/wow-grok context [on|off]`.
+
 ### 6. Cloud / GeForce Now
 
 **Unsupported.** The app must share a machine with a normal local WoW install.

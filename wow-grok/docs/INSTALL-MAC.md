@@ -10,6 +10,10 @@ Full player steps: [INSTALL-USERS.md](INSTALL-USERS.md).
 
 Grant **Screen Recording** to the app under System Settings → Privacy & Security → Screen Recording. First launch may prompt and must list **WoWGrok** in that Settings pane; enable it, then **Quit and reopen** from Applications.
 
+## Game context (in-game)
+
+The in-game context area currently **only works for location, money, and XP**. Toggle with `/wow-grok context [on|off]`. See [INSTALL-USERS.md](INSTALL-USERS.md).
+
 ## Upgrading / replacing WoWGrok.app (required)
 
 macOS treats each new unsigned binary as a **different identity**. After you replace `/Applications/WoWGrok.app` from a new DMG:
