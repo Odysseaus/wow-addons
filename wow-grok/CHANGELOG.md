@@ -16,7 +16,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Notes
 
-- **Mac upgrade:** after replacing `WoWGrok.app`, **remove and re-add** Screen Recording for the new binary (System Settings → Privacy & Security → Screen Recording). Do not rely on Leave Enabled. See [INSTALL-MAC.md](docs/INSTALL-MAC.md).
+- **Mac upgrade:** after replacing `WoWGrok.app`, **remove and re-add** Screen Recording for the new binary (System Settings → Privacy & Security → Screen Recording). Do not rely on Leave Enabled. Documented in [README.md](README.md) (Mac upgrade section), [INSTALL-MAC.md](docs/INSTALL-MAC.md), and [INSTALL-USERS.md](docs/INSTALL-USERS.md).
 
 ## [Unreleased]
 
