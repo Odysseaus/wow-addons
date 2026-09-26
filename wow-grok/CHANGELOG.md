@@ -9,6 +9,13 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - **Product 0.1.25** = **app/bridge 0.1.25** with xAI server-side `web_search` enabled by default and `x_search` disabled by default; AddOn content unchanged from 0.1.24 except toc Version → 0.1.25; capture unchanged.
 - **Capture unchanged** from working 0.1.24 / 0.1.19 lineage — md5 `b75395986a768269a8f4ae5594709159`.
 
+
+### Product pin (Windows)
+
+- **Windows 0.1.25** = same app/bridge/AddOn pin as Mac 0.1.25, plus Windows tray (`tray_win`: **Running** + **Quit**), certifi SSL / `--ssl-smoke`, and GHA `wow-grok-win-release.yml` → public tag `wow-grok-win-v0.1.25` (`WoWGrok.exe`).
+- Default tools unchanged: `webSearch: true`, `xSearch: false` (no X Search default; no Send→ReloadUI).
+- **Game context scope:** context area **currently only works for location, money, and XP** (INSTALL-WINDOWS + README + release notes).
+
 ### Changed
 
 - Default config is `webSearch: true`, `xSearch: false`; startup banner shows `tools: web_search` and Responses tools contain only `[{"type": "web_search"}]` by default.
