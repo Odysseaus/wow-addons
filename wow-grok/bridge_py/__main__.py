@@ -23,6 +23,8 @@ from . import setup_detect as _freeze_setup_detect  # noqa: F401
 from . import capture_mac as _freeze_capture_mac  # noqa: F401
 from . import tk_util as _freeze_tk_util  # noqa: F401
 from . import menubar as _freeze_menubar  # noqa: F401
+from . import tray_win as _freeze_tray_win  # noqa: F401
+from . import capture_win as _freeze_capture_win  # noqa: F401
 
 
 def _load(name: str):
@@ -32,8 +34,43 @@ def _load(name: str):
     return importlib.import_module(f"bridge_py.{name}")
 
 
+
+
+def _ssl_smoke() -> int:
+    """Prove certifi CA works in frozen builds (CI / release gate)."""
+    try:
+        from . import ssl_certs
+
+        path = ssl_certs.configure()
+    except Exception as e:  # noqa: BLE001
+        print(f"ssl-smoke: configure failed: {e}", flush=True)
+        return 2
+    import urllib.error
+    import urllib.request
+
+    url = "https://api.x.ai/v1/models"
+    try:
+        urllib.request.urlopen(url, timeout=30)
+        print("ssl-smoke: unexpected 200 without auth", flush=True)
+        return 1
+    except urllib.error.HTTPError as e:
+        # 401/403 = TLS + certs OK
+        print(f"ssl-smoke: OK HTTP {e.code} ca={path}", flush=True)
+        return 0
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        print(f"ssl-smoke: FAIL {type(e).__name__}: {msg} ca={path}", flush=True)
+        if "CERTIFICATE" in msg.upper() or "SSL" in msg.upper():
+            return 3
+        return 4
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+
+    # Frozen SSL smoke: HTTPS must get auth error, not CERTIFICATE_VERIFY_FAILED.
+    if argv and argv[0] == "--ssl-smoke":
+        return _ssl_smoke()
 
     # Frozen one-file re-entry: bridge spawns this exe with --run-capture-*
     if argv and argv[0] == "--run-capture-mac":

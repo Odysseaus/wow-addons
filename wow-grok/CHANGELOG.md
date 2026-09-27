@@ -9,6 +9,11 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - **Product 0.1.26** = **app/bridge 0.1.26** + AddOn **0.1.26**; capture unchanged from 0.1.19 lineage — md5 `b75395986a768269a8f4ae5594709159`.
 - Defaults unchanged for tools: `webSearch: true`, `xSearch: false`.
 
+### Product pin (Windows)
+
+- **Windows 0.1.26** = same multi-chat Inbox recovery as Mac 0.1.26 (5b49255 / PR #3), plus Windows tray (`tray_win`: **Running** + **Quit**), certifi SSL / `--ssl-smoke`, and GHA `wow-grok-win-release.yml` → public tag `wow-grok-win-v0.1.26` (`WoWGrok.exe`).
+- Tools / defaults unchanged: `webSearch: true`, `xSearch: false`; default `timeoutMs` 300000; no Send→ReloadUI; Game context still location/money/XP only.
+
 ### Fixed
 
 - **Stuck Thinking / multi-chat Inbox miss:** hello and already-handled Outbox paths re-seed `live` from recent transcript assistant replies for **all** chats (not only the latest Outbox id), then publish Inbox/slots. `live_put` moves keys to most-recent so `live.values()[-30:]` cannot drop an older pending chat’s done reply when another chat keeps publishing.

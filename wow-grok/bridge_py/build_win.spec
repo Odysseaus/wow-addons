@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-# From repo root on Windows Helper / OMEN:
+# From repo root on Windows Helper / OMEN / GHA windows-latest:
 #   pyinstaller --noconfirm bridge_py\build_win.spec
-# Output: dist\WoWGrok.exe
+# Output: dist\WoWGrok.exe (tray companion; no console)
 
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
@@ -37,11 +37,15 @@ a = Analysis(
         'bridge_py.tk_util',
         'bridge_py.xai',
         'bridge_py.ssl_certs',
+        'bridge_py.menubar',
+        'bridge_py.tray_win',
         'certifi',
         'PIL',
+        'pystray',
+        'pystray._win32',
         'tkinter',
         '_tkinter',
-    ] + collect_submodules('bridge_py'),
+    ] + collect_submodules('bridge_py') + collect_submodules('pystray'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -67,7 +71,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
