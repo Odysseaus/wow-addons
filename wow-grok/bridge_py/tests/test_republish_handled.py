@@ -1,4 +1,4 @@
-"""Tests for already-handled outbox re-publish helpers."""
+"""Tests for already-handled outbox re-publish helpers (see also test_live_seed)."""
 from __future__ import annotations
 
 import unittest

@@ -1,8 +1,6 @@
-# WoWGrok 0.1.25 (Mac product pin)
+# WoWGrok 0.1.26 (Mac product pin)
 
-- **Product 0.1.25** = app/bridge **0.1.25** with xAI `web_search` on by default and `x_search` off by default; AddOn content unchanged from 0.1.24 except toc Version **0.1.25**; capture unchanged.
-- Default tools: `webSearch: true`, `xSearch: false` → `tools: web_search`.
-- Existing **0.1.24** Mac users: set `"xSearch": false` in `~/Library/Application Support/WoWGrok/config.json`, then restart WoWGrok.
-- Capture md5 `b75395986a768269a8f4ae5594709159`.
-- Versions: pyproject, `__init__`, toc, `build_mac.spec`, CHANGELOG → **0.1.25**.
-- Branch base: `mac/v0.1.24-xai-tools` (bbdedb9).
+- **Product 0.1.26** = app/bridge **0.1.26** + AddOn **0.1.26**; capture unchanged (md5 `b75395986a768269a8f4ae5594709159`).
+- **Stuck pending / multi-chat Inbox:** hello + already-handled re-serve recent transcript replies for all chats; `live_put` LRU so one chat cannot push another out of the published set; ApplyReplies accepts done/error by chat when id drifted.
+- Default `timeoutMs`: **300000** (5m). Tools: `webSearch: true`, `xSearch: false`.
+- Branch base: `mac/v0.1.25-web-search-only`.

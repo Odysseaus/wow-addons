@@ -660,6 +660,8 @@ local function MarkAcked(id)
 end
 
 -- Dispatch a list of reply records to the chats waiting for them.
+-- Prefer exact pendingId match (any status). For done/error only, also accept
+-- the same chat when r.id drifted from pendingId (multi-chat / Outbox overwrite).
 local function ApplyReplies(replies)
 	local matched = false
 	for _, r in ipairs(replies or {}) do
@@ -674,6 +676,22 @@ local function ApplyReplies(replies)
 				Finish(c, "system", "Bridge error: " .. tostring(r.text), denied)
 			elseif r.status == "working" then
 				c.progress = r.text
+			end
+		end
+	end
+	for _, r in ipairs(replies or {}) do
+		if r.status == "done" or r.status == "error" then
+			local c = FindChat(r.chat)
+			if c and c.pendingId and r.id ~= c.pendingId then
+				matched = true
+				MarkAcked(c.pendingId)
+				MarkAcked(r.id)
+				local denied = type(r.denied) == "table" and #r.denied > 0 and r.denied or nil
+				if r.status == "done" then
+					Finish(c, "grok", r.text or "", denied)
+				else
+					Finish(c, "system", "Bridge error: " .. tostring(r.text), denied)
+				end
 			end
 		end
 	end

@@ -91,7 +91,7 @@ def default_config() -> dict[str, Any]:
         "allowedTools": [],
         "pollMs": 750,
         "progressWriteMs": 3000,
-        "timeoutMs": 1800000,
+        "timeoutMs": 300000,
     }
 
 

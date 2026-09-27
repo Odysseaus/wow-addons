@@ -14,5 +14,7 @@ Common keys:
 | `slots` | Reply slot count (default 200) |
 | `capture.processName` | Game process (`WowB` for Forever, etc.) |
 | `gameContext` | `true` — inject ambient game context from the addon into Grok’s instructions. **Currently reliable for location, money, and XP only.** `false` ignores it. In-game: `/wow-grok context [on|off]` |
+| `timeoutMs` | API call deadline in ms (default **300000** / 5 minutes). Raise for very long tool runs. Existing configs keep their saved value. |
+| `webSearch` / `xSearch` | Default `true` / `false` — xAI Responses tools. |
 
 First-run GUI writes paths and installs `WoWGrok` + `WoWGrok_S001`–`S200`. See [INSTALL-USERS.md](INSTALL-USERS.md) and [DEV.md](DEV.md).

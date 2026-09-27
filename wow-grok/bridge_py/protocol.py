@@ -403,3 +403,63 @@ def _build_silent_wav() -> bytes:
 
 
 SILENT_WAV = _build_silent_wav()
+
+
+
+def live_put(live: dict, key: str, record: dict) -> None:
+    """Insert/update live[key], moving the key to most-recent (insertion order).
+
+    publish_now publishes list(live.values())[-30:]. Plain assignment leaves an
+    older key at the front, so traffic on other chats can push a finished reply
+    out of Inbox while the addon still has pendingId set.
+    """
+    live.pop(key, None)
+    live[key] = record
+
+
+def seed_live_from_transcripts(
+    live: dict,
+    transcripts: dict,
+    state: dict | None = None,
+    session: str = "",
+    limit: int = 30,
+) -> int:
+    """Re-queue recent assistant replies into live for Inbox/hello recovery.
+
+    Returns how many chats were seeded. Used on hello and already-handled submit
+    so a stuck pending chat is re-served even when Outbox only holds another id.
+    """
+    state = state or {}
+    chats = transcripts.get("chats") or {}
+    ordered = sorted(
+        (c for c in chats.values() if c.get("id") and c.get("messages")),
+        key=lambda c: c.get("updated") or 0,
+        reverse=True,
+    )[:limit]
+    n = 0
+    for c in ordered:
+        chat_id = str(c.get("id") or "")
+        asst = None
+        for m in reversed(list(c.get("messages") or [])):
+            if m.get("role") == "assistant":
+                asst = m
+                break
+        if not asst:
+            continue
+        jid = int(asst.get("id") or 0)
+        if not jid:
+            continue
+        record = {
+            "chat": chat_id,
+            "id": jid,
+            "status": "done",
+            "text": str(asst.get("text") or ""),
+            "cwd": c.get("cwd") or "",
+            "session": (state.get("sessions") or {}).get(f"chat:{chat_id}") or "",
+        }
+        for k, rec in list(live.items()):
+            if rec.get("chat") == chat_id:
+                live.pop(k, None)
+        live_put(live, chat_key({"session": session or "", "chat": chat_id}), record)
+        n += 1
+    return n

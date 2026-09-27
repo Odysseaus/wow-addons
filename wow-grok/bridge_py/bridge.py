@@ -203,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     presence_max = int(cfg.get("presenceMax") or 2000)
     poll_ms = int(cfg.get("pollMs") or 750)
     progress_write_ms = int(cfg.get("progressWriteMs") or 3000)
-    timeout_ms = int(cfg.get("timeoutMs") or 1_800_000)
+    timeout_ms = int(cfg.get("timeoutMs") or 300_000)
 
     api_key = cfgmod.resolve_api_key(cfg)
     # Never log the key — only the source label
@@ -298,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     def publish_now() -> None:
         nonlocal last_publish, pending_restore
         last_publish = time.time() * 1000
+        # Last 30 by update recency (live_put moves keys to the end).
         records = list(live.values())[-30:]
         try:
             atomic_write(Path(cfg["inboxFile"]), slot_file("WoWGrok_Inbox", records))
@@ -327,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def publish(key: str, record: dict, urgent: bool = False) -> None:
         with publish_lock:
-            live[key] = record
+            P.live_put(live, key, record)
             if urgent:
                 publish_now()
                 return
@@ -680,6 +681,12 @@ def main(argv: list[str] | None = None) -> int:
             set_context(job)
         if P.already_handled(state, job):
             republish_handled_reply(job)
+            # Also re-serve other chats' latest done replies — Outbox/SV only
+            # holds the latest id, so a hello/resend for chat B must not leave
+            # chat A stuck Thinking with its reply missing from Inbox.
+            seeded = P.seed_live_from_transcripts(live, transcripts, state, str(job.get("session") or ""))
+            if seeded:
+                publish_now()
             return
         if job.get("forget"):
             P.mark_handled(state, job)
@@ -692,10 +699,12 @@ def main(argv: list[str] | None = None) -> int:
             save_state()
             signal_wav("ack", job["id"], True)
             maybe_offer_restore(job)
+            seeded = P.seed_live_from_transcripts(live, transcripts, state, str(job.get("session") or ""))
             publish_now()
             log(
                 f"hello from session {job.get('session')}"
                 f"{' (restore offered)' if pending_restore else ''}"
+                f"; re-served {seeded} recent chat reply(ies) for Inbox"
             )
             return
         key = P.chat_key(job)

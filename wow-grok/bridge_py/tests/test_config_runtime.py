@@ -15,6 +15,7 @@ class TestRuntimeDir(unittest.TestCase):
         defaults = cfgmod.default_config()
         self.assertTrue(defaults["webSearch"])
         self.assertFalse(defaults["xSearch"])
+        self.assertEqual(defaults["timeoutMs"], 300000)
 
     def test_frozen_macos_app_uses_application_support(self):
         fake_exe = Path("/Applications/WoWGrok.app/Contents/MacOS/WoWGrok")

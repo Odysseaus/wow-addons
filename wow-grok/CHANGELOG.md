@@ -2,6 +2,27 @@
 
 All notable changes to this project are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.26] - 2026-09-27
+
+### Product pin (Mac)
+
+- **Product 0.1.26** = **app/bridge 0.1.26** + AddOn **0.1.26**; capture unchanged from 0.1.19 lineage — md5 `b75395986a768269a8f4ae5594709159`.
+- Defaults unchanged for tools: `webSearch: true`, `xSearch: false`.
+
+### Fixed
+
+- **Stuck Thinking / multi-chat Inbox miss:** hello and already-handled Outbox paths re-seed `live` from recent transcript assistant replies for **all** chats (not only the latest Outbox id), then publish Inbox/slots. `live_put` moves keys to most-recent so `live.values()[-30:]` cannot drop an older pending chat’s done reply when another chat keeps publishing.
+- **ApplyReplies id drift:** done/error replies still Finish a chat when `r.chat` matches and `pendingId` is set, even if `r.id ~= pendingId` (exact id match still preferred; working stays exact-only).
+
+### Changed
+
+- Default `timeoutMs` **300000** (5 minutes), down from 1800000 (30 minutes). Existing `config.json` values are kept; only new defaults / example change. Long tool/web calls should usually finish within 5m; raise `timeoutMs` in config if you need more.
+
+### Notes
+
+- Pixel Send still does **not** ReloadUI on the healthy path.
+- Workarounds still valid: `/wow-grok cancel`, new chat, `/reload` after Inbox inject.
+
 ## [0.1.25] - 2026-09-25
 
 ### Product pin (Mac)
