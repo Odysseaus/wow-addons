@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: WoW Action Bar
+## Notes: Fill empty action-bar slots with your spells, grouped by category. Leaves placed spells alone.
+## Author: Odysseaus
+## Version: 0.1.0
+## SavedVariables: WoWActionBarDB
+
+Classify.lua
+Core.lua
+Settings.lua
