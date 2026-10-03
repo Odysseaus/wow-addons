@@ -56,8 +56,14 @@ end
 local function placeSpell(slot, index)
   if HasAction(slot) then return false end
   ClearCursor()
-  PickupSpellBookItem(index, "spell")
-  if not CursorHasSpell() or HasAction(slot) then
+  if C_SpellBook and C_SpellBook.PickupSpellBookItem then
+    C_SpellBook.PickupSpellBookItem(index, NS.SpellBank or 0)
+  elseif type(PickupSpellBookItem) == "function" then
+    PickupSpellBookItem(index, "spell")
+  else
+    return false
+  end
+  if type(CursorHasSpell) ~= "function" or not CursorHasSpell() or HasAction(slot) then
     ClearCursor()
     return false
   end
@@ -69,8 +75,14 @@ end
 local function placeItem(slot, bag, bagSlot)
   if HasAction(slot) then return false end
   ClearCursor()
-  PickupContainerItem(bag, bagSlot)
-  if not CursorHasItem() or HasAction(slot) then
+  if C_Container and C_Container.PickupContainerItem then
+    C_Container.PickupContainerItem(bag, bagSlot)
+  elseif type(PickupContainerItem) == "function" then
+    PickupContainerItem(bag, bagSlot)
+  else
+    return false
+  end
+  if type(CursorHasItem) ~= "function" or not CursorHasItem() or HasAction(slot) then
     ClearCursor()
     return false
   end
