@@ -1,7 +1,9 @@
 local _, NS = ...
 WoWThreat = NS
 
--- Forever has no EditModeManagerFrame; do not register with Edit Mode.
+-- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
+-- enum and OnSystemLoad will not accept an addon frame. UI.lua only listens
+-- for EventRegistry "EditMode.Enter" and "EditMode.Exit".
 
 NS.MODES = { "bars", "plates", "dial" }
 NS.rows = {}
@@ -125,7 +127,7 @@ function NS.ToggleLock()
   if NS.db.locked then
     print("|cffd4af37WoW Threat|r window locked.")
   else
-    print("|cffd4af37WoW Threat|r window unlocked.")
+    print("|cffd4af37WoW Threat|r lock cleared. The meter moves only while Edit Mode is open.")
   end
 end
 

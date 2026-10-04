@@ -38,6 +38,11 @@ local ARC_FRAC = 0.658
 local NEEDLE_TEX_W, NEEDLE_TEX_H = 1024, 1024
 local PCT_OX, PCT_OY = 0.0072, 0.1379
 local built = false
+-- Drag is allowed only after EventRegistry fires EditMode.Enter, and only
+-- while EditModeManagerFrame exists. A saved lock flag never enables drag.
+local editModeOpen = false
+local editModeBound = false
+local dragging = false
 
 local RefreshData
 
@@ -588,10 +593,57 @@ local function SavePosition()
   NS.db.yOfs = yOfs or 0
 end
 
+local function SavedLockFlag()
+  return (NS.db and (NS.db.locked or NS.db.lock)) and true or false
+end
+
+local function EditModeSignalsPresent()
+  return (EventRegistry and EditModeManagerFrame) and true or false
+end
+
+-- Edit Mode open, both client objects present, and /wtm has not locked.
+-- Outside Edit Mode this is false even when the saved flag is false.
+local function DragAllowed()
+  if not editModeOpen then return false end
+  if not EditModeSignalsPresent() then return false end
+  if SavedLockFlag() then return false end
+  return true
+end
+
+local function BindEditModeSignals()
+  if editModeBound or not main then return end
+  if not EventRegistry or type(EventRegistry.RegisterCallback) ~= "function" then
+    return
+  end
+  -- Listen only. EditModeSystem is a closed enum; do not register a frame.
+  local function onEnter()
+    editModeOpen = true
+    if NS.ApplyLock then NS.ApplyLock() end
+  end
+  local function onExit()
+    editModeOpen = false
+    if dragging and main then
+      dragging = false
+      main:StopMovingOrSizing()
+      SavePosition()
+    end
+    if NS.ApplyLock then NS.ApplyLock() end
+  end
+  EventRegistry:RegisterCallback("EditMode.Enter", onEnter, main)
+  EventRegistry:RegisterCallback("EditMode.Exit", onExit, main)
+  editModeBound = true
+end
+
 function NS.ApplyLock()
   if not main then return end
-  local locked = NS.db and (NS.db.locked or NS.db.lock) and true or false
-  if locked then
+  BindEditModeSignals()
+  local allow = DragAllowed()
+  if not allow then
+    if dragging then
+      dragging = false
+      main:StopMovingOrSizing()
+      SavePosition()
+    end
     main:SetMovable(false)
     main:RegisterForDrag()
     if plusBtn then plusBtn:Hide() end
@@ -670,13 +722,16 @@ local function Build()
   main:SetFrameStrata('MEDIUM')
   main:SetClampedToScreen(true)
   main:EnableMouse(true)
-  main:SetMovable(true)
-  main:RegisterForDrag('LeftButton')
+  -- Locked until EditMode.Enter. Do not register drag or start a move here.
+  main:SetMovable(false)
   main:SetScript('OnDragStart', function(self)
-    if NS.db and (NS.db.locked or NS.db.lock) then return end
+    if not DragAllowed() then return end
+    dragging = true
+    self:SetMovable(true)
     self:StartMoving()
   end)
   main:SetScript('OnDragStop', function(self)
+    dragging = false
     self:StopMovingOrSizing()
     SavePosition()
   end)
@@ -703,6 +758,8 @@ local function Build()
   minusBtn = MakeMiniButton(main, 'WoWThreatMinusButton', '-', 24)
   minusBtn:SetPoint('RIGHT', plusBtn, 'LEFT', -4, 0)
   minusBtn:SetScript('OnClick', function() AdjustScale(-0.1) end)
+  plusBtn:Hide()
+  minusBtn:Hide()
   -- Above the dial, so the face cannot take the click.
   modeBtn:SetFrameStrata('HIGH')
   plusBtn:SetFrameStrata('HIGH')
