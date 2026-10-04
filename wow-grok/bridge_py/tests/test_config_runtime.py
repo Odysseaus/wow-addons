@@ -143,6 +143,107 @@ class TestProviderAndClaudeKey(unittest.TestCase):
             self.assertNotIn("sk-ant-from-env", json.dumps(saved))
             self.assertEqual(out, saved)
 
+    def test_gui_prompts_provider_default_xai_then_xai_key(self):
+        """Incomplete setup: provider dialog then existing xAI key prompt."""
+        from bridge_py import first_run
+
+        env = os.environ.copy()
+        env.pop("XAI_API_KEY", None)
+        env.pop("ANTHROPIC_API_KEY", None)
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._headless_cfg(tmp)
+            with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(
+                first_run, "_gui_available", return_value=True
+            ), mock.patch.object(
+                first_run, "prompt_provider", return_value="xai"
+            ) as prov, mock.patch.object(
+                first_run, "prompt_api_key", return_value="xai-test-key"
+            ) as xai_key, mock.patch.object(
+                first_run, "prompt_claude_api_key"
+            ) as claude_key, mock.patch.object(
+                first_run.cfgmod, "load_config", return_value=cfg
+            ), mock.patch.object(
+                first_run.cfgmod, "save_config", return_value=Path(tmp) / "config.json"
+            ) as save, mock.patch(
+                "bridge_py.install_addon.ensure_game_files"
+            ):
+                out = first_run.ensure_first_run_config(headless=False)
+            prov.assert_called_once()
+            xai_key.assert_called_once()
+            claude_key.assert_not_called()
+            saved = save.call_args[0][0]
+            self.assertEqual(saved["provider"], "xai")
+            self.assertEqual(saved["apiKey"], "xai-test-key")
+            self.assertEqual(out["provider"], "xai")
+
+    def test_gui_prompts_provider_claude_then_claude_key(self):
+        """Choosing Claude asks for Anthropic key; xAI key prompt stays unused."""
+        from bridge_py import first_run
+
+        env = os.environ.copy()
+        env.pop("XAI_API_KEY", None)
+        env.pop("ANTHROPIC_API_KEY", None)
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._headless_cfg(tmp)
+            with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(
+                first_run, "_gui_available", return_value=True
+            ), mock.patch.object(
+                first_run, "prompt_provider", return_value="claude"
+            ) as prov, mock.patch.object(
+                first_run, "prompt_api_key"
+            ) as xai_key, mock.patch.object(
+                first_run, "prompt_claude_api_key", return_value="sk-ant-test"
+            ) as claude_key, mock.patch.object(
+                first_run.cfgmod, "load_config", return_value=cfg
+            ), mock.patch.object(
+                first_run.cfgmod, "save_config", return_value=Path(tmp) / "config.json"
+            ) as save, mock.patch(
+                "bridge_py.install_addon.ensure_game_files"
+            ):
+                out = first_run.ensure_first_run_config(headless=False)
+            prov.assert_called_once()
+            claude_key.assert_called_once()
+            xai_key.assert_not_called()
+            saved = save.call_args[0][0]
+            self.assertEqual(saved["provider"], "claude")
+            self.assertEqual(saved["claudeApiKey"], "sk-ant-test")
+            self.assertEqual(out["claudeApiKey"], "sk-ant-test")
+
+    def test_gui_skips_provider_prompt_when_key_already_present(self):
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._headless_cfg(tmp, apiKey="already", provider="xai")
+            with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(
+                first_run, "_gui_available", return_value=True
+            ), mock.patch.object(
+                first_run, "prompt_provider"
+            ) as prov, mock.patch.object(
+                first_run, "prompt_api_key"
+            ) as xai_key, mock.patch.object(
+                first_run.cfgmod, "load_config", return_value=cfg
+            ), mock.patch.object(
+                first_run.cfgmod, "save_config", return_value=Path(tmp) / "config.json"
+            ), mock.patch(
+                "bridge_py.install_addon.ensure_game_files"
+            ):
+                first_run.ensure_first_run_config(headless=False)
+            prov.assert_not_called()
+            xai_key.assert_not_called()
+
+    def test_ask_provider_dialog_normalizes_default(self):
+        from bridge_py import tk_util
+
+        with mock.patch.object(tk_util, "_run_modal_dialog", return_value="xai") as run:
+            self.assertEqual(tk_util.ask_provider_dialog(), "xai")
+            run.assert_called_once()
+            self.assertEqual(run.call_args.kwargs.get("default"), "xai")
+        with mock.patch.object(tk_util, "_run_modal_dialog", return_value="CLAUDE"):
+            self.assertEqual(tk_util.ask_provider_dialog(), "claude")
+        with mock.patch.object(tk_util, "_run_modal_dialog", return_value=None):
+            self.assertEqual(tk_util.ask_provider_dialog(), "xai")
+
+
 
 if __name__ == "__main__":
     unittest.main()
