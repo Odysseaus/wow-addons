@@ -765,54 +765,6 @@ function NS.OnDBReady(...)
   NS.RefreshChrome()
 end
 
-local function InstallSlash()
-  local foundCmd
-  for key, val in pairs(_G) do
-    if type(key) == 'string' and type(val) == 'string' and string.lower(val) == '/wtm' then
-      local cmd = string.match(key, '^SLASH_(%w+)%d+$')
-      if cmd and type(SlashCmdList[cmd]) == 'function' then
-        foundCmd = cmd
-        break
-      end
-    end
-  end
-  if foundCmd then
-    local old = SlashCmdList[foundCmd]
-    if old._wtm then return end
-    local function wrapper(msg)
-      local mode = string.match(string.lower(msg or ''), '^%s*mode%s+(%a+)')
-      if mode then
-        NS.SetMode(mode)
-        return
-      end
-      old(msg)
-    end
-    wrapper._wtm = true
-    SlashCmdList[foundCmd] = wrapper
-    return
-  end
-  if SlashCmdList.WOWTHREATUI and SlashCmdList.WOWTHREATUI._wtm then return end
-  local function wrapper(msg)
-    local mode = string.match(string.lower(msg or ''), '^%s*mode%s+(%a+)')
-    if mode then
-      NS.SetMode(mode)
-      return
-    end
-    if NS.CycleMode then NS.CycleMode() end
-  end
-  wrapper._wtm = true
-  SLASH_WOWTHREATUI1 = '/wtm'
-  SlashCmdList.WOWTHREATUI = wrapper
-end
-
-InstallSlash()
-
-local boot = CreateFrame('Frame')
-boot:RegisterEvent('PLAYER_LOGIN')
-boot:SetScript('OnEvent', function()
-  InstallSlash()
-end)
-
 if NS.db then
   NS.OnDBReady()
 end
