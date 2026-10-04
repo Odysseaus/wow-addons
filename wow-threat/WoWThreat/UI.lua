@@ -4,7 +4,13 @@ local ROW_N = 10
 local POLL = 0.2
 local LERP_T = 0.25
 local SCALE_MIN, SCALE_MAX = 0.6, 1.6
-local FRAME_W, FRAME_H = 280, 280
+local ART_W, ART_H = 859, 722
+local TEX_SIZE = 1024
+local HEADER = 26
+local FRAME_W = 340
+local FRAME_H = math.floor(FRAME_W * ART_H / ART_W + 0.5)
+local IN_L, IN_T, IN_R, IN_B = 0.24, 0.20, 0.22, 0.16
+local TITLE_H = 18
 
 local main, content
 local barsLayer, platesLayer, dialLayer
@@ -203,24 +209,10 @@ local function ApplyIcon(tex, class)
   end
 end
 
-local function MakeMiniButton(parent, label, w)
-  local b = CreateFrame('Button', nil, parent)
-  b:SetSize(w or 18, 16)
-  local bg = b:CreateTexture(nil, 'BACKGROUND')
-  bg:SetAllPoints()
-  bg:SetTexture('Interface\\Buttons\\WHITE8X8')
-  bg:SetVertexColor(0.22, 0.16, 0.05, 0.92)
-  local fs = b:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
-  fs:SetPoint('CENTER', 0, 0)
-  b:SetFontString(fs)
+local function MakeMiniButton(parent, name, label, w)
+  local b = CreateFrame('Button', name, parent, 'UIPanelButtonTemplate')
+  b:SetSize(w or 22, 22)
   b:SetText(label)
-  b.bg = bg
-  b:SetScript('OnEnter', function()
-    bg:SetVertexColor(0.48, 0.36, 0.08, 1)
-  end)
-  b:SetScript('OnLeave', function()
-    bg:SetVertexColor(0.22, 0.16, 0.05, 0.92)
-  end)
   return b
 end
 
@@ -417,7 +409,7 @@ local function SyncRows(list)
   for i = 1, n do
     local e = list[i]
     local key = EntryKey(e, i)
-    local y = -((i - 1) * (rh + gap))
+    local y = -(TITLE_H + (i - 1) * (rh + gap))
     seenB[key] = true
     seenP[key] = true
     seenM[key] = true
@@ -609,7 +601,6 @@ local function Build()
   built = true
 
   main = CreateFrame('Frame', 'WoWThreatFrame', UIParent)
-  main:SetSize(FRAME_W, FRAME_H)
   main:SetFrameStrata('MEDIUM')
   main:SetClampedToScreen(true)
   main:EnableMouse(true)
@@ -624,33 +615,37 @@ local function Build()
     SavePosition()
   end)
 
-  local bg = main:CreateTexture(nil, 'BACKGROUND')
-  bg:SetAllPoints()
-  bg:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatFrame')
+  main:SetSize(FRAME_W, FRAME_H + HEADER)
+
+  local art = main:CreateTexture(nil, 'BACKGROUND')
+  art:SetPoint('TOPLEFT', main, 'TOPLEFT', 0, -HEADER)
+  art:SetSize(FRAME_W, FRAME_H)
+  art:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatFrame')
+  art:SetTexCoord(0, ART_W / TEX_SIZE, 0, ART_H / TEX_SIZE)
 
   titleFS = main:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
-  titleFS:SetPoint('TOP', main, 'TOP', 0, -8)
   titleFS:SetText('THREAT METER')
   titleFS:SetTextColor(1, 0.82, 0)
 
-  modeBtn = MakeMiniButton(main, 'Bars', 52)
-  modeBtn:SetPoint('TOPLEFT', main, 'TOPLEFT', 10, -6)
+  modeBtn = MakeMiniButton(main, 'WoWThreatModeButton', 'Bars', 72)
+  modeBtn:SetPoint('TOPLEFT', main, 'TOPLEFT', 0, 0)
   modeBtn:SetScript('OnClick', function()
     if NS.CycleMode then NS.CycleMode() end
     if NS.ApplyMode then NS.ApplyMode() end
     if NS.RefreshChrome then NS.RefreshChrome() end
   end)
 
-  plusBtn = MakeMiniButton(main, '+', 16)
-  plusBtn:SetPoint('TOPRIGHT', main, 'TOPRIGHT', -8, -6)
+  plusBtn = MakeMiniButton(main, 'WoWThreatPlusButton', '+', 24)
+  plusBtn:SetPoint('TOPRIGHT', main, 'TOPRIGHT', 0, 0)
   plusBtn:SetScript('OnClick', function() AdjustScale(0.1) end)
-  minusBtn = MakeMiniButton(main, '-', 16)
-  minusBtn:SetPoint('RIGHT', plusBtn, 'LEFT', -2, 0)
+  minusBtn = MakeMiniButton(main, 'WoWThreatMinusButton', '-', 24)
+  minusBtn:SetPoint('RIGHT', plusBtn, 'LEFT', -4, 0)
   minusBtn:SetScript('OnClick', function() AdjustScale(-0.1) end)
 
   content = CreateFrame('Frame', nil, main)
-  content:SetPoint('TOPLEFT', main, 'TOPLEFT', FRAME_W * 0.12, -FRAME_H * 0.18)
-  content:SetPoint('BOTTOMRIGHT', main, 'BOTTOMRIGHT', -FRAME_W * 0.12, FRAME_H * 0.12)
+  content:SetPoint('TOPLEFT', art, 'TOPLEFT', FRAME_W * IN_L, -FRAME_H * IN_T)
+  content:SetPoint('BOTTOMRIGHT', art, 'BOTTOMRIGHT', -FRAME_W * IN_R, FRAME_H * IN_B)
+  titleFS:SetPoint('TOP', content, 'TOP', 0, 0)
 
   banner = content:CreateFontString(nil, 'OVERLAY', 'GameFontNormalSmall')
   banner:SetPoint('TOP', content, 'TOP', 0, 0)
