@@ -5,7 +5,9 @@ local POLL = 0.2
 local LERP_T = 0.25
 local SCALE_MIN, SCALE_MAX = 0.6, 1.6
 local TEX_SIZE = 1024
-local ART_X, ART_Y = 133, 12
+-- ThreatFrame.tga is one 1024 square. The continuous gold border occupies
+-- the top-left 617x701; a single texcoord range covers that whole border.
+local ART_X, ART_Y = 0, 0
 local ART_W, ART_H = 617, 701
 local HEADER = 26
 local FRAME_W = 320
