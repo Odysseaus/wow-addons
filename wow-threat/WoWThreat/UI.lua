@@ -152,6 +152,7 @@ local function BuildList()
           pct = PctNumber(e),
           isPlayer = e.isPlayer or e.isMe or e.player,
           unit = e.unit,
+          seq = #out + 1,
         }
       end
     end
@@ -165,12 +166,16 @@ local function BuildList()
           pct = PctNumber(e),
           isPlayer = e.isPlayer or e.isMe or e.player,
           unit = e.unit,
+          seq = #out + 1,
         }
       end
     end
   end
   table.sort(out, function(a, b)
     if a.pct == b.pct then
+      local as = a.seq or 0
+      local bs = b.seq or 0
+      if as ~= bs then return as < bs end
       return (a.name or '') < (b.name or '')
     end
     return a.pct > b.pct
