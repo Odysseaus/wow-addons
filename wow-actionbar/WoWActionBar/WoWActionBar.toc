@@ -2,7 +2,8 @@
 ## Title: WoW Action Bar
 ## Notes: Fill empty action-bar slots with your spells, grouped by category. Leaves placed spells alone.
 ## Author: Odysseaus
-## Version: 0.1.1
+## Version: 0.1.2
+## IconTexture: Interface\Icons\Spell_Fire_Fireball
 ## SavedVariables: WoWActionBarDB
 
 Classify.lua
