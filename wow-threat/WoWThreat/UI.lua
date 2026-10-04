@@ -579,27 +579,17 @@ local function AdjustScale(delta)
   main:SetScale(s)
 end
 
-local function SavePosition()
-  if not main or not NS.db then return end
-  local point, _, relativePoint, xOfs, yOfs = main:GetPoint(1)
-  NS.db.point = point or 'CENTER'
-  NS.db.relativePoint = relativePoint or 'CENTER'
-  NS.db.xOfs = xOfs or 0
-  NS.db.yOfs = yOfs or 0
-end
-
 function NS.ApplyLock()
   if not main then return end
+  -- Forever has no EditModeManagerFrame. Never enable free drag.
+  main:SetMovable(false)
+  main:RegisterForDrag()
   local locked = NS.db and (NS.db.locked or NS.db.lock) and true or false
   if locked then
-    main:SetMovable(false)
-    main:RegisterForDrag()
     if plusBtn then plusBtn:Hide() end
     if minusBtn then minusBtn:Hide() end
   else
-    main:SetMovable(true)
     main:EnableMouse(true)
-    main:RegisterForDrag('LeftButton')
     if plusBtn then plusBtn:Show() end
     if minusBtn then minusBtn:Show() end
   end
@@ -670,16 +660,9 @@ local function Build()
   main:SetFrameStrata('MEDIUM')
   main:SetClampedToScreen(true)
   main:EnableMouse(true)
-  main:SetMovable(true)
-  main:RegisterForDrag('LeftButton')
-  main:SetScript('OnDragStart', function(self)
-    if NS.db and (NS.db.locked or NS.db.lock) then return end
-    self:StartMoving()
-  end)
-  main:SetScript('OnDragStop', function(self)
-    self:StopMovingOrSizing()
-    SavePosition()
-  end)
+  -- No EditModeManagerFrame on this client, so the frame is not draggable.
+  -- A saved WoWThreatDB point is still applied in ApplyLayout.
+  main:SetMovable(false)
 
   main:SetSize(FRAME_W, FRAME_H + HEADER)
 

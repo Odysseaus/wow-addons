@@ -125,7 +125,7 @@ function NS.ToggleLock()
   if NS.db.locked then
     print("|cffd4af37WoW Threat|r window locked.")
   else
-    print("|cffd4af37WoW Threat|r window unlocked.")
+    print("|cffd4af37WoW Threat|r window unlocked. The frame is not draggable (Forever has no Edit Mode).")
   end
 end
 
