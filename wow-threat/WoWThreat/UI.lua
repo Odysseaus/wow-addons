@@ -626,6 +626,96 @@ local function DragAllowed()
   return true
 end
 
+-- Blue Edit Mode box from daves_balls EditModeDialog.lua (CreateSelection /
+-- PaintSelection). Blizzard's editmode-actionbar-highlight nine-slice when
+-- that atlas exists; otherwise a solid blue via SetColorTexture (built-in
+-- white). Shown only while this Edit Mode session is active.
+local HIGHLIGHT_KIT = 'editmode-actionbar-highlight'
+local SELECTION_LAYOUT = {
+  TopRightCorner = { atlas = '%s-NineSlice-Corner', mirrorLayout = true, x = 8, y = 8 },
+  TopLeftCorner = { atlas = '%s-NineSlice-Corner', mirrorLayout = true, x = -8, y = 8 },
+  BottomLeftCorner = { atlas = '%s-NineSlice-Corner', mirrorLayout = true, x = -8, y = -8 },
+  BottomRightCorner = { atlas = '%s-NineSlice-Corner', mirrorLayout = true, x = 8, y = -8 },
+  TopEdge = { atlas = '_%s-NineSlice-EdgeTop' },
+  BottomEdge = { atlas = '_%s-NineSlice-EdgeBottom' },
+  LeftEdge = { atlas = '!%s-NineSlice-EdgeLeft' },
+  RightEdge = { atlas = '!%s-NineSlice-EdgeRight' },
+  Center = { atlas = '%s-NineSlice-Center', x = -8, y = 8, x1 = 8, y1 = -8 },
+}
+local HIGHLIGHT_PIECES = {
+  'TopLeftCorner', 'TopRightCorner', 'BottomLeftCorner', 'BottomRightCorner',
+  'TopEdge', 'BottomEdge', 'LeftEdge', 'RightEdge', 'Center',
+}
+local editHighlight
+
+local function HasEditModeArt()
+  return NineSliceUtil and NineSliceUtil.ApplyLayout and C_Texture and C_Texture.GetAtlasInfo
+    and C_Texture.GetAtlasInfo(HIGHLIGHT_KIT .. '-NineSlice-Corner') ~= nil
+end
+
+local function PaintEditHighlight(sel)
+  if sel.art then
+    NineSliceUtil.ApplyLayout(sel.art, SELECTION_LAYOUT, HIGHLIGHT_KIT)
+  elseif sel.tint then
+    sel.tint:SetColorTexture(0.25, 0.6, 1, 0.22)
+  end
+end
+
+local function CreateEditHighlight(target)
+  local sel = CreateFrame('Frame', nil, target)
+  sel:SetAllPoints()
+  sel:SetFrameLevel(target:GetFrameLevel() + 20)
+  if HasEditModeArt() then
+    sel.art = CreateFrame('Frame', nil, sel)
+    sel.art:SetAllPoints()
+    sel.hover = CreateFrame('Frame', nil, sel)
+    sel.hover:SetAllPoints()
+    sel.hover:SetAlpha(0.4)
+    NineSliceUtil.ApplyLayout(sel.hover, SELECTION_LAYOUT, HIGHLIGHT_KIT)
+    local i, key
+    for i, key in ipairs(HIGHLIGHT_PIECES) do
+      if sel.hover[key] then sel.hover[key]:SetBlendMode('ADD') end
+    end
+    sel.hover:Hide()
+  else
+    sel.tint = sel:CreateTexture(nil, 'OVERLAY')
+    sel.tint:SetAllPoints()
+  end
+  sel.label = sel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+  sel.label:SetPoint('BOTTOM', sel, 'TOP', 0, 10)
+  sel.label:SetText('WoW Threat')
+  PaintEditHighlight(sel)
+  sel:SetIgnoreParentAlpha(true)
+  sel:Hide()
+  sel:SetScript('OnShow', function()
+    if not sel.hover then return end
+    if target:GetScript('OnEnter') ~= sel.hookedEnter or not sel.hookedEnter then
+      target:HookScript('OnEnter', function()
+        if sel:IsShown() then sel.hover:Show() end
+      end)
+      sel.hookedEnter = target:GetScript('OnEnter')
+    end
+    if target:GetScript('OnLeave') ~= sel.hookedLeave or not sel.hookedLeave then
+      target:HookScript('OnLeave', function() sel.hover:Hide() end)
+      sel.hookedLeave = target:GetScript('OnLeave')
+    end
+  end)
+  sel:SetScript('OnHide', function()
+    if sel.hover then sel.hover:Hide() end
+  end)
+  return sel
+end
+
+local function SyncEditHighlight()
+  if not editHighlight then return end
+  -- Edit Mode session only. A cleared /wtm lock must not show the box.
+  if editModeOpen then
+    editHighlight:Show()
+  else
+    editHighlight:Hide()
+  end
+end
+
 local function BindEditModeSignals()
   if editModeBound or not main then return end
   if not EventRegistry or type(EventRegistry.RegisterCallback) ~= "function" then
@@ -634,10 +724,12 @@ local function BindEditModeSignals()
   -- Listen only. EditModeSystem is a closed enum; do not register a frame.
   local function onEnter()
     editModeOpen = true
+    SyncEditHighlight()
     if NS.ApplyLock then NS.ApplyLock() end
   end
   local function onExit()
     editModeOpen = false
+    SyncEditHighlight()
     if dragging and main then
       dragging = false
       main:StopMovingOrSizing()
@@ -653,6 +745,7 @@ end
 function NS.ApplyLock()
   if not main then return end
   BindEditModeSignals()
+  SyncEditHighlight()
   local allow = DragAllowed()
   if not allow then
     if dragging then
@@ -739,6 +832,8 @@ local function Build()
   main:SetClampedToScreen(true)
   main:EnableMouse(true)
   -- Locked until EditMode.Enter. Do not register drag or start a move here.
+  -- Highlight stays hidden until EditMode.Enter (editModeOpen is false here).
+  editHighlight = CreateEditHighlight(main)
   main:SetMovable(false)
   main:SetScript('OnDragStart', function(self)
     if not DragAllowed() then return end
