@@ -4,12 +4,13 @@ local ROW_N = 10
 local POLL = 0.2
 local LERP_T = 0.25
 local SCALE_MIN, SCALE_MAX = 0.6, 1.6
-local ART_W, ART_H = 859, 722
 local TEX_SIZE = 1024
+local ART_X, ART_Y = 133, 12
+local ART_W, ART_H = 617, 701
 local HEADER = 26
-local FRAME_W = 340
+local FRAME_W = 320
 local FRAME_H = math.floor(FRAME_W * ART_H / ART_W + 0.5)
-local IN_L, IN_T, IN_R, IN_B = 0.24, 0.20, 0.22, 0.16
+local IN_L, IN_T, IN_R, IN_B = 0.11, 0.16, 0.11, 0.14
 local TITLE_H = 18
 
 local main, content
@@ -621,14 +622,14 @@ local function Build()
   art:SetPoint('TOPLEFT', main, 'TOPLEFT', 0, -HEADER)
   art:SetSize(FRAME_W, FRAME_H)
   art:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatFrame')
-  art:SetTexCoord(0, ART_W / TEX_SIZE, 0, ART_H / TEX_SIZE)
+  art:SetTexCoord(ART_X / TEX_SIZE, (ART_X + ART_W) / TEX_SIZE, ART_Y / TEX_SIZE, (ART_Y + ART_H) / TEX_SIZE)
 
   titleFS = main:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
   titleFS:SetText('THREAT METER')
   titleFS:SetTextColor(1, 0.82, 0)
 
   modeBtn = MakeMiniButton(main, 'WoWThreatModeButton', 'Bars', 72)
-  modeBtn:SetPoint('TOPLEFT', main, 'TOPLEFT', 0, 0)
+  modeBtn:SetPoint('TOPLEFT', art, 'TOPLEFT', 0, HEADER)
   modeBtn:SetScript('OnClick', function()
     if NS.CycleMode then NS.CycleMode() end
     if NS.ApplyMode then NS.ApplyMode() end
@@ -636,7 +637,7 @@ local function Build()
   end)
 
   plusBtn = MakeMiniButton(main, 'WoWThreatPlusButton', '+', 24)
-  plusBtn:SetPoint('TOPRIGHT', main, 'TOPRIGHT', 0, 0)
+  plusBtn:SetPoint('TOPRIGHT', art, 'TOPRIGHT', 0, HEADER)
   plusBtn:SetScript('OnClick', function() AdjustScale(0.1) end)
   minusBtn = MakeMiniButton(main, 'WoWThreatMinusButton', '-', 24)
   minusBtn:SetPoint('RIGHT', plusBtn, 'LEFT', -4, 0)
