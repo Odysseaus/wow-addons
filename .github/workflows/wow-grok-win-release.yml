@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. wow-grok-win-v0.1.0)'
+        description: 'Release tag (e.g. wow-grok-win-v0.1.27)'
         required: true
         type: string
       prerelease:
@@ -62,6 +62,7 @@ jobs:
               raise SystemExit("version inject failed")
           init.write_text(text2, encoding="utf-8")
           print("OK: injected", ver)
+          print("TOC left unchanged (addon stays 0.1.22, matching Mac 0.1.27)")
           PY
 
       - name: Build .exe
@@ -118,23 +119,28 @@ jobs:
 
           Built from commit ${SHA} via GitHub Actions (windows-latest, unsigned).
 
-          ### First Win ship
-          - Frozen \`WoWGrok.exe\` bridge (PyInstaller one-file)
-          - System tray: **Running** + **Quit** (pystray) — required, not deferred
-          - SSL/certifi parity with Mac \`wow-grok-mac-v0.1.18\` (\`ssl_certs.configure\` + certifi CA)
-          - Frozen \`--ssl-smoke\` gate (HTTPS auth error, not CERTIFICATE_VERIFY_FAILED)
+          ### Product pin — parity with Mac \`wow-grok-mac-v0.1.27\` (commit 1e378ca / PR #7)
+          - First-run prompt: choose **xAI** or **Claude**. Enter / default keeps **xAI**.
+          - Claude uses Anthropic Messages API (\`claudeApiKey\` or \`ANTHROPIC_API_KEY\`, model \`claude-sonnet-4-5\`). xAI stays \`provider: xai\`, model \`grok-4-latest\`.
+          - Default timeoutMs **1800000** (30m), same as main. Existing configs kept.
+          - This main build does **not** set webSearch/xSearch and does **not** attach xAI \`web_search\` / \`x_search\` tools (same as Mac 0.1.27).
+          - Healthy pixel Send does **not** call ReloadUI (reload remains the non-pixel fallback).
+          - In-game addon TOC stays **0.1.22**. Game-context area (location / money / XP) is **not** in this trunk.
+          - Tray **Running** + **Quit** (pystray); SSL / \`--ssl-smoke\`.
 
           ### Install
-          1. Download \`WoWGrok.exe\` (SmartScreen may warn — unsigned first drop).
-          2. Double-click; enter xAI API key; confirm AddOns folder.
-          3. Leave running (tray icon) while you play Forever. Quit from the tray menu.
+          1. Download \`WoWGrok.exe\` (SmartScreen may warn — unsigned).
+          2. Double-click; choose xAI (default) or Claude; enter that API key; confirm AddOns folder.
+          3. Leave running — system tray (notification area) shows **Running**.
+          4. After Forever is running with WoW Grok enabled, type \`/wow-grok\` or \`/grok\` in game chat.
+          5. When done later, tray → **Quit** (stops the app; not part of opening/using the AddOn).
 
-          Odysseaus retests on myPc after this asset lands.
+          Mac counterpart: https://github.com/Odysseaus/wow-addons/releases/tag/wow-grok-mac-v0.1.27
           MD
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Windows ${TAG#wow-grok-win-} — tray + SSL"
+          TITLE="WoW Grok Windows v0.1.27 — Claude provider prompt; xAI default; tray + SSL"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok.exe \
