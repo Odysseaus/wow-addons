@@ -13,15 +13,14 @@ local ART_W, ART_H = 619, 677
 local HEADER = 26
 local FRAME_W = 320
 local FRAME_H = math.floor(FRAME_W * ART_H / ART_W + 0.5)
--- Top inset clears the W crest, which hangs to about 0.17 of the art.
-local IN_L, IN_T, IN_R, IN_B = 0.11, 0.20, 0.11, 0.14
-local TITLE_H = 18
--- Clear pixels between the title glyphs and the dial ring.
-local TITLE_GAP = 6
+-- Largest rectangle inside the transparent hole of the 619x677 art.
+-- Top clears the W crest (pixel 116); bottom clears the lower gem.
+-- Right up to the inner metal, and the same rect for bars, plates, and dial.
+local IN_L, IN_T, IN_R, IN_B = 47 / 619, 116 / 677, 53 / 619, 94 / 677
 
 local main, content
 local barsLayer, platesLayer, dialLayer
-local banner, titleFS, modeBtn, plusBtn, minusBtn
+local banner, modeBtn, plusBtn, minusBtn
 local barByKey, barFree = {}, {}
 local plateByKey, plateFree = {}, {}
 local markByKey, markFree = {}, {}
@@ -429,7 +428,7 @@ local function SyncRows(list)
   for i = 1, n do
     local e = list[i]
     local key = EntryKey(e, i)
-    local y = -(TITLE_H + (i - 1) * (rh + gap))
+    local y = -((i - 1) * (rh + gap))
     seenB[key] = true
     seenP[key] = true
     seenM[key] = true
@@ -478,18 +477,14 @@ local function DialRadius()
   local ch = content:GetHeight() or 0
   if not cw or cw < 40 then cw = 160 end
   if not ch or ch < 40 then ch = 160 end
-  -- Face sits in the area under the title, not across the whole content.
-  local availH = ch - TITLE_H - TITLE_GAP
-  if availH < 40 then availH = 40 end
+  -- Face fills the content rect (the inner opening). The square uses the
+  -- shorter side; the needle scales with that face so the tip stays on the arc.
   local sz = cw
-  if availH < sz then sz = availH end
-  local face = sz * 0.98
+  if ch < sz then sz = ch end
+  local face = sz
   dial.face:SetSize(face, face)
-  -- Hub is the center of that lower area. Scale changes content size, so
-  -- this is recomputed here rather than baked at build time.
-  local hubY = -(TITLE_H + TITLE_GAP) / 2
   dial.hub:ClearAllPoints()
-  dial.hub:SetPoint('CENTER', content, 'CENTER', 0, hubY)
+  dial.hub:SetPoint('CENTER', content, 'CENTER', 0, 0)
   local radius = face * 0.5 * ARC_FRAC
   local px = PCT_OX * face
   local py = -PCT_OY * face
@@ -694,10 +689,6 @@ local function Build()
   art:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatFrame')
   art:SetTexCoord(ART_X / TEX_SIZE, (ART_X + ART_W) / TEX_SIZE, ART_Y / TEX_SIZE, (ART_Y + ART_H) / TEX_SIZE)
 
-  titleFS = main:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
-  titleFS:SetText('THREAT METER')
-  titleFS:SetTextColor(1, 0.82, 0)
-
   modeBtn = MakeMiniButton(main, 'WoWThreatModeButton', 'Bars', 92)
   modeBtn:SetPoint('TOPLEFT', art, 'TOPLEFT', 0, HEADER)
   modeBtn:SetScript('OnClick', function()
@@ -724,7 +715,6 @@ local function Build()
   content:SetPoint('TOPLEFT', art, 'TOPLEFT', FRAME_W * IN_L, -FRAME_H * IN_T)
   content:SetPoint('BOTTOMRIGHT', art, 'BOTTOMRIGHT', -FRAME_W * IN_R, FRAME_H * IN_B)
   content:SetClipsChildren(true)
-  titleFS:SetPoint('TOP', content, 'TOP', 0, 0)
 
   banner = content:CreateFontString(nil, 'OVERLAY', 'GameFontNormalSmall')
   banner:SetPoint('TOP', content, 'TOP', 0, 0)
@@ -749,7 +739,7 @@ local function Build()
 
   dial.hub = CreateFrame('Frame', nil, dialLayer)
   dial.hub:SetSize(2, 2)
-  dial.hub:SetPoint('CENTER', content, 'CENTER', 0, -(TITLE_H + TITLE_GAP) / 2)
+  dial.hub:SetPoint('CENTER', content, 'CENTER', 0, 0)
 
   dial.face = dialLayer:CreateTexture(nil, 'BACKGROUND')
   dial.face:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
