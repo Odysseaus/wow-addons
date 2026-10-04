@@ -4,6 +4,11 @@ local _, NS = ...
 
 local SAMPLE_TANK_RAW = 10000
 
+-- issecretvalue is the documented tainted-safe test; == on a secret string throws.
+local function valueIsSecret(value)
+    return type(issecretvalue) == "function" and issecretvalue(value)
+end
+
 local function sortEntries(entries)
     local i
     for i = 1, #entries do
@@ -94,6 +99,10 @@ end
 
 -- GUID token first, unit token "target" when the GUID call yields nothing.
 local function queryThreat(unit, mobToken)
+    -- Secret GUID/token: UnitIsUnit and ~= are illegal here (AllowedWhenUntainted); query the plain "target" token.
+    if valueIsSecret(mobToken) then
+        mobToken = "target"
+    end
     local isTanking, status, scaledPercentage, rawPercentage, threatValue =
         UnitDetailedThreatSituation(unit, mobToken)
     local empty = isTanking == nil and status == nil and scaledPercentage == nil
@@ -123,11 +132,14 @@ local function pushLive(entries, seen, unit, mobToken)
         return
     end
     local guid = UnitGUID(unit)
-    if guid then
+    -- Secret GUIDs cannot be table keys; group GUIDs are not secret, so dedupe is unchanged.
+    if guid and not valueIsSecret(guid) then
         if seen[guid] then
             return
         end
         seen[guid] = true
+    elseif valueIsSecret(guid) then
+        guid = nil
     end
 
     local name = UnitName(unit)
@@ -141,6 +153,13 @@ local function pushLive(entries, seen, unit, mobToken)
         raw = numericThreat(threatValue, rawPercentage, scaledPercentage)
     end
 
+    local samePlayer = UnitIsUnit(unit, "player")
+    local isPlayer = false
+    -- Return may be a secret boolean (SecretWhenUnitComparisonRestricted); do not boolean-test it.
+    if not valueIsSecret(samePlayer) then
+        isPlayer = samePlayer and true or false
+    end
+
     entries[#entries + 1] = {
         unit = unit,
         name = name or unit,
@@ -151,7 +170,7 @@ local function pushLive(entries, seen, unit, mobToken)
         pct = 0,
         raw = raw,
         value = raw,
-        isPlayer = UnitIsUnit(unit, "player") and true or false,
+        isPlayer = isPlayer,
     }
 end
 
@@ -183,7 +202,8 @@ local function collectLive()
     local mobToken = nil
     if targetIsHostile() then
         mobToken = UnitGUID("target")
-        if not mobToken or mobToken == "" then
+        -- Secret target GUID: skip == (tainted compare throws); UnitIsUnit cannot accept a secret token either.
+        if valueIsSecret(mobToken) or not mobToken or mobToken == "" then
             mobToken = "target"
         end
     end
