@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: WoW Threat
+## Notes: Forever threat meter — bars, plates, and dial in a gold frame.
+## Author: Odysseaus
+## Version: 0.1.0
+## IconTexture: Interface\Icons\Spell_Fire_Fireball
+## SavedVariables: WoWThreatDB
+
+Core.lua
+Collector.lua
+UI.lua
