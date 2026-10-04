@@ -23,6 +23,10 @@ local barSmooth, plateSmooth, markSmooth = {}, {}, {}
 local dial = {}
 local pollAcc = 0
 local dialVis = { angle = 180, target = 180, ready = false }
+-- Arc midline radius / half the 768 dial texture. Percent anchor is an
+-- offset from texture center as a fraction of the texture (y down).
+local ARC_FRAC = 0.658
+local PCT_OX, PCT_OY = 0.0072, 0.1379
 local built = false
 
 local RefreshData
@@ -300,7 +304,7 @@ local function CreateMarker(parent)
   dot:SetSize(8, 8)
   dot:SetTexture('Interface\\Buttons\\WHITE8X8')
   local icon = m:CreateTexture(nil, 'OVERLAY')
-  icon:SetSize(12, 12)
+  icon:SetSize(14, 14)
   icon:SetTexture('Interface\\Icons\\INV_Misc_QuestionMark')
   local nameFS = m:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
   nameFS:SetWordWrap(false)
@@ -314,26 +318,44 @@ end
 
 local function PlaceMarker(marker, angle, radius)
   local rad = math.rad(angle)
-  local x = math.cos(rad) * radius
-  local y = math.sin(rad) * radius
+  local c = math.cos(rad)
+  local s = math.sin(rad)
   marker:ClearAllPoints()
-  marker:SetPoint('CENTER', dial.hub, 'CENTER', x, y)
-  marker.dot:ClearAllPoints()
+  marker:SetPoint('CENTER', dial.hub, 'CENTER', c * radius, s * radius)
+  marker.dot:Hide()
   marker.icon:ClearAllPoints()
   marker.nameFS:ClearAllPoints()
-  marker.dot:SetPoint('CENTER', marker, 'CENTER', 0, 0)
-  if x >= 0 then
-    marker.icon:SetPoint('LEFT', marker.dot, 'RIGHT', 1, 0)
-    marker.nameFS:SetPoint('LEFT', marker.icon, 'RIGHT', 1, 0)
+  marker.icon:SetPoint('CENTER', marker, 'CENTER', 0, 0)
+  -- Name sits just inside the arc, toward the hub, so the crest does not clip it.
+  if c > 0.45 then
+    marker.nameFS:SetPoint('RIGHT', marker.icon, 'LEFT', -2, 0)
+    marker.nameFS:SetJustifyH('RIGHT')
+  elseif c < -0.45 then
+    marker.nameFS:SetPoint('LEFT', marker.icon, 'RIGHT', 2, 0)
     marker.nameFS:SetJustifyH('LEFT')
   else
-    marker.icon:SetPoint('RIGHT', marker.dot, 'LEFT', -1, 0)
-    marker.nameFS:SetPoint('RIGHT', marker.icon, 'LEFT', -1, 0)
-    marker.nameFS:SetJustifyH('RIGHT')
+    marker.nameFS:SetPoint('TOP', marker.icon, 'BOTTOM', 0, -1)
+    marker.nameFS:SetJustifyH('CENTER')
   end
 end
 
 local function UpdateNeedle(angle, length)
+  if dial.needle and dial.needle.SetRotation then
+    local n = #dial.segs
+    for i = 1, n do
+      dial.segs[i]:Hide()
+    end
+    local h = length * 2
+    if h < 2 then h = 2 end
+    dial.needle:Show()
+    dial.needle:ClearAllPoints()
+    dial.needle:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
+    -- Art is only the top half of a 64x256 texture, so width follows that aspect.
+    dial.needle:SetSize(h * (64 / 256), h)
+    dial.needle:SetRotation(math.rad(angle - 90))
+    return
+  end
+  if dial.needle then dial.needle:Hide() end
   local n = #dial.segs
   for i = 1, n do
     local dist = length * (i / n)
@@ -346,15 +368,6 @@ local function UpdateNeedle(angle, length)
     local w = (i == n) and 7 or 4
     s:SetSize(w, w)
     s:Show()
-  end
-  if dial.needle and dial.needle.SetRotation then
-    dial.needle:Show()
-    dial.needle:ClearAllPoints()
-    dial.needle:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
-    dial.needle:SetSize(3, length * 2)
-    dial.needle:SetRotation(math.rad(angle - 90))
-  elseif dial.needle then
-    dial.needle:Hide()
   end
 end
 
@@ -460,12 +473,26 @@ local function DialRadius()
   local sz = cw
   if ch < sz then sz = ch end
   if sz < 40 then sz = 160 end
-  local face = sz * 0.72
+  local face = sz * 0.98
   dial.face:SetSize(face, face)
-  if dial.border then
-    dial.border:SetSize(face + 28, face + 28)
+  local radius = face * 0.5 * ARC_FRAC
+  local px = PCT_OX * face
+  local py = -PCT_OY * face
+  if dial.pct and dial.pctSign then
+    local nw = dial.pct:GetStringWidth() or 0
+    local sw = dial.pctSign:GetStringWidth() or 0
+    if not nw or nw < 1 then nw = 36 end
+    if not sw or sw < 1 then sw = 18 end
+    local left = px - (nw + sw) / 2
+    dial.pct:ClearAllPoints()
+    dial.pct:SetPoint('LEFT', dial.hub, 'CENTER', left, py)
+    dial.pctSign:ClearAllPoints()
+    dial.pctSign:SetPoint('LEFT', dial.pct, 'RIGHT', 0, 0)
+  elseif dial.pct then
+    dial.pct:ClearAllPoints()
+    dial.pct:SetPoint('CENTER', dial.hub, 'CENTER', px, py)
   end
-  return face * 0.40
+  return radius
 end
 
 RefreshData = function()
@@ -479,8 +506,14 @@ RefreshData = function()
     dialVis.angle = dialVis.target
     dialVis.ready = true
   end
+  local shown = math.floor(pp + 0.5)
   if dial.pct then
-    dial.pct:SetText(string.format('%d%%', math.floor(pp + 0.5)))
+    if dial.pctSign then
+      dial.pct:SetText(tostring(shown))
+      dial.pctSign:SetText('%')
+    else
+      dial.pct:SetText(string.format('%d%%', shown))
+    end
   end
   local radius = DialRadius()
   dial.radius = radius
@@ -518,7 +551,7 @@ local function Animate(elapsed)
       local st = markSmooth[key]
       if st and row.targetAngle then
         st.angle = Lerp(st.angle, row.targetAngle, elapsed)
-        PlaceMarker(row, st.angle, radius + 8)
+        PlaceMarker(row, st.angle, radius)
       end
     end
   end
@@ -671,51 +704,27 @@ local function Build()
 
   dial.hub = CreateFrame('Frame', nil, dialLayer)
   dial.hub:SetSize(2, 2)
-  dial.hub:SetPoint('CENTER', content, 'CENTER', 0, -2)
+  dial.hub:SetPoint('CENTER', content, 'CENTER', 0, 0)
 
   dial.face = dialLayer:CreateTexture(nil, 'BACKGROUND')
   dial.face:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
-  dial.face:SetTexture('Interface\\Minimap\\UI-Minimap-Background')
-  dial.face:SetVertexColor(0.12, 0.1, 0.08, 0.95)
+  dial.face:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatDial')
   dial.face:SetSize(150, 150)
-
-  dial.border = dialLayer:CreateTexture(nil, 'BORDER')
-  dial.border:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
-  dial.border:SetTexture('Interface\\Minimap\\MiniMap-TrackingBorder')
-  dial.border:SetSize(178, 178)
-  dial.border:SetVertexColor(1, 0.82, 0.25, 1)
-
-  dial.skull = dialLayer:CreateTexture(nil, 'OVERLAY')
-  dial.skull:SetTexture('Interface\\TargetingFrame\\UI-RaidTargetingIcon_8')
-  dial.skull:SetSize(18, 18)
-  dial.skull:SetPoint('TOP', dial.face, 'TOP', 0, 4)
-
-  dial.caution = dialLayer:CreateFontString(nil, 'OVERLAY', 'GameFontNormalSmall')
-  dial.caution:SetPoint('BOTTOM', dial.skull, 'TOP', 0, 0)
-  dial.caution:SetText('CAUTION')
-  dial.caution:SetTextColor(1, 0.82, 0)
-
-  dial.safe = dialLayer:CreateFontString(nil, 'OVERLAY', 'GameFontNormalSmall')
-  dial.safe:SetPoint('RIGHT', dial.face, 'LEFT', 2, 0)
-  dial.safe:SetText('SAFE')
-  dial.safe:SetTextColor(0.55, 0.9, 0.45)
-
-  dial.pull = dialLayer:CreateFontString(nil, 'OVERLAY', 'GameFontNormalSmall')
-  dial.pull:SetPoint('LEFT', dial.face, 'RIGHT', -2, 0)
-  dial.pull:SetText('PULL')
-  dial.pull:SetTextColor(1, 0.35, 0.25)
 
   local read = CreateFrame('Frame', nil, dialLayer)
   read:SetAllPoints()
   read:SetFrameLevel((dialLayer:GetFrameLevel() or 1) + 6)
-  dial.pct = read:CreateFontString(nil, 'OVERLAY', 'GameFontNormalHuge')
-  dial.pct:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
-  dial.pct:SetTextColor(1, 0.9, 0.55)
-  dial.pct:SetText('0%')
+  dial.pct = read:CreateFontString(nil, 'OVERLAY')
+  dial.pct:SetFont('Fonts\\FRIZQT__.TTF', 32, 'OUTLINE')
+  dial.pct:SetTextColor(0.96, 0.91, 0.78, 1)
+  dial.pct:SetText('0')
+  dial.pctSign = read:CreateFontString(nil, 'OVERLAY')
+  dial.pctSign:SetFont('Fonts\\FRIZQT__.TTF', 32, 'OUTLINE')
+  dial.pctSign:SetTextColor(0.86, 0.16, 0.12, 1)
+  dial.pctSign:SetText('%')
 
   dial.needle = dialLayer:CreateTexture(nil, 'OVERLAY')
-  dial.needle:SetTexture('Interface\\Buttons\\WHITE8X8')
-  dial.needle:SetVertexColor(1, 0.95, 0.85, 0.35)
+  dial.needle:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatNeedle')
   dial.needle:Hide()
 
   dial.segs = {}
