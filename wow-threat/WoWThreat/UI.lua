@@ -12,6 +12,8 @@ local FRAME_W = 320
 local FRAME_H = math.floor(FRAME_W * ART_H / ART_W + 0.5)
 local IN_L, IN_T, IN_R, IN_B = 0.11, 0.16, 0.11, 0.14
 local TITLE_H = 18
+-- Clear pixels between the title glyphs and the dial ring.
+local TITLE_GAP = 6
 
 local main, content
 local barsLayer, platesLayer, dialLayer
@@ -23,9 +25,11 @@ local barSmooth, plateSmooth, markSmooth = {}, {}, {}
 local dial = {}
 local pollAcc = 0
 local dialVis = { angle = 180, target = 180, ready = false }
--- Arc midline radius / half the 768 dial texture. Percent anchor is an
+-- Arc midline radius / half the dial texture. Percent anchor is an
 -- offset from texture center as a fraction of the texture (y down).
+-- Uniform 768 -> 1024 resample, so the fraction is unchanged.
 local ARC_FRAC = 0.658
+local NEEDLE_TEX_W, NEEDLE_TEX_H = 128, 512
 local PCT_OX, PCT_OY = 0.0072, 0.1379
 local built = false
 
@@ -300,16 +304,12 @@ end
 local function CreateMarker(parent)
   local m = CreateFrame('Frame', nil, parent)
   m:SetSize(90, 14)
-  local dot = m:CreateTexture(nil, 'OVERLAY')
-  dot:SetSize(8, 8)
-  dot:SetTexture('Interface\\Buttons\\WHITE8X8')
   local icon = m:CreateTexture(nil, 'OVERLAY')
   icon:SetSize(14, 14)
   icon:SetTexture('Interface\\Icons\\INV_Misc_QuestionMark')
   local nameFS = m:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
   nameFS:SetWordWrap(false)
   nameFS:SetWidth(70)
-  m.dot = dot
   m.icon = icon
   m.nameFS = nameFS
   m:Hide()
@@ -322,7 +322,6 @@ local function PlaceMarker(marker, angle, radius)
   local s = math.sin(rad)
   marker:ClearAllPoints()
   marker:SetPoint('CENTER', dial.hub, 'CENTER', c * radius, s * radius)
-  marker.dot:Hide()
   marker.icon:ClearAllPoints()
   marker.nameFS:ClearAllPoints()
   marker.icon:SetPoint('CENTER', marker, 'CENTER', 0, 0)
@@ -350,8 +349,8 @@ local function UpdateNeedle(angle, length)
     dial.needle:Show()
     dial.needle:ClearAllPoints()
     dial.needle:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
-    -- Art is only the top half of a 64x256 texture, so width follows that aspect.
-    dial.needle:SetSize(h * (64 / 256), h)
+    -- Blade is only the top half of a 128x512 texture, so width follows that aspect.
+    dial.needle:SetSize(h * (NEEDLE_TEX_W / NEEDLE_TEX_H), h)
     dial.needle:SetRotation(math.rad(angle - 90))
     return
   end
@@ -395,7 +394,6 @@ end
 
 local function FillMarker(row, e)
   local r, g, b = ClassRGB(e.class)
-  row.dot:SetVertexColor(r, g, b, 1)
   ApplyIcon(row.icon, e.class)
   row.nameFS:SetText(DisplayName(e))
   row.nameFS:SetTextColor(r, g, b)
@@ -470,11 +468,20 @@ end
 local function DialRadius()
   local cw = content:GetWidth() or 0
   local ch = content:GetHeight() or 0
+  if not cw or cw < 40 then cw = 160 end
+  if not ch or ch < 40 then ch = 160 end
+  -- Face sits in the area under the title, not across the whole content.
+  local availH = ch - TITLE_H - TITLE_GAP
+  if availH < 40 then availH = 40 end
   local sz = cw
-  if ch < sz then sz = ch end
-  if sz < 40 then sz = 160 end
+  if availH < sz then sz = availH end
   local face = sz * 0.98
   dial.face:SetSize(face, face)
+  -- Hub is the center of that lower area. Scale changes content size, so
+  -- this is recomputed here rather than baked at build time.
+  local hubY = -(TITLE_H + TITLE_GAP) / 2
+  dial.hub:ClearAllPoints()
+  dial.hub:SetPoint('CENTER', content, 'CENTER', 0, hubY)
   local radius = face * 0.5 * ARC_FRAC
   local px = PCT_OX * face
   local py = -PCT_OY * face
@@ -704,7 +711,7 @@ local function Build()
 
   dial.hub = CreateFrame('Frame', nil, dialLayer)
   dial.hub:SetSize(2, 2)
-  dial.hub:SetPoint('CENTER', content, 'CENTER', 0, 0)
+  dial.hub:SetPoint('CENTER', content, 'CENTER', 0, -(TITLE_H + TITLE_GAP) / 2)
 
   dial.face = dialLayer:CreateTexture(nil, 'BACKGROUND')
   dial.face:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
@@ -715,11 +722,11 @@ local function Build()
   read:SetAllPoints()
   read:SetFrameLevel((dialLayer:GetFrameLevel() or 1) + 6)
   dial.pct = read:CreateFontString(nil, 'OVERLAY')
-  dial.pct:SetFont('Fonts\\FRIZQT__.TTF', 32, 'OUTLINE')
+  dial.pct:SetFont('Fonts\\FRIZQT__.TTF', 32, '')
   dial.pct:SetTextColor(0.96, 0.91, 0.78, 1)
   dial.pct:SetText('0')
   dial.pctSign = read:CreateFontString(nil, 'OVERLAY')
-  dial.pctSign:SetFont('Fonts\\FRIZQT__.TTF', 32, 'OUTLINE')
+  dial.pctSign:SetFont('Fonts\\FRIZQT__.TTF', 32, '')
   dial.pctSign:SetTextColor(0.86, 0.16, 0.12, 1)
   dial.pctSign:SetText('%')
 
