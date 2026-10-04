@@ -5,14 +5,16 @@ local POLL = 0.2
 local LERP_T = 0.25
 local SCALE_MIN, SCALE_MAX = 0.6, 1.6
 local TEX_SIZE = 1024
--- ThreatFrame.tga is one 1024 square. The continuous gold border occupies
--- the top-left 617x701; a single texcoord range covers that whole border.
-local ART_X, ART_Y = 0, 0
-local ART_W, ART_H = 617, 701
+-- ThreatFrame.tga is one 1024 square. The approved gold border is a single
+-- uncropped region (not tiled, not split into corners). Black outside the
+-- metal and the black center are alpha 0.
+local ART_X, ART_Y = 202, 173
+local ART_W, ART_H = 619, 677
 local HEADER = 26
 local FRAME_W = 320
 local FRAME_H = math.floor(FRAME_W * ART_H / ART_W + 0.5)
-local IN_L, IN_T, IN_R, IN_B = 0.11, 0.16, 0.11, 0.14
+-- Top inset clears the W crest, which hangs to about 0.17 of the art.
+local IN_L, IN_T, IN_R, IN_B = 0.11, 0.20, 0.11, 0.14
 local TITLE_H = 18
 -- Clear pixels between the title glyphs and the dial ring.
 local TITLE_GAP = 6
@@ -31,7 +33,10 @@ local dialVis = { angle = 180, target = 180, ready = false }
 -- offset from texture center as a fraction of the texture (y down).
 -- Uniform 768 -> 1024 resample, so the fraction is unchanged.
 local ARC_FRAC = 0.658
-local NEEDLE_TEX_W, NEEDLE_TEX_H = 128, 512
+-- Full needle texture. Hub is the texture center; the opaque tip is at the
+-- top. DialRadius already returns the arc radius, and UpdateNeedle draws the
+-- texture at h = radius * 2, so the tip meets the arc and stays inside the frame.
+local NEEDLE_TEX_W, NEEDLE_TEX_H = 1024, 1024
 local PCT_OX, PCT_OY = 0.0072, 0.1379
 local built = false
 
@@ -352,7 +357,7 @@ local function UpdateNeedle(angle, length)
     dial.needle:SetVertexColor(1, 1, 1, 1)
     dial.needle:ClearAllPoints()
     dial.needle:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
-    -- Blade is only the top half of a 128x512 texture, so width follows that aspect.
+    -- Width follows the real texture aspect so the hub stays on the dial center.
     dial.needle:SetSize(h * (NEEDLE_TEX_W / NEEDLE_TEX_H), h)
     dial.needle:SetRotation(math.rad(angle - 90))
     return
