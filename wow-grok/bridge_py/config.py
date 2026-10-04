@@ -1,4 +1,4 @@
-"""Local config paths and load/save. Never logs apiKey."""
+"""Local config paths and load/save. Never logs apiKey or claudeApiKey."""
 from __future__ import annotations
 
 import json
@@ -85,6 +85,10 @@ def default_config() -> dict[str, Any]:
         "apiKey": "",
         "model": "grok-4-latest",
         "apiBase": "https://api.x.ai/v1",
+        "provider": "xai",
+        "claudeApiKey": "",
+        "claudeModel": "claude-sonnet-4-5",
+        "claudeApiBase": "https://api.anthropic.com",
         "allowedTools": [],
         "pollMs": 750,
         "progressWriteMs": 3000,
@@ -118,6 +122,7 @@ def resolve_api_key(cfg: dict | None = None) -> str:
 
 
 def has_api_key(cfg: dict | None = None) -> bool:
+    """xAI key only. Claude uses :func:`has_claude_api_key`."""
     return bool(resolve_api_key(cfg))
 
 
@@ -127,6 +132,44 @@ def api_key_source(cfg: dict | None = None) -> str:
     if cfg and cfg.get("apiKey"):
         return "config.json"
     return "MISSING — set XAI_API_KEY or config apiKey"
+
+
+def resolve_provider(cfg: dict | None = None) -> str:
+    """``xai`` or ``claude``. Missing or unknown values stay on xAI."""
+    raw = ""
+    if cfg is not None:
+        raw = str(cfg.get("provider") or "").strip().lower()
+    if raw in ("xai", "claude"):
+        return raw
+    return "xai"
+
+
+def resolve_claude_api_key(cfg: dict | None = None) -> str:
+    env = os.environ.get("ANTHROPIC_API_KEY") or ""
+    if env:
+        return env
+    if cfg and cfg.get("claudeApiKey"):
+        return str(cfg["claudeApiKey"])
+    return ""
+
+
+def has_claude_api_key(cfg: dict | None = None) -> bool:
+    return bool(resolve_claude_api_key(cfg))
+
+
+def claude_api_key_source(cfg: dict | None = None) -> str:
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "env ANTHROPIC_API_KEY"
+    if cfg and cfg.get("claudeApiKey"):
+        return "config.json"
+    return "MISSING — set ANTHROPIC_API_KEY or config claudeApiKey"
+
+
+def has_provider_api_key(cfg: dict | None = None) -> bool:
+    """True when the active provider's key is available (env or config)."""
+    if resolve_provider(cfg) == "claude":
+        return has_claude_api_key(cfg)
+    return has_api_key(cfg)
 
 
 def derive_paths_from_addon_dir(cfg: dict, addon_dir: str, account: str | None = None) -> dict:
