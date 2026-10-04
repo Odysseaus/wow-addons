@@ -372,6 +372,57 @@ def ask_string_dialog(title: str, prompt: str, *, show: str | None = None) -> st
     return _run_modal_dialog(title=title, build=build, default=None, min_w=460, min_h=180)
 
 
+def ask_provider_dialog(
+    title: str = "WoW Grok — AI provider",
+    body: str | None = None,
+) -> str:
+    """Choose xAI (default) or Claude. Return is ``"xai"`` or ``"claude"``.
+
+    Enter / closing the window keeps **xAI** (default). Escape also keeps xAI.
+    """
+    if body is None:
+        body = (
+            "Choose which AI to use for in-game chat.\n\n"
+            "• xAI (Grok) — default. Press Enter or click Use xAI (default).\n"
+            "• Claude (Anthropic) — needs its own API key "
+            "(claudeApiKey or ANTHROPIC_API_KEY).\n\n"
+            "You can change this later in local config.json (provider key)."
+        )
+
+    def build(frm: Any, finish: Callable[[Any], None]) -> None:
+        import tkinter as tk
+
+        tk.Label(frm, text=body, justify="left", wraplength=420, anchor="w").pack(
+            fill="both", expand=True
+        )
+        btns = tk.Frame(frm)
+        btns.pack(fill="x", pady=(14, 0))
+        tk.Button(
+            btns, text="Use Claude", width=14, command=lambda: finish("claude")
+        ).pack(side="left")
+        default_btn = tk.Button(
+            btns,
+            text="Use xAI (default)",
+            width=16,
+            command=lambda: finish("xai"),
+        )
+        default_btn.pack(side="right")
+        try:
+            default_btn.focus_set()
+        except Exception:
+            pass
+        try:
+            frm.winfo_toplevel().bind("<Return>", lambda _e: finish("xai"))
+            frm.winfo_toplevel().bind("<Escape>", lambda _e: finish("xai"))
+        except Exception:
+            pass
+
+    raw = _run_modal_dialog(
+        title=title, build=build, default="xai", min_w=460, min_h=220
+    )
+    return "claude" if str(raw).strip().lower() == "claude" else "xai"
+
+
 def show_screen_recording_dialog(body: str, *, title: str = "WoW Grok — Screen Recording") -> str:
     """Centered dialog with Quit / Continue (same work-area helper).
 

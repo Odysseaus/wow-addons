@@ -1,4 +1,10 @@
-"""First-run UI: xAI API key popup + AddOns folder picker (tkinter)."""
+"""First-run UI: provider choice + API key + AddOns folder picker (tkinter).
+
+Shared by the Mac app (DMG) and Windows exe. Asks xAI vs Claude (xAI is the
+default / Enter). Then asks for the matching API key. ``provider: claude``
+without a key asks for an Anthropic key (or fails headless with a config/env
+message).
+"""
 from __future__ import annotations
 
 import os
@@ -67,6 +73,35 @@ def prompt_api_key(parent=None) -> str | None:
         return None
     key = key.strip()
     return key or None
+
+
+def prompt_claude_api_key(parent=None) -> str | None:
+    """Ask for an Anthropic API key. Returns the key or None if cancelled.
+
+    Reuses the same string dialog as the xAI prompt. Never logs the value.
+    """
+    _ = parent
+    key = tk_util.ask_string_dialog(
+        "WoW Grok — Anthropic API key",
+        "You chose Claude (Anthropic).\n\n"
+        "Paste your Anthropic API key. It is stored ONLY in local config.json "
+        "as claudeApiKey (not uploaded, not sent to the WoW addon, not written into Lua).\n\n"
+        "Get a key at https://console.anthropic.com/ — or set ANTHROPIC_API_KEY and restart.",
+        show="*",
+    )
+    if key is None:
+        return None
+    key = key.strip()
+    return key or None
+
+
+def prompt_provider(parent=None) -> str:
+    """Ask xAI (default) vs Claude. Same dialog on Mac and Windows.
+
+    Returns ``"xai"`` or ``"claude"``. Enter / Escape / close window → xAI.
+    """
+    _ = parent
+    return tk_util.ask_provider_dialog()
 
 
 def prompt_addons_dir(
@@ -252,10 +287,12 @@ def ensure_first_run_config(
     headless: bool = False,
     wow: str | None = None,
 ) -> dict[str, Any]:
-    """Load or create config; prompt for API key + AddOns if needed.
+    """Load or create config; prompt for provider + API key + AddOns if needed.
 
-    After addonDir + apiKey are set and config is saved, installs the main
-    addon and reply slots into Interface/AddOns (GUI shows progress dialogs).
+    After addonDir and the active provider's API key are set and config is saved,
+    installs the main addon and reply slots into Interface/AddOns (GUI shows
+    progress dialogs). GUI setup asks xAI vs Claude (Enter = xAI default), then
+    the matching key prompt. Claude requires ANTHROPIC_API_KEY or claudeApiKey.
 
     headless: skip UI (CLI --wow / env only); exit 2 if incomplete.
     """
@@ -304,8 +341,45 @@ def ensure_first_run_config(
     if not cfg.get("defaultCwd"):
         cfg["defaultCwd"] = os.getcwd()
 
-    # API key
-    if not cfgmod.has_api_key(cfg):
+    # Provider choice (Mac DMG + Windows exe share this first-run UI).
+    # Show when the active provider still needs a key — incomplete setup.
+    # Headless keeps config / default xAI (no dialog).
+    if (
+        not headless
+        and _gui_available()
+        and not cfgmod.has_provider_api_key(cfg)
+    ):
+        if os.environ.get("DISPLAY") is None and sys.platform.startswith("linux"):
+            # No display: leave provider as-is (default xai); key checks below exit.
+            pass
+        else:
+            cfg["provider"] = prompt_provider()
+
+    # API key. Required key depends on provider; xAI stays the default path.
+    if cfgmod.resolve_provider(cfg) == "claude":
+        if not cfgmod.has_claude_api_key(cfg):
+            if headless:
+                print(
+                    "Missing Anthropic API key. Set ANTHROPIC_API_KEY or claudeApiKey in config.json.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            if os.environ.get("DISPLAY") is None and sys.platform.startswith("linux"):
+                print(
+                    "Missing Anthropic API key and no display for first-run UI. "
+                    "Set ANTHROPIC_API_KEY or write claudeApiKey into config.json.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            key = prompt_claude_api_key()
+            if not key:
+                print(
+                    "Anthropic API key required. Set ANTHROPIC_API_KEY or claudeApiKey in config.json.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            cfg["claudeApiKey"] = key
+    elif not cfgmod.has_api_key(cfg):
         if headless:
             print(
                 "Missing xAI API key. Set XAI_API_KEY or apiKey in config.json.",

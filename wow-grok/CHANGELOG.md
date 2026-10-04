@@ -4,6 +4,11 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Optional Claude provider on the shared Python bridge (`provider`: `xai` or `claude`). xAI stays the default. Claude calls the Anthropic Messages API (`ANTHROPIC_API_KEY` or `claudeApiKey`, default model `claude-sonnet-4-5`) through the same inbox/outbox, so the in-game addon protocol stays the same. Set the keys in local `config.json` (dev: `bridge_py/config.json`; Mac app: Application Support; Windows: next to the exe).
+- First-run GUI (Mac app / Windows exe, shared `first_run.py`) prompts for **xAI or Claude**; Enter / default button keeps xAI. Choosing Claude without a key asks for the Anthropic key in the same setup flow.
+
 ### Changed
 
 - Bridge talks to the xAI Grok API (`POST /v1/responses`, default model `grok-4-latest`) instead of spawning the Claude Code CLI. Conversations use `previous_response_id` with a local history fallback.

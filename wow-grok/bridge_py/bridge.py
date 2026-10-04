@@ -1,7 +1,7 @@
 """WoW Grok bridge main loop (ported from bridge/bridge.js).
 
 OUT  capture (mac/win) pixel strip -> jobs  (fallback: SavedVariables outbox)
-RUN  xAI Grok API per chat, up to maxParallel
+RUN  xAI Grok API (default) or Anthropic Claude per chat, up to maxParallel
 IN   write Inbox.lua + WoWGrok_S### slot files + signal wavs
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import claude
 from . import config as cfgmod
 from . import protocol as P
 from . import ssl_certs as _ssl_certs
@@ -141,6 +142,24 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = ensure_first_run_config(headless=args.headless or not _can_gui(), wow=args.wow)
 
+    provider = cfgmod.resolve_provider(cfg)
+    if provider == "claude":
+        api_key = cfgmod.resolve_claude_api_key(cfg)
+        # Never log the key — only the source label
+        key_src = cfgmod.claude_api_key_source(cfg)
+        active_model = cfg.get("claudeModel") or claude.DEFAULT_MODEL
+        if not api_key:
+            print(
+                "Missing Anthropic API key. Set ANTHROPIC_API_KEY or claudeApiKey in config.json.",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        api_key = cfgmod.resolve_api_key(cfg)
+        # Never log the key — only the source label
+        key_src = cfgmod.api_key_source(cfg)
+        active_model = cfg.get("model") or xai.DEFAULT_MODEL
+
     state_file = cfgmod.state_path()
     log_file = cfgmod.log_path()
     transcript_file = cfgmod.transcripts_path()
@@ -204,10 +223,6 @@ def main(argv: list[str] | None = None) -> int:
     poll_ms = int(cfg.get("pollMs") or 750)
     progress_write_ms = int(cfg.get("progressWriteMs") or 3000)
     timeout_ms = int(cfg.get("timeoutMs") or 1_800_000)
-
-    api_key = cfgmod.resolve_api_key(cfg)
-    # Never log the key — only the source label
-    key_src = cfgmod.api_key_source(cfg)
 
     forgotten: set[str] = set()
     pending_restore: dict | None = None
@@ -525,7 +540,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         abort = {"flag": False}
         running[key] = {"job": job, "abort": abort}
-        log(f"{tag} -> grok ({cfg.get('model') or xai.DEFAULT_MODEL}) in {cwd}")
+        if provider == "claude":
+            log(f"{tag} -> claude ({cfg.get('claudeModel') or claude.DEFAULT_MODEL}) in {cwd}")
+        else:
+            log(f"{tag} -> grok ({cfg.get('model') or xai.DEFAULT_MODEL}) in {cwd}")
 
         def worker() -> None:
             try:
@@ -548,16 +566,28 @@ def main(argv: list[str] | None = None) -> int:
                         },
                     )
 
-                result = xai.chat(
-                    api_key=api_key,
-                    model=cfg.get("model"),
-                    api_base=cfg.get("apiBase"),
-                    input=job.get("text") or "",
-                    previous_response_id=prev_id,
-                    history=hist,
-                    on_progress=on_progress,
-                    timeout=timeout_ms / 1000.0,
-                )
+                if provider == "claude":
+                    result = claude.chat(
+                        api_key=api_key,
+                        model=cfg.get("claudeModel"),
+                        api_base=cfg.get("claudeApiBase"),
+                        input=job.get("text") or "",
+                        previous_response_id=prev_id,
+                        history=hist,
+                        on_progress=on_progress,
+                        timeout=timeout_ms / 1000.0,
+                    )
+                else:
+                    result = xai.chat(
+                        api_key=api_key,
+                        model=cfg.get("model"),
+                        api_base=cfg.get("apiBase"),
+                        input=job.get("text") or "",
+                        previous_response_id=prev_id,
+                        history=hist,
+                        on_progress=on_progress,
+                        timeout=timeout_ms / 1000.0,
+                    )
                 if abort["flag"]:
                     return
                 rid = result.get("id") or ""
@@ -808,7 +838,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  config   : {cfgmod.config_path()}")
     print(f"  addonDir : {cfg.get('addonDir')}")
     print(f"  project  : {default_cwd}  ({default_src})")
-    print(f"  model    : {cfg.get('model') or xai.DEFAULT_MODEL}")
+    print(f"  provider : {provider}")
+    print(f"  model    : {active_model}")
     print(f"  api key  : {key_src}")
     if not cap.get("enabled"):
         cap_label = "off"
