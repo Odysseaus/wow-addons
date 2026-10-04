@@ -1,5 +1,10 @@
 local _, NS = ...
 
+-- issecretvalue is the documented tainted-safe test; == on a secret string throws.
+local function valueIsSecret(value)
+  return type(issecretvalue) == 'function' and issecretvalue(value)
+end
+
 local ROW_N = 10
 local POLL = 0.2
 local LERP_T = 0.25
@@ -126,8 +131,9 @@ local function DisplayName(e)
 end
 
 local function EntryKey(e, i)
-  if e.guid and e.guid ~= '' then return e.guid end
-  if e.GUID and e.GUID ~= '' then return e.GUID end
+  -- Secret GUIDs cannot be compared or used as table keys; skip them.
+  if e.guid and not valueIsSecret(e.guid) and e.guid ~= '' then return e.guid end
+  if e.GUID and not valueIsSecret(e.GUID) and e.GUID ~= '' then return e.GUID end
   if e.name and e.name ~= '' then return 'n:' .. e.name end
   return 'i:' .. tostring(i)
 end
@@ -186,7 +192,12 @@ end
 local function IsPlayerEntry(e, pname, pguid)
   if e.isPlayer then return true end
   if e.unit == 'player' then return true end
-  if pguid and e.guid and e.guid == pguid then return true end
+  -- UnitIsUnit on plain tokens; skip when the token or the boolean result is secret (no == on GUIDs).
+  if e.unit and type(UnitIsUnit) == 'function' and not valueIsSecret(e.unit) then
+    local same = UnitIsUnit(e.unit, 'player')
+    if not valueIsSecret(same) and same then return true end
+  end
+  if pguid and e.guid and not valueIsSecret(pguid) and not valueIsSecret(e.guid) and e.guid == pguid then return true end
   if pname and e.name and e.name == pname then return true end
   return false
 end
