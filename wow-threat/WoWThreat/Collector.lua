@@ -5,6 +5,12 @@ local _, NS = ...
 local SAMPLE_TANK_RAW = 10000
 
 local function sortEntries(entries)
+    local i
+    for i = 1, #entries do
+        if entries[i].order == nil then
+            entries[i].order = i
+        end
+    end
     table.sort(entries, function(a, b)
         local av = a.value or 0
         local bv = b.value or 0
@@ -15,6 +21,11 @@ local function sortEntries(entries)
         local bp = b.pct or 0
         if ap ~= bp then
             return ap > bp
+        end
+        local ao = a.order or 0
+        local bo = b.order or 0
+        if ao ~= bo then
+            return ao < bo
         end
         return (a.name or "") < (b.name or "")
     end)
@@ -121,9 +132,14 @@ local function pushLive(entries, seen, unit, mobToken)
 
     local name = UnitName(unit)
     local _, class = UnitClass(unit)
-    local isTanking, status, scaledPercentage, rawPercentage, threatValue =
-        queryThreat(unit, mobToken)
-    local raw = numericThreat(threatValue, rawPercentage, scaledPercentage)
+    local isTanking, status = false, 0
+    local raw = 0
+    if mobToken then
+        local scaledPercentage, rawPercentage, threatValue
+        isTanking, status, scaledPercentage, rawPercentage, threatValue =
+            queryThreat(unit, mobToken)
+        raw = numericThreat(threatValue, rawPercentage, scaledPercentage)
+    end
 
     entries[#entries + 1] = {
         unit = unit,
@@ -139,26 +155,48 @@ local function pushLive(entries, seen, unit, mobToken)
     }
 end
 
-local function collectLive()
-    if not targetIsHostile() then
-        return {}
+-- Raid: raid1..raidN. Party: player plus party1..partyN. Solo: player.
+-- Missing unit tokens are skipped by pushLive.
+local function groupUnitTokens()
+    local units = {}
+    local n = 0
+    if type(GetNumGroupMembers) == "function" then
+        n = GetNumGroupMembers() or 0
     end
+    local i
+    if type(IsInRaid) == "function" and IsInRaid() then
+        for i = 1, n do
+            units[#units + 1] = "raid" .. i
+        end
+    elseif type(IsInGroup) == "function" and IsInGroup() then
+        units[#units + 1] = "player"
+        for i = 1, n do
+            units[#units + 1] = "party" .. i
+        end
+    else
+        units[#units + 1] = "player"
+    end
+    return units
+end
 
-    local mobToken = UnitGUID("target")
-    if not mobToken or mobToken == "" then
-        mobToken = "target"
+local function collectLive()
+    local mobToken = nil
+    if targetIsHostile() then
+        mobToken = UnitGUID("target")
+        if not mobToken or mobToken == "" then
+            mobToken = "target"
+        end
     end
 
     local entries = {}
     local seen = {}
-    pushLive(entries, seen, "player", mobToken)
-
+    local units = groupUnitTokens()
     local i
-    for i = 1, 4 do
-        pushLive(entries, seen, "party" .. i, mobToken)
+    for i = 1, #units do
+        pushLive(entries, seen, units[i], mobToken)
     end
-    for i = 1, 40 do
-        pushLive(entries, seen, "raid" .. i, mobToken)
+    if #entries == 0 then
+        pushLive(entries, seen, "player", mobToken)
     end
 
     return applyRelativeScale(entries)
@@ -255,6 +293,8 @@ local function collectSample()
     return applyRelativeScale(entries)
 end
 
+-- Sample names (Tank, Mage, ...) are only the /wtm test and missing-API path.
+-- Bars and plates otherwise always get the real group, target or not.
 function NS.CollectThreat()
     if useSample() then
         return collectSample()
