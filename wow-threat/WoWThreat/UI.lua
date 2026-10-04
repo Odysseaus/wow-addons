@@ -347,6 +347,7 @@ local function UpdateNeedle(angle, length)
     local h = length * 2
     if h < 2 then h = 2 end
     dial.needle:Show()
+    dial.needle:SetVertexColor(1, 1, 1, 1)
     dial.needle:ClearAllPoints()
     dial.needle:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
     -- Blade is only the top half of a 128x512 texture, so width follows that aspect.
@@ -524,7 +525,12 @@ RefreshData = function()
   end
   local radius = DialRadius()
   dial.radius = radius
-  UpdateNeedle(dialVis.angle, radius)
+  local mode = string.lower(tostring((NS.db and NS.db.mode) or 'bars'))
+  if mode == 'dial' and dialLayer and dialLayer:IsShown() then
+    UpdateNeedle(dialVis.angle, radius)
+  elseif dial.needle then
+    dial.needle:Hide()
+  end
 end
 
 local function Animate(elapsed)
@@ -618,7 +624,24 @@ function NS.ApplyMode()
   if NS.db then NS.db.mode = m end
   if m == 'bars' then barsLayer:Show() else barsLayer:Hide() end
   if m == 'plates' then platesLayer:Show() else platesLayer:Hide() end
-  if m == 'dial' then dialLayer:Show() else dialLayer:Hide() end
+  if m == 'dial' then
+    dialLayer:Show()
+    if dial.face then dial.face:Show() end
+    if dial.pct then dial.pct:Show() end
+    if dial.pctSign then dial.pctSign:Show() end
+  else
+    dialLayer:Hide()
+    if dial.face then dial.face:Hide() end
+    if dial.needle then dial.needle:Hide() end
+    if dial.pct then dial.pct:Hide() end
+    if dial.pctSign then dial.pctSign:Hide() end
+    if dial.segs then
+      local i
+      for i = 1, #dial.segs do
+        dial.segs[i]:Hide()
+      end
+    end
+  end
   if modeBtn then modeBtn:SetText(ModeWord()) end
   RefreshData()
 end
@@ -668,7 +691,7 @@ local function Build()
   titleFS:SetText('THREAT METER')
   titleFS:SetTextColor(1, 0.82, 0)
 
-  modeBtn = MakeMiniButton(main, 'WoWThreatModeButton', 'Bars', 72)
+  modeBtn = MakeMiniButton(main, 'WoWThreatModeButton', 'Bars', 92)
   modeBtn:SetPoint('TOPLEFT', art, 'TOPLEFT', 0, HEADER)
   modeBtn:SetScript('OnClick', function()
     if NS.CycleMode then NS.CycleMode() end
@@ -682,10 +705,18 @@ local function Build()
   minusBtn = MakeMiniButton(main, 'WoWThreatMinusButton', '-', 24)
   minusBtn:SetPoint('RIGHT', plusBtn, 'LEFT', -4, 0)
   minusBtn:SetScript('OnClick', function() AdjustScale(-0.1) end)
+  -- Above the dial, so the face cannot take the click.
+  modeBtn:SetFrameStrata('HIGH')
+  plusBtn:SetFrameStrata('HIGH')
+  minusBtn:SetFrameStrata('HIGH')
+  modeBtn:SetFrameLevel(80)
+  plusBtn:SetFrameLevel(80)
+  minusBtn:SetFrameLevel(80)
 
   content = CreateFrame('Frame', nil, main)
   content:SetPoint('TOPLEFT', art, 'TOPLEFT', FRAME_W * IN_L, -FRAME_H * IN_T)
   content:SetPoint('BOTTOMRIGHT', art, 'BOTTOMRIGHT', -FRAME_W * IN_R, FRAME_H * IN_B)
+  content:SetClipsChildren(true)
   titleFS:SetPoint('TOP', content, 'TOP', 0, 0)
 
   banner = content:CreateFontString(nil, 'OVERLAY', 'GameFontNormalSmall')
