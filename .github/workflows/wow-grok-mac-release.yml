@@ -60,7 +60,7 @@ jobs:
 
       - name: Prove supervisor is in the bundle
         run: |
-          python <<'PY'
+          python3.12 <<'PY'
           from pathlib import Path
           app = Path("dist/WoWGrok.app")
           needle = b"bridge_py.supervisor"
@@ -85,7 +85,7 @@ jobs:
 
       - name: Prove menubar + LSUIElement
         run: |
-          python <<'PY'
+          python3.12 <<'PY'
           from pathlib import Path
           app = Path("dist/WoWGrok.app")
           plist = next(app.rglob("Info.plist"))
