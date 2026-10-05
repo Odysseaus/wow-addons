@@ -134,6 +134,25 @@ jobs:
           hdiutil create -volname WoWGrok -srcfolder "$STAGE" -ov -format UDZO dist/WoWGrok.dmg
           ls -la dist/WoWGrok.dmg
 
+      # Self-hosted Mac has no gh on the runner PATH; use an existing binary or fetch the official release (no package manager)
+      - name: Ensure gh CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if command -v gh >/dev/null 2>&1; then gh --version; exit 0; fi
+          for d in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
+            if [[ -x "$d/gh" ]]; then echo "$d" >> "$GITHUB_PATH"; "$d/gh" --version; exit 0; fi
+          done
+          VER=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/cli/cli/releases/latest | .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))')
+          DEST="$RUNNER_TEMP/gh-cli"
+          rm -rf "$DEST" && mkdir -p "$DEST"
+          curl -fsSL -o "$DEST/gh.zip" "https://github.com/cli/cli/releases/download/v${VER}/gh_${VER}_macOS_arm64.zip"
+          ditto -x -k "$DEST/gh.zip" "$DEST"
+          BIN=$(dirname "$(find "$DEST" -type f -path '*/bin/gh' | head -1)")
+          echo "$BIN" >> "$GITHUB_PATH"
+          "$BIN/gh" --version
+
       - name: Create / update Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -152,7 +171,7 @@ jobs:
           - Trunk: **0.1.13** pixel Send + strip SetScale(768 / physH); RecordFor still 7-field (no ctx).
           - Plus: panel version title + **shift-click ExpandLinks** only (from 0.1.20 BuildUI / ExpandLinks).
           - Bridge/app capture: **0.1.19** capture_mac (CG strip / screencapture -l) + permissionPaused resume smoke.
-          - **Not included:** GameContext / ContextToSend / RecordFor ctx / hello ctx / `/wow-grok context` / SafeReload-on-Send / loadfile Inbox / SetScale(1) / capturePaused chat UX from 0.1.14–0.1.20.
+          - **Not included:** GameContext / ContextToSend / RecordFor ctx / hello ctx / \`/wow-grok context\` / SafeReload-on-Send / loadfile Inbox / SetScale(1) / capturePaused chat UX from 0.1.14–0.1.20.
 
           ### Set up in 2 to 3 minutes
           1. **Download the app and addon.** Open the DMG, drag \`WoWGrok.app\` to Applications, then eject. Gatekeeper (unsigned): **Control-click → Open**, then **Open Anyway** if shown. Confirm your AddOns folder — the app creates the addon and reply slots.
