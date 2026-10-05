@@ -1,4 +1,4 @@
-"""Display-free tests for Mac onboard wizard step state + provider mapping."""
+"""Display-free tests for onboard wizard step state + provider mapping (Mac + Windows)."""
 from __future__ import annotations
 
 import sys
@@ -91,23 +91,54 @@ class DownloadCompleteTests(unittest.TestCase):
         with mock.patch.object(Path, "is_dir", return_value=True):
             self.assertTrue(
                 wiz.download_step_complete(
-                    addon_dir="/fake/AddOns", running_from_applications=False
+                    addon_dir="/fake/AddOns",
+                    running_from_applications=False,
+                    running_frozen=False,
                 )
             )
 
-    def test_complete_when_running_from_applications(self):
-        self.assertTrue(
-            wiz.download_step_complete(
-                addon_dir=None, running_from_applications=True
+    def test_complete_when_running_from_applications_mac(self):
+        with mock.patch.object(wiz.sys, "platform", "darwin"):
+            self.assertTrue(
+                wiz.download_step_complete(
+                    addon_dir=None, running_from_applications=True
+                )
             )
-        )
 
-    def test_incomplete_otherwise(self):
-        self.assertFalse(
-            wiz.download_step_complete(
-                addon_dir=None, running_from_applications=False
+    def test_incomplete_on_mac_otherwise(self):
+        with mock.patch.object(wiz.sys, "platform", "darwin"):
+            self.assertFalse(
+                wiz.download_step_complete(
+                    addon_dir=None, running_from_applications=False
+                )
             )
-        )
+
+    def test_complete_on_windows_when_frozen(self):
+        with mock.patch.object(wiz.sys, "platform", "win32"):
+            self.assertTrue(
+                wiz.download_step_complete(
+                    addon_dir=None, running_frozen=True
+                )
+            )
+
+    def test_incomplete_on_windows_when_not_frozen(self):
+        with mock.patch.object(wiz.sys, "platform", "win32"):
+            self.assertFalse(
+                wiz.download_step_complete(
+                    addon_dir=None, running_frozen=False
+                )
+            )
+
+    def test_windows_does_not_require_applications(self):
+        """Applications path must not gate Windows download completeness."""
+        with mock.patch.object(wiz.sys, "platform", "win32"), mock.patch.object(
+            wiz, "is_running_from_applications", return_value=False
+        ):
+            self.assertTrue(
+                wiz.download_step_complete(
+                    addon_dir=None, running_frozen=True
+                )
+            )
 
 
 class ApplyResultTests(unittest.TestCase):
@@ -136,8 +167,16 @@ class ShouldUseWizardTests(unittest.TestCase):
         with mock.patch.object(wiz.sys, "platform", "darwin"):
             self.assertFalse(wiz.should_use_wizard(headless=True, gui_available=True))
 
-    def test_windows_skips(self):
+    def test_windows_gui_uses_wizard(self):
         with mock.patch.object(wiz.sys, "platform", "win32"):
+            self.assertTrue(wiz.should_use_wizard(headless=False, gui_available=True))
+
+    def test_windows_headless_skips(self):
+        with mock.patch.object(wiz.sys, "platform", "win32"):
+            self.assertFalse(wiz.should_use_wizard(headless=True, gui_available=True))
+
+    def test_linux_skips(self):
+        with mock.patch.object(wiz.sys, "platform", "linux"):
             self.assertFalse(wiz.should_use_wizard(headless=False, gui_available=True))
 
     def test_no_gui_skips(self):
@@ -177,7 +216,7 @@ class FirstRunWizardIntegrationTests(unittest.TestCase):
             ), mock.patch.object(
                 wiz.sys, "platform", "darwin"
             ), mock.patch.object(
-                first_run, "_run_mac_onboard_wizard", side_effect=fake_wizard
+                first_run, "_run_onboard_wizard", side_effect=fake_wizard
             ) as run_wiz, mock.patch.object(
                 first_run, "prompt_provider"
             ) as prov, mock.patch.object(
@@ -197,6 +236,63 @@ class FirstRunWizardIntegrationTests(unittest.TestCase):
             xai_key.assert_not_called()
             saved = save.call_args[0][0]
             self.assertEqual(saved["apiKey"], "xai-from-wizard")
+            self.assertEqual(saved["provider"], "xai")
+            self.assertEqual(out["addonDir"], str(Path(tmp).resolve()))
+
+
+
+    def test_windows_incomplete_setup_runs_wizard_not_legacy_prompts(self):
+        from bridge_py import first_run
+        import os
+        import tempfile
+
+        env = os.environ.copy()
+        env.pop("XAI_API_KEY", None)
+        env.pop("ANTHROPIC_API_KEY", None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {
+                "addonDir": "",
+                "defaultCwd": tmp,
+                "provider": "xai",
+                "apiKey": "",
+                "claudeApiKey": "",
+                "capture": {},
+            }
+
+            def fake_wizard(c: dict) -> dict:
+                c["provider"] = "xai"
+                c["apiKey"] = "xai-from-wizard-win"
+                return first_run._apply_addon_dir(c, Path(tmp))
+
+            with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(
+                first_run, "_gui_available", return_value=True
+            ), mock.patch.object(
+                first_run.sys, "platform", "win32"
+            ), mock.patch.object(
+                wiz.sys, "platform", "win32"
+            ), mock.patch.object(
+                first_run, "_run_onboard_wizard", side_effect=fake_wizard
+            ) as run_wiz, mock.patch.object(
+                first_run, "prompt_provider"
+            ) as prov, mock.patch.object(
+                first_run, "prompt_api_key"
+            ) as xai_key, mock.patch.object(
+                first_run.cfgmod, "load_config", return_value=cfg
+            ), mock.patch.object(
+                first_run.cfgmod, "save_config", return_value=Path(tmp) / "config.json"
+            ) as save, mock.patch(
+                "bridge_py.install_addon.ensure_game_files"
+            ), mock.patch.object(
+                first_run, "prompt_mac_screen_recording"
+            ) as screen:
+                out = first_run.ensure_first_run_config(headless=False)
+            run_wiz.assert_called_once()
+            prov.assert_not_called()
+            xai_key.assert_not_called()
+            screen.assert_not_called()  # Screen Recording is Mac-only
+            saved = save.call_args[0][0]
+            self.assertEqual(saved["apiKey"], "xai-from-wizard-win")
             self.assertEqual(saved["provider"], "xai")
             self.assertEqual(out["addonDir"], str(Path(tmp).resolve()))
 

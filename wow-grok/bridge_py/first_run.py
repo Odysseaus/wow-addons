@@ -1,11 +1,12 @@
 """First-run UI: provider choice + API key + AddOns folder picker (tkinter).
 
-Shared by the Mac app (DMG) and Windows exe. On **macOS** with a display,
-:func:`ensure_first_run_config` prefers the two-pane :mod:`onboard_wizard`
-(Download → Connect your AI → Say hi in game) instead of the older sequential
-tiny dialogs. Windows (and Mac headless / fallback) still use the provider +
-key prompts below. ``provider: claude`` without a key asks for an Anthropic
-key (or fails headless with a config/env message).
+Shared by the Mac app (DMG) and Windows exe. On **macOS** or **Windows** with a
+display, :func:`ensure_first_run_config` prefers the two-pane
+:mod:`onboard_wizard` (Download → Connect your AI → Say hi in game) instead of
+the older sequential tiny dialogs. Headless / no-GUI fallback still uses the
+provider + key prompts below. Screen Recording onboarding stays **Mac-only**.
+``provider: claude`` without a key asks for an Anthropic key (or fails
+headless with a config/env message).
 """
 from __future__ import annotations
 
@@ -313,8 +314,8 @@ def _apply_addon_dir(cfg: dict[str, Any], addon_dir: Path) -> dict[str, Any]:
     return cfg
 
 
-def _run_mac_onboard_wizard(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Mac two-pane wizard for incomplete setup. Mutates and returns ``cfg``."""
+def _run_onboard_wizard(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Two-pane wizard for incomplete setup (Mac + Windows). Mutates and returns ``cfg``."""
     from . import onboard_wizard
 
     existing = setup_detect.find_existing_addons()
@@ -347,10 +348,11 @@ def ensure_first_run_config(
 
     After addonDir and the active provider's API key are set and config is saved,
     installs the main addon and reply slots into Interface/AddOns (GUI shows
-    progress dialogs). On macOS GUI launches, incomplete setup opens the
-    :mod:`onboard_wizard` (Download → Connect your AI → Say hi). Windows and
-    fallback paths still ask xAI vs Claude (Enter = xAI default), then the
+    progress dialogs). On macOS / Windows GUI launches, incomplete setup opens
+    the :mod:`onboard_wizard` (Download → Connect your AI → Say hi). Headless /
+    no-GUI fallback still asks xAI vs Claude (Enter = xAI default), then the
     matching key prompt. Claude requires ANTHROPIC_API_KEY or claudeApiKey.
+    Screen Recording sheet remains macOS-only after a successful install.
 
     headless: skip UI (CLI --wow / env only); exit 2 if incomplete.
     """
@@ -400,14 +402,14 @@ def ensure_first_run_config(
         or not cfgmod.has_provider_api_key(cfg)
     )
     if use_wizard and needs_setup:
-        # Wizard owns AddOns picker (if still missing) + provider + API key on Mac.
-        cfg = _run_mac_onboard_wizard(cfg)
+        # Wizard owns AddOns picker (if still missing) + provider + API key.
+        cfg = _run_onboard_wizard(cfg)
 
     if not cfg.get("defaultCwd"):
         cfg["defaultCwd"] = os.getcwd()
 
-    # Sequential provider/key prompts when the wizard was not used (Windows,
-    # or Mac already complete / wizard finish-later without a key).
+    # Sequential provider/key prompts when the wizard was not used
+    # (already complete / finish-later without a key / no GUI).
     if (
         not use_wizard
         and not headless

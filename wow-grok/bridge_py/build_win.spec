@@ -28,6 +28,8 @@ a = Analysis(
         'bridge_py.capture_win',
         'bridge_py.config',
         'bridge_py.first_run',
+        'bridge_py.onboard_wizard',
+        'bridge_py.claude',
         'bridge_py.install_addon',
         'bridge_py.install_slots',
         'bridge_py.protocol',
