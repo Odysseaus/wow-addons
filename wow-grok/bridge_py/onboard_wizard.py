@@ -1,8 +1,10 @@
-"""Mac first-run onboarding wizard (NQA-style two-pane layout, WoWGrok branding).
+"""First-run onboarding wizard (NQA-style two-pane layout, WoWGrok branding).
 
-Pure helpers in this module are display-free so unit tests can cover step state
-and provider mapping without a GUI. The tkinter UI is built only when
-:func:`run_onboard_wizard` is called.
+Shared by Mac and Windows. Pure helpers are display-free so unit tests can
+cover step state and provider mapping without a GUI. The tkinter UI is built
+only when :func:`run_onboard_wizard` is called. Platform-specific copy
+(Applications vs exe, menu bar vs tray) is parameterized — Screen Recording
+stays Mac-only in :mod:`first_run`.
 """
 from __future__ import annotations
 
@@ -117,17 +119,9 @@ def live_provider_ids() -> tuple[str, ...]:
     return tuple(r["id"] for r in PROVIDER_ROWS if r["live"])
 
 
-def download_step_complete(
-    *,
-    addon_dir: str | Path | None = None,
-    running_from_applications: bool | None = None,
-) -> bool:
-    """Download is done when AddOns is known, or the app is under /Applications."""
-    if addon_dir and Path(addon_dir).is_dir():
-        return True
-    if running_from_applications is None:
-        running_from_applications = is_running_from_applications()
-    return bool(running_from_applications)
+def is_running_frozen() -> bool:
+    """True when running as a frozen app (PyInstaller exe / .app)."""
+    return bool(getattr(sys, "frozen", False))
 
 
 def is_running_from_applications() -> bool:
@@ -143,9 +137,33 @@ def is_running_from_applications() -> bool:
     if "Applications" in parts:
         return True
     # Dev / non-frozen: treat as not Applications
-    if not getattr(sys, "frozen", False):
+    if not is_running_frozen():
         return False
     return False
+
+
+def download_step_complete(
+    *,
+    addon_dir: str | Path | None = None,
+    running_from_applications: bool | None = None,
+    running_frozen: bool | None = None,
+) -> bool:
+    """Download is done when AddOns is known, or the platform install signal is met.
+
+    Mac: AddOns dir **or** running from ``/Applications`` (unchanged).
+    Windows: AddOns dir **or** the frozen ``WoWGrok.exe`` is already running
+    (player downloaded and launched the app — no Applications folder).
+    """
+    if addon_dir and Path(addon_dir).is_dir():
+        return True
+    if sys.platform == "win32":
+        if running_frozen is None:
+            running_frozen = is_running_frozen()
+        return bool(running_frozen)
+    # darwin (and other): Applications check; non-Mac non-Win → False unless dir set
+    if running_from_applications is None:
+        running_from_applications = is_running_from_applications()
+    return bool(running_from_applications)
 
 
 @dataclass
@@ -214,7 +232,7 @@ def apply_wizard_result(cfg: dict[str, Any], result: WizardResult) -> dict[str, 
     return cfg
 
 
-# --- Colors (dark Mac-like palette; not NQA skull branding) -----------------
+# --- Colors (dark palette; not NQA skull branding) --------------------------
 
 _BG = "#1a1a1c"
 _BG_SIDE = "#141416"
@@ -229,6 +247,65 @@ _OK = "#3dcc7a"
 _BORDER = "#3a3a40"
 
 
+def _ui_font(size: int, weight: str = "normal") -> tuple:
+    """Prefer Segoe UI on Windows; Helvetica elsewhere (tk maps fine on Mac)."""
+    family = "Segoe UI" if sys.platform == "win32" else "Helvetica"
+    if weight == "bold":
+        return (family, size, "bold")
+    return (family, size)
+
+
+def _platform_machine_phrase() -> str:
+    if sys.platform == "win32":
+        return "this PC"
+    if sys.platform == "darwin":
+        return "this Mac"
+    return "this computer"
+
+
+def _download_blurb() -> str:
+    if sys.platform == "win32":
+        return (
+            "Download WoWGrok.exe and run it (if SmartScreen appears: "
+            "More info → Run anyway). Confirm your WoW Interface\\AddOns "
+            "folder so the app can install the addon and reply slots."
+        )
+    return (
+        "Drag WoWGrok into Applications, then launch from there "
+        "(not from the DMG). Confirm your WoW Interface/AddOns folder "
+        "so the app can install the addon and reply slots."
+    )
+
+
+def _say_hi_body(*, connected_label: str | None) -> str:
+    if sys.platform == "win32":
+        body = (
+            "You're almost questing.\n\n"
+            "1. Set WoW to Windowed or Windowed (Fullscreen).\n"
+            "2. Fully quit and relaunch WoW if it was already open.\n"
+            "3. At character select, enable WoW Grok (and leave the slot addons on).\n"
+            "4. Log in and type /wow-grok or /grok in chat.\n\n"
+            "Leave WoWGrok running in the system tray (notification area by the "
+            "clock — use the ^ arrow if needed). Right-click it; the menu should "
+            "say Running. It's the live bridge, not a one-time installer.\n\n"
+            "When you send a message, a brief pixel bar appears at the top-left "
+            "of WoW so the app can read your question."
+        )
+    else:
+        body = (
+            "You're almost questing.\n\n"
+            "1. Set WoW to Windowed or Windowed (Fullscreen) / borderless.\n"
+            "2. Fully quit and relaunch WoW if it was already open.\n"
+            "3. At character select, enable WoW Grok (and leave the slot addons on).\n"
+            "4. Log in and type /wow-grok or /grok in chat.\n\n"
+            "Leave WoWGrok running in the menu bar — it's the live bridge, "
+            "not a one-time installer."
+        )
+    if connected_label:
+        body = f"{connected_label} is connected.\n\n" + body
+    return body
+
+
 def run_onboard_wizard(
     *,
     cfg: dict[str, Any] | None = None,
@@ -236,13 +313,13 @@ def run_onboard_wizard(
     pick_addons_dir: Callable[[], Path | None] | None = None,
     secure_store_label: str | None = None,
 ) -> WizardResult:
-    """Show the two-pane Mac onboarding wizard. Blocks until closed.
+    """Show the two-pane onboarding wizard (Mac + Windows). Blocks until closed.
 
     ``pick_addons_dir`` is injected so first_run can reuse
     :func:`first_run.prompt_addons_dir` without a circular import at module load.
     """
     import tkinter as tk
-    
+
     from . import tk_util
 
     cfg = dict(cfg or {})
@@ -294,13 +371,13 @@ def run_onboard_wizard(
     logo.pack(anchor="w")
     # Simple WoWGrok mark: rounded square + "WG" — no skull
     logo.create_oval(2, 2, 46, 46, fill="#2c2c32", outline=_ACCENT, width=2)
-    logo.create_text(24, 24, text="WG", fill=_ACCENT, font=("Helvetica", 14, "bold"))
+    logo.create_text(24, 24, text="WG", fill=_ACCENT, font=_ui_font(14, "bold"))
     tk.Label(
         brand,
         text="WoW Grok",
         bg=_BG_SIDE,
         fg=_FG,
-        font=("Helvetica", 13, "bold"),
+        font=_ui_font(13, "bold"),
         anchor="w",
     ).pack(anchor="w", pady=(10, 0))
 
@@ -325,14 +402,14 @@ def run_onboard_wizard(
     for step in STEPS:
         row_f = tk.Frame(steps_box, bg=_BG_SIDE)
         row_f.pack(fill="x", pady=6)
-        dot = tk.Label(row_f, text="◇", bg=_BG_SIDE, fg=_FG_MUTED, font=("Helvetica", 12))
+        dot = tk.Label(row_f, text="◇", bg=_BG_SIDE, fg=_FG_MUTED, font=_ui_font(12))
         dot.pack(side="left", padx=(4, 8))
         lab = tk.Label(
             row_f,
             text=STEP_LABELS[step],
             bg=_BG_SIDE,
             fg=_FG_MUTED,
-            font=("Helvetica", 11),
+            font=_ui_font(11),
             anchor="w",
         )
         lab.pack(side="left", fill="x", expand=True)
@@ -373,7 +450,7 @@ def run_onboard_wizard(
         text="Finish later",
         bg=_BG_SIDE,
         fg=_FG_MUTED,
-        font=("Helvetica", 10),
+        font=_ui_font(10),
         cursor="hand2",
     )
     fl.pack(anchor="e")
@@ -397,19 +474,15 @@ def run_onboard_wizard(
             text="Download",
             bg=_BG,
             fg=_FG,
-            font=("Helvetica", 22, "bold"),
+            font=_ui_font(22, "bold"),
             anchor="w",
         ).pack(anchor="w")
         tk.Label(
             content,
-            text=(
-                "Drag WoWGrok into Applications, then launch from there "
-                "(not from the DMG). Confirm your WoW Interface/AddOns folder "
-                "so the app can install the addon and reply slots."
-            ),
+            text=_download_blurb(),
             bg=_BG,
             fg=_FG_MUTED,
-            font=("Helvetica", 11),
+            font=_ui_font(11),
             wraplength=440,
             justify="left",
             anchor="w",
@@ -421,7 +494,7 @@ def run_onboard_wizard(
             textvariable=path_var,
             bg=_BG_CARD,
             fg=_FG,
-            font=("Helvetica", 10),
+            font=_ui_font(10),
             wraplength=420,
             justify="left",
             anchor="w",
@@ -475,7 +548,7 @@ def run_onboard_wizard(
             relief="flat",
             padx=22,
             pady=8,
-            font=("Helvetica", 11, "bold"),
+            font=_ui_font(11, "bold"),
         )
         cont.pack(side="right")
 
@@ -488,7 +561,7 @@ def run_onboard_wizard(
             text="Connect your AI",
             bg=_BG,
             fg=_FG,
-            font=("Helvetica", 22, "bold"),
+            font=_ui_font(22, "bold"),
             anchor="w",
         ).pack(side="left")
         tk.Label(
@@ -496,7 +569,7 @@ def run_onboard_wizard(
             text="ⓘ",
             bg=_BG,
             fg=_FG_MUTED,
-            font=("Helvetica", 12),
+            font=_ui_font(12),
         ).pack(side="right")
 
         tk.Label(
@@ -508,7 +581,7 @@ def run_onboard_wizard(
             ),
             bg=_BG,
             fg=_FG_MUTED,
-            font=("Helvetica", 11),
+            font=_ui_font(11),
             wraplength=440,
             justify="left",
             anchor="w",
@@ -550,7 +623,7 @@ def run_onboard_wizard(
                 text=prow["label"],
                 bg=_BG_CARD,
                 fg=_FG if prow["live"] else _FG_MUTED,
-                font=("Helvetica", 12),
+                font=_ui_font(12),
                 anchor="w",
             )
             name.pack(side="left", padx=(14, 8), pady=10)
@@ -559,11 +632,11 @@ def run_onboard_wizard(
                 text=prow["hint"],
                 bg=_BG_CARD,
                 fg=_FG_MUTED,
-                font=("Helvetica", 10),
+                font=_ui_font(10),
                 anchor="e",
             )
             hint.pack(side="left", fill="x", expand=True)
-            mark = tk.Label(rf, text="", bg=_BG_CARD, fg=_ACCENT, font=("Helvetica", 12), width=2)
+            mark = tk.Label(rf, text="", bg=_BG_CARD, fg=_ACCENT, font=_ui_font(12), width=2)
             mark.pack(side="right", padx=(4, 10))
 
             row_widgets[prow["id"]] = {
@@ -591,14 +664,14 @@ def run_onboard_wizard(
         status_var = tk.StringVar(value="")
         status_row = tk.Frame(content, bg=_BG)
         status_row.pack(fill="x", pady=(12, 0))
-        status_mark = tk.Label(status_row, text="", bg=_BG, fg=_OK, font=("Helvetica", 12))
+        status_mark = tk.Label(status_row, text="", bg=_BG, fg=_OK, font=_ui_font(12))
         status_mark.pack(side="left", padx=(0, 6))
         status_lbl = tk.Label(
             status_row,
             textvariable=status_var,
             bg=_BG,
             fg=_OK,
-            font=("Helvetica", 11),
+            font=_ui_font(11),
             anchor="w",
         )
         status_lbl.pack(side="left")
@@ -652,10 +725,11 @@ def run_onboard_wizard(
                 return
             _clear_key_area()
             store = secure_store_label
+            machine = _platform_machine_phrase()
             where = (
-                f"Stored in {store} on this Mac."
+                f"Stored in {store} on {machine}."
                 if store
-                else "Stored only in local config.json on this Mac."
+                else f"Stored only in local config.json on {machine}."
             )
             tk.Label(
                 key_area,
@@ -666,7 +740,7 @@ def run_onboard_wizard(
                 ),
                 bg=_BG,
                 fg=_FG_MUTED,
-                font=("Helvetica", 10),
+                font=_ui_font(10),
                 wraplength=440,
                 justify="left",
                 anchor="w",
@@ -688,7 +762,7 @@ def run_onboard_wizard(
                 relief="flat",
                 padx=16,
                 pady=6,
-                font=("Helvetica", 10, "bold"),
+                font=_ui_font(10, "bold"),
             ).pack(side="right")
             try:
                 entry.bind("<Return>", lambda _e: _save_key(row, entry))
@@ -706,7 +780,7 @@ def run_onboard_wizard(
             relief="flat",
             padx=28,
             pady=10,
-            font=("Helvetica", 12, "bold"),
+            font=_ui_font(12, "bold"),
         ).pack(side="left")
 
     def _show_say_hi() -> None:
@@ -716,26 +790,16 @@ def run_onboard_wizard(
             text="Say hi in game",
             bg=_BG,
             fg=_FG,
-            font=("Helvetica", 22, "bold"),
+            font=_ui_font(22, "bold"),
             anchor="w",
         ).pack(anchor="w")
-        body = (
-            "You're almost questing.\n\n"
-            "1. Set WoW to Windowed or Windowed (Fullscreen) / borderless.\n"
-            "2. Fully quit and relaunch WoW if it was already open.\n"
-            "3. At character select, enable WoW Grok (and leave the slot addons on).\n"
-            "4. Log in and type /wow-grok or /grok in chat.\n\n"
-            "Leave WoWGrok running in the menu bar — it's the live bridge, "
-            "not a one-time installer."
-        )
-        if state.connected_label:
-            body = f"{state.connected_label} is connected.\n\n" + body
+        body = _say_hi_body(connected_label=state.connected_label)
         tk.Label(
             content,
             text=body,
             bg=_BG,
             fg=_FG_MUTED,
-            font=("Helvetica", 11),
+            font=_ui_font(11),
             wraplength=460,
             justify="left",
             anchor="w",
@@ -767,7 +831,7 @@ def run_onboard_wizard(
             relief="flat",
             padx=22,
             pady=10,
-            font=("Helvetica", 12, "bold"),
+            font=_ui_font(12, "bold"),
         ).pack(anchor="w")
 
     def _show_step() -> None:
@@ -807,7 +871,7 @@ def run_onboard_wizard(
 
 
 def should_use_wizard(*, headless: bool, gui_available: bool) -> bool:
-    """Mac GUI first-run uses the wizard; headless / non-Mac keep the old path."""
+    """Mac and Windows GUI first-run use the wizard; headless keeps the old path."""
     if headless or not gui_available:
         return False
-    return sys.platform == "darwin"
+    return sys.platform in ("darwin", "win32")

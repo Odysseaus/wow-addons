@@ -13,16 +13,17 @@ You need **Windows 10 or 11**, **World of Warcraft: Forever** (or another local 
 1. Download **`WoWGrok.exe`** from the [Releases page](https://github.com/Odysseaus/wow-addons/releases). Pick the newest **`wow-grok-win-v…`** release. Mac builds are separate (`wow-grok-mac-v…`).
 2. Optional: move `WoWGrok.exe` into a folder you'll keep, such as `Documents\WoWGrok`. Its settings file sits next to it.
 3. Double-click `WoWGrok.exe`. If Windows says **"Windows protected your PC"**, click **More info**, then **Run anyway**. You'll see this because the exe is **unsigned** (see [Fair questions](#fair-questions)).
-4. Confirm your WoW **Interface\AddOns** folder. WoWGrok looks for it automatically and shows a folder picker if it finds none or several.
+4. On first launch, WoWGrok opens a short **setup wizard** (Download → Connect your AI → Say hi in game). Confirm your WoW **Interface\AddOns** folder when asked. WoWGrok looks for it automatically and shows a folder picker if it finds none or several.
 
 ## 2. Connect your AI: paste an API key
 
-1. Choose **xAI (Grok)** or **Claude**. Pressing Enter (the default button) keeps **xAI**.
+1. In the wizard, choose **Grok** (xAI, default) or **Claude**. ChatGPT / Gemini / Other are listed as Coming soon.
 2. Paste the key for that provider:
    - xAI: create one at [console.x.ai](https://console.x.ai/) (keys start with `xai-`).
    - Claude: create one at [console.anthropic.com](https://console.anthropic.com/).
    - API keys are billed per use by the provider. A Grok, ChatGPT, or Claude **chat subscription is not an API key**.
-3. Wait for **Done**. In about a minute WoWGrok writes the `WoWGrok` addon and its reply slots (`WoWGrok_S001` to `WoWGrok_S200`) into your AddOns folder. Don't copy any folders yourself.
+   - Keys go in **Windows Credential Manager** (see [Fair questions](#fair-questions)).
+3. Continue through **Say hi in game**, then wait for install to finish. In about a minute WoWGrok writes the `WoWGrok` addon and its reply slots (`WoWGrok_S001` to `WoWGrok_S200`) into your AddOns folder. Don't copy any folders yourself.
 
 ## 3. Log in and play
 
