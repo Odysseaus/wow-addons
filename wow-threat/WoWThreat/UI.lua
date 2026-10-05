@@ -33,8 +33,8 @@ local FRAME_H = 328
 local IN_L, IN_T, IN_R, IN_B = 0.11, 0.16, 0.11, 0.18
 local DIAL_SIZE = 340
 local PLATE_W = 372
--- ThreatPlate.tga is 1024x128 (width / height).
-local PLATE_ASPECT = 1024 / 128
+-- ThreatPlate.tga is 1024x148 (width / height) as of 0.1.22.
+local PLATE_ASPECT = 1024 / 148
 local PLATE_GAP = 5
 local PLATE_BORDER = 8
 -- Glossy fill sits in the empty stone groove (fractions of a plate, y from top).
@@ -46,8 +46,11 @@ local PLATE_BORDER = 8
 -- ThreatPlate aspect height and sizes the outer plates window to exactly
 -- five of those rows (explicit content SetSize) so bottom gold corners are
 -- not scissored and the yellow frame is not taller than five plates.
+-- ThreatPlate.tga is 1024x148 (0.1.22): full bottom gold corners mirrored from
+-- the top ornament band below the fill well (prior 1024x128 art was truncated).
 local GROOVE_L, GROOVE_R = 0.082, 0.922
-local GROOVE_T, GROOVE_B = 0.695, 0.938
+-- Groove well stays at absolute y ~89..119 of the original art (now taller tex).
+local GROOVE_T, GROOVE_B = 89 / 148, 119 / 148
 
 local main, content, art, plateBorder
 local barsLayer, platesLayer, dialLayer
@@ -286,7 +289,7 @@ local function IsPlayerEntry(e, pname, pguid)
 end
 
 local function PlateRowHeight(rw)
-  -- ThreatPlate.tga is 1024x128 (type 2 / 32bpp / desc 40). Integer height
+  -- ThreatPlate.tga is 1024x148 (type 2 / 32bpp / desc 40). Integer height
   -- from the row width so the full stone plate - including bottom gold
   -- rounded corners - maps into the row with no fractional scissor.
   if not rw or rw < 8 then
