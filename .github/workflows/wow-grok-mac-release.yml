@@ -121,38 +121,18 @@ jobs:
           cd dist
           ditto -c -k --sequesterRsrc --keepParent WoWGrok.app WoWGrok-mac-arm64.zip
 
-      - name: Make DMG (create-dmg drag-to-Applications)
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      # Pure hdiutil (package manager fails on macOS 27.0.1 with MacOSVersionError); Applications symlink keeps drag-to-install
+      - name: Make DMG (hdiutil)
         run: |
           set -euo pipefail
-          # brew may be broken on new macOS (e.g. "unknown or unsupported macOS version"); hdiutil fallback below covers it
-          if ! command -v create-dmg >/dev/null 2>&1; then
-            brew install create-dmg || echo "::warning::brew install create-dmg failed; using hdiutil fallback"
-          fi
           STAGE="dist/dmg-stage"
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
           cp -R dist/WoWGrok.app "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
           rm -f dist/WoWGrok.dmg
-          # create-dmg may exit non-zero after a successful image (bless); accept if DMG exists
-          create-dmg \
-            --volname "WoWGrok" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --icon "WoWGrok.app" 150 185 \
-            --hide-extension "WoWGrok.app" \
-            --app-drop-link 450 185 \
-            "dist/WoWGrok.dmg" \
-            "$STAGE/" || true
-          if [[ ! -f dist/WoWGrok.dmg ]]; then
-            echo "create-dmg failed; falling back to hdiutil of staged folder"
-            hdiutil create -volname WoWGrok -srcfolder "$STAGE" -ov -format UDZO dist/WoWGrok.dmg
-          fi
+          hdiutil create -volname WoWGrok -srcfolder "$STAGE" -ov -format UDZO dist/WoWGrok.dmg
           ls -la dist/WoWGrok.dmg
-
 
       - name: Create / update Release
         env:
