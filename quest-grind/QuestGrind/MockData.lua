@@ -1,7 +1,7 @@
 local _, NS = ...
 
 -- Mocked route matching approved mockups (Barrens Loop / Smart Drinks).
--- Live quest log wiring is P1.
+-- Used when quest log empty or /qg mock (P1 live is Quests.lua).
 
 NS.MockRoute = {
   name = "Barrens Loop",
