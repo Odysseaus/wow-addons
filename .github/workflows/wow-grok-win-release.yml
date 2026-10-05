@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. wow-grok-win-v0.1.27)'
+        description: 'Release tag (e.g. wow-grok-win-v0.1.31)'
         required: true
         type: string
       prerelease:
@@ -62,7 +62,7 @@ jobs:
               raise SystemExit("version inject failed")
           init.write_text(text2, encoding="utf-8")
           print("OK: injected", ver)
-          print("TOC left unchanged (addon stays 0.1.22, matching Mac 0.1.27)")
+          print("TOC left unchanged (addon stays 0.1.22)")
           PY
 
       - name: Build .exe
@@ -117,31 +117,38 @@ jobs:
           NOTES=$(cat <<MD
           ## WoWGrok Windows ${TAG#wow-grok-win-}
 
-          Built from commit ${SHA} via GitHub Actions (windows-latest, unsigned).
+          Built from commit ${SHA} via GitHub Actions (windows-latest, unsigned). Includes PR #48 onboard changes.
 
-          ### Product pin — parity with Mac \`wow-grok-mac-v0.1.27\` (commit 1e378ca / PR #7)
-          - First-run prompt: choose **xAI** or **Claude**. Enter / default keeps **xAI**.
-          - Claude uses Anthropic Messages API (\`claudeApiKey\` or \`ANTHROPIC_API_KEY\`, model \`claude-sonnet-4-5\`). xAI stays \`provider: xai\`, model \`grok-4-latest\`.
-          - Default timeoutMs **1800000** (30m), same as main. Existing configs kept.
-          - This main build does **not** set webSearch/xSearch and does **not** attach xAI \`web_search\` / \`x_search\` tools (same as Mac 0.1.27).
+          ### What's new in 0.1.31 (PR #48)
+          - **Wizard gate**: opens on version bump **OR** missing/invalid API key (not every launch when key is healthy).
+          - **xAI + Claude only** — no legacy provider paths.
+          - **No legacy Tk popups** — onboard wizard is the setup UI.
+          - Tray menu **Setup…** to re-open the wizard; menu shows **app version**.
+          - API keys in Windows Credential Manager (`WoWGrok/apiKey`); fallback to `config.json` if that write fails.
+          - Tray **Running** + **Quit** (pystray); SSL / `--ssl-smoke`.
+
+          ### Product pin
+          - First-run / Setup: choose **xAI** or **Claude**. Enter / default keeps **xAI**.
+          - Claude uses Anthropic Messages API (`claudeApiKey` or `ANTHROPIC_API_KEY`, model `claude-sonnet-4-5`). xAI stays `provider: xai`, model `grok-4-latest`.
+          - Default timeoutMs **1800000** (30m). Existing configs kept.
+          - This build does **not** set webSearch/xSearch and does **not** attach xAI `web_search` / `x_search` tools.
           - Healthy pixel Send does **not** call ReloadUI (reload remains the non-pixel fallback).
-          - In-game addon TOC stays **0.1.22**. Game-context area (location / money / XP) is **not** in this trunk.
-          - Tray **Running** + **Quit** (pystray); SSL / \`--ssl-smoke\`.
+          - In-game addon TOC stays **0.1.22**.
 
           ### Set up in 2 to 3 minutes
-          1. **Download the app. It installs the addon.** Run \`WoWGrok.exe\`. It is unsigned, so if SmartScreen says "Windows protected your PC", click **More info → Run anyway**. Confirm your AddOns folder.
-          2. **Connect your AI.** Choose xAI (Enter = default) or Claude, paste that API key, and wait for **Done** while it writes the addon and reply slots. API keys are stored in Windows Credential Manager (\`WoWGrok/apiKey\`); if that write fails they fall back to \`config.json\`.
-          3. **Log in and play.** Leave the tray icon **Running**. Use Windowed or Windowed (Fullscreen), fully restart WoW, enable WoW Grok, and type \`/wow-grok\` or \`/grok\`.
+          1. **Download the app. It installs the addon.** Run `WoWGrok.exe`. It is unsigned, so if SmartScreen says "Windows protected your PC", click **More info → Run anyway**. Confirm your AddOns folder.
+          2. **Connect your AI.** Choose xAI (Enter = default) or Claude, paste that API key, and wait for **Done** while it writes the addon and reply slots. Keys go to Credential Manager when possible.
+          3. **Log in and play.** Leave the tray icon **Running**. Use Windowed or Windowed (Fullscreen), fully restart WoW, enable WoW Grok, and type `/wow-grok` or `/grok`.
 
-          When you are done later, tray → **Quit** (stops the app; not part of opening or using the AddOn).
-          Full guide and fair questions: https://github.com/Odysseaus/wow-addons/blob/main/wow-grok/docs/INSTALL-WINDOWS.md
+          When you are done later, tray → **Quit** (stops the app; not part of opening or using the AddOn). Re-open setup anytime via tray → **Setup…**.
+          Full guide: https://github.com/Odysseaus/wow-addons/blob/main/wow-grok/docs/INSTALL-WINDOWS.md
 
           Mac counterpart: https://github.com/Odysseaus/wow-addons/releases/tag/wow-grok-mac-v0.1.27
           MD
           )
           PRE_FLAG=()
           if [[ "$PRE" == "true" ]]; then PRE_FLAG=(--prerelease); fi
-          TITLE="WoW Grok Windows v0.1.27 — Claude provider prompt; xAI default; tray + SSL"
+          TITLE="WoW Grok Windows v0.1.31 — onboard wizard gate; xAI+Claude; Setup…; menu version (#48)"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               wow-grok/dist/WoWGrok.exe \
