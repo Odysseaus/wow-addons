@@ -33,10 +33,12 @@ local FRAME_H = 328
 local IN_L, IN_T, IN_R, IN_B = 0.11, 0.16, 0.11, 0.18
 local DIAL_SIZE = 340
 local PLATE_W = 372
--- ThreatPlate.tga is 1024x148 (width / height) as of 0.1.22.
-local PLATE_ASPECT = 1024 / 148
+-- ThreatPlate.tga is 981x148 (width / height) as of 0.1.22.
+local PLATE_ASPECT = 981 / 148
 local PLATE_GAP = 5
-local PLATE_BORDER = 8
+-- Outer chrome margin around plates content. Was 8 (black L/R gutters);
+-- 0.1.23 hugs the plate with a 1px gap. GoldLine plateBorder stays hidden.
+local PLATE_BORDER = 1
 -- Glossy fill sits in the empty stone groove (fractions of a plate, y from top).
 -- Inner well of ThreatPlate.tga (1024x128): gold stroke is about x 73..948 and
 -- y 86..123. 0.1.15 stopped the fill at y 0.875 (pixel 112), so the stripe
@@ -46,11 +48,11 @@ local PLATE_BORDER = 8
 -- ThreatPlate aspect height and sizes the outer plates window to exactly
 -- five of those rows (explicit content SetSize) so bottom gold corners are
 -- not scissored and the yellow frame is not taller than five plates.
--- ThreatPlate.tga is 1024x148 (0.1.22): full bottom gold corners mirrored from
+-- ThreatPlate.tga is 981x148 (0.1.22): full bottom gold corners mirrored from
 -- the top ornament band below the fill well (prior 1024x128 art was truncated).
-local GROOVE_L, GROOVE_R = 0.082, 0.922
--- Groove well stays at absolute y ~89..119 of the original art (now taller tex).
-local GROOVE_T, GROOVE_B = 89 / 148, 119 / 148
+local GROOVE_L, GROOVE_R = 0.063201, 0.939857
+-- Groove well abs y ~89..119 on 148px plate; x remapped after L/R black crop.
+local GROOVE_T, GROOVE_B = 0.601351, 0.804054
 
 local main, content, art, plateBorder
 local barsLayer, platesLayer, dialLayer
@@ -289,7 +291,7 @@ local function IsPlayerEntry(e, pname, pguid)
 end
 
 local function PlateRowHeight(rw)
-  -- ThreatPlate.tga is 1024x148 (type 2 / 32bpp / desc 40). Integer height
+  -- ThreatPlate.tga is 981x148 (type 2 / 32bpp / desc 40). Integer height
   -- from the row width so the full stone plate - including bottom gold
   -- rounded corners - maps into the row with no fractional scissor.
   if not rw or rw < 8 then
@@ -1150,7 +1152,7 @@ local function ApplyFrame(m)
     if content.SetClipsChildren then content:SetClipsChildren(true) end
   end
   if plateBorder then
-    if m == 'plates' then plateBorder:Show() else plateBorder:Hide() end
+    plateBorder:Hide() -- 0.1.23: ThreatPlate has its own frame; GoldLine left L/R black gaps
   end
 end
 
