@@ -148,6 +148,23 @@ local function ThreatRGB(pct)
   return a[2] + (b[2] - a[2]) * u, a[3] + (b[3] - a[3]) * u, a[4] + (b[4] - a[4]) * u
 end
 
+-- Bar rows only. Rank 1 is the top (highest threat). Not class color, and not
+-- a function of fill width, so a width change does not recolor the row.
+-- BarFill.tga is a gray gloss (about 0.75), so these tints are what that
+-- multiply shows as deep red, orange, gold, darker gold, brown.
+local BAR_RANK_RGB = {
+  { 1.00, 0.12, 0.08 },
+  { 1.00, 0.55, 0.10 },
+  { 1.00, 0.82, 0.22 },
+  { 0.78, 0.55, 0.14 },
+  { 0.50, 0.32, 0.12 },
+}
+
+local function BarRankRGB(rank)
+  local c = BAR_RANK_RGB[rank] or BAR_RANK_RGB[#BAR_RANK_RGB]
+  return c[1], c[2], c[3]
+end
+
 local function PctNumber(e)
   local p = tonumber(e.pct or e.percent or e.threatPct or e.scaled or e.value) or 0
   return p
@@ -338,12 +355,6 @@ local function CreateBarRow(parent)
   icon:SetSize(14, 14)
   icon:SetPoint('LEFT', row, 'LEFT', 0, 0)
   icon:SetTexture('Interface\\Icons\\INV_Misc_QuestionMark')
-  local nameFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
-  nameFS:SetPoint('LEFT', icon, 'RIGHT', 4, 0)
-  nameFS:SetJustifyH('LEFT')
-  nameFS:SetWordWrap(false)
-  nameFS:SetFont('Fonts\\FRIZQT__.TTF', 14, '')
-  nameFS:SetTextColor(0.96, 0.91, 0.78)
   local pctFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
   pctFS:SetPoint('RIGHT', row, 'RIGHT', 0, 0)
   pctFS:SetWidth(42)
@@ -351,9 +362,10 @@ local function CreateBarRow(parent)
   pctFS:SetWordWrap(false)
   pctFS:SetFont('Fonts\\FRIZQT__.TTF', 14, '')
   pctFS:SetTextColor(0.96, 0.91, 0.78)
+  -- Track starts after the icon, not after the name, so every row shares a left edge.
   local slot = CreateFrame('Frame', nil, row)
-  slot:SetPoint('LEFT', nameFS, 'RIGHT', 4, 0)
-  slot:SetPoint('RIGHT', pctFS, 'LEFT', -4, 0)
+  slot:SetPoint('LEFT', row, 'LEFT', 20, 0)
+  slot:SetPoint('RIGHT', pctFS, 'LEFT', -6, 0)
   slot:SetHeight(12)
   local rim = slot:CreateTexture(nil, 'BACKGROUND')
   rim:SetPoint('TOPLEFT', -1, 1)
@@ -365,25 +377,48 @@ local function CreateBarRow(parent)
   track:SetPoint('BOTTOMRIGHT', -1, 1)
   track:SetTexture('Interface\\Buttons\\WHITE8X8')
   track:SetVertexColor(0.05, 0.04, 0.03, 0.92)
-  local fill = slot:CreateTexture(nil, 'ARTWORK')
-  fill:SetTexture(TEX_FILL)
-  fill:SetPoint('LEFT', slot, 'LEFT', 1, 0)
-  fill:SetWidth(1)
-  fill:SetHeight(8)
-  local shine = slot:CreateTexture(nil, 'OVERLAY')
+  -- StatusBar fill grows from the left. SetValue takes the collector percent
+  -- (or a secret number) without this file doing arithmetic on a secret.
+  local status = CreateFrame('StatusBar', nil, slot)
+  status:SetPoint('TOPLEFT', slot, 'TOPLEFT', 1, -1)
+  status:SetPoint('BOTTOMRIGHT', slot, 'BOTTOMRIGHT', -1, 1)
+  status:SetStatusBarTexture(TEX_FILL)
+  status:SetMinMaxValues(0, 100)
+  status:SetValue(0)
+  if status.SetOrientation then status:SetOrientation('HORIZONTAL') end
+  if status.SetReverseFill then status:SetReverseFill(false) end
+  status:SetStatusBarColor(BAR_RANK_RGB[1][1], BAR_RANK_RGB[1][2], BAR_RANK_RGB[1][3], 1)
+  local shine = status:CreateTexture(nil, 'OVERLAY')
   shine:SetTexture(TEX_SHINE)
   shine:SetBlendMode('ADD')
-  shine:SetPoint('LEFT', slot, 'LEFT', 1, 0)
-  shine:SetWidth(1)
-  shine:SetHeight(8)
   shine:SetAlpha(0.9)
+  shine:SetVertexColor(1, 0.97, 0.90, 0.95)
+  local sbTex = status:GetStatusBarTexture()
+  if sbTex then
+    shine:SetAllPoints(sbTex)
+  end
+  local nameLayer = CreateFrame('Frame', nil, status)
+  nameLayer:SetAllPoints()
+  if nameLayer.SetFrameLevel and status.GetFrameLevel then
+    nameLayer:SetFrameLevel(status:GetFrameLevel() + 2)
+  end
+  local nameFS = nameLayer:CreateFontString(nil, 'OVERLAY')
+  nameFS:SetPoint('LEFT', nameLayer, 'LEFT', 8, 0)
+  nameFS:SetPoint('RIGHT', nameLayer, 'RIGHT', -6, 0)
+  nameFS:SetJustifyH('LEFT')
+  nameFS:SetJustifyV('MIDDLE')
+  nameFS:SetWordWrap(false)
+  nameFS:SetFont('Fonts\\FRIZQT__.TTF', 14, 'OUTLINE')
+  nameFS:SetTextColor(0.97, 0.94, 0.86)
+  nameFS:SetShadowColor(0, 0, 0, 1)
+  nameFS:SetShadowOffset(1, -1)
   row.icon = icon
   row.nameFS = nameFS
   row.pctFS = pctFS
   row.slot = slot
-  row.fill = fill
+  row.status = status
   row.shine = shine
-  row.pctValue = 0
+  row.rankApplied = nil
   row:Hide()
   return row
 end
@@ -394,46 +429,39 @@ local function LayoutBarFill(row)
   local sh = rh * BAR_SLOT_FRAC
   if sh < 8 then sh = 8 end
   if sh > rh - 2 then sh = rh - 2 end
-  row.slot:SetHeight(sh)
   local icon = sh
   if icon < 12 then icon = 12 end
   if icon > rh - 1 then icon = rh - 1 end
   row.icon:SetSize(icon, icon)
-  -- Full first name. Width follows the string so a 72px box cannot clip it.
-  local nw = TextWidth(row.nameFS)
-  if nw < 8 then
-    local label = row.nameFS:GetText() or ''
-    nw = 8 * string.len(label)
-    if nw < 8 then nw = 8 end
+  -- Same left inset on every row. The name is inside the bar and does not shift it.
+  row.slot:ClearAllPoints()
+  row.slot:SetPoint('LEFT', row, 'LEFT', icon + 6, 0)
+  row.slot:SetPoint('RIGHT', row.pctFS, 'LEFT', -6, 0)
+  row.slot:SetHeight(sh)
+  -- Gloss follows the status-bar texture, which is only the filled span.
+  if row.status and row.shine and row.status.GetStatusBarTexture then
+    local sbTex = row.status:GetStatusBarTexture()
+    if sbTex then
+      row.shine:ClearAllPoints()
+      row.shine:SetAllPoints(sbTex)
+    end
   end
-  row.nameFS:SetWidth(nw + 2)
-  local rw = row:GetWidth() or 0
-  local pctW = 42
-  local sw = rw - icon - 4 - (nw + 2) - 4 - 4 - pctW
-  if sw < 0 then sw = 0 end
-  local inner = sw - 2
-  if inner < 0 then inner = 0 end
-  local pct = row.pctValue or 0
-  if pct < 0 then pct = 0 end
-  if pct > 100 then pct = 100 end
-  local fw = inner * pct / 100
-  row.fill:ClearAllPoints()
-  row.shine:ClearAllPoints()
-  -- Fill the inner track of the slot (1px rim), full height. Not a short sliver.
-  row.fill:SetPoint('TOPLEFT', row.slot, 'TOPLEFT', 1, -1)
-  row.fill:SetPoint('BOTTOMLEFT', row.slot, 'BOTTOMLEFT', 1, 1)
-  row.fill:SetTexCoord(0, 1, 0, 1)
-  row.shine:SetTexCoord(0, 1, 0, 1)
-  if fw < 0.5 then
-    row.fill:Hide()
-    row.shine:Hide()
-  else
-    row.fill:Show()
-    row.shine:Show()
-    row.fill:SetWidth(fw)
-    row.shine:SetPoint('TOPLEFT', row.fill, 'TOPLEFT', 0, 0)
-    row.shine:SetPoint('BOTTOMRIGHT', row.fill, 'BOTTOMRIGHT', 0, 0)
+end
+
+-- Collector pct is 0..100 (over 100 clamps to a full bar). A secret value is
+-- handed to SetValue and is not read here.
+local function ApplyBarValue(status, pct)
+  if valueIsSecret(pct) then
+    status:SetValue(pct)
+    return
   end
+  local v = pct or 0
+  if type(v) ~= 'number' then
+    v = tonumber(v) or 0
+  end
+  if v < 0 then v = 0 end
+  if v > 100 then v = 100 end
+  status:SetValue(v)
 end
 
 local function CreatePlate(parent)
@@ -587,19 +615,29 @@ local function UpdateNeedle(angle, length)
   end
 end
 
-local function FillBar(row, e)
+local function FillBar(row, e, rank)
   ApplyIcon(row.icon, e.class)
   row.nameFS:SetText(FirstName(e))
-  row.nameFS:SetTextColor(0.96, 0.91, 0.78)
-  local pct = e.pct or 0
-  local v = pct
-  if v < 0 then v = 0 end
-  if v > 100 then v = 100 end
-  row.pctValue = v
-  local tr, tg, tb = ThreatRGB(v)
-  row.fill:SetVertexColor(tr, tg, tb, 1)
-  row.shine:SetVertexColor(1, 0.97, 0.90, 0.95)
-  row.pctFS:SetText(string.format('%d', math.floor(pct + 0.5)))
+  row.nameFS:SetTextColor(0.97, 0.94, 0.86)
+  -- Color stays on the rank. Do not recolor from pct, from the animated
+  -- width, or because this row's player changed units.
+  local tr, tg, tb = BarRankRGB(rank or 1)
+  if row.rankApplied ~= rank then
+    row.rankApplied = rank
+    row.status:SetStatusBarColor(tr, tg, tb, 1)
+    row.shine:SetVertexColor(1, 0.97, 0.90, 0.95)
+  end
+  -- e.pct is the collector's 0-100 percent. Do not fall back to raw threat.
+  -- Do not compare or format a secret; SetValue can take it as-is.
+  local pct = e.pct
+  if valueIsSecret(pct) then
+    ApplyBarValue(row.status, pct)
+  else
+    local shown = pct or 0
+    if type(shown) ~= 'number' then shown = tonumber(shown) or 0 end
+    row.pctFS:SetText(string.format('%d', math.floor(shown + 0.5)))
+    ApplyBarValue(row.status, shown)
+  end
   LayoutBarFill(row)
 end
 
@@ -659,7 +697,7 @@ local function SyncRows(list)
       local bar = Acquire(barByKey, barFree, key)
       if bar then
         bar:SetHeight(rh)
-        FillBar(bar, e)
+        FillBar(bar, e, i)
         bar.targetY = y
         if not barSmooth[key] then barSmooth[key] = { y = y } end
         bar:Show()
@@ -764,6 +802,7 @@ local function Animate(elapsed)
         row:ClearAllPoints()
         row:SetPoint('TOPLEFT', content, 'TOPLEFT', 0, st.y)
         row:SetPoint('TOPRIGHT', content, 'TOPRIGHT', 0, st.y)
+        -- Position only. Rank color and StatusBar value are not touched here.
         LayoutBarFill(row)
       end
     end
