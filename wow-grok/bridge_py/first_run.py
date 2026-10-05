@@ -20,6 +20,51 @@ from . import config as cfgmod
 from . import setup_detect
 from . import tk_util
 
+# Bump when the onboard wizard changes enough that existing (already configured)
+# installs should see it once more. Stored in config.json as
+# ``onboardWizardVersion`` after the wizard closes (done / finish later / close).
+ONBOARD_WIZARD_VERSION = 1
+ONBOARD_WIZARD_VERSION_KEY = "onboardWizardVersion"
+
+
+def onboard_wizard_version_due(cfg: dict[str, Any] | None) -> bool:
+    """True when this config has not yet seen the current onboard wizard version.
+
+    Pre-wizard configs (no ``onboardWizardVersion``) and configs from an older
+    wizard version are "due" so upgrading users see the wizard once.
+    """
+    try:
+        seen = int((cfg or {}).get(ONBOARD_WIZARD_VERSION_KEY) or 0)
+    except (TypeError, ValueError):
+        seen = 0
+    return seen < ONBOARD_WIZARD_VERSION
+
+
+def should_show_onboard_wizard(
+    cfg: dict[str, Any] | None,
+    *,
+    use_wizard: bool,
+    needs_setup: bool,
+) -> bool:
+    """Pure gate: show the GUI wizard when setup is incomplete or the version is new."""
+    if not use_wizard:
+        return False
+    return bool(needs_setup) or onboard_wizard_version_due(cfg)
+
+
+def mark_onboard_wizard_seen(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Record that the current wizard version was shown (mutates + returns ``cfg``)."""
+    cfg[ONBOARD_WIZARD_VERSION_KEY] = ONBOARD_WIZARD_VERSION
+    return cfg
+
+
+def _setup_incomplete(cfg: dict[str, Any]) -> bool:
+    return (
+        not cfg.get("addonDir")
+        or not Path(str(cfg.get("addonDir") or "")).is_dir()
+        or not cfgmod.has_provider_api_key(cfg)
+    )
+
 
 def _tk():
     """Lazy import so headless / servers without tkinter still load the package."""
@@ -315,7 +360,11 @@ def _apply_addon_dir(cfg: dict[str, Any], addon_dir: Path) -> dict[str, Any]:
 
 
 def _run_onboard_wizard(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Two-pane wizard for incomplete setup (Mac + Windows). Mutates and returns ``cfg``."""
+    """Two-pane wizard (Mac + Windows). Mutates and returns ``cfg``.
+
+    Always records ``onboardWizardVersion`` afterwards (done / finish later /
+    cancelled) so an already-configured install is not nagged every launch.
+    """
     from . import onboard_wizard
 
     existing = setup_detect.find_existing_addons()
@@ -328,6 +377,7 @@ def _run_onboard_wizard(cfg: dict[str, Any]) -> dict[str, Any]:
         initial_addon_dir=cfg.get("addonDir") or None,
         pick_addons_dir=_pick,
         secure_store_label=cfgmod.secure_store_label(),
+        provider_key_present=cfgmod.has_provider_api_key(cfg),
     )
     onboard_wizard.apply_wizard_result(cfg, result)
     if result.addon_dir:
@@ -336,6 +386,11 @@ def _run_onboard_wizard(cfg: dict[str, Any]) -> dict[str, Any]:
         f"[onboard-wizard] status={result.status} provider={result.provider!r} "
         f"connected={result.connected_label!r}"
     )
+    mark_onboard_wizard_seen(cfg)
+    try:
+        cfgmod.save_config(cfg)
+    except Exception as e:  # noqa: BLE001
+        _append_bridge_log(f"[onboard-wizard] failed to save config: {e}")
     return cfg
 
 
@@ -349,7 +404,9 @@ def ensure_first_run_config(
     After addonDir and the active provider's API key are set and config is saved,
     installs the main addon and reply slots into Interface/AddOns (GUI shows
     progress dialogs). On macOS / Windows GUI launches, incomplete setup opens
-    the :mod:`onboard_wizard` (Download → Connect your AI → Say hi). Headless /
+    the :mod:`onboard_wizard` (Download → Connect your AI → Say hi); it also
+    shows once on configured installs whose ``onboardWizardVersion`` is older
+    than :data:`ONBOARD_WIZARD_VERSION` (pre-wizard upgrades). Headless /
     no-GUI fallback still asks xAI vs Claude (Enter = xAI default), then the
     matching key prompt. Claude requires ANTHROPIC_API_KEY or claudeApiKey.
     Screen Recording sheet remains macOS-only after a successful install.
@@ -374,10 +431,11 @@ def ensure_first_run_config(
             sys.exit(2)
         cfg = _apply_addon_dir(cfg, Path(norm))
     elif (not cfg.get("addonDir") or not Path(str(cfg["addonDir"])).is_dir()) and not (
-        use_wizard and not cfgmod.has_provider_api_key(cfg)
+        use_wizard
+        and (not cfgmod.has_provider_api_key(cfg) or onboard_wizard_version_due(cfg))
     ):
         # Non-wizard path: pick AddOns now. Wizard path collects AddOns inside
-        # the Download step when the provider key is also still missing.
+        # the Download step when the wizard is about to show anyway.
         existing = setup_detect.find_existing_addons()
         if headless:
             if len(existing) == 1:
@@ -396,13 +454,15 @@ def ensure_first_run_config(
                 sys.exit(2)
             cfg = _apply_addon_dir(cfg, picked)
 
-    needs_setup = (
-        not cfg.get("addonDir")
-        or not Path(str(cfg.get("addonDir") or "")).is_dir()
-        or not cfgmod.has_provider_api_key(cfg)
-    )
-    if use_wizard and needs_setup:
+    needs_setup = _setup_incomplete(cfg)
+    if should_show_onboard_wizard(cfg, use_wizard=use_wizard, needs_setup=needs_setup):
         # Wizard owns AddOns picker (if still missing) + provider + API key.
+        # Also shown once per ONBOARD_WIZARD_VERSION for already-configured
+        # installs (e.g. upgrading from a pre-wizard config.json).
+        _append_bridge_log(
+            f"[onboard-wizard] show needs_setup={needs_setup} "
+            f"seen={cfg.get(ONBOARD_WIZARD_VERSION_KEY)!r} current={ONBOARD_WIZARD_VERSION}"
+        )
         cfg = _run_onboard_wizard(cfg)
 
     if not cfg.get("defaultCwd"):
@@ -494,3 +554,55 @@ def ensure_first_run_config(
         prompt_mac_screen_recording(cfg)
 
     return cfg
+
+
+SETUP_EXIT_APPLIED = 0
+SETUP_EXIT_UNCHANGED = 3
+SETUP_EXIT_UNAVAILABLE = 4
+
+
+def _setup_fingerprint(cfg: dict[str, Any]) -> tuple:
+    """What the running bridge cares about (keys compared by presence of value)."""
+    return (
+        cfgmod.resolve_provider(cfg),
+        str(cfg.get("addonDir") or ""),
+        cfgmod.resolve_api_key(cfg),
+        cfgmod.resolve_claude_api_key(cfg),
+    )
+
+
+def run_setup_wizard_on_demand() -> int:
+    """Menu bar **Setup…**: re-open the onboard wizard in its own process.
+
+    Runs as ``WoWGrok --onboard-setup`` (frozen) / ``python -m bridge_py
+    --onboard-setup`` so Tk never shares the AppKit run loop with rumps.
+    Saves config (and reinstalls addon/slots when AddOns is valid).
+
+    Exit codes: ``0`` = provider / key / AddOns changed (caller restarts the
+    bridge to apply), ``3`` = nothing relevant changed, ``4`` = no GUI.
+    """
+    from . import onboard_wizard
+
+    if not onboard_wizard.should_use_wizard(headless=False, gui_available=_gui_available()):
+        print("Setup wizard needs a GUI (macOS / Windows).", file=sys.stderr)
+        return SETUP_EXIT_UNAVAILABLE
+
+    cfg = cfgmod.load_config()
+    if cfg is None:
+        cfg = cfgmod.load_example()
+    before = _setup_fingerprint(cfg)
+    _append_bridge_log("[onboard-wizard] on-demand Setup… from menu")
+    cfg = _run_onboard_wizard(cfg)  # saves config + onboardWizardVersion
+    after = _setup_fingerprint(cfg)
+    if after == before:
+        return SETUP_EXIT_UNCHANGED
+
+    addon_dir = cfg.get("addonDir")
+    if addon_dir and Path(str(addon_dir)).is_dir():
+        from .install_addon import InstallError, ensure_game_files
+
+        try:
+            ensure_game_files(cfg, gui=True)
+        except InstallError as e:
+            _append_bridge_log(f"[onboard-wizard] on-demand install failed: {e}")
+    return SETUP_EXIT_APPLIED

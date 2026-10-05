@@ -1040,14 +1040,16 @@ def main(argv: list[str] | None = None) -> int:
             from . import menubar
 
             if menubar.available():
-                menubar.run_status_item(
+                rc = menubar.run_status_item(
                     stop_event=stop_event,
                     screen_ui=screen_ui,
                     on_quit=on_quit,
                 )
                 stop_capture()
                 _kill_sibling_wowgrok_pids()
-                return 0
+                # rc == supervisor.RESTART_EXIT_CODE after menu Setup… changed
+                # provider / key / AddOns: supervisor relaunches the bridge.
+                return rc
         except Exception as e:  # noqa: BLE001
             print(f"menubar unavailable ({e}); falling back to wait loop", flush=True)
 
