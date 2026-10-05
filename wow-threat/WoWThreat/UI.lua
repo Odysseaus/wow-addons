@@ -6,6 +6,13 @@ local function valueIsSecret(value)
 end
 
 local ROW_N = 10
+-- Bars only. Dial marks and plates still use ROW_N. Five rows fill the frame
+-- the way the approved bars concept does.
+local BAR_ROWS = 5
+local BAR_GAP = 6
+-- Fraction of the bar row used by the glossy slot. 0.1.15 used 0.42 and then
+-- capped the slot at 18px, which drew a thin sliver inside a 10-row stack.
+local BAR_SLOT_FRAC = 0.78
 local POLL = 0.2
 local LERP_T = 0.25
 local SCALE_MIN, SCALE_MAX = 0.6, 1.6
@@ -27,8 +34,13 @@ local PLATE_ASPECT = 1024 / 128
 local PLATE_GAP = 5
 local PLATE_BORDER = 8
 -- Glossy fill sits in the empty stone groove (fractions of a plate, y from top).
-local GROOVE_L, GROOVE_R = 0.072, 0.928
-local GROOVE_T, GROOVE_B = 0.70, 0.875
+-- Inner well of ThreatPlate.tga (1024x128): gold stroke is about x 73..948 and
+-- y 86..123. 0.1.15 stopped the fill at y 0.875 (pixel 112), so the stripe
+-- ended above the well floor and the bottom of the gloss was clipped.
+-- 0.1.16 insets to the open interior: x 84..944 (0.082..0.922), y 89..120
+-- (0.695..0.938).
+local GROOVE_L, GROOVE_R = 0.082, 0.922
+local GROOVE_T, GROOVE_B = 0.695, 0.938
 
 local main, content, art, plateBorder
 local barsLayer, platesLayer, dialLayer
@@ -142,12 +154,39 @@ local function PctNumber(e)
 end
 
 local function DisplayName(e)
+  -- Dial name marks only. Bars and plates use FirstName.
   local n = e.name or e.unitName or 'Unknown'
   if NS.ShortName then
     local s = NS.ShortName(n)
     if s and s ~= '' then n = s end
   end
   return n
+end
+
+-- Full character name for bars and plates. Realm suffix is not part of the
+-- first name. Do not run this through ShortName (that keeps dial marks short).
+local function FirstName(e)
+  local n = e.name or e.unitName or 'Unknown'
+  if valueIsSecret(n) then return 'Unknown' end
+  if type(n) ~= 'string' then n = tostring(n) end
+  local dash = string.find(n, '-', 1, true)
+  if dash and dash > 1 then
+    n = string.sub(n, 1, dash - 1)
+  end
+  if n == '' then return 'Unknown' end
+  return n
+end
+
+local function TextWidth(fs)
+  if fs.GetUnboundedStringWidth then
+    local w = fs:GetUnboundedStringWidth()
+    if w and w > 1 then return w end
+  end
+  if fs.GetStringWidth then
+    local w = fs:GetStringWidth()
+    if w and w > 1 then return w end
+  end
+  return 0
 end
 
 local function EntryKey(e, i)
@@ -224,11 +263,23 @@ end
 
 local function RowPitch()
   local ch = content and content:GetHeight() or 0
-  if not ch or ch < 40 then ch = FRAME_H * 0.70 end
   local m = string.lower(tostring((NS.db and NS.db.mode) or 'bars'))
+  local count = ROW_N
   local gap = 2
-  if m == 'plates' then gap = PLATE_GAP end
-  local rh = (ch - gap * (ROW_N - 1)) / ROW_N
+  if m == 'plates' then
+    gap = PLATE_GAP
+  elseif m == 'bars' then
+    count = BAR_ROWS
+    gap = BAR_GAP
+  end
+  if not ch or ch < 40 then
+    if m == 'bars' then
+      ch = FRAME_H * (1 - IN_T - IN_B)
+    else
+      ch = FRAME_H * 0.70
+    end
+  end
+  local rh = (ch - gap * (count - 1)) / count
   if rh < 8 then rh = 8 end
   return rh, gap
 end
@@ -288,15 +339,17 @@ local function CreateBarRow(parent)
   icon:SetPoint('LEFT', row, 'LEFT', 0, 0)
   icon:SetTexture('Interface\\Icons\\INV_Misc_QuestionMark')
   local nameFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
-  nameFS:SetPoint('LEFT', icon, 'RIGHT', 3, 0)
-  nameFS:SetWidth(72)
+  nameFS:SetPoint('LEFT', icon, 'RIGHT', 4, 0)
   nameFS:SetJustifyH('LEFT')
   nameFS:SetWordWrap(false)
+  nameFS:SetFont('Fonts\\FRIZQT__.TTF', 14, '')
   nameFS:SetTextColor(0.96, 0.91, 0.78)
   local pctFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
   pctFS:SetPoint('RIGHT', row, 'RIGHT', 0, 0)
-  pctFS:SetWidth(36)
+  pctFS:SetWidth(42)
   pctFS:SetJustifyH('RIGHT')
+  pctFS:SetWordWrap(false)
+  pctFS:SetFont('Fonts\\FRIZQT__.TTF', 14, '')
   pctFS:SetTextColor(0.96, 0.91, 0.78)
   local slot = CreateFrame('Frame', nil, row)
   slot:SetPoint('LEFT', nameFS, 'RIGHT', 4, 0)
@@ -338,25 +391,39 @@ end
 local function LayoutBarFill(row)
   if not row.slot then return end
   local rh = row:GetHeight() or 16
-  local sh = rh * 0.42
-  if sh < 6 then sh = 6 end
-  if sh > 18 then sh = 18 end
+  local sh = rh * BAR_SLOT_FRAC
+  if sh < 8 then sh = 8 end
+  if sh > rh - 2 then sh = rh - 2 end
   row.slot:SetHeight(sh)
-  local icon = rh * 0.70
-  if icon < 10 then icon = 10 end
-  if icon > 22 then icon = 22 end
+  local icon = sh
+  if icon < 12 then icon = 12 end
+  if icon > rh - 1 then icon = rh - 1 end
   row.icon:SetSize(icon, icon)
-  local sw = row.slot:GetWidth() or 0
+  -- Full first name. Width follows the string so a 72px box cannot clip it.
+  local nw = TextWidth(row.nameFS)
+  if nw < 8 then
+    local label = row.nameFS:GetText() or ''
+    nw = 8 * string.len(label)
+    if nw < 8 then nw = 8 end
+  end
+  row.nameFS:SetWidth(nw + 2)
+  local rw = row:GetWidth() or 0
+  local pctW = 42
+  local sw = rw - icon - 4 - (nw + 2) - 4 - 4 - pctW
+  if sw < 0 then sw = 0 end
   local inner = sw - 2
   if inner < 0 then inner = 0 end
   local pct = row.pctValue or 0
   if pct < 0 then pct = 0 end
   if pct > 100 then pct = 100 end
   local fw = inner * pct / 100
-  local fh = sh - 2
-  if fh < 2 then fh = 2 end
-  row.fill:SetHeight(fh)
-  row.shine:SetHeight(fh)
+  row.fill:ClearAllPoints()
+  row.shine:ClearAllPoints()
+  -- Fill the inner track of the slot (1px rim), full height. Not a short sliver.
+  row.fill:SetPoint('TOPLEFT', row.slot, 'TOPLEFT', 1, -1)
+  row.fill:SetPoint('BOTTOMLEFT', row.slot, 'BOTTOMLEFT', 1, 1)
+  row.fill:SetTexCoord(0, 1, 0, 1)
+  row.shine:SetTexCoord(0, 1, 0, 1)
   if fw < 0.5 then
     row.fill:Hide()
     row.shine:Hide()
@@ -364,7 +431,8 @@ local function LayoutBarFill(row)
     row.fill:Show()
     row.shine:Show()
     row.fill:SetWidth(fw)
-    row.shine:SetWidth(fw)
+    row.shine:SetPoint('TOPLEFT', row.fill, 'TOPLEFT', 0, 0)
+    row.shine:SetPoint('BOTTOMRIGHT', row.fill, 'BOTTOMRIGHT', 0, 0)
   end
 end
 
@@ -404,14 +472,22 @@ local function LayoutPlate(row)
   local nameY = rh * 0.16
   row.nameFS:ClearAllPoints()
   row.nameFS:SetPoint('CENTER', row, 'CENTER', 0, nameY)
-  row.nameFS:SetWidth(rw * 0.55)
+  local nw = TextWidth(row.nameFS)
+  if nw < 8 then
+    local label = row.nameFS:GetText() or ''
+    nw = 8 * string.len(label)
+    if nw < 8 then nw = 8 end
+  end
+  row.nameFS:SetWidth(nw + 2)
   row.pctFS:ClearAllPoints()
   row.pctFS:SetPoint('RIGHT', row, 'RIGHT', -rw * 0.045, nameY)
   row.pctFS:SetWidth(rw * 0.16)
-  local gy = rh * (0.5 - (GROOVE_T + GROOVE_B) / 2)
-  local gh = rh * (GROOVE_B - GROOVE_T)
-  if gh < 3 then gh = 3 end
   local gx = rw * GROOVE_L
+  local top = rh * GROOVE_T
+  local bot = rh * GROOVE_B
+  if top < 1 then top = 1 end
+  if bot < top + 3 then bot = top + 3 end
+  if bot > rh - 1 then bot = rh - 1 end
   local gw = rw * (GROOVE_R - GROOVE_L)
   local pct = row.pctValue or 0
   if pct < 0 then pct = 0 end
@@ -419,10 +495,13 @@ local function LayoutPlate(row)
   local fw = gw * pct / 100
   row.fill:ClearAllPoints()
   row.shine:ClearAllPoints()
-  row.fill:SetPoint('LEFT', row, 'LEFT', gx, gy)
-  row.shine:SetPoint('LEFT', row, 'LEFT', gx, gy)
-  row.fill:SetHeight(gh)
-  row.shine:SetHeight(gh)
+  -- Top and bottom anchors keep the whole gloss gradient inside the well.
+  -- A center+height anchor at the old 0.70..0.875 groove cut the stripe off
+  -- above the floor of the stone meter.
+  row.fill:SetPoint('TOPLEFT', row, 'TOPLEFT', gx, -top)
+  row.fill:SetPoint('BOTTOMLEFT', row, 'TOPLEFT', gx, -bot)
+  row.fill:SetTexCoord(0, 1, 0, 1)
+  row.shine:SetTexCoord(0, 1, 0, 1)
   if fw < 0.5 then
     row.fill:Hide()
     row.shine:Hide()
@@ -430,7 +509,8 @@ local function LayoutPlate(row)
     row.fill:Show()
     row.shine:Show()
     row.fill:SetWidth(fw)
-    row.shine:SetWidth(fw)
+    row.shine:SetPoint('TOPLEFT', row.fill, 'TOPLEFT', 0, 0)
+    row.shine:SetPoint('BOTTOMRIGHT', row.fill, 'BOTTOMRIGHT', 0, 0)
   end
 end
 
@@ -509,7 +589,7 @@ end
 
 local function FillBar(row, e)
   ApplyIcon(row.icon, e.class)
-  row.nameFS:SetText(DisplayName(e))
+  row.nameFS:SetText(FirstName(e))
   row.nameFS:SetTextColor(0.96, 0.91, 0.78)
   local pct = e.pct or 0
   local v = pct
@@ -532,7 +612,7 @@ local function FillPlate(row, e, rank, n)
   local tr, tg, tb = ThreatRGB(v)
   row.fill:SetVertexColor(tr, tg, tb, 1)
   row.shine:SetVertexColor(1, 0.97, 0.88, 0.9)
-  row.nameFS:SetText(DisplayName(e))
+  row.nameFS:SetText(FirstName(e))
   row.nameFS:SetTextColor(0.94, 0.89, 0.76)
   row.pctFS:SetText(string.format('%d', math.floor(pct + 0.5)))
   LayoutPlate(row)
@@ -566,20 +646,24 @@ local function SyncRows(list)
   local seenB, seenP, seenM = {}, {}, {}
   local n = #list
   if n > ROW_N then n = ROW_N end
+  local nBar = n
+  if nBar > BAR_ROWS then nBar = BAR_ROWS end
   for i = 1, n do
     local e = list[i]
     local key = EntryKey(e, i)
     local y = -((i - 1) * (rh + gap))
-    seenB[key] = true
     seenP[key] = true
     seenM[key] = true
-    local bar = Acquire(barByKey, barFree, key)
-    if bar then
-      bar:SetHeight(rh)
-      FillBar(bar, e)
-      bar.targetY = y
-      if not barSmooth[key] then barSmooth[key] = { y = y } end
-      bar:Show()
+    if i <= nBar then
+      seenB[key] = true
+      local bar = Acquire(barByKey, barFree, key)
+      if bar then
+        bar:SetHeight(rh)
+        FillBar(bar, e)
+        bar.targetY = y
+        if not barSmooth[key] then barSmooth[key] = { y = y } end
+        bar:Show()
+      end
     end
     local plate = Acquire(plateByKey, plateFree, key)
     if plate then
