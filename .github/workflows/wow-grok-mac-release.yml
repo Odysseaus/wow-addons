@@ -127,7 +127,10 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
           set -euo pipefail
-          brew install create-dmg
+          # brew may be broken on new macOS (e.g. "unknown or unsupported macOS version"); hdiutil fallback below covers it
+          if ! command -v create-dmg >/dev/null 2>&1; then
+            brew install create-dmg || echo "::warning::brew install create-dmg failed; using hdiutil fallback"
+          fi
           STAGE="dist/dmg-stage"
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
