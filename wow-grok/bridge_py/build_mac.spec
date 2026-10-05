@@ -29,6 +29,7 @@ a = Analysis(
         'bridge_py.config',
         'bridge_py.first_run',
         'bridge_py.onboard_wizard',
+        'bridge_py.key_health',
         'bridge_py.install_addon',
         'bridge_py.install_slots',
         'bridge_py.protocol',
@@ -89,8 +90,8 @@ app = BUNDLE(
     icon=None,
     bundle_identifier='com.wowgrok.bridge',
     info_plist={
-        'CFBundleShortVersionString': '0.1.30',
-        'CFBundleVersion': '0.1.30',
+        'CFBundleShortVersionString': '0.1.31',
+        'CFBundleVersion': '0.1.31',
         'NSHighResolutionCapable': True,
         'LSUIElement': True,  # menu-bar agent; no Dock icon in steady state
         'NSAppleEventsUsageDescription':

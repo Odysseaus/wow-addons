@@ -30,6 +30,16 @@ STEP_LABELS = {
 # UI label → config provider id. Only live providers return a non-None id.
 PROVIDER_ROWS: tuple[dict[str, Any], ...] = (
     {
+        "id": "grok",
+        "label": "xAI (Grok)",
+        "hint": "xAI API · billed by xAI",
+        "live": True,
+        "config_provider": "xai",
+        "key_field": "apiKey",
+        "key_url": "https://console.x.ai/",
+        "key_prefix_hint": "xai-…",
+    },
+    {
         "id": "claude",
         "label": "Claude",
         "hint": "API key · billed by Anthropic",
@@ -39,60 +49,20 @@ PROVIDER_ROWS: tuple[dict[str, Any], ...] = (
         "key_url": "https://console.anthropic.com/",
         "key_prefix_hint": "Anthropic key",
     },
-    {
-        "id": "chatgpt",
-        "label": "ChatGPT",
-        "hint": "Coming soon",
-        "live": False,
-        "config_provider": None,
-        "key_field": None,
-        "key_url": None,
-        "key_prefix_hint": None,
-    },
-    {
-        "id": "grok",
-        "label": "Grok",
-        "hint": "xAI API · billed by xAI",
-        "live": True,
-        "config_provider": "xai",
-        "key_field": "apiKey",
-        "key_url": "https://console.x.ai/",
-        "key_prefix_hint": "xai-…",
-    },
-    {
-        "id": "gemini",
-        "label": "Gemini",
-        "hint": "Coming soon",
-        "live": False,
-        "config_provider": None,
-        "key_field": None,
-        "key_url": None,
-        "key_prefix_hint": None,
-    },
-    {
-        "id": "other",
-        "label": "Other",
-        "hint": "Coming soon",
-        "live": False,
-        "config_provider": None,
-        "key_field": None,
-        "key_url": None,
-        "key_prefix_hint": None,
-    },
 )
 
 
 def ui_label_to_provider(label: str) -> str | None:
     """Map a picker label (``\"Grok\"``, ``\"Claude\"``, …) to ``xai`` / ``claude``.
 
-    Returns ``None`` for Coming soon / unknown labels.
+    Returns ``None`` for unknown labels (only xAI (Grok) and Claude exist).
     """
     needle = (label or "").strip().lower()
     for row in PROVIDER_ROWS:
         if row["label"].lower() == needle:
             return row["config_provider"]
     # aliases
-    if needle in ("xai", "x.ai"):
+    if needle in ("xai", "x.ai", "grok"):
         return "xai"
     if needle in ("anthropic",):
         return "claude"
@@ -251,6 +221,10 @@ def apply_wizard_result(cfg: dict[str, Any], result: WizardResult) -> dict[str, 
         cfg["provider"] = result.provider
     if result.api_key and result.key_field:
         cfg[result.key_field] = result.api_key
+        # New key pasted → drop any invalid/expired flag for that provider.
+        from . import key_health
+
+        key_health.clear_key_invalid(cfg, result.provider or cfg.get("provider") or "xai")
     return cfg
 
 
@@ -603,9 +577,7 @@ def run_onboard_wizard(
         tk.Label(
             content,
             text=(
-                "Choose a provider and paste an API key. "
-                "ChatGPT, Gemini, and Other are listed for later — "
-                "Claude and Grok (xAI) work now."
+                "Choose xAI (Grok) or Claude and paste an API key."
             ),
             bg=_BG,
             fg=_FG_MUTED,
@@ -740,7 +712,7 @@ def run_onboard_wizard(
         def _on_continue() -> None:
             row = provider_row_by_id(state.selected_row_id)
             if row is None or not row["live"]:
-                status_var.set("That provider is coming soon — pick Claude or Grok.")
+                status_var.set("Pick xAI (Grok) or Claude.")
                 status_mark.configure(text="", fg=_FG_MUTED)
                 status_lbl.configure(fg=_FG_MUTED)
                 return

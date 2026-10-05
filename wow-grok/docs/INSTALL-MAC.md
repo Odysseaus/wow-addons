@@ -12,7 +12,7 @@ You need **macOS**, **World of Warcraft: Forever** (or another local WoW client)
 
 1. Download the Mac build from the [Releases page](https://github.com/Odysseaus/wow-addons/releases). Pick the newest **`wow-grok-mac-v…`** release (`.dmg`, or the `.app` zip). Windows builds are separate (`wow-grok-win-v…`).
 2. Open the **`.dmg`**. Finder shows **WoWGrok.app** and an **Applications** shortcut.
-3. **Drag `WoWGrok.app` onto the Applications shortcut** (or into `/Applications`). Eject the DMG. Always launch from **Applications**, not from the DMG or Downloads.
+3. **Drag `WoWGrok.app` onto the Applications shortcut** (or into `/Applications`). Eject the DMG. Always launch from **Applications** (`/Applications/WoWGrok.app` or `~/Applications/WoWGrok.app`), not from the DMG, Downloads, or an old build folder. Leftover copies under `~/wowgrok-build-*` (or other non-Applications paths) can steal Dock / Spotlight launches so you keep running an older binary even after installing a newer DMG.
 4. First open (unsigned build) — a plain double-click often only shows **Done** and does **not** launch:
    - Hold **Control** and click `WoWGrok.app` → click **Open**.
    - If macOS still blocks it, open **System Settings → Privacy & Security** and click **Open Anyway** (if shown).
@@ -21,16 +21,16 @@ You need **macOS**, **World of Warcraft: Forever** (or another local WoW client)
 ## 2. Connect your AI
 
 1. On first launch, WoWGrok opens an **in-app setup wizard** (two-pane: Download → Connect your AI → Say hi in game). You can click **Finish later** and reopen the app to finish — or use menu bar → **Setup…** any time.
-2. Under **Connect your AI**, pick a provider. **Claude** and **Grok** (xAI) work now; ChatGPT / Gemini / Other show as Coming soon.
+2. Under **Connect your AI**, pick a provider: **xAI (Grok)** (default) or **Claude**. Those are the only two providers.
 3. Click **Continue**, paste the API key for that provider, and wait for the green **"{Provider} is connected."** status:
    - Grok / xAI: create a key at [console.x.ai](https://console.x.ai/) (keys start with `xai-`).
    - Claude: create a key at [console.anthropic.com](https://console.anthropic.com/).
-   - API keys are billed per use by the provider. A Grok, ChatGPT, or Claude **chat subscription is not an API key**.
+   - API keys are billed per use by the provider. A Grok or Claude **chat subscription is not an API key**.
 4. Advance to **Say hi in game**, then **Done**. In about a minute WoWGrok writes the addon and slots into your AddOns folder.
 5. **Screen Recording** (needed so the app can read the top-left pixel strip):
    - On first launch WoWGrok may show an in-app sheet and request access so a **WoWGrok** row appears under **System Settings → Privacy & Security → Screen Recording** (or Screen & System Audio Recording). Turn **WoWGrok** ON.
    - If the app offers **Quit WoWGrok**, click it so the permission sticks, then reopen from Applications.
-6. **Leave WoWGrok running.** After first-run it sits in the **menu bar** (quiet companion; no Dock icon). It's the live bridge between WoW and your AI, not a one-time installer.
+6. **Leave WoWGrok running.** After first-run it sits in the **menu bar** (quiet companion; no Dock icon). The menu shows a disabled **WoWGrok <version>** row (for example `WoWGrok 0.1.31`) so you can confirm which binary is live — if that version does not match the DMG you just installed, Quit and reopen from `/Applications`. It's the live bridge between WoW and your AI, not a one-time installer.
 
 ## 3. Start questing
 
@@ -62,8 +62,18 @@ Only the top-left area of the WoW window where the addon draws the strip. On Mac
 **Where is my API key stored?**
 On Mac the key stays in local **`config.json`** under `~/Library/Application Support/WoWGrok/`. It stays on your Mac. It's sent only to the AI provider you chose, never to the WoW addon or Lua, and never committed to git. The `XAI_API_KEY` or `ANTHROPIC_API_KEY` environment variables override any stored key. To change or remove a key, clear `apiKey` / `claudeApiKey` in that file (or delete the file), then reopen WoWGrok.app and it will ask again. Easier: menu bar → **Setup…** and paste the new key.
 
+**I installed a new DMG but the menu still shows an old version / Setup never appears.**
+macOS Dock or Spotlight may still be launching an older binary (often from a leftover `~/wowgrok-build-*` folder) instead of `/Applications/WoWGrok.app`. Open the menu bar dropdown and check the disabled **WoWGrok <version>** row. If it is wrong, **Quit WoWGrok**, confirm `/Applications/WoWGrok.app` exists, remove or ignore old build folders, and reopen from Applications (or Spotlight after Quitting so it reindexes). You can also check `~/Library/Application Support/WoWGrok/bridge.log` for a `[startup] app_version=… executable=…` line that names the path that actually ran.
+
 **When does the setup wizard show? I already had WoWGrok set up and only got the menu bar.**
-The Connect-your-AI wizard auto-opens **once per new app version** — the first time you launch a build newer than the `lastSeenAppVersion` stored in `config.json` (missing counts as new). After you close it (Done, Finish later, or the window's close button) WoWGrok records the current app version and stays quiet on later launches of that same build. **Same version never auto-shows the wizard**, even if setup is incomplete (no key / AddOns); use menu bar → **Setup…** to reopen it, or answer the smaller sequential first-run prompts if the app asks for a key or AddOns folder. To **re-force the wizard** without renaming the whole file, Quit WoWGrok, open `~/Library/Application Support/WoWGrok/config.json`, delete the `lastSeenAppVersion` key (and any leftover `onboardWizardVersion`), save, and reopen — or just use menu bar → **Setup…**. To start completely fresh, Quit WoWGrok, rename that `config.json` (for example to `config.old.json`), and reopen the app.
+The Connect-your-AI wizard is the **only** setup UI (the old one-at-a-time provider / key / AddOns popups are gone). It auto-opens when **any** of these is true:
+
+- **New app version** — `lastSeenAppVersion` in `config.json` is missing or differs from the running app.
+- **No AI key** — the selected provider (xAI or Claude) has no key in env, `config.json`, or the keychain.
+- **Key rejected (invalid / expired)** — a quick startup check (`GET …/models`) or a real chat got an auth rejection: xAI HTTP 400 "Incorrect API key" / 401 / 403, Anthropic HTTP 401 `authentication_error`. WoWGrok remembers this as `providerKeyInvalid` in `config.json` until you paste a new key (or the key works again). Being offline, timeouts, rate limits, and 5xx **never** count as invalid.
+- **AddOns folder missing** — so the wizard (not an old popup) asks for it.
+
+Same app version + a working key stays **menu-bar only**. Closing the wizard (Done, Finish later, or the close button) records the current app version. Use menu bar → **Setup…** any time to reopen it. To skip the startup key check, set `"keyProbeOnStartup": false` in `config.json`. To **re-force the wizard** without renaming the whole file, Quit WoWGrok, open `~/Library/Application Support/WoWGrok/config.json`, delete the `lastSeenAppVersion` key (and any leftover `onboardWizardVersion`), save, and reopen — or just use menu bar → **Setup…**. To start completely fresh, Quit WoWGrok, rename that `config.json` (for example to `config.old.json`), and reopen the app.
 
 **Does it work with GeForce Now or cloud WoW?**
 No. WoWGrok must run on the same Mac as a local WoW install.
@@ -79,6 +89,7 @@ Not yet. This trunk doesn't include the in-game game-context area (`/wow-grok co
 |---------|-------------|
 | App won't launch / only shows Done | Hold **Control** → click `WoWGrok.app` → **Open**; then **System Settings → Privacy & Security → Open Anyway** if shown. |
 | No menu bar icon / no replies | Reopen from Applications and leave the menu bar companion running. Check Windowed / borderless, full WoW restart, and WoW Grok + slots enabled. |
+| Menu shows wrong version after upgrade | Quit WoWGrok; launch `/Applications/WoWGrok.app` (not DMG / Downloads / `~/wowgrok-build-*`). Confirm the disabled version row and `bridge.log` `[startup]` line. Use **Setup…** to reopen the wizard. |
 | "Missing API key" | Reopen WoWGrok.app and paste the key, or set `XAI_API_KEY` / `ANTHROPIC_API_KEY`. |
 | Addon or slots missing | Reopen WoWGrok.app so it reinstalls into AddOns, then fully quit and relaunch WoW. |
 | Capture / Screen Recording loops | Enable **WoWGrok** under Screen Recording, then **Quit and reopen** (toggle alone is not enough). |

@@ -2,7 +2,8 @@
 
 On darwin with rumps available, the bridge main thread runs a status item
 instead of a blank wait loop. First-run / install still use Tk beforehand.
-Menu: **Setup…** re-opens the onboard wizard (Connect your AI) on demand;
+Menu: a disabled **WoWGrok <version>** row (so a wrong binary is obvious),
+**Setup…** re-opens the onboard wizard (Connect your AI) on demand;
 **Quit WoWGrok**.
 
 Windows system tray: not in this release (optional future stub).
@@ -18,6 +19,20 @@ SETUP_MENU_TITLE = "Setup…"
 RESTART_EXIT_CODE = 75
 # first_run.run_setup_wizard_on_demand exit codes
 _SETUP_APPLIED = 0
+
+
+def menu_version_label(version: str | None = None) -> str:
+    """Disabled menu-row title showing the running package version.
+
+    Pure helper (no rumps): ``WoWGrok 0.1.31`` from ``bridge_py.__version__`` so a
+    wrong-binary launch (e.g. an old ``~/wowgrok-build-*`` copy) is obvious in the
+    menu bar dropdown.
+    """
+    if version is None:
+        from . import __version__ as pkg_version
+
+        version = str(pkg_version)
+    return f"WoWGrok {version}"
 
 
 def available() -> bool:
@@ -122,7 +137,11 @@ def run_status_item(
                 quit_button=None,
             )
             self._status = rumps.MenuItem("Running")
+            # Disabled row: package version (wrong-binary launches are obvious).
+            version_row = rumps.MenuItem(menu_version_label())
+            version_row.set_callback(None)
             self.menu = [
+                version_row,
                 self._status,
                 None,
                 rumps.MenuItem(SETUP_MENU_TITLE, callback=self._setup),

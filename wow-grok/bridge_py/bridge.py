@@ -601,13 +601,45 @@ def main(argv: list[str] | None = None) -> int:
                 state.setdefault("history", {})[skey] = hist
                 save_state()
                 finish(job, "done", text, session=rid)
+                _note_key_health(provider, ok=True)
             except Exception as e:  # noqa: BLE001
                 if abort["flag"]:
                     return
                 log(f"{tag} error: {e}")
                 finish(job, "error", str(e))
+                _note_key_health(provider, ok=False, err=e)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    key_flag_checked: dict[str, bool] = {}
+
+    def _note_key_health(prov: str, *, ok: bool, err: BaseException | None = None) -> None:
+        """Persist / clear config providerKeyInvalid (wizard gate). Never raises."""
+        try:
+            from . import key_health
+
+            if ok:
+                if key_flag_checked.get(prov):
+                    return
+                key_flag_checked[prov] = True
+                disk = cfgmod.load_config()
+                if disk and key_health.clear_key_invalid(disk, prov):
+                    cfgmod.save_config(disk)
+                    log(f"[key-health] {prov} key accepted — cleared invalid flag")
+                return
+            status = getattr(err, "status", None)
+            if not key_health.is_auth_failure(prov, status, str(err or "")):
+                return
+            disk = cfgmod.load_config() or {}
+            key_health.mark_key_invalid(disk, prov, status, "chat rejected key")
+            cfgmod.save_config(disk)
+            key_flag_checked[prov] = False
+            log(
+                f"[key-health] {prov} key rejected (HTTP {status}) — "
+                "wizard will reopen next launch"
+            )
+        except Exception as e2:  # noqa: BLE001
+            log(f"[key-health] flag update failed: {e2}")
 
     def submit(job: dict) -> None:
         if P.already_handled(state, job):
