@@ -56,6 +56,22 @@ end
 
 function NS.ApplyClassIcon(tex, class)
   if not tex then return end
+  if tex.SetTexCoord then tex:SetTexCoord(0, 1, 0, 1) end
+  tex:SetVertexColor(1, 1, 1, 1)
+  if class and tex.SetAtlas and C_Texture and C_Texture.GetAtlasInfo then
+    local key = string.lower(class)
+    local candidates = {
+      "classicon-" .. key,
+      "groupfinder-icon-class-" .. key,
+    }
+    local i
+    for i = 1, #candidates do
+      if C_Texture.GetAtlasInfo(candidates[i]) then
+        tex:SetAtlas(candidates[i])
+        return
+      end
+    end
+  end
   local map = nil
   if CLASS_ICON_TCOORDS and class and CLASS_ICON_TCOORDS[class] then
     map = CLASS_ICON_TCOORDS[class]

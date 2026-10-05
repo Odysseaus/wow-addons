@@ -10,20 +10,27 @@ local POLL = 0.2
 local LERP_T = 0.25
 local SCALE_MIN, SCALE_MAX = 0.6, 1.6
 local TEX_SIZE = 1024
--- ThreatFrame.tga is one 1024 square. The approved gold border is a single
--- uncropped region (not tiled, not split into corners). Black outside the
--- metal and the black center are alpha 0.
-local ART_X, ART_Y = 202, 173
-local ART_W, ART_H = 619, 677
+-- 0.1.15 art, each cropped from its approved concept (dungeon, torches, and
+-- people are not in the textures). Interiors are alpha 0 so Lua draws names,
+-- bars, marks, and the percent.
+-- Bars: gold filigree frame (ThreatFrame), full 1024 square.
 local HEADER = 26
-local FRAME_W = 320
-local FRAME_H = math.floor(FRAME_W * ART_H / ART_W + 0.5)
--- Largest rectangle inside the transparent hole of the 619x677 art.
--- Top clears the W crest (pixel 116); bottom clears the lower gem.
--- Right up to the inner metal, and the same rect for bars, plates, and dial.
-local IN_L, IN_T, IN_R, IN_B = 47 / 619, 116 / 677, 53 / 619, 94 / 677
+local FRAME_W = 328
+local FRAME_H = 328
+-- Hole fractions of the frame texture. Top clears the crest; bottom clears the
+-- lower gem; sides sit inside the rails.
+local IN_L, IN_T, IN_R, IN_B = 0.11, 0.16, 0.11, 0.18
+local DIAL_SIZE = 340
+local PLATE_W = 372
+-- ThreatPlate.tga is 1024x128 (width / height).
+local PLATE_ASPECT = 1024 / 128
+local PLATE_GAP = 5
+local PLATE_BORDER = 8
+-- Glossy fill sits in the empty stone groove (fractions of a plate, y from top).
+local GROOVE_L, GROOVE_R = 0.072, 0.928
+local GROOVE_T, GROOVE_B = 0.70, 0.875
 
-local main, content
+local main, content, art, plateBorder
 local barsLayer, platesLayer, dialLayer
 local banner, modeBtn, plusBtn, minusBtn
 local barByKey, barFree = {}, {}
@@ -33,15 +40,18 @@ local barSmooth, plateSmooth, markSmooth = {}, {}, {}
 local dial = {}
 local pollAcc = 0
 local dialVis = { angle = 180, target = 180, ready = false }
--- Arc midline radius / half the dial texture. Percent anchor is an
--- offset from texture center as a fraction of the texture (y down).
--- Uniform 768 -> 1024 resample, so the fraction is unchanged.
-local ARC_FRAC = 0.658
--- Full needle texture. Hub is the texture center; the opaque tip is at the
--- top. DialRadius already returns the arc radius, and UpdateNeedle draws the
--- texture at h = radius * 2, so the tip meets the arc and stays inside the frame.
+-- Arc midline radius / half the dial texture (skull ring from the approved dial).
+-- 0% is left, 50% up, 100% right. The arc is that upper semicircle.
+local ARC_FRAC = 0.670
+-- Sword cut from the dial concept. Hub is the texture center; the blade points
+-- up. The opaque tip is 7px below the top of the 1024 texture (reach 505/512),
+-- so UpdateNeedle lengthens the quad slightly and the tip meets the arc
+-- without passing the ring. Not tinted.
 local NEEDLE_TEX_W, NEEDLE_TEX_H = 1024, 1024
-local PCT_OX, PCT_OY = 0.0072, 0.1379
+local NEEDLE_TIP_REACH = 505 / 512
+-- Percent sits in the lower interior, under the hub and above the bottom skull.
+-- y is down, as a fraction of the dial face.
+local PCT_OX, PCT_OY = 0.0, 0.20
 local built = false
 -- Drag is allowed only after EventRegistry fires EditMode.Enter, and only
 -- while EditModeManagerFrame exists. A saved lock flag never enables drag.
@@ -96,24 +106,34 @@ local function ClassRGB(class)
   return 0.85, 0.85, 0.85
 end
 
-local function Heat(rank, n)
-  local t = 0
-  if n > 1 then t = (rank - 1) / (n - 1) end
+-- Threat color, not class color. High is red, mid orange/gold, low dark gold.
+local THREAT_STOPS = {
+  { 0.00, 0.42, 0.24, 0.08 },
+  { 0.18, 0.58, 0.36, 0.09 },
+  { 0.40, 0.86, 0.62, 0.14 },
+  { 0.62, 0.93, 0.46, 0.08 },
+  { 0.82, 0.78, 0.20, 0.05 },
+  { 1.00, 0.62, 0.06, 0.04 },
+}
+
+local function ThreatRGB(pct)
+  local t = (pct or 0) / 100
   if t < 0 then t = 0 end
   if t > 1 then t = 1 end
-  local r, g, b
-  if t < 0.5 then
-    local u = t / 0.5
-    r = 1
-    g = 0.12 + (0.50 - 0.12) * u
-    b = 0.05 * (1 - u)
-  else
-    local u = (t - 0.5) / 0.5
-    r = 1
-    g = 0.50 + (0.86 - 0.50) * u
-    b = 0
+  local i = 1
+  local n = #THREAT_STOPS
+  while i < n and THREAT_STOPS[i + 1][1] < t do
+    i = i + 1
   end
-  return r, g, b
+  local a = THREAT_STOPS[i]
+  local b = THREAT_STOPS[i]
+  if i < n then b = THREAT_STOPS[i + 1] end
+  local span = b[1] - a[1]
+  local u = 0
+  if span > 0 then u = (t - a[1]) / span end
+  if u < 0 then u = 0 end
+  if u > 1 then u = 1 end
+  return a[2] + (b[2] - a[2]) * u, a[3] + (b[3] - a[3]) * u, a[4] + (b[4] - a[4]) * u
 end
 
 local function PctNumber(e)
@@ -205,9 +225,11 @@ end
 local function RowPitch()
   local ch = content and content:GetHeight() or 0
   if not ch or ch < 40 then ch = FRAME_H * 0.70 end
+  local m = string.lower(tostring((NS.db and NS.db.mode) or 'bars'))
   local gap = 2
+  if m == 'plates' then gap = PLATE_GAP end
   local rh = (ch - gap * (ROW_N - 1)) / ROW_N
-  if rh < 12 then rh = 12 end
+  if rh < 8 then rh = 8 end
   return rh, gap
 end
 
@@ -252,6 +274,12 @@ local function MakeMiniButton(parent, name, label, w)
   return b
 end
 
+local TEX_FILL = 'Interface\\AddOns\\WoWThreat\\Textures\\BarFill'
+local TEX_SHINE = 'Interface\\AddOns\\WoWThreat\\Textures\\BarShine'
+local TEX_PLATE = 'Interface\\AddOns\\WoWThreat\\Textures\\ThreatPlate'
+local TEX_DIAMOND = 'Interface\\AddOns\\WoWThreat\\Textures\\Diamond'
+local TEX_GOLD = 'Interface\\AddOns\\WoWThreat\\Textures\\GoldLine'
+
 local function CreateBarRow(parent)
   local row = CreateFrame('Frame', nil, parent)
   row:SetHeight(16)
@@ -260,39 +288,84 @@ local function CreateBarRow(parent)
   icon:SetPoint('LEFT', row, 'LEFT', 0, 0)
   icon:SetTexture('Interface\\Icons\\INV_Misc_QuestionMark')
   local nameFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
-  nameFS:SetPoint('LEFT', icon, 'RIGHT', 2, 0)
-  nameFS:SetWidth(64)
+  nameFS:SetPoint('LEFT', icon, 'RIGHT', 3, 0)
+  nameFS:SetWidth(72)
   nameFS:SetJustifyH('LEFT')
   nameFS:SetWordWrap(false)
+  nameFS:SetTextColor(0.96, 0.91, 0.78)
   local pctFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
   pctFS:SetPoint('RIGHT', row, 'RIGHT', 0, 0)
-  pctFS:SetWidth(42)
+  pctFS:SetWidth(36)
   pctFS:SetJustifyH('RIGHT')
-  pctFS:SetTextColor(1, 0.95, 0.8)
-  local bar = CreateFrame('StatusBar', nil, row)
-  bar:SetPoint('LEFT', nameFS, 'RIGHT', 3, 0)
-  bar:SetPoint('RIGHT', pctFS, 'LEFT', -3, 0)
-  bar:SetHeight(11)
-  bar:SetStatusBarTexture('Interface\\TargetingFrame\\UI-StatusBar')
-  bar:SetMinMaxValues(0, 100)
-  bar:SetValue(0)
-  local bg = bar:CreateTexture(nil, 'BACKGROUND')
-  bg:SetAllPoints()
-  bg:SetTexture('Interface\\Buttons\\WHITE8X8')
-  bg:SetVertexColor(0, 0, 0, 0.55)
-  local tick = bar:CreateTexture(nil, 'OVERLAY')
-  tick:SetTexture('Interface\\Buttons\\WHITE8X8')
-  tick:SetVertexColor(1, 1, 1, 1)
-  tick:SetWidth(2)
-  tick:SetPoint('TOPRIGHT', bar, 'TOPRIGHT', 0, 1)
-  tick:SetPoint('BOTTOMRIGHT', bar, 'BOTTOMRIGHT', 0, -1)
+  pctFS:SetTextColor(0.96, 0.91, 0.78)
+  local slot = CreateFrame('Frame', nil, row)
+  slot:SetPoint('LEFT', nameFS, 'RIGHT', 4, 0)
+  slot:SetPoint('RIGHT', pctFS, 'LEFT', -4, 0)
+  slot:SetHeight(12)
+  local rim = slot:CreateTexture(nil, 'BACKGROUND')
+  rim:SetPoint('TOPLEFT', -1, 1)
+  rim:SetPoint('BOTTOMRIGHT', 1, -1)
+  rim:SetTexture('Interface\\Buttons\\WHITE8X8')
+  rim:SetVertexColor(0.45, 0.32, 0.10, 0.95)
+  local track = slot:CreateTexture(nil, 'BORDER')
+  track:SetPoint('TOPLEFT', 1, -1)
+  track:SetPoint('BOTTOMRIGHT', -1, 1)
+  track:SetTexture('Interface\\Buttons\\WHITE8X8')
+  track:SetVertexColor(0.05, 0.04, 0.03, 0.92)
+  local fill = slot:CreateTexture(nil, 'ARTWORK')
+  fill:SetTexture(TEX_FILL)
+  fill:SetPoint('LEFT', slot, 'LEFT', 1, 0)
+  fill:SetWidth(1)
+  fill:SetHeight(8)
+  local shine = slot:CreateTexture(nil, 'OVERLAY')
+  shine:SetTexture(TEX_SHINE)
+  shine:SetBlendMode('ADD')
+  shine:SetPoint('LEFT', slot, 'LEFT', 1, 0)
+  shine:SetWidth(1)
+  shine:SetHeight(8)
+  shine:SetAlpha(0.9)
   row.icon = icon
   row.nameFS = nameFS
   row.pctFS = pctFS
-  row.bar = bar
-  row.tick = tick
+  row.slot = slot
+  row.fill = fill
+  row.shine = shine
+  row.pctValue = 0
   row:Hide()
   return row
+end
+
+local function LayoutBarFill(row)
+  if not row.slot then return end
+  local rh = row:GetHeight() or 16
+  local sh = rh * 0.42
+  if sh < 6 then sh = 6 end
+  if sh > 18 then sh = 18 end
+  row.slot:SetHeight(sh)
+  local icon = rh * 0.70
+  if icon < 10 then icon = 10 end
+  if icon > 22 then icon = 22 end
+  row.icon:SetSize(icon, icon)
+  local sw = row.slot:GetWidth() or 0
+  local inner = sw - 2
+  if inner < 0 then inner = 0 end
+  local pct = row.pctValue or 0
+  if pct < 0 then pct = 0 end
+  if pct > 100 then pct = 100 end
+  local fw = inner * pct / 100
+  local fh = sh - 2
+  if fh < 2 then fh = 2 end
+  row.fill:SetHeight(fh)
+  row.shine:SetHeight(fh)
+  if fw < 0.5 then
+    row.fill:Hide()
+    row.shine:Hide()
+  else
+    row.fill:Show()
+    row.shine:Show()
+    row.fill:SetWidth(fw)
+    row.shine:SetWidth(fw)
+  end
 end
 
 local function CreatePlate(parent)
@@ -300,43 +373,77 @@ local function CreatePlate(parent)
   row:SetHeight(18)
   local bg = row:CreateTexture(nil, 'BACKGROUND')
   bg:SetAllPoints()
-  bg:SetTexture('Interface\\Buttons\\WHITE8X8')
-  bg:SetVertexColor(0.4, 0.15, 0.05, 0.92)
-  local edge = row:CreateTexture(nil, 'BORDER')
-  edge:SetPoint('TOPLEFT', -1, 1)
-  edge:SetPoint('BOTTOMRIGHT', 1, -1)
-  edge:SetTexture('Interface\\Buttons\\WHITE8X8')
-  edge:SetVertexColor(0.85, 0.68, 0.22, 0.95)
-  local inner = row:CreateTexture(nil, 'ARTWORK')
-  inner:SetPoint('TOPLEFT', 1, -1)
-  inner:SetPoint('BOTTOMRIGHT', -1, 1)
-  inner:SetTexture('Interface\\Buttons\\WHITE8X8')
-  local glow = row:CreateTexture(nil, 'OVERLAY')
-  glow:SetPoint('TOPLEFT', -6, 6)
-  glow:SetPoint('BOTTOMRIGHT', 6, -6)
-  glow:SetTexture('Interface\\Buttons\\UI-ActionButton-Border')
-  glow:SetBlendMode('ADD')
-  glow:SetAlpha(0.85)
+  bg:SetTexture(TEX_PLATE)
   local nameFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
-  nameFS:SetPoint('CENTER', row, 'CENTER', 0, 0)
   nameFS:SetJustifyH('CENTER')
   nameFS:SetWordWrap(false)
-  row.bg = inner
-  row.glow = glow
+  nameFS:SetTextColor(0.93, 0.88, 0.74)
+  local pctFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+  pctFS:SetJustifyH('RIGHT')
+  pctFS:SetTextColor(0.93, 0.88, 0.74)
+  local fill = row:CreateTexture(nil, 'ARTWORK')
+  fill:SetTexture(TEX_FILL)
+  local shine = row:CreateTexture(nil, 'OVERLAY')
+  shine:SetTexture(TEX_SHINE)
+  shine:SetBlendMode('ADD')
+  shine:SetAlpha(0.85)
+  row.bg = bg
   row.nameFS = nameFS
+  row.pctFS = pctFS
+  row.fill = fill
+  row.shine = shine
+  row.pctValue = 0
   row:Hide()
   return row
 end
 
+local function LayoutPlate(row)
+  local rh = row:GetHeight() or 18
+  local rw = row:GetWidth() or 0
+  if rw < 8 then return end
+  local nameY = rh * 0.16
+  row.nameFS:ClearAllPoints()
+  row.nameFS:SetPoint('CENTER', row, 'CENTER', 0, nameY)
+  row.nameFS:SetWidth(rw * 0.55)
+  row.pctFS:ClearAllPoints()
+  row.pctFS:SetPoint('RIGHT', row, 'RIGHT', -rw * 0.045, nameY)
+  row.pctFS:SetWidth(rw * 0.16)
+  local gy = rh * (0.5 - (GROOVE_T + GROOVE_B) / 2)
+  local gh = rh * (GROOVE_B - GROOVE_T)
+  if gh < 3 then gh = 3 end
+  local gx = rw * GROOVE_L
+  local gw = rw * (GROOVE_R - GROOVE_L)
+  local pct = row.pctValue or 0
+  if pct < 0 then pct = 0 end
+  if pct > 100 then pct = 100 end
+  local fw = gw * pct / 100
+  row.fill:ClearAllPoints()
+  row.shine:ClearAllPoints()
+  row.fill:SetPoint('LEFT', row, 'LEFT', gx, gy)
+  row.shine:SetPoint('LEFT', row, 'LEFT', gx, gy)
+  row.fill:SetHeight(gh)
+  row.shine:SetHeight(gh)
+  if fw < 0.5 then
+    row.fill:Hide()
+    row.shine:Hide()
+  else
+    row.fill:Show()
+    row.shine:Show()
+    row.fill:SetWidth(fw)
+    row.shine:SetWidth(fw)
+  end
+end
+
 local function CreateMarker(parent)
   local m = CreateFrame('Frame', nil, parent)
-  m:SetSize(90, 14)
+  m:SetSize(90, 16)
   local icon = m:CreateTexture(nil, 'OVERLAY')
-  icon:SetSize(14, 14)
-  icon:SetTexture('Interface\\Icons\\INV_Misc_QuestionMark')
+  icon:SetSize(12, 12)
+  icon:SetTexture(TEX_DIAMOND)
   local nameFS = m:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
   nameFS:SetWordWrap(false)
   nameFS:SetWidth(70)
+  nameFS:SetTextColor(0.96, 0.93, 0.84)
   m.icon = icon
   m.nameFS = nameFS
   m:Hide()
@@ -352,7 +459,7 @@ local function PlaceMarker(marker, angle, radius)
   marker.icon:ClearAllPoints()
   marker.nameFS:ClearAllPoints()
   marker.icon:SetPoint('CENTER', marker, 'CENTER', 0, 0)
-  -- Name sits just inside the arc, toward the hub, so the crest does not clip it.
+  -- Name sits just inside the arc, toward the hub.
   if c > 0.45 then
     marker.nameFS:SetPoint('RIGHT', marker.icon, 'LEFT', -2, 0)
     marker.nameFS:SetJustifyH('RIGHT')
@@ -371,13 +478,15 @@ local function UpdateNeedle(angle, length)
     for i = 1, n do
       dial.segs[i]:Hide()
     end
-    local h = length * 2
+    local reach = NEEDLE_TIP_REACH
+    if not reach or reach < 0.5 then reach = 1 end
+    local h = (length * 2) / reach
     if h < 2 then h = 2 end
     dial.needle:Show()
+    -- Sword art is already gold. Do not tint it.
     dial.needle:SetVertexColor(1, 1, 1, 1)
     dial.needle:ClearAllPoints()
     dial.needle:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
-    -- Width follows the real texture aspect so the hub stays on the dial center.
     dial.needle:SetSize(h * (NEEDLE_TEX_W / NEEDLE_TEX_H), h)
     dial.needle:SetRotation(math.rad(angle - 90))
     return
@@ -399,32 +508,43 @@ local function UpdateNeedle(angle, length)
 end
 
 local function FillBar(row, e)
-  local r, g, b = ClassRGB(e.class)
   ApplyIcon(row.icon, e.class)
   row.nameFS:SetText(DisplayName(e))
-  row.nameFS:SetTextColor(r, g, b)
-  row.bar:SetStatusBarColor(r, g, b, 1)
+  row.nameFS:SetTextColor(0.96, 0.91, 0.78)
   local pct = e.pct or 0
   local v = pct
   if v < 0 then v = 0 end
   if v > 100 then v = 100 end
-  row.bar:SetValue(v)
-  row.pctFS:SetText(string.format('%d%%', math.floor(pct + 0.5)))
+  row.pctValue = v
+  local tr, tg, tb = ThreatRGB(v)
+  row.fill:SetVertexColor(tr, tg, tb, 1)
+  row.shine:SetVertexColor(1, 0.97, 0.90, 0.95)
+  row.pctFS:SetText(string.format('%d', math.floor(pct + 0.5)))
+  LayoutBarFill(row)
 end
 
 local function FillPlate(row, e, rank, n)
-  local hr, hg, hb = Heat(rank, n)
-  row.bg:SetVertexColor(hr * 0.55, hg * 0.45, hb * 0.35, 0.95)
-  row.glow:SetVertexColor(hr, hg, hb, 0.9)
+  local pct = e.pct or 0
+  local v = pct
+  if v < 0 then v = 0 end
+  if v > 100 then v = 100 end
+  row.pctValue = v
+  local tr, tg, tb = ThreatRGB(v)
+  row.fill:SetVertexColor(tr, tg, tb, 1)
+  row.shine:SetVertexColor(1, 0.97, 0.88, 0.9)
   row.nameFS:SetText(DisplayName(e))
-  row.nameFS:SetTextColor(1, 0.95, 0.85)
+  row.nameFS:SetTextColor(0.94, 0.89, 0.76)
+  row.pctFS:SetText(string.format('%d', math.floor(pct + 0.5)))
+  LayoutPlate(row)
 end
 
 local function FillMarker(row, e)
   local r, g, b = ClassRGB(e.class)
-  ApplyIcon(row.icon, e.class)
+  row.icon:SetTexture(TEX_DIAMOND)
+  row.icon:SetTexCoord(0, 1, 0, 1)
+  row.icon:SetVertexColor(r, g, b, 1)
   row.nameFS:SetText(DisplayName(e))
-  row.nameFS:SetTextColor(r, g, b)
+  row.nameFS:SetTextColor(0.96, 0.93, 0.84)
 end
 
 local function AngleFor(e, rank, n)
@@ -503,28 +623,23 @@ local function DialRadius()
   local sz = cw
   if ch < sz then sz = ch end
   local face = sz
-  dial.face:SetSize(face, face)
+  if dial.face then dial.face:Hide() end
   dial.hub:ClearAllPoints()
   dial.hub:SetPoint('CENTER', content, 'CENTER', 0, 0)
   local radius = face * 0.5 * ARC_FRAC
   local px = PCT_OX * face
   local py = -PCT_OY * face
-  if dial.pct and dial.pctSign then
-    local nw = dial.pct:GetStringWidth() or 0
-    local sw = dial.pctSign:GetStringWidth() or 0
-    if not nw or nw < 1 then nw = 36 end
-    if not sw or sw < 1 then sw = 18 end
-    local left = px - (nw + sw) / 2
-    dial.pct:ClearAllPoints()
-    dial.pct:SetPoint('LEFT', dial.hub, 'CENTER', left, py)
-    dial.pctSign:ClearAllPoints()
-    dial.pctSign:SetPoint('LEFT', dial.pct, 'RIGHT', 0, 0)
-  elseif dial.pct then
+  if dial.pct then
     dial.pct:ClearAllPoints()
     dial.pct:SetPoint('CENTER', dial.hub, 'CENTER', px, py)
   end
+  if dial.pctSign and dial.pct then
+    dial.pctSign:ClearAllPoints()
+    dial.pctSign:SetPoint('TOP', dial.pct, 'BOTTOM', 0, 1)
+  end
   return radius
 end
+
 
 RefreshData = function()
   if not built then return end
@@ -565,6 +680,7 @@ local function Animate(elapsed)
         row:ClearAllPoints()
         row:SetPoint('TOPLEFT', content, 'TOPLEFT', 0, st.y)
         row:SetPoint('TOPRIGHT', content, 'TOPRIGHT', 0, st.y)
+        LayoutBarFill(row)
       end
     end
   end
@@ -576,6 +692,7 @@ local function Animate(elapsed)
         row:ClearAllPoints()
         row:SetPoint('TOPLEFT', content, 'TOPLEFT', 0, st.y)
         row:SetPoint('TOPRIGHT', content, 'TOPRIGHT', 0, st.y)
+        LayoutPlate(row)
       end
     end
   end
@@ -780,16 +897,57 @@ function NS.ApplyLayout()
   NS.ApplyLock()
 end
 
+local function ApplyFrame(m)
+  if not main or not art or not content then return end
+  local aw, ah
+  if m == 'dial' then
+    aw, ah = DIAL_SIZE, DIAL_SIZE
+  elseif m == 'plates' then
+    local ph = PLATE_W / PLATE_ASPECT
+    local stack = ph * ROW_N + PLATE_GAP * (ROW_N - 1)
+    aw = PLATE_W + PLATE_BORDER * 2
+    ah = stack + PLATE_BORDER * 2
+  else
+    aw, ah = FRAME_W, FRAME_H
+  end
+  main:SetSize(aw, ah + HEADER)
+  art:ClearAllPoints()
+  art:SetPoint('TOPLEFT', main, 'TOPLEFT', 0, -HEADER)
+  art:SetSize(aw, ah)
+  art:SetTexCoord(0, 1, 0, 1)
+  if m == 'dial' then
+    art:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatDial')
+    art:Show()
+    content:ClearAllPoints()
+    content:SetAllPoints(art)
+  elseif m == 'plates' then
+    art:Hide()
+    content:ClearAllPoints()
+    content:SetPoint('TOPLEFT', main, 'TOPLEFT', PLATE_BORDER, -(HEADER + PLATE_BORDER))
+    content:SetPoint('BOTTOMRIGHT', main, 'BOTTOMRIGHT', -PLATE_BORDER, PLATE_BORDER)
+  else
+    art:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatFrame')
+    art:Show()
+    content:ClearAllPoints()
+    content:SetPoint('TOPLEFT', art, 'TOPLEFT', aw * IN_L, -ah * IN_T)
+    content:SetPoint('BOTTOMRIGHT', art, 'BOTTOMRIGHT', -aw * IN_R, ah * IN_B)
+  end
+  if plateBorder then
+    if m == 'plates' then plateBorder:Show() else plateBorder:Hide() end
+  end
+end
+
 function NS.ApplyMode()
   if not barsLayer then return end
   local m = string.lower(tostring((NS.db and NS.db.mode) or 'bars'))
   if m ~= 'bars' and m ~= 'plates' and m ~= 'dial' then m = 'bars' end
   if NS.db then NS.db.mode = m end
+  ApplyFrame(m)
   if m == 'bars' then barsLayer:Show() else barsLayer:Hide() end
   if m == 'plates' then platesLayer:Show() else platesLayer:Hide() end
   if m == 'dial' then
     dialLayer:Show()
-    if dial.face then dial.face:Show() end
+    if dial.face then dial.face:Hide() end
     if dial.pct then dial.pct:Show() end
     if dial.pctSign then dial.pctSign:Show() end
   else
@@ -808,6 +966,7 @@ function NS.ApplyMode()
   if modeBtn then modeBtn:SetText(ModeWord()) end
   RefreshData()
 end
+
 
 function NS.RefreshChrome()
   if not main then return end
@@ -849,14 +1008,14 @@ local function Build()
 
   main:SetSize(FRAME_W, FRAME_H + HEADER)
 
-  local art = main:CreateTexture(nil, 'BACKGROUND')
+  art = main:CreateTexture(nil, 'BACKGROUND')
   art:SetPoint('TOPLEFT', main, 'TOPLEFT', 0, -HEADER)
   art:SetSize(FRAME_W, FRAME_H)
   art:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatFrame')
-  art:SetTexCoord(ART_X / TEX_SIZE, (ART_X + ART_W) / TEX_SIZE, ART_Y / TEX_SIZE, (ART_Y + ART_H) / TEX_SIZE)
+  art:SetTexCoord(0, 1, 0, 1)
 
   modeBtn = MakeMiniButton(main, 'WoWThreatModeButton', 'Bars', 92)
-  modeBtn:SetPoint('TOPLEFT', art, 'TOPLEFT', 0, HEADER)
+  modeBtn:SetPoint('TOPLEFT', main, 'TOPLEFT', 2, -2)
   modeBtn:SetScript('OnClick', function()
     if NS.CycleMode then NS.CycleMode() end
     if NS.ApplyMode then NS.ApplyMode() end
@@ -864,7 +1023,7 @@ local function Build()
   end)
 
   plusBtn = MakeMiniButton(main, 'WoWThreatPlusButton', '+', 24)
-  plusBtn:SetPoint('TOPRIGHT', art, 'TOPRIGHT', 0, HEADER)
+  plusBtn:SetPoint('TOPRIGHT', main, 'TOPRIGHT', -2, -2)
   plusBtn:SetScript('OnClick', function() AdjustScale(0.1) end)
   minusBtn = MakeMiniButton(main, 'WoWThreatMinusButton', '-', 24)
   minusBtn:SetPoint('RIGHT', plusBtn, 'LEFT', -4, 0)
@@ -883,6 +1042,28 @@ local function Build()
   content:SetPoint('TOPLEFT', art, 'TOPLEFT', FRAME_W * IN_L, -FRAME_H * IN_T)
   content:SetPoint('BOTTOMRIGHT', art, 'BOTTOMRIGHT', -FRAME_W * IN_R, FRAME_H * IN_B)
   content:SetClipsChildren(true)
+  plateBorder = CreateFrame('Frame', nil, main)
+  local edgeTop = plateBorder:CreateTexture(nil, 'ARTWORK')
+  edgeTop:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\GoldLine')
+  edgeTop:SetPoint('BOTTOMLEFT', content, 'TOPLEFT', -3, 0)
+  edgeTop:SetPoint('BOTTOMRIGHT', content, 'TOPRIGHT', 3, 0)
+  edgeTop:SetHeight(3)
+  local edgeBot = plateBorder:CreateTexture(nil, 'ARTWORK')
+  edgeBot:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\GoldLine')
+  edgeBot:SetPoint('TOPLEFT', content, 'BOTTOMLEFT', -3, 0)
+  edgeBot:SetPoint('TOPRIGHT', content, 'BOTTOMRIGHT', 3, 0)
+  edgeBot:SetHeight(3)
+  local edgeLeft = plateBorder:CreateTexture(nil, 'ARTWORK')
+  edgeLeft:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\GoldLine')
+  edgeLeft:SetPoint('TOPRIGHT', content, 'TOPLEFT', 0, 3)
+  edgeLeft:SetPoint('BOTTOMRIGHT', content, 'BOTTOMLEFT', 0, -3)
+  edgeLeft:SetWidth(3)
+  local edgeRight = plateBorder:CreateTexture(nil, 'ARTWORK')
+  edgeRight:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\GoldLine')
+  edgeRight:SetPoint('TOPLEFT', content, 'TOPRIGHT', 0, 3)
+  edgeRight:SetPoint('BOTTOMLEFT', content, 'BOTTOMRIGHT', 0, -3)
+  edgeRight:SetWidth(3)
+  plateBorder:Hide()
 
   banner = content:CreateFontString(nil, 'OVERLAY', 'GameFontNormalSmall')
   banner:SetPoint('TOP', content, 'TOP', 0, 0)
@@ -911,19 +1092,19 @@ local function Build()
 
   dial.face = dialLayer:CreateTexture(nil, 'BACKGROUND')
   dial.face:SetPoint('CENTER', dial.hub, 'CENTER', 0, 0)
-  dial.face:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatDial')
-  dial.face:SetSize(150, 150)
+  dial.face:Hide()
+  dial.face:SetSize(4, 4)
 
   local read = CreateFrame('Frame', nil, dialLayer)
   read:SetAllPoints()
   read:SetFrameLevel((dialLayer:GetFrameLevel() or 1) + 6)
   dial.pct = read:CreateFontString(nil, 'OVERLAY')
-  dial.pct:SetFont('Fonts\\FRIZQT__.TTF', 32, '')
-  dial.pct:SetTextColor(0.96, 0.91, 0.78, 1)
+  dial.pct:SetFont('Fonts\\FRIZQT__.TTF', 36, '')
+  dial.pct:SetTextColor(0.95, 0.82, 0.42, 1)
   dial.pct:SetText('0')
   dial.pctSign = read:CreateFontString(nil, 'OVERLAY')
-  dial.pctSign:SetFont('Fonts\\FRIZQT__.TTF', 32, '')
-  dial.pctSign:SetTextColor(0.86, 0.16, 0.12, 1)
+  dial.pctSign:SetFont('Fonts\\FRIZQT__.TTF', 18, '')
+  dial.pctSign:SetTextColor(0.95, 0.82, 0.42, 1)
   dial.pctSign:SetText('%')
 
   dial.needle = dialLayer:CreateTexture(nil, 'OVERLAY')
