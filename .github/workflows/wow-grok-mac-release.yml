@@ -142,13 +142,13 @@ jobs:
           - Bridge/app capture: **0.1.19** capture_mac (CG strip / screencapture -l) + permissionPaused resume smoke.
           - **Not included:** GameContext / ContextToSend / RecordFor ctx / hello ctx / `/wow-grok context` / SafeReload-on-Send / loadfile Inbox / SetScale(1) / capturePaused chat UX from 0.1.14–0.1.20.
 
-          ### Install
-          1. Quit any old WoWGrok process.
-          2. Open the DMG, drag WoWGrok.app to Applications, then eject.
-          3. Hold Control, click, Open if Gatekeeper warns.
-          4. Enter API key, confirm AddOns, wait for slot install.
-          5. When the Screen Recording sheet appears, enable WoWGrok in System Settings, Quit from the sheet, then reopen.
-          6. Leave WoWGrok running (menu bar) while you play. Type /wow-grok or /grok in game chat.
+          ### Set up in 2 to 3 minutes
+          1. **Download the app and addon.** Open the DMG, drag \`WoWGrok.app\` to Applications, then eject. Gatekeeper (unsigned): **Control-click → Open**, then **Open Anyway** if shown. Confirm your AddOns folder — the app creates the addon and reply slots.
+          2. **Connect your AI.** Choose xAI (Enter = default) or Claude, paste that API key, and wait for **Done**. Grant **Screen Recording**, Quit/reopen once if offered, then leave the **menu bar** companion running. The key stays in local \`config.json\` under Application Support.
+          3. **Start questing.** Use Windowed or Windowed (Fullscreen) / borderless, fully restart Forever, enable WoW Grok, and type \`/wow-grok\` or \`/grok\`.
+
+          When you are done later, menu bar → **Quit WoWGrok** (stops the app; not part of opening or using the AddOn).
+          Full guide and fair questions: https://github.com/Odysseaus/wow-addons/blob/main/wow-grok/docs/INSTALL-MAC.md
 
           Zip of .app is also attached for convenience.
           MD

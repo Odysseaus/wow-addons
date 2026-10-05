@@ -10,6 +10,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - First-run GUI (Mac app / Windows exe, shared `first_run.py`) prompts for **xAI or Claude**; Enter / default button keeps xAI. Choosing Claude without a key asks for the Anthropic key in the same setup flow.
 - Windows: API keys (`apiKey`, `claudeApiKey`) are stored in **Windows Credential Manager** (generic credentials `WoWGrok/apiKey`, `WoWGrok/claudeApiKey`, via advapi32 `CredWriteW`/`CredReadW`; no new dependency). Saving config moves a non-empty key into Credential Manager, checks the read-back, and only then blanks it in `config.json`. Existing installs migrate on the next launch, and if the write fails the key stays in `config.json`. Lookup order: env var, then `config.json`, then Credential Manager. Keys are never logged. Mac and Linux are unchanged (`config.json`).
 - Windows install docs rewritten as **Set up in 2 to 3 minutes** (download the app, paste an API key, log in and play), with fair questions covering SmartScreen (unsigned: More info → Run anyway), why the desktop app and the top-left pixel bar exist, Windowed / Windowed (Fullscreen), and where the key is stored.
+- Mac install docs rewritten as **Set up in 2 to 3 minutes** (download the app and addon, connect your AI, start questing), with fair questions covering Gatekeeper (Control-click → Open / Open Anyway), Screen Recording + Quit/reopen, why the desktop app and the top-left pixel bar exist, Windowed / borderless, and where the key is stored (`config.json` in Application Support).
 
 ### Changed
 

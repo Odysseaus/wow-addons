@@ -1,11 +1,82 @@
-# Install on Mac (players)
+# WoW Grok on Mac: set up in 2 to 3 minutes
 
-Use the packaged **`.dmg`** (drag **WoWGrok.app** to the Applications shortcut) or the `.app` zip — no Node.js, npm, or Python required.
+One download, no Node.js, npm, Python, or terminal. **WoWGrok.app** is the desktop companion *and* the addon installer. It writes the WoW Grok addon into your WoW folder for you, so there is no separate addon zip to unzip.
 
-After first-run, WoWGrok lives in the **menu bar** (quiet companion). Leave it running while you play; Quit from the menu (exits menu bar + bridge + capture).
+You need **macOS**, **World of Warcraft: Forever** (or another local WoW client) installed on the **same Mac**, and an **API key** from xAI (the default) or Anthropic (Claude, optional).
 
-Full player steps: [INSTALL-USERS.md](INSTALL-USERS.md).
+> **Not supported:** GeForce Now, Shadow, or any cloud or streaming WoW. The app has to run on the same Mac as a normal local WoW install.
 
-Grant **Screen Recording** to the app under System Settings → Privacy & Security → Screen Recording. First launch may prompt and must list **WoWGrok** in that Settings pane; enable it, then **Quit and reopen** from Applications.
+---
 
-Developers / from source: [DEV.md](DEV.md).
+## 1. Download the app and addon
+
+1. Download the Mac build from the [Releases page](https://github.com/Odysseaus/wow-addons/releases). Pick the newest **`wow-grok-mac-v…`** release (`.dmg`, or the `.app` zip). Windows builds are separate (`wow-grok-win-v…`).
+2. Open the **`.dmg`**. Finder shows **WoWGrok.app** and an **Applications** shortcut.
+3. **Drag `WoWGrok.app` onto the Applications shortcut** (or into `/Applications`). Eject the DMG. Always launch from **Applications**, not from the DMG or Downloads.
+4. First open (unsigned build) — a plain double-click often only shows **Done** and does **not** launch:
+   - Hold **Control** and click `WoWGrok.app` → click **Open**.
+   - If macOS still blocks it, open **System Settings → Privacy & Security** and click **Open Anyway** (if shown).
+5. Confirm your WoW **Interface/AddOns** folder. WoWGrok looks for it automatically and shows a folder picker if it finds none or several. The app creates the `WoWGrok` addon and reply slots (`WoWGrok_S001`–`WoWGrok_S200`) for you — don't copy any folders yourself.
+
+## 2. Connect your AI
+
+1. Choose **xAI (Grok)** or **Claude**. Pressing Enter (the default button) keeps **xAI**.
+2. Paste the key for that provider:
+   - xAI: create one at [console.x.ai](https://console.x.ai/) (keys start with `xai-`).
+   - Claude: create one at [console.anthropic.com](https://console.anthropic.com/).
+   - API keys are billed per use by the provider. A Grok, ChatGPT, or Claude **chat subscription is not an API key**.
+3. Wait for **Done**. In about a minute WoWGrok writes the addon and slots into your AddOns folder.
+4. **Screen Recording** (needed so the app can read the top-left pixel strip):
+   - On first launch WoWGrok may show an in-app sheet and request access so a **WoWGrok** row appears under **System Settings → Privacy & Security → Screen Recording** (or Screen & System Audio Recording). Turn **WoWGrok** ON.
+   - If the app offers **Quit WoWGrok**, click it so the permission sticks, then reopen from Applications.
+5. **Leave WoWGrok running.** After first-run it sits in the **menu bar** (quiet companion; no Dock icon). It's the live bridge between WoW and your AI, not a one-time installer.
+
+## 3. Start questing
+
+1. Set WoW to **Windowed** or **Windowed (Fullscreen)** / borderless. Exclusive **Fullscreen** blocks the screen read.
+2. If Forever / WoW was already open, **fully quit and relaunch** it. `/reload` doesn't pick up new AddOns.
+3. At character select, open **AddOns**, enable **WoW Grok**, and leave the `WoW Grok slot ###` entries enabled.
+4. Log in and type **`/wow-grok`** or **`/grok`** in chat.
+
+**Stopping later:** menu bar → **Quit WoWGrok**. Quit exits the menu bar, bridge, and capture together so you can replace `/Applications/WoWGrok.app`. You don't need Quit to open or use WoW Grok, and in-game replies stop until you reopen the app.
+
+---
+
+## Fair questions
+
+**macOS says the app is damaged / can't be opened / only shows Done. Is that OK?**
+The Release build is **not notarized / code-signed** right now, so Gatekeeper may block a plain double-click. Hold **Control**, click `WoWGrok.app` → **Open**, then **Open Anyway** in Privacy & Security if shown — but only for an app you downloaded from this project's Releases page. Releases built by GitHub Actions list the commit they were built from.
+
+**Why a desktop app? Can I use just the addon?**
+WoW addons can't go online. The addon shows your message in game, the app reads it and asks your AI, then writes the answer back into AddOn files the game loads. Without the app running, the addon can't get replies. Play in **Windowed** or **Windowed (Fullscreen)** / borderless so the app can see the game window.
+
+**What's the pixelated bar at the top left of WoW?**
+That's how your question gets from WoW to the app. When you send a message, the addon briefly draws it as a strip of colored squares in the top-left corner. WoWGrok reads that small area, sends your question to your AI, and the strip goes away once the message is received. Nothing is injected into the game, nothing reads game memory, and no key presses or clicks are faked.
+
+**Does it read my screen?**
+Only the top-left area of the WoW window where the addon draws the strip. On Mac that needs **Screen Recording** permission for WoWGrok. A window covering that corner gets read too — keep the corner clear.
+
+**Where is my API key stored?**
+On Mac the key stays in local **`config.json`** under `~/Library/Application Support/WoWGrok/`. It stays on your Mac. It's sent only to the AI provider you chose, never to the WoW addon or Lua, and never committed to git. The `XAI_API_KEY` or `ANTHROPIC_API_KEY` environment variables override any stored key. To change or remove a key, clear `apiKey` / `claudeApiKey` in that file (or delete the file), then reopen WoWGrok.app and it will ask again.
+
+**Does it work with GeForce Now or cloud WoW?**
+No. WoWGrok must run on the same Mac as a local WoW install.
+
+**Is the game-context feature here?**
+Not yet. This trunk doesn't include the in-game game-context area (`/wow-grok context`, location / money / XP). See the changelog note under 0.1.21.
+
+---
+
+## Troubleshooting
+
+| Problem | What to try |
+|---------|-------------|
+| App won't launch / only shows Done | Hold **Control** → click `WoWGrok.app` → **Open**; then **System Settings → Privacy & Security → Open Anyway** if shown. |
+| No menu bar icon / no replies | Reopen from Applications and leave the menu bar companion running. Check Windowed / borderless, full WoW restart, and WoW Grok + slots enabled. |
+| "Missing API key" | Reopen WoWGrok.app and paste the key, or set `XAI_API_KEY` / `ANTHROPIC_API_KEY`. |
+| Addon or slots missing | Reopen WoWGrok.app so it reinstalls into AddOns, then fully quit and relaunch WoW. |
+| Capture / Screen Recording loops | Enable **WoWGrok** under Screen Recording, then **Quit and reopen** (toggle alone is not enough). |
+| xAI SSL / CERTIFICATE_VERIFY_FAILED | Use **v0.1.13+** (bundles certifi CA store). Quit old WoWGrok, replace the app, reopen. |
+| Post-install dialog stuck (spinning) | Force Quit WoWGrok (install is already done), reopen; use v0.1.3+ which uses a dismissible Done / OK window. |
+
+Everyone, both platforms: [INSTALL-USERS.md](INSTALL-USERS.md). Windows: [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md). Developers / from source: [DEV.md](DEV.md). Build notes: [bridge_py/packaging.md](../bridge_py/packaging.md).
