@@ -2,7 +2,8 @@ local _, NS = ...
 
 -- Layered UI: every visual piece is its own Frame so pieces can move later.
 -- Transparent PAD outside chrome so ornate edges never clip (root > art).
--- Themes apply to Full AND Less AND Compass. Solid colors = P0; TGA polish = P4.
+-- Themes apply to Full AND Less AND Compass. Solid colors = P0/P1; TGA polish = P4.
+-- P1: ApplyRoute / RefreshRouteUI paint live or mock; Route.lua rotates needles.
 
 local PAD = 24
 NS.PAD = PAD
@@ -543,7 +544,11 @@ function NS.ApplyMode()
     ShowList(FULL_LAYERS)
   end
   ResizeForMode(mode)
-  NS.RefreshMock()
+  if NS.Refresh then
+    NS.Refresh()
+  else
+    NS.RefreshMock()
+  end
   NS.ApplyTheme()
 end
 
@@ -599,7 +604,7 @@ function NS.ApplyTheme()
     set(layers.routeRow.icon.tex, th.chrome)
     set(layers.routeRow.name, th.title)
     set(layers.routeRow.progress, th.text)
-    layers.routeRow.bar:SetFilled((NS.MockRoute and NS.MockRoute.filled) or 1, th.accent)
+    layers.routeRow.bar:SetFilled(((NS.liveRoute or NS.MockRoute) and (NS.liveRoute or NS.MockRoute).filled) or 1, th.accent)
   end
   if layers.stepRow then
     set(layers.stepRow.icon.tex, th.chrome)
@@ -650,7 +655,7 @@ function NS.ApplyTheme()
     set(layers.lessDistance.diamondR.tex, th.chromeHi)
   end
   if layers.lessProgress then
-    layers.lessProgress.bar:SetFilled((NS.MockRoute and NS.MockRoute.filled) or 1, th.accent)
+    layers.lessProgress.bar:SetFilled(((NS.liveRoute or NS.MockRoute) and (NS.liveRoute or NS.MockRoute).filled) or 1, th.accent)
   end
   if layers.modeChrome then
     set(layers.modeChrome.bg.tex, th.chrome)
@@ -685,33 +690,81 @@ function NS.ApplyTheme()
   if NS.ApplyDialogThemes then NS.ApplyDialogThemes() end
 end
 
-function NS.RefreshMock()
-  local m = NS.MockRoute
+function NS.SetNeedleRotation(needleFrame, radians)
+  if not needleFrame then return end
+  local tex = needleFrame.tex
+  if tex and type(tex.SetRotation) == "function" then
+    pcall(tex.SetRotation, tex, radians)
+    return
+  end
+  if type(needleFrame.SetRotation) == "function" then
+    pcall(needleFrame.SetRotation, needleFrame, radians)
+    return
+  end
+  if needleFrame.SetPoint and needleFrame:GetParent() then
+    local ox = math.sin(radians or 0) * 12
+    local oy = math.cos(radians or 0) * 12
+    needleFrame:ClearAllPoints()
+    needleFrame:SetPoint("CENTER", needleFrame:GetParent(), "CENTER", ox, oy)
+  end
+end
+
+--- Paint HUD from any MockRoute-compatible table (live or mock).
+function NS.ApplyRoute(m)
   if not m or not layers.routeRow then return end
 
-  layers.routeRow.name:SetText(m.name)
-  layers.routeRow.progress:SetText(string.format("%d/%d", m.index, m.total))
-  layers.routeRow.bar:SetFilled(m.filled, NS.GetTheme().accent)
+  layers.routeRow.name:SetText(m.name or "")
+  layers.routeRow.progress:SetText(string.format("%d/%d", m.index or 0, m.total or 0))
+  layers.routeRow.bar:SetFilled(m.filled or 1, NS.GetTheme().accent)
 
-  layers.stepRow.title:SetText(m.step.title)
-  layers.stepRow.dist:SetText(m.step.distance .. " ·")
-  layers.stepRow.bearing:SetText(m.step.bearing)
-  layers.stepRow.approx:SetText("· " .. m.step.approx)
-  layers.stepRow.zone:SetText(m.step.zone)
+  local step = m.step or {}
+  layers.stepRow.title:SetText(step.title or "")
+  layers.stepRow.dist:SetText((step.distance or "?") .. " ·")
+  layers.stepRow.bearing:SetText(step.bearing or "")
+  layers.stepRow.approx:SetText("· " .. (step.approx or ""))
+  layers.stepRow.zone:SetText(step.zone or "")
 
-  layers.trackerRow.text:SetText(m.tracker.label)
-  layers.trackerRow.count:SetText(string.format("%d/%d", m.tracker.count, m.tracker.total))
+  local tracker = m.tracker or {}
+  layers.trackerRow.text:SetText(tracker.label or "")
+  layers.trackerRow.count:SetText(string.format("%d/%d", tracker.count or 0, tracker.total or 0))
 
-  layers.statusBlock.state:SetText(m.status.state)
-  layers.statusBlock.last:SetText(m.status.last)
-  layers.statusBlock.xp:SetText(m.status.xp)
+  local status = m.status or {}
+  layers.statusBlock.state:SetText(status.state or "")
+  layers.statusBlock.last:SetText(status.last or "")
+  layers.statusBlock.xp:SetText(status.xp or "")
 
-  if layers.lessTitle then layers.lessTitle.text:SetText(m.step.title) end
-  if layers.lessDistance then layers.lessDistance.text:SetText(m.step.distance) end
+  if layers.lessTitle then layers.lessTitle.text:SetText(step.title or "") end
+  if layers.lessDistance then layers.lessDistance.text:SetText(step.distance or "?") end
   if layers.lessProgress then
-    layers.lessProgress.bar:SetFilled(m.filled, NS.GetTheme().accent)
+    layers.lessProgress.bar:SetFilled(m.filled or 1, NS.GetTheme().accent)
   end
   if layers.compassOnlyFace then
-    layers.compassOnlyFace.dist:SetText(m.step.distance)
+    layers.compassOnlyFace.dist:SetText(step.distance or "?")
+  end
+
+  if m.bearingDeg and NS.UpdateCompassNeedles then
+    NS.UpdateCompassNeedles(m.bearingDeg)
+  end
+end
+
+function NS.RefreshMock()
+  NS.ApplyRoute(NS.MockRoute)
+end
+
+--- Soft update: distance / bearing / zone / compass only (ticker path).
+function NS.RefreshRouteUI(m)
+  m = m or NS.liveRoute
+  if not m or not layers.stepRow then return end
+  local step = m.step or {}
+  layers.stepRow.dist:SetText((step.distance or "?") .. " ·")
+  layers.stepRow.bearing:SetText(step.bearing or "")
+  layers.stepRow.approx:SetText("· " .. (step.approx or ""))
+  layers.stepRow.zone:SetText(step.zone or "")
+  if layers.lessDistance then layers.lessDistance.text:SetText(step.distance or "?") end
+  if layers.compassOnlyFace then
+    layers.compassOnlyFace.dist:SetText(step.distance or "?")
+  end
+  if m.bearingDeg and NS.UpdateCompassNeedles then
+    NS.UpdateCompassNeedles(m.bearingDeg)
   end
 end
