@@ -55,18 +55,30 @@ def prompt_api_key(parent=None) -> str | None:
     """Ask for xAI API key. Returns key or None if cancelled. Never logs the value."""
     # parent kept for API compat; custom dialogs own their roots
     _ = parent
+    store = cfgmod.secure_store_label()
+    if store:
+        where = (
+            f"Your key is stored in {store} on this PC (local config.json is "
+            "only a fallback if that fails)."
+        )
+        short = f"(Stored locally in {store} — not uploaded, not in the addon.)"
+    else:
+        where = (
+            "Your key is stored ONLY in a local config.json on this computer "
+            "(next to the bridge)."
+        )
+        short = "(Stored locally only in config.json — not uploaded, not in the addon.)"
     tk_util.show_info_dialog(
         "WoW Grok — API key",
         "WoW Grok needs an xAI API key to chat with Grok.\n\n"
-        "Your key is stored ONLY in a local config.json on this computer "
-        "(next to the bridge). It is never uploaded, never sent to the WoW "
+        f"{where} It is never uploaded, never sent to the WoW "
         "addon, and never written into Lua.\n\n"
         "Get a key at https://console.x.ai/",
     )
     key = tk_util.ask_string_dialog(
         "WoW Grok — xAI API key",
         "Paste your xAI API key (starts with xai-…):\n"
-        "(Stored locally only in config.json — not uploaded, not in the addon.)",
+        f"{short}",
         show="*",
     )
     if key is None:
@@ -81,11 +93,16 @@ def prompt_claude_api_key(parent=None) -> str | None:
     Reuses the same string dialog as the xAI prompt. Never logs the value.
     """
     _ = parent
+    store = cfgmod.secure_store_label()
+    if store:
+        where = f"It is stored in {store} on this PC "
+    else:
+        where = "It is stored ONLY in local config.json as claudeApiKey "
     key = tk_util.ask_string_dialog(
         "WoW Grok — Anthropic API key",
         "You chose Claude (Anthropic).\n\n"
-        "Paste your Anthropic API key. It is stored ONLY in local config.json "
-        "as claudeApiKey (not uploaded, not sent to the WoW addon, not written into Lua).\n\n"
+        f"Paste your Anthropic API key. {where}"
+        "(not uploaded, not sent to the WoW addon, not written into Lua).\n\n"
         "Get a key at https://console.anthropic.com/ — or set ANTHROPIC_API_KEY and restart.",
         show="*",
     )

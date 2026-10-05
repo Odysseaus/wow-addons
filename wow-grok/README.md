@@ -22,23 +22,33 @@ Based on MIT [wow-claude](https://github.com/chelinho139/wow-claude) by chelinho
 
 ## Requirements
 
-- Windows or macOS
-- World of Warcraft: Forever (or a matching classic / beta flavor folder), **windowed or borderless** (exclusive fullscreen blocks capture)
-- An xAI API key from [console.x.ai](https://console.x.ai/) (Grok **API**, not a Grok Bot token)
+- Windows 10/11 or macOS
+- World of Warcraft: Forever (or a matching classic / beta flavor folder) in **Windowed** or **Windowed (Fullscreen)** / borderless mode (exclusive fullscreen blocks capture)
+- An xAI API key from [console.x.ai](https://console.x.ai/) (Grok **API**, not a Grok Bot token). Claude (Anthropic key) is optional at first run.
 - **Bridge:** `WoWGrok.exe` (Windows) or `WoWGrok.app` (Mac) from Releases — **separate downloads**, not one shared installer
+
+**Windows:** one download. `WoWGrok.exe` is the app and installs the addon for you. It's unsigned, so SmartScreen may say "Windows protected your PC": click **More info → Run anyway**. Leave the **tray** icon running while you play; **Quit** is only for stopping later. Three steps: [docs/INSTALL-WINDOWS.md](docs/INSTALL-WINDOWS.md).
 
 **Mac:** the DMG shows **WoWGrok.app** plus an **Applications** shortcut — drag the app into Applications, then launch from there. The Release build is unsigned — hold **Control** and click → **Open**, then **Open Anyway** in Privacy & Security if shown. A plain double-click often only shows **Done**. Grant **Screen Recording**, use **Quit WoWGrok** once if offered (permission stick only), reopen, then **keep WoWGrok running while you play Forever** — look for the **menu bar** icon (quiet companion; no Dock icon). Quit from the menu bar. It is the live bridge, not a one-shot installer.
 
 ## Simple install
 
-Full walkthrough: [docs/INSTALL-USERS.md](docs/INSTALL-USERS.md).
+Full walkthrough: [docs/INSTALL-USERS.md](docs/INSTALL-USERS.md). Mac and Windows are **separate downloads** from this project’s **Releases**.
 
-1. **Download** the Mac or Windows executable from this project’s **Releases** (`WoWGrok.app` / `.dmg`, or `WoWGrok.exe` — separate builds).
-2. **Install / run**:
-   - **Windows:** double-click `WoWGrok.exe` (you can keep it anywhere convenient).
-   - **Mac:** open the `.dmg` (app + **Applications** shortcut), **drag `WoWGrok.app` into Applications**, then launch from Applications (not from the DMG or Downloads). First open (unsigned):
-     1. Hold **Control** and click `WoWGrok.app` → click **Open**.
-     2. If macOS still blocks it, open **System Settings → Privacy & Security**, then click **Open Anyway** (if shown).
+### Windows: set up in 2 to 3 minutes
+
+Details and fair questions: [docs/INSTALL-WINDOWS.md](docs/INSTALL-WINDOWS.md).
+
+1. **Download the app. It installs the addon.** Get `WoWGrok.exe` from the newest `wow-grok-win-v…` release and double-click it. SmartScreen (unsigned build): **More info → Run anyway**. Confirm your WoW `Interface\AddOns` folder.
+2. **Connect your AI: paste an API key.** Choose **xAI** (Enter = default) or **Claude**, paste that key, and wait for **Done** while the app writes the `WoWGrok` addon and reply slots. Newer Windows builds keep the key in **Windows Credential Manager**; 0.1.27 and earlier use local `config.json`.
+3. **Log in and play.** Leave the **tray** icon **Running**. Use **Windowed** or **Windowed (Fullscreen)**, fully restart WoW, enable **WoW Grok** at character select, and type **`/wow-grok`** or **`/grok`**. Tray → **Quit** only when you want to stop later.
+
+### Mac
+
+1. **Download** the Mac build from this project’s **Releases** (`WoWGrok.app` / `.dmg`).
+2. **Install / run:** open the `.dmg` (app + **Applications** shortcut), **drag `WoWGrok.app` into Applications**, then launch from Applications (not from the DMG or Downloads). First open (unsigned):
+   1. Hold **Control** and click `WoWGrok.app` → click **Open**.
+   2. If macOS still blocks it, open **System Settings → Privacy & Security**, then click **Open Anyway** (if shown).
 3. **Enter your xAI API key** when asked — stored only in a local `config.json` (never uploaded, never written into Lua).
 4. **Pick or confirm** your WoW `Interface/AddOns` folder (auto-detect, or a folder picker).
 5. Wait while the **app creates** the main `WoWGrok` addon and reply slots `WoWGrok_S001`–`WoWGrok_S200` as top-level siblings in that folder (can take about a minute). Do **not** copy 200 folders yourself.
