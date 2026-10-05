@@ -350,18 +350,20 @@ end
 
 -- BarFill/BarShine stay for plates. Bars use per-rank fills cut from the
 -- approved image plus a gold bevel border.
-local TEX_FILL = 'Interface\AddOns\WoWThreat\Textures\BarFill'
-local TEX_SHINE = 'Interface\AddOns\WoWThreat\Textures\BarShine'
-local TEX_PLATE = 'Interface\AddOns\WoWThreat\Textures\ThreatPlate'
-local TEX_DIAMOND = 'Interface\AddOns\WoWThreat\Textures\Diamond'
-local TEX_GOLD = 'Interface\AddOns\WoWThreat\Textures\GoldLine'
-local TEX_BEVEL = 'Interface\AddOns\WoWThreat\Textures\BarBevel'
+-- Paths use doubled backslashes so Lua keeps Interface\AddOns\... (0.1.18
+-- used single \ escapes and Rank/Bevel/plate textures failed to load).
+local TEX_FILL = 'Interface\\AddOns\\WoWThreat\\Textures\\BarFill'
+local TEX_SHINE = 'Interface\\AddOns\\WoWThreat\\Textures\\BarShine'
+local TEX_PLATE = 'Interface\\AddOns\\WoWThreat\\Textures\\ThreatPlate'
+local TEX_DIAMOND = 'Interface\\AddOns\\WoWThreat\\Textures\\Diamond'
+local TEX_GOLD = 'Interface\\AddOns\\WoWThreat\\Textures\\GoldLine'
+local TEX_BEVEL = 'Interface\\AddOns\\WoWThreat\\Textures\\BarBevel'
 local TEX_FILL_RANK = {
-  'Interface\AddOns\WoWThreat\Textures\BarFillRank1',
-  'Interface\AddOns\WoWThreat\Textures\BarFillRank2',
-  'Interface\AddOns\WoWThreat\Textures\BarFillRank3',
-  'Interface\AddOns\WoWThreat\Textures\BarFillRank4',
-  'Interface\AddOns\WoWThreat\Textures\BarFillRank5',
+  'Interface\\AddOns\\WoWThreat\\Textures\\BarFillRank1',
+  'Interface\\AddOns\\WoWThreat\\Textures\\BarFillRank2',
+  'Interface\\AddOns\\WoWThreat\\Textures\\BarFillRank3',
+  'Interface\\AddOns\\WoWThreat\\Textures\\BarFillRank4',
+  'Interface\\AddOns\\WoWThreat\\Textures\\BarFillRank5',
 }
 local BEVEL_CAP = 32 / 256
 
