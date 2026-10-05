@@ -6,6 +6,8 @@ Runtime settings live in a local **`config.json`** (gitignored). First-run on Ma
 - Frozen macOS app: `~/Library/Application Support/WoWGrok/config.json`
 - Windows exe: `config.json` next to the `.exe`
 
+**Windows API keys:** `apiKey` / `claudeApiKey` go to **Windows Credential Manager** (`WoWGrok/apiKey`, `WoWGrok/claudeApiKey`), and `config.json` keeps an empty string. A key you type into `config.json` by hand is used right away and moved into Credential Manager on the next save or launch. If Credential Manager can't be written, the key stays in `config.json`. Lookup order: env var, then `config.json`, then Credential Manager. macOS keeps keys in `config.json`.
+
 Mac and Windows share `bridge_py`, so both read the same keys. The file is created on first run. Prefer environment variables over putting keys in the file.
 
 **xAI (Grok) is the default provider.** First-run offers Claude as well; or set `"provider": "claude"` in config later. Same inbox/outbox; the in-game addon protocol is unchanged.

@@ -83,7 +83,7 @@ jobs:
               raise SystemExit("exe suspiciously small")
           # onefile stores archive after bootloader; string scan is enough for gate
           data = exe.read_bytes()
-          for needle in (b"tray_win", b"pystray", b"ssl_certs", b"certifi"):
+          for needle in (b"tray_win", b"pystray", b"ssl_certs", b"certifi", b"secret_store"):
               if needle not in data:
                   raise SystemExit(f"missing {needle!r} in exe")
               print("OK found", needle.decode())
@@ -128,12 +128,13 @@ jobs:
           - In-game addon TOC stays **0.1.22**. Game-context area (location / money / XP) is **not** in this trunk.
           - Tray **Running** + **Quit** (pystray); SSL / \`--ssl-smoke\`.
 
-          ### Install
-          1. Download \`WoWGrok.exe\` (SmartScreen may warn — unsigned).
-          2. Double-click; choose xAI (default) or Claude; enter that API key; confirm AddOns folder.
-          3. Leave running — system tray (notification area) shows **Running**.
-          4. After Forever is running with WoW Grok enabled, type \`/wow-grok\` or \`/grok\` in game chat.
-          5. When done later, tray → **Quit** (stops the app; not part of opening/using the AddOn).
+          ### Set up in 2 to 3 minutes
+          1. **Download the app. It installs the addon.** Run \`WoWGrok.exe\`. It is unsigned, so if SmartScreen says "Windows protected your PC", click **More info → Run anyway**. Confirm your AddOns folder.
+          2. **Connect your AI.** Choose xAI (Enter = default) or Claude, paste that API key, and wait for **Done** while it writes the addon and reply slots. API keys are stored in Windows Credential Manager (\`WoWGrok/apiKey\`); if that write fails they fall back to \`config.json\`.
+          3. **Log in and play.** Leave the tray icon **Running**. Use Windowed or Windowed (Fullscreen), fully restart WoW, enable WoW Grok, and type \`/wow-grok\` or \`/grok\`.
+
+          When you are done later, tray → **Quit** (stops the app; not part of opening or using the AddOn).
+          Full guide and fair questions: https://github.com/Odysseaus/wow-addons/blob/main/wow-grok/docs/INSTALL-WINDOWS.md
 
           Mac counterpart: https://github.com/Odysseaus/wow-addons/releases/tag/wow-grok-mac-v0.1.27
           MD

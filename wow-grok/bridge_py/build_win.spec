@@ -37,6 +37,7 @@ a = Analysis(
         'bridge_py.tk_util',
         'bridge_py.xai',
         'bridge_py.ssl_certs',
+        'bridge_py.secret_store',
         'bridge_py.menubar',
         'bridge_py.tray_win',
         'certifi',

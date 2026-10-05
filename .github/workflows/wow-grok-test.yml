@@ -18,3 +18,15 @@ jobs:
         working-directory: wow-grok
       - run: python -m unittest discover -s bridge_py/tests -v
         working-directory: wow-grok
+  windows-secret-store:
+    # Real Windows Credential Manager round trip (advapi32 via ctypes) + config migration.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pillow
+        working-directory: wow-grok
+      - run: python -m unittest bridge_py.tests.test_secret_store -v
+        working-directory: wow-grok

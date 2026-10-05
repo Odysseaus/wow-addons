@@ -1,4 +1,12 @@
-"""Local config paths and load/save. Never logs apiKey or claudeApiKey."""
+"""Local config paths and load/save. Never logs apiKey or claudeApiKey.
+
+Windows: API keys live in Windows Credential Manager (:mod:`secret_store`).
+``save_config`` moves any non-empty ``apiKey`` / ``claudeApiKey`` into the
+store, verifies the read-back, and only then blanks it in ``config.json``.
+If the store is unavailable or the write fails, the key stays in
+``config.json`` (pre-0.1.28 behaviour). Existing installs migrate on the next
+launch. macOS / Linux are unchanged (``config.json``).
+"""
 from __future__ import annotations
 
 import json
@@ -13,6 +21,9 @@ CONFIG_NAME = "config.json"
 STATE_NAME = "state.json"
 TRANSCRIPTS_NAME = "transcripts.json"
 LOG_NAME = "bridge.log"
+
+# Fields that go to the OS secret store on Windows (never to logs).
+SECRET_FIELDS = ("apiKey", "claudeApiKey")
 
 
 def runtime_dir() -> Path:
@@ -103,13 +114,85 @@ def load_config() -> dict[str, Any] | None:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def _secret_store():
+    """``secret_store`` module when the OS store is usable, else ``None``."""
+    try:
+        from . import secret_store
+
+        return secret_store if secret_store.available() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def secure_store_label() -> str | None:
+    """Human name of the active OS secret store, or ``None`` (config.json only)."""
+    store = _secret_store()
+    return store.STORE_LABEL if store is not None else None
+
+
+def _stored_secret(field: str) -> str:
+    store = _secret_store()
+    if store is None:
+        return ""
+    return store.get(field)
+
+
+def _append_log(line: str) -> None:
+    """Best-effort bridge.log line. Callers must never pass a secret value."""
+    try:
+        import time
+
+        path = log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def secrets_for_disk(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Copy of ``cfg`` safe to write to config.json.
+
+    On Windows each non-empty secret field is written to Credential Manager
+    and verified; on success the on-disk copy gets ``""``. On failure (or on
+    Mac / Linux) the value is kept so the player is never left without a key.
+    The caller's in-memory ``cfg`` is not modified.
+    """
+    store = _secret_store()
+    if store is None:
+        return cfg
+    out = dict(cfg)
+    for field in SECRET_FIELDS:
+        val = str(out.get(field) or "").strip()
+        if not val:
+            continue
+        if store.put(field, val):
+            out[field] = ""
+            _append_log(f"[secrets] {field} stored in {store.STORE_LABEL}")
+        else:
+            _append_log(
+                f"[secrets] {field}: {store.STORE_LABEL} write failed — "
+                "kept in local config.json"
+            )
+    return out
+
+
 def save_config(cfg: dict[str, Any]) -> Path:
     p = config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    data = secrets_for_disk(cfg)
     tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     tmp.replace(p)
     return p
+
+
+def forget_stored_keys() -> list[str]:
+    """Delete WoWGrok keys from the OS secret store. Returns deleted fields."""
+    store = _secret_store()
+    if store is None:
+        return []
+    return [f for f in SECRET_FIELDS if store.delete(f)]
 
 
 def resolve_api_key(cfg: dict | None = None) -> str:
@@ -118,7 +201,7 @@ def resolve_api_key(cfg: dict | None = None) -> str:
         return env
     if cfg and cfg.get("apiKey"):
         return str(cfg["apiKey"])
-    return ""
+    return _stored_secret("apiKey")
 
 
 def has_api_key(cfg: dict | None = None) -> bool:
@@ -131,6 +214,8 @@ def api_key_source(cfg: dict | None = None) -> str:
         return "env XAI_API_KEY"
     if cfg and cfg.get("apiKey"):
         return "config.json"
+    if _stored_secret("apiKey"):
+        return secure_store_label() or "secret store"
     return "MISSING — set XAI_API_KEY or config apiKey"
 
 
@@ -150,7 +235,7 @@ def resolve_claude_api_key(cfg: dict | None = None) -> str:
         return env
     if cfg and cfg.get("claudeApiKey"):
         return str(cfg["claudeApiKey"])
-    return ""
+    return _stored_secret("claudeApiKey")
 
 
 def has_claude_api_key(cfg: dict | None = None) -> bool:
@@ -162,6 +247,8 @@ def claude_api_key_source(cfg: dict | None = None) -> str:
         return "env ANTHROPIC_API_KEY"
     if cfg and cfg.get("claudeApiKey"):
         return "config.json"
+    if _stored_secret("claudeApiKey"):
+        return secure_store_label() or "secret store"
     return "MISSING — set ANTHROPIC_API_KEY or config claudeApiKey"
 
 

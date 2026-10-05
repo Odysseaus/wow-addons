@@ -25,6 +25,7 @@ from . import tk_util as _freeze_tk_util  # noqa: F401
 from . import menubar as _freeze_menubar  # noqa: F401
 from . import tray_win as _freeze_tray_win  # noqa: F401
 from . import capture_win as _freeze_capture_win  # noqa: F401
+from . import secret_store as _freeze_secret_store  # noqa: F401
 
 
 def _load(name: str):
