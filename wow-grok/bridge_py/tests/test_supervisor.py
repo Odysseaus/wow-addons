@@ -102,6 +102,22 @@ class TestStopChild(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(popen.call_args.kwargs.get("start_new_session"))
 
+    def test_restart_exit_code_relaunches_immediately(self):
+        """Menu Setup… exits the bridge with RESTART_EXIT_CODE → relaunch, no 3 s sleep."""
+        first = mock.Mock(spec=subprocess.Popen)
+        first.wait.return_value = supervisor.RESTART_EXIT_CODE
+        second = mock.Mock(spec=subprocess.Popen)
+        second.wait.return_value = 0
+        with mock.patch.object(
+            supervisor.subprocess, "Popen", side_effect=[first, second]
+        ) as popen, mock.patch.object(supervisor.signal, "signal"), mock.patch.object(
+            supervisor.time, "sleep"
+        ) as sleep:
+            code = supervisor.run_supervised([])
+        self.assertEqual(code, 0)
+        self.assertEqual(popen.call_count, 2)
+        sleep.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

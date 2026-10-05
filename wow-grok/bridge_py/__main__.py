@@ -78,6 +78,11 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "--run-capture-win":
         return _load("capture_win").main(argv[1:])
 
+    # Menu bar "Setup…": re-open the onboard wizard in its own process (Tk
+    # never shares the rumps/AppKit run loop). See first_run.run_setup_wizard_on_demand.
+    if argv and argv[0] == "--onboard-setup":
+        return _load("first_run").run_setup_wizard_on_demand()
+
     ap = argparse.ArgumentParser(
         prog="python -m bridge_py",
         description="WoW Grok Python bridge (supervisor + first-run UI)",

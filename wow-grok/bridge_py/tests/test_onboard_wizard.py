@@ -297,5 +297,241 @@ class FirstRunWizardIntegrationTests(unittest.TestCase):
             self.assertEqual(out["addonDir"], str(Path(tmp).resolve()))
 
 
+class ExistingKeyStateTests(unittest.TestCase):
+    def test_mark_existing_key_shows_connected_without_new_key(self):
+        st = wiz.WizardState()
+        st.mark_download_done()
+        row = wiz.provider_row_by_id("grok")
+        assert row is not None
+        st.mark_existing_key(row)
+        self.assertEqual(st.connected_label, "Grok")
+        self.assertEqual(st.provider, "xai")
+        self.assertIsNone(st.api_key)  # nothing new to write back
+        self.assertEqual(st.step_status(wiz.STEP_CONNECT), "done")
+        # Stays on Connect so the user can still replace the key / switch.
+        self.assertEqual(st.active_step, wiz.STEP_CONNECT)
+        self.assertTrue(st.can_continue_with("grok"))
+        self.assertFalse(st.can_continue_with("claude"))
+
+    def test_can_continue_requires_key_or_existing(self):
+        st = wiz.WizardState()
+        self.assertFalse(st.can_continue_with("grok"))
+        row = wiz.provider_row_by_id("claude")
+        assert row is not None
+        st.mark_connected(row, "sk-ant-x")
+        self.assertTrue(st.can_continue_with("claude"))
+
+    def test_apply_result_without_new_key_keeps_existing_key(self):
+        cfg = {"provider": "xai", "apiKey": "xai-old"}
+        res = wiz.WizardResult(status="finish_later", provider="xai")
+        wiz.apply_wizard_result(cfg, res)
+        self.assertEqual(cfg["apiKey"], "xai-old")
+
+
+class OnboardVersionGateTests(unittest.TestCase):
+    def setUp(self):
+        from bridge_py import first_run
+
+        self.fr = first_run
+
+    def test_pre_wizard_config_is_due(self):
+        self.assertTrue(self.fr.onboard_wizard_version_due({"apiKey": "k"}))
+        self.assertTrue(self.fr.onboard_wizard_version_due(None))
+
+    def test_older_or_garbage_version_is_due(self):
+        self.assertTrue(self.fr.onboard_wizard_version_due({"onboardWizardVersion": 0}))
+        self.assertTrue(self.fr.onboard_wizard_version_due({"onboardWizardVersion": "x"}))
+
+    def test_current_version_not_due(self):
+        cfg = {"onboardWizardVersion": self.fr.ONBOARD_WIZARD_VERSION}
+        self.assertFalse(self.fr.onboard_wizard_version_due(cfg))
+
+    def test_should_show_matrix(self):
+        cur = {"onboardWizardVersion": self.fr.ONBOARD_WIZARD_VERSION}
+        show = self.fr.should_show_onboard_wizard
+        # No GUI wizard path → never (headless keeps legacy prompts / exit 2).
+        self.assertFalse(show({}, use_wizard=False, needs_setup=True))
+        self.assertFalse(show({}, use_wizard=False, needs_setup=False))
+        # Incomplete → always.
+        self.assertTrue(show(cur, use_wizard=True, needs_setup=True))
+        # Complete but never saw this wizard version (upgrade) → once.
+        self.assertTrue(show({}, use_wizard=True, needs_setup=False))
+        # Complete and seen → quiet.
+        self.assertFalse(show(cur, use_wizard=True, needs_setup=False))
+
+    def test_mark_seen(self):
+        cfg: dict = {}
+        self.fr.mark_onboard_wizard_seen(cfg)
+        self.assertEqual(cfg["onboardWizardVersion"], self.fr.ONBOARD_WIZARD_VERSION)
+        self.assertFalse(self.fr.onboard_wizard_version_due(cfg))
+
+
+class UpgradeGateIntegrationTests(unittest.TestCase):
+    """Configured pre-wizard config.json: wizard shows once, then stays quiet."""
+
+    def _run(self, cfg: dict, tmp: str, status: str = "finish_later"):
+        from bridge_py import first_run
+        import os
+
+        env = os.environ.copy()
+        env.pop("XAI_API_KEY", None)
+        env.pop("ANTHROPIC_API_KEY", None)
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(
+            first_run, "_gui_available", return_value=True
+        ), mock.patch.object(first_run.sys, "platform", "darwin"), mock.patch.object(
+            wiz.sys, "platform", "darwin"
+        ), mock.patch.object(
+            wiz, "run_onboard_wizard", return_value=wiz.WizardResult(status=status)
+        ) as run_wiz, mock.patch.object(
+            first_run.setup_detect, "find_existing_addons", return_value=[]
+        ), mock.patch.object(
+            first_run.cfgmod, "load_config", return_value=cfg
+        ), mock.patch.object(
+            first_run.cfgmod, "save_config", return_value=Path(tmp) / "config.json"
+        ) as save, mock.patch(
+            "bridge_py.install_addon.ensure_game_files"
+        ), mock.patch.object(
+            first_run, "prompt_mac_screen_recording"
+        ):
+            out = first_run.ensure_first_run_config(headless=False)
+        return out, run_wiz, save
+
+    def _configured(self, tmp: str) -> dict:
+        return {
+            "addonDir": tmp,
+            "defaultCwd": tmp,
+            "provider": "xai",
+            "apiKey": "xai-existing",
+            "claudeApiKey": "",
+            "capture": {},
+        }
+
+    def test_configured_pre_wizard_install_sees_wizard_once(self):
+        import tempfile
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._configured(tmp)
+            out, run_wiz, save = self._run(cfg, tmp)
+            run_wiz.assert_called_once()
+            self.assertTrue(run_wiz.call_args.kwargs["provider_key_present"])
+            self.assertEqual(out["onboardWizardVersion"], first_run.ONBOARD_WIZARD_VERSION)
+            self.assertEqual(out["apiKey"], "xai-existing")  # not wiped by finish later
+            saved = save.call_args[0][0]
+            self.assertEqual(saved["onboardWizardVersion"], first_run.ONBOARD_WIZARD_VERSION)
+
+            # Next launch: same config now carries the version → no wizard.
+            out2, run_wiz2, _ = self._run(dict(out), tmp)
+            run_wiz2.assert_not_called()
+
+    def test_cancelled_also_marks_seen(self):
+        import tempfile
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out, run_wiz, _ = self._run(self._configured(tmp), tmp, status="cancelled")
+            run_wiz.assert_called_once()
+            self.assertEqual(out["onboardWizardVersion"], first_run.ONBOARD_WIZARD_VERSION)
+
+    def test_finish_later_without_key_still_exits_2(self):
+        import tempfile
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._configured(tmp)
+            cfg["apiKey"] = ""
+            cfg["onboardWizardVersion"] = first_run.ONBOARD_WIZARD_VERSION
+            with self.assertRaises(SystemExit) as cm:
+                self._run(cfg, tmp)
+            self.assertEqual(cm.exception.code, 2)
+
+
+class SetupOnDemandTests(unittest.TestCase):
+    def _run(self, cfg: dict, result: "wiz.WizardResult", tmp: str):
+        from bridge_py import first_run
+        import os
+
+        env = os.environ.copy()
+        env.pop("XAI_API_KEY", None)
+        env.pop("ANTHROPIC_API_KEY", None)
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(
+            first_run, "_gui_available", return_value=True
+        ), mock.patch.object(wiz.sys, "platform", "darwin"), mock.patch.object(
+            wiz, "run_onboard_wizard", return_value=result
+        ), mock.patch.object(
+            first_run.setup_detect, "find_existing_addons", return_value=[]
+        ), mock.patch.object(
+            first_run.cfgmod, "load_config", return_value=cfg
+        ), mock.patch.object(
+            first_run.cfgmod, "save_config", return_value=Path(tmp) / "config.json"
+        ) as save, mock.patch(
+            "bridge_py.install_addon.ensure_game_files"
+        ) as install:
+            code = first_run.run_setup_wizard_on_demand()
+        return code, save, install
+
+    def test_unchanged_returns_3_no_reinstall(self):
+        import tempfile
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {"addonDir": tmp, "provider": "xai", "apiKey": "xai-a", "capture": {}}
+            code, save, install = self._run(cfg, wiz.WizardResult(status="finish_later"), tmp)
+            self.assertEqual(code, first_run.SETUP_EXIT_UNCHANGED)
+            save.assert_called()  # onboardWizardVersion recorded
+            install.assert_not_called()
+
+    def test_new_key_returns_0_and_reinstalls(self):
+        import tempfile
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {"addonDir": tmp, "provider": "xai", "apiKey": "xai-a", "capture": {}}
+            res = wiz.WizardResult(
+                status="done", provider="claude", api_key="sk-ant-new", key_field="claudeApiKey"
+            )
+            code, save, install = self._run(cfg, res, tmp)
+            self.assertEqual(code, first_run.SETUP_EXIT_APPLIED)
+            saved = save.call_args[0][0]
+            self.assertEqual(saved["provider"], "claude")
+            self.assertEqual(saved["claudeApiKey"], "sk-ant-new")
+            install.assert_called_once()
+
+
+class MenubarSetupHelpersTests(unittest.TestCase):
+    def test_setup_command_source_run(self):
+        from bridge_py import menubar
+
+        with mock.patch.object(sys, "frozen", False, create=True):
+            cmd = menubar.setup_wizard_command()
+        self.assertEqual(cmd, [sys.executable, "-m", "bridge_py", "--onboard-setup"])
+
+    def test_setup_command_frozen(self):
+        from bridge_py import menubar
+
+        exe = "/Applications/WoWGrok.app/Contents/MacOS/WoWGrok"
+        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(
+            sys, "executable", exe
+        ):
+            self.assertEqual(menubar.setup_wizard_command(), [exe, "--onboard-setup"])
+
+    def test_setup_result_action(self):
+        from bridge_py import menubar, supervisor
+
+        self.assertEqual(menubar.setup_result_action(0), "restart")
+        for code in (3, 4, 1, -15, None):
+            self.assertEqual(menubar.setup_result_action(code), "none")
+        self.assertEqual(menubar.RESTART_EXIT_CODE, supervisor.RESTART_EXIT_CODE)
+
+    def test_main_dispatches_onboard_setup(self):
+        from bridge_py import __main__ as entry
+
+        with mock.patch(
+            "bridge_py.first_run.run_setup_wizard_on_demand", return_value=3
+        ) as run:
+            self.assertEqual(entry.main(["--onboard-setup"]), 3)
+        run.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

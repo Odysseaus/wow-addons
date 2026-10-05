@@ -20,7 +20,7 @@ You need **macOS**, **World of Warcraft: Forever** (or another local WoW client)
 
 ## 2. Connect your AI
 
-1. On first launch, WoWGrok opens an **in-app setup wizard** (two-pane: Download → Connect your AI → Say hi in game). You can click **Finish later** and reopen the app to finish.
+1. On first launch, WoWGrok opens an **in-app setup wizard** (two-pane: Download → Connect your AI → Say hi in game). You can click **Finish later** and reopen the app to finish — or use menu bar → **Setup…** any time.
 2. Under **Connect your AI**, pick a provider. **Claude** and **Grok** (xAI) work now; ChatGPT / Gemini / Other show as Coming soon.
 3. Click **Continue**, paste the API key for that provider, and wait for the green **"{Provider} is connected."** status:
    - Grok / xAI: create a key at [console.x.ai](https://console.x.ai/) (keys start with `xai-`).
@@ -38,6 +38,8 @@ You need **macOS**, **World of Warcraft: Forever** (or another local WoW client)
 2. If Forever / WoW was already open, **fully quit and relaunch** it. `/reload` doesn't pick up new AddOns.
 3. At character select, open **AddOns**, enable **WoW Grok**, and leave the `WoW Grok slot ###` entries enabled.
 4. Log in and type **`/wow-grok`** or **`/grok`** in chat.
+
+**Changing your AI later:** menu bar → **Setup…** re-opens the setup wizard without quitting. Paste a new key or pick another provider; if anything changed, WoWGrok restarts its bridge in the background (the menu bar icon blinks once) so the new key takes effect.
 
 **Stopping later:** menu bar → **Quit WoWGrok**. Quit exits the menu bar, bridge, and capture together so you can replace `/Applications/WoWGrok.app`. You don't need Quit to open or use WoW Grok, and in-game replies stop until you reopen the app.
 
@@ -58,7 +60,10 @@ That's how your question gets from WoW to the app. When you send a message, the 
 Only the top-left area of the WoW window where the addon draws the strip. On Mac that needs **Screen Recording** permission for WoWGrok. A window covering that corner gets read too — keep the corner clear.
 
 **Where is my API key stored?**
-On Mac the key stays in local **`config.json`** under `~/Library/Application Support/WoWGrok/`. It stays on your Mac. It's sent only to the AI provider you chose, never to the WoW addon or Lua, and never committed to git. The `XAI_API_KEY` or `ANTHROPIC_API_KEY` environment variables override any stored key. To change or remove a key, clear `apiKey` / `claudeApiKey` in that file (or delete the file), then reopen WoWGrok.app and it will ask again.
+On Mac the key stays in local **`config.json`** under `~/Library/Application Support/WoWGrok/`. It stays on your Mac. It's sent only to the AI provider you chose, never to the WoW addon or Lua, and never committed to git. The `XAI_API_KEY` or `ANTHROPIC_API_KEY` environment variables override any stored key. To change or remove a key, clear `apiKey` / `claudeApiKey` in that file (or delete the file), then reopen WoWGrok.app and it will ask again. Easier: menu bar → **Setup…** and paste the new key.
+
+**When does the setup wizard show? I already had WoWGrok set up and only got the menu bar.**
+The wizard opens on launch when setup is **incomplete** (no valid AddOns folder, or no API key for your provider), and **once** the first time you launch a build with a new setup wizard version — even if you were already configured (an older `config.json` from before the wizard). After you close it (Done, Finish later, or the window's close button) WoWGrok records `onboardWizardVersion` in `config.json` and stays quiet on later launches. To open it again, use menu bar → **Setup…**. To start completely fresh, Quit WoWGrok, rename `~/Library/Application Support/WoWGrok/config.json` (for example to `config.old.json`), and reopen the app.
 
 **Does it work with GeForce Now or cloud WoW?**
 No. WoWGrok must run on the same Mac as a local WoW install.

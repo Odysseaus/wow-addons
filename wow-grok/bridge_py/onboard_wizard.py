@@ -181,6 +181,9 @@ class WizardState:
     addon_dir: str | None = None
     finished_later: bool = False
     completed: bool = False
+    # Row whose key is already stored (config / keychain / env) — set when the
+    # wizard re-opens on a configured install (upgrade gate or menu Setup…).
+    existing_key_row_id: str | None = None
 
     def mark_download_done(self) -> None:
         self.completed_steps.add(STEP_DOWNLOAD)
@@ -195,6 +198,25 @@ class WizardState:
         self.api_key = api_key
         self.completed_steps.add(STEP_CONNECT)
         self.active_step = STEP_SAY_HI
+
+    def mark_existing_key(self, row: dict[str, Any]) -> None:
+        """Show ``row`` as connected using the key already on file (no new key).
+
+        Connect counts as done, but the active step is left alone so the user
+        can still paste a new key or switch provider.
+        """
+        self.connected_row_id = row["id"]
+        self.connected_label = row["label"]
+        self.provider = row["config_provider"]
+        self.key_field = row["key_field"]
+        self.existing_key_row_id = row["id"]
+        self.completed_steps.add(STEP_CONNECT)
+
+    def can_continue_with(self, row_id: str) -> bool:
+        """True when Continue on Connect may advance without pasting a key."""
+        if self.connected_row_id != row_id:
+            return False
+        return bool(self.api_key) or self.existing_key_row_id == row_id
 
     def mark_say_hi_done(self) -> None:
         self.completed_steps.add(STEP_SAY_HI)
@@ -312,11 +334,15 @@ def run_onboard_wizard(
     initial_addon_dir: str | Path | None = None,
     pick_addons_dir: Callable[[], Path | None] | None = None,
     secure_store_label: str | None = None,
+    provider_key_present: bool = False,
 ) -> WizardResult:
     """Show the two-pane onboarding wizard (Mac + Windows). Blocks until closed.
 
     ``pick_addons_dir`` is injected so first_run can reuse
     :func:`first_run.prompt_addons_dir` without a circular import at module load.
+
+    ``provider_key_present``: the configured provider already has a key, so
+    Connect starts as "<provider> is connected" (paste a new key to replace it).
     """
     import tkinter as tk
 
@@ -334,6 +360,8 @@ def run_onboard_wizard(
     row = provider_row_for_config(existing) or provider_row_by_id("grok")
     if row:
         state.selected_row_id = row["id"]
+        if provider_key_present and row.get("live"):
+            state.mark_existing_key(row)
 
     if download_step_complete(addon_dir=state.addon_dir):
         state.mark_download_done()
@@ -716,8 +744,8 @@ def run_onboard_wizard(
                 status_mark.configure(text="", fg=_FG_MUTED)
                 status_lbl.configure(fg=_FG_MUTED)
                 return
-            # Already connected to this row with a key → advance
-            if state.connected_row_id == row["id"] and state.api_key:
+            # Already connected to this row (new or existing key) → advance
+            if state.can_continue_with(row["id"]):
                 state.completed_steps.add(STEP_CONNECT)
                 state.active_step = STEP_SAY_HI
                 _refresh_sidebar()

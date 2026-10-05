@@ -8,6 +8,9 @@ import sys
 import time
 from typing import Sequence
 
+# Bridge exit code meaning "config changed (menu Setup…) — restart me now".
+RESTART_EXIT_CODE = 75
+
 
 def _bridge_command(bridge_argv: Sequence[str] | None) -> list[str]:
     """Build argv to run the bridge as a child process.
@@ -84,5 +87,8 @@ def run_supervised(bridge_argv: Sequence[str] | None = None) -> int:
             return 0
         if code in (0, 2):
             return code
+        if code == RESTART_EXIT_CODE:
+            print("\nbridge restarting to apply new setup", flush=True)
+            continue
         print(f"\nbridge exited ({code}); restarting in 3 s", flush=True)
         time.sleep(3)
