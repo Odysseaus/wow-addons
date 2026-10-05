@@ -50,17 +50,24 @@ jobs:
           echo "Python 3.12 not found on self-hosted runner" >&2
           exit 1
 
-      - name: Install deps
+      # uv-managed Python is PEP 668 externally-managed; install deps into a project venv instead
+      - name: Create venv and install deps
         run: |
-          python3.12 -m pip install -U pip
-          python3.12 -m pip install pillow pyinstaller rumps certifi
+          set -euo pipefail
+          rm -rf .venv
+          python3.12 -m venv .venv
+          .venv/bin/python -m pip install -U pip
+          .venv/bin/python -m pip install pillow pyinstaller rumps certifi
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          .venv/bin/python --version
+          .venv/bin/python -c "import PIL, PyInstaller, rumps, certifi; print('deps ok')"
 
       - name: Build .app
-        run: python3.12 -m PyInstaller --noconfirm bridge_py/build_mac.spec
+        run: .venv/bin/python -m PyInstaller --noconfirm bridge_py/build_mac.spec
 
       - name: Prove supervisor is in the bundle
         run: |
-          python3.12 <<'PY'
+          .venv/bin/python <<'PY'
           from pathlib import Path
           app = Path("dist/WoWGrok.app")
           needle = b"bridge_py.supervisor"
@@ -85,7 +92,7 @@ jobs:
 
       - name: Prove menubar + LSUIElement
         run: |
-          python3.12 <<'PY'
+          .venv/bin/python <<'PY'
           from pathlib import Path
           app = Path("dist/WoWGrok.app")
           plist = next(app.rglob("Info.plist"))
