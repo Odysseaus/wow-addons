@@ -84,6 +84,26 @@ def mark_onboard_wizard_seen(cfg: dict[str, Any]) -> dict[str, Any]:
     return cfg
 
 
+def format_startup_path_log(
+    *,
+    app_version: str,
+    executable: str,
+    frozen: bool,
+    applications: bool,
+) -> str:
+    """One bridge.log line: which binary is running (before the onboard gate)."""
+    return (
+        f"[startup] app_version={app_version} executable={executable} "
+        f"frozen={'true' if frozen else 'false'} "
+        f"applications={'true' if applications else 'false'}"
+    )
+
+
+def should_warn_not_under_applications(*, frozen: bool, applications: bool) -> bool:
+    """Soft nudge: frozen Mac binary outside /Applications or ~/Applications."""
+    return bool(frozen) and not bool(applications)
+
+
 def _setup_incomplete(cfg: dict[str, Any]) -> bool:
     return (
         not cfg.get("addonDir")
@@ -448,6 +468,26 @@ def ensure_first_run_config(
     cfg = cfgmod.load_config()
     if cfg is None:
         cfg = cfgmod.load_example()
+
+    # Always log which binary is running *before* the version-bump gate so a
+    # wrong-path launch (e.g. ~/wowgrok-build-0.1.27) is diagnosable even when
+    # the gate never fires.
+    frozen = onboard_wizard.is_running_frozen()
+    applications = onboard_wizard.is_running_from_applications()
+    _append_bridge_log(
+        format_startup_path_log(
+            app_version=current_app_version(),
+            executable=str(sys.executable),
+            frozen=frozen,
+            applications=applications,
+        )
+    )
+    if should_warn_not_under_applications(frozen=frozen, applications=applications):
+        _append_bridge_log(
+            "[startup] warning: frozen app is not under /Applications or "
+            "~/Applications; old ~/wowgrok-build-* copies can steal Dock/"
+            "Spotlight launches — prefer /Applications/WoWGrok.app"
+        )
 
     # PR #45 left onboardWizardVersion; drop it only — never invent lastSeen.
     legacy_key_present = _LEGACY_ONBOARD_WIZARD_VERSION_KEY in (cfg or {})

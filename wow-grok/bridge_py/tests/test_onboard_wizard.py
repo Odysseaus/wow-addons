@@ -605,5 +605,68 @@ class MenubarSetupHelpersTests(unittest.TestCase):
         run.assert_called_once()
 
 
+class MenuVersionLabelTests(unittest.TestCase):
+    def test_menu_version_label_uses_explicit_version(self):
+        from bridge_py import menubar
+
+        self.assertEqual(menubar.menu_version_label("0.1.31"), "WoWGrok 0.1.31")
+        self.assertEqual(menubar.menu_version_label("9.9.9"), "WoWGrok 9.9.9")
+
+    def test_menu_version_label_defaults_to_package_version(self):
+        from bridge_py import __version__, menubar
+
+        self.assertEqual(menubar.menu_version_label(), f"WoWGrok {__version__}")
+
+
+class StartupPathLogTests(unittest.TestCase):
+    def test_format_startup_path_log(self):
+        from bridge_py import first_run
+
+        line = first_run.format_startup_path_log(
+            app_version="0.1.31",
+            executable="/Applications/WoWGrok.app/Contents/MacOS/WoWGrok",
+            frozen=True,
+            applications=True,
+        )
+        self.assertEqual(
+            line,
+            "[startup] app_version=0.1.31 "
+            "executable=/Applications/WoWGrok.app/Contents/MacOS/WoWGrok "
+            "frozen=true applications=true",
+        )
+
+    def test_format_startup_path_log_false_flags(self):
+        from bridge_py import first_run
+
+        line = first_run.format_startup_path_log(
+            app_version="0.1.27",
+            executable="/Users/gbundt/wowgrok-build-0.1.27/wow-grok/dist/WoWGrok.app/"
+            "Contents/MacOS/WoWGrok",
+            frozen=True,
+            applications=False,
+        )
+        self.assertIn("frozen=true", line)
+        self.assertIn("applications=false", line)
+        self.assertIn("app_version=0.1.27", line)
+
+    def test_should_warn_not_under_applications(self):
+        from bridge_py import first_run
+
+        self.assertTrue(
+            first_run.should_warn_not_under_applications(frozen=True, applications=False)
+        )
+        self.assertFalse(
+            first_run.should_warn_not_under_applications(frozen=True, applications=True)
+        )
+        self.assertFalse(
+            first_run.should_warn_not_under_applications(frozen=False, applications=False)
+        )
+        self.assertFalse(
+            first_run.should_warn_not_under_applications(frozen=False, applications=True)
+        )
+
+
+
+
 if __name__ == "__main__":
     unittest.main()
