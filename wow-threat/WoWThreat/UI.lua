@@ -42,8 +42,10 @@ local PLATE_BORDER = 8
 -- y 86..123. 0.1.15 stopped the fill at y 0.875 (pixel 112), so the stripe
 -- ended above the well floor and the bottom of the gloss was clipped.
 -- 0.1.16/0.1.20 insets to the open interior: x 84..944 (0.082..0.922),
--- y 89..120 (0.695..0.938). Per-row plate height is aspect-locked so the
--- bottom gold border and fill stripe stay visible (not squashed/clipped).
+-- y 89..120 (0.695..0.938). 0.1.21 locks each plate row to an integer
+-- ThreatPlate aspect height and sizes the outer plates window to exactly
+-- five of those rows (explicit content SetSize) so bottom gold corners are
+-- not scissored and the yellow frame is not taller than five plates.
 local GROOVE_L, GROOVE_R = 0.082, 0.922
 local GROOVE_T, GROOVE_B = 0.695, 0.938
 
@@ -284,14 +286,23 @@ local function IsPlayerEntry(e, pname, pguid)
 end
 
 local function PlateRowHeight(rw)
-  -- ThreatPlate.tga is 1024x128. Lock row height to that aspect so the full
-  -- stone plate (bottom gold border + fill well) is never vertically squashed
-  -- or clipped by a too-short row.
+  -- ThreatPlate.tga is 1024x128 (type 2 / 32bpp / desc 40). Integer height
+  -- from the row width so the full stone plate - including bottom gold
+  -- rounded corners - maps into the row with no fractional scissor.
   if not rw or rw < 8 then
     rw = content and content:GetWidth() or 0
   end
   if not rw or rw < 8 then rw = PLATE_W end
-  return rw / PLATE_ASPECT
+  local h = rw / PLATE_ASPECT
+  -- ceil so a fractional pixel cannot drop the bottom gold texel row
+  h = math.floor(h + 0.999)
+  if h < 8 then h = 8 end
+  return h
+end
+
+local function PlatesStackHeight(rw)
+  local ph = PlateRowHeight(rw or PLATE_W)
+  return ph * PLATE_ROWS + PLATE_GAP * (PLATE_ROWS - 1), ph
 end
 
 local function RowPitch()
@@ -517,11 +528,12 @@ local function CreatePlate(parent)
   row:SetHeight(PlateRowHeight(PLATE_W))
   if row.SetClipsChildren then row:SetClipsChildren(false) end
   local bg = row:CreateTexture(nil, 'BACKGROUND')
-  bg:SetAllPoints()
   bg:SetTexture(TEX_PLATE)
-  -- Full 1024x128 plate art. Do not crop; a short row + clip was cutting the
-  -- bottom gold border and fill well off each player plate.
+  -- Full 1024x128 plate art (ThreatPlate has bottom gold corners in-file).
+  -- Parent clip is disabled in ApplyFrame so bottom ornaments are not cut.
   bg:SetTexCoord(0, 1, 0, 1)
+  bg:ClearAllPoints()
+  bg:SetAllPoints(row)
   local nameFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
   nameFS:SetJustifyH('CENTER')
   nameFS:SetWordWrap(false)
@@ -548,13 +560,16 @@ end
 local function LayoutPlate(row)
   local rw = row:GetWidth() or 0
   if rw < 8 then return end
-  -- Keep each plate at texture aspect so bottom border + fill stay visible.
+  -- Integer aspect height; full TexCoord; bg pinned to all four sides so the
+  -- bottom gold corners stay in the drawn quad (not cropped or letterboxed).
   local rh = PlateRowHeight(rw)
   if row.SetHeight then row:SetHeight(rh) end
+  if row.SetClipsChildren then row:SetClipsChildren(false) end
   if row.bg then
     row.bg:SetTexCoord(0, 1, 0, 1)
     row.bg:ClearAllPoints()
-    row.bg:SetAllPoints(row)
+    row.bg:SetPoint('TOPLEFT', row, 'TOPLEFT', 0, 0)
+    row.bg:SetPoint('BOTTOMRIGHT', row, 'BOTTOMRIGHT', 0, 0)
   end
   local nameY = rh * 0.16
   row.nameFS:ClearAllPoints()
@@ -1090,16 +1105,16 @@ local function ApplyFrame(m)
   if m == 'dial' then
     aw, ah = DIAL_SIZE, DIAL_SIZE
   elseif m == 'plates' then
-    -- Outer window is always five plate-rows tall (approved plates concept),
-    -- even when solo shows only one player.
-    local ph = PlateRowHeight(PLATE_W)
-    local stack = ph * PLATE_ROWS + PLATE_GAP * (PLATE_ROWS - 1)
+    -- Outer window is always exactly five plate-rows tall (approved concept),
+    -- even when solo shows only one player inside that container.
+    local stack = PlatesStackHeight(PLATE_W)
     aw = PLATE_W + PLATE_BORDER * 2
     ah = stack + PLATE_BORDER * 2
   else
     aw, ah = FRAME_W, FRAME_H
   end
   main:SetSize(aw, ah + HEADER)
+  if main.SetClipsChildren then main:SetClipsChildren(false) end
   art:ClearAllPoints()
   art:SetPoint('TOPLEFT', main, 'TOPLEFT', 0, -HEADER)
   art:SetSize(aw, ah)
@@ -1112,12 +1127,17 @@ local function ApplyFrame(m)
     if content.SetClipsChildren then content:SetClipsChildren(true) end
   elseif m == 'plates' then
     art:Hide()
+    local stack = PlatesStackHeight(PLATE_W)
+    -- Explicit content size (not BOTTOMRIGHT stretch). Stretching to a stale
+    -- FRAME_H-sized main left a tall empty yellow frame under one plate, and
+    -- a too-short content scissored each row's bottom gold corners.
     content:ClearAllPoints()
     content:SetPoint('TOPLEFT', main, 'TOPLEFT', PLATE_BORDER, -(HEADER + PLATE_BORDER))
-    content:SetPoint('BOTTOMRIGHT', main, 'BOTTOMRIGHT', -PLATE_BORDER, PLATE_BORDER)
-    -- Parent clipping was eating the bottom gold border / fill of each plate
-    -- row when height and texels disagreed by a pixel.
+    content:SetSize(PLATE_W, stack)
     if content.SetClipsChildren then content:SetClipsChildren(false) end
+    if platesLayer and platesLayer.SetClipsChildren then
+      platesLayer:SetClipsChildren(false)
+    end
   else
     art:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatFrame')
     art:Show()
