@@ -14,26 +14,38 @@ class ProviderMappingTests(unittest.TestCase):
         self.assertEqual(wiz.ui_label_to_provider("Grok"), "xai")
         self.assertEqual(wiz.ui_label_to_provider("grok"), "xai")
         self.assertEqual(wiz.ui_label_to_provider("xai"), "xai")
+        self.assertEqual(wiz.ui_label_to_provider("xAI (Grok)"), "xai")
+        self.assertEqual(wiz.ui_label_to_provider("x.ai"), "xai")
 
     def test_ui_label_claude_maps_to_claude(self):
         self.assertEqual(wiz.ui_label_to_provider("Claude"), "claude")
         self.assertEqual(wiz.ui_label_to_provider("anthropic"), "claude")
 
-    def test_coming_soon_labels_return_none(self):
+    def test_removed_provider_labels_return_none(self):
         for label in ("ChatGPT", "Gemini", "Other", "Unknown"):
             self.assertIsNone(wiz.ui_label_to_provider(label), label)
 
-    def test_live_providers_are_claude_and_grok(self):
-        live = wiz.live_provider_ids()
-        self.assertEqual(set(live), {"claude", "grok"})
+    def test_provider_rows_are_only_xai_and_claude(self):
+        """Connect-your-AI picker: xAI (Grok) + Claude only — no Coming soon rows."""
+        self.assertEqual(tuple(r["id"] for r in wiz.PROVIDER_ROWS), ("grok", "claude"))
+        self.assertEqual(wiz.live_provider_ids(), ("grok", "claude"))
+        self.assertEqual(
+            tuple(r["config_provider"] for r in wiz.PROVIDER_ROWS), ("xai", "claude")
+        )
         for row in wiz.PROVIDER_ROWS:
-            if row["id"] in live:
-                self.assertTrue(row["live"])
-                self.assertIsNotNone(row["config_provider"])
-                self.assertIsNotNone(row["key_field"])
-            else:
-                self.assertFalse(row["live"])
-                self.assertIsNone(row["config_provider"])
+            self.assertTrue(row["live"])
+            self.assertIsNotNone(row["key_field"])
+            blob = f"{row['label']} {row['hint']}".lower()
+            for banned in ("coming soon", "chatgpt", "gemini", "other"):
+                self.assertNotIn(banned, blob, row["id"])
+        self.assertIsNone(wiz.provider_row_by_id("chatgpt"))
+        self.assertIsNone(wiz.provider_row_by_id("gemini"))
+        self.assertIsNone(wiz.provider_row_by_id("other"))
+
+    def test_wizard_source_has_no_coming_soon_copy(self):
+        src = Path(wiz.__file__).read_text(encoding="utf-8").lower()
+        for banned in ("coming soon", "chatgpt", "gemini"):
+            self.assertNotIn(banned, src)
 
     def test_provider_row_for_config(self):
         self.assertEqual(wiz.provider_row_for_config("xai")["id"], "grok")
@@ -66,7 +78,7 @@ class WizardStateTests(unittest.TestCase):
         self.assertEqual(st.provider, "xai")
         self.assertEqual(st.key_field, "apiKey")
         self.assertEqual(st.api_key, "xai-test-key")
-        self.assertEqual(st.connected_label, "Grok")
+        self.assertEqual(st.connected_label, "xAI (Grok)")
         self.assertEqual(st.active_step, wiz.STEP_SAY_HI)
         self.assertEqual(st.step_status(wiz.STEP_CONNECT), "done")
         self.assertEqual(st.step_status(wiz.STEP_SAY_HI), "active")
@@ -204,7 +216,7 @@ class FirstRunWizardIntegrationTests(unittest.TestCase):
                 "capture": {},
             }
 
-            def fake_wizard(c: dict) -> dict:
+            def fake_wizard(c: dict, **_kw) -> dict:
                 c["provider"] = "xai"
                 c["apiKey"] = "xai-from-wizard"
                 return first_run._apply_addon_dir(c, Path(tmp))
@@ -260,7 +272,7 @@ class FirstRunWizardIntegrationTests(unittest.TestCase):
                 "capture": {},
             }
 
-            def fake_wizard(c: dict) -> dict:
+            def fake_wizard(c: dict, **_kw) -> dict:
                 c["provider"] = "xai"
                 c["apiKey"] = "xai-from-wizard-win"
                 return first_run._apply_addon_dir(c, Path(tmp))
@@ -304,7 +316,7 @@ class ExistingKeyStateTests(unittest.TestCase):
         row = wiz.provider_row_by_id("grok")
         assert row is not None
         st.mark_existing_key(row)
-        self.assertEqual(st.connected_label, "Grok")
+        self.assertEqual(st.connected_label, "xAI (Grok)")
         self.assertEqual(st.provider, "xai")
         self.assertIsNone(st.api_key)  # nothing new to write back
         self.assertEqual(st.step_status(wiz.STEP_CONNECT), "done")
@@ -348,16 +360,22 @@ class OnboardVersionGateTests(unittest.TestCase):
         cfg = {"lastSeenAppVersion": self.cur}
         self.assertFalse(self.fr.app_version_wizard_due(cfg))
 
-    def test_should_show_matrix_version_only(self):
-        seen = {"lastSeenAppVersion": self.cur}
+    def test_should_show_matrix(self):
+        seen_ok = {"lastSeenAppVersion": self.cur, "apiKey": "xai-test"}
+        seen_nokey = {"lastSeenAppVersion": self.cur, "apiKey": ""}
         show = self.fr.should_show_onboard_wizard
-        # No GUI wizard path → never.
-        self.assertFalse(show({}, use_wizard=False))
-        self.assertFalse(show(seen, use_wizard=False))
-        # Version bump (missing lastSeen) → show once, regardless of setup.
-        self.assertTrue(show({}, use_wizard=True))
-        # Same version → never auto-show (even if caller would have needs_setup).
-        self.assertFalse(show(seen, use_wizard=True))
+        with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
+            self.fr.cfgmod, "_stored_secret", return_value=""
+        ):
+            # No GUI wizard path → never.
+            self.assertFalse(show({}, use_wizard=False))
+            self.assertFalse(show(seen_nokey, use_wizard=False))
+            # Version bump (missing lastSeen) → show, regardless of setup.
+            self.assertTrue(show({"apiKey": "xai-test"}, use_wizard=True))
+            # Same version + no token → show.
+            self.assertTrue(show(seen_nokey, use_wizard=True))
+            # Same version + valid token → menu bar only.
+            self.assertFalse(show(seen_ok, use_wizard=True))
 
     def test_mark_seen_writes_app_version(self):
         cfg: dict = {}
@@ -429,6 +447,7 @@ class UpgradeGateIntegrationTests(unittest.TestCase):
         ], patches[6], patches[7] as save, patches[8], patches[9], patches[10] as prov, patches[
             11
         ] as xai_key, patches[12] as addons:
+            self._last = (run_wiz, prov, xai_key, addons)
             out = first_run.ensure_first_run_config(headless=False)
         return out, run_wiz, save, prov, xai_key, addons
 
@@ -485,7 +504,8 @@ class UpgradeGateIntegrationTests(unittest.TestCase):
             self.assertEqual(saved["lastSeenAppVersion"], first_run.current_app_version())
             self.assertNotIn("onboardWizardVersion", saved)
 
-    def test_same_version_incomplete_uses_sequential_not_wizard(self):
+    def test_same_version_no_token_shows_wizard(self):
+        """Same version but no AI key → wizard auto-shows (CoS rule), not sequential."""
         import tempfile
         from bridge_py import first_run
 
@@ -493,16 +513,109 @@ class UpgradeGateIntegrationTests(unittest.TestCase):
             cfg = self._configured(tmp)
             cfg["apiKey"] = ""
             cfg["lastSeenAppVersion"] = first_run.current_app_version()
-            out, run_wiz, save, prov, xai_key, addons = self._run(
-                cfg, tmp, prompt_key="xai-from-sequential"
-            )
+            # finish_later without a key → wizard shown, then exit 2.
+            with self.assertRaises(SystemExit) as cm:
+                self._run(cfg, tmp, prompt_key="xai-from-sequential")
+            self.assertEqual(cm.exception.code, 2)
+            run_wiz, prov, xai_key, addons = self._last
+            run_wiz.assert_called_once()
+            # Old sequential popups must never run alongside the wizard.
+            prov.assert_not_called()
+            xai_key.assert_not_called()
+            addons.assert_not_called()
+
+    def test_same_version_missing_addons_uses_wizard_not_legacy_picker(self):
+        import tempfile
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._configured(tmp)
+            cfg["addonDir"] = str(Path(tmp) / "nope")
+            cfg["lastSeenAppVersion"] = first_run.current_app_version()
+            with self.assertRaises(SystemExit):
+                self._run(cfg, tmp, prompt_addons=Path(tmp))
+            run_wiz, prov, xai_key, addons = self._last
+            run_wiz.assert_called_once()
+            addons.assert_not_called()  # legacy AddOns popup not used directly
+            prov.assert_not_called()
+            xai_key.assert_not_called()
+
+    def test_gate_reasons(self):
+        from bridge_py import first_run
+
+        cur = first_run.current_app_version()
+        gate = first_run.onboard_wizard_gate
+        self.assertEqual(gate({}, use_wizard=False), (False, "no_gui"))
+        self.assertEqual(gate({}, use_wizard=True, token_state="ok"), (True, "version_bump"))
+        seen = {"lastSeenAppVersion": cur}
+        self.assertEqual(gate(seen, use_wizard=True, token_state="missing"), (True, "no_token"))
+        self.assertEqual(
+            gate(seen, use_wizard=True, token_state="invalid"), (True, "token_invalid")
+        )
+        self.assertEqual(
+            gate(seen, use_wizard=True, token_state="ok", addons_missing=True),
+            (True, "no_addons"),
+        )
+        self.assertEqual(gate(seen, use_wizard=True, token_state="ok"), (False, "current"))
+
+    def test_same_version_flagged_invalid_shows_wizard_asking_for_new_key(self):
+        import tempfile
+        from bridge_py import first_run, key_health
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._configured(tmp)
+            cfg["lastSeenAppVersion"] = first_run.current_app_version()
+            key_health.mark_key_invalid(cfg, "xai", 400, "chat rejected key")
+            out, run_wiz, *_ = self._run(cfg, tmp)
+            run_wiz.assert_called_once()
+            # Connect must not show "connected" for a rejected key.
+            self.assertFalse(run_wiz.call_args.kwargs["provider_key_present"])
+            # finish later keeps the old key + flag; app keeps running (no exit).
+            self.assertEqual(out["apiKey"], "xai-existing")
+            self.assertTrue(key_health.is_key_flagged_invalid(out))
+
+    def test_same_version_valid_token_no_wizard(self):
+        import tempfile
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._configured(tmp)
+            cfg["lastSeenAppVersion"] = first_run.current_app_version()
+            out, run_wiz, save, prov, xai_key, addons = self._run(cfg, tmp)
             run_wiz.assert_not_called()
-            addons.assert_not_called()  # AddOns already set
-            prov.assert_called_once()
-            xai_key.assert_called_once()
-            self.assertEqual(out["apiKey"], "xai-from-sequential")
-            # lastSeen must not be rewritten just because setup was incomplete
-            self.assertEqual(out["lastSeenAppVersion"], first_run.current_app_version())
+            addons.assert_not_called()
+            prov.assert_not_called()
+            xai_key.assert_not_called()
+
+    def test_same_version_probe_invalid_shows_wizard_and_persists_flag(self):
+        import tempfile
+        from bridge_py import first_run, key_health
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._configured(tmp)
+            cfg["lastSeenAppVersion"] = first_run.current_app_version()
+            with mock.patch.object(
+                key_health, "probe_provider_key", return_value="invalid"
+            ) as probe:
+                out, run_wiz, save, *_ = self._run(cfg, tmp)
+            probe.assert_called_once()
+            run_wiz.assert_called_once()
+            self.assertTrue(key_health.is_key_flagged_invalid(out))
+
+    def test_probe_disabled_by_config(self):
+        import tempfile
+        from bridge_py import first_run, key_health
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._configured(tmp)
+            cfg["lastSeenAppVersion"] = first_run.current_app_version()
+            cfg["keyProbeOnStartup"] = False
+            with mock.patch.object(
+                key_health, "probe_provider_key", return_value="invalid"
+            ) as probe:
+                out, run_wiz, *_ = self._run(cfg, tmp)
+            probe.assert_not_called()
+            run_wiz.assert_not_called()
 
     def test_version_bump_finish_later_without_key_still_exits_2(self):
         """After the version-bump wizard closes without a key, exit 2 (not sequential)."""

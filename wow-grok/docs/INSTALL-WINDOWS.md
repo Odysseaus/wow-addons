@@ -17,11 +17,11 @@ You need **Windows 10 or 11**, **World of Warcraft: Forever** (or another local 
 
 ## 2. Connect your AI: paste an API key
 
-1. In the wizard, choose **Grok** (xAI, default) or **Claude**. ChatGPT / Gemini / Other are listed as Coming soon.
+1. In the wizard, choose **xAI (Grok)** (default) or **Claude** — the only two providers.
 2. Paste the key for that provider:
    - xAI: create one at [console.x.ai](https://console.x.ai/) (keys start with `xai-`).
    - Claude: create one at [console.anthropic.com](https://console.anthropic.com/).
-   - API keys are billed per use by the provider. A Grok, ChatGPT, or Claude **chat subscription is not an API key**.
+   - API keys are billed per use by the provider. A Grok or Claude **chat subscription is not an API key**.
    - Keys go in **Windows Credential Manager** (see [Fair questions](#fair-questions)).
 3. Continue through **Say hi in game**, then wait for install to finish. In about a minute WoWGrok writes the `WoWGrok` addon and its reply slots (`WoWGrok_S001` to `WoWGrok_S200`) into your AddOns folder. Don't copy any folders yourself.
 

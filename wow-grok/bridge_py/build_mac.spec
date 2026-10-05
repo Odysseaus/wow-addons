@@ -29,6 +29,7 @@ a = Analysis(
         'bridge_py.config',
         'bridge_py.first_run',
         'bridge_py.onboard_wizard',
+        'bridge_py.key_health',
         'bridge_py.install_addon',
         'bridge_py.install_slots',
         'bridge_py.protocol',
