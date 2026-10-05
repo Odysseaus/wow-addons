@@ -23,6 +23,10 @@ jobs:
     defaults:
       run:
         working-directory: wow-grok
+    env:
+      # Self-hosted: do not mkdir /Users/runner (hosted image path)
+      AGENT_TOOLSDIRECTORY: /Users/gbundt/actions-runner/wow-addons/hostedtoolcache
+      RUNNER_TOOL_CACHE: /Users/gbundt/actions-runner/wow-addons/hostedtoolcache
     steps:
       - uses: actions/checkout@v4
 
@@ -123,16 +127,6 @@ jobs:
           fi
           ls -la dist/WoWGrok.dmg
 
-
-      - name: Wipe runner work directory
-        if: always()
-        run: |
-          # Belt-and-suspenders beyond ACTIONS_RUNNER_HOOK_JOB_COMPLETED on the Mac runner
-          set -euo pipefail
-          ROOT="${{ runner.workspace }}"
-          echo "Cleaning workspace under $ROOT"
-          find "$ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
-          echo "Workspace cleaned"
 
       - name: Create / update Release
         env:
