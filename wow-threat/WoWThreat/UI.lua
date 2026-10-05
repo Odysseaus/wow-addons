@@ -9,10 +9,13 @@ local ROW_N = 10
 -- Bars only. Dial marks and plates still use ROW_N. Five rows fill the frame
 -- the way the approved bars concept does.
 local BAR_ROWS = 5
-local BAR_GAP = 6
--- Fraction of the bar row used by the glossy slot. 0.1.15 used 0.42 and then
--- capped the slot at 18px, which drew a thin sliver inside a 10-row stack.
-local BAR_SLOT_FRAC = 0.78
+local BAR_GAP = 8
+-- Fraction of the bar row used by the glossy bar. Smaller than 0.1.17 so the
+-- bars sit clear of the gold frame with a visible inner margin.
+local BAR_SLOT_FRAC = 0.68
+-- Extra inset inside the content hole so bars never touch the filigree frame.
+local BAR_PAD_X = 12
+local BAR_PAD_Y = 10
 local POLL = 0.2
 local LERP_T = 0.25
 local SCALE_MIN, SCALE_MAX = 0.6, 1.6
@@ -296,6 +299,9 @@ local function RowPitch()
       ch = FRAME_H * 0.70
     end
   end
+  if m == 'bars' then
+    ch = ch - (BAR_PAD_Y * 2)
+  end
   local rh = (ch - gap * (count - 1)) / count
   if rh < 8 then rh = 8 end
   return rh, gap
@@ -342,11 +348,22 @@ local function MakeMiniButton(parent, name, label, w)
   return b
 end
 
-local TEX_FILL = 'Interface\\AddOns\\WoWThreat\\Textures\\BarFill'
-local TEX_SHINE = 'Interface\\AddOns\\WoWThreat\\Textures\\BarShine'
-local TEX_PLATE = 'Interface\\AddOns\\WoWThreat\\Textures\\ThreatPlate'
-local TEX_DIAMOND = 'Interface\\AddOns\\WoWThreat\\Textures\\Diamond'
-local TEX_GOLD = 'Interface\\AddOns\\WoWThreat\\Textures\\GoldLine'
+-- BarFill/BarShine stay for plates. Bars use per-rank fills cut from the
+-- approved image plus a gold bevel border.
+local TEX_FILL = 'Interface\AddOns\WoWThreat\Textures\BarFill'
+local TEX_SHINE = 'Interface\AddOns\WoWThreat\Textures\BarShine'
+local TEX_PLATE = 'Interface\AddOns\WoWThreat\Textures\ThreatPlate'
+local TEX_DIAMOND = 'Interface\AddOns\WoWThreat\Textures\Diamond'
+local TEX_GOLD = 'Interface\AddOns\WoWThreat\Textures\GoldLine'
+local TEX_BEVEL = 'Interface\AddOns\WoWThreat\Textures\BarBevel'
+local TEX_FILL_RANK = {
+  'Interface\AddOns\WoWThreat\Textures\BarFillRank1',
+  'Interface\AddOns\WoWThreat\Textures\BarFillRank2',
+  'Interface\AddOns\WoWThreat\Textures\BarFillRank3',
+  'Interface\AddOns\WoWThreat\Textures\BarFillRank4',
+  'Interface\AddOns\WoWThreat\Textures\BarFillRank5',
+}
+local BEVEL_CAP = 32 / 256
 
 local function CreateBarRow(parent)
   local row = CreateFrame('Frame', nil, parent)
@@ -362,45 +379,38 @@ local function CreateBarRow(parent)
   pctFS:SetWordWrap(false)
   pctFS:SetFont('Fonts\\FRIZQT__.TTF', 14, '')
   pctFS:SetTextColor(0.96, 0.91, 0.78)
-  -- Track starts after the icon, not after the name, so every row shares a left edge.
+  -- Track starts after the icon so every row shares a left edge.
   local slot = CreateFrame('Frame', nil, row)
   slot:SetPoint('LEFT', row, 'LEFT', 20, 0)
   slot:SetPoint('RIGHT', pctFS, 'LEFT', -6, 0)
   slot:SetHeight(12)
-  local rim = slot:CreateTexture(nil, 'BACKGROUND')
-  rim:SetPoint('TOPLEFT', -1, 1)
-  rim:SetPoint('BOTTOMRIGHT', 1, -1)
-  rim:SetTexture('Interface\\Buttons\\WHITE8X8')
-  rim:SetVertexColor(0.45, 0.32, 0.10, 0.95)
-  local track = slot:CreateTexture(nil, 'BORDER')
-  track:SetPoint('TOPLEFT', 1, -1)
-  track:SetPoint('BOTTOMRIGHT', -1, 1)
-  track:SetTexture('Interface\\Buttons\\WHITE8X8')
-  track:SetVertexColor(0.05, 0.04, 0.03, 0.92)
-  -- StatusBar fill grows from the left. SetValue takes the collector percent
-  -- (or a secret number) without this file doing arithmetic on a secret.
+  -- StatusBar fill grows from the left. Per-rank art is the StatusBar texture.
+  -- SetValue takes the collector percent (or a secret) without arithmetic here.
   local status = CreateFrame('StatusBar', nil, slot)
-  status:SetPoint('TOPLEFT', slot, 'TOPLEFT', 1, -1)
-  status:SetPoint('BOTTOMRIGHT', slot, 'BOTTOMRIGHT', -1, 1)
-  status:SetStatusBarTexture(TEX_FILL)
+  status:SetPoint('TOPLEFT', slot, 'TOPLEFT', 0, 0)
+  status:SetPoint('BOTTOMRIGHT', slot, 'BOTTOMRIGHT', 0, 0)
+  status:SetStatusBarTexture(TEX_FILL_RANK[1])
   status:SetMinMaxValues(0, 100)
   status:SetValue(0)
   if status.SetOrientation then status:SetOrientation('HORIZONTAL') end
   if status.SetReverseFill then status:SetReverseFill(false) end
-  status:SetStatusBarColor(BAR_RANK_RGB[1][1], BAR_RANK_RGB[1][2], BAR_RANK_RGB[1][3], 1)
-  local shine = status:CreateTexture(nil, 'OVERLAY')
-  shine:SetTexture(TEX_SHINE)
-  shine:SetBlendMode('ADD')
-  shine:SetAlpha(0.9)
-  shine:SetVertexColor(1, 0.97, 0.90, 0.95)
-  local sbTex = status:GetStatusBarTexture()
-  if sbTex then
-    shine:SetAllPoints(sbTex)
-  end
+  -- Art already carries rank color; keep the vertex white.
+  status:SetStatusBarColor(1, 1, 1, 1)
+  -- Gold bevel is a 3-slice (left cap / stretch mid / right cap) locked to the
+  -- StatusBar fill texture so the border shrinks with threat.
+  local bevelL = status:CreateTexture(nil, 'OVERLAY', nil, 1)
+  bevelL:SetTexture(TEX_BEVEL)
+  bevelL:SetTexCoord(0, BEVEL_CAP, 0, 1)
+  local bevelM = status:CreateTexture(nil, 'OVERLAY', nil, 1)
+  bevelM:SetTexture(TEX_BEVEL)
+  bevelM:SetTexCoord(BEVEL_CAP, 1 - BEVEL_CAP, 0, 1)
+  local bevelR = status:CreateTexture(nil, 'OVERLAY', nil, 1)
+  bevelR:SetTexture(TEX_BEVEL)
+  bevelR:SetTexCoord(1 - BEVEL_CAP, 1, 0, 1)
   local nameLayer = CreateFrame('Frame', nil, status)
   nameLayer:SetAllPoints()
   if nameLayer.SetFrameLevel and status.GetFrameLevel then
-    nameLayer:SetFrameLevel(status:GetFrameLevel() + 2)
+    nameLayer:SetFrameLevel(status:GetFrameLevel() + 3)
   end
   local nameFS = nameLayer:CreateFontString(nil, 'OVERLAY')
   nameFS:SetPoint('LEFT', nameLayer, 'LEFT', 8, 0)
@@ -417,7 +427,9 @@ local function CreateBarRow(parent)
   row.pctFS = pctFS
   row.slot = slot
   row.status = status
-  row.shine = shine
+  row.bevelL = bevelL
+  row.bevelM = bevelM
+  row.bevelR = bevelR
   row.rankApplied = nil
   row:Hide()
   return row
@@ -438,12 +450,31 @@ local function LayoutBarFill(row)
   row.slot:SetPoint('LEFT', row, 'LEFT', icon + 6, 0)
   row.slot:SetPoint('RIGHT', row.pctFS, 'LEFT', -6, 0)
   row.slot:SetHeight(sh)
-  -- Gloss follows the status-bar texture, which is only the filled span.
-  if row.status and row.shine and row.status.GetStatusBarTexture then
+  -- Bevel follows the filled StatusBar texture (grows and shrinks with threat).
+  if row.status and row.status.GetStatusBarTexture then
     local sbTex = row.status:GetStatusBarTexture()
-    if sbTex then
-      row.shine:ClearAllPoints()
-      row.shine:SetAllPoints(sbTex)
+    local bevelL, bevelM, bevelR = row.bevelL, row.bevelM, row.bevelR
+    if sbTex and bevelL and bevelM and bevelR then
+      local pad = 2
+      local cap = sh * 0.22
+      if cap < 6 then cap = 6 end
+      if cap > 14 then cap = 14 end
+      bevelL:ClearAllPoints()
+      bevelM:ClearAllPoints()
+      bevelR:ClearAllPoints()
+      bevelL:SetPoint('TOPLEFT', sbTex, 'TOPLEFT', -pad, pad)
+      bevelL:SetPoint('BOTTOMLEFT', sbTex, 'BOTTOMLEFT', -pad, -pad)
+      bevelL:SetWidth(cap)
+      bevelR:SetPoint('TOPRIGHT', sbTex, 'TOPRIGHT', pad, pad)
+      bevelR:SetPoint('BOTTOMRIGHT', sbTex, 'BOTTOMRIGHT', pad, -pad)
+      bevelR:SetWidth(cap)
+      bevelM:SetPoint('TOPLEFT', bevelL, 'TOPRIGHT', 0, 0)
+      bevelM:SetPoint('BOTTOMLEFT', bevelL, 'BOTTOMRIGHT', 0, 0)
+      bevelM:SetPoint('TOPRIGHT', bevelR, 'TOPLEFT', 0, 0)
+      bevelM:SetPoint('BOTTOMRIGHT', bevelR, 'BOTTOMLEFT', 0, 0)
+      bevelL:Show()
+      bevelM:Show()
+      bevelR:Show()
     end
   end
 end
@@ -619,13 +650,12 @@ local function FillBar(row, e, rank)
   ApplyIcon(row.icon, e.class)
   row.nameFS:SetText(FirstName(e))
   row.nameFS:SetTextColor(0.97, 0.94, 0.86)
-  -- Color stays on the rank. Do not recolor from pct, from the animated
-  -- width, or because this row's player changed units.
-  local tr, tg, tb = BarRankRGB(rank or 1)
+  -- Rank art stays on the row. Do not swap textures from pct or fill width.
   if row.rankApplied ~= rank then
     row.rankApplied = rank
-    row.status:SetStatusBarColor(tr, tg, tb, 1)
-    row.shine:SetVertexColor(1, 0.97, 0.90, 0.95)
+    local tex = TEX_FILL_RANK[rank or 1] or TEX_FILL_RANK[#TEX_FILL_RANK]
+    row.status:SetStatusBarTexture(tex)
+    row.status:SetStatusBarColor(1, 1, 1, 1)
   end
   -- e.pct is the collector's 0-100 percent. Do not fall back to raw threat.
   -- Do not compare or format a secret; SetValue can take it as-is.
@@ -800,9 +830,9 @@ local function Animate(elapsed)
       if st and row.targetY then
         st.y = Lerp(st.y, row.targetY, elapsed)
         row:ClearAllPoints()
-        row:SetPoint('TOPLEFT', content, 'TOPLEFT', 0, st.y)
-        row:SetPoint('TOPRIGHT', content, 'TOPRIGHT', 0, st.y)
-        -- Position only. Rank color and StatusBar value are not touched here.
+        row:SetPoint('TOPLEFT', content, 'TOPLEFT', BAR_PAD_X, st.y - BAR_PAD_Y)
+        row:SetPoint('TOPRIGHT', content, 'TOPRIGHT', -BAR_PAD_X, st.y - BAR_PAD_Y)
+        -- Position only. Rank texture and StatusBar value are not touched here.
         LayoutBarFill(row)
       end
     end

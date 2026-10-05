@@ -2,7 +2,7 @@
 ## Title: WoW Threat
 ## Notes: Forever threat meter — approved bars, dial, and plates.
 ## Author: Odysseaus
-## Version: 0.1.17
+## Version: 0.1.18
 ## IconTexture: Interface\Icons\Spell_Fire_Fireball
 ## SavedVariables: WoWThreatDB
 
