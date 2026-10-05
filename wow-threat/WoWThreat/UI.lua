@@ -6,9 +6,10 @@ local function valueIsSecret(value)
 end
 
 local ROW_N = 10
--- Bars only. Dial marks and plates still use ROW_N. Five rows fill the frame
--- the way the approved bars concept does.
+-- Bars and plates cap at five visible rows (approved concepts). Dial marks
+-- still use ROW_N.
 local BAR_ROWS = 5
+local PLATE_ROWS = 5
 local BAR_GAP = 8
 -- Fraction of the bar row used by the glossy bar. Smaller than 0.1.17 so the
 -- bars sit clear of the gold frame with a visible inner margin.
@@ -40,8 +41,9 @@ local PLATE_BORDER = 8
 -- Inner well of ThreatPlate.tga (1024x128): gold stroke is about x 73..948 and
 -- y 86..123. 0.1.15 stopped the fill at y 0.875 (pixel 112), so the stripe
 -- ended above the well floor and the bottom of the gloss was clipped.
--- 0.1.16 insets to the open interior: x 84..944 (0.082..0.922), y 89..120
--- (0.695..0.938).
+-- 0.1.16/0.1.20 insets to the open interior: x 84..944 (0.082..0.922),
+-- y 89..120 (0.695..0.938). Per-row plate height is aspect-locked so the
+-- bottom gold border and fill stripe stay visible (not squashed/clipped).
 local GROOVE_L, GROOVE_R = 0.082, 0.922
 local GROOVE_T, GROOVE_B = 0.695, 0.938
 
@@ -281,6 +283,17 @@ local function IsPlayerEntry(e, pname, pguid)
   return false
 end
 
+local function PlateRowHeight(rw)
+  -- ThreatPlate.tga is 1024x128. Lock row height to that aspect so the full
+  -- stone plate (bottom gold border + fill well) is never vertically squashed
+  -- or clipped by a too-short row.
+  if not rw or rw < 8 then
+    rw = content and content:GetWidth() or 0
+  end
+  if not rw or rw < 8 then rw = PLATE_W end
+  return rw / PLATE_ASPECT
+end
+
 local function RowPitch()
   local ch = content and content:GetHeight() or 0
   local m = string.lower(tostring((NS.db and NS.db.mode) or 'bars'))
@@ -288,6 +301,8 @@ local function RowPitch()
   local gap = 2
   if m == 'plates' then
     gap = PLATE_GAP
+    count = PLATE_ROWS
+    return PlateRowHeight(content and content:GetWidth() or PLATE_W), gap
   elseif m == 'bars' then
     count = BAR_ROWS
     gap = BAR_GAP
@@ -499,10 +514,14 @@ end
 
 local function CreatePlate(parent)
   local row = CreateFrame('Frame', nil, parent)
-  row:SetHeight(18)
+  row:SetHeight(PlateRowHeight(PLATE_W))
+  if row.SetClipsChildren then row:SetClipsChildren(false) end
   local bg = row:CreateTexture(nil, 'BACKGROUND')
   bg:SetAllPoints()
   bg:SetTexture(TEX_PLATE)
+  -- Full 1024x128 plate art. Do not crop; a short row + clip was cutting the
+  -- bottom gold border and fill well off each player plate.
+  bg:SetTexCoord(0, 1, 0, 1)
   local nameFS = row:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
   nameFS:SetJustifyH('CENTER')
   nameFS:SetWordWrap(false)
@@ -527,9 +546,16 @@ local function CreatePlate(parent)
 end
 
 local function LayoutPlate(row)
-  local rh = row:GetHeight() or 18
   local rw = row:GetWidth() or 0
   if rw < 8 then return end
+  -- Keep each plate at texture aspect so bottom border + fill stay visible.
+  local rh = PlateRowHeight(rw)
+  if row.SetHeight then row:SetHeight(rh) end
+  if row.bg then
+    row.bg:SetTexCoord(0, 1, 0, 1)
+    row.bg:ClearAllPoints()
+    row.bg:SetAllPoints(row)
+  end
   local nameY = rh * 0.16
   row.nameFS:ClearAllPoints()
   row.nameFS:SetPoint('CENTER', row, 'CENTER', 0, nameY)
@@ -718,11 +744,12 @@ local function SyncRows(list)
   if n > ROW_N then n = ROW_N end
   local nBar = n
   if nBar > BAR_ROWS then nBar = BAR_ROWS end
+  local nPlate = n
+  if nPlate > PLATE_ROWS then nPlate = PLATE_ROWS end
   for i = 1, n do
     local e = list[i]
     local key = EntryKey(e, i)
     local y = -((i - 1) * (rh + gap))
-    seenP[key] = true
     seenM[key] = true
     if i <= nBar then
       seenB[key] = true
@@ -735,13 +762,17 @@ local function SyncRows(list)
         bar:Show()
       end
     end
-    local plate = Acquire(plateByKey, plateFree, key)
-    if plate then
-      plate:SetHeight(rh)
-      FillPlate(plate, e, i, n)
-      plate.targetY = y
-      if not plateSmooth[key] then plateSmooth[key] = { y = y } end
-      plate:Show()
+    if i <= nPlate then
+      seenP[key] = true
+      local plate = Acquire(plateByKey, plateFree, key)
+      if plate then
+        -- Aspect-locked height (not a shortened slice of a tall/short window).
+        plate:SetHeight(PlateRowHeight(plate:GetWidth() or PLATE_W))
+        FillPlate(plate, e, i, n)
+        plate.targetY = y
+        if not plateSmooth[key] then plateSmooth[key] = { y = y } end
+        plate:Show()
+      end
     end
     local mk = Acquire(markByKey, markFree, key)
     if mk then
@@ -847,6 +878,7 @@ local function Animate(elapsed)
         row:ClearAllPoints()
         row:SetPoint('TOPLEFT', content, 'TOPLEFT', 0, st.y)
         row:SetPoint('TOPRIGHT', content, 'TOPRIGHT', 0, st.y)
+        row:SetHeight(PlateRowHeight(row:GetWidth() or PLATE_W))
         LayoutPlate(row)
       end
     end
@@ -1058,8 +1090,10 @@ local function ApplyFrame(m)
   if m == 'dial' then
     aw, ah = DIAL_SIZE, DIAL_SIZE
   elseif m == 'plates' then
-    local ph = PLATE_W / PLATE_ASPECT
-    local stack = ph * ROW_N + PLATE_GAP * (ROW_N - 1)
+    -- Outer window is always five plate-rows tall (approved plates concept),
+    -- even when solo shows only one player.
+    local ph = PlateRowHeight(PLATE_W)
+    local stack = ph * PLATE_ROWS + PLATE_GAP * (PLATE_ROWS - 1)
     aw = PLATE_W + PLATE_BORDER * 2
     ah = stack + PLATE_BORDER * 2
   else
@@ -1075,17 +1109,22 @@ local function ApplyFrame(m)
     art:Show()
     content:ClearAllPoints()
     content:SetAllPoints(art)
+    if content.SetClipsChildren then content:SetClipsChildren(true) end
   elseif m == 'plates' then
     art:Hide()
     content:ClearAllPoints()
     content:SetPoint('TOPLEFT', main, 'TOPLEFT', PLATE_BORDER, -(HEADER + PLATE_BORDER))
     content:SetPoint('BOTTOMRIGHT', main, 'BOTTOMRIGHT', -PLATE_BORDER, PLATE_BORDER)
+    -- Parent clipping was eating the bottom gold border / fill of each plate
+    -- row when height and texels disagreed by a pixel.
+    if content.SetClipsChildren then content:SetClipsChildren(false) end
   else
     art:SetTexture('Interface\\AddOns\\WoWThreat\\Textures\\ThreatFrame')
     art:Show()
     content:ClearAllPoints()
     content:SetPoint('TOPLEFT', art, 'TOPLEFT', aw * IN_L, -ah * IN_T)
     content:SetPoint('BOTTOMRIGHT', art, 'BOTTOMRIGHT', -aw * IN_R, ah * IN_B)
+    if content.SetClipsChildren then content:SetClipsChildren(true) end
   end
   if plateBorder then
     if m == 'plates' then plateBorder:Show() else plateBorder:Hide() end
