@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest  # was macos-14; failover when macos-14 queue starves
+    runs-on: macos-13  # failover: macos-14/latest starved
     defaults:
       run:
         working-directory: wow-grok
