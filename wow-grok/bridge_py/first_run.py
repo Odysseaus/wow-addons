@@ -26,7 +26,7 @@ from . import tk_util
 # Auto-show only when bridge_py.__version__ differs from this value (missing =
 # new → show once). Same app version never auto-shows, even if setup is incomplete
 # (menu bar + Setup… / sequential prompts instead). Legacy ``onboardWizardVersion``
-# from PR #45 is migrated to lastSeenAppVersion without re-showing.
+# from PR #45 is deleted only — never invent a fake lastSeenAppVersion.
 LAST_SEEN_APP_VERSION_KEY = "lastSeenAppVersion"
 _LEGACY_ONBOARD_WIZARD_VERSION_KEY = "onboardWizardVersion"
 
@@ -39,25 +39,25 @@ def current_app_version() -> str:
 
 
 def migrate_legacy_onboard_wizard_version(cfg: dict[str, Any]) -> bool:
-    """If PR #45 left ``onboardWizardVersion`` but no ``lastSeenAppVersion``, mark seen.
+    """Drop PR #45 ``onboardWizardVersion`` without inventing ``lastSeenAppVersion``.
 
-    Treats those installs as already shown for the *current* app version so
-    testers are not double-prompted. Mutates ``cfg``; does not save. Returns True
-    when a migration write is needed.
+    Setting lastSeen to the *current* build previously skipped the version-bump
+    wizard for users who only had the legacy key (e.g. first launch of 0.1.29).
+    Preferred behavior: delete the legacy key only and leave lastSeen missing so
+    this build still auto-shows once per the product rule. Mutates ``cfg``; does
+    not save. Returns True when a migration write is needed.
     """
-    if (cfg or {}).get(LAST_SEEN_APP_VERSION_KEY):
-        return False
     if _LEGACY_ONBOARD_WIZARD_VERSION_KEY not in (cfg or {}):
         return False
-    cfg[LAST_SEEN_APP_VERSION_KEY] = current_app_version()
+    del cfg[_LEGACY_ONBOARD_WIZARD_VERSION_KEY]
     return True
 
 
 def app_version_wizard_due(cfg: dict[str, Any] | None) -> bool:
     """True when ``lastSeenAppVersion`` is missing or differs from the running app.
 
-    Call after :func:`migrate_legacy_onboard_wizard_version` so #45 configs that
-    already saw the wizard are not due again.
+    Call after :func:`migrate_legacy_onboard_wizard_version` so the legacy key
+    alone cannot suppress the gate (it is deleted, not converted to lastSeen).
     """
     seen = str((cfg or {}).get(LAST_SEEN_APP_VERSION_KEY) or "")
     return seen != current_app_version()
@@ -449,18 +449,25 @@ def ensure_first_run_config(
     if cfg is None:
         cfg = cfgmod.load_example()
 
-    # #45 testers already saw the wizard via onboardWizardVersion — mark seen for
-    # this build without opening it again.
+    # PR #45 left onboardWizardVersion; drop it only — never invent lastSeen.
+    legacy_key_present = _LEGACY_ONBOARD_WIZARD_VERSION_KEY in (cfg or {})
     if migrate_legacy_onboard_wizard_version(cfg):
         try:
             cfgmod.save_config(cfg)
         except Exception as e:  # noqa: BLE001
-            _append_bridge_log(f"[onboard-wizard] failed to save lastSeen migration: {e}")
+            _append_bridge_log(f"[onboard-wizard] failed to save legacy-key cleanup: {e}")
 
     use_wizard = onboard_wizard.should_use_wizard(
         headless=headless, gui_available=_gui_available()
     )
     show_wizard = should_show_onboard_wizard(cfg, use_wizard=use_wizard)
+    _append_bridge_log(
+        f"[onboard-wizard] gate "
+        f"seen={cfg.get(LAST_SEEN_APP_VERSION_KEY)!r} "
+        f"current={current_app_version()!r} "
+        f"show={'true' if show_wizard else 'false'} "
+        f"legacy_key={'true' if legacy_key_present else 'false'}"
+    )
 
     # CLI --wow always wins for AddOns path (headless and GUI).
     if wow:
@@ -493,11 +500,7 @@ def ensure_first_run_config(
     showed_wizard = False
     if show_wizard:
         # Once per app version bump only (not every needs_setup launch).
-        _append_bridge_log(
-            f"[onboard-wizard] show version_due "
-            f"seen={cfg.get(LAST_SEEN_APP_VERSION_KEY)!r} "
-            f"current={current_app_version()!r}"
-        )
+        # Gate decision already logged above (seen/current/show/legacy_key).
         cfg = _run_onboard_wizard(cfg)
         showed_wizard = True
 

@@ -368,12 +368,19 @@ class OnboardVersionGateTests(unittest.TestCase):
     def test_migrate_legacy_onboard_wizard_version(self):
         cfg = {"onboardWizardVersion": 1, "apiKey": "k"}
         self.assertTrue(self.fr.migrate_legacy_onboard_wizard_version(cfg))
-        self.assertEqual(cfg["lastSeenAppVersion"], self.cur)
-        self.assertFalse(self.fr.app_version_wizard_due(cfg))
-        # Idempotent: already has lastSeen → no-op.
+        # Legacy key removed; lastSeen must NOT be invented (wizard still due).
+        self.assertNotIn("onboardWizardVersion", cfg)
+        self.assertNotIn("lastSeenAppVersion", cfg)
+        self.assertTrue(self.fr.app_version_wizard_due(cfg))
+        # Idempotent: no legacy key left → no-op.
         self.assertFalse(self.fr.migrate_legacy_onboard_wizard_version(cfg))
         # No legacy key → no migration.
         self.assertFalse(self.fr.migrate_legacy_onboard_wizard_version({"apiKey": "k"}))
+        # Legacy key with existing lastSeen: still only deletes the legacy key.
+        cfg2 = {"onboardWizardVersion": 1, "lastSeenAppVersion": "0.1.28"}
+        self.assertTrue(self.fr.migrate_legacy_onboard_wizard_version(cfg2))
+        self.assertNotIn("onboardWizardVersion", cfg2)
+        self.assertEqual(cfg2["lastSeenAppVersion"], "0.1.28")
 
 
 class UpgradeGateIntegrationTests(unittest.TestCase):
@@ -462,18 +469,21 @@ class UpgradeGateIntegrationTests(unittest.TestCase):
             run_wiz.assert_called_once()
             self.assertEqual(out["lastSeenAppVersion"], first_run.current_app_version())
 
-    def test_legacy_onboard_wizard_version_migrates_without_showing(self):
+    def test_legacy_onboard_wizard_version_still_shows_after_cleanup(self):
+        """Legacy key alone must not suppress the wizard for the current build."""
         import tempfile
         from bridge_py import first_run
 
         with tempfile.TemporaryDirectory() as tmp:
             cfg = self._configured(tmp)
-            cfg["onboardWizardVersion"] = 1  # PR #45 already showed
+            cfg["onboardWizardVersion"] = 1  # PR #45 leftover; no lastSeen
             out, run_wiz, save, *_ = self._run(cfg, tmp)
-            run_wiz.assert_not_called()
+            run_wiz.assert_called_once()
+            self.assertNotIn("onboardWizardVersion", out)
             self.assertEqual(out["lastSeenAppVersion"], first_run.current_app_version())
             saved = save.call_args[0][0]
             self.assertEqual(saved["lastSeenAppVersion"], first_run.current_app_version())
+            self.assertNotIn("onboardWizardVersion", saved)
 
     def test_same_version_incomplete_uses_sequential_not_wizard(self):
         import tempfile
