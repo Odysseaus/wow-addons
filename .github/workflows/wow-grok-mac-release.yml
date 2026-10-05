@@ -30,17 +30,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      # setup-python's macOS pkg installer needs sudo + /Users/runner; use preinstalled 3.12 on the MacBook runner
+      - name: Use preinstalled Python 3.12
+        run: |
+          set -euo pipefail
+          CANDIDATES=(
+            "$HOME/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin"
+            "$HOME/Library/Frameworks/Python.framework/Versions/3.12/bin"
+            "$HOME/actions-runner/wow-addons/hostedtoolcache/Python/3.12.10/arm64/bin"
+          )
+          for d in "${CANDIDATES[@]}"; do
+            if [[ -x "$d/python3.12" ]]; then
+              echo "$d" >> "$GITHUB_PATH"
+              echo "Using $d/python3.12"
+              "$d/python3.12" --version
+              exit 0
+            fi
+          done
+          echo "Python 3.12 not found on self-hosted runner" >&2
+          exit 1
 
       - name: Install deps
         run: |
-          python -m pip install -U pip
-          pip install pillow pyinstaller rumps certifi
+          python3.12 -m pip install -U pip
+          python3.12 -m pip install pillow pyinstaller rumps certifi
 
       - name: Build .app
-        run: pyinstaller --noconfirm bridge_py/build_mac.spec
+        run: python3.12 -m PyInstaller --noconfirm bridge_py/build_mac.spec
 
       - name: Prove supervisor is in the bundle
         run: |
