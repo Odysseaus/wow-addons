@@ -18,7 +18,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest  # was macos-14; failover when macos-14 queue starves
+    # Hosted fallback when Odysseaus asks: runs-on: macos-latest
+    runs-on: [self-hosted, macOS, wow-addons-mac]
     defaults:
       run:
         working-directory: wow-grok
@@ -121,6 +122,17 @@ jobs:
             hdiutil create -volname WoWGrok -srcfolder "$STAGE" -ov -format UDZO dist/WoWGrok.dmg
           fi
           ls -la dist/WoWGrok.dmg
+
+
+      - name: Wipe runner work directory
+        if: always()
+        run: |
+          # Belt-and-suspenders beyond ACTIONS_RUNNER_HOOK_JOB_COMPLETED on the Mac runner
+          set -euo pipefail
+          ROOT="${{ runner.workspace }}"
+          echo "Cleaning workspace under $ROOT"
+          find "$ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+          echo "Workspace cleaned"
 
       - name: Create / update Release
         env:
