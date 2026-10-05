@@ -48,7 +48,7 @@ Details and fair questions: [docs/INSTALL-WINDOWS.md](docs/INSTALL-WINDOWS.md).
 Details and fair questions: [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md).
 
 1. **Download the app and addon.** Get the newest `wow-grok-mac-v…` `.dmg` from Releases, drag **WoWGrok.app** into Applications, then launch from there. Gatekeeper (unsigned): **Control-click → Open**, then **Open Anyway** if shown. Confirm your WoW `Interface/AddOns` folder — the app creates the addon and reply slots.
-2. **Connect your AI.** Choose **xAI** (Enter = default) or **Claude**, paste that key, and wait for **Done**. Grant **Screen Recording**, Quit/reopen once if offered, then leave the **menu bar** companion running. The key stays in local `config.json` under Application Support.
+2. **Connect your AI.** First launch opens the in-app setup wizard — pick **Claude** or **Grok** (xAI), paste that API key, then continue to **Say hi in game**. Grant **Screen Recording**, Quit/reopen once if offered, then leave the **menu bar** companion running. The key stays in local `config.json` under Application Support.
 3. **Start questing.** Use **Windowed** or **Windowed (Fullscreen)** / borderless, fully restart Forever, enable **WoW Grok** at character select, and type **`/wow-grok`** or **`/grok`**. Menu bar → **Quit WoWGrok** only when you want to stop later.
 
 You never need Python, pip, npm, or a terminal for this path.
