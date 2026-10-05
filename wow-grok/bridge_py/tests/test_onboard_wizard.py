@@ -185,7 +185,7 @@ class ShouldUseWizardTests(unittest.TestCase):
 
 
 class FirstRunWizardIntegrationTests(unittest.TestCase):
-    def test_mac_incomplete_setup_runs_wizard_not_legacy_prompts(self):
+    def test_mac_first_launch_incomplete_runs_wizard_not_legacy_prompts(self):
         from bridge_py import first_run
         import os
         import tempfile
@@ -241,7 +241,7 @@ class FirstRunWizardIntegrationTests(unittest.TestCase):
 
 
 
-    def test_windows_incomplete_setup_runs_wizard_not_legacy_prompts(self):
+    def test_windows_first_launch_incomplete_runs_wizard_not_legacy_prompts(self):
         from bridge_py import first_run
         import os
         import tempfile
@@ -333,68 +333,97 @@ class OnboardVersionGateTests(unittest.TestCase):
         from bridge_py import first_run
 
         self.fr = first_run
+        self.cur = self.fr.current_app_version()
 
-    def test_pre_wizard_config_is_due(self):
-        self.assertTrue(self.fr.onboard_wizard_version_due({"apiKey": "k"}))
-        self.assertTrue(self.fr.onboard_wizard_version_due(None))
+    def test_missing_last_seen_is_due(self):
+        self.assertTrue(self.fr.app_version_wizard_due({"apiKey": "k"}))
+        self.assertTrue(self.fr.app_version_wizard_due(None))
+        self.assertTrue(self.fr.app_version_wizard_due({}))
 
-    def test_older_or_garbage_version_is_due(self):
-        self.assertTrue(self.fr.onboard_wizard_version_due({"onboardWizardVersion": 0}))
-        self.assertTrue(self.fr.onboard_wizard_version_due({"onboardWizardVersion": "x"}))
+    def test_different_app_version_is_due(self):
+        self.assertTrue(self.fr.app_version_wizard_due({"lastSeenAppVersion": "0.0.1"}))
+        self.assertTrue(self.fr.app_version_wizard_due({"lastSeenAppVersion": "0.1.28"}))
 
-    def test_current_version_not_due(self):
-        cfg = {"onboardWizardVersion": self.fr.ONBOARD_WIZARD_VERSION}
-        self.assertFalse(self.fr.onboard_wizard_version_due(cfg))
+    def test_same_app_version_not_due(self):
+        cfg = {"lastSeenAppVersion": self.cur}
+        self.assertFalse(self.fr.app_version_wizard_due(cfg))
 
-    def test_should_show_matrix(self):
-        cur = {"onboardWizardVersion": self.fr.ONBOARD_WIZARD_VERSION}
+    def test_should_show_matrix_version_only(self):
+        seen = {"lastSeenAppVersion": self.cur}
         show = self.fr.should_show_onboard_wizard
-        # No GUI wizard path → never (headless keeps legacy prompts / exit 2).
-        self.assertFalse(show({}, use_wizard=False, needs_setup=True))
-        self.assertFalse(show({}, use_wizard=False, needs_setup=False))
-        # Incomplete → always.
-        self.assertTrue(show(cur, use_wizard=True, needs_setup=True))
-        # Complete but never saw this wizard version (upgrade) → once.
-        self.assertTrue(show({}, use_wizard=True, needs_setup=False))
-        # Complete and seen → quiet.
-        self.assertFalse(show(cur, use_wizard=True, needs_setup=False))
+        # No GUI wizard path → never.
+        self.assertFalse(show({}, use_wizard=False))
+        self.assertFalse(show(seen, use_wizard=False))
+        # Version bump (missing lastSeen) → show once, regardless of setup.
+        self.assertTrue(show({}, use_wizard=True))
+        # Same version → never auto-show (even if caller would have needs_setup).
+        self.assertFalse(show(seen, use_wizard=True))
 
-    def test_mark_seen(self):
+    def test_mark_seen_writes_app_version(self):
         cfg: dict = {}
         self.fr.mark_onboard_wizard_seen(cfg)
-        self.assertEqual(cfg["onboardWizardVersion"], self.fr.ONBOARD_WIZARD_VERSION)
-        self.assertFalse(self.fr.onboard_wizard_version_due(cfg))
+        self.assertEqual(cfg["lastSeenAppVersion"], self.cur)
+        self.assertFalse(self.fr.app_version_wizard_due(cfg))
+
+    def test_migrate_legacy_onboard_wizard_version(self):
+        cfg = {"onboardWizardVersion": 1, "apiKey": "k"}
+        self.assertTrue(self.fr.migrate_legacy_onboard_wizard_version(cfg))
+        self.assertEqual(cfg["lastSeenAppVersion"], self.cur)
+        self.assertFalse(self.fr.app_version_wizard_due(cfg))
+        # Idempotent: already has lastSeen → no-op.
+        self.assertFalse(self.fr.migrate_legacy_onboard_wizard_version(cfg))
+        # No legacy key → no migration.
+        self.assertFalse(self.fr.migrate_legacy_onboard_wizard_version({"apiKey": "k"}))
 
 
 class UpgradeGateIntegrationTests(unittest.TestCase):
-    """Configured pre-wizard config.json: wizard shows once, then stays quiet."""
+    """App-version gate: wizard shows once per build bump, then stays quiet."""
 
-    def _run(self, cfg: dict, tmp: str, status: str = "finish_later"):
+    def _run(
+        self,
+        cfg: dict,
+        tmp: str,
+        status: str = "finish_later",
+        *,
+        prompt_key: str | None = None,
+        prompt_addons: "Path | None" = None,
+    ):
         from bridge_py import first_run
         import os
 
         env = os.environ.copy()
         env.pop("XAI_API_KEY", None)
         env.pop("ANTHROPIC_API_KEY", None)
-        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(
-            first_run, "_gui_available", return_value=True
-        ), mock.patch.object(first_run.sys, "platform", "darwin"), mock.patch.object(
-            wiz.sys, "platform", "darwin"
-        ), mock.patch.object(
-            wiz, "run_onboard_wizard", return_value=wiz.WizardResult(status=status)
-        ) as run_wiz, mock.patch.object(
-            first_run.setup_detect, "find_existing_addons", return_value=[]
-        ), mock.patch.object(
-            first_run.cfgmod, "load_config", return_value=cfg
-        ), mock.patch.object(
-            first_run.cfgmod, "save_config", return_value=Path(tmp) / "config.json"
-        ) as save, mock.patch(
-            "bridge_py.install_addon.ensure_game_files"
-        ), mock.patch.object(
-            first_run, "prompt_mac_screen_recording"
-        ):
+        patches = [
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(first_run, "_gui_available", return_value=True),
+            mock.patch.object(first_run.sys, "platform", "darwin"),
+            mock.patch.object(wiz.sys, "platform", "darwin"),
+            mock.patch.object(
+                wiz, "run_onboard_wizard", return_value=wiz.WizardResult(status=status)
+            ),
+            mock.patch.object(first_run.setup_detect, "find_existing_addons", return_value=[]),
+            mock.patch.object(first_run.cfgmod, "load_config", return_value=cfg),
+            mock.patch.object(
+                first_run.cfgmod, "save_config", return_value=Path(tmp) / "config.json"
+            ),
+            mock.patch("bridge_py.install_addon.ensure_game_files"),
+            mock.patch.object(first_run, "prompt_mac_screen_recording"),
+            mock.patch.object(first_run, "prompt_provider", return_value="xai"),
+            mock.patch.object(first_run, "prompt_api_key", return_value=prompt_key or ""),
+            mock.patch.object(
+                first_run,
+                "prompt_addons_dir",
+                return_value=prompt_addons,
+            ),
+        ]
+        with patches[0], patches[1], patches[2], patches[3], patches[4] as run_wiz, patches[
+            5
+        ], patches[6], patches[7] as save, patches[8], patches[9], patches[10] as prov, patches[
+            11
+        ] as xai_key, patches[12] as addons:
             out = first_run.ensure_first_run_config(headless=False)
-        return out, run_wiz, save
+        return out, run_wiz, save, prov, xai_key, addons
 
     def _configured(self, tmp: str) -> dict:
         return {
@@ -412,16 +441,16 @@ class UpgradeGateIntegrationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             cfg = self._configured(tmp)
-            out, run_wiz, save = self._run(cfg, tmp)
+            out, run_wiz, save, *_ = self._run(cfg, tmp)
             run_wiz.assert_called_once()
             self.assertTrue(run_wiz.call_args.kwargs["provider_key_present"])
-            self.assertEqual(out["onboardWizardVersion"], first_run.ONBOARD_WIZARD_VERSION)
+            self.assertEqual(out["lastSeenAppVersion"], first_run.current_app_version())
             self.assertEqual(out["apiKey"], "xai-existing")  # not wiped by finish later
             saved = save.call_args[0][0]
-            self.assertEqual(saved["onboardWizardVersion"], first_run.ONBOARD_WIZARD_VERSION)
+            self.assertEqual(saved["lastSeenAppVersion"], first_run.current_app_version())
 
-            # Next launch: same config now carries the version → no wizard.
-            out2, run_wiz2, _ = self._run(dict(out), tmp)
+            # Next launch: same config now carries lastSeen → no wizard.
+            out2, run_wiz2, *_ = self._run(dict(out), tmp)
             run_wiz2.assert_not_called()
 
     def test_cancelled_also_marks_seen(self):
@@ -429,18 +458,51 @@ class UpgradeGateIntegrationTests(unittest.TestCase):
         from bridge_py import first_run
 
         with tempfile.TemporaryDirectory() as tmp:
-            out, run_wiz, _ = self._run(self._configured(tmp), tmp, status="cancelled")
+            out, run_wiz, *_ = self._run(self._configured(tmp), tmp, status="cancelled")
             run_wiz.assert_called_once()
-            self.assertEqual(out["onboardWizardVersion"], first_run.ONBOARD_WIZARD_VERSION)
+            self.assertEqual(out["lastSeenAppVersion"], first_run.current_app_version())
 
-    def test_finish_later_without_key_still_exits_2(self):
+    def test_legacy_onboard_wizard_version_migrates_without_showing(self):
+        import tempfile
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._configured(tmp)
+            cfg["onboardWizardVersion"] = 1  # PR #45 already showed
+            out, run_wiz, save, *_ = self._run(cfg, tmp)
+            run_wiz.assert_not_called()
+            self.assertEqual(out["lastSeenAppVersion"], first_run.current_app_version())
+            saved = save.call_args[0][0]
+            self.assertEqual(saved["lastSeenAppVersion"], first_run.current_app_version())
+
+    def test_same_version_incomplete_uses_sequential_not_wizard(self):
         import tempfile
         from bridge_py import first_run
 
         with tempfile.TemporaryDirectory() as tmp:
             cfg = self._configured(tmp)
             cfg["apiKey"] = ""
-            cfg["onboardWizardVersion"] = first_run.ONBOARD_WIZARD_VERSION
+            cfg["lastSeenAppVersion"] = first_run.current_app_version()
+            out, run_wiz, save, prov, xai_key, addons = self._run(
+                cfg, tmp, prompt_key="xai-from-sequential"
+            )
+            run_wiz.assert_not_called()
+            addons.assert_not_called()  # AddOns already set
+            prov.assert_called_once()
+            xai_key.assert_called_once()
+            self.assertEqual(out["apiKey"], "xai-from-sequential")
+            # lastSeen must not be rewritten just because setup was incomplete
+            self.assertEqual(out["lastSeenAppVersion"], first_run.current_app_version())
+
+    def test_version_bump_finish_later_without_key_still_exits_2(self):
+        """After the version-bump wizard closes without a key, exit 2 (not sequential)."""
+        import tempfile
+        from bridge_py import first_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._configured(tmp)
+            cfg["apiKey"] = ""
+            # No lastSeen → wizard due; finish_later leaves no key → exit 2.
             with self.assertRaises(SystemExit) as cm:
                 self._run(cfg, tmp)
             self.assertEqual(cm.exception.code, 2)
@@ -478,7 +540,7 @@ class SetupOnDemandTests(unittest.TestCase):
             cfg = {"addonDir": tmp, "provider": "xai", "apiKey": "xai-a", "capture": {}}
             code, save, install = self._run(cfg, wiz.WizardResult(status="finish_later"), tmp)
             self.assertEqual(code, first_run.SETUP_EXIT_UNCHANGED)
-            save.assert_called()  # onboardWizardVersion recorded
+            save.assert_called()  # lastSeenAppVersion recorded
             install.assert_not_called()
 
     def test_new_key_returns_0_and_reinstalls(self):

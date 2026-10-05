@@ -1,12 +1,14 @@
 """First-run UI: provider choice + API key + AddOns folder picker (tkinter).
 
 Shared by the Mac app (DMG) and Windows exe. On **macOS** or **Windows** with a
-display, :func:`ensure_first_run_config` prefers the two-pane
-:mod:`onboard_wizard` (Download → Connect your AI → Say hi in game) instead of
-the older sequential tiny dialogs. Headless / no-GUI fallback still uses the
-provider + key prompts below. Screen Recording onboarding stays **Mac-only**.
-``provider: claude`` without a key asks for an Anthropic key (or fails
-headless with a config/env message).
+display, :func:`ensure_first_run_config` auto-opens the two-pane
+:mod:`onboard_wizard` (Download → Connect your AI → Say hi in game) **once per
+app version bump** (``lastSeenAppVersion`` vs ``__version__``). Same version
+never auto-shows the wizard; incomplete setup then uses the sequential tiny
+dialogs (or menu bar **Setup…** for the wizard on demand). Headless / no-GUI
+fallback still uses the provider + key prompts below. Screen Recording
+onboarding stays **Mac-only**. ``provider: claude`` without a key asks for an
+Anthropic key (or fails headless with a config/env message).
 """
 from __future__ import annotations
 
@@ -20,41 +22,65 @@ from . import config as cfgmod
 from . import setup_detect
 from . import tk_util
 
-# Bump when the onboard wizard changes enough that existing (already configured)
-# installs should see it once more. Stored in config.json as
-# ``onboardWizardVersion`` after the wizard closes (done / finish later / close).
-ONBOARD_WIZARD_VERSION = 1
-ONBOARD_WIZARD_VERSION_KEY = "onboardWizardVersion"
+# Persist the app package version that last showed the NQA onboard wizard.
+# Auto-show only when bridge_py.__version__ differs from this value (missing =
+# new → show once). Same app version never auto-shows, even if setup is incomplete
+# (menu bar + Setup… / sequential prompts instead). Legacy ``onboardWizardVersion``
+# from PR #45 is migrated to lastSeenAppVersion without re-showing.
+LAST_SEEN_APP_VERSION_KEY = "lastSeenAppVersion"
+_LEGACY_ONBOARD_WIZARD_VERSION_KEY = "onboardWizardVersion"
 
 
-def onboard_wizard_version_due(cfg: dict[str, Any] | None) -> bool:
-    """True when this config has not yet seen the current onboard wizard version.
+def current_app_version() -> str:
+    """Package version string used for the once-per-build wizard gate."""
+    from . import __version__
 
-    Pre-wizard configs (no ``onboardWizardVersion``) and configs from an older
-    wizard version are "due" so upgrading users see the wizard once.
+    return str(__version__)
+
+
+def migrate_legacy_onboard_wizard_version(cfg: dict[str, Any]) -> bool:
+    """If PR #45 left ``onboardWizardVersion`` but no ``lastSeenAppVersion``, mark seen.
+
+    Treats those installs as already shown for the *current* app version so
+    testers are not double-prompted. Mutates ``cfg``; does not save. Returns True
+    when a migration write is needed.
     """
-    try:
-        seen = int((cfg or {}).get(ONBOARD_WIZARD_VERSION_KEY) or 0)
-    except (TypeError, ValueError):
-        seen = 0
-    return seen < ONBOARD_WIZARD_VERSION
+    if (cfg or {}).get(LAST_SEEN_APP_VERSION_KEY):
+        return False
+    if _LEGACY_ONBOARD_WIZARD_VERSION_KEY not in (cfg or {}):
+        return False
+    cfg[LAST_SEEN_APP_VERSION_KEY] = current_app_version()
+    return True
+
+
+def app_version_wizard_due(cfg: dict[str, Any] | None) -> bool:
+    """True when ``lastSeenAppVersion`` is missing or differs from the running app.
+
+    Call after :func:`migrate_legacy_onboard_wizard_version` so #45 configs that
+    already saw the wizard are not due again.
+    """
+    seen = str((cfg or {}).get(LAST_SEEN_APP_VERSION_KEY) or "")
+    return seen != current_app_version()
 
 
 def should_show_onboard_wizard(
     cfg: dict[str, Any] | None,
     *,
     use_wizard: bool,
-    needs_setup: bool,
 ) -> bool:
-    """Pure gate: show the GUI wizard when setup is incomplete or the version is new."""
+    """Pure gate: auto-show the NQA wizard only on an app version bump (GUI path).
+
+    Incomplete setup on the *same* version does **not** open the wizard; use
+    Setup… or the sequential first-run prompts instead.
+    """
     if not use_wizard:
         return False
-    return bool(needs_setup) or onboard_wizard_version_due(cfg)
+    return app_version_wizard_due(cfg)
 
 
 def mark_onboard_wizard_seen(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Record that the current wizard version was shown (mutates + returns ``cfg``)."""
-    cfg[ONBOARD_WIZARD_VERSION_KEY] = ONBOARD_WIZARD_VERSION
+    """Record that the version-bump wizard was shown/closed (mutates + returns ``cfg``)."""
+    cfg[LAST_SEEN_APP_VERSION_KEY] = current_app_version()
     return cfg
 
 
@@ -362,8 +388,8 @@ def _apply_addon_dir(cfg: dict[str, Any], addon_dir: Path) -> dict[str, Any]:
 def _run_onboard_wizard(cfg: dict[str, Any]) -> dict[str, Any]:
     """Two-pane wizard (Mac + Windows). Mutates and returns ``cfg``.
 
-    Always records ``onboardWizardVersion`` afterwards (done / finish later /
-    cancelled) so an already-configured install is not nagged every launch.
+    Always records ``lastSeenAppVersion`` afterwards (done / finish later /
+    cancelled) so the same app build is not auto-shown again.
     """
     from . import onboard_wizard
 
@@ -403,13 +429,17 @@ def ensure_first_run_config(
 
     After addonDir and the active provider's API key are set and config is saved,
     installs the main addon and reply slots into Interface/AddOns (GUI shows
-    progress dialogs). On macOS / Windows GUI launches, incomplete setup opens
-    the :mod:`onboard_wizard` (Download → Connect your AI → Say hi); it also
-    shows once on configured installs whose ``onboardWizardVersion`` is older
-    than :data:`ONBOARD_WIZARD_VERSION` (pre-wizard upgrades). Headless /
-    no-GUI fallback still asks xAI vs Claude (Enter = xAI default), then the
-    matching key prompt. Claude requires ANTHROPIC_API_KEY or claudeApiKey.
-    Screen Recording sheet remains macOS-only after a successful install.
+    progress dialogs). On macOS / Windows GUI launches, the :mod:`onboard_wizard`
+    (Download → Connect your AI → Say hi) auto-opens **only** when the running
+    app ``__version__`` differs from ``lastSeenAppVersion`` in config.json
+    (missing counts as new → show once). Closing it records the current version.
+    Same app version never auto-shows the wizard — even when setup is incomplete;
+    incomplete same-version GUI launches use the sequential provider/key/AddOns
+    prompts instead. Menu bar **Setup…** still opens the wizard on demand.
+    Headless / no-GUI fallback still asks xAI vs Claude (Enter = xAI default),
+    then the matching key prompt. Claude requires ANTHROPIC_API_KEY or
+    claudeApiKey. Screen Recording sheet remains macOS-only after a successful
+    install.
 
     headless: skip UI (CLI --wow / env only); exit 2 if incomplete.
     """
@@ -419,9 +449,18 @@ def ensure_first_run_config(
     if cfg is None:
         cfg = cfgmod.load_example()
 
+    # #45 testers already saw the wizard via onboardWizardVersion — mark seen for
+    # this build without opening it again.
+    if migrate_legacy_onboard_wizard_version(cfg):
+        try:
+            cfgmod.save_config(cfg)
+        except Exception as e:  # noqa: BLE001
+            _append_bridge_log(f"[onboard-wizard] failed to save lastSeen migration: {e}")
+
     use_wizard = onboard_wizard.should_use_wizard(
         headless=headless, gui_available=_gui_available()
     )
+    show_wizard = should_show_onboard_wizard(cfg, use_wizard=use_wizard)
 
     # CLI --wow always wins for AddOns path (headless and GUI).
     if wow:
@@ -430,12 +469,9 @@ def ensure_first_run_config(
             print(f'--wow "{wow}" is not a WoW AddOns/client folder', file=sys.stderr)
             sys.exit(2)
         cfg = _apply_addon_dir(cfg, Path(norm))
-    elif (not cfg.get("addonDir") or not Path(str(cfg["addonDir"])).is_dir()) and not (
-        use_wizard
-        and (not cfgmod.has_provider_api_key(cfg) or onboard_wizard_version_due(cfg))
-    ):
-        # Non-wizard path: pick AddOns now. Wizard path collects AddOns inside
-        # the Download step when the wizard is about to show anyway.
+    elif (not cfg.get("addonDir") or not Path(str(cfg["addonDir"])).is_dir()) and not show_wizard:
+        # Non-wizard path: pick AddOns now. Version-bump wizard collects AddOns
+        # inside the Download step when it is about to show.
         existing = setup_detect.find_existing_addons()
         if headless:
             if len(existing) == 1:
@@ -454,24 +490,24 @@ def ensure_first_run_config(
                 sys.exit(2)
             cfg = _apply_addon_dir(cfg, picked)
 
-    needs_setup = _setup_incomplete(cfg)
-    if should_show_onboard_wizard(cfg, use_wizard=use_wizard, needs_setup=needs_setup):
-        # Wizard owns AddOns picker (if still missing) + provider + API key.
-        # Also shown once per ONBOARD_WIZARD_VERSION for already-configured
-        # installs (e.g. upgrading from a pre-wizard config.json).
+    showed_wizard = False
+    if show_wizard:
+        # Once per app version bump only (not every needs_setup launch).
         _append_bridge_log(
-            f"[onboard-wizard] show needs_setup={needs_setup} "
-            f"seen={cfg.get(ONBOARD_WIZARD_VERSION_KEY)!r} current={ONBOARD_WIZARD_VERSION}"
+            f"[onboard-wizard] show version_due "
+            f"seen={cfg.get(LAST_SEEN_APP_VERSION_KEY)!r} "
+            f"current={current_app_version()!r}"
         )
         cfg = _run_onboard_wizard(cfg)
+        showed_wizard = True
 
     if not cfg.get("defaultCwd"):
         cfg["defaultCwd"] = os.getcwd()
 
-    # Sequential provider/key prompts when the wizard was not used
-    # (already complete / finish-later without a key / no GUI).
+    # Sequential provider/key prompts when the NQA wizard was not auto-shown
+    # (same-version incomplete, headless-off GUI without version bump, etc.).
     if (
-        not use_wizard
+        not showed_wizard
         and not headless
         and _gui_available()
         and not cfgmod.has_provider_api_key(cfg)
@@ -486,7 +522,7 @@ def ensure_first_run_config(
     # Skip prompts when the wizard already stored a key for the active provider.
     if cfgmod.resolve_provider(cfg) == "claude":
         if not cfgmod.has_claude_api_key(cfg):
-            if headless or use_wizard:
+            if headless or showed_wizard:
                 print(
                     "Missing Anthropic API key. Set ANTHROPIC_API_KEY or claudeApiKey in config.json.",
                     file=sys.stderr,
@@ -508,7 +544,7 @@ def ensure_first_run_config(
                 sys.exit(2)
             cfg["claudeApiKey"] = key
     elif not cfgmod.has_api_key(cfg):
-        if headless or use_wizard:
+        if headless or showed_wizard:
             print(
                 "Missing xAI API key. Set XAI_API_KEY or apiKey in config.json.",
                 file=sys.stderr,
@@ -592,7 +628,7 @@ def run_setup_wizard_on_demand() -> int:
         cfg = cfgmod.load_example()
     before = _setup_fingerprint(cfg)
     _append_bridge_log("[onboard-wizard] on-demand Setup… from menu")
-    cfg = _run_onboard_wizard(cfg)  # saves config + onboardWizardVersion
+    cfg = _run_onboard_wizard(cfg)  # saves config + lastSeenAppVersion
     after = _setup_fingerprint(cfg)
     if after == before:
         return SETUP_EXIT_UNCHANGED
