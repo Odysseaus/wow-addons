@@ -1,9 +1,11 @@
 """First-run UI: provider choice + API key + AddOns folder picker (tkinter).
 
-Shared by the Mac app (DMG) and Windows exe. Asks xAI vs Claude (xAI is the
-default / Enter). Then asks for the matching API key. ``provider: claude``
-without a key asks for an Anthropic key (or fails headless with a config/env
-message).
+Shared by the Mac app (DMG) and Windows exe. On **macOS** with a display,
+:func:`ensure_first_run_config` prefers the two-pane :mod:`onboard_wizard`
+(Download → Connect your AI → Say hi in game) instead of the older sequential
+tiny dialogs. Windows (and Mac headless / fallback) still use the provider +
+key prompts below. ``provider: claude`` without a key asks for an Anthropic
+key (or fails headless with a config/env message).
 """
 from __future__ import annotations
 
@@ -299,6 +301,43 @@ def prompt_mac_screen_recording(cfg: dict[str, Any] | None = None) -> None:
         raise
 
 
+def _apply_addon_dir(cfg: dict[str, Any], addon_dir: Path) -> dict[str, Any]:
+    """Fill addonDir / inbox / SavedVariables / capture process from AddOns path."""
+    cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(addon_dir))
+    client = addon_dir.parent.parent
+    accounts = setup_detect.find_accounts(client)
+    if accounts:
+        cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(addon_dir), accounts[0])
+    cap = cfg.setdefault("capture", {})
+    cap["processName"] = setup_detect.detect_process_name(client)
+    return cfg
+
+
+def _run_mac_onboard_wizard(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Mac two-pane wizard for incomplete setup. Mutates and returns ``cfg``."""
+    from . import onboard_wizard
+
+    existing = setup_detect.find_existing_addons()
+
+    def _pick() -> Path | None:
+        return prompt_addons_dir(existing)
+
+    result = onboard_wizard.run_onboard_wizard(
+        cfg=cfg,
+        initial_addon_dir=cfg.get("addonDir") or None,
+        pick_addons_dir=_pick,
+        secure_store_label=cfgmod.secure_store_label(),
+    )
+    onboard_wizard.apply_wizard_result(cfg, result)
+    if result.addon_dir:
+        cfg = _apply_addon_dir(cfg, Path(result.addon_dir))
+    _append_bridge_log(
+        f"[onboard-wizard] status={result.status} provider={result.provider!r} "
+        f"connected={result.connected_label!r}"
+    )
+    return cfg
+
+
 def ensure_first_run_config(
     *,
     headless: bool = False,
@@ -308,33 +347,39 @@ def ensure_first_run_config(
 
     After addonDir and the active provider's API key are set and config is saved,
     installs the main addon and reply slots into Interface/AddOns (GUI shows
-    progress dialogs). GUI setup asks xAI vs Claude (Enter = xAI default), then
-    the matching key prompt. Claude requires ANTHROPIC_API_KEY or claudeApiKey.
+    progress dialogs). On macOS GUI launches, incomplete setup opens the
+    :mod:`onboard_wizard` (Download → Connect your AI → Say hi). Windows and
+    fallback paths still ask xAI vs Claude (Enter = xAI default), then the
+    matching key prompt. Claude requires ANTHROPIC_API_KEY or claudeApiKey.
 
     headless: skip UI (CLI --wow / env only); exit 2 if incomplete.
     """
+    from . import onboard_wizard
+
     cfg = cfgmod.load_config()
     if cfg is None:
         cfg = cfgmod.load_example()
 
-    # AddOns path
+    use_wizard = onboard_wizard.should_use_wizard(
+        headless=headless, gui_available=_gui_available()
+    )
+
+    # CLI --wow always wins for AddOns path (headless and GUI).
     if wow:
         norm = setup_detect.normalize_addons_selection(wow)
         if not norm:
             print(f'--wow "{wow}" is not a WoW AddOns/client folder', file=sys.stderr)
             sys.exit(2)
-        cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(norm))
-        client = Path(norm).parent.parent
-        accounts = setup_detect.find_accounts(client)
-        if accounts:
-            cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(norm), accounts[0])
-        cap = cfg.setdefault("capture", {})
-        cap["processName"] = setup_detect.detect_process_name(client)
-    elif not cfg.get("addonDir") or not Path(cfg["addonDir"]).is_dir():
+        cfg = _apply_addon_dir(cfg, Path(norm))
+    elif (not cfg.get("addonDir") or not Path(str(cfg["addonDir"])).is_dir()) and not (
+        use_wizard and not cfgmod.has_provider_api_key(cfg)
+    ):
+        # Non-wizard path: pick AddOns now. Wizard path collects AddOns inside
+        # the Download step when the provider key is also still missing.
         existing = setup_detect.find_existing_addons()
         if headless:
             if len(existing) == 1:
-                cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(existing[0]))
+                cfg = _apply_addon_dir(cfg, existing[0])
             else:
                 print(
                     "No addonDir in config. Pass --wow <path> or run without --headless "
@@ -347,22 +392,25 @@ def ensure_first_run_config(
             if not picked:
                 print("AddOns folder required.", file=sys.stderr)
                 sys.exit(2)
-            cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(picked))
-            client = picked.parent.parent
-            accounts = setup_detect.find_accounts(client)
-            if accounts:
-                cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(picked), accounts[0])
-            cap = cfg.setdefault("capture", {})
-            cap["processName"] = setup_detect.detect_process_name(client)
+            cfg = _apply_addon_dir(cfg, picked)
+
+    needs_setup = (
+        not cfg.get("addonDir")
+        or not Path(str(cfg.get("addonDir") or "")).is_dir()
+        or not cfgmod.has_provider_api_key(cfg)
+    )
+    if use_wizard and needs_setup:
+        # Wizard owns AddOns picker (if still missing) + provider + API key on Mac.
+        cfg = _run_mac_onboard_wizard(cfg)
 
     if not cfg.get("defaultCwd"):
         cfg["defaultCwd"] = os.getcwd()
 
-    # Provider choice (Mac DMG + Windows exe share this first-run UI).
-    # Show when the active provider still needs a key — incomplete setup.
-    # Headless keeps config / default xAI (no dialog).
+    # Sequential provider/key prompts when the wizard was not used (Windows,
+    # or Mac already complete / wizard finish-later without a key).
     if (
-        not headless
+        not use_wizard
+        and not headless
         and _gui_available()
         and not cfgmod.has_provider_api_key(cfg)
     ):
@@ -373,9 +421,10 @@ def ensure_first_run_config(
             cfg["provider"] = prompt_provider()
 
     # API key. Required key depends on provider; xAI stays the default path.
+    # Skip prompts when the wizard already stored a key for the active provider.
     if cfgmod.resolve_provider(cfg) == "claude":
         if not cfgmod.has_claude_api_key(cfg):
-            if headless:
+            if headless or use_wizard:
                 print(
                     "Missing Anthropic API key. Set ANTHROPIC_API_KEY or claudeApiKey in config.json.",
                     file=sys.stderr,
@@ -397,7 +446,7 @@ def ensure_first_run_config(
                 sys.exit(2)
             cfg["claudeApiKey"] = key
     elif not cfgmod.has_api_key(cfg):
-        if headless:
+        if headless or use_wizard:
             print(
                 "Missing xAI API key. Set XAI_API_KEY or apiKey in config.json.",
                 file=sys.stderr,
@@ -415,6 +464,11 @@ def ensure_first_run_config(
             print("API key required.", file=sys.stderr)
             sys.exit(2)
         cfg["apiKey"] = key
+
+    # AddonDir still required after wizard finish-later
+    if not cfg.get("addonDir") or not Path(str(cfg["addonDir"])).is_dir():
+        print("AddOns folder required.", file=sys.stderr)
+        sys.exit(2)
 
     cfgmod.save_config(cfg)
 

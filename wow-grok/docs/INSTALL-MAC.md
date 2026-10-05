@@ -1,6 +1,6 @@
 # WoW Grok on Mac: set up in 2 to 3 minutes
 
-One download, no Node.js, npm, Python, or terminal. **WoWGrok.app** is the desktop companion *and* the addon installer. It writes the WoW Grok addon into your WoW folder for you, so there is no separate addon zip to unzip.
+One download, no Node.js, npm, Python, or terminal. **WoWGrok.app** is the desktop companion *and* the addon installer. First launch shows an in-app setup wizard (Connect your AI, then Say hi in game). It writes the WoW Grok addon into your WoW folder for you, so there is no separate addon zip to unzip.
 
 You need **macOS**, **World of Warcraft: Forever** (or another local WoW client) installed on the **same Mac**, and an **API key** from xAI (the default) or Anthropic (Claude, optional).
 
@@ -20,16 +20,17 @@ You need **macOS**, **World of Warcraft: Forever** (or another local WoW client)
 
 ## 2. Connect your AI
 
-1. Choose **xAI (Grok)** or **Claude**. Pressing Enter (the default button) keeps **xAI**.
-2. Paste the key for that provider:
-   - xAI: create one at [console.x.ai](https://console.x.ai/) (keys start with `xai-`).
-   - Claude: create one at [console.anthropic.com](https://console.anthropic.com/).
+1. On first launch, WoWGrok opens an **in-app setup wizard** (two-pane: Download → Connect your AI → Say hi in game). You can click **Finish later** and reopen the app to finish.
+2. Under **Connect your AI**, pick a provider. **Claude** and **Grok** (xAI) work now; ChatGPT / Gemini / Other show as Coming soon.
+3. Click **Continue**, paste the API key for that provider, and wait for the green **"{Provider} is connected."** status:
+   - Grok / xAI: create a key at [console.x.ai](https://console.x.ai/) (keys start with `xai-`).
+   - Claude: create a key at [console.anthropic.com](https://console.anthropic.com/).
    - API keys are billed per use by the provider. A Grok, ChatGPT, or Claude **chat subscription is not an API key**.
-3. Wait for **Done**. In about a minute WoWGrok writes the addon and slots into your AddOns folder.
-4. **Screen Recording** (needed so the app can read the top-left pixel strip):
+4. Advance to **Say hi in game**, then **Done**. In about a minute WoWGrok writes the addon and slots into your AddOns folder.
+5. **Screen Recording** (needed so the app can read the top-left pixel strip):
    - On first launch WoWGrok may show an in-app sheet and request access so a **WoWGrok** row appears under **System Settings → Privacy & Security → Screen Recording** (or Screen & System Audio Recording). Turn **WoWGrok** ON.
    - If the app offers **Quit WoWGrok**, click it so the permission sticks, then reopen from Applications.
-5. **Leave WoWGrok running.** After first-run it sits in the **menu bar** (quiet companion; no Dock icon). It's the live bridge between WoW and your AI, not a one-time installer.
+6. **Leave WoWGrok running.** After first-run it sits in the **menu bar** (quiet companion; no Dock icon). It's the live bridge between WoW and your AI, not a one-time installer.
 
 ## 3. Start questing
 
