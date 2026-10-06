@@ -26,6 +26,35 @@ local function SafeRegister(frame, event)
   return ok
 end
 
+-- Bearing convention (0.2.5): bearingDeg is a compass bearing, degrees
+-- CLOCKWISE from north (E = 90), for both coord kinds:
+--   map   : normalized x grows east, y grows south  -> atan2(dx, -dy)
+--   world : UnitPosition order is (y, x); worldX grows north, worldY grows
+--           west, so east = -dy, north = dx         -> atan2(-dy, dx)
+function NS.BearingFromDelta(dx, dy, kind)
+  local deg
+  if kind == "world" then
+    deg = math.deg(math.atan2(-dy, dx))
+  else
+    deg = math.deg(math.atan2(dx, -dy))
+  end
+  if deg < 0 then deg = deg + 360 end
+  return deg
+end
+
+-- Screen rotation for a compass arrow, radians COUNTER-CLOCKWISE from up
+-- (Texture:SetRotation convention). GetPlayerFacing is radians CCW from north,
+-- bearing is CW from north, so the target's CCW angle is -bearing and the
+-- arrow turns by (-bearing - facing). Without a facing API the arrow sits on
+-- a north-up rose: -bearing.
+function NS.ArrowRadians(bearingDeg)
+  if type(bearingDeg) ~= "number" then return nil end
+  local facing = SafeCall(GetPlayerFacing)
+  local facingDeg = 0
+  if type(facing) == "number" then facingDeg = math.deg(facing) end
+  return math.rad((-bearingDeg - facingDeg) % 360)
+end
+
 function NS.ComputeDistanceBearing(tx, ty, tmap)
   local px, py, pmap, kind = NS.GetPlayerMapPosition()
   if not (px and py and tx and ty) then
@@ -39,9 +68,7 @@ function NS.ComputeDistanceBearing(tx, ty, tmap)
   else
     dist = math.sqrt(dx * dx + dy * dy) * 1000
   end
-  local bearingDeg = math.deg(math.atan2(dx, -dy))
-  if bearingDeg < 0 then bearingDeg = bearingDeg + 360 end
-  return dist, bearingDeg, true
+  return dist, NS.BearingFromDelta(dx, dy, kind), true
 end
 
 local function FormatDistance(yards)
@@ -68,7 +95,8 @@ local function RelativeBearing(targetDeg)
     return Cardinal(targetDeg)
   end
   local facingDeg = math.deg(facing)
-  local delta = (targetDeg - facingDeg + 180) % 360 - 180
+  -- CCW delta (positive = left): target CCW angle is -bearing.
+  local delta = (-targetDeg - facingDeg + 180) % 360 - 180
   local ad = math.abs(delta)
   if ad < 25 then return "ahead"
   elseif ad > 155 then return "behind"
@@ -77,98 +105,109 @@ local function RelativeBearing(targetDeg)
   end
 end
 
--- Needle rotation: radians from up (0 = north / ahead on face). Geometric tip+tail
--- pivot always works; SetRotation is best-effort on Forever ColorTextures.
-function NS.SetNeedleRotation(needleFrame, radians)
+-- Arrow convention (0.2.5):
+-- MinimapArrow points up at 0 radians. Texture:SetRotation is
+-- counter-clockwise positive and rotates around the texture center.
+-- Callers pass NS.ArrowRadians(bearingDeg) (CCW from up, facing-relative),
+-- so SetRotation(radians) aims the arrow at the quest as the player turns.
+-- The arrow frame stays at face CENTER (never moved). Skip SetRotation
+-- unless the angle changed by more than ~0.5 degree (anti-jitter).
+-- bearingDeg == nil hides the arrow (no false north). A numeric bearing,
+-- including mock bearingDeg, shows and aims it.
+local ROT_EPS = math.rad(0.5)
+
+local function ShowArrow(needleFrame, visible)
   if not needleFrame then return end
-  radians = radians or 0
-  needleFrame._qgRadians = radians
-
-  local parent = needleFrame.GetParent and needleFrame:GetParent()
-  if parent and needleFrame.ClearAllPoints and needleFrame.SetPoint then
-    -- Pivot stays glued to face center (no off-center rectangle nudge).
-    needleFrame:ClearAllPoints()
-    needleFrame:SetPoint("CENTER", parent, "CENTER", 0, 0)
-  end
-
-  local ox = math.sin(radians)
-  local oy = math.cos(radians)
-
-  if needleFrame._qgNeedle then
-    local tipLen = needleFrame.tipLen or 40
-    local tipW = needleFrame.tipW or 7
-    local tailLen = needleFrame.tailLen or 16
-    local tailW = needleFrame.tailW or 5
-
-    if needleFrame.tip then
-      local mid = tipLen * 0.48
-      needleFrame.tip:ClearAllPoints()
-      needleFrame.tip:SetSize(tipW, tipLen)
-      needleFrame.tip:SetPoint("CENTER", needleFrame, "CENTER", ox * mid, oy * mid)
-      if type(needleFrame.tip.SetRotation) == "function" then
-        pcall(needleFrame.tip.SetRotation, needleFrame.tip, radians)
-      end
-      if needleFrame.tip.tex and type(needleFrame.tip.tex.SetRotation) == "function" then
-        pcall(needleFrame.tip.tex.SetRotation, needleFrame.tip.tex, radians)
-      end
+  if needleFrame._qgCanRotate and needleFrame.tex then
+    if visible then
+      if needleFrame.tex.Show then needleFrame.tex:Show() end
+    else
+      if needleFrame.tex.Hide then needleFrame.tex:Hide() end
     end
-    if needleFrame.tail then
-      local mid = tailLen * 0.48
-      needleFrame.tail:ClearAllPoints()
-      needleFrame.tail:SetSize(tailW, tailLen)
-      needleFrame.tail:SetPoint("CENTER", needleFrame, "CENTER", -ox * mid, -oy * mid)
-      if type(needleFrame.tail.SetRotation) == "function" then
-        pcall(needleFrame.tail.SetRotation, needleFrame.tail, radians)
-      end
-      if needleFrame.tail.tex and type(needleFrame.tail.tex.SetRotation) == "function" then
-        pcall(needleFrame.tail.tex.SetRotation, needleFrame.tail.tex, radians)
-      end
-    end
-    if needleFrame.hub then
-      needleFrame.hub:ClearAllPoints()
-      needleFrame.hub:SetPoint("CENTER", needleFrame, "CENTER", 0, 0)
-    end
-    -- Direction tip glyph always tracks bearing even when texture rotation fails.
+    if needleFrame.glyph and needleFrame.glyph.Hide then needleFrame.glyph:Hide() end
+  else
+    if needleFrame.tex and needleFrame.tex.Hide then needleFrame.tex:Hide() end
     if needleFrame.glyph then
-      local reach = tipLen * 0.92
-      needleFrame.glyph:ClearAllPoints()
-      needleFrame.glyph:SetPoint("CENTER", needleFrame, "CENTER", ox * reach, oy * reach)
+      if visible then
+        if needleFrame.glyph.Show then needleFrame.glyph:Show() end
+      else
+        if needleFrame.glyph.Hide then needleFrame.glyph:Hide() end
+      end
     end
-    return
-  end
-
-  -- Legacy Solid rectangle: rotate in place only (no center nudge).
-  local tex = needleFrame.tex
-  if tex and type(tex.SetRotation) == "function" then
-    pcall(tex.SetRotation, tex, radians)
-  end
-  if type(needleFrame.SetRotation) == "function" then
-    pcall(needleFrame.SetRotation, needleFrame, radians)
   end
 end
 
-function NS.UpdateCompassNeedles(bearingDeg)
-  if bearingDeg == nil then return end
-  local facing = SafeCall(GetPlayerFacing)
-  local rel
-  if type(facing) == "number" then
-    local facingDeg = math.deg(facing)
-    rel = math.rad((bearingDeg - facingDeg + 360) % 360)
-  else
-    -- No facing API: point by absolute bearing, 0 = north.
-    rel = math.rad(bearingDeg % 360)
+local function AngleChanged(prev, radians)
+  if type(prev) ~= "number" then return true end
+  local d = math.abs(radians - prev)
+  if d > math.pi then d = (math.pi * 2) - d end
+  return d > ROT_EPS
+end
+
+function NS.SetNeedleRotation(needleFrame, radians)
+  if not needleFrame then return end
+  if type(radians) ~= "number" then radians = 0 end
+  local twopi = math.pi * 2
+  radians = radians % twopi
+  if radians < 0 then radians = radians + twopi end
+
+  local changed = AngleChanged(needleFrame._qgRadians, radians)
+  if changed then
+    needleFrame._qgRadians = radians
   end
+
+  if needleFrame._qgCanRotate and needleFrame.tex and type(needleFrame.tex.SetRotation) == "function" then
+    if not changed then return end
+    local ok = pcall(needleFrame.tex.SetRotation, needleFrame.tex, radians)
+    if ok then return end
+    -- SetRotation threw: drop to the single glyph for this face.
+    needleFrame._qgCanRotate = false
+    if needleFrame.tex.Hide then needleFrame.tex:Hide() end
+    if needleFrame.glyph and needleFrame.glyph.Show then needleFrame.glyph:Show() end
+  end
+
+  if not changed then return end
+  if needleFrame.glyph and needleFrame.glyph.ClearAllPoints and needleFrame.glyph.SetPoint then
+    local radius = needleFrame._qgGlyphRadius or 24
+    -- 0 rad = up, CCW positive (same as SetRotation): x = -sin, y = cos.
+    local ox = -math.sin(radians) * radius
+    local oy = math.cos(radians) * radius
+    needleFrame.glyph:ClearAllPoints()
+    needleFrame.glyph:SetPoint("CENTER", needleFrame, "CENTER", ox, oy)
+  end
+end
+
+local function EachNeedle()
+  local list = {}
   local layers = NS.layers
-  if not layers then return end
-  -- Compass-only face is updated even when Full/Less layers are hidden.
+  if not layers then return list end
+  -- Compass-only face is included even when Full/Less layers are hidden.
   if layers.compassOnlyFace and layers.compassOnlyFace.needle then
-    NS.SetNeedleRotation(layers.compassOnlyFace.needle, rel)
+    list[#list + 1] = layers.compassOnlyFace.needle
   end
   if layers.compassLarge and layers.compassLarge.needle then
-    NS.SetNeedleRotation(layers.compassLarge.needle, rel)
+    list[#list + 1] = layers.compassLarge.needle
   end
   if layers.lessCompass and layers.lessCompass.needle then
-    NS.SetNeedleRotation(layers.lessCompass.needle, rel)
+    list[#list + 1] = layers.lessCompass.needle
+  end
+  return list
+end
+
+function NS.UpdateCompassNeedles(bearingDeg)
+  local needles = EachNeedle()
+  if bearingDeg == nil then
+    local i
+    for i = 1, #needles do
+      ShowArrow(needles[i], false)
+    end
+    return
+  end
+  local rel = NS.ArrowRadians(bearingDeg) or 0
+  local i
+  for i = 1, #needles do
+    ShowArrow(needles[i], true)
+    NS.SetNeedleRotation(needles[i], rel)
   end
 end
 
@@ -192,7 +231,7 @@ function NS.TickRoute()
         NS.ApplyRoute(route)
       end
     elseif route and route.source == "live" and NS.RefreshFocusedNav then
-      -- 0.25s: distance, bearing, needle. POI reprobe lives in RefreshFocusedNav
+      -- 0.25s: distance, bearing, arrow. POI reprobe lives in RefreshFocusedNav
       -- so a quest that starts without coords can still acquire them.
       NS.RefreshFocusedNav(route)
     end
@@ -204,10 +243,13 @@ function NS.TickRoute()
       if route.hasCoords and route.bearingDeg ~= nil then
         NS.UpdateCompassNeedles(route.bearingDeg)
       elseif route.source == "live" then
-        -- Drop a stale mock angle when the live quest has no bearing yet.
-        NS.UpdateCompassNeedles(0)
+        -- No coords: hide the arrow. Do not aim it north.
+        NS.UpdateCompassNeedles(nil)
       elseif route.bearingDeg ~= nil then
+        -- Mock route with bearingDeg may still point.
         NS.UpdateCompassNeedles(route.bearingDeg)
+      else
+        NS.UpdateCompassNeedles(nil)
       end
       if NS.UpdateMapPins then
         NS.UpdateMapPins(route)

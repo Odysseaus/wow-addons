@@ -4,7 +4,7 @@ In-game quest HUD for WoW Forever — prettier than alt-tabbing a guide. Modes *
 
 ## Status
 
-**P1 live questing (0.2.4)** — reads the player quest log, focuses the checked quest (or the closest incomplete), shows Dungeon/World plus rewards with **item icon tooltips**, a **real compass needle**, and a minimap **edge arrow** (or bottom focus badge when coords are missing). Falls back to mocked Barrens Loop when the log is empty (or `/qg mock`). Ask bridge = **P2**. Hide Blizzard objectives = **P3**. Art polish (TGA) = **P4**. Interface stays **16001**.
+**P1 live questing (0.2.5)** — reads the player quest log, focuses the checked quest (or the closest incomplete), shows Dungeon/World plus one **Rewards** area (text and **item icon tooltips**), a **compass arrow** toward the focused quest, and a minimap **edge arrow** (or bottom focus badge when coords are missing). Falls back to mocked Barrens Loop when the log is empty (or `/qg mock`). Ask bridge = **P2**. Hide Blizzard objectives = **P3**. Art polish (TGA) = **P4**. Interface stays **16001**.
 
 ## Install
 
@@ -17,7 +17,7 @@ Copy the `QuestGrind/` folder into `Interface/AddOns/`.
 
 | Mode | What you see |
 |------|----------------|
-| **Full** | Route, current step, tracker, compass, status, Ask SI |
+| **Full** | Route, current step, rewards, tracker, compass, status, Ask SI |
 | **Less** | Compact step + distance + progress + mode chrome |
 | **Compass** | Direction rose + distance |
 
@@ -43,9 +43,9 @@ Also: `/qg mode [full|less|compass]`, `/qg full`, `/qg less`, `/qg compass`, `/q
   - One checked → that quest.
   - Several checked → closest of the checked incomplete quests.
   - On complete or when that quest leaves the log, the same rules pick the next focus.
-- **HUD**: focused quest shows a **Dungeon** or **World** badge and a short reward line (XP, money, items) under Current Step, under the Less title, and on the status/XP line. Item rewards also show **icons** — hover for a real item tooltip (`SetItemByID` / hyperlink).
+- **HUD**: focused quest shows a **Dungeon** or **World** badge. Full mode has one **Rewards** section (header, XP / money / items, or **None**) and **item icons** — hover for a real item tooltip (`SetItemByID` / hyperlink). The status block shows state, last update, and a quest count ("3 quests" / "1 quest"), not a second reward line. Less mode still puts type and rewards on the subtitle.
 - **Minimap**: with coords, an **edge arrow** points toward the focus. Without coords, a **bottom focus badge** (not on the player) shows the focus is active; hover shows the quest title. World map pin appears when normalized (or converted) coordinates exist.
-- **Compass**: a real tip+tail needle pivots from center toward the focus (updates on move/rotate). Distance stays live (re-probes objective position; about 1s for a full log pass). No coords shows `Zone · ?` instead of a leftover mock distance.
+- **Compass**: one arrow on each face points from the player toward the focus (updates on move/rotate). No coordinates hides the arrow instead of pointing north. Distance stays live (re-probes objective position; about 1s for a full log pass). No coords shows `Zone · ?` instead of a leftover mock distance.
 - **Mock fallback**: if the log is empty, HUD shows the P0 Barrens Loop mock.
 - **`/qg mock`**: force mock on/off (saved in `QuestGrindDB.forceMock`).
 - **`/qg refresh`**: force a live refresh (clears force-mock and any `/qg next` override).

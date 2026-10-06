@@ -1,6 +1,7 @@
 local _, NS = ...
 
--- P1 live quest log. 0.2.4: item reward IDs for tooltips; 0.2.3 focus/rewards/type
+-- P1 live quest log. 0.2.5: status.count is the quest total (rewards stay on rewardsText).
+-- 0.2.4: item reward IDs for tooltips; 0.2.3 focus/rewards/type
 -- (closest when none/many are watched), POI reprobe for map + compass.
 -- Prefer Classic/Forever APIs; every Blizzard call is type-checked and pcalled.
 
@@ -493,7 +494,8 @@ local function RelativeBearing(targetDeg)
     return Cardinal(targetDeg)
   end
   local facingDeg = math.deg(facing)
-  local delta = (targetDeg - facingDeg + 180) % 360 - 180
+  -- CCW delta (positive = left): bearing is CW, facing is CCW from north.
+  local delta = (-targetDeg - facingDeg + 180) % 360 - 180
   local ad = math.abs(delta)
   if ad < 25 then return "ahead"
   elseif ad > 155 then return "behind"
@@ -563,7 +565,14 @@ local function ComputeNav(quest, pos)
   else
     dist = math.sqrt(dx * dx + dy * dy) * 1000
   end
-  local bearingDeg = math.deg(math.atan2(dx, -dy))
+  -- Compass bearing, CW from north (see Route.lua NS.BearingFromDelta).
+  -- world: worldX grows north, worldY grows west; map: x east, y south.
+  local bearingDeg
+  if kind == "world" then
+    bearingDeg = math.deg(math.atan2(-dy, dx))
+  else
+    bearingDeg = math.deg(math.atan2(dx, -dy))
+  end
   if bearingDeg < 0 then bearingDeg = bearingDeg + 360 end
   return {
     hasCoords = true,
@@ -1210,6 +1219,14 @@ local function GatherRewards(quest)
   return rewards, FormatRewardsText(rewards)
 end
 
+local function QuestCountText(n)
+  if type(n) ~= "number" then n = 0 end
+  n = math.floor(n)
+  if n < 0 then n = 0 end
+  if n == 1 then return "1 quest" end
+  return string.format("%d quests", n)
+end
+
 local function CopyMock()
   local m = NS.MockRoute or {}
   local out = {
@@ -1233,7 +1250,7 @@ local function CopyMock()
     status = {
       state = (m.status and m.status.state) or "In progress",
       last = (m.status and m.status.last) or "2m ago",
-      xp = (m.status and m.status.xp) or "+1240 XP",
+      count = (m.status and m.status.count) or QuestCountText(m.total or 7),
     },
     askPlaceholder = m.askPlaceholder or "Where do I turn in Smart Drinks?",
     targetX = nil,
@@ -1244,14 +1261,14 @@ local function CopyMock()
     mapY = nil,
     worldX = nil,
     worldY = nil,
-    bearingDeg = 0,
+    bearingDeg = (type(m.bearingDeg) == "number") and m.bearingDeg or 0,
     distanceYards = nil,
     hasCoords = false,
     questID = nil,
     questType = nil,
     questTypeLabel = nil,
     rewards = nil,
-    rewardsText = nil,
+    rewardsText = m.rewardsText or "+1240 XP",
     source = "mock",
   }
   return out
@@ -1330,10 +1347,6 @@ local function BuildLive(quest, list)
   if quest.complete then state = "Ready to turn in" end
   local qtype = quest.questType or "World"
   if qtype ~= "Dungeon" then qtype = "World" end
-  local xpLine = rewardsText
-  if xpLine == nil or xpLine == "" then
-    xpLine = string.format("%d quest%s", #list, #list == 1 and "" or "s")
-  end
 
   return {
     name = "Quest Log",
@@ -1352,7 +1365,7 @@ local function BuildLive(quest, list)
     status = {
       state = state,
       last = "live",
-      xp = xpLine,
+      count = QuestCountText(#list),
     },
     askPlaceholder = "Help with: " .. tostring(quest.title),
     targetX = nav.targetX or quest.targetX,

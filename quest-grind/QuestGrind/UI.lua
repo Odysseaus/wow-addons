@@ -3,8 +3,9 @@ local _, NS = ...
 -- Layered UI: every visual piece is its own Frame so pieces can move later.
 -- Transparent PAD outside chrome so ornate edges never clip (root > art).
 -- Themes apply to Full AND Less AND Compass. Solid colors = P0/P1; TGA polish = P4.
--- P1: ApplyRoute / RefreshRouteUI paint live or mock; Route.lua rotates needles.
--- 0.2.4: item reward icon tooltips; geometric compass needle; minimap focus badge.
+-- P1: ApplyRoute / RefreshRouteUI paint live or mock; Route.lua rotates compass arrows.
+-- 0.2.5: one Rewards area in Full (header + text + icons); one compass arrow per face.
+-- 0.2.4: item reward icon tooltips; minimap focus badge.
 -- 0.2.1 (P0 UX fix): window controls live on layers.chromeControls, which is
 -- NEVER hidden by mode switches (Full / Less / Compass / minimized), sits above
 -- all content (frame level), and is anchored inside art TOPRIGHT.
@@ -61,62 +62,88 @@ local function Solid(parent, r, g, b, a)
   return f
 end
 
--- Geometric compass needle: tip (gold) + tail (dark) + hub + direction glyph.
--- Pivot stays at face CENTER; Route.SetNeedleRotation places tip/tail via sin/cos.
-local function MakeNeedle(parent, tipLen, tipW, tailLen, tailW)
+-- One arrow per compass face. Interface\Minimap\MinimapArrow points up at 0 rad
+-- and rotates around its center via Texture:SetRotation (CCW positive).
+-- The frame stays anchored at face CENTER and is never moved.
+-- If the texture fails to load or SetRotation is missing, a single "^" glyph
+-- is placed on a radius instead (Route.SetNeedleRotation).
+local MINIMAP_ARROW = "Interface\\Minimap\\MinimapArrow"
+
+local function ArrowTextureLoaded(tex)
+  if not tex or type(tex.SetTexture) ~= "function" then return false end
+  local ok, ret = pcall(tex.SetTexture, tex, MINIMAP_ARROW)
+  if not ok or ret == false then return false end
+  if type(tex.GetTexture) == "function" then
+    local okGot, got = pcall(tex.GetTexture, tex)
+    if not okGot then return false end
+    if got == nil or got == "" or got == 0 then return false end
+  end
+  return true
+end
+
+local function MakeArrow(parent, size)
+  local px = size or 70
   local f = CreateFrame("Frame", nil, parent)
-  f:SetSize(8, 8)
+  f:SetSize(px, px)
   f:SetPoint("CENTER", parent, "CENTER", 0, 0)
-  f._qgNeedle = true
-  f.tipLen = tipLen or 44
-  f.tipW = tipW or 7
-  f.tailLen = tailLen or 16
-  f.tailW = tailW or 5
+  if type(parent.GetFrameLevel) == "function" and type(f.SetFrameLevel) == "function" then
+    local okLevel, level = pcall(parent.GetFrameLevel, parent)
+    if okLevel and type(level) == "number" then
+      pcall(f.SetFrameLevel, f, level + 2)
+    end
+  end
+  f._qgArrow = true
+  f._qgArrowSize = px
+  f._qgGlyphRadius = math.floor(px * 0.42)
 
-  f.tip = CreateFrame("Frame", nil, f)
-  f.tip:SetSize(f.tipW, f.tipLen)
-  f.tip.tex = f.tip:CreateTexture(nil, "ARTWORK")
-  f.tip.tex:SetAllPoints()
-  f.tip.tex:SetColorTexture(1, 1, 1, 1)
-  f.tip.tex._qgThemeWhite = true
-  f.tip.tex:SetVertexColor(0.90, 0.78, 0.40, 1)
+  f.tex = f:CreateTexture(nil, "ARTWORK")
+  f.tex:SetSize(px, px)
+  f.tex:SetPoint("CENTER", f, "CENTER", 0, 0)
+  if f.tex.SetVertexColor then
+    f.tex:SetVertexColor(0.95, 0.88, 0.55, 1)
+  end
 
-  f.tail = CreateFrame("Frame", nil, f)
-  f.tail:SetSize(f.tailW, f.tailLen)
-  f.tail.tex = f.tail:CreateTexture(nil, "ARTWORK")
-  f.tail.tex:SetAllPoints()
-  f.tail.tex:SetColorTexture(1, 1, 1, 1)
-  f.tail.tex._qgThemeWhite = true
-  f.tail.tex:SetVertexColor(0.45, 0.35, 0.20, 1)
+  local loaded = ArrowTextureLoaded(f.tex)
+  f._qgArrowLoaded = loaded
+  f._qgCanRotate = loaded and type(f.tex.SetRotation) == "function"
 
-  f.hub = CreateFrame("Frame", nil, f)
-  f.hub:SetSize(10, 10)
-  f.hub:SetPoint("CENTER", f, "CENTER", 0, 0)
-  f.hub.tex = f.hub:CreateTexture(nil, "OVERLAY")
-  f.hub.tex:SetAllPoints()
-  f.hub.tex:SetColorTexture(1, 1, 1, 1)
-  f.hub.tex._qgThemeWhite = true
-  f.hub.tex:SetVertexColor(0.95, 0.88, 0.55, 1)
-
-  f.glyph = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  f.glyph:SetPoint("CENTER", f, "CENTER", 0, (f.tipLen or 44) * 0.92)
-  if f.glyph.SetFont and GameFontNormal and GameFontNormal.GetFont then
-    local path = GameFontNormal:GetFont()
-    if path then f.glyph:SetFont(path, 14, "OUTLINE") end
+  f.glyph = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  f.glyph:SetJustifyH("CENTER")
+  if f.glyph.SetJustifyV then f.glyph:SetJustifyV("MIDDLE") end
+  if f.glyph.SetFont and GameFontNormal and type(GameFontNormal.GetFont) == "function" then
+    local okFont, path = pcall(GameFontNormal.GetFont, GameFontNormal)
+    if okFont and type(path) == "string" and path ~= "" then
+      pcall(f.glyph.SetFont, f.glyph, path, math.max(12, math.floor(px * 0.22)), "OUTLINE")
+    end
   end
   f.glyph:SetText("^")
   f.glyph:SetTextColor(0.95, 0.88, 0.45, 1)
+  f.glyph:SetPoint("CENTER", f, "CENTER", 0, f._qgGlyphRadius)
 
-  -- Theme apply targets tip as .tex (chromeHi); tail/hub separate.
-  f.tex = f.tip.tex
-  f.tailTex = f.tail.tex
-  f.hubTex = f.hub.tex
-  -- Park at north (0 rad) until Route.SetNeedleRotation runs.
-  f.tip:ClearAllPoints()
-  f.tip:SetPoint("CENTER", f, "CENTER", 0, (f.tipLen or 44) * 0.48)
-  f.tail:ClearAllPoints()
-  f.tail:SetPoint("CENTER", f, "CENTER", 0, -(f.tailLen or 16) * 0.48)
+  if f._qgCanRotate then
+    f.glyph:Hide()
+    f.tex:Show()
+  else
+    if f.tex.Hide then f.tex:Hide() end
+    f.glyph:Show()
+  end
   return f
+end
+
+-- File texture: vertex-tint only. NS.SetVertexColor would SetColorTexture
+-- a white solid and wipe MinimapArrow.
+local function TintCompassArrow(n, th)
+  if not n or not th or not th.chromeHi then return end
+  local c = th.chromeHi
+  local r = c.r or 0.90
+  local g = c.g or 0.78
+  local b = c.b or 0.40
+  if n.tex and type(n.tex.SetVertexColor) == "function" and not n.tex._qgThemeWhite then
+    pcall(n.tex.SetVertexColor, n.tex, r, g, b, 1)
+  end
+  if n.glyph and type(n.glyph.SetTextColor) == "function" then
+    pcall(n.glyph.SetTextColor, n.glyph, r, g, b, 1)
+  end
 end
 
 local REWARD_ICON_SLOTS = 4
@@ -502,7 +529,9 @@ function NS.BuildUI()
   layers.routeRow = routeRow
 
   local stepRow = CreateFrame("Frame", nil, art)
-  stepRow:SetSize(200, 140)
+  -- Taller than 140 so the Rewards header, wrapped text, and icons clear the tracker.
+  -- Tracker bottom stays above Ask SI (art 460, button bottom inset 28, height 40).
+  stepRow:SetSize(200, 168)
   stepRow:SetPoint("TOPLEFT", routeRow, "BOTTOMLEFT", 0, -10)
   stepRow.icon = Solid(stepRow, 0.72, 0.55, 0.22, 1)
   stepRow.icon:SetSize(22, 22)
@@ -527,11 +556,14 @@ function NS.BuildUI()
   stepRow.approx:SetPoint("LEFT", stepRow.bearing, "RIGHT", 4, 0)
   stepRow.zone = FS(stepRow, nil, 11)
   stepRow.zone:SetPoint("TOPLEFT", stepRow.dist, "BOTTOMLEFT", 0, -2)
+  stepRow.rewardsLabel = FS(stepRow, nil, 10)
+  stepRow.rewardsLabel:SetPoint("TOPLEFT", stepRow.zone, "BOTTOMLEFT", 0, -4)
+  stepRow.rewardsLabel:SetText("Rewards")
   stepRow.rewards = FS(stepRow, nil, 11)
-  stepRow.rewards:SetPoint("TOPLEFT", stepRow.zone, "BOTTOMLEFT", 0, -2)
+  stepRow.rewards:SetPoint("TOPLEFT", stepRow.rewardsLabel, "BOTTOMLEFT", 0, -2)
   stepRow.rewards:SetWidth(190)
   stepRow.rewards:SetWordWrap(true)
-  stepRow.rewards:SetText("")
+  stepRow.rewards:SetText("None")
   stepRow.rewardIcons = {}
   local ri
   for ri = 1, REWARD_ICON_SLOTS do
@@ -582,7 +614,7 @@ function NS.BuildUI()
   compassLarge.W = FS(compassLarge, nil, 12, "OUTLINE")
   compassLarge.W:SetPoint("LEFT", 8, 0)
   compassLarge.W:SetText("W")
-  compassLarge.needle = MakeNeedle(compassLarge, 48, 7, 18, 5)
+  compassLarge.needle = MakeArrow(compassLarge, 70)
   layers.compassLarge = compassLarge
 
   local statusBlock = CreateFrame("Frame", nil, art)
@@ -598,10 +630,12 @@ function NS.BuildUI()
   statusBlock.lastLabel:SetText("Last")
   statusBlock.last = FS(statusBlock, nil, 12)
   statusBlock.last:SetPoint("LEFT", statusBlock.lastLabel, "RIGHT", 6, 0)
-  statusBlock.xp = FS(statusBlock, nil, 12, "OUTLINE")
-  statusBlock.xp:SetPoint("TOPLEFT", statusBlock.lastLabel, "BOTTOMLEFT", 0, -4)
-  statusBlock.xp:SetWidth(124)
-  statusBlock.xp:SetWordWrap(true)
+  -- Quest count only ("3 quests"). Reward text lives in the Rewards section.
+  statusBlock.count = FS(statusBlock, nil, 12, "OUTLINE")
+  statusBlock.count:SetPoint("TOPLEFT", statusBlock.lastLabel, "BOTTOMLEFT", 0, -4)
+  statusBlock.count:SetWidth(124)
+  statusBlock.count:SetWordWrap(true)
+  statusBlock.count:SetText("")
   layers.statusBlock = statusBlock
 
   -- Divider between columns
@@ -657,7 +691,7 @@ function NS.BuildUI()
   lessCompass.ring:SetPoint("TOPLEFT", -3, 3)
   lessCompass.ring:SetPoint("BOTTOMRIGHT", 3, -3)
   lessCompass.ring:SetFrameLevel(lessCompass:GetFrameLevel() - 1)
-  lessCompass.needle = MakeNeedle(lessCompass, 26, 5, 10, 4)
+  lessCompass.needle = MakeArrow(lessCompass, 40)
   layers.lessCompass = lessCompass
 
   local lessTitle = CreateFrame("Frame", nil, art)
@@ -738,7 +772,7 @@ function NS.BuildUI()
   compassOnly.W = FS(compassOnly, nil, 14, "OUTLINE")
   compassOnly.W:SetPoint("LEFT", 10, 0)
   compassOnly.W:SetText("W")
-  compassOnly.needle = MakeNeedle(compassOnly, 56, 8, 20, 6)
+  compassOnly.needle = MakeArrow(compassOnly, 84)
   compassOnly.dist = FS(compassOnly, nil, 13, "OUTLINE")
   compassOnly.dist:SetPoint("BOTTOM", 0, 12)
   layers.compassOnlyFace = compassOnly
@@ -1013,8 +1047,16 @@ function NS.ApplyTheme()
         set(layers.stepRow.typeBadge, th.statusOk)
       end
     end
+    if layers.stepRow.rewardsLabel then
+      set(layers.stepRow.rewardsLabel, th.title)
+    end
     if layers.stepRow.rewards then
-      set(layers.stepRow.rewards, th.statusXp)
+      local rewardText = layers.stepRow.rewards.GetText and layers.stepRow.rewards:GetText()
+      if rewardText == nil or rewardText == "" or rewardText == "None" then
+        set(layers.stepRow.rewards, th.muted)
+      else
+        set(layers.stepRow.rewards, th.statusXp)
+      end
     end
     if layers.stepRow.rewardIcons then
       local i
@@ -1032,15 +1074,7 @@ function NS.ApplyTheme()
   if layers.compassLarge then
     set(layers.compassLarge.face.tex, th.panel)
     set(layers.compassLarge.ring.tex, th.chrome)
-    if layers.compassLarge.needle then
-      local n = layers.compassLarge.needle
-      if n.tex then set(n.tex, th.chromeHi) end
-      if n.tailTex then set(n.tailTex, th.muted) end
-      if n.hubTex then set(n.hubTex, th.chromeHi) end
-      if n.glyph and n.glyph.SetTextColor and th.chromeHi then
-        n.glyph:SetTextColor(th.chromeHi.r or 0.9, th.chromeHi.g or 0.78, th.chromeHi.b or 0.4, 1)
-      end
-    end
+    TintCompassArrow(layers.compassLarge.needle, th)
     set(layers.compassLarge.N, th.title)
     set(layers.compassLarge.E, th.title)
     set(layers.compassLarge.S, th.title)
@@ -1051,7 +1085,9 @@ function NS.ApplyTheme()
     set(layers.statusBlock.state, th.statusOk)
     set(layers.statusBlock.lastLabel, th.muted)
     set(layers.statusBlock.last, th.text)
-    set(layers.statusBlock.xp, th.statusXp)
+    if layers.statusBlock.count then
+      set(layers.statusBlock.count, th.text)
+    end
   end
   if layers.askButton then
     set(layers.askButton.bg, th.accent)
@@ -1063,15 +1099,7 @@ function NS.ApplyTheme()
   if layers.lessCompass then
     set(layers.lessCompass.face.tex, th.panel)
     set(layers.lessCompass.ring.tex, th.chrome)
-    if layers.lessCompass.needle then
-      local n = layers.lessCompass.needle
-      if n.tex then set(n.tex, th.chromeHi) end
-      if n.tailTex then set(n.tailTex, th.muted) end
-      if n.hubTex then set(n.hubTex, th.chromeHi) end
-      if n.glyph and n.glyph.SetTextColor and th.chromeHi then
-        n.glyph:SetTextColor(th.chromeHi.r or 0.9, th.chromeHi.g or 0.78, th.chromeHi.b or 0.4, 1)
-      end
-    end
+    TintCompassArrow(layers.lessCompass.needle, th)
   end
   if layers.lessTitle then
     set(layers.lessTitle.text, th.text)
@@ -1103,15 +1131,7 @@ function NS.ApplyTheme()
   if layers.compassOnlyFace then
     set(layers.compassOnlyFace.face.tex, th.panel)
     set(layers.compassOnlyFace.ring.tex, th.chrome)
-    if layers.compassOnlyFace.needle then
-      local n = layers.compassOnlyFace.needle
-      if n.tex then set(n.tex, th.chromeHi) end
-      if n.tailTex then set(n.tailTex, th.muted) end
-      if n.hubTex then set(n.hubTex, th.chromeHi) end
-      if n.glyph and n.glyph.SetTextColor and th.chromeHi then
-        n.glyph:SetTextColor(th.chromeHi.r or 0.9, th.chromeHi.g or 0.78, th.chromeHi.b or 0.4, 1)
-      end
-    end
+    TintCompassArrow(layers.compassOnlyFace.needle, th)
     set(layers.compassOnlyFace.N, th.title)
     set(layers.compassOnlyFace.E, th.title)
     set(layers.compassOnlyFace.S, th.title)
@@ -1231,7 +1251,19 @@ local function PaintQuestMeta(m)
   local set = NS.SetVertexColor
   local live = m and m.source == "live"
   local qtype = live and (m.questTypeLabel or m.questType or "") or ""
-  local rewards = live and (m.rewardsText or "") or ""
+  -- Mock and live share this line (mock rewardsText is "+1240 XP"). Icons stay live-only.
+  local rewards = (m and m.rewardsText) or ""
+  local noReward = false
+  if rewards == "" then
+    local nItems = 0
+    if live and m then
+      nItems = #CollectRewardIconItems(m.rewards)
+    end
+    if nItems == 0 then
+      rewards = "None"
+      noReward = true
+    end
+  end
   if layers.stepRow and layers.stepRow.typeBadge then
     layers.stepRow.typeBadge:SetText(qtype)
     if qtype == "Dungeon" then
@@ -1242,7 +1274,11 @@ local function PaintQuestMeta(m)
   end
   if layers.stepRow and layers.stepRow.rewards then
     layers.stepRow.rewards:SetText(rewards)
-    set(layers.stepRow.rewards, th.statusXp)
+    if noReward then
+      set(layers.stepRow.rewards, th.muted)
+    else
+      set(layers.stepRow.rewards, th.statusXp)
+    end
   end
   PaintRewardIcons(m)
   if layers.lessTitle and layers.lessTitle.sub then
@@ -1260,9 +1296,13 @@ local function PaintNeedles(m)
   if m.hasCoords and m.bearingDeg ~= nil then
     NS.UpdateCompassNeedles(m.bearingDeg)
   elseif m.source == "live" then
-    NS.UpdateCompassNeedles(0)
+    -- No live bearing: hide the arrow. Do not aim it north.
+    NS.UpdateCompassNeedles(nil)
   elseif m.bearingDeg ~= nil then
+    -- Mock (and any non-live route) may still point from bearingDeg.
     NS.UpdateCompassNeedles(m.bearingDeg)
+  else
+    NS.UpdateCompassNeedles(nil)
   end
 end
 
@@ -1289,7 +1329,9 @@ function NS.ApplyRoute(m)
   local status = m.status or {}
   layers.statusBlock.state:SetText(status.state or "")
   layers.statusBlock.last:SetText(status.last or "")
-  layers.statusBlock.xp:SetText(status.xp or "")
+  if layers.statusBlock.count then
+    layers.statusBlock.count:SetText(status.count or "")
+  end
 
   if layers.lessTitle then layers.lessTitle.text:SetText(step.title or "") end
   if layers.lessDistance then layers.lessDistance.text:SetText(step.distance or "?") end

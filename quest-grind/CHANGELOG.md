@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5 — Single Rewards area, simple compass arrow
+
+- **Fixed**: Full mode has one **Rewards** section (header, reward text, item icons). Empty live rewards show **None**. Mock shows **+1240 XP** in that same section. The status column no longer repeats reward text; it shows a quest count ("3 quests" / "1 quest").
+- **Fixed**: Each compass face (Full, Less, Compass) is a single arrow toward the focused quest. No live bearing hides the arrow instead of pointing north. Mock `bearingDeg` may still point.
+- **Fixed**: Arrow direction math. Bearing is a clockwise compass bearing for both map and world coordinates (world axes: X north, Y west), and the arrow turns by `-bearing - facing` (WoW facing and `SetRotation` are counter-clockwise), so it points at the quest from the player as you turn. The ahead / left / right text uses the same rule.
+- **Deferred**: objectives progress tick; minimap route redesign (the minimap edge arrow in `Map.lua` is unchanged).
+
 ## 0.2.4 — Item tooltips, minimap route, real needle
 
 - **Item reward hover**: reward items keep `itemID` / texture / link; Full mode shows icon buttons under Current Step. Hover uses `GameTooltip:SetItemByID` (else `SetHyperlink`) like the quest log.

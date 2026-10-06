@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: QuestGrind
-## Notes: Quest HUD — Full / Less / Compass. 0.2.4 item tooltips, minimap route pointer, real compass needle. P1 quest log. Ask SI via companion (P2).
+## Notes: Quest HUD — Full / Less / Compass. 0.2.5 single Rewards area, simple compass arrow. P1 quest log. Ask SI via companion (P2).
 ## Author: Odysseaus
-## Version: 0.2.4
+## Version: 0.2.5
 ## IconTexture: Interface\Icons\INV_Misc_Map_01
 ## SavedVariables: QuestGrindDB
 
