@@ -898,6 +898,89 @@ local function RelativeBearing(targetDeg)
   end
 end
 
+-- Convert map-norm (0..1) on uiMapID to continent world yards via C_Map.GetWorldPosFromMapPos.
+-- Returns continentID, worldX, worldY (UnitPosition order: worldX north, worldY west) or nils.
+local function MapNormToWorld(mapID, mapX, mapY)
+  if type(mapID) ~= "number" or type(mapX) ~= "number" or type(mapY) ~= "number" then
+    return nil, nil, nil
+  end
+  if type(C_Map) ~= "table" or type(C_Map.GetWorldPosFromMapPos) ~= "function" then
+    return nil, nil, nil
+  end
+  local vec = { x = mapX, y = mapY }
+  if type(CreateVector2D) == "function" then
+    local created = SafeCall(CreateVector2D, mapX, mapY)
+    if type(created) == "table" then vec = created end
+  end
+  local ok, a, b = pcall(C_Map.GetWorldPosFromMapPos, mapID, vec)
+  if not ok then return nil, nil, nil end
+  -- API: continentID, worldPosition  OR sometimes worldPosition alone
+  local continentID, worldPos
+  if type(a) == "number" and type(b) == "table" then
+    continentID, worldPos = a, b
+  elseif type(a) == "table" then
+    worldPos = a
+    continentID = b
+  else
+    return nil, nil, nil
+  end
+  local wx, wy = VecXY(worldPos)
+  if type(wx) ~= "number" or type(wy) ~= "number" then return nil, nil, nil end
+  return continentID, wx, wy
+end
+
+-- Player map-norm on a specific uiMapID (same pattern as Map.lua PlayerNormOnMap).
+local function PlayerNormOnMapID(mapID)
+  if type(mapID) ~= "number" then return nil, nil end
+  if type(C_Map) == "table" and type(C_Map.GetPlayerMapPosition) == "function" then
+    local p = SafeCall(C_Map.GetPlayerMapPosition, mapID, "player")
+    local x, y = VecXY(p)
+    if type(x) == "number" and type(y) == "number" and (x > 0 or y > 0) and x <= 1 and y <= 1 then
+      return x, y
+    end
+  end
+  return nil, nil
+end
+
+-- Pick comparable (px,py,tx,ty,kind) for distance. Never compare raw map-norm across different map IDs.
+-- Prefer same-continent world yards; else same-map (or player projected onto quest map) map-norm ×1000.
+-- Returns px, py, tx, ty, kind ("world"|"map") or all nils if incomparable → caller sets hasCoords=false.
+local function ComparableNavPositions(quest, pos, worldX, worldY, mapX, mapY)
+  local qMap = quest.targetMapID
+  local pMap = pos.mapID or pos.worldMapID
+
+  -- 1) Prefer world yards when both sides have world (player UnitPosition + quest world, or map→world).
+  local twx, twy, tCont = worldX, worldY, nil
+  if (not twx or not twy) and mapX and mapY and type(qMap) == "number" then
+    tCont, twx, twy = MapNormToWorld(qMap, mapX, mapY)
+  end
+  if twx and twy and pos.worldX and pos.worldY then
+    -- Same continent when we know both; UnitPosition's 4th return is instance/continent id.
+    local pCont = pos.worldMapID
+    if tCont == nil or pCont == nil or tCont == pCont then
+      return pos.worldX, pos.worldY, twx, twy, "world"
+    end
+  end
+
+  -- 2) Same uiMapID map-norm (existing same-map path).
+  if mapX and mapY and pos.mapX and pos.mapY then
+    if type(qMap) ~= "number" or type(pMap) ~= "number" or qMap == pMap then
+      return pos.mapX, pos.mapY, mapX, mapY, "map"
+    end
+  end
+
+  -- 3) Different maps: project player onto quest's map, then map-norm distance.
+  if mapX and mapY and type(qMap) == "number" then
+    local ppx, ppy = PlayerNormOnMapID(qMap)
+    if ppx and ppy then
+      return ppx, ppy, mapX, mapY, "map"
+    end
+  end
+
+  -- 4) Incomparable — do NOT fall back to cross-map raw map-norm×1000.
+  return nil, nil, nil, nil, nil
+end
+
 local function ComputeNav(quest, pos)
   pos = pos or NS.GetPlayerPositions()
   local worldX, worldY = quest.worldX, quest.worldY
@@ -925,15 +1008,10 @@ local function ComputeNav(quest, pos)
     end
   end
 
-  local px, py, tx, ty, kind
-  if worldX and pos.worldX then
-    px, py, tx, ty, kind = pos.worldX, pos.worldY, worldX, worldY, "world"
-  elseif mapX and pos.mapX then
-    px, py, tx, ty, kind = pos.mapX, pos.mapY, mapX, mapY, "map"
-  end
+  local px, py, tx, ty, kind = ComparableNavPositions(quest, pos, worldX, worldY, mapX, mapY)
 
   local zone = ZoneName()
-  if not (px and py and tx and ty) then
+  if not (px and py and tx and ty and kind) then
     return {
       hasCoords = false,
       distanceYards = nil,
@@ -957,10 +1035,9 @@ local function ComputeNav(quest, pos)
   if kind == "world" then
     dist = math.sqrt(dx * dx + dy * dy)
   else
+    -- Same-map (or player-on-quest-map) normalized coords → yards scale (unchanged for same-map).
     dist = math.sqrt(dx * dx + dy * dy) * 1000
   end
-  -- Compass bearing, CW from north (see Route.lua NS.BearingFromDelta).
-  -- world: worldX grows north, worldY grows west; map: x east, y south.
   local bearingDeg
   if kind == "world" then
     bearingDeg = math.deg(math.atan2(-dy, dx))

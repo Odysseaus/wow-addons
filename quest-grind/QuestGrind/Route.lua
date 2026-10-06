@@ -58,20 +58,107 @@ function NS.ArrowRadians(bearingDeg)
   return math.rad((-bearingDeg - facingDeg) % 360)
 end
 
+-- Convert map-norm (0..1) on uiMapID to continent world yards.
+-- Returns continentID, worldX, worldY or nils. Kept local so Route.lua does not depend on Quests.lua helpers.
+local function MapNormToWorld(mapID, mapX, mapY)
+  if type(mapID) ~= "number" or type(mapX) ~= "number" or type(mapY) ~= "number" then
+    return nil, nil, nil
+  end
+  if type(C_Map) ~= "table" or type(C_Map.GetWorldPosFromMapPos) ~= "function" then
+    return nil, nil, nil
+  end
+  local vec = { x = mapX, y = mapY }
+  if type(CreateVector2D) == "function" then
+    local created = SafeCall(CreateVector2D, mapX, mapY)
+    if type(created) == "table" then vec = created end
+  end
+  local ok, a, b = pcall(C_Map.GetWorldPosFromMapPos, mapID, vec)
+  if not ok then return nil, nil, nil end
+  local continentID, worldPos
+  if type(a) == "number" and type(b) == "table" then
+    continentID, worldPos = a, b
+  elseif type(a) == "table" then
+    worldPos = a
+    continentID = b
+  else
+    return nil, nil, nil
+  end
+  local wx, wy
+  if type(worldPos) == "table" then
+    if type(worldPos.GetXY) == "function" then
+      local okxy, x, y = pcall(worldPos.GetXY, worldPos)
+      if okxy and type(x) == "number" and type(y) == "number" then
+        wx, wy = x, y
+      end
+    end
+    if type(wx) ~= "number" and type(worldPos.x) == "number" and type(worldPos.y) == "number" then
+      wx, wy = worldPos.x, worldPos.y
+    end
+  end
+  if type(wx) ~= "number" or type(wy) ~= "number" then return nil, nil, nil end
+  return continentID, wx, wy
+end
+
 function NS.ComputeDistanceBearing(tx, ty, tmap)
-  local px, py, pmap, kind = NS.GetPlayerMapPosition()
-  if not (px and py and tx and ty) then
+  if type(tx) ~= "number" or type(ty) ~= "number" then
     return nil, nil, false
   end
-  local dx = tx - px
-  local dy = ty - py
-  local dist
-  if kind == "world" then
-    dist = math.sqrt(dx * dx + dy * dy)
-  else
-    dist = math.sqrt(dx * dx + dy * dy) * 1000
+  if type(NS.GetPlayerPositions) ~= "function" then
+    return nil, nil, false
   end
-  return dist, NS.BearingFromDelta(dx, dy, kind), true
+  local pos = NS.GetPlayerPositions()
+  if type(pos) ~= "table" then
+    return nil, nil, false
+  end
+
+  -- 1) Same-continent world yards: map-norm on tmap → world, compared to UnitPosition.
+  if pos.worldX and pos.worldY and type(tmap) == "number" then
+    local tCont, twx, twy = MapNormToWorld(tmap, tx, ty)
+    if twx and twy then
+      local pCont = pos.worldMapID
+      if tCont == nil or pCont == nil or tCont == pCont then
+        local dx = twx - pos.worldX
+        local dy = twy - pos.worldY
+        local dist = math.sqrt(dx * dx + dy * dy)
+        return dist, NS.BearingFromDelta(dx, dy, "world"), true
+      end
+    end
+  end
+
+  -- 2) Same uiMapID, or tmap unknown: map-norm ×1000. Never raw-compare a different map.
+  local pMap = pos.mapID
+  if pos.mapX and pos.mapY and (tmap == nil or tmap == pMap) then
+    local dx = tx - pos.mapX
+    local dy = ty - pos.mapY
+    local dist = math.sqrt(dx * dx + dy * dy) * 1000
+    return dist, NS.BearingFromDelta(dx, dy, "map"), true
+  end
+
+  -- 3) Different maps: project the player onto tmap, then map-norm ×1000.
+  if type(tmap) == "number" and type(C_Map) == "table" and type(C_Map.GetPlayerMapPosition) == "function" then
+    local p = SafeCall(C_Map.GetPlayerMapPosition, tmap, "player")
+    local px, py
+    if type(p) == "table" then
+      if type(p.GetXY) == "function" then
+        local okxy, x, y = pcall(p.GetXY, p)
+        if okxy and type(x) == "number" and type(y) == "number" then
+          px, py = x, y
+        end
+      end
+      if type(px) ~= "number" and type(p.x) == "number" and type(p.y) == "number" then
+        px, py = p.x, p.y
+      end
+    end
+    if type(px) == "number" and type(py) == "number" and (px > 0 or py > 0) and px <= 1 and py <= 1 then
+      local dx = tx - px
+      local dy = ty - py
+      local dist = math.sqrt(dx * dx + dy * dy) * 1000
+      return dist, NS.BearingFromDelta(dx, dy, "map"), true
+    end
+  end
+
+  -- 4) Incomparable — do not fake a cross-map map-norm ×1000.
+  return nil, nil, false
 end
 
 local function FormatDistance(yards)

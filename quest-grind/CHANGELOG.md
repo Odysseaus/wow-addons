@@ -1,3 +1,9 @@
+## 0.2.13 — Cross-map focus distance (no fake ~23 yd)
+
+- **Fixed**: `ComputeNav` no longer compares map-normalized 0..1 coords across different `uiMapID`s (×1000 → fake ~23 yd). Unchecked focus ranking and HUD yards shared that path, so a far quest (e.g. Zephras Isle on another map) could win “closest”. Now prefers same-continent **world** yards (`UnitPosition` / `C_Map.GetWorldPosFromMapPos`); else player position on the **quest’s** map via `C_Map.GetPlayerMapPosition(questMap, "player")` then map-norm×1000; if maps differ and conversion fails → `hasCoords=false` / `distanceYards=nil` → rank `+inf`, HUD `?`. Never raw map-norm×1000 across different map IDs (`Quests.lua`: `ComparableNavPositions` / `ComputeNav`).
+- **Fixed**: `Route.lua` `ComputeDistanceBearing` uses the same cross-map rules (parity with ComputeNav).
+- **Keep**: focus scope / checked rules (no checked → closest incomplete; one checked → that quest; multi-checked → closest among checked); same-map focus/HUD; 0.2.12 QuestLine XY / fair ≤7 packing / no single-Blizzard wipe / Blizzard-as-start / no QG on live pin / Current location. Interface **16001**.
+
 ## 0.2.12 — QuestLine XY for upcoming stops; fair ≤7 packing; map overlay keep
 
 - **Fixed**: upcoming / untriggered chain stops rarely had map XY (no GetQuestsOnMap pin yet), so they never entered the ≤7 route and Blizzard→QG lines never drew. `StopMapCoords` now falls back to `C_QuestLine.GetQuestLineInfo` / `GetAvailableQuestLines` XY (normalized like GetQuestsOnMap); GetQuestsOnMap / TryQuestPOI stay higher priority for in-log accepted stops. `RequestQuestLinesForMap` still kicked on miss. `ReadQuestLine` keeps additive mapX/mapY when present (`Quests.lua`).
