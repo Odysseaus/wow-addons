@@ -5,6 +5,23 @@ NS.MODES = { "full", "less", "compass" }
 NS.db = nil
 NS.uiReady = false
 
+-- SelectQuestLogEntry fires QUEST_LOG_UPDATE on some clients. Depth-count so a
+-- nested select cannot re-enter Refresh, and a nested pop cannot clear early.
+local refreshDepth = 0
+
+function NS.PushRefresh()
+  refreshDepth = refreshDepth + 1
+  NS._refreshing = true
+end
+
+function NS.PopRefresh()
+  refreshDepth = refreshDepth - 1
+  if refreshDepth <= 0 then
+    refreshDepth = 0
+    NS._refreshing = false
+  end
+end
+
 local DEFAULTS = {
   mode = "full",
   theme = "default",
@@ -56,39 +73,59 @@ end
 
 --- Primary refresh: live quest log when available; mock if empty or /qg mock.
 function NS.Refresh()
-  if NS.db and NS.db.forceMock then
-    NS.forceMock = true
+  if NS._refreshing then
+    return NS.liveRoute
   end
-  local route
-  if NS.forceMock then
-    if NS.GetLiveRoute then
-      route = NS.GetLiveRoute() -- respects forceMock → mock copy
+  NS.PushRefresh()
+  local ok, err = pcall(function()
+    if NS.db and NS.db.forceMock then
+      NS.forceMock = true
     end
-    if NS.ApplyRoute and route then
-      NS.ApplyRoute(route)
-    elseif NS.RefreshMock then
-      NS.RefreshMock()
+    local route
+    if NS.forceMock then
+      if NS.GetLiveRoute then
+        route = NS.GetLiveRoute() -- respects forceMock → mock copy
+      end
+      if NS.ApplyRoute and route then
+        NS.ApplyRoute(route)
+      elseif NS.RefreshMock then
+        NS.RefreshMock()
+      end
+    else
+      if NS.RefreshLive then
+        route = NS.RefreshLive()
+      elseif NS.GetLiveRoute and NS.ApplyRoute then
+        route = NS.GetLiveRoute()
+        NS.ApplyRoute(route)
+      elseif NS.RefreshMock then
+        NS.RefreshMock()
+      end
     end
-  else
-    if NS.RefreshLive then
-      route = NS.RefreshLive()
-    elseif NS.GetLiveRoute and NS.ApplyRoute then
-      route = NS.GetLiveRoute()
-      NS.ApplyRoute(route)
-    elseif NS.RefreshMock then
-      NS.RefreshMock()
+    if NS.UpdateMapPins then
+      NS.UpdateMapPins(NS.liveRoute or route)
+    end
+    if NS.StartRouteTicker then
+      NS.StartRouteTicker()
+    end
+    if NS.TickRoute then
+      NS.TickRoute()
+    end
+  end)
+  NS.PopRefresh()
+  if not ok then
+    local shown = false
+    if type(geterrorhandler) == "function" then
+      local handler = geterrorhandler()
+      if type(handler) == "function" then
+        handler(err)
+        shown = true
+      end
+    end
+    if not shown and NS.Print then
+      NS.Print("refresh error: " .. tostring(err))
     end
   end
-  if NS.UpdateMapPins then
-    NS.UpdateMapPins(NS.liveRoute or route)
-  end
-  if NS.StartRouteTicker then
-    NS.StartRouteTicker()
-  end
-  if NS.TickRoute then
-    NS.TickRoute()
-  end
-  return route or NS.liveRoute
+  return NS.liveRoute
 end
 
 local MODE_NAMES = { full = "Full", less = "Less", compass = "Compass" }
@@ -240,6 +277,8 @@ local function SlashHandler(msg)
   elseif cmd == "refresh" then
     NS.forceMock = false
     if NS.db then NS.db.forceMock = false end
+    -- Explicit refresh drops a /qg next override and reapplies checked/closest.
+    NS.manualFocusID = nil
     NS.Refresh()
     local src = (NS.liveRoute and NS.liveRoute.source) or "?"
     Print("refreshed (" .. tostring(src) .. ").")
@@ -281,14 +320,14 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if NS.ApplyLock then NS.ApplyLock() end
     NS.Refresh()
     NS.uiReady = true
-    Print("ready (0.2.1) — HUD buttons: Full/Less/Compass, Edit, Min, X. /qg help. /qg show if hidden. Ask SI stubs (P2).")
+    Print("ready (0.2.3) — HUD buttons: Full/Less/Compass, Edit, Min, X. /qg help. /qg show if hidden. Ask SI stubs (P2).")
   elseif event == "UNIT_QUEST_LOG_CHANGED" then
-    if arg1 == "player" or arg1 == nil then
-      if NS.uiReady then NS.Refresh() end
+    if (arg1 == "player" or arg1 == nil) and NS.uiReady and not NS._refreshing then
+      NS.Refresh()
     end
   elseif event == "QUEST_ACCEPTED" or event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN"
       or event == "QUEST_LOG_UPDATE" or event == "PLAYER_ENTERING_WORLD"
       or event == "ZONE_CHANGED_NEW_AREA" then
-    if NS.uiReady then NS.Refresh() end
+    if NS.uiReady and not NS._refreshing then NS.Refresh() end
   end
 end)

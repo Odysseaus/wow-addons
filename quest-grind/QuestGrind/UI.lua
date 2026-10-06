@@ -13,7 +13,7 @@ NS.PAD = PAD
 
 -- Sizes leave a ~32px top strip in every mode for the persistent controls.
 local ART = {
-  full = { w = 400, h = 440 },
+  full = { w = 400, h = 460 },
   less = { w = 440, h = 128 },
   compass = { w = 240, h = 264 },
   minimized = { w = 240, h = 40 },
@@ -389,7 +389,7 @@ function NS.BuildUI()
   layers.routeRow = routeRow
 
   local stepRow = CreateFrame("Frame", nil, art)
-  stepRow:SetSize(200, 70)
+  stepRow:SetSize(200, 116)
   stepRow:SetPoint("TOPLEFT", routeRow, "BOTTOMLEFT", 0, -10)
   stepRow.icon = Solid(stepRow, 0.72, 0.55, 0.22, 1)
   stepRow.icon:SetSize(22, 22)
@@ -400,8 +400,12 @@ function NS.BuildUI()
   stepRow.label = FS(stepRow, nil, 10)
   stepRow.label:SetPoint("LEFT", stepRow.icon, "RIGHT", 8, 6)
   stepRow.label:SetText("Current Step")
+  stepRow.typeBadge = FS(stepRow, nil, 11, "OUTLINE")
+  stepRow.typeBadge:SetPoint("LEFT", stepRow.label, "RIGHT", 8, 0)
+  stepRow.typeBadge:SetText("")
   stepRow.title = FS(stepRow, nil, 15, "OUTLINE")
   stepRow.title:SetPoint("TOPLEFT", stepRow.label, "BOTTOMLEFT", 0, -2)
+  stepRow.title:SetWidth(180)
   stepRow.dist = FS(stepRow, nil, 11)
   stepRow.dist:SetPoint("TOPLEFT", stepRow.title, "BOTTOMLEFT", 0, -2)
   stepRow.bearing = FS(stepRow, nil, 11)
@@ -410,6 +414,11 @@ function NS.BuildUI()
   stepRow.approx:SetPoint("LEFT", stepRow.bearing, "RIGHT", 4, 0)
   stepRow.zone = FS(stepRow, nil, 11)
   stepRow.zone:SetPoint("TOPLEFT", stepRow.dist, "BOTTOMLEFT", 0, -2)
+  stepRow.rewards = FS(stepRow, nil, 11)
+  stepRow.rewards:SetPoint("TOPLEFT", stepRow.zone, "BOTTOMLEFT", 0, -2)
+  stepRow.rewards:SetWidth(190)
+  stepRow.rewards:SetWordWrap(true)
+  stepRow.rewards:SetText("")
   layers.stepRow = stepRow
 
   local trackerRow = CreateFrame("Frame", nil, art)
@@ -455,7 +464,7 @@ function NS.BuildUI()
   layers.compassLarge = compassLarge
 
   local statusBlock = CreateFrame("Frame", nil, art)
-  statusBlock:SetSize(130, 80)
+  statusBlock:SetSize(130, 100)
   statusBlock:SetPoint("TOP", compassLarge, "BOTTOM", 0, -12)
   statusBlock.label = FS(statusBlock, nil, 10)
   statusBlock.label:SetPoint("TOPLEFT", 0, 0)
@@ -467,8 +476,10 @@ function NS.BuildUI()
   statusBlock.lastLabel:SetText("Last")
   statusBlock.last = FS(statusBlock, nil, 12)
   statusBlock.last:SetPoint("LEFT", statusBlock.lastLabel, "RIGHT", 6, 0)
-  statusBlock.xp = FS(statusBlock, nil, 13, "OUTLINE")
+  statusBlock.xp = FS(statusBlock, nil, 12, "OUTLINE")
   statusBlock.xp:SetPoint("TOPLEFT", statusBlock.lastLabel, "BOTTOMLEFT", 0, -4)
+  statusBlock.xp:SetWidth(124)
+  statusBlock.xp:SetWordWrap(true)
   layers.statusBlock = statusBlock
 
   -- Divider between columns
@@ -530,10 +541,15 @@ function NS.BuildUI()
   layers.lessCompass = lessCompass
 
   local lessTitle = CreateFrame("Frame", nil, art)
-  lessTitle:SetSize(220, 20)
+  lessTitle:SetSize(250, 36)
   lessTitle:SetPoint("TOPLEFT", lessCompass, "TOPRIGHT", 12, -4)
   lessTitle.text = FS(lessTitle, nil, 15, "OUTLINE")
-  lessTitle.text:SetPoint("LEFT")
+  lessTitle.text:SetPoint("TOPLEFT")
+  lessTitle.text:SetWidth(240)
+  lessTitle.sub = FS(lessTitle, nil, 11)
+  lessTitle.sub:SetPoint("TOPLEFT", lessTitle.text, "BOTTOMLEFT", 0, -1)
+  lessTitle.sub:SetWidth(240)
+  lessTitle.sub:SetText("")
   layers.lessTitle = lessTitle
 
   local lessDistance = CreateFrame("Frame", nil, art)
@@ -871,6 +887,17 @@ function NS.ApplyTheme()
     set(layers.stepRow.bearing, th.statusOk)
     set(layers.stepRow.approx, th.muted)
     set(layers.stepRow.zone, th.title)
+    if layers.stepRow.typeBadge then
+      local qtype = NS.liveRoute and NS.liveRoute.questType
+      if qtype == "Dungeon" then
+        set(layers.stepRow.typeBadge, th.accent)
+      else
+        set(layers.stepRow.typeBadge, th.statusOk)
+      end
+    end
+    if layers.stepRow.rewards then
+      set(layers.stepRow.rewards, th.statusXp)
+    end
   end
   if layers.trackerRow then
     set(layers.trackerRow.label, th.title)
@@ -905,7 +932,17 @@ function NS.ApplyTheme()
     set(layers.lessCompass.ring.tex, th.chrome)
     set(layers.lessCompass.needle.tex, th.chromeHi)
   end
-  if layers.lessTitle then set(layers.lessTitle.text, th.text) end
+  if layers.lessTitle then
+    set(layers.lessTitle.text, th.text)
+    if layers.lessTitle.sub then
+      local qtype = NS.liveRoute and NS.liveRoute.questType
+      if qtype == "Dungeon" then
+        set(layers.lessTitle.sub, th.accent)
+      else
+        set(layers.lessTitle.sub, th.muted)
+      end
+    end
+  end
   if layers.lessDistance then
     set(layers.lessDistance.text, th.text)
     set(layers.lessDistance.diamondL.tex, th.chromeHi)
@@ -947,22 +984,63 @@ function NS.ApplyTheme()
   if NS.ApplyDialogThemes then NS.ApplyDialogThemes() end
 end
 
-function NS.SetNeedleRotation(needleFrame, radians)
-  if not needleFrame then return end
-  local tex = needleFrame.tex
-  if tex and type(tex.SetRotation) == "function" then
-    pcall(tex.SetRotation, tex, radians)
-    return
+-- Live with no objective coords must not stay blank or stuck on mock distance.
+local function CompassDistLine(m)
+  if not m then return "?" end
+  local step = m.step or {}
+  if m.source == "live" and not m.hasCoords then
+    local zone = step.zone
+    if type(zone) ~= "string" or zone == "" then zone = "?" end
+    return zone .. " · ?"
   end
-  if type(needleFrame.SetRotation) == "function" then
-    pcall(needleFrame.SetRotation, needleFrame, radians)
-    return
+  return step.distance or "?"
+end
+
+local function LiveSubtitle(m)
+  if not m or m.source ~= "live" then return "" end
+  local qtype = m.questTypeLabel or m.questType or ""
+  local rewards = m.rewardsText or ""
+  if qtype ~= "" and rewards ~= "" then return qtype .. " · " .. rewards end
+  if qtype ~= "" then return qtype end
+  return rewards
+end
+
+local function PaintQuestMeta(m)
+  local th = NS.GetTheme()
+  local set = NS.SetVertexColor
+  local live = m and m.source == "live"
+  local qtype = live and (m.questTypeLabel or m.questType or "") or ""
+  local rewards = live and (m.rewardsText or "") or ""
+  if layers.stepRow and layers.stepRow.typeBadge then
+    layers.stepRow.typeBadge:SetText(qtype)
+    if qtype == "Dungeon" then
+      set(layers.stepRow.typeBadge, th.accent)
+    else
+      set(layers.stepRow.typeBadge, th.statusOk)
+    end
   end
-  if needleFrame.SetPoint and needleFrame:GetParent() then
-    local ox = math.sin(radians or 0) * 12
-    local oy = math.cos(radians or 0) * 12
-    needleFrame:ClearAllPoints()
-    needleFrame:SetPoint("CENTER", needleFrame:GetParent(), "CENTER", ox, oy)
+  if layers.stepRow and layers.stepRow.rewards then
+    layers.stepRow.rewards:SetText(rewards)
+    set(layers.stepRow.rewards, th.statusXp)
+  end
+  if layers.lessTitle and layers.lessTitle.sub then
+    layers.lessTitle.sub:SetText(LiveSubtitle(m))
+    if qtype == "Dungeon" then
+      set(layers.lessTitle.sub, th.accent)
+    else
+      set(layers.lessTitle.sub, th.muted)
+    end
+  end
+end
+
+local function PaintNeedles(m)
+  if not m or not NS.UpdateCompassNeedles then return end
+  if m.hasCoords and m.bearingDeg ~= nil then
+    NS.UpdateCompassNeedles(m.bearingDeg)
+  elseif m.source == "live" then
+    NS.UpdateCompassNeedles(0)
+  elseif m.bearingDeg ~= nil then
+    NS.UpdateCompassNeedles(m.bearingDeg)
   end
 end
 
@@ -980,6 +1058,7 @@ function NS.ApplyRoute(m)
   layers.stepRow.bearing:SetText(step.bearing or "")
   layers.stepRow.approx:SetText("· " .. (step.approx or ""))
   layers.stepRow.zone:SetText(step.zone or "")
+  PaintQuestMeta(m)
 
   local tracker = m.tracker or {}
   layers.trackerRow.text:SetText(tracker.label or "")
@@ -996,12 +1075,10 @@ function NS.ApplyRoute(m)
     layers.lessProgress.bar:SetFilled(m.filled or 1, NS.GetTheme().accent)
   end
   if layers.compassOnlyFace then
-    layers.compassOnlyFace.dist:SetText(step.distance or "?")
+    layers.compassOnlyFace.dist:SetText(CompassDistLine(m))
   end
 
-  if m.bearingDeg and NS.UpdateCompassNeedles then
-    NS.UpdateCompassNeedles(m.bearingDeg)
-  end
+  PaintNeedles(m)
 end
 
 function NS.RefreshMock()
@@ -1019,9 +1096,7 @@ function NS.RefreshRouteUI(m)
   layers.stepRow.zone:SetText(step.zone or "")
   if layers.lessDistance then layers.lessDistance.text:SetText(step.distance or "?") end
   if layers.compassOnlyFace then
-    layers.compassOnlyFace.dist:SetText(step.distance or "?")
+    layers.compassOnlyFace.dist:SetText(CompassDistLine(m))
   end
-  if m.bearingDeg and NS.UpdateCompassNeedles then
-    NS.UpdateCompassNeedles(m.bearingDeg)
-  end
+  PaintNeedles(m)
 end

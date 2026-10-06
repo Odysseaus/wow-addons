@@ -5,7 +5,13 @@ local _, NS = ...
 local ticker
 local updateFrame
 local elapsedAcc = 0
+local enumAcc = 0
 local TICK = 0.25
+local ENUM_EVERY = 1.0
+
+function NS.NoteRouteEnum()
+  enumAcc = 0
+end
 
 local function SafeCall(fn, ...)
   if type(fn) ~= "function" then return nil end
@@ -71,83 +77,114 @@ local function RelativeBearing(targetDeg)
   end
 end
 
--- Needle rotation: WoW SetRotation is radians clockwise from up for textures.
+-- Needle rotation: radians clockwise from up. ColorTexture SetRotation is flaky
+-- on Forever, so always also nudge the frame along the bearing.
 function NS.SetNeedleRotation(needleFrame, radians)
   if not needleFrame then return end
+  radians = radians or 0
   local tex = needleFrame.tex
   if tex and type(tex.SetRotation) == "function" then
     pcall(tex.SetRotation, tex, radians)
-    return
   end
   if type(needleFrame.SetRotation) == "function" then
     pcall(needleFrame.SetRotation, needleFrame, radians)
-    return
   end
-  -- Approximate: nudge needle offset by bearing (no SetRotation available).
-  if needleFrame.SetPoint and needleFrame:GetParent() then
-    local ox = math.sin(radians) * 12
-    local oy = math.cos(radians) * 12
+  local parent = needleFrame.GetParent and needleFrame:GetParent()
+  if parent and needleFrame.ClearAllPoints and needleFrame.SetPoint then
+    local h = 28
+    if needleFrame.GetHeight then
+      local gh = needleFrame:GetHeight()
+      if type(gh) == "number" and gh > 0 then h = gh end
+    end
+    local reach = h * 0.32
+    if reach < 10 then reach = 10 end
+    local ox = math.sin(radians) * reach
+    local oy = math.cos(radians) * reach
     needleFrame:ClearAllPoints()
-    needleFrame:SetPoint("CENTER", needleFrame:GetParent(), "CENTER", ox, oy)
+    needleFrame:SetPoint("CENTER", parent, "CENTER", ox, oy)
   end
 end
 
 function NS.UpdateCompassNeedles(bearingDeg)
   if bearingDeg == nil then return end
   local facing = SafeCall(GetPlayerFacing)
-  local facingDeg = facing and math.deg(facing) or 0
-  -- Relative angle for needle pointing toward objective on a north-up rose.
-  local rel = math.rad(bearingDeg)
-  -- If we have facing, show direction relative to player (needle = where to turn).
-  if facing then
+  local rel
+  if type(facing) == "number" then
+    local facingDeg = math.deg(facing)
     rel = math.rad((bearingDeg - facingDeg + 360) % 360)
+  else
+    -- No facing API: point by absolute bearing, 0 = north.
+    rel = math.rad(bearingDeg % 360)
   end
   local layers = NS.layers
   if not layers then return end
+  -- Compass-only face is updated even when Full/Less layers are hidden.
+  if layers.compassOnlyFace and layers.compassOnlyFace.needle then
+    NS.SetNeedleRotation(layers.compassOnlyFace.needle, rel)
+  end
   if layers.compassLarge and layers.compassLarge.needle then
     NS.SetNeedleRotation(layers.compassLarge.needle, rel)
   end
   if layers.lessCompass and layers.lessCompass.needle then
     NS.SetNeedleRotation(layers.lessCompass.needle, rel)
   end
-  if layers.compassOnlyFace and layers.compassOnlyFace.needle then
-    NS.SetNeedleRotation(layers.compassOnlyFace.needle, rel)
-  end
 end
 
 function NS.TickRoute()
-  local route = NS.liveRoute
-  if not route then
-    if NS.GetLiveRoute then route = NS.GetLiveRoute() end
-  end
-  if not route then return end
+  local nested = NS._refreshing
+  if NS.PushRefresh then NS.PushRefresh() end
+  local ok, err = pcall(function()
+    local forceMock = NS.forceMock or (NS.db and NS.db.forceMock)
+    enumAcc = enumAcc + TICK
+    local wantFull = (not forceMock) and enumAcc >= (ENUM_EVERY - 0.001)
 
-  -- Recompute nav when we have target coords (live) or skip for mock.
-  if route.source == "live" and route.hasCoords and route.targetX and route.targetY then
-    local dist, bearing, ok = NS.ComputeDistanceBearing(route.targetX, route.targetY, route.targetMapID)
-    if ok then
-      route.distanceYards = dist
-      route.bearingDeg = bearing
-      route.step.distance = FormatDistance(dist)
-      route.step.bearing = RelativeBearing(bearing)
-      route.step.approx = "approx."
-      route.step.zone = (SafeCall(GetRealZoneText) or SafeCall(GetZoneText) or route.step.zone or "?")
+    local route = NS.liveRoute
+    if forceMock then
+      if (not route or route.source ~= "mock") and NS.GetLiveRoute then
+        route = NS.GetLiveRoute()
+      end
+    elseif not nested and (wantFull or not route or route.source ~= "live") and NS.GetLiveRoute then
+      enumAcc = 0
+      route = NS.GetLiveRoute()
+      if route and NS.ApplyRoute then
+        NS.ApplyRoute(route)
+      end
+    elseif route and route.source == "live" and NS.RefreshFocusedNav then
+      -- 0.25s: distance, bearing, needle. POI reprobe lives in RefreshFocusedNav
+      -- so a quest that starts without coords can still acquire them.
+      NS.RefreshFocusedNav(route)
     end
-  elseif route.source == "live" and not route.hasCoords then
-    route.step.distance = "?"
-    route.step.bearing = "unknown"
-    route.step.approx = "no coords"
-    route.step.zone = SafeCall(GetRealZoneText) or SafeCall(GetZoneText) or route.step.zone or "?"
-  end
 
-  if NS.RefreshRouteUI then
-    NS.RefreshRouteUI(route)
-  end
-  if route.bearingDeg then
-    NS.UpdateCompassNeedles(route.bearingDeg)
-  end
-  if NS.UpdateMinimapArrow then
-    NS.UpdateMinimapArrow(route)
+    if route then
+      if NS.RefreshRouteUI then
+        NS.RefreshRouteUI(route)
+      end
+      if route.hasCoords and route.bearingDeg ~= nil then
+        NS.UpdateCompassNeedles(route.bearingDeg)
+      elseif route.source == "live" then
+        -- Drop a stale mock angle when the live quest has no bearing yet.
+        NS.UpdateCompassNeedles(0)
+      elseif route.bearingDeg ~= nil then
+        NS.UpdateCompassNeedles(route.bearingDeg)
+      end
+      if NS.UpdateMapPins then
+        NS.UpdateMapPins(route)
+      end
+    end
+  end)
+  if NS.PopRefresh then NS.PopRefresh() end
+  if not ok then
+    local shown = false
+    if type(geterrorhandler) == "function" then
+      local handler = geterrorhandler()
+      if type(handler) == "function" then
+        handler(err)
+        shown = true
+      end
+    end
+    if not shown and NS.Print then
+      NS.Print("route error: " .. tostring(err))
+    end
   end
 end
 

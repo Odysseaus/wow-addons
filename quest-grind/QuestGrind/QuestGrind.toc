@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: QuestGrind
-## Notes: Quest HUD — Full / Less / Compass. 0.2.2 theme-stick fix + 0.2.1 P0 UX (Mode/Edit/Min/Close, Expand, Ask SI). P1 live quest log + route. Ask SI via companion (P2).
+## Notes: Quest HUD — Full / Less / Compass. 0.2.3 rewards + Dungeon/World, checked-quest focus, minimap pointer, live compass. P1 quest log. Ask SI via companion (P2).
 ## Author: Odysseaus
-## Version: 0.2.2
+## Version: 0.2.3
 ## IconTexture: Interface\Icons\INV_Misc_Map_01
 ## SavedVariables: QuestGrindDB
 

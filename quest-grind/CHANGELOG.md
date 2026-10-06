@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3 — P1 fix set
+
+- **Rewards + type**: focused live quest shows **Dungeon** or **World** and a short reward line (XP, money, item names) under Current Step, on the Less subtitle, and in the status/XP line.
+- **Focus**: watched (checked) incomplete quests win. None checked → closest incomplete. One checked → that quest. Several checked → closest of those. No coords sorts as farthest so a positioned quest wins; if nobody has coords, log order is kept. `/qg next` and `/qg prev` cycle that candidate set until the quest completes, drops, or the watch set changes.
+- **Minimap / map**: objective lookup also tries waypoint-for-map, world-map area, task info, and world-yard → normalized conversion. A live focus always shows a minimap pointer — edge arrow with a gold `!` when the bearing is known, center quest-bang when it is not. World map pin uses normalized or converted coords.
+- **Compass**: the 0.25s tick recomputes distance and re-probes POI when coords are missing (full log enumerate about once a second). Needles nudge as well as rotate, including the compass-only face while Full is hidden. No coords shows `Zone · ?` instead of a stale mock distance. With no facing API the needle uses absolute bearing vs north.
+- Root causes: focus preferred “has objectives” over the tracker and distance; pins and the minimap arrow hid whenever `hasCoords` was false and world yards never became a map pin; the compass tick bailed out before POI was retried and `SetRotation` on a solid needle did not reliably move.
+
 ## 0.2.2 — Theme-stick fix
 
 - **Theme stick**: switching themes then returning to a previous theme now always re-applies that theme’s chrome **and** panel/content colors (no more “play it back and forth to recover”).

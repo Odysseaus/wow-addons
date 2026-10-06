@@ -1,18 +1,20 @@
 local _, NS = ...
 
--- P1: live quest log enumerate + prioritize + MockRoute-compatible live route.
--- Prefer Classic/Forever APIs; guard C_QuestLog vs legacy GetQuestLog* with pcall.
+-- P1 live quest log. 0.2.3: rewards + Dungeon/World type, checked-quest focus
+-- (closest when none/many are watched), POI reprobe for map + compass.
+-- Prefer Classic/Forever APIs; every Blizzard call is type-checked and pcalled.
 
 NS.questList = NS.questList or {}
 NS.selectedQuestIndex = NS.selectedQuestIndex or 1
 NS.liveRoute = NS.liveRoute or nil
 NS.forceMock = NS.forceMock or false
+NS.focusCandidates = NS.focusCandidates or {}
 
 local function SafeCall(fn, ...)
   if type(fn) ~= "function" then return nil end
-  local ok, a, b, c, d, e, f = pcall(fn, ...)
+  local ok, a, b, c, d, e, f, g, h, i, j, k, l, m = pcall(fn, ...)
   if not ok then return nil end
-  return a, b, c, d, e, f
+  return a, b, c, d, e, f, g, h, i, j, k, l, m
 end
 
 local function ZoneName()
@@ -21,43 +23,191 @@ local function ZoneName()
   return "?"
 end
 
-function NS.GetPlayerMapPosition()
-  -- Prefer world coords (yards) when available.
-  if type(UnitPosition) == "function" then
-    local y, x, _, mapID = SafeCall(UnitPosition, "player")
-    -- UnitPosition returns y, x in yards (Classic); treat as world coords.
-    if x and y then
-      return x, y, mapID, "world"
-    end
-  end
-  -- Normalized map position fallback.
-  local mapID
-  if C_Map and type(C_Map.GetBestMapForUnit) == "function" then
-    mapID = SafeCall(C_Map.GetBestMapForUnit, "player")
-  end
-  if mapID and C_Map and type(C_Map.GetPlayerMapPosition) == "function" then
-    local pos = SafeCall(C_Map.GetPlayerMapPosition, mapID, "player")
-    if pos then
-      local ok, x, y = pcall(function()
-        if pos.GetXY then return pos:GetXY() end
-        return pos.x, pos.y
-      end)
-      if ok and x and y then
-        return x, y, mapID, "map"
-      end
-    end
-  end
-  if type(GetPlayerMapPosition) == "function" then
-    local x, y = SafeCall(GetPlayerMapPosition, "player")
-    if x and y and x > 0 and y > 0 then
-      return x, y, mapID, "map"
-    end
-  end
-  return nil, nil, nil, nil
-end
-
 local function HasCQuestLog()
   return type(C_QuestLog) == "table"
+end
+
+-- Known instance tag ids (Enum.QuestTag). String fallback is "dungeon" only;
+-- outdoor group size (suggestedGroup) is NOT enough to call a quest a Dungeon.
+local DUNGEON_TAG_IDS = {
+  [81] = true, -- Dungeon
+  [62] = true, -- Raid
+  [88] = true, -- Raid10
+  [89] = true, -- Raid25
+}
+
+local function AbsorbEnumTags()
+  if type(Enum) ~= "table" or type(Enum.QuestTag) ~= "table" then return end
+  local names = { "Dungeon", "Raid", "Raid10", "Raid25" }
+  local i
+  for i = 1, #names do
+    local v = Enum.QuestTag[names[i]]
+    if type(v) == "number" then DUNGEON_TAG_IDS[v] = true end
+  end
+end
+
+local function TagIsDungeon(tag)
+  if type(tag) == "number" then
+    return DUNGEON_TAG_IDS[tag] == true
+  end
+  if type(tag) == "string" then
+    if string.find(string.lower(tag), "dungeon", 1, true) then return true end
+    local n = tonumber(tag)
+    if n and DUNGEON_TAG_IDS[n] then return true end
+  end
+  return false
+end
+
+local function TagFromInfoTable(t)
+  if type(t) ~= "table" then return false end
+  if TagIsDungeon(t.tagName) or TagIsDungeon(t.tagID) or TagIsDungeon(t.tag) then
+    return true
+  end
+  if TagIsDungeon(t.questTag) or TagIsDungeon(t.questType) or TagIsDungeon(t.name) or TagIsDungeon(t.type) then
+    return true
+  end
+  return false
+end
+
+-- 0..1 (and not both zero) = normalized map. Anything larger is world yards.
+local function ClassifyXY(x, y)
+  if type(x) ~= "number" or type(y) ~= "number" then return nil end
+  if x == 0 and y == 0 then return nil end
+  if math.abs(x) <= 1 and math.abs(y) <= 1 then return "map", x, y end
+  return "world", x, y
+end
+
+local function VecXY(pos)
+  if type(pos) ~= "table" then return nil, nil end
+  if type(pos.GetXY) == "function" then
+    local ok, x, y = pcall(pos.GetXY, pos)
+    if ok and type(x) == "number" and type(y) == "number" then return x, y end
+  end
+  if type(pos.x) == "number" and type(pos.y) == "number" then
+    return pos.x, pos.y
+  end
+  return nil, nil
+end
+
+local function WorldToNorm(wx, wy, mapID)
+  if type(wx) ~= "number" or type(wy) ~= "number" then return nil, nil, nil end
+  if type(C_Map) ~= "table" or type(C_Map.GetMapPosFromWorldPos) ~= "function" then
+    return nil, nil, nil
+  end
+  local ids = {}
+  local function add(id)
+    if type(id) ~= "number" or id == 0 then return end
+    local i
+    for i = 1, #ids do
+      if ids[i] == id then return end
+    end
+    ids[#ids + 1] = id
+  end
+  add(mapID)
+  if type(C_Map.GetBestMapForUnit) == "function" then
+    add(SafeCall(C_Map.GetBestMapForUnit, "player"))
+  end
+  if type(C_Map.GetFallbackWorldMapID) == "function" then
+    add(SafeCall(C_Map.GetFallbackWorldMapID))
+  end
+
+  local function accept(pos, ui)
+    local x, y = VecXY(pos)
+    if type(x) ~= "number" or type(y) ~= "number" then return nil end
+    if x < 0 or y < 0 or x > 1 or y > 1 then return nil end
+    if x == 0 and y == 0 then return nil end
+    return x, y, ui
+  end
+
+  local function attempt(id, x, y)
+    local vec = { x = x, y = y }
+    if type(CreateVector2D) == "function" then
+      local created = SafeCall(CreateVector2D, x, y)
+      if type(created) == "table" then vec = created end
+    end
+    local ok, a, b = pcall(C_Map.GetMapPosFromWorldPos, id, vec)
+    if not ok then return nil end
+    if type(b) == "table" then
+      local nx, ny, mid = accept(b, type(a) == "number" and a or id)
+      if nx then return nx, ny, mid end
+    end
+    if type(a) == "table" then
+      local nx, ny = accept(a, id)
+      if nx then return nx, ny, id end
+    end
+    return nil
+  end
+
+  local i
+  for i = 1, #ids do
+    local nx, ny, mid = attempt(ids[i], wx, wy)
+    if nx then return nx, ny, mid end
+  end
+  local ok, a = pcall(C_Map.GetMapPosFromWorldPos, { x = wx, y = wy })
+  if ok and type(a) == "table" then
+    local nx, ny = accept(a, mapID)
+    if nx then return nx, ny, mapID end
+  end
+  return nil, nil, nil
+end
+
+NS.WorldToMapNorm = function(wx, wy, mapID)
+  return WorldToNorm(wx, wy, mapID)
+end
+
+function NS.GetPlayerPositions()
+  local pos = {
+    worldX = nil,
+    worldY = nil,
+    worldMapID = nil,
+    mapX = nil,
+    mapY = nil,
+    mapID = nil,
+  }
+  if type(UnitPosition) == "function" then
+    local y, x, _, mapID = SafeCall(UnitPosition, "player")
+    if type(x) == "number" and type(y) == "number" then
+      pos.worldX, pos.worldY, pos.worldMapID = x, y, mapID
+    end
+  end
+  local mapID
+  if type(C_Map) == "table" and type(C_Map.GetBestMapForUnit) == "function" then
+    mapID = SafeCall(C_Map.GetBestMapForUnit, "player")
+    if type(mapID) == "number" then pos.mapID = mapID end
+  end
+  if pos.mapID and type(C_Map) == "table" and type(C_Map.GetPlayerMapPosition) == "function" then
+    local p = SafeCall(C_Map.GetPlayerMapPosition, pos.mapID, "player")
+    local x, y = VecXY(p)
+    if type(x) == "number" and type(y) == "number" and (x > 0 or y > 0) then
+      pos.mapX, pos.mapY = x, y
+    end
+  end
+  if not pos.mapX and type(GetPlayerMapPosition) == "function" then
+    local x, y = SafeCall(GetPlayerMapPosition, "player")
+    if type(x) == "number" and type(y) == "number" and x > 0 and y > 0 then
+      pos.mapX, pos.mapY = x, y
+    end
+  end
+  -- Player yards → normalized so a map-space POI still has a distance.
+  if not pos.mapX and pos.worldX then
+    local mx, my, mid = WorldToNorm(pos.worldX, pos.worldY, pos.mapID or pos.worldMapID)
+    if mx then
+      pos.mapX, pos.mapY = mx, my
+      if type(mid) == "number" then pos.mapID = mid end
+    end
+  end
+  return pos
+end
+
+function NS.GetPlayerMapPosition()
+  local pos = NS.GetPlayerPositions()
+  if pos.worldX and pos.worldY then
+    return pos.worldX, pos.worldY, pos.worldMapID, "world"
+  end
+  if pos.mapX and pos.mapY then
+    return pos.mapX, pos.mapY, pos.mapID, "map"
+  end
+  return nil, nil, nil, nil
 end
 
 local function GetNumEntries()
@@ -94,6 +244,7 @@ end
 local function GetObjectivesLegacy(logIndex)
   local objs = {}
   local n = SafeCall(GetNumQuestLeaderBoards, logIndex) or 0
+  if type(n) ~= "number" then n = 0 end
   local i
   for i = 1, n do
     local text, objectiveType, finished = SafeCall(GetQuestLogLeaderBoard, i, logIndex)
@@ -116,28 +267,551 @@ local function GetObjectivesLegacy(logIndex)
   return objs
 end
 
-local function TryQuestPOI(questID)
-  -- Best-effort: quest POI / world map position APIs vary widely on Forever.
-  if HasCQuestLog() and type(C_QuestLog.GetNextWaypoint) == "function" then
-    local mapID, x, y = SafeCall(C_QuestLog.GetNextWaypoint, questID)
-    if x and y then return x, y, mapID end
+local function PlayerMapID()
+  if type(C_Map) == "table" and type(C_Map.GetBestMapForUnit) == "function" then
+    local id = SafeCall(C_Map.GetBestMapForUnit, "player")
+    if type(id) == "number" then return id end
   end
-  if type(C_QuestLog) == "table" and type(C_QuestLog.GetQuestObjectives) == "function" then
-    -- no reliable coords from objectives alone
-  end
-  if type(QuestPOIGetIconInfo) == "function" then
-    local _, posX, posY = SafeCall(QuestPOIGetIconInfo, questID)
-    if posX and posY and posX > 0 then
-      return posX, posY, nil
-    end
-  end
-  if type(GetQuestLogSpecialItemInfo) == "function" then
-    -- item link only; no coords
-  end
-  return nil, nil, nil
+  return nil
 end
 
-local function EnumerateModern()
+local function MakePOI(x, y, mapID)
+  local kind, nx, ny = ClassifyXY(x, y)
+  if not kind then return nil end
+  local poi = { mapID = mapID }
+  if kind == "world" then
+    poi.worldX, poi.worldY = nx, ny
+    poi.worldMapID = mapID
+    local mx, my, mid = WorldToNorm(nx, ny, mapID)
+    if mx then
+      poi.mapX, poi.mapY = mx, my
+      poi.mapID = mid or mapID
+    end
+  else
+    poi.mapX, poi.mapY = nx, ny
+  end
+  return poi
+end
+
+local function IsMapID(v)
+  return type(v) == "number" and v >= 1 and v == math.floor(v)
+end
+
+local function NormPair(x, y)
+  return type(x) == "number" and type(y) == "number"
+    and math.abs(x) <= 1 and math.abs(y) <= 1
+    and not (x == 0 and y == 0)
+end
+
+-- GetNextWaypoint is mapID, x, y. QuestPOI is often (completed, x, y), (x, y),
+-- or (x, y, mapID) when x,y are already normalized.
+local function POIFromWaypoint(a, b, c)
+  if (a == nil or type(a) == "boolean") and type(b) == "number" and type(c) == "number" then
+    return MakePOI(b, c, nil)
+  end
+  if type(a) ~= "number" or type(b) ~= "number" then return nil end
+  if type(c) ~= "number" then
+    return MakePOI(a, b, nil)
+  end
+  if NormPair(a, b) then
+    return MakePOI(a, b, IsMapID(c) and c or nil)
+  end
+  if NormPair(b, c) or math.abs(b) > 1 or math.abs(c) > 1 then
+    return MakePOI(b, c, IsMapID(a) and a or nil)
+  end
+  return MakePOI(a, b, IsMapID(c) and c or nil)
+end
+
+local function QuestAreaID(questID, logIndex)
+  local area
+  if type(questID) == "number" and type(GetQuestWorldMapAreaID) == "function" then
+    local a = SafeCall(GetQuestWorldMapAreaID, questID)
+    if type(a) == "number" then area = a end
+  end
+  if type(GetQuestLogWorldMapAreaID) == "function" then
+    local a
+    if type(questID) == "number" then a = SafeCall(GetQuestLogWorldMapAreaID, questID) end
+    if type(a) ~= "number" and type(logIndex) == "number" then
+      a = SafeCall(GetQuestLogWorldMapAreaID, logIndex)
+    end
+    if type(a) == "number" then area = a end
+  end
+  return area
+end
+
+local function TrySuperTrack(questID)
+  if type(questID) ~= "number" then return nil end
+  local st
+  if type(C_SuperTrack) == "table" and type(C_SuperTrack.GetSuperTrackedQuestID) == "function" then
+    st = SafeCall(C_SuperTrack.GetSuperTrackedQuestID)
+  end
+  if type(st) ~= "number" and type(GetSuperTrackedQuestID) == "function" then
+    st = SafeCall(GetSuperTrackedQuestID)
+  end
+  if st ~= questID then return nil end
+  if type(C_SuperTrack) == "table" and type(C_SuperTrack.GetSuperTrackedPosition) == "function" then
+    local a, b, c = SafeCall(C_SuperTrack.GetSuperTrackedPosition)
+    local poi = POIFromWaypoint(a, b, c)
+    if poi then return poi end
+  end
+  return nil
+end
+
+local function TryTaskInfo(questID)
+  if type(questID) ~= "number" or type(QuestMapGetTaskInfo) ~= "function" then return nil end
+  local a, b, c, d = SafeCall(QuestMapGetTaskInfo, questID)
+  return POIFromWaypoint(a, b, c) or POIFromWaypoint(b, c, d) or POIFromWaypoint(a, b, d)
+end
+
+-- Best-effort objective position. Forever often has no POI; callers must tolerate nil.
+function NS.TryQuestPOI(questID, logIndex)
+  local area = QuestAreaID(questID, logIndex)
+  local playerMap = PlayerMapID()
+
+  if type(questID) == "number" and HasCQuestLog() and type(C_QuestLog.GetNextWaypoint) == "function" then
+    local mapID, x, y = SafeCall(C_QuestLog.GetNextWaypoint, questID)
+    local poi = POIFromWaypoint(mapID, x, y)
+    if poi then
+      if not poi.mapID and area then poi.mapID = area end
+      return poi
+    end
+  end
+
+  if type(questID) == "number" and HasCQuestLog() and type(C_QuestLog.GetNextWaypointForMap) == "function" then
+    local maps = { playerMap, area }
+    local i
+    for i = 1, #maps do
+      if type(maps[i]) == "number" then
+        local x, y = SafeCall(C_QuestLog.GetNextWaypointForMap, questID, maps[i])
+        local poi = MakePOI(x, y, maps[i])
+        if poi then return poi end
+      end
+    end
+  end
+
+  if type(questID) == "number" and HasCQuestLog() and type(C_QuestLog.GetQuestsOnMap) == "function" then
+    local maps = { playerMap, area }
+    local mi
+    for mi = 1, #maps do
+      if type(maps[mi]) == "number" then
+        local list = SafeCall(C_QuestLog.GetQuestsOnMap, maps[mi])
+        if type(list) == "table" then
+          local i
+          for i = 1, #list do
+            local e = list[i]
+            if type(e) == "table" and e.questID == questID then
+              local poi = MakePOI(e.x, e.y, maps[mi])
+              if poi then return poi end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  if type(questID) == "number" and type(C_TaskQuest) == "table" and type(C_TaskQuest.GetQuestLocation) == "function" then
+    local maps = { playerMap, area }
+    local i
+    for i = 1, #maps do
+      if type(maps[i]) == "number" then
+        local x, y = SafeCall(C_TaskQuest.GetQuestLocation, questID, maps[i])
+        local poi = MakePOI(x, y, maps[i])
+        if poi then return poi end
+      end
+    end
+  end
+
+  if type(questID) == "number" and type(QuestPOIGetIconInfo) == "function" then
+    local a, b, c = SafeCall(QuestPOIGetIconInfo, questID)
+    local poi = POIFromWaypoint(a, b, c) or POIFromWaypoint(b, c, a)
+    if poi then return poi end
+  end
+
+  local taskPOI = TryTaskInfo(questID)
+  if taskPOI then return taskPOI end
+
+  local st = TrySuperTrack(questID)
+  if st then return st end
+
+  -- Area id alone cannot place a pin; keep it so a later waypoint call has a map.
+  if area then
+    return { mapID = area }
+  end
+  return nil
+end
+
+local function ApplyPOI(quest, poi)
+  quest.mapX, quest.mapY = nil, nil
+  quest.worldX, quest.worldY = nil, nil
+  quest.targetX, quest.targetY = nil, nil
+  quest.targetCoordKind = nil
+  if type(poi) ~= "table" then
+    quest.targetMapID = quest.targetMapID
+    return
+  end
+  if type(poi.mapID) == "number" then quest.targetMapID = poi.mapID end
+  if type(poi.mapX) == "number" and type(poi.mapY) == "number" then
+    quest.mapX, quest.mapY = poi.mapX, poi.mapY
+  end
+  if type(poi.worldX) == "number" and type(poi.worldY) == "number" then
+    quest.worldX, quest.worldY = poi.worldX, poi.worldY
+  end
+  if quest.worldX then
+    quest.targetX, quest.targetY = quest.worldX, quest.worldY
+    quest.targetCoordKind = "world"
+    quest.targetMapID = poi.worldMapID or quest.targetMapID
+  elseif quest.mapX then
+    quest.targetX, quest.targetY = quest.mapX, quest.mapY
+    quest.targetCoordKind = "map"
+  end
+end
+
+local function FormatDistance(yards)
+  if not yards then return "?" end
+  if yards >= 1000 then
+    return string.format("%.1fk yd", yards / 1000)
+  end
+  return string.format("%d yd", math.floor(yards + 0.5))
+end
+
+local function Cardinal(deg)
+  if not deg then return "unknown" end
+  local d = deg % 360
+  if d < 0 then d = d + 360 end
+  local dirs = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
+  local idx = math.floor((d + 22.5) / 45) % 8 + 1
+  return dirs[idx]
+end
+
+local function RelativeBearing(targetDeg)
+  if not targetDeg then return "unknown" end
+  local facing
+  if type(GetPlayerFacing) == "function" then
+    facing = SafeCall(GetPlayerFacing)
+  end
+  if type(facing) ~= "number" then
+    return Cardinal(targetDeg)
+  end
+  local facingDeg = math.deg(facing)
+  local delta = (targetDeg - facingDeg + 180) % 360 - 180
+  local ad = math.abs(delta)
+  if ad < 25 then return "ahead"
+  elseif ad > 155 then return "behind"
+  elseif delta > 0 then return "left"
+  else return "right"
+  end
+end
+
+local function ComputeNav(quest, pos)
+  pos = pos or NS.GetPlayerPositions()
+  local worldX, worldY = quest.worldX, quest.worldY
+  local mapX, mapY = quest.mapX, quest.mapY
+  if not worldX and quest.targetCoordKind == "world" then
+    worldX, worldY = quest.targetX, quest.targetY
+  end
+  if not mapX and quest.targetCoordKind == "map" then
+    mapX, mapY = quest.targetX, quest.targetY
+  end
+  if not worldX and not mapX and quest.targetX and quest.targetY then
+    local kind, x, y = ClassifyXY(quest.targetX, quest.targetY)
+    if kind == "world" then
+      worldX, worldY = x, y
+    elseif kind == "map" then
+      mapX, mapY = x, y
+    end
+  end
+  if worldX and not mapX then
+    local mx, my, mid = WorldToNorm(worldX, worldY, quest.targetMapID or pos.mapID or pos.worldMapID)
+    if mx then
+      mapX, mapY = mx, my
+      quest.mapX, quest.mapY = mx, my
+      if type(mid) == "number" and not quest.targetMapID then quest.targetMapID = mid end
+    end
+  end
+
+  local px, py, tx, ty, kind
+  if worldX and pos.worldX then
+    px, py, tx, ty, kind = pos.worldX, pos.worldY, worldX, worldY, "world"
+  elseif mapX and pos.mapX then
+    px, py, tx, ty, kind = pos.mapX, pos.mapY, mapX, mapY, "map"
+  end
+
+  local zone = ZoneName()
+  if not (px and py and tx and ty) then
+    return {
+      hasCoords = false,
+      distanceYards = nil,
+      bearingDeg = nil,
+      distance = "?",
+      bearing = "unknown",
+      approx = "no coords",
+      zone = zone,
+      mapX = mapX,
+      mapY = mapY,
+      targetX = nil,
+      targetY = nil,
+      targetCoordKind = nil,
+      targetMapID = quest.targetMapID or pos.mapID,
+    }
+  end
+
+  local dx = tx - px
+  local dy = ty - py
+  local dist
+  if kind == "world" then
+    dist = math.sqrt(dx * dx + dy * dy)
+  else
+    dist = math.sqrt(dx * dx + dy * dy) * 1000
+  end
+  local bearingDeg = math.deg(math.atan2(dx, -dy))
+  if bearingDeg < 0 then bearingDeg = bearingDeg + 360 end
+  return {
+    hasCoords = true,
+    distanceYards = dist,
+    bearingDeg = bearingDeg,
+    distance = FormatDistance(dist),
+    bearing = RelativeBearing(bearingDeg),
+    approx = "approx.",
+    zone = zone,
+    targetX = tx,
+    targetY = ty,
+    targetCoordKind = kind,
+    targetMapID = quest.targetMapID or pos.mapID or pos.worldMapID,
+    mapX = mapX,
+    mapY = mapY,
+  }
+end
+
+function NS.NormalizeQuestPin(route)
+  if type(route) ~= "table" then return nil, nil end
+  if type(route.mapX) == "number" and type(route.mapY) == "number" then
+    local kind = ClassifyXY(route.mapX, route.mapY)
+    if kind == "map" then return route.mapX, route.mapY end
+  end
+  local wx, wy = route.worldX, route.worldY
+  if type(wx) ~= "number" and route.targetCoordKind == "world" then
+    wx, wy = route.targetX, route.targetY
+  end
+  if type(wx) == "number" and type(wy) == "number" then
+    local x, y, id = WorldToNorm(wx, wy, route.targetMapID)
+    if x then
+      route.mapX, route.mapY = x, y
+      if type(id) == "number" then route.targetMapID = route.targetMapID or id end
+      return x, y
+    end
+  end
+  if route.targetCoordKind ~= "world" and type(route.targetX) == "number" and type(route.targetY) == "number" then
+    local kind, x, y = ClassifyXY(route.targetX, route.targetY)
+    if kind == "map" then return x, y end
+  end
+  return nil, nil
+end
+
+local function LookupQuestType(quest, info)
+  AbsorbEnumTags()
+  if TagIsDungeon(quest.questTag) or TagIsDungeon(quest.tagName) or TagIsDungeon(quest.tagID) then
+    return "Dungeon"
+  end
+  if TagFromInfoTable(info) then return "Dungeon" end
+  if type(info) == "table" and TagFromInfoTable(info.questTagInfo) then return "Dungeon" end
+
+  local qid = quest.questID
+  if type(qid) ~= "number" then return "World" end
+
+  if type(GetQuestTagInfo) == "function" then
+    local tagID, tagName = SafeCall(GetQuestTagInfo, qid)
+    if type(tagID) == "table" then
+      if TagFromInfoTable(tagID) then return "Dungeon" end
+    elseif TagIsDungeon(tagID) or TagIsDungeon(tagName) then
+      return "Dungeon"
+    end
+  end
+  if HasCQuestLog() and type(C_QuestLog.GetQuestTagInfo) == "function" then
+    local tagID, tagName = SafeCall(C_QuestLog.GetQuestTagInfo, qid)
+    if type(tagID) == "table" then
+      if TagFromInfoTable(tagID) then return "Dungeon" end
+    elseif TagIsDungeon(tagID) or TagIsDungeon(tagName) then
+      return "Dungeon"
+    end
+  end
+  if HasCQuestLog() and type(C_QuestLog.GetQuestType) == "function" then
+    local qt = SafeCall(C_QuestLog.GetQuestType, qid)
+    if type(qt) == "table" then
+      if TagFromInfoTable(qt) then return "Dungeon" end
+    elseif TagIsDungeon(qt) then
+      return "Dungeon"
+    end
+  end
+  return "World"
+end
+
+local function PushRefresh()
+  if NS.PushRefresh then
+    NS.PushRefresh()
+  else
+    NS._refreshing = true
+  end
+end
+
+local function PopRefresh()
+  if NS.PopRefresh then
+    NS.PopRefresh()
+  else
+    NS._refreshing = false
+  end
+end
+
+-- SelectQuestLogEntry fires QUEST_LOG_UPDATE on some clients. Hold the refresh
+-- guard across the select so that event cannot re-enter Refresh.
+local function WithLogSelected(logIndex, reader)
+  local prev
+  if type(GetQuestLogSelection) == "function" then
+    prev = SafeCall(GetQuestLogSelection)
+  end
+  PushRefresh()
+  if type(logIndex) == "number" and type(SelectQuestLogEntry) == "function" then
+    SafeCall(SelectQuestLogEntry, logIndex)
+  end
+  local ret = { pcall(reader) }
+  if type(prev) == "number" and type(SelectQuestLogEntry) == "function" then
+    SafeCall(SelectQuestLogEntry, prev)
+  end
+  PopRefresh()
+  if not ret[1] then return nil end
+  return ret[2], ret[3], ret[4], ret[5], ret[6], ret[7], ret[8], ret[9]
+end
+
+local function AsQuestID(v)
+  if type(v) == "number" and v > 0 then return v end
+  return nil
+end
+
+local function TitleFields(logIndex)
+  local title, level, tagOrGroup, isHeader, isCollapsed, isComplete, frequency, questID =
+    SafeCall(GetQuestLogTitle, logIndex)
+  local questTag, suggestedGroup, tagID
+  if type(tagOrGroup) == "string" then
+    -- Vanilla-style: 3rd return is "Dungeon" / "Elite" / "Raid".
+    questTag = tagOrGroup
+  elseif type(tagOrGroup) == "number" then
+    if DUNGEON_TAG_IDS[tagOrGroup] then
+      tagID = tagOrGroup
+    else
+      suggestedGroup = tagOrGroup
+    end
+  end
+  questID = AsQuestID(questID)
+  if not questID and HasCQuestLog() and type(C_QuestLog.GetQuestIDForLogIndex) == "function" then
+    questID = AsQuestID(SafeCall(C_QuestLog.GetQuestIDForLogIndex, logIndex))
+  end
+  if not title and type(SelectQuestLogEntry) == "function" then
+    local t2, lv2, tag2, header2, _, complete2, freq2, id2 = WithLogSelected(logIndex, function()
+      return SafeCall(GetQuestLogTitle, logIndex)
+    end)
+    if t2 then
+      title, level, isHeader, isComplete, frequency = t2, lv2, header2, complete2, freq2
+      if type(tag2) == "string" then
+        questTag = tag2
+      elseif type(tag2) == "number" and not suggestedGroup then
+        if DUNGEON_TAG_IDS[tag2] then tagID = tag2 else suggestedGroup = tag2 end
+      end
+      questID = questID or AsQuestID(id2)
+    end
+  end
+  if not questID and type(SelectQuestLogEntry) == "function" then
+    local qid = WithLogSelected(logIndex, function()
+      local id
+      if type(GetQuestID) == "function" then id = AsQuestID(SafeCall(GetQuestID)) end
+      if not id and type(GetQuestLogQuestID) == "function" then
+        id = AsQuestID(SafeCall(GetQuestLogQuestID))
+      end
+      return id
+    end)
+    questID = questID or qid
+  end
+  return title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, questTag, tagID
+end
+
+local function WatchMaps()
+  local byIndex, byID = {}, {}
+  if type(GetNumQuestWatches) == "function" and type(GetQuestIndexForWatch) == "function" then
+    local n = SafeCall(GetNumQuestWatches) or 0
+    if type(n) == "number" then
+      local i
+      for i = 1, n do
+        local idx = SafeCall(GetQuestIndexForWatch, i)
+        if type(idx) == "number" then byIndex[idx] = true end
+      end
+    end
+  end
+  if HasCQuestLog() and type(C_QuestLog.GetNumQuestWatches) == "function" then
+    local getter = C_QuestLog.GetQuestIDForQuestWatchIndex
+    if type(getter) ~= "function" then getter = C_QuestLog.GetQuestIDForWatch end
+    local n = SafeCall(C_QuestLog.GetNumQuestWatches) or 0
+    if type(n) == "number" and type(getter) == "function" then
+      local i
+      for i = 1, n do
+        local id = SafeCall(getter, i)
+        if type(id) == "number" then byID[id] = true end
+      end
+    end
+  end
+  return byIndex, byID
+end
+
+local function EntryWatched(logIndex, questID, byIndex, byID)
+  local watched = false
+  if type(logIndex) == "number" and byIndex[logIndex] then watched = true end
+  if type(questID) == "number" and byID[questID] then watched = true end
+  if not watched and type(logIndex) == "number" and type(IsQuestWatched) == "function" then
+    local w = SafeCall(IsQuestWatched, logIndex)
+    if w == true or w == 1 then watched = true end
+  end
+  if not watched and type(questID) == "number" and HasCQuestLog() and type(C_QuestLog.GetQuestWatchType) == "function" then
+    local wt = SafeCall(C_QuestLog.GetQuestWatchType, questID)
+    -- nil = not watched. 0 is a real watch type (Automatic) and must count.
+    if wt ~= nil then watched = true end
+  end
+  return watched
+end
+
+-- IsPushableQuest / GetQuestLogPushable is share-state, not the objective tracker.
+-- Probed so Forever builds that expose it are tolerated; it does not set `watched`.
+local function NotePushable(quest)
+  local qid = quest.questID
+  local pushable
+  if type(qid) == "number" and HasCQuestLog() and type(C_QuestLog.IsPushableQuest) == "function" then
+    pushable = SafeCall(C_QuestLog.IsPushableQuest, qid)
+  elseif type(qid) == "number" and type(IsPushableQuest) == "function" then
+    pushable = SafeCall(IsPushableQuest, qid)
+  end
+  quest.pushable = (pushable == true or pushable == 1) or false
+end
+
+local function NewEntry(fields)
+  local poi = NS.TryQuestPOI(fields.questID, fields.logIndex)
+  local entry = {
+    logIndex = fields.logIndex,
+    questID = fields.questID,
+    title = fields.title,
+    complete = fields.complete and true or false,
+    objectives = fields.objectives or {},
+    level = fields.level,
+    suggestedGroup = fields.suggestedGroup,
+    questTag = fields.questTag,
+    tagID = fields.tagID,
+    tagName = fields.tagName,
+    watched = fields.watched and true or false,
+    pushable = false,
+  }
+  ApplyPOI(entry, poi)
+  entry.questType = LookupQuestType(entry, fields.info)
+  entry.questTypeLabel = entry.questType
+  NotePushable(entry)
+  return entry
+end
+
+local function EnumerateModern(byIndex, byID)
   local list = {}
   local n = GetNumEntries()
   local i
@@ -154,116 +828,186 @@ local function EnumerateModern()
         local c = SafeCall(C_QuestLog.IsComplete, questID)
         if c ~= nil then complete = c and true or false end
       end
-      local objs = questID and GetObjectivesModern(questID) or {}
-      local tx, ty, tmap = TryQuestPOI(questID)
-      list[#list + 1] = {
-        logIndex = i,
+      local tag = info.questTag or info.tag or info.tagName
+      local tagID = info.tagID
+      if type(info.questTagInfo) == "table" then
+        tag = tag or info.questTagInfo.tagName
+        tagID = tagID or info.questTagInfo.tagID
+      end
+      list[#list + 1] = NewEntry({
+        logIndex = info.questLogIndex or i,
         questID = questID,
         title = title,
         complete = complete,
-        objectives = objs,
+        objectives = questID and GetObjectivesModern(questID) or {},
         level = info.level,
         suggestedGroup = info.suggestedGroup,
-        targetX = tx,
-        targetY = ty,
-        targetMapID = tmap,
-      }
+        questTag = tag,
+        tagID = tagID,
+        tagName = type(tag) == "string" and tag or nil,
+        watched = EntryWatched(info.questLogIndex or i, questID, byIndex, byID),
+        info = info,
+      })
     elseif type(info) ~= "table" then
-      -- GetInfo missing: stop modern path
       return nil
     end
   end
   return list
 end
 
-local function EnumerateLegacy()
+local function EnumerateLegacy(byIndex, byID)
   local list = {}
   local n = GetNumEntries()
   local i
   for i = 1, n do
-    local title, level, suggestedGroup, isHeader, _, isComplete, frequency, questID =
-      SafeCall(GetQuestLogTitle, i)
-    -- Classic returns many fields; tolerate partial.
-    if not title then
-      -- alternate: SelectQuestLogEntry then GetQuestLogTitle
-      if type(SelectQuestLogEntry) == "function" then
-        SafeCall(SelectQuestLogEntry, i)
-        title, level, suggestedGroup, isHeader, _, isComplete, frequency, questID =
-          SafeCall(GetQuestLogTitle, i)
-      end
-    end
+    local title, level, suggestedGroup, isHeader, _, isComplete, _, questID, questTag, tagID = TitleFields(i)
     if title and not isHeader then
-      local objs = GetObjectivesLegacy(i)
-      local complete = false
-      if isComplete == 1 or isComplete == true then
-        complete = true
-      end
-      local tx, ty, tmap = TryQuestPOI(questID)
-      list[#list + 1] = {
+      local complete = (isComplete == 1 or isComplete == true)
+      list[#list + 1] = NewEntry({
         logIndex = i,
         questID = questID,
         title = title,
         complete = complete,
-        objectives = objs,
+        objectives = GetObjectivesLegacy(i),
         level = level,
         suggestedGroup = suggestedGroup,
-        targetX = tx,
-        targetY = ty,
-        targetMapID = tmap,
-      }
+        questTag = questTag,
+        tagID = tagID,
+        tagName = questTag,
+        watched = EntryWatched(i, questID, byIndex, byID),
+        info = nil,
+      })
     end
   end
   return list
 end
 
-local function Prioritize(list)
-  table.sort(list, function(a, b)
-    local ac = a.complete and 1 or 0
-    local bc = b.complete and 1 or 0
-    if ac ~= bc then return ac < bc end
-    local ao = #(a.objectives or {})
-    local bo = #(b.objectives or {})
-    if (ao == 0) ~= (bo == 0) then return ao > 0 end
-    local ah = (a.targetX and a.targetY) and 1 or 0
-    local bh = (b.targetX and b.targetY) and 1 or 0
-    if ah ~= bh then return ah > bh end
-    return (a.logIndex or 0) < (b.logIndex or 0)
-  end)
-  return list
-end
-
-function NS.EnumerateQuests()
+local function CollectQuests()
+  local byIndex, byID = WatchMaps()
   local list
   if HasCQuestLog() then
-    list = EnumerateModern()
+    list = EnumerateModern(byIndex, byID)
   end
   if not list then
-    list = EnumerateLegacy()
+    list = EnumerateLegacy(byIndex, byID)
   end
-  list = Prioritize(list or {})
+  return list or {}
+end
+
+local function FocusKey(q)
+  if not q then return nil end
+  if type(q.questID) == "number" then return "id:" .. tostring(q.questID) end
+  if type(q.logIndex) == "number" then return "log:" .. tostring(q.logIndex) end
+  return nil
+end
+
+local function ByDistThenIndex(a, b)
+  local da = a._dist or math.huge
+  local db = b._dist or math.huge
+  if da ~= db then return da < db end
+  local ia = a.logIndex or 0
+  local ib = b.logIndex or 0
+  if ia ~= ib then return ia < ib end
+  return false
+end
+
+function NS.QuestDistance(quest, pos)
+  local nav = ComputeNav(quest, pos)
+  if nav.hasCoords and type(nav.distanceYards) == "number" then
+    return nav.distanceYards
+  end
+  return math.huge
+end
+
+-- Checked (watched) incomplete quests win. None checked → closest incomplete.
+-- No usable coords → distance +inf so coord-bearing quests sort first; if every
+-- candidate lacks coords, logIndex order is the tie-break (first incomplete).
+function NS.GetFocusCandidates(list)
+  list = list or NS.questList or {}
+  local pos = NS.GetPlayerPositions()
+  local incomplete, watched = {}, {}
+  local i
+  for i = 1, #list do
+    local q = list[i]
+    q._dist = NS.QuestDistance(q, pos)
+    if not q.complete then
+      incomplete[#incomplete + 1] = q
+      if q.watched then watched[#watched + 1] = q end
+    end
+  end
+  local candidates
+  if #watched > 0 then
+    candidates = watched
+  elseif #incomplete > 0 then
+    candidates = incomplete
+  else
+    candidates = {}
+    for i = 1, #list do candidates[i] = list[i] end
+  end
+  table.sort(candidates, ByDistThenIndex)
+  return candidates
+end
+
+local function WatchKey(list)
+  local ids = {}
+  local i
+  for i = 1, #list do
+    if list[i].watched and not list[i].complete then
+      ids[#ids + 1] = FocusKey(list[i]) or ""
+    end
+  end
+  table.sort(ids)
+  return table.concat(ids, ",")
+end
+
+local function ApplyFocus(list)
+  local key = WatchKey(list)
+  -- Tracker membership changed → drop manual cycle and use the auto rules.
+  if NS._watchKey ~= nil and NS._watchKey ~= key then
+    NS.manualFocusID = nil
+  end
+  NS._watchKey = key
+
+  local candidates = NS.GetFocusCandidates(list)
+  NS.focusCandidates = candidates
   NS.questList = list
-  -- Keep selected index stable by questID when possible.
-  local sel = NS.selectedQuestIndex or 1
-  local wantID = NS.selectedQuestID
-  if wantID then
+
+  local chosen
+  if NS.manualFocusID then
     local i
-    for i = 1, #list do
-      if list[i].questID == wantID then
-        sel = i
+    for i = 1, #candidates do
+      if FocusKey(candidates[i]) == NS.manualFocusID then
+        chosen = candidates[i]
         break
       end
     end
+    -- Gone or completed (no longer a candidate) → stale id cleared.
+    if not chosen then NS.manualFocusID = nil end
   end
-  if sel < 1 then sel = 1 end
-  if #list == 0 then
-    sel = 1
-  elseif sel > #list then
-    sel = #list
+  if not chosen then
+    chosen = candidates[1]
   end
-  NS.selectedQuestIndex = sel
-  if list[sel] then
-    NS.selectedQuestID = list[sel].questID
+
+  if chosen then
+    NS.selectedQuestID = chosen.questID
+    NS.selectedLogIndex = chosen.logIndex
+    local sel = 1
+    local i
+    for i = 1, #list do
+      if list[i] == chosen then sel = i break end
+    end
+    NS.selectedQuestIndex = sel
+  else
+    NS.selectedQuestID = nil
+    NS.selectedLogIndex = nil
+    NS.selectedQuestIndex = 1
   end
+  return chosen
+end
+
+function NS.EnumerateQuests()
+  local list = CollectQuests()
+  ApplyFocus(list)
   return list
 end
 
@@ -271,25 +1015,177 @@ function NS.SelectQuest(index)
   local list = NS.questList or {}
   if type(index) ~= "number" then return end
   if index < 1 or index > #list then return end
+  NS.manualFocusID = FocusKey(list[index])
   NS.selectedQuestIndex = index
   NS.selectedQuestID = list[index].questID
+  NS.selectedLogIndex = list[index].logIndex
+  if NS.Refresh then NS.Refresh() end
+end
+
+function NS.CycleFocus(delta)
+  delta = tonumber(delta) or 1
+  local list = CollectQuests()
+  NS.questList = list
+  local candidates = NS.GetFocusCandidates(list)
+  NS.focusCandidates = candidates
+  if #candidates == 0 then
+    if NS.Refresh then NS.Refresh() end
+    return
+  end
+  local curKey = NS.manualFocusID
+  if not curKey and type(NS.selectedQuestID) == "number" then
+    curKey = "id:" .. tostring(NS.selectedQuestID)
+  elseif not curKey and type(NS.selectedLogIndex) == "number" then
+    curKey = "log:" .. tostring(NS.selectedLogIndex)
+  end
+  local cur, found = 1, false
+  local i
+  for i = 1, #candidates do
+    if FocusKey(candidates[i]) == curKey then
+      cur = i
+      found = true
+      break
+    end
+  end
+  local nxt = 1
+  if found then
+    nxt = cur + delta
+    if nxt > #candidates then nxt = 1 end
+    if nxt < 1 then nxt = #candidates end
+  end
+  NS.manualFocusID = FocusKey(candidates[nxt])
+  NS.selectedQuestID = candidates[nxt].questID
+  NS.selectedLogIndex = candidates[nxt].logIndex
   if NS.Refresh then NS.Refresh() end
 end
 
 function NS.NextQuest()
-  local list = NS.questList or {}
-  if #list == 0 then return end
-  local i = (NS.selectedQuestIndex or 1) + 1
-  if i > #list then i = 1 end
-  NS.SelectQuest(i)
+  NS.CycleFocus(1)
 end
 
 function NS.PrevQuest()
-  local list = NS.questList or {}
-  if #list == 0 then return end
-  local i = (NS.selectedQuestIndex or 1) - 1
-  if i < 1 then i = #list end
-  NS.SelectQuest(i)
+  NS.CycleFocus(-1)
+end
+
+local function FormatMoney(copper)
+  copper = tonumber(copper)
+  if not copper or copper <= 0 then return nil end
+  copper = math.floor(copper + 0.5)
+  local g = math.floor(copper / 10000)
+  local s = math.floor((copper % 10000) / 100)
+  local c = copper % 100
+  local parts = {}
+  if g > 0 then parts[#parts + 1] = tostring(g) .. "g" end
+  if s > 0 then parts[#parts + 1] = tostring(s) .. "s" end
+  if c > 0 and g == 0 then parts[#parts + 1] = tostring(c) .. "c" end
+  if #parts == 0 then return nil end
+  return table.concat(parts, " ")
+end
+
+local function CleanItemName(name)
+  if type(name) ~= "string" or name == "" then return nil end
+  local plain = string.match(name, "%[(.-)%]")
+  if plain and plain ~= "" then return plain end
+  return name
+end
+
+local function ReadRewardItems(nFn, infoFn, dest, questID)
+  if type(nFn) ~= "function" or type(infoFn) ~= "function" then return end
+  local n = SafeCall(nFn, questID)
+  if type(n) ~= "number" or n <= 0 then n = SafeCall(nFn) end
+  if type(n) ~= "number" or n <= 0 then return end
+  if n > 12 then n = 12 end
+  local i
+  for i = 1, n do
+    local name, _, count, _, _, itemID = SafeCall(infoFn, i, questID)
+    if type(name) ~= "string" or name == "" then
+      name, _, count, _, _, itemID = SafeCall(infoFn, i)
+    end
+    name = CleanItemName(name)
+    if not name and type(itemID) == "number" and type(GetItemInfo) == "function" then
+      name = CleanItemName(SafeCall(GetItemInfo, itemID))
+    end
+    if name then
+      local c = 1
+      if type(count) == "number" and count > 0 then c = count end
+      dest[#dest + 1] = { name = name, count = c }
+    end
+  end
+end
+
+local function FormatRewardsText(rewards)
+  local parts = {}
+  if type(rewards.xp) == "number" and rewards.xp > 0 then
+    parts[#parts + 1] = "+" .. tostring(math.floor(rewards.xp + 0.5)) .. " XP"
+  end
+  local money = FormatMoney(rewards.money)
+  if money then parts[#parts + 1] = money end
+  local shown = 0
+  local function add(list)
+    local i
+    for i = 1, #list do
+      if shown >= 3 then return end
+      local it = list[i]
+      if it and type(it.name) == "string" and it.name ~= "" then
+        local s = it.name
+        if type(it.count) == "number" and it.count > 1 then
+          s = s .. " x" .. tostring(math.floor(it.count))
+        end
+        parts[#parts + 1] = s
+        shown = shown + 1
+      end
+    end
+  end
+  add(rewards.items or {})
+  add(rewards.choices or {})
+  if #parts == 0 then return "" end
+  local text = table.concat(parts, " · ")
+  if string.len(text) > 96 then
+    text = string.sub(text, 1, 93) .. "..."
+  end
+  return text
+end
+
+local function TakePositive(v)
+  if type(v) == "number" and v > 0 then return v end
+  return nil
+end
+
+local function GatherRewards(quest)
+  local rewards = { xp = 0, money = 0, items = {}, choices = {} }
+  local qid = quest.questID
+
+  local function readSelected()
+    local xp = TakePositive(SafeCall(GetQuestLogRewardXP))
+    if not xp and type(qid) == "number" then
+      xp = TakePositive(SafeCall(GetQuestLogRewardXP, qid))
+    end
+    local money = TakePositive(SafeCall(GetQuestLogRewardMoney))
+    if not money and type(qid) == "number" then
+      money = TakePositive(SafeCall(GetQuestLogRewardMoney, qid))
+    end
+    if xp then rewards.xp = xp end
+    if money then rewards.money = money end
+    ReadRewardItems(GetNumQuestLogRewards, GetQuestLogRewardInfo, rewards.items, qid)
+    ReadRewardItems(GetNumQuestLogChoices, GetQuestLogChoiceInfo, rewards.choices, qid)
+    if HasCQuestLog() and type(qid) == "number" then
+      if rewards.xp == 0 and type(C_QuestLog.GetQuestRewardXP) == "function" then
+        local v = TakePositive(SafeCall(C_QuestLog.GetQuestRewardXP, qid))
+        if v then rewards.xp = v end
+      end
+      if rewards.money == 0 and type(C_QuestLog.GetQuestRewardMoney) == "function" then
+        local v = TakePositive(SafeCall(C_QuestLog.GetQuestRewardMoney, qid))
+        if v then rewards.money = v end
+      end
+    end
+  end
+
+  if type(quest.logIndex) == "number" and type(SelectQuestLogEntry) == "function" then
+    WithLogSelected(quest.logIndex, readSelected)
+  else
+    readSelected()
+  end
+  return rewards, FormatRewardsText(rewards)
 end
 
 local function CopyMock()
@@ -321,90 +1217,22 @@ local function CopyMock()
     targetX = nil,
     targetY = nil,
     targetMapID = nil,
+    targetCoordKind = nil,
+    mapX = nil,
+    mapY = nil,
+    worldX = nil,
+    worldY = nil,
     bearingDeg = 0,
     distanceYards = nil,
     hasCoords = false,
     questID = nil,
+    questType = nil,
+    questTypeLabel = nil,
+    rewards = nil,
+    rewardsText = nil,
     source = "mock",
   }
   return out
-end
-
-local function FormatDistance(yards)
-  if not yards then return "?" end
-  if yards >= 1000 then
-    return string.format("%.1fk yd", yards / 1000)
-  end
-  return string.format("%d yd", math.floor(yards + 0.5))
-end
-
-local function Cardinal(deg)
-  if not deg then return "unknown" end
-  local d = deg % 360
-  if d < 0 then d = d + 360 end
-  local dirs = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
-  local idx = math.floor((d + 22.5) / 45) % 8 + 1
-  return dirs[idx]
-end
-
-local function RelativeBearing(targetDeg)
-  if not targetDeg then return "unknown" end
-  local facing
-  if type(GetPlayerFacing) == "function" then
-    facing = SafeCall(GetPlayerFacing)
-  end
-  if not facing then
-    return Cardinal(targetDeg)
-  end
-  -- GetPlayerFacing: radians, 0 = north, increases counter-clockwise in many clients.
-  local facingDeg = math.deg(facing)
-  local delta = (targetDeg - facingDeg + 180) % 360 - 180
-  local ad = math.abs(delta)
-  if ad < 25 then return "ahead"
-  elseif ad > 155 then return "behind"
-  elseif delta > 0 then return "left"
-  else return "right"
-  end
-end
-
-local function ComputeNav(quest)
-  local px, py, pmap, kind = NS.GetPlayerMapPosition()
-  local tx, ty, tmap = quest.targetX, quest.targetY, quest.targetMapID
-  if not (tx and ty and px and py) then
-    return {
-      hasCoords = false,
-      distanceYards = nil,
-      bearingDeg = nil,
-      distance = "?",
-      bearing = "unknown",
-      approx = "no coords",
-      zone = ZoneName(),
-    }
-  end
-  local dx = tx - px
-  local dy = ty - py
-  local dist
-  if kind == "world" then
-    dist = math.sqrt(dx * dx + dy * dy)
-  else
-    -- Normalized map units → rough yards (heuristic ~1000 yd per map axis).
-    dist = math.sqrt(dx * dx + dy * dy) * 1000
-  end
-  -- Bearing: 0 = north (+y in map space often inverted). Use atan2(dx, -dy) for N-up maps.
-  local bearingDeg = math.deg(math.atan2(dx, -dy))
-  if bearingDeg < 0 then bearingDeg = bearingDeg + 360 end
-  return {
-    hasCoords = true,
-    distanceYards = dist,
-    bearingDeg = bearingDeg,
-    distance = FormatDistance(dist),
-    bearing = RelativeBearing(bearingDeg),
-    approx = "approx.",
-    zone = ZoneName(),
-    targetX = tx,
-    targetY = ty,
-    targetMapID = tmap or pmap,
-  }
 end
 
 local function FirstIncompleteObjective(quest)
@@ -422,7 +1250,6 @@ local function TrackerFromQuest(quest)
   local obj = FirstIncompleteObjective(quest)
   if obj then
     local label = obj.text or quest.title
-    -- Strip trailing "x/y" from label for cleaner display when we show count separately.
     local clean = string.gsub(label, "%s*%d+%s*/%s*%d+%s*$", "")
     return {
       label = clean ~= "" and clean or quest.title,
@@ -435,6 +1262,147 @@ local function TrackerFromQuest(quest)
     count = quest.complete and 1 or 0,
     total = 1,
   }
+end
+
+local function CandidateIndex(quest)
+  local list = NS.focusCandidates or {}
+  local i
+  for i = 1, #list do
+    if list[i] == quest then return i, #list end
+  end
+  return NS.selectedQuestIndex or 1, #list
+end
+
+-- Selecting the quest log every tick flickers Blizzard's quest frame. Re-read
+-- rewards when the focused quest changes, and at most every few seconds.
+local function CachedRewards(quest)
+  local key = tostring(quest.questID or "x") .. ":" .. tostring(quest.logIndex or "x")
+  local now = 0
+  if type(GetTime) == "function" then
+    local t = GetTime()
+    if type(t) == "number" then now = t end
+  end
+  if NS._rewardCacheKey == key and type(NS._rewardCache) == "table" and (now - (NS._rewardCacheAt or 0)) < 5 then
+    return NS._rewardCache, NS._rewardCacheText or ""
+  end
+  local rewards, text = GatherRewards(quest)
+  NS._rewardCacheKey = key
+  NS._rewardCache = rewards
+  NS._rewardCacheText = text
+  NS._rewardCacheAt = now
+  return rewards, text
+end
+
+local function BuildLive(quest, list)
+  local pos = NS.GetPlayerPositions()
+  local nav = ComputeNav(quest, pos)
+  local rewards, rewardsText = CachedRewards(quest)
+  quest.rewards = rewards
+  quest.rewardsText = rewardsText
+  local tracker = TrackerFromQuest(quest)
+  local cpos, ctotal = CandidateIndex(quest)
+  if ctotal < 1 then ctotal = #list end
+  local segs = math.min(5, math.max(1, ctotal))
+  local barFilled = math.min(segs, math.max(1, cpos))
+  local state = "In progress"
+  if quest.complete then state = "Ready to turn in" end
+  local qtype = quest.questType or "World"
+  if qtype ~= "Dungeon" then qtype = "World" end
+  local xpLine = rewardsText
+  if xpLine == nil or xpLine == "" then
+    xpLine = string.format("%d quest%s", #list, #list == 1 and "" or "s")
+  end
+
+  return {
+    name = "Quest Log",
+    index = cpos,
+    total = ctotal,
+    segments = segs,
+    filled = barFilled,
+    step = {
+      title = quest.title,
+      distance = nav.distance,
+      bearing = nav.bearing,
+      approx = nav.approx,
+      zone = nav.zone,
+    },
+    tracker = tracker,
+    status = {
+      state = state,
+      last = "live",
+      xp = xpLine,
+    },
+    askPlaceholder = "Help with: " .. tostring(quest.title),
+    targetX = nav.targetX or quest.targetX,
+    targetY = nav.targetY or quest.targetY,
+    targetMapID = nav.targetMapID or quest.targetMapID,
+    targetCoordKind = nav.targetCoordKind or quest.targetCoordKind,
+    mapX = nav.mapX or quest.mapX,
+    mapY = nav.mapY or quest.mapY,
+    worldX = quest.worldX,
+    worldY = quest.worldY,
+    bearingDeg = nav.bearingDeg,
+    distanceYards = nav.distanceYards,
+    hasCoords = nav.hasCoords and true or false,
+    questID = quest.questID,
+    logIndex = quest.logIndex,
+    watched = quest.watched and true or false,
+    questType = qtype,
+    questTypeLabel = qtype,
+    rewards = rewards,
+    rewardsText = rewardsText or "",
+    source = "live",
+  }
+end
+
+function NS.RefreshFocusedNav(route)
+  if not route or route.source ~= "live" then return route end
+  local list = NS.questList or {}
+  local q
+  local i
+  for i = 1, #list do
+    local e = list[i]
+    if route.questID and e.questID == route.questID then
+      q = e
+      break
+    end
+    if not route.questID and route.logIndex and e.logIndex == route.logIndex then
+      q = e
+      break
+    end
+  end
+  if not q then return route end
+
+  -- Re-probe POI until both a bearing and a normalized pin exist. Distance still
+  -- updates every tick from whatever coords we already have.
+  if not (route.hasCoords and route.mapX and route.mapY) then
+    local poi = NS.TryQuestPOI(q.questID, q.logIndex)
+    if poi and (poi.mapX or poi.worldX) then
+      ApplyPOI(q, poi)
+    elseif poi and poi.mapID and not q.targetMapID then
+      q.targetMapID = poi.mapID
+    end
+  end
+
+  local nav = ComputeNav(q)
+  route.targetX = nav.targetX or q.targetX
+  route.targetY = nav.targetY or q.targetY
+  route.targetMapID = nav.targetMapID or q.targetMapID
+  route.targetCoordKind = nav.targetCoordKind or q.targetCoordKind
+  route.mapX = nav.mapX or q.mapX
+  route.mapY = nav.mapY or q.mapY
+  route.worldX = q.worldX
+  route.worldY = q.worldY
+  route.hasCoords = nav.hasCoords and true or false
+  route.bearingDeg = nav.bearingDeg
+  route.distanceYards = nav.distanceYards
+  if route.step then
+    route.step.distance = nav.distance
+    route.step.bearing = nav.bearing
+    route.step.approx = nav.approx
+    route.step.zone = nav.zone
+  end
+  return route
 end
 
 function NS.GetLiveRoute()
@@ -450,57 +1418,36 @@ function NS.GetLiveRoute()
   if not list or #list == 0 then
     local m = CopyMock()
     NS.liveRoute = m
+    if NS.NoteRouteEnum then NS.NoteRouteEnum() end
     return m
   end
 
+  local q
   local idx = NS.selectedQuestIndex or 1
-  if idx < 1 then idx = 1 end
-  if idx > #list then idx = #list end
-  local q = list[idx]
-  local nav = ComputeNav(q)
-  local tracker = TrackerFromQuest(q)
-  local filled = 0
-  local segs = math.min(5, math.max(1, #list))
-  local i
-  for i = 1, #list do
-    if list[i].complete then filled = filled + 1 end
+  if list[idx] and (not NS.selectedQuestID or list[idx].questID == NS.selectedQuestID) then
+    q = list[idx]
   end
-  -- Progress bar: selected position among incomplete-first list.
-  local barFilled = math.min(segs, math.max(1, idx))
+  if not q and NS.selectedQuestID then
+    local i
+    for i = 1, #list do
+      if list[i].questID == NS.selectedQuestID then
+        q = list[i]
+        break
+      end
+    end
+  end
+  if not q then
+    q = (NS.focusCandidates and NS.focusCandidates[1]) or list[1]
+  end
+  if not q then
+    local m = CopyMock()
+    NS.liveRoute = m
+    return m
+  end
 
-  local state = "In progress"
-  if q.complete then state = "Ready to turn in" end
-
-  local out = {
-    name = "Quest Log",
-    index = idx,
-    total = #list,
-    segments = segs,
-    filled = barFilled,
-    step = {
-      title = q.title,
-      distance = nav.distance,
-      bearing = nav.bearing,
-      approx = nav.approx,
-      zone = nav.zone,
-    },
-    tracker = tracker,
-    status = {
-      state = state,
-      last = "live",
-      xp = string.format("%d quest%s", #list, #list == 1 and "" or "s"),
-    },
-    askPlaceholder = "Help with: " .. tostring(q.title),
-    targetX = nav.targetX or q.targetX,
-    targetY = nav.targetY or q.targetY,
-    targetMapID = nav.targetMapID or q.targetMapID,
-    bearingDeg = nav.bearingDeg,
-    distanceYards = nav.distanceYards,
-    hasCoords = nav.hasCoords and true or false,
-    questID = q.questID,
-    source = "live",
-  }
+  local out = BuildLive(q, list)
   NS.liveRoute = out
+  if NS.NoteRouteEnum then NS.NoteRouteEnum() end
   return out
 end
 
