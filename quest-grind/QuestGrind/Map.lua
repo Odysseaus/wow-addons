@@ -722,11 +722,10 @@ function NS.UpdateMapPins(route)
   SnapStopsToBlizzardPins(visible)
   MarkStopsWithQuestsOnMap(visible, viewMap)
 
-  -- Only stop on the map is already a live Blizzard pin: no badge, no segment.
-  if #visible == 1 and StopHasBlizzardPin(visible[1]) then
-    HideAllPinsAndLines()
-    return
-  end
+  -- 0.2.12: do NOT wipe overlay when #visible==1 && hasBlizzardPin.
+  -- A lone Blizzard-backed stop still participates in redraw; QG badges
+  -- stay skipped via StopHasBlizzardPin below. Early-exit only when
+  -- #visible==0 (already handled above).
 
   local anchor = AnchorFrame(parent)
   local key = StopsKey(visible, viewMap)
@@ -764,17 +763,22 @@ function NS.UpdateMapPins(route)
   local li = 1
   for i = 1, #points - 1 do
     local a, bpt = points[i], points[i + 1]
-    local ax, ay = NormToPixel(anchor, a.x, a.y)
-    local bx, by = NormToPixel(anchor, bpt.x, bpt.y)
-    if ax and bx then
-      local line = EnsureLine(li)
-      local cr, cg, cb = RouteColor(bpt.colorIndex or bpt.n)
-      -- Same-chain segment (shared order #): paint with that quest's color.
-      if a.n and bpt.n and a.n == bpt.n then
-        cr, cg, cb = RouteColor(a.colorIndex or a.n)
+    -- Cross-map hop: both stops name a map and they differ. Skip the segment.
+    local aMap = a.stop and a.stop.mapID
+    local bMap = bpt.stop and bpt.stop.mapID
+    if not (type(aMap) == "number" and type(bMap) == "number" and aMap ~= bMap) then
+      local ax, ay = NormToPixel(anchor, a.x, a.y)
+      local bx, by = NormToPixel(anchor, bpt.x, bpt.y)
+      if ax and bx then
+        local line = EnsureLine(li)
+        local cr, cg, cb = RouteColor(bpt.colorIndex or bpt.n)
+        -- Same-chain segment (shared order #): paint with that quest's color.
+        if a.n and bpt.n and a.n == bpt.n then
+          cr, cg, cb = RouteColor(a.colorIndex or a.n)
+        end
+        DrawLinePixels(line, anchor, ax, ay, bx, by, ICON_CLEAR_PX, ICON_CLEAR_PX, cr, cg, cb, 0.85)
+        li = li + 1
       end
-      DrawLinePixels(line, anchor, ax, ay, bx, by, ICON_CLEAR_PX, ICON_CLEAR_PX, cr, cg, cb, 0.85)
-      li = li + 1
     end
   end
 

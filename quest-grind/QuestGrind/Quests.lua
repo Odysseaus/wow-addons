@@ -368,6 +368,9 @@ local function HasQuestLineAPI()
     and type(C_QuestLine.GetQuestLineQuests) == "function"
 end
 
+-- Assigned later (next to the other map-XY helpers). ReadQuestLine closes over it.
+local NormFromQuestsOnMapXY
+
 local function ReadQuestLine(questID, mapID)
   local info = SafeCall(C_QuestLine.GetQuestLineInfo, questID, mapID)
   if type(info) ~= "table" or type(info.questLineID) ~= "number" or info.questLineID <= 0 then
@@ -385,13 +388,22 @@ local function ReadQuestLine(questID, mapID)
     end
   end
   if #quests < 1 then return nil end
-  return {
+  local out = {
     lineID = info.questLineID,
     name = type(info.questLineName) == "string" and info.questLineName or nil,
     quests = quests,
     pos = pos,
     source = "api",
   }
+  -- Additive: quest-line pin, same 0..1 / 0..100 rules as GetQuestsOnMap.
+  local x, y = NormFromQuestsOnMapXY(info.x, info.y)
+  if type(x) == "number" and type(y) == "number" then
+    out.mapX = x
+    out.mapY = y
+    local mid = info.mapID or info.uiMapID or mapID
+    if type(mid) == "number" and mid > 0 then out.mapID = mid end
+  end
+  return out
 end
 
 local function ReadChainData(questID)
@@ -603,7 +615,8 @@ end
 
 -- GetQuestsOnMap x,y are normalized 0..1 on Forever. Some clients use 0..100
 -- percent. Never classify either form as world yards (ClassifyXY would).
-local function NormFromQuestsOnMapXY(x, y)
+-- Assign into the forward-declared local (ReadQuestLine closes over it).
+NormFromQuestsOnMapXY = function(x, y)
   if type(x) ~= "number" or type(y) ~= "number" then return nil, nil end
   if x == 0 and y == 0 then return nil, nil end
   if x < 0 or y < 0 then return nil, nil end
@@ -656,6 +669,96 @@ local function ViewedMapID()
   if type(WorldMapFrame.GetMapID) ~= "function" then return nil end
   local id = SafeCall(WorldMapFrame.GetMapID, WorldMapFrame)
   if type(id) == "number" and id > 0 then return id end
+  return nil
+end
+
+-- Quest-line pin (C_QuestLine). Below GetQuestsOnMap / TryQuestPOI in StopMapCoords.
+local function POIFromQuestLineInfo(questID, mapHint)
+  if type(questID) ~= "number" then return nil end
+  if type(C_QuestLine) ~= "table" or type(C_QuestLine.GetQuestLineInfo) ~= "function" then
+    return nil
+  end
+  local maps = {}
+  local function add(id)
+    if type(id) ~= "number" or id <= 0 then return end
+    local i
+    for i = 1, #maps do if maps[i] == id then return end end
+    maps[#maps + 1] = id
+  end
+  add(ViewedMapID())
+  add(PlayerMapID())
+  add(mapHint)
+  add(QuestAreaID(questID, nil))
+
+  local function fromInfo(info, fallbackMap)
+    if type(info) ~= "table" then return nil end
+    local x, y = info.x, info.y
+    if type(x) ~= "number" or type(y) ~= "number" then
+      x, y = VecXY(info.position or info.pos)
+    end
+    x, y = NormFromQuestsOnMapXY(x, y)
+    if not x then return nil end
+    local mid = info.mapID or info.uiMapID or fallbackMap
+    if type(mid) ~= "number" or mid <= 0 then
+      mid = ViewedMapID() or PlayerMapID()
+    end
+    if type(mid) ~= "number" then return nil end
+    return { mapID = mid, mapX = x, mapY = y }
+  end
+
+  -- Try nil mapID first if API accepts it, then each map.
+  local info = SafeCall(C_QuestLine.GetQuestLineInfo, questID, nil)
+  local poi = fromInfo(info, nil)
+  if poi then return poi end
+  local i
+  for i = 1, #maps do
+    info = SafeCall(C_QuestLine.GetQuestLineInfo, questID, maps[i])
+    poi = fromInfo(info, maps[i])
+    if poi then return poi end
+  end
+
+  if type(C_QuestLine.GetAvailableQuestLines) == "function" then
+    for i = 1, #maps do
+      local list = SafeCall(C_QuestLine.GetAvailableQuestLines, maps[i])
+      if type(list) == "table" then
+        local j
+        local n = #list
+        if n > 0 then
+          for j = 1, n do
+            local e = list[j]
+            if type(e) == "table" then
+              local qid = e.questID or e.questId
+              if qid == questID then
+                poi = fromInfo(e, maps[i])
+                if poi then return poi end
+              end
+            end
+          end
+        else
+          local _, e
+          for _, e in pairs(list) do
+            if type(e) == "table" then
+              local qid = e.questID or e.questId
+              if qid == questID then
+                poi = fromInfo(e, maps[i])
+                if poi then return poi end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- Kick async load (same chainRequested table used by GetQuestChain).
+  if type(C_QuestLine.RequestQuestLinesForMap) == "function" and type(chainRequested) == "table" then
+    for i = 1, #maps do
+      if not chainRequested[maps[i]] then
+        chainRequested[maps[i]] = true
+        SafeCall(C_QuestLine.RequestQuestLinesForMap, maps[i])
+      end
+    end
+  end
   return nil
 end
 
@@ -1292,11 +1395,11 @@ function NS.GetFocusCandidates(list)
 end
 
 -- ===== 0.2.9 main-map route stops (up to 7) =====
--- Best completion order = focus-candidate order (closest checked / scoped),
--- then upcoming untriggered chain steps for those quests (ChainData / C_QuestLine)
--- inserted after their predecessor when Forever exposes a POI. Cap = 7 locations.
--- Distinct quests get distinct order numbers + colors; every location in the same
--- chain shares that quest's order number (chain nodes are not renumbered).
+-- Best completion order = focus-candidate order (closest checked / scoped).
+-- Fair pack: each candidate gets its accepted pin plus at most one upcoming
+-- chain step before the next candidate. Leftover slots fill further steps.
+-- Cap = 7. Distinct quests get distinct order numbers + colors; chain nodes
+-- share that number (not renumbered).
 NS.MAX_MAP_ROUTE_STOPS = 7
 
 local function StopMapCoords(questID, logIndex, existing)
@@ -1323,18 +1426,31 @@ local function StopMapCoords(questID, logIndex, existing)
     end
   end
   local poi = NS.TryQuestPOI(questID, logIndex)
-  if type(poi) ~= "table" then return nil, nil, nil end
-  if type(poi.mapX) == "number" and type(poi.mapY) == "number" then
-    local kind = ClassifyXY(poi.mapX, poi.mapY)
-    if kind == "map" and not (poi.mapX == 0 and poi.mapY == 0) then
-      return poi.mapX, poi.mapY, poi.mapID
+  if type(poi) == "table" then
+    if type(poi.mapX) == "number" and type(poi.mapY) == "number" then
+      local kind = ClassifyXY(poi.mapX, poi.mapY)
+      if kind == "map" and not (poi.mapX == 0 and poi.mapY == 0) then
+        return poi.mapX, poi.mapY, poi.mapID
+      end
+    end
+    if type(poi.worldX) == "number" and type(poi.worldY) == "number" then
+      local mx, my, mid = WorldToNorm(poi.worldX, poi.worldY, poi.mapID)
+      if mx then return mx, my, mid or poi.mapID end
     end
   end
-  if type(poi.worldX) == "number" and type(poi.worldY) == "number" then
-    local mx, my, mid = WorldToNorm(poi.worldX, poi.worldY, poi.mapID)
-    if mx then return mx, my, mid or poi.mapID end
+
+  -- QuestLine only after GetQuestsOnMap, cached/existing XY, and TryQuestPOI.
+  local mapHint = nil
+  if type(existing) == "table" then
+    mapHint = existing.targetMapID or existing.mapID
   end
-  return nil, nil, poi.mapID
+  local linePOI = POIFromQuestLineInfo(questID, mapHint)
+  if type(linePOI) == "table" and type(linePOI.mapX) == "number" and type(linePOI.mapY) == "number" then
+    return linePOI.mapX, linePOI.mapY, linePOI.mapID
+  end
+
+  if type(poi) == "table" then return nil, nil, poi.mapID end
+  return nil, nil, nil
 end
 
 local function InLogByID(list)
@@ -1402,53 +1518,52 @@ function NS.GetMapRouteStops(maxStops)
   end
 
   local i
+  -- Pass 1: fair — each candidate gets accepted + at most one upcoming next-with-POI
   for i = 1, #candidates do
     if #stops >= maxStops then break end
     local q = candidates[i]
     if type(q) == "table" then
       local mx, my, mid = StopMapCoords(q.questID, q.logIndex, q)
+      local acceptedAdded = false
+      local sharedN, sharedColor, groupQID = nil, nil, q.questID
       if mx then
-        addStop(q.questID, q.title, mx, my, mid or q.targetMapID, true, q.chainID, q.chainStep or q.chainPos, nil, q.questID)
+        acceptedAdded = addStop(q.questID, q.title, mx, my, mid or q.targetMapID, true, q.chainID, q.chainStep or q.chainPos, nil, q.questID)
+        if acceptedAdded and #stops > 0 then
+          local last = stops[#stops]
+          sharedN = last.n
+          sharedColor = last.colorIndex or last.n
+          groupQID = last.groupQuestID or q.questID
+        end
       end
-    end
-  end
-
-  -- Insert upcoming untriggered chain steps after each accepted stop. Lines on
-  -- the map start at the first chain quest and continue through these steps;
-  -- each location keeps the SAME order number / color as its predecessor.
-  local grown = {}
-  for i = 1, #stops do
-    grown[#grown + 1] = stops[i]
-    if #grown >= maxStops then break end
-    local s = stops[i]
-    if type(s.questID) ~= "number" then
-      -- continue
-    else
-      local chain = NS.GetQuestChain(s.questID, s.mapID)
-      if chain and type(chain.quests) == "table" then
-        local startPos = chain.pos or 1
-        local qi
-        for qi = startPos + 1, #chain.quests do
-          if #grown >= maxStops then break end
-          local nid = chain.quests[qi]
-          if type(nid) == "number" and not seen[nid] and not FlaggedComplete(nid) and not inLog[nid] then
-            local mx, my, mid = StopMapCoords(nid, nil, nil)
-            if mx then
-              grown[#grown + 1] = {
-                n = s.n,
-                colorIndex = s.colorIndex or s.n,
-                groupQuestID = s.groupQuestID or s.questID,
-                questID = nid,
-                title = "Chain step " .. tostring(qi),
-                mapX = mx,
-                mapY = my,
-                mapID = mid or s.mapID,
-                inLog = false,
-                untriggered = true,
-                chainID = chain.lineID,
-                chainStep = qi,
-              }
-              seen[nid] = true
+      -- At most one upcoming next-with-POI for this candidate before next candidate
+      if acceptedAdded and #stops < maxStops then
+        local chain = NS.GetQuestChain(q.questID, mid or q.targetMapID)
+        if chain and type(chain.quests) == "table" then
+          local startPos = chain.pos or 1
+          local qi
+          for qi = startPos + 1, #chain.quests do
+            if #stops >= maxStops then break end
+            local nid = chain.quests[qi]
+            if type(nid) == "number" and not seen[nid] and not FlaggedComplete(nid) and not inLog[nid] then
+              local cx, cy, cid = StopMapCoords(nid, nil, nil)
+              if cx then
+                stops[#stops + 1] = {
+                  n = sharedN,
+                  colorIndex = sharedColor or sharedN,
+                  groupQuestID = groupQID,
+                  questID = nid,
+                  title = "Chain step " .. tostring(qi),
+                  mapX = cx,
+                  mapY = cy,
+                  mapID = cid or mid or q.targetMapID,
+                  inLog = false,
+                  untriggered = true,
+                  chainID = chain.lineID,
+                  chainStep = qi,
+                }
+                seen[nid] = true
+                break  -- at most ONE per candidate in pass 1
+              end
             end
           end
         end
@@ -1456,12 +1571,64 @@ function NS.GetMapRouteStops(maxStops)
     end
   end
 
+  -- Pass 2 (optional fill): leftover slots. Each sweep walks accepted stops and
+  -- appends one further upcoming chain step, sharing n/color. Repeat to continue
+  -- the chain. Cap at maxStops. Skip already seen / complete / inLog.
   -- Do NOT renumber after chain inserts — chain nodes share the predecessor's n.
-  if #grown > maxStops then
-    while #grown > maxStops do grown[#grown] = nil end
+  local guard = 0
+  while #stops < maxStops and guard < maxStops do
+    guard = guard + 1
+    local anchors = {}
+    local si
+    for si = 1, #stops do
+      local s = stops[si]
+      if type(s) == "table" and s.inLog and type(s.questID) == "number" then
+        anchors[#anchors + 1] = s
+      end
+    end
+    local addedAny = false
+    for si = 1, #anchors do
+      if #stops >= maxStops then break end
+      local s = anchors[si]
+      local chain = NS.GetQuestChain(s.questID, s.mapID)
+      if chain and type(chain.quests) == "table" then
+        local startPos = chain.pos or 1
+        if type(s.chainStep) == "number" and s.chainStep > startPos then
+          startPos = s.chainStep
+        end
+        local qi
+        for qi = startPos + 1, #chain.quests do
+          local nid = chain.quests[qi]
+          if type(nid) == "number" and not seen[nid] and not FlaggedComplete(nid) and not inLog[nid] then
+            local cx, cy, cid = StopMapCoords(nid, nil, nil)
+            if cx then
+              stops[#stops + 1] = {
+                n = s.n,
+                colorIndex = s.colorIndex or s.n,
+                groupQuestID = s.groupQuestID or s.questID,
+                questID = nid,
+                title = "Chain step " .. tostring(qi),
+                mapX = cx,
+                mapY = cy,
+                mapID = cid or s.mapID,
+                inLog = false,
+                untriggered = true,
+                chainID = chain.lineID,
+                chainStep = qi,
+              }
+              seen[nid] = true
+              addedAny = true
+              break
+            end
+          end
+        end
+      end
+    end
+    if not addedAny then break end
   end
-  NS.mapRouteStops = grown
-  return grown
+
+  NS.mapRouteStops = stops
+  return stops
 end
 
 local function WatchKey(list)

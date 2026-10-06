@@ -1,3 +1,10 @@
+## 0.2.12 — QuestLine XY for upcoming stops; fair ≤7 packing; map overlay keep
+
+- **Fixed**: upcoming / untriggered chain stops rarely had map XY (no GetQuestsOnMap pin yet), so they never entered the ≤7 route and Blizzard→QG lines never drew. `StopMapCoords` now falls back to `C_QuestLine.GetQuestLineInfo` / `GetAvailableQuestLines` XY (normalized like GetQuestsOnMap); GetQuestsOnMap / TryQuestPOI stay higher priority for in-log accepted stops. `RequestQuestLinesForMap` still kicked on miss. `ReadQuestLine` keeps additive mapX/mapY when present (`Quests.lua`).
+- **Changed**: fair ≤7 packing — each focus candidate adds its accepted stop plus **at most one** upcoming next-with-POI before the next candidate, so parallel mid-chain quests can each get a Blizzard→QG segment within the cap; leftover slots fill further chain steps. Chain nodes still share order # / colorIndex.
+- **Fixed**: `Map.lua` no longer wipes the overlay merely because `#visible==1 && hasBlizzardPin`. Early-exit only when nothing to draw. Cross-map line segments skipped; same-map consecutive lines kept. Still: no QG badge on live Blizzard pin; lines from Blizzard XY → later stops.
+- **Keep**: ≤7; no center→#1; chain shared #; per-quest colors; icon clear gap; minimap off; Current location HUD; focus rules; Pass items. Interface **16001**.
+
 ## 0.2.11 — Blizzard pin as start; QG markers on later chain stops only
 
 - **Changed**: main-map route no longer places a QuestGrind numbered badge on the same spot as a live **Blizzard quest icon** (0.2.10 “QG under Blizzard” made badges invisible / competing).
