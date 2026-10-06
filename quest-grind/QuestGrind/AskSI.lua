@@ -21,7 +21,10 @@ local function Solid(parent, r, g, b, a)
   local f = CreateFrame("Frame", nil, parent)
   local t = f:CreateTexture(nil, "BACKGROUND")
   t:SetAllPoints()
-  t:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
+  -- White solid base; color via SetVertexColor so re-themes always stick (see Themes.lua).
+  t:SetColorTexture(1, 1, 1, 1)
+  t._qgThemeWhite = true
+  t:SetVertexColor(r or 0, g or 0, b or 0, a or 1)
   f.tex = t
   return f
 end
@@ -83,7 +86,9 @@ local function BuildAsk()
   box:SetPoint("TOPLEFT", query, "BOTTOMLEFT", 0, -10)
   box.bg = box:CreateTexture(nil, "BACKGROUND")
   box.bg:SetAllPoints()
-  box.bg:SetColorTexture(0.08, 0.06, 0.04, 0.95)
+  box.bg:SetColorTexture(1, 1, 1, 1)
+  box.bg._qgThemeWhite = true
+  box.bg:SetVertexColor(0.08, 0.06, 0.04, 0.95)
   box.border = Solid(box, 0.72, 0.55, 0.22, 1)
   box.border:SetPoint("TOPLEFT", -1, 1)
   box.border:SetPoint("BOTTOMRIGHT", 1, -1)
@@ -103,7 +108,9 @@ local function BuildAsk()
   askBtn:SetPoint("TOP", box, "BOTTOM", 0, -14)
   askBtn.bg = askBtn:CreateTexture(nil, "BACKGROUND")
   askBtn.bg:SetAllPoints()
-  askBtn.bg:SetColorTexture(0.85, 0.65, 0.20, 1)
+  askBtn.bg:SetColorTexture(1, 1, 1, 1)
+  askBtn.bg._qgThemeWhite = true
+  askBtn.bg:SetVertexColor(0.85, 0.65, 0.20, 1)
   askBtn.text = FS(askBtn, 13, "OUTLINE")
   askBtn.text:SetPoint("CENTER")
   askBtn.text:SetText("Ask SI")
@@ -136,7 +143,9 @@ local function BuildAsk()
   close:SetPoint("TOPRIGHT", -14, -14)
   close.bg = close:CreateTexture(nil, "BACKGROUND")
   close.bg:SetAllPoints()
-  close.bg:SetColorTexture(0.7, 0.55, 0.25, 1)
+  close.bg:SetColorTexture(1, 1, 1, 1)
+  close.bg._qgThemeWhite = true
+  close.bg:SetVertexColor(0.7, 0.55, 0.25, 1)
   close.text = FS(close, 12, "OUTLINE")
   close.text:SetPoint("CENTER")
   close.text:SetText("X")
@@ -146,7 +155,7 @@ end
 
 function NS.RefreshAskTheme()
   if not askArt then return end
-  local th = NS.GetTheme()
+  local th = NS.GetTheme(NS.db and NS.db.theme)
   NS.SetVertexColor(askArt.chrome.tex, th.chrome)
   NS.SetVertexColor(askArt.panel.tex, th.panel)
   NS.SetVertexColor(askArt.title, th.title)

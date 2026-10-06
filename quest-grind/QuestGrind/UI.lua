@@ -4,16 +4,30 @@ local _, NS = ...
 -- Transparent PAD outside chrome so ornate edges never clip (root > art).
 -- Themes apply to Full AND Less AND Compass. Solid colors = P0/P1; TGA polish = P4.
 -- P1: ApplyRoute / RefreshRouteUI paint live or mock; Route.lua rotates needles.
+-- 0.2.1 (P0 UX fix): window controls live on layers.chromeControls, which is
+-- NEVER hidden by mode switches (Full / Less / Compass / minimized), sits above
+-- all content (frame level), and is anchored inside art TOPRIGHT.
 
 local PAD = 24
 NS.PAD = PAD
 
+-- Sizes leave a ~32px top strip in every mode for the persistent controls.
 local ART = {
-  full = { w = 360, h = 420 },
-  less = { w = 420, h = 110 },
-  compass = { w = 200, h = 220 },
-  minimized = { w = 180, h = 36 },
+  full = { w = 400, h = 440 },
+  less = { w = 440, h = 128 },
+  compass = { w = 240, h = 264 },
+  minimized = { w = 240, h = 40 },
 }
+
+local CTRL_H = 22
+local CTRL_GAP = 3
+local CTRL_CLOSE_GAP = 8 -- extra space so Close is not hit by accident
+local CTRL_INSET = 10
+local CTRL_LEVEL = 20 -- above every content layer
+local W_MODE, W_EDIT, W_MIN, W_EXPAND, W_CLOSE, W_GRIP = 60, 36, 36, 56, 22, 44
+
+local MODE_LABEL = { full = "Full", less = "Less", compass = "Compass" }
+NS.MODE_LABEL = MODE_LABEL
 
 local layers = {}
 NS.layers = layers
@@ -38,28 +52,117 @@ local function Solid(parent, r, g, b, a)
   local f = CreateFrame("Frame", nil, parent)
   local t = f:CreateTexture(nil, "BACKGROUND")
   t:SetAllPoints()
-  t:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
+  -- White solid base; color via SetVertexColor so re-themes always stick (see Themes.lua).
+  t:SetColorTexture(1, 1, 1, 1)
+  t._qgThemeWhite = true
+  t:SetVertexColor(r or 0, g or 0, b or 0, a or 1)
   f.tex = t
   return f
 end
 
-local function ChipButton(parent, label, w, h)
+-- Tooltip: getTip(self) returns title, line (line optional).
+local function ShowTip(self)
+  if not GameTooltip or not self.getTip then return end
+  local title, line = self.getTip(self)
+  if not title then return end
+  GameTooltip:SetOwner(self, "ANCHOR_TOP")
+  GameTooltip:SetText(title, 1, 0.85, 0.4)
+  if line then GameTooltip:AddLine(line, 0.95, 0.93, 0.88, true) end
+  GameTooltip:Show()
+end
+
+local function HideTip()
+  if GameTooltip then GameTooltip:Hide() end
+end
+
+-- Labeled control chip: thin chromeHi border, dark panel fill, readable text.
+local function ChipButton(parent, label, w, h, getTip)
   local b = CreateFrame("Button", nil, parent)
-  b:SetSize(w or 28, h or 28)
-  b.bg = b:CreateTexture(nil, "BACKGROUND")
-  b.bg:SetAllPoints()
-  b.bg:SetColorTexture(0.5, 0.4, 0.2, 0.95)
-  b.text = FS(b, nil, 12, "OUTLINE")
-  b.text:SetPoint("CENTER")
+  b:SetSize(w or 28, h or CTRL_H)
+  b.border = b:CreateTexture(nil, "BACKGROUND", nil, -8)
+  b.border:SetAllPoints()
+  b.border:SetColorTexture(1, 1, 1, 1)
+  b.border._qgThemeWhite = true
+  b.border:SetVertexColor(0.90, 0.78, 0.40, 1)
+  b.bg = b:CreateTexture(nil, "BACKGROUND", nil, 1)
+  b.bg:SetPoint("TOPLEFT", 1, -1)
+  b.bg:SetPoint("BOTTOMRIGHT", -1, 1)
+  b.bg:SetColorTexture(1, 1, 1, 1)
+  b.bg._qgThemeWhite = true
+  b.bg:SetVertexColor(0.18, 0.12, 0.07, 1)
+  b.text = FS(b, nil, 11, "OUTLINE")
+  b.text:SetJustifyH("CENTER")
+  b.text:SetPoint("CENTER", 0, 0)
   b.text:SetText(label or "")
+  b.getTip = getTip
   b:SetScript("OnEnter", function(self)
-    self.bg:SetColorTexture(0.7, 0.55, 0.25, 1)
+    NS.SetVertexColor(self.bg, NS.GetTheme().chrome)
+    ShowTip(self)
   end)
   b:SetScript("OnLeave", function(self)
     local th = NS.GetTheme()
-    NS.SetVertexColor(self.bg, th.chromeHi)
+    NS.SetVertexColor(self.bg, th.panel, 1)
+    HideTip()
   end)
   return b
+end
+
+local function CurrentMode()
+  local m = NS.db and NS.db.mode
+  if m and MODE_LABEL[m] then return m end
+  return "full"
+end
+
+local function NextModeLabel(step)
+  local modes = NS.MODES or { "full", "less", "compass" }
+  local cur = CurrentMode()
+  local i, n = 1, 1
+  for n = 1, #modes do
+    if modes[n] == cur then i = n end
+  end
+  i = i + (step or 1)
+  if i > #modes then i = 1 end
+  if i < 1 then i = #modes end
+  return MODE_LABEL[modes[i]] or "Full"
+end
+
+-- Drag helpers shared by root, title, Move grip, and minimized bar.
+local function StartHUDDrag()
+  local root = NS.root
+  if not root then return end
+  if NS.db and NS.db.locked then return end
+  root.isDragging = true
+  root:StartMoving()
+end
+
+local function StopHUDDrag()
+  local root = NS.root
+  if not root or not root.isDragging then return end
+  root.isDragging = nil
+  root:StopMovingOrSizing()
+  if NS.db then
+    local p, _, rp, x, y = root:GetPoint(1)
+    NS.db.point = p
+    NS.db.relativePoint = rp
+    NS.db.xOfs = x
+    NS.db.yOfs = y
+  end
+end
+NS.StartHUDDrag = StartHUDDrag
+NS.StopHUDDrag = StopHUDDrag
+
+local function MoveTip()
+  if NS.db and NS.db.locked then
+    return "Locked", "Position locked. Type /qg lock to unlock, then drag to move."
+  end
+  return "Move", "Drag to move (lock/unlock with /qg lock)."
+end
+
+local function MakeDraggable(f)
+  f:EnableMouse(true)
+  f:RegisterForDrag("LeftButton")
+  f:SetScript("OnDragStart", function() StartHUDDrag() end)
+  f:SetScript("OnDragStop", function() StopHUDDrag() end)
 end
 
 local function MakeSegmentBar(parent, n)
@@ -71,10 +174,14 @@ local function MakeSegmentBar(parent, n)
     s:SetSize(28, 8)
     s.bg = s:CreateTexture(nil, "BACKGROUND")
     s.bg:SetAllPoints()
-    s.bg:SetColorTexture(0.15, 0.12, 0.08, 0.9)
+    s.bg:SetColorTexture(1, 1, 1, 1)
+    s.bg._qgThemeWhite = true
+    s.bg:SetVertexColor(0.15, 0.12, 0.08, 0.9)
     s.fill = s:CreateTexture(nil, "ARTWORK")
     s.fill:SetAllPoints()
-    s.fill:SetColorTexture(0.85, 0.65, 0.2, 1)
+    s.fill:SetColorTexture(1, 1, 1, 1)
+    s.fill._qgThemeWhite = true
+    s.fill:SetVertexColor(0.85, 0.65, 0.2, 1)
     s.fill:Hide()
     if i == 1 then
       s:SetPoint("LEFT", bar, "LEFT", 0, 0)
@@ -121,25 +228,13 @@ function NS.BuildUI()
   root:EnableMouse(true)
   root:RegisterForDrag("LeftButton")
   root:SetClipsChildren(false)
+  root:SetClampedToScreen(true) -- resizes / drags never push controls off-screen
   root:SetFrameStrata("MEDIUM")
   -- Root has NO opaque background — transparent padding outside art.
   NS.root = root
 
-  root:SetScript("OnDragStart", function(self)
-    if NS.db and not NS.db.locked then
-      self:StartMoving()
-    end
-  end)
-  root:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
-    if NS.db then
-      local p, _, rp, x, y = self:GetPoint(1)
-      NS.db.point = p
-      NS.db.relativePoint = rp
-      NS.db.xOfs = x
-      NS.db.yOfs = y
-    end
-  end)
+  root:SetScript("OnDragStart", function() StartHUDDrag() end)
+  root:SetScript("OnDragStop", function() StopHUDDrag() end)
 
   local art = CreateFrame("Frame", nil, root)
   art:SetSize(ART.full.w, ART.full.h)
@@ -175,50 +270,110 @@ function NS.BuildUI()
   emblem:SetPoint("TOP", art, "TOP", 0, 6)
   emblem.bg = emblem:CreateTexture(nil, "BACKGROUND")
   emblem.bg:SetAllPoints()
-  emblem.bg:SetColorTexture(0.72, 0.55, 0.22, 1)
+  emblem.bg:SetColorTexture(1, 1, 1, 1)
+  emblem.bg._qgThemeWhite = true
+  emblem.bg:SetVertexColor(0.72, 0.55, 0.22, 1)
   emblem.ring = emblem:CreateTexture(nil, "BORDER")
   emblem.ring:SetPoint("TOPLEFT", 3, -3)
   emblem.ring:SetPoint("BOTTOMRIGHT", -3, 3)
-  emblem.ring:SetColorTexture(0.10, 0.08, 0.05, 1)
+  emblem.ring:SetColorTexture(1, 1, 1, 1)
+  emblem.ring._qgThemeWhite = true
+  emblem.ring:SetVertexColor(0.10, 0.08, 0.05, 1)
   emblem.glyph = FS(emblem, nil, 18, "OUTLINE")
   emblem.glyph:SetPoint("CENTER")
   emblem.glyph:SetText("!")
   layers.emblem = emblem
 
-  -- Title
+  -- Title (header drag zone when unlocked; sits below the control strip)
   local title = CreateFrame("Frame", nil, art)
   title:SetSize(200, 24)
-  title:SetPoint("TOP", art, "TOP", 0, -28)
+  title:SetPoint("TOP", art, "TOP", 0, -36)
   title.text = FS(title, nil, 18, "OUTLINE")
+  title.text:SetJustifyH("CENTER")
   title.text:SetPoint("CENTER")
   title.text:SetText("QuestGrind")
+  MakeDraggable(title)
+  title.getTip = MoveTip
+  title:SetScript("OnEnter", ShowTip)
+  title:SetScript("OnLeave", HideTip)
   layers.title = title
 
-  -- Window controls (own layers)
-  local btnClose = ChipButton(art, "X", 24, 24)
-  btnClose:SetPoint("TOPRIGHT", art, "TOPRIGHT", -14, -14)
-  btnClose:SetScript("OnClick", function() root:Hide() end)
-  layers.btnClose = btnClose
+  -- ===== Persistent control chrome (never hidden by mode switches) =====
+  local chromeControls = CreateFrame("Frame", nil, art)
+  chromeControls:SetFrameLevel(art:GetFrameLevel() + CTRL_LEVEL)
+  chromeControls:SetSize(W_MODE + W_EDIT + W_MIN + W_CLOSE + CTRL_GAP * 2 + CTRL_CLOSE_GAP, CTRL_H)
+  chromeControls:SetPoint("TOPRIGHT", art, "TOPRIGHT", -CTRL_INSET, -CTRL_INSET)
+  layers.chromeControls = chromeControls
 
-  local btnMinimize = ChipButton(art, "-", 24, 24)
-  btnMinimize:SetPoint("RIGHT", btnClose, "LEFT", -4, 0)
+  local ctrlLevel = chromeControls:GetFrameLevel() + 1
+
+  local btnClose = ChipButton(chromeControls, "X", W_CLOSE, CTRL_H, function()
+    return "Close", "Hide the HUD. Bring it back with /qg show."
+  end)
+  btnClose:SetFrameLevel(ctrlLevel)
+  btnClose:SetPoint("RIGHT", chromeControls, "RIGHT", 0, 0)
+  btnClose:SetScript("OnClick", function() NS.HideHUD() end)
+  layers.btnClose = btnClose
+  chromeControls.btnClose = btnClose
+
+  local btnMinimize = ChipButton(chromeControls, "Min", W_MIN, CTRL_H, function()
+    if NS.db and NS.db.minimized then
+      return "Expand", "Restore the full QuestGrind HUD."
+    end
+    return "Minimize", "Collapse to a small bar. Click Expand (or the bar) to restore."
+  end)
+  btnMinimize:SetFrameLevel(ctrlLevel)
+  btnMinimize:SetPoint("RIGHT", btnClose, "LEFT", -CTRL_CLOSE_GAP, 0)
   btnMinimize:SetScript("OnClick", function() NS.ToggleMinimize() end)
   layers.btnMinimize = btnMinimize
+  chromeControls.btnMinimize = btnMinimize
 
-  local btnEdit = ChipButton(art, "E", 24, 24)
-  btnEdit:SetPoint("RIGHT", btnMinimize, "LEFT", -4, 0)
+  local btnEdit = ChipButton(chromeControls, "Edit", W_EDIT, CTRL_H, function()
+    return "Edit Mode", "Open the theme picker (themes apply to Full, Less, and Compass)."
+  end)
+  btnEdit:SetFrameLevel(ctrlLevel)
+  btnEdit:SetPoint("RIGHT", btnMinimize, "LEFT", -CTRL_GAP, 0)
   btnEdit:SetScript("OnClick", function() NS.ToggleEditMode() end)
   layers.btnEdit = btnEdit
+  chromeControls.btnEdit = btnEdit
 
-  local btnMode = ChipButton(art, "M", 24, 24)
-  btnMode:SetPoint("RIGHT", btnEdit, "LEFT", -4, 0)
-  btnMode:SetScript("OnClick", function() NS.CycleMode() end)
+  local btnMode = ChipButton(chromeControls, "Full", W_MODE, CTRL_H, function()
+    return "Cycle view mode", "Now: " .. (MODE_LABEL[CurrentMode()] or "Full")
+      .. "   Next: " .. NextModeLabel(1) .. "\nLeft-click: next  |  Right-click: previous"
+  end)
+  btnMode:SetFrameLevel(ctrlLevel)
+  btnMode:SetPoint("RIGHT", btnEdit, "LEFT", -CTRL_GAP, 0)
+  btnMode:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  btnMode:SetScript("OnClick", function(self, button)
+    if button == "RightButton" then
+      NS.CycleMode(-1)
+    else
+      NS.CycleMode(1)
+    end
+    if GameTooltip and GameTooltip.IsOwned and GameTooltip:IsOwned(self) then ShowTip(self) end
+  end)
   layers.btnModeCycle = btnMode
+  chromeControls.btnMode = btnMode
+
+  -- Move grip: child of chromeControls (shown/hidden with it) but anchored to art TOPLEFT.
+  local moveGrip = ChipButton(chromeControls, "Move", W_GRIP, CTRL_H, MoveTip)
+  moveGrip:SetFrameLevel(ctrlLevel)
+  moveGrip:SetPoint("TOPLEFT", art, "TOPLEFT", CTRL_INSET, -CTRL_INSET)
+  -- Press-and-hold drags immediately (no drag threshold); release saves position.
+  moveGrip:SetScript("OnMouseDown", function() StartHUDDrag() end)
+  moveGrip:SetScript("OnMouseUp", function() StopHUDDrag() end)
+  moveGrip:SetScript("OnClick", function()
+    if NS.db and NS.db.locked then
+      NS.Print("HUD is locked — /qg lock to unlock, then drag Move.")
+    end
+  end)
+  layers.moveGrip = moveGrip
+  chromeControls.moveGrip = moveGrip
 
   -- ===== FULL mode content layers =====
   local routeRow = CreateFrame("Frame", nil, art)
   routeRow:SetSize(200, 48)
-  routeRow:SetPoint("TOPLEFT", art, "TOPLEFT", 20, -60)
+  routeRow:SetPoint("TOPLEFT", art, "TOPLEFT", 20, -72)
   routeRow.icon = Solid(routeRow, 0.72, 0.55, 0.22, 1)
   routeRow.icon:SetSize(22, 22)
   routeRow.icon:SetPoint("TOPLEFT", 0, 0)
@@ -275,7 +430,7 @@ function NS.BuildUI()
   -- Right column: large compass
   local compassLarge = CreateFrame("Frame", nil, art)
   compassLarge:SetSize(130, 130)
-  compassLarge:SetPoint("TOPRIGHT", art, "TOPRIGHT", -24, -70)
+  compassLarge:SetPoint("TOPRIGHT", art, "TOPRIGHT", -28, -82)
   compassLarge.face = Solid(compassLarge, 0.25, 0.20, 0.12, 1)
   compassLarge.face:SetAllPoints()
   compassLarge.ring = Solid(compassLarge, 0.72, 0.55, 0.22, 1)
@@ -319,24 +474,35 @@ function NS.BuildUI()
   -- Divider between columns
   local divider = Solid(art, 0.72, 0.55, 0.22, 0.6)
   divider:SetSize(2, 240)
-  divider:SetPoint("TOP", art, "TOP", 20, -60)
+  divider:SetPoint("TOP", art, "TOP", 20, -72)
   layers.divider = divider
 
-  -- Ask SI button (own layer)
+  -- Ask SI button (own layer). Border sits BELOW the fill (it previously
+  -- drew on BORDER over the fill and swallowed the button into the chrome).
   local askButton = CreateFrame("Button", nil, art)
-  askButton:SetSize(200, 36)
-  askButton:SetPoint("BOTTOM", art, "BOTTOM", 0, 24)
-  askButton.bg = askButton:CreateTexture(nil, "BACKGROUND")
-  askButton.bg:SetAllPoints()
-  askButton.bg:SetColorTexture(0.85, 0.65, 0.20, 1)
-  askButton.border = askButton:CreateTexture(nil, "BORDER")
+  askButton:SetSize(220, 40)
+  askButton:SetPoint("BOTTOM", art, "BOTTOM", 0, 28)
+  askButton:SetFrameLevel(art:GetFrameLevel() + 6)
+  askButton.border = askButton:CreateTexture(nil, "BACKGROUND", nil, -8)
   askButton.border:SetPoint("TOPLEFT", -2, 2)
   askButton.border:SetPoint("BOTTOMRIGHT", 2, -2)
-  askButton.border:SetColorTexture(0.72, 0.55, 0.22, 1)
-  askButton:SetFrameLevel(askButton:GetFrameLevel() + 1)
-  askButton.text = FS(askButton, nil, 14, "OUTLINE")
+  askButton.border:SetColorTexture(1, 1, 1, 1)
+  askButton.border._qgThemeWhite = true
+  askButton.border:SetVertexColor(0.72, 0.55, 0.22, 1)
+  askButton.bg = askButton:CreateTexture(nil, "BACKGROUND", nil, 1)
+  askButton.bg:SetAllPoints()
+  askButton.bg:SetColorTexture(1, 1, 1, 1)
+  askButton.bg._qgThemeWhite = true
+  askButton.bg:SetVertexColor(0.85, 0.65, 0.20, 1)
+  askButton.text = FS(askButton, nil, 16, "OUTLINE")
+  askButton.text:SetJustifyH("CENTER")
   askButton.text:SetPoint("CENTER")
   askButton.text:SetText("Ask SI")
+  askButton.getTip = function()
+    return "Ask SI", "Ask a question about your current quest (stub until P2). Also /qg ask."
+  end
+  askButton:SetScript("OnEnter", ShowTip)
+  askButton:SetScript("OnLeave", HideTip)
   askButton:SetScript("OnClick", function()
     if NS.OpenAskSI then NS.OpenAskSI() end
   end)
@@ -351,7 +517,7 @@ function NS.BuildUI()
   -- ===== LESS mode layers =====
   local lessCompass = CreateFrame("Frame", nil, art)
   lessCompass:SetSize(70, 70)
-  lessCompass:SetPoint("LEFT", art, "LEFT", 16, 0)
+  lessCompass:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", 16, 14)
   lessCompass.face = Solid(lessCompass, 0.25, 0.20, 0.12, 1)
   lessCompass.face:SetAllPoints()
   lessCompass.ring = Solid(lessCompass, 0.72, 0.55, 0.22, 1)
@@ -391,26 +557,33 @@ function NS.BuildUI()
   layers.lessProgress = lessProgress
 
   local modeChrome = CreateFrame("Frame", nil, art)
-  modeChrome:SetSize(56, 70)
-  modeChrome:SetPoint("RIGHT", art, "RIGHT", -12, 0)
+  modeChrome:SetSize(56, 56)
+  modeChrome:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", -12, 12)
   modeChrome.bg = Solid(modeChrome, 0.72, 0.55, 0.22, 1)
   modeChrome.bg:SetAllPoints()
   modeChrome.inner = Solid(modeChrome, 0.18, 0.12, 0.07, 0.96)
   modeChrome.inner:SetPoint("TOPLEFT", 3, -3)
   modeChrome.inner:SetPoint("BOTTOMRIGHT", -3, 3)
   modeChrome.label = FS(modeChrome, nil, 12, "OUTLINE")
+  modeChrome.label:SetJustifyH("CENTER")
   modeChrome.label:SetPoint("CENTER", 0, 8)
   modeChrome.chevron = FS(modeChrome, nil, 14, "OUTLINE")
-  modeChrome.chevron:SetPoint("CENTER", 0, -12)
+  modeChrome.chevron:SetPoint("CENTER", 0, -10)
   modeChrome.chevron:SetText("v")
+  -- Secondary mode control (Less only). Primary is chromeControls.btnMode.
   modeChrome:EnableMouse(true)
-  modeChrome:SetScript("OnMouseUp", function() NS.CycleMode() end)
+  modeChrome:SetScript("OnMouseUp", function() NS.CycleMode(1) end)
+  modeChrome.getTip = function()
+    return "Cycle view mode", "Next: " .. NextModeLabel(1)
+  end
+  modeChrome:SetScript("OnEnter", ShowTip)
+  modeChrome:SetScript("OnLeave", HideTip)
   layers.modeChrome = modeChrome
 
   -- ===== COMPASS mode layers =====
   local compassOnly = CreateFrame("Frame", nil, art)
   compassOnly:SetSize(160, 160)
-  compassOnly:SetPoint("CENTER", art, "CENTER", 0, 8)
+  compassOnly:SetPoint("CENTER", art, "CENTER", 0, -6)
   compassOnly.face = Solid(compassOnly, 0.30, 0.25, 0.18, 1)
   compassOnly.face:SetAllPoints()
   compassOnly.ring = Solid(compassOnly, 0.72, 0.55, 0.22, 1)
@@ -449,20 +622,33 @@ function NS.BuildUI()
   -- Crest for compass mode top
   local compassCrest = Solid(art, 0.90, 0.78, 0.40, 1)
   compassCrest:SetSize(36, 16)
-  compassCrest:SetPoint("TOP", art, "TOP", 0, -10)
+  compassCrest:SetPoint("TOP", art, "TOP", 0, 6)
   layers.compassCrest = compassCrest
 
-  -- Minimized restore chip
+  -- Minimized restore chip (click = Expand; drag = move when unlocked).
+  -- The Expand + Close buttons on chromeControls stay visible next to it.
   local miniBar = CreateFrame("Button", nil, art)
-  miniBar:SetSize(160, 28)
-  miniBar:SetPoint("CENTER", art, "CENTER", 0, 0)
+  miniBar:SetSize(130, 26)
+  miniBar:SetPoint("LEFT", art, "LEFT", 8, 0)
+  miniBar:SetFrameLevel(art:GetFrameLevel() + 15)
   miniBar.bg = miniBar:CreateTexture(nil, "BACKGROUND")
   miniBar.bg:SetAllPoints()
-  miniBar.bg:SetColorTexture(0.72, 0.55, 0.22, 1)
+  miniBar.bg:SetColorTexture(1, 1, 1, 1)
+  miniBar.bg._qgThemeWhite = true
+  miniBar.bg:SetVertexColor(0.72, 0.55, 0.22, 1)
   miniBar.text = FS(miniBar, nil, 12, "OUTLINE")
+  miniBar.text:SetJustifyH("CENTER")
   miniBar.text:SetPoint("CENTER")
   miniBar.text:SetText("QuestGrind")
+  miniBar:RegisterForDrag("LeftButton")
+  miniBar:SetScript("OnDragStart", function() StartHUDDrag() end)
+  miniBar:SetScript("OnDragStop", function() StopHUDDrag() end)
   miniBar:SetScript("OnClick", function() NS.ToggleMinimize() end)
+  miniBar.getTip = function()
+    return "QuestGrind (minimized)", "Click to expand. Drag to move when unlocked."
+  end
+  miniBar:SetScript("OnEnter", ShowTip)
+  miniBar:SetScript("OnLeave", HideTip)
   miniBar:Hide()
   layers.miniBar = miniBar
 
@@ -473,30 +659,39 @@ function NS.BuildUI()
   end
 end
 
+-- Window controls are NOT in these lists: they live on chromeControls,
+-- which is shown in every mode by LayoutControls().
 local FULL_LAYERS = {
   "routeRow", "stepRow", "trackerRow", "compassLarge", "statusBlock",
   "askButton", "divider", "bottomJewel", "emblem", "title",
-  "btnClose", "btnMinimize", "btnEdit", "btnModeCycle",
 }
 local LESS_LAYERS = {
   "lessCompass", "lessTitle", "lessDistance", "lessProgress", "modeChrome",
-  "btnClose", "btnMinimize", "btnEdit",
 }
 local COMPASS_LAYERS = {
   "compassOnlyFace", "compassPlate", "compassCrest",
-  "btnClose", "btnMinimize", "btnEdit", "btnModeCycle",
 }
 local ALWAYS = {
   "chromeOuter", "chromeInner", "cornerTL", "cornerTR", "cornerBL", "cornerBR",
+}
+NS.FULL_LAYERS = FULL_LAYERS
+NS.LESS_LAYERS = LESS_LAYERS
+NS.COMPASS_LAYERS = COMPASS_LAYERS
+
+-- Never hidden by HideAllContent (chrome + persistent controls).
+local PERSIST = {
+  art = true,
+  chromeOuter = true, chromeInner = true,
+  cornerTL = true, cornerTR = true, cornerBL = true, cornerBR = true,
+  chromeControls = true,
+  btnModeCycle = true, btnEdit = true, btnMinimize = true, btnClose = true,
+  moveGrip = true,
 }
 
 local function HideAllContent()
   local name, frame
   for name, frame in pairs(layers) do
-    if name ~= "art" and name ~= "chromeOuter" and name ~= "chromeInner"
-      and name ~= "cornerTL" and name ~= "cornerTR"
-      and name ~= "cornerBL" and name ~= "cornerBR"
-      and name ~= "miniBar" then
+    if not PERSIST[name] then
       frame:Hide()
     end
   end
@@ -512,9 +707,6 @@ end
 
 local function ResizeForMode(mode)
   local a = ART[mode] or ART.full
-  if NS.db and NS.db.minimized then
-    a = ART.minimized
-  end
   layers.art:SetSize(a.w, a.h)
   NS.root:SetSize(a.w + PAD * 2, a.h + PAD * 2)
   -- Re-anchor chrome inner inset
@@ -523,55 +715,117 @@ local function ResizeForMode(mode)
   layers.chromeInner:SetPoint("BOTTOMRIGHT", layers.art, "BOTTOMRIGHT", -8, 8)
 end
 
-function NS.ApplyMode()
-  if not NS.root then return end
-  if NS.db and NS.db.minimized then
-    NS.ApplyMinimize()
-    return
+local function PaintGrip()
+  local grip = layers.moveGrip
+  if not grip then return end
+  local th = NS.GetTheme()
+  if NS.db and NS.db.locked then
+    grip.text:SetText("Locked")
+    NS.SetVertexColor(grip.text, th.muted)
+  else
+    grip.text:SetText("Move")
+    NS.SetVertexColor(grip.text, th.text)
   end
-  local mode = (NS.db and NS.db.mode) or "full"
+end
+
+--- Position + label the persistent controls. Always leaves the strip visible.
+local function LayoutControls(minimized)
+  local cc = layers.chromeControls
+  if not cc then return end
+  local art = layers.art
+  local close, minb, edit, modeb, grip = cc.btnClose, cc.btnMinimize, cc.btnEdit, cc.btnMode, cc.moveGrip
+
+  cc:ClearAllPoints()
+  close:ClearAllPoints()
+  close:SetPoint("RIGHT", cc, "RIGHT", 0, 0)
+  minb:ClearAllPoints()
+  minb:SetPoint("RIGHT", close, "LEFT", -CTRL_CLOSE_GAP, 0)
+
+  if minimized then
+    minb.text:SetText("Expand")
+    minb:SetWidth(W_EXPAND)
+    edit:Hide()
+    modeb:Hide()
+    grip:Hide()
+    cc:SetSize(W_EXPAND + CTRL_CLOSE_GAP + W_CLOSE, CTRL_H)
+    cc:SetPoint("RIGHT", art, "RIGHT", -8, 0)
+  else
+    minb.text:SetText("Min")
+    minb:SetWidth(W_MIN)
+    edit:ClearAllPoints()
+    edit:SetPoint("RIGHT", minb, "LEFT", -CTRL_GAP, 0)
+    modeb:ClearAllPoints()
+    modeb:SetPoint("RIGHT", edit, "LEFT", -CTRL_GAP, 0)
+    modeb.text:SetText(MODE_LABEL[CurrentMode()] or "Full")
+    grip:ClearAllPoints()
+    grip:SetPoint("TOPLEFT", art, "TOPLEFT", CTRL_INSET, -CTRL_INSET)
+    edit:Show()
+    modeb:Show()
+    grip:Show()
+    cc:SetSize(W_MODE + W_EDIT + W_MIN + W_CLOSE + CTRL_GAP * 2 + CTRL_CLOSE_GAP, CTRL_H)
+    cc:SetPoint("TOPRIGHT", art, "TOPRIGHT", -CTRL_INSET, -CTRL_INSET)
+  end
+  close:Show()
+  minb:Show()
+  cc:Show()
+  PaintGrip()
+end
+
+--- Single layout pass for every state. Compass / Less / minimized never hide
+--- chromeControls and never Hide() the root.
+local function ApplyLayout()
+  if not NS.root or not layers.art then return end
+  local minimized = NS.db and NS.db.minimized
+  local mode = CurrentMode()
+  if NS.db and NS.db.mode ~= mode then NS.db.mode = mode end
+
   HideAllContent()
-  layers.miniBar:Hide()
   ShowList(ALWAYS)
-  if mode == "less" then
-    ShowList(LESS_LAYERS)
-    if layers.modeChrome and layers.modeChrome.label then
-      layers.modeChrome.label:SetText("Less")
+  if minimized then
+    layers.miniBar:Show()
+    ResizeForMode("minimized")
+  else
+    if mode == "less" then
+      ShowList(LESS_LAYERS)
+      if layers.modeChrome and layers.modeChrome.label then
+        layers.modeChrome.label:SetText("Less")
+      end
+    elseif mode == "compass" then
+      ShowList(COMPASS_LAYERS)
+    else
+      ShowList(FULL_LAYERS)
     end
-  elseif mode == "compass" then
-    ShowList(COMPASS_LAYERS)
-  else
-    ShowList(FULL_LAYERS)
+    ResizeForMode(mode)
   end
-  ResizeForMode(mode)
-  if NS.Refresh then
-    NS.Refresh()
-  else
-    NS.RefreshMock()
+  LayoutControls(minimized)
+
+  if not minimized then
+    if NS.Refresh then
+      NS.Refresh()
+    elseif NS.RefreshMock then
+      NS.RefreshMock()
+    end
   end
   NS.ApplyTheme()
 end
+NS.ApplyLayout = ApplyLayout
+
+function NS.ApplyMode()
+  ApplyLayout()
+end
 
 function NS.ApplyMinimize()
-  if not NS.root then return end
-  if NS.db and NS.db.minimized then
-    HideAllContent()
-    ShowList(ALWAYS)
-    layers.miniBar:Show()
-    ResizeForMode("minimized")
-    NS.ApplyTheme()
-  else
-    NS.ApplyMode()
-  end
+  ApplyLayout()
 end
 
 function NS.ApplyLock()
-  -- Drag gated in OnDragStart via NS.db.locked
+  -- Drag gated in StartHUDDrag via NS.db.locked; grip label reflects state.
+  if NS.root then PaintGrip() end
 end
 
 function NS.ApplyTheme()
   if not NS.root then return end
-  local th = NS.GetTheme()
+  local th = NS.GetTheme(NS.db and NS.db.theme)
   local set = NS.SetVertexColor
 
   set(layers.chromeOuter.tex, th.chrome)
@@ -592,13 +846,16 @@ function NS.ApplyTheme()
 
   local function paintBtn(b)
     if not b then return end
-    set(b.bg, th.chromeHi)
+    if b.border then set(b.border, th.chromeHi) end
+    set(b.bg, th.panel, 1)
     set(b.text, th.text)
   end
   paintBtn(layers.btnClose)
   paintBtn(layers.btnMinimize)
   paintBtn(layers.btnEdit)
   paintBtn(layers.btnModeCycle)
+  paintBtn(layers.moveGrip)
+  PaintGrip()
 
   if layers.routeRow then
     set(layers.routeRow.icon.tex, th.chrome)

@@ -164,12 +164,14 @@ NS.THEMES = {
   },
 }
 
+-- Resolve palette by id (string). Never returns a half-applied / mutated table.
 function NS.GetTheme(id)
-  if id and NS.THEMES[id] then
-    return NS.THEMES[id]
+  local key = id
+  if type(key) ~= "string" or key == "" then
+    key = NS.db and NS.db.theme
   end
-  if NS.db and NS.db.theme and NS.THEMES[NS.db.theme] then
-    return NS.THEMES[NS.db.theme]
+  if type(key) == "string" and NS.THEMES[key] then
+    return NS.THEMES[key]
   end
   return NS.THEMES.default
 end
@@ -178,16 +180,48 @@ function NS.ApplyThemeColors(id)
   return NS.GetTheme(id)
 end
 
+-- Paint a FontString or solid Texture with a theme color.
+-- Root cause of theme-stick / contrast collapse (0.2.1): solids were created with
+-- SetColorTexture(themeRGB) and re-themed by calling SetColorTexture again. On the
+-- Forever client that re-apply is flaky — returning to a prior theme sometimes left
+-- the old baked solid (or a vertex multiply on top of it), so chrome and panel could
+-- end up the same muddy color. Fix: one-time promote each texture to a white solid
+-- base, then always tint with SetVertexColor so every switch (including back to a
+-- previous theme) writes the true chrome AND panel colors with contrast preserved.
 function NS.SetVertexColor(obj, c, a)
   if not obj or not c then return end
+  local r, g, b = c.r, c.g, c.b
+  if type(r) ~= "number" then return end
   local alpha = a
   if alpha == nil then alpha = c.a end
   if alpha == nil then alpha = 1 end
+
+  -- FontString (has SetTextColor, no SetColorTexture)
+  if obj.SetTextColor and not obj.SetColorTexture then
+    obj:SetTextColor(r, g, b, alpha)
+    return
+  end
+
+  if obj.SetColorTexture and obj.SetVertexColor then
+    if not obj._qgThemeWhite then
+      obj:SetColorTexture(1, 1, 1, 1)
+      obj._qgThemeWhite = true
+    end
+    obj:SetVertexColor(r, g, b, alpha)
+    return
+  end
+
+  if obj.SetColorTexture then
+    obj:SetColorTexture(r, g, b, alpha)
+    return
+  end
+
+  if obj.SetVertexColor then
+    obj:SetVertexColor(r, g, b, alpha)
+    return
+  end
+
   if obj.SetTextColor then
-    obj:SetTextColor(c.r, c.g, c.b, alpha)
-  elseif obj.SetColorTexture then
-    obj:SetColorTexture(c.r, c.g, c.b, alpha)
-  elseif obj.SetVertexColor then
-    obj:SetVertexColor(c.r, c.g, c.b, alpha)
+    obj:SetTextColor(r, g, b, alpha)
   end
 end
