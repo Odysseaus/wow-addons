@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1 — P0 UX fix (mode cycle, chrome controls, Ask SI)
+
+Fixes Odysseaus P0 FAIL list (P1 features held; existing P1 modules unchanged):
+
+- **Persistent control strip** (`layers.chromeControls`) on Full, Less, Compass and minimized — excluded from `HideAllContent`, frame level above all content, anchored inside art TOPRIGHT. Compass no longer buries the controls.
+- **Mode button** shows `Full` / `Less` / `Compass` (was cryptic `M`); tooltip "Cycle view mode"; left-click next, right-click previous; works from every mode (Compass → Full). Less `modeChrome` kept as a secondary control (moved so it no longer overlaps the strip).
+- **Edit** button labeled `Edit` (was `E`) with Edit Mode tooltip.
+- **Min / Expand**: `Min` collapses to a small bar; when minimized the strip shows `Expand` + `X`, and the `QuestGrind` bar also expands on click.
+- **Close (X)** prints `HUD hidden — type /qg show to bring it back.`; extra gap from Min to avoid misclicks. `/qg show`, `/qg mode <full|less|compass>`, `/qg full|less|compass`, `/qg expand` always recover.
+- **Move** grip (top-left) + draggable title; tooltip shows lock state; grip reads `Locked` when `/qg lock` is on. Root clamped to screen.
+- **Ask SI** button bigger (220×40, 16pt) and fixed: its border texture was drawn over the fill, hiding the button in the chrome.
+- Art sizes adjusted so the strip never overlaps content: Full 400×440, Less 440×128, Compass 240×264, minimized 240×40.
+- Single `ApplyLayout()` path for mode + minimize (no Hide() of the root on mode change).
+
 ## 0.2.0 — P1 live questing
 
 - Live quest log read (`Quests.lua`) with C_QuestLog + legacy GetQuestLog* guards for Forever

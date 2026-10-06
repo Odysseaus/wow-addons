@@ -91,19 +91,36 @@ function NS.Refresh()
   return route or NS.liveRoute
 end
 
-function NS.CycleMode()
+local MODE_NAMES = { full = "Full", less = "Less", compass = "Compass" }
+
+--- Cycle Full -> Less -> Compass -> Full (step = -1 goes backwards).
+--- Always un-minimizes and never hides the HUD, so the player can't get stuck.
+function NS.CycleMode(step)
   if not NS.db then NS.CopyDefaults() end
+  step = tonumber(step) or 1
   local i = 1
   local n
   for n = 1, #NS.MODES do
     if NS.MODES[n] == NS.db.mode then i = n end
   end
-  i = i + 1
+  i = i + step
   if i > #NS.MODES then i = 1 end
-  NS.db.mode = NS.MODES[i]
+  if i < 1 then i = #NS.MODES end
+  NS.SetMode(NS.MODES[i])
+end
+
+function NS.SetMode(mode)
+  if not NS.db then NS.CopyDefaults() end
+  mode = string.lower(tostring(mode or "full"))
+  if not MODE_NAMES[mode] then
+    Print("unknown mode: " .. tostring(mode) .. " (use full, less, or compass).")
+    return
+  end
+  NS.db.mode = mode
   NS.db.minimized = false
+  if NS.root and not NS.root:IsShown() then NS.root:Show() end
   if NS.ApplyMode then NS.ApplyMode() end
-  Print("mode " .. NS.db.mode .. ".")
+  Print("mode " .. MODE_NAMES[mode] .. ".")
 end
 
 function NS.SetTheme(id)
@@ -121,6 +138,7 @@ end
 function NS.ToggleMinimize()
   if not NS.db then NS.CopyDefaults() end
   NS.db.minimized = not NS.db.minimized
+  if NS.root and not NS.root:IsShown() then NS.root:Show() end
   if NS.ApplyMinimize then NS.ApplyMinimize() end
 end
 
@@ -131,7 +149,7 @@ function NS.ToggleLock()
   if NS.db.locked then
     Print("window locked.")
   else
-    Print("lock cleared — drag to move.")
+    Print("lock cleared — drag the Move grip (or the title) to move.")
   end
 end
 
@@ -168,13 +186,18 @@ function NS.ResetDB()
 end
 
 function NS.ShowHUD()
-  if NS.root then NS.root:Show() end
+  if NS.root then
+    NS.root:Show()
+    -- Re-run layout so controls / mode are always in a sane, visible state.
+    if NS.ApplyMode then NS.ApplyMode() end
+  end
   if NS.UpdateMapPins then NS.UpdateMapPins(NS.liveRoute) end
 end
 
 function NS.HideHUD()
   if NS.root then NS.root:Hide() end
   if NS.ClearMapPins then NS.ClearMapPins() end
+  Print("HUD hidden — type /qg show to bring it back.")
 end
 
 local function SlashHandler(msg)
@@ -186,7 +209,13 @@ local function SlashHandler(msg)
   elseif cmd == "hide" then
     NS.HideHUD()
   elseif cmd == "mode" then
-    NS.CycleMode()
+    if rest and rest ~= "" then
+      NS.SetMode(string.lower(rest))
+    else
+      NS.CycleMode(1)
+    end
+  elseif cmd == "full" or cmd == "less" or cmd == "compass" then
+    NS.SetMode(cmd)
   elseif cmd == "theme" then
     if rest and rest ~= "" then
       NS.SetTheme(string.lower(rest))
@@ -203,6 +232,8 @@ local function SlashHandler(msg)
     NS.ResetDB()
   elseif cmd == "min" or cmd == "minimize" then
     NS.ToggleMinimize()
+  elseif cmd == "expand" then
+    if NS.db and NS.db.minimized then NS.ToggleMinimize() else NS.ShowHUD() end
   elseif cmd == "refresh" then
     NS.forceMock = false
     if NS.db then NS.db.forceMock = false end
@@ -216,7 +247,8 @@ local function SlashHandler(msg)
   elseif cmd == "prev" then
     if NS.PrevQuest then NS.PrevQuest() end
   else
-    Print("commands: show | hide | mode | theme <id> | edit | lock | ask | min | refresh | mock | next | prev | reset | help")
+    Print("commands: show | hide | mode [full|less|compass] | theme <id> | edit | lock | ask | min | expand | refresh | mock | next | prev | reset | help")
+    Print("HUD buttons: Move (drag) | Full/Less/Compass (cycle view mode) | Edit (themes) | Min / Expand | X (hide; /qg show restores). Full mode: Ask SI.")
   end
 end
 
@@ -246,7 +278,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if NS.ApplyLock then NS.ApplyLock() end
     NS.Refresh()
     NS.uiReady = true
-    Print("P1 live questing ready — /qg help. Live log when available; /qg mock for Barrens Loop. Ask SI stubs (P2).")
+    Print("ready (0.2.1) — HUD buttons: Full/Less/Compass, Edit, Min, X. /qg help. /qg show if hidden. Ask SI stubs (P2).")
   elseif event == "UNIT_QUEST_LOG_CHANGED" then
     if arg1 == "player" or arg1 == nil then
       if NS.uiReady then NS.Refresh() end

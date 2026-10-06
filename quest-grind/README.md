@@ -21,7 +21,19 @@ Copy the `QuestGrind/` folder into `Interface/AddOns/`.
 | **Less** | Compact step + distance + progress + mode chrome |
 | **Compass** | Direction rose + distance |
 
-Cycle with `/qg mode` or the mode control on the HUD. Movable when unlocked (`/qg lock`). Minimize via the HUD button.
+### HUD controls (0.2.1)
+
+An always-visible control strip sits at the top of the HUD in **every** mode (and when minimized):
+
+| Control | What it does |
+|---------|--------------|
+| **Move** (top-left) | Drag to move. Reads **Locked** when `/qg lock` is on. The title also drags. |
+| **Full / Less / Compass** | Mode button — label shows the current mode. Left-click = next, right-click = previous. |
+| **Edit** | Opens Edit Mode (theme picker). |
+| **Min** / **Expand** | Collapse to a small bar; click **Expand** (or the `QuestGrind` bar) to restore. |
+| **X** | Hide the HUD. `/qg show` brings it back (a chat hint is printed). |
+
+Also: `/qg mode [full|less|compass]`, `/qg full`, `/qg less`, `/qg compass`, `/qg expand`.
 
 ## Live vs mock
 
@@ -67,7 +79,8 @@ The **Ask SI** button opens a stub dialog.
 
 ```
 /questgrind (alias /qg)
-  show | hide | mode | theme <id> | edit | lock | ask | min
+  show | hide | mode [full|less|compass] | full | less | compass
+  theme <id> | edit | lock | ask | min | expand
   refresh | mock | next | prev | reset | help
 ```
 
