@@ -1,16 +1,46 @@
 local _, NS = ...
 
--- 0.2.9: MAIN world-map route only (minimap overlays dropped).
+-- Main world-map route only (minimap overlays dropped).
 -- Up to 7 numbered stops in QuestGrind completion order. First objective is
 -- the START of the route (no line from map center / player to #1). Chain
 -- locations share one order number; distinct quests get distinct colors.
 -- Lines stop short of Blizzard quest icons; untriggered chain steps get
 -- QuestGrind number circles (no Blizzard pin yet).
+--
+-- MapCanvas places pins from TOPLEFT with inverted Y (same math as Blizzard):
+--   ox, oy = width * nx, -height * ny
+--   SetPoint("CENTER", canvas, "TOPLEFT", ox, oy)
+-- Markers use that anchor and a low frame level so they sit on the quest
+-- icon and draw behind it. Do not use BOTTOMLEFT + positive Y.
 
 local MAX_STOPS = 7
 local ICON_CLEAR_PX = 16 -- pull line endpoints short of icon centers
 local PIN_SIZE = 22
 local LINE_THICK = 2.5
+local OVERLAY_LEVEL_OFFSET = 8 -- canvas level + this; stay under quest pins
+
+-- Live Blizzard pins whose parent is the real map canvas. Quest templates
+-- are listed first so a quest bang wins when we snap coordinates.
+local QUEST_PIN_TEMPLATES = {
+  "QuestPinTemplate",
+  "StorylineQuestPinTemplate",
+  "BonusObjectivePinTemplate",
+  "WorldQuestPinTemplate",
+  "CampaignQuestPinTemplate",
+  "QuestOfferPinTemplate",
+}
+local PARENT_PIN_TEMPLATES = {
+  "QuestPinTemplate",
+  "StorylineQuestPinTemplate",
+  "BonusObjectivePinTemplate",
+  "WorldQuestPinTemplate",
+  "CampaignQuestPinTemplate",
+  "QuestOfferPinTemplate",
+  "AreaPOIPinTemplate",
+  "WorldMapUnitPinTemplate",
+  "DungeonEntrancePinTemplate",
+  "GroupMembersPinTemplate",
+}
 
 local overlay
 local pins = {}
@@ -25,15 +55,187 @@ local function SafeCall(fn, ...)
   return a, b, c, d
 end
 
+-- WoW widgets are tables; some clients expose them as userdata.
+local function IsWidget(obj)
+  local t = type(obj)
+  return t == "table" or t == "userdata"
+end
+
+local function FrameSize(f)
+  if not IsWidget(f) or type(f.GetWidth) ~= "function" or type(f.GetHeight) ~= "function" then
+    return 0, 0
+  end
+  local w = SafeCall(f.GetWidth, f)
+  local h = SafeCall(f.GetHeight, f)
+  if type(w) ~= "number" then w = 0 end
+  if type(h) ~= "number" then h = 0 end
+  return w, h
+end
+
+local function UsableCanvas(f)
+  local w, h = FrameSize(f)
+  return w >= 1 and h >= 1
+end
+
+-- The scroll viewport is window space. Pins parented there drift off the
+-- quest icons whenever a real canvas child exists.
+local function IsScrollViewport(f)
+  if not f or not WorldMapFrame then return false end
+  local sc = WorldMapFrame.ScrollContainer
+  return sc and f == sc
+end
+
+-- EnumeratePinsByTemplate yields either `next, pool, nil` (pairs) or a
+-- closure. Walk a bounded number of pins; ignore a missing API.
+local function ForEachTemplatePin(templates, fn)
+  if not WorldMapFrame or type(WorldMapFrame.EnumeratePinsByTemplate) ~= "function" then
+    return
+  end
+  if type(templates) ~= "table" or type(fn) ~= "function" then return end
+  local ti
+  for ti = 1, #templates do
+    local ok, iter, state, ctrl = pcall(WorldMapFrame.EnumeratePinsByTemplate, WorldMapFrame, templates[ti])
+    if ok and type(iter) == "function" then
+      local guard = 0
+      while guard < 250 do
+        guard = guard + 1
+        local ok2, a, b = pcall(iter, state, ctrl)
+        if not ok2 or a == nil then break end
+        -- pairs() key is the control variable. Array pools key by index and
+        -- yield the pin as the second value; hash pools key by the pin.
+        ctrl = a
+        local pin
+        if IsWidget(a) and type(a.GetParent) == "function" then
+          pin = a
+        elseif IsWidget(b) and type(b.GetParent) == "function" then
+          pin = b
+        end
+        if pin then
+          local stop = fn(pin)
+          if stop then return end
+        end
+      end
+    end
+  end
+end
+
+local function BlizzardPinCanvas()
+  local found
+  ForEachTemplatePin(PARENT_PIN_TEMPLATES, function(pin)
+    if type(pin.GetParent) ~= "function" then return false end
+    local parent = SafeCall(pin.GetParent, pin)
+    if parent and UsableCanvas(parent) and not IsScrollViewport(parent) then
+      found = parent
+      return true
+    end
+    return false
+  end)
+  return found
+end
+
 local function FindWorldMapParent()
   if not WorldMapFrame then return nil end
-  if WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer.Child then
-    return WorldMapFrame.ScrollContainer.Child
+
+  -- Same parent as a live Blizzard pin, when one exists.
+  local fromPin = BlizzardPinCanvas()
+  if fromPin then return fromPin end
+
+  if type(WorldMapFrame.GetCanvas) == "function" then
+    local canvas = SafeCall(WorldMapFrame.GetCanvas, WorldMapFrame)
+    if UsableCanvas(canvas) and not IsScrollViewport(canvas) then
+      return canvas
+    end
   end
-  if WorldMapFrame.ScrollContainer then return WorldMapFrame.ScrollContainer end
-  if WorldMapDetailFrame then return WorldMapDetailFrame end
-  if WorldMapButton then return WorldMapButton end
-  return WorldMapFrame
+
+  local sc = WorldMapFrame.ScrollContainer
+  if IsWidget(sc) then
+    if sc.Child and UsableCanvas(sc.Child) and not IsScrollViewport(sc.Child) then
+      return sc.Child
+    end
+    if type(sc.GetCanvas) == "function" then
+      local canvas = SafeCall(sc.GetCanvas, sc)
+      if UsableCanvas(canvas) and not IsScrollViewport(canvas) then
+        return canvas
+      end
+    end
+  end
+
+  if WorldMapDetailFrame and UsableCanvas(WorldMapDetailFrame) and not IsScrollViewport(WorldMapDetailFrame) then
+    return WorldMapDetailFrame
+  end
+  if WorldMapButton and UsableCanvas(WorldMapButton) and not IsScrollViewport(WorldMapButton) then
+    return WorldMapButton
+  end
+
+  -- Canvas exists but is not sized yet: do not fall back to the viewport.
+  local childExists = type(WorldMapFrame.GetCanvas) == "function"
+  if IsWidget(sc) and (sc.Child or type(sc.GetCanvas) == "function") then
+    childExists = true
+  end
+  if childExists then return nil end
+  if UsableCanvas(WorldMapFrame) and not IsScrollViewport(WorldMapFrame) then
+    return WorldMapFrame
+  end
+  return nil
+end
+
+-- Anchor space is the map canvas, not the overlay frame. Blizzard pins are
+-- positioned against that canvas; measuring the overlay before it lays out
+-- would put markers in the wrong pixel space.
+local function AnchorFrame(overlayFrame)
+  if overlayFrame and type(overlayFrame.GetParent) == "function" then
+    local gp = overlayFrame:GetParent()
+    if gp and UsableCanvas(gp) and not IsScrollViewport(gp) then
+      return gp
+    end
+  end
+  return overlayFrame
+end
+
+local function LowestQuestPinLevel()
+  local lowest
+  ForEachTemplatePin(QUEST_PIN_TEMPLATES, function(pin)
+    if type(pin.GetFrameLevel) ~= "function" then return false end
+    local lv = SafeCall(pin.GetFrameLevel, pin)
+    if type(lv) == "number" and lv > 1 then
+      if not lowest or lv < lowest then lowest = lv end
+    end
+    return false
+  end)
+  return lowest
+end
+
+local function ApplyOverlayDepth(f, parent)
+  if not f or not parent then return end
+  -- Same strata as the canvas. Never force TOOLTIP (that paints over quest
+  -- bangs). If the canvas itself is HIGH, matching it is required so frame
+  -- level, not a lower strata, is what puts us under those bangs.
+  local strata = "MEDIUM"
+  if type(parent.GetFrameStrata) == "function" then
+    local s = SafeCall(parent.GetFrameStrata, parent)
+    if type(s) == "string" and s ~= "" and s ~= "TOOLTIP" then
+      strata = s
+    end
+  end
+  pcall(f.SetFrameStrata, f, strata)
+
+  local base = 1
+  if type(parent.GetFrameLevel) == "function" then
+    local lv = SafeCall(parent.GetFrameLevel, parent)
+    if type(lv) == "number" and lv > 0 then base = lv end
+  end
+  local level = base + OVERLAY_LEVEL_OFFSET
+  local lowest = LowestQuestPinLevel()
+  -- Number circles are parented to this overlay at overlay+1. Keep that
+  -- strictly under the lowest Blizzard quest pin when one is on the map.
+  if type(lowest) == "number" and lowest > base then
+    local cap = lowest - 2
+    if cap < base then cap = base end
+    if level > cap then level = cap end
+  end
+  if level < base then level = base end
+  if level > 10000 then level = 10000 end
+  pcall(f.SetFrameLevel, f, level)
 end
 
 local function CurrentMapID()
@@ -49,19 +251,23 @@ local function CurrentMapID()
 end
 
 local function EnsureOverlay()
-  if overlay and overlay:GetParent() then return overlay end
   local parent = FindWorldMapParent()
   if not parent then return nil end
-  local f = CreateFrame("Frame", "QuestGrindMapRoute", parent)
-  f:SetAllPoints(parent)
-  f:SetFrameStrata("TOOLTIP")
-  local base = 0
-  if parent.GetFrameLevel then base = parent:GetFrameLevel() or 0 end
-  f:SetFrameLevel(base + 50)
-  f:EnableMouse(false)
-  f:Hide()
-  overlay = f
-  return f
+  if not overlay then
+    local f = CreateFrame("Frame", "QuestGrindMapRoute", parent)
+    f:SetAllPoints(parent)
+    f:EnableMouse(false)
+    f:Hide()
+    overlay = f
+  elseif overlay:GetParent() ~= parent then
+    local ok = pcall(overlay.SetParent, overlay, parent)
+    if not ok then return nil end
+    overlay:ClearAllPoints()
+    overlay:SetAllPoints(parent)
+  end
+  ApplyOverlayDepth(overlay, parent)
+  overlay:EnableMouse(false)
+  return overlay
 end
 
 local function ThemeGold()
@@ -159,11 +365,13 @@ local function EnsureLine(i)
 end
 
 local function NormToPixel(parent, x, y)
+  if not parent or type(parent.GetWidth) ~= "function" then return nil, nil end
   local w = parent:GetWidth() or 0
   local h = parent:GetHeight() or 0
   if w <= 0 or h <= 0 then return nil, nil end
-  -- Normalized 0..1, bottom-left origin (Forever / classic detail frame).
-  return x * w, y * h
+  -- Normalized 0..1, TOPLEFT origin. Y grows south, so the pixel offset is
+  -- negative. This is MapCanvasMixin:ApplyPinPosition.
+  return x * w, -(y * h)
 end
 
 -- Draw a line between pixel points. clearStart/clearEnd pull endpoints short
@@ -186,8 +394,8 @@ local function DrawLinePixels(line, parent, x1, y1, x2, y2, clearStart, clearEnd
   if line._qgIsLine then
     if line.SetColorTexture then pcall(line.SetColorTexture, line, r, g, b, a) end
     if line.SetStartPoint then
-      pcall(line.SetStartPoint, line, "BOTTOMLEFT", parent, sx, sy)
-      pcall(line.SetEndPoint, line, "BOTTOMLEFT", parent, ex, ey)
+      pcall(line.SetStartPoint, line, "TOPLEFT", parent, sx, sy)
+      pcall(line.SetEndPoint, line, "TOPLEFT", parent, ex, ey)
     end
     if line.Show then line:Show() end
     return
@@ -200,7 +408,7 @@ local function DrawLinePixels(line, parent, x1, y1, x2, y2, clearStart, clearEnd
   end
   line:ClearAllPoints()
   line:SetSize(llen, LINE_THICK)
-  line:SetPoint("CENTER", parent, "BOTTOMLEFT", (sx + ex) / 2, (sy + ey) / 2)
+  line:SetPoint("CENTER", parent, "TOPLEFT", (sx + ex) / 2, (sy + ey) / 2)
   if line.SetVertexColor then
     line:SetVertexColor(r, g, b, a)
   elseif line.SetColorTexture then
@@ -212,6 +420,28 @@ local function DrawLinePixels(line, parent, x1, y1, x2, y2, clearStart, clearEnd
   line:Show()
 end
 
+-- Pins stay mouse-enabled for their tooltip. The overlay itself does not
+-- take clicks, and the low frame level keeps Blizzard bangs on top.
+local function MatchPinDepth(pin)
+  local parent = pin:GetParent()
+  if not parent then return end
+  if type(parent.GetFrameStrata) == "function" then
+    local strata = SafeCall(parent.GetFrameStrata, parent)
+    if type(strata) == "string" and strata ~= "" and strata ~= "TOOLTIP" then
+      pcall(pin.SetFrameStrata, pin, strata)
+    end
+  end
+  if type(parent.GetFrameLevel) == "function" then
+    local lv = SafeCall(parent.GetFrameLevel, parent)
+    if type(lv) == "number" then
+      local child = lv + 1
+      if child < 1 then child = 1 end
+      if child > 10000 then child = 10000 end
+      pcall(pin.SetFrameLevel, pin, child)
+    end
+  end
+end
+
 local function PlacePin(pin, parent, x, y, n, stop, r, g, b)
   if not pin or not parent then return end
   local px, py = NormToPixel(parent, x, y)
@@ -220,7 +450,8 @@ local function PlacePin(pin, parent, x, y, n, stop, r, g, b)
     return
   end
   pin:ClearAllPoints()
-  pin:SetPoint("CENTER", parent, "BOTTOMLEFT", px, py)
+  pin:SetPoint("CENTER", parent, "TOPLEFT", px, py)
+  MatchPinDepth(pin)
   pin.questTitle = stop.title
   pin.routeN = n
   pin.untriggered = stop.untriggered and true or false
@@ -310,6 +541,62 @@ local function StopsKey(stops, mapID)
   return table.concat(parts, "|")
 end
 
+local function PinQuestID(pin)
+  if type(pin.questID) == "number" then return pin.questID end
+  if type(pin.GetQuestID) == "function" then
+    local id = SafeCall(pin.GetQuestID, pin)
+    if type(id) == "number" then return id end
+  end
+  if type(pin.questId) == "number" then return pin.questId end
+  return nil
+end
+
+-- GetPosition is normalized 0..1. A raw x/y above 1 is percent, never yards.
+local function PinMapNorm(pin)
+  local x, y
+  if type(pin.GetPosition) == "function" then
+    x, y = SafeCall(pin.GetPosition, pin)
+  end
+  if type(x) ~= "number" or type(y) ~= "number" then
+    x, y = pin.normalizedX, pin.normalizedY
+  end
+  if type(x) ~= "number" or type(y) ~= "number" then
+    x, y = pin.x, pin.y
+  end
+  if type(x) ~= "number" or type(y) ~= "number" then return nil, nil end
+  if x == 0 and y == 0 then return nil, nil end
+  if x >= 0 and y >= 0 and x <= 1 and y <= 1 then return x, y end
+  if x > 1 and y > 1 and x <= 100 and y <= 100 then
+    return x / 100, y / 100
+  end
+  return nil, nil
+end
+
+local function SnapStopsToBlizzardPins(stops)
+  if type(stops) ~= "table" or #stops < 1 then return end
+  if not WorldMapFrame or type(WorldMapFrame.EnumeratePinsByTemplate) ~= "function" then
+    return
+  end
+  local want = {}
+  local i
+  for i = 1, #stops do
+    local id = stops[i].questID
+    if type(id) == "number" then want[id] = stops[i] end
+  end
+  ForEachTemplatePin(QUEST_PIN_TEMPLATES, function(pin)
+    local id = PinQuestID(pin)
+    local stop = id and want[id] or nil
+    if stop then
+      local x, y = PinMapNorm(pin)
+      if x then
+        stop.mapX, stop.mapY = x, y
+        want[id] = nil
+      end
+    end
+    return false
+  end)
+end
+
 function NS.UpdateMapPins(route)
   route = route or NS.liveRoute
 
@@ -379,6 +666,11 @@ function NS.UpdateMapPins(route)
     return
   end
 
+  -- When a Blizzard quest pin for this questID is on the canvas, use its
+  -- normalized position so the number sits on that icon.
+  SnapStopsToBlizzardPins(visible)
+
+  local anchor = AnchorFrame(parent)
   local key = StopsKey(visible, viewMap)
   -- Still redraw when the map is shown even if key matches — parent size may
   -- have changed; cheap enough for ≤7 pins.
@@ -414,8 +706,8 @@ function NS.UpdateMapPins(route)
   local li = 1
   for i = 1, #points - 1 do
     local a, bpt = points[i], points[i + 1]
-    local ax, ay = NormToPixel(parent, a.x, a.y)
-    local bx, by = NormToPixel(parent, bpt.x, bpt.y)
+    local ax, ay = NormToPixel(anchor, a.x, a.y)
+    local bx, by = NormToPixel(anchor, bpt.x, bpt.y)
     if ax and bx then
       local line = EnsureLine(li)
       local cr, cg, cb = RouteColor(bpt.colorIndex or bpt.n)
@@ -423,7 +715,7 @@ function NS.UpdateMapPins(route)
       if a.n and bpt.n and a.n == bpt.n then
         cr, cg, cb = RouteColor(a.colorIndex or a.n)
       end
-      DrawLinePixels(line, parent, ax, ay, bx, by, ICON_CLEAR_PX, ICON_CLEAR_PX, cr, cg, cb, 0.85)
+      DrawLinePixels(line, anchor, ax, ay, bx, by, ICON_CLEAR_PX, ICON_CLEAR_PX, cr, cg, cb, 0.85)
       li = li + 1
     end
   end
@@ -434,7 +726,7 @@ function NS.UpdateMapPins(route)
     local s = visible[i]
     local pin = EnsurePin(i)
     local cr, cg, cb = RouteColor(s.colorIndex or s.n or i)
-    PlacePin(pin, parent, s.mapX, s.mapY, s.n or i, s, cr, cg, cb)
+    PlacePin(pin, anchor, s.mapX, s.mapY, s.n or i, s, cr, cg, cb)
   end
 end
 

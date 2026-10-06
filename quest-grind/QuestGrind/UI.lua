@@ -1179,14 +1179,22 @@ function NS.ApplyTheme()
   if NS.ApplyDialogThemes then NS.ApplyDialogThemes() end
 end
 
+-- Full HUD zone line. Prefix the existing FontString; do not add a row.
+local function CurrentLocationLabel(zone)
+  if type(zone) ~= "string" or zone == "" or zone == "?" then
+    return "Current location: ?"
+  end
+  return "Current location: " .. zone
+end
+
 -- Live with no objective coords must not stay blank or stuck on mock distance.
 local function CompassDistLine(m)
   if not m then return "?" end
   local step = m.step or {}
   if m.source == "live" and not m.hasCoords then
     local zone = step.zone
-    if type(zone) ~= "string" or zone == "" then zone = "?" end
-    return zone .. " · ?"
+    if type(zone) ~= "string" or zone == "" or zone == "?" then zone = "?" end
+    return "Current location: " .. zone .. " · ?"
   end
   return step.distance or "?"
 end
@@ -1349,7 +1357,7 @@ function NS.ApplyRoute(m)
   layers.stepRow.dist:SetText((step.distance or "?") .. " ·")
   layers.stepRow.bearing:SetText(step.bearing or "")
   layers.stepRow.approx:SetText("· " .. (step.approx or ""))
-  layers.stepRow.zone:SetText(step.zone or "")
+  layers.stepRow.zone:SetText(CurrentLocationLabel(step.zone))
   PaintQuestMeta(m)
 
   local tracker = m.tracker or {}
@@ -1387,7 +1395,7 @@ function NS.RefreshRouteUI(m)
   layers.stepRow.dist:SetText((step.distance or "?") .. " ·")
   layers.stepRow.bearing:SetText(step.bearing or "")
   layers.stepRow.approx:SetText("· " .. (step.approx or ""))
-  layers.stepRow.zone:SetText(step.zone or "")
+  layers.stepRow.zone:SetText(CurrentLocationLabel(step.zone))
   if layers.lessDistance then layers.lessDistance.text:SetText(step.distance or "?") end
   if layers.compassOnlyFace then
     layers.compassOnlyFace.dist:SetText(CompassDistLine(m))

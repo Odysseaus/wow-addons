@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.10 — Current location label; map markers under Blizzard icons
+
+- **Fixed**: HUD zone line is labeled **Current location** (Full step row + Compass no-coords line) so the place name is not a bare unlabeled string (`UI.lua`).
+- **Fixed**: main-map QuestGrind route markers use the same MapCanvas placement as Blizzard quest icons (TOPLEFT + inverted Y; same canvas parent) and prefer `C_QuestLog.GetQuestsOnMap` / live pin snap so stop **#1** sits on the real quest bang (`Map.lua` / `Quests.lua`).
+- **Fixed**: QG markers and route lines draw **behind** Blizzard quest icons (canvas strata, low frame level — no TOOLTIP overlay).
+- **Keep**: ≤7 stops; no center→#1 line; chain shared order #; per-quest colors; icon clear gap; untriggered markers; minimap route dropped. Interface **16001**.
+
 ## 0.2.9 — Route start, chain shared #, per-quest colors
 
 - **Fixed**: no route line from map **center / player** to stop **#1** — the first objective is the **start** of the route (`Map.lua`).

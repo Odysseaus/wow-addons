@@ -601,10 +601,90 @@ local function TryTaskInfo(questID)
   return POIFromWaypoint(a, b, c) or POIFromWaypoint(b, c, d) or POIFromWaypoint(a, b, d)
 end
 
+-- GetQuestsOnMap x,y are normalized 0..1 on Forever. Some clients use 0..100
+-- percent. Never classify either form as world yards (ClassifyXY would).
+local function NormFromQuestsOnMapXY(x, y)
+  if type(x) ~= "number" or type(y) ~= "number" then return nil, nil end
+  if x == 0 and y == 0 then return nil, nil end
+  if x < 0 or y < 0 then return nil, nil end
+  if x <= 1 and y <= 1 then return x, y end
+  if x > 1 and y > 1 and x <= 100 and y <= 100 then
+    return x / 100, y / 100
+  end
+  return nil, nil
+end
+
+local function POIFromQuestsOnMapEntry(e, mapID, questID)
+  if type(e) ~= "table" then return nil end
+  local id = e.questID
+  if type(id) ~= "number" then id = e.questId end
+  if id ~= questID then return nil end
+  local x, y = e.x, e.y
+  if type(x) ~= "number" or type(y) ~= "number" then
+    x, y = VecXY(e.position or e.pos)
+  end
+  x, y = NormFromQuestsOnMapXY(x, y)
+  if not x then return nil end
+  return { mapID = mapID, mapX = x, mapY = y }
+end
+
+-- Same list Blizzard uses to place quest pins on uiMapID.
+local function POIFromQuestsOnMap(mapID, questID)
+  if type(questID) ~= "number" or type(mapID) ~= "number" or mapID <= 0 then return nil end
+  if not HasCQuestLog() or type(C_QuestLog.GetQuestsOnMap) ~= "function" then return nil end
+  local list = SafeCall(C_QuestLog.GetQuestsOnMap, mapID)
+  if type(list) ~= "table" then return nil end
+  local n = #list
+  local i
+  if n > 0 then
+    for i = 1, n do
+      local poi = POIFromQuestsOnMapEntry(list[i], mapID, questID)
+      if poi then return poi end
+    end
+    return nil
+  end
+  local _, e
+  for _, e in pairs(list) do
+    local poi = POIFromQuestsOnMapEntry(e, mapID, questID)
+    if poi then return poi end
+  end
+  return nil
+end
+
+local function ViewedMapID()
+  if type(WorldMapFrame) ~= "table" and type(WorldMapFrame) ~= "userdata" then return nil end
+  if type(WorldMapFrame.GetMapID) ~= "function" then return nil end
+  local id = SafeCall(WorldMapFrame.GetMapID, WorldMapFrame)
+  if type(id) == "number" and id > 0 then return id end
+  return nil
+end
+
 -- Best-effort objective position. Forever often has no POI; callers must tolerate nil.
+-- Prefer the XY Blizzard draws: GetQuestsOnMap, then QuestPOIGetIconInfo, then
+-- waypoint / task / supertrack fallbacks.
 function NS.TryQuestPOI(questID, logIndex)
   local area = QuestAreaID(questID, logIndex)
   local playerMap = PlayerMapID()
+
+  if type(questID) == "number" then
+    local maps = { playerMap, area }
+    local seen = {}
+    local mi
+    for mi = 1, #maps do
+      local mid = maps[mi]
+      if type(mid) == "number" and not seen[mid] then
+        seen[mid] = true
+        local poi = POIFromQuestsOnMap(mid, questID)
+        if poi then return poi end
+      end
+    end
+  end
+
+  if type(questID) == "number" and type(QuestPOIGetIconInfo) == "function" then
+    local a, b, c = SafeCall(QuestPOIGetIconInfo, questID)
+    local poi = POIFromWaypoint(a, b, c) or POIFromWaypoint(b, c, a)
+    if poi then return poi end
+  end
 
   if type(questID) == "number" and HasCQuestLog() and type(C_QuestLog.GetNextWaypoint) == "function" then
     local mapID, x, y = SafeCall(C_QuestLog.GetNextWaypoint, questID)
@@ -627,26 +707,6 @@ function NS.TryQuestPOI(questID, logIndex)
     end
   end
 
-  if type(questID) == "number" and HasCQuestLog() and type(C_QuestLog.GetQuestsOnMap) == "function" then
-    local maps = { playerMap, area }
-    local mi
-    for mi = 1, #maps do
-      if type(maps[mi]) == "number" then
-        local list = SafeCall(C_QuestLog.GetQuestsOnMap, maps[mi])
-        if type(list) == "table" then
-          local i
-          for i = 1, #list do
-            local e = list[i]
-            if type(e) == "table" and e.questID == questID then
-              local poi = MakePOI(e.x, e.y, maps[mi])
-              if poi then return poi end
-            end
-          end
-        end
-      end
-    end
-  end
-
   if type(questID) == "number" and type(C_TaskQuest) == "table" and type(C_TaskQuest.GetQuestLocation) == "function" then
     local maps = { playerMap, area }
     local i
@@ -657,12 +717,6 @@ function NS.TryQuestPOI(questID, logIndex)
         if poi then return poi end
       end
     end
-  end
-
-  if type(questID) == "number" and type(QuestPOIGetIconInfo) == "function" then
-    local a, b, c = SafeCall(QuestPOIGetIconInfo, questID)
-    local poi = POIFromWaypoint(a, b, c) or POIFromWaypoint(b, c, a)
-    if poi then return poi end
   end
 
   local taskPOI = TryTaskInfo(questID)
@@ -1246,6 +1300,16 @@ end
 NS.MAX_MAP_ROUTE_STOPS = 7
 
 local function StopMapCoords(questID, logIndex, existing)
+  -- Viewed map: Blizzard's GetQuestsOnMap XY wins over any cached pin so the
+  -- route stop sits on the quest icon for the map the player is looking at.
+  local viewMap = ViewedMapID()
+  if type(questID) == "number" and type(viewMap) == "number" then
+    local poi = POIFromQuestsOnMap(viewMap, questID)
+    if type(poi) == "table" and type(poi.mapX) == "number" and type(poi.mapY) == "number" then
+      return poi.mapX, poi.mapY, poi.mapID or viewMap
+    end
+  end
+
   if type(existing) == "table" then
     if type(existing.mapX) == "number" and type(existing.mapY) == "number" then
       local kind = ClassifyXY(existing.mapX, existing.mapY)
