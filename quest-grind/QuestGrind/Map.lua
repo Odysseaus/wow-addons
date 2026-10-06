@@ -1,11 +1,20 @@
 local _, NS = ...
 
--- P1: world map pin(s) + minimap edge arrow / bottom focus badge (0.2.4).
+-- 0.2.8: MAIN world-map route only (minimap overlays dropped).
+-- Up to 7 numbered stops in QuestGrind completion order, route lines that
+-- stop short of Blizzard quest icons, and QuestGrind number circles for
+-- untriggered chain steps (no Blizzard pin yet).
 
-local mapPin
-local minimapArrow
-local minimapBadge
+local MAX_STOPS = 7
+local ICON_CLEAR_PX = 16 -- pull line endpoints short of icon centers
+local PIN_SIZE = 22
+local LINE_THICK = 2.5
+
+local overlay
+local pins = {}
+local lines = {}
 local hookedMap = false
+local lastDrawKey = nil
 
 local function SafeCall(fn, ...)
   if type(fn) ~= "function" then return nil end
@@ -16,209 +25,383 @@ end
 
 local function FindWorldMapParent()
   if not WorldMapFrame then return nil end
+  if WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer.Child then
+    return WorldMapFrame.ScrollContainer.Child
+  end
   if WorldMapFrame.ScrollContainer then return WorldMapFrame.ScrollContainer end
   if WorldMapDetailFrame then return WorldMapDetailFrame end
   if WorldMapButton then return WorldMapButton end
   return WorldMapFrame
 end
 
-local function EnsureMapPin()
-  if mapPin then return mapPin end
+local function CurrentMapID()
+  if WorldMapFrame and type(WorldMapFrame.GetMapID) == "function" then
+    local id = SafeCall(WorldMapFrame.GetMapID, WorldMapFrame)
+    if type(id) == "number" then return id end
+  end
+  if type(C_Map) == "table" and type(C_Map.GetBestMapForUnit) == "function" then
+    local id = SafeCall(C_Map.GetBestMapForUnit, "player")
+    if type(id) == "number" then return id end
+  end
+  return nil
+end
+
+local function EnsureOverlay()
+  if overlay and overlay:GetParent() then return overlay end
   local parent = FindWorldMapParent()
   if not parent then return nil end
-  local f = CreateFrame("Frame", "QuestGrindMapPin", parent)
-  f:SetSize(18, 18)
+  local f = CreateFrame("Frame", "QuestGrindMapRoute", parent)
+  f:SetAllPoints(parent)
   f:SetFrameStrata("TOOLTIP")
-  f.bg = f:CreateTexture(nil, "ARTWORK")
-  f.bg:SetAllPoints()
-  f.bg:SetColorTexture(0.90, 0.78, 0.20, 0.95)
-  f.glyph = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  f.glyph:SetPoint("CENTER")
-  f.glyph:SetText("!")
+  local base = 0
+  if parent.GetFrameLevel then base = parent:GetFrameLevel() or 0 end
+  f:SetFrameLevel(base + 50)
+  f:EnableMouse(false)
   f:Hide()
-  mapPin = f
+  overlay = f
   return f
 end
 
-local function EnsureMinimapArrow()
-  if minimapArrow then return minimapArrow end
-  if not Minimap then return nil end
-  local f = CreateFrame("Frame", "QuestGrindMinimapArrow", Minimap)
-  f:SetSize(22, 22)
-  f:SetFrameStrata("HIGH")
-  local base = 0
-  if Minimap.GetFrameLevel then base = Minimap:GetFrameLevel() or 0 end
-  f:SetFrameLevel(base + 40)
-  f.tex = f:CreateTexture(nil, "ARTWORK")
-  f.tex:SetAllPoints()
-  f.tex:SetColorTexture(0.95, 0.78, 0.20, 1)
-  f.glyph = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  f.glyph:SetPoint("CENTER", 0, 0)
-  if f.glyph.SetFont and GameFontNormal and GameFontNormal.GetFont then
-    local path = GameFontNormal:GetFont()
-    if path then f.glyph:SetFont(path, 16, "OUTLINE") end
+local function ThemeGold()
+  local th = NS.GetTheme and NS.GetTheme() or nil
+  if type(th) == "table" and type(th.accent) == "table" then
+    return th.accent[1] or 0.90, th.accent[2] or 0.78, th.accent[3] or 0.20
   end
-  f.glyph:SetText("!")
-  f.glyph:SetTextColor(0.12, 0.06, 0.02, 1)
-  f:Hide()
-  minimapArrow = f
-  return f
+  return 0.90, 0.78, 0.20
 end
 
--- Focus badge: sits under the minimap disk (NOT on the player). Used when the
--- live focus has no coords — still useful (quest title on hover), never a fake bearing.
-local function EnsureMinimapBadge()
-  if minimapBadge then return minimapBadge end
-  if not Minimap then return nil end
-  local f = CreateFrame("Button", "QuestGrindMinimapBadge", Minimap)
-  f:SetSize(22, 22)
-  f:SetFrameStrata("HIGH")
-  local base = 0
-  if Minimap.GetFrameLevel then base = Minimap:GetFrameLevel() or 0 end
-  f:SetFrameLevel(base + 42)
-  f.border = f:CreateTexture(nil, "BACKGROUND")
-  f.border:SetAllPoints()
-  f.border:SetColorTexture(1, 1, 1, 1)
-  f.border._qgThemeWhite = true
-  f.border:SetVertexColor(0.90, 0.78, 0.40, 1)
-  f.bg = f:CreateTexture(nil, "ARTWORK")
-  f.bg:SetPoint("TOPLEFT", 1, -1)
-  f.bg:SetPoint("BOTTOMRIGHT", -1, 1)
-  f.bg:SetColorTexture(1, 1, 1, 1)
-  f.bg._qgThemeWhite = true
-  f.bg:SetVertexColor(0.18, 0.12, 0.07, 1)
-  f.glyph = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  f.glyph:SetPoint("CENTER", 0, 0)
-  if f.glyph.SetFont and GameFontNormal and GameFontNormal.GetFont then
-    local path = GameFontNormal:GetFont()
-    if path then f.glyph:SetFont(path, 14, "OUTLINE") end
-  end
-  f.glyph:SetText("!")
-  f.glyph:SetTextColor(0.95, 0.85, 0.35, 1)
-  f:SetPoint("BOTTOM", Minimap, "BOTTOM", 0, -2)
+local function EnsurePin(i)
+  if pins[i] then return pins[i] end
+  local parent = EnsureOverlay()
+  if not parent then return nil end
+  local f = CreateFrame("Frame", "QuestGrindMapPin" .. i, parent)
+  f:SetSize(PIN_SIZE, PIN_SIZE)
   f:EnableMouse(true)
-  f:RegisterForClicks("LeftButtonUp")
+  f.ring = f:CreateTexture(nil, "ARTWORK")
+  f.ring:SetAllPoints()
+  f.ring:SetColorTexture(1, 1, 1, 1)
+  f.ring._qgThemeWhite = true
+  f.fill = f:CreateTexture(nil, "ARTWORK")
+  f.fill:SetPoint("TOPLEFT", 2, -2)
+  f.fill:SetPoint("BOTTOMRIGHT", -2, 2)
+  f.fill:SetColorTexture(1, 1, 1, 1)
+  f.fill._qgThemeWhite = true
+  f.num = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  f.num:SetPoint("CENTER", 0, 0)
+  if f.num.SetFont and GameFontNormal and GameFontNormal.GetFont then
+    local path = GameFontNormal:GetFont()
+    if path then f.num:SetFont(path, 12, "OUTLINE") end
+  end
   f:SetScript("OnEnter", function(self)
     if not GameTooltip then return end
-    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-    local title = self.questTitle or "Focused quest"
-    GameTooltip:SetText(title, 1, 0.85, 0.4)
-    GameTooltip:AddLine("No map coords yet — edge arrow appears when Forever exposes a POI.", 0.85, 0.82, 0.75, true)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    local title = self.questTitle or "Quest"
+    local n = self.routeN or "?"
+    GameTooltip:SetText(tostring(n) .. ". " .. title, 1, 0.85, 0.4)
+    if self.untriggered then
+      GameTooltip:AddLine("Untriggered chain step — QuestGrind marker (no Blizzard pin yet).", 0.85, 0.82, 0.75, true)
+    else
+      GameTooltip:AddLine("Route stop — line stops short of the map quest icon.", 0.85, 0.82, 0.75, true)
+    end
     GameTooltip:Show()
   end)
   f:SetScript("OnLeave", function()
     if GameTooltip then GameTooltip:Hide() end
   end)
   f:Hide()
-  minimapBadge = f
+  pins[i] = f
   return f
 end
 
-local function PositionOnMap(pin, x, y)
-  -- x,y normalized 0..1 (top-left origin varies). Classic often bottom-left.
-  local parent = pin:GetParent()
-  if not parent then return end
+local function EnsureLine(i)
+  if lines[i] then return lines[i] end
+  local parent = EnsureOverlay()
+  if not parent then return nil end
+  local tex
+  if type(parent.CreateLine) == "function" then
+    local ok, line = pcall(parent.CreateLine, parent, nil, "ARTWORK", nil, 0)
+    if ok and line then
+      line._qgIsLine = true
+      if line.SetThickness then pcall(line.SetThickness, line, LINE_THICK) end
+      lines[i] = line
+      return line
+    end
+  end
+  tex = parent:CreateTexture(nil, "ARTWORK")
+  tex:SetColorTexture(1, 1, 1, 1)
+  tex._qgThemeWhite = true
+  tex._qgIsLine = false
+  tex:Hide()
+  lines[i] = tex
+  return tex
+end
+
+local function NormToPixel(parent, x, y)
   local w = parent:GetWidth() or 0
   local h = parent:GetHeight() or 0
-  if w <= 0 or h <= 0 then return end
-  -- Assume 0,0 = bottom-left (common for detail frame); y up.
+  if w <= 0 or h <= 0 then return nil, nil end
+  -- Normalized 0..1, bottom-left origin (Forever / classic detail frame).
+  return x * w, y * h
+end
+
+-- Draw a line between pixel points. clearStart/clearEnd pull endpoints short
+-- of quest icons so the stroke touches but does not cover them.
+local function DrawLinePixels(line, parent, x1, y1, x2, y2, clearStart, clearEnd, r, g, b, a)
+  if not line or not parent then return end
+  local dx, dy = x2 - x1, y2 - y1
+  local len = math.sqrt(dx * dx + dy * dy)
+  clearStart = clearStart or 0
+  clearEnd = clearEnd or 0
+  if len < (clearStart + clearEnd + 2) then
+    if line.Hide then line:Hide() end
+    return
+  end
+  local ux, uy = dx / len, dy / len
+  local sx = x1 + ux * clearStart
+  local sy = y1 + uy * clearStart
+  local ex = x2 - ux * clearEnd
+  local ey = y2 - uy * clearEnd
+  if line._qgIsLine then
+    if line.SetColorTexture then pcall(line.SetColorTexture, line, r, g, b, a) end
+    if line.SetStartPoint then
+      pcall(line.SetStartPoint, line, "BOTTOMLEFT", parent, sx, sy)
+      pcall(line.SetEndPoint, line, "BOTTOMLEFT", parent, ex, ey)
+    end
+    if line.Show then line:Show() end
+    return
+  end
+  local ldx, ldy = ex - sx, ey - sy
+  local llen = math.sqrt(ldx * ldx + ldy * ldy)
+  if llen < 1 then
+    line:Hide()
+    return
+  end
+  line:ClearAllPoints()
+  line:SetSize(llen, LINE_THICK)
+  line:SetPoint("CENTER", parent, "BOTTOMLEFT", (sx + ex) / 2, (sy + ey) / 2)
+  if line.SetVertexColor then
+    line:SetVertexColor(r, g, b, a)
+  elseif line.SetColorTexture then
+    line:SetColorTexture(r, g, b, a)
+  end
+  if type(line.SetRotation) == "function" then
+    pcall(line.SetRotation, line, math.atan2(ldy, ldx))
+  end
+  line:Show()
+end
+
+local function PlacePin(pin, parent, x, y, n, stop, r, g, b)
+  if not pin or not parent then return end
+  local px, py = NormToPixel(parent, x, y)
+  if not px then
+    pin:Hide()
+    return
+  end
   pin:ClearAllPoints()
-  pin:SetPoint("CENTER", parent, "BOTTOMLEFT", x * w, y * h)
+  pin:SetPoint("CENTER", parent, "BOTTOMLEFT", px, py)
+  pin.questTitle = stop.title
+  pin.routeN = n
+  pin.untriggered = stop.untriggered and true or false
+  if pin.num then pin.num:SetText(tostring(n)) end
+  if stop.untriggered then
+    -- Own circle for chain steps that have no Blizzard icon yet.
+    if pin.ring and pin.ring.SetVertexColor then
+      pin.ring:SetVertexColor(r, g, b, 1)
+    end
+    if pin.fill and pin.fill.SetVertexColor then
+      pin.fill:SetVertexColor(0.12, 0.08, 0.04, 0.95)
+    end
+    if pin.num then pin.num:SetTextColor(r, g, b, 1) end
+  else
+    -- Accepted: still number the stop; ring sits on / near the real icon.
+    if pin.ring and pin.ring.SetVertexColor then
+      pin.ring:SetVertexColor(r, g, b, 1)
+    end
+    if pin.fill and pin.fill.SetVertexColor then
+      pin.fill:SetVertexColor(0.18, 0.12, 0.05, 0.85)
+    end
+    if pin.num then pin.num:SetTextColor(1, 0.95, 0.75, 1) end
+  end
+  pin:Show()
+end
+
+local function HideAllPinsAndLines()
+  local i
+  for i = 1, MAX_STOPS do
+    if pins[i] then pins[i]:Hide() end
+  end
+  for i = 1, MAX_STOPS + 1 do
+    if lines[i] and lines[i].Hide then lines[i]:Hide() end
+  end
+  if overlay then overlay:Hide() end
+  lastDrawKey = nil
+end
+
+-- Minimap overlays intentionally disabled (0.2.8). Keep stubs so old callers
+-- (ClearMapPins / UpdateMinimapArrow) stay safe no-ops.
+function NS.UpdateMinimapArrow(_route)
+  -- dropped: no minimap route / pointer for now
 end
 
 function NS.ClearMapPins()
-  if mapPin then mapPin:Hide() end
-  if minimapArrow then minimapArrow:Hide() end
-  if minimapBadge then minimapBadge:Hide() end
+  HideAllPinsAndLines()
+end
+
+local function PlayerNormOnMap(mapID)
+  local pos = NS.GetPlayerPositions and NS.GetPlayerPositions() or nil
+  if not pos then return nil, nil end
+  if type(mapID) == "number" and type(C_Map) == "table" and type(C_Map.GetPlayerMapPosition) == "function" then
+    local p = SafeCall(C_Map.GetPlayerMapPosition, mapID, "player")
+    if type(p) == "table" then
+      local x, y
+      if type(p.GetXY) == "function" then
+        local ok, a, b = pcall(p.GetXY, p)
+        if ok then x, y = a, b end
+      end
+      if type(x) ~= "number" then x, y = p.x, p.y end
+      if type(x) == "number" and type(y) == "number" and (x > 0 or y > 0) and x <= 1 and y <= 1 then
+        return x, y
+      end
+    end
+  end
+  if type(pos.mapX) == "number" and type(pos.mapY) == "number" then
+    if (not mapID) or (pos.mapID == mapID) then
+      return pos.mapX, pos.mapY
+    end
+  end
+  return nil, nil
+end
+
+local function StopsKey(stops, mapID)
+  local parts = { tostring(mapID or 0) }
+  local i
+  for i = 1, #stops do
+    local s = stops[i]
+    parts[#parts + 1] = string.format("%d:%s:%.4f:%.4f:%s",
+      s.n or i,
+      tostring(s.questID or 0),
+      s.mapX or 0,
+      s.mapY or 0,
+      s.untriggered and "u" or "a")
+  end
+  return table.concat(parts, "|")
 end
 
 function NS.UpdateMapPins(route)
   route = route or NS.liveRoute
-  if not route or route.source ~= "live" then
-    NS.ClearMapPins()
-    return
-  end
 
-  -- World map pin when we have normalized coords (raw or converted from yards).
-  local pin = EnsureMapPin()
-  local tx, ty
-  if NS.NormalizeQuestPin then
-    tx, ty = NS.NormalizeQuestPin(route)
-  end
-  if not tx and route.mapX and route.mapY then
-    tx, ty = route.mapX, route.mapY
-  end
-  local looksNormalized = type(tx) == "number" and type(ty) == "number"
-    and tx >= 0 and tx <= 1 and ty >= 0 and ty <= 1
-    and not (tx == 0 and ty == 0)
-  if pin and looksNormalized and WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown() then
-    PositionOnMap(pin, tx, ty)
-    pin:Show()
-  elseif pin then
-    pin:Hide()
-  end
-
-  -- Minimap: edge arrow when bearing known; bottom focus badge when not (never center-on-player).
-  NS.UpdateMinimapArrow(route)
+  -- Always keep minimap quiet.
+  NS.UpdateMinimapArrow(nil)
   NS.HookWorldMap()
-end
-
-function NS.UpdateMinimapArrow(route)
-  route = route or NS.liveRoute
-  local arrow = EnsureMinimapArrow()
-  local badge = EnsureMinimapBadge()
-  if not arrow and not badge then return end
 
   if not route or route.source ~= "live" then
-    if arrow then arrow:Hide() end
-    if badge then badge:Hide() end
+    HideAllPinsAndLines()
+    return
+  end
+  if not (WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()) then
+    HideAllPinsAndLines()
     return
   end
 
-  local haveBearing = route.hasCoords and route.bearingDeg ~= nil
-  local title = nil
-  if route.step and type(route.step.title) == "string" and route.step.title ~= "" then
-    title = route.step.title
-  elseif type(route.name) == "string" then
-    title = route.name
+  local parent = EnsureOverlay()
+  if not parent then
+    HideAllPinsAndLines()
+    return
   end
 
-  if haveBearing and arrow then
-    if badge then badge:Hide() end
-    if arrow.glyph then arrow.glyph:SetText("!") end
-    local facing = SafeCall(GetPlayerFacing)
-    local rel
-    if type(facing) == "number" then
-      local facingDeg = math.deg(facing)
-      rel = math.rad((route.bearingDeg - facingDeg + 360) % 360)
-    else
-      rel = math.rad(route.bearingDeg % 360)
-    end
-    local radius = 62
-    if Minimap and Minimap.GetWidth then
-      radius = math.max(48, (Minimap:GetWidth() or 140) * 0.42)
-    end
-    local ox = math.sin(rel) * radius
-    local oy = math.cos(rel) * radius
-    -- Edge pointer: tall gold tip + bang, rotated toward focus.
-    arrow:SetSize(18, 26)
-    arrow:ClearAllPoints()
-    arrow:SetPoint("CENTER", Minimap, "CENTER", ox, oy)
-    if arrow.tex and type(arrow.tex.SetRotation) == "function" then
-      pcall(arrow.tex.SetRotation, arrow.tex, rel)
-    elseif type(arrow.SetRotation) == "function" then
-      pcall(arrow.SetRotation, arrow, rel)
-    end
-    arrow:Show()
+  local viewMap = CurrentMapID()
+  local stops
+  if NS.GetMapRouteStops then
+    stops = NS.GetMapRouteStops(MAX_STOPS)
   else
-    -- No coords: hide edge arrow; show bottom badge (not center-on-player).
-    if arrow then arrow:Hide() end
-    if badge then
-      badge.questTitle = title or "Focused quest"
-      badge:ClearAllPoints()
-      badge:SetPoint("BOTTOM", Minimap, "BOTTOM", 0, -2)
-      badge:Show()
+    stops = NS.mapRouteStops
+  end
+  stops = stops or {}
+
+  -- Filter to the map currently shown (coords are map-local).
+  local visible = {}
+  local i
+  for i = 1, #stops do
+    local s = stops[i]
+    if type(s.mapX) == "number" and type(s.mapY) == "number" then
+      if (not viewMap) or (not s.mapID) or (s.mapID == viewMap) then
+        visible[#visible + 1] = s
+      end
     end
+  end
+
+  -- Fallback: if the multi-stop builder yielded nothing but the focused route
+  -- has a pin, show a single numbered stop so the map is not blank.
+  if #visible == 0 and NS.NormalizeQuestPin then
+    local tx, ty = NS.NormalizeQuestPin(route)
+    if type(tx) == "number" and type(ty) == "number" and tx >= 0 and tx <= 1 and ty >= 0 and ty <= 1
+      and not (tx == 0 and ty == 0) then
+      if (not viewMap) or (not route.targetMapID) or (route.targetMapID == viewMap) then
+        visible[1] = {
+          n = 1,
+          questID = route.questID,
+          title = (route.step and route.step.title) or route.name or "Focus",
+          mapX = tx,
+          mapY = ty,
+          mapID = route.targetMapID or viewMap,
+          inLog = true,
+          untriggered = false,
+        }
+      end
+    end
+  end
+
+  if #visible == 0 then
+    HideAllPinsAndLines()
+    return
+  end
+
+  local key = StopsKey(visible, viewMap)
+  -- Still redraw when the map is shown even if key matches — parent size may
+  -- have changed; cheap enough for ≤7 pins.
+  lastDrawKey = key
+
+  overlay:Show()
+  local r, g, b = ThemeGold()
+
+  -- Hide unused pin/line slots first.
+  for i = 1, MAX_STOPS do
+    if pins[i] then pins[i]:Hide() end
+  end
+  for i = 1, MAX_STOPS + 1 do
+    if lines[i] and lines[i].Hide then lines[i]:Hide() end
+  end
+
+  local points = {}
+  local px, py = PlayerNormOnMap(viewMap)
+  if type(px) == "number" and type(py) == "number" then
+    points[#points + 1] = { x = px, y = py, isPlayer = true }
+  end
+  for i = 1, #visible do
+    local s = visible[i]
+    points[#points + 1] = { x = s.mapX, y = s.mapY, stop = s, n = s.n or i }
+  end
+
+  -- Route lines: player → 1 → 2 → … (stop short of quest icon centers).
+  local li = 1
+  for i = 1, #points - 1 do
+    local a, bpt = points[i], points[i + 1]
+    local ax, ay = NormToPixel(parent, a.x, a.y)
+    local bx, by = NormToPixel(parent, bpt.x, bpt.y)
+    if ax and bx then
+      local line = EnsureLine(li)
+      local clearStart = a.isPlayer and 0 or ICON_CLEAR_PX
+      local clearEnd = ICON_CLEAR_PX
+      DrawLinePixels(line, parent, ax, ay, bx, by, clearStart, clearEnd, r, g, b, 0.85)
+      li = li + 1
+    end
+  end
+
+  -- Number circles (accepted + untriggered).
+  for i = 1, #visible do
+    local s = visible[i]
+    local pin = EnsurePin(i)
+    PlacePin(pin, parent, s.mapX, s.mapY, s.n or i, s, r, g, b)
   end
 end
 
@@ -229,7 +412,43 @@ function NS.HookWorldMap()
     if NS.UpdateMapPins then NS.UpdateMapPins(NS.liveRoute) end
   end)
   WorldMapFrame:HookScript("OnHide", function()
-    if mapPin then mapPin:Hide() end
+    HideAllPinsAndLines()
+  end)
+  -- Redraw when the player pans / changes map (API varies by client).
+  if type(WorldMapFrame.OnMapChanged) == "function" or WorldMapFrame.ScrollContainer then
+    pcall(function()
+      if WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer.HookScript then
+        WorldMapFrame.ScrollContainer:HookScript("OnSizeChanged", function()
+          if NS.UpdateMapPins then NS.UpdateMapPins(NS.liveRoute) end
+        end)
+      end
+    end)
+  end
+  local ev = CreateFrame("Frame")
+  pcall(function() ev:RegisterEvent("WORLD_MAP_OPEN") end)
+  pcall(function() ev:RegisterEvent("PLAYER_ENTERING_WORLD") end)
+  -- Some Forever builds fire this when the canvas map id changes.
+  pcall(function() ev:RegisterEvent("ZONE_CHANGED_NEW_AREA") end)
+  ev:SetScript("OnEvent", function()
+    if WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown() then
+      if NS.UpdateMapPins then NS.UpdateMapPins(NS.liveRoute) end
+    end
+  end)
+  -- Poll map id while open (cheap; OnUpdate only while shown).
+  local poll = CreateFrame("Frame", "QuestGrindMapPoll")
+  local acc, lastID = 0, nil
+  poll:SetScript("OnUpdate", function(_, elapsed)
+    if not (WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()) then
+      return
+    end
+    acc = acc + (elapsed or 0)
+    if acc < 0.35 then return end
+    acc = 0
+    local id = CurrentMapID()
+    if id ~= lastID then
+      lastID = id
+      if NS.UpdateMapPins then NS.UpdateMapPins(NS.liveRoute) end
+    end
   end)
 end
 
@@ -244,4 +463,3 @@ mapEv:SetScript("OnEvent", function(_, event)
     if NS.UpdateMapPins then NS.UpdateMapPins(NS.liveRoute) end
   end
 end)
-

@@ -1237,6 +1237,157 @@ function NS.GetFocusCandidates(list)
   return candidates
 end
 
+-- ===== 0.2.8 main-map route stops (up to 7) =====
+-- Best completion order = focus-candidate order (closest checked / scoped),
+-- then upcoming untriggered chain steps for those quests (ChainData / C_QuestLine)
+-- inserted after their predecessor when Forever exposes a POI. Cap = 7.
+NS.MAX_MAP_ROUTE_STOPS = 7
+
+local function StopMapCoords(questID, logIndex, existing)
+  if type(existing) == "table" then
+    if type(existing.mapX) == "number" and type(existing.mapY) == "number" then
+      local kind = ClassifyXY(existing.mapX, existing.mapY)
+      if kind == "map" and not (existing.mapX == 0 and existing.mapY == 0) then
+        return existing.mapX, existing.mapY, existing.targetMapID
+      end
+    end
+    if type(existing.worldX) == "number" and type(existing.worldY) == "number" then
+      local mx, my, mid = WorldToNorm(existing.worldX, existing.worldY, existing.targetMapID)
+      if mx then return mx, my, mid or existing.targetMapID end
+    end
+  end
+  local poi = NS.TryQuestPOI(questID, logIndex)
+  if type(poi) ~= "table" then return nil, nil, nil end
+  if type(poi.mapX) == "number" and type(poi.mapY) == "number" then
+    local kind = ClassifyXY(poi.mapX, poi.mapY)
+    if kind == "map" and not (poi.mapX == 0 and poi.mapY == 0) then
+      return poi.mapX, poi.mapY, poi.mapID
+    end
+  end
+  if type(poi.worldX) == "number" and type(poi.worldY) == "number" then
+    local mx, my, mid = WorldToNorm(poi.worldX, poi.worldY, poi.mapID)
+    if mx then return mx, my, mid or poi.mapID end
+  end
+  return nil, nil, poi.mapID
+end
+
+local function InLogByID(list)
+  local set, i = {}, nil
+  for i = 1, #(list or {}) do
+    local id = list[i].questID
+    if type(id) == "number" then set[id] = list[i] end
+  end
+  return set
+end
+
+-- Returns ordered stops for the world-map route overlay.
+-- Each: { n, questID, title, mapX, mapY, mapID, inLog, untriggered, chainID, chainStep }
+function NS.GetMapRouteStops(maxStops)
+  maxStops = tonumber(maxStops) or NS.MAX_MAP_ROUTE_STOPS or 7
+  if maxStops < 1 then maxStops = 1 end
+  if maxStops > 7 then maxStops = 7 end
+
+  local list = NS.questList
+  if type(list) ~= "table" or #list == 0 then
+    list = CollectQuests()
+    if type(list) == "table" and #list > 0 then
+      ApplyFocus(list)
+    end
+  end
+  list = list or {}
+  local inLog = InLogByID(list)
+  local candidates = NS.focusCandidates
+  if type(candidates) ~= "table" or #candidates == 0 then
+    candidates = NS.GetFocusCandidates(list)
+  end
+
+  local stops, seen = {}, {}
+  local function addStop(questID, title, mapX, mapY, mapID, inLogFlag, chainID, chainStep)
+    if #stops >= maxStops then return false end
+    if type(questID) == "number" and seen[questID] then return false end
+    if type(mapX) ~= "number" or type(mapY) ~= "number" then return false end
+    if mapX < 0 or mapY < 0 or mapX > 1 or mapY > 1 then return false end
+    if mapX == 0 and mapY == 0 then return false end
+    local n = #stops + 1
+    stops[n] = {
+      n = n,
+      questID = questID,
+      title = title or ("Quest " .. tostring(questID or "?")),
+      mapX = mapX,
+      mapY = mapY,
+      mapID = mapID,
+      inLog = inLogFlag and true or false,
+      untriggered = not inLogFlag,
+      chainID = chainID,
+      chainStep = chainStep,
+    }
+    if type(questID) == "number" then seen[questID] = true end
+    return true
+  end
+
+  local i
+  for i = 1, #candidates do
+    if #stops >= maxStops then break end
+    local q = candidates[i]
+    if type(q) == "table" then
+      local mx, my, mid = StopMapCoords(q.questID, q.logIndex, q)
+      if mx then
+        addStop(q.questID, q.title, mx, my, mid or q.targetMapID, true, q.chainID, q.chainStep or q.chainPos)
+      end
+    end
+  end
+
+  -- Insert upcoming untriggered chain steps after each accepted stop (best order:
+  -- finish the chain you are on before leaping to unrelated pins).
+  local grown = {}
+  for i = 1, #stops do
+    grown[#grown + 1] = stops[i]
+    if #grown >= maxStops then break end
+    local s = stops[i]
+    if type(s.questID) ~= "number" then
+      -- continue
+    else
+      local chain = NS.GetQuestChain(s.questID, s.mapID)
+      if chain and type(chain.quests) == "table" then
+        local startPos = chain.pos or 1
+        local qi
+        for qi = startPos + 1, #chain.quests do
+          if #grown >= maxStops then break end
+          local nid = chain.quests[qi]
+          if type(nid) == "number" and not seen[nid] and not FlaggedComplete(nid) and not inLog[nid] then
+            local mx, my, mid = StopMapCoords(nid, nil, nil)
+            if mx then
+              grown[#grown + 1] = {
+                n = #grown + 1,
+                questID = nid,
+                title = "Chain step " .. tostring(qi),
+                mapX = mx,
+                mapY = my,
+                mapID = mid or s.mapID,
+                inLog = false,
+                untriggered = true,
+                chainID = chain.lineID,
+                chainStep = qi,
+              }
+              seen[nid] = true
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- Renumber after chain inserts.
+  for i = 1, #grown do
+    grown[i].n = i
+  end
+  if #grown > maxStops then
+    while #grown > maxStops do grown[#grown] = nil end
+  end
+  NS.mapRouteStops = grown
+  return grown
+end
+
 local function WatchKey(list)
   local ids = {}
   local i

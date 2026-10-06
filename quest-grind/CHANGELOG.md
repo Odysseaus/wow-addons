@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.8 — Main world-map route (drop minimap)
+
+- **Changed**: **Minimap route/pointer dropped** for now — no edge arrow, no bottom focus badge (`Map.lua` stubs are no-ops). Compass HUD needles are unchanged.
+- **Added**: **Main world map route** — up to **seven** numbered stops in QuestGrind’s best completion order (focus-candidate order: closest checked / scoped, then upcoming **untriggered chain** steps with a POI inserted after their predecessor).
+- **Added**: Route **lines** between player → 1 → 2 → … that **stop short** of quest icon centers (do not overlap Blizzard map quest icons).
+- **Added**: QuestGrind **number circles** on every stop; untriggered chain steps (no Blizzard pin yet) get their own numbered marker on the route.
+- **Notes**: Interface stays **16001**. Objectives progress tick still deferred.
+
 ## 0.2.7 — ChainData GPL fallback, closest-checked focus, no fake 1/1
 
 - **Added**: shipped `ChainData.lua` — questID → chainId/step/total + ordered lists, generated from **QuestieDB Forever** (via [TylerAkins/wow-database](https://github.com/TylerAkins/wow-database) export, commit recorded in `ChainDataMeta`). Quest records are **GPL-3.0**; attributed in this changelog, README, and the file header. `C_QuestLine` is still tried first; ChainData fills misses. Done counts use `C_QuestLog.IsQuestFlaggedCompleted` / `IsQuestFlaggedCompleted`, with a session set from `GetAllCompletedQuestIDs` when present.
