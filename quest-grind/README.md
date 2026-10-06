@@ -21,7 +21,7 @@ Copy the `QuestGrind/` folder into `Interface/AddOns/`.
 | **Less** | Compact step + distance + progress + mode chrome |
 | **Compass** | Direction rose + distance |
 
-### HUD controls (0.2.1)
+### HUD controls (0.2.1+)
 
 An always-visible control strip sits at the top of the HUD in **every** mode (and when minimized):
 
@@ -49,15 +49,15 @@ Distance/bearing need objective coordinates (quest POI / waypoint APIs). When Fo
 **Default** gold/wood plus Forever class themes: warrior, paladin, hunter, rogue, priest, shaman, mage, warlock, druid.
 
 - Themes apply to **Full AND Less AND Compass** (not Full-only).
-- Pick in **Edit Mode** (edit button / `/qg edit`).
+- Pick in **Edit Mode** (edit button / `/qg edit`). Every switch (including returning to a previous theme) re-applies chrome **and** panel colors with contrast preserved (0.2.2).
 - Identity is **colors / materials / motifs** — no class names baked into art textures.
-- P0/P1 use solid-color `SetColorTexture` layers; TGA/wood/gold polish is **P4**.
+- P0/P1 use solid-color layers (white base + vertex tint); TGA/wood/gold polish is **P4**.
 
 ## Layered UI
 
-Every visual piece is its own `Frame` (outer chrome, title, quest-bang emblem, route row, current step, tracker, compass, status, Ask SI button, edit/mode controls, etc.) so pieces can be moved later inside the QuestGrind window.
+Every visual piece is its own `Frame` so pieces can be moved later inside the QuestGrind window. The **root container is larger than the art** with transparent padding (`PAD = 24`) so ornate edges never clip.
 
-The **root container is larger than the art** with transparent padding (`PAD = 24`) so ornate edges never clip.
+**In-game check — chrome controls:** Move / Mode / Edit / Min / X stay as separate clickable buttons and don’t visually melt into one solid blob with the panel — hover each and see separate hit targets.
 
 ## Ask SI
 

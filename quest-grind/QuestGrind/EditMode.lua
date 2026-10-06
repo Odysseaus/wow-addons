@@ -21,7 +21,10 @@ local function Solid(parent, r, g, b, a)
   local f = CreateFrame("Frame", nil, parent)
   local t = f:CreateTexture(nil, "BACKGROUND")
   t:SetAllPoints()
-  t:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
+  -- White solid base; color via SetVertexColor so re-themes always stick (see Themes.lua).
+  t:SetColorTexture(1, 1, 1, 1)
+  t._qgThemeWhite = true
+  t:SetVertexColor(r or 0, g or 0, b or 0, a or 1)
   f.tex = t
   return f
 end
@@ -79,7 +82,9 @@ local function BuildEdit()
   close:SetPoint("TOPRIGHT", -14, -14)
   close.bg = close:CreateTexture(nil, "BACKGROUND")
   close.bg:SetAllPoints()
-  close.bg:SetColorTexture(0.7, 0.55, 0.25, 1)
+  close.bg:SetColorTexture(1, 1, 1, 1)
+  close.bg._qgThemeWhite = true
+  close.bg:SetVertexColor(0.7, 0.55, 0.25, 1)
   close.text = FS(close, 12, "OUTLINE")
   close.text:SetPoint("CENTER")
   close.text:SetText("X")
@@ -108,7 +113,9 @@ local function BuildEdit()
     btn.bg = btn:CreateTexture(nil, "BACKGROUND")
     btn.bg:SetPoint("TOPLEFT", 28, 0)
     btn.bg:SetPoint("BOTTOMRIGHT", 0, 0)
-    btn.bg:SetColorTexture(0.12, 0.10, 0.08, 0.6)
+    btn.bg:SetColorTexture(1, 1, 1, 1)
+    btn.bg._qgThemeWhite = true
+    btn.bg:SetVertexColor(0.12, 0.10, 0.08, 0.6)
 
     btn.label = FS(btn, 12, "OUTLINE")
     btn.label:SetPoint("LEFT", btn.swatchChrome, "RIGHT", 12, 0)
@@ -126,14 +133,14 @@ end
 function NS.RefreshEditMode()
   if not themeButtons then return end
   local cur = NS.db and NS.db.theme or "default"
-  local th = NS.GetTheme()
+  local th = NS.GetTheme(cur)
   local i, btn
   for i = 1, #themeButtons do
     btn = themeButtons[i]
     if btn.themeId == cur then
-      btn.bg:SetColorTexture(th.accent.r, th.accent.g, th.accent.b, 0.35)
+      NS.SetVertexColor(btn.bg, th.accent, 0.35)
     else
-      btn.bg:SetColorTexture(0.12, 0.10, 0.08, 0.6)
+      NS.SetVertexColor(btn.bg, { r = 0.12, g = 0.10, b = 0.08, a = 0.6 })
     end
   end
   if editArt then

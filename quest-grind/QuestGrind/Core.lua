@@ -125,10 +125,13 @@ end
 
 function NS.SetTheme(id)
   if not NS.db then NS.CopyDefaults() end
+  id = string.lower(tostring(id or ""))
   if not (NS.THEMES and NS.THEMES[id]) then
     Print("unknown theme: " .. tostring(id))
     return
   end
+  -- Always write + full re-paint (even when re-selecting the same id) so a
+  -- stuck chrome/panel from a prior switch is corrected immediately.
   NS.db.theme = id
   if NS.ApplyTheme then NS.ApplyTheme() end
   if NS.RefreshEditMode then NS.RefreshEditMode() end

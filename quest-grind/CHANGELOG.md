@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 — Theme-stick fix
+
+- **Theme stick**: switching themes then returning to a previous theme now always re-applies that theme’s chrome **and** panel/content colors (no more “play it back and forth to recover”).
+- **Contrast**: chrome vs inner panel can no longer collapse into the same muddy color after repeated switches.
+- Root cause: solids were baked with `SetColorTexture(themeRGB)` and re-themed by calling `SetColorTexture` again; on Forever that re-apply was flaky / could leave a vertex multiply on an old baked solid. Fix: white solid base + `SetVertexColor` tint on every apply (`Themes.lua` helper; `Solid`/chips/dialogs match).
+- In-game check for chrome controls: Move / Mode / Edit / Min / X stay as separate clickable buttons and don’t visually melt into one solid blob with the panel — hover each and see separate hit targets.
+
+
 ## 0.2.1 — P0 UX fix (mode cycle, chrome controls, Ask SI)
 
 Fixes Odysseaus P0 FAIL list (P1 features held; existing P1 modules unchanged):

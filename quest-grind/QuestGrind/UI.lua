@@ -52,7 +52,10 @@ local function Solid(parent, r, g, b, a)
   local f = CreateFrame("Frame", nil, parent)
   local t = f:CreateTexture(nil, "BACKGROUND")
   t:SetAllPoints()
-  t:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
+  -- White solid base; color via SetVertexColor so re-themes always stick (see Themes.lua).
+  t:SetColorTexture(1, 1, 1, 1)
+  t._qgThemeWhite = true
+  t:SetVertexColor(r or 0, g or 0, b or 0, a or 1)
   f.tex = t
   return f
 end
@@ -78,11 +81,15 @@ local function ChipButton(parent, label, w, h, getTip)
   b:SetSize(w or 28, h or CTRL_H)
   b.border = b:CreateTexture(nil, "BACKGROUND", nil, -8)
   b.border:SetAllPoints()
-  b.border:SetColorTexture(0.90, 0.78, 0.40, 1)
+  b.border:SetColorTexture(1, 1, 1, 1)
+  b.border._qgThemeWhite = true
+  b.border:SetVertexColor(0.90, 0.78, 0.40, 1)
   b.bg = b:CreateTexture(nil, "BACKGROUND", nil, 1)
   b.bg:SetPoint("TOPLEFT", 1, -1)
   b.bg:SetPoint("BOTTOMRIGHT", -1, 1)
-  b.bg:SetColorTexture(0.18, 0.12, 0.07, 1)
+  b.bg:SetColorTexture(1, 1, 1, 1)
+  b.bg._qgThemeWhite = true
+  b.bg:SetVertexColor(0.18, 0.12, 0.07, 1)
   b.text = FS(b, nil, 11, "OUTLINE")
   b.text:SetJustifyH("CENTER")
   b.text:SetPoint("CENTER", 0, 0)
@@ -167,10 +174,14 @@ local function MakeSegmentBar(parent, n)
     s:SetSize(28, 8)
     s.bg = s:CreateTexture(nil, "BACKGROUND")
     s.bg:SetAllPoints()
-    s.bg:SetColorTexture(0.15, 0.12, 0.08, 0.9)
+    s.bg:SetColorTexture(1, 1, 1, 1)
+    s.bg._qgThemeWhite = true
+    s.bg:SetVertexColor(0.15, 0.12, 0.08, 0.9)
     s.fill = s:CreateTexture(nil, "ARTWORK")
     s.fill:SetAllPoints()
-    s.fill:SetColorTexture(0.85, 0.65, 0.2, 1)
+    s.fill:SetColorTexture(1, 1, 1, 1)
+    s.fill._qgThemeWhite = true
+    s.fill:SetVertexColor(0.85, 0.65, 0.2, 1)
     s.fill:Hide()
     if i == 1 then
       s:SetPoint("LEFT", bar, "LEFT", 0, 0)
@@ -259,11 +270,15 @@ function NS.BuildUI()
   emblem:SetPoint("TOP", art, "TOP", 0, 6)
   emblem.bg = emblem:CreateTexture(nil, "BACKGROUND")
   emblem.bg:SetAllPoints()
-  emblem.bg:SetColorTexture(0.72, 0.55, 0.22, 1)
+  emblem.bg:SetColorTexture(1, 1, 1, 1)
+  emblem.bg._qgThemeWhite = true
+  emblem.bg:SetVertexColor(0.72, 0.55, 0.22, 1)
   emblem.ring = emblem:CreateTexture(nil, "BORDER")
   emblem.ring:SetPoint("TOPLEFT", 3, -3)
   emblem.ring:SetPoint("BOTTOMRIGHT", -3, 3)
-  emblem.ring:SetColorTexture(0.10, 0.08, 0.05, 1)
+  emblem.ring:SetColorTexture(1, 1, 1, 1)
+  emblem.ring._qgThemeWhite = true
+  emblem.ring:SetVertexColor(0.10, 0.08, 0.05, 1)
   emblem.glyph = FS(emblem, nil, 18, "OUTLINE")
   emblem.glyph:SetPoint("CENTER")
   emblem.glyph:SetText("!")
@@ -471,10 +486,14 @@ function NS.BuildUI()
   askButton.border = askButton:CreateTexture(nil, "BACKGROUND", nil, -8)
   askButton.border:SetPoint("TOPLEFT", -2, 2)
   askButton.border:SetPoint("BOTTOMRIGHT", 2, -2)
-  askButton.border:SetColorTexture(0.72, 0.55, 0.22, 1)
+  askButton.border:SetColorTexture(1, 1, 1, 1)
+  askButton.border._qgThemeWhite = true
+  askButton.border:SetVertexColor(0.72, 0.55, 0.22, 1)
   askButton.bg = askButton:CreateTexture(nil, "BACKGROUND", nil, 1)
   askButton.bg:SetAllPoints()
-  askButton.bg:SetColorTexture(0.85, 0.65, 0.20, 1)
+  askButton.bg:SetColorTexture(1, 1, 1, 1)
+  askButton.bg._qgThemeWhite = true
+  askButton.bg:SetVertexColor(0.85, 0.65, 0.20, 1)
   askButton.text = FS(askButton, nil, 16, "OUTLINE")
   askButton.text:SetJustifyH("CENTER")
   askButton.text:SetPoint("CENTER")
@@ -614,7 +633,9 @@ function NS.BuildUI()
   miniBar:SetFrameLevel(art:GetFrameLevel() + 15)
   miniBar.bg = miniBar:CreateTexture(nil, "BACKGROUND")
   miniBar.bg:SetAllPoints()
-  miniBar.bg:SetColorTexture(0.72, 0.55, 0.22, 1)
+  miniBar.bg:SetColorTexture(1, 1, 1, 1)
+  miniBar.bg._qgThemeWhite = true
+  miniBar.bg:SetVertexColor(0.72, 0.55, 0.22, 1)
   miniBar.text = FS(miniBar, nil, 12, "OUTLINE")
   miniBar.text:SetJustifyH("CENTER")
   miniBar.text:SetPoint("CENTER")
@@ -804,7 +825,7 @@ end
 
 function NS.ApplyTheme()
   if not NS.root then return end
-  local th = NS.GetTheme()
+  local th = NS.GetTheme(NS.db and NS.db.theme)
   local set = NS.SetVertexColor
 
   set(layers.chromeOuter.tex, th.chrome)
