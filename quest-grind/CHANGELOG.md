@@ -1,3 +1,10 @@
+## 0.2.11 — Blizzard pin as start; QG markers on later chain stops only
+
+- **Changed**: main-map route no longer places a QuestGrind numbered badge on the same spot as a live **Blizzard quest icon** (0.2.10 “QG under Blizzard” made badges invisible / competing).
+- **Changed**: accepted / current stop = **Blizzard map quest icon only**; route **lines** still start from that Blizzard pin XY and connect to later chain locations.
+- **Changed**: QuestGrind **numbered markers** only on stops **without** a live Blizzard pin (untriggered / upcoming chain steps, or accepted stops with no pin). Multi-quest routes use the same per-stop rule (`Map.lua`: `hasBlizzardPin` via live pin snap + `GetQuestsOnMap`).
+- **Keep**: ≤7 stops; no center→#1 line; chain shared order #; per-quest colors; icon clear gap; minimap route dropped; HUD **Current location:** label; prioritization / objectives tick / Full·Less·Compass / solo·2+·empty / reload·relog. Interface **16001**.
+
 # Changelog
 
 ## 0.2.10 — Current location label; map markers under Blizzard icons

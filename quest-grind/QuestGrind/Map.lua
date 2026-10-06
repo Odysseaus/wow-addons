@@ -1,23 +1,27 @@
 local _, NS = ...
 
 -- Main world-map route only (minimap overlays dropped).
--- Up to 7 numbered stops in QuestGrind completion order. First objective is
--- the START of the route (no line from map center / player to #1). Chain
+-- Up to 7 stops in QuestGrind completion order. First objective is the
+-- START of the route (no line from map center / player to #1). Chain
 -- locations share one order number; distinct quests get distinct colors.
--- Lines stop short of Blizzard quest icons; untriggered chain steps get
--- QuestGrind number circles (no Blizzard pin yet).
+-- Lines stop short of Blizzard quest icons / QG circles.
+--
+-- 0.2.11 marker rule: if a stop already has a live Blizzard quest pin,
+-- do NOT draw a QuestGrind numbered badge there — the Blizzard icon is
+-- the marker. Still run route lines from that Blizzard pin XY to later
+-- stops. QG numbered circles only for stops without a live Blizzard pin
+-- (untriggered / upcoming chain steps, or accepted stops with no pin).
 --
 -- MapCanvas places pins from TOPLEFT with inverted Y (same math as Blizzard):
 --   ox, oy = width * nx, -height * ny
 --   SetPoint("CENTER", canvas, "TOPLEFT", ox, oy)
--- Markers use that anchor and a low frame level so they sit on the quest
--- icon and draw behind it. Do not use BOTTOMLEFT + positive Y.
+-- Do not use BOTTOMLEFT + positive Y.
 
 local MAX_STOPS = 7
 local ICON_CLEAR_PX = 16 -- pull line endpoints short of icon centers
 local PIN_SIZE = 22
 local LINE_THICK = 2.5
-local OVERLAY_LEVEL_OFFSET = 8 -- canvas level + this; stay under quest pins
+local OVERLAY_LEVEL_OFFSET = 8 -- canvas level + this; route lines stay below live pins
 
 -- Live Blizzard pins whose parent is the real map canvas. Quest templates
 -- are listed first so a quest bang wins when we snap coordinates.
@@ -208,8 +212,8 @@ end
 local function ApplyOverlayDepth(f, parent)
   if not f or not parent then return end
   -- Same strata as the canvas. Never force TOOLTIP (that paints over quest
-  -- bangs). If the canvas itself is HIGH, matching it is required so frame
-  -- level, not a lower strata, is what puts us under those bangs.
+  -- bangs). If the canvas itself is HIGH, matching it keeps route lines from
+  -- covering a live pin. Number badges are not drawn on those pins.
   local strata = "MEDIUM"
   if type(parent.GetFrameStrata) == "function" then
     local s = SafeCall(parent.GetFrameStrata, parent)
@@ -226,8 +230,9 @@ local function ApplyOverlayDepth(f, parent)
   end
   local level = base + OVERLAY_LEVEL_OFFSET
   local lowest = LowestQuestPinLevel()
-  -- Number circles are parented to this overlay at overlay+1. Keep that
-  -- strictly under the lowest Blizzard quest pin when one is on the map.
+  -- Lines (and any QuestGrind number on a stop Blizzard did not pin) are
+  -- parented here. Keep that frame level under a live quest pin so a stroke
+  -- cannot cover the Blizzard icon.
   if type(lowest) == "number" and lowest > base then
     local cap = lowest - 2
     if cap < base then cap = base end
@@ -327,9 +332,9 @@ local function EnsurePin(i)
     local n = self.routeN or "?"
     GameTooltip:SetText(tostring(n) .. ". " .. title, 1, 0.85, 0.4)
     if self.untriggered then
-      GameTooltip:AddLine("Untriggered chain step — same order # as its chain; QuestGrind marker (no Blizzard pin yet).", 0.85, 0.82, 0.75, true)
+      GameTooltip:AddLine("Upcoming chain step — same order # as its chain. QuestGrind number; this stop has no Blizzard pin.", 0.85, 0.82, 0.75, true)
     else
-      GameTooltip:AddLine("Route stop — first stop is the route start; lines stop short of quest icons.", 0.85, 0.82, 0.75, true)
+      GameTooltip:AddLine("Route stop — QuestGrind marker (no live Blizzard quest pin on this spot).", 0.85, 0.82, 0.75, true)
     end
     GameTooltip:Show()
   end)
@@ -421,7 +426,7 @@ local function DrawLinePixels(line, parent, x1, y1, x2, y2, clearStart, clearEnd
 end
 
 -- Pins stay mouse-enabled for their tooltip. The overlay itself does not
--- take clicks, and the low frame level keeps Blizzard bangs on top.
+-- take clicks. Numbered markers are not placed on a live Blizzard quest pin.
 local function MatchPinDepth(pin)
   local parent = pin:GetParent()
   if not parent then return end
@@ -456,25 +461,15 @@ local function PlacePin(pin, parent, x, y, n, stop, r, g, b)
   pin.routeN = n
   pin.untriggered = stop.untriggered and true or false
   if pin.num then pin.num:SetText(tostring(n)) end
-  if stop.untriggered then
-    -- Own circle for chain steps that have no Blizzard icon yet.
-    if pin.ring and pin.ring.SetVertexColor then
-      pin.ring:SetVertexColor(r, g, b, 1)
-    end
-    if pin.fill and pin.fill.SetVertexColor then
-      pin.fill:SetVertexColor(0.12, 0.08, 0.04, 0.95)
-    end
-    if pin.num then pin.num:SetTextColor(r, g, b, 1) end
-  else
-    -- Accepted: still number the stop; ring sits on / near the real icon.
-    if pin.ring and pin.ring.SetVertexColor then
-      pin.ring:SetVertexColor(r, g, b, 1)
-    end
-    if pin.fill and pin.fill.SetVertexColor then
-      pin.fill:SetVertexColor(0.18, 0.12, 0.05, 0.85)
-    end
-    if pin.num then pin.num:SetTextColor(1, 0.95, 0.75, 1) end
+  -- QG circle only (placed when the stop has no live Blizzard pin):
+  -- colored ring, dark fill, colored number.
+  if pin.ring and pin.ring.SetVertexColor then
+    pin.ring:SetVertexColor(r, g, b, 1)
   end
+  if pin.fill and pin.fill.SetVertexColor then
+    pin.fill:SetVertexColor(0.12, 0.08, 0.04, 0.95)
+  end
+  if pin.num then pin.num:SetTextColor(r, g, b, 1) end
   pin:Show()
 end
 
@@ -530,13 +525,14 @@ local function StopsKey(stops, mapID)
   local i
   for i = 1, #stops do
     local s = stops[i]
-    parts[#parts + 1] = string.format("%d:%d:%s:%.4f:%.4f:%s",
+    parts[#parts + 1] = string.format("%d:%d:%s:%.4f:%.4f:%s:%s",
       s.n or i,
       s.colorIndex or s.n or i,
       tostring(s.questID or 0),
       s.mapX or 0,
       s.mapY or 0,
-      s.untriggered and "u" or "a")
+      s.untriggered and "u" or "a",
+      s.hasBlizzardPin and "b" or "q")
   end
   return table.concat(parts, "|")
 end
@@ -590,11 +586,62 @@ local function SnapStopsToBlizzardPins(stops)
       local x, y = PinMapNorm(pin)
       if x then
         stop.mapX, stop.mapY = x, y
+        stop.hasBlizzardPin = true
         want[id] = nil
       end
     end
     return false
   end)
+end
+
+local function NormalizeMapXY(x, y)
+  if type(x) ~= "number" or type(y) ~= "number" then return nil, nil end
+  if x == 0 and y == 0 then return nil, nil end
+  if x >= 0 and y >= 0 and x <= 1 and y <= 1 then return x, y end
+  if x > 1 and y > 1 and x <= 100 and y <= 100 then
+    return x / 100, y / 100
+  end
+  return nil, nil
+end
+
+local function MarkStopsWithQuestsOnMap(stops, viewMap)
+  if type(stops) ~= "table" or #stops < 1 then return end
+  if type(viewMap) ~= "number" then return end
+  if type(C_QuestLog) ~= "table" or type(C_QuestLog.GetQuestsOnMap) ~= "function" then
+    return
+  end
+  local list = SafeCall(C_QuestLog.GetQuestsOnMap, viewMap)
+  if type(list) ~= "table" then return end
+  local byID = {}
+  local i
+  for i = 1, #list do
+    local e = list[i]
+    if type(e) == "table" then
+      local id = e.questID or e.questId or e.id
+      if type(id) == "number" then
+        local x = e.x or e.mapX or e.normalizedX
+        local y = e.y or e.mapY or e.normalizedY
+        local nx, ny = NormalizeMapXY(x, y)
+        if nx then byID[id] = { x = nx, y = ny } end
+      end
+    end
+  end
+  for i = 1, #stops do
+    local s = stops[i]
+    local id = s and s.questID
+    local hit = type(id) == "number" and byID[id] or nil
+    if hit then
+      s.hasBlizzardPin = true
+      -- Prefer live-pin snap XY when already set; otherwise take GetQuestsOnMap.
+      if type(s.mapX) ~= "number" or type(s.mapY) ~= "number" then
+        s.mapX, s.mapY = hit.x, hit.y
+      end
+    end
+  end
+end
+
+local function StopHasBlizzardPin(stop)
+  return type(stop) == "table" and stop.hasBlizzardPin and true or false
 end
 
 function NS.UpdateMapPins(route)
@@ -640,8 +687,9 @@ function NS.UpdateMapPins(route)
     end
   end
 
-  -- Fallback: if the multi-stop builder yielded nothing but the focused route
-  -- has a pin, show a single numbered stop so the map is not blank.
+  -- Fallback: builder yielded nothing but the focused route has a coordinate.
+  -- After snap/mark, a lone Blizzard-backed stop draws nothing; a stop with
+  -- no Blizzard pin still gets one QuestGrind marker.
   if #visible == 0 and NS.NormalizeQuestPin then
     local tx, ty = NS.NormalizeQuestPin(route)
     if type(tx) == "number" and type(ty) == "number" and tx >= 0 and tx <= 1 and ty >= 0 and ty <= 1
@@ -666,9 +714,19 @@ function NS.UpdateMapPins(route)
     return
   end
 
-  -- When a Blizzard quest pin for this questID is on the canvas, use its
-  -- normalized position so the number sits on that icon.
+  -- Per draw: live canvas pins, then GetQuestsOnMap. Both set hasBlizzardPin
+  -- and XY so route lines leave the Blizzard icon. Numbers are skipped later.
+  for i = 1, #visible do
+    visible[i].hasBlizzardPin = nil
+  end
   SnapStopsToBlizzardPins(visible)
+  MarkStopsWithQuestsOnMap(visible, viewMap)
+
+  -- Only stop on the map is already a live Blizzard pin: no badge, no segment.
+  if #visible == 1 and StopHasBlizzardPin(visible[1]) then
+    HideAllPinsAndLines()
+    return
+  end
 
   local anchor = AnchorFrame(parent)
   local key = StopsKey(visible, viewMap)
@@ -720,13 +778,19 @@ function NS.UpdateMapPins(route)
     end
   end
 
-  -- Number circles (accepted + untriggered). Shared n within a chain;
-  -- distinct quests get distinct colors.
+  local pi = 1
   for i = 1, #visible do
     local s = visible[i]
-    local pin = EnsurePin(i)
-    local cr, cg, cb = RouteColor(s.colorIndex or s.n or i)
-    PlacePin(pin, anchor, s.mapX, s.mapY, s.n or i, s, cr, cg, cb)
+    if not StopHasBlizzardPin(s) then
+      local pin = EnsurePin(pi)
+      local cr, cg, cb = RouteColor(s.colorIndex or s.n or i)
+      PlacePin(pin, anchor, s.mapX, s.mapY, s.n or i, s, cr, cg, cb)
+      pi = pi + 1
+    end
+  end
+  -- hide unused pin slots (already hidden at start; EnsurePin may create more — hide from pi to MAX_STOPS)
+  for i = pi, MAX_STOPS do
+    if pins[i] then pins[i]:Hide() end
   end
 end
 
