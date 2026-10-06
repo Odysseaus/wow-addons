@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6 — Chain index + chain progress, checked-chain focus, smooth compass
+
+- **Fixed**: the index next to **Quest Log** is the focused quest's **step in its quest chain** (`C_QuestLine.GetQuestLineInfo` → `GetQuestLineQuests`), e.g. `3/10`. Standalone quests read `1/1`. Root cause: 0.2.3–0.2.5 showed the position in the focus *candidate* list, so it read `1/15` with nothing checked and `1/1` once one quest was checked.
+- **Fixed**: focus stays on a **checked chain**. Checked quests remain candidates when **ready to turn in**; after a turn-in, the next step (same quest line, or the quest accepted within 20s of turning in a focused quest) keeps focus even if it is not checked. Focus falls to the nearest quest only when nothing in the log is checked / on a checked chain. Checking a quest (incl. un-check → re-check of a turn-in-ready chain quest) brings it into focus; un-checking drops it. Root cause: candidates were *checked AND incomplete*, so finishing objectives or turning in dropped focus to the nearest quest. `QUEST_WATCH_LIST_CHANGED` now refreshes immediately.
+- **Changed**: Quest Log progress (Full and Less) is **one bar** with a centered percentage, same length as the old 5-segment strip. Fill = chain steps complete / steps in chain (current step counts once ready to turn in).
+- **Improved**: compass arrow is smoother and more responsive — a per-frame animator re-reads facing every frame and player position ~20×/s, eases toward the target (~0.14s catch-up, big jumps snap), and the rotation deadzone dropped from 0.5° to 0.1°. Text/distance stay on the 0.25s ticker. `Map.lua` bearing unchanged.
+- **Deferred**: objectives progress tick; minimap route redesign.
+
 ## 0.2.5 — Single Rewards area, simple compass arrow
 
 - **Fixed**: Full mode has one **Rewards** section (header, reward text, item icons). Empty live rewards show **None**. Mock shows **+1240 XP** in that same section. The status column no longer repeats reward text; it shows a quest count ("3 quests" / "1 quest").

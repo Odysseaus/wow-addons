@@ -1,6 +1,9 @@
 local _, NS = ...
 
--- P1: distance/compass ticker. Throttled ~0.25s. Forever-safe.
+-- P1: distance/text ticker (~0.25s) + 0.2.6 per-frame compass animator.
+-- The arrow re-reads facing and player position every frame (position at
+-- ~20 Hz) and eases toward the target angle, so turning is smooth instead of
+-- stepping every 0.25s. Forever-safe.
 
 local ticker
 local updateFrame
@@ -111,10 +114,11 @@ end
 -- Callers pass NS.ArrowRadians(bearingDeg) (CCW from up, facing-relative),
 -- so SetRotation(radians) aims the arrow at the quest as the player turns.
 -- The arrow frame stays at face CENTER (never moved). Skip SetRotation
--- unless the angle changed by more than ~0.5 degree (anti-jitter).
+-- unless the angle changed by more than ~0.1 degree (0.2.6: was 0.5 — the
+-- easing animator below removes jitter, so the deadzone can be tiny).
 -- bearingDeg == nil hides the arrow (no false north). A numeric bearing,
 -- including mock bearingDeg, shows and aims it.
-local ROT_EPS = math.rad(0.5)
+local ROT_EPS = math.rad(0.1)
 
 local function ShowArrow(needleFrame, visible)
   if not needleFrame then return end
@@ -194,21 +198,144 @@ local function EachNeedle()
   return list
 end
 
+-- Target bearing (deg CW from north) the animator aims at. nil = hidden.
+NS._needleBearing = nil
+local needlesVisible = false
+
+local function ApplyNeedleRadians(rel)
+  local needles = EachNeedle()
+  local i
+  for i = 1, #needles do
+    NS.SetNeedleRotation(needles[i], rel)
+  end
+end
+
 function NS.UpdateCompassNeedles(bearingDeg)
   local needles = EachNeedle()
+  local i
   if bearingDeg == nil then
-    local i
+    NS._needleBearing = nil
+    needlesVisible = false
     for i = 1, #needles do
       ShowArrow(needles[i], false)
     end
     return
   end
-  local rel = NS.ArrowRadians(bearingDeg) or 0
-  local i
+  NS._needleBearing = bearingDeg
+  local firstShow = not needlesVisible
+  needlesVisible = true
   for i = 1, #needles do
     ShowArrow(needles[i], true)
-    NS.SetNeedleRotation(needles[i], rel)
   end
+  -- Without the animator (or on first show) aim immediately; otherwise the
+  -- animator eases toward the new target next frame.
+  if firstShow or not NS._compassAnimating then
+    local rel = NS.ArrowRadians(bearingDeg) or 0
+    NS._needleShown = rel
+    ApplyNeedleRadians(rel)
+  end
+end
+
+-- ===== 0.2.6 compass animator =====
+-- Exponential ease toward the facing-relative target. SMOOTH_K = 1/time-constant:
+-- 16 -> ~90% of a turn caught up in ~0.14s. Big jumps (new quest) snap.
+local SMOOTH_K = 16
+local SNAP_RAD = math.rad(150)
+local POS_EVERY = 0.05
+local posAcc = 0
+local TWO_PI = math.pi * 2
+
+local function ShortestDelta(from, to)
+  local d = (to - from) % TWO_PI
+  if d > math.pi then d = d - TWO_PI end
+  return d
+end
+
+-- Live bearing from the focused route's cached target and the player's
+-- current position (same math as Quests.ComputeNav).
+local function LiveBearing(route)
+  if type(route) ~= "table" or route.source ~= "live" or not route.hasCoords then return nil end
+  if not NS.GetPlayerPositions then return nil end
+  local pos = NS.GetPlayerPositions()
+  local tx, ty, kind
+  if route.targetCoordKind == "world" and type(route.targetX) == "number" and pos.worldX then
+    tx, ty, kind = route.targetX, route.targetY, "world"
+    return NS.BearingFromDelta(tx - pos.worldX, ty - pos.worldY, kind)
+  end
+  local mx, my = route.mapX, route.mapY
+  if type(mx) ~= "number" and route.targetCoordKind == "map" then mx, my = route.targetX, route.targetY end
+  if type(mx) == "number" and type(my) == "number" and pos.mapX then
+    return NS.BearingFromDelta(mx - pos.mapX, my - pos.mapY, "map")
+  end
+  return nil
+end
+
+local function AnyNeedleVisible()
+  local needles = EachNeedle()
+  local i
+  for i = 1, #needles do
+    local n = needles[i]
+    if n and type(n.IsVisible) == "function" then
+      local ok, v = pcall(n.IsVisible, n)
+      if ok and v then return true end
+    end
+  end
+  return false
+end
+
+local function AnimateCompass(elapsed)
+  if not needlesVisible or NS._needleBearing == nil then return end
+  if not AnyNeedleVisible() then return end
+  elapsed = elapsed or 0
+  if elapsed > 0.25 then elapsed = 0.25 end
+  posAcc = posAcc + elapsed
+  if posAcc >= POS_EVERY then
+    posAcc = 0
+    local b = LiveBearing(NS.liveRoute)
+    if b then NS._needleBearing = b end
+  end
+  local target = NS.ArrowRadians(NS._needleBearing)
+  if type(target) ~= "number" then return end
+  local shown = NS._needleShown
+  if type(shown) ~= "number" then
+    shown = target
+  else
+    local d = ShortestDelta(shown, target)
+    if math.abs(d) >= SNAP_RAD then
+      shown = target
+    else
+      local a = 1 - math.exp(-SMOOTH_K * elapsed)
+      shown = shown + d * a
+      if math.abs(ShortestDelta(shown, target)) < ROT_EPS then shown = target end
+    end
+  end
+  shown = shown % TWO_PI
+  NS._needleShown = shown
+  ApplyNeedleRadians(shown)
+end
+
+local animFrame
+function NS.StartCompassAnimator()
+  if animFrame or type(CreateFrame) ~= "function" then return end
+  animFrame = CreateFrame("Frame", "QuestGrindCompassAnim")
+  animFrame:SetScript("OnUpdate", function(_, elapsed)
+    local ok, err = pcall(AnimateCompass, elapsed)
+    if not ok then
+      -- Never spam: stop animating and fall back to the 0.25s ticker aim.
+      NS._compassAnimating = false
+      animFrame:SetScript("OnUpdate", nil)
+      if NS.Print then NS.Print("compass animator off: " .. tostring(err)) end
+    end
+  end)
+  NS._compassAnimating = true
+end
+
+function NS.StopCompassAnimator()
+  if animFrame then
+    animFrame:SetScript("OnUpdate", nil)
+    animFrame = nil
+  end
+  NS._compassAnimating = false
 end
 
 function NS.TickRoute()
@@ -273,6 +400,7 @@ function NS.TickRoute()
 end
 
 function NS.StartRouteTicker()
+  if NS.StartCompassAnimator then NS.StartCompassAnimator() end
   if ticker or updateFrame then return end
   if C_Timer and type(C_Timer.NewTicker) == "function" then
     ticker = C_Timer.NewTicker(TICK, function()
@@ -292,6 +420,7 @@ function NS.StartRouteTicker()
 end
 
 function NS.StopRouteTicker()
+  if NS.StopCompassAnimator then NS.StopCompassAnimator() end
   if ticker then
     if type(ticker.Cancel) == "function" then
       pcall(ticker.Cancel, ticker)

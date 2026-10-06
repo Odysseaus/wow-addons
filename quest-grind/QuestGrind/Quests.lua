@@ -1,6 +1,8 @@
 local _, NS = ...
 
--- P1 live quest log. 0.2.5: status.count is the quest total (rewards stay on rewardsText).
+-- P1 live quest log. 0.2.6: chain step index + chain progress (C_QuestLine),
+-- checked-chain focus scope (turn-in-ready stays, successors adopted).
+-- 0.2.5: status.count is the quest total (rewards stay on rewardsText).
 -- 0.2.4: item reward IDs for tooltips; 0.2.3 focus/rewards/type
 -- (closest when none/many are watched), POI reprobe for map + compass.
 -- Prefer Classic/Forever APIs; every Blizzard call is type-checked and pcalled.
@@ -338,6 +340,146 @@ local function QuestAreaID(questID, logIndex)
     if type(a) == "number" then area = a end
   end
   return area
+end
+
+-- 0.2.6 quest chains. Forever is the modern client, so C_QuestLine is the
+-- source: GetQuestLineInfo(questID, uiMapID) -> questLineID, then
+-- GetQuestLineQuests(questLineID) -> ordered quest IDs. Hits are cached for the
+-- session; misses retry after CHAIN_RETRY seconds (or on QUESTLINE_UPDATE).
+local CHAIN_RETRY = 15
+local chainCache = {}
+local chainRequested = {}
+
+local function NowSec()
+  local t = SafeCall(GetTime)
+  if type(t) == "number" then return t end
+  return 0
+end
+
+local function HasQuestLineAPI()
+  return type(C_QuestLine) == "table" and type(C_QuestLine.GetQuestLineInfo) == "function"
+    and type(C_QuestLine.GetQuestLineQuests) == "function"
+end
+
+local function ReadQuestLine(questID, mapID)
+  local info = SafeCall(C_QuestLine.GetQuestLineInfo, questID, mapID)
+  if type(info) ~= "table" or type(info.questLineID) ~= "number" or info.questLineID <= 0 then
+    return nil
+  end
+  local ids = SafeCall(C_QuestLine.GetQuestLineQuests, info.questLineID)
+  if type(ids) ~= "table" or #ids < 1 then return nil end
+  local quests, pos = {}, nil
+  local i
+  for i = 1, #ids do
+    local id = ids[i]
+    if type(id) == "number" then
+      quests[#quests + 1] = id
+      if id == questID then pos = #quests end
+    end
+  end
+  if #quests < 1 then return nil end
+  return {
+    lineID = info.questLineID,
+    name = type(info.questLineName) == "string" and info.questLineName or nil,
+    quests = quests,
+    pos = pos,
+  }
+end
+
+function NS.GetQuestChain(questID, mapHint)
+  if type(questID) ~= "number" or not HasQuestLineAPI() then return nil end
+  local now = NowSec()
+  local c = chainCache[questID]
+  if c then
+    if c.lineID then return c end
+    if (now - (c.at or 0)) < CHAIN_RETRY then return nil end
+  end
+  local maps = {}
+  local function add(id)
+    if type(id) ~= "number" or id <= 0 then return end
+    local i
+    for i = 1, #maps do if maps[i] == id then return end end
+    maps[#maps + 1] = id
+  end
+  add(mapHint)
+  add(PlayerMapID())
+  add(QuestAreaID(questID, nil))
+  local found = ReadQuestLine(questID, nil)
+  local i
+  for i = 1, #maps do
+    if found then break end
+    found = ReadQuestLine(questID, maps[i])
+  end
+  if found then
+    chainCache[questID] = found
+    return found
+  end
+  -- Ask the client to download quest lines for the maps we tried; a later
+  -- QUESTLINE_UPDATE clears misses so the next enumerate picks it up.
+  if type(C_QuestLine.RequestQuestLinesForMap) == "function" then
+    for i = 1, #maps do
+      if not chainRequested[maps[i]] then
+        chainRequested[maps[i]] = true
+        SafeCall(C_QuestLine.RequestQuestLinesForMap, maps[i])
+      end
+    end
+  end
+  chainCache[questID] = { at = now }
+  return nil
+end
+
+local function ClearChainMisses()
+  local k, v
+  for k, v in pairs(chainCache) do
+    if not v.lineID then chainCache[k] = nil end
+  end
+end
+NS.ClearChainMisses = ClearChainMisses
+
+local function FlaggedComplete(questID)
+  if HasCQuestLog() and type(C_QuestLog.IsQuestFlaggedCompleted) == "function" then
+    local v = SafeCall(C_QuestLog.IsQuestFlaggedCompleted, questID)
+    return v == true
+  end
+  if type(IsQuestFlaggedCompleted) == "function" then
+    local v = SafeCall(IsQuestFlaggedCompleted, questID)
+    return v == true or v == 1
+  end
+  return false
+end
+
+-- Step index / total / steps done for the focused quest. A quest without a
+-- chain is a one-step chain (1/1). The current step counts as done once its
+-- objectives are complete (ready to turn in).
+function NS.ChainProgress(quest)
+  local out = { index = 1, total = 1, done = 0, frac = 0, name = nil, lineID = nil }
+  if type(quest) ~= "table" then return out end
+  local c = NS.GetQuestChain(quest.questID, quest.targetMapID)
+  local cur = quest.complete and 1 or 0
+  if not c then
+    out.done = cur
+    out.frac = cur
+    return out
+  end
+  local total = #c.quests
+  local flagged = 0
+  local i
+  for i = 1, total do
+    local id = c.quests[i]
+    if id ~= quest.questID and FlaggedComplete(id) then flagged = flagged + 1 end
+  end
+  local before = flagged
+  if c.pos and (c.pos - 1) > before then before = c.pos - 1 end
+  if before > total - 1 then before = total - 1 end
+  local done = before + cur
+  if done > total then done = total end
+  out.total = total
+  out.index = c.pos or math.min(total, before + 1)
+  out.done = done
+  out.frac = total > 0 and (done / total) or 0
+  out.name = c.name
+  out.lineID = c.lineID
+  return out
 end
 
 local function TrySuperTrack(questID)
@@ -814,6 +956,8 @@ local function NewEntry(fields)
     pushable = false,
   }
   ApplyPOI(entry, poi)
+  local chain = NS.GetQuestChain(entry.questID, entry.targetMapID)
+  entry.chainID = chain and chain.lineID or nil
   entry.questType = LookupQuestType(entry, fields.info)
   entry.questTypeLabel = entry.questType
   NotePushable(entry)
@@ -928,25 +1072,43 @@ function NS.QuestDistance(quest, pos)
   return math.huge
 end
 
--- Checked (watched) incomplete quests win. None checked → closest incomplete.
--- No usable coords → distance +inf so coord-bearing quests sort first; if every
--- candidate lacks coords, logIndex order is the tie-break (first incomplete).
+-- 0.2.6 focus scope. A quest is "in scope" when it is checked (watched), or
+-- it continues a checked chain: same questLineID as the sticky chain, or it
+-- was accepted right after a scoped quest was turned in (adopted successor,
+-- covers clients/quests without C_QuestLine data). Checked quests stay in
+-- scope when ready to turn in.
+NS._adopted = NS._adopted or {}
+NS._stickyChainID = NS._stickyChainID or nil
+NS._scopeIDs = NS._scopeIDs or {}
+
+local function InScope(q)
+  if q.watched then return true end
+  if type(q.questID) == "number" and NS._adopted[q.questID] then return true end
+  if NS._stickyChainID and q.chainID == NS._stickyChainID then return true end
+  return false
+end
+
+-- In-scope quests win (incl. ready to turn in). Only when NO quest in the real
+-- log is in scope does focus fall to the closest incomplete quest. No usable
+-- coords -> distance +inf so coord-bearing quests sort first; logIndex breaks ties.
 function NS.GetFocusCandidates(list)
   list = list or NS.questList or {}
   local pos = NS.GetPlayerPositions()
-  local incomplete, watched = {}, {}
+  local incomplete, scoped = {}, {}
   local i
   for i = 1, #list do
     local q = list[i]
     q._dist = NS.QuestDistance(q, pos)
+    if InScope(q) then
+      scoped[#scoped + 1] = q
+    end
     if not q.complete then
       incomplete[#incomplete + 1] = q
-      if q.watched then watched[#watched + 1] = q end
     end
   end
   local candidates
-  if #watched > 0 then
-    candidates = watched
+  if #scoped > 0 then
+    candidates = scoped
   elseif #incomplete > 0 then
     candidates = incomplete
   else
@@ -961,12 +1123,53 @@ local function WatchKey(list)
   local ids = {}
   local i
   for i = 1, #list do
-    if list[i].watched and not list[i].complete then
+    if list[i].watched then
       ids[#ids + 1] = FocusKey(list[i]) or ""
     end
   end
   table.sort(ids)
   return table.concat(ids, ",")
+end
+
+-- Tracks check/uncheck transitions between enumerations:
+--  * newly checked quest -> takes focus (recheck brings a turn-in-ready quest back)
+--  * explicitly unchecked (still in log) -> drops adoption / sticky chain for it
+local function NoteWatchTransitions(list)
+  local now, inLog = {}, {}
+  local newly
+  local i
+  for i = 1, #list do
+    local q = list[i]
+    local k = FocusKey(q)
+    if k then
+      inLog[k] = q
+      if q.watched then now[k] = true end
+    end
+  end
+  local prev = NS._prevWatched
+  if prev then
+    for i = 1, #list do
+      local q = list[i]
+      local k = FocusKey(q)
+      if k and now[k] and not prev[k] and not newly then newly = q end
+    end
+    local k
+    for k in pairs(prev) do
+      local q = inLog[k]
+      if q and not now[k] then
+        if type(q.questID) == "number" then NS._adopted[q.questID] = nil end
+        if NS._stickyChainID and q.chainID == NS._stickyChainID then NS._stickyChainID = nil end
+        if NS.manualFocusID == k then NS.manualFocusID = nil end
+      end
+    end
+  end
+  NS._prevWatched = now
+  -- Adopted ids that left the log are forgotten.
+  local id
+  for id in pairs(NS._adopted) do
+    if not inLog["id:" .. tostring(id)] then NS._adopted[id] = nil end
+  end
+  return newly
 end
 
 local function ApplyFocus(list)
@@ -977,31 +1180,67 @@ local function ApplyFocus(list)
   end
   NS._watchKey = key
 
+  local newly = NoteWatchTransitions(list)
+  if newly then
+    NS.manualFocusID = FocusKey(newly)
+  end
+  if NS._pendingFocusID then
+    local i
+    for i = 1, #list do
+      if list[i].questID == NS._pendingFocusID then
+        NS.manualFocusID = FocusKey(list[i])
+        NS._pendingFocusID = nil
+        break
+      end
+    end
+  end
+
   local candidates = NS.GetFocusCandidates(list)
   NS.focusCandidates = candidates
   NS.questList = list
 
+  local scopeIDs = {}
+  local i
+  for i = 1, #list do
+    if type(list[i].questID) == "number" and InScope(list[i]) then scopeIDs[list[i].questID] = true end
+  end
+  NS._scopeIDs = scopeIDs
+
   local chosen
   if NS.manualFocusID then
-    local i
     for i = 1, #candidates do
       if FocusKey(candidates[i]) == NS.manualFocusID then
         chosen = candidates[i]
         break
       end
     end
-    -- Gone or completed (no longer a candidate) → stale id cleared.
+    -- Gone or out of scope (no longer a candidate) → stale id cleared.
     if not chosen then NS.manualFocusID = nil end
+  end
+  -- Stay on the checked chain: an adopted successor first, then the nearest
+  -- quest on the sticky chain, before plain distance order.
+  if not chosen then
+    for i = 1, #candidates do
+      local q = candidates[i]
+      if type(q.questID) == "number" and NS._adopted[q.questID] then chosen = q break end
+    end
+  end
+  if not chosen and NS._stickyChainID then
+    for i = 1, #candidates do
+      if candidates[i].chainID == NS._stickyChainID then chosen = candidates[i] break end
+    end
   end
   if not chosen then
     chosen = candidates[1]
   end
 
   if chosen then
+    if chosen.watched or (type(chosen.questID) == "number" and NS._adopted[chosen.questID]) then
+      NS._stickyChainID = chosen.chainID
+    end
     NS.selectedQuestID = chosen.questID
     NS.selectedLogIndex = chosen.logIndex
     local sel = 1
-    local i
     for i = 1, #list do
       if list[i] == chosen then sel = i break end
     end
@@ -1013,6 +1252,38 @@ local function ApplyFocus(list)
   end
   return chosen
 end
+
+-- Turn-in of an in-scope quest opens a short window; the next quest accepted
+-- in it is adopted as the chain's next step and takes focus.
+local ADOPT_WINDOW = 20
+local turnInAt
+local chainEv = CreateFrame("Frame")
+pcall(chainEv.RegisterEvent, chainEv, "QUEST_TURNED_IN")
+pcall(chainEv.RegisterEvent, chainEv, "QUEST_ACCEPTED")
+pcall(chainEv.RegisterEvent, chainEv, "QUESTLINE_UPDATE")
+chainEv:SetScript("OnEvent", function(_, event, a1, a2)
+  if event == "QUESTLINE_UPDATE" then
+    ClearChainMisses()
+  elseif event == "QUEST_TURNED_IN" then
+    if type(a1) == "number" and NS._scopeIDs and NS._scopeIDs[a1] then
+      turnInAt = NowSec()
+      local c = NS.GetQuestChain(a1)
+      if c and c.lineID then NS._stickyChainID = c.lineID end
+    end
+  elseif event == "QUEST_ACCEPTED" then
+    local qid = (type(a2) == "number" and a2 > 0) and a2 or a1
+    if turnInAt and type(qid) == "number" and (NowSec() - turnInAt) <= ADOPT_WINDOW then
+      -- Known chain that is not the one just advanced -> not its next step.
+      local c = NS.GetQuestChain(qid)
+      if not (NS._stickyChainID and c and c.lineID and c.lineID ~= NS._stickyChainID) then
+        NS._adopted[qid] = true
+        NS._pendingFocusID = qid
+        turnInAt = nil
+        if NS.uiReady and not NS._refreshing and NS.Refresh then NS.Refresh() end
+      end
+    end
+  end
+end)
 
 function NS.EnumerateQuests()
   local list = CollectQuests()
@@ -1233,8 +1504,8 @@ local function CopyMock()
     name = m.name or "Barrens Loop",
     index = m.index or 1,
     total = m.total or 7,
-    segments = m.segments or 5,
-    filled = m.filled or 1,
+    progressFrac = (type(m.progressFrac) == "number") and m.progressFrac
+      or ((m.total and m.total > 0) and ((m.filled or 0) / m.total) or 0),
     step = {
       title = (m.step and m.step.title) or "Smart Drinks",
       distance = (m.step and m.step.distance) or "142 yd",
@@ -1303,15 +1574,6 @@ local function TrackerFromQuest(quest)
   }
 end
 
-local function CandidateIndex(quest)
-  local list = NS.focusCandidates or {}
-  local i
-  for i = 1, #list do
-    if list[i] == quest then return i, #list end
-  end
-  return NS.selectedQuestIndex or 1, #list
-end
-
 -- Selecting the quest log every tick flickers Blizzard's quest frame. Re-read
 -- rewards when the focused quest changes, and at most every few seconds.
 local function CachedRewards(quest)
@@ -1339,10 +1601,9 @@ local function BuildLive(quest, list)
   quest.rewards = rewards
   quest.rewardsText = rewardsText
   local tracker = TrackerFromQuest(quest)
-  local cpos, ctotal = CandidateIndex(quest)
-  if ctotal < 1 then ctotal = #list end
-  local segs = math.min(5, math.max(1, ctotal))
-  local barFilled = math.min(segs, math.max(1, cpos))
+  -- 0.2.6: index/total is the quest-chain step (1/1 for a standalone quest);
+  -- progressFrac = chain steps done / steps in chain.
+  local chain = NS.ChainProgress(quest)
   local state = "In progress"
   if quest.complete then state = "Ready to turn in" end
   local qtype = quest.questType or "World"
@@ -1350,10 +1611,12 @@ local function BuildLive(quest, list)
 
   return {
     name = "Quest Log",
-    index = cpos,
-    total = ctotal,
-    segments = segs,
-    filled = barFilled,
+    index = chain.index,
+    total = chain.total,
+    progressFrac = chain.frac,
+    chainDone = chain.done,
+    chainName = chain.name,
+    chainID = chain.lineID,
     step = {
       title = quest.title,
       distance = nav.distance,

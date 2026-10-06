@@ -307,6 +307,7 @@ SafeRegister(ev, "QUEST_REMOVED")
 SafeRegister(ev, "QUEST_TURNED_IN")
 SafeRegister(ev, "QUEST_LOG_UPDATE")
 SafeRegister(ev, "UNIT_QUEST_LOG_CHANGED")
+SafeRegister(ev, "QUEST_WATCH_LIST_CHANGED")
 SafeRegister(ev, "ZONE_CHANGED_NEW_AREA")
 ev:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == "QuestGrind" then
@@ -320,13 +321,14 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if NS.ApplyLock then NS.ApplyLock() end
     NS.Refresh()
     NS.uiReady = true
-    Print("ready (0.2.5) — HUD buttons: Full/Less/Compass, Edit, Min, X. /qg help. /qg show if hidden. Ask SI stubs (P2).")
+    Print("ready (0.2.6) — HUD buttons: Full/Less/Compass, Edit, Min, X. /qg help. /qg show if hidden. Ask SI stubs (P2).")
   elseif event == "UNIT_QUEST_LOG_CHANGED" then
     if (arg1 == "player" or arg1 == nil) and NS.uiReady and not NS._refreshing then
       NS.Refresh()
     end
   elseif event == "QUEST_ACCEPTED" or event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN"
       or event == "QUEST_LOG_UPDATE" or event == "PLAYER_ENTERING_WORLD"
+      or event == "QUEST_WATCH_LIST_CHANGED"
       or event == "ZONE_CHANGED_NEW_AREA" then
     if NS.uiReady and not NS._refreshing then NS.Refresh() end
   end

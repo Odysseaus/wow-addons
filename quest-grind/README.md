@@ -4,7 +4,7 @@ In-game quest HUD for WoW Forever — prettier than alt-tabbing a guide. Modes *
 
 ## Status
 
-**P1 live questing (0.2.5)** — reads the player quest log, focuses the checked quest (or the closest incomplete), shows Dungeon/World plus one **Rewards** area (text and **item icon tooltips**), a **compass arrow** toward the focused quest, and a minimap **edge arrow** (or bottom focus badge when coords are missing). Falls back to mocked Barrens Loop when the log is empty (or `/qg mock`). Ask bridge = **P2**. Hide Blizzard objectives = **P3**. Art polish (TGA) = **P4**. Interface stays **16001**.
+**P1 live questing (0.2.6)** — reads the player quest log, focuses the checked quest or checked chain (or the closest incomplete), shows the **quest-chain step** (e.g. `Quest Log 3/10`) with one **chain % progress bar**, shows Dungeon/World plus one **Rewards** area (text and **item icon tooltips**), a **compass arrow** toward the focused quest, and a minimap **edge arrow** (or bottom focus badge when coords are missing). Falls back to mocked Barrens Loop when the log is empty (or `/qg mock`). Ask bridge = **P2**. Hide Blizzard objectives = **P3**. Art polish (TGA) = **P4**. Interface stays **16001**.
 
 ## Install
 
@@ -37,19 +37,20 @@ Also: `/qg mode [full|less|compass]`, `/qg full`, `/qg less`, `/qg compass`, `/q
 
 ## Live vs mock
 
-- **Live** (default): enumerates accepted quests via `C_QuestLog` when present, else legacy `GetQuestLog*`. Focus rules (0.2.3+):
-  - **Checked** = on the Blizzard objective tracker.
-  - No quests checked → closest incomplete quest (coords beat quests with none; if nobody has coords, log order).
-  - One checked → that quest.
-  - Several checked → closest of the checked incomplete quests.
-  - On complete or when that quest leaves the log, the same rules pick the next focus.
+- **Live** (default): enumerates accepted quests via `C_QuestLog` when present, else legacy `GetQuestLog*`. Focus rules (0.2.6):
+  - **Checked** = on the Blizzard objective tracker. A checked quest stays in focus when it is **ready to turn in**.
+  - **Checked chain**: after you turn in a step of a checked quest, the next step of that chain keeps focus even if it is not checked (same `C_QuestLine` quest line, or the quest you accept right after the turn-in).
+  - Checking a quest (including re-checking a turn-in-ready one) brings it into focus. Unchecking drops it (and its chain) from focus.
+  - Several checked → stay on the current chain, otherwise closest of the checked quests.
+  - Only when **no** quest in the log is checked (or continues a checked chain) → closest incomplete quest (coords beat quests with none; if nobody has coords, log order).
+- **Quest Log index / progress**: `Quest Log i/N` is the focused quest's step in its quest chain (`C_QuestLine`); a standalone quest is `1/1`. The single bar under it shows **chain steps complete / steps in chain** with a centered percentage (the current step counts once it is ready to turn in).
 - **HUD**: focused quest shows a **Dungeon** or **World** badge. Full mode has one **Rewards** section (header, XP / money / items, or **None**) and **item icons** — hover for a real item tooltip (`SetItemByID` / hyperlink). The status block shows state, last update, and a quest count ("3 quests" / "1 quest"), not a second reward line. Less mode still puts type and rewards on the subtitle.
 - **Minimap**: with coords, an **edge arrow** points toward the focus. Without coords, a **bottom focus badge** (not on the player) shows the focus is active; hover shows the quest title. World map pin appears when normalized (or converted) coordinates exist.
-- **Compass**: one arrow on each face points from the player toward the focus (updates on move/rotate). No coordinates hides the arrow instead of pointing north. Distance stays live (re-probes objective position; about 1s for a full log pass). No coords shows `Zone · ?` instead of a leftover mock distance.
+- **Compass**: one arrow on each face points from the player toward the focus. 0.2.6: the arrow re-reads facing every frame (position ~20×/s) and eases toward the target, so turning is smooth and responsive. No coordinates hides the arrow instead of pointing north. Distance stays live (re-probes objective position; about 1s for a full log pass). No coords shows `Zone · ?` instead of a leftover mock distance.
 - **Mock fallback**: if the log is empty, HUD shows the P0 Barrens Loop mock.
 - **`/qg mock`**: force mock on/off (saved in `QuestGrindDB.forceMock`).
 - **`/qg refresh`**: force a live refresh (clears force-mock and any `/qg next` override).
-- **`/qg next` / `/qg prev`**: cycle the current candidate set (checked quests if any, otherwise incomplete), closest first.
+- **`/qg next` / `/qg prev`**: cycle the current candidate set (checked / checked-chain quests if any, otherwise incomplete), closest first.
 
 Distance/bearing use objective coordinates when Forever exposes them (quest POI, waypoint, or world yards converted onto the map). Without coords the distance line is `?`, the compass shows the zone, and the minimap shows the bottom focus badge.
 

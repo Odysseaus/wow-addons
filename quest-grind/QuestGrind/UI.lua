@@ -4,6 +4,7 @@ local _, NS = ...
 -- Transparent PAD outside chrome so ornate edges never clip (root > art).
 -- Themes apply to Full AND Less AND Compass. Solid colors = P0/P1; TGA polish = P4.
 -- P1: ApplyRoute / RefreshRouteUI paint live or mock; Route.lua rotates compass arrows.
+-- 0.2.6: one centered-percentage chain progress bar (was 5 segments).
 -- 0.2.5: one Rewards area in Full (header + text + icons); one compass arrow per face.
 -- 0.2.4: item reward icon tooltips; minimap focus badge.
 -- 0.2.1 (P0 UX fix): window controls live on layers.chromeControls, which is
@@ -305,45 +306,69 @@ local function MakeDraggable(f)
   f:SetScript("OnDragStop", function() StopHUDDrag() end)
 end
 
-local function MakeSegmentBar(parent, n)
+-- 0.2.6: one continuous bar (replaces the 5 segments) with a centered
+-- percentage. Same overall length as the old 5-segment strip (5*28 + 4*3).
+local PROGRESS_W = 152
+local PROGRESS_H = 12
+
+local function ClampFrac(frac)
+  frac = tonumber(frac) or 0
+  if frac ~= frac then frac = 0 end -- NaN
+  if frac < 0 then frac = 0 end
+  if frac > 1 then frac = 1 end
+  return frac
+end
+NS.ClampProgressFrac = ClampFrac
+
+local function MakeProgressBar(parent, width)
+  local w = width or PROGRESS_W
   local bar = CreateFrame("Frame", nil, parent)
-  bar.segs = {}
-  local i
-  for i = 1, n do
-    local s = CreateFrame("Frame", nil, bar)
-    s:SetSize(28, 8)
-    s.bg = s:CreateTexture(nil, "BACKGROUND")
-    s.bg:SetAllPoints()
-    s.bg:SetColorTexture(1, 1, 1, 1)
-    s.bg._qgThemeWhite = true
-    s.bg:SetVertexColor(0.15, 0.12, 0.08, 0.9)
-    s.fill = s:CreateTexture(nil, "ARTWORK")
-    s.fill:SetAllPoints()
-    s.fill:SetColorTexture(1, 1, 1, 1)
-    s.fill._qgThemeWhite = true
-    s.fill:SetVertexColor(0.85, 0.65, 0.2, 1)
-    s.fill:Hide()
-    if i == 1 then
-      s:SetPoint("LEFT", bar, "LEFT", 0, 0)
+  bar:SetSize(w, PROGRESS_H)
+  bar.bg = bar:CreateTexture(nil, "BACKGROUND")
+  bar.bg:SetAllPoints()
+  bar.bg:SetColorTexture(1, 1, 1, 1)
+  bar.bg._qgThemeWhite = true
+  bar.bg:SetVertexColor(0.15, 0.12, 0.08, 0.9)
+  bar.fill = bar:CreateTexture(nil, "ARTWORK")
+  bar.fill:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+  bar.fill:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+  bar.fill:SetWidth(1)
+  bar.fill:SetColorTexture(1, 1, 1, 1)
+  bar.fill._qgThemeWhite = true
+  bar.fill:SetVertexColor(0.85, 0.65, 0.2, 1)
+  bar.fill:Hide()
+  bar.pct = FS(bar, nil, 10, "OUTLINE")
+  bar.pct:SetJustifyH("CENTER")
+  bar.pct:SetPoint("CENTER", bar, "CENTER", 0, 0)
+  bar.pct:SetTextColor(1, 1, 1, 1)
+  bar.pct:SetText("0%")
+  bar._qgWidth = w
+  bar._qgFrac = 0
+  function bar:SetProgress(frac, accent)
+    frac = ClampFrac(frac)
+    self._qgFrac = frac
+    if accent then NS.SetVertexColor(self.fill, accent) end
+    local fw = math.floor(self._qgWidth * frac + 0.5)
+    if fw < 1 then
+      self.fill:Hide()
     else
-      s:SetPoint("LEFT", bar.segs[i - 1], "RIGHT", 3, 0)
+      self.fill:SetWidth(fw)
+      self.fill:Show()
     end
-    bar.segs[i] = s
-  end
-  bar:SetSize(n * 31, 8)
-  function bar:SetFilled(count, accent)
-    local j
-    for j = 1, #self.segs do
-      if j <= count then
-        if accent then NS.SetVertexColor(self.segs[j].fill, accent) end
-        self.segs[j].fill:Show()
-      else
-        self.segs[j].fill:Hide()
-      end
-    end
+    self.pct:SetText(string.format("%d%%", math.floor(frac * 100 + 0.5)))
   end
   return bar
 end
+
+local function RouteFrac(m)
+  if type(m) ~= "table" then return 0 end
+  if type(m.progressFrac) == "number" then return ClampFrac(m.progressFrac) end
+  if type(m.total) == "number" and m.total > 0 then
+    return ClampFrac((m.filled or 0) / m.total)
+  end
+  return 0
+end
+NS.RouteProgressFrac = RouteFrac
 
 local function EmblemGlyph(motif)
   if motif == "swords" then return "X"
@@ -524,7 +549,7 @@ function NS.BuildUI()
   routeRow.name:SetPoint("LEFT", routeRow.icon, "RIGHT", 8, 4)
   routeRow.progress = FS(routeRow, nil, 11)
   routeRow.progress:SetPoint("LEFT", routeRow.name, "RIGHT", 6, 0)
-  routeRow.bar = MakeSegmentBar(routeRow, 5)
+  routeRow.bar = MakeProgressBar(routeRow, PROGRESS_W)
   routeRow.bar:SetPoint("TOPLEFT", routeRow.icon, "BOTTOMLEFT", 0, -8)
   layers.routeRow = routeRow
 
@@ -722,7 +747,7 @@ function NS.BuildUI()
   local lessProgress = CreateFrame("Frame", nil, art)
   lessProgress:SetSize(220, 12)
   lessProgress:SetPoint("TOPLEFT", lessDistance, "BOTTOMLEFT", 0, -6)
-  lessProgress.bar = MakeSegmentBar(lessProgress, 5)
+  lessProgress.bar = MakeProgressBar(lessProgress, PROGRESS_W)
   lessProgress.bar:SetPoint("LEFT", 0, 0)
   layers.lessProgress = lessProgress
 
@@ -1029,7 +1054,7 @@ function NS.ApplyTheme()
     set(layers.routeRow.icon.tex, th.chrome)
     set(layers.routeRow.name, th.title)
     set(layers.routeRow.progress, th.text)
-    layers.routeRow.bar:SetFilled(((NS.liveRoute or NS.MockRoute) and (NS.liveRoute or NS.MockRoute).filled) or 1, th.accent)
+    layers.routeRow.bar:SetProgress(RouteFrac(NS.liveRoute or NS.MockRoute), th.accent)
   end
   if layers.stepRow then
     set(layers.stepRow.icon.tex, th.chrome)
@@ -1118,7 +1143,7 @@ function NS.ApplyTheme()
     set(layers.lessDistance.diamondR.tex, th.chromeHi)
   end
   if layers.lessProgress then
-    layers.lessProgress.bar:SetFilled(((NS.liveRoute or NS.MockRoute) and (NS.liveRoute or NS.MockRoute).filled) or 1, th.accent)
+    layers.lessProgress.bar:SetProgress(RouteFrac(NS.liveRoute or NS.MockRoute), th.accent)
   end
   if layers.modeChrome then
     set(layers.modeChrome.bg.tex, th.chrome)
@@ -1312,7 +1337,7 @@ function NS.ApplyRoute(m)
 
   layers.routeRow.name:SetText(m.name or "")
   layers.routeRow.progress:SetText(string.format("%d/%d", m.index or 0, m.total or 0))
-  layers.routeRow.bar:SetFilled(m.filled or 1, NS.GetTheme().accent)
+  layers.routeRow.bar:SetProgress(RouteFrac(m), NS.GetTheme().accent)
 
   local step = m.step or {}
   layers.stepRow.title:SetText(step.title or "")
@@ -1336,7 +1361,7 @@ function NS.ApplyRoute(m)
   if layers.lessTitle then layers.lessTitle.text:SetText(step.title or "") end
   if layers.lessDistance then layers.lessDistance.text:SetText(step.distance or "?") end
   if layers.lessProgress then
-    layers.lessProgress.bar:SetFilled(m.filled or 1, NS.GetTheme().accent)
+    layers.lessProgress.bar:SetProgress(RouteFrac(m), NS.GetTheme().accent)
   end
   if layers.compassOnlyFace then
     layers.compassOnlyFace.dist:SetText(CompassDistLine(m))
