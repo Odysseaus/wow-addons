@@ -4,7 +4,7 @@ In-game quest HUD for WoW Forever — prettier than alt-tabbing a guide. Modes *
 
 ## Status
 
-**P1 live questing (0.2.3)** — reads the player quest log, focuses the checked quest (or the closest incomplete), shows Dungeon/World plus rewards, updates the compass from live data, and always draws a minimap pointer for the focused quest. Falls back to mocked Barrens Loop when the log is empty (or `/qg mock`). Ask bridge = **P2**. Hide Blizzard objectives = **P3**. Art polish (TGA) = **P4**. Interface stays **16001**.
+**P1 live questing (0.2.4)** — reads the player quest log, focuses the checked quest (or the closest incomplete), shows Dungeon/World plus rewards with **item icon tooltips**, a **real compass needle**, and a minimap **edge arrow** (or bottom focus badge when coords are missing). Falls back to mocked Barrens Loop when the log is empty (or `/qg mock`). Ask bridge = **P2**. Hide Blizzard objectives = **P3**. Art polish (TGA) = **P4**. Interface stays **16001**.
 
 ## Install
 
@@ -37,21 +37,21 @@ Also: `/qg mode [full|less|compass]`, `/qg full`, `/qg less`, `/qg compass`, `/q
 
 ## Live vs mock
 
-- **Live** (default): enumerates accepted quests via `C_QuestLog` when present, else legacy `GetQuestLog*`. Focus rules (0.2.3):
+- **Live** (default): enumerates accepted quests via `C_QuestLog` when present, else legacy `GetQuestLog*`. Focus rules (0.2.3+):
   - **Checked** = on the Blizzard objective tracker.
   - No quests checked → closest incomplete quest (coords beat quests with none; if nobody has coords, log order).
   - One checked → that quest.
   - Several checked → closest of the checked incomplete quests.
   - On complete or when that quest leaves the log, the same rules pick the next focus.
-- **HUD**: focused quest shows a **Dungeon** or **World** badge and a short reward line (XP, money, items) under Current Step, under the Less title, and on the status/XP line.
-- **Minimap**: a live focus always shows a pointer. Edge arrow with a gold `!` when the bearing is known; a center `!` when coords are missing. World map pin appears when normalized (or converted) coordinates exist.
-- **Compass**: distance and needle stay live (re-probes objective position; about 1s for a full log pass). No coords shows `Zone · ?` instead of a leftover mock distance.
+- **HUD**: focused quest shows a **Dungeon** or **World** badge and a short reward line (XP, money, items) under Current Step, under the Less title, and on the status/XP line. Item rewards also show **icons** — hover for a real item tooltip (`SetItemByID` / hyperlink).
+- **Minimap**: with coords, an **edge arrow** points toward the focus. Without coords, a **bottom focus badge** (not on the player) shows the focus is active; hover shows the quest title. World map pin appears when normalized (or converted) coordinates exist.
+- **Compass**: a real tip+tail needle pivots from center toward the focus (updates on move/rotate). Distance stays live (re-probes objective position; about 1s for a full log pass). No coords shows `Zone · ?` instead of a leftover mock distance.
 - **Mock fallback**: if the log is empty, HUD shows the P0 Barrens Loop mock.
 - **`/qg mock`**: force mock on/off (saved in `QuestGrindDB.forceMock`).
 - **`/qg refresh`**: force a live refresh (clears force-mock and any `/qg next` override).
 - **`/qg next` / `/qg prev`**: cycle the current candidate set (checked quests if any, otherwise incomplete), closest first.
 
-Distance/bearing use objective coordinates when Forever exposes them (quest POI, waypoint, or world yards converted onto the map). Without coords the distance line is `?`, the compass shows the zone, and the minimap still shows the focus bang.
+Distance/bearing use objective coordinates when Forever exposes them (quest POI, waypoint, or world yards converted onto the map). Without coords the distance line is `?`, the compass shows the zone, and the minimap shows the bottom focus badge.
 
 ## Themes
 

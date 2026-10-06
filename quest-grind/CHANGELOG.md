@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.4 — Item tooltips, minimap route, real needle
+
+- **Item reward hover**: reward items keep `itemID` / texture / link; Full mode shows icon buttons under Current Step. Hover uses `GameTooltip:SetItemByID` (else `SetHyperlink`) like the quest log.
+- **Minimap**: removed the center-on-player dead `!`. With coords → edge arrow toward focus. Without coords → bottom focus badge (quest title on hover; never a fake bearing).
+- **Compass**: replaced Solid rectangle needles with a geometric tip+tail+hub needle that pivots from face center (sin/cos + glyph). Facing/move updates keep the tip on the focus bearing.
+- Root causes: rewards were name-only FontStrings with no item tip; no-coords path pinned a bang on the player; Solid bars + off-center nudge looked like a floating rectangle, not a needle.
+
 ## 0.2.3 — P1 fix set
 
 - **Rewards + type**: focused live quest shows **Dungeon** or **World** and a short reward line (XP, money, item names) under Current Step, on the Less subtitle, and in the status/XP line.

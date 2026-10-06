@@ -4,6 +4,7 @@ local _, NS = ...
 -- Transparent PAD outside chrome so ornate edges never clip (root > art).
 -- Themes apply to Full AND Less AND Compass. Solid colors = P0/P1; TGA polish = P4.
 -- P1: ApplyRoute / RefreshRouteUI paint live or mock; Route.lua rotates needles.
+-- 0.2.4: item reward icon tooltips; geometric compass needle; minimap focus badge.
 -- 0.2.1 (P0 UX fix): window controls live on layers.chromeControls, which is
 -- NEVER hidden by mode switches (Full / Less / Compass / minimized), sits above
 -- all content (frame level), and is anchored inside art TOPRIGHT.
@@ -58,6 +59,118 @@ local function Solid(parent, r, g, b, a)
   t:SetVertexColor(r or 0, g or 0, b or 0, a or 1)
   f.tex = t
   return f
+end
+
+-- Geometric compass needle: tip (gold) + tail (dark) + hub + direction glyph.
+-- Pivot stays at face CENTER; Route.SetNeedleRotation places tip/tail via sin/cos.
+local function MakeNeedle(parent, tipLen, tipW, tailLen, tailW)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetSize(8, 8)
+  f:SetPoint("CENTER", parent, "CENTER", 0, 0)
+  f._qgNeedle = true
+  f.tipLen = tipLen or 44
+  f.tipW = tipW or 7
+  f.tailLen = tailLen or 16
+  f.tailW = tailW or 5
+
+  f.tip = CreateFrame("Frame", nil, f)
+  f.tip:SetSize(f.tipW, f.tipLen)
+  f.tip.tex = f.tip:CreateTexture(nil, "ARTWORK")
+  f.tip.tex:SetAllPoints()
+  f.tip.tex:SetColorTexture(1, 1, 1, 1)
+  f.tip.tex._qgThemeWhite = true
+  f.tip.tex:SetVertexColor(0.90, 0.78, 0.40, 1)
+
+  f.tail = CreateFrame("Frame", nil, f)
+  f.tail:SetSize(f.tailW, f.tailLen)
+  f.tail.tex = f.tail:CreateTexture(nil, "ARTWORK")
+  f.tail.tex:SetAllPoints()
+  f.tail.tex:SetColorTexture(1, 1, 1, 1)
+  f.tail.tex._qgThemeWhite = true
+  f.tail.tex:SetVertexColor(0.45, 0.35, 0.20, 1)
+
+  f.hub = CreateFrame("Frame", nil, f)
+  f.hub:SetSize(10, 10)
+  f.hub:SetPoint("CENTER", f, "CENTER", 0, 0)
+  f.hub.tex = f.hub:CreateTexture(nil, "OVERLAY")
+  f.hub.tex:SetAllPoints()
+  f.hub.tex:SetColorTexture(1, 1, 1, 1)
+  f.hub.tex._qgThemeWhite = true
+  f.hub.tex:SetVertexColor(0.95, 0.88, 0.55, 1)
+
+  f.glyph = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  f.glyph:SetPoint("CENTER", f, "CENTER", 0, (f.tipLen or 44) * 0.92)
+  if f.glyph.SetFont and GameFontNormal and GameFontNormal.GetFont then
+    local path = GameFontNormal:GetFont()
+    if path then f.glyph:SetFont(path, 14, "OUTLINE") end
+  end
+  f.glyph:SetText("^")
+  f.glyph:SetTextColor(0.95, 0.88, 0.45, 1)
+
+  -- Theme apply targets tip as .tex (chromeHi); tail/hub separate.
+  f.tex = f.tip.tex
+  f.tailTex = f.tail.tex
+  f.hubTex = f.hub.tex
+  -- Park at north (0 rad) until Route.SetNeedleRotation runs.
+  f.tip:ClearAllPoints()
+  f.tip:SetPoint("CENTER", f, "CENTER", 0, (f.tipLen or 44) * 0.48)
+  f.tail:ClearAllPoints()
+  f.tail:SetPoint("CENTER", f, "CENTER", 0, -(f.tailLen or 16) * 0.48)
+  return f
+end
+
+local REWARD_ICON_SLOTS = 4
+
+local function ShowItemTooltip(self)
+  if not GameTooltip then return end
+  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+  local shown = false
+  local itemID = self.itemID
+  if type(itemID) == "number" and itemID > 0 and type(GameTooltip.SetItemByID) == "function" then
+    local ok = pcall(GameTooltip.SetItemByID, GameTooltip, itemID)
+    if ok then shown = true end
+  end
+  if not shown then
+    local link = self.itemLink
+    if type(link) == "string" and link ~= "" and type(GameTooltip.SetHyperlink) == "function" then
+      local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, link)
+      if ok then shown = true end
+    end
+  end
+  if not shown and type(itemID) == "number" and itemID > 0 and type(GameTooltip.SetHyperlink) == "function" then
+    local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. tostring(math.floor(itemID)))
+    if ok then shown = true end
+  end
+  if not shown then
+    local name = self.itemName or "Reward"
+    GameTooltip:SetText(name, 1, 0.85, 0.4)
+  end
+  GameTooltip:Show()
+end
+
+local function MakeRewardIcon(parent)
+  local b = CreateFrame("Button", nil, parent)
+  b:SetSize(22, 22)
+  b:EnableMouse(true)
+  b.border = b:CreateTexture(nil, "BACKGROUND")
+  b.border:SetAllPoints()
+  b.border:SetColorTexture(1, 1, 1, 1)
+  b.border._qgThemeWhite = true
+  b.border:SetVertexColor(0.72, 0.55, 0.22, 1)
+  b.icon = b:CreateTexture(nil, "ARTWORK")
+  b.icon:SetPoint("TOPLEFT", 1, -1)
+  b.icon:SetPoint("BOTTOMRIGHT", -1, 1)
+  b.icon:SetColorTexture(0.25, 0.20, 0.12, 1)
+  b.count = FS(b, nil, 10, "OUTLINE")
+  b.count:SetPoint("BOTTOMRIGHT", 1, -1)
+  b.count:SetJustifyH("RIGHT")
+  b.count:SetText("")
+  b:SetScript("OnEnter", ShowItemTooltip)
+  b:SetScript("OnLeave", function()
+    if GameTooltip then GameTooltip:Hide() end
+  end)
+  b:Hide()
+  return b
 end
 
 -- Tooltip: getTip(self) returns title, line (line optional).
@@ -389,7 +502,7 @@ function NS.BuildUI()
   layers.routeRow = routeRow
 
   local stepRow = CreateFrame("Frame", nil, art)
-  stepRow:SetSize(200, 116)
+  stepRow:SetSize(200, 140)
   stepRow:SetPoint("TOPLEFT", routeRow, "BOTTOMLEFT", 0, -10)
   stepRow.icon = Solid(stepRow, 0.72, 0.55, 0.22, 1)
   stepRow.icon:SetSize(22, 22)
@@ -419,6 +532,17 @@ function NS.BuildUI()
   stepRow.rewards:SetWidth(190)
   stepRow.rewards:SetWordWrap(true)
   stepRow.rewards:SetText("")
+  stepRow.rewardIcons = {}
+  local ri
+  for ri = 1, REWARD_ICON_SLOTS do
+    local icon = MakeRewardIcon(stepRow)
+    if ri == 1 then
+      icon:SetPoint("TOPLEFT", stepRow.rewards, "BOTTOMLEFT", 0, -4)
+    else
+      icon:SetPoint("LEFT", stepRow.rewardIcons[ri - 1], "RIGHT", 4, 0)
+    end
+    stepRow.rewardIcons[ri] = icon
+  end
   layers.stepRow = stepRow
 
   local trackerRow = CreateFrame("Frame", nil, art)
@@ -458,9 +582,7 @@ function NS.BuildUI()
   compassLarge.W = FS(compassLarge, nil, 12, "OUTLINE")
   compassLarge.W:SetPoint("LEFT", 8, 0)
   compassLarge.W:SetText("W")
-  compassLarge.needle = Solid(compassLarge, 0.90, 0.78, 0.40, 1)
-  compassLarge.needle:SetSize(6, 50)
-  compassLarge.needle:SetPoint("CENTER", 8, 12)
+  compassLarge.needle = MakeNeedle(compassLarge, 48, 7, 18, 5)
   layers.compassLarge = compassLarge
 
   local statusBlock = CreateFrame("Frame", nil, art)
@@ -535,9 +657,7 @@ function NS.BuildUI()
   lessCompass.ring:SetPoint("TOPLEFT", -3, 3)
   lessCompass.ring:SetPoint("BOTTOMRIGHT", 3, -3)
   lessCompass.ring:SetFrameLevel(lessCompass:GetFrameLevel() - 1)
-  lessCompass.needle = Solid(lessCompass, 0.90, 0.78, 0.40, 1)
-  lessCompass.needle:SetSize(4, 28)
-  lessCompass.needle:SetPoint("CENTER", 4, 6)
+  lessCompass.needle = MakeNeedle(lessCompass, 26, 5, 10, 4)
   layers.lessCompass = lessCompass
 
   local lessTitle = CreateFrame("Frame", nil, art)
@@ -618,9 +738,7 @@ function NS.BuildUI()
   compassOnly.W = FS(compassOnly, nil, 14, "OUTLINE")
   compassOnly.W:SetPoint("LEFT", 10, 0)
   compassOnly.W:SetText("W")
-  compassOnly.needle = Solid(compassOnly, 0.90, 0.78, 0.40, 1)
-  compassOnly.needle:SetSize(8, 60)
-  compassOnly.needle:SetPoint("CENTER", 10, 16)
+  compassOnly.needle = MakeNeedle(compassOnly, 56, 8, 20, 6)
   compassOnly.dist = FS(compassOnly, nil, 13, "OUTLINE")
   compassOnly.dist:SetPoint("BOTTOM", 0, 12)
   layers.compassOnlyFace = compassOnly
@@ -898,6 +1016,13 @@ function NS.ApplyTheme()
     if layers.stepRow.rewards then
       set(layers.stepRow.rewards, th.statusXp)
     end
+    if layers.stepRow.rewardIcons then
+      local i
+      for i = 1, #layers.stepRow.rewardIcons do
+        local ic = layers.stepRow.rewardIcons[i]
+        if ic and ic.border then set(ic.border, th.chrome) end
+      end
+    end
   end
   if layers.trackerRow then
     set(layers.trackerRow.label, th.title)
@@ -907,7 +1032,15 @@ function NS.ApplyTheme()
   if layers.compassLarge then
     set(layers.compassLarge.face.tex, th.panel)
     set(layers.compassLarge.ring.tex, th.chrome)
-    set(layers.compassLarge.needle.tex, th.chromeHi)
+    if layers.compassLarge.needle then
+      local n = layers.compassLarge.needle
+      if n.tex then set(n.tex, th.chromeHi) end
+      if n.tailTex then set(n.tailTex, th.muted) end
+      if n.hubTex then set(n.hubTex, th.chromeHi) end
+      if n.glyph and n.glyph.SetTextColor and th.chromeHi then
+        n.glyph:SetTextColor(th.chromeHi.r or 0.9, th.chromeHi.g or 0.78, th.chromeHi.b or 0.4, 1)
+      end
+    end
     set(layers.compassLarge.N, th.title)
     set(layers.compassLarge.E, th.title)
     set(layers.compassLarge.S, th.title)
@@ -930,7 +1063,15 @@ function NS.ApplyTheme()
   if layers.lessCompass then
     set(layers.lessCompass.face.tex, th.panel)
     set(layers.lessCompass.ring.tex, th.chrome)
-    set(layers.lessCompass.needle.tex, th.chromeHi)
+    if layers.lessCompass.needle then
+      local n = layers.lessCompass.needle
+      if n.tex then set(n.tex, th.chromeHi) end
+      if n.tailTex then set(n.tailTex, th.muted) end
+      if n.hubTex then set(n.hubTex, th.chromeHi) end
+      if n.glyph and n.glyph.SetTextColor and th.chromeHi then
+        n.glyph:SetTextColor(th.chromeHi.r or 0.9, th.chromeHi.g or 0.78, th.chromeHi.b or 0.4, 1)
+      end
+    end
   end
   if layers.lessTitle then
     set(layers.lessTitle.text, th.text)
@@ -962,7 +1103,15 @@ function NS.ApplyTheme()
   if layers.compassOnlyFace then
     set(layers.compassOnlyFace.face.tex, th.panel)
     set(layers.compassOnlyFace.ring.tex, th.chrome)
-    set(layers.compassOnlyFace.needle.tex, th.chromeHi)
+    if layers.compassOnlyFace.needle then
+      local n = layers.compassOnlyFace.needle
+      if n.tex then set(n.tex, th.chromeHi) end
+      if n.tailTex then set(n.tailTex, th.muted) end
+      if n.hubTex then set(n.hubTex, th.chromeHi) end
+      if n.glyph and n.glyph.SetTextColor and th.chromeHi then
+        n.glyph:SetTextColor(th.chromeHi.r or 0.9, th.chromeHi.g or 0.78, th.chromeHi.b or 0.4, 1)
+      end
+    end
     set(layers.compassOnlyFace.N, th.title)
     set(layers.compassOnlyFace.E, th.title)
     set(layers.compassOnlyFace.S, th.title)
@@ -1005,6 +1154,78 @@ local function LiveSubtitle(m)
   return rewards
 end
 
+local function CollectRewardIconItems(rewards)
+  local out = {}
+  if type(rewards) ~= "table" then return out end
+  local function take(list)
+    local i
+    for i = 1, #(list or {}) do
+      if #out >= REWARD_ICON_SLOTS then return end
+      local it = list[i]
+      if it and (it.itemID or it.texture or it.link) then
+        out[#out + 1] = it
+      end
+    end
+  end
+  take(rewards.items)
+  take(rewards.choices)
+  return out
+end
+
+local function PaintRewardIcons(m)
+  if not layers.stepRow or not layers.stepRow.rewardIcons then return end
+  local icons = layers.stepRow.rewardIcons
+  local items = {}
+  if m and m.source == "live" and type(m.rewards) == "table" then
+    items = CollectRewardIconItems(m.rewards)
+  end
+  local i
+  for i = 1, #icons do
+    local b = icons[i]
+    local it = items[i]
+    if it then
+      b.itemID = it.itemID
+      b.itemLink = it.link
+      b.itemName = it.name
+      local tex = it.texture
+      if (not tex or tex == "") and type(it.itemID) == "number" and type(GetItemIcon) == "function" then
+        local ok, ic = pcall(GetItemIcon, it.itemID)
+        if ok and ic then tex = ic end
+      end
+      if (not tex or tex == "") and type(it.itemID) == "number" and type(GetItemInfo) == "function" then
+        local ok, _, _, _, _, _, _, _, _, _, itex = pcall(GetItemInfo, it.itemID)
+        if ok and itex then tex = itex end
+      end
+      if b.icon then
+        if tex and b.icon.SetTexture then
+          local ok = pcall(b.icon.SetTexture, b.icon, tex)
+          if not ok then
+            b.icon:SetColorTexture(0.35, 0.28, 0.14, 1)
+          else
+            -- Clear any leftover solid tint
+            if b.icon.SetVertexColor then b.icon:SetVertexColor(1, 1, 1, 1) end
+          end
+        else
+          b.icon:SetColorTexture(0.35, 0.28, 0.14, 1)
+        end
+      end
+      if b.count then
+        if type(it.count) == "number" and it.count > 1 then
+          b.count:SetText(tostring(math.floor(it.count)))
+        else
+          b.count:SetText("")
+        end
+      end
+      b:Show()
+    else
+      b.itemID = nil
+      b.itemLink = nil
+      b.itemName = nil
+      b:Hide()
+    end
+  end
+end
+
 local function PaintQuestMeta(m)
   local th = NS.GetTheme()
   local set = NS.SetVertexColor
@@ -1023,6 +1244,7 @@ local function PaintQuestMeta(m)
     layers.stepRow.rewards:SetText(rewards)
     set(layers.stepRow.rewards, th.statusXp)
   end
+  PaintRewardIcons(m)
   if layers.lessTitle and layers.lessTitle.sub then
     layers.lessTitle.sub:SetText(LiveSubtitle(m))
     if qtype == "Dungeon" then

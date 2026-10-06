@@ -1,9 +1,10 @@
 local _, NS = ...
 
--- P1: world map pin(s) + minimap arrow. Simple SetColorTexture art (P4 = polish).
+-- P1: world map pin(s) + minimap edge arrow / bottom focus badge (0.2.4).
 
 local mapPin
 local minimapArrow
+local minimapBadge
 local hookedMap = false
 
 local function SafeCall(fn, ...)
@@ -64,6 +65,55 @@ local function EnsureMinimapArrow()
   return f
 end
 
+-- Focus badge: sits under the minimap disk (NOT on the player). Used when the
+-- live focus has no coords — still useful (quest title on hover), never a fake bearing.
+local function EnsureMinimapBadge()
+  if minimapBadge then return minimapBadge end
+  if not Minimap then return nil end
+  local f = CreateFrame("Button", "QuestGrindMinimapBadge", Minimap)
+  f:SetSize(22, 22)
+  f:SetFrameStrata("HIGH")
+  local base = 0
+  if Minimap.GetFrameLevel then base = Minimap:GetFrameLevel() or 0 end
+  f:SetFrameLevel(base + 42)
+  f.border = f:CreateTexture(nil, "BACKGROUND")
+  f.border:SetAllPoints()
+  f.border:SetColorTexture(1, 1, 1, 1)
+  f.border._qgThemeWhite = true
+  f.border:SetVertexColor(0.90, 0.78, 0.40, 1)
+  f.bg = f:CreateTexture(nil, "ARTWORK")
+  f.bg:SetPoint("TOPLEFT", 1, -1)
+  f.bg:SetPoint("BOTTOMRIGHT", -1, 1)
+  f.bg:SetColorTexture(1, 1, 1, 1)
+  f.bg._qgThemeWhite = true
+  f.bg:SetVertexColor(0.18, 0.12, 0.07, 1)
+  f.glyph = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  f.glyph:SetPoint("CENTER", 0, 0)
+  if f.glyph.SetFont and GameFontNormal and GameFontNormal.GetFont then
+    local path = GameFontNormal:GetFont()
+    if path then f.glyph:SetFont(path, 14, "OUTLINE") end
+  end
+  f.glyph:SetText("!")
+  f.glyph:SetTextColor(0.95, 0.85, 0.35, 1)
+  f:SetPoint("BOTTOM", Minimap, "BOTTOM", 0, -2)
+  f:EnableMouse(true)
+  f:RegisterForClicks("LeftButtonUp")
+  f:SetScript("OnEnter", function(self)
+    if not GameTooltip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    local title = self.questTitle or "Focused quest"
+    GameTooltip:SetText(title, 1, 0.85, 0.4)
+    GameTooltip:AddLine("No map coords yet — edge arrow appears when Forever exposes a POI.", 0.85, 0.82, 0.75, true)
+    GameTooltip:Show()
+  end)
+  f:SetScript("OnLeave", function()
+    if GameTooltip then GameTooltip:Hide() end
+  end)
+  f:Hide()
+  minimapBadge = f
+  return f
+end
+
 local function PositionOnMap(pin, x, y)
   -- x,y normalized 0..1 (top-left origin varies). Classic often bottom-left.
   local parent = pin:GetParent()
@@ -79,6 +129,7 @@ end
 function NS.ClearMapPins()
   if mapPin then mapPin:Hide() end
   if minimapArrow then minimapArrow:Hide() end
+  if minimapBadge then minimapBadge:Hide() end
 end
 
 function NS.UpdateMapPins(route)
@@ -107,7 +158,7 @@ function NS.UpdateMapPins(route)
     pin:Hide()
   end
 
-  -- Minimap pointer is required for every live focus, even with no pin coords.
+  -- Minimap: edge arrow when bearing known; bottom focus badge when not (never center-on-player).
   NS.UpdateMinimapArrow(route)
   NS.HookWorldMap()
 end
@@ -115,16 +166,26 @@ end
 function NS.UpdateMinimapArrow(route)
   route = route or NS.liveRoute
   local arrow = EnsureMinimapArrow()
-  if not arrow then return end
+  local badge = EnsureMinimapBadge()
+  if not arrow and not badge then return end
+
   if not route or route.source ~= "live" then
-    arrow:Hide()
+    if arrow then arrow:Hide() end
+    if badge then badge:Hide() end
     return
   end
 
-  if arrow.glyph then arrow.glyph:SetText("!") end
-
   local haveBearing = route.hasCoords and route.bearingDeg ~= nil
-  if haveBearing then
+  local title = nil
+  if route.step and type(route.step.title) == "string" and route.step.title ~= "" then
+    title = route.step.title
+  elseif type(route.name) == "string" then
+    title = route.name
+  end
+
+  if haveBearing and arrow then
+    if badge then badge:Hide() end
+    if arrow.glyph then arrow.glyph:SetText("!") end
     local facing = SafeCall(GetPlayerFacing)
     local rel
     if type(facing) == "number" then
@@ -139,7 +200,8 @@ function NS.UpdateMinimapArrow(route)
     end
     local ox = math.sin(rel) * radius
     local oy = math.cos(rel) * radius
-    arrow:SetSize(20, 28)
+    -- Edge pointer: tall gold tip + bang, rotated toward focus.
+    arrow:SetSize(18, 26)
     arrow:ClearAllPoints()
     arrow:SetPoint("CENTER", Minimap, "CENTER", ox, oy)
     if arrow.tex and type(arrow.tex.SetRotation) == "function" then
@@ -147,16 +209,17 @@ function NS.UpdateMinimapArrow(route)
     elseif type(arrow.SetRotation) == "function" then
       pcall(arrow.SetRotation, arrow, rel)
     end
+    arrow:Show()
   else
-    -- No coords: still show a quest-bang so a live focus is never invisible.
-    arrow:SetSize(22, 22)
-    arrow:ClearAllPoints()
-    arrow:SetPoint("CENTER", Minimap, "CENTER", 0, 10)
-    if arrow.tex and type(arrow.tex.SetRotation) == "function" then
-      pcall(arrow.tex.SetRotation, arrow.tex, 0)
+    -- No coords: hide edge arrow; show bottom badge (not center-on-player).
+    if arrow then arrow:Hide() end
+    if badge then
+      badge.questTitle = title or "Focused quest"
+      badge:ClearAllPoints()
+      badge:SetPoint("BOTTOM", Minimap, "BOTTOM", 0, -2)
+      badge:Show()
     end
   end
-  arrow:Show()
 end
 
 function NS.HookWorldMap()

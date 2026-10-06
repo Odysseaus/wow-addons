@@ -1,6 +1,6 @@
 local _, NS = ...
 
--- P1 live quest log. 0.2.3: rewards + Dungeon/World type, checked-quest focus
+-- P1 live quest log. 0.2.4: item reward IDs for tooltips; 0.2.3 focus/rewards/type
 -- (closest when none/many are watched), POI reprobe for map + compass.
 -- Prefer Classic/Forever APIs; every Blizzard call is type-checked and pcalled.
 
@@ -1097,18 +1097,40 @@ local function ReadRewardItems(nFn, infoFn, dest, questID)
   if n > 12 then n = 12 end
   local i
   for i = 1, n do
-    local name, _, count, _, _, itemID = SafeCall(infoFn, i, questID)
+    -- Classic: name, texture, count, quality, isUsable [, itemID]
+    local name, texture, count, quality, _, itemID = SafeCall(infoFn, i, questID)
     if type(name) ~= "string" or name == "" then
-      name, _, count, _, _, itemID = SafeCall(infoFn, i)
+      name, texture, count, quality, _, itemID = SafeCall(infoFn, i)
     end
     name = CleanItemName(name)
-    if not name and type(itemID) == "number" and type(GetItemInfo) == "function" then
-      name = CleanItemName(SafeCall(GetItemInfo, itemID))
+    local link = nil
+    if type(itemID) == "number" and itemID > 0 and type(GetItemInfo) == "function" then
+      local iname, ilink, _, _, _, _, _, _, _, itex = SafeCall(GetItemInfo, itemID)
+      if not name then name = CleanItemName(iname) end
+      if type(ilink) == "string" and ilink ~= "" then link = ilink end
+      if (type(texture) ~= "string" or texture == "") and type(itex) == "string" then
+        texture = itex
+      end
+      if (type(texture) ~= "string" or texture == "") and type(GetItemIcon) == "function" then
+        local ic = SafeCall(GetItemIcon, itemID)
+        if type(ic) == "string" or type(ic) == "number" then texture = ic end
+      end
     end
-    if name then
+    if type(itemID) == "number" and itemID > 0 and not link then
+      link = "item:" .. tostring(math.floor(itemID))
+    end
+    -- Keep entries that have a name OR an itemID (icons can still show).
+    if name or (type(itemID) == "number" and itemID > 0) then
       local c = 1
       if type(count) == "number" and count > 0 then c = count end
-      dest[#dest + 1] = { name = name, count = c }
+      dest[#dest + 1] = {
+        name = name or ("Item " .. tostring(itemID)),
+        count = c,
+        itemID = (type(itemID) == "number" and itemID > 0) and itemID or nil,
+        texture = texture,
+        link = link,
+        quality = quality,
+      }
     end
   end
 end

@@ -77,31 +77,73 @@ local function RelativeBearing(targetDeg)
   end
 end
 
--- Needle rotation: radians clockwise from up. ColorTexture SetRotation is flaky
--- on Forever, so always also nudge the frame along the bearing.
+-- Needle rotation: radians from up (0 = north / ahead on face). Geometric tip+tail
+-- pivot always works; SetRotation is best-effort on Forever ColorTextures.
 function NS.SetNeedleRotation(needleFrame, radians)
   if not needleFrame then return end
   radians = radians or 0
+  needleFrame._qgRadians = radians
+
+  local parent = needleFrame.GetParent and needleFrame:GetParent()
+  if parent and needleFrame.ClearAllPoints and needleFrame.SetPoint then
+    -- Pivot stays glued to face center (no off-center rectangle nudge).
+    needleFrame:ClearAllPoints()
+    needleFrame:SetPoint("CENTER", parent, "CENTER", 0, 0)
+  end
+
+  local ox = math.sin(radians)
+  local oy = math.cos(radians)
+
+  if needleFrame._qgNeedle then
+    local tipLen = needleFrame.tipLen or 40
+    local tipW = needleFrame.tipW or 7
+    local tailLen = needleFrame.tailLen or 16
+    local tailW = needleFrame.tailW or 5
+
+    if needleFrame.tip then
+      local mid = tipLen * 0.48
+      needleFrame.tip:ClearAllPoints()
+      needleFrame.tip:SetSize(tipW, tipLen)
+      needleFrame.tip:SetPoint("CENTER", needleFrame, "CENTER", ox * mid, oy * mid)
+      if type(needleFrame.tip.SetRotation) == "function" then
+        pcall(needleFrame.tip.SetRotation, needleFrame.tip, radians)
+      end
+      if needleFrame.tip.tex and type(needleFrame.tip.tex.SetRotation) == "function" then
+        pcall(needleFrame.tip.tex.SetRotation, needleFrame.tip.tex, radians)
+      end
+    end
+    if needleFrame.tail then
+      local mid = tailLen * 0.48
+      needleFrame.tail:ClearAllPoints()
+      needleFrame.tail:SetSize(tailW, tailLen)
+      needleFrame.tail:SetPoint("CENTER", needleFrame, "CENTER", -ox * mid, -oy * mid)
+      if type(needleFrame.tail.SetRotation) == "function" then
+        pcall(needleFrame.tail.SetRotation, needleFrame.tail, radians)
+      end
+      if needleFrame.tail.tex and type(needleFrame.tail.tex.SetRotation) == "function" then
+        pcall(needleFrame.tail.tex.SetRotation, needleFrame.tail.tex, radians)
+      end
+    end
+    if needleFrame.hub then
+      needleFrame.hub:ClearAllPoints()
+      needleFrame.hub:SetPoint("CENTER", needleFrame, "CENTER", 0, 0)
+    end
+    -- Direction tip glyph always tracks bearing even when texture rotation fails.
+    if needleFrame.glyph then
+      local reach = tipLen * 0.92
+      needleFrame.glyph:ClearAllPoints()
+      needleFrame.glyph:SetPoint("CENTER", needleFrame, "CENTER", ox * reach, oy * reach)
+    end
+    return
+  end
+
+  -- Legacy Solid rectangle: rotate in place only (no center nudge).
   local tex = needleFrame.tex
   if tex and type(tex.SetRotation) == "function" then
     pcall(tex.SetRotation, tex, radians)
   end
   if type(needleFrame.SetRotation) == "function" then
     pcall(needleFrame.SetRotation, needleFrame, radians)
-  end
-  local parent = needleFrame.GetParent and needleFrame:GetParent()
-  if parent and needleFrame.ClearAllPoints and needleFrame.SetPoint then
-    local h = 28
-    if needleFrame.GetHeight then
-      local gh = needleFrame:GetHeight()
-      if type(gh) == "number" and gh > 0 then h = gh end
-    end
-    local reach = h * 0.32
-    if reach < 10 then reach = 10 end
-    local ox = math.sin(radians) * reach
-    local oy = math.cos(radians) * reach
-    needleFrame:ClearAllPoints()
-    needleFrame:SetPoint("CENTER", parent, "CENTER", ox, oy)
   end
 end
 

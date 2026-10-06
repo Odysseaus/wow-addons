@@ -320,7 +320,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if NS.ApplyLock then NS.ApplyLock() end
     NS.Refresh()
     NS.uiReady = true
-    Print("ready (0.2.3) — HUD buttons: Full/Less/Compass, Edit, Min, X. /qg help. /qg show if hidden. Ask SI stubs (P2).")
+    Print("ready (0.2.4) — HUD buttons: Full/Less/Compass, Edit, Min, X. /qg help. /qg show if hidden. Ask SI stubs (P2).")
   elseif event == "UNIT_QUEST_LOG_CHANGED" then
     if (arg1 == "player" or arg1 == nil) and NS.uiReady and not NS._refreshing then
       NS.Refresh()
