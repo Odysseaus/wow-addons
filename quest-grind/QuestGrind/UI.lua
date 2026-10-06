@@ -4,6 +4,7 @@ local _, NS = ...
 -- Transparent PAD outside chrome so ornate edges never clip (root > art).
 -- Themes apply to Full AND Less AND Compass. Solid colors = P0/P1; TGA polish = P4.
 -- P1: ApplyRoute / RefreshRouteUI paint live or mock; Route.lua rotates compass arrows.
+-- 0.2.7: no-chain shows "—"; bar uses objective progress when no chain.
 -- 0.2.6: one centered-percentage chain progress bar (was 5 segments).
 -- 0.2.5: one Rewards area in Full (header + text + icons); one compass arrow per face.
 -- 0.2.4: item reward icon tooltips; minimap focus badge.
@@ -1336,7 +1337,11 @@ function NS.ApplyRoute(m)
   if not m or not layers.routeRow then return end
 
   layers.routeRow.name:SetText(m.name or "")
-  layers.routeRow.progress:SetText(string.format("%d/%d", m.index or 0, m.total or 0))
+  if m.noChain or type(m.index) ~= "number" or type(m.total) ~= "number" or (m.total or 0) < 1 then
+    layers.routeRow.progress:SetText("—")
+  else
+    layers.routeRow.progress:SetText(string.format("%d/%d", m.index, m.total))
+  end
   layers.routeRow.bar:SetProgress(RouteFrac(m), NS.GetTheme().accent)
 
   local step = m.step or {}

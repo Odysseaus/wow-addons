@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.7 — ChainData GPL fallback, closest-checked focus, no fake 1/1
+
+- **Added**: shipped `ChainData.lua` — questID → chainId/step/total + ordered lists, generated from **QuestieDB Forever** (via [TylerAkins/wow-database](https://github.com/TylerAkins/wow-database) export, commit recorded in `ChainDataMeta`). Quest records are **GPL-3.0**; attributed in this changelog, README, and the file header. `C_QuestLine` is still tried first; ChainData fills misses. Done counts use `C_QuestLog.IsQuestFlaggedCompleted` / `IsQuestFlaggedCompleted`, with a session set from `GetAllCompletedQuestIDs` when present.
+- **Fixed**: no chain data no longer shows a fake `1/1`. The Quest Log index reads **—**; the single progress bar uses **objective progress** instead.
+- **Fixed**: multiple checked quests → always the **closest checked**, recomputed as the player moves (~1s enumerate). Newly checked no longer pins focus forever. Chain / adopted-successor rules apply only when **nothing** is checked (or the successor itself is checked). `/qg next` / `/qg prev` remain a temporary override until the check set changes or `/qg refresh`. No-coords still sort after coords, then log order.
+- **Fixed**: `QuestAreaID` prefers Forever `GetQuestUiMapID(questID)` (legacy world-map area APIs remain as fallbacks).
+
 ## 0.2.6 — Chain index + chain progress, checked-chain focus, smooth compass
 
 - **Fixed**: the index next to **Quest Log** is the focused quest's **step in its quest chain** (`C_QuestLine.GetQuestLineInfo` → `GetQuestLineQuests`), e.g. `3/10`. Standalone quests read `1/1`. Root cause: 0.2.3–0.2.5 showed the position in the focus *candidate* list, so it read `1/15` with nothing checked and `1/1` once one quest was checked.
