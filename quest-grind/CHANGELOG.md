@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.9 — Route start, chain shared #, per-quest colors
+
+- **Fixed**: no route line from map **center / player** to stop **#1** — the first objective is the **start** of the route (`Map.lua`).
+- **Changed**: if a quest has a **chain**, lines start at the first chain quest and continue to the next chain step(s); every location in that chain uses the **same order number** (`Quests.lua` / `Map.lua`).
+- **Changed**: each **distinct quest** (not each chain node) gets a **different color** on pins and connecting lines.
+- **Keep**: ≤7 stops, lines stop short of icons, untriggered chain markers, minimap route dropped. Interface **16001**.
+
 ## 0.2.8 — Main world-map route (drop minimap)
 
 - **Changed**: **Minimap route/pointer dropped** for now — no edge arrow, no bottom focus badge (`Map.lua` stubs are no-ops). Compass HUD needles are unchanged.

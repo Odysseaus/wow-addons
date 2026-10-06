@@ -1237,10 +1237,12 @@ function NS.GetFocusCandidates(list)
   return candidates
 end
 
--- ===== 0.2.8 main-map route stops (up to 7) =====
+-- ===== 0.2.9 main-map route stops (up to 7) =====
 -- Best completion order = focus-candidate order (closest checked / scoped),
 -- then upcoming untriggered chain steps for those quests (ChainData / C_QuestLine)
--- inserted after their predecessor when Forever exposes a POI. Cap = 7.
+-- inserted after their predecessor when Forever exposes a POI. Cap = 7 locations.
+-- Distinct quests get distinct order numbers + colors; every location in the same
+-- chain shares that quest's order number (chain nodes are not renumbered).
 NS.MAX_MAP_ROUTE_STOPS = 7
 
 local function StopMapCoords(questID, logIndex, existing)
@@ -1281,7 +1283,9 @@ local function InLogByID(list)
 end
 
 -- Returns ordered stops for the world-map route overlay.
--- Each: { n, questID, title, mapX, mapY, mapID, inLog, untriggered, chainID, chainStep }
+-- Each: { n, questID, title, mapX, mapY, mapID, inLog, untriggered, chainID,
+--         chainStep, colorIndex, groupQuestID }
+-- n / colorIndex are per distinct quest (shared across that quest's chain nodes).
 function NS.GetMapRouteStops(maxStops)
   maxStops = tonumber(maxStops) or NS.MAX_MAP_ROUTE_STOPS or 7
   if maxStops < 1 then maxStops = 1 end
@@ -1302,15 +1306,23 @@ function NS.GetMapRouteStops(maxStops)
   end
 
   local stops, seen = {}, {}
-  local function addStop(questID, title, mapX, mapY, mapID, inLogFlag, chainID, chainStep)
+  local orderNum = 0
+  local function addStop(questID, title, mapX, mapY, mapID, inLogFlag, chainID, chainStep, sharedN, groupQuestID)
     if #stops >= maxStops then return false end
     if type(questID) == "number" and seen[questID] then return false end
     if type(mapX) ~= "number" or type(mapY) ~= "number" then return false end
     if mapX < 0 or mapY < 0 or mapX > 1 or mapY > 1 then return false end
     if mapX == 0 and mapY == 0 then return false end
-    local n = #stops + 1
-    stops[n] = {
+    local n = sharedN
+    if type(n) ~= "number" then
+      orderNum = orderNum + 1
+      n = orderNum
+    end
+    local gqid = groupQuestID or questID
+    stops[#stops + 1] = {
       n = n,
+      colorIndex = n,
+      groupQuestID = gqid,
       questID = questID,
       title = title or ("Quest " .. tostring(questID or "?")),
       mapX = mapX,
@@ -1332,13 +1344,14 @@ function NS.GetMapRouteStops(maxStops)
     if type(q) == "table" then
       local mx, my, mid = StopMapCoords(q.questID, q.logIndex, q)
       if mx then
-        addStop(q.questID, q.title, mx, my, mid or q.targetMapID, true, q.chainID, q.chainStep or q.chainPos)
+        addStop(q.questID, q.title, mx, my, mid or q.targetMapID, true, q.chainID, q.chainStep or q.chainPos, nil, q.questID)
       end
     end
   end
 
-  -- Insert upcoming untriggered chain steps after each accepted stop (best order:
-  -- finish the chain you are on before leaping to unrelated pins).
+  -- Insert upcoming untriggered chain steps after each accepted stop. Lines on
+  -- the map start at the first chain quest and continue through these steps;
+  -- each location keeps the SAME order number / color as its predecessor.
   local grown = {}
   for i = 1, #stops do
     grown[#grown + 1] = stops[i]
@@ -1358,7 +1371,9 @@ function NS.GetMapRouteStops(maxStops)
             local mx, my, mid = StopMapCoords(nid, nil, nil)
             if mx then
               grown[#grown + 1] = {
-                n = #grown + 1,
+                n = s.n,
+                colorIndex = s.colorIndex or s.n,
+                groupQuestID = s.groupQuestID or s.questID,
                 questID = nid,
                 title = "Chain step " .. tostring(qi),
                 mapX = mx,
@@ -1377,10 +1392,7 @@ function NS.GetMapRouteStops(maxStops)
     end
   end
 
-  -- Renumber after chain inserts.
-  for i = 1, #grown do
-    grown[i].n = i
-  end
+  -- Do NOT renumber after chain inserts — chain nodes share the predecessor's n.
   if #grown > maxStops then
     while #grown > maxStops do grown[#grown] = nil end
   end

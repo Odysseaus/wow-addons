@@ -1,9 +1,11 @@
 local _, NS = ...
 
--- 0.2.8: MAIN world-map route only (minimap overlays dropped).
--- Up to 7 numbered stops in QuestGrind completion order, route lines that
--- stop short of Blizzard quest icons, and QuestGrind number circles for
--- untriggered chain steps (no Blizzard pin yet).
+-- 0.2.9: MAIN world-map route only (minimap overlays dropped).
+-- Up to 7 numbered stops in QuestGrind completion order. First objective is
+-- the START of the route (no line from map center / player to #1). Chain
+-- locations share one order number; distinct quests get distinct colors.
+-- Lines stop short of Blizzard quest icons; untriggered chain steps get
+-- QuestGrind number circles (no Blizzard pin yet).
 
 local MAX_STOPS = 7
 local ICON_CLEAR_PX = 16 -- pull line endpoints short of icon centers
@@ -70,6 +72,26 @@ local function ThemeGold()
   return 0.90, 0.78, 0.20
 end
 
+-- Distinct-quest palette (index = stop.n / colorIndex). Chain nodes of the
+-- same quest reuse the same color. Falls back to theme gold past the table.
+local ROUTE_COLORS = {
+  { 0.95, 0.75, 0.20 }, -- 1 gold
+  { 0.35, 0.75, 0.95 }, -- 2 sky
+  { 0.95, 0.42, 0.35 }, -- 3 coral
+  { 0.45, 0.90, 0.45 }, -- 4 green
+  { 0.80, 0.50, 0.95 }, -- 5 violet
+  { 0.95, 0.60, 0.20 }, -- 6 orange
+  { 0.35, 0.85, 0.80 }, -- 7 teal
+}
+
+local function RouteColor(idx)
+  local i = tonumber(idx) or 1
+  if i < 1 then i = 1 end
+  local c = ROUTE_COLORS[((i - 1) % #ROUTE_COLORS) + 1]
+  if c then return c[1], c[2], c[3] end
+  return ThemeGold()
+end
+
 local function EnsurePin(i)
   if pins[i] then return pins[i] end
   local parent = EnsureOverlay()
@@ -99,9 +121,9 @@ local function EnsurePin(i)
     local n = self.routeN or "?"
     GameTooltip:SetText(tostring(n) .. ". " .. title, 1, 0.85, 0.4)
     if self.untriggered then
-      GameTooltip:AddLine("Untriggered chain step — QuestGrind marker (no Blizzard pin yet).", 0.85, 0.82, 0.75, true)
+      GameTooltip:AddLine("Untriggered chain step — same order # as its chain; QuestGrind marker (no Blizzard pin yet).", 0.85, 0.82, 0.75, true)
     else
-      GameTooltip:AddLine("Route stop — line stops short of the map quest icon.", 0.85, 0.82, 0.75, true)
+      GameTooltip:AddLine("Route stop — first stop is the route start; lines stop short of quest icons.", 0.85, 0.82, 0.75, true)
     end
     GameTooltip:Show()
   end)
@@ -237,7 +259,7 @@ local function HideAllPinsAndLines()
   lastDrawKey = nil
 end
 
--- Minimap overlays intentionally disabled (0.2.8). Keep stubs so old callers
+-- Minimap overlays intentionally disabled (0.2.8+). Keep stubs so old callers
 -- (ClearMapPins / UpdateMinimapArrow) stay safe no-ops.
 function NS.UpdateMinimapArrow(_route)
   -- dropped: no minimap route / pointer for now
@@ -277,8 +299,9 @@ local function StopsKey(stops, mapID)
   local i
   for i = 1, #stops do
     local s = stops[i]
-    parts[#parts + 1] = string.format("%d:%s:%.4f:%.4f:%s",
+    parts[#parts + 1] = string.format("%d:%d:%s:%.4f:%.4f:%s",
       s.n or i,
+      s.colorIndex or s.n or i,
       tostring(s.questID or 0),
       s.mapX or 0,
       s.mapY or 0,
@@ -362,7 +385,6 @@ function NS.UpdateMapPins(route)
   lastDrawKey = key
 
   overlay:Show()
-  local r, g, b = ThemeGold()
 
   -- Hide unused pin/line slots first.
   for i = 1, MAX_STOPS do
@@ -372,17 +394,23 @@ function NS.UpdateMapPins(route)
     if lines[i] and lines[i].Hide then lines[i]:Hide() end
   end
 
+  -- 0.2.9: first objective is the START of the route — do NOT draw a line
+  -- from map center / player to #1. Points are stop locations only.
   local points = {}
-  local px, py = PlayerNormOnMap(viewMap)
-  if type(px) == "number" and type(py) == "number" then
-    points[#points + 1] = { x = px, y = py, isPlayer = true }
-  end
   for i = 1, #visible do
     local s = visible[i]
-    points[#points + 1] = { x = s.mapX, y = s.mapY, stop = s, n = s.n or i }
+    local ci = s.colorIndex or s.n or i
+    points[#points + 1] = {
+      x = s.mapX,
+      y = s.mapY,
+      stop = s,
+      n = s.n or i,
+      colorIndex = ci,
+    }
   end
 
-  -- Route lines: player → 1 → 2 → … (stop short of quest icon centers).
+  -- Route lines: #1 → #2 → … (within a chain, same n continues across steps).
+  -- Color = destination stop's distinct-quest color. Stop short of icons.
   local li = 1
   for i = 1, #points - 1 do
     local a, bpt = points[i], points[i + 1]
@@ -390,18 +418,23 @@ function NS.UpdateMapPins(route)
     local bx, by = NormToPixel(parent, bpt.x, bpt.y)
     if ax and bx then
       local line = EnsureLine(li)
-      local clearStart = a.isPlayer and 0 or ICON_CLEAR_PX
-      local clearEnd = ICON_CLEAR_PX
-      DrawLinePixels(line, parent, ax, ay, bx, by, clearStart, clearEnd, r, g, b, 0.85)
+      local cr, cg, cb = RouteColor(bpt.colorIndex or bpt.n)
+      -- Same-chain segment (shared order #): paint with that quest's color.
+      if a.n and bpt.n and a.n == bpt.n then
+        cr, cg, cb = RouteColor(a.colorIndex or a.n)
+      end
+      DrawLinePixels(line, parent, ax, ay, bx, by, ICON_CLEAR_PX, ICON_CLEAR_PX, cr, cg, cb, 0.85)
       li = li + 1
     end
   end
 
-  -- Number circles (accepted + untriggered).
+  -- Number circles (accepted + untriggered). Shared n within a chain;
+  -- distinct quests get distinct colors.
   for i = 1, #visible do
     local s = visible[i]
     local pin = EnsurePin(i)
-    PlacePin(pin, parent, s.mapX, s.mapY, s.n or i, s, r, g, b)
+    local cr, cg, cb = RouteColor(s.colorIndex or s.n or i)
+    PlacePin(pin, parent, s.mapX, s.mapY, s.n or i, s, cr, cg, cb)
   end
 end
 
