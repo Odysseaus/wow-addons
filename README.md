@@ -80,13 +80,16 @@ A threat meter for Forever with approved bars, dial, and plates. It lists your g
 - Version `0.1.23`, Interface `16001`.
 
 <p align="center">
-  <img src="wow-threat/docs/plates.png" alt="WoW Threat in Plates mode in game: a cracked-stone plate with gold corners showing the name Odysseaus, a threat fill, and 0 on the right, under the Plates mode button" width="606">
+  <img src="wow-threat/docs/bars-mockup.png" alt="Mockup, not an in-game screenshot: WoW Threat Bars mode rendered by script from the addon's textures, a gold filigree frame with five glossy threat bars (Thrall 100, Jaina 82, Sylvanas 64, Anduin 45, Varian 25) and a MOCK RENDER label" width="328">
 </p>
-<p align="center"><em><strong>Plates</strong> mode in game (solo, 0 threat), captured on Oct 5 on a build before 0.1.23. Release 0.1.23 removed the dark strips at the plate's left and right edges.</em></p>
+<p align="center"><em><strong>Bars</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.18). The square boxes stand in for class icons.</em></p>
 
-> 📷 **Screenshot needed (Bars):** WoW Threat 0.1.23 in **Bars** mode during a group pull (or `/wtm test`), showing the gold filigree frame, class icons, glossy bars, and percents.
+<p align="center">
+  <img src="wow-threat/docs/plates-mockup.png" alt="Mockup, not an in-game screenshot: WoW Threat Plates mode rendered by script from the addon's textures, five cracked-stone plates with gold corners for Tank 100, Mage 78, Rogue 54, Priest 31 and Hunter 12" width="408">
+</p>
+<p align="center"><em><strong>Plates</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.20). Later builds restored the plates' bottom gold corners (0.1.22) and trimmed their side edges (0.1.23).</em></p>
 
-> 📷 **Screenshot needed (Dial):** WoW Threat 0.1.23 in **Dial** mode (`/wtm mode dial`, then `/wtm test` or a pull), showing the skull ring, sword needle, and large percent.
+> 📷 **Image needed (Dial):** there's no mockup or in-game screenshot of **Dial** mode yet. Wanted: WoW Threat 0.1.23 in Dial mode (`/wtm mode dial`, then `/wtm test` or a pull), showing the skull ring, sword needle, and large percent.
 
 ### Download & install
 
