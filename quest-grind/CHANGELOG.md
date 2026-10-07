@@ -1,4 +1,83 @@
+## 0.2.13 — Cross-map focus distance (no fake ~23 yd)
+
+- **Fixed**: `ComputeNav` no longer compares map-normalized 0..1 coords across different `uiMapID`s (×1000 → fake ~23 yd). Unchecked focus ranking and HUD yards shared that path, so a far quest (e.g. Zephras Isle on another map) could win “closest”. Now prefers same-continent **world** yards (`UnitPosition` / `C_Map.GetWorldPosFromMapPos`); else player position on the **quest’s** map via `C_Map.GetPlayerMapPosition(questMap, "player")` then map-norm×1000; if maps differ and conversion fails → `hasCoords=false` / `distanceYards=nil` → rank `+inf`, HUD `?`. Never raw map-norm×1000 across different map IDs (`Quests.lua`: `ComparableNavPositions` / `ComputeNav`).
+- **Fixed**: `Route.lua` `ComputeDistanceBearing` uses the same cross-map rules (parity with ComputeNav).
+- **Keep**: focus scope / checked rules (no checked → closest incomplete; one checked → that quest; multi-checked → closest among checked); same-map focus/HUD; 0.2.12 QuestLine XY / fair ≤7 packing / no single-Blizzard wipe / Blizzard-as-start / no QG on live pin / Current location. Interface **16001**.
+
+## 0.2.12 — QuestLine XY for upcoming stops; fair ≤7 packing; map overlay keep
+
+- **Fixed**: upcoming / untriggered chain stops rarely had map XY (no GetQuestsOnMap pin yet), so they never entered the ≤7 route and Blizzard→QG lines never drew. `StopMapCoords` now falls back to `C_QuestLine.GetQuestLineInfo` / `GetAvailableQuestLines` XY (normalized like GetQuestsOnMap); GetQuestsOnMap / TryQuestPOI stay higher priority for in-log accepted stops. `RequestQuestLinesForMap` still kicked on miss. `ReadQuestLine` keeps additive mapX/mapY when present (`Quests.lua`).
+- **Changed**: fair ≤7 packing — each focus candidate adds its accepted stop plus **at most one** upcoming next-with-POI before the next candidate, so parallel mid-chain quests can each get a Blizzard→QG segment within the cap; leftover slots fill further chain steps. Chain nodes still share order # / colorIndex.
+- **Fixed**: `Map.lua` no longer wipes the overlay merely because `#visible==1 && hasBlizzardPin`. Early-exit only when nothing to draw. Cross-map line segments skipped; same-map consecutive lines kept. Still: no QG badge on live Blizzard pin; lines from Blizzard XY → later stops.
+- **Keep**: ≤7; no center→#1; chain shared #; per-quest colors; icon clear gap; minimap off; Current location HUD; focus rules; Pass items. Interface **16001**.
+
+## 0.2.11 — Blizzard pin as start; QG markers on later chain stops only
+
+- **Changed**: main-map route no longer places a QuestGrind numbered badge on the same spot as a live **Blizzard quest icon** (0.2.10 “QG under Blizzard” made badges invisible / competing).
+- **Changed**: accepted / current stop = **Blizzard map quest icon only**; route **lines** still start from that Blizzard pin XY and connect to later chain locations.
+- **Changed**: QuestGrind **numbered markers** only on stops **without** a live Blizzard pin (untriggered / upcoming chain steps, or accepted stops with no pin). Multi-quest routes use the same per-stop rule (`Map.lua`: `hasBlizzardPin` via live pin snap + `GetQuestsOnMap`).
+- **Keep**: ≤7 stops; no center→#1 line; chain shared order #; per-quest colors; icon clear gap; minimap route dropped; HUD **Current location:** label; prioritization / objectives tick / Full·Less·Compass / solo·2+·empty / reload·relog. Interface **16001**.
+
 # Changelog
+
+## 0.2.10 — Current location label; map markers under Blizzard icons
+
+- **Fixed**: HUD zone line is labeled **Current location** (Full step row + Compass no-coords line) so the place name is not a bare unlabeled string (`UI.lua`).
+- **Fixed**: main-map QuestGrind route markers use the same MapCanvas placement as Blizzard quest icons (TOPLEFT + inverted Y; same canvas parent) and prefer `C_QuestLog.GetQuestsOnMap` / live pin snap so stop **#1** sits on the real quest bang (`Map.lua` / `Quests.lua`).
+- **Fixed**: QG markers and route lines draw **behind** Blizzard quest icons (canvas strata, low frame level — no TOOLTIP overlay).
+- **Keep**: ≤7 stops; no center→#1 line; chain shared order #; per-quest colors; icon clear gap; untriggered markers; minimap route dropped. Interface **16001**.
+
+## 0.2.9 — Route start, chain shared #, per-quest colors
+
+- **Fixed**: no route line from map **center / player** to stop **#1** — the first objective is the **start** of the route (`Map.lua`).
+- **Changed**: if a quest has a **chain**, lines start at the first chain quest and continue to the next chain step(s); every location in that chain uses the **same order number** (`Quests.lua` / `Map.lua`).
+- **Changed**: each **distinct quest** (not each chain node) gets a **different color** on pins and connecting lines.
+- **Keep**: ≤7 stops, lines stop short of icons, untriggered chain markers, minimap route dropped. Interface **16001**.
+
+## 0.2.8 — Main world-map route (drop minimap)
+
+- **Changed**: **Minimap route/pointer dropped** for now — no edge arrow, no bottom focus badge (`Map.lua` stubs are no-ops). Compass HUD needles are unchanged.
+- **Added**: **Main world map route** — up to **seven** numbered stops in QuestGrind’s best completion order (focus-candidate order: closest checked / scoped, then upcoming **untriggered chain** steps with a POI inserted after their predecessor).
+- **Added**: Route **lines** between player → 1 → 2 → … that **stop short** of quest icon centers (do not overlap Blizzard map quest icons).
+- **Added**: QuestGrind **number circles** on every stop; untriggered chain steps (no Blizzard pin yet) get their own numbered marker on the route.
+- **Notes**: Interface stays **16001**. Objectives progress tick still deferred.
+
+## 0.2.7 — ChainData GPL fallback, closest-checked focus, no fake 1/1
+
+- **Added**: shipped `ChainData.lua` — questID → chainId/step/total + ordered lists, generated from **QuestieDB Forever** (via [TylerAkins/wow-database](https://github.com/TylerAkins/wow-database) export, commit recorded in `ChainDataMeta`). Quest records are **GPL-3.0**; attributed in this changelog, README, and the file header. `C_QuestLine` is still tried first; ChainData fills misses. Done counts use `C_QuestLog.IsQuestFlaggedCompleted` / `IsQuestFlaggedCompleted`, with a session set from `GetAllCompletedQuestIDs` when present.
+- **Fixed**: no chain data no longer shows a fake `1/1`. The Quest Log index reads **—**; the single progress bar uses **objective progress** instead.
+- **Fixed**: multiple checked quests → always the **closest checked**, recomputed as the player moves (~1s enumerate). Newly checked no longer pins focus forever. Chain / adopted-successor rules apply only when **nothing** is checked (or the successor itself is checked). `/qg next` / `/qg prev` remain a temporary override until the check set changes or `/qg refresh`. No-coords still sort after coords, then log order.
+- **Fixed**: `QuestAreaID` prefers Forever `GetQuestUiMapID(questID)` (legacy world-map area APIs remain as fallbacks).
+
+## 0.2.6 — Chain index + chain progress, checked-chain focus, smooth compass
+
+- **Fixed**: the index next to **Quest Log** is the focused quest's **step in its quest chain** (`C_QuestLine.GetQuestLineInfo` → `GetQuestLineQuests`), e.g. `3/10`. Standalone quests read `1/1`. Root cause: 0.2.3–0.2.5 showed the position in the focus *candidate* list, so it read `1/15` with nothing checked and `1/1` once one quest was checked.
+- **Fixed**: focus stays on a **checked chain**. Checked quests remain candidates when **ready to turn in**; after a turn-in, the next step (same quest line, or the quest accepted within 20s of turning in a focused quest) keeps focus even if it is not checked. Focus falls to the nearest quest only when nothing in the log is checked / on a checked chain. Checking a quest (incl. un-check → re-check of a turn-in-ready chain quest) brings it into focus; un-checking drops it. Root cause: candidates were *checked AND incomplete*, so finishing objectives or turning in dropped focus to the nearest quest. `QUEST_WATCH_LIST_CHANGED` now refreshes immediately.
+- **Changed**: Quest Log progress (Full and Less) is **one bar** with a centered percentage, same length as the old 5-segment strip. Fill = chain steps complete / steps in chain (current step counts once ready to turn in).
+- **Improved**: compass arrow is smoother and more responsive — a per-frame animator re-reads facing every frame and player position ~20×/s, eases toward the target (~0.14s catch-up, big jumps snap), and the rotation deadzone dropped from 0.5° to 0.1°. Text/distance stay on the 0.25s ticker. `Map.lua` bearing unchanged.
+- **Deferred**: objectives progress tick; minimap route redesign.
+
+## 0.2.5 — Single Rewards area, simple compass arrow
+
+- **Fixed**: Full mode has one **Rewards** section (header, reward text, item icons). Empty live rewards show **None**. Mock shows **+1240 XP** in that same section. The status column no longer repeats reward text; it shows a quest count ("3 quests" / "1 quest").
+- **Fixed**: Each compass face (Full, Less, Compass) is a single arrow toward the focused quest. No live bearing hides the arrow instead of pointing north. Mock `bearingDeg` may still point.
+- **Fixed**: Arrow direction math. Bearing is a clockwise compass bearing for both map and world coordinates (world axes: X north, Y west), and the arrow turns by `-bearing - facing` (WoW facing and `SetRotation` are counter-clockwise), so it points at the quest from the player as you turn. The ahead / left / right text uses the same rule.
+- **Deferred**: objectives progress tick; minimap route redesign (the minimap edge arrow in `Map.lua` is unchanged).
+
+## 0.2.4 — Item tooltips, minimap route, real needle
+
+- **Item reward hover**: reward items keep `itemID` / texture / link; Full mode shows icon buttons under Current Step. Hover uses `GameTooltip:SetItemByID` (else `SetHyperlink`) like the quest log.
+- **Minimap**: removed the center-on-player dead `!`. With coords → edge arrow toward focus. Without coords → bottom focus badge (quest title on hover; never a fake bearing).
+- **Compass**: replaced Solid rectangle needles with a geometric tip+tail+hub needle that pivots from face center (sin/cos + glyph). Facing/move updates keep the tip on the focus bearing.
+- Root causes: rewards were name-only FontStrings with no item tip; no-coords path pinned a bang on the player; Solid bars + off-center nudge looked like a floating rectangle, not a needle.
+
+## 0.2.3 — P1 fix set
+
+- **Rewards + type**: focused live quest shows **Dungeon** or **World** and a short reward line (XP, money, item names) under Current Step, on the Less subtitle, and in the status/XP line.
+- **Focus**: watched (checked) incomplete quests win. None checked → closest incomplete. One checked → that quest. Several checked → closest of those. No coords sorts as farthest so a positioned quest wins; if nobody has coords, log order is kept. `/qg next` and `/qg prev` cycle that candidate set until the quest completes, drops, or the watch set changes.
+- **Minimap / map**: objective lookup also tries waypoint-for-map, world-map area, task info, and world-yard → normalized conversion. A live focus always shows a minimap pointer — edge arrow with a gold `!` when the bearing is known, center quest-bang when it is not. World map pin uses normalized or converted coords.
+- **Compass**: the 0.25s tick recomputes distance and re-probes POI when coords are missing (full log enumerate about once a second). Needles nudge as well as rotate, including the compass-only face while Full is hidden. No coords shows `Zone · ?` instead of a stale mock distance. With no facing API the needle uses absolute bearing vs north.
+- Root causes: focus preferred “has objectives” over the tracker and distance; pins and the minimap arrow hid whenever `hasCoords` was false and world yards never became a map pin; the compass tick bailed out before POI was retried and `SetRotation` on a solid needle did not reliably move.
 
 ## 0.2.2 — Theme-stick fix
 

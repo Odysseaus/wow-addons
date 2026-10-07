@@ -4,7 +4,7 @@ In-game quest HUD for WoW Forever — prettier than alt-tabbing a guide. Modes *
 
 ## Status
 
-**P1 live questing** — reads the player quest log, prioritizes incomplete quests, updates distance/compass, and draws simple map + minimap route markers when coordinates are known. Falls back to mocked Barrens Loop when the log is empty (or `/qg mock`). Ask bridge = **P2**. Hide Blizzard objectives = **P3**. Art polish (TGA) = **P4**.
+**P1 live questing (0.2.13)** — reads the player quest log, focuses the **closest checked** quest (recomputed as you move; chain/adopted successor only when nothing is checked), shows the **quest-chain step** (e.g. `Quest Log 3/10`) from `C_QuestLine` or shipped **ChainData** (QuestieDB Forever, GPL-3.0), or **—** with objective % when no chain is known, plus one **Rewards** area (text and **item icon tooltips**), a **compass arrow** toward the focused quest, and a **main world-map route** (up to seven stops; accepted stop = real **Blizzard quest icon** only — no QG badge on that spot; upcoming chain stops use **QuestLine XY** when no Blizzard pin; fair pack so parallel mid-chain each get Blizzard→QG within ≤7; lines from Blizzard pin to later chain steps; QG numbered circles only where there is no live Blizzard pin; first objective is the route **start** — no center→#1 line; chain locations share one order #; each distinct quest a different color; lines stop short of icons; lone Blizzard pin no longer blanks the overlay). HUD zone line labeled **Current location**. **0.2.13**: focus/HUD distance uses same-continent world yards or player-on-quest-map; never fake map-norm×1000 across different maps (far maps rank as `?` / +inf). Minimap route/pointer is **off** for now. Falls back to mocked Barrens Loop when the log is empty (or `/qg mock`). Ask bridge = **P2**. Hide Blizzard objectives = **P3**. Art polish (TGA) = **P4**. Interface stays **16001**.
 
 ## Install
 
@@ -17,7 +17,7 @@ Copy the `QuestGrind/` folder into `Interface/AddOns/`.
 
 | Mode | What you see |
 |------|----------------|
-| **Full** | Route, current step, tracker, compass, status, Ask SI |
+| **Full** | Route, current step, rewards, tracker, compass, status, Ask SI |
 | **Less** | Compact step + distance + progress + mode chrome |
 | **Compass** | Direction rose + distance |
 
@@ -37,12 +37,22 @@ Also: `/qg mode [full|less|compass]`, `/qg full`, `/qg less`, `/qg compass`, `/q
 
 ## Live vs mock
 
-- **Live** (default): enumerates accepted quests via `C_QuestLog` when present, else legacy `GetQuestLog*`. Incomplete first; objectives preferred; selection stays stable across refreshes.
+- **Live** (default): enumerates accepted quests via `C_QuestLog` when present, else legacy `GetQuestLog*`. Focus rules (0.2.7):
+  - **Checked** = on the Blizzard objective tracker. Several checked → always the **closest checked**, recomputed as you move. Newly checked does **not** pin forever.
+  - **Chain / adopted successor** (same `C_QuestLine` / ChainData line, or the quest accepted within ~20s of a scoped turn-in) applies only when **nothing** is checked, or when that successor is itself checked.
+  - Unchecking drops that quest from the checked set (and clears sticky/adopt for it). `/qg next` / `/qg prev` temporarily override until the check set changes or `/qg refresh`.
+  - Only when **no** quest is checked → closest incomplete (coords beat quests with none; if nobody has coords, log order).
+- **Quest Log index / progress**: `Quest Log i/N` is the focused quest's step in its quest chain (`C_QuestLine` first, else shipped **ChainData** from QuestieDB Forever). **No chain data → `—`** (not a fake `1/1`); the bar then follows **objective progress**. With a chain, the bar is steps complete / steps in chain (current step counts once ready to turn in; completed steps use `IsQuestFlaggedCompleted` / `GetAllCompletedQuestIDs`).
+- **HUD**: focused quest shows a **Dungeon** or **World** badge. Full mode has one **Rewards** section (header, XP / money / items, or **None**) and **item icons** — hover for a real item tooltip (`SetItemByID` / hyperlink). The status block shows state, last update, and a quest count ("3 quests" / "1 quest"), not a second reward line. Less mode still puts type and rewards on the subtitle.
+- **World map route (0.2.12+)**: open the main map to see up to **seven** stops in QuestGrind’s best completion order. An accepted stop that already has a live **Blizzard quest icon** keeps that icon only (no QuestGrind numbered badge on the same spot). Upcoming / untriggered chain steps resolve XY via **C_QuestLine** when they have no Blizzard pin yet. Packing is **fair** within ≤7 (each focus candidate gets accepted + at most one next-with-POI before the next candidate). Route **lines** run from the Blizzard pin XY to later chain locations. QuestGrind **number circles** appear only on stops **without** a live Blizzard pin. A lone Blizzard-backed stop no longer blanks the overlay. The **first objective is the start** of the route (no line from map center / player to #1). Chain locations share the **same order number**; each **distinct quest** gets a **different color**. Lines **stop short** of icons. **Minimap** route/pointer is disabled for now (compass HUD unchanged). HUD zone line is labeled **Current location**.
+
+- **Compass**: one arrow on each face points from the player toward the focus. 0.2.6: the arrow re-reads facing every frame (position ~20×/s) and eases toward the target, so turning is smooth and responsive. No coordinates hides the arrow instead of pointing north. Distance stays live (re-probes objective position; about 1s for a full log pass). No coords shows `Zone · ?` instead of a leftover mock distance.
 - **Mock fallback**: if the log is empty, HUD shows the P0 Barrens Loop mock.
 - **`/qg mock`**: force mock on/off (saved in `QuestGrindDB.forceMock`).
-- **`/qg refresh`**: force a live refresh (clears force-mock).
+- **`/qg refresh`**: force a live refresh (clears force-mock and any `/qg next` override).
+- **`/qg next` / `/qg prev`**: temporary cycle of the current candidate set (checked quests if any, otherwise incomplete / adopted), closest first — cleared when checks change or on `/qg refresh`.
 
-Distance/bearing need objective coordinates (quest POI / waypoint APIs). When Forever does not expose coords, distance shows `?` and the zone name is used; compass stays idle.
+Distance/bearing use objective coordinates when Forever exposes them (quest POI, waypoint, or world yards). **0.2.13**: same-continent world yards preferred; else player projected onto the quest’s `uiMapID`; never raw map-norm×1000 across different maps (incomparable → `?` / +inf). Without coords the distance line is `?` and the compass shows the zone (no false north). The main-map route only draws stops that have usable map coordinates.
 
 ## Themes
 
@@ -99,7 +109,7 @@ quest-grind/
     MockData.lua
     Quests.lua         ← P1 live log
     Route.lua          ← P1 distance/compass ticker
-    Map.lua            ← P1 world map + minimap
+    Map.lua            ← P1 main world-map route (0.2.9; minimap off)
     UI.lua
     EditMode.lua
     AskSI.lua
