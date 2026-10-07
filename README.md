@@ -10,8 +10,6 @@ World of Warcraft: Forever addons by Odysseaus, built for the classic beta clien
 | [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v0.1.23`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v0.1.23) |
 | [QuestGrind](#questgrind) | [`quest-grind/`](quest-grind/) | 🚧 Under construction, not released | No release yet |
 
-`daves_balls` is not an addon in this repo. See [Reference only: daves_balls](#reference-only-daves_balls).
-
 ## Where AddOns go
 
 For any addon you install by copying a folder, put the folder in your AddOns directory:
@@ -114,9 +112,3 @@ An in-game quest HUD for WoW Forever, meant to be prettier than alt-tabbing to a
 ### Download & install
 
 There's nothing to download yet. QuestGrind will get its own `quest-grind-v*` release when it's ready. Until then it is for testing only: the folder to copy is `quest-grind/QuestGrind/`, taken from a [ZIP of this repo](https://github.com/Odysseaus/wow-addons/archive/refs/heads/main.zip). It goes into the AddOns directory as `QuestGrind` (see [Where AddOns go](#where-addons-go)), followed by `/reload`.
-
----
-
-## Reference only: daves_balls
-
-`daves_balls` is **not** an addon in this repo and isn't installable or released here. It's an outside addon that WoW Threat used only as a **visual reference** for its blue Edit Mode highlight box (its `EditModeDialog.lua` selection overlay). See the note in [`wow-threat/WoWThreat/UI.lua`](wow-threat/WoWThreat/UI.lua).
