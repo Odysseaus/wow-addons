@@ -89,7 +89,10 @@ A threat meter for Forever with approved bars, dial, and plates. It lists your g
 </p>
 <p align="center"><em><strong>Plates</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.20). Later builds restored the plates' bottom gold corners (0.1.22) and trimmed their side edges (0.1.23).</em></p>
 
-> 📷 **Image needed (Dial):** there's no mockup or in-game screenshot of **Dial** mode yet. Wanted: WoW Threat 0.1.23 in Dial mode (`/wtm mode dial`, then `/wtm test` or a pull), showing the skull ring, sword needle, and large percent.
+<p align="center">
+  <img src="wow-threat/docs/dial-mockup.png" alt="Mockup, not an in-game screenshot: WoW Threat Dial mode rendered by script from the addon's textures, the gold skull ring running green to red with the sword needle at 72%, class-colored diamond marks for Tank, Mage, Warlo, Druid and Rogue, and a large 72 % readout" width="340">
+</p>
+<p align="center"><em><strong>Dial</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.23).</em></p>
 
 ### Download & install
 
