@@ -8,10 +8,7 @@ World of Warcraft: Forever addons by Odysseaus, built for the classic beta clien
 |-------|--------|--------|--------|
 | [WoW Grok](#wow-grok) | [`wow-grok/`](wow-grok/) | Released (Mac app, Windows app, addon zip) | [Releases](https://github.com/Odysseaus/wow-addons/releases) (`wow-grok-mac-v…`, `wow-grok-win-v…`) |
 | [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v0.1.23`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v0.1.23) |
-| [WoW Action Bar](#wow-action-bar) | [`wow-actionbar/`](wow-actionbar/) | Released | [`wow-actionbar-v0.1.2`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-actionbar-v0.1.2) |
 | [QuestGrind](#questgrind) | [`quest-grind/`](quest-grind/) | 🚧 Under construction, not released | No release yet |
-
-`daves_balls` is not an addon in this repo. See [Reference only: daves_balls](#reference-only-daves_balls).
 
 ## Where AddOns go
 
@@ -82,41 +79,26 @@ A threat meter for Forever with approved bars, dial, and plates. It lists your g
 - Commands: `/wtm` or `/wowthreat`, then `mode [bars|plates|dial]`, `lock`, `test` (sample roster), or `reset`. The window moves only while Edit Mode is open, and its settings are saved in `WoWThreatDB`.
 - Version `0.1.23`, Interface `16001`.
 
-> 📷 **Screenshot needed:** WoW Threat in **Bars** mode during a group pull (or `/wtm test`).
+<p align="center">
+  <img src="wow-threat/docs/bars-mockup.png" alt="Mockup, not an in-game screenshot: WoW Threat Bars mode rendered by script from the addon's textures, a gold filigree frame with five glossy threat bars (Thrall 100, Jaina 82, Sylvanas 64, Anduin 45, Varian 25) and a MOCK RENDER label" width="328">
+</p>
+<p align="center"><em><strong>Bars</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.18). The square boxes stand in for class icons.</em></p>
 
-> 📷 **Screenshot needed:** WoW Threat in **Dial** and **Plates** modes.
+<p align="center">
+  <img src="wow-threat/docs/plates-mockup.png" alt="Mockup, not an in-game screenshot: WoW Threat Plates mode rendered by script from the addon's textures, five cracked-stone plates with gold corners for Tank 100, Mage 78, Rogue 54, Priest 31 and Hunter 12" width="408">
+</p>
+<p align="center"><em><strong>Plates</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.20). Later builds restored the plates' bottom gold corners (0.1.22) and trimmed their side edges (0.1.23).</em></p>
+
+<p align="center">
+  <img src="wow-threat/docs/dial-mockup.png" alt="Mockup, not an in-game screenshot: WoW Threat Dial mode rendered by script from the addon's textures, the gold skull ring running green to red with the sword needle at 72%, class-colored diamond marks for Tank, Mage, Warlo, Druid and Rogue, and a large 72 % readout" width="340">
+</p>
+<p align="center"><em><strong>Dial</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.23).</em></p>
 
 ### Download & install
 
 1. Download `WoWThreat-0.1.23.zip` from the [`wow-threat-v0.1.23`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v0.1.23) release.
 2. Unzip it. You'll get a `WoWThreat` folder, which includes `Textures/`.
 3. Copy the `WoWThreat` folder into your AddOns directory:
-   - Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`
-   - Windows: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\` (your drive or install folder may differ)
-4. Type `/reload` in game.
-
----
-
-## WoW Action Bar
-
-Folder: [`wow-actionbar/`](wow-actionbar/) · Addon: [`wow-actionbar/WoWActionBar/`](wow-actionbar/WoWActionBar/) · Full README: [`wow-actionbar/README.md`](wow-actionbar/README.md)
-
-Fills **empty** action-bar slots with your spells, grouped by category, and leaves spells you've already placed alone. It doesn't replace the bar UI, and dragging works as it normally does. It's not part of WoW Grok.
-
-- Fills in this order: healing spells, other instants, cast-time spells, then food and drink (items in your bags, plus Conjure Food and Conjure Water).
-- Leaves one empty slot between groups (you can set 0–3). The two side bars stay off unless you turn them on. After the first pass it locks, so it won't reshuffle.
-- A **WA** button at the right of the main bar, or `/wa`, opens settings for group order, the gap, which bars it may use, and the lock. To run it again, unlock it, then click **Organize now** or type `/wa organize`.
-- Version `0.1.2`, Interface `16001`.
-
-> 📷 **Screenshot needed:** the main action bar after WoW Action Bar has filled empty slots, showing the groups and the **WA** button.
-
-> 📷 **Screenshot needed:** the `/wa` settings panel.
-
-### Download & install
-
-1. Download `WoWActionBar-0.1.2.zip` from the [`wow-actionbar-v0.1.2`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-actionbar-v0.1.2) release.
-2. Unzip it. You'll get a `WoWActionBar` folder.
-3. Copy the `WoWActionBar` folder into your AddOns directory:
    - Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`
    - Windows: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\` (your drive or install folder may differ)
 4. Type `/reload` in game.
@@ -136,9 +118,3 @@ An in-game quest HUD for WoW Forever, meant to be prettier than alt-tabbing to a
 ### Download & install
 
 There's nothing to download yet. QuestGrind will get its own `quest-grind-v*` release when it's ready. Until then it is for testing only: the folder to copy is `quest-grind/QuestGrind/`, taken from a [ZIP of this repo](https://github.com/Odysseaus/wow-addons/archive/refs/heads/main.zip). It goes into the AddOns directory as `QuestGrind` (see [Where AddOns go](#where-addons-go)), followed by `/reload`.
-
----
-
-## Reference only: daves_balls
-
-`daves_balls` is **not** an addon in this repo and isn't installable or released here. It's an outside addon that WoW Threat used only as a **visual reference** for its blue Edit Mode highlight box (its `EditModeDialog.lua` selection overlay). See the note in [`wow-threat/WoWThreat/UI.lua`](wow-threat/WoWThreat/UI.lua).
