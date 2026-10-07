@@ -8,7 +8,6 @@ World of Warcraft: Forever addons by Odysseaus, built for the classic beta clien
 |-------|--------|--------|--------|
 | [WoW Grok](#wow-grok) | [`wow-grok/`](wow-grok/) | Released (Mac app, Windows app, addon zip) | [Releases](https://github.com/Odysseaus/wow-addons/releases) (`wow-grok-mac-v…`, `wow-grok-win-v…`) |
 | [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v0.1.23`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v0.1.23) |
-| [WoW Action Bar](#wow-action-bar) | [`wow-actionbar/`](wow-actionbar/) | Released | [`wow-actionbar-v0.1.2`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-actionbar-v0.1.2) |
 | [QuestGrind](#questgrind) | [`quest-grind/`](quest-grind/) | 🚧 Under construction, not released | No release yet |
 
 `daves_balls` is not an addon in this repo. See [Reference only: daves_balls](#reference-only-daves_balls).
@@ -82,41 +81,20 @@ A threat meter for Forever with approved bars, dial, and plates. It lists your g
 - Commands: `/wtm` or `/wowthreat`, then `mode [bars|plates|dial]`, `lock`, `test` (sample roster), or `reset`. The window moves only while Edit Mode is open, and its settings are saved in `WoWThreatDB`.
 - Version `0.1.23`, Interface `16001`.
 
-> 📷 **Screenshot needed:** WoW Threat in **Bars** mode during a group pull (or `/wtm test`).
+<p align="center">
+  <img src="wow-threat/docs/plates.png" alt="WoW Threat in Plates mode in game: a cracked-stone plate with gold corners showing the name Odysseaus, a threat fill, and 0 on the right, under the Plates mode button" width="606">
+</p>
+<p align="center"><em><strong>Plates</strong> mode in game (solo, 0 threat), captured on Oct 5 on a build before 0.1.23. Release 0.1.23 removed the dark strips at the plate's left and right edges.</em></p>
 
-> 📷 **Screenshot needed:** WoW Threat in **Dial** and **Plates** modes.
+> 📷 **Screenshot needed (Bars):** WoW Threat 0.1.23 in **Bars** mode during a group pull (or `/wtm test`), showing the gold filigree frame, class icons, glossy bars, and percents.
+
+> 📷 **Screenshot needed (Dial):** WoW Threat 0.1.23 in **Dial** mode (`/wtm mode dial`, then `/wtm test` or a pull), showing the skull ring, sword needle, and large percent.
 
 ### Download & install
 
 1. Download `WoWThreat-0.1.23.zip` from the [`wow-threat-v0.1.23`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v0.1.23) release.
 2. Unzip it. You'll get a `WoWThreat` folder, which includes `Textures/`.
 3. Copy the `WoWThreat` folder into your AddOns directory:
-   - Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`
-   - Windows: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\` (your drive or install folder may differ)
-4. Type `/reload` in game.
-
----
-
-## WoW Action Bar
-
-Folder: [`wow-actionbar/`](wow-actionbar/) · Addon: [`wow-actionbar/WoWActionBar/`](wow-actionbar/WoWActionBar/) · Full README: [`wow-actionbar/README.md`](wow-actionbar/README.md)
-
-Fills **empty** action-bar slots with your spells, grouped by category, and leaves spells you've already placed alone. It doesn't replace the bar UI, and dragging works as it normally does. It's not part of WoW Grok.
-
-- Fills in this order: healing spells, other instants, cast-time spells, then food and drink (items in your bags, plus Conjure Food and Conjure Water).
-- Leaves one empty slot between groups (you can set 0–3). The two side bars stay off unless you turn them on. After the first pass it locks, so it won't reshuffle.
-- A **WA** button at the right of the main bar, or `/wa`, opens settings for group order, the gap, which bars it may use, and the lock. To run it again, unlock it, then click **Organize now** or type `/wa organize`.
-- Version `0.1.2`, Interface `16001`.
-
-> 📷 **Screenshot needed:** the main action bar after WoW Action Bar has filled empty slots, showing the groups and the **WA** button.
-
-> 📷 **Screenshot needed:** the `/wa` settings panel.
-
-### Download & install
-
-1. Download `WoWActionBar-0.1.2.zip` from the [`wow-actionbar-v0.1.2`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-actionbar-v0.1.2) release.
-2. Unzip it. You'll get a `WoWActionBar` folder.
-3. Copy the `WoWActionBar` folder into your AddOns directory:
    - Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`
    - Windows: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\` (your drive or install folder may differ)
 4. Type `/reload` in game.
