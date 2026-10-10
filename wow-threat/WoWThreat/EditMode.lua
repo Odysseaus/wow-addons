@@ -64,6 +64,7 @@ local function MakeSlider(parent, label, minV, maxV, step, y, fmt, get, set)
   row.Sync = function()
     local v = get()
     row.syncing = true
+    row.last = v
     s:SetValue(v)
     row.syncing = false
     row.value:SetText(string.format(fmt, v))
@@ -72,14 +73,19 @@ local function MakeSlider(parent, label, minV, maxV, step, y, fmt, get, set)
     if row.syncing then return end
     v = math.floor(v / step + 0.5) * step
     if v < minV then v = minV elseif v > maxV then v = maxV end
-    set(v)
+    if v == row.last then return end
+    row.last = v
+    set(v, false)
     row.value:SetText(string.format(fmt, v))
   end)
-  s:SetScript("OnMouseWheel", function(_, d)
-    local v = get() + (d > 0 and step or -step)
+  row.Commit = function(v)
+    v = math.floor(v / step + 0.5) * step
     if v < minV then v = minV elseif v > maxV then v = maxV end
-    set(v)
+    set(v, true)
     row.Sync()
+  end
+  s:SetScript("OnMouseWheel", function(_, d)
+    row.Commit(get() + (d > 0 and step or -step))
   end)
   if s.EnableMouseWheel then s:EnableMouseWheel(true) end
   row.slider = s
@@ -132,7 +138,29 @@ local function Build()
   dialog.rows = {}
   dialog.rows[1] = MakeSlider(dialog, "Scale", 0.6, 1.6, 0.05, -36, "%.2f",
     function() return (NS.Layout().scale or 1) end,
-    function(v) if NS.SetScale then NS.SetScale(v) end; Apply(); NS.AnchorDialog() end)
+    function(v, commit)
+      -- Throttled live apply (~30 Hz) from dialog OnUpdate; commit on release.
+      if commit then
+        dialog.pendingScale = nil
+        if NS.ApplyScale then NS.ApplyScale(v, true) end
+      else
+        dialog.pendingScale = v
+      end
+    end)
+  local scaleSlider = dialog.rows[1].slider
+  scaleSlider:SetScript("OnMouseUp", function()
+    local v = dialog.pendingScale or scaleSlider:GetValue()
+    if v then dialog.rows[1].Commit(v) end
+  end)
+  dialog.acc = 0
+  dialog:SetScript("OnUpdate", function(_, elapsed)
+    dialog.acc = dialog.acc + (elapsed or 0)
+    if dialog.acc < 1 / 30 then return end
+    dialog.acc = 0
+    if dialog.pendingScale and NS.ApplyScale then
+      NS.ApplyScale(dialog.pendingScale, false)
+    end
+  end)
   dialog.rows[2] = MakeSlider(dialog, "Max rows", 1, 10, 1, -72, "%d",
     function() return DB().maxRows or 5 end,
     function(v) DB().maxRows = v; Apply() end)
@@ -176,20 +204,21 @@ local function Build()
   return dialog
 end
 
+-- Anchored to UIParent (not the meter) so it never moves while a slider
+-- is dragged. Placed beside the meter on show, drag release and reset.
 function NS.AnchorDialog()
   if not dialog or not dialog:IsShown() then return end
   local main = NS.MainFrame and NS.MainFrame()
   if not main then return end
+  local ms = main:GetScale() or 1
+  local left, top, right = main:GetLeft(), main:GetTop(), main:GetRight()
+  if not left or not top or not right then return end
+  local uw = UIParent:GetWidth() or 0
+  local x = right * ms + 12
+  if uw > 0 and x + W > uw then x = left * ms - 12 - W end
+  if x < 0 then x = 0 end
   dialog:ClearAllPoints()
-  local right = main:GetRight()
-  local screenW = UIParent:GetWidth()
-  local ms = main:GetEffectiveScale() or 1
-  local us = UIParent:GetEffectiveScale() or 1
-  if right and screenW and right * ms / us + W + 20 > screenW then
-    dialog:SetPoint("TOPRIGHT", main, "TOPLEFT", -12, 0)
-  else
-    dialog:SetPoint("TOPLEFT", main, "TOPRIGHT", 12, 0)
-  end
+  dialog:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, top * ms)
 end
 
 function NS.ShowDialog()

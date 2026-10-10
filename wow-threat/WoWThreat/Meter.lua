@@ -26,23 +26,33 @@ local function InCombat()
   return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
 end
 
--- Save as TOPLEFT of UIParent BOTTOMLEFT, snapped to an 8 px screen grid
--- and clamped so the frame stays fully on screen.
+-- Position model (0.6.1): each layout stores its top-left corner in
+-- UIParent units (lay.ux, lay.uy from UIParent BOTTOMLEFT). That is
+-- independent of the meter's own scale, so the frame offset is simply
+-- ux / scale. Nothing reads live positions while the scale changes.
+local function PlaceAt(lay, scale)
+  main:ClearAllPoints()
+  main:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", lay.ux / scale, lay.uy / scale)
+end
+
+-- Read the frame's current top-left once and store it in UIParent units,
+-- snapped to an 8 px screen grid and clamped on screen. Used on drag
+-- release, scale commit, and legacy-position conversion only.
 local function SnapAndSave()
   if not main then return end
   local lay = NS.Layout(currentLayout)
-  local s = main:GetEffectiveScale() or 1
+  local scale = main:GetScale() or 1
   local ps = UIParent:GetEffectiveScale() or 1
   local left, top = main:GetLeft(), main:GetTop()
   if not left or not top then return end
-  -- frame units -> screen px
-  local sx, sy = left * s, top * s
+  -- frame units -> UIParent units -> screen px
+  local sx, sy = left * scale * ps, top * scale * ps
   sx = math.floor(sx / SNAP + 0.5) * SNAP
   sy = math.floor(sy / SNAP + 0.5) * SNAP
   local sw = (UIParent:GetWidth() or 0) * ps
   local sh = (UIParent:GetHeight() or 0) * ps
-  local fw = (main:GetWidth() or 0) * s
-  local fh = (main:GetHeight() or 0) * s
+  local fw = (main:GetWidth() or 0) * scale * ps
+  local fh = (main:GetHeight() or 0) * scale * ps
   if sw > 0 then
     if sx + fw > sw then sx = math.floor((sw - fw) / SNAP) * SNAP end
     if sx < 0 then sx = 0 end
@@ -51,12 +61,11 @@ local function SnapAndSave()
     if sy > sh then sy = math.floor(sh / SNAP) * SNAP end
     if sy - fh < 0 then sy = math.ceil(fh / SNAP) * SNAP end
   end
-  lay.point = "TOPLEFT"
-  lay.relativePoint = "BOTTOMLEFT"
-  lay.xOfs = sx / s
-  lay.yOfs = sy / s
-  main:ClearAllPoints()
-  main:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", lay.xOfs, lay.yOfs)
+  lay.ux = sx / ps
+  lay.uy = sy / ps
+  lay.point, lay.relativePoint = "TOPLEFT", "BOTTOMLEFT"
+  lay.xOfs, lay.yOfs = lay.ux, lay.uy
+  PlaceAt(lay, scale)
 end
 
 -- ---------------------------------------------------------------- Edit Mode
@@ -538,19 +547,25 @@ local function Ease(cur, target, k)
   return cur + (target - cur) * k
 end
 
--- Columns: "auto" = ceil(n / maxRows) clamped 1..4, else 1..4 fixed.
-function NS.ColumnCount(n, maxRows, columns)
+-- Columns (0.6.1): "auto" = min(4, ceil(rowsToShow / maxRows)); fixed 1..4
+-- otherwise. maxCols (from the 60% screen-width cap) always wins.
+function NS.ColumnCount(n, maxRows, columns, maxCols)
+  local c
   if columns == "auto" or columns == nil then
-    return math.max(1, math.min(4, math.ceil((n or 0) / math.max(1, maxRows))))
+    c = math.ceil((n or 0) / math.max(1, maxRows))
+  else
+    c = math.floor(tonumber(columns) or 1)
   end
-  local c = tonumber(columns) or 1
-  if c < 1 then c = 1 elseif c > 4 then c = 4 end
-  return math.floor(c)
+  if c > 4 then c = 4 end
+  if maxCols and c > maxCols then c = maxCols end
+  if c < 1 then c = 1 end
+  return c
 end
 
 -- Global ranking across columns plus player pin. Returns visible list and C.
-function NS.LayoutEntries(entries, maxRows, columns)
-  local C = NS.ColumnCount(#entries, maxRows, columns)
+-- Rows past C*maxRows are hidden, except the pinned player row.
+function NS.LayoutEntries(entries, maxRows, columns, maxCols)
+  local C = NS.ColumnCount(#entries, maxRows, columns, maxCols)
   local N = math.min(maxRows * C, #entries)
   local vis, you, youVisible = {}, nil, false
   local i
@@ -566,6 +581,17 @@ function NS.LayoutEntries(entries, maxRows, columns)
     you.pinned = true
   end
   return vis, C
+end
+
+-- Most columns that fit in WIDTH_CAP of UIParent at the current scale.
+local WIDTH_CAP = 0.6
+function NS.MaxColumns(barWidth, scale)
+  local uw = UIParent and UIParent.GetWidth and UIParent:GetWidth() or 0
+  if not uw or uw <= 0 then return 4 end
+  local limit = uw * WIDTH_CAP / (scale or 1)
+  local c = math.floor((limit - PAD * 2 + 12) / (barWidth + 12))
+  if c < 1 then c = 1 elseif c > 4 then c = 4 end
+  return c
 end
 
 local function SetGlow(r, a)
@@ -726,7 +752,7 @@ local function Render(entries)
 
   local i
   for i = 1, #entries do entries[i].pinned = nil end
-  local vis, C = NS.LayoutEntries(entries, maxRows, db.columns)
+  local vis, C = NS.LayoutEntries(entries, maxRows, db.columns, NS.MaxColumns(w, main:GetScale() or 1))
 
   local top = 100
   for i = 1, #entries do
@@ -839,27 +865,45 @@ function NS.ApplyLayout()
   if not main then return end
   currentLayout = NS.ActiveLayoutName()
   local lay = NS.Layout(currentLayout)
-  main:SetScale(lay.scale or 1)
-  main:ClearAllPoints()
-  main:SetPoint(lay.point or "CENTER", UIParent, lay.relativePoint or "CENTER", lay.xOfs or 0, lay.yOfs or 40)
+  local scale = lay.scale or 1
+  main:SetScale(scale)
+  if type(lay.ux) == "number" and type(lay.uy) == "number" then
+    PlaceAt(lay, scale)
+  else
+    -- Legacy (<= 0.6.0) offsets were in the meter's own units. Place once
+    -- that way, then convert to the scale-independent UIParent anchor.
+    main:ClearAllPoints()
+    main:SetPoint(lay.point or "CENTER", UIParent, lay.relativePoint or "CENTER", lay.xOfs or 0, lay.yOfs or 40)
+    if main:GetLeft() and main:GetTop() then SnapAndSave() end
+  end
   ApplyDrag()
   if NS.AnchorDialog then NS.AnchorDialog() end
 end
 
--- Live scale change that keeps the top-left corner in place on screen.
-function NS.SetScale(v)
+-- Scale: live apply keeps the top-left fixed using the stored anchor only.
+-- commit = true (mouse release / wheel) saves the scale and snaps once.
+function NS.ApplyScale(v, commit)
   if not main then return end
   local lay = NS.Layout(currentLayout)
+  v = math.floor(v / 0.05 + 0.5) * 0.05
   if v < 0.6 then v = 0.6 elseif v > 1.6 then v = 1.6 end
-  local old = main:GetScale() or 1
-  local left, top = main:GetLeft(), main:GetTop()
-  lay.scale = v
-  main:SetScale(v)
-  if left and top then
-    main:ClearAllPoints()
-    main:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * old / v, top * old / v)
+  if type(lay.ux) ~= "number" or type(lay.uy) ~= "number" then
+    SnapAndSave() -- one-time conversion before the first scale change
+  end
+  if type(lay.ux) ~= "number" then return end
+  if main:GetScale() ~= v then
+    main:SetScale(v)
+    PlaceAt(lay, v)
+    if NS.Refresh then NS.Refresh() end
+  end
+  if commit then
+    lay.scale = v
     SnapAndSave()
   end
+end
+
+function NS.SetScale(v)
+  NS.ApplyScale(v, true)
 end
 
 local function Build()

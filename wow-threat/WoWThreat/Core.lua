@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "0.6.0"
+NS.VERSION = "0.6.1"
 NS.DB_VERSION = 2
 NS.apiMissing = true
 NS.forceTest = false
@@ -164,6 +164,7 @@ function NS.ResetPosition()
   local lay = NS.Layout()
   local k, v
   for k, v in pairs(LAYOUT_DEFAULTS) do lay[k] = v end
+  lay.ux, lay.uy = nil, nil
   if NS.ApplyLayout then NS.ApplyLayout() end
 end
 
