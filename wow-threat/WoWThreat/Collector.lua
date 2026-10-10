@@ -2,8 +2,6 @@
 -- Core.lua has already run: local _, NS = ... and WoWThreat = NS.
 local _, NS = ...
 
-local SAMPLE_TANK_RAW = 10000
-
 -- issecretvalue is the documented tainted-safe test; == on a secret string throws.
 local function valueIsSecret(value)
     return type(issecretvalue) == "function" and issecretvalue(value)
@@ -222,95 +220,96 @@ local function collectLive()
     return applyRelativeScale(entries)
 end
 
-local function osc(t, speed, phase, lo, hi)
-    local s = math.sin(t * speed + phase)
-    local u = (s + 1) * 0.5
-    return lo + (hi - lo) * u
+-- Test roster sim (modeled on the previewer): each fake player has a rate
+-- that drifts, plus occasional bursts. Ticks about every 0.1 s.
+local SIM_TICK = 0.1
+local SIM_RESET = 90
+local sim = nil
+
+local function rnd(a, b)
+    return a + math.random() * (b - a)
+end
+
+local function newSim(now)
+    local roster = {
+        { name = "Tank", class = "WARRIOR", unit = "party1", role = "tank" },
+        { name = "Mage", class = "MAGE", unit = "player", role = "dps", isPlayer = true },
+        { name = "Warlock", class = "WARLOCK", unit = "party2", role = "dps" },
+        { name = "Druid", class = "DRUID", unit = "party3", role = "heal" },
+        { name = "Rogue", class = "ROGUE", unit = "party4", role = "dps" },
+    }
+    local i
+    for i = 1, #roster do
+        local m = roster[i]
+        m.guid = "Player-Sample-" .. i
+        m.threat = 0
+        if m.role == "tank" then
+            m.base = rnd(1300, 1700)
+        elseif m.role == "heal" then
+            m.base = rnd(250, 420)
+        else
+            m.base = rnd(700, 1250)
+        end
+        m.rate = m.base
+    end
+    return { start = now, last = now, acc = 0, members = roster }
+end
+
+local function stepSim(dt)
+    local i
+    for i = 1, #sim.members do
+        local m = sim.members[i]
+        -- Rate random-walks around its base and is pulled back toward it.
+        m.rate = m.rate + (m.base - m.rate) * 0.05 + rnd(-0.08, 0.08) * m.base
+        if m.rate < m.base * 0.3 then m.rate = m.base * 0.3 end
+        if m.rate > m.base * 2.2 then m.rate = m.base * 2.2 end
+        local gain = m.rate * dt
+        if m.role ~= "heal" and math.random() < 0.02 then
+            gain = gain + m.base * rnd(0.6, 1.8) -- crit / big spell burst
+        end
+        m.threat = m.threat + gain
+    end
 end
 
 local function collectSample()
-    local t = 0
+    local now = 0
     if type(GetTime) == "function" then
-        t = GetTime() or 0
+        now = GetTime() or 0
+    end
+    if not sim or now - sim.start > SIM_RESET or now < sim.last then
+        sim = newSim(now)
+    end
+    local elapsed = now - sim.last
+    sim.last = now
+    if elapsed > 1 then elapsed = 1 end
+    sim.acc = sim.acc + elapsed
+    while sim.acc >= SIM_TICK do
+        sim.acc = sim.acc - SIM_TICK
+        stepSim(SIM_TICK)
     end
 
-    local tankRaw = SAMPLE_TANK_RAW
-    local mageRaw = math.floor(osc(t, 0.55, 0.40, 3500, 14500) + 0.5)
-    local lockRaw = math.floor(osc(t, 0.37, 1.70, 2800, 11800) + 0.5)
-    local druidRaw = math.floor(osc(t, 0.42, 2.80, 4200, 9800) + 0.5)
-    local rogueRaw = math.floor(osc(t, 0.63, 4.10, 1800, 13200) + 0.5)
-
-    local function offStatus(raw)
-        if raw > tankRaw then
-            return 2
-        end
-        return 1
+    local top = 0
+    local i
+    for i = 1, #sim.members do
+        if sim.members[i].threat > top then top = sim.members[i].threat end
     end
+    local entries = {}
+    for i = 1, #sim.members do
+        local m = sim.members[i]
+        local pct = 0
+        if top > 0 then pct = m.threat / top * 100 end
+        entries[#entries + 1] = {
+            unit = m.unit, name = m.name, class = m.class, guid = m.guid,
+            isTanking = m.threat >= top and top > 0, status = (m.threat >= top) and 3 or 1,
+            pct = pct, raw = m.threat, value = m.threat, isPlayer = m.isPlayer and true or false,
+        }
+    end
+    sortEntries(entries)
+    return entries
+end
 
-    local entries = {
-        {
-            unit = "party1",
-            name = "Tank",
-            class = "WARRIOR",
-            guid = "Player-Sample-1",
-            isTanking = true,
-            status = 3,
-            pct = 0,
-            raw = tankRaw,
-            value = tankRaw,
-            isPlayer = false,
-        },
-        {
-            unit = "player",
-            name = "Mage",
-            class = "MAGE",
-            guid = "Player-Sample-2",
-            isTanking = false,
-            status = offStatus(mageRaw),
-            pct = 0,
-            raw = mageRaw,
-            value = mageRaw,
-            isPlayer = true,
-        },
-        {
-            unit = "party2",
-            name = "Warlock",
-            class = "WARLOCK",
-            guid = "Player-Sample-3",
-            isTanking = false,
-            status = offStatus(lockRaw),
-            pct = 0,
-            raw = lockRaw,
-            value = lockRaw,
-            isPlayer = false,
-        },
-        {
-            unit = "party3",
-            name = "Druid",
-            class = "DRUID",
-            guid = "Player-Sample-4",
-            isTanking = false,
-            status = offStatus(druidRaw),
-            pct = 0,
-            raw = druidRaw,
-            value = druidRaw,
-            isPlayer = false,
-        },
-        {
-            unit = "party4",
-            name = "Rogue",
-            class = "ROGUE",
-            guid = "Player-Sample-5",
-            isTanking = false,
-            status = offStatus(rogueRaw),
-            pct = 0,
-            raw = rogueRaw,
-            value = rogueRaw,
-            isPlayer = false,
-        },
-    }
-
-    return applyRelativeScale(entries)
+function NS.ResetSample()
+    sim = nil
 end
 
 -- Sample names (Tank, Mage, ...) are only the /wtm test and missing-API path.

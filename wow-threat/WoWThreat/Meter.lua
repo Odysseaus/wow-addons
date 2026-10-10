@@ -158,6 +158,74 @@ local function Ellipsize(fs, text, maxW)
   end
 end
 
+-- Per-member eased state, keyed by GUID or name so a re-sort keeps easing.
+local state = {}
+local animFrame = nil
+local EASE_RATE = 8
+local SNAP_PX = 0.5
+
+local function EntryKey(e, i)
+  if type(e.guid) == "string" and e.guid ~= "" then return e.guid end
+  if type(e.name) == "string" then return "n:" .. e.name end
+  return "i:" .. i
+end
+
+local function Ease(cur, target, k)
+  return cur + (target - cur) * k
+end
+
+-- Apply eased values to the visible rows. Returns true while anything moves.
+local function Step(dt)
+  local db = DB()
+  local w = db.barWidth or 240
+  local full = w - 2
+  local k = 1 - math.exp(-EASE_RATE * (dt or 0))
+  local moving = false
+  local i
+  for i = 1, #rows do
+    local r = rows[i]
+    local st = r.key and state[r.key]
+    if st and r:IsShown() then
+      local tw = st.tfrac * full
+      st.w = Ease(st.w, tw, k)
+      if math.abs(tw - st.w) < SNAP_PX then st.w = tw else moving = true end
+      st.pct = Ease(st.pct, st.tpct, k)
+      if math.abs(st.tpct - st.pct) < 0.05 then st.pct = st.tpct else moving = true end
+      st.raw = Ease(st.raw, st.traw, k)
+      if math.abs(st.traw - st.raw) < 0.5 then st.raw = st.traw else moving = true end
+
+      r.value:SetText(string.format("%.1f%%  %s", st.pct, NS.FormatThreat(st.raw)))
+      local vw = r.value.GetStringWidth and r.value:GetStringWidth() or 60
+      if not vw or vw <= 0 then vw = 60 end
+      if r.lastVW ~= math.floor(vw) then
+        r.lastVW = math.floor(vw)
+        r.name:SetWidth(math.max(10, w - vw - 8))
+        Ellipsize(r.name, r.label or "?", w - vw - 8)
+      end
+      if st.w < 1 then
+        r.fill:Hide(); r.shine:Hide()
+      else
+        r.fill:Show(); r.shine:Show()
+        r.fill:SetWidth(st.w)
+      end
+    end
+  end
+  return moving
+end
+
+local function AnimOnUpdate(self, elapsed)
+  if not Step(elapsed) then
+    self:SetScript("OnUpdate", nil)
+  end
+end
+
+local function StartAnim()
+  if not animFrame then animFrame = CreateFrame("Frame") end
+  if animFrame and not animFrame:GetScript("OnUpdate") then
+    animFrame:SetScript("OnUpdate", AnimOnUpdate)
+  end
+end
+
 local function Render(entries)
   if not main then return end
   local db = DB()
@@ -175,39 +243,47 @@ local function Render(entries)
     if type(p) == "number" and p > top then top = p end
   end
 
+  local live = {}
   local shown = math.min(#entries, maxRows)
   for i = 1, maxRows do
     local r = rows[i] or CreateRow(i)
     local e = entries[i]
     if e then
+      local key = EntryKey(e, i)
+      live[key] = true
+      local pct = type(e.pct) == "number" and e.pct or 0
+      local raw = type(e.raw) == "number" and e.raw or 0
+      local frac = pct / top
+      if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+      local st = state[key]
+      if not st then
+        st = { w = 0, pct = 0, raw = 0 }
+        state[key] = st
+      end
+      st.tfrac, st.tpct, st.traw = frac, pct, raw
+
       r:ClearAllPoints()
       r:SetPoint("TOPLEFT", main, "TOPLEFT", PAD, -(HEADER + (i - 1) * rh))
       r:SetSize(w, rh)
       r.bar:SetHeight(barH)
-      local pct = type(e.pct) == "number" and e.pct or 0
-      r.value:SetText(string.format("%.1f%%  %s", pct, NS.FormatThreat(e.raw)))
-      local vw = r.value.GetStringWidth and r.value:GetStringWidth() or 60
-      r.name:SetWidth(math.max(10, w - vw - 8))
-      Ellipsize(r.name, NS.FirstName(e.name), w - vw - 8)
+      if r.key ~= key then r.lastVW = nil end
+      r.key = key
+      r.label = NS.FirstName(e.name)
       if e.isPlayer then r.name:SetTextColor(1, 0.9, 0.64) else r.name:SetTextColor(0.93, 0.89, 0.8) end
       local cr, cg, cb = 0.5, 0.56, 0.65
       if db.classColors ~= false then cr, cg, cb = NS.ClassColor(e.class) end
       r.fill:SetVertexColor(cr, cg, cb, 1)
-      local frac = pct / top
-      if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
-      local fw = (w - 2) * frac
-      if fw < 1 then
-        r.fill:Hide(); r.shine:Hide()
-      else
-        r.fill:Show(); r.shine:Show()
-        r.fill:SetWidth(fw)
-      end
       r:Show()
     else
+      r.key = nil
       r:Hide()
     end
   end
-  for i = maxRows + 1, #rows do rows[i]:Hide() end
+  for i = maxRows + 1, #rows do rows[i].key = nil; rows[i]:Hide() end
+  local k
+  for k in pairs(state) do
+    if not live[k] then state[k] = nil end
+  end
 
   main:SetSize(w + PAD * 2, HEADER + math.max(1, shown) * rh + 4)
   if shown == 0 and not editModeOpen then
@@ -215,6 +291,15 @@ local function Render(entries)
   else
     main:SetAlpha(1)
   end
+  if shown > 0 then
+    Step(0)
+    StartAnim()
+  end
+end
+
+local function PollInterval()
+  if NS.forceTest or NS.apiMissing then return 0.1 end
+  return POLL
 end
 
 function NS.Refresh()
@@ -271,7 +356,7 @@ local function Build()
 
   main:SetScript("OnUpdate", function(_, elapsed)
     pollAcc = pollAcc + (elapsed or 0)
-    if pollAcc >= POLL then
+    if pollAcc >= PollInterval() then
       pollAcc = 0
       NS.Refresh()
     end
