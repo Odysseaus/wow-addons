@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "0.3.0"
+NS.VERSION = "0.4.0"
 NS.DB_VERSION = 2
 NS.apiMissing = true
 NS.forceTest = false
@@ -196,7 +196,7 @@ function NS.Probe()
   print("GetBuildInfo: " .. build)
 end
 
-local HELP = "commands: /wtm test [raid20|raid40] | /wtm reset | /wtm probe | /wtm debug"
+local HELP = "commands: /wtm test [raid20|raid40|swap|swapfast] | /wtm reset | /wtm probe | /wtm debug"
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
@@ -221,7 +221,16 @@ SlashCmdList["WOWTHREAT"] = function(msg)
   msg = string.gsub(msg, "%s+$", "")
   local testArg = string.match(msg, "^test%s*(%w*)$")
   if testArg then
-    local size = 5
+    local size = NS.testSize or 5
+    if testArg == "swap" or testArg == "swapfast" then
+      NS.testSwapEvery = (testArg == "swap") and 2 or 0.2
+      NS.forceTest = true
+      NS.Print("test swap every " .. NS.testSwapEvery .. " s (/wtm test to stop).")
+      if NS.Refresh then NS.Refresh() end
+      return
+    end
+    NS.testSwapEvery = nil
+    if testArg == "" then size = 5 end
     if testArg == "raid20" then size = 20
     elseif testArg == "raid40" then size = 40
     elseif testArg ~= "" then testArg = nil end

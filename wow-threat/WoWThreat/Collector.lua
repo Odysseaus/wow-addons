@@ -343,6 +343,25 @@ local function stepSim(dt)
     end
 end
 
+-- /wtm test swap: every NS.testSwapEvery seconds the runner-up jumps just
+-- past the leader, forcing a leader change (0.2 s = rapid back-and-forth).
+local function forceSwap()
+    local first, second = nil, nil
+    local i
+    for i = 1, #sim.members do
+        local m = sim.members[i]
+        if not first or m.threat > first.threat then
+            second = first
+            first = m
+        elseif not second or m.threat > second.threat then
+            second = m
+        end
+    end
+    if first and second then
+        second.threat = first.threat * 1.12 + 50
+    end
+end
+
 local function collectSample()
     local now = 0
     if type(GetTime) == "function" then
@@ -359,6 +378,13 @@ local function collectSample()
     while sim.acc >= SIM_TICK do
         sim.acc = sim.acc - SIM_TICK
         stepSim(SIM_TICK)
+        if NS.testSwapEvery then
+            sim.swapAcc = (sim.swapAcc or 0) + SIM_TICK
+            if sim.swapAcc >= NS.testSwapEvery - 1e-6 then
+                sim.swapAcc = 0
+                forceSwap()
+            end
+        end
     end
 
     local top = 0
@@ -425,6 +451,7 @@ drv:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_REGEN_DISABLED" then
         NS.inCombat = true
         NS.ResetThreatDebug()
+        if NS.OnCombatStart then NS.OnCombatStart() end
     elseif event == "PLAYER_REGEN_ENABLED" then
         NS.inCombat = false
         if NS.OnCombatEnd then NS.OnCombatEnd() end

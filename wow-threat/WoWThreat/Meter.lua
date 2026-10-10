@@ -121,14 +121,35 @@ local SAFETY_POLL = 0.5
 local TEST_TICK = 0.1
 
 local state = {}      -- eased values per member key (GUID or name)
+local rowByKey = {}   -- live row frame per member key
+local pool = {}       -- released row frames
 local animFrame = nil
 local EASE_RATE = 8
+local MOVE_RATE = 12
 local SNAP_PX = 0.5
 local fadeT = nil     -- seconds left in the leave-combat fade, or nil
 local lastShown = 0
 
-local function CreateRow(i)
+-- Pop (PLAN 6)
+local POP_HOLD = 0.4
+local POP_COOLDOWN = 1.5
+local POP_GLOW = 1.2
+local POP_FLASH = 0.3
+local leaderKey, candKey, candSince = nil, nil, 0
+local lastPopAt = -100
+local suppressPop = true
+
+local function Now()
+  return type(GetTime) == "function" and (GetTime() or 0) or 0
+end
+
+local function CreateRow()
   local r = CreateFrame("Frame", nil, main)
+  -- Opaque backing so a sliding row covers the one it passes.
+  r.solid = r:CreateTexture(nil, "BACKGROUND", nil, -1)
+  r.solid:SetPoint("TOPLEFT", r, "TOPLEFT", -1, 1)
+  r.solid:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 1, 0)
+  r.solid:SetColorTexture(0.07, 0.055, 0.06, 1)
   r.hl = r:CreateTexture(nil, "BACKGROUND", nil, 1)
   r.hl:SetAllPoints()
   r.hl:SetColorTexture(0.91, 0.77, 0.42, 0.12)
@@ -146,7 +167,7 @@ local function CreateRow(i)
   r.bar:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 0, 2)
   r.bg = r.bar:CreateTexture(nil, "BACKGROUND")
   r.bg:SetAllPoints()
-  r.bg:SetColorTexture(0.04, 0.035, 0.04, 0.9)
+  r.bg:SetColorTexture(0.04, 0.035, 0.04, 1)
   r.fill = r.bar:CreateTexture(nil, "ARTWORK")
   r.fill:SetPoint("TOPLEFT", r.bar, "TOPLEFT", 1, -1)
   r.fill:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", 1, 1)
@@ -164,9 +185,114 @@ local function CreateRow(i)
   r.border:SetPoint("BOTTOMRIGHT", r.bar, "BOTTOMRIGHT", 1, -1)
   r.border:SetColorTexture(0.91, 0.77, 0.42, 0.25)
   r.border:Hide()
+
+  -- Pop: white ADD flash over the row.
+  r.flash = r:CreateTexture(nil, "OVERLAY", nil, 6)
+  r.flash:SetAllPoints()
+  r.flash:SetColorTexture(1, 1, 1, 1)
+  r.flash:SetBlendMode("ADD")
+  r.flash:SetAlpha(0)
+  -- Pop: gold glow border from four plain textures (no atlas).
+  r.glow = {}
+  local edges = {
+    { "TOPLEFT", "TOPRIGHT", -2, 2, 2, 2, true },
+    { "BOTTOMLEFT", "BOTTOMRIGHT", -2, -2, 2, -2, true },
+    { "TOPLEFT", "BOTTOMLEFT", -2, 2, -2, -2, false },
+    { "TOPRIGHT", "BOTTOMRIGHT", 2, 2, 2, -2, false },
+  }
+  local i
+  for i = 1, 4 do
+    local e = edges[i]
+    local t = r:CreateTexture(nil, "OVERLAY", nil, 7)
+    t:SetColorTexture(1, 0.82, 0.35, 1)
+    t:SetBlendMode("ADD")
+    t:SetPoint(e[1], r, e[1], e[3], e[4])
+    t:SetPoint(e[2], r, e[2], e[5], e[6])
+    if e[7] then t:SetHeight(2) else t:SetWidth(2) end
+    t:SetAlpha(0)
+    r.glow[i] = t
+  end
+  -- Pop: Scale 1 -> 1.08 -> 1 from the LEFT edge.
+  if r.CreateAnimationGroup then
+    local ok = pcall(function()
+      local ag = r:CreateAnimationGroup()
+      local up = ag:CreateAnimation("Scale")
+      local down = ag:CreateAnimation("Scale")
+      if up.SetScaleFrom and up.SetScaleTo then
+        up:SetScaleFrom(1, 1); up:SetScaleTo(1.08, 1.08)
+        down:SetScaleFrom(1.08, 1.08); down:SetScaleTo(1, 1)
+      else
+        up:SetScale(1.08, 1.08)
+        down:SetScale(1 / 1.08, 1 / 1.08)
+      end
+      up:SetOrigin("LEFT", 0, 0); down:SetOrigin("LEFT", 0, 0)
+      up:SetDuration(0.12); up:SetOrder(1)
+      down:SetDuration(0.18); down:SetOrder(2)
+      r.popAnim = ag
+    end)
+    if not ok then r.popAnim = nil end
+  end
   r:Hide()
-  rows[i] = r
+  rows[#rows + 1] = r
   return r
+end
+
+local function AcquireRow()
+  local r = table.remove(pool)
+  if not r then r = CreateRow() end
+  r.popT = nil
+  r.flash:SetAlpha(0)
+  local i
+  for i = 1, 4 do r.glow[i]:SetAlpha(0) end
+  return r
+end
+
+local function ReleaseRow(r)
+  if r.popAnim and r.popAnim.Stop then pcall(r.popAnim.Stop, r.popAnim) end
+  r.key = nil
+  r:Hide()
+  pool[#pool + 1] = r
+end
+
+local function ClearRows()
+  local k, r
+  for k, r in pairs(rowByKey) do ReleaseRow(r) end
+  rowByKey = {}
+  state = {}
+end
+
+local function StartPop(r)
+  r.popT = 0
+  if r.popAnim and r.popAnim.Play then
+    pcall(r.popAnim.Stop, r.popAnim)
+    pcall(r.popAnim.Play, r.popAnim)
+  end
+end
+
+-- Leader debounce: pop when a new key holds rank 1 for POP_HOLD seconds,
+-- at most once per POP_COOLDOWN, never on the first sort of a fight.
+function NS.UpdateLeader(key, now)
+  if key ~= candKey then
+    candKey, candSince = key, now
+  end
+  if not key or key == leaderKey then return false end
+  if now - candSince < POP_HOLD then return false end
+  local popped = false
+  if suppressPop or leaderKey == nil then
+    suppressPop = false
+  elseif now - lastPopAt >= POP_COOLDOWN then
+    lastPopAt = now
+    popped = true
+  else
+    return false -- keep the old leader until the cooldown ends
+  end
+  leaderKey = key
+  return popped
+end
+
+function NS.ResetLeader()
+  leaderKey, candKey, candSince = nil, nil, 0
+  suppressPop = true
 end
 
 -- Drop one UTF-8 character from the end.
@@ -236,21 +362,28 @@ function NS.LayoutEntries(entries, maxRows, columns)
   return vis, C
 end
 
+local function SetGlow(r, a)
+  local i
+  for i = 1, 4 do r.glow[i]:SetAlpha(a) end
+end
+
 local function Step(dt)
   local db = DB()
   local w = db.barWidth or 240
   local full = w - 2
-  local k = 1 - math.exp(-EASE_RATE * (dt or 0))
+  dt = dt or 0
+  local k = 1 - math.exp(-EASE_RATE * dt)
+  local km = 1 - math.exp(-MOVE_RATE * dt)
   local moving = false
+  local baseLevel = main:GetFrameLevel() or 1
 
   if fadeT then
-    fadeT = fadeT - (dt or 0)
+    fadeT = fadeT - dt
     if fadeT <= 0 then
       fadeT = nil
-      state = {}
-      local i
-      for i = 1, #rows do rows[i].key = nil; rows[i]:Hide() end
+      ClearRows()
       lastShown = 0
+      NS.ResetLeader()
       if not editModeOpen then main:SetAlpha(0) end
       return false
     end
@@ -258,11 +391,32 @@ local function Step(dt)
     moving = true
   end
 
-  local i
-  for i = 1, #rows do
-    local r = rows[i]
-    local st = r.key and state[r.key]
-    if st and r:IsShown() then
+  local key, r
+  for key, r in pairs(rowByKey) do
+    local st = state[key]
+    if st then
+      -- Position: ease x/y toward the sorted slot.
+      local slid = false
+      r.x = Ease(r.x, r.tx, km)
+      if math.abs(r.tx - r.x) < SNAP_PX then r.x = r.tx else slid = true end
+      r.y = Ease(r.y, r.ty, km)
+      if math.abs(r.ty - r.y) < SNAP_PX then r.y = r.ty else slid = true end
+      r:ClearAllPoints()
+      r:SetPoint("TOPLEFT", main, "TOPLEFT", r.x, r.y)
+      -- Moving rows draw above settled ones; the popping row above all.
+      local lvl = baseLevel + 2
+      if slid then lvl = baseLevel + 6 end
+      if r.popT then lvl = baseLevel + 10 end
+      if r.lvl ~= lvl then r.lvl = lvl; r:SetFrameLevel(lvl) end
+      -- New rows fade in at their slot.
+      if r.a < 1 then
+        r.a = Ease(r.a, 1, k)
+        if r.a > 0.99 then r.a = 1 else slid = true end
+        r:SetAlpha(r.a)
+      end
+      if slid then moving = true end
+
+      -- Bar width and counters.
       local tw = st.tfrac * full
       st.w = Ease(st.w, tw, k)
       if math.abs(tw - st.w) < SNAP_PX then st.w = tw else moving = true end
@@ -286,6 +440,24 @@ local function Step(dt)
       else
         r.fill:Show(); r.shine:Show()
         r.fill:SetWidth(st.w)
+      end
+
+      -- Pop flash (0 -> 0.7 -> 0 over 0.3 s) and glow fade (1.2 s).
+      if r.popT then
+        r.popT = r.popT + dt
+        local t = r.popT
+        local fa = 0
+        if t < POP_FLASH / 2 then fa = 0.7 * t / (POP_FLASH / 2)
+        elseif t < POP_FLASH then fa = 0.7 * (1 - (t - POP_FLASH / 2) / (POP_FLASH / 2)) end
+        r.flash:SetAlpha(fa)
+        if t < POP_GLOW then
+          SetGlow(r, 1 - t / POP_GLOW)
+          moving = true
+        else
+          r.popT = nil
+          r.flash:SetAlpha(0)
+          SetGlow(r, 0)
+        end
       end
     end
   end
@@ -316,6 +488,10 @@ function NS.OnCombatEnd()
   if not NS.forceTest and not NS.apiMissing then StartFade() end
 end
 
+function NS.OnCombatStart()
+  NS.ResetLeader()
+end
+
 local function Render(entries)
   if not main then return end
   local db = DB()
@@ -328,19 +504,21 @@ local function Render(entries)
   if #entries == 0 then
     if lastShown > 0 and not editModeOpen then StartFade() return end
     if not fadeT then
-      local i
-      for i = 1, #rows do rows[i].key = nil; rows[i]:Hide() end
+      ClearRows()
+      NS.ResetLeader()
       main:SetAlpha(editModeOpen and 1 or 0)
     end
     return
   end
-  fadeT = nil
+  if fadeT then
+    -- Data came back mid-fade: restore.
+    fadeT = nil
+  end
 
   local i
   for i = 1, #entries do entries[i].pinned = nil end
   local vis, C = NS.LayoutEntries(entries, maxRows, db.columns)
 
-  -- Fill scales to the top % (min 100) so over-aggro rows cap at full.
   local top = 100
   for i = 1, #entries do
     local p = entries[i].pct
@@ -350,7 +528,6 @@ local function Render(entries)
   local live = {}
   local colW = w + COL_GAP
   for i = 1, #vis do
-    local r = rows[i] or CreateRow(i)
     local e = vis[i]
     local key = EntryKey(e, i)
     live[key] = true
@@ -367,8 +544,17 @@ local function Render(entries)
 
     local col = math.floor((i - 1) / maxRows)
     local slot = (i - 1) % maxRows
-    r:ClearAllPoints()
-    r:SetPoint("TOPLEFT", main, "TOPLEFT", PAD + col * colW, -(HEADER + slot * rh))
+    local tx = PAD + col * colW
+    local ty = -(HEADER + slot * rh)
+    local r = rowByKey[key]
+    if not r then
+      r = AcquireRow()
+      rowByKey[key] = r
+      r.x, r.y, r.a = tx, ty, 0
+      r:SetAlpha(0)
+      r.lastVW = nil
+    end
+    r.tx, r.ty = tx, ty
     r:SetSize(w, rh)
     r.bar:SetHeight(barH)
     local label = NS.FirstName(e.name)
@@ -387,10 +573,22 @@ local function Render(entries)
     r.fill:SetVertexColor(cr, cg, cb, 1)
     r:Show()
   end
-  for i = #vis + 1, #rows do rows[i].key = nil; rows[i]:Hide() end
-  local k
+  local k, r
+  for k, r in pairs(rowByKey) do
+    if not live[k] then
+      ReleaseRow(r)
+      rowByKey[k] = nil
+    end
+  end
   for k in pairs(state) do
     if not live[k] then state[k] = nil end
+  end
+
+  -- Pop on a debounced leader change.
+  local lead = EntryKey(entries[1], 1)
+  if NS.UpdateLeader(lead, Now()) and rowByKey[lead] then
+    StartPop(rowByKey[lead])
+    NS.popCount = (NS.popCount or 0) + 1
   end
 
   local usedRows = math.min(#vis, maxRows)
