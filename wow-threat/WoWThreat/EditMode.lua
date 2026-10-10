@@ -142,7 +142,7 @@ local function Build()
       -- Throttled live apply (~30 Hz) from dialog OnUpdate; commit on release.
       if commit then
         dialog.pendingScale = nil
-        if NS.ApplyScale then NS.ApplyScale(v, true) end
+        NS.SetOption("scale", v, "dialog")
       else
         dialog.pendingScale = v
       end
@@ -163,10 +163,10 @@ local function Build()
   end)
   dialog.rows[2] = MakeSlider(dialog, "Max rows", 1, 10, 1, -72, "%d",
     function() return DB().maxRows or 5 end,
-    function(v) DB().maxRows = v; Apply() end)
+    function(v) NS.SetOption("maxRows", v, "dialog") end)
   dialog.rows[3] = MakeSlider(dialog, "Bar width", 160, 320, 4, -108, "%d",
     function() return DB().barWidth or 240 end,
-    function(v) DB().barWidth = v; Apply() end)
+    function(v) NS.SetOption("barWidth", v, "dialog") end)
 
   local cols = MakeButton(dialog, ColumnsLabel(DB().columns), W - 32)
   cols:SetPoint("TOPLEFT", dialog, "TOPLEFT", 16, -152)
@@ -178,9 +178,8 @@ local function Build()
     for i = 1, #COLUMNS do if COLUMNS[i] == db.columns then idx = i end end
     idx = idx + ((button == "RightButton") and -1 or 1)
     if idx > #COLUMNS then idx = 1 elseif idx < 1 then idx = #COLUMNS end
-    db.columns = COLUMNS[idx]
-    cols.text:SetText(ColumnsLabel(db.columns))
-    Apply()
+    NS.SetOption("columns", COLUMNS[idx], "dialog")
+    cols.text:SetText(ColumnsLabel(DB().columns))
   end)
   dialog.cols = cols
 
@@ -200,9 +199,17 @@ local function Build()
     for i = 1, #dialog.rows do dialog.rows[i].Sync() end
     cols.text:SetText(ColumnsLabel(DB().columns))
   end
+  -- Options panel (or slash) changed something: resync while visible.
+  NS.OnOptionChanged(function(_, _, source)
+    if source ~= "dialog" and dialog:IsShown() and not dialog.pendingScale then dialog.Sync() end
+  end)
   dialog:Hide()
   return dialog
 end
+
+-- Shared simple widgets for the Settings canvas fallback.
+NS.MakeSliderRow = function(...) return MakeSlider(...) end
+NS.MakeButton = function(...) return MakeButton(...) end
 
 -- Anchored to UIParent (not the meter) so it never moves while a slider
 -- is dragged. Placed beside the meter on show, drag release and reset.

@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "0.6.1"
+NS.VERSION = "0.7.0"
 NS.DB_VERSION = 2
 NS.apiMissing = true
 NS.forceTest = false
@@ -29,15 +29,90 @@ local DEFAULTS = {
   columns = "auto",
   showFire = true,
   fireIntensity = 0.8,
+  showPop = true,
+  onlyInGroup = false,
+  hideOutOfCombat = true,
 }
 
 local OLD_KEYS = { "mode", "locked", "lock", "point", "relativePoint", "xOfs", "yOfs", "scale" }
 
+function NS.Clamp(v, lo, hi, def) return NS._Clamp(v, lo, hi, def) end
 local function Clamp(v, lo, hi, def)
   if type(v) ~= "number" then return def end
   if v < lo then return lo end
   if v > hi then return hi end
   return v
+end
+
+NS._Clamp = Clamp
+
+-- ------------------------------------------------------------ options
+-- Single write path for every user setting (Options panel, Edit Mode
+-- dialog, slash). Validates, writes WoWThreatDB, applies live and
+-- notifies listeners so both UIs stay in sync.
+NS.OPTION_SPEC = {
+  maxRows = { "number", 1, 10, 1 },
+  barWidth = { "number", 160, 320, 4 },
+  rowHeight = { "number", 20, 32, 1 },
+  fireIntensity = { "number", 0, 1, 0.05 },
+  scale = { "number", 0.6, 1.6, 0.05 },
+  showFire = { "boolean" },
+  showPop = { "boolean" },
+  classColors = { "boolean" },
+  onlyInGroup = { "boolean" },
+  hideOutOfCombat = { "boolean" },
+  testMode = { "boolean" },
+  columns = { "columns" },
+  numberFormat = { "enum", { short = true, full = true } },
+}
+local listeners = {}
+
+function NS.OnOptionChanged(fn)
+  listeners[#listeners + 1] = fn
+end
+
+function NS.GetOption(key)
+  if not NS.db then NS.MigrateDB() end
+  if key == "scale" then return NS.Layout().scale or 1 end
+  if key == "testMode" then return NS.forceTest and true or false end
+  return NS.db[key]
+end
+
+function NS.NotifyOption(key, source)
+  local i
+  for i = 1, #listeners do pcall(listeners[i], key, NS.GetOption(key), source) end
+end
+
+function NS.SetOption(key, value, source)
+  if not NS.db then NS.MigrateDB() end
+  local spec = NS.OPTION_SPEC[key]
+  if not spec then return end
+  if spec[1] == "number" then
+    value = tonumber(value)
+    if not value then return end
+    value = math.floor(value / spec[4] + 0.5) * spec[4]
+    value = Clamp(value, spec[2], spec[3], spec[2])
+  elseif spec[1] == "boolean" then
+    value = value and true or false
+  elseif spec[1] == "columns" then
+    if value ~= "auto" then
+      local c = tonumber(value)
+      value = (c and c >= 1 and c <= 4) and math.floor(c) or "auto"
+    end
+  elseif spec[1] == "enum" then
+    if not spec[2][value] then return end
+  end
+  if key == "scale" then
+    if NS.ApplyScale then NS.ApplyScale(value, true) else NS.Layout().scale = value end
+  elseif key == "testMode" then
+    NS.forceTest = value
+    if NS.ResetSample and value then NS.ResetSample() end
+  else
+    NS.db[key] = value
+  end
+  if NS.Refresh then NS.Refresh() end
+  local i
+  for i = 1, #listeners do pcall(listeners[i], key, NS.GetOption(key), source) end
 end
 
 function NS.Print(msg)
@@ -235,7 +310,7 @@ function NS.Probe()
   print("GetBuildInfo: " .. build)
 end
 
-local HELP = "commands: /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm reset | /wtm probe | /wtm debug"
+local HELP = "commands: /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm options | /wtm reset | /wtm probe | /wtm debug"
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
@@ -288,6 +363,7 @@ SlashCmdList["WOWTHREAT"] = function(msg)
       NS.testSize = size
       if NS.ResetSample then NS.ResetSample() end
       NS.Print(NS.forceTest and ("test on (" .. size .. " players).") or "test off.")
+      NS.NotifyOption("testMode", "slash")
       if NS.Refresh then NS.Refresh() end
       return
     end
@@ -297,18 +373,22 @@ SlashCmdList["WOWTHREAT"] = function(msg)
     if not NS.db then NS.MigrateDB() end
     local n = tonumber(fireArg)
     if fireArg == "off" then
-      NS.db.showFire = false
+      NS.SetOption("showFire", false, "slash")
     elseif fireArg == "on" then
-      NS.db.showFire = true
+      NS.SetOption("showFire", true, "slash")
     elseif n and n >= 0 and n <= 1 then
-      NS.db.fireIntensity = n
-      NS.db.showFire = true
+      NS.SetOption("fireIntensity", n, "slash")
+      NS.SetOption("showFire", true, "slash")
     else
       NS.Print("usage: /wtm fire <0-1|off|on>")
       return
     end
     NS.Print(string.format("fire %s, intensity %.2f.", NS.db.showFire and "on" or "off", NS.db.fireIntensity))
     if NS.Refresh then NS.Refresh() end
+    return
+  end
+  if msg == "options" or msg == "config" then
+    if NS.OpenOptions then NS.OpenOptions() else NS.Print("options panel unavailable.") end
     return
   end
   if msg == "debug" then

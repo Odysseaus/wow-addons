@@ -720,6 +720,7 @@ local function StartFade()
 end
 
 function NS.OnCombatEnd()
+  if DB().hideOutOfCombat == false then return end
   if not NS.forceTest and not NS.apiMissing then StartFade() end
 end
 
@@ -823,7 +824,7 @@ local function Render(entries)
 
   -- Pop on a debounced leader change.
   local lead = EntryKey(entries[1], 1)
-  if NS.UpdateLeader(lead, Now()) and rowByKey[lead] then
+  if NS.UpdateLeader(lead, Now()) and rowByKey[lead] and DB().showPop ~= false then
     StartPop(rowByKey[lead])
     NS.popCount = (NS.popCount or 0) + 1
   end
@@ -837,8 +838,11 @@ local function Render(entries)
 end
 
 local function LiveVisible()
+  local db = DB()
+  if db.onlyInGroup and not (type(IsInGroup) == "function" and IsInGroup()) then return false end
   if not (UnitExists and UnitExists("target")) then return false end
   if not (UnitCanAttack and UnitCanAttack("player", "target")) then return false end
+  if db.hideOutOfCombat == false then return true end
   local combat = NS.inCombat
   if type(UnitAffectingCombat) == "function" then
     combat = combat or (UnitAffectingCombat("player") and true or false)
