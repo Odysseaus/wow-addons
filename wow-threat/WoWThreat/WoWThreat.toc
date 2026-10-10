@@ -2,7 +2,7 @@
 ## Title: WoW Threat
 ## Notes: Forever threat meter: one sorted bar per group member.
 ## Author: Odysseaus
-## Version: 0.4.0
+## Version: 0.5.0
 ## IconTexture: Interface\Icons\Spell_Fire_Fireball
 ## SavedVariables: WoWThreatDB
 

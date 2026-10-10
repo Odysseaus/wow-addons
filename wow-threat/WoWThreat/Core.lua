@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "0.4.0"
+NS.VERSION = "0.5.0"
 NS.DB_VERSION = 2
 NS.apiMissing = true
 NS.forceTest = false
@@ -27,6 +27,8 @@ local DEFAULTS = {
   numberFormat = "short",
   classColors = true,
   columns = "auto",
+  showFire = true,
+  fireIntensity = 0.8,
 }
 
 local OLD_KEYS = { "mode", "locked", "lock", "point", "relativePoint", "xOfs", "yOfs", "scale" }
@@ -117,6 +119,7 @@ function NS.MigrateDB()
     local c = tonumber(db.columns)
     db.columns = (c and c >= 1 and c <= 4) and math.floor(c) or "auto"
   end
+  db.fireIntensity = Clamp(db.fireIntensity, 0, 1, 0.8)
   if db.threatScale ~= 1 and db.threatScale ~= 100 then db.threatScale = "auto" end
   if db.numberFormat ~= "short" and db.numberFormat ~= "full" then db.numberFormat = "short" end
 
@@ -196,7 +199,7 @@ function NS.Probe()
   print("GetBuildInfo: " .. build)
 end
 
-local HELP = "commands: /wtm test [raid20|raid40|swap|swapfast] | /wtm reset | /wtm probe | /wtm debug"
+local HELP = "commands: /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm reset | /wtm probe | /wtm debug"
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
@@ -247,6 +250,25 @@ SlashCmdList["WOWTHREAT"] = function(msg)
       if NS.Refresh then NS.Refresh() end
       return
     end
+  end
+  local fireArg = string.match(msg, "^fire%s*(%S*)$")
+  if fireArg then
+    if not NS.db then NS.MigrateDB() end
+    local n = tonumber(fireArg)
+    if fireArg == "off" then
+      NS.db.showFire = false
+    elseif fireArg == "on" then
+      NS.db.showFire = true
+    elseif n and n >= 0 and n <= 1 then
+      NS.db.fireIntensity = n
+      NS.db.showFire = true
+    else
+      NS.Print("usage: /wtm fire <0-1|off|on>")
+      return
+    end
+    NS.Print(string.format("fire %s, intensity %.2f.", NS.db.showFire and "on" or "off", NS.db.fireIntensity))
+    if NS.Refresh then NS.Refresh() end
+    return
   end
   if msg == "debug" then
     NS.debug = not NS.debug

@@ -127,6 +127,8 @@ local animFrame = nil
 local EASE_RATE = 8
 local MOVE_RATE = 12
 local SNAP_PX = 0.5
+local FIRE_TEX = TEX .. "Fire_Flipbook"
+local FIRE_COLS, FIRE_FRAMES = 4, 16
 local fadeT = nil     -- seconds left in the leave-combat fade, or nil
 local lastShown = 0
 
@@ -186,6 +188,64 @@ local function CreateRow()
   r.border:SetColorTexture(0.91, 0.77, 0.42, 0.25)
   r.border:Hide()
 
+  -- Fire (PLAN 7): clip frame sized to the fill width, fire anchored at the
+  -- bottom with ADD blend. Created once per row and reused.
+  r.fireClip = CreateFrame("Frame", nil, r.bar)
+  r.fireClip:SetPoint("TOPLEFT", r.bar, "TOPLEFT", 1, -1)
+  r.fireClip:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", 1, 1)
+  r.fireClip:SetWidth(1)
+  if r.fireClip.SetClipsChildren then r.fireClip:SetClipsChildren(true) end
+  r.fireClip:SetFrameLevel(r.bar:GetFrameLevel() + 1)
+  r.fire = r.fireClip:CreateTexture(nil, "ARTWORK")
+  r.fire:SetTexture(FIRE_TEX)
+  r.fire:SetBlendMode("ADD")
+  r.fire:SetPoint("BOTTOMLEFT", r.fireClip, "BOTTOMLEFT", 0, 0)
+  r.fire:SetPoint("BOTTOMRIGHT", r.fireClip, "BOTTOMRIGHT", 0, 0)
+  r.fire:SetHeight(1)
+  r.fireDur = 1.0
+  r.fireFrame = 0
+  r.fireAcc = 0
+  if NS.FlipBookOK ~= false and r.fire.CreateAnimationGroup then
+    local ok = pcall(function()
+      local ag = r.fire:CreateAnimationGroup()
+      local fb = ag:CreateAnimation("FlipBook")
+      fb:SetFlipBookRows(4)
+      fb:SetFlipBookColumns(FIRE_COLS)
+      fb:SetFlipBookFrames(FIRE_FRAMES)
+      fb:SetFlipBookFrameWidth(0)
+      fb:SetFlipBookFrameHeight(0)
+      fb:SetDuration(1.0)
+      ag:SetLooping("REPEAT")
+      r.fireAG, r.fireFB = ag, fb
+    end)
+    if not ok then
+      r.fireAG, r.fireFB = nil, nil
+      NS.FlipBookOK = false
+    end
+  end
+  if not r.fireAG then
+    r.fire:SetTexCoord(0, 0.25, 0, 0.25)
+  end
+  -- White-hot layer above 90%: pulsing via a bouncing Alpha animation.
+  r.hot = CreateFrame("Frame", nil, r.fireClip)
+  r.hot:SetAllPoints(r.fireClip)
+  r.hotTex = r.hot:CreateTexture(nil, "OVERLAY")
+  r.hotTex:SetAllPoints()
+  r.hotTex:SetColorTexture(1, 1, 0.94, 1)
+  r.hotTex:SetBlendMode("ADD")
+  r.hotTex:SetAlpha(0.35)
+  pcall(function()
+    local ag = r.hotTex:CreateAnimationGroup()
+    local a = ag:CreateAnimation("Alpha")
+    a:SetFromAlpha(0.15)
+    a:SetToAlpha(0.55)
+    a:SetDuration(0.3)
+    ag:SetLooping("BOUNCE")
+    r.hotAG = ag
+  end)
+  r.hot:Hide()
+  r.fireClip:Hide()
+
   -- Pop: white ADD flash over the row.
   r.flash = r:CreateTexture(nil, "OVERLAY", nil, 6)
   r.flash:SetAllPoints()
@@ -237,6 +297,75 @@ local function CreateRow()
   return r
 end
 
+local function StopFire(r)
+  if r.fireAG and r.fireOn then pcall(r.fireAG.Stop, r.fireAG) end
+  if r.hotAG and r.hotOn then pcall(r.hotAG.Stop, r.hotAG) end
+  r.fireOn, r.hotOn = false, false
+  r.hot:Hide()
+  r.fireClip:Hide()
+end
+
+-- pct is 0..1 of the bar; width is the eased fill width in px.
+local function UpdateFire(r, pct, width, barH, class, dt)
+  local db = DB()
+  local inten = type(db.fireIntensity) == "number" and db.fireIntensity or 0.8
+  if db.showFire == false or inten <= 0 or width < 2 or not r:IsShown() then
+    if r.fireOn or r.fireClip:IsShown() then StopFire(r) end
+    return false
+  end
+  if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
+  r.fireClip:SetWidth(width)
+  r.fireClip:Show()
+  local inner = math.max(1, barH - 2)
+  r.fire:SetHeight(math.max(1, inner * (0.35 + 0.65 * pct)))
+  local a = 0.25 + 0.75 * pct * inten
+  if a > 1 then a = 1 end
+  r.fire:SetAlpha(a)
+  -- Orange, blended 25% toward the class color.
+  local cr, cg, cb = NS.ClassColor(class)
+  r.fire:SetVertexColor(1 * 0.75 + cr * 0.25, 0.55 * 0.75 + cg * 0.25, 0.15 * 0.75 + cb * 0.25, 1)
+  local dur = 1.0 - 0.4 * pct
+  local needsTick = false
+  if r.fireAG then
+    if math.abs(dur - r.fireDur) > 0.05 then
+      r.fireDur = dur
+      pcall(r.fireFB.SetDuration, r.fireFB, dur)
+    end
+    if not r.fireOn then
+      pcall(r.fireAG.Play, r.fireAG)
+      r.fireOn = true
+    end
+  else
+    -- SetTexCoord fallback; keeps the anim driver alive while fire shows.
+    r.fireDur = dur
+    r.fireAcc = r.fireAcc + (dt or 0)
+    local step = dur / FIRE_FRAMES
+    if r.fireAcc >= step then
+      r.fireFrame = (r.fireFrame + math.floor(r.fireAcc / step)) % FIRE_FRAMES
+      r.fireAcc = r.fireAcc % step
+      local c = r.fireFrame % FIRE_COLS
+      local rr = math.floor(r.fireFrame / FIRE_COLS)
+      r.fire:SetTexCoord(c * 0.25, c * 0.25 + 0.25, rr * 0.25, rr * 0.25 + 0.25)
+    end
+    r.fireOn = true
+    needsTick = true
+  end
+  if pct > 0.9 then
+    r.hot:SetAlpha(math.min(1, (pct - 0.9) / 0.1 * inten))
+    if not r.hotOn then
+      r.hot:Show()
+      if r.hotAG then pcall(r.hotAG.Play, r.hotAG) end
+      r.hotOn = true
+    end
+  elseif r.hotOn then
+    if r.hotAG then pcall(r.hotAG.Stop, r.hotAG) end
+    r.hot:Hide()
+    r.hotOn = false
+  end
+  return needsTick
+end
+
+
 local function AcquireRow()
   local r = table.remove(pool)
   if not r then r = CreateRow() end
@@ -248,6 +377,7 @@ local function AcquireRow()
 end
 
 local function ReleaseRow(r)
+  StopFire(r)
   if r.popAnim and r.popAnim.Stop then pcall(r.popAnim.Stop, r.popAnim) end
   r.key = nil
   r:Hide()
@@ -441,6 +571,9 @@ local function Step(dt)
         r.fill:Show(); r.shine:Show()
         r.fill:SetWidth(st.w)
       end
+      if UpdateFire(r, full > 0 and st.w / full or 0, st.w, r.barH or 14, r.class, dt) then
+        moving = true
+      end
 
       -- Pop flash (0 -> 0.7 -> 0 over 0.3 s) and glow fade (1.2 s).
       if r.popT then
@@ -557,6 +690,8 @@ local function Render(entries)
     r.tx, r.ty = tx, ty
     r:SetSize(w, rh)
     r.bar:SetHeight(barH)
+    r.barH = barH
+    r.class = e.class
     local label = NS.FirstName(e.name)
     if r.key ~= key or r.label ~= label then r.lastVW = nil end
     r.key = key
