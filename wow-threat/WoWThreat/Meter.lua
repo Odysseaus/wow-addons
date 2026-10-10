@@ -1,4 +1,4 @@
--- WoWThreat single bar meter (Phase 1, v0.2.0). Plain rows, no slide/pop/fire.
+-- WoWThreat meter: rows, slides, pop, fire, and listen-only Edit Mode hooks.
 local _, NS = ...
 
 local POLL = 0.2
@@ -15,101 +15,177 @@ local function DB()
   return NS.db or {}
 end
 
-local function SavePosition()
+local SNAP = 8
+local currentLayout = nil
+
+local function Note(msg)
+  if NS.Print then NS.Print(msg) end
+end
+
+local function InCombat()
+  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
+end
+
+-- Save as TOPLEFT of UIParent BOTTOMLEFT, snapped to an 8 px screen grid
+-- and clamped so the frame stays fully on screen.
+local function SnapAndSave()
   if not main then return end
-  local lay = NS.Layout and NS.Layout()
-  if not lay then return end
-  local point, _, relativePoint, xOfs, yOfs = main:GetPoint(1)
-  lay.point = point or "CENTER"
-  lay.relativePoint = relativePoint or "CENTER"
-  lay.xOfs = xOfs or 0
-  lay.yOfs = yOfs or 0
+  local lay = NS.Layout(currentLayout)
+  local s = main:GetEffectiveScale() or 1
+  local ps = UIParent:GetEffectiveScale() or 1
+  local left, top = main:GetLeft(), main:GetTop()
+  if not left or not top then return end
+  -- frame units -> screen px
+  local sx, sy = left * s, top * s
+  sx = math.floor(sx / SNAP + 0.5) * SNAP
+  sy = math.floor(sy / SNAP + 0.5) * SNAP
+  local sw = (UIParent:GetWidth() or 0) * ps
+  local sh = (UIParent:GetHeight() or 0) * ps
+  local fw = (main:GetWidth() or 0) * s
+  local fh = (main:GetHeight() or 0) * s
+  if sw > 0 then
+    if sx + fw > sw then sx = math.floor((sw - fw) / SNAP) * SNAP end
+    if sx < 0 then sx = 0 end
+  end
+  if sh > 0 then
+    if sy > sh then sy = math.floor(sh / SNAP) * SNAP end
+    if sy - fh < 0 then sy = math.ceil(fh / SNAP) * SNAP end
+  end
+  lay.point = "TOPLEFT"
+  lay.relativePoint = "BOTTOMLEFT"
+  lay.xOfs = sx / s
+  lay.yOfs = sy / s
+  main:ClearAllPoints()
+  main:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", lay.xOfs, lay.yOfs)
 end
 
 -- ---------------------------------------------------------------- Edit Mode
-local function DragAllowed()
-  return editModeOpen and EventRegistry ~= nil and EditModeManagerFrame ~= nil
-end
-
-local HIGHLIGHT_KIT = "editmode-actionbar-highlight"
-local SELECTION_LAYOUT = {
-  TopRightCorner = { atlas = "%s-NineSlice-Corner", mirrorLayout = true, x = 8, y = 8 },
-  TopLeftCorner = { atlas = "%s-NineSlice-Corner", mirrorLayout = true, x = -8, y = 8 },
-  BottomLeftCorner = { atlas = "%s-NineSlice-Corner", mirrorLayout = true, x = -8, y = -8 },
-  BottomRightCorner = { atlas = "%s-NineSlice-Corner", mirrorLayout = true, x = 8, y = -8 },
-  TopEdge = { atlas = "_%s-NineSlice-EdgeTop" },
-  BottomEdge = { atlas = "_%s-NineSlice-EdgeBottom" },
-  LeftEdge = { atlas = "!%s-NineSlice-EdgeLeft" },
-  RightEdge = { atlas = "!%s-NineSlice-EdgeRight" },
-  Center = { atlas = "%s-NineSlice-Center", x = -8, y = 8, x1 = 8, y1 = -8 },
-}
+-- Listen-only integration (PLAN 3). Never RegisterSystemFrame or call
+-- secure EditMode methods; only read GetActiveLayoutInfo via pcall.
 local editHighlight
 
-local function HasEditModeArt()
-  if not (NineSliceUtil and NineSliceUtil.ApplyLayout) then return false end
-  if not (C_Texture and C_Texture.GetAtlasInfo) then return false end
-  local ok, info = pcall(C_Texture.GetAtlasInfo, HIGHLIGHT_KIT .. "-NineSlice-Corner")
-  return ok and info ~= nil
+function NS.IsEditMode() return editModeOpen end
+function NS.MainFrame() return main end
+
+local function DragAllowed()
+  return editModeOpen and not InCombat()
 end
 
+-- Blue selection drawn from plain textures (no atlas on this client).
 local function CreateEditHighlight(target)
-  local sel = CreateFrame("Frame", nil, target)
-  sel:SetAllPoints()
-  sel:SetFrameLevel(target:GetFrameLevel() + 20)
-  local painted = false
-  if HasEditModeArt() then
-    sel.art = CreateFrame("Frame", nil, sel)
-    sel.art:SetAllPoints()
-    painted = pcall(NineSliceUtil.ApplyLayout, sel.art, SELECTION_LAYOUT, HIGHLIGHT_KIT)
+  local sel = CreateFrame("Button", "WoWThreatSelection", target)
+  sel:SetPoint("TOPLEFT", target, "TOPLEFT", -4, 4)
+  sel:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 4, -4)
+  sel:SetFrameLevel((target:GetFrameLevel() or 1) + 30)
+  sel.fill = sel:CreateTexture(nil, "BACKGROUND")
+  sel.fill:SetAllPoints()
+  sel.fill:SetColorTexture(0.18, 0.5, 1, 0.18)
+  sel.edges = {}
+  local spec = {
+    { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
+    { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false },
+  }
+  local i
+  for i = 1, 4 do
+    local t = sel:CreateTexture(nil, "BORDER")
+    t:SetColorTexture(0.3, 0.68, 1, 0.95)
+    t:SetPoint(spec[i][1], sel, spec[i][1], 0, 0)
+    t:SetPoint(spec[i][2], sel, spec[i][2], 0, 0)
+    if spec[i][3] then t:SetHeight(2) else t:SetWidth(2) end
+    sel.edges[i] = t
   end
-  if not painted then
-    sel.tint = sel:CreateTexture(nil, "OVERLAY")
-    sel.tint:SetAllPoints()
-    sel.tint:SetColorTexture(0.25, 0.6, 1, 0.22)
-  end
+  sel.hover = sel:CreateTexture(nil, "ARTWORK")
+  sel.hover:SetAllPoints()
+  sel.hover:SetColorTexture(0.45, 0.75, 1, 0.12)
+  sel.hover:Hide()
   sel.label = sel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  sel.label:SetPoint("BOTTOM", sel, "TOP", 0, 10)
+  sel.label:SetPoint("CENTER", sel, "TOP", 0, 0)
   sel.label:SetText("WoW Threat")
   if sel.SetIgnoreParentAlpha then sel:SetIgnoreParentAlpha(true) end
+
+  sel:EnableMouse(true)
+  sel:RegisterForClicks("LeftButtonUp")
+  sel:RegisterForDrag("LeftButton")
+  sel:SetScript("OnEnter", function() sel.hover:Show() end)
+  sel:SetScript("OnLeave", function() sel.hover:Hide() end)
+  sel:SetScript("OnDragStart", function()
+    if not DragAllowed() then
+      if InCombat() then Note("can't move the meter in combat.") end
+      return
+    end
+    dragging = true
+    main:SetMovable(true)
+    main:StartMoving()
+  end)
+  sel:SetScript("OnDragStop", function()
+    if not dragging then return end
+    dragging = false
+    main:StopMovingOrSizing()
+    SnapAndSave()
+    if NS.AnchorDialog then NS.AnchorDialog() end
+  end)
+  sel:SetScript("OnClick", function()
+    if dragging then return end
+    if InCombat() then
+      Note("settings are unavailable in combat.")
+      return
+    end
+    if NS.ToggleDialog then NS.ToggleDialog() end
+  end)
   sel:Hide()
   return sel
 end
 
 local function ApplyDrag()
   if not main then return end
+  main:EnableMouse(false)
   if editHighlight then
     if editModeOpen then editHighlight:Show() else editHighlight:Hide() end
   end
-  if DragAllowed() then
-    main:SetMovable(true)
-    main:EnableMouse(true)
-    main:RegisterForDrag("LeftButton")
-  else
+  if not editModeOpen then
     if dragging then
       dragging = false
       main:StopMovingOrSizing()
-      SavePosition()
+      SnapAndSave()
     end
     main:SetMovable(false)
-    main:RegisterForDrag()
-    main:EnableMouse(false)
+    if NS.HideDialog then NS.HideDialog() end
   end
 end
+
+-- Reapply when the active Edit Mode layout changed.
+local function CheckLayout()
+  local name = NS.ActiveLayoutName()
+  if name ~= currentLayout and NS.ApplyLayout then NS.ApplyLayout() end
+end
+NS.CheckLayout = CheckLayout
 
 local function BindEditModeSignals()
   if editModeBound or not main then return end
   if not EventRegistry or type(EventRegistry.RegisterCallback) ~= "function" then return end
-  -- Listen only. Never RegisterSystemFrame (closed enum, taints the manager).
   EventRegistry:RegisterCallback("EditMode.Enter", function()
     editModeOpen = true
+    CheckLayout()
     ApplyDrag()
     if NS.Refresh then NS.Refresh() end
   end, main)
   EventRegistry:RegisterCallback("EditMode.Exit", function()
     editModeOpen = false
+    CheckLayout()
     ApplyDrag()
     if NS.Refresh then NS.Refresh() end
   end, main)
+  -- Post-hook only (hooksecurefunc does not taint the manager).
+  local em = EditModeManagerFrame
+  if em and type(hooksecurefunc) == "function" then
+    local names = { "SelectLayout", "UpdateLayoutInfo" }
+    local i
+    for i = 1, #names do
+      if type(em[names[i]]) == "function" then
+        pcall(hooksecurefunc, em, names[i], function() CheckLayout() end)
+      end
+    end
+  end
   editModeBound = true
 end
 
@@ -735,7 +811,6 @@ local function Render(entries)
 end
 
 local function LiveVisible()
-  if editModeOpen then return true end
   if not (UnitExists and UnitExists("target")) then return false end
   if not (UnitCanAttack and UnitCanAttack("player", "target")) then return false end
   local combat = NS.inCombat
@@ -753,16 +828,38 @@ function NS.Refresh()
   if not NS.forceTest and not NS.apiMissing and not LiveVisible() then
     entries = {}
   end
+  if editModeOpen and #entries == 0 and NS.CollectSample then
+    local ok2, fake = pcall(NS.CollectSample)
+    if ok2 and type(fake) == "table" then entries = fake end
+  end
   Render(entries)
 end
 
 function NS.ApplyLayout()
   if not main then return end
-  local lay = NS.Layout and NS.Layout() or {}
+  currentLayout = NS.ActiveLayoutName()
+  local lay = NS.Layout(currentLayout)
+  main:SetScale(lay.scale or 1)
   main:ClearAllPoints()
   main:SetPoint(lay.point or "CENTER", UIParent, lay.relativePoint or "CENTER", lay.xOfs or 0, lay.yOfs or 40)
-  main:SetScale(lay.scale or 1)
   ApplyDrag()
+  if NS.AnchorDialog then NS.AnchorDialog() end
+end
+
+-- Live scale change that keeps the top-left corner in place on screen.
+function NS.SetScale(v)
+  if not main then return end
+  local lay = NS.Layout(currentLayout)
+  if v < 0.6 then v = 0.6 elseif v > 1.6 then v = 1.6 end
+  local old = main:GetScale() or 1
+  local left, top = main:GetLeft(), main:GetTop()
+  lay.scale = v
+  main:SetScale(v)
+  if left and top then
+    main:ClearAllPoints()
+    main:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * old / v, top * old / v)
+    SnapAndSave()
+  end
 end
 
 local function Build()
@@ -783,17 +880,6 @@ local function Build()
   editHighlight = CreateEditHighlight(main)
   main:SetMovable(false)
   main:EnableMouse(false)
-  main:SetScript("OnDragStart", function(self)
-    if not DragAllowed() then return end
-    dragging = true
-    self:StartMoving()
-  end)
-  main:SetScript("OnDragStop", function(self)
-    if not dragging then return end
-    dragging = false
-    self:StopMovingOrSizing()
-    SavePosition()
-  end)
 
   -- Driver: dirty -> refresh at most every 0.2 s; safety poll every 0.5 s;
   -- test mode ticks every 0.1 s.

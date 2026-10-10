@@ -407,6 +407,10 @@ local function collectSample()
     return entries
 end
 
+function NS.CollectSample()
+    return collectSample()
+end
+
 function NS.ResetSample()
     sim = nil
 end

@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "0.5.0"
+NS.VERSION = "0.6.0"
 NS.DB_VERSION = 2
 NS.apiMissing = true
 NS.forceTest = false
@@ -127,14 +127,49 @@ function NS.MigrateDB()
   return db
 end
 
-function NS.Layout()
+-- Edit Mode layout name, pcall-wrapped. Falls back to "default".
+function NS.ActiveLayoutName()
+  local em = EditModeManagerFrame
+  if em and type(em.GetActiveLayoutInfo) == "function" then
+    local ok, info = pcall(em.GetActiveLayoutInfo, em)
+    if ok and type(info) == "table" and type(info.layoutName) == "string" and info.layoutName ~= "" then
+      return info.layoutName
+    end
+  end
+  return "default"
+end
+
+-- Position table for a layout. A new layout inherits the default position.
+function NS.Layout(name)
   if not NS.db then NS.MigrateDB() end
-  return NS.db.layout.default
+  name = name or NS.ActiveLayoutName()
+  local layouts = NS.db.layout
+  local lay = layouts[name]
+  if type(lay) ~= "table" then
+    lay = {}
+    local k, v
+    for k, v in pairs(layouts.default) do lay[k] = v end
+    layouts[name] = lay
+  end
+  local k, v
+  for k, v in pairs(LAYOUT_DEFAULTS) do
+    if lay[k] == nil or type(lay[k]) ~= type(v) then lay[k] = v end
+  end
+  lay.scale = Clamp(lay.scale, 0.6, 1.6, 1)
+  return lay
+end
+
+-- Reset the active layout's position to the default spot.
+function NS.ResetPosition()
+  local lay = NS.Layout()
+  local k, v
+  for k, v in pairs(LAYOUT_DEFAULTS) do lay[k] = v end
+  if NS.ApplyLayout then NS.ApplyLayout() end
 end
 
 function NS.ResetDB()
   if not NS.db then NS.MigrateDB() end
-  NS.db.layout.default = nil
+  NS.db.layout = nil
   NS.forceTest = false
   NS.MigrateDB()
   if NS.ApplyLayout then NS.ApplyLayout() end
@@ -204,6 +239,8 @@ local HELP = "commands: /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
+ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+pcall(ev.RegisterEvent, ev, "EDIT_MODE_LAYOUTS_UPDATED")
 ev:SetScript("OnEvent", function(self, event, arg1)
   if event == "ADDON_LOADED" and arg1 == "WoWThreat" then
     NS.MigrateDB()
@@ -212,7 +249,10 @@ ev:SetScript("OnEvent", function(self, event, arg1)
   elseif event == "PLAYER_LOGIN" then
     NS.apiMissing = type(UnitDetailedThreatSituation) ~= "function"
     if NS.apiMissing then NS.forceTest = true end
+    if NS.CheckLayout then NS.CheckLayout() end
     if NS.Refresh then NS.Refresh() end
+  elseif event == "PLAYER_ENTERING_WORLD" or event == "EDIT_MODE_LAYOUTS_UPDATED" then
+    if NS.CheckLayout then NS.CheckLayout() end
   end
 end)
 
