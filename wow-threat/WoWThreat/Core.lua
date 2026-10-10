@@ -2,34 +2,17 @@ local _, NS = ...
 WoWThreat = NS
 
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
--- enum and OnSystemLoad will not accept an addon frame. UI.lua only listens
--- for EventRegistry "EditMode.Enter" and "EditMode.Exit".
+-- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.MODES = { "bars", "plates", "dial" }
-NS.rows = {}
-NS.anim = {}
+NS.VERSION = "0.2.0"
+NS.DB_VERSION = 2
 NS.apiMissing = true
 NS.forceTest = false
 NS.db = nil
 
-NS.CLASS_ICON_TCOORDS = {
-  WARRIOR     = { 0, 0.25, 0, 0.25 },
-  MAGE        = { 0.25, 0.49609375, 0, 0.25 },
-  ROGUE       = { 0.49609375, 0.7421875, 0, 0.25 },
-  DRUID       = { 0.7421875, 0.98828125, 0, 0.25 },
-  HUNTER      = { 0, 0.25, 0.25, 0.5 },
-  SHAMAN      = { 0.25, 0.49609375, 0.25, 0.5 },
-  PRIEST      = { 0.49609375, 0.7421875, 0.25, 0.5 },
-  WARLOCK     = { 0.7421875, 0.98828125, 0.25, 0.5 },
-  PALADIN     = { 0, 0.25, 0.5, 0.75 },
-  DEATHKNIGHT = { 0.25, 0.49609375, 0.5, 0.75 },
-  MONK        = { 0.49609375, 0.7421875, 0.5, 0.75 },
-  DEMONHUNTER = { 0.7421875, 0.98828125, 0.5, 0.75 },
-}
+local PREFIX = "|cffd4af37WoW Threat|r "
 
-local DEFAULTS = {
-  mode = "bars",
-  locked = false,
+local LAYOUT_DEFAULTS = {
   point = "CENTER",
   relativePoint = "CENTER",
   xOfs = 0,
@@ -37,9 +20,30 @@ local DEFAULTS = {
   scale = 1,
 }
 
+local DEFAULTS = {
+  maxRows = 5,
+  barWidth = 240,
+  rowHeight = 28,
+  numberFormat = "short",
+  classColors = true,
+}
+
+local OLD_KEYS = { "mode", "locked", "lock", "point", "relativePoint", "xOfs", "yOfs", "scale" }
+
+local function Clamp(v, lo, hi, def)
+  if type(v) ~= "number" then return def end
+  if v < lo then return lo end
+  if v > hi then return hi end
+  return v
+end
+
+function NS.Print(msg)
+  print(PREFIX .. tostring(msg))
+end
+
 function NS.ClassColor(class)
   local c = RAID_CLASS_COLORS and class and RAID_CLASS_COLORS[class]
-  if c then
+  if c and c.r then
     return c.r, c.g, c.b
   end
   if class == "WARRIOR" then return 0.78, 0.61, 0.43 end
@@ -54,127 +58,152 @@ function NS.ClassColor(class)
   return 0.8, 0.8, 0.8
 end
 
-function NS.ApplyClassIcon(tex, class)
-  if not tex then return end
-  if tex.SetTexCoord then tex:SetTexCoord(0, 1, 0, 1) end
-  tex:SetVertexColor(1, 1, 1, 1)
-  if class and tex.SetAtlas and C_Texture and C_Texture.GetAtlasInfo then
-    local key = string.lower(class)
-    local candidates = {
-      "classicon-" .. key,
-      "groupfinder-icon-class-" .. key,
-    }
-    local i
-    for i = 1, #candidates do
-      if C_Texture.GetAtlasInfo(candidates[i]) then
-        tex:SetAtlas(candidates[i])
-        return
-      end
-    end
+-- First name only: strip "-Realm".
+function NS.FirstName(name)
+  if type(name) ~= "string" then return "?" end
+  if type(Ambiguate) == "function" then
+    local ok, short = pcall(Ambiguate, name, "short")
+    if ok and type(short) == "string" then name = short end
   end
-  local map = nil
-  if CLASS_ICON_TCOORDS and class and CLASS_ICON_TCOORDS[class] then
-    map = CLASS_ICON_TCOORDS[class]
-  elseif class and NS.CLASS_ICON_TCOORDS[class] then
-    map = NS.CLASS_ICON_TCOORDS[class]
-  end
-  if map then
-    tex:SetTexture("Interface\\TargetingFrame\\UI-Classes-Circles")
-    tex:SetTexCoord(map[1], map[2], map[3], map[4])
-    tex:SetVertexColor(1, 1, 1, 1)
-  else
-    local r, g, b = NS.ClassColor(class)
-    tex:SetTexture("Interface\\Buttons\\WHITE8X8")
-    tex:SetTexCoord(0, 1, 0, 1)
-    tex:SetVertexColor(r, g, b, 1)
-  end
+  return (string.match(name, "^[^%-]+") or name)
 end
 
-function NS.ShortName(name)
-  name = name or "?"
-  if string.len(name) > 5 then
-    return string.sub(name, 1, 5)
-  end
-  return name
+-- 999, 12.3k, 1.23M
+function NS.FormatThreat(v)
+  if type(v) ~= "number" then return "0" end
+  v = math.floor(v + 0.5)
+  if NS.db and NS.db.numberFormat == "full" then return tostring(v) end
+  if v < 1000 then return tostring(v) end
+  if v < 1000000 then return string.format("%.1fk", v / 1000) end
+  return string.format("%.2fM", v / 1000000)
 end
 
-function NS.CopyDefaults()
+-- SavedVariables v1 -> v2. Safe on fresh installs and repeat runs.
+function NS.MigrateDB()
   if type(WoWThreatDB) ~= "table" then
     WoWThreatDB = {}
   end
-  NS.db = WoWThreatDB
-  if NS.db.locked == nil and NS.db.lock ~= nil then
-    NS.db.locked = NS.db.lock
+  local db = WoWThreatDB
+  if type(db.layout) ~= "table" then db.layout = {} end
+  if type(db.layout.default) ~= "table" then db.layout.default = {} end
+  local lay = db.layout.default
+
+  if (tonumber(db.version) or 1) < 2 then
+    if type(db.point) == "string" and lay.point == nil then lay.point = db.point end
+    if type(db.relativePoint) == "string" and lay.relativePoint == nil then lay.relativePoint = db.relativePoint end
+    if type(db.xOfs) == "number" and lay.xOfs == nil then lay.xOfs = db.xOfs end
+    if type(db.yOfs) == "number" and lay.yOfs == nil then lay.yOfs = db.yOfs end
+    if type(db.scale) == "number" and lay.scale == nil then lay.scale = db.scale end
   end
-  local k, v
-  for k, v in pairs(DEFAULTS) do
-    if NS.db[k] == nil then
-      NS.db[k] = v
-    end
-  end
-  if NS.db.scale < 0.6 then NS.db.scale = 0.6 end
-  if NS.db.scale > 1.6 then NS.db.scale = 1.6 end
-  local known = false
   local i
-  for i = 1, 3 do
-    if NS.MODES[i] == NS.db.mode then known = true end
+  for i = 1, #OLD_KEYS do
+    db[OLD_KEYS[i]] = nil
   end
-  if not known then NS.db.mode = "bars" end
+  db.version = NS.DB_VERSION
+
+  local k, v
+  for k, v in pairs(LAYOUT_DEFAULTS) do
+    if lay[k] == nil or type(lay[k]) ~= type(v) then lay[k] = v end
+  end
+  lay.scale = Clamp(lay.scale, 0.6, 1.6, 1)
+  for k, v in pairs(DEFAULTS) do
+    if db[k] == nil or type(db[k]) ~= type(v) then db[k] = v end
+  end
+  db.maxRows = Clamp(db.maxRows, 1, 10, 5)
+  db.barWidth = Clamp(db.barWidth, 160, 320, 240)
+  db.rowHeight = Clamp(db.rowHeight, 20, 32, 28)
+  if db.numberFormat ~= "short" and db.numberFormat ~= "full" then db.numberFormat = "short" end
+
+  NS.db = db
+  return db
 end
 
-function NS.CycleMode()
-  if not NS.db then NS.CopyDefaults() end
-  local i = 1
-  local n
-  for n = 1, 3 do
-    if NS.MODES[n] == NS.db.mode then i = n end
-  end
-  i = i + 1
-  if i > 3 then i = 1 end
-  NS.db.mode = NS.MODES[i]
-  if NS.ApplyMode then NS.ApplyMode() end
-  print("|cffd4af37WoW Threat|r mode " .. NS.db.mode .. ".")
-end
-
-function NS.ToggleLock()
-  if not NS.db then NS.CopyDefaults() end
-  NS.db.locked = not NS.db.locked
-  if NS.ApplyLock then NS.ApplyLock() end
-  if NS.db.locked then
-    print("|cffd4af37WoW Threat|r window locked.")
-  else
-    print("|cffd4af37WoW Threat|r lock cleared. The meter moves only while Edit Mode is open.")
-  end
+function NS.Layout()
+  if not NS.db then NS.MigrateDB() end
+  return NS.db.layout.default
 end
 
 function NS.ResetDB()
-  if not NS.db then NS.CopyDefaults() end
-  NS.db.mode = "bars"
-  NS.db.locked = false
-  NS.db.point = "CENTER"
-  NS.db.relativePoint = "CENTER"
-  NS.db.xOfs = 0
-  NS.db.yOfs = 40
-  NS.db.scale = 1
+  if not NS.db then NS.MigrateDB() end
+  NS.db.layout.default = nil
   NS.forceTest = false
+  NS.MigrateDB()
   if NS.ApplyLayout then NS.ApplyLayout() end
-  print("|cffd4af37WoW Threat|r reset.")
+  if NS.Refresh then NS.Refresh() end
+  NS.Print("reset.")
 end
+
+-- /wtm probe: one plain line per item so the chat can be copied.
+local function yn(v) return v and "yes" or "no" end
+
+function NS.Probe()
+  local lines = {}
+  local function add(label, ok) lines[#lines + 1] = label .. ": " .. yn(ok) end
+  local S = type(Settings) == "table" and Settings or nil
+  local em = EditModeManagerFrame
+
+  add("EditModeManagerFrame", em ~= nil)
+  add("EditModeSystemMixin", EditModeSystemMixin ~= nil)
+  add("EventRegistry", EventRegistry ~= nil)
+  add("Settings", S ~= nil)
+  add("Settings.RegisterAddOnCategory", S and type(S.RegisterAddOnCategory) == "function")
+  add("Settings.RegisterVerticalLayoutCategory", S and type(S.RegisterVerticalLayoutCategory) == "function")
+  add("Settings.RegisterCanvasLayoutCategory", S and type(S.RegisterCanvasLayoutCategory) == "function")
+  add("Settings.OpenToCategory", S and type(S.OpenToCategory) == "function")
+  add("InterfaceOptions_AddCategory", type(InterfaceOptions_AddCategory) == "function")
+
+  local flip = false
+  if type(CreateFrame) == "function" then
+    local ok, res = pcall(function()
+      local f = CreateFrame("Frame")
+      local t = f:CreateTexture()
+      local ag = t:CreateAnimationGroup()
+      return ag:CreateAnimation("FlipBook") ~= nil
+    end)
+    flip = ok and res
+  end
+  add("FlipBook animation", flip)
+
+  add("EditModeManagerFrame.IsShowingGrid", em and type(em.IsShowingGrid) == "function")
+  add("EditModeManagerFrame.GetGridSpacing", em and type(em.GetGridSpacing) == "function")
+  add("EditModeManagerFrame.GetActiveLayoutInfo", em and type(em.GetActiveLayoutInfo) == "function")
+
+  local atlas = false
+  if type(C_Texture) == "table" and type(C_Texture.GetAtlasInfo) == "function" then
+    local ok, info = pcall(C_Texture.GetAtlasInfo, "editmode-actionbar-highlight")
+    atlas = ok and info ~= nil
+  end
+  add("C_Texture.GetAtlasInfo('editmode-actionbar-highlight')", atlas)
+  add("UnitDetailedThreatSituation", type(UnitDetailedThreatSituation) == "function")
+
+  local build = "unknown"
+  if type(GetBuildInfo) == "function" then
+    local ok, ver, bnum, bdate, toc = pcall(GetBuildInfo)
+    if ok then
+      build = tostring(ver) .. " build " .. tostring(bnum) .. " (" .. tostring(bdate) .. ") toc " .. tostring(toc)
+    end
+  end
+
+  NS.Print("probe v" .. NS.VERSION)
+  local i
+  for i = 1, #lines do print(lines[i]) end
+  print("GetBuildInfo: " .. build)
+end
+
+local HELP = "commands: /wtm test | /wtm reset | /wtm probe"
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:SetScript("OnEvent", function(self, event, arg1)
   if event == "ADDON_LOADED" and arg1 == "WoWThreat" then
-    NS.CopyDefaults()
+    NS.MigrateDB()
     NS.apiMissing = type(UnitDetailedThreatSituation) ~= "function"
     if NS.OnDBReady then NS.OnDBReady() end
   elseif event == "PLAYER_LOGIN" then
     NS.apiMissing = type(UnitDetailedThreatSituation) ~= "function"
-    if NS.apiMissing then
-      NS.forceTest = true
-    end
-    if NS.RefreshChrome then NS.RefreshChrome() end
+    if NS.apiMissing then NS.forceTest = true end
+    if NS.Refresh then NS.Refresh() end
   end
 end)
 
@@ -184,36 +213,21 @@ SlashCmdList["WOWTHREAT"] = function(msg)
   msg = string.lower(msg or "")
   msg = string.gsub(msg, "^%s+", "")
   msg = string.gsub(msg, "%s+$", "")
-  local modeArg = string.match(msg, "^mode%s+(%a+)$")
-  if modeArg then
-    if NS.SetMode then
-      NS.SetMode(modeArg)
-    else
-      NS.db = NS.db or {}
-      NS.db.mode = modeArg
-      if NS.ApplyMode then NS.ApplyMode() end
-    end
-  elseif msg == "mode" then
-    NS.CycleMode()
-  elseif msg == "lock" then
-    NS.ToggleLock()
-  elseif msg == "test" then
+  if msg == "test" then
     NS.apiMissing = type(UnitDetailedThreatSituation) ~= "function"
     if NS.apiMissing then
       NS.forceTest = true
-      print("|cffd4af37WoW Threat|r test roster (no threat API).")
+      NS.Print("test roster (no threat API).")
     else
       NS.forceTest = not NS.forceTest
-      if NS.forceTest then
-        print("|cffd4af37WoW Threat|r test on.")
-      else
-        print("|cffd4af37WoW Threat|r test off.")
-      end
+      NS.Print(NS.forceTest and "test on." or "test off.")
     end
-    if NS.RefreshChrome then NS.RefreshChrome() end
+    if NS.Refresh then NS.Refresh() end
   elseif msg == "reset" then
     NS.ResetDB()
+  elseif msg == "probe" then
+    NS.Probe()
   else
-    print("|cffd4af37WoW Threat|r /wtm mode [bars|plates|dial] | lock | test | reset")
+    NS.Print(HELP)
   end
 end
