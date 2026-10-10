@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "0.2.1"
+NS.VERSION = "0.3.0"
 NS.DB_VERSION = 2
 NS.apiMissing = true
 NS.forceTest = false
@@ -26,6 +26,7 @@ local DEFAULTS = {
   rowHeight = 28,
   numberFormat = "short",
   classColors = true,
+  columns = "auto",
 }
 
 local OLD_KEYS = { "mode", "locked", "lock", "point", "relativePoint", "xOfs", "yOfs", "scale" }
@@ -112,6 +113,11 @@ function NS.MigrateDB()
   db.maxRows = Clamp(db.maxRows, 1, 10, 5)
   db.barWidth = Clamp(db.barWidth, 160, 320, 240)
   db.rowHeight = Clamp(db.rowHeight, 20, 32, 28)
+  if db.columns ~= "auto" then
+    local c = tonumber(db.columns)
+    db.columns = (c and c >= 1 and c <= 4) and math.floor(c) or "auto"
+  end
+  if db.threatScale ~= 1 and db.threatScale ~= 100 then db.threatScale = "auto" end
   if db.numberFormat ~= "short" and db.numberFormat ~= "full" then db.numberFormat = "short" end
 
   NS.db = db
@@ -190,7 +196,7 @@ function NS.Probe()
   print("GetBuildInfo: " .. build)
 end
 
-local HELP = "commands: /wtm test | /wtm reset | /wtm probe"
+local HELP = "commands: /wtm test [raid20|raid40] | /wtm reset | /wtm probe | /wtm debug"
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
@@ -213,16 +219,30 @@ SlashCmdList["WOWTHREAT"] = function(msg)
   msg = string.lower(msg or "")
   msg = string.gsub(msg, "^%s+", "")
   msg = string.gsub(msg, "%s+$", "")
-  if msg == "test" then
-    NS.apiMissing = type(UnitDetailedThreatSituation) ~= "function"
-    if NS.apiMissing then
-      NS.forceTest = true
-      NS.Print("test roster (no threat API).")
-    else
-      NS.forceTest = not NS.forceTest
-      NS.Print(NS.forceTest and "test on." or "test off.")
+  local testArg = string.match(msg, "^test%s*(%w*)$")
+  if testArg then
+    local size = 5
+    if testArg == "raid20" then size = 20
+    elseif testArg == "raid40" then size = 40
+    elseif testArg ~= "" then testArg = nil end
+    if testArg then
+      NS.apiMissing = type(UnitDetailedThreatSituation) ~= "function"
+      if NS.apiMissing or (testArg ~= "" and not (NS.forceTest and NS.testSize == size)) then
+        NS.forceTest = true
+      else
+        NS.forceTest = not NS.forceTest
+      end
+      NS.testSize = size
+      if NS.ResetSample then NS.ResetSample() end
+      NS.Print(NS.forceTest and ("test on (" .. size .. " players).") or "test off.")
+      if NS.Refresh then NS.Refresh() end
+      return
     end
-    if NS.Refresh then NS.Refresh() end
+  end
+  if msg == "debug" then
+    NS.debug = not NS.debug
+    if NS.ResetThreatDebug then NS.ResetThreatDebug() end
+    NS.Print(NS.debug and "debug on: one threatValue line per unit per target." or "debug off.")
   elseif msg == "reset" then
     NS.ResetDB()
   elseif msg == "probe" then

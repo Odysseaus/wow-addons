@@ -112,9 +112,50 @@ local function queryThreat(unit, mobToken)
     return isTanking, status, scaledPercentage, rawPercentage, threatValue
 end
 
-local function numericThreat(threatValue, rawPercentage, scaledPercentage)
+-- threatValue scale. Retail and Classic document threatValue as raw x100.
+-- Auto mode divides by 100, unless a holder (rawPct >= 100) reports a value
+-- under 100, which means this client returns unscaled raw threat.
+-- WoWThreatDB.threatScale = "auto" | 1 | 100 overrides.
+local scaleSeen = nil
+local debugPrinted = {}
+
+local function threatDivisor(threatValue, rawPercentage)
+    local setting = NS.db and NS.db.threatScale
+    if setting == 1 or setting == 100 then
+        return setting
+    end
+    if scaleSeen then
+        return scaleSeen
+    end
+    if type(threatValue) == "number" and type(rawPercentage) == "number"
+        and rawPercentage >= 100 and threatValue > 0 then
+        if threatValue < 100 then
+            scaleSeen = 1
+        else
+            scaleSeen = 100
+        end
+        return scaleSeen
+    end
+    return 100
+end
+
+function NS.ResetThreatDebug()
+    debugPrinted = {}
+    scaleSeen = nil
+end
+
+local function numericThreat(threatValue, rawPercentage, scaledPercentage, unit)
+    if valueIsSecret(threatValue) then threatValue = nil end
+    if valueIsSecret(rawPercentage) then rawPercentage = nil end
+    if valueIsSecret(scaledPercentage) then scaledPercentage = nil end
     if type(threatValue) == "number" then
-        return threatValue
+        local div = threatDivisor(threatValue, rawPercentage)
+        if NS.debug and unit and not debugPrinted[unit] and threatValue > 0 then
+            debugPrinted[unit] = true
+            print(string.format("|cffd4af37WoW Threat|r debug %s threatValue=%s rawPct=%s scaledPct=%s divisor=%d -> %.1f",
+                tostring(unit), tostring(threatValue), tostring(rawPercentage), tostring(scaledPercentage), div, threatValue / div))
+        end
+        return threatValue / div
     end
     if type(rawPercentage) == "number" then
         return rawPercentage
@@ -148,7 +189,7 @@ local function pushLive(entries, seen, unit, mobToken)
         local scaledPercentage, rawPercentage, threatValue
         isTanking, status, scaledPercentage, rawPercentage, threatValue =
             queryThreat(unit, mobToken)
-        raw = numericThreat(threatValue, rawPercentage, scaledPercentage)
+        raw = numericThreat(threatValue, rawPercentage, scaledPercentage, unit)
     end
 
     local samePlayer = UnitIsUnit(unit, "player")
@@ -230,15 +271,43 @@ local function rnd(a, b)
     return a + math.random() * (b - a)
 end
 
-local function newSim(now)
-    local roster = {
-        { name = "Tank", class = "WARRIOR", unit = "party1", role = "tank" },
-        { name = "Mage", class = "MAGE", unit = "player", role = "dps", isPlayer = true },
-        { name = "Warlock", class = "WARLOCK", unit = "party2", role = "dps" },
-        { name = "Druid", class = "DRUID", unit = "party3", role = "heal" },
-        { name = "Rogue", class = "ROGUE", unit = "party4", role = "dps" },
-    }
+local SIM_NAMES = {
+    "Aldric", "Brynja-Faerlina", "Caelum", "Dorrin", "Elowen", "Fenwick", "Garrik", "Hesper",
+    "Isolde", "Jorund", "Kaelith", "Lirael", "Maelis", "Norric", "Orwen", "Perrin", "Quilla",
+    "Rhydian", "Tamsin", "Ulric", "Vesna", "Wystan", "Yrsa", "Zephyrine", "Ansel", "Brannoc",
+    "Cressida", "Dagny", "Eamon", "Faelan", "Gwendolyn", "Halvard", "Ingrith", "Joren",
+    "Kestrel", "Leofric", "Mirelle", "Nyssa", "Osric",
+}
+NS.LONG_TEST_NAME = "Seraphinavellewyndmoorthalias"
+local DPS = { "ROGUE", "MAGE", "WARLOCK", "HUNTER", "WARRIOR", "SHAMAN", "DRUID", "PALADIN" }
+local HEAL = { "PRIEST", "DRUID", "SHAMAN", "PALADIN" }
+
+local function newSim(now, n)
+    n = n or 5
+    local nTank = (n >= 10) and 2 or 1
+    local nHeal = math.max(1, math.floor(n / 5 + 0.5))
+    local roster = {}
     local i
+    for i = 1, n do
+        local m = { unit = "party" .. i }
+        if i == n then
+            m.name, m.class, m.role, m.isPlayer, m.unit = "You", "MAGE", "dps", true, "player"
+        else
+            if i == 2 then
+                m.name = NS.LONG_TEST_NAME
+            else
+                m.name = SIM_NAMES[((i - 1) % #SIM_NAMES) + 1]
+            end
+            if i <= nTank then
+                m.role, m.class = "tank", (i % 2 == 0) and "PALADIN" or "WARRIOR"
+            elseif i <= nTank + nHeal then
+                m.role, m.class = "heal", HEAL[(i % #HEAL) + 1]
+            else
+                m.role, m.class = "dps", DPS[((i * 3) % #DPS) + 1]
+            end
+        end
+        roster[i] = m
+    end
     for i = 1, #roster do
         local m = roster[i]
         m.guid = "Player-Sample-" .. i
@@ -250,9 +319,12 @@ local function newSim(now)
         else
             m.base = rnd(700, 1250)
         end
+        if m.isPlayer and n > 10 then
+            m.base = rnd(150, 250) -- low threat so the pinned row shows in raids
+        end
         m.rate = m.base
     end
-    return { start = now, last = now, acc = 0, members = roster }
+    return { start = now, last = now, acc = 0, members = roster, n = n }
 end
 
 local function stepSim(dt)
@@ -276,8 +348,9 @@ local function collectSample()
     if type(GetTime) == "function" then
         now = GetTime() or 0
     end
-    if not sim or now - sim.start > SIM_RESET or now < sim.last then
-        sim = newSim(now)
+    local size = NS.testSize or 5
+    if not sim or sim.n ~= size or now - sim.start > SIM_RESET or now < sim.last then
+        sim = newSim(now, size)
     end
     local elapsed = now - sim.last
     sim.last = now
@@ -334,3 +407,31 @@ function NS.GetPlayerThreatPercent(entries)
     end
     return 0
 end
+
+-- Event driver: mark dirty on threat/target/roster/combat events. Meter.lua
+-- refreshes with a 0.2 s throttle plus a 0.5 s safety poll.
+NS.dirty = true
+NS.inCombat = false
+local drv = CreateFrame("Frame")
+local EVENTS = {
+    "UNIT_THREAT_LIST_UPDATE", "UNIT_THREAT_SITUATION_UPDATE", "PLAYER_TARGET_CHANGED",
+    "GROUP_ROSTER_UPDATE", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ENTERING_WORLD",
+}
+local i
+for i = 1, #EVENTS do
+    pcall(drv.RegisterEvent, drv, EVENTS[i])
+end
+drv:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        NS.inCombat = true
+        NS.ResetThreatDebug()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        NS.inCombat = false
+        if NS.OnCombatEnd then NS.OnCombatEnd() end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        NS.inCombat = type(UnitAffectingCombat) == "function" and UnitAffectingCombat("player") and true or false
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        NS.ResetThreatDebug()
+    end
+    NS.dirty = true
+end)

@@ -114,8 +114,25 @@ local function BindEditModeSignals()
 end
 
 -- ---------------------------------------------------------------- rows
+local ELLIPSIS = "\226\128\166" -- UTF-8 "…"
+local COL_GAP = 12
+local FADE_TIME = 1.0
+local SAFETY_POLL = 0.5
+local TEST_TICK = 0.1
+
+local state = {}      -- eased values per member key (GUID or name)
+local animFrame = nil
+local EASE_RATE = 8
+local SNAP_PX = 0.5
+local fadeT = nil     -- seconds left in the leave-combat fade, or nil
+local lastShown = 0
+
 local function CreateRow(i)
   local r = CreateFrame("Frame", nil, main)
+  r.hl = r:CreateTexture(nil, "BACKGROUND", nil, 1)
+  r.hl:SetAllPoints()
+  r.hl:SetColorTexture(0.91, 0.77, 0.42, 0.12)
+  r.hl:Hide()
   r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   r.name:SetPoint("TOPLEFT", r, "TOPLEFT", 1, 0)
   r.name:SetJustifyH("LEFT")
@@ -142,27 +159,42 @@ local function CreateRow(i)
   r.bevel = r.bar:CreateTexture(nil, "OVERLAY", nil, 1)
   r.bevel:SetAllPoints()
   r.bevel:SetTexture(TEX .. "BarBevel")
+  r.border = r.bar:CreateTexture(nil, "OVERLAY", nil, 2)
+  r.border:SetPoint("TOPLEFT", r.bar, "TOPLEFT", -1, 1)
+  r.border:SetPoint("BOTTOMRIGHT", r.bar, "BOTTOMRIGHT", 1, -1)
+  r.border:SetColorTexture(0.91, 0.77, 0.42, 0.25)
+  r.border:Hide()
   r:Hide()
   rows[i] = r
   return r
 end
 
-local function Ellipsize(fs, text, maxW)
-  fs:SetText(text)
-  if not fs.GetStringWidth or maxW <= 0 then return end
-  if fs:GetStringWidth() <= maxW then return end
-  local s = text
-  while string.len(s) > 1 and fs:GetStringWidth() > maxW do
-    s = string.sub(s, 1, string.len(s) - 1)
-    fs:SetText(s .. "...")
+-- Drop one UTF-8 character from the end.
+local function DropLastChar(s)
+  local n = string.len(s)
+  while n > 1 do
+    local b = string.byte(s, n)
+    n = n - 1
+    if b < 128 or b >= 192 then break end
   end
+  return string.sub(s, 1, n)
 end
 
--- Per-member eased state, keyed by GUID or name so a re-sort keeps easing.
-local state = {}
-local animFrame = nil
-local EASE_RATE = 8
-local SNAP_PX = 0.5
+function NS.Truncate(fs, text, maxW)
+  text = text or "?"
+  fs:SetText(text)
+  if not fs.GetStringWidth or not maxW or maxW <= 0 then return text end
+  local width = fs:GetStringWidth()
+  if not width or width <= maxW then return text end
+  local s = text
+  while string.len(s) > 1 do
+    s = DropLastChar(s)
+    fs:SetText(s .. ELLIPSIS)
+    width = fs:GetStringWidth()
+    if not width or width <= maxW then break end
+  end
+  return s .. ELLIPSIS
+end
 
 local function EntryKey(e, i)
   if type(e.guid) == "string" and e.guid ~= "" then return e.guid end
@@ -174,13 +206,58 @@ local function Ease(cur, target, k)
   return cur + (target - cur) * k
 end
 
--- Apply eased values to the visible rows. Returns true while anything moves.
+-- Columns: "auto" = ceil(n / maxRows) clamped 1..4, else 1..4 fixed.
+function NS.ColumnCount(n, maxRows, columns)
+  if columns == "auto" or columns == nil then
+    return math.max(1, math.min(4, math.ceil((n or 0) / math.max(1, maxRows))))
+  end
+  local c = tonumber(columns) or 1
+  if c < 1 then c = 1 elseif c > 4 then c = 4 end
+  return math.floor(c)
+end
+
+-- Global ranking across columns plus player pin. Returns visible list and C.
+function NS.LayoutEntries(entries, maxRows, columns)
+  local C = NS.ColumnCount(#entries, maxRows, columns)
+  local N = math.min(maxRows * C, #entries)
+  local vis, you, youVisible = {}, nil, false
+  local i
+  for i = 1, #entries do
+    if entries[i].isPlayer then you = entries[i] end
+    if i <= N then
+      vis[i] = entries[i]
+      if entries[i].isPlayer then youVisible = true end
+    end
+  end
+  if you and not youVisible and N > 0 then
+    vis[N] = you
+    you.pinned = true
+  end
+  return vis, C
+end
+
 local function Step(dt)
   local db = DB()
   local w = db.barWidth or 240
   local full = w - 2
   local k = 1 - math.exp(-EASE_RATE * (dt or 0))
   local moving = false
+
+  if fadeT then
+    fadeT = fadeT - (dt or 0)
+    if fadeT <= 0 then
+      fadeT = nil
+      state = {}
+      local i
+      for i = 1, #rows do rows[i].key = nil; rows[i]:Hide() end
+      lastShown = 0
+      if not editModeOpen then main:SetAlpha(0) end
+      return false
+    end
+    main:SetAlpha(fadeT / FADE_TIME)
+    moving = true
+  end
+
   local i
   for i = 1, #rows do
     local r = rows[i]
@@ -199,8 +276,10 @@ local function Step(dt)
       if not vw or vw <= 0 then vw = 60 end
       if r.lastVW ~= math.floor(vw) then
         r.lastVW = math.floor(vw)
-        r.name:SetWidth(math.max(10, w - vw - 8))
-        Ellipsize(r.name, r.label or "?", w - vw - 8)
+        -- PLAN 8: names get at most barWidth-90, less if the value text is wider.
+        local nameW = math.min(w - 90, w - vw - 8)
+        r.name:SetWidth(math.max(10, nameW))
+        NS.Truncate(r.name, r.label, nameW)
       end
       if st.w < 1 then
         r.fill:Hide(); r.shine:Hide()
@@ -221,9 +300,20 @@ end
 
 local function StartAnim()
   if not animFrame then animFrame = CreateFrame("Frame") end
-  if animFrame and not animFrame:GetScript("OnUpdate") then
+  if not animFrame:GetScript("OnUpdate") then
     animFrame:SetScript("OnUpdate", AnimOnUpdate)
   end
+end
+
+local function StartFade()
+  if lastShown > 0 and not fadeT then
+    fadeT = FADE_TIME
+    StartAnim()
+  end
+end
+
+function NS.OnCombatEnd()
+  if not NS.forceTest and not NS.apiMissing then StartFade() end
 end
 
 local function Render(entries)
@@ -235,82 +325,100 @@ local function Render(entries)
   local barH = math.max(8, rh - 14)
   entries = type(entries) == "table" and entries or {}
 
-  -- Collector already sorts descending; scale fill to the top % (min 100).
-  local top = 100
+  if #entries == 0 then
+    if lastShown > 0 and not editModeOpen then StartFade() return end
+    if not fadeT then
+      local i
+      for i = 1, #rows do rows[i].key = nil; rows[i]:Hide() end
+      main:SetAlpha(editModeOpen and 1 or 0)
+    end
+    return
+  end
+  fadeT = nil
+
   local i
+  for i = 1, #entries do entries[i].pinned = nil end
+  local vis, C = NS.LayoutEntries(entries, maxRows, db.columns)
+
+  -- Fill scales to the top % (min 100) so over-aggro rows cap at full.
+  local top = 100
   for i = 1, #entries do
     local p = entries[i].pct
     if type(p) == "number" and p > top then top = p end
   end
 
   local live = {}
-  local shown = math.min(#entries, maxRows)
-  for i = 1, maxRows do
+  local colW = w + COL_GAP
+  for i = 1, #vis do
     local r = rows[i] or CreateRow(i)
-    local e = entries[i]
-    if e then
-      local key = EntryKey(e, i)
-      live[key] = true
-      local pct = type(e.pct) == "number" and e.pct or 0
-      local raw = type(e.raw) == "number" and e.raw or 0
-      local frac = pct / top
-      if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
-      local st = state[key]
-      if not st then
-        st = { w = 0, pct = 0, raw = 0 }
-        state[key] = st
-      end
-      st.tfrac, st.tpct, st.traw = frac, pct, raw
-
-      r:ClearAllPoints()
-      r:SetPoint("TOPLEFT", main, "TOPLEFT", PAD, -(HEADER + (i - 1) * rh))
-      r:SetSize(w, rh)
-      r.bar:SetHeight(barH)
-      if r.key ~= key then r.lastVW = nil end
-      r.key = key
-      r.label = NS.FirstName(e.name)
-      if e.isPlayer then r.name:SetTextColor(1, 0.9, 0.64) else r.name:SetTextColor(0.93, 0.89, 0.8) end
-      local cr, cg, cb = 0.5, 0.56, 0.65
-      if db.classColors ~= false then cr, cg, cb = NS.ClassColor(e.class) end
-      r.fill:SetVertexColor(cr, cg, cb, 1)
-      r:Show()
-    else
-      r.key = nil
-      r:Hide()
+    local e = vis[i]
+    local key = EntryKey(e, i)
+    live[key] = true
+    local pct = type(e.pct) == "number" and e.pct or 0
+    local raw = type(e.raw) == "number" and e.raw or 0
+    local frac = pct / top
+    if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+    local st = state[key]
+    if not st then
+      st = { w = 0, pct = 0, raw = 0 }
+      state[key] = st
     end
+    st.tfrac, st.tpct, st.traw = frac, pct, raw
+
+    local col = math.floor((i - 1) / maxRows)
+    local slot = (i - 1) % maxRows
+    r:ClearAllPoints()
+    r:SetPoint("TOPLEFT", main, "TOPLEFT", PAD + col * colW, -(HEADER + slot * rh))
+    r:SetSize(w, rh)
+    r.bar:SetHeight(barH)
+    local label = NS.FirstName(e.name)
+    if r.key ~= key or r.label ~= label then r.lastVW = nil end
+    r.key = key
+    r.label = label
+    if e.isPlayer then
+      r.name:SetTextColor(1, 0.9, 0.64)
+      r.hl:Show(); r.border:Show()
+    else
+      r.name:SetTextColor(0.93, 0.89, 0.8)
+      r.hl:Hide(); r.border:Hide()
+    end
+    local cr, cg, cb = 0.5, 0.56, 0.65
+    if db.classColors ~= false then cr, cg, cb = NS.ClassColor(e.class) end
+    r.fill:SetVertexColor(cr, cg, cb, 1)
+    r:Show()
   end
-  for i = maxRows + 1, #rows do rows[i].key = nil; rows[i]:Hide() end
+  for i = #vis + 1, #rows do rows[i].key = nil; rows[i]:Hide() end
   local k
   for k in pairs(state) do
     if not live[k] then state[k] = nil end
   end
 
-  main:SetSize(w + PAD * 2, HEADER + math.max(1, shown) * rh + 4)
-  if shown == 0 and not editModeOpen then
-    main:SetAlpha(0)
-  else
-    main:SetAlpha(1)
-  end
-  if shown > 0 then
-    Step(0)
-    StartAnim()
-  end
+  local usedRows = math.min(#vis, maxRows)
+  main:SetSize(C * colW - COL_GAP + PAD * 2, HEADER + math.max(1, usedRows) * rh + 4)
+  main:SetAlpha(1)
+  lastShown = #vis
+  Step(0)
+  StartAnim()
 end
 
-local function PollInterval()
-  if NS.forceTest or NS.apiMissing then return 0.1 end
-  return POLL
+local function LiveVisible()
+  if editModeOpen then return true end
+  if not (UnitExists and UnitExists("target")) then return false end
+  if not (UnitCanAttack and UnitCanAttack("player", "target")) then return false end
+  local combat = NS.inCombat
+  if type(UnitAffectingCombat) == "function" then
+    combat = combat or (UnitAffectingCombat("player") and true or false)
+  end
+  return combat and true or false
 end
 
 function NS.Refresh()
   if not main then return end
+  NS.dirty = false
   local ok, entries = pcall(NS.CollectThreat)
   if not ok then entries = {} end
-  -- Live data only while a hostile target exists; test roster always shows.
-  if not NS.forceTest and not NS.apiMissing and not editModeOpen then
-    if not (UnitExists and UnitExists("target") and UnitCanAttack and UnitCanAttack("player", "target")) then
-      entries = {}
-    end
+  if not NS.forceTest and not NS.apiMissing and not LiveVisible() then
+    entries = {}
   end
   Render(entries)
 end
@@ -354,9 +462,14 @@ local function Build()
     SavePosition()
   end)
 
+  -- Driver: dirty -> refresh at most every 0.2 s; safety poll every 0.5 s;
+  -- test mode ticks every 0.1 s.
   main:SetScript("OnUpdate", function(_, elapsed)
     pollAcc = pollAcc + (elapsed or 0)
-    if pollAcc >= PollInterval() then
+    local test = NS.forceTest or NS.apiMissing
+    if (test and pollAcc >= TEST_TICK)
+      or (NS.dirty and pollAcc >= POLL)
+      or pollAcc >= SAFETY_POLL then
       pollAcc = 0
       NS.Refresh()
     end
