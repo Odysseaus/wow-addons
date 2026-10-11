@@ -53,8 +53,12 @@ local nActive = 0
 NS.fireAnimCalls = 0       -- Play/Stop/SetDuration issued by fire (harness)
 local driver = CreateFrame("Frame")
 
+-- Harness counters: fireAnimCalls = Stop/SetDuration (restarts); a first
+-- Play of a spark/core pulse when it first appears is counted separately.
+NS.fireAnimStarts = 0
 local function AnimCall(obj, method)
-  NS.fireAnimCalls = NS.fireAnimCalls + 1
+  if method == "Play" then NS.fireAnimStarts = NS.fireAnimStarts + 1
+  else NS.fireAnimCalls = NS.fireAnimCalls + 1 end
   pcall(obj[method], obj)
 end
 
@@ -125,8 +129,8 @@ NS._FireDrive = Drive
 local maskOK = nil
 local function NewLayer(clip, sub, blend)
   local L = {}
-  L.a = clip:CreateTexture(nil, "ARTWORK", sub)
-  L.b = clip:CreateTexture(nil, "ARTWORK", sub + 1)
+  L.a = clip:CreateTexture(nil, "ARTWORK", nil, sub)
+  L.b = clip:CreateTexture(nil, "ARTWORK", nil, sub + 1)
   L.b:SetPoint("TOPLEFT", L.a, "TOPLEFT"); L.b:SetPoint("BOTTOMRIGHT", L.a, "BOTTOMRIGHT")
   if blend then L.a:SetBlendMode(blend); L.b:SetBlendMode(blend) end
   L.a:Hide(); L.b:Hide()
@@ -151,7 +155,7 @@ function NS.FireCreate(r)
     -- fixed per-tile phase so neighbouring tiles never line up
     r.tiles[j] = { body = NewLayer(clip, 0), glow = NewLayer(clip, 3, "ADD"), phase = ((j - 1) * 0.37) % 1 }
   end
-  r.core = clip:CreateTexture(nil, "ARTWORK", 5)
+  r.core = clip:CreateTexture(nil, "ARTWORK", nil, 5)
   r.core:SetTexture(TEX .. "Fire_Core")
   r.core:SetBlendMode("ADD")
   r.core:SetPoint("BOTTOMLEFT", clip, "BOTTOMLEFT", 0, 0)
@@ -166,7 +170,7 @@ function NS.FireCreate(r)
   end)
   r.sparks = {}
   for j = 1, MAX_SPARKS do
-    local s = clip:CreateTexture(nil, "ARTWORK", 6)
+    local s = clip:CreateTexture(nil, "ARTWORK", nil, 6)
     s:SetTexture(TEX .. "Spark")
     s:SetBlendMode("ADD")
     s:SetSize(3, 3)
@@ -200,7 +204,7 @@ function NS.FireCreate(r)
     if not ok then r.tipMask = nil end
   end
   if not r.tipMask then
-    r.tipCap = clip:CreateTexture(nil, "ARTWORK", 7)
+    r.tipCap = clip:CreateTexture(nil, "ARTWORK", nil, 7)
     r.tipCap:SetTexture(TEX .. "TipCap")
     r.tipCap:SetPoint("TOPRIGHT", clip, "TOPRIGHT", 0, 0)
     r.tipCap:SetPoint("BOTTOMRIGHT", clip, "BOTTOMRIGHT", 0, 0)

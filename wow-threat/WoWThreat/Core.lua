@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "1.1.2"
+NS.VERSION = "1.1.3"
 NS.DB_VERSION = 3
 NS.apiMissing = true
 NS.forceTest = false
@@ -121,17 +121,27 @@ function NS.SetOption(key, value, source)
   elseif spec[1] == "enum" then
     if not spec[2][value] then return end
   end
+  -- From Blizzard's Settings UI we are inside its (secure) callback chain:
+  -- store the value now, but defer every frame/texture operation to the
+  -- next frame so nothing is created from that stack (taint, 1.1.3).
+  local defer = (source == "settings") and type(C_Timer) == "table" and type(C_Timer.After) == "function"
   if key == "scale" then
-    if NS.ApplyScale then NS.ApplyScale(value, true) else NS.Layout().scale = value end
+    if defer then
+      NS.Layout().scale = value
+      C_Timer.After(0, function() if NS.ApplyScale then NS.ApplyScale(value, true) end end)
+    elseif NS.ApplyScale then NS.ApplyScale(value, true) else NS.Layout().scale = value end
   elseif key == "testMode" then
     NS.forceTest = value
     if NS.ResetSample and value then NS.ResetSample() end
   else
     NS.db[key] = value
   end
-  if VISUAL[key] and NS.ThemeRefresh then NS.ThemeRefresh() end
-  if key == "fireSound" and NS.UpdateSound then NS.UpdateSound() end
-  if NS.Refresh then NS.Refresh() end
+  local function apply()
+    if VISUAL[key] and NS.ThemeRefresh then NS.ThemeRefresh() end
+    if key == "fireSound" and NS.UpdateSound then NS.UpdateSound() end
+    if NS.Refresh then NS.Refresh() end
+  end
+  if defer then C_Timer.After(0, apply) else apply() end
   local i
   for i = 1, #listeners do pcall(listeners[i], key, NS.GetOption(key), source) end
 end
