@@ -50,8 +50,10 @@ function NS.ThemeColor(key)
   return hex(th[key] or "#ffffff")
 end
 
+-- 1.1.4: every theme (and Classic / Off) uses the Ironforged fire tint.
+NS.FIRE_THEME = "ironforged"
 function NS.ThemeFireColor()
-  local r, g, b = hex(T().fire)
+  local r, g, b = hex(THEMES[NS.FIRE_THEME].fire)
   return r, g, b
 end
 

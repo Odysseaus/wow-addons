@@ -139,7 +139,8 @@ end
 
 local function SheetFor(style)
   if style == "classic" then return STYLES.classic.tex end
-  return TEX .. "Fire_Fireplace_" .. (NS.ThemeId and NS.ThemeId() or "emberhall")
+  -- 1.1.4: one fire for every theme (the Ironforged sheet).
+  return TEX .. "Fire_Fireplace_ironforged"
 end
 
 function NS.FireCreate(r)

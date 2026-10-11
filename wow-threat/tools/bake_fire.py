@@ -8,7 +8,7 @@ seamlessly in x (wrap crossfade) and the 32-frame loop is seamless in time
 (variance-preserving crossfade), played at 8 fps = 4 s.
 
 Usage: bake_fire.py OUTDIR [--preview DIR] [--fallback]
-Writes Fire_Fireplace_<theme>.tga (1024x512, 4x8 frames) per theme,
+Writes Fire_Fireplace_ironforged.tga (1024x512, 4x8 frames; --all-themes for every tint),
 optionally the 2x512x512 fallback halves, plus spark/core/tip/mask textures.
 """
 import os, sys
@@ -133,7 +133,11 @@ def main():
     fallback = "--fallback" in sys.argv
     os.makedirs(out, exist_ok=True)
     heats = [np.clip(frame_heat(i), 0, 1) for i in range(FRAMES)]
-    for name, (hot, mid, cool) in THEMES.items():
+    # 1.1.4: the addon ships one fire (Ironforged) for every theme. Pass
+    # --all-themes to bake the other tints for experiments (not shipped).
+    names = list(THEMES) if "--all-themes" in sys.argv else ["ironforged"]
+    for name in names:
+        hot, mid, cool = THEMES[name]
         L = lut(hot, mid, cool)
         sheet = np.zeros((FHT * ROWS, FW * COLS, 4), np.uint8)
         for i, h in enumerate(heats):
@@ -181,7 +185,7 @@ def main():
     m = np.ones((16, 256)); m[:, 240:] = np.linspace(1, 0, 16)[None, :]
     mask = np.zeros((16, 256, 4), np.uint8); mask[..., :3] = (m[..., None] * 255).astype(np.uint8); mask[..., 3] = (m * 255).astype(np.uint8)
     save_tga(mask, os.path.join(out, "TipMask.tga"))
-    print("baked", len(THEMES), "themes,", FRAMES, "frames each")
+    print("baked", len(names), "theme(s),", FRAMES, "frames each")
 
 if __name__ == "__main__":
     main()
