@@ -33,6 +33,9 @@ local function VarType(kind)
 end
 
 -- Register one setting; returns the setting object or nil.
+-- 1.1.5: plain RegisterAddOnSetting backed by the `shadow` table (no proxy
+-- getters/setters), so Blizzard's Options search never runs our code to read
+-- a value. Changes come back through the value-changed callback only.
 local function Register(key, kind, name, default)
   local variable = "WoWThreat_" .. key
   local vtype = VarType(kind)
@@ -43,13 +46,8 @@ local function Register(key, kind, name, default)
   end
   local setting
 
-  -- 1) Proxy setting (10.1+/11.x): getter/setter straight into NS options.
-  if type(Settings.RegisterProxySetting) == "function" then
-    local ok, s = pcall(Settings.RegisterProxySetting, category, variable, vtype, name, default, get, set)
-    if ok and s then setting = s end
-  end
   -- 2) 11.x RegisterAddOnSetting(category, variable, variableKey, variableTbl, type, name, default)
-  if not setting and type(Settings.RegisterAddOnSetting) == "function" then
+  if type(Settings.RegisterAddOnSetting) == "function" then
     shadow[key] = get()
     local ok, s = pcall(Settings.RegisterAddOnSetting, category, variable, key, shadow, vtype, name, default)
     -- Accept only if the object really is our variable (an older client
@@ -88,10 +86,8 @@ local function AddSlider(key, name, minV, maxV, step, fmt, tip)
   local s = Register(key, "number", name, NS.GetOption(key))
   if not s then return false end
   local ok = pcall(function()
+    -- Stock slider: no custom label formatter (1.1.5, Options search taint).
     local opts = Settings.CreateSliderOptions(minV, maxV, step)
-    if opts.SetLabelFormatter and MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Label then
-      opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format(fmt, v) end)
-    end
     Settings.CreateSlider(category, s, opts, tip)
   end)
   return ok
@@ -162,16 +158,10 @@ local function BuildVertical()
   all = AddCheckbox("testMode", "Test mode", "Show the fake roster (same as /wtm test).") and all
   if not all then return false end
 
-  -- Reset position button.
-  local added = false
-  if type(CreateSettingsButtonInitializer) == "function" and layout and layout.AddInitializer then
-    added = pcall(function()
-      local init = CreateSettingsButtonInitializer("Reset position", "Reset", ResetPositionClicked,
-        "Move the meter back to the default spot for this Edit Mode layout.", true)
-      layout:AddInitializer(init)
-    end)
-  end
-  NS.resetHint = not added -- /wtm reset is the fallback
+  -- 1.1.5: no custom button initializer in Options (it was indexed by the
+  -- Options search and tainted it). Reset lives in the Edit Mode dialog and
+  -- /wtm reset.
+  NS.resetHint = true
 
   local regOk = pcall(Settings.RegisterAddOnCategory, category)
   return regOk
@@ -285,19 +275,17 @@ local function SyncFromOutside(key, value, source)
   end
   local s = settings[key]
   if not s then return end
-  local v = ToSetting(key, value)
-  syncing = true
-  shadow[key] = v
-  if type(Settings.NotifyUpdate) == "function" then
+  -- 1.1.5: only refresh the backing table. Never call SetValue on the
+  -- Blizzard setting from Edit Mode or /wtm; notify only while the Options
+  -- panel is closed (it re-reads the table when it opens).
+  shadow[key] = ToSetting(key, value)
+  local panel = SettingsPanel
+  local open = panel and panel.IsShown and panel:IsShown()
+  if not open and type(Settings.NotifyUpdate) == "function" then
+    syncing = true
     pcall(Settings.NotifyUpdate, "WoWThreat_" .. key)
+    syncing = false
   end
-  if s.GetValue and s.SetValue then
-    local okGet, cur = pcall(s.GetValue, s)
-    if not okGet or cur ~= v then pcall(s.SetValue, s, v) end
-  elseif s.NotifyUpdate then
-    pcall(s.NotifyUpdate, s)
-  end
-  syncing = false
 end
 
 function NS.BuildSettings()
