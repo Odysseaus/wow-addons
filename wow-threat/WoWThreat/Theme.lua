@@ -102,6 +102,8 @@ local function Build(parent)
   host = parent
   frame = CreateFrame("Frame", nil, parent)
   frame:SetAllPoints(parent)
+  -- Hard guarantee: no theme art or effect can draw outside the meter.
+  if frame.SetClipsChildren then frame:SetClipsChildren(true) end
   frame:SetFrameLevel(math.max(0, (parent:GetFrameLevel() or 1)))
   P.body = Tex("BACKGROUND", -8)
   P.body:SetPoint("TOPLEFT", 1, -1); P.body:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -174,19 +176,49 @@ local function AlphaPulse(t, lo, hi, dur, startDelay)
   return ag
 end
 
-local function Rock(t, deg, dur, point, ox, oy, delay)
-  local ag = NewAG(t, "BOUNCE")
-  if not ag then return end
-  local r = ag:CreateAnimation("Rotation")
-  r:SetDegrees(deg); r:SetDuration(dur)
-  if point then r:SetOrigin(point, ox or 0, oy or 0) end
-  if r.SetSmoothing then r:SetSmoothing("IN_OUT") end
-  ag.delay = delay
-  return ag
+-- Rocking pieces (1.1.1). Rotation AnimationGroups with SetOrigin swung
+-- whole pieces in large arcs on this client, so rocking is driven by one
+-- 30 Hz Lua tick calling Texture:SetRotation(radians) about the piece's OWN
+-- centre: a bounded sine of a few degrees, smooth both ways (like BOUNCE).
+-- NS._motion records every moving piece for the harness bounds check.
+local rockers = {}
+NS._motion = {}
+local function Motion(m) NS._motion[#NS._motion + 1] = m end
+
+local function Rock(t, deg, period, phase, cx, cy, w, h, base)
+  rockers[#rockers + 1] = { t = t, amp = math.rad(deg), period = period, phase = phase or 0, base = base or 0 }
+  Motion({ kind = "rotate", cx = cx, cy = cy, w = w, h = h, deg = deg })
 end
 
+local function Spin(t, period, cx, cy, w, h)
+  rockers[#rockers + 1] = { t = t, spin = period, base = 0, phase = 0 }
+  Motion({ kind = "spin", cx = cx, cy = cy, w = w, h = h })
+end
+
+local driver = CreateFrame("Frame")
+local acc, clock = 0, 0
+local function DriveRockers(_, elapsed)
+  acc = acc + (elapsed or 0)
+  clock = clock + (elapsed or 0)
+  if acc < 1 / 30 then return end
+  acc = 0
+  local i
+  for i = 1, #rockers do
+    local r = rockers[i]
+    local a
+    if r.spin then
+      a = -(clock / r.spin) * 2 * math.pi % (2 * math.pi)
+    else
+      a = r.base + r.amp * math.sin(2 * math.pi * clock / r.period + r.phase)
+    end
+    if r.t.SetRotation then r.t:SetRotation(a) end
+  end
+end
+NS._DriveRockers = DriveRockers
+
 -- One-shot burst inside a long cycle: startDelay + dur + endDelay = cycle.
-local function Burst(t, cycle, offset, dur, peak, dx, dy)
+local function Burst(t, cycle, offset, dur, peak, dx, dy, cx, cy, size)
+  if cx then Motion({ kind = "move", cx = cx, cy = cy, w = size, h = size, dx = dx or 0, dy = dy or 0 }) end
   local ag = NewAG(t, "REPEAT")
   if not ag then return end
   if ag.SetToFinalAlpha then ag:SetToFinalAlpha(false) end
@@ -202,6 +234,9 @@ end
 
 local function ClearFx()
   local i
+  for i = 1, #rockers do if rockers[i].t.SetRotation then rockers[i].t:SetRotation(rockers[i].base or 0) end end
+  rockers = {}
+  NS._motion = {}
   for i = 1, #groups do pcall(groups[i].Stop, groups[i]) end
   groups = {}
   for i = 1, #fx do fx[i]:Hide(); fx[i]:ClearAllPoints() end
@@ -242,37 +277,41 @@ local function BuildFx(id, W, H)
     local pv = th.pivot
     for i = 1, 4 do
       local s = CORNER_SGN[i]
-      Rock(P.corner[i], id == "ironforged" and 3 or 3.5, id == "ironforged" and 2.3 or 1.7, CORNER_PTS[i], s[1] * pv, s[2] * pv, i * 0.6)
+      local ccx = (s[1] > 0) and CS / 2 or W - CS / 2
+      local ccy = (s[2] < 0) and CS / 2 or H - CS / 2
+      Rock(P.corner[i], 2, id == "ironforged" and 4.5 or 3.3, i * 1.6, ccx, ccy, CS, CS)
     end
-    Rock(P.crest, 2.5, 2.6, "CENTER", 0, 0, 0.3)
+    Rock(P.crest, 2, 5.5, 1, W / 2, 13, 60, 28)
     if id == "ironforged" then
-      Rock(P.medallion, 4, 2.5, "CENTER", 0, 0, 1.1)
+      Rock(P.medallion, 3, 5, 2.4, B + 3 + 14, B + (TB - 28) / 2 + 2 + 14, 28, 28)
       -- steel glint sliding along a blade, one corner every 5 s (20 s cycle)
       for i = 1, 4 do
         local s = CORNER_SGN[i]
         local g = PooledFx(12, 1, 1, 1)
-        g:SetPoint("CENTER", frame, CORNER_PTS[i], s[1] * 30, s[2] * 30)
-        Burst(g, 20, (i - 1) * 5, 1.2, 0.55, -s[1] * 22, -s[2] * 22)
+        -- glint slides along the blade, from the hilt toward the tip (stays in the 52 px corner)
+        g:SetPoint("CENTER", frame, CORNER_PTS[i], s[1] * 34, s[2] * 34)
+        local gx = (s[1] > 0) and 34 or W - 34
+        local gy = (s[2] < 0) and 34 or H - 34
+        Burst(g, 20, (i - 1) * 5, 1.2, 0.55, -s[1] * 20, -s[2] * 20, gx, gy, 12)
       end
     else
       -- breeze along the leaf studs + green-gold sheen on a few clusters
       local stride = math.max(1, math.ceil(#studs / 32))
       for i = 1, #studs, stride do
         local st = studs[i]
-        if st:IsShown() then Rock(st, 8, 1.6, "CENTER", 0, 0, (i % 7) * 0.23) end
+        if st:IsShown() then Rock(st, 7, 3.3, (st.px + st.py) * 0.012, st.px, st.py, th.studSize, th.studSize, st.base) end
       end
       for i = 1, 3 do
         local st = studs[1 + ((i * 5) % math.max(1, #studs))]
         if st and st:IsShown() then
-          local g = PooledFx(th.studSize * 1.8, 0.88, 1, 0.55)
+          local g = PooledFx(th.studSize * 1.15, 0.88, 1, 0.55)
           g:SetPoint("CENTER", st, "CENTER")
-          Burst(g, 2.6 * 3, (i - 1) * 2.6, 2.4, 0.32)
+          Burst(g, 2.6 * 3, (i - 1) * 2.6, 2.4, 0.32, nil, nil, st.px, st.py, th.studSize * 1.15)
         end
       end
     end
   elseif id == "dawnward" then
-    local ag = NewAG(P.medallion, "REPEAT")
-    if ag then local r = ag:CreateAnimation("Rotation"); r:SetDegrees(-360); r:SetDuration(48) end
+    Spin(P.medallion, 48, B + 3 + 14, B + (TB - 28) / 2 + 2 + 14, 28, 28)
     local h1 = PooledFx(40, 1, 0.94, 0.7); h1:SetPoint("CENTER", P.medallion, "CENTER"); AlphaPulse(h1, 0.08, 0.3, 1.6)
     local h2 = PooledFx(32, 1, 0.94, 0.7); h2:SetPoint("CENTER", P.crest, "CENTER"); AlphaPulse(h2, 0.08, 0.3, 1.6, 0.8)
     -- holy motes drifting up from the bottom rail and the side rails
@@ -282,10 +321,10 @@ local function BuildFx(id, W, H)
       local side = i % 3
       if side == 0 then
         m:SetPoint("CENTER", frame, "BOTTOMLEFT", 30 + ((i * 0.618) % 1) * (W - 60), B * 0.5)
-        Burst(m, per, (i * 0.71) % per * 0.5, per * 0.5, 0.5, 0, 28)
+        Burst(m, per, (i * 0.71) % per * 0.5, per * 0.5, 0.5, 0, 28, 30 + ((i * 0.618) % 1) * (W - 60), H - B * 0.5, 7)
       else
         m:SetPoint("CENTER", frame, side == 1 and "BOTTOMLEFT" or "BOTTOMRIGHT", side == 1 and B * 0.5 or -B * 0.5, 30)
-        Burst(m, per, (i * 0.53) % per * 0.5, per * 0.5, 0.5, 0, H - 60)
+        Burst(m, per, (i * 0.53) % per * 0.5, per * 0.5, 0.5, 0, H - 60, side == 1 and B * 0.5 or W - B * 0.5, H - 30, 7)
       end
     end
     -- light sweep across the rails every 8 s
@@ -293,9 +332,9 @@ local function BuildFx(id, W, H)
     for i = 1, 2 do
       local sw = PooledFx(B + 6, 1, 0.98, 0.9, ART .. "fx_sweep")
       sw:SetSize(60, B)
-      sw:SetPoint("CENTER", frame, rails[i][1], -30, rails[i][2])
+      sw:SetPoint("CENTER", frame, rails[i][1], 30, rails[i][2])
       if sw.SetRotation then pcall(sw.SetRotation, sw, -0.5) end
-      Burst(sw, 8, (i - 1) * 0.25, 2.2, 0.28, W + 60, 0)
+      Burst(sw, 8, (i - 1) * 0.25, 2.2, 0.28, W - 60, 0, 30, i == 1 and B * 0.5 or H - B * 0.5, B)
     end
   elseif id == "voidbound" then
     local stride = math.max(2, math.ceil(#studs / 32))
@@ -308,13 +347,16 @@ local function BuildFx(id, W, H)
     for i = 1, 5 do
       local w = PooledFx(28, (i % 3 == 0) and 0.43 or 0.67, (i % 3 == 0) and 1 or 0.35, (i % 3 == 0) and 0.43 or 1)
       w:SetAlpha(i % 3 == 0 and 0.28 or 0.35)
-      w:SetPoint("CENTER", frame, "TOPLEFT", 0, -B * 0.5)
+      w:SetPoint("CENTER", frame, "TOPLEFT", B * 0.5, -B * 0.5)
       local ag = NewAG(w, "REPEAT")
       if ag then
         local sp = 22 + i * 7
-        local legs = { { W - B * 0.5, 0, W }, { 0, -(H - B), H }, { -(W - B * 0.5), 0, W }, { 0, H - B, H } }
+        local legs = { { W - B, 0, W }, { 0, -(H - B), H }, { -(W - B), 0, W }, { 0, H - B, H } }
         local j
+        local x, y = B * 0.5, B * 0.5
         for j = 1, 4 do
+          x, y = x + legs[j][1], y - legs[j][2]
+          Motion({ kind = "path", cx = x, cy = y, w = 0, h = 0, dx = 0, dy = 0 })
           local mv = ag:CreateAnimation("Translation")
           mv:SetOffset(legs[j][1], legs[j][2]); mv:SetDuration(legs[j][3] / sp); mv:SetOrder(j)
         end
@@ -346,6 +388,11 @@ function NS.ThemeAnimate(on)
     if on then fx[i]:Show() else fx[i]:Hide() end
   end
   playing = on and true or false
+  if playing and #rockers > 0 then driver:SetScript("OnUpdate", DriveRockers)
+  else
+    driver:SetScript("OnUpdate", nil)
+    for i = 1, #rockers do if rockers[i].t.SetRotation then rockers[i].t:SetRotation(rockers[i].base or 0) end end
+  end
 end
 
 -- -------------------------------------------------------------- layout ---
@@ -408,6 +455,7 @@ local function Skin(id)
       s:SetSize(th.studSize, th.studSize)
       s:ClearAllPoints(); s:SetPoint("CENTER", frame, "TOPLEFT", pos[i][1], pos[i][2])
       if s.SetRotation then pcall(s.SetRotation, s, pos[i][3]) end
+      s.px, s.py, s.base = pos[i][1], -pos[i][2], pos[i][3]
       s:SetAlpha(1)
       s:Show()
     elseif s then
@@ -437,3 +485,5 @@ end
 
 function NS.ThemeTitle(id) return (THEMES[id or ""] or {}).title end
 function NS.ThemeGroupCount() return #groups end
+function NS.ThemeRockerCount() return #rockers end
+function NS.ThemeSize() return sizeW, sizeH end
