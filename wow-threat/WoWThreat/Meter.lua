@@ -2,11 +2,14 @@
 local _, NS = ...
 
 local POLL = 0.2
-local HEADER = 18
-local PAD = 6
+-- Themed frame metrics (Theme.lua): 20 px border + 36 px title band.
+local HEADER = 62
+local PAD = 28
+local BOTTOM = 26
 local TEX = "Interface\\AddOns\\WoWThreat\\Textures\\"
 
-local main, title, rows = nil, nil, {}
+local main, rows = nil, {}
+local SetThemeActive -- defined below Step
 local editModeOpen, editModeBound, dragging = false, false, false
 local pollAcc = 0
 
@@ -212,8 +215,6 @@ local animFrame = nil
 local EASE_RATE = 8
 local MOVE_RATE = 12
 local SNAP_PX = 0.5
-local FIRE_TEX = TEX .. "Fire_Flipbook"
-local FIRE_COLS, FIRE_FRAMES = 4, 16
 local fadeT = nil     -- seconds left in the leave-combat fade, or nil
 local lastShown = 0
 
@@ -236,100 +237,47 @@ local function CreateRow()
   r.solid = r:CreateTexture(nil, "BACKGROUND", nil, -1)
   r.solid:SetPoint("TOPLEFT", r, "TOPLEFT", -1, 1)
   r.solid:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 1, 0)
-  r.solid:SetColorTexture(0.07, 0.055, 0.06, 1)
-  r.hl = r:CreateTexture(nil, "BACKGROUND", nil, 1)
-  r.hl:SetAllPoints()
-  r.hl:SetColorTexture(0.91, 0.77, 0.42, 0.12)
-  r.hl:Hide()
-  r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  r.name:SetPoint("TOPLEFT", r, "TOPLEFT", 1, 0)
-  r.name:SetJustifyH("LEFT")
-  if r.name.SetWordWrap then r.name:SetWordWrap(false) end
-  r.value = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  r.value:SetPoint("TOPRIGHT", r, "TOPRIGHT", -1, 0)
-  r.value:SetJustifyH("RIGHT")
+  r.solid:SetColorTexture(NS.ThemeColor("rowBg"))
 
+  -- Black bar: the fire IS the bar (PLAN-visuals 1).
   r.bar = CreateFrame("Frame", nil, r)
   r.bar:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 2)
   r.bar:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 0, 2)
   r.bg = r.bar:CreateTexture(nil, "BACKGROUND")
   r.bg:SetAllPoints()
-  r.bg:SetColorTexture(0.04, 0.035, 0.04, 1)
+  r.bg:SetColorTexture(0, 0, 0, 1)
+  -- Plain fill, used only by the "off" fire style.
   r.fill = r.bar:CreateTexture(nil, "ARTWORK")
   r.fill:SetPoint("TOPLEFT", r.bar, "TOPLEFT", 1, -1)
   r.fill:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", 1, 1)
   r.fill:SetTexture(TEX .. "BarFill")
-  r.shine = r.bar:CreateTexture(nil, "OVERLAY")
-  r.shine:SetAllPoints(r.fill)
-  r.shine:SetTexture(TEX .. "BarShine")
-  r.shine:SetBlendMode("ADD")
-  r.shine:SetAlpha(0.35)
-  r.bevel = r.bar:CreateTexture(nil, "OVERLAY", nil, 1)
-  r.bevel:SetAllPoints()
-  r.bevel:SetTexture(TEX .. "BarBevel")
-  r.border = r.bar:CreateTexture(nil, "OVERLAY", nil, 2)
-  r.border:SetPoint("TOPLEFT", r.bar, "TOPLEFT", -1, 1)
-  r.border:SetPoint("BOTTOMRIGHT", r.bar, "BOTTOMRIGHT", 1, -1)
-  r.border:SetColorTexture(0.91, 0.77, 0.42, 0.25)
-  r.border:Hide()
-
-  -- Fire (PLAN 7): clip frame sized to the fill width, fire anchored at the
-  -- bottom with ADD blend. Created once per row and reused.
-  r.fireClip = CreateFrame("Frame", nil, r.bar)
-  r.fireClip:SetPoint("TOPLEFT", r.bar, "TOPLEFT", 1, -1)
-  r.fireClip:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", 1, 1)
-  r.fireClip:SetWidth(1)
-  if r.fireClip.SetClipsChildren then r.fireClip:SetClipsChildren(true) end
-  r.fireClip:SetFrameLevel(r.bar:GetFrameLevel() + 1)
-  r.fire = r.fireClip:CreateTexture(nil, "ARTWORK")
-  r.fire:SetTexture(FIRE_TEX)
-  r.fire:SetBlendMode("ADD")
-  r.fire:SetPoint("BOTTOMLEFT", r.fireClip, "BOTTOMLEFT", 0, 0)
-  r.fire:SetPoint("BOTTOMRIGHT", r.fireClip, "BOTTOMRIGHT", 0, 0)
-  r.fire:SetHeight(1)
-  r.fireDur = 1.0
-  r.fireFrame = 0
-  r.fireAcc = 0
-  if NS.FlipBookOK ~= false and r.fire.CreateAnimationGroup then
-    local ok = pcall(function()
-      local ag = r.fire:CreateAnimationGroup()
-      local fb = ag:CreateAnimation("FlipBook")
-      fb:SetFlipBookRows(4)
-      fb:SetFlipBookColumns(FIRE_COLS)
-      fb:SetFlipBookFrames(FIRE_FRAMES)
-      fb:SetFlipBookFrameWidth(0)
-      fb:SetFlipBookFrameHeight(0)
-      fb:SetDuration(1.0)
-      ag:SetLooping("REPEAT")
-      r.fireAG, r.fireFB = ag, fb
-    end)
-    if not ok then
-      r.fireAG, r.fireFB = nil, nil
-      NS.FlipBookOK = false
-    end
+  r.fill:Hide()
+  NS.FireCreate(r)
+  -- Player row: outline around the bar in the theme's accent color.
+  r.outline = {}
+  local o
+  for o = 1, 4 do
+    local t = r.bar:CreateTexture(nil, "OVERLAY", nil, 3)
+    t:SetColorTexture(1, 1, 1, 1)
+    r.outline[o] = t
   end
-  if not r.fireAG then
-    r.fire:SetTexCoord(0, 0.25, 0, 0.25)
-  end
-  -- White-hot layer above 90%: pulsing via a bouncing Alpha animation.
-  r.hot = CreateFrame("Frame", nil, r.fireClip)
-  r.hot:SetAllPoints(r.fireClip)
-  r.hotTex = r.hot:CreateTexture(nil, "OVERLAY")
-  r.hotTex:SetAllPoints()
-  r.hotTex:SetColorTexture(1, 1, 0.94, 1)
-  r.hotTex:SetBlendMode("ADD")
-  r.hotTex:SetAlpha(0.35)
-  pcall(function()
-    local ag = r.hotTex:CreateAnimationGroup()
-    local a = ag:CreateAnimation("Alpha")
-    a:SetFromAlpha(0.15)
-    a:SetToAlpha(0.55)
-    a:SetDuration(0.3)
-    ag:SetLooping("BOUNCE")
-    r.hotAG = ag
-  end)
-  r.hot:Hide()
-  r.fireClip:Hide()
+  r.outline[1]:SetPoint("TOPLEFT", r.bar, "TOPLEFT", -1, 1); r.outline[1]:SetPoint("TOPRIGHT", r.bar, "TOPRIGHT", 1, 1); r.outline[1]:SetHeight(1)
+  r.outline[2]:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", -1, -1); r.outline[2]:SetPoint("BOTTOMRIGHT", r.bar, "BOTTOMRIGHT", 1, -1); r.outline[2]:SetHeight(1)
+  r.outline[3]:SetPoint("TOPLEFT", r.bar, "TOPLEFT", -1, 1); r.outline[3]:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", -1, -1); r.outline[3]:SetWidth(1)
+  r.outline[4]:SetPoint("TOPRIGHT", r.bar, "TOPRIGHT", 1, 1); r.outline[4]:SetPoint("BOTTOMRIGHT", r.bar, "BOTTOMRIGHT", 1, -1); r.outline[4]:SetWidth(1)
+  -- Text sits above the fire so flame overflow never hides it.
+  r.textLayer = CreateFrame("Frame", nil, r)
+  r.textLayer:SetAllPoints(r)
+  r.textLayer:SetFrameLevel(r.bar:GetFrameLevel() + 4)
+  r.name = r.textLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  r.name:SetPoint("TOPLEFT", r, "TOPLEFT", 1, 0)
+  r.name:SetJustifyH("LEFT")
+  r.name:SetShadowColor(0, 0, 0, 1); r.name:SetShadowOffset(1, -1)
+  if r.name.SetWordWrap then r.name:SetWordWrap(false) end
+  r.value = r.textLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  r.value:SetPoint("TOPRIGHT", r, "TOPRIGHT", -1, 0)
+  r.value:SetJustifyH("RIGHT")
+  r.value:SetShadowColor(0, 0, 0, 1); r.value:SetShadowOffset(1, -1)
 
   -- Pop: white ADD flash over the row.
   r.flash = r:CreateTexture(nil, "OVERLAY", nil, 6)
@@ -382,74 +330,15 @@ local function CreateRow()
   return r
 end
 
-local function StopFire(r)
-  if r.fireAG and r.fireOn then pcall(r.fireAG.Stop, r.fireAG) end
-  if r.hotAG and r.hotOn then pcall(r.hotAG.Stop, r.hotAG) end
-  r.fireOn, r.hotOn = false, false
-  r.hot:Hide()
-  r.fireClip:Hide()
-end
+local function StopFire(r) NS.FireStop(r) end
 
--- pct is 0..1 of the bar; width is the eased fill width in px.
-local function UpdateFire(r, pct, width, barH, class, dt)
-  local db = DB()
-  local inten = type(db.fireIntensity) == "number" and db.fireIntensity or 0.8
-  if db.showFire == false or inten <= 0 or width < 2 or not r:IsShown() then
-    if r.fireOn or r.fireClip:IsShown() then StopFire(r) end
-    return false
+local function SetOutline(r, on)
+  local i
+  local cr, cg, cb = NS.ThemeColor("you")
+  for i = 1, 4 do
+    if on then r.outline[i]:SetColorTexture(cr, cg, cb, 0.9); r.outline[i]:Show() else r.outline[i]:Hide() end
   end
-  if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
-  r.fireClip:SetWidth(width)
-  r.fireClip:Show()
-  local inner = math.max(1, barH - 2)
-  r.fire:SetHeight(math.max(1, inner * (0.35 + 0.65 * pct)))
-  local a = 0.25 + 0.75 * pct * inten
-  if a > 1 then a = 1 end
-  r.fire:SetAlpha(a)
-  -- Orange, blended 25% toward the class color.
-  local cr, cg, cb = NS.ClassColor(class)
-  r.fire:SetVertexColor(1 * 0.75 + cr * 0.25, 0.55 * 0.75 + cg * 0.25, 0.15 * 0.75 + cb * 0.25, 1)
-  local dur = 1.0 - 0.4 * pct
-  local needsTick = false
-  if r.fireAG then
-    if math.abs(dur - r.fireDur) > 0.05 then
-      r.fireDur = dur
-      pcall(r.fireFB.SetDuration, r.fireFB, dur)
-    end
-    if not r.fireOn then
-      pcall(r.fireAG.Play, r.fireAG)
-      r.fireOn = true
-    end
-  else
-    -- SetTexCoord fallback; keeps the anim driver alive while fire shows.
-    r.fireDur = dur
-    r.fireAcc = r.fireAcc + (dt or 0)
-    local step = dur / FIRE_FRAMES
-    if r.fireAcc >= step then
-      r.fireFrame = (r.fireFrame + math.floor(r.fireAcc / step)) % FIRE_FRAMES
-      r.fireAcc = r.fireAcc % step
-      local c = r.fireFrame % FIRE_COLS
-      local rr = math.floor(r.fireFrame / FIRE_COLS)
-      r.fire:SetTexCoord(c * 0.25, c * 0.25 + 0.25, rr * 0.25, rr * 0.25 + 0.25)
-    end
-    r.fireOn = true
-    needsTick = true
-  end
-  if pct > 0.9 then
-    r.hot:SetAlpha(math.min(1, (pct - 0.9) / 0.1 * inten))
-    if not r.hotOn then
-      r.hot:Show()
-      if r.hotAG then pcall(r.hotAG.Play, r.hotAG) end
-      r.hotOn = true
-    end
-  elseif r.hotOn then
-    if r.hotAG then pcall(r.hotAG.Stop, r.hotAG) end
-    r.hot:Hide()
-    r.hotOn = false
-  end
-  return needsTick
 end
-
 
 local function AcquireRow()
   local r = table.remove(pool)
@@ -616,7 +505,8 @@ local function Step(dt)
       ClearRows()
       lastShown = 0
       NS.ResetLeader()
-      if not editModeOpen then main:SetAlpha(0) end
+      if not editModeOpen then main:SetAlpha(0); SetThemeActive(false) end
+      if NS.UpdateSound then NS.UpdateSound() end
       return false
     end
     main:SetAlpha(fadeT / FADE_TIME)
@@ -667,13 +557,13 @@ local function Step(dt)
         r.name:SetWidth(math.max(10, nameW))
         NS.Truncate(r.name, r.label, nameW)
       end
-      if st.w < 1 then
-        r.fill:Hide(); r.shine:Hide()
+      if st.w < 1 or NS.FireStyle() ~= "off" then
+        r.fill:Hide()
       else
-        r.fill:Show(); r.shine:Show()
+        r.fill:Show()
         r.fill:SetWidth(st.w)
       end
-      if UpdateFire(r, full > 0 and st.w / full or 0, st.w, r.barH or 14, r.class, dt) then
+      if NS.FireUpdate(r, full > 0 and st.w / full or 0, st.w, r.barH or 16, dt, r.rank, lastShown) then
         moving = true
       end
 
@@ -728,12 +618,35 @@ function NS.OnCombatStart()
   NS.ResetLeader()
 end
 
+SetThemeActive = function(on)
+  on = on and true or false
+  if on == (NS.themeActive or false) then return end
+  NS.themeActive = on
+  if NS.ThemeAnimate then NS.ThemeAnimate(on) end
+end
+
+function NS.MeterShowing()
+  return main ~= nil and lastShown > 0 and (main:GetAlpha() or 0) > 0
+end
+
+-- Theme / fire style / effects changed: re-skin live rows.
+function NS.RestyleRows()
+  local k, r
+  for k, r in pairs(rowByKey) do
+    r.solid:SetColorTexture(NS.ThemeColor("rowBg"))
+    r.fireKey = nil
+    if r.outline[1]:IsShown() then SetOutline(r, true) end
+  end
+  for k, r in ipairs(pool) do r.solid:SetColorTexture(NS.ThemeColor("rowBg")); r.fireKey = nil end
+  if main then StartAnim() end
+end
+
 local function Render(entries)
   if not main then return end
   local db = DB()
   local maxRows = db.maxRows or 5
   local w = db.barWidth or 240
-  local rh = db.rowHeight or 28
+  local rh = db.rowHeight or 30
   local barH = math.max(8, rh - 14)
   entries = type(entries) == "table" and entries or {}
 
@@ -743,6 +656,9 @@ local function Render(entries)
       ClearRows()
       NS.ResetLeader()
       main:SetAlpha(editModeOpen and 1 or 0)
+      SetThemeActive(editModeOpen and true or false)
+      if lastShown ~= 0 then lastShown = 0 end
+      if NS.UpdateSound then NS.UpdateSound() end
     end
     return
   end
@@ -793,22 +709,20 @@ local function Render(entries)
     r.tx, r.ty = tx, ty
     r:SetSize(w, rh)
     r.bar:SetHeight(barH)
-    r.barH = barH
+    r.barH, r.rowH, r.rank = barH, rh, i
     r.class = e.class
     local label = NS.FirstName(e.name)
     if r.key ~= key or r.label ~= label then r.lastVW = nil end
     r.key = key
     r.label = label
-    if e.isPlayer then
-      r.name:SetTextColor(1, 0.9, 0.64)
-      r.hl:Show(); r.border:Show()
+    -- Class color on the name text only; the bar is fire.
+    if db.classColors ~= false then
+      r.name:SetTextColor(NS.ClassColor(e.class))
     else
-      r.name:SetTextColor(0.93, 0.89, 0.8)
-      r.hl:Hide(); r.border:Hide()
+      r.name:SetTextColor(NS.ThemeColor(e.isPlayer and "youText" or "text"))
     end
-    local cr, cg, cb = 0.5, 0.56, 0.65
-    if db.classColors ~= false then cr, cg, cb = NS.ClassColor(e.class) end
-    r.fill:SetVertexColor(cr, cg, cb, 1)
+    SetOutline(r, e.isPlayer and true or false)
+    r.fill:SetVertexColor(NS.ThemeFireColor())
     r:Show()
   end
   local k, r
@@ -830,9 +744,15 @@ local function Render(entries)
   end
 
   local usedRows = math.min(#vis, maxRows)
-  main:SetSize(C * colW - COL_GAP + PAD * 2, HEADER + math.max(1, usedRows) * rh + 4)
+  local fw, fh = C * colW - COL_GAP + PAD * 2, HEADER + math.max(1, usedRows) * rh + BOTTOM
+  main:SetSize(fw, fh)
+  NS.ThemeLayout(main, fw, fh)
   main:SetAlpha(1)
+  local wasShown = lastShown
   lastShown = #vis
+  NS.topRaw = type(entries[1].raw) == "number" and entries[1].raw or 0
+  SetThemeActive(true)
+  if wasShown == 0 and NS.UpdateSound then NS.UpdateSound() end
   Step(0)
   StartAnim()
 end
@@ -917,13 +837,7 @@ local function Build()
   main:SetClampedToScreen(true)
   main:SetSize(252, 80)
 
-  local bg = main:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(0.07, 0.055, 0.06, 0.75)
-
-  title = main:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  title:SetPoint("TOPLEFT", main, "TOPLEFT", PAD + 2, -4)
-  title:SetText("WoW Threat")
+  NS.ThemeLayout(main, 296, 140)
 
   editHighlight = CreateEditHighlight(main)
   main:SetMovable(false)
