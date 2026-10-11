@@ -113,7 +113,7 @@ local function queryThreat(unit, mobToken)
 end
 
 -- threatValue scale. Retail and Classic document threatValue as raw x100.
--- Auto mode divides by 100, unless a holder (rawPct >= 100) reports a value
+-- Auto scale divides by 100, unless a holder (rawPct >= 100) reports a value
 -- under 100, which means this client returns unscaled raw threat.
 -- WoWThreatDB.threatScale = "auto" | 1 | 100 overrides.
 local scaleSeen = nil
@@ -415,54 +415,11 @@ function NS.ResetSample()
     sim = nil
 end
 
--- Sample names (Tank, Mage, ...) are only the /wtm test and missing-API path.
--- Bars and plates otherwise always get the real group, target or not.
+-- The sample roster is used only for /wtm test, Edit Mode previews and a
+-- missing threat API. Otherwise the meter always gets the real group.
 function NS.CollectThreat()
     if useSample() then
         return collectSample()
     end
     return collectLive()
 end
-
-function NS.GetPlayerThreatPercent(entries)
-    if type(entries) ~= "table" then
-        entries = NS.CollectThreat()
-    end
-    local i
-    for i = 1, #entries do
-        local e = entries[i]
-        if e.isPlayer or e.unit == "player" then
-            return e.pct or 0
-        end
-    end
-    return 0
-end
-
--- Event driver: mark dirty on threat/target/roster/combat events. Meter.lua
--- refreshes with a 0.2 s throttle plus a 0.5 s safety poll.
-NS.dirty = true
-NS.inCombat = false
-local drv = CreateFrame("Frame")
-local EVENTS = {
-    "UNIT_THREAT_LIST_UPDATE", "UNIT_THREAT_SITUATION_UPDATE", "PLAYER_TARGET_CHANGED",
-    "GROUP_ROSTER_UPDATE", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ENTERING_WORLD",
-}
-local i
-for i = 1, #EVENTS do
-    pcall(drv.RegisterEvent, drv, EVENTS[i])
-end
-drv:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_REGEN_DISABLED" then
-        NS.inCombat = true
-        NS.ResetThreatDebug()
-        if NS.OnCombatStart then NS.OnCombatStart() end
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        NS.inCombat = false
-        if NS.OnCombatEnd then NS.OnCombatEnd() end
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        NS.inCombat = type(UnitAffectingCombat) == "function" and UnitAffectingCombat("player") and true or false
-    elseif event == "PLAYER_TARGET_CHANGED" then
-        NS.ResetThreatDebug()
-    end
-    NS.dirty = true
-end)

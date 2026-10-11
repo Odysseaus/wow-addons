@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "0.7.0"
+NS.VERSION = "1.0.0"
 NS.DB_VERSION = 2
 NS.apiMissing = true
 NS.forceTest = false
@@ -34,6 +34,7 @@ local DEFAULTS = {
   hideOutOfCombat = true,
 }
 
+-- Pre-0.2.0 keys removed by the v2 migration.
 local OLD_KEYS = { "mode", "locked", "lock", "point", "relativePoint", "xOfs", "yOfs", "scale" }
 
 function NS.Clamp(v, lo, hi, def) return NS._Clamp(v, lo, hi, def) end
@@ -310,7 +311,7 @@ function NS.Probe()
   print("GetBuildInfo: " .. build)
 end
 
-local HELP = "commands: /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm options | /wtm reset | /wtm probe | /wtm debug"
+local HELP = "v" .. NS.VERSION .. " commands: /wtm options (settings) | /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm reset (position) | /wtm debug (threat scale line) | /wtm probe (API check). Move it in Edit Mode."
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
