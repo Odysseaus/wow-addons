@@ -4,7 +4,7 @@
 local _, NS = ...
 
 local dialog
-local W, H = 300, 236
+local W, H = 300, 304
 
 local function DB()
   if not NS.db and NS.MigrateDB then NS.MigrateDB() end
@@ -183,8 +183,36 @@ local function Build()
   end)
   dialog.cols = cols
 
+  -- Theme and fire style cyclers (left click next, right click previous).
+  local function Cycler(key, label, y)
+    local b = MakeButton(dialog, "", W - 32)
+    b:SetPoint("TOPLEFT", dialog, "TOPLEFT", 16, y)
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b.Sync = function()
+      local list = (key == "theme") and NS.THEME_CHOICE_LIST or NS.STYLE_CHOICE_LIST
+      local cur, text = DB()[key], DB()[key]
+      local i
+      for i = 1, #(list or {}) do if list[i][1] == cur then text = list[i][2] end end
+      b.text:SetText(label .. ": " .. tostring(text))
+    end
+    b:SetScript("OnClick", function(_, button)
+      local list = (key == "theme") and NS.THEME_CHOICE_LIST or NS.STYLE_CHOICE_LIST
+      if not list then return end
+      local idx, i = 1
+      for i = 1, #list do if list[i][1] == DB()[key] then idx = i end end
+      idx = idx + ((button == "RightButton") and -1 or 1)
+      if idx > #list then idx = 1 elseif idx < 1 then idx = #list end
+      NS.SetOption(key, list[idx][1], "dialog")
+      b.Sync()
+    end)
+    b.Sync()
+    return b
+  end
+  dialog.theme = Cycler("theme", "Theme", -186)
+  dialog.style = Cycler("fireStyle", "Fire style", -220)
+
   local reset = MakeButton(dialog, "Reset position", W - 32)
-  reset:SetPoint("TOPLEFT", dialog, "TOPLEFT", 16, -186)
+  reset:SetPoint("TOPLEFT", dialog, "TOPLEFT", 16, -262)
   reset:SetScript("OnClick", function()
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
       NS.Print("can't move the meter in combat.")
@@ -198,6 +226,8 @@ local function Build()
     local i
     for i = 1, #dialog.rows do dialog.rows[i].Sync() end
     cols.text:SetText(ColumnsLabel(DB().columns))
+    dialog.theme.Sync()
+    dialog.style.Sync()
   end
   -- Options panel (or slash) changed something: resync while visible.
   NS.OnOptionChanged(function(_, _, source)

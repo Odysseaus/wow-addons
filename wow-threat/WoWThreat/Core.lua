@@ -4,8 +4,8 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "1.0.0"
-NS.DB_VERSION = 2
+NS.VERSION = "1.1.4"
+NS.DB_VERSION = 3
 NS.apiMissing = true
 NS.forceTest = false
 NS.db = nil
@@ -23,7 +23,7 @@ local LAYOUT_DEFAULTS = {
 local DEFAULTS = {
   maxRows = 5,
   barWidth = 240,
-  rowHeight = 28,
+  rowHeight = 30,
   numberFormat = "short",
   classColors = true,
   columns = "auto",
@@ -32,7 +32,16 @@ local DEFAULTS = {
   showPop = true,
   onlyInGroup = false,
   hideOutOfCombat = true,
+  -- v3 (1.1.0 visuals)
+  theme = "auto",
+  fireStyle = "fireplace",
+  fireSpeed = 1,
+  flameOverflow = 10,
+  animateFrame = true,
+  reducedEffects = false,
+  fireSound = false,
 }
+NS.THEME_CHOICES = { auto = true, emberhall = true, ironforged = true, ursinegrove = true, dawnward = true, voidbound = true }
 
 -- Pre-0.2.0 keys removed by the v2 migration.
 local OLD_KEYS = { "mode", "locked", "lock", "point", "relativePoint", "xOfs", "yOfs", "scale" }
@@ -65,7 +74,16 @@ NS.OPTION_SPEC = {
   testMode = { "boolean" },
   columns = { "columns" },
   numberFormat = { "enum", { short = true, full = true } },
+  theme = { "enum", NS.THEME_CHOICES },
+  fireStyle = { "enum", { fireplace = true, classic = true, off = true } },
+  fireSpeed = { "number", 0.5, 1.5, 0.05 },
+  flameOverflow = { "number", 0, 14, 1 },
+  animateFrame = { "boolean" },
+  reducedEffects = { "boolean" },
+  fireSound = { "boolean" },
 }
+-- Options that change the look: re-skin the frame / restyle the fire.
+local VISUAL = { theme = true, fireStyle = true, fireSpeed = true, animateFrame = true, reducedEffects = true, showFire = true }
 local listeners = {}
 
 function NS.OnOptionChanged(fn)
@@ -103,15 +121,27 @@ function NS.SetOption(key, value, source)
   elseif spec[1] == "enum" then
     if not spec[2][value] then return end
   end
+  -- From Blizzard's Settings UI we are inside its (secure) callback chain:
+  -- store the value now, but defer every frame/texture operation to the
+  -- next frame so nothing is created from that stack (taint, 1.1.3).
+  local defer = (source == "settings") and type(C_Timer) == "table" and type(C_Timer.After) == "function"
   if key == "scale" then
-    if NS.ApplyScale then NS.ApplyScale(value, true) else NS.Layout().scale = value end
+    if defer then
+      NS.Layout().scale = value
+      C_Timer.After(0, function() if NS.ApplyScale then NS.ApplyScale(value, true) end end)
+    elseif NS.ApplyScale then NS.ApplyScale(value, true) else NS.Layout().scale = value end
   elseif key == "testMode" then
     NS.forceTest = value
     if NS.ResetSample and value then NS.ResetSample() end
   else
     NS.db[key] = value
   end
-  if NS.Refresh then NS.Refresh() end
+  local function apply()
+    if VISUAL[key] and NS.ThemeRefresh then NS.ThemeRefresh() end
+    if key == "fireSound" and NS.UpdateSound then NS.UpdateSound() end
+    if NS.Refresh then NS.Refresh() end
+  end
+  if defer then C_Timer.After(0, apply) else apply() end
   local i
   for i = 1, #listeners do pcall(listeners[i], key, NS.GetOption(key), source) end
 end
@@ -174,6 +204,10 @@ function NS.MigrateDB()
     if type(db.yOfs) == "number" and lay.yOfs == nil then lay.yOfs = db.yOfs end
     if type(db.scale) == "number" and lay.scale == nil then lay.scale = db.scale end
   end
+  local from = tonumber(db.version) or 1
+  -- v2 -> v3: Row height default moves 28 -> 30 (fire needs the room);
+  -- only bump it when the user still had the old default.
+  if from < 3 and db.rowHeight == 28 then db.rowHeight = 30 end
   local i
   for i = 1, #OLD_KEYS do
     db[OLD_KEYS[i]] = nil
@@ -190,7 +224,11 @@ function NS.MigrateDB()
   end
   db.maxRows = Clamp(db.maxRows, 1, 10, 5)
   db.barWidth = Clamp(db.barWidth, 160, 320, 240)
-  db.rowHeight = Clamp(db.rowHeight, 20, 32, 28)
+  db.rowHeight = Clamp(db.rowHeight, 20, 32, 30)
+  if not NS.THEME_CHOICES[db.theme] then db.theme = "auto" end
+  if db.fireStyle ~= "fireplace" and db.fireStyle ~= "classic" and db.fireStyle ~= "off" then db.fireStyle = "fireplace" end
+  db.fireSpeed = Clamp(db.fireSpeed, 0.5, 1.5, 1)
+  db.flameOverflow = Clamp(db.flameOverflow, 0, 14, 10)
   if db.columns ~= "auto" then
     local c = tonumber(db.columns)
     db.columns = (c and c >= 1 and c <= 4) and math.floor(c) or "auto"
@@ -296,6 +334,19 @@ function NS.Probe()
   end
   add("C_Texture.GetAtlasInfo('editmode-actionbar-highlight')", atlas)
   add("UnitDetailedThreatSituation", type(UnitDetailedThreatSituation) == "function")
+  local mask = false
+  if type(CreateFrame) == "function" then
+    local ok, res = pcall(function()
+      local f = CreateFrame("Frame")
+      return f.CreateMaskTexture ~= nil and f:CreateMaskTexture() ~= nil
+    end)
+    mask = ok and res
+  end
+  add("MaskTexture (CreateMaskTexture)", mask)
+  add("PlaySoundFile", type(PlaySoundFile) == "function")
+  add("StopSound", type(StopSound) == "function")
+  add("C_Timer.After", type(C_Timer) == "table" and type(C_Timer.After) == "function")
+  add("C_Timer.NewTicker", type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function")
 
   local build = "unknown"
   if type(GetBuildInfo) == "function" then
@@ -311,7 +362,7 @@ function NS.Probe()
   print("GetBuildInfo: " .. build)
 end
 
-local HELP = "v" .. NS.VERSION .. " commands: /wtm options (settings) | /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm reset (position) | /wtm debug (threat scale line) | /wtm probe (API check). Move it in Edit Mode."
+local HELP = "v" .. NS.VERSION .. " commands: /wtm options (settings) | /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm theme <auto|emberhall|ironforged|ursinegrove|dawnward|voidbound> | /wtm style <fireplace|classic|off> | /wtm reset (position) | /wtm debug (threat scale line) | /wtm probe (API check). Move it in Edit Mode."
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
@@ -386,6 +437,28 @@ SlashCmdList["WOWTHREAT"] = function(msg)
     end
     NS.Print(string.format("fire %s, intensity %.2f.", NS.db.showFire and "on" or "off", NS.db.fireIntensity))
     if NS.Refresh then NS.Refresh() end
+    return
+  end
+  local themeArg = string.match(msg, "^theme%s*(%S*)$")
+  if themeArg then
+    if NS.THEME_CHOICES[themeArg] then
+      NS.SetOption("theme", themeArg, "slash")
+      local id = NS.ThemeId and NS.ThemeId() or themeArg
+      NS.Print("theme " .. themeArg .. (themeArg == "auto" and (" -> " .. id) or "") .. ".")
+    else
+      NS.Print("usage: /wtm theme <auto|emberhall|ironforged|ursinegrove|dawnward|voidbound>")
+    end
+    return
+  end
+  local styleArg = string.match(msg, "^style%s*(%S*)$")
+  if styleArg then
+    if styleArg == "fireplace" or styleArg == "classic" or styleArg == "off" then
+      NS.SetOption("fireStyle", styleArg, "slash")
+      if styleArg ~= "off" and NS.db.showFire == false then NS.SetOption("showFire", true, "slash") end
+      NS.Print("fire style " .. styleArg .. ".")
+    else
+      NS.Print("usage: /wtm style <fireplace|classic|off>")
+    end
     return
   end
   if msg == "options" or msg == "config" then

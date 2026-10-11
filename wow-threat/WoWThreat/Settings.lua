@@ -120,6 +120,10 @@ end
 
 local COLUMN_CHOICES = { { "auto", "Auto" }, { "1", "1" }, { "2", "2" }, { "3", "3" }, { "4", "4" } }
 local FORMAT_CHOICES = { { "short", "Short (12.3k)" }, { "full", "Full (12345)" } }
+local THEME_CHOICES = { { "auto", "Auto (by class)" }, { "emberhall", "Ember Hall" }, { "ironforged", "Ironforged" },
+  { "ursinegrove", "Ursine Grove" }, { "dawnward", "Dawnward" }, { "voidbound", "Voidbound" } }
+local STYLE_CHOICES = { { "fireplace", "Fireplace" }, { "classic", "Classic" }, { "off", "Off (plain bar)" } }
+NS.THEME_CHOICE_LIST, NS.STYLE_CHOICE_LIST = THEME_CHOICES, STYLE_CHOICES
 
 local function ResetPositionClicked()
   if type(InCombatLockdown) == "function" and InCombatLockdown() then
@@ -141,13 +145,20 @@ local function BuildVertical()
   all = AddSlider("barWidth", "Bar width", 160, 320, 4, "%d", "Width of each bar in pixels.") and all
   all = AddSlider("rowHeight", "Row height", 20, 32, 1, "%d", "Height of each row in pixels.") and all
   all = AddSlider("scale", "Scale", 0.6, 1.6, 0.05, "%.2f", "Meter scale for the active Edit Mode layout.") and all
-  all = AddCheckbox("showFire", "Show fire", "Fire effect inside the bars.") and all
-  all = AddSlider("fireIntensity", "Fire intensity", 0, 1, 0.05, "%.2f", "Fire brightness.") and all
+  all = AddDropdown("theme", "Theme", THEME_CHOICES, "Frame theme. Auto: Warrior Ironforged, Druid Ursine Grove, Paladin Dawnward, Warlock Voidbound, others Ember Hall.") and all
+  all = AddCheckbox("animateFrame", "Animate frame", "Theme frame animations (swords, leaves, sun, runes, gems).") and all
+  all = AddCheckbox("showFire", "Show fire", "The fire is the bar.") and all
+  all = AddDropdown("fireStyle", "Fire style", STYLE_CHOICES, "Fireplace (default), Classic (lighter) or Off (plain bar).") and all
+  all = AddSlider("fireIntensity", "Fire intensity", 0, 1, 0.05, "%.2f", "Flame height and brightness.") and all
+  all = AddSlider("fireSpeed", "Fire speed", 0.5, 1.5, 0.05, "%.2f", "Flame motion speed (1 = previewer).") and all
+  all = AddSlider("flameOverflow", "Flame overflow", 0, 14, 1, "%d", "How far flame tips rise above the bar (px).") and all
+  all = AddCheckbox("fireSound", "Fire sound", "Quiet crackle in combat (SFX channel). Off by default.") and all
+  all = AddCheckbox("reducedEffects", "Reduced effects", "One fire layer, no sparks/glow, static frame. For low FPS.") and all
   all = AddCheckbox("showPop", "Show pop", "Flash and glow when a new player takes the top spot.") and all
   all = AddDropdown("numberFormat", "Number format", FORMAT_CHOICES, "How raw threat is shown.") and all
   all = AddCheckbox("onlyInGroup", "Show only in group", "Hide live rows while solo.") and all
   all = AddCheckbox("hideOutOfCombat", "Hide out of combat", "Fade rows out when combat ends.") and all
-  all = AddCheckbox("classColors", "Class colors", "Color bars by class.") and all
+  all = AddCheckbox("classColors", "Class colors", "Color names by class.") and all
   all = AddCheckbox("testMode", "Test mode", "Show the fake roster (same as /wtm test).") and all
   if not all then return false end
 
@@ -229,8 +240,15 @@ local function BuildCanvas()
   slider("Bar width", "barWidth", 160, 320, 4, "%d")
   slider("Row height", "rowHeight", 20, 32, 1, "%d")
   slider("Scale", "scale", 0.6, 1.6, 0.05, "%.2f")
+  add(CanvasCycle(canvas, "Theme", "theme", THEME_CHOICES, y))
+  add(CanvasCheck(canvas, "Animate frame", "animateFrame", y))
   add(CanvasCheck(canvas, "Show fire", "showFire", y))
+  add(CanvasCycle(canvas, "Fire style", "fireStyle", STYLE_CHOICES, y))
   slider("Fire intensity", "fireIntensity", 0, 1, 0.05, "%.2f")
+  slider("Fire speed", "fireSpeed", 0.5, 1.5, 0.05, "%.2f")
+  slider("Flame overflow", "flameOverflow", 0, 14, 1, "%d")
+  add(CanvasCheck(canvas, "Fire sound", "fireSound", y))
+  add(CanvasCheck(canvas, "Reduced effects", "reducedEffects", y))
   add(CanvasCheck(canvas, "Show pop", "showPop", y))
   add(CanvasCycle(canvas, "Number format", "numberFormat", FORMAT_CHOICES, y))
   add(CanvasCheck(canvas, "Show only in group", "onlyInGroup", y))
