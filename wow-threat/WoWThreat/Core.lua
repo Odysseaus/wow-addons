@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "1.1.1"
+NS.VERSION = "1.1.2"
 NS.DB_VERSION = 3
 NS.apiMissing = true
 NS.forceTest = false
