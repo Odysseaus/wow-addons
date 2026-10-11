@@ -7,7 +7,7 @@ World of Warcraft: Forever addons by Odysseaus, built for the classic beta clien
 | Addon | Folder | Status | Get it |
 |-------|--------|--------|--------|
 | [WoW Grok](#wow-grok) | [`wow-grok/`](wow-grok/) | Released (Mac app, Windows app, addon zip) | [Releases](https://github.com/Odysseaus/wow-addons/releases) (`wow-grok-mac-v…`, `wow-grok-win-v…`) |
-| [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v0.1.23`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v0.1.23) |
+| [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v1.1.4`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.1.4) |
 | [QuestGrind](#questgrind) | [`quest-grind/`](quest-grind/) | 🚧 Under construction, not released | No release yet |
 
 ## Where AddOns go
@@ -82,13 +82,24 @@ A single, clean threat meter for Forever. It lists your group against your hosti
 - **Options panel:** Esc > Options > AddOns > WoW Threat (or `/wtm options`): Max rows, Columns, Bar width, Row height, Scale, Theme, Animate frame, Show fire, Fire style, Fire intensity, Fire speed, Flame overflow, Fire sound (off by default; SFX channel, in combat only), Reduced effects, Show pop, Number format, Show only in group, Hide out of combat, Class colors, Test mode and Reset position. It stays in sync with the Edit Mode dialog.
 - **Slash commands** (`/wtm` or `/wowthreat`): `options`, `test [raid20|raid40|swap|swapfast]`, `theme <auto|emberhall|ironforged|ursinegrove|dawnward|voidbound>`, `style <fireplace|classic|off>`, `fire <0-1|off|on>`, `reset`, `debug` (prints one threat-scale line per unit), `probe` (API check). Anything else prints the help.
 - Settings are saved in `WoWThreatDB` (schema v3). Upgrades from 0.1.x and 1.0.0 migrate automatically.
-- Version `1.1.0`, Interface `16001`.
+- Version `1.1.4` (latest release [`wow-threat-v1.1.4`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.1.4)), Interface `16001`.
 
-_Screenshot coming: the old Bars, Plates and Dial mockups were removed because those modes no longer exist._
+### Screenshots
+
+> **Previewer renders, not in-game.** These come from the addon previewer, set up to match 1.1.4: Fireplace fire with the Ironforged tint, black bars, mid-combat. In-game captures will replace them later.
+
+| | |
+|---|---|
+| ![WoW Threat, Ember Hall theme, previewer render (not in-game)](wow-threat/docs/wowthreat-emberhall.png)<br>**Ember Hall** (default) · Previewer render (not in-game) | ![WoW Threat, Ironforged theme, previewer render (not in-game)](wow-threat/docs/wowthreat-ironforged.png)<br>**Ironforged** (Warrior) · Previewer render (not in-game) |
+| ![WoW Threat, Ursine Grove theme, previewer render (not in-game)](wow-threat/docs/wowthreat-ursinegrove.png)<br>**Ursine Grove** (Druid) · Previewer render (not in-game) | ![WoW Threat, Dawnward theme, previewer render (not in-game)](wow-threat/docs/wowthreat-dawnward.png)<br>**Dawnward** (Paladin) · Previewer render (not in-game) |
+| ![WoW Threat, Voidbound theme, previewer render (not in-game)](wow-threat/docs/wowthreat-voidbound.png)<br>**Voidbound** (Warlock) · Previewer render (not in-game) | |
+
+![WoW Threat, raid of 40 in 4 columns, Ironforged theme, previewer render (not in-game)](wow-threat/docs/wowthreat-raid40-columns.png)
+**Raid 40, 4 columns × 10 rows** (Ironforged) · Previewer render (not in-game; simulation paused so rows are settled)
 
 ### Download & install
 
-1. Download the `WoWThreat` zip from the latest `wow-threat-v…` release on the [releases page](https://github.com/Odysseaus/wow-addons/releases). Until 1.0.0 is released, that is [`wow-threat-v0.1.23`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v0.1.23) with the old design.
+1. Download the `WoWThreat` zip from the latest `wow-threat-v…` release on the [releases page](https://github.com/Odysseaus/wow-addons/releases). The latest is [`wow-threat-v1.1.4`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.1.4) (`WoWThreat-1.1.4.zip`).
 2. Unzip it. You'll get a `WoWThreat` folder, which includes `Textures/`.
 3. Copy the `WoWThreat` folder into your AddOns directory, replacing any older copy:
    - Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`
