@@ -1,11 +1,13 @@
 ## Interface: 16001
 ## Title: WoW Threat
-## Notes: Forever threat meter — approved bars, dial, and plates.
+## Notes: Forever threat meter: one sorted bar per group member.
 ## Author: Odysseaus
-## Version: 0.1.23
+## Version: 1.0.0
 ## IconTexture: Interface\Icons\Spell_Fire_Fireball
 ## SavedVariables: WoWThreatDB
 
 Core.lua
 Collector.lua
-UI.lua
+Meter.lua
+EditMode.lua
+Settings.lua

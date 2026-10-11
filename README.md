@@ -71,37 +71,28 @@ More: [all-platform overview](wow-grok/docs/INSTALL-USERS.md) · [how it works](
 
 Folder: [`wow-threat/`](wow-threat/) · Addon: [`wow-threat/WoWThreat/`](wow-threat/WoWThreat/)
 
-A threat meter for Forever with approved bars, dial, and plates. It lists your group with the highest threat on top, using the client's threat API (`UnitDetailedThreatSituation` / `UnitThreatSituation`) against your hostile target.
+A single, clean threat meter for Forever. It lists your group against your hostile target with the highest threat on top, using the client's `UnitDetailedThreatSituation`.
 
-- **Bars:** a gold filigree frame with class icons, glossy threat-colored bars, and percents.
-- **Plates:** cracked-stone nameplates with gold corners, the name on top, a threat fill, and a percent on the right.
-- **Dial:** a round gold skull ring that runs green to red, with a sword needle and a large percent.
-- Commands: `/wtm` or `/wowthreat`, then `mode [bars|plates|dial]`, `lock`, `test` (sample roster), or `reset`. The window moves only while Edit Mode is open, and its settings are saved in `WoWThreatDB`.
-- Version `0.1.23`, Interface `16001`.
+- **One bar meter:** each row shows the first name (realm stripped, long names cut off with …) above a class-colored bar, with % and raw threat (12.3k) on the right. Your own row has a gold highlight and stays pinned when you fall outside the shown rows.
+- **Motion:** bars and numbers count smoothly, rows slide to their new rank, and a new #1 gets a short pop (scale bump, flash, gold glow).
+- **Fire:** an original flipbook flame inside each bar's fill grows taller, brighter and faster with threat, with a white-hot pulse above 90%.
+- **Columns:** Auto or 1–4, ranked across columns and capped at about 60% of the screen width, with up to 10 rows per column. Rows fade out when combat ends.
+- **Edit Mode:** open Edit Mode to see a blue "WoW Threat" selection with preview rows. Drag it (snaps to 8 px), or click it for Scale, Max rows, Bar width, Columns and Reset position. Positions are saved per Edit Mode layout. The meter can't be moved outside Edit Mode.
+- **Options panel:** Esc > Options > AddOns > WoW Threat (or `/wtm options`): Max rows, Columns, Bar width, Row height, Scale, Show fire, Fire intensity, Show pop, Number format, Show only in group, Hide out of combat, Class colors, Test mode and Reset position. It stays in sync with the Edit Mode dialog.
+- **Slash commands** (`/wtm` or `/wowthreat`): `options`, `test [raid20|raid40|swap|swapfast]`, `fire <0-1|off|on>`, `reset`, `debug` (prints one threat-scale line per unit), `probe` (API check). Anything else prints the help.
+- Settings are saved in `WoWThreatDB`. Upgrades from 0.1.x migrate the old position automatically.
+- Version `1.0.0` (in review in [PR #54](https://github.com/Odysseaus/wow-addons/pull/54)), Interface `16001`. The latest published release is still `0.1.23`, which has the old Bars/Plates/Dial design.
 
-<p align="center">
-  <img src="wow-threat/docs/bars-mockup.png" alt="Mockup, not an in-game screenshot: WoW Threat Bars mode rendered by script from the addon's textures, a gold filigree frame with five glossy threat bars (Thrall 100, Jaina 82, Sylvanas 64, Anduin 45, Varian 25) and a MOCK RENDER label" width="328">
-</p>
-<p align="center"><em><strong>Bars</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.18). The square boxes stand in for class icons.</em></p>
-
-<p align="center">
-  <img src="wow-threat/docs/plates-mockup.png" alt="Mockup, not an in-game screenshot: WoW Threat Plates mode rendered by script from the addon's textures, five cracked-stone plates with gold corners for Tank 100, Mage 78, Rogue 54, Priest 31 and Hunter 12" width="408">
-</p>
-<p align="center"><em><strong>Plates</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.20). Later builds restored the plates' bottom gold corners (0.1.22) and trimmed their side edges (0.1.23).</em></p>
-
-<p align="center">
-  <img src="wow-threat/docs/dial-mockup.png" alt="Mockup, not an in-game screenshot: WoW Threat Dial mode rendered by script from the addon's textures, the gold skull ring running green to red with the sword needle at 72%, class-colored diamond marks for Tank, Mage, Warlo, Druid and Rogue, and a large 72 % readout" width="340">
-</p>
-<p align="center"><em><strong>Dial</strong> mode. Mockup, not an in-game screenshot. Script-rendered from the addon's own textures (build 0.1.23).</em></p>
+_Screenshot coming: the old Bars, Plates and Dial mockups were removed because those modes no longer exist._
 
 ### Download & install
 
-1. Download `WoWThreat-0.1.23.zip` from the [`wow-threat-v0.1.23`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v0.1.23) release.
+1. Download the `WoWThreat` zip from the latest `wow-threat-v…` release on the [releases page](https://github.com/Odysseaus/wow-addons/releases). Until 1.0.0 is released, that is [`wow-threat-v0.1.23`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v0.1.23) with the old design.
 2. Unzip it. You'll get a `WoWThreat` folder, which includes `Textures/`.
-3. Copy the `WoWThreat` folder into your AddOns directory:
+3. Copy the `WoWThreat` folder into your AddOns directory, replacing any older copy:
    - Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`
    - Windows: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\` (your drive or install folder may differ)
-4. Type `/reload` in game.
+4. Type `/reload` in game, then `/wtm test` to see it, or open Edit Mode to place it.
 
 ---
 
