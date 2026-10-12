@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "1.1.5"
+NS.VERSION = "1.2.0"
 NS.DB_VERSION = 3
 NS.apiMissing = true
 NS.forceTest = false
@@ -75,7 +75,7 @@ NS.OPTION_SPEC = {
   columns = { "columns" },
   numberFormat = { "enum", { short = true, full = true } },
   theme = { "enum", NS.THEME_CHOICES },
-  fireStyle = { "enum", { fireplace = true, classic = true, off = true } },
+  fireStyle = { "enum", { fireplace = true, classic = true, castbar = true, off = true } },
   fireSpeed = { "number", 0.5, 1.5, 0.05 },
   flameOverflow = { "number", 0, 14, 1 },
   animateFrame = { "boolean" },
@@ -226,7 +226,7 @@ function NS.MigrateDB()
   db.barWidth = Clamp(db.barWidth, 160, 320, 240)
   db.rowHeight = Clamp(db.rowHeight, 20, 32, 30)
   if not NS.THEME_CHOICES[db.theme] then db.theme = "auto" end
-  if db.fireStyle ~= "fireplace" and db.fireStyle ~= "classic" and db.fireStyle ~= "off" then db.fireStyle = "fireplace" end
+  if db.fireStyle ~= "fireplace" and db.fireStyle ~= "classic" and db.fireStyle ~= "castbar" and db.fireStyle ~= "off" then db.fireStyle = "fireplace" end
   db.fireSpeed = Clamp(db.fireSpeed, 0.5, 1.5, 1)
   db.flameOverflow = Clamp(db.flameOverflow, 0, 14, 10)
   if db.columns ~= "auto" then
@@ -362,7 +362,7 @@ function NS.Probe()
   print("GetBuildInfo: " .. build)
 end
 
-local HELP = "v" .. NS.VERSION .. " commands: /wtm options (settings) | /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm theme <auto|emberhall|ironforged|ursinegrove|dawnward|voidbound> | /wtm style <fireplace|classic|off> | /wtm reset (position) | /wtm debug (threat scale line) | /wtm probe (API check). Move it in Edit Mode."
+local HELP = "v" .. NS.VERSION .. " commands: /wtm options (settings) | /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm theme <auto|emberhall|ironforged|ursinegrove|dawnward|voidbound> | /wtm style <fireplace|classic|castbar|off> | /wtm reset (position) | /wtm debug (threat scale line) | /wtm probe (API check). Move it in Edit Mode."
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
@@ -452,12 +452,12 @@ SlashCmdList["WOWTHREAT"] = function(msg)
   end
   local styleArg = string.match(msg, "^style%s*(%S*)$")
   if styleArg then
-    if styleArg == "fireplace" or styleArg == "classic" or styleArg == "off" then
+    if styleArg == "fireplace" or styleArg == "classic" or styleArg == "castbar" or styleArg == "off" then
       NS.SetOption("fireStyle", styleArg, "slash")
       if styleArg ~= "off" and NS.db.showFire == false then NS.SetOption("showFire", true, "slash") end
       NS.Print("fire style " .. styleArg .. ".")
     else
-      NS.Print("usage: /wtm style <fireplace|classic|off>")
+      NS.Print("usage: /wtm style <fireplace|classic|castbar|off>")
     end
     return
   end
