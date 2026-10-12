@@ -30,7 +30,7 @@ local function Style()
   local db = DB()
   if db.showFire == false then return "off" end
   local s = db.fireStyle
-  if s == "classic" or s == "off" then return s end
+  if s == "classic" or s == "off" or s == "castbar" then return s end
   return "fireplace"
 end
 NS.FireStyle = Style
@@ -52,6 +52,7 @@ local active = {}          -- rows with fire showing
 local nActive = 0
 NS.fireAnimCalls = 0       -- Play/Stop/SetDuration issued by fire (harness)
 local driver = CreateFrame("Frame")
+local CBPaint              -- castbar painter (defined below)
 
 -- Harness counters: fireAnimCalls = Stop/SetDuration (restarts); a first
 -- Play of a spark/core pulse when it first appears is counted separately.
@@ -108,9 +109,172 @@ local function PaintRow(r)
 end
 
 local function Drive(_, elapsed)
-  clock = clock + (elapsed or 0) * Speed()
+  local dt = (elapsed or 0) * Speed()
+  clock = clock + dt
   local r
-  for r in pairs(active) do PaintRow(r) end
+  for r in pairs(active) do
+    if r.fStyle == "castbar" then CBPaint(r, dt) else PaintRow(r) end
+  end
+end
+
+-- ------------------------------------------------------- castbar (1.2.0) ---
+-- Layered scrolling-texture fire (our own baked art, tools/bake_castbar.py):
+-- base (BLEND), flow (ADD, scrolls upward, flickering alpha), veil (ADD, slow
+-- drift) on the black bar, all sized to the FULL bar and cropped by the clip,
+-- so the texel scale is fixed (k = inner/64) at any bar size. Offsets advance
+-- from the shared fire clock's dt; speeds drift through a sum of sines. A
+-- leading-edge spark and a few pooled embers ride on top. No AnimationGroups,
+-- so nothing can restart; data updates only resize and re-alpha.
+local CB_W, CB_VW, CB_H = 512, 256, 64
+local MAX_EMBERS = 6
+local TAU = 6.2831853
+local VEIL_R, VEIL_G, VEIL_B = 1, 0.47, 0.12
+local sin = math.sin
+NS.castbarPaints = 0
+
+local function CBWob(cb, t, o)
+  return sin(t * cb.f1 * TAU + cb.p1 + o) * 0.5 + sin(t * cb.f2 * TAU + cb.p2 + o * 1.7) * 0.3
+    + sin(t * cb.f3 * TAU + cb.p3 + o * 2.3) * 0.2
+end
+
+local function CBAlpha(tex, cb, key, a)
+  if math.abs((cb[key] or -1) - a) > ALPHA_EPS then cb[key] = a; tex:SetAlpha(a) end
+end
+
+local function CBRespawn(e, cb, first)
+  e.x = math.random() * (cb.fillW or 10)
+  e.y = (cb.inner or 12) * math.random() * 0.65
+  e.age = first and -math.random() * 0.8 or 0
+  e.max = 0.5 + math.random() * 0.7
+  e.vx = (math.random() - 0.5) * 16
+  e.vy = 15 + math.random() * 30
+  e.sw = math.random() * TAU
+  e.sz = 2 + math.random() * 2
+end
+
+CBPaint = function(r, dt)
+  local cb = r.cb
+  if not cb or not cb.on then return end
+  NS.castbarPaints = NS.castbarPaints + 1
+  local t = clock
+  local sm = 1 + 0.45 * CBWob(cb, t, 0)
+  cb.u = (cb.u + 0.02 * sm * dt) % 1
+  cb.u2 = (cb.u2 + 0.025 * sm * dt) % 1
+  cb.v = (cb.v + 0.55 * dt * (1 + 0.3 * CBWob(cb, t + 9, 1))) % 1
+  cb.uv = (cb.uv + 0.015 * dt) % 1
+  local span = cb.span
+  cb.base:SetTexCoord(cb.u, cb.u + span, 0, 1)
+  cb.flow:SetTexCoord(cb.u2, cb.u2 + span, cb.v, cb.v + 1)
+  local I = cb.inten
+  if cb.flicker then
+    CBAlpha(cb.flow, cb, "fa", (0.5 + 0.45 * (0.5 + 0.5 * CBWob(cb, t * 6, 3))) * (0.55 + 0.45 * I))
+  end
+  if cb.veilOn then
+    cb.veil:SetTexCoord(cb.uv, cb.uv + cb.vspan, 0, 1)
+    CBAlpha(cb.veil, cb, "va", (0.35 + 0.2 * CBWob(cb, t + 3, 5)) * (0.6 + 0.4 * I))
+  end
+  if cb.sparkOn then CBAlpha(cb.spark, cb, "sa", (0.75 + 0.25 * CBWob(cb, t * 6, 1)) * (0.6 + 0.4 * I)) end
+  local j
+  for j = 1, cb.nEmbers do
+    local e = cb.embers[j]
+    e.age = e.age + dt
+    if e.age >= e.max then CBRespawn(e, cb, false) end
+    if e.age < 0 then
+      if e.shown then e.tex:Hide(); e.shown = false end
+    else
+      local tt = e.age / e.max
+      e.vx = e.vx + sin(e.age * 6 + e.sw) * 20 * dt
+      local a = (1 - tt) * math.min(1, tt * 6) * (0.6 + 0.4 * I)
+      e.tex:SetPoint("CENTER", r.fireClip, "BOTTOMLEFT", e.x + e.vx * e.age * 0.3, e.y + e.vy * e.age * 0.35)
+      e.tex:SetAlpha(a)
+      if not e.shown then e.tex:Show(); e.shown = true end
+    end
+  end
+end
+
+local function CBCreate(r)
+  local clip = r.fireClip
+  local cb = { u = math.random(), u2 = math.random(), v = math.random(), uv = math.random(),
+    f1 = 0.07 + math.random() * 0.05, f2 = 0.17 + math.random() * 0.09, f3 = 0.37 + math.random() * 0.16,
+    p1 = math.random() * TAU, p2 = math.random() * TAU, p3 = math.random() * TAU, span = 1, vspan = 1,
+    inten = 0.8, nEmbers = 0, embers = {} }
+  local function layer(name, blend, sub)
+    local tex = clip:CreateTexture(nil, "ARTWORK", nil, sub)
+    tex:SetTexture(TEX .. name, "REPEAT", "REPEAT")
+    tex:SetBlendMode(blend)
+    tex:SetPoint("BOTTOMLEFT", clip, "BOTTOMLEFT", 0, 0)
+    tex:Hide()
+    return tex
+  end
+  cb.base = layer("CB_Base", "BLEND", 0)
+  cb.flow = layer("CB_Flow", "ADD", 1)
+  cb.veil = layer("CB_Veil", "ADD", 2)
+  cb.veil:SetVertexColor(VEIL_R, VEIL_G, VEIL_B, 1)
+  -- spark and embers live on an unclipped frame so they can spill past the edge
+  local fx = CreateFrame("Frame", nil, r.bar)
+  fx:SetAllPoints(r.bar)
+  fx:SetFrameLevel(clip:GetFrameLevel() + 1)
+  cb.fx = fx
+  cb.spark = fx:CreateTexture(nil, "OVERLAY", nil, 6)
+  cb.spark:SetTexture(TEX .. "CB_Spark")
+  cb.spark:SetBlendMode("ADD")
+  cb.spark:Hide()
+  local j
+  for j = 1, MAX_EMBERS do
+    local e = { tex = fx:CreateTexture(nil, "OVERLAY", nil, 5) }
+    e.tex:SetTexture(TEX .. "CB_Ember")
+    e.tex:SetBlendMode("ADD")
+    e.tex:SetSize(3, 3)
+    e.tex:Hide()
+    CBRespawn(e, cb, true)
+    cb.embers[j] = e
+  end
+  r.cb = cb
+  return cb
+end
+
+local function CBHide(r)
+  local cb = r.cb
+  if not cb or not cb.on then return end
+  cb.on = false
+  cb.base:Hide(); cb.flow:Hide(); cb.veil:Hide(); cb.spark:Hide()
+  cb.fa, cb.va, cb.sa = nil, nil, nil
+  local j
+  for j = 1, MAX_EMBERS do local e = cb.embers[j]; e.tex:Hide(); e.shown = false end
+  cb.nEmbers = 0
+end
+NS._CBHide = CBHide
+
+-- Layout for the castbar style (data update): sizes, flags, counts only.
+local function CBUpdate(r, pct, width, inner, inten, reduced, big, alpha)
+  local cb = r.cb or CBCreate(r)
+  local barW = math.max(8, ((r.bar.GetWidth and r.bar:GetWidth()) or 240) - 2)
+  local k = inner / CB_H
+  if cb.barW ~= barW or cb.inner ~= inner then
+    cb.barW, cb.inner = barW, inner
+    cb.span, cb.vspan = barW / (CB_W * k), barW / (CB_VW * k)
+    cb.base:SetSize(barW, inner); cb.flow:SetSize(barW, inner); cb.veil:SetSize(barW, inner)
+    cb.spark:SetSize(inner * 0.9, inner * 1.7)
+  end
+  cb.fillW, cb.inten = width, inten
+  if not cb.on then
+    cb.on = true
+    cb.base:Show(); cb.flow:Show()
+  end
+  if math.abs((cb.ba or -1) - alpha) > ALPHA_EPS then cb.ba = alpha; cb.base:SetAlpha(alpha) end
+  cb.flicker = not reduced
+  if reduced then CBAlpha(cb.flow, cb, "fa", 0.6 * (0.55 + 0.45 * inten)) end
+  local veilOn = not reduced and not big
+  if veilOn ~= cb.veilOn then cb.veilOn = veilOn; cb.va = nil; if veilOn then cb.veil:Show() else cb.veil:Hide() end end
+  local sparkOn = pct > 0.01 and pct < 0.995
+  if sparkOn ~= cb.sparkOn then cb.sparkOn = sparkOn; cb.sa = nil; if sparkOn then cb.spark:Show() else cb.spark:Hide() end end
+  if sparkOn then cb.spark:SetPoint("CENTER", r.fireClip, "BOTTOMLEFT", width, inner * 0.5) end
+  local n = 0
+  if not reduced and not big then n = math.ceil(MAX_EMBERS * (0.4 + 0.6 * inten) * (0.3 + 0.7 * pct)) end
+  if n > MAX_EMBERS then n = MAX_EMBERS end
+  local j
+  for j = n + 1, cb.nEmbers do local e = cb.embers[j]; e.tex:Hide(); e.shown = false end
+  cb.nEmbers = n
 end
 
 local function Activate(r, on)
@@ -227,6 +391,7 @@ function NS.FireStop(r)
   local j
   for j = 1, MAX_TILES do HideLayer(r.tiles[j].body); HideLayer(r.tiles[j].glow) end
   r.fNeed = 0
+  CBHide(r)
   for j = 1, MAX_SPARKS do
     local sp = r.sparks[j]
     if sp.playing and sp.ag then AnimCall(sp.ag, "Stop") end
@@ -275,8 +440,7 @@ function NS.FireUpdate(r, pct, width, barH, dt, rank, nrows)
   if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
   local reduced = Reduced()
   local sheet = SheetFor(style)
-  if r.fireKey ~= style .. "|" .. sheet then Restyle(r, style, sheet) end
-  r.fStyle = style
+  if style ~= "castbar" and r.fireKey ~= style .. "|" .. sheet then Restyle(r, style, sheet) end
 
   local inner = math.max(2, barH - 2)
   local over = type(db.flameOverflow) == "number" and db.flameOverflow or 10
@@ -284,6 +448,33 @@ function NS.FireUpdate(r, pct, width, barH, dt, rank, nrows)
   if over > room then over = room end
   r.fireClip:SetSize(width, inner + over)
   if not r.fireOn then r.fireClip:Show(); r.fireOn = true end
+
+  if style == "castbar" then
+    local big = (nrows or 1) > 20
+    local alpha = (0.88 + 0.12 * pct) * (0.85 + 0.15 * inten)
+    if alpha > 1 then alpha = 1 end
+    -- hide the fireplace/classic pieces (once), then lay out the castbar layers
+    if r.fStyle ~= "castbar" or (r.fNeed or 0) > 0 then
+      local j
+      for j = 1, MAX_TILES do HideLayer(r.tiles[j].body); HideLayer(r.tiles[j].glow) end
+      r.fNeed = 0
+      for j = 1, MAX_SPARKS do r.sparks[j].tex:Hide() end
+      if r.tipCap then r.tipCap:Hide() end
+    end
+    r.fStyle = "castbar"
+    CBUpdate(r, pct, width, inner, inten, Reduced(), big, alpha)
+    Activate(r, true)
+    if pct > 0.9 and not Reduced() then
+      r.core:SetHeight(inner * 0.7)
+      r.core:SetAlpha(math.min(1, (pct - 0.9) / 0.1) * 0.3)
+      if not r.core:IsShown() then r.core:Show() end
+      if not r.corePlaying and r.coreAG then r.corePlaying = true; AnimCall(r.coreAG, "Play") end
+    elseif r.core:IsShown() then
+      r.core:Hide()
+    end
+    return false
+  end
+  if r.fStyle == "castbar" then CBHide(r); if r.tipCap then r.tipCap:Show() end end
 
   local s = inner / REF_INNER
   local tileW, texH
@@ -340,6 +531,7 @@ function NS.FireUpdate(r, pct, width, barH, dt, rank, nrows)
     end
   end
   r.fNeed = need
+  r.fStyle = style
   Activate(r, true)
   PaintRow(r)
 
