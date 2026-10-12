@@ -7,7 +7,7 @@ World of Warcraft: Forever addons by Odysseaus, built for the classic beta clien
 | Addon | Folder | Status | Get it |
 |-------|--------|--------|--------|
 | [WoW Grok](#wow-grok) | [`wow-grok/`](wow-grok/) | Released (Mac app, Windows app, addon zip) | [Releases](https://github.com/Odysseaus/wow-addons/releases) (`wow-grok-mac-v…`, `wow-grok-win-v…`) |
-| [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v1.1.5`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.1.5) |
+| [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v1.2.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.2.0) |
 | [QuestGrind](#questgrind) | [`quest-grind/`](quest-grind/) | 🚧 Under construction, not released | No release yet |
 
 ## Where AddOns go
@@ -82,7 +82,7 @@ A single, clean threat meter for Forever. It lists your group against your hosti
 - **Options panel:** Esc > Options > AddOns > WoW Threat (or `/wtm options`): Max rows, Columns, Bar width, Row height, Scale, Theme, Animate frame, Show fire, Fire style, Fire intensity, Fire speed, Flame overflow, Fire sound (off by default; SFX channel, in combat only), Reduced effects, Show pop, Number format, Show only in group, Hide out of combat, Class colors, Test mode and Reset position. It stays in sync with the Edit Mode dialog.
 - **Slash commands** (`/wtm` or `/wowthreat`): `options`, `test [raid20|raid40|swap|swapfast]`, `theme <auto|emberhall|ironforged|ursinegrove|dawnward|voidbound>`, `style <fireplace|classic|castbar|off>`, `fire <0-1|off|on>`, `reset`, `debug` (prints one threat-scale line per unit), `probe` (API check). Anything else prints the help.
 - Settings are saved in `WoWThreatDB` (schema v3). Upgrades from 0.1.x and 1.0.0 migrate automatically.
-- Version `1.1.5` (latest release [`wow-threat-v1.1.5`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.1.5)), Interface `16001`.
+- Version `1.2.0` (latest release [`wow-threat-v1.2.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.2.0)), Interface `16001`.
 
 ### Screenshots
 
@@ -99,7 +99,7 @@ A single, clean threat meter for Forever. It lists your group against your hosti
 
 ### Download & install
 
-1. Download the `WoWThreat` zip from the latest `wow-threat-v…` release on the [releases page](https://github.com/Odysseaus/wow-addons/releases). The latest is [`wow-threat-v1.1.5`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.1.5) (`WoWThreat-1.1.5.zip`).
+1. Download the `WoWThreat` zip from the latest `wow-threat-v…` release on the [releases page](https://github.com/Odysseaus/wow-addons/releases). The latest is [`wow-threat-v1.2.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.2.0) (`WoWThreat-1.2.0.zip`).
 2. Unzip it. You'll get a `WoWThreat` folder, which includes `Textures/`.
 3. Copy the `WoWThreat` folder into your AddOns directory, replacing any older copy:
    - Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`
