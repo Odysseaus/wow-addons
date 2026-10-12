@@ -2,14 +2,14 @@ local _, NS = ...
 
 -- Layered UI: every visual piece is its own Frame so pieces can move later.
 -- Transparent PAD outside chrome so ornate edges never clip (root > art).
--- Themes apply to Full AND Less AND Compass. Solid colors = P0/P1; TGA polish = P4.
--- P1: ApplyRoute / RefreshRouteUI paint live or mock; Route.lua rotates compass arrows.
+-- Themes apply to Full AND Simple. Solid colors = P0/P1; TGA polish = P4.
+-- P1: ApplyRoute / RefreshRouteUI paint live or mock; Route.lua rotates direction arrows.
 -- 0.2.7: no-chain shows "—"; bar uses objective progress when no chain.
 -- 0.2.6: one centered-percentage chain progress bar (was 5 segments).
--- 0.2.5: one Rewards area in Full (header + text + icons); one compass arrow per face.
+-- 0.2.5: one Rewards area in Full (header + text + icons); one direction arrow per face.
 -- 0.2.4: item reward icon tooltips; minimap focus badge.
 -- 0.2.1 (P0 UX fix): window controls live on layers.chromeControls, which is
--- NEVER hidden by mode switches (Full / Less / Compass / minimized), sits above
+-- NEVER hidden by mode switches (Full / Simple / minimized), sits above
 -- all content (frame level), and is anchored inside art TOPRIGHT.
 
 local PAD = 24
@@ -18,8 +18,7 @@ NS.PAD = PAD
 -- Sizes leave a ~32px top strip in every mode for the persistent controls.
 local ART = {
   full = { w = 400, h = 460 },
-  less = { w = 440, h = 128 },
-  compass = { w = 240, h = 264 },
+  simple = { w = 440, h = 128 },
   minimized = { w = 240, h = 40 },
 }
 
@@ -30,7 +29,7 @@ local CTRL_INSET = 10
 local CTRL_LEVEL = 20 -- above every content layer
 local W_MODE, W_EDIT, W_MIN, W_EXPAND, W_CLOSE, W_GRIP = 60, 36, 36, 56, 22, 44
 
-local MODE_LABEL = { full = "Full", less = "Less", compass = "Compass" }
+local MODE_LABEL = { full = "Full", simple = "Simple" }
 NS.MODE_LABEL = MODE_LABEL
 
 local layers = {}
@@ -64,7 +63,7 @@ local function Solid(parent, r, g, b, a)
   return f
 end
 
--- One arrow per compass face. Interface\Minimap\MinimapArrow points up at 0 rad
+-- One arrow per direction dial. Interface\Minimap\MinimapArrow points up at 0 rad
 -- and rotates around its center via Texture:SetRotation (CCW positive).
 -- The frame stays anchored at face CENTER and is never moved.
 -- If the texture fails to load or SetRotation is missing, a single "^" glyph
@@ -134,7 +133,7 @@ end
 
 -- File texture: vertex-tint only. NS.SetVertexColor would SetColorTexture
 -- a white solid and wipe MinimapArrow.
-local function TintCompassArrow(n, th)
+local function TintDialArrow(n, th)
   if not n or not th or not th.chromeHi then return end
   local c = th.chromeHi
   local r = c.r or 0.90
@@ -256,7 +255,7 @@ local function CurrentMode()
 end
 
 local function NextModeLabel(step)
-  local modes = NS.MODES or { "full", "less", "compass" }
+  local modes = NS.MODES or { "full", "simple" }
   local cur = CurrentMode()
   local i, n = 1, 1
   for n = 1, #modes do
@@ -495,7 +494,7 @@ function NS.BuildUI()
   chromeControls.btnMinimize = btnMinimize
 
   local btnEdit = ChipButton(chromeControls, "Edit", W_EDIT, CTRL_H, function()
-    return "Edit Mode", "Open the theme picker (themes apply to Full, Less, and Compass)."
+    return "Edit Mode", "Open the theme picker (themes apply to Full and Simple)."
   end)
   btnEdit:SetFrameLevel(ctrlLevel)
   btnEdit:SetPoint("RIGHT", btnMinimize, "LEFT", -CTRL_GAP, 0)
@@ -618,34 +617,34 @@ function NS.BuildUI()
   trackerRow.count:SetPoint("TOPLEFT", trackerRow.text, "BOTTOMLEFT", 0, -2)
   layers.trackerRow = trackerRow
 
-  -- Right column: large compass
-  local compassLarge = CreateFrame("Frame", nil, art)
-  compassLarge:SetSize(130, 130)
-  compassLarge:SetPoint("TOPRIGHT", art, "TOPRIGHT", -28, -82)
-  compassLarge.face = Solid(compassLarge, 0.25, 0.20, 0.12, 1)
-  compassLarge.face:SetAllPoints()
-  compassLarge.ring = Solid(compassLarge, 0.72, 0.55, 0.22, 1)
-  compassLarge.ring:SetPoint("TOPLEFT", -4, 4)
-  compassLarge.ring:SetPoint("BOTTOMRIGHT", 4, -4)
-  compassLarge.ring:SetFrameLevel(compassLarge:GetFrameLevel() - 1)
-  compassLarge.N = FS(compassLarge, nil, 12, "OUTLINE")
-  compassLarge.N:SetPoint("TOP", 0, -8)
-  compassLarge.N:SetText("N")
-  compassLarge.E = FS(compassLarge, nil, 12, "OUTLINE")
-  compassLarge.E:SetPoint("RIGHT", -8, 0)
-  compassLarge.E:SetText("E")
-  compassLarge.S = FS(compassLarge, nil, 12, "OUTLINE")
-  compassLarge.S:SetPoint("BOTTOM", 0, 8)
-  compassLarge.S:SetText("S")
-  compassLarge.W = FS(compassLarge, nil, 12, "OUTLINE")
-  compassLarge.W:SetPoint("LEFT", 8, 0)
-  compassLarge.W:SetText("W")
-  compassLarge.needle = MakeArrow(compassLarge, 70)
-  layers.compassLarge = compassLarge
+  -- Right column: large direction dial
+  local dialLarge = CreateFrame("Frame", nil, art)
+  dialLarge:SetSize(130, 130)
+  dialLarge:SetPoint("TOPRIGHT", art, "TOPRIGHT", -28, -82)
+  dialLarge.face = Solid(dialLarge, 0.25, 0.20, 0.12, 1)
+  dialLarge.face:SetAllPoints()
+  dialLarge.ring = Solid(dialLarge, 0.72, 0.55, 0.22, 1)
+  dialLarge.ring:SetPoint("TOPLEFT", -4, 4)
+  dialLarge.ring:SetPoint("BOTTOMRIGHT", 4, -4)
+  dialLarge.ring:SetFrameLevel(dialLarge:GetFrameLevel() - 1)
+  dialLarge.N = FS(dialLarge, nil, 12, "OUTLINE")
+  dialLarge.N:SetPoint("TOP", 0, -8)
+  dialLarge.N:SetText("N")
+  dialLarge.E = FS(dialLarge, nil, 12, "OUTLINE")
+  dialLarge.E:SetPoint("RIGHT", -8, 0)
+  dialLarge.E:SetText("E")
+  dialLarge.S = FS(dialLarge, nil, 12, "OUTLINE")
+  dialLarge.S:SetPoint("BOTTOM", 0, 8)
+  dialLarge.S:SetText("S")
+  dialLarge.W = FS(dialLarge, nil, 12, "OUTLINE")
+  dialLarge.W:SetPoint("LEFT", 8, 0)
+  dialLarge.W:SetText("W")
+  dialLarge.needle = MakeArrow(dialLarge, 70)
+  layers.dialLarge = dialLarge
 
   local statusBlock = CreateFrame("Frame", nil, art)
   statusBlock:SetSize(130, 100)
-  statusBlock:SetPoint("TOP", compassLarge, "BOTTOM", 0, -12)
+  statusBlock:SetPoint("TOP", dialLarge, "BOTTOM", 0, -12)
   statusBlock.label = FS(statusBlock, nil, 10)
   statusBlock.label:SetPoint("TOPLEFT", 0, 0)
   statusBlock.label:SetText("Status")
@@ -707,50 +706,50 @@ function NS.BuildUI()
   bottomJewel:SetPoint("BOTTOM", art, "BOTTOM", 0, 6)
   layers.bottomJewel = bottomJewel
 
-  -- ===== LESS mode layers =====
-  local lessCompass = CreateFrame("Frame", nil, art)
-  lessCompass:SetSize(70, 70)
-  lessCompass:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", 16, 14)
-  lessCompass.face = Solid(lessCompass, 0.25, 0.20, 0.12, 1)
-  lessCompass.face:SetAllPoints()
-  lessCompass.ring = Solid(lessCompass, 0.72, 0.55, 0.22, 1)
-  lessCompass.ring:SetPoint("TOPLEFT", -3, 3)
-  lessCompass.ring:SetPoint("BOTTOMRIGHT", 3, -3)
-  lessCompass.ring:SetFrameLevel(lessCompass:GetFrameLevel() - 1)
-  lessCompass.needle = MakeArrow(lessCompass, 40)
-  layers.lessCompass = lessCompass
+  -- ===== SIMPLE mode layers =====
+  local simpleDial = CreateFrame("Frame", nil, art)
+  simpleDial:SetSize(70, 70)
+  simpleDial:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", 16, 14)
+  simpleDial.face = Solid(simpleDial, 0.25, 0.20, 0.12, 1)
+  simpleDial.face:SetAllPoints()
+  simpleDial.ring = Solid(simpleDial, 0.72, 0.55, 0.22, 1)
+  simpleDial.ring:SetPoint("TOPLEFT", -3, 3)
+  simpleDial.ring:SetPoint("BOTTOMRIGHT", 3, -3)
+  simpleDial.ring:SetFrameLevel(simpleDial:GetFrameLevel() - 1)
+  simpleDial.needle = MakeArrow(simpleDial, 40)
+  layers.simpleDial = simpleDial
 
-  local lessTitle = CreateFrame("Frame", nil, art)
-  lessTitle:SetSize(250, 36)
-  lessTitle:SetPoint("TOPLEFT", lessCompass, "TOPRIGHT", 12, -4)
-  lessTitle.text = FS(lessTitle, nil, 15, "OUTLINE")
-  lessTitle.text:SetPoint("TOPLEFT")
-  lessTitle.text:SetWidth(240)
-  lessTitle.sub = FS(lessTitle, nil, 11)
-  lessTitle.sub:SetPoint("TOPLEFT", lessTitle.text, "BOTTOMLEFT", 0, -1)
-  lessTitle.sub:SetWidth(240)
-  lessTitle.sub:SetText("")
-  layers.lessTitle = lessTitle
+  local simpleTitle = CreateFrame("Frame", nil, art)
+  simpleTitle:SetSize(250, 36)
+  simpleTitle:SetPoint("TOPLEFT", simpleDial, "TOPRIGHT", 12, -4)
+  simpleTitle.text = FS(simpleTitle, nil, 15, "OUTLINE")
+  simpleTitle.text:SetPoint("TOPLEFT")
+  simpleTitle.text:SetWidth(240)
+  simpleTitle.sub = FS(simpleTitle, nil, 11)
+  simpleTitle.sub:SetPoint("TOPLEFT", simpleTitle.text, "BOTTOMLEFT", 0, -1)
+  simpleTitle.sub:SetWidth(240)
+  simpleTitle.sub:SetText("")
+  layers.simpleTitle = simpleTitle
 
-  local lessDistance = CreateFrame("Frame", nil, art)
-  lessDistance:SetSize(220, 18)
-  lessDistance:SetPoint("TOPLEFT", lessTitle, "BOTTOMLEFT", 0, -2)
-  lessDistance.diamondL = Solid(lessDistance, 0.90, 0.78, 0.40, 1)
-  lessDistance.diamondL:SetSize(8, 8)
-  lessDistance.diamondL:SetPoint("LEFT", 40, 0)
-  lessDistance.text = FS(lessDistance, nil, 13, "OUTLINE")
-  lessDistance.text:SetPoint("LEFT", lessDistance.diamondL, "RIGHT", 8, 0)
-  lessDistance.diamondR = Solid(lessDistance, 0.90, 0.78, 0.40, 1)
-  lessDistance.diamondR:SetSize(8, 8)
-  lessDistance.diamondR:SetPoint("LEFT", lessDistance.text, "RIGHT", 8, 0)
-  layers.lessDistance = lessDistance
+  local simpleDistance = CreateFrame("Frame", nil, art)
+  simpleDistance:SetSize(220, 18)
+  simpleDistance:SetPoint("TOPLEFT", simpleTitle, "BOTTOMLEFT", 0, -2)
+  simpleDistance.diamondL = Solid(simpleDistance, 0.90, 0.78, 0.40, 1)
+  simpleDistance.diamondL:SetSize(8, 8)
+  simpleDistance.diamondL:SetPoint("LEFT", 40, 0)
+  simpleDistance.text = FS(simpleDistance, nil, 13, "OUTLINE")
+  simpleDistance.text:SetPoint("LEFT", simpleDistance.diamondL, "RIGHT", 8, 0)
+  simpleDistance.diamondR = Solid(simpleDistance, 0.90, 0.78, 0.40, 1)
+  simpleDistance.diamondR:SetSize(8, 8)
+  simpleDistance.diamondR:SetPoint("LEFT", simpleDistance.text, "RIGHT", 8, 0)
+  layers.simpleDistance = simpleDistance
 
-  local lessProgress = CreateFrame("Frame", nil, art)
-  lessProgress:SetSize(220, 12)
-  lessProgress:SetPoint("TOPLEFT", lessDistance, "BOTTOMLEFT", 0, -6)
-  lessProgress.bar = MakeProgressBar(lessProgress, PROGRESS_W)
-  lessProgress.bar:SetPoint("LEFT", 0, 0)
-  layers.lessProgress = lessProgress
+  local simpleProgress = CreateFrame("Frame", nil, art)
+  simpleProgress:SetSize(220, 12)
+  simpleProgress:SetPoint("TOPLEFT", simpleDistance, "BOTTOMLEFT", 0, -6)
+  simpleProgress.bar = MakeProgressBar(simpleProgress, PROGRESS_W)
+  simpleProgress.bar:SetPoint("LEFT", 0, 0)
+  layers.simpleProgress = simpleProgress
 
   local modeChrome = CreateFrame("Frame", nil, art)
   modeChrome:SetSize(56, 56)
@@ -766,7 +765,7 @@ function NS.BuildUI()
   modeChrome.chevron = FS(modeChrome, nil, 14, "OUTLINE")
   modeChrome.chevron:SetPoint("CENTER", 0, -10)
   modeChrome.chevron:SetText("v")
-  -- Secondary mode control (Less only). Primary is chromeControls.btnMode.
+  -- Secondary mode control (Simple only). Primary is chromeControls.btnMode.
   modeChrome:EnableMouse(true)
   modeChrome:SetScript("OnMouseUp", function() NS.CycleMode(1) end)
   modeChrome.getTip = function()
@@ -776,48 +775,6 @@ function NS.BuildUI()
   modeChrome:SetScript("OnLeave", HideTip)
   layers.modeChrome = modeChrome
 
-  -- ===== COMPASS mode layers =====
-  local compassOnly = CreateFrame("Frame", nil, art)
-  compassOnly:SetSize(160, 160)
-  compassOnly:SetPoint("CENTER", art, "CENTER", 0, -6)
-  compassOnly.face = Solid(compassOnly, 0.30, 0.25, 0.18, 1)
-  compassOnly.face:SetAllPoints()
-  compassOnly.ring = Solid(compassOnly, 0.72, 0.55, 0.22, 1)
-  compassOnly.ring:SetPoint("TOPLEFT", -5, 5)
-  compassOnly.ring:SetPoint("BOTTOMRIGHT", 5, -5)
-  compassOnly.ring:SetFrameLevel(compassOnly:GetFrameLevel() - 1)
-  compassOnly.N = FS(compassOnly, nil, 14, "OUTLINE")
-  compassOnly.N:SetPoint("TOP", 0, -10)
-  compassOnly.N:SetText("N")
-  compassOnly.E = FS(compassOnly, nil, 14, "OUTLINE")
-  compassOnly.E:SetPoint("RIGHT", -10, 0)
-  compassOnly.E:SetText("E")
-  compassOnly.S = FS(compassOnly, nil, 14, "OUTLINE")
-  compassOnly.S:SetPoint("BOTTOM", 0, 28)
-  compassOnly.S:SetText("S")
-  compassOnly.W = FS(compassOnly, nil, 14, "OUTLINE")
-  compassOnly.W:SetPoint("LEFT", 10, 0)
-  compassOnly.W:SetText("W")
-  compassOnly.needle = MakeArrow(compassOnly, 84)
-  compassOnly.dist = FS(compassOnly, nil, 13, "OUTLINE")
-  compassOnly.dist:SetPoint("BOTTOM", 0, 12)
-  layers.compassOnlyFace = compassOnly
-
-  local compassPlate = CreateFrame("Frame", nil, art)
-  compassPlate:SetSize(100, 24)
-  compassPlate:SetPoint("BOTTOM", art, "BOTTOM", 0, 14)
-  compassPlate.bg = Solid(compassPlate, 0.72, 0.55, 0.22, 1)
-  compassPlate.bg:SetAllPoints()
-  compassPlate.label = FS(compassPlate, nil, 12, "OUTLINE")
-  compassPlate.label:SetPoint("CENTER")
-  compassPlate.label:SetText("Compass")
-  layers.compassPlate = compassPlate
-
-  -- Crest for compass mode top
-  local compassCrest = Solid(art, 0.90, 0.78, 0.40, 1)
-  compassCrest:SetSize(36, 16)
-  compassCrest:SetPoint("TOP", art, "TOP", 0, 6)
-  layers.compassCrest = compassCrest
 
   -- Minimized restore chip (click = Expand; drag = move when unlocked).
   -- The Expand + Close buttons on chromeControls stay visible next to it.
@@ -856,21 +813,17 @@ end
 -- Window controls are NOT in these lists: they live on chromeControls,
 -- which is shown in every mode by LayoutControls().
 local FULL_LAYERS = {
-  "routeRow", "stepRow", "trackerRow", "compassLarge", "statusBlock",
+  "routeRow", "stepRow", "trackerRow", "dialLarge", "statusBlock",
   "askButton", "divider", "bottomJewel", "emblem", "title",
 }
-local LESS_LAYERS = {
-  "lessCompass", "lessTitle", "lessDistance", "lessProgress", "modeChrome",
-}
-local COMPASS_LAYERS = {
-  "compassOnlyFace", "compassPlate", "compassCrest",
+local SIMPLE_LAYERS = {
+  "simpleDial", "simpleTitle", "simpleDistance", "simpleProgress", "modeChrome",
 }
 local ALWAYS = {
   "chromeOuter", "chromeInner", "cornerTL", "cornerTR", "cornerBL", "cornerBR",
 }
 NS.FULL_LAYERS = FULL_LAYERS
-NS.LESS_LAYERS = LESS_LAYERS
-NS.COMPASS_LAYERS = COMPASS_LAYERS
+NS.SIMPLE_LAYERS = SIMPLE_LAYERS
 
 -- Never hidden by HideAllContent (chrome + persistent controls).
 local PERSIST = {
@@ -965,7 +918,7 @@ local function LayoutControls(minimized)
   PaintGrip()
 end
 
---- Single layout pass for every state. Compass / Less / minimized never hide
+--- Single layout pass for every state. Simple / minimized never hide
 --- chromeControls and never Hide() the root.
 local function ApplyLayout()
   if not NS.root or not layers.art then return end
@@ -979,13 +932,11 @@ local function ApplyLayout()
     layers.miniBar:Show()
     ResizeForMode("minimized")
   else
-    if mode == "less" then
-      ShowList(LESS_LAYERS)
+    if mode == "simple" then
+      ShowList(SIMPLE_LAYERS)
       if layers.modeChrome and layers.modeChrome.label then
-        layers.modeChrome.label:SetText("Less")
+        layers.modeChrome.label:SetText("Simple")
       end
-    elseif mode == "compass" then
-      ShowList(COMPASS_LAYERS)
     else
       ShowList(FULL_LAYERS)
     end
@@ -1097,14 +1048,14 @@ function NS.ApplyTheme()
     set(layers.trackerRow.text, th.text)
     set(layers.trackerRow.count, th.text)
   end
-  if layers.compassLarge then
-    set(layers.compassLarge.face.tex, th.panel)
-    set(layers.compassLarge.ring.tex, th.chrome)
-    TintCompassArrow(layers.compassLarge.needle, th)
-    set(layers.compassLarge.N, th.title)
-    set(layers.compassLarge.E, th.title)
-    set(layers.compassLarge.S, th.title)
-    set(layers.compassLarge.W, th.title)
+  if layers.dialLarge then
+    set(layers.dialLarge.face.tex, th.panel)
+    set(layers.dialLarge.ring.tex, th.chrome)
+    TintDialArrow(layers.dialLarge.needle, th)
+    set(layers.dialLarge.N, th.title)
+    set(layers.dialLarge.E, th.title)
+    set(layers.dialLarge.S, th.title)
+    set(layers.dialLarge.W, th.title)
   end
   if layers.statusBlock then
     set(layers.statusBlock.label, th.title)
@@ -1121,30 +1072,30 @@ function NS.ApplyTheme()
     set(layers.askButton.text, th.text)
   end
 
-  -- Less mode
-  if layers.lessCompass then
-    set(layers.lessCompass.face.tex, th.panel)
-    set(layers.lessCompass.ring.tex, th.chrome)
-    TintCompassArrow(layers.lessCompass.needle, th)
+  -- Simple mode
+  if layers.simpleDial then
+    set(layers.simpleDial.face.tex, th.panel)
+    set(layers.simpleDial.ring.tex, th.chrome)
+    TintDialArrow(layers.simpleDial.needle, th)
   end
-  if layers.lessTitle then
-    set(layers.lessTitle.text, th.text)
-    if layers.lessTitle.sub then
+  if layers.simpleTitle then
+    set(layers.simpleTitle.text, th.text)
+    if layers.simpleTitle.sub then
       local qtype = NS.liveRoute and NS.liveRoute.questType
       if qtype == "Dungeon" then
-        set(layers.lessTitle.sub, th.accent)
+        set(layers.simpleTitle.sub, th.accent)
       else
-        set(layers.lessTitle.sub, th.muted)
+        set(layers.simpleTitle.sub, th.muted)
       end
     end
   end
-  if layers.lessDistance then
-    set(layers.lessDistance.text, th.text)
-    set(layers.lessDistance.diamondL.tex, th.chromeHi)
-    set(layers.lessDistance.diamondR.tex, th.chromeHi)
+  if layers.simpleDistance then
+    set(layers.simpleDistance.text, th.text)
+    set(layers.simpleDistance.diamondL.tex, th.chromeHi)
+    set(layers.simpleDistance.diamondR.tex, th.chromeHi)
   end
-  if layers.lessProgress then
-    layers.lessProgress.bar:SetProgress(RouteFrac(NS.liveRoute or NS.MockRoute), th.accent)
+  if layers.simpleProgress then
+    layers.simpleProgress.bar:SetProgress(RouteFrac(NS.liveRoute or NS.MockRoute), th.accent)
   end
   if layers.modeChrome then
     set(layers.modeChrome.bg.tex, th.chrome)
@@ -1153,24 +1104,6 @@ function NS.ApplyTheme()
     set(layers.modeChrome.chevron, th.chromeHi)
   end
 
-  -- Compass mode
-  if layers.compassOnlyFace then
-    set(layers.compassOnlyFace.face.tex, th.panel)
-    set(layers.compassOnlyFace.ring.tex, th.chrome)
-    TintCompassArrow(layers.compassOnlyFace.needle, th)
-    set(layers.compassOnlyFace.N, th.title)
-    set(layers.compassOnlyFace.E, th.title)
-    set(layers.compassOnlyFace.S, th.title)
-    set(layers.compassOnlyFace.W, th.title)
-    set(layers.compassOnlyFace.dist, th.text)
-  end
-  if layers.compassPlate then
-    set(layers.compassPlate.bg.tex, th.chrome)
-    set(layers.compassPlate.label, th.title)
-  end
-  if layers.compassCrest then
-    set(layers.compassCrest.tex, th.chromeHi)
-  end
   if layers.miniBar then
     set(layers.miniBar.bg, th.chrome)
     set(layers.miniBar.text, th.title)
@@ -1187,17 +1120,6 @@ local function CurrentLocationLabel(zone)
   return "Current location: " .. zone
 end
 
--- Live with no objective coords must not stay blank or stuck on mock distance.
-local function CompassDistLine(m)
-  if not m then return "?" end
-  local step = m.step or {}
-  if m.source == "live" and not m.hasCoords then
-    local zone = step.zone
-    if type(zone) ~= "string" or zone == "" or zone == "?" then zone = "?" end
-    return "Current location: " .. zone .. " · ?"
-  end
-  return step.distance or "?"
-end
 
 local function LiveSubtitle(m)
   if not m or m.source ~= "live" then return "" end
@@ -1315,28 +1237,28 @@ local function PaintQuestMeta(m)
     end
   end
   PaintRewardIcons(m)
-  if layers.lessTitle and layers.lessTitle.sub then
-    layers.lessTitle.sub:SetText(LiveSubtitle(m))
+  if layers.simpleTitle and layers.simpleTitle.sub then
+    layers.simpleTitle.sub:SetText(LiveSubtitle(m))
     if qtype == "Dungeon" then
-      set(layers.lessTitle.sub, th.accent)
+      set(layers.simpleTitle.sub, th.accent)
     else
-      set(layers.lessTitle.sub, th.muted)
+      set(layers.simpleTitle.sub, th.muted)
     end
   end
 end
 
 local function PaintNeedles(m)
-  if not m or not NS.UpdateCompassNeedles then return end
+  if not m or not NS.UpdateDialNeedles then return end
   if m.hasCoords and m.bearingDeg ~= nil then
-    NS.UpdateCompassNeedles(m.bearingDeg)
+    NS.UpdateDialNeedles(m.bearingDeg)
   elseif m.source == "live" then
     -- No live bearing: hide the arrow. Do not aim it north.
-    NS.UpdateCompassNeedles(nil)
+    NS.UpdateDialNeedles(nil)
   elseif m.bearingDeg ~= nil then
     -- Mock (and any non-live route) may still point from bearingDeg.
-    NS.UpdateCompassNeedles(m.bearingDeg)
+    NS.UpdateDialNeedles(m.bearingDeg)
   else
-    NS.UpdateCompassNeedles(nil)
+    NS.UpdateDialNeedles(nil)
   end
 end
 
@@ -1371,13 +1293,10 @@ function NS.ApplyRoute(m)
     layers.statusBlock.count:SetText(status.count or "")
   end
 
-  if layers.lessTitle then layers.lessTitle.text:SetText(step.title or "") end
-  if layers.lessDistance then layers.lessDistance.text:SetText(step.distance or "?") end
-  if layers.lessProgress then
-    layers.lessProgress.bar:SetProgress(RouteFrac(m), NS.GetTheme().accent)
-  end
-  if layers.compassOnlyFace then
-    layers.compassOnlyFace.dist:SetText(CompassDistLine(m))
+  if layers.simpleTitle then layers.simpleTitle.text:SetText(step.title or "") end
+  if layers.simpleDistance then layers.simpleDistance.text:SetText(step.distance or "?") end
+  if layers.simpleProgress then
+    layers.simpleProgress.bar:SetProgress(RouteFrac(m), NS.GetTheme().accent)
   end
 
   PaintNeedles(m)
@@ -1387,7 +1306,7 @@ function NS.RefreshMock()
   NS.ApplyRoute(NS.MockRoute)
 end
 
---- Soft update: distance / bearing / zone / compass only (ticker path).
+--- Soft update: distance / bearing / zone / arrow only (ticker path).
 function NS.RefreshRouteUI(m)
   m = m or NS.liveRoute
   if not m or not layers.stepRow then return end
@@ -1396,9 +1315,6 @@ function NS.RefreshRouteUI(m)
   layers.stepRow.bearing:SetText(step.bearing or "")
   layers.stepRow.approx:SetText("· " .. (step.approx or ""))
   layers.stepRow.zone:SetText(CurrentLocationLabel(step.zone))
-  if layers.lessDistance then layers.lessDistance.text:SetText(step.distance or "?") end
-  if layers.compassOnlyFace then
-    layers.compassOnlyFace.dist:SetText(CompassDistLine(m))
-  end
+  if layers.simpleDistance then layers.simpleDistance.text:SetText(step.distance or "?") end
   PaintNeedles(m)
 end

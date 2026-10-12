@@ -1,7 +1,8 @@
 local _, NS = ...
 QuestGrind = NS
+NS.VERSION = "0.2.14"
 
-NS.MODES = { "full", "less", "compass" }
+NS.MODES = { "full", "simple" }
 NS.db = nil
 NS.uiReady = false
 
@@ -59,6 +60,9 @@ function NS.CopyDefaults()
   end
   if NS.db.scale < 0.6 then NS.db.scale = 0.6 end
   if NS.db.scale > 1.6 then NS.db.scale = 1.6 end
+  -- 0.2.14 migration: saved mode "compass" (removed) -> full, "less" (renamed) -> simple.
+  if NS.db.mode == "compass" then NS.db.mode = "full" end
+  if NS.db.mode == "less" then NS.db.mode = "simple" end
   local known = false
   local i
   for i = 1, #NS.MODES do
@@ -128,9 +132,10 @@ function NS.Refresh()
   return NS.liveRoute
 end
 
-local MODE_NAMES = { full = "Full", less = "Less", compass = "Compass" }
+local MODE_NAMES = { full = "Full", simple = "Simple" }
+local MODE_ALIAS = { less = "simple" } -- 0.2.14: old name still accepted
 
---- Cycle Full -> Less -> Compass -> Full (step = -1 goes backwards).
+--- Cycle Full -> Simple -> Full (step = -1 goes backwards).
 --- Always un-minimizes and never hides the HUD, so the player can't get stuck.
 function NS.CycleMode(step)
   if not NS.db then NS.CopyDefaults() end
@@ -149,8 +154,9 @@ end
 function NS.SetMode(mode)
   if not NS.db then NS.CopyDefaults() end
   mode = string.lower(tostring(mode or "full"))
+  mode = MODE_ALIAS[mode] or mode
   if not MODE_NAMES[mode] then
-    Print("unknown mode: " .. tostring(mode) .. " (use full, less, or compass).")
+    Print("unknown mode: " .. tostring(mode) .. " (use full or simple).")
     return
   end
   NS.db.mode = mode
@@ -172,7 +178,7 @@ function NS.SetTheme(id)
   NS.db.theme = id
   if NS.ApplyTheme then NS.ApplyTheme() end
   if NS.RefreshEditMode then NS.RefreshEditMode() end
-  Print("theme " .. id .. " (applies to Full, Less, and Compass).")
+  Print("theme " .. id .. " (applies to Full and Simple).")
 end
 
 function NS.ToggleMinimize()
@@ -254,7 +260,7 @@ local function SlashHandler(msg)
     else
       NS.CycleMode(1)
     end
-  elseif cmd == "full" or cmd == "less" or cmd == "compass" then
+  elseif cmd == "full" or cmd == "simple" or cmd == "less" then
     NS.SetMode(cmd)
   elseif cmd == "theme" then
     if rest and rest ~= "" then
@@ -289,8 +295,8 @@ local function SlashHandler(msg)
   elseif cmd == "prev" then
     if NS.PrevQuest then NS.PrevQuest() end
   else
-    Print("commands: show | hide | mode [full|less|compass] | theme <id> | edit | lock | ask | min | expand | refresh | mock | next | prev | reset | help")
-    Print("HUD buttons: Move (drag) | Full/Less/Compass (cycle view mode) | Edit (themes) | Min / Expand | X (hide; /qg show restores). Full mode: Ask SI.")
+    Print("commands: show | hide | mode [full|simple] | theme <id> | edit | lock | ask | min | expand | refresh | mock | next | prev | reset | help")
+    Print("HUD buttons: Move (drag) | Full/Simple (cycle view mode) | Edit (themes) | Min / Expand | X (hide; /qg show restores). Full mode: Ask SI.")
   end
 end
 
@@ -321,7 +327,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if NS.ApplyLock then NS.ApplyLock() end
     NS.Refresh()
     NS.uiReady = true
-    Print("ready (0.2.6) — HUD buttons: Full/Less/Compass, Edit, Min, X. /qg help. /qg show if hidden. Ask SI stubs (P2).")
+    Print("ready (" .. (NS.VERSION or "?") .. ") — HUD buttons: Full/Simple, Edit, Min, X. /qg help. /qg show if hidden. Ask SI stubs (P2).")
   elseif event == "UNIT_QUEST_LOG_CHANGED" then
     if (arg1 == "player" or arg1 == nil) and NS.uiReady and not NS._refreshing then
       NS.Refresh()

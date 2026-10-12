@@ -1,6 +1,6 @@
 local _, NS = ...
 
--- P1: distance/text ticker (~0.25s) + 0.2.6 per-frame compass animator.
+-- P1: distance/text ticker (~0.25s) + 0.2.6 per-frame arrow animator.
 -- The arrow re-reads facing and player position every frame (position at
 -- ~20 Hz) and eases toward the target angle, so turning is smooth instead of
 -- stepping every 0.25s. Forever-safe.
@@ -29,7 +29,7 @@ local function SafeRegister(frame, event)
   return ok
 end
 
--- Bearing convention (0.2.5): bearingDeg is a compass bearing, degrees
+-- Bearing convention (0.2.5): bearingDeg is a map bearing, degrees
 -- CLOCKWISE from north (E = 90), for both coord kinds:
 --   map   : normalized x grows east, y grows south  -> atan2(dx, -dy)
 --   world : UnitPosition order is (y, x); worldX grows north, worldY grows
@@ -45,7 +45,7 @@ function NS.BearingFromDelta(dx, dy, kind)
   return deg
 end
 
--- Screen rotation for a compass arrow, radians COUNTER-CLOCKWISE from up
+-- Screen rotation for a direction arrow, radians COUNTER-CLOCKWISE from up
 -- (Texture:SetRotation convention). GetPlayerFacing is radians CCW from north,
 -- bearing is CW from north, so the target's CCW angle is -bearing and the
 -- arrow turns by (-bearing - facing). Without a facing API the arrow sits on
@@ -272,15 +272,11 @@ local function EachNeedle()
   local list = {}
   local layers = NS.layers
   if not layers then return list end
-  -- Compass-only face is included even when Full/Less layers are hidden.
-  if layers.compassOnlyFace and layers.compassOnlyFace.needle then
-    list[#list + 1] = layers.compassOnlyFace.needle
+  if layers.dialLarge and layers.dialLarge.needle then
+    list[#list + 1] = layers.dialLarge.needle
   end
-  if layers.compassLarge and layers.compassLarge.needle then
-    list[#list + 1] = layers.compassLarge.needle
-  end
-  if layers.lessCompass and layers.lessCompass.needle then
-    list[#list + 1] = layers.lessCompass.needle
+  if layers.simpleDial and layers.simpleDial.needle then
+    list[#list + 1] = layers.simpleDial.needle
   end
   return list
 end
@@ -297,7 +293,7 @@ local function ApplyNeedleRadians(rel)
   end
 end
 
-function NS.UpdateCompassNeedles(bearingDeg)
+function NS.UpdateDialNeedles(bearingDeg)
   local needles = EachNeedle()
   local i
   if bearingDeg == nil then
@@ -316,14 +312,14 @@ function NS.UpdateCompassNeedles(bearingDeg)
   end
   -- Without the animator (or on first show) aim immediately; otherwise the
   -- animator eases toward the new target next frame.
-  if firstShow or not NS._compassAnimating then
+  if firstShow or not NS._dialAnimating then
     local rel = NS.ArrowRadians(bearingDeg) or 0
     NS._needleShown = rel
     ApplyNeedleRadians(rel)
   end
 end
 
--- ===== 0.2.6 compass animator =====
+-- ===== 0.2.6 arrow animator =====
 -- Exponential ease toward the facing-relative target. SMOOTH_K = 1/time-constant:
 -- 16 -> ~90% of a turn caught up in ~0.14s. Big jumps (new quest) snap.
 local SMOOTH_K = 16
@@ -370,7 +366,7 @@ local function AnyNeedleVisible()
   return false
 end
 
-local function AnimateCompass(elapsed)
+local function AnimateDial(elapsed)
   if not needlesVisible or NS._needleBearing == nil then return end
   if not AnyNeedleVisible() then return end
   elapsed = elapsed or 0
@@ -402,27 +398,27 @@ local function AnimateCompass(elapsed)
 end
 
 local animFrame
-function NS.StartCompassAnimator()
+function NS.StartDialAnimator()
   if animFrame or type(CreateFrame) ~= "function" then return end
-  animFrame = CreateFrame("Frame", "QuestGrindCompassAnim")
+  animFrame = CreateFrame("Frame", "QuestGrindDialAnim")
   animFrame:SetScript("OnUpdate", function(_, elapsed)
-    local ok, err = pcall(AnimateCompass, elapsed)
+    local ok, err = pcall(AnimateDial, elapsed)
     if not ok then
       -- Never spam: stop animating and fall back to the 0.25s ticker aim.
-      NS._compassAnimating = false
+      NS._dialAnimating = false
       animFrame:SetScript("OnUpdate", nil)
-      if NS.Print then NS.Print("compass animator off: " .. tostring(err)) end
+      if NS.Print then NS.Print("arrow animator off: " .. tostring(err)) end
     end
   end)
-  NS._compassAnimating = true
+  NS._dialAnimating = true
 end
 
-function NS.StopCompassAnimator()
+function NS.StopDialAnimator()
   if animFrame then
     animFrame:SetScript("OnUpdate", nil)
     animFrame = nil
   end
-  NS._compassAnimating = false
+  NS._dialAnimating = false
 end
 
 function NS.TickRoute()
@@ -455,15 +451,15 @@ function NS.TickRoute()
         NS.RefreshRouteUI(route)
       end
       if route.hasCoords and route.bearingDeg ~= nil then
-        NS.UpdateCompassNeedles(route.bearingDeg)
+        NS.UpdateDialNeedles(route.bearingDeg)
       elseif route.source == "live" then
         -- No coords: hide the arrow. Do not aim it north.
-        NS.UpdateCompassNeedles(nil)
+        NS.UpdateDialNeedles(nil)
       elseif route.bearingDeg ~= nil then
         -- Mock route with bearingDeg may still point.
-        NS.UpdateCompassNeedles(route.bearingDeg)
+        NS.UpdateDialNeedles(route.bearingDeg)
       else
-        NS.UpdateCompassNeedles(nil)
+        NS.UpdateDialNeedles(nil)
       end
       if NS.UpdateMapPins then
         NS.UpdateMapPins(route)
@@ -487,7 +483,7 @@ function NS.TickRoute()
 end
 
 function NS.StartRouteTicker()
-  if NS.StartCompassAnimator then NS.StartCompassAnimator() end
+  if NS.StartDialAnimator then NS.StartDialAnimator() end
   if ticker or updateFrame then return end
   if C_Timer and type(C_Timer.NewTicker) == "function" then
     ticker = C_Timer.NewTicker(TICK, function()
@@ -507,7 +503,7 @@ function NS.StartRouteTicker()
 end
 
 function NS.StopRouteTicker()
-  if NS.StopCompassAnimator then NS.StopCompassAnimator() end
+  if NS.StopDialAnimator then NS.StopDialAnimator() end
   if ticker then
     if type(ticker.Cancel) == "function" then
       pcall(ticker.Cancel, ticker)
