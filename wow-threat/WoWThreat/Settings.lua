@@ -40,9 +40,15 @@ local function Register(key, kind, name, default)
   local variable = "WoWThreat_" .. key
   local vtype = VarType(kind)
   local function get() return ToSetting(key, NS.GetOption(key)) end
+  -- 1.3.0: the write is deferred one frame (C_Timer.After(0)) so none of our
+  -- code runs inside Blizzard's Settings call stack.
   local function set(v)
     if syncing then return end
-    NS.SetOption(key, FromSetting(key, v), "settings")
+    if C_Timer and type(C_Timer.After) == "function" then
+      C_Timer.After(0, function() NS.SetOption(key, FromSetting(key, v), "settings") end)
+    else
+      NS.SetOption(key, FromSetting(key, v), "settings")
+    end
   end
   local setting
 
@@ -118,7 +124,7 @@ local COLUMN_CHOICES = { { "auto", "Auto" }, { "1", "1" }, { "2", "2" }, { "3", 
 local FORMAT_CHOICES = { { "short", "Short (12.3k)" }, { "full", "Full (12345)" } }
 local THEME_CHOICES = { { "auto", "Auto (by class)" }, { "emberhall", "Ember Hall" }, { "ironforged", "Ironforged" },
   { "ursinegrove", "Ursine Grove" }, { "dawnward", "Dawnward" }, { "voidbound", "Voidbound" } }
-local STYLE_CHOICES = { { "fireplace", "Fireplace" }, { "classic", "Classic" }, { "castbar", "Castbar fire" }, { "off", "Off (plain bar)" } }
+local STYLE_CHOICES = { { "fireplace", "Fireplace" }, { "classic", "Classic" }, { "castbar", "Castbar fire" }, { "gem", "Gem" }, { "off", "Off (plain bar)" } }
 NS.THEME_CHOICE_LIST, NS.STYLE_CHOICE_LIST = THEME_CHOICES, STYLE_CHOICES
 
 local function ResetPositionClicked()
@@ -144,7 +150,7 @@ local function BuildVertical()
   all = AddDropdown("theme", "Theme", THEME_CHOICES, "Frame theme. Auto: Warrior Ironforged, Druid Ursine Grove, Paladin Dawnward, Warlock Voidbound, others Ember Hall.") and all
   all = AddCheckbox("animateFrame", "Animate frame", "Theme frame animations (swords, leaves, sun, runes, gems).") and all
   all = AddCheckbox("showFire", "Show fire", "The fire is the bar.") and all
-  all = AddDropdown("fireStyle", "Fire style", STYLE_CHOICES, "Fireplace (default), Classic (lighter), Castbar fire (layered scrolling fire) or Off (plain bar).") and all
+  all = AddDropdown("fireStyle", "Style", STYLE_CHOICES, "Fireplace (default), Classic (lighter), Castbar fire (layered scrolling fire), Gem (polished stone by rank) or Off (plain bar). Every style sits in the same bronze frame.") and all
   all = AddSlider("fireIntensity", "Fire intensity", 0, 1, 0.05, "%.2f", "Flame height and brightness.") and all
   all = AddSlider("fireSpeed", "Fire speed", 0.5, 1.5, 0.05, "%.2f", "Flame motion speed (1 = previewer).") and all
   all = AddSlider("flameOverflow", "Flame overflow", 0, 14, 1, "%d", "How far flame tips rise above the bar (px).") and all
@@ -233,7 +239,7 @@ local function BuildCanvas()
   add(CanvasCycle(canvas, "Theme", "theme", THEME_CHOICES, y))
   add(CanvasCheck(canvas, "Animate frame", "animateFrame", y))
   add(CanvasCheck(canvas, "Show fire", "showFire", y))
-  add(CanvasCycle(canvas, "Fire style", "fireStyle", STYLE_CHOICES, y))
+  add(CanvasCycle(canvas, "Style", "fireStyle", STYLE_CHOICES, y))
   slider("Fire intensity", "fireIntensity", 0, 1, 0.05, "%.2f")
   slider("Fire speed", "fireSpeed", 0.5, 1.5, 0.05, "%.2f")
   slider("Flame overflow", "flameOverflow", 0, 14, 1, "%d")

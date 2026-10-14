@@ -209,7 +209,7 @@ local function Build()
     return b
   end
   dialog.theme = Cycler("theme", "Theme", -186)
-  dialog.style = Cycler("fireStyle", "Fire style", -220)
+  dialog.style = Cycler("fireStyle", "Style", -220)
 
   local reset = MakeButton(dialog, "Reset position", W - 32)
   reset:SetPoint("TOPLEFT", dialog, "TOPLEFT", 16, -262)

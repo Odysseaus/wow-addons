@@ -26,10 +26,14 @@ local STYLES = {
 
 local function DB() return WoWThreatDB or {} end
 
+-- 1.3.0: "gem" is a standalone polished-stone bar (no flames over it), so it
+-- stays on even with Show fire off; Show fire then only drops its glow/sheen.
+-- Anything unknown (incl. the removed "tongues") draws as Fireplace.
 local function Style()
   local db = DB()
-  if db.showFire == false then return "off" end
   local s = db.fireStyle
+  if s == "gem" then return "gem" end
+  if db.showFire == false then return "off" end
   if s == "classic" or s == "off" or s == "castbar" then return s end
   return "fireplace"
 end
@@ -53,6 +57,7 @@ local nActive = 0
 NS.fireAnimCalls = 0       -- Play/Stop/SetDuration issued by fire (harness)
 local driver = CreateFrame("Frame")
 local CBPaint              -- castbar painter (defined below)
+local GemPaint             -- gem sheen painter (defined below)
 
 -- Harness counters: fireAnimCalls = Stop/SetDuration (restarts); a first
 -- Play of a spark/core pulse when it first appears is counted separately.
@@ -113,7 +118,9 @@ local function Drive(_, elapsed)
   clock = clock + dt
   local r
   for r in pairs(active) do
-    if r.fStyle == "castbar" then CBPaint(r, dt) else PaintRow(r) end
+    if r.fStyle == "castbar" then CBPaint(r, dt)
+    elseif r.fStyle == "gem" then GemPaint(r)
+    else PaintRow(r) end
   end
 end
 
@@ -210,9 +217,9 @@ local function CBCreate(r)
   cb.flow = layer("CB_Flow", "ADD", 1)
   cb.veil = layer("CB_Veil", "ADD", 2)
   cb.veil:SetVertexColor(VEIL_R, VEIL_G, VEIL_B, 1)
-  -- spark and embers live on an unclipped frame so they can spill past the edge
-  local fx = CreateFrame("Frame", nil, r.bar)
-  fx:SetAllPoints(r.bar)
+  -- 1.3.0: spark and embers are clipped inside the bevel seat like the rest
+  local fx = CreateFrame("Frame", nil, clip)
+  fx:SetAllPoints(clip)
   fx:SetFrameLevel(clip:GetFrameLevel() + 1)
   cb.fx = fx
   cb.spark = fx:CreateTexture(nil, "OVERLAY", nil, 6)
@@ -248,7 +255,7 @@ NS._CBHide = CBHide
 -- Layout for the castbar style (data update): sizes, flags, counts only.
 local function CBUpdate(r, pct, width, inner, inten, reduced, big, alpha)
   local cb = r.cb or CBCreate(r)
-  local barW = math.max(8, ((r.bar.GetWidth and r.bar:GetWidth()) or 240) - 2)
+  local barW = math.max(8, ((r.bar.GetWidth and r.bar:GetWidth()) or 240) - 2 * (r.bevB or 1))
   local k = inner / CB_H
   if cb.barW ~= barW or cb.inner ~= inner then
     cb.barW, cb.inner = barW, inner
@@ -277,7 +284,8 @@ local function CBUpdate(r, pct, width, inner, inten, reduced, big, alpha)
   cb.nEmbers = n
 end
 
-local function Activate(r, on)
+local Activate
+Activate = function(r, on)
   if on and not active[r] then
     active[r] = true; nActive = nActive + 1
     if nActive == 1 then driver:SetScript("OnUpdate", Drive) end
@@ -308,8 +316,9 @@ local function SheetFor(style)
 end
 
 function NS.FireCreate(r)
+  NS.BarFrameCreate(r)
   local clip = CreateFrame("Frame", nil, r.bar)
-  clip:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", 1, 1)
+  clip:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", 1, 1)  -- re-anchored to the bevel seat by NS.BarFrameUpdate
   clip:SetSize(1, 1)
   if clip.SetClipsChildren then clip:SetClipsChildren(true) end
   clip:SetFrameLevel(r.bar:GetFrameLevel() + 1)
@@ -403,6 +412,7 @@ function NS.FireStop(r)
   r.core:Hide()
   r.fireOn = false
   r.fireClip:Hide()
+  if r.gemOn and NS.GemHide then NS.GemHide(r) end
 end
 
 local function Restyle(r, style, sheet)
@@ -433,6 +443,12 @@ function NS.FireUpdate(r, pct, width, barH, dt, rank, nrows)
   local db = DB()
   local style = Style()
   local inten = type(db.fireIntensity) == "number" and db.fireIntensity or 0.8
+  if style == "gem" and width >= 1 and r:IsShown() then
+    if r.fireOn or r.fireClip:IsShown() then NS.FireStop(r) end
+    NS.GemUpdate(r, inten, db.showFire ~= false)
+    return false
+  end
+  if r.gemOn then NS.GemHide(r) end
   if style == "off" or inten <= 0 or width < 2 or not r:IsShown() then
     if r.fireOn or r.fireClip:IsShown() then NS.FireStop(r) end
     return false
@@ -442,11 +458,10 @@ function NS.FireUpdate(r, pct, width, barH, dt, rank, nrows)
   local sheet = SheetFor(style)
   if style ~= "castbar" and r.fireKey ~= style .. "|" .. sheet then Restyle(r, style, sheet) end
 
-  local inner = math.max(2, barH - 2)
-  local over = type(db.flameOverflow) == "number" and db.flameOverflow or 10
-  local room = math.max(0, (r.rowH or (barH + 14)) - barH - 2)
-  if over > room then over = room end
-  r.fireClip:SetSize(width, inner + over)
+  -- 1.3.0: fire is clipped inside the bevel seat (no overflow above the bar).
+  local inner = math.max(2, r.seatH or (barH - 2))
+  width = math.max(2, r.seatW or width)
+  r.fireClip:SetSize(width, inner)
   if not r.fireOn then r.fireClip:Show(); r.fireOn = true end
 
   if style == "castbar" then
@@ -563,4 +578,190 @@ function NS.FireUpdate(r, pct, width, barH, dt, rank, nrows)
   end
   if r.tipCap then r.tipCap:SetWidth(math.min(8, width * 0.25)) end
   return false
+end
+
+-- ------------------------------------------- bevel frame + gem (1.3.0) ---
+-- Ported from the approved previewer (threat.js bevelFrame/gemFill). Every
+-- style sits in the same beveled bronze frame that wraps the filled length
+-- (min. one bar height wide, so the caps never squash). Contents (fire, gem,
+-- plain fill) are clipped to the frame's inner seat. Art: tools/bake_gem.py.
+local BEV_B = 6 / 32         -- border thickness / bar height (baked 32 px tall, 6 px border)
+local GEM_COLORS = {         -- #1 red, #2 orange, #3 gold, rest dark bronze (deepening)
+  { 176, 16, 14 }, { 226, 98, 14 }, { 214, 150, 28 }, { 100, 58, 18 },
+}
+NS.GEM_COLORS = GEM_COLORS
+
+local function GemColor(rank)
+  rank = (rank or 1) - 1
+  if rank < 3 then local c = GEM_COLORS[rank + 1]; return c[1] / 255, c[2] / 255, c[3] / 255 end
+  local k = math.min(1, (rank - 3) / 12)
+  local b = GEM_COLORS[4]
+  local m = (1 - 0.3 * k) / 255
+  return b[1] * m, b[2] * m, b[3] * m
+end
+NS.GemColor = GemColor
+
+local function Mul(r, g, b, m)
+  return math.min(1, r * m), math.min(1, g * m), math.min(1, b * m)
+end
+
+function NS.BarFrameCreate(r)
+  if r.bevel then return end
+  local bar = r.bar
+  local L, M, R = bar:CreateTexture(nil, "BORDER", nil, 1), bar:CreateTexture(nil, "BORDER", nil, 1), bar:CreateTexture(nil, "BORDER", nil, 1)
+  L:SetTexture(TEX .. "Bar_Bevel"); M:SetTexture(TEX .. "Bar_Bevel"); R:SetTexture(TEX .. "Bar_Bevel")
+  L:SetTexCoord(0, 0.25, 0, 1); M:SetTexCoord(0.25, 0.75, 0, 1); R:SetTexCoord(0.75, 1, 0, 1)
+  L:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+  M:SetPoint("BOTTOMLEFT", L, "BOTTOMRIGHT", 0, 0)
+  R:SetPoint("BOTTOMLEFT", M, "BOTTOMRIGHT", 0, 0)
+  L:Hide(); M:Hide(); R:Hide()
+  r.bevel = { L = L, M = M, R = R }
+  -- seat: clipped container for the gem / plain fill
+  local seat = CreateFrame("Frame", nil, bar)
+  seat:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 1, 1)
+  seat:SetSize(1, 1)
+  if seat.SetClipsChildren then seat:SetClipsChildren(true) end
+  seat:SetFrameLevel(bar:GetFrameLevel() + 1)
+  r.seat = seat
+  -- inner shadow over fire styles (above the fire clip)
+  local shade = CreateFrame("Frame", nil, bar)
+  shade:SetAllPoints(seat)
+  shade:SetFrameLevel(bar:GetFrameLevel() + 3)
+  r.shadeFrame = shade
+  r.shade = shade:CreateTexture(nil, "OVERLAY", nil, 0)
+  r.shade:SetTexture(TEX .. "Seat_Shade")
+  r.shade:SetAllPoints(shade)
+  shade:Hide()
+end
+
+-- Layout of the frame for a fill of `width` px on a bar `barH` tall.
+function NS.BarFrameUpdate(r, width, barH, showFrame)
+  if not r.bevel then return end
+  local b = r.bevel
+  if not showFrame or width < 1 then
+    if r.bevOn then b.L:Hide(); b.M:Hide(); b.R:Hide(); r.bevOn = false end
+    r.seatW = 0
+    if r.shadeOn then r.shadeFrame:Hide(); r.shadeOn = false end
+    return
+  end
+  local fw = math.max(barH, width + 2)
+  local B = math.max(2, barH * BEV_B)
+  local cap = barH / 2
+  if r.bevH ~= barH or math.abs((r.bevW or -1) - fw) > 0.25 then
+    r.bevH, r.bevW = barH, fw
+    b.L:SetSize(cap, barH); b.R:SetSize(cap, barH)
+    b.M:SetSize(math.max(0.01, fw - 2 * cap), barH)
+  end
+  if not r.bevOn then b.L:Show(); b.M:Show(); b.R:Show(); r.bevOn = true end
+  local sw, sh = math.max(1, fw - 2 * B), math.max(1, barH - 2 * B)
+  if r.bevB ~= B then
+    r.bevB = B
+    r.seat:ClearAllPoints(); r.seat:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", B, B)
+    r.fireClip:ClearAllPoints(); r.fireClip:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", B, B)
+  end
+  if math.abs((r.seatW or -1) - sw) > 0.1 or r.seatH ~= sh then r.seat:SetSize(sw, sh) end
+  r.seatW, r.seatH = sw, sh
+  local wantShade = Style() ~= "gem"
+  if wantShade ~= r.shadeOn then r.shadeOn = wantShade; if wantShade then r.shadeFrame:Show() else r.shadeFrame:Hide() end end
+end
+
+local function GemCreate(r)
+  local seat = r.seat
+  local g = {}
+  local function T(name, sub, layer)
+    local t = seat:CreateTexture(nil, layer or "ARTWORK", nil, sub)
+    if name then t:SetTexture(TEX .. name) end
+    t:Hide()
+    return t
+  end
+  g.stone = T(nil, 0)
+  g.stone:SetTexture(TEX .. "Gem_Stone", "REPEAT", "CLAMP")
+  g.stone:SetPoint("TOPLEFT", seat, "TOPLEFT", 0, 0)
+  g.stone:SetPoint("BOTTOMRIGHT", seat, "BOTTOMRIGHT", 0, 0)
+  g.glow = T("Gem_Glow", 1); g.glow:SetAllPoints(seat)
+  g.endL = T("Gem_End", 2); g.endL:SetPoint("TOPLEFT", seat, "TOPLEFT"); g.endL:SetPoint("BOTTOMLEFT", seat, "BOTTOMLEFT")
+  g.endR = T("Gem_End", 2); g.endR:SetPoint("TOPRIGHT", seat, "TOPRIGHT"); g.endR:SetPoint("BOTTOMRIGHT", seat, "BOTTOMRIGHT")
+  g.endR:SetTexCoord(1, 0, 0, 1)
+  g.sheen = T("Gem_Sheen", 3); g.sheen:SetPoint("TOP", seat, "TOP"); g.sheen:SetPoint("BOTTOM", seat, "BOTTOM")
+  g.gloss = T("Gem_Gloss", 4); g.gloss:SetAllPoints(seat)
+  g.spot = T("Gem_Spot", 5)
+  -- inner bevel of the stone: lit top/left lip, dark bottom/right lip
+  g.lt = T(nil, 0, "OVERLAY"); g.lt:SetPoint("TOPLEFT", seat, "TOPLEFT", 0, 0); g.lt:SetPoint("TOPRIGHT", seat, "TOPRIGHT", 0, 0); g.lt:SetHeight(1)
+  g.ll = T(nil, 0, "OVERLAY"); g.ll:SetPoint("TOPLEFT", seat, "TOPLEFT", 0, 0); g.ll:SetPoint("BOTTOMLEFT", seat, "BOTTOMLEFT", 0, 0); g.ll:SetWidth(1)
+  g.db = T(nil, 1, "OVERLAY"); g.db:SetPoint("BOTTOMLEFT", seat, "BOTTOMLEFT", 0, 0); g.db:SetPoint("BOTTOMRIGHT", seat, "BOTTOMRIGHT", 0, 0); g.db:SetHeight(1)
+  g.dr = T(nil, 1, "OVERLAY"); g.dr:SetPoint("TOPRIGHT", seat, "TOPRIGHT", 0, 0); g.dr:SetPoint("BOTTOMRIGHT", seat, "BOTTOMRIGHT", 0, 0); g.dr:SetWidth(1)
+  g.db:SetColorTexture(0, 0, 0, 0.55); g.dr:SetColorTexture(0, 0, 0, 0.55)
+  g.all = { g.stone, g.glow, g.endL, g.endR, g.gloss, g.spot, g.lt, g.ll, g.db, g.dr }
+  r.gem = g
+  return g
+end
+
+function NS.GemHide(r)
+  local g = r.gem
+  if not g or not r.gemOn then return end
+  r.gemOn = false
+  local i
+  for i = 1, #g.all do g.all[i]:Hide() end
+  g.sheen:Hide(); g.sheenOn = false
+  Activate(r, false)
+  if r.fStyle == "gem" then r.fStyle = nil end
+end
+
+-- Layout (data update only): colours by rank, sizes; the sheen moves on the
+-- shared fire clock (Drive -> GemPaint).
+function NS.GemUpdate(r, inten, live)
+  local g = r.gem or GemCreate(r)
+  local sw, sh = r.seatW or 0, r.seatH or 0
+  if sw < 1 then NS.GemHide(r) return end
+  local rank = r.rank or 1
+  if g.rank ~= rank then
+    g.rank = rank
+    local cr, cg, cb = GemColor(rank)
+    g.stone:SetVertexColor(Mul(cr, cg, cb, 1.12))
+    g.glow:SetVertexColor(Mul(cr, cg, cb, 1.5))
+    local lr, lg, lb = Mul(cr, cg, cb, 1.8)
+    g.lt:SetColorTexture(lr, lg, lb, 0.55); g.ll:SetColorTexture(lr, lg, lb, 0.55)
+    g.ofs = ((rank * 61) % 256) / 256
+    g.w = nil
+  end
+  if g.w ~= sw or g.h ~= sh then
+    g.w, g.h = sw, sh
+    local k = sh / 32
+    g.stone:SetTexCoord(g.ofs, g.ofs + sw / (256 * k), 0, 1)
+    local e = math.min(sw * 0.45, sh * 1.2)
+    g.endL:SetWidth(e); g.endR:SetWidth(e)
+    g.spot:ClearAllPoints()
+    g.spot:SetSize(math.max(2, math.min(sh * 1.4, sw * 0.16)), math.max(1, sh * 0.3))
+    g.spot:SetPoint("CENTER", r.seat, "TOPLEFT", math.min(sw * 0.1, sh) + 2 + math.min(sh * 0.7, sw * 0.08) * 0.5, -sh * 0.16)
+    g.sheen:SetWidth(sh * 2.8)
+  end
+  live = live and inten > 0
+  local ga = 0.25 + (live and 0.45 * inten or 0)
+  if math.abs((g.ga or -1) - ga) > ALPHA_EPS then g.ga = ga; g.glow:SetAlpha(ga) end
+  g.sheenA = live and 0.35 * (0.4 + 0.6 * inten) or 0
+  g.live = live and not Reduced()
+  if not r.gemOn then
+    r.gemOn = true
+    local i
+    for i = 1, #g.all do g.all[i]:Show() end
+  end
+  r.fStyle = "gem"
+  if g.live then Activate(r, true); GemPaint(r)
+  else
+    if g.sheenOn then g.sheen:Hide(); g.sheenOn = false end
+    Activate(r, false)
+  end
+end
+
+GemPaint = function(r)
+  local g = r.gem
+  if not g or not r.gemOn or not g.live then return end
+  local sw, sh = g.w or 0, g.h or 0
+  local ph = ((clock * 0.35 + ((g.rank or 1) - 1) * 0.13) % 1.6) / 1.6 * 1.25 - 0.1
+  local x = -sh * 2 + (sw + sh * 4) * ph
+  g.sheen:ClearAllPoints()
+  g.sheen:SetPoint("TOP", r.seat, "TOPLEFT", x, 0)
+  g.sheen:SetPoint("BOTTOM", r.seat, "BOTTOMLEFT", x, 0)
+  g.sheen:SetAlpha(g.sheenA)
+  if not g.sheenOn then g.sheen:Show(); g.sheenOn = true end
 end

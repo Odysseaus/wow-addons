@@ -51,6 +51,10 @@ function NS.ThemeColor(key)
 end
 
 -- 1.1.4: every theme (and Classic / Off) uses the Ironforged fire tint.
+-- 1.3.0: every fire style in every theme uses the Ironforged/Warrior Fireplace
+-- palette: hot 255,220,150  mid 255,95,20  cool 210,25,10 (baked into the
+-- Fireplace and Castbar sheets; Classic / Off are tinted with mid).
+NS.FIRE_PALETTE = { hot = { 255, 220, 150 }, mid = { 255, 95, 20 }, cool = { 210, 25, 10 } }
 NS.FIRE_THEME = "ironforged"
 function NS.ThemeFireColor()
   local r, g, b = hex(THEMES[NS.FIRE_THEME].fire)
