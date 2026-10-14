@@ -246,13 +246,14 @@ local function CreateRow()
   r.bg = r.bar:CreateTexture(nil, "BACKGROUND")
   r.bg:SetAllPoints()
   r.bg:SetColorTexture(0, 0, 0, 1)
-  -- Plain fill, used only by the "off" fire style.
-  r.fill = r.bar:CreateTexture(nil, "ARTWORK")
-  r.fill:SetPoint("TOPLEFT", r.bar, "TOPLEFT", 1, -1)
-  r.fill:SetPoint("BOTTOMLEFT", r.bar, "BOTTOMLEFT", 1, 1)
+  -- Bevel frame + seat + fire clip (Fire.lua). 1.3.0: every style sits in
+  -- the same beveled bronze frame; contents are clipped to its seat.
+  NS.FireCreate(r)
+  -- Plain fill, used only by the "off" fire style (inside the seat).
+  r.fill = r.seat:CreateTexture(nil, "ARTWORK", nil, 0)
+  r.fill:SetAllPoints(r.seat)
   r.fill:SetTexture(TEX .. "BarFill")
   r.fill:Hide()
-  NS.FireCreate(r)
   -- Player row: outline around the bar in the theme's accent color.
   r.outline = {}
   local o
@@ -557,11 +558,11 @@ local function Step(dt)
         r.name:SetWidth(math.max(10, nameW))
         NS.Truncate(r.name, r.label, nameW)
       end
+      NS.BarFrameUpdate(r, st.w, r.barH or 16, true)
       if st.w < 1 or NS.FireStyle() ~= "off" then
         r.fill:Hide()
       else
         r.fill:Show()
-        r.fill:SetWidth(st.w)
       end
       if NS.FireUpdate(r, full > 0 and st.w / full or 0, st.w, r.barH or 16, dt, r.rank, lastShown) then
         moving = true
