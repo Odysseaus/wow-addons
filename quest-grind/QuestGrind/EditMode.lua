@@ -1,7 +1,7 @@
 local _, NS = ...
 
 -- In-addon Edit Mode: theme picker for default + Forever class themes.
--- Themes apply to Full, Less, AND Compass. Labels may use class names;
+-- Themes apply to Full AND Simple. Labels may use class names;
 -- textures never bake class name strings (colors/motifs only).
 
 local PAD = 24
@@ -74,7 +74,7 @@ local function BuildEdit()
   note:SetPoint("BOTTOM", 0, 40)
   note:SetWidth(280)
   note:SetJustifyH("CENTER")
-  note:SetText("Themes apply to Full, Less, and Compass. Art polish (TGA) is P4 — colors/motifs for now.")
+  note:SetText("Themes apply to Full and Simple. Art polish (TGA) is P4 — colors/motifs for now.")
   editArt.note = note
 
   local close = CreateFrame("Button", nil, editArt)
@@ -158,7 +158,7 @@ function NS.OpenEditMode()
   NS.RefreshEditMode()
   editRoot:Show()
   NS.editOpen = true
-  NS.Print("Edit Mode — pick a theme (applies to Full, Less, Compass).")
+  NS.Print("Edit Mode — pick a theme (applies to Full and Simple).")
 end
 
 function NS.CloseEditMode()

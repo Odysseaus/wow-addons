@@ -114,7 +114,7 @@ A single, clean threat meter for Forever. It lists your group against your hosti
 
 Folder: [`quest-grind/`](quest-grind/) · Addon: [`quest-grind/QuestGrind/`](quest-grind/QuestGrind/) · Full README: [`quest-grind/README.md`](quest-grind/README.md) · [Changelog](quest-grind/CHANGELOG.md)
 
-An in-game quest HUD for WoW Forever, meant to be prettier than alt-tabbing to a guide. It has three modes, **Full**, **Less**, and **Compass**, plus class color themes picked in Edit Mode. `main` has version `0.2.2`: it reads your live quest log, prioritizes incomplete quests, and shows distance and a compass when the game provides coordinates. It falls back to a mock route when your log is empty. Slash: `/questgrind` or `/qg`. Later phases are planned: **Ask SI** through a desktop companion (P2), hiding Blizzard objectives (P3), and art polish (P4). Newer work, currently `0.2.13`, is still in an open pull request and isn't merged.
+An in-game quest HUD for WoW Forever, meant to be prettier than alt-tabbing to a guide. It has two modes, **Full** and **Simple**, plus class color themes picked in Edit Mode. It reads your live quest log, prioritizes incomplete quests, and shows distance and a direction arrow when the game provides coordinates. It falls back to a mock route when your log is empty. Slash: `/questgrind` or `/qg`. Later phases are planned: **Ask SI** through a desktop companion (P2), hiding Blizzard objectives (P3), and art polish (P4). `main` has `0.2.13`; `0.2.14` (Compass mode removed, Less renamed Simple) is in an open pull request.
 
 > 📷 **Screenshot needed:** the QuestGrind HUD in **Full** mode with a live quest (plus **Less** and **Compass** if possible).
 

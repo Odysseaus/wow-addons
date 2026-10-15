@@ -27,7 +27,7 @@ NS.MockRoute = {
     count = "7 quests",
   },
   rewardsText = "+1240 XP",
-  -- North, so the mock compass arrow still points when the log is empty.
+  -- North, so the mock direction arrow still points when the log is empty.
   bearingDeg = 0,
   askPlaceholder = "Where do I turn in Smart Drinks?",
 }

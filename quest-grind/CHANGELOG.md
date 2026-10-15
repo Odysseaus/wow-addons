@@ -1,8 +1,16 @@
+## 0.2.14 — Compass mode removed, Less renamed Simple
+
+- **Removed**: Compass mode (its HUD face, plate, crest, layout, size, theme painting, slash commands and help text). The direction arrow on the Full and Simple faces stays (internally renamed from "compass" to "dial").
+- **Renamed**: the **Less** mode is now **Simple** everywhere you see it (mode button, mode chrome label, slash commands, help, Edit Mode note). `/qg less` and `/qg mode less` still work as aliases.
+- **Migration**: saved `mode = "compass"` becomes **full** and `mode = "less"` becomes **simple** on load.
+- Startup line now prints the real version.
+
 ## 0.2.13 — Cross-map focus distance (no fake ~23 yd)
 
 - **Fixed**: `ComputeNav` no longer compares map-normalized 0..1 coords across different `uiMapID`s (×1000 → fake ~23 yd). Unchecked focus ranking and HUD yards shared that path, so a far quest (e.g. Zephras Isle on another map) could win “closest”. Now prefers same-continent **world** yards (`UnitPosition` / `C_Map.GetWorldPosFromMapPos`); else player position on the **quest’s** map via `C_Map.GetPlayerMapPosition(questMap, "player")` then map-norm×1000; if maps differ and conversion fails → `hasCoords=false` / `distanceYards=nil` → rank `+inf`, HUD `?`. Never raw map-norm×1000 across different map IDs (`Quests.lua`: `ComparableNavPositions` / `ComputeNav`).
 - **Fixed**: `Route.lua` `ComputeDistanceBearing` uses the same cross-map rules (parity with ComputeNav).
 - **Keep**: focus scope / checked rules (no checked → closest incomplete; one checked → that quest; multi-checked → closest among checked); same-map focus/HUD; 0.2.12 QuestLine XY / fair ≤7 packing / no single-Blizzard wipe / Blizzard-as-start / no QG on live pin / Current location. Interface **16001**.
+
 
 ## 0.2.12 — QuestLine XY for upcoming stops; fair ≤7 packing; map overlay keep
 
