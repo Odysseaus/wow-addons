@@ -1,11 +1,11 @@
--- Dark Matter 0.0.2 (P0.1 scaffold)
+-- Dark Matter 0.0.3 (P0.2 probe)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.0.2"
+NS.version = "0.0.3"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 

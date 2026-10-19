@@ -1,6 +1,6 @@
-# Dark Matter (P0.1 scaffold)
+# Dark Matter (P0.2 probe)
 
-**Version 0.0.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.0.3** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter will be a dark, one-window overview of your quests, fishing, dungeons and achievements. **P0 is only the scaffold**: it adds a minimap button, a plain placeholder window, and a probe that checks which Blizzard APIs this client really has, so P1 can be built on facts instead of guesses. It does nothing else yet.
 
@@ -13,7 +13,8 @@ Dark Matter will be a dark, one-window overview of your quests, fishing, dungeon
   | Command | What it does |
   |---|---|
   | `/dm` | toggle the window |
-  | `/dm probe` | run the probe (below); opens the scrolling report |
+  | `/dm probe` | run the probe (below); opens the summary window |
+  | `/dm raw` | show or hide the raw call list in the probe window |
   | `/dm reset` | reset window position (`/dm reset all` also puts the minimap button back) |
   | `/dm minimap` | show or hide the minimap button |
   | `/dm icon` | switch the minimap icon between the Dark Matter icon and a stock Blizzard icon (use this if the icon ever shows blank) |
@@ -22,37 +23,31 @@ Dark Matter will be a dark, one-window overview of your quests, fishing, dungeon
 
 Safety: stock Blizzard controls only. No secure frames, no hooks on Blizzard code, nothing changed in combat. The Settings page is registered one frame after login (`C_Timer.After(0)`).
 
-## Running the probe (please do this twice)
+## Running the probe (0.0.3)
 
-**Round 1: the probe**
+1. Copy the `DarkMatter` folder into your AddOns folder (Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`). If the game is running, type `/reload`; if it doesn't show Dark Matter 0.0.3 in the addon list, quit and relaunch once.
+2. Type `/dm probe`. The window opens with a **summary: one line per area**, each marked `[OK]` (data came back), `[EMPTY]` (the call works but returned nothing) or `[MISSING]` (the API isn't there), with counts. The summary is short enough for one screenshot (scroll with the mouse wheel if needed).
+3. Wait about 5 seconds, then screenshot again: the **Items on demand** line updates once the game has had time to load item data ("[after 3s]").
+4. Optional: `/dm raw` shows or hides the full list of raw call returns in the window.
+5. For the complete data, type `/reload` (or log out) and share `World of Warcraft/_classic_beta_/WTF/Account/<YOUR ACCOUNT>/SavedVariables/DarkMatter.lua`. The raw returns of every call are in `DarkMatterDB["probe"]["calls"]`. Only read or send that file; nothing else in `WTF` needs touching.
 
-1. Copy the `DarkMatter` folder into your AddOns folder (Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`), then log in. If the game was already running, fully quit and relaunch it once so the new version is picked up. Check Dark Matter is enabled at character select.
-2. In game, type `/reload`, then `/dm probe`.
-3. The Dark Matter window opens with the full report. It scrolls with the mouse wheel. **Take screenshots** of the top of the report and of the scrolled-down part (use the mouse wheel), or of chat if easier.
+Best results: run `/dm probe` once standing in a city or open world, and once inside a dungeon (the instance lines then show real values).
 
-**Round 2: does SavedVariables persist?**
+### What the probe checks (0.0.3)
 
-4. Type `/reload` again, then `/dm probe` again. Look at the second line of the report:
-   `SavedVariables: loadCount=N | loaded from disk: YES/NO | previous session: ... | previous probe present: ...`
-   - `loaded from disk: YES`, `loadCount=2` and `previous probe present: YES` means saving works on this client.
-   - `NO` and `loadCount=1` again means the client is not loading SavedVariables (a known beta bug); window position and minimap angle will then reset on every restart.
-5. Screenshot that too.
+| Area | What it tests |
+|---|---|
+| Quests / Fishing / Achievements | `C_QuestLog` counts, `GetProfessionInfo` Fishing skill, achievement points and categories (loads the Achievement UI on demand) |
+| Journal API | which `EJ_*` functions and `C_EncounterJournal` functions exist |
+| Journal data (no UI) | `C_EncounterJournal.InitalizeSelectedTier` and `OnOpen`, then tiers, instance counts per tier, well-known instance IDs, bosses, loot via `C_EncounterJournal.GetLootInfoByIndex`; the stock journal selection is restored afterwards |
+| Map discovery | dungeon child maps of the world map, dungeon entrances and encounters on your current map |
+| LFG / dungeons | `C_LFGInfo`, `GetLFDChoiceOrder`, category entries, a scan of dungeon IDs 1 to 1300 with boss counts |
+| Saved instances | `GetNumSavedInstances`, `GetSavedInstanceInfo`, `GetInstanceInfo` |
+| Items on demand | a few well-known classic item IDs plus one that does not exist: `DoesItemExistByID`, `GetItemInfoInstant`, `C_Item.GetItemInfo`, tooltip lines, checked now and again after 3 seconds |
+| Loot learning | which loot and boss-kill events the client lets an addon register, and whether the loot APIs exist |
+| Game rules | every game rule the client knows, and which are active |
 
-**The full report is also saved in SavedVariables** (`DarkMatterDB["probe"]`), so nothing has to be copied from chat. After the probe, `/reload` (or log out) writes the file, then share:
-`World of Warcraft/_classic_beta_/WTF/Account/<YOUR ACCOUNT>/SavedVariables/DarkMatter.lua`
-(only read or send that file; nothing else in `WTF` needs touching).
-
-### What the probe does (0.0.2)
-
-1. **Loads the Encounter Journal and Achievement UI on demand** (`Blizzard_EncounterJournal`, `Blizzard_AchievementUI`) with the stock `LoadAddOn`, guarded with `pcall`, then re-checks their frames.
-2. **Checks API presence** by group (quest log, fishing/professions, Adventure Guide, achievements, Settings, timers, Edit Mode/options). Optional APIs (`GetMinimapShape`, `GetNumQuestLogEntries`, `InterfaceOptionsFrame`, ...) are shown as "optional absent", not MISSING.
-3. **Quest log:** `C_QuestLog.GetNumQuestLogEntries` and `C_QuestLog.GetInfo(1)` as replacements for the missing global.
-4. **Fishing skill:** `GetProfessions` + `GetProfessionInfo` (and `C_TradeSkillUI.GetProfessionInfoBySkillLineID`), and it records which function actually produced skill and maximum.
-5. **Adventure Guide:** tiers, how many dungeons and raids per tier, one sample instance, its boss count, `EJ_GetEncounterInfo`, and loot (`EJ_GetNumLoot`, `EJ_GetLootInfoByIndex`) for one sample boss. It uses the stock selection calls and puts your tier selection back afterwards.
-6. **Achievements:** total points, categories, `GetAchievementInfo` for a sample achievement.
-7. **Raw returns:** every call's return types (and short values) are listed at the end of the report and saved under `DarkMatterDB.probe.calls`, so we learn what exists without guessing.
-
-It opens no windows other than the Dark Matter window and changes nothing else.
+Every call is wrapped in `pcall`, secret values are never compared, and nothing opens a window other than Dark Matter's own.
 
 ### About SavedVariables on the beta
 

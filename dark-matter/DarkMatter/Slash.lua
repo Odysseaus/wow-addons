@@ -10,6 +10,7 @@ local function Help()
   NS.Print("v" .. NS.version .. " commands:")
   print("  /dm  toggle the window")
   print("  /dm probe  check this client's APIs (saved to DarkMatterDB.probe)")
+  print("  /dm raw  show/hide the raw call list in the probe window")
   print("  /dm reset  reset window position   (/dm reset all: also minimap button)")
   print("  /dm minimap  show/hide the minimap button")
   print("  /dm icon  switch between the Dark Matter icon and a stock icon")
@@ -27,6 +28,10 @@ SlashCmdList["DARKMATTER"] = function(msg)
     NS.ToggleWindow(false)
   elseif cmd == "probe" then
     NS.RunProbe(false)
+  elseif cmd == "raw" then
+    NS.showRaw = not NS.showRaw
+    NS.Print("raw call list in the window: " .. (NS.showRaw and "on" or "off"))
+    if NS.RefreshWindow then NS.RefreshWindow() end
   elseif cmd == "reset" then
     NS.ResetWindowPosition()
     if rest == "all" then NS.ResetMinimapButton() NS.Print("minimap button reset.") end

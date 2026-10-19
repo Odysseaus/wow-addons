@@ -63,13 +63,13 @@ local function Build()
 
   local head = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   head:SetPoint("TOPLEFT", 16, -34)
-  head:SetText("Dark Matter " .. NS.version .. " (P0.1 probe)")
+  head:SetText("Dark Matter " .. NS.version .. " (P0.2 probe)")
 
   local note = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   note:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -4)
   note:SetWidth(500)
   note:SetJustifyH("LEFT")
-  note:SetText("Placeholder window. Scroll the report with the mouse wheel.")
+  note:SetText("Summary of /dm probe (mouse wheel scrolls). /dm raw shows the raw call list; everything is saved in SavedVariables.")
 
   local scroll = CreateFrame("ScrollFrame", "DarkMatterProbeScroll", f, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", 14, -78)
@@ -117,7 +117,11 @@ function NS.RefreshWindow()
   if not frame or not frame.probeText then return end
   local p = NS.lastProbe
   if p and p.summary then
-    frame.probeText:SetText(table.concat(p.summary, "\n"))
+    local text = table.concat(p.summary, "\n")
+    if NS.showRaw and NS.RawLines then
+      text = text .. "\n\n-- Raw call returns (type:value) --\n" .. table.concat(NS.RawLines(p), "\n")
+    end
+    frame.probeText:SetText(text)
     frame.probeContent:SetHeight((frame.probeText:GetStringHeight() or 0) + 8)
     frame.probeScroll:SetVerticalScroll(0)
   end
