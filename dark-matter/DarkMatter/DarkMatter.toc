@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.2.15 (P2.15): Fishing catalog (sourced + auto-learned) with item tooltips; Quests; /dm probe.
+## Notes: Dark Matter 0.3.0 (P3.0): Adventure Guide (dungeons, bosses, drops, loot learning); Fishing; Quests; /dm probe.
 ## Author: Odysseaus
-## Version: 0.2.15
+## Version: 0.3.0
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
@@ -19,6 +19,8 @@ Tab_Quests.lua
 Data_Fishing.lua
 Data_FishingCatches.lua
 Fishing.lua
+Data_Dungeons.lua
+AdventureGuide.lua
 Tab_Journals.lua
 Tab_Stub.lua
 Minimap.lua

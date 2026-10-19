@@ -1,11 +1,11 @@
--- Dark Matter 0.2.15 (P2.15: tooltip corner on the item icon)
+-- Dark Matter 0.3.0 (P3.0: Adventure Guide v1)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.2.15"
+NS.version = "0.3.0"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -57,6 +57,7 @@ local function InitDB()
   if type(NS.db.blockedLog) ~= "table" then NS.db.blockedLog = {} end
   InitCharDB()
   if NS.StartFishingTracker then NS.StartFishingTracker() end
+  if NS.AG and NS.AG.StartTracker then NS.AG.StartTracker() end
   if NS.SetTheme and not NS.SetTheme(NS.db.theme) then NS.db.theme = "wow" end
   NS.db.loadCount = (tonumber(NS.db.loadCount) or 0) + 1
   NS.db.lastSession = date("%Y-%m-%d %H:%M:%S")

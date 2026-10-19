@@ -1784,6 +1784,141 @@ if MODE ~= "minimal" then
   rawset(GameTooltip, "GetWidth", function() return 200 end)
   rawset(GameTooltip, "GetHeight", function() return 100 end)
 
+
+  -- ===== 0.3.0 Adventure Guide: seed, LFG merge, filters, gate, loot learning, UI + same tooltip placement =====
+  local AGm = DarkMatter.AG
+  local seed = DarkMatter.AdventureGuideSeed
+  check(AGm and seed, "AG module + seed loaded")
+  local want = { RFC = 4, WC = 9, DM = 9, SFK = 9, BFD = 8 }
+  local nb, nd, bad = 0, 0, 0
+  for _, d in ipairs(seed) do
+    check(want[d.short] == #d.bosses, "seed " .. d.short .. ": full boss list (" .. #d.bosses .. ")")
+    for _, b in ipairs(d.bosses) do
+      nb = nb + 1
+      if b.src ~= "https://www.wowhead.com/forever/npc=" .. b.npcId then bad = bad + 1 end
+      local ids = {}
+      for _, it in ipairs(b.drops) do
+        nd = nd + 1
+        if ids[it.itemId] or it.src ~= "https://www.wowhead.com/forever/item=" .. it.itemId or not it.icon:find("^Interface\\Icons\\") or it.quality < 2 then bad = bad + 1 end
+        ids[it.itemId] = true
+      end
+    end
+  end
+  check(#seed == 5 and nb == 39 and nd == 86 and bad == 0, string.format("seed: %d dungeons, %d bosses, %d drops, each cites wowhead.com/forever (bad=%d)", #seed, nb, nd, bad))
+  -- stub client LFG (ids 10/11, names only, placeholder boss names)
+  AGm._ResetCaches()
+  local stubList = AGm.ScanLFG()
+  out("AG: stub LFG dungeons with encounters:", #stubList, "(real client probe: 67)")
+  check(#stubList == 2, "stub LFG: 2 dungeons with encounters (SECRETNAME and empty ids skipped)")
+  -- richer LFG mock: full classic return order, a raid, a secret name, a random queue entry
+  local LFG = {
+    [18] = { "Ragefire Chasm", 1, 1, 13, 18, 15, 13, 18, 0, 0, "", 1, 5, bosses = { "Oggleflint", "Taragaman the Hungerer", "Jergosh the Invoker", "Bazzalan" } },
+    [6] = { "Deadmines", 1, 1, 17, 26, 20, 17, 26, 0, 0, "", 1, 5, bosses = { "Rhahk'Zor", "Sneed", "Gilnid", "Mr. Smite", "Captain Greenskin", "Edwin VanCleef" } },
+    [26] = { "Gnomeregan", 1, 1, 29, 38, 33, 29, 38, 0, 0, "", 1, 5, bosses = { "Grubbis", "Viscous Fallout", "Mekgineer Thermaplugg" } },
+    [48] = { "Molten Core", 2, 3, 60, 60, 60, 60, 60, 0, 0, "", 1, 40, bosses = { "Lucifron", "Ragnaros" } },
+    [300] = { "SECRETNAME", 1, 1, 1, 1, 1, 1, 1, 0, 0, "", 1, 5, bosses = { "x" } },
+    [301] = { "Random Classic Dungeon", 1, 1, 15, 30, 20, 15, 30, 0, 0, "", 1, 5, bosses = {} },
+  }
+  local sGI, sGN, sGE = GetLFGDungeonInfo, GetLFGDungeonNumEncounters, GetLFGDungeonEncounterInfo
+  GetLFGDungeonInfo = function(id) local e = LFG[id] if e then return unpack(e, 1, 13) end end
+  GetLFGDungeonNumEncounters = function(id) local e = LFG[id] return e and #e.bosses or 0 end
+  GetLFGDungeonEncounterInfo = function(id, i) local e = LFG[id] return e and e.bosses[i], "tex", false end
+  AGm._ResetCaches()
+  local list = AGm.Dungeons()
+  local by = {}
+  for _, d in ipairs(list) do by[d.name] = d end
+  check(#list == 7 and by["Deadmines"] and by["Deadmines"].seeded and by["Gnomeregan"] and not by["Gnomeregan"].seeded and by["Wailing Caverns"] and by["Wailing Caverns"].source == "seed", "LFG merge: 4 LFG + 3 seed-only dungeons (" .. #list .. ")")
+  check(by["Molten Core"].kind == "Raid" and by["Deadmines"].kind == "Dungeon" and by["Deadmines"].recLevel == 20 and by["Deadmines"].size == 5, "kind/recommended level/size from LFG")
+  check(#by["Deadmines"].bosses == 9 and by["Deadmines"].bosses[8].name == "Edwin VanCleef" and #by["Deadmines"].bosses[8].drops == 4, "Deadmines: seed boss list (9) with LFG names matched, VanCleef 4 drops")
+  check(list[1].name == "Ragefire Chasm" and list[#list].name == "Molten Core", "sorted by minimum level")
+  local kinds = AGm.Kinds(list)
+  check(#kinds == 2 and kinds[1] == "Dungeon" and kinds[2] == "Raid", "type filter offered from LFG kinds")
+  local f1 = AGm.Filter(list, "gelihast", "all", "all", 22)
+  check(#f1 == 1 and f1[1].name == "Blackfathom Deeps", "search by boss")
+  local f2 = AGm.Filter(list, "cookie's tenderizer", "all", "all", 22)
+  check(#f2 == 1 and f2[1].name == "Deadmines", "search by drop name")
+  local f3 = AGm.Filter(list, nil, "mine", "all", 22)
+  local n3 = {}
+  for _, d in ipairs(f3) do n3[d.name] = true end
+  check(not n3["Ragefire Chasm"] and not n3["Gnomeregan"] and not n3["Molten Core"] and n3["Deadmines"] and n3["Blackfathom Deeps"], "near-my-level filter (22)")
+  local f4 = AGm.Filter(list, nil, "all", "Raid", 22)
+  check(#f4 == 1 and f4[1].name == "Molten Core", "type filter: Raid")
+  -- C_Item.DoesItemExistByID gate
+  local sEx = C_Item.DoesItemExistByID
+  C_Item.DoesItemExistByID = function(id) return id ~= 5197 end
+  AGm._ResetCaches()
+  local cookie
+  for _, d in ipairs(AGm.Dungeons()) do if d.name == "Deadmines" then for _, b in ipairs(d.bosses) do if b.name == "Cookie" then cookie = b end end end end
+  check(cookie and #cookie.drops == 1 and cookie.drops[1].itemId ~= 5197, "DoesItemExistByID=false hides the drop (Cookie's Tenderizer)")
+  C_Item.DoesItemExistByID = sEx
+  AGm._ResetCaches()
+  -- loot learning: boss by NPC id from the loot source GUID; dedupe per source; recent kill; other
+  local sII, sLSI, sLSL = GetInstanceInfo, GetLootSourceInfo, GetLootSlotLink
+  GetInstanceInfo = function() return "The Deadmines", "party", 1, "Normal", 5, 0, false, 36, 5 end
+  local SRC = {}
+  GetLootSourceInfo = function(i) return SRC[i] end
+  GetLootSlotLink = function(i) local s = LOOT_SLOTS[i] return s and s.link end
+  LOOT_SLOTS = { { link = "|cff0070dd|Hitem:5191::::::::20:::::::|h[Cruel Barb]|h|r", name = "Cruel Barb", qty = 1, quality = 3 } }
+  SRC[1] = "Creature-0-4372-36-1581-639-0000ABCDEF"
+  local agf = AGm._Frame()
+  check(agf and agf._ev and agf._ev.LOOT_OPENED and agf._ev.ENCOUNTER_END and agf._ev.BOSS_KILL, "AG private event frame registered (LOOT_OPENED, ENCOUNTER_END, BOSS_KILL)")
+  agf._scripts.OnEvent(agf, "LOOT_OPENED")
+  check(AGm.SeenCount("deadmines", "Edwin VanCleef", 5191) == 1, "loot from VanCleef's corpse (npc 639) counted for VanCleef")
+  agf._scripts.OnEvent(agf, "LOOT_OPENED")
+  check(AGm.SeenCount("deadmines", "Edwin VanCleef", 5191) == 1, "re-opening the same corpse does not double count")
+  TIME_NOW = 5000
+  agf._scripts.OnEvent(agf, "ENCOUNTER_END", 2969, "Mr. Smite", 1, 5, 1)
+  LOOT_SLOTS = { { link = "|Hitem:5196::::::::20:::::::|h[Smite's Reaver]|h", name = "Smite's Reaver" } }
+  SRC[1] = "Creature-0-4372-36-1581-99999-0000ABCDE0"
+  agf._scripts.OnEvent(agf, "LOOT_OPENED")
+  check(AGm.SeenCount("deadmines", "Mr. Smite", 5196) == 1, "unknown source right after a kill -> that boss")
+  TIME_NOW = 5400
+  SRC[1] = "Creature-0-4372-36-1581-99998-0000ABCDE1"
+  agf._scripts.OnEvent(agf, "LOOT_OPENED")
+  check(AGm.SeenCount("deadmines", nil, 5196) == 1, "late unknown source -> dungeon '_other'")
+  GetInstanceInfo = function() return "Elwynn Forest", "none" end
+  SRC[1] = "Creature-0-4372-0-1581-299-0000ABCDE2"
+  check(AGm.OnLootOpened() == 0, "no learning outside dungeons")
+  check(type(DarkMatterDB.agSeen) == "table" and DarkMatterDB.agSeen.deadmines, "seen counts are account-wide (DarkMatterDB.agSeen)")
+  -- UI: Adventure Guide section, VanCleef drops, client names, same tooltip placement as fishing
+  GetInstanceInfo = sII
+  local sGII2 = GetItemInfo
+  GetItemInfo = function(id) if id == 5191 then return "Cruel Barb", "item:5191", 3 end return sGII2(id) end
+  DarkMatterDB.agDungeon, DarkMatterDB.agBoss = "deadmines", "Edwin VanCleef"
+  DarkMatter.tabs.journals.SetSection("adventure")
+  check(DarkMatterDB.section == "adventure", "Adventure Guide section opens")
+  local drows, brows = {}, 0
+  for _, fr in ipairs(ALL) do
+    local e = rawget(fr, "entry")
+    if type(e) == "table" and rawget(fr, "dungeon") and fr._shown then drows[#drows + 1] = fr end
+    if rawget(fr, "bossName") and fr._shown then brows = brows + 1 end
+  end
+  check(#drows == 4 and brows == 9, "VanCleef: 4 drop rows, 9 boss rows (" .. #drows .. "/" .. brows .. ")")
+  local barb
+  for _, r in ipairs(drows) do if r.entry.itemId == 5191 then barb = r end end
+  check(barb and barb.text:GetText() == "Cruel Barb" and barb.seen == 1 and barb.small:GetText():find("seen 1", 1, true), "drop row: client item name, seen by you = 1")
+  check(barb.icon._quality == 3 and barb.icon._itemId == 5191, "drop icon: rarity rim from quality (Rare)")
+  COMPARE = false
+  barb._scripts.OnEnter(barb)
+  check(T.anchor == "ANCHOR_PRESERVE" and T.pts[1] == "BOTTOMLEFT" and T.pts[2] == barb.icon and T.pts[3] == "TOPRIGHT" and T.pts[4] == 1 and T.pts[5] == 1, "AG drop tooltip: same placement as fishing (BOTTOMLEFT at the icon TOPRIGHT, visible +4,+4)")
+  barb._scripts.OnLeave(barb)
+  COMPARE = true
+  barb._scripts.OnEnter(barb)
+  check(ShoppingTooltip1.pts[1] == "BOTTOMLEFT" and ShoppingTooltip1.pts[2] == GameTooltip and ShoppingTooltip1.pts[3] == "BOTTOMRIGHT", "AG drop tooltip: compare chained right, bottoms aligned")
+  barb._scripts.OnLeave(barb)
+  COMPARE = false
+  check(not T.shown, "AG tooltip hidden on leave")
+  -- taint-safety: no hooks/global replacement/Blizzard UI loads in the AG files
+  for _, fn in ipairs({ "AdventureGuide.lua", "Data_Dungeons.lua" }) do
+    local src = io.open(arg[1] .. "/" .. fn):read("*a")
+    check(not src:find("hooksecurefunc", 1, true) and not src:find("LoadAddOn", 1, true) and not src:find("EncounterJournal", 1, true) and not src:find("_G%[") , fn .. ": no hooks, no addon loads, no EJ, no _G writes")
+  end
+  GetItemInfo = sGII2
+  GetLFGDungeonInfo, GetLFGDungeonNumEncounters, GetLFGDungeonEncounterInfo = sGI, sGN, sGE
+  GetLootSourceInfo, GetLootSlotLink = sLSI, sLSL
+  LOOT_SLOTS = {}
+  DarkMatter.tabs.journals.SetSection("fishing")
+  AGm._ResetCaches()
   DarkMatter.Print = savedPrint
   COMPARE = false
 
@@ -1791,6 +1926,16 @@ if MODE ~= "minimal" then
   C_Item.IsItemDataCachedByID = savedCached
   ShoppingTooltip1, ShoppingTooltip2 = nil, nil
   DarkMatter.FishingSetUIPref("showAll", false)
+end
+
+-- ===== 0.3.0 Adventure Guide without LFG APIs (minimal client): seed only =====
+if MODE == "minimal" then
+  DarkMatter.AG._ResetCaches()
+  local l = DarkMatter.AG.Dungeons()
+  check(#l == 5 and l[1].source == "seed", "minimal client: AG falls back to the 5 seeded dungeons")
+  DarkMatter.tabs.journals.SetSection("adventure")
+  check(DarkMatterDB.section == "adventure", "minimal client: Adventure Guide opens")
+  DarkMatter.tabs.journals.SetSection("fishing")
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

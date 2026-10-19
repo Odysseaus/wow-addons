@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.2.15** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.3.0** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -90,13 +90,19 @@ Early notes on this beta say the client sometimes does not load saved variables 
 - `tools/stubtest/mock.py` runs the real addon code in a strict stub client (bad argument types raise like the game; every anchor, size, `SetTexCoord`, frame level and draw layer is modelled). It asserts that every texcoord is within 0..1 with left < right and top < bottom, that every drawn texture is anchored with a non-zero size and no larger than the window, that the window border is exactly 8 pieces spanning corner to corner, that content frames sit above the window art, and that the atlas table matches the real TGA sizes.
 - With `MODE=full DM_RENDER_DIR=out`, it also writes `layout-<tab>.json`; `tools/render_preview.py layout-quests.json DarkMatter out.png` composites the window from the same TGAs and texcoords the Lua uses, so the layout can be checked without the game.
 
+## Adventure Guide data (0.3.0)
+
+- Primary source: **Wowhead WoW Forever**. URL format: `https://www.wowhead.com/forever/npc=<npcId>` and `https://www.wowhead.com/forever/item=<itemId>` (cited per boss and per drop in `Data_Dungeons.lua`); database root `https://www.wowhead.com/forever/database`.
+- `tools/dungeons/seed.json`: our own dungeon/boss/NPC-ID list. `fetch_wowhead.py` caches each boss's drop list from Wowhead Classic (`https://www.wowhead.com/classic/npc=<id>`, the marked fallback for drop attribution; the Forever HTML pages are not reachable from our tooling). `verify_forever.py` validates every NPC and item against Forever via its tooltip API (`https://nether.wowhead.com/forever/tooltip/{npc|item}/<id>`) and exits non-zero on any missing or renamed entry. `gen_dungeons.py` writes `Data_Dungeons.lua` with Forever names/quality/icons; `gen_preview.py` writes the same data into the previewer.
+- No other addon's loot table is used.
+
 ## Art
 
 All art is original: the minimap icon (`Media/dm-icon.tga`) was generated procedurally for this addon. The minimap ring and background are stock built-in game textures referenced by path (`Interface\Minimap\...`); no Blizzard art is copied into the addon.
 
 ## Files
 
-`DarkMatter.toc`, `Core.lua` (namespace, defaults, blocked-action logger), `Probe.lua`, `Theme.lua`, `Atlas_WoW.lua`, `Theme_WoW.lua`, `Widgets.lua`, `ProbeWindow.lua`, `Window.lua`, `Tab_Quests.lua`, `Data_Fishing.lua`, `Tab_Journals.lua`, `Tab_Stub.lua`, `Minimap.lua`, `Options.lua`, `Slash.lua`, `Media/*.tga`.
+`DarkMatter.toc`, `Core.lua` (namespace, defaults, blocked-action logger), `Probe.lua`, `Theme.lua`, `Atlas_WoW.lua`, `Theme_WoW.lua`, `Widgets.lua`, `ProbeWindow.lua`, `Window.lua`, `Tab_Quests.lua`, `Data_Fishing.lua`, `Data_FishingCatches.lua`, `Fishing.lua`, `Data_Dungeons.lua`, `AdventureGuide.lua`, `Tab_Journals.lua`, `Tab_Stub.lua`, `Minimap.lua`, `Options.lua`, `Slash.lua`, `Media/*.tga`.
 
 ### Blocked-action log (0.0.4)
 

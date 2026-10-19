@@ -905,17 +905,20 @@ local function EnsureModifierWatch()
     if not h then return end
     local tt = GameTooltip
     local owned = tt and tt.IsOwned and select(2, pcall(tt.IsOwned, tt, h.owner))
-    if owned then NS.FishingShowCatchTooltip(h.owner, h.e, h.total) else hover = nil end
+    if owned then NS.ShowItemTooltip(h.owner, h.e, h.fn) else hover = nil end
   end)
 end
 
-function NS.FishingShowCatchTooltip(owner, e, total)
+-- Shared item tooltip (Fishing rows, Adventure Guide drops): item (or fallback lines), then our own lines
+-- via addLines(tt), then the placement rule (leftmost tooltip's BOTTOMLEFT 4px from the icon's TOPRIGHT,
+-- compares chained right, mirror only for screen space) and the settle watcher.
+function NS.ShowItemTooltip(owner, e, addLines)
   local tt = GameTooltip
   if not (tt and owner and type(e) == "table") then return nil end
   -- ANCHOR_PRESERVE: Blizzard's compare code leaves our points alone (no slide onto the cursor)
   tt:SetOwner(owner, "ANCHOR_PRESERVE")
   PlaceTooltip(tt, owner)
-  hover = { owner = owner, e = e, total = total }
+  hover = { owner = owner, e = e, fn = addLines }
   EnsureModifierWatch()
   local itemId = SafeNum(e.itemId)
   local mode = "fallback"
@@ -938,35 +941,46 @@ function NS.FishingShowCatchTooltip(owner, e, total)
     -- no item on the tooltip: drop any compare tooltips left from a previous row
     if GameTooltip_HideShoppingTooltips and tt.shoppingTooltips then pcall(GameTooltip_HideShoppingTooltips, tt) end
   end
-  -- Dark Matter lines
-  tt:AddLine(" ")
-  tt:AddLine("Dark Matter", 1, 0.82, 0)
-  local caught = e.caught and (SafeNum(e.count) or 0) > 0
-  if caught then
-    local count = SafeNum(e.count) or 0
-    local pct = (SafeNum(total) or 0) > 0 and string.format(" (%.0f%%)", 100 * count / total) or ""
-    tt:AddDoubleLine("Caught", tostring(count) .. pct, 0.9, 0.9, 0.9, 1, 1, 1)
-    local where = e.lastZone or "unknown"
-    local coords = NS.FishingFormatCoords(e.lastX, e.lastY)
-    if coords then where = where .. " (" .. coords .. ")" end
-    tt:AddDoubleLine("Last caught", where, 0.9, 0.9, 0.9, 1, 1, 1)
-  else
-    tt:AddLine("Not caught yet", 0.75, 0.75, 0.75)
-    if e.learned then
-      tt:AddDoubleLine("First seen", (e.firstZone or "this account") .. (e.firstSeen and (" · " .. e.firstSeen) or ""), 0.9, 0.9, 0.9, 1, 1, 1)
-    end
-  end
-  if not caught or e.waters then
-    if e.waters then tt:AddDoubleLine("Typical waters", e.waters, 0.9, 0.9, 0.9, 1, 1, 1) end
-    if e.skill then tt:AddDoubleLine("Fishing skill", tostring(e.skill), 0.9, 0.9, 0.9, 1, 1, 1) end
-  end
-  if e.junk then tt:AddLine("Junk", 0.62, 0.62, 0.62) end
+  if addLines then pcall(addLines, tt) end
   tt:Show()
   -- sizes are known after Show: place main + compare tooltips; the watcher keeps them there
   tipDebugPrinted = 0
   PlaceTooltip(tt, owner, "show")
   StartWatch(tt, owner)
   return mode
+end
+NS.HideItemTooltip = function(owner) return NS.FishingHideCatchTooltip(owner) end
+
+local function FishingLines(e, total)
+  return function(tt)
+    tt:AddLine(" ")
+    tt:AddLine("Dark Matter", 1, 0.82, 0)
+    local caught = e.caught and (SafeNum(e.count) or 0) > 0
+    if caught then
+      local count = SafeNum(e.count) or 0
+      local pct = (SafeNum(total) or 0) > 0 and string.format(" (%.0f%%)", 100 * count / total) or ""
+      tt:AddDoubleLine("Caught", tostring(count) .. pct, 0.9, 0.9, 0.9, 1, 1, 1)
+      local where = e.lastZone or "unknown"
+      local coords = NS.FishingFormatCoords(e.lastX, e.lastY)
+      if coords then where = where .. " (" .. coords .. ")" end
+      tt:AddDoubleLine("Last caught", where, 0.9, 0.9, 0.9, 1, 1, 1)
+    else
+      tt:AddLine("Not caught yet", 0.75, 0.75, 0.75)
+      if e.learned then
+        tt:AddDoubleLine("First seen", (e.firstZone or "this account") .. (e.firstSeen and (" · " .. e.firstSeen) or ""), 0.9, 0.9, 0.9, 1, 1, 1)
+      end
+    end
+    if not caught or e.waters then
+      if e.waters then tt:AddDoubleLine("Typical waters", e.waters, 0.9, 0.9, 0.9, 1, 1, 1) end
+      if e.skill then tt:AddDoubleLine("Fishing skill", tostring(e.skill), 0.9, 0.9, 0.9, 1, 1, 1) end
+    end
+    if e.junk then tt:AddLine("Junk", 0.62, 0.62, 0.62) end
+  end
+end
+
+function NS.FishingShowCatchTooltip(owner, e, total)
+  if type(e) ~= "table" then return nil end
+  return NS.ShowItemTooltip(owner, e, FishingLines(e, total))
 end
 
 function NS.FishingHideCatchTooltip(owner)
