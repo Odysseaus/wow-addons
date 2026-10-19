@@ -321,6 +321,47 @@ function UI.Scroll(parent, w, h)
   return S
 end
 
+
+-- Horizontal progress bar (slate track + coloured fill + centred label). Stock textures only.
+function UI.Bar(parent, w, h)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetSize(w, h)
+  local track = f:CreateTexture(nil, "BACKGROUND")
+  track:SetAllPoints(f)
+  local fill = f:CreateTexture(nil, "ARTWORK")
+  fill:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+  fill:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, 1)
+  fill:SetWidth(1)
+  local gloss = f:CreateTexture(nil, "OVERLAY")
+  gloss:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -1)
+  gloss:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -1)
+  gloss:SetHeight(math.max(2, math.floor(h / 2)))
+  gloss:SetColorTexture(1, 1, 1, 0.12)
+  local label = f:CreateFontString(nil, "OVERLAY")
+  NS.SetFont(label, 11, "")
+  label:SetPoint("CENTER", f, "CENTER", 0, 0)
+  label:SetShadowOffset(1, -1)
+  label:SetShadowColor(0, 0, 0, 0.85)
+  f.fill, f.label = fill, label
+  function f:SetProgress(cur, maxv, text, colorKey)
+    maxv = maxv or 1
+    if maxv < 1 then maxv = 1 end
+    cur = cur or 0
+    if cur < 0 then cur = 0 elseif cur > maxv then cur = maxv end
+    local inner = math.max(1, self:GetWidth() - 2)
+    fill:SetWidth(math.max(1, math.floor(inner * cur / maxv + 0.5)))
+    label:SetText(text or (tostring(cur) .. " / " .. tostring(maxv)))
+    local r, g, b = NS.Color(colorKey or "gold")
+    fill:SetColorTexture(r, g, b, 1)
+  end
+  NS.OnSkin(function()
+    track:SetColorTexture(0.06, 0.06, 0.07, 0.95)
+    local r, g, b = NS.Color("goldOn")
+    label:SetTextColor(r, g, b)
+  end)
+  return f
+end
+
 -- Centred "coming in a later phase" state on a page (glyph, big title, text).
 function UI.Stub(page, glyphKey, title, text)
   local s = CreateFrame("Frame", nil, page)

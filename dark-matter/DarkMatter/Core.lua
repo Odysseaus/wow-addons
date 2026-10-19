@@ -1,11 +1,11 @@
--- Dark Matter 0.1.3 (P1: main window, Quests tab, WoW theme)
+-- Dark Matter 0.2.0 (P2: Journals Fishing, Quests tab, WoW theme)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.1.3"
+NS.version = "0.2.0"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -18,6 +18,7 @@ local DEFAULTS = {
   tab = "quests",
   section = "fishing",
   questCollapsed = {},
+  fishingZone = nil,
   loadCount = 0,
 }
 

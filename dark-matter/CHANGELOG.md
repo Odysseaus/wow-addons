@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 (P2, Journals Fishing)
+- Journals → Fishing is a real panel: fishing skill bar from `GetProfessionInfo(select(4, GetProfessions()))` (probe-confirmed), and a waters list with minimum skill floors.
+- Zone list is original Dark Matter static data (`Data_Fishing.lua`): this Forever client has no fishing-zone or catch APIs (only profession skill + `IsFishingLoot`). Waters show Ready/Locked by your skill; no fake catch counts or "(Complete)" tags. Catch statistics stay for a later phase.
+- Adventure Guide and Achievements sections remain "Coming soon". Quests tab, Settings click-outside, probe and blocked logger are unchanged.
+- New `UI.Bar` progress widget; fishing skill events on a private frame while the Fishing section is shown.
+
 ## 0.1.3 (Settings pop: click-outside / Esc dismiss)
 - Settings popover closes when you click anywhere outside it: a catcher over the main window (above content, below the pop) and a full-screen catcher under the window so a click on the world dismisses too. The Settings button still toggles open; while open, a click on Settings hits the catcher and closes without re-opening.
 - Esc closes the Settings pop first (via `UISpecialFrames` on the named `DarkMatterSettingsPop`); Esc again closes the main window as before. Stock frames and private handlers only.

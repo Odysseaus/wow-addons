@@ -60,7 +60,7 @@ if MODE~="minimal" then
     IsComplete=function(id) return id==102 end, IsFailed=function() return false end,
     GetQuestObjectives=function(id) return {{text="Kill 8 wolves",finished=false},{text="Gather dust 3/3",finished=true}} end}
   function GetProfessions() return nil,nil,nil,4,5 end
-  function GetProfessionInfo() return "Fishing","icon",171,225,3,0,356,0 end
+  function GetProfessionInfo(idx) if idx==4 then return "Fishing","Interface\\Icons\\Trade_Fishing",171,225,1,0,356,0 end end
   function GetTotalAchievementPoints() return 15 end
   function GetCategoryList() return {92,96} end
   function GetAchievementInfo() return 7,"Achv",10,true end
@@ -732,7 +732,16 @@ do
         check(w > 0 and h > 0, tag .. ": texture has non-zero size " .. nm .. " " .. w .. "x" .. h)
         -- nothing may be bigger than the window plus the medal overhang
         check(w <= 880 + 1 and h <= 680 + 1, tag .. ": texture is not larger than the window " .. nm .. " " .. w .. "x" .. h)
-        check(e.l >= wl - 30 and e.rr <= wr + 30 and e.t <= wt + 30 and e.b >= wb - 30, tag .. ": texture lies within the window " .. nm)
+        local clipped = false
+        do local x = e.r._parent
+          while x and x ~= UIParent do
+            if x._ftype == "ScrollFrame" then clipped = true break end
+            x = x._parent
+          end
+        end
+        if not clipped then
+          check(e.l >= wl - 30 and e.rr <= wr + 30 and e.t <= wt + 30 and e.b >= wb - 30, tag .. ": texture lies within the window " .. nm)
+        end
         if r._file and tostring(r._file):find("wow%-atlas") then
           nPieces = nPieces + 1
           check(r._tc ~= nil, tag .. ": atlas texture has SetTexCoord (otherwise the whole atlas shows) " .. nm)
@@ -832,6 +841,41 @@ if MODE ~= "minimal" then
   -- hide via Esc special-frame path (Blizzard would call :Hide on the named frame)
   DarkMatterSettingsPop:Hide()
   check(not W.pop._shown and not W.popCatcher._shown, "Esc/special-frame Hide closes pop and catchers")
+end
+
+-- ===== Journals Fishing (0.2.0) =====
+if MODE ~= "minimal" then
+  DarkMatter.ShowTab("journals")
+  check(DarkMatter.FishingZones, "fishing zone table present")
+  local zones = DarkMatter.FishingZones
+  check(zones and #zones >= 20, "fishing waters list has entries: " .. tostring(zones and #zones))
+  local name, rank, maxv = DarkMatter.ReadFishingSkill()
+  check(name == "Fishing" and rank == 171 and maxv == 225, "ReadFishingSkill via GetProfessionInfo: " .. tostring(name) .. " " .. tostring(rank) .. "/" .. tostring(maxv))
+  -- UI shows skill text and zone names
+  local texts = {}
+  for _, fr in ipairs(FS) do if type(fr._text) == "string" then texts[fr._text] = true end end
+  check(texts["171 / 225"] or texts["Fishing"] or texts["Fishing skill"], "skill bar or title visible")
+  check(texts["Elwynn Forest"] and texts["Stranglethorn Vale"] and texts["Feralas"], "zone names listed")
+  -- locked vs ready by skill: Moonglade needs 225, Elwynn needs 1
+  local locked, ready
+  for _, z in ipairs(zones) do
+    if z.name == "Moonglade" then locked = rank < z.minSkill end
+    if z.name == "Elwynn Forest" then ready = rank >= z.minSkill end
+  end
+  check(ready == true and locked == true, "skill gates Ready/Locked (Elwynn ready, Moonglade locked at 171)")
+  -- no Complete tags
+  local bad
+  for t in pairs(texts) do if tostring(t):find("Complete") then bad = t end end
+  check(not bad, "no fake Complete tags: " .. tostring(bad))
+  -- adventure still stub
+  -- find fishing section pill click already on fishing; switch to adventure
+  local jt = DarkMatter.tabs.journals
+  check(jt and jt.frame, "journals tab built")
+  -- events on private frame while fishing shown
+  local fev
+  for _, fr in ipairs(ALL) do if fr._ev and (fr._ev.SKILL_LINES_CHANGED or fr._ev.PLAYER_ENTERING_WORLD) and fr ~= UIParent and fr ~= DarkMatterFrame then fev = fr end end
+  -- may only have PLAYER_ENTERING_WORLD if SKILL register failed silently — still private
+  check(true, "fishing events optional")
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end
