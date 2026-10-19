@@ -528,7 +528,7 @@ end
 function NS._FishingResetExistsCache() existsCache = {} end
 
 -- ---------------------------------------------------------------------------
--- Row tooltips (0.2.8). Plain GameTooltip use from our own rows: SetOwner +
+-- Row tooltips (0.2.8, placement 0.2.9). Plain GameTooltip use from our own rows: SetOwner +
 -- SetHyperlink/SetItemByID, then our lines. No hooks, no secure frames.
 -- ---------------------------------------------------------------------------
 
@@ -572,10 +572,42 @@ NS._FishingItemCached = ItemCached
 
 -- Fill GameTooltip for one catch-type row entry. total = all logged catches (for share %).
 -- Returns "item" when the client item tooltip was used, "fallback" otherwise.
+-- Tooltip placement (0.2.9): tooltip BOTTOMRIGHT to row TOPLEFT with an 8px gap.
+-- If that would leave the screen (left or top edge), flip to the other side, gap kept.
+local TIP_GAP = 8
+local function Num(f, m)
+  local fn = f and f[m]
+  if type(fn) ~= "function" then return nil end
+  local ok, v = pcall(fn, f)
+  if ok and type(v) == "number" then return v end
+  return nil
+end
+
+function NS.FishingTooltipAnchor(tt, owner)
+  local fitsLeft, fitsTop = true, true
+  local os, ts = Num(owner, "GetEffectiveScale") or 1, Num(tt, "GetEffectiveScale") or 1
+  local left, top = Num(owner, "GetLeft"), Num(owner, "GetTop")
+  local w, h = Num(tt, "GetWidth"), Num(tt, "GetHeight")
+  local screenH = Num(UIParent, "GetHeight")
+  local us = Num(UIParent, "GetEffectiveScale") or 1
+  if left and w then fitsLeft = (left * os - (w + TIP_GAP) * ts) >= 0 end
+  if top and h and screenH then fitsTop = (top * os + (h + TIP_GAP) * ts) <= screenH * us end
+  local point = (fitsTop and "BOTTOM" or "TOP") .. (fitsLeft and "RIGHT" or "LEFT")
+  local rel = (fitsTop and "TOP" or "BOTTOM") .. (fitsLeft and "LEFT" or "RIGHT")
+  return point, rel, fitsLeft and -TIP_GAP or TIP_GAP, fitsTop and TIP_GAP or -TIP_GAP
+end
+
+local function PlaceTooltip(tt, owner)
+  local point, rel, x, y = NS.FishingTooltipAnchor(tt, owner)
+  tt:ClearAllPoints()
+  tt:SetPoint(point, owner, rel, x, y)
+end
+
 function NS.FishingShowCatchTooltip(owner, e, total)
   local tt = GameTooltip
   if not (tt and owner and type(e) == "table") then return nil end
-  tt:SetOwner(owner, "ANCHOR_RIGHT")
+  tt:SetOwner(owner, "ANCHOR_NONE")
+  PlaceTooltip(tt, owner)
   local itemId = SafeNum(e.itemId)
   local mode = "fallback"
   if itemId and ItemCached(itemId) then
@@ -619,6 +651,8 @@ function NS.FishingShowCatchTooltip(owner, e, total)
   end
   if e.junk then tt:AddLine("Junk", 0.62, 0.62, 0.62) end
   tt:Show()
+  -- size is known after Show: re-check the screen edges
+  PlaceTooltip(tt, owner)
   return mode
 end
 

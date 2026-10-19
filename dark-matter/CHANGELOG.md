@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.9 (P2.9, row tooltip placement)
+- Fishing row tooltips: `SetOwner(row, "ANCHOR_NONE")` + `SetPoint("BOTTOMRIGHT", row, "TOPLEFT", -8, 8)`, so the tooltip sits up-left of the row with an 8px gap instead of corner-to-corner.
+- Same placement for the item tooltip, the fallback (uncached) tooltip and the refresh after item data loads; re-checked after `Show()` once the size is known.
+- Stays on screen: near the left edge it flips to the row's right (`BOTTOMLEFT` to `TOPRIGHT`, +8,+8); near the top it goes below (`TOP*` to `BOTTOM*`, y -8). The gap is kept in every case.
+- Previewer: the example fish tooltip uses the same anchor and gap.
+
 ## 0.2.8 (P2.8, catch-type row tooltips)
 - Hovering a **by fish** row (own catches and every Show all row, including uncaught and learned) shows `GameTooltip:SetOwner(row, "ANCHOR_RIGHT")` with the real item tooltip: `SetHyperlink` with the stored loot item string, else `SetItemByID(itemId)`.
 - When the item isn't in the client cache yet (`C_Item.IsItemDataCachedByID`, fallback `GetItemInfo`), a simple tooltip shows name in quality colour + quality name, and item data is requested; the open list refreshes on `GET_ITEM_INFO_RECEIVED` and a still-hovered row rebuilds into the full item tooltip.

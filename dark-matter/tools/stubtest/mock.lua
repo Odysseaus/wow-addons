@@ -1369,6 +1369,8 @@ if MODE ~= "minimal" then
   rawset(GameTooltip, "AddLine", function(_, t) TT.lines[#TT.lines + 1] = tostring(t) end)
   rawset(GameTooltip, "AddDoubleLine", function(_, a, b) TT.lines[#TT.lines + 1] = tostring(a) .. "=" .. tostring(b) end)
   rawset(GameTooltip, "Show", function() TT.shown = true end)
+  rawset(GameTooltip, "SetPoint", function(_, ...) TT.point = { ... } end)
+  rawset(GameTooltip, "ClearAllPoints", function() TT.point = nil end)
   rawset(GameTooltip, "Hide", function() TT.hidden = true; TT.shown = false end)
   rawset(GameTooltip, "IsOwned", function(_, o) return TT.owner == o end)
   local function has(pat) for _, l in ipairs(TT.lines) do if l:find(pat, 1, true) then return true end end return false end
@@ -1398,7 +1400,9 @@ if MODE ~= "minimal" then
   local savedCached = C_Item.IsItemDataCachedByID
   C_Item.IsItemDataCachedByID = function() return true end
   ttreset(); caughtRow._scripts.OnEnter(caughtRow)
-  check(TT.owner == caughtRow and TT.anchor == "ANCHOR_RIGHT" and TT.shown, "SetOwner(row, ANCHOR_RIGHT) + Show")
+  check(TT.owner == caughtRow and TT.anchor == "ANCHOR_NONE" and TT.shown, "SetOwner(row, ANCHOR_NONE) + Show")
+  local lp = TT.point
+  check(lp and lp[1] == "BOTTOMRIGHT" and lp[2] == caughtRow and lp[3] == "TOPLEFT" and lp[4] == -8 and lp[5] == 8, "tooltip BOTTOMRIGHT to row TOPLEFT, gap -8,8 (" .. tostring(lp and lp[1]) .. "," .. tostring(lp and lp[3]) .. "," .. tostring(lp and lp[4]) .. "," .. tostring(lp and lp[5]) .. "," .. tostring(lp and lp[2] == caughtRow) .. ")")
   check(TT.link == "item:250001", "cached caught item uses stored link via SetHyperlink")
   check(has("Caught=") and has("Last caught=Elwynn Forest") , "caught lines: count + last zone (" .. table.concat(TT.lines, " | ") .. ")")
   caughtRow._scripts.OnLeave(caughtRow)
@@ -1416,14 +1420,32 @@ if MODE ~= "minimal" then
   ttreset(); learnedRow._scripts.OnEnter(learnedRow)
   check(TT.itemId == nil and TT.link == nil and TT.lines[1] == "Hyjal Ember Trout" and TT.lines[2] == "Uncommon", "fallback tooltip: name + quality (" .. table.concat(TT.lines, " | ") .. ")")
   check(has("Dark Matter") and has("Not caught yet") and TT.shown, "fallback tooltip has Dark Matter lines")
+  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -8 and q[5] == 8, "fallback tooltip uses gap placement") end
   -- hovering while data arrives: list refresh rebuilds the tooltip with the real item
   C_Item.IsItemDataCachedByID = function() return true end
   ttreset(); DarkMatter.tabs.journals.Refresh()
   check(TT.itemId == 250002 and TT.owner == learnedRow, "refresh while hovered upgrades to item tooltip (" .. tostring(TT.itemId) .. "," .. tostring(TT.owner == learnedRow) .. "," .. tostring(rawget(learnedRow, "_hover")) .. "," .. tostring(learnedRow.entry and learnedRow.entry.name) .. ")")
+  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -8 and q[5] == 8, "refresh tooltip uses gap placement") end
   learnedRow._scripts.OnLeave(learnedRow)
   -- OnLeave from a row that no longer owns the tooltip does not hide someone else's tooltip
   ttreset(); TT.owner = "other"; caughtRow._scripts.OnLeave(caughtRow)
   check(not TT.hidden, "OnLeave leaves tooltips owned by others alone")
+  -- screen edges (UIParent 1000 tall); tooltip 200x100
+  local function fr(l, t, w, h) return { GetLeft = function() return l end, GetTop = function() return t end, GetWidth = function() return w end, GetHeight = function() return h end, GetEffectiveScale = function() return 1 end } end
+  local tip = fr(nil, nil, 200, 100)
+  rawset(UIParent, "GetHeight", function() return 1000 end)
+  local A = DarkMatter.FishingTooltipAnchor
+  local p1, r1, x1, y1 = A(tip, fr(500, 500))
+  check(p1 == "BOTTOMRIGHT" and r1 == "TOPLEFT" and x1 == -8 and y1 == 8, "room: BOTTOMRIGHT->TOPLEFT -8,8")
+  local p2, r2, x2, y2 = A(tip, fr(100, 500))
+  check(p2 == "BOTTOMLEFT" and r2 == "TOPRIGHT" and x2 == 8 and y2 == 8, "left edge: flip to TOPRIGHT +8,8")
+  local p3, r3, x3, y3 = A(tip, fr(500, 950))
+  check(p3 == "TOPRIGHT" and r3 == "BOTTOMLEFT" and x3 == -8 and y3 == -8, "top edge: flip below, -8,-8")
+  local p4, r4, x4, y4 = A(tip, fr(50, 980))
+  check(p4 == "TOPLEFT" and r4 == "BOTTOMRIGHT" and x4 == 8 and y4 == -8, "top-left corner: BOTTOMRIGHT +8,-8")
+  local p5 = A(tip, {})
+  check(p5 == "BOTTOMRIGHT", "no geometry: default placement")
+  rawset(UIParent, "GetHeight", nil)
   -- no hooks on GameTooltip
   check(rawget(GameTooltip, "_scripts") == nil or next(GameTooltip._scripts) == nil, "no scripts set on GameTooltip")
   C_Item.IsItemDataCachedByID = savedCached
