@@ -1,0 +1,626 @@
+{
+"item": {
+"10399": {
+"icon": "inv_chest_leather_08",
+"name": "Blackened Defias Armor",
+"quality": 3
+},
+"10403": {
+"icon": "inv_belt_26",
+"name": "Blackened Defias Belt",
+"quality": 3
+},
+"10410": {
+"icon": "inv_pants_11",
+"name": "Leggings of the Fang",
+"quality": 3
+},
+"10411": {
+"icon": "inv_boots_04",
+"name": "Footpads of the Fang",
+"quality": 3
+},
+"10412": {
+"icon": "inv_belt_30",
+"name": "Belt of the Fang",
+"quality": 3
+},
+"11121": {
+"icon": "inv_sword_36",
+"name": "Darkwater Talwar",
+"quality": 3
+},
+"1155": {
+"icon": "inv_staff_06",
+"name": "Rod of the Sleepwalker",
+"quality": 3
+},
+"1156": {
+"icon": "inv_jewelry_ring_09",
+"name": "Lavishly Jeweled Ring",
+"quality": 3
+},
+"1292": {
+"icon": "inv_axe_23",
+"name": "Butcher's Cleaver",
+"quality": 3
+},
+"12988": {
+"icon": "inv_chest_leather_10",
+"name": "Starsight Tunic",
+"quality": 3
+},
+"1318": {
+"icon": "inv_throwingaxe_06",
+"name": "Night Reaver",
+"quality": 3
+},
+"13245": {
+"icon": "inv_shield_18",
+"name": "Kresh's Back",
+"quality": 3
+},
+"14145": {
+"icon": "inv_weapon_shortblade_12",
+"name": "Cursed Felblade",
+"quality": 3
+},
+"14147": {
+"icon": "inv_bracer_07",
+"name": "Cavedweller Bracers",
+"quality": 3
+},
+"14148": {
+"icon": "inv_bracer_13",
+"name": "Crystalline Cuffs",
+"quality": 3
+},
+"14149": {
+"icon": "inv_misc_cape_18",
+"name": "Subterranean Cape",
+"quality": 3
+},
+"14150": {
+"icon": "inv_chest_cloth_24",
+"name": "Robe of Evocation",
+"quality": 3
+},
+"14151": {
+"icon": "inv_weapon_shortblade_25",
+"name": "Chanting Blade",
+"quality": 3
+},
+"1482": {
+"icon": "inv_sword_13",
+"name": "Shadowfang",
+"quality": 3
+},
+"1937": {
+"icon": "inv_sword_24",
+"name": "Buzz Saw",
+"quality": 3
+},
+"2205": {
+"icon": "inv_sword_41",
+"name": "Duskbringer",
+"quality": 3
+},
+"3078": {
+"icon": "inv_weapon_bow_04",
+"name": "Naga Heartpiercer",
+"quality": 3
+},
+"3191": {
+"icon": "inv_axe_06",
+"name": "Arced War Axe",
+"quality": 3
+},
+"3230": {
+"icon": "inv_bracer_07",
+"name": "Black Wolf Bracers",
+"quality": 3
+},
+"3748": {
+"icon": "inv_shoulder_05",
+"name": "Feline Mantle",
+"quality": 3
+},
+"5191": {
+"icon": "inv_sword_24",
+"name": "Cruel Barb",
+"quality": 3
+},
+"5192": {
+"icon": "inv_sword_24",
+"name": "Thief's Blade",
+"quality": 3
+},
+"5193": {
+"icon": "inv_misc_cape_08",
+"name": "Cape of the Brotherhood",
+"quality": 3
+},
+"5194": {
+"icon": "inv_throwingaxe_06",
+"name": "Taskmaster Axe",
+"quality": 3
+},
+"5195": {
+"icon": "inv_gauntlets_23",
+"name": "Gold-flecked Gloves",
+"quality": 3
+},
+"5196": {
+"icon": "inv_axe_22",
+"name": "Smite's Reaver",
+"quality": 3
+},
+"5197": {
+"icon": "inv_fabric_silk_02",
+"name": "Cookie's Tenderizer",
+"quality": 3
+},
+"5198": {
+"icon": "inv_staff_02",
+"name": "Cookie's Stirring Rod",
+"quality": 3
+},
+"5199": {
+"icon": "inv_pants_02",
+"name": "Smelting Pants",
+"quality": 3
+},
+"5200": {
+"icon": "inv_spear_07",
+"name": "Impaling Harpoon",
+"quality": 3
+},
+"5201": {
+"icon": "inv_staff_13",
+"name": "Emberstone Staff",
+"quality": 3
+},
+"5202": {
+"icon": "inv_shirt_08",
+"name": "Corsair's Overshirt",
+"quality": 3
+},
+"5243": {
+"icon": "inv_wand_11",
+"name": "Firebelcher",
+"quality": 3
+},
+"5443": {
+"icon": "inv_shield_02",
+"name": "Gold-plated Buckler",
+"quality": 3
+},
+"5444": {
+"icon": "inv_misc_cape_11",
+"name": "Miner's Cape",
+"quality": 3
+},
+"5970": {
+"icon": "inv_gauntlets_19",
+"name": "Serpent Gloves",
+"quality": 3
+},
+"6220": {
+"icon": "inv_weapon_shortblade_25",
+"name": "Meteor Shard",
+"quality": 3
+},
+"6226": {
+"icon": "inv_chest_cloth_24",
+"name": "Bloody Apron",
+"quality": 3
+},
+"6314": {
+"icon": "inv_misc_cape_10",
+"name": "Wolfmaster Cape",
+"quality": 3
+},
+"6318": {
+"icon": "inv_staff_27",
+"name": "Odo's Ley Staff",
+"quality": 3
+},
+"6319": {
+"icon": "inv_belt_03",
+"name": "Girdle of the Blindwatcher",
+"quality": 3
+},
+"6320": {
+"icon": "inv_shield_03",
+"name": "Commander's Crest",
+"quality": 3
+},
+"6321": {
+"icon": "inv_belt_29",
+"name": "Silverlaine's Family Seal",
+"quality": 3
+},
+"6323": {
+"icon": "inv_mace_02",
+"name": "Baron's Scepter",
+"quality": 3
+},
+"6324": {
+"icon": "inv_chest_cloth_31",
+"name": "Robes of Arugal",
+"quality": 3
+},
+"6340": {
+"icon": "inv_misc_pelt_wolf_02",
+"name": "Fenrus' Hide",
+"quality": 3
+},
+"6341": {
+"icon": "inv_misc_lantern_01",
+"name": "Eerie Stable Lantern",
+"quality": 3
+},
+"6392": {
+"icon": "inv_belt_10",
+"name": "Belt of Arugal",
+"quality": 3
+},
+"6448": {
+"icon": "inv_weapon_shortblade_10",
+"name": "Tail Spike",
+"quality": 3
+},
+"6449": {
+"icon": "inv_chest_cloth_15",
+"name": "Glowing Lizardscale Cloak",
+"quality": 3
+},
+"6459": {
+"icon": "inv_boots_01",
+"name": "Savage Trodders",
+"quality": 3
+},
+"6460": {
+"icon": "inv_belt_03",
+"name": "Cobrahn's Grasp",
+"quality": 3
+},
+"6461": {
+"icon": "inv_shoulder_05",
+"name": "Slime-encrusted Pads",
+"quality": 3
+},
+"6463": {
+"icon": "inv_jewelry_ring_15",
+"name": "Deep Fathom Ring",
+"quality": 3
+},
+"6465": {
+"icon": "inv_chest_cloth_36",
+"name": "Robe of the Moccasin",
+"quality": 3
+},
+"6469": {
+"icon": "inv_weapon_bow_10",
+"name": "Venomstrike",
+"quality": 3
+},
+"6472": {
+"icon": "inv_wand_10",
+"name": "Stinging Viper",
+"quality": 3
+},
+"6473": {
+"icon": "inv_shirt_16",
+"name": "Armor of the Fang",
+"quality": 3
+},
+"6627": {
+"icon": "inv_chest_plate08",
+"name": "Mutant Scale Breastplate",
+"quality": 3
+},
+"6629": {
+"icon": "inv_misc_cape_17",
+"name": "Sporid Cape",
+"quality": 3
+},
+"6630": {
+"icon": "inv_shield_10",
+"name": "Seedcloud Buckler",
+"quality": 3
+},
+"6631": {
+"icon": "inv_staff_25",
+"name": "Living Root",
+"quality": 3
+},
+"6632": {
+"icon": "inv_misc_cape_02",
+"name": "Feyscale Cloak",
+"quality": 3
+},
+"6633": {
+"icon": "inv_sword_16",
+"name": "Butcher's Slicer",
+"quality": 3
+},
+"6641": {
+"icon": "inv_sword_17",
+"name": "Haunting Blade",
+"quality": 3
+},
+"6642": {
+"icon": "inv_chest_chain_05",
+"name": "Phantom Armor",
+"quality": 3
+},
+"6901": {
+"icon": "inv_misc_monsterscales_03",
+"name": "Glowing Thresher Cape",
+"quality": 3
+},
+"6902": {
+"icon": "inv_bracer_08",
+"name": "Bands of Serra'kis",
+"quality": 3
+},
+"6903": {
+"icon": "inv_pants_02",
+"name": "Gaze Dreamer Pants",
+"quality": 3
+},
+"6904": {
+"icon": "inv_misc_monsterfang_01",
+"name": "Bite of Serra'kis",
+"quality": 3
+},
+"6905": {
+"icon": "inv_weapon_halberd_06",
+"name": "Reef Axe",
+"quality": 3
+},
+"6906": {
+"icon": "inv_gauntlets_10",
+"name": "Algae Fists",
+"quality": 3
+},
+"6907": {
+"icon": "inv_shirt_06",
+"name": "Tortoise Armor",
+"quality": 3
+},
+"6908": {
+"icon": "inv_belt_24",
+"name": "Ghamoo-ra's Bind",
+"quality": 3
+},
+"6909": {
+"icon": "inv_sword_42",
+"name": "Strike of the Hydra",
+"quality": 3
+},
+"6910": {
+"icon": "inv_pants_14",
+"name": "Leech Pants",
+"quality": 3
+},
+"6911": {
+"icon": "inv_belt_25",
+"name": "Moss Cinch",
+"quality": 3
+},
+"7230": {
+"icon": "inv_hammer_09",
+"name": "Smite's Mighty Hammer",
+"quality": 3
+},
+"872": {
+"icon": "inv_throwingaxe_01",
+"name": "Rockslicer",
+"quality": 3
+},
+"888": {
+"icon": "inv_gauntlets_13",
+"name": "Naga Battle Gloves",
+"quality": 3
+}
+},
+"npc": {
+"11517": {
+"icon": null,
+"name": "Oggleflint",
+"quality": null
+},
+"11518": {
+"icon": null,
+"name": "Jergosh the Invoker",
+"quality": null
+},
+"11519": {
+"icon": null,
+"name": "Bazzalan",
+"quality": null
+},
+"11520": {
+"icon": null,
+"name": "Taragaman the Hungerer",
+"quality": null
+},
+"12876": {
+"icon": null,
+"name": "Baron Aquanis",
+"quality": null
+},
+"12902": {
+"icon": null,
+"name": "Lorgus Jett",
+"quality": null
+},
+"1763": {
+"icon": null,
+"name": "Gilnid",
+"quality": null
+},
+"3586": {
+"icon": null,
+"name": "Miner Johnson",
+"quality": null
+},
+"3653": {
+"icon": null,
+"name": "Kresh",
+"quality": null
+},
+"3654": {
+"icon": null,
+"name": "Mutanus the Devourer",
+"quality": null
+},
+"3669": {
+"icon": null,
+"name": "Lord Cobrahn",
+"quality": null
+},
+"3670": {
+"icon": null,
+"name": "Lord Pythas",
+"quality": null
+},
+"3671": {
+"icon": null,
+"name": "Lady Anacondra",
+"quality": null
+},
+"3673": {
+"icon": null,
+"name": "Lord Serpentis",
+"quality": null
+},
+"3674": {
+"icon": null,
+"name": "Skum",
+"quality": null
+},
+"3872": {
+"icon": null,
+"name": "Deathsworn Captain",
+"quality": null
+},
+"3886": {
+"icon": null,
+"name": "Razorclaw the Butcher",
+"quality": null
+},
+"3887": {
+"icon": null,
+"name": "Baron Silverlaine",
+"quality": null
+},
+"3914": {
+"icon": null,
+"name": "Rethilgore",
+"quality": null
+},
+"3927": {
+"icon": null,
+"name": "Wolf Master Nandos",
+"quality": null
+},
+"4274": {
+"icon": null,
+"name": "Fenrus the Devourer",
+"quality": null
+},
+"4275": {
+"icon": null,
+"name": "Archmage Arugal",
+"quality": null
+},
+"4278": {
+"icon": null,
+"name": "Commander Springvale",
+"quality": null
+},
+"4279": {
+"icon": null,
+"name": "Odo the Blindwatcher",
+"quality": null
+},
+"4829": {
+"icon": null,
+"name": "Aku'mai",
+"quality": null
+},
+"4830": {
+"icon": null,
+"name": "Old Serra'kis",
+"quality": null
+},
+"4831": {
+"icon": null,
+"name": "Lady Sarevess",
+"quality": null
+},
+"4832": {
+"icon": null,
+"name": "Twilight Lord Kelris",
+"quality": null
+},
+"4887": {
+"icon": null,
+"name": "Ghamoo-ra",
+"quality": null
+},
+"5775": {
+"icon": null,
+"name": "Verdan the Everliving",
+"quality": null
+},
+"5912": {
+"icon": null,
+"name": "Deviate Faerie Dragon",
+"quality": null
+},
+"6243": {
+"icon": null,
+"name": "Gelihast",
+"quality": null
+},
+"639": {
+"icon": null,
+"name": "Edwin VanCleef",
+"quality": null
+},
+"642": {
+"icon": null,
+"name": "Sneed's Shredder",
+"quality": null
+},
+"643": {
+"icon": null,
+"name": "Sneed",
+"quality": null
+},
+"644": {
+"icon": null,
+"name": "Rhahk'Zor",
+"quality": null
+},
+"645": {
+"icon": null,
+"name": "Cookie",
+"quality": null
+},
+"646": {
+"icon": null,
+"name": "Mr. Smite",
+"quality": null
+},
+"647": {
+"icon": null,
+"name": "Captain Greenskin",
+"quality": null
+}
+}
+}
