@@ -7,13 +7,23 @@ local ICON = "Interface\\AddOns\\DarkMatter\\Media\\dm-icon"
 local STOCK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local atan2 = math.atan2 or math.atan
 
+-- GetMinimapShape is optional (this client has none): assume a round minimap.
+local function MinimapShape()
+  local fn = _G.GetMinimapShape
+  if type(fn) == "function" then
+    local ok, shape = pcall(fn)
+    if ok and type(shape) == "string" then return shape end
+  end
+  return "ROUND"
+end
+
 local function UpdatePosition()
   if not button or not NS.db then return end
   local angle = math.rad(NS.db.minimap.angle or 215)
   local x, y = math.cos(angle), math.sin(angle)
   local w = (Minimap:GetWidth() / 2) + 5
   local h = (Minimap:GetHeight() / 2) + 5
-  local shape = GetMinimapShape and GetMinimapShape() or "ROUND"
+  local shape = MinimapShape()
   if shape == "SQUARE" then
     -- push out to the square edge instead of the circle
     local m = math.max(math.abs(x), math.abs(y))

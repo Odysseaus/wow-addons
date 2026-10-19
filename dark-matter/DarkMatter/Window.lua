@@ -39,7 +39,7 @@ local function Build()
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -2, -2)
   end
-  f:SetSize(440, 380)
+  f:SetSize(540, 460)
   f:SetFrameStrata("MEDIUM")
   f:SetClampedToScreen(true)
   f:SetMovable(true)
@@ -47,6 +47,7 @@ local function Build()
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", function(self) self:StartMoving() end)
   f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() SavePosition() end)
+  f:SetScript("OnShow", function() NS.RefreshWindow() end)
   f:Hide()
 
   local title = f.TitleText or (f.TitleContainer and f.TitleContainer.TitleText)
@@ -62,22 +63,29 @@ local function Build()
 
   local head = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   head:SetPoint("TOPLEFT", 16, -34)
-  head:SetText("Dark Matter " .. NS.version .. " (P0 scaffold)")
+  head:SetText("Dark Matter " .. NS.version .. " (P0.1 probe)")
 
-  local note = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  note:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -6)
-  note:SetWidth(408)
+  local note = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  note:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -4)
+  note:SetWidth(500)
   note:SetJustifyH("LEFT")
-  note:SetText("Placeholder window. The real frame arrives in P1. Drag this window to move it; "
-    .. "drag the minimap button around the minimap edge.")
+  note:SetText("Placeholder window. Scroll the report with the mouse wheel.")
 
-  local probeText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  probeText:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -10)
-  probeText:SetWidth(408)
+  local scroll = CreateFrame("ScrollFrame", "DarkMatterProbeScroll", f, "UIPanelScrollFrameTemplate")
+  scroll:SetPoint("TOPLEFT", 14, -78)
+  scroll:SetPoint("BOTTOMRIGHT", -34, 46)
+  local content = CreateFrame("Frame", nil, scroll)
+  content:SetSize(484, 10)
+  scroll:SetScrollChild(content)
+  local probeText = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  probeText:SetPoint("TOPLEFT", 0, 0)
+  probeText:SetWidth(484)
   probeText:SetJustifyH("LEFT")
   probeText:SetJustifyV("TOP")
   probeText:SetText("No probe yet. Press Run probe (or type /dm probe).")
   f.probeText = probeText
+  f.probeContent = content
+  f.probeScroll = scroll
 
   local probeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   probeBtn:SetSize(130, 24)
@@ -110,6 +118,8 @@ function NS.RefreshWindow()
   local p = NS.lastProbe
   if p and p.summary then
     frame.probeText:SetText(table.concat(p.summary, "\n"))
+    frame.probeContent:SetHeight((frame.probeText:GetStringHeight() or 0) + 8)
+    frame.probeScroll:SetVerticalScroll(0)
   end
 end
 

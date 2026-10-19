@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.0.1 (P0 scaffold): minimap button, placeholder window, /dm probe. No gameplay features yet.
+## Notes: Dark Matter 0.0.2 (P0.1): minimap button, placeholder window, /dm probe. No gameplay features yet.
 ## Author: Odysseaus
-## Version: 0.0.1
+## Version: 0.0.2
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 

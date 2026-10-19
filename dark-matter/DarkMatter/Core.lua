@@ -1,11 +1,11 @@
--- Dark Matter 0.0.1 (P0 scaffold)
+-- Dark Matter 0.0.2 (P0.1 scaffold)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.0.1"
+NS.version = "0.0.2"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 
@@ -39,6 +39,7 @@ local function InitDB()
   NS.db = DarkMatterDB
   NS.sv.previousSession = NS.db.lastSession
   NS.sv.previousLoadCount = NS.db.loadCount
+  NS.sv.previousProbeWhen = type(NS.db.probe) == "table" and NS.db.probe.when or nil
   CopyDefaults(NS.db, DEFAULTS)
   NS.db.loadCount = (tonumber(NS.db.loadCount) or 0) + 1
   NS.db.lastSession = date("%Y-%m-%d %H:%M:%S")
