@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.14 (P2.14, placement diagnostics + settle)
+- Investigation of the 0.2.13 "still off" reports using `/dm tipdebug` from the real client: the logged rects match the screen. Oily Blackmouth (no compare): anchor `242,593.5 147.7x28` (icon + name), tooltip frame `390.7,622.5 364.7x172.3`; on screen the tooltip's visible border sits ~4 units right of the end of "Oily Blackmouth" and ~4 above its icon. 103 Pound Mightfish (two compares): anchor right 420.5, tooltip at 421.5,514.5, compares chained right, bottoms aligned. No scale or coordinate-space mismatch: placement is applied exactly as specified.
+- Why it chose right/up without a compare: the icon is only 242 units from the screen's left edge and the tooltip is ~365 wide, so "up-left of the icon" does not fit and rule (a) flips it to the item's top-right. Above the row, it necessarily covers the rows above.
+- `/dm tipdebug` now also prints effective scales (UIParent, tooltip, anchor, row, icon), the row's and icon's own rects, and the room decision (`room L/R`, `need`, chosen side, "no room on the left"); saved as `decision` with `frames.icon`/`frames.UIParent`.
+- Placement watcher re-applies every frame for the first 10 frames after show, then on any size/anchor change.
+- Stub tests reproduce both real-client tipdebug geometries exactly and assert no overlap with the hovered item and up-left placement when there is room. Previewer DM-25 adds the left-edge no-compare case.
+- Kept `ANCHOR_PRESERVE`: with `ANCHOR_NONE` the client's `GameTooltip_AnchorComparisonTooltips` calls `SetAnchorType(anchorType, dx, 0)` and slides the tooltip (the 0.2.9 cursor jump).
+
 ## 0.2.13 (P2.13, tooltip corner on the item)
 - **Fix: tooltip "close but not there yet".** Measured on the 0.2.12 screenshot (window on the left, "103 Pound Mightfish" hovered; ~1.19 screen px per UI unit): the tooltip's visible bottom-left was 11 px (~9 units) right of the end of the name and 13 px (~11 units) above the icon's top edge, i.e. ~5 units right and ~7 units up from the target. It sat on the hovered row (not the row above); the gap was just too big. Two causes:
   - The item anchor spanned the full row height, so its top was the row's padded top, 4 units above the icon.

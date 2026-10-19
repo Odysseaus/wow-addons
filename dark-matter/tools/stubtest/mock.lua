@@ -1715,6 +1715,80 @@ if MODE ~= "minimal" then
   A._scripts.OnLeave(A)
   SlashCmdList["DARKMATTER"]("tipdebug")
   rawset(GameTooltip, "GetRect", nil)
+  -- 0.2.14: tipdebug also prints scales, row/icon rects and the room decision
+  lines = {}
+  DarkMatter.Print = function(m) lines[#lines + 1] = tostring(m) end
+  SlashCmdList["DARKMATTER"]("tipdebug")
+  A._scripts.OnEnter(A)
+  local sl
+  for _, l in ipairs(lines) do if l:find("tipdebug scale ui", 1, true) then sl = l end end
+  check(sl and sl:find("room L", 1, true) and sl:find("icon", 1, true) and sl:find("row", 1, true), "tipdebug prints scales, row/icon rects and room (" .. tostring(sl) .. ")")
+  local lr = DarkMatterDB.tipdebug.last
+  check(lr and lr.decision and lr.decision.scales and lr.frames.icon and lr.frames.UIParent, "tipdebug saves decision, scales, icon and UIParent")
+  A._scripts.OnLeave(A)
+  SlashCmdList["DARKMATTER"]("tipdebug")
+  -- watcher re-applies every frame while settling (first 10 frames), without counting as fixes
+  A._scripts.OnEnter(A)
+  local nSet, fx0 = 0, W.target.fixes or 0
+  local realSP = rawget(GameTooltip, "SetPoint")
+  rawset(GameTooltip, "SetPoint", function(self, ...) nSet = nSet + 1 return realSP(self, ...) end)
+  for _ = 1, 12 do W._scripts.OnUpdate(W, 0.016) end
+  check(nSet == 10 and (W.target.fixes or 0) == fx0, "settling: re-applied on 10 frames, then only on change (" .. nSet .. ")")
+  rawset(GameTooltip, "SetPoint", realSP)
+  A._scripts.OnLeave(A)
+
+  -- real-client geometry from the /dm tipdebug screenshots (window at the screen's left edge, UI units)
+  local function fakeF(l, b, w, h)
+    local f = {}
+    function f:GetLeft() return l end
+    function f:GetRight() return l + w end
+    function f:GetTop() return b + h end
+    function f:GetBottom() return b end
+    function f:GetEffectiveScale() return 1 end
+    return f
+  end
+  local function resolve(pt, rel, x, y, a, w, h)
+    local ax = rel:find("RIGHT") and (a:GetRight()) or a:GetLeft()
+    local ay = rel:find("TOP") and a:GetTop() or a:GetBottom()
+    local inset = DarkMatter.FISH_TIP_INSET
+    local fx = x > 0 and x - inset or x + inset
+    local fy = y > 0 and y - inset or y + inset
+    local px, py = ax + fx, ay + fy
+    local l = pt:find("LEFT") and px or px - w
+    local b = pt:find("BOTTOM") and py or py - h
+    return l, b, w, h
+  end
+  rawset(UIParent, "GetWidth", function() return 1200 end)
+  rawset(UIParent, "GetHeight", function() return 900 end)
+  -- (1) Oily Blackmouth, no compare: anchor 242,593.5 147.7x28; tooltip 364.7x172.3
+  rawset(GameTooltip, "GetWidth", function() return 364.7 end)
+  rawset(GameTooltip, "GetHeight", function() return 172.3 end)
+  local oily = fakeF(242, 593.5, 147.7, 28)
+  local pt, rl, x1, y1, sd = DarkMatter.FishingTooltipAnchor(GameTooltip, oily, 0, 0)
+  local dc = DarkMatter._FishingLastDecision
+  check(dc.roomLeft == 242 and not dc.fitsLeft and dc.need > 360, "geometry (1): 242 units left of the icon < 369 needed: no room on the left")
+  check(pt == "BOTTOMLEFT" and rl == "TOPRIGHT" and sd == "right", "geometry (1): flips to the item's top-right, above the row")
+  local l1, b1 = resolve(pt, rl, x1, y1, oily, 364.7, 172.3)
+  check(math.abs(l1 - 390.7) < 0.05 and math.abs(b1 - 622.5) < 0.05, "geometry (1): frame at 390.7,622.5 = the real client's tipdebug rect")
+  check(b1 >= oily:GetTop() and l1 >= oily:GetRight(), "geometry (1): tooltip does not overlap the hovered item (bottom above icon top, left past name end)")
+  check(math.abs((b1 - oily:GetTop()) + DarkMatter.FISH_TIP_INSET - 4) < 0.05 and math.abs((l1 - oily:GetRight()) + DarkMatter.FISH_TIP_INSET - 4) < 0.05, "geometry (1): visible border 4 from the item corner")
+  -- same row with room on the left: up-left of the icon
+  local roomy = fakeF(500, 593.5, 147.7, 28)
+  pt, rl, x1 = DarkMatter.FishingTooltipAnchor(GameTooltip, roomy, 0, 0)
+  local l2, b2, w2 = resolve(pt, rl, x1, 4, roomy, 364.7, 172.3)
+  check(pt == "BOTTOMRIGHT" and rl == "TOPLEFT" and l2 + w2 <= roomy:GetLeft() and b2 >= roomy:GetTop(), "geometry: with room on the left the tooltip goes up-left of the icon")
+  -- (2) 103 Pound Mightfish with two compares: anchor 242,485.5 178.5x28; tooltip 250.9x131.3
+  rawset(GameTooltip, "GetWidth", function() return 250.9 end)
+  rawset(GameTooltip, "GetHeight", function() return 131.3 end)
+  local might = fakeF(242, 485.5, 178.5, 28)
+  pt, rl, x1, y1, sd = DarkMatter.FishingTooltipAnchor(GameTooltip, might, 420, 200)
+  local l3, b3 = resolve(pt, rl, x1, y1, might, 250.9, 131.3)
+  check(pt == "BOTTOMLEFT" and sd == "right" and math.abs(l3 - 421.5) < 0.05 and math.abs(b3 - 514.5) < 0.05, "geometry (2): compare case frame at 421.5,514.5 = the real client's tipdebug rect")
+  check(b3 >= might:GetTop(), "geometry (2): main tooltip above the hovered item")
+  rawset(UIParent, "GetWidth", nil); rawset(UIParent, "GetHeight", nil)
+  rawset(GameTooltip, "GetWidth", function() return 200 end)
+  rawset(GameTooltip, "GetHeight", function() return 100 end)
+
   DarkMatter.Print = savedPrint
   COMPARE = false
 

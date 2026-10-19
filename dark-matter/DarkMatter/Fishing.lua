@@ -670,14 +670,21 @@ function NS.FishingTooltipAnchor(tt, owner, cw, ch)
   local function roomLeft() return left and (left * os) or 0 end
   local function roomRight() return (right and screenW) and (screenW * us - right * os) or 0 end
   local useRight
+  local fl, fr = fitsLeftSet(), fitsRightSet()
   if hasCompare then
-    useRight = fitsRightSet() or (not fitsLeftSet() and roomRight() >= roomLeft())
+    useRight = fr or (not fl and roomRight() >= roomLeft())
   else
-    useRight = not fitsLeftSet() and (fitsRightSet() or roomRight() > roomLeft())
+    useRight = not fl and (fr or roomRight() > roomLeft())
   end
   local fitsTop = true
   local hh = math.max(h or 0, ch or 0)
   if top and h and screenH then fitsTop = (top * os + g + hh * ts) <= screenH * us end
+  -- why this side was chosen (screen units), for /dm tipdebug
+  NS._FishingLastDecision = {
+    roomLeft = roomLeft(), roomRight = roomRight(), need = (w and (w + cw) * ts or 0) + g,
+    fitsLeft = fl, fitsRight = fr, fitsTop = fitsTop, compare = hasCompare,
+    scales = { ui = us, tip = ts, anchor = os },
+  }
   local v1, v2 = fitsTop and "BOTTOM" or "TOP", fitsTop and "TOP" or "BOTTOM"
   local y = fitsTop and TIP_GAP or -TIP_GAP
   if useRight then
@@ -772,6 +779,8 @@ local function TipDebugRecord(tt, owner, anchor, reason, side, vert, nc)
       ShoppingTooltip2 = DescribeFrame(_G.ShoppingTooltip2, owner, anchor),
       anchor = DescribeFrame(anchor, owner, anchor),
       row = DescribeFrame(owner, owner, anchor),
+      icon = owner and owner.icon and DescribeFrame(owner.icon, owner, anchor) or nil,
+      UIParent = DescribeFrame(UIParent, owner, anchor),
     },
   }
   -- visible gap estimate: frame gap between the tooltip and the item anchor, plus the border inset
@@ -783,6 +792,7 @@ local function TipDebugRecord(tt, owner, anchor, reason, side, vert, nc)
     local dy = vert == "up" and (gB - aT) or (aB - gT)
     rec.delta = { frameX = R(dx), frameY = R(dy), visibleX = R(dx + TIP_INSET), visibleY = R(dy + TIP_INSET), inset = TIP_INSET }
   end
+  rec.decision = NS._FishingLastDecision
   td.last = rec
   td.log = td.log or {}
   table.insert(td.log, rec)
@@ -794,6 +804,14 @@ local function TipDebugRecord(tt, owner, anchor, reason, side, vert, nc)
     local g, s1 = rec.frames.GameTooltip, rec.frames.ShoppingTooltip1
     NS.Print(string.format("tipdebug %s %s/%s: tip %s [%s] anchor %s cmp1 %s [%s]", reason, tostring(side), tostring(vert),
       g and g.points[1] or "-", rs(g), rs(rec.frames.anchor), (s1 and s1.shown) and (s1.points[1] or "-") or "hidden", rs(s1)))
+    local dc, fr = rec.decision, rec.frames
+    if dc then
+      local function sc(d) return d and tostring(d.scale) or "-" end
+      NS.Print(string.format("tipdebug scale ui %s tip %s anchor %s row %s icon %s | row %s icon %s | room L %s R %s need %s -> %s%s",
+        sc(fr.UIParent), sc(fr.GameTooltip), sc(fr.anchor), sc(fr.row), sc(fr.icon), rs(fr.row), rs(fr.icon),
+        tostring(R(dc.roomLeft)), tostring(R(dc.roomRight)), tostring(R(dc.need)), tostring(side),
+        (side == "right" and not dc.compare and not dc.fitsLeft) and " (no room on the left)" or ""))
+    end
     local d = rec.delta
     if d then
       NS.Print(string.format("tipdebug anchor %s vs tip %s: frame gap x=%s y=%s, visible ~x=%s y=%s (inset %s, target 4)",
@@ -874,10 +892,13 @@ local function StartWatch(tt, owner)
       if not (ok and owned and w.tt:IsShown()) then self.target = nil self:Hide() return end
       local sig = Signature(w.tt)
       local moved = PointsChanged()
-      if sig ~= w.sig or moved then
-        PlaceTooltip(w.tt, w.owner, moved and "repoint" or "resize")
+      w.frames = (w.frames or 0) + 1
+      local changed = sig ~= w.sig or moved
+      -- re-apply on any change, and every frame for the first 10 frames after show (settling)
+      if changed or w.frames <= 10 then
+        PlaceTooltip(w.tt, w.owner, changed and (moved and "repoint" or "resize") or nil)
         w.sig = Signature(w.tt)
-        w.fixes = (w.fixes or 0) + 1
+        if changed then w.fixes = (w.fixes or 0) + 1 end
       end
     end)
   end
