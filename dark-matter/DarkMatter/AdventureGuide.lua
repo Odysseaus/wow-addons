@@ -1,5 +1,6 @@
--- Adventure Guide data layer (0.3.1): dungeon list from the client's LFG data (read-only), merged with our own
--- static drop seed (Data_Dungeons.lua: validated on Wowhead WoW Forever), plus account-wide loot learning.
+-- Adventure Guide data layer (0.3.2): our known-good list of every Classic + Forever dungeon and raid
+-- (Data_Dungeons.lua: validated on Wowhead WoW Forever) merged with the client's LFG data (read-only, by name or
+-- alias), plus account-wide loot learning.
 -- Taint-safe: read-only API calls (pcall), our own private event frame, no hooks, no Blizzard UI loads.
 local _, NS = ...
 local AG = {}
@@ -31,6 +32,10 @@ local function SeedIndex()
   for _, d in ipairs(NS.AdventureGuideSeed or {}) do
     local k = Norm(d.name)
     if k then seedIdx.byName[k] = d end
+    for _, a in ipairs(d.aliases or {}) do
+      local ak = Norm(a)
+      if ak and not seedIdx.byName[ak] then seedIdx.byName[ak] = d end
+    end
     for _, b in ipairs(d.bosses or {}) do
       if b.npcId then seedIdx.bossByNpc[b.npcId] = { dungeon = d, boss = b } end
     end
@@ -128,14 +133,16 @@ local function ScanRaw()
   return rows
 end
 
--- Why an LFG row is not a dungeon/raid (nil = accepted).
+-- Why an LFG row is not a dungeon/raid (nil = accepted). 0.3.2: a row matching our list (name or alias) is always
+-- kept; LFG rows that report no bosses are kept too (the real client lists 21 such dungeons/raids).
 local function RejectReason(e, idx)
   if not e.key then return "noname" end
   if AG.IsPlaceholder(e.name) then return "placeholder" end
+  if idx.byName[e.key] then return nil end
   if NOT_DUNGEON[e.key] then return "zone" end
+  if e.name:lower():find("^random[%s%-]") then return "random" end -- random-queue rows
   if e.typeID and REJECT_TYPE[e.typeID] then return REJECT_TYPE[e.typeID] end
   if e.subtypeID and REJECT_SUBTYPE[e.subtypeID] then return REJECT_SUBTYPE[e.subtypeID] end
-  if #e.bosses == 0 and not idx.byName[e.key] then return "nobosses" end
   return nil
 end
 
@@ -180,11 +187,32 @@ function AG.ScanReport()
   if type(DarkMatterDB) == "table" then
     DarkMatterDB.agscan = { at = date("%Y-%m-%d %H:%M:%S"), stats = stats, rows = out }
   end
-  local parts = {}
+  local parts, noBoss, unlisted = {}, {}, {}
   for k, v in pairs(stats.rejected) do parts[#parts + 1] = k .. " " .. v end
   table.sort(parts)
-  return string.format("agscan: %d LFG names, %d dungeons/raids kept; rejected: %s", stats.named, stats.accepted,
-    #parts > 0 and table.concat(parts, ", ") or "none")
+  for _, r in ipairs(out) do
+    if r.accepted and #(r.bosses or {}) == 0 then noBoss[#noBoss + 1] = r.name end
+    if r.accepted and not idx.byName[Norm(r.name)] then unlisted[#unlisted + 1] = r.name end
+  end
+  if type(DarkMatterDB) == "table" and DarkMatterDB.agscan then
+    DarkMatterDB.agscan.noBosses, DarkMatterDB.agscan.notInList = noBoss, unlisted
+  end
+  local lines = { string.format("agscan: %d LFG names, %d dungeons/raids kept (%d match our list); rejected: %s", stats.named,
+    stats.accepted, stats.accepted - #unlisted, #parts > 0 and table.concat(parts, ", ") or "none") }
+  -- chat lines stay short: names in chunks
+  local function Chunk(label, names)
+    if #names == 0 then return end
+    local cur = label .. " (" .. #names .. "): "
+    for i, n in ipairs(names) do
+      local add = n .. (i < #names and ", " or "")
+      if #cur + #add > 230 then lines[#lines + 1] = cur cur = "  " end
+      cur = cur .. add
+    end
+    lines[#lines + 1] = cur
+  end
+  Chunk("kept, no LFG bosses", noBoss)
+  Chunk("kept, not in our list", unlisted)
+  return table.concat(lines, "\n"), lines
 end
 
 local function Kind(e)
@@ -204,45 +232,56 @@ local function Drops(b)
   return out
 end
 
--- Merged list: every LFG dungeon (with its seed drops when we have them) + seed dungeons the LFG list lacks.
+-- Merged list (0.3.2): every dungeon and raid in our list (always shown), with live LFG data attached where the
+-- name or an alias matches (several LFG rows may map to one entry, e.g. Stratholme's two gates), plus any other
+-- LFG row that is a real dungeon/raid (zones, battlegrounds and placeholders are filtered in the scan).
 function AG.Dungeons()
   local idx = SeedIndex()
-  local out, used = {}, {}
-  for _, e in ipairs(AG.ScanLFG()) do
-    local sd = idx.byName[e.key]
-    local d = { name = e.name, key = e.key, lfgId = e.lfgId, source = "lfg", kind = Kind(e),
-      minLevel = e.minLevel, maxLevel = e.maxLevel, recLevel = e.recLevel, size = e.maxPlayers,
-      numEncounters = e.numEncounters, seeded = sd ~= nil, zone = sd and sd.zone, short = sd and sd.short, bosses = {} }
-    if sd then
-      used[e.key] = true
-      -- our seed range wins (LFG reports e.g. Wailing Caverns 17-17); LFG keeps the recommended level
-      if sd.levels then d.minLevel, d.maxLevel = sd.levels[1], sd.levels[2] end
-      local have = {}
-      for _, b in ipairs(sd.bosses or {}) do
-        have[Norm(b.name)] = true
-        d.bosses[#d.bosses + 1] = { name = b.name, npcId = b.npcId, rare = b.rare, src = b.src, dropSrc = b.dropSrc, drops = Drops(b), seeded = true }
-      end
-      for _, bn in ipairs(e.bosses) do
-        if not have[Norm(bn)] then d.bosses[#d.bosses + 1] = { name = bn, drops = {}, seeded = false } end
-      end
-    else
-      for _, bn in ipairs(e.bosses) do d.bosses[#d.bosses + 1] = { name = bn, drops = {}, seeded = false } end
-      if d.minLevel and d.minLevel <= 0 then d.minLevel = nil end
-      if d.maxLevel and d.minLevel and d.maxLevel < d.minLevel then d.maxLevel = d.minLevel end
-    end
-    out[#out + 1] = d
-  end
+  local out, bySeed = {}, {}
   for _, sd in ipairs(NS.AdventureGuideSeed or {}) do
     local k = Norm(sd.name)
-    if k and not used[k] then
-      local d = { name = sd.name, key = k, source = "seed", kind = "Dungeon", minLevel = sd.levels and sd.levels[1],
-        maxLevel = sd.levels and sd.levels[2], size = 5, seeded = true, zone = sd.zone, short = sd.short, bosses = {} }
+    if k and not bySeed[sd] then
+      local dropsSeeded = sd.dropsSeeded ~= false
+      local d = { name = sd.name, key = k, source = "list", lfg = false, kind = sd.kind or "Dungeon",
+        minLevel = sd.levels and sd.levels[1], maxLevel = sd.levels and sd.levels[2], size = sd.size or 5,
+        seeded = true, dropsSeeded = dropsSeeded, forever = sd.forever, zone = sd.zone, short = sd.short,
+        src = sd.src, bosses = {}, _have = {} }
       for _, b in ipairs(sd.bosses or {}) do
-        d.bosses[#d.bosses + 1] = { name = b.name, npcId = b.npcId, rare = b.rare, src = b.src, dropSrc = b.dropSrc, drops = Drops(b), seeded = true }
+        d._have[Norm(b.name) or ""] = true
+        d.bosses[#d.bosses + 1] = { name = b.name, npcId = b.npcId, rare = b.rare, src = b.src, dropSrc = b.dropSrc,
+          drops = dropsSeeded and Drops(b) or {}, seeded = dropsSeeded and not b.dropsPending }
       end
+      bySeed[sd] = d
       out[#out + 1] = d
     end
   end
+  for _, e in ipairs(AG.ScanLFG()) do
+    local sd = idx.byName[e.key]
+    local d = sd and bySeed[sd]
+    if d then
+      d.lfg, d.source = true, "list+lfg"
+      d.lfgId = d.lfgId or e.lfgId
+      if (not d.recLevel) and e.recLevel and e.recLevel > 0 then d.recLevel = e.recLevel end
+      d.numEncounters = (d.numEncounters or 0) + (e.numEncounters or 0)
+      for _, bn in ipairs(e.bosses) do
+        local bk = Norm(bn) or ""
+        if not d._have[bk] then
+          d._have[bk] = true
+          d.bosses[#d.bosses + 1] = { name = bn, drops = {}, seeded = false, live = true }
+        end
+      end
+    else
+      d = { name = e.name, key = e.key, lfgId = e.lfgId, source = "lfg", lfg = true, kind = Kind(e),
+        minLevel = e.minLevel, maxLevel = e.maxLevel, recLevel = e.recLevel, size = e.maxPlayers,
+        numEncounters = e.numEncounters, seeded = false, dropsSeeded = false, bosses = {}, _have = {} }
+      for _, bn in ipairs(e.bosses) do d.bosses[#d.bosses + 1] = { name = bn, drops = {}, seeded = false, live = true } end
+      if d.minLevel and d.minLevel <= 0 then d.minLevel = nil end
+      if d.maxLevel and d.minLevel and d.maxLevel < d.minLevel then d.maxLevel = d.minLevel end
+      if d.maxLevel and d.maxLevel <= 0 then d.maxLevel = nil end
+      out[#out + 1] = d
+    end
+  end
+  for _, d in ipairs(out) do d._have = nil end
   table.sort(out, function(a, b)
     local la, lb = a.minLevel or 999, b.minLevel or 999
     if la ~= lb then return la < lb end

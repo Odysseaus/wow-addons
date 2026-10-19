@@ -24,11 +24,15 @@ def listview(html, lvid):
 def main():
     cache = json.loads(OUT.read_text()) if OUT.exists() and "--refresh" not in sys.argv else {}
     for dg in SEED["dungeons"]:
+        if not dg.get("drops", True): continue  # 0.3.2: boss lists only (raids, Forever-only instances)
         for b in dg["bosses"]:
             npc = str(b[1])
             if npc in cache: continue
             req = urllib.request.Request("https://www.wowhead.com/classic/npc=%s" % npc, headers=UA)
-            html = urllib.request.urlopen(req, timeout=30).read().decode("utf8", "replace")
+            try:
+                html = urllib.request.urlopen(req, timeout=30).read().decode("utf8", "replace")
+            except Exception as e:  # noqa: BLE001
+                print("fetch failed", npc, b[0], e); continue
             t = re.search(r"<title>([^<]*?) - NPC", html)
             drops = []
             for it in listview(html, "drops"):

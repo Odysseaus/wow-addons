@@ -1,0 +1,818 @@
+{
+ "_comment": "Hand-authored known-good instance list (original entry). Names, level ranges, type and location come from Wowhead WoW Forever zone data (https://www.wowhead.com/forever/zone=<id>, via the Forever tooltip API) unless levelSrc says otherwise (wing ranges: warcraft.wiki.gg fallback). Boss order from warcraft.wiki.gg dungeon pages; every boss NPC ID is resolved and validated on Wowhead Forever by resolve_forever.py. 'drops': true = drops attributed from the Wowhead Classic NPC page (fallback), validated on Forever.",
+ "instances": [
+  {
+   "name": "Ragefire Chasm",
+   "short": "RFC",
+   "kind": "Dungeon",
+   "zoneId": 2437,
+   "drops": true,
+   "bosses": [
+    "Oggleflint",
+    "Taragaman the Hungerer",
+    "Jergosh the Invoker",
+    "Bazzalan"
+   ]
+  },
+  {
+   "name": "The Hall of Thanes",
+   "short": "HoT",
+   "kind": "Dungeon",
+   "zoneId": 16919,
+   "forever": true,
+   "aliases": [
+    "Hall of Thanes"
+   ],
+   "levels": [
+    13,
+    18
+   ],
+   "levelSrc": "https://www.wowhead.com/forever/guide/hall-of-thanes-dungeon-overview-location-rewards",
+   "zone": "Ironforge",
+   "bosses": [
+    "Faldrim Anvilmar",
+    "Magmatus",
+    "Plunder",
+    "Durgen Dirgehammer"
+   ]
+  },
+  {
+   "name": "Ruins of Lordaeron",
+   "short": "RoL",
+   "kind": "Dungeon",
+   "zoneId": 16611,
+   "forever": true,
+   "levels": [
+    15,
+    20
+   ],
+   "levelSrc": "https://warcraft.wiki.gg/wiki/Ruins_of_Lordaeron",
+   "zone": "Tirisfal Glades",
+   "bosses": [
+    "Witherfang",
+    "The Abandoned",
+    "Rath'mael",
+    "Lordaeron Captain",
+    "Viktor the Vile",
+    "Bjork"
+   ],
+   "note": "The Butcher has no Wowhead Forever NPC record yet; live LFG data fills it in."
+  },
+  {
+   "name": "Wailing Caverns",
+   "short": "WC",
+   "kind": "Dungeon",
+   "zoneId": 718,
+   "drops": true,
+   "bosses": [
+    "Lady Anacondra",
+    "Lord Cobrahn",
+    "Kresh",
+    "Lord Pythas",
+    "Skum",
+    "Lord Serpentis",
+    "Verdan the Everliving",
+    "Mutanus the Devourer",
+    [
+     "Deviate Faerie Dragon",
+     "rare"
+    ]
+   ]
+  },
+  {
+   "name": "The Deadmines",
+   "short": "DM",
+   "kind": "Dungeon",
+   "zoneId": 1581,
+   "drops": true,
+   "aliases": [
+    "Deadmines"
+   ],
+   "bosses": [
+    "Rhahk'Zor",
+    [
+     "Miner Johnson",
+     "rare"
+    ],
+    "Sneed's Shredder",
+    "Sneed",
+    "Gilnid",
+    "Mr. Smite",
+    "Captain Greenskin",
+    "Edwin VanCleef",
+    "Cookie"
+   ]
+  },
+  {
+   "name": "Shadowfang Keep",
+   "short": "SFK",
+   "kind": "Dungeon",
+   "zoneId": 209,
+   "drops": true,
+   "bosses": [
+    "Rethilgore",
+    "Razorclaw the Butcher",
+    "Baron Silverlaine",
+    "Commander Springvale",
+    "Odo the Blindwatcher",
+    [
+     "Deathsworn Captain",
+     "rare"
+    ],
+    "Fenrus the Devourer",
+    "Wolf Master Nandos",
+    "Archmage Arugal"
+   ]
+  },
+  {
+   "name": "Blackfathom Deeps",
+   "short": "BFD",
+   "kind": "Dungeon",
+   "zoneId": 719,
+   "drops": true,
+   "bosses": [
+    "Ghamoo-ra",
+    "Lady Sarevess",
+    "Gelihast",
+    "Lorgus Jett",
+    "Baron Aquanis",
+    "Twilight Lord Kelris",
+    "Old Serra'kis",
+    "Aku'mai"
+   ]
+  },
+  {
+   "name": "The Stockade",
+   "short": "Stocks",
+   "kind": "Dungeon",
+   "zoneId": 717,
+   "drops": true,
+   "aliases": [
+    "Stormwind Stockade",
+    "Stockade",
+    "The Stockades"
+   ],
+   "bosses": [
+    "Targorr the Dread",
+    "Kam Deepfury",
+    "Hamhock",
+    "Bazil Thredd",
+    "Dextren Ward",
+    [
+     "Bruegal Ironknuckle",
+     "rare"
+    ]
+   ]
+  },
+  {
+   "name": "Excavation Site: Wetlands",
+   "short": "Exc",
+   "kind": "Dungeon",
+   "zoneId": 16732,
+   "forever": true,
+   "levels": [
+    24,
+    29
+   ],
+   "levelSrc": "https://wowseer.gg/news/nine-new-dungeons",
+   "zone": "Wetlands",
+   "aliases": [
+    "Excavation Site"
+   ],
+   "bosses": [
+    "Saltspine",
+    "Shadetooth",
+    "Highland Horror",
+    "Relic Guardian"
+   ],
+   "bossSrc": "https://wowseer.gg/news/nine-new-dungeons"
+  },
+  {
+   "name": "Gnomeregan",
+   "short": "Gnomer",
+   "kind": "Dungeon",
+   "zoneId": 721,
+   "drops": true,
+   "bosses": [
+    "Grubbis",
+    "Viscous Fallout",
+    "Electrocutioner 6000",
+    "Crowd Pummeler 9-60",
+    [
+     "Dark Iron Ambassador",
+     "rare"
+    ],
+    "Mekgineer Thermaplugg"
+   ]
+  },
+  {
+   "name": "City of Dalaran",
+   "short": "Dal",
+   "kind": "Dungeon",
+   "zoneId": 16560,
+   "forever": true,
+   "levels": [
+    28,
+    33
+   ],
+   "levelSrc": "https://wowseer.gg/news/nine-new-dungeons",
+   "zone": "Alterac Mountains",
+   "aliases": [
+    "Dalaran"
+   ],
+   "bosses": [
+    "Arcane Anomaly",
+    "Fel Ancient",
+    "Mana Devourer",
+    "Mana Elemental",
+    "Unstable Sentinel",
+    "Shade of the Archmage",
+    "Lyn the Ignored",
+    "Atrexis the Grave Knight",
+    "Mana Wraith"
+   ],
+   "bossSrc": "https://wowseer.gg/news/nine-new-dungeons"
+  },
+  {
+   "name": "Razorfen Kraul",
+   "short": "RFK",
+   "kind": "Dungeon",
+   "zoneId": 491,
+   "drops": true,
+   "bosses": [
+    "Roogug",
+    "Aggem Thorncurse",
+    "Death Speaker Jargba",
+    "Overlord Ramtusk",
+    "Agathelos the Raging",
+    [
+     "Blind Hunter",
+     "rare"
+    ],
+    "Charlga Razorflank",
+    [
+     "Earthcaller Halmgar",
+     "rare"
+    ]
+   ]
+  },
+  {
+   "name": "Scarlet Monastery: Graveyard",
+   "short": "SM GY",
+   "kind": "Dungeon",
+   "zoneId": 796,
+   "wing": "Graveyard",
+   "levels": [
+    26,
+    36
+   ],
+   "levelSrc": "https://warcraft.wiki.gg/wiki/Scarlet_Monastery",
+   "drops": true,
+   "bosses": [
+    "Interrogator Vishas",
+    "Bloodmage Thalnos",
+    [
+     "Azshir the Sleepless",
+     "rare"
+    ],
+    [
+     "Fallen Champion",
+     "rare"
+    ],
+    [
+     "Ironspine",
+     "rare"
+    ]
+   ]
+  },
+  {
+   "name": "Scarlet Monastery: Library",
+   "short": "SM Lib",
+   "kind": "Dungeon",
+   "zoneId": 796,
+   "wing": "Library",
+   "levels": [
+    29,
+    39
+   ],
+   "levelSrc": "https://warcraft.wiki.gg/wiki/Scarlet_Monastery",
+   "drops": true,
+   "bosses": [
+    "Houndmaster Loksey",
+    "Arcanist Doan"
+   ]
+  },
+  {
+   "name": "Scarlet Monastery: Armory",
+   "short": "SM Arm",
+   "kind": "Dungeon",
+   "zoneId": 796,
+   "wing": "Armory",
+   "levels": [
+    32,
+    42
+   ],
+   "levelSrc": "https://warcraft.wiki.gg/wiki/Scarlet_Monastery",
+   "drops": true,
+   "bosses": [
+    "Herod"
+   ]
+  },
+  {
+   "name": "Scarlet Monastery: Cathedral",
+   "short": "SM Cath",
+   "kind": "Dungeon",
+   "zoneId": 796,
+   "wing": "Cathedral",
+   "levels": [
+    35,
+    45
+   ],
+   "levelSrc": "https://warcraft.wiki.gg/wiki/Scarlet_Monastery",
+   "drops": true,
+   "bosses": [
+    "High Inquisitor Fairbanks",
+    "Scarlet Commander Mograine",
+    "High Inquisitor Whitemane"
+   ]
+  },
+  {
+   "name": "Razorfen Downs",
+   "short": "RFD",
+   "kind": "Dungeon",
+   "zoneId": 722,
+   "drops": true,
+   "bosses": [
+    "Tuten'kash",
+    "Mordresh Fire Eye",
+    "Glutton",
+    [
+     "Ragglesnout",
+     "rare"
+    ],
+    "Amnennar the Coldbringer",
+    [
+     "Plaguemaw the Rotting",
+     "rare"
+    ]
+   ]
+  },
+  {
+   "name": "Uldaman",
+   "short": "Ulda",
+   "kind": "Dungeon",
+   "zoneId": 1337,
+   "drops": true,
+   "bosses": [
+    "Revelosh",
+    "Baelog",
+    "Ironaya",
+    "Obsidian Sentinel",
+    "Ancient Stone Keeper",
+    "Galgann Firehammer",
+    "Grimlok",
+    "Archaedas"
+   ]
+  },
+  {
+   "name": "Maraudon",
+   "short": "Mara",
+   "kind": "Dungeon",
+   "zoneId": 2100,
+   "drops": true,
+   "bosses": [
+    "Noxxion",
+    "Razorlash",
+    "Lord Vyletongue",
+    [
+     "Meshlok the Harvester",
+     "rare"
+    ],
+    "Celebras the Cursed",
+    "Landslide",
+    "Tinkerer Gizlock",
+    "Rotgrip",
+    "Princess Theradras"
+   ]
+  },
+  {
+   "name": "Zul'Farrak",
+   "short": "ZF",
+   "kind": "Dungeon",
+   "zoneId": 1176,
+   "drops": true,
+   "bosses": [
+    "Antu'sul",
+    "Theka the Martyr",
+    "Witch Doctor Zum'rah",
+    "Nekrum Gutchewer",
+    "Shadowpriest Sezz'ziz",
+    "Sergeant Bly",
+    "Hydromancer Velratha",
+    "Ruuzlu",
+    "Chief Ukorz Sandscalp",
+    "Gahz'rilla",
+    [
+     "Zerillis",
+     "rare"
+    ]
+   ]
+  },
+  {
+   "name": "Dire Maul: East",
+   "short": "DM E",
+   "kind": "Dungeon",
+   "zoneId": 2557,
+   "wing": "East",
+   "levels": [
+    36,
+    46
+   ],
+   "levelSrc": "https://warcraft.wiki.gg/wiki/Dire_Maul",
+   "drops": true,
+   "bosses": [
+    "Pusillin",
+    "Zevrim Thornhoof",
+    "Hydrospawn",
+    "Lethtendris",
+    "Alzzin the Wildshaper",
+    [
+     "Isalien",
+     "rare"
+    ]
+   ]
+  },
+  {
+   "name": "Dire Maul: West",
+   "short": "DM W",
+   "kind": "Dungeon",
+   "zoneId": 2557,
+   "wing": "West",
+   "levels": [
+    39,
+    49
+   ],
+   "levelSrc": "https://warcraft.wiki.gg/wiki/Dire_Maul",
+   "drops": true,
+   "bosses": [
+    "Tendris Warpwood",
+    "Illyanna Ravenoak",
+    "Magister Kalendris",
+    "Immol'thar",
+    [
+     "Tsu'zee",
+     "rare"
+    ],
+    "Prince Tortheldrin"
+   ]
+  },
+  {
+   "name": "Dire Maul: North",
+   "short": "DM N",
+   "kind": "Dungeon",
+   "zoneId": 2557,
+   "wing": "North",
+   "levels": [
+    42,
+    52
+   ],
+   "levelSrc": "https://warcraft.wiki.gg/wiki/Dire_Maul",
+   "drops": true,
+   "bosses": [
+    "Guard Mol'dar",
+    "Stomper Kreeg",
+    "Guard Fengus",
+    "Guard Slip'kik",
+    "Captain Kromcrush",
+    "Cho'Rush the Observer",
+    "King Gordok"
+   ]
+  },
+  {
+   "name": "The Temple of Atal'Hakkar",
+   "short": "ST",
+   "kind": "Dungeon",
+   "zoneId": 1477,
+   "drops": true,
+   "aliases": [
+    "Sunken Temple",
+    "Temple of Atal'Hakkar"
+   ],
+   "bosses": [
+    "Atal'alarion",
+    "Dreamscythe",
+    "Weaver",
+    "Avatar of Hakkar",
+    "Jammal'an the Prophet",
+    "Ogom the Wretched",
+    "Morphaz",
+    "Hazzas",
+    "Shade of Eranikus"
+   ]
+  },
+  {
+   "name": "Stratholme",
+   "short": "Strat",
+   "kind": "Dungeon",
+   "zoneId": 2017,
+   "drops": true,
+   "aliases": [
+    "Stratholme - Main Gate",
+    "Stratholme - Service Entrance",
+    "Stratholme: Main Gate",
+    "Stratholme: Service Entrance",
+    "Stratholme Live",
+    "Stratholme Undead"
+   ],
+   "bosses": [
+    [
+     "Skul",
+     "rare"
+    ],
+    [
+     "Hearthsinger Forresten",
+     "rare"
+    ],
+    "The Unforgiven",
+    "Timmy the Cruel",
+    "Cannon Master Willey",
+    "Archivist Galford",
+    "Balnazzar",
+    [
+     "Stonespine",
+     "rare"
+    ],
+    "Magistrate Barthilas",
+    "Nerub'enkan",
+    "Baroness Anastari",
+    "Maleki the Pallid",
+    "Ramstein the Gorger",
+    "Baron Rivendare"
+   ]
+  },
+  {
+   "name": "Blackrock Depths",
+   "short": "BRD",
+   "kind": "Dungeon",
+   "zoneId": 1584,
+   "drops": true,
+   "bosses": [
+    "Lord Roccor",
+    "High Interrogator Gerstahn",
+    "Anub'shiah",
+    "Eviscerator",
+    "Gorosh the Dervish",
+    "Grizzle",
+    "Hedrum the Creeper",
+    "Ok'thor the Breaker",
+    "Houndmaster Grebmar",
+    "Bael'Gar",
+    "Lord Incendius",
+    "Fineous Darkvire",
+    "Warder Stilgiss",
+    "Pyromancer Loregrain",
+    "General Angerforge",
+    "Golem Lord Argelmach",
+    "Hurley Blackbreath",
+    "Phalanx",
+    "Ribbly Screwspigot",
+    "Plugger Spazzring",
+    "Ambassador Flamelash",
+    "Magmus",
+    "Emperor Dagran Thaurissan"
+   ]
+  },
+  {
+   "name": "Lower Blackrock Spire",
+   "short": "LBRS",
+   "kind": "Dungeon",
+   "zoneId": 1583,
+   "wing": "Lower",
+   "drops": true,
+   "aliases": [
+    "Blackrock Spire - Lower",
+    "Blackrock Spire: Lower",
+    "Blackrock Spire"
+   ],
+   "bosses": [
+    [
+     "Spirestone Butcher",
+     "rare"
+    ],
+    "Highlord Omokk",
+    [
+     "Spirestone Battle Lord",
+     "rare"
+    ],
+    "Shadow Hunter Vosh'gajin",
+    "War Master Voone",
+    [
+     "Bannok Grimaxe",
+     "rare"
+    ],
+    "Mother Smolderweb",
+    [
+     "Crystal Fang",
+     "rare"
+    ],
+    "Urok Doomhowl",
+    "Quartermaster Zigris",
+    [
+     "Ghok Bashguud",
+     "rare"
+    ],
+    "Halycon",
+    "Gizrul the Slavener",
+    "Overlord Wyrmthalak"
+   ]
+  },
+  {
+   "name": "Upper Blackrock Spire",
+   "short": "UBRS",
+   "kind": "Dungeon",
+   "zoneId": 1583,
+   "wing": "Upper",
+   "drops": true,
+   "aliases": [
+    "Blackrock Spire - Upper",
+    "Blackrock Spire: Upper"
+   ],
+   "bosses": [
+    "Pyroguard Emberseer",
+    "Solakar Flamewreath",
+    [
+     "Jed Runewatcher",
+     "rare"
+    ],
+    "Goraluk Anvilcrack",
+    "Warchief Rend Blackhand",
+    "Gyth",
+    "The Beast",
+    "General Drakkisath"
+   ]
+  },
+  {
+   "name": "Scholomance",
+   "short": "Scholo",
+   "kind": "Dungeon",
+   "zoneId": 2057,
+   "drops": true,
+   "bosses": [
+    "Kirtonos the Herald",
+    "Jandice Barov",
+    "Rattlegore",
+    "Marduk Blackpool",
+    "Vectus",
+    "Ras Frostwhisper",
+    "Instructor Malicia",
+    "Doctor Theolen Krastinov",
+    "Lorekeeper Polkelt",
+    "The Ravenian",
+    "Lord Alexei Barov",
+    "Lady Illucia Barov",
+    "Darkmaster Gandling"
+   ]
+  },
+  {
+   "name": "Molten Core",
+   "short": "MC",
+   "kind": "Raid",
+   "zoneId": 2717,
+   "size": 40,
+   "bosses": [
+    "Lucifron",
+    "Magmadar",
+    "Gehennas",
+    "Garr",
+    "Shazzrah",
+    "Baron Geddon",
+    "Golemagg the Incinerator",
+    "Sulfuron Harbinger",
+    "Majordomo Executus",
+    "Ragnaros"
+   ]
+  },
+  {
+   "name": "Onyxia's Lair",
+   "short": "Ony",
+   "kind": "Raid",
+   "zoneId": 2159,
+   "size": 40,
+   "levels": [
+    60,
+    60
+   ],
+   "levelSrc": "https://warcraft.wiki.gg/wiki/Onyxia%27s_Lair",
+   "bosses": [
+    "Onyxia"
+   ]
+  },
+  {
+   "name": "Zul'Gurub",
+   "short": "ZG",
+   "kind": "Raid",
+   "zoneId": 1977,
+   "size": 20,
+   "bosses": [
+    "High Priestess Jeklik",
+    "High Priest Venoxis",
+    "High Priestess Mar'li",
+    "Bloodlord Mandokir",
+    "Gri'lek",
+    "Hazza'rah",
+    "Renataki",
+    "Wushoolay",
+    "Gahz'ranka",
+    "High Priest Thekal",
+    "High Priestess Arlokk",
+    "Jin'do the Hexxer",
+    "Hakkar"
+   ]
+  },
+  {
+   "name": "Blackwing Lair",
+   "short": "BWL",
+   "kind": "Raid",
+   "zoneId": 2677,
+   "size": 40,
+   "bosses": [
+    "Razorgore the Untamed",
+    "Vaelastrasz the Corrupt",
+    "Broodlord Lashlayer",
+    "Firemaw",
+    "Ebonroc",
+    "Flamegor",
+    "Chromaggus",
+    "Nefarian"
+   ]
+  },
+  {
+   "name": "Ruins of Ahn'Qiraj",
+   "short": "AQ20",
+   "kind": "Raid",
+   "zoneId": 3429,
+   "size": 20,
+   "bosses": [
+    "Kurinnaxx",
+    "General Rajaxx",
+    "Moam",
+    "Buru the Gorger",
+    "Ayamiss the Hunter",
+    "Ossirian the Unscarred"
+   ]
+  },
+  {
+   "name": "Temple of Ahn'Qiraj",
+   "short": "AQ40",
+   "kind": "Raid",
+   "zoneId": 3428,
+   "size": 40,
+   "aliases": [
+    "Ahn'Qiraj",
+    "Ahn'Qiraj Temple"
+   ],
+   "bosses": [
+    "The Prophet Skeram",
+    "Lord Kri",
+    "Battleguard Sartura",
+    "Fankriss the Unyielding",
+    "Viscidus",
+    "Princess Huhuran",
+    "Emperor Vek'lor",
+    "Ouro",
+    "C'Thun"
+   ]
+  },
+  {
+   "name": "Naxxramas",
+   "short": "Naxx",
+   "kind": "Raid",
+   "zoneId": 3456,
+   "size": 40,
+   "bosses": [
+    "Anub'Rekhan",
+    "Grand Widow Faerlina",
+    "Maexxna",
+    "Noth the Plaguebringer",
+    "Heigan the Unclean",
+    "Loatheb",
+    "Instructor Razuvious",
+    "Gothik the Harvester",
+    "Thane Korth'azz",
+    "Patchwerk",
+    "Grobbulus",
+    "Gluth",
+    "Thaddius",
+    "Sapphiron",
+    "Kel'Thuzad"
+   ]
+  }
+ ],
+ "npcOverride": {
+  "_comment": "Bosses Forever's search does not return by exact name (or returns two); IDs confirmed with the Forever NPC tooltip.",
+  "Mr. Smite": 646,
+  "The Beast": 10430,
+  "C'Thun": 15727,
+  "Gri'lek": 15082
+ }
+}

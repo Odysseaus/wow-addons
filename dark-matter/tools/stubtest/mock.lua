@@ -1791,8 +1791,14 @@ if MODE ~= "minimal" then
   check(AGm and seed, "AG module + seed loaded")
   local want = { RFC = 4, WC = 9, DM = 9, SFK = 9, BFD = 8 }
   local nb, nd, bad = 0, 0, 0
+  local nDun, nRaid, nDropSeeded, names = 0, 0, 0, {}
   for _, d in ipairs(seed) do
-    check(want[d.short] == #d.bosses, "seed " .. d.short .. ": full boss list (" .. #d.bosses .. ")")
+    names[d.name] = d
+    if want[d.short] then check(want[d.short] == #d.bosses, "seed " .. d.short .. ": full boss list (" .. #d.bosses .. ")") end
+    if d.kind == "Raid" then nRaid = nRaid + 1 else nDun = nDun + 1 end
+    if d.dropsSeeded then nDropSeeded = nDropSeeded + 1 end
+    if not (d.src and d.src:find("^https://www%.wowhead%.com/forever/zone=%d+$")) then bad = bad + 1 end
+    if not (d.levels and d.levels[1] <= d.levels[2]) then bad = bad + 1 end
     for _, b in ipairs(d.bosses) do
       nb = nb + 1
       if b.src ~= "https://www.wowhead.com/forever/npc=" .. b.npcId then bad = bad + 1 end
@@ -1804,7 +1810,25 @@ if MODE ~= "minimal" then
       end
     end
   end
-  check(#seed == 5 and nb == 39 and nd == 86 and bad == 0, string.format("seed: %d dungeons, %d bosses, %d drops, each cites wowhead.com/forever (bad=%d)", #seed, nb, nd, bad))
+  out("AG seed:", #seed, "instances,", nDun, "dungeons,", nRaid, "raids,", nb, "bosses,", nd, "drops,", nDropSeeded, "with drops")
+  check(#seed == 36 and nDun == 29 and nRaid == 7 and bad == 0, string.format("known-good list: %d instances (%d dungeons, %d raids), %d bosses, %d drops, each cites wowhead.com/forever (bad=%d)", #seed, nDun, nRaid, nb, nd, bad))
+  local missing = {}
+  for _, n in ipairs({ "Ragefire Chasm", "Wailing Caverns", "The Deadmines", "Shadowfang Keep", "Blackfathom Deeps", "The Stockade",
+    "Gnomeregan", "Razorfen Kraul", "Scarlet Monastery: Graveyard", "Scarlet Monastery: Library", "Scarlet Monastery: Armory",
+    "Scarlet Monastery: Cathedral", "Razorfen Downs", "Uldaman", "Zul'Farrak", "Maraudon", "The Temple of Atal'Hakkar",
+    "Blackrock Depths", "Lower Blackrock Spire", "Upper Blackrock Spire", "Dire Maul: East", "Dire Maul: West", "Dire Maul: North",
+    "Scholomance", "Stratholme", "Molten Core", "Onyxia's Lair", "Zul'Gurub", "Blackwing Lair", "Ruins of Ahn'Qiraj",
+    "Temple of Ahn'Qiraj", "Naxxramas", "The Hall of Thanes", "Ruins of Lordaeron", "Excavation Site: Wetlands", "City of Dalaran" }) do
+    if not names[n] then missing[#missing + 1] = n end
+  end
+  check(#missing == 0, "every Classic dungeon/raid + Forever's Wowhead-listed instances present (" .. table.concat(missing, ", ") .. ")")
+  local allBosses, raidNoDrops = true, true
+  for _, d in ipairs(seed) do
+    if #d.bosses == 0 then allBosses = false end
+    if not d.dropsSeeded then for _, b in ipairs(d.bosses) do if #b.drops > 0 then raidNoDrops = false end end end
+  end
+  check(allBosses and raidNoDrops and nDropSeeded == 24 and nd > 86, "every instance has a Forever-validated boss list; drops seeded for 24 dungeons (Forever-validated items only), boss lists only elsewhere")
+  check(names["The Hall of Thanes"].forever and names["The Hall of Thanes"].levels[1] == 13 and #names["The Hall of Thanes"].bosses == 4, "Forever-only Hall of Thanes: 13-18, 4 bosses")
   -- stub client LFG (ids 10/11, names only, placeholder boss names)
   AGm._ResetCaches()
   local stubList = AGm.ScanLFG()
@@ -1829,6 +1853,13 @@ if MODE ~= "minimal" then
     [404] = { "Skirmish Field", 1, 6, 0, 0, 0, 0, 0, 0, 0, "", 1, 5, bosses = { "Boss" } },
     [405] = { "Empty Hall", 1, 1, 10, 20, 15, 10, 20, 0, 0, "", 1, 5, bosses = {} },
     [406] = { "zzOld Deadmines", 1, 1, 17, 26, 20, 17, 26, 0, 0, "", 1, 5, bosses = { "Smite" } },
+    -- 0.3.2: client spellings that must merge into the list by alias; a list entry with an extra live boss
+    [500] = { "Scarlet Monastery - Graveyard", 1, 1, 26, 36, 30, 26, 36, 0, 0, "", 1, 5, bosses = {} },
+    [501] = { "Stormwind Stockade", 1, 1, 22, 30, 25, 22, 30, 0, 0, "", 1, 5, bosses = {} },
+    [502] = { "Dire Maul - East", 1, 1, 36, 46, 40, 36, 46, 0, 0, "", 1, 5, bosses = {} },
+    [503] = { "Stratholme - Main Gate", 1, 1, 48, 58, 55, 48, 58, 0, 0, "", 1, 5, bosses = {} },
+    [504] = { "Stratholme - Service Entrance", 1, 1, 48, 58, 55, 48, 58, 0, 0, "", 1, 5, bosses = {} },
+    [505] = { "Ruins of Lordaeron", 1, 1, 15, 20, 17, 15, 20, 0, 0, "", 1, 5, bosses = { "Witherfang", "The Butcher" } },
   }
   local sGI, sGN, sGE = GetLFGDungeonInfo, GetLFGDungeonNumEncounters, GetLFGDungeonEncounterInfo
   GetLFGDungeonInfo = function(id) local e = LFG[id] if e then return unpack(e, 1, 13) end end
@@ -1838,50 +1869,61 @@ if MODE ~= "minimal" then
   local list = AGm.Dungeons()
   local by = {}
   for _, d in ipairs(list) do by[d.name] = d end
-  check(#list == 7 and by["Deadmines"] and by["Deadmines"].seeded and by["Gnomeregan"] and not by["Gnomeregan"].seeded and by["Wailing Caverns"] and by["Wailing Caverns"].source == "lfg" and by["Blackfathom Deeps"].source == "seed", "LFG merge: 5 LFG + 2 seed-only dungeons (" .. #list .. ")")
+  check(#list == 37 and by["The Deadmines"] and by["The Deadmines"].lfg and by["Gnomeregan"].lfg and by["Gnomeregan"].seeded and by["Wailing Caverns"].lfg
+    and not by["Blackfathom Deeps"].lfg and by["Empty Hall"] and by["Empty Hall"].source == "lfg" and not by["Deadmines"], "LFG merge: 36 list entries always shown + 1 unlisted LFG dungeon (" .. #list .. ")")
+  check(by["Scarlet Monastery: Graveyard"].lfg and by["The Stockade"].lfg and by["Dire Maul: East"].lfg and by["Stratholme"].lfgId == 503 and not by["Stormwind Stockade"] and not by["Stratholme - Main Gate"],
+    "aliases: 'Scarlet Monastery - Graveyard', 'Stormwind Stockade', 'Dire Maul - East', both Stratholme gates merge into the list")
+  local rol, butcher = by["Ruins of Lordaeron"], nil
+  for _, b in ipairs(rol.bosses) do if b.name == "The Butcher" then butcher = b end end
+  check(#rol.bosses == 7 and butcher and butcher.live and not butcher.seeded, "live LFG boss added to a list entry (Ruins of Lordaeron: The Butcher)")
   local zoneLeak = {}
-  for _, n in ipairs({ "Alterac Mountains", "Arathi Basin", "Ashenvale Forest", "Some Frontier", "Skirmish Field", "Empty Hall", "zzOld Deadmines", "SECRETNAME", "Random Classic Dungeon" }) do
+  for _, n in ipairs({ "Alterac Mountains", "Arathi Basin", "Ashenvale Forest", "Some Frontier", "Skirmish Field", "zzOld Deadmines", "SECRETNAME", "Random Classic Dungeon" }) do
     if by[n] then zoneLeak[#zoneLeak + 1] = n end
   end
   check(#zoneLeak == 0, "zones, battlegrounds, PvP, empty and placeholder LFG rows are not listed (" .. table.concat(zoneLeak, ",") .. ")")
   local st = AGm.ScanStats()
-  check(st.named == 13 and st.accepted == 5 and st.rejected.zone == 4 and st.rejected.pvp == 1 and st.rejected.nobosses == 2 and st.rejected.placeholder == 1,
-    string.format("scan stats: %d named, %d kept, zone %s, pvp %s, nobosses %s, placeholder %s", st.named, st.accepted,
-      tostring(st.rejected.zone), tostring(st.rejected.pvp), tostring(st.rejected.nobosses), tostring(st.rejected.placeholder)))
+  check(st.named == 19 and st.accepted == 12 and st.rejected.zone == 4 and st.rejected.pvp == 1 and st.rejected.random == 1 and st.rejected.nobosses == nil and st.rejected.placeholder == 1,
+    string.format("scan stats (boss-less rows kept): %d named, %d kept, zone %s, pvp %s, random %s, nobosses %s, placeholder %s", st.named, st.accepted,
+      tostring(st.rejected.zone), tostring(st.rejected.pvp), tostring(st.rejected.random), tostring(st.rejected.nobosses), tostring(st.rejected.placeholder)))
   local wc = by["Wailing Caverns"]
   local wcBad = false
   for _, b in ipairs(wc.bosses) do if b.name == "No Longer in Use" then wcBad = true end end
-  check(#wc.bosses == 9 and not wcBad and wc.minLevel == 17 and wc.maxLevel == 24 and wc.recLevel == 17, "Wailing Caverns: 'No Longer in Use' dropped, 9 bosses, seed level range 17-24 (LFG said 17-17)")
+  check(#wc.bosses == 9 and not wcBad and wc.minLevel == 17 and wc.maxLevel == 27 and wc.recLevel == 17, "Wailing Caverns: 'No Longer in Use' dropped, 9 bosses, Forever level range 17-27 (LFG said 17-17)")
   local phOk = true
   for _, n in ipairs({ "No Longer in Use", "UNUSED Boss", "[PH] Boss", "zzOldGuy", "Deprecated Ogre", "PH Kobold" }) do if not AGm.IsPlaceholder(n) then phOk = false end end
   for _, n in ipairs({ "Deviate Faerie Dragon", "Verdan the Everliving", "Mutanus the Devourer", "Phantom", "Gelihast" }) do if AGm.IsPlaceholder(n) then phOk = false end end
   check(phOk, "placeholder names matched, real boss names kept")
   local rep = AGm.ScanReport()
-  check(rep:find("13 LFG names, 5 dungeons/raids kept", 1, true) and type(DarkMatterDB.agscan) == "table" and #DarkMatterDB.agscan.rows == 13, "/dm agscan: chat summary + DarkMatterDB.agscan rows (" .. rep .. ")")
+  check(rep:find("19 LFG names, 12 dungeons/raids kept (11 match our list)", 1, true) and type(DarkMatterDB.agscan) == "table" and #DarkMatterDB.agscan.rows == 19, "/dm agscan: chat summary + DarkMatterDB.agscan rows (" .. rep:gsub("\n", " | ") .. ")")
+  local nbn = table.concat(DarkMatterDB.agscan.noBosses, ",")
+  check(rep:find("kept, no LFG bosses (6): ", 1, true) and nbn:find("Empty Hall", 1, true) and nbn:find("Stormwind Stockade", 1, true) and DarkMatterDB.agscan.notInList[1] == "Empty Hall" and #DarkMatterDB.agscan.notInList == 1,
+    "/dm agscan names the boss-less rows and the rows not in our list (" .. nbn .. ")")
   local zr
   for _, r in ipairs(DarkMatterDB.agscan.rows) do if r.name == "Alterac Mountains" then zr = r end end
   check(zr and zr.accepted == false and zr.reason == "zone", "agscan row records the reject reason")
-  check(by["Molten Core"].kind == "Raid" and by["Deadmines"].kind == "Dungeon" and by["Deadmines"].recLevel == 20 and by["Deadmines"].size == 5, "kind/recommended level/size from LFG")
-  check(#by["Deadmines"].bosses == 9 and by["Deadmines"].bosses[8].name == "Edwin VanCleef" and #by["Deadmines"].bosses[8].drops == 4, "Deadmines: seed boss list (9) with LFG names matched, VanCleef 4 drops")
-  check(list[1].name == "Ragefire Chasm" and list[#list].name == "Molten Core", "sorted by minimum level")
+  check(by["Molten Core"].kind == "Raid" and by["Molten Core"].size == 40 and by["The Deadmines"].kind == "Dungeon" and by["The Deadmines"].recLevel == 20 and by["The Deadmines"].size == 5, "kind/size from our list, recommended level from LFG")
+  check(#by["The Deadmines"].bosses == 9 and by["The Deadmines"].bosses[8].name == "Edwin VanCleef" and #by["The Deadmines"].bosses[8].drops == 4, "Deadmines: list boss order (9) with LFG names matched, VanCleef 4 drops")
+  local sorted = true
+  for i = 2, #list do if (list[i].minLevel or 999) < (list[i - 1].minLevel or 999) then sorted = false end end
+  check(sorted and list[1].name == "Empty Hall" and list[2].name == "The Hall of Thanes", "sorted by minimum level (unlisted LFG Empty Hall 10, then Hall of Thanes 13)")
   local kinds = AGm.Kinds(list)
-  check(#kinds == 2 and kinds[1] == "Dungeon" and kinds[2] == "Raid", "type filter offered from LFG kinds")
+  check(#kinds == 2 and kinds[1] == "Dungeon" and kinds[2] == "Raid", "types: Dungeon and Raid")
   local f1 = AGm.Filter(list, "gelihast", "all", "all", 22)
   check(#f1 == 1 and f1[1].name == "Blackfathom Deeps", "search by boss")
   local f2 = AGm.Filter(list, "cookie's tenderizer", "all", "all", 22)
-  check(#f2 == 1 and f2[1].name == "Deadmines", "search by drop name")
+  check(#f2 == 1 and f2[1].name == "The Deadmines", "search by drop name")
   local f3 = AGm.Filter(list, nil, "mine", "all", 22)
   local n3 = {}
   for _, d in ipairs(f3) do n3[d.name] = true end
-  check(not n3["Ragefire Chasm"] and not n3["Gnomeregan"] and not n3["Molten Core"] and n3["Deadmines"] and n3["Blackfathom Deeps"], "near-my-level filter (22)")
+  check(not n3["The Hall of Thanes"] and not n3["Gnomeregan"] and not n3["Molten Core"] and n3["The Deadmines"] and n3["Blackfathom Deeps"] and n3["Ragefire Chasm"], "near-my-level filter (22; Forever RFC is 15-25)")
   local f4 = AGm.Filter(list, nil, "all", "Raid", 22)
-  check(#f4 == 1 and f4[1].name == "Molten Core", "type filter: Raid")
+  check(#f4 == 7, "type filter: Raid (7)")
   -- C_Item.DoesItemExistByID gate
   local sEx = C_Item.DoesItemExistByID
   C_Item.DoesItemExistByID = function(id) return id ~= 5197 end
   AGm._ResetCaches()
   local cookie
-  for _, d in ipairs(AGm.Dungeons()) do if d.name == "Deadmines" then for _, b in ipairs(d.bosses) do if b.name == "Cookie" then cookie = b end end end end
+  for _, d in ipairs(AGm.Dungeons()) do if d.name == "The Deadmines" then for _, b in ipairs(d.bosses) do if b.name == "Cookie" then cookie = b end end end end
   check(cookie and #cookie.drops == 1 and cookie.drops[1].itemId ~= 5197, "DoesItemExistByID=false hides the drop (Cookie's Tenderizer)")
   C_Item.DoesItemExistByID = sEx
   AGm._ResetCaches()
@@ -1973,10 +2015,49 @@ if MODE ~= "minimal" then
       if (r.text:GetText() == "Blackfathom Deeps") then bfd = r end
     end
   end
-  check(entries == 7 and #heads == 2 and heads[1] == "Dungeons" and heads[2] == "Raids", "dropdown: 7 entries grouped by type (" .. entries .. ", " .. table.concat(heads, "/") .. ")")
+  check(entries == 37 and #heads == 2 and heads[1] == "Dungeons" and heads[2] == "Raids", "dropdown: all 37 entries grouped by type (" .. entries .. ", " .. table.concat(heads, "/") .. ")")
+  local listed = {}
+  for _, r in ipairs(W.menuRows) do
+    if r._shown and not r._hid and rawget(r, "dungeonKey") then
+      listed[r.text:GetText()] = true
+    end
+  end
+  local miss = {}
+  for _, d in ipairs(seed) do if not listed[d.name] then miss[#miss + 1] = d.name end end
+  check(#miss == 0, "dropdown lists every dungeon and raid in the known-good list (" .. table.concat(miss, ", ") .. ")")
   bfd._scripts.OnClick(bfd)
   check(not W.menu:IsShown() and W.title:GetText() == "Blackfathom Deeps" and W.drop.text:GetText() == "Blackfathom Deeps", "picking an entry selects it and closes the dropdown")
   W.drop._scripts.OnClick(W.drop)
+  DarkMatterDB.agDungeon, DarkMatterDB.agBoss = AGm.Norm("Ruins of Lordaeron"), "The Butcher"
+  DarkMatter.tabs.journals.Refresh()
+  local bt
+  for _, r in ipairs(W.bossRows) do if r._shown and r.bossName == "The Butcher" then bt = r end end
+  check(bt and bt.sub:GetText() == "live LFG boss · drops coming soon", "live LFG boss on a list entry: labelled, drops coming soon")
+  DarkMatterDB.agDungeon, DarkMatterDB.agBoss = AGm.Norm("Empty Hall"), nil
+  DarkMatter.tabs.journals.Refresh()
+  check(W.title:GetText() == "Empty Hall" and W.emptyDrops._shown and (W.emptyDrops:GetText() or ""):find("Boss and drop data coming soon", 1, true)
+    and W.emptyBoss._shown and (W.emptyBoss:GetText() or ""):find("coming soon", 1, true), "dungeon with no bosses anywhere: 'Boss and drop data coming soon'")
+  DarkMatterDB.agDungeon, DarkMatterDB.agBoss = AGm.Norm("Molten Core"), "Ragnaros"
+  DarkMatter.tabs.journals.Refresh()
+  local rg
+  for _, r in ipairs(W.bossRows) do if r._shown and r.bossName == "Ragnaros" then rg = r end end
+  check(rg and rg.sub:GetText() == "drops coming soon" and W.dropNote:GetText() == "", "raid with a boss list only: 'drops coming soon'")
+  local function bossSub(dn, bn)
+    DarkMatterDB.agDungeon, DarkMatterDB.agBoss = AGm.Norm(dn), bn
+    DarkMatter.tabs.journals.Refresh()
+    for _, r in ipairs(W.bossRows) do if r._shown and r.bossName == bn then return r.sub:GetText(), W.emptyDrops:GetText() end end
+  end
+  bossSub("Scarlet Monastery: Graveyard", "Bloodmage Thalnos")
+  check(W.drop.text:GetText() == "SM: Graveyard" and W.title:GetText() == "Scarlet Monastery: Graveyard", "long wing name: compact dropdown label, full name in the header (" .. tostring(W.drop.text:GetText()) .. ")")
+  bossSub("Dire Maul: East", "Lethtendris")
+  check(W.drop.text:GetText() == "Dire Maul: East", "short names stay unabbreviated in the dropdown label")
+  local s1, e1 = bossSub("Zul'Farrak", "Nekrum Gutchewer")
+  check(s1 == "drops coming soon" and e1:find("Drop data coming soon", 1, true), "boss whose Classic drops are not on Forever yet: 'drops coming soon' (" .. tostring(s1) .. ")")
+  local s2, e2 = bossSub("Ragefire Chasm", "Oggleflint")
+  check(s2 == "0 drops" and e2:find("lists no boss-specific drops", 1, true), "boss with no boss-specific drops: '0 drops' (" .. tostring(s2) .. ")")
+  local nPend, nItemsAll = 0, 0
+  for _, d in ipairs(DarkMatter.AdventureGuideSeed) do for _, b in ipairs(d.bosses) do if b.dropsPending then nPend = nPend + 1 end nItemsAll = nItemsAll + #b.drops end end
+  check(nPend == 17 and nItemsAll == 470, "seed: 470 Forever-validated drops, 17 bosses with drops pending on Forever (" .. nPend .. ", " .. nItemsAll .. ")")
   DarkMatter.tabs.journals.SetSection("fishing")
   check(not W.menu:IsShown(), "dropdown closes when the section changes")
   DarkMatterDB.agDungeon, DarkMatterDB.agBoss = "deadmines", "Edwin VanCleef"
@@ -2016,7 +2097,7 @@ end
 if MODE == "minimal" then
   DarkMatter.AG._ResetCaches()
   local l = DarkMatter.AG.Dungeons()
-  check(#l == 5 and l[1].source == "seed", "minimal client: AG falls back to the 5 seeded dungeons")
+  check(#l == 36 and l[1].source == "list", "minimal client: AG shows the full known-good list (36)")
   DarkMatter.tabs.journals.SetSection("adventure")
   check(DarkMatterDB.section == "adventure", "minimal client: Adventure Guide opens")
   DarkMatter.tabs.journals.SetSection("fishing")

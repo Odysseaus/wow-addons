@@ -54,7 +54,10 @@ SlashCmdList["DARKMATTER"] = function(msg)
   elseif cmd == "options" then
     NS.OpenOptions()
   elseif cmd == "agscan" then
-    if NS.AG and NS.AG.ScanReport then NS.Print(NS.AG.ScanReport()) end
+    if NS.AG and NS.AG.ScanReport then
+      local _, lines = NS.AG.ScanReport()
+      for _, l in ipairs(lines or {}) do NS.Print(l) end
+    end
   elseif cmd == "tipdebug" then
     local on = NS.FishingToggleTipDebug()
     local td = NS.db.tipdebug or {}

@@ -3,7 +3,7 @@
 Uses Wowhead's Forever tooltip API (https://nether.wowhead.com/forever/tooltip/{npc|item}/<id>);
 the Forever HTML pages (https://www.wowhead.com/forever/npc=<id>, /forever/item=<id>) are the
 citation URLs. Caches to wowhead_forever.json. Exit 1 on any NPC/item that is missing in Forever
-or whose name differs from the seed / Classic fallback."""
+or whose name differs from the seed; items missing on Forever are reported and left out by gen_dungeons.py."""
 import json, sys, time, urllib.request, urllib.error
 from pathlib import Path
 HERE = Path(__file__).resolve().parent
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     items = sorted({it["id"] for d in picked for b in d["bosses"] for it in b["drops"]})
     cache = ensure(cache, "npc", npcs, "--refresh" in sys.argv)
     cache = ensure(cache, "item", items, "--refresh" in sys.argv)
-    bad = 0
+    bad = 0; missing = set()
     for d in seed["dungeons"]:
         for b in d["bosses"]:
             f = cache["npc"].get(str(b[1]))
@@ -49,9 +49,10 @@ if __name__ == "__main__":
         for b in d["bosses"]:
             for it in b["drops"]:
                 f = cache["item"].get(str(it["id"]))
-                if not f:
-                    bad += 1; print("ITEM missing in Forever", it["id"], it["name"])
-                elif f["name"] != it["name"]:
-                    bad += 1; print("ITEM name", it["id"], it["name"], "-> Forever:", f["name"])
+                if not f:  # gen_dungeons.py leaves these out (not seeded from Classic alone)
+                    missing.add(it["id"])
+                elif f["name"] != it["name"]:  # gen_dungeons.py uses the Forever name
+                    print("note: item", it["id"], it["name"], "-> Forever name:", f["name"])
+    print("%d item(s) not in Wowhead Forever's database: left out of the seed" % len(missing))
     print("checked %d npcs, %d items against Wowhead Forever: %d issue(s)" % (len(npcs), len(items), bad))
     sys.exit(1 if bad else 0)

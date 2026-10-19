@@ -1,5 +1,5 @@
 -- Journals tab: Fishing panel with waters list + catch statistics (per-character).
--- Adventure Guide (0.3.1): dungeon dropdown, LFG dungeons/raids only + our Forever-validated drop seed + loot learning. Achievements: placeholder.
+-- Adventure Guide (0.3.2): dungeon dropdown, LFG dungeons/raids only + our Forever-validated drop seed + loot learning. Achievements: placeholder.
 local _, NS = ...
 local UI = NS.UI
 
@@ -666,6 +666,7 @@ end
 ---------------------------------------------------------------------------
 local agPage, agSearch, agLvlAll, agLvlMine = nil, nil, nil, nil
 local agDrop, agMenu, agMenuScroll, agMenuHead
+local agDropTextW = 157
 local agBossScroll, agDropScroll, agTitle, agMeta, agBossHead, agDropHead, agDropNote, agEmptyBoss, agEmptyDrops
 local agMenuRows, agBossRows, agDropRows = {}, {}, {}
 local agHover
@@ -679,6 +680,14 @@ local function AGPrefs()
 end
 
 -- one line, fixed height: no wrapping into the next row
+-- "Scarlet Monastery: Graveyard" -> "SM: Graveyard" (dropdown label only)
+local function CompactName(n)
+  local pre, rest = n:match("^(.-):%s*(.+)$")
+  if not pre then return n end
+  local ini = pre:gsub("(%a)[%a']*%s*", "%1")
+  return ini .. ": " .. rest
+end
+
 local function OneLine(fs, h)
   if fs.SetWordWrap then fs:SetWordWrap(false) end
   fs:SetHeight(h)
@@ -894,6 +903,10 @@ local function RefreshAG()
   if NS.db and sel then NS.db.agDungeon = sel.key end
   RefreshMenu(list, all, sel)
   agDrop.text:SetText(sel and sel.name or (#all == 0 and "No dungeons" or "No match"))
+  if sel then  -- long wing names ("Scarlet Monastery: Graveyard") use initials for the prefix; the header shows the full name
+    local okW, w = pcall(agDrop.text.GetStringWidth, agDrop.text)
+    if #sel.name > 25 or (okW and type(w) == "number" and w > agDropTextW) then agDrop.text:SetText(CompactName(sel.name)) end
+  end
   agDrop.small:SetText(sel and LevelText(sel) or "")
 
   -- dungeon header + bosses
@@ -910,7 +923,8 @@ local function RefreshAG()
     if sel.recLevel and sel.recLevel > 0 then bits[#bits + 1] = "Recommended " .. sel.recLevel end
     if sel.size and sel.size > 0 then bits[#bits + 1] = sel.size .. "-player" end
     bits[#bits + 1] = sel.kind
-    if sel.zone then bits[#bits + 1] = sel.zone end
+    if sel.forever then bits[#bits + 1] = "New in Forever" end
+    if sel.zone and sel.zone ~= "" then bits[#bits + 1] = sel.zone end
     bits[#bits + 1] = #bosses .. (#bosses == 1 and " boss" or " bosses")
     agMeta:SetText(table.concat(bits, " · "))
   end
@@ -934,8 +948,10 @@ local function RefreshAG()
       if b.seeded then
         local n = #b.drops
         bits[#bits + 1] = n == 1 and "1 drop" or (n .. " drops")
+      elseif b.live then
+        bits[#bits + 1] = "live LFG boss · drops coming soon"
       else
-        bits[#bits + 1] = "drops not seeded"
+        bits[#bits + 1] = "drops coming soon"
       end
       r.sub:SetText(table.concat(bits, " · "))
       if on then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
@@ -997,10 +1013,12 @@ local function RefreshAG()
     if #drops > 0 then
       agEmptyDrops:Hide()
     else
-      if not sel or not boss then
+      if not sel then
         agEmptyDrops:SetText("")
+      elseif not boss then
+        agEmptyDrops:SetText("Boss and drop data coming soon.\nLoot learning records what you see here.")
       elseif not boss.seeded then
-        agEmptyDrops:SetText("Drops not seeded yet for this boss.\nLoot learning records what you see here.")
+        agEmptyDrops:SetText("Drop data coming soon for this boss.\nLoot learning records what you see here.")
       else
         agEmptyDrops:SetText("Wowhead WoW Forever lists no boss-specific drops here.\nLoot learning records what you see.")
       end
@@ -1049,6 +1067,7 @@ local function BuildAdventure(page)
 
   -- dungeon dropdown: a Button + our own menu frame (no UIDropDownMenu: shared Blizzard state, taint risk)
   local DROP_W = 230
+  agDropTextW = DROP_W - 73
   agDrop = CreateFrame("Button", nil, bar)
   agDrop:SetSize(DROP_W, 26)
   agDrop:SetPoint("LEFT", bar, "LEFT", 0, 0)
@@ -1122,7 +1141,7 @@ local function BuildAdventure(page)
   agBossScroll.frame:SetPoint("TOPLEFT", bp, "TOPLEFT", 4, -28)
   agEmptyBoss = UI.Text(bp, "OVERLAY", 12, "listSoft", "CENTER")
   agEmptyBoss:SetPoint("CENTER", bp, "CENTER", 0, 0)
-  agEmptyBoss:SetText("No bosses listed.")
+  agEmptyBoss:SetText("Boss and drop data\ncoming soon.")
   agEmptyBoss:Hide()
 
   local dropW = innerW - bossW - 8
@@ -1145,7 +1164,7 @@ local function BuildAdventure(page)
   NS.AGWidgets = function()
     return { drop = agDrop, menu = agMenu, menuRows = agMenuRows, menuScroll = agMenuScroll, bossRows = agBossRows,
       dropRows = agDropRows, title = agTitle, meta = agMeta, dropHead = agDropHead, dropNote = agDropNote,
-      bossHead = agBossHead, search = agSearch }
+      bossHead = agBossHead, search = agSearch, emptyBoss = agEmptyBoss, emptyDrops = agEmptyDrops }
   end
   agPage:Hide()
 end
