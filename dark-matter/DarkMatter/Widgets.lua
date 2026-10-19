@@ -395,50 +395,44 @@ function UI.Bar(parent, w, h, thin)
 end
 
 
--- Circular item icon: real item texture (SetPortraitToTexture / mask) + rarity-colored border.
--- (0.2.4 used Minimap ZoomButton chrome as a "ring" — it painted opaque gold circles over the icon.)
+-- Item icon with rarity rim. Forever 1.60.1: SetPortraitToTexture blanks the
+-- texture (white square); use plain SetTexture(Interface\Icons\...) instead.
 function UI.RoundIcon(parent, size)
   size = size or 28
   local f = CreateFrame("Frame", nil, parent)
   f:SetSize(size, size)
-  -- Outer rarity rim (thin border behind the portrait inset)
+  -- Outer rarity rim (visible even when quality is common/white)
   local border = f:CreateTexture(nil, "BACKGROUND")
   border:SetAllPoints(f)
-  border:SetColorTexture(0.62, 0.62, 0.62, 1) -- common default
+  border:SetColorTexture(0.78, 0.78, 0.78, 1)
+  -- Dark pad so a white common rim still reads as a border
+  local pad = f:CreateTexture(nil, "BORDER")
+  pad:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+  pad:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+  pad:SetColorTexture(0.08, 0.07, 0.05, 1)
   local tex = f:CreateTexture(nil, "ARTWORK")
   tex:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -2)
   tex:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
-  f.tex, f.border = tex, border
+  tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+  f.tex, f.border, f.pad = tex, border, pad
   f._iconPath = nil
   f._quality = 1
-
-  local function ApplyMask()
-    if f.mask or not (tex.AddMaskTexture and f.CreateMaskTexture) then return end
-    local okm, mask = pcall(function()
-      local m = f:CreateMaskTexture()
-      m:SetAllPoints(tex)
-      m:SetTexture("Interface\CharacterFrame\TempPortraitAlphaMask")
-      tex:AddMaskTexture(m)
-      return m
-    end)
-    if okm then f.mask = mask end
-  end
+  f._itemId = nil
 
   local function SetBorderQuality(q)
     q = tonumber(q) or 1
     f._quality = q
-    local r, g, b = 0.62, 0.62, 0.62
+    local r, g, b = 0.78, 0.78, 0.78
     if GetItemQualityColor then
       local ok, rr, gg, bb = pcall(GetItemQualityColor, q)
-      if ok and rr then r, g, b = rr, gg, bb end
+      if ok and type(rr) == "number" then r, g, b = rr, gg, bb end
     elseif ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q] then
       local c = ITEM_QUALITY_COLORS[q]
       r, g, b = c.r or r, c.g or g, c.b or b
     else
-      -- poor/common/uncommon/rare/epic/legendary fallbacks
       local map = {
         [0] = { 0.62, 0.62, 0.62 },
-        [1] = { 1.00, 1.00, 1.00 },
+        [1] = { 0.90, 0.90, 0.90 },
         [2] = { 0.12, 1.00, 0.00 },
         [3] = { 0.00, 0.44, 0.87 },
         [4] = { 0.64, 0.21, 0.93 },
@@ -450,36 +444,50 @@ function UI.RoundIcon(parent, size)
     border:SetColorTexture(r, g, b, 1)
   end
 
+  local function ApplyPath(path)
+    f._iconPath = path
+    if not path then
+      tex:SetColorTexture(0.18, 0.15, 0.10, 1)
+      return false
+    end
+    -- Forever: never use SetPortraitToTexture — it clears the layer to white.
+    tex:SetTexture(path)
+    tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    tex:SetVertexColor(1, 1, 1, 1)
+    tex:SetAlpha(1)
+    tex:Show()
+    return true
+  end
+
   function f.SetItem(_, itemId, quality, fallbackPath)
-    -- quality may be omitted; accept (id, fallbackPath) for older callers
     if type(quality) == "string" and fallbackPath == nil then
       fallbackPath = quality
       quality = nil
     end
+    f._itemId = itemId
     SetBorderQuality(quality)
-    local path = nil
-    if itemId and NS.FishingItemIcon then
+    local path = fallbackPath
+    if (not path) and itemId and NS.FishingItemIcon then
       path = NS.FishingItemIcon(itemId)
     end
-    path = path or fallbackPath
-    f._iconPath = path
-    if not path then
-      tex:SetColorTexture(0.12, 0.10, 0.08, 1)
-      return
+    if not path and itemId and NS.FishingCatalogIcon then
+      path = NS.FishingCatalogIcon(itemId)
     end
-    local usedPortrait = false
-    if SetPortraitToTexture then
-      local ok = pcall(SetPortraitToTexture, tex, path)
-      usedPortrait = ok and true or false
-    end
-    if not usedPortrait then
-      tex:SetTexture(path)
-      ApplyMask()
+    ApplyPath(path)
+    -- Ask client to load; GET_ITEM_INFO_RECEIVED / next refresh fills missing icons.
+    if itemId and NS.FishingRequestItemIcon then
+      NS.FishingRequestItemIcon(itemId)
     end
   end
   function f.GetIconPath(_) return f._iconPath end
+  function f.RefreshIcon(_)
+    if not f._itemId then return end
+    local path = NS.FishingItemIcon and NS.FishingItemIcon(f._itemId)
+    if path then ApplyPath(path) end
+  end
   return f
 end
+
 -- Small checkbox with label (stock CheckButton).
 function UI.Checkbox(parent, label, size)
   size = size or 20

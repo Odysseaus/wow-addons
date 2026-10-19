@@ -365,7 +365,7 @@ local function RefreshFishList()
         r.sub:SetText(e.junk and "Not caught yet · junk" or "Not caught yet")
       end
       r.sub:SetTextColor(NS.Color(caught and "listSoft" or "listSoft"))
-      r.icon:SetItem(e.itemId, NS.FishingItemQuality and NS.FishingItemQuality(e.itemId, e.quality) or e.quality)
+      r.icon:SetItem(e.itemId, NS.FishingItemQuality and NS.FishingItemQuality(e.itemId, e.quality) or e.quality, e.icon)
       if selectedFish == e.name then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
       r:Show()
     elseif r then

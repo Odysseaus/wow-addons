@@ -1211,4 +1211,62 @@ do
   end
 end
 
+
+-- ===== 0.2.6 Forever icon fix: no SetPortraitToTexture, real Interface\Icons path, rarity rim =====
+if MODE ~= "minimal" then
+  PORTRAIT_CALLS = 0
+  SetPortraitToTexture = function(tex) PORTRAIT_CALLS = PORTRAIT_CALLS + 1; if tex and tex.SetColorTexture then tex:SetColorTexture(1, 1, 1, 1) end end
+  -- GetItemInfoInstant: icon is 5th return (4th = equipLoc / subtype) — must not be used as a texture
+  C_Item.GetItemInfoInstant = function(id) return id, "Trade Goods", "Meat", "", (id == 6291 and 133888 or nil), 7, 8 end
+  check(DarkMatter.FishingItemIcon(6291) == 133888, "GetItemInfoInstant 5th return used (fileID)")
+  local savedIcon = GetItemIcon
+  GetItemIcon = function() return "Meat" end -- garbage string must be rejected
+  local catPath = DarkMatter.FishingItemIcon(6303)
+  check(type(catPath) == "string" and catPath:find("^Interface\\Icons\\"), "catalog Interface\\Icons fallback: " .. tostring(catPath))
+  GetItemIcon = savedIcon
+
+  local f = DarkMatter.GetFishingDB()
+  FISH_LOOT = true
+  LOOT_SLOTS = { { tex = "Interface\\Icons\\INV_Misc_Fish_32", name = "Raw Longjaw Mud Snapper", qty = 1, quality = 2, link = "item:6289" } }
+  f.lastZone = "Elwynn Forest"
+  DarkMatter._FishingTest.BeginCast()
+  DarkMatter._FishingTest.OnFishingLoot()
+  local storedIcon
+  for _, z in pairs(f.zones) do if z.items and z.items["Raw Longjaw Mud Snapper"] then storedIcon = z.items["Raw Longjaw Mud Snapper"].icon end end
+  check(storedIcon == "Interface\\Icons\\INV_Misc_Fish_32", "loot slot texture stored: " .. tostring(storedIcon))
+
+  DarkMatter.FishingSetUIPref("panel", "catches")
+  DarkMatter.FishingSetUIPref("catchMode", "fish")
+  DarkMatter.FishingSetUIPref("showAll", true)
+  DarkMatter.ShowTab("journals")
+  DarkMatter.tabs.journals.Refresh()
+  local good, white, bordered, total = 0, 0, 0, 0
+  for _, fr in ipairs(ALL) do
+    local getp = rawget(fr, "GetIconPath")
+    local tx, bd = rawget(fr, "tex"), rawget(fr, "border")
+    if type(getp) == "function" and tx and bd then
+      total = total + 1
+      local file = rawget(tx, "_file")
+      if file ~= nil then good = good + 1 end
+      local c = rawget(tx, "_color")
+      if c and c[1] == 1 and c[2] == 1 and c[3] == 1 then white = white + 1 end
+      if rawget(bd, "_color") then bordered = bordered + 1 end
+    end
+  end
+  check(total > 0, "fish icons built: " .. total)
+  check(PORTRAIT_CALLS == 0, "SetPortraitToTexture never called: " .. PORTRAIT_CALLS)
+  check(white == 0, "no white-square icon textures: " .. white)
+  check(good == total, "every icon has a texture file: " .. good .. "/" .. total)
+  check(bordered == total, "every icon has rarity rim color")
+  -- rarity: uncommon (2) rim is green
+  local greenRim = false
+  for _, fr in ipairs(ALL) do
+    if rawget(fr, "_quality") == 2 then
+      local bc = rawget(rawget(fr, "border") or {}, "_color")
+      if bc and bc[2] > 0.9 and bc[1] < 0.3 then greenRim = true end
+    end
+  end
+  check(greenRim, "uncommon icon rim is green")
+end
+
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

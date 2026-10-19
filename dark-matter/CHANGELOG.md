@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.6 (P2.6, Forever item icons)
+- Fix fish icons rendering as **white squares** on Forever 1.60.1: `SetPortraitToTexture` blanks the texture on this client; icons now use plain `SetTexture` with square crop + **rarity rim** (poor→legendary via `GetItemQualityColor`).
+- Fix `GetItemInfoInstant` read: icon is the 5th return (0.2.4/0.2.5 took the 4th, a type/subtype string). Icon values are validated (fileID or `Interface\...` path only).
+- Icon sources in order: loot-window texture stored at catch time → `GetItemInfoInstant` → `GetItemIconByID`/`GetItemIcon` → `GetItemInfo` → static `Interface\Icons\...` in `Data_FishingCatches.lua`. `RequestLoadItemDataByID` + `GET_ITEM_INFO_RECEIVED` refresh the list when data arrives.
+- Old catches without an item link resolve their item id from the catalog by name.
+
 ## 0.2.5 (P2.5, catch-mode toggle + real fish icons)
 - Fix **by zone / by fish** toggle stuck on by zone: filter bar raised above content roots; Refresh applies view from CharDB without rewriting catchMode.
 - Fix fish icons showing as gold circles: removed opaque Minimap ZoomButton chrome; icons use GetItemIcon / C_Item (RequestLoadItemDataByID when needed) with SetPortraitToTexture or circular mask.

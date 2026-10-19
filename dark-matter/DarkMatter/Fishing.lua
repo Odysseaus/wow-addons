@@ -233,42 +233,100 @@ function NS.ParseItemId(link)
   return ParseItemId(link)
 end
 
+-- Valid icon: fileID number, or an Interface\... texture path. Rejects item type/subtype strings.
 local function CoerceIcon(tex)
+  if issecretvalue and issecretvalue(tex) then return nil end
   if type(tex) == "number" and tex > 0 then return tex end
-  if type(tex) == "string" and tex ~= "" and tex ~= "0" then return tex end
+  if type(tex) == "string" and tex ~= "" then
+    local low = tex:lower()
+    if low:find("^interface[\\/]") then return tex end
+  end
   return nil
+end
+
+local catalogIconById
+local function CatalogIcon(itemId)
+  if not catalogIconById then
+    catalogIconById = {}
+    for _, e in ipairs(NS.FishingCatchCatalog or {}) do
+      if e.itemId and e.icon then catalogIconById[e.itemId] = e.icon end
+    end
+  end
+  return catalogIconById[itemId]
+end
+
+function NS.FishingCatalogIcon(itemId)
+  itemId = SafeNum(itemId)
+  return itemId and CatalogIcon(itemId) or nil
 end
 
 local function ItemIcon(itemId)
   itemId = SafeNum(itemId)
   if not itemId then return nil end
-  if GetItemIcon then
-    local ok, tex = pcall(GetItemIcon, itemId)
-    tex = ok and CoerceIcon(tex) or nil
-    if tex then return tex end
-  end
   local CI = C_Item
+  -- 1) GetItemInfoInstant (cache-free): itemID, type, subType, equipLoc, icon, classID, subclassID
+  if CI and CI.GetItemInfoInstant then
+    local ok, _, _, _, _, icon = pcall(CI.GetItemInfoInstant, itemId)
+    icon = ok and CoerceIcon(icon) or nil
+    if icon then return icon end
+  end
+  if GetItemInfoInstant then
+    local ok, _, _, _, _, icon = pcall(GetItemInfoInstant, itemId)
+    icon = ok and CoerceIcon(icon) or nil
+    if icon then return icon end
+  end
+  -- 2) Icon-by-id APIs
   if CI and CI.GetItemIconByID then
     local ok, tex = pcall(CI.GetItemIconByID, itemId)
     tex = ok and CoerceIcon(tex) or nil
     if tex then return tex end
   end
-  if CI and CI.GetItemInfoInstant then
-    local ok, _, _, _, icon = pcall(CI.GetItemInfoInstant, itemId)
-    icon = ok and CoerceIcon(icon) or nil
-    if icon then return icon end
+  if GetItemIcon then
+    local ok, tex = pcall(GetItemIcon, itemId)
+    tex = ok and CoerceIcon(tex) or nil
+    if tex then return tex end
   end
-  -- Forever / Classic: ask the client to load item data (taint-safe pcall); next refresh picks it up.
-  if CI and CI.RequestLoadItemDataByID then
-    pcall(CI.RequestLoadItemDataByID, itemId)
-  elseif RequestLoadItemDataByID then
-    pcall(RequestLoadItemDataByID, itemId)
+  -- 3) GetItemInfo 10th return (texture) when cached
+  if GetItemInfo then
+    local ok, tex = pcall(function() return select(10, GetItemInfo(itemId)) end)
+    tex = ok and CoerceIcon(tex) or nil
+    if tex then return tex end
   end
-  return nil
+  -- 4) Static Classic paths from the catalog
+  return CatalogIcon(itemId)
 end
 
 function NS.FishingItemIcon(itemId)
   return ItemIcon(itemId)
+end
+
+-- Async load: request item data once; GET_ITEM_INFO_RECEIVED refreshes the open fishing list.
+local iconRequested = {}
+local iconEv
+function NS.FishingRequestItemIcon(itemId)
+  itemId = SafeNum(itemId)
+  if not itemId or iconRequested[itemId] then return end
+  iconRequested[itemId] = true
+  local CI = C_Item
+  if CI and CI.RequestLoadItemDataByID then
+    pcall(CI.RequestLoadItemDataByID, itemId)
+  end
+  if not iconEv and CreateFrame then
+    iconEv = CreateFrame("Frame")
+    pcall(function() iconEv:RegisterEvent("GET_ITEM_INFO_RECEIVED") end)
+    pcall(function() iconEv:RegisterEvent("ITEM_DATA_LOAD_RESULT") end)
+    iconEv:SetScript("OnEvent", function()
+      if NS._iconRefreshPending then return end
+      NS._iconRefreshPending = true
+      local function run()
+        NS._iconRefreshPending = false
+        local t = NS.tabs and NS.tabs.journals
+        local fr = t and t.frame
+        if t and t.Refresh and fr and fr.IsShown and fr:IsShown() then t.Refresh() end
+      end
+      if C_Timer and C_Timer.After then C_Timer.After(0.2, run) else run() end
+    end)
+  end
 end
 
 -- Quality 0..5 for rarity border (prefer stored, then catalog junk, then item APIs).
@@ -403,7 +461,7 @@ local function ConfirmGotAway()
   f.streak = 0
 end
 
-local function RecordLootSlot(f, zone, itemName, quantity, quality, link)
+local function RecordLootSlot(f, zone, itemName, quantity, quality, link, lootTex)
   quantity = SafeNum(quantity) or 1
   quality = SafeNum(quality) or 1
   itemName = SafeStr(itemName) or "Catch"
@@ -445,6 +503,8 @@ local function RecordLootSlot(f, zone, itemName, quantity, quality, link)
   it.quality = quality
   if copper then it.copper = copper end
   if itemId then it.itemId = itemId end
+  local iconTex = CoerceIcon(lootTex)
+  if iconTex then it.icon = iconTex end
   it.lastZone = zone
   local px, py = NS.ReadPlayerMapPos()
   if px and py then
@@ -468,7 +528,7 @@ local function OnFishingLoot()
     n = ok and SafeNum(v) or 0
   end
   for slot = 1, n do
-    local ok, _, itemName, quantity, a4, a5 = pcall(GetLootSlotInfo, slot)
+    local ok, lootTex, itemName, quantity, a4, a5 = pcall(GetLootSlotInfo, slot)
     if ok and SafeStr(itemName) then
       -- Classic: texture, item, qty, quality. Retail: texture, item, qty, currencyID, quality.
       local quality
@@ -485,7 +545,7 @@ local function OnFishingLoot()
         local ok2, l = pcall(GetLootSlotLink, slot)
         if ok2 then link = SafeStr(l) end
       end
-      RecordLootSlot(f, zone, itemName, quantity, quality, link)
+      RecordLootSlot(f, zone, itemName, quantity, quality, link, lootTex)
     end
   end
 end
@@ -647,6 +707,7 @@ function NS.FishingCatchTypes(showAll, search)
             quality = SafeNum(it.quality) or 1,
             copper = SafeNum(it.copper),
             itemId = SafeNum(it.itemId),
+            icon = CoerceIcon(it.icon),
             caught = true,
             lastZone = SafeStr(it.lastZone),
             lastX = SafeNum(it.lastX),
@@ -657,6 +718,7 @@ function NS.FishingCatchTypes(showAll, search)
         end
         e.count = e.count + (SafeNum(it.count) or 0)
         if SafeNum(it.itemId) then e.itemId = SafeNum(it.itemId) end
+        if not e.icon then e.icon = CoerceIcon(it.icon) end
         e.zones[zoneName] = (e.zones[zoneName] or 0) + (SafeNum(it.count) or 0)
         -- prefer most recently written last* on any zone bucket (loot overwrites)
         if it.lastZone then
@@ -665,6 +727,16 @@ function NS.FishingCatchTypes(showAll, search)
           e.lastY = SafeNum(it.lastY)
         end
       end
+    end
+  end
+
+  -- Older records may lack itemId (no loot link): resolve from catalog by name.
+  local byName = NS.FishingCatalogByName and NS.FishingCatalogByName() or {}
+  for name, e in pairs(caught) do
+    local cat = byName[name]
+    if cat then
+      if not e.itemId then e.itemId = cat.itemId end
+      if cat.junk then e.junk = true end
     end
   end
 
