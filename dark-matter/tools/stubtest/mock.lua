@@ -1358,4 +1358,76 @@ if MODE ~= "minimal" then
   check(hdr2 ~= nil, "Show all off header: " .. tostring(hdr2))
 end
 
+
+-- ===== 0.2.8 catch-type row tooltips: item tooltip + Dark Matter lines; fallback when not cached =====
+if MODE ~= "minimal" then
+  local TT = { lines = {} }
+  local function ttreset() TT = { lines = {} } end
+  rawset(GameTooltip, "SetOwner", function(_, owner, anchor) TT.owner, TT.anchor = owner, anchor end)
+  rawset(GameTooltip, "SetItemByID", function(_, id) TT.itemId = id; TT.lines[#TT.lines + 1] = "ITEM:" .. tostring(id) end)
+  rawset(GameTooltip, "SetHyperlink", function(_, l) TT.link = l; TT.lines[#TT.lines + 1] = "LINK:" .. tostring(l) end)
+  rawset(GameTooltip, "AddLine", function(_, t) TT.lines[#TT.lines + 1] = tostring(t) end)
+  rawset(GameTooltip, "AddDoubleLine", function(_, a, b) TT.lines[#TT.lines + 1] = tostring(a) .. "=" .. tostring(b) end)
+  rawset(GameTooltip, "Show", function() TT.shown = true end)
+  rawset(GameTooltip, "Hide", function() TT.hidden = true; TT.shown = false end)
+  rawset(GameTooltip, "IsOwned", function(_, o) return TT.owner == o end)
+  local function has(pat) for _, l in ipairs(TT.lines) do if l:find(pat, 1, true) then return true end end return false end
+
+  check(DarkMatter.FishingItemString("|cff1eff00|Hitem:6289:0:0:0|h[Raw Longjaw Mud Snapper]|h|r") == "item:6289:0:0:0", "item string from loot link")
+  check(DarkMatter.FishingItemString("item:250001") == "item:250001" and DarkMatter.FishingItemString("garbage") == nil, "item string validation")
+  local fz = DarkMatter.GetFishingDB()
+  local storedLink
+  for _, zb in pairs(fz.zones or {}) do local it = zb.items and zb.items["Riverglades Glimmerfin"] if it and it.link then storedLink = it.link end end
+  check(storedLink == "item:250001", "loot link stored on catch: " .. tostring(storedLink))
+
+  DarkMatter.FishingSetUIPref("panel", "catches")
+  DarkMatter.FishingSetUIPref("catchMode", "fish")
+  DarkMatter.FishingSetUIPref("showAll", true)
+  DarkMatter.tabs.journals.Refresh()
+  local rows = {}
+  for _, fr in ipairs(ALL) do
+    local e = rawget(fr, "entry")
+    if type(e) == "table" and fr._scripts and fr._scripts.OnEnter then rows[e.name] = fr end
+  end
+  local caughtRow, uncaughtRow, learnedRow = rows["Riverglades Glimmerfin"], rows["10 Pound Mud Snapper"], rows["Hyjal Ember Trout"]
+  check(caughtRow and uncaughtRow and learnedRow, "rows have OnEnter + entry (caught, uncaught, learned)")
+  local nWith, nRows = 0, 0
+  for _, fr in ipairs(ALL) do if type(rawget(fr, "entry")) == "table" then nRows = nRows + 1 if fr._scripts.OnEnter and fr._scripts.OnLeave then nWith = nWith + 1 end end end
+  check(nRows > 100 and nWith == nRows, "every Show all row has OnEnter/OnLeave (" .. nWith .. "/" .. nRows .. ")")
+
+  local savedCached = C_Item.IsItemDataCachedByID
+  C_Item.IsItemDataCachedByID = function() return true end
+  ttreset(); caughtRow._scripts.OnEnter(caughtRow)
+  check(TT.owner == caughtRow and TT.anchor == "ANCHOR_RIGHT" and TT.shown, "SetOwner(row, ANCHOR_RIGHT) + Show")
+  check(TT.link == "item:250001", "cached caught item uses stored link via SetHyperlink")
+  check(has("Caught=") and has("Last caught=Elwynn Forest") , "caught lines: count + last zone (" .. table.concat(TT.lines, " | ") .. ")")
+  caughtRow._scripts.OnLeave(caughtRow)
+  ttreset(); uncaughtRow._scripts.OnEnter(uncaughtRow)
+  check(TT.itemId == 2620 or TT.itemId == uncaughtRow.entry.itemId, "uncaught catalog item uses SetItemByID")
+  check(has("Not caught yet") and has("Typical waters=") and not has("Caught="), "uncaught lines: Not caught yet + typical waters")
+  uncaughtRow._scripts.OnLeave(uncaughtRow)
+  ttreset(); learnedRow._scripts.OnEnter(learnedRow)
+  check(has("Not caught yet") and has("First seen=Mount Hyjal"), "learned lines: first seen zone")
+  TT.hidden = nil; learnedRow._scripts.OnLeave(learnedRow)
+  check(TT.hidden, "OnLeave hides tooltip")
+
+  -- not cached: fallback name/quality tooltip, plus our lines; no item APIs called
+  C_Item.IsItemDataCachedByID = function() return false end
+  ttreset(); learnedRow._scripts.OnEnter(learnedRow)
+  check(TT.itemId == nil and TT.link == nil and TT.lines[1] == "Hyjal Ember Trout" and TT.lines[2] == "Uncommon", "fallback tooltip: name + quality (" .. table.concat(TT.lines, " | ") .. ")")
+  check(has("Dark Matter") and has("Not caught yet") and TT.shown, "fallback tooltip has Dark Matter lines")
+  -- hovering while data arrives: list refresh rebuilds the tooltip with the real item
+  C_Item.IsItemDataCachedByID = function() return true end
+  ttreset(); DarkMatter.tabs.journals.Refresh()
+  check(TT.itemId == 250002 and TT.owner == learnedRow, "refresh while hovered upgrades to item tooltip (" .. tostring(TT.itemId) .. "," .. tostring(TT.owner == learnedRow) .. "," .. tostring(rawget(learnedRow, "_hover")) .. "," .. tostring(learnedRow.entry and learnedRow.entry.name) .. ")")
+  learnedRow._scripts.OnLeave(learnedRow)
+  -- OnLeave from a row that no longer owns the tooltip does not hide someone else's tooltip
+  ttreset(); TT.owner = "other"; caughtRow._scripts.OnLeave(caughtRow)
+  check(not TT.hidden, "OnLeave leaves tooltips owned by others alone")
+  -- no hooks on GameTooltip
+  check(rawget(GameTooltip, "_scripts") == nil or next(GameTooltip._scripts) == nil, "no scripts set on GameTooltip")
+  C_Item.IsItemDataCachedByID = savedCached
+  DarkMatter.FishingSetUIPref("showAll", false)
+end
+
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

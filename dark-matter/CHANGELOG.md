@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.8 (P2.8, catch-type row tooltips)
+- Hovering a **by fish** row (own catches and every Show all row, including uncaught and learned) shows `GameTooltip:SetOwner(row, "ANCHOR_RIGHT")` with the real item tooltip: `SetHyperlink` with the stored loot item string, else `SetItemByID(itemId)`.
+- When the item isn't in the client cache yet (`C_Item.IsItemDataCachedByID`, fallback `GetItemInfo`), a simple tooltip shows name in quality colour + quality name, and item data is requested; the open list refreshes on `GET_ITEM_INFO_RECEIVED` and a still-hovered row rebuilds into the full item tooltip.
+- Dark Matter lines under the item: **Caught N (share %)** + **Last caught zone (coords)**; or **Not caught yet** + first seen (learned) + **Typical waters** / **Fishing skill**; Junk marker.
+- OnLeave (and row hide) hides the tooltip only if the row still owns it. No hooks, no secure templates, no scripts on GameTooltip.
+- Catches now store the bare loot `item:...` string (`it.link`) for the tooltip; older catches use the item id.
+- Previewer: matching hover tooltip on fish rows.
+
 ## 0.2.7 (P2.7, fishing catalog: sourced + auto-learned)
 - **Auto-learn:** any fishing loot item (with an item link) that is not in the static catalog is saved per account in `DarkMatterDB.fishingCatalogLearned[itemId] = {itemId, name, icon, quality, firstZone, firstSeen}`. Later sightings only fill a missing icon/quality; first zone/date are kept.
 - **Show all** = static catalog + learned catalog + your own catches, deduped by itemId (name fallback for old link-less catches). Order: caught → learned (not yet caught by this character) → rest; then count, then name.

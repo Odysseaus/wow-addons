@@ -527,6 +527,111 @@ end
 
 function NS._FishingResetExistsCache() existsCache = {} end
 
+-- ---------------------------------------------------------------------------
+-- Row tooltips (0.2.8). Plain GameTooltip use from our own rows: SetOwner +
+-- SetHyperlink/SetItemByID, then our lines. No hooks, no secure frames.
+-- ---------------------------------------------------------------------------
+
+-- Extract a bare "item:..." string from a loot link (or accept one); nil otherwise.
+function NS.FishingItemString(link)
+  link = SafeStr(link)
+  if not link then return nil end
+  local s = link:match("|H(item:[%-%d:]+)|h") or link:match("^(item:[%-%d:]+)$")
+  return s
+end
+
+local QUALITY_NAMES = { [0] = "Poor", [1] = "Common", [2] = "Uncommon", [3] = "Rare", [4] = "Epic", [5] = "Legendary" }
+local QUALITY_RGB = {
+  [0] = { 0.62, 0.62, 0.62 }, [1] = { 1, 1, 1 }, [2] = { 0.12, 1, 0 },
+  [3] = { 0, 0.44, 0.87 }, [4] = { 0.64, 0.21, 0.93 }, [5] = { 1, 0.5, 0 },
+}
+local function QualityRGB(q)
+  if GetItemQualityColor then
+    local ok, r, g, b = pcall(GetItemQualityColor, q)
+    if ok and type(r) == "number" then return r, g, b end
+  end
+  local c = QUALITY_RGB[q] or QUALITY_RGB[1]
+  return c[1], c[2], c[3]
+end
+
+-- True when the client has item data in cache (so SetItemByID fills the tooltip now).
+local function ItemCached(itemId)
+  if not itemId then return false end
+  local CI = C_Item
+  if CI and CI.IsItemDataCachedByID then
+    local ok, v = pcall(CI.IsItemDataCachedByID, itemId)
+    if ok and v ~= nil then return v and true or false end
+  end
+  if GetItemInfo then
+    local ok, name = pcall(GetItemInfo, itemId)
+    return ok and type(name) == "string" and name ~= ""
+  end
+  return false
+end
+NS._FishingItemCached = ItemCached
+
+-- Fill GameTooltip for one catch-type row entry. total = all logged catches (for share %).
+-- Returns "item" when the client item tooltip was used, "fallback" otherwise.
+function NS.FishingShowCatchTooltip(owner, e, total)
+  local tt = GameTooltip
+  if not (tt and owner and type(e) == "table") then return nil end
+  tt:SetOwner(owner, "ANCHOR_RIGHT")
+  local itemId = SafeNum(e.itemId)
+  local mode = "fallback"
+  if itemId and ItemCached(itemId) then
+    local ok
+    if e.link and tt.SetHyperlink then
+      ok = pcall(tt.SetHyperlink, tt, e.link)
+    end
+    if not ok and tt.SetItemByID then
+      ok = pcall(tt.SetItemByID, tt, itemId)
+    end
+    if ok then mode = "item" end
+  end
+  local q = NS.FishingItemQuality and NS.FishingItemQuality(itemId, e.quality) or (SafeNum(e.quality) or 1)
+  if mode == "fallback" then
+    local r, g, b = QualityRGB(q)
+    tt:AddLine(e.name or "?", r, g, b)
+    tt:AddLine(QUALITY_NAMES[q] or "Item", 0.8, 0.8, 0.8)
+    if itemId and NS.FishingRequestItemIcon then NS.FishingRequestItemIcon(itemId) end
+  end
+  -- Dark Matter lines
+  tt:AddLine(" ")
+  tt:AddLine("Dark Matter", 1, 0.82, 0)
+  local caught = e.caught and (SafeNum(e.count) or 0) > 0
+  if caught then
+    local count = SafeNum(e.count) or 0
+    local pct = (SafeNum(total) or 0) > 0 and string.format(" (%.0f%%)", 100 * count / total) or ""
+    tt:AddDoubleLine("Caught", tostring(count) .. pct, 0.9, 0.9, 0.9, 1, 1, 1)
+    local where = e.lastZone or "unknown"
+    local coords = NS.FishingFormatCoords(e.lastX, e.lastY)
+    if coords then where = where .. " (" .. coords .. ")" end
+    tt:AddDoubleLine("Last caught", where, 0.9, 0.9, 0.9, 1, 1, 1)
+  else
+    tt:AddLine("Not caught yet", 0.75, 0.75, 0.75)
+    if e.learned then
+      tt:AddDoubleLine("First seen", (e.firstZone or "this account") .. (e.firstSeen and (" · " .. e.firstSeen) or ""), 0.9, 0.9, 0.9, 1, 1, 1)
+    end
+  end
+  if not caught or e.waters then
+    if e.waters then tt:AddDoubleLine("Typical waters", e.waters, 0.9, 0.9, 0.9, 1, 1, 1) end
+    if e.skill then tt:AddDoubleLine("Fishing skill", tostring(e.skill), 0.9, 0.9, 0.9, 1, 1, 1) end
+  end
+  if e.junk then tt:AddLine("Junk", 0.62, 0.62, 0.62) end
+  tt:Show()
+  return mode
+end
+
+function NS.FishingHideCatchTooltip(owner)
+  local tt = GameTooltip
+  if not tt then return end
+  if tt.IsOwned then
+    local ok, owned = pcall(tt.IsOwned, tt, owner)
+    if ok and not owned then return end
+  end
+  tt:Hide()
+end
+
 local function RecordLootSlot(f, zone, itemName, quantity, quality, link, lootTex)
   quantity = SafeNum(quantity) or 1
   quality = SafeNum(quality) or 1
@@ -569,6 +674,8 @@ local function RecordLootSlot(f, zone, itemName, quantity, quality, link, lootTe
   it.quality = quality
   if copper then it.copper = copper end
   if itemId then it.itemId = itemId end
+  local itemString = NS.FishingItemString(link)
+  if itemString then it.link = itemString end
   local iconTex = CoerceIcon(lootTex)
   if iconTex then it.icon = iconTex end
   if itemId then LearnCatalogItem(itemId, itemName, iconTex, quality, zone) end
@@ -776,6 +883,7 @@ function NS.FishingCatchTypes(showAll, search)
             copper = SafeNum(it.copper),
             itemId = SafeNum(it.itemId),
             icon = CoerceIcon(it.icon),
+            link = NS.FishingItemString(it.link),
             caught = true,
             lastZone = SafeStr(it.lastZone),
             lastX = SafeNum(it.lastX),
@@ -787,6 +895,7 @@ function NS.FishingCatchTypes(showAll, search)
         e.count = e.count + (SafeNum(it.count) or 0)
         if SafeNum(it.itemId) then e.itemId = SafeNum(it.itemId) end
         if not e.icon then e.icon = CoerceIcon(it.icon) end
+        if not e.link then e.link = NS.FishingItemString(it.link) end
         e.zones[zoneName] = (e.zones[zoneName] or 0) + (SafeNum(it.count) or 0)
         -- prefer most recently written last* on any zone bucket (loot overwrites)
         if it.lastZone then

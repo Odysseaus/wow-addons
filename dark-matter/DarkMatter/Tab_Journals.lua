@@ -326,6 +326,18 @@ local function GetFishRow(i)
     selectedFish = self.catchName
     if tab and tab.RefreshFish then tab.RefreshFish() end
   end)
+  -- item tooltip + our lines (caught count, last zone/coords or waters/skill)
+  r:SetScript("OnEnter", function(self)
+    self._hover = true
+    if self.entry then NS.FishingShowCatchTooltip(self, self.entry, self.total) end
+  end)
+  r:SetScript("OnLeave", function(self)
+    self._hover = false
+    NS.FishingHideCatchTooltip(self)
+  end)
+  r:SetScript("OnHide", function(self)
+    if self._hover then self._hover = false NS.FishingHideCatchTooltip(self) end
+  end)
   fishRowPool[i] = r
   return r
 end
@@ -349,6 +361,7 @@ local function RefreshFishList()
     if e then
       r = GetFishRow(i)
       r.catchName = e.name
+      r.entry, r.total = e, total
       r:ClearAllPoints()
       r:SetPoint("TOPLEFT", fishScroll.content, "TOPLEFT", 0, -(i - 1) * (FISH_ROW_H or 36))
       r:SetPoint("RIGHT", fishScroll.content, "RIGHT", 0, 0)
@@ -383,8 +396,11 @@ local function RefreshFishList()
       r.icon:SetItem(e.itemId, NS.FishingItemQuality and NS.FishingItemQuality(e.itemId, e.quality) or e.quality, e.icon)
       if selectedFish == e.name then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
       r:Show()
+      -- item data arrived (list refresh) while hovering: rebuild the tooltip with the real item
+      if r._hover then NS.FishingShowCatchTooltip(r, e, total) end
     elseif r then
       r:Hide()
+      r.entry = nil
     end
   end
   fishScroll:SetContentHeight(math.max(1, n * (FISH_ROW_H or 36)))
