@@ -203,6 +203,32 @@ local function ParseItemId(link)
   return id and tonumber(id) or nil
 end
 
+
+--- Player map position for last-catch tagging (Forever: C_Map when present).
+-- Returns x, y in 0..1 (or nils). Never requests server data.
+function NS.ReadPlayerMapPos()
+  local CM = C_Map
+  if CM and CM.GetBestMapForUnit and CM.GetPlayerMapPosition then
+    local ok, mapId = pcall(CM.GetBestMapForUnit, "player")
+    mapId = ok and SafeNum(mapId) or nil
+    if mapId then
+      local ok2, pos = pcall(CM.GetPlayerMapPosition, mapId, "player")
+      if ok2 and pos then
+        if pos.GetXY then
+          local ok3, x, y = pcall(function() return pos:GetXY() end)
+          if ok3 then return SafeNum(x), SafeNum(y) end
+        end
+        return SafeNum(pos.x), SafeNum(pos.y)
+      end
+    end
+  end
+  if GetPlayerMapPosition then
+    local ok, x, y = pcall(GetPlayerMapPosition, "player")
+    if ok then return SafeNum(x), SafeNum(y) end
+  end
+  return nil, nil
+end
+
 function NS.ParseItemId(link)
   return ParseItemId(link)
 end
@@ -378,6 +404,11 @@ local function RecordLootSlot(f, zone, itemName, quantity, quality, link)
   it.quality = quality
   if copper then it.copper = copper end
   if itemId then it.itemId = itemId end
+  it.lastZone = zone
+  local px, py = NS.ReadPlayerMapPos()
+  if px and py then
+    it.lastX, it.lastY = px, py
+  end
 end
 
 local function OnFishingLoot()
@@ -456,6 +487,9 @@ function NS.FishingZoneStats(zoneName)
       quality = SafeNum(it.quality) or 1,
       copper = SafeNum(it.copper),
       itemId = SafeNum(it.itemId),
+      lastZone = SafeStr(it.lastZone),
+      lastX = SafeNum(it.lastX),
+      lastY = SafeNum(it.lastY),
     }
   end
   table.sort(items, function(a, b) return a.count > b.count end)
@@ -554,39 +588,107 @@ local function OnError(_, _, message)
 end
 
 
---- Aggregate catch types across all zones (for Catches by fish).
--- showAll false => fish-focused: exclude quality-0 junk. showAll true => every logged type.
+--- Catch types for Catches-by-fish.
+-- showAll false: only items this character has logged.
+-- showAll true: full NS.FishingCatchCatalog; caught items highlighted + sorted to top; uncaught below.
 function NS.FishingCatchTypes(showAll, search)
   local f = Ensure()
-  local byName = {}
+  local caught = {} -- keyed by name
   for zoneName, z in pairs(f.zones or {}) do
     if type(z) == "table" and type(z.items) == "table" then
       for name, it in pairs(z.items) do
-        local junk = it.junk and true or false
-        local quality = SafeNum(it.quality) or (junk and 0 or 1)
-        if showAll or quality > 0 then
-          local e = byName[name]
-          if not e then
-            e = { name = name, count = 0, junk = junk, quality = quality, copper = SafeNum(it.copper), itemId = SafeNum(it.itemId), zones = {} }
-            byName[name] = e
-          end
-          e.count = e.count + (SafeNum(it.count) or 0)
-          if SafeNum(it.itemId) then e.itemId = SafeNum(it.itemId) end
-          e.zones[zoneName] = (e.zones[zoneName] or 0) + (SafeNum(it.count) or 0)
+        local e = caught[name]
+        if not e then
+          e = {
+            name = name,
+            count = 0,
+            junk = it.junk and true or false,
+            quality = SafeNum(it.quality) or 1,
+            copper = SafeNum(it.copper),
+            itemId = SafeNum(it.itemId),
+            caught = true,
+            lastZone = SafeStr(it.lastZone),
+            lastX = SafeNum(it.lastX),
+            lastY = SafeNum(it.lastY),
+            zones = {},
+          }
+          caught[name] = e
+        end
+        e.count = e.count + (SafeNum(it.count) or 0)
+        if SafeNum(it.itemId) then e.itemId = SafeNum(it.itemId) end
+        e.zones[zoneName] = (e.zones[zoneName] or 0) + (SafeNum(it.count) or 0)
+        -- prefer most recently written last* on any zone bucket (loot overwrites)
+        if it.lastZone then
+          e.lastZone = SafeStr(it.lastZone)
+          e.lastX = SafeNum(it.lastX)
+          e.lastY = SafeNum(it.lastY)
         end
       end
     end
   end
+
   local list, total = {}, 0
   search = search and tostring(search):lower() or ""
-  for _, e in pairs(byName) do
-    if search == "" or (e.name and e.name:lower():find(search, 1, true)) then
-      list[#list + 1] = e
-      total = total + e.count
-    end
+
+  local function want(name)
+    return search == "" or (name and name:lower():find(search, 1, true))
   end
-  table.sort(list, function(a, b) return a.count > b.count end)
+
+  if showAll then
+    local seen = {}
+    for _, cat in ipairs(NS.FishingCatchCatalog or {}) do
+      local name = cat.name
+      if name and want(name) then
+        seen[name] = true
+        local c = caught[name]
+        if c then
+          list[#list + 1] = c
+          total = total + c.count
+        else
+          list[#list + 1] = {
+            name = name,
+            count = 0,
+            junk = cat.junk and true or false,
+            quality = cat.junk and 0 or 1,
+            itemId = cat.itemId,
+            caught = false,
+            lastZone = nil,
+            lastX = nil,
+            lastY = nil,
+            zones = {},
+          }
+        end
+      end
+    end
+    -- logged items not in catalog still appear (caught, top)
+    for name, c in pairs(caught) do
+      if not seen[name] and want(name) then
+        list[#list + 1] = c
+        total = total + c.count
+      end
+    end
+    table.sort(list, function(a, b)
+      if a.caught ~= b.caught then return a.caught end
+      if a.count ~= b.count then return a.count > b.count end
+      return (a.name or "") < (b.name or "")
+    end)
+  else
+    for _, c in pairs(caught) do
+      if want(c.name) then
+        list[#list + 1] = c
+        total = total + c.count
+      end
+    end
+    table.sort(list, function(a, b) return a.count > b.count end)
+  end
   return list, total
+end
+
+function NS.FishingFormatCoords(x, y)
+  x, y = SafeNum(x), SafeNum(y)
+  if not x or not y then return nil end
+  -- map positions are 0..1; show as classic percent coords
+  return string.format("%.1f, %.1f", x * 100, y * 100)
 end
 
 function NS.FishingUIPrefs()

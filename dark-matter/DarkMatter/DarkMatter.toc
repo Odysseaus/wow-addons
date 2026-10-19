@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.2.3 (P2.3): Catches by zone/fish, Show all, search; lure names; Quests; /dm probe.
+## Notes: Dark Matter 0.2.4 (P2.4): Catches view, catalog Show all, last-catch coords; Quests; /dm probe.
 ## Author: Odysseaus
-## Version: 0.2.3
+## Version: 0.2.4
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
@@ -17,6 +17,7 @@ ProbeWindow.lua
 Window.lua
 Tab_Quests.lua
 Data_Fishing.lua
+Data_FishingCatches.lua
 Fishing.lua
 Tab_Journals.lua
 Tab_Stub.lua

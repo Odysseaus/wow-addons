@@ -16,7 +16,7 @@ local fishPage, stubPage, stub
 local skillBar, skillTitle, skillSub
 local viewWaters, watersRoot, fishRoot, statsRoot, statsScroll
 local zoneScroll, detailPanel, detailTitle, detailMeta, detailStatus, detailBody, catchHeader, catchRows, emptyFish
-local fvZone, fvFish, fvStats
+local fvCatches, fvStats, modeZone, modeFish
 local fishScroll, fishRowPool, emptyCatchFish
 local searchBox, showAllBox, filterBar
 local rowPool, selectedZone, selectedFish, fishRank, fishMax = {}, nil, nil, nil, nil
@@ -258,12 +258,15 @@ local function GetUI()
 end
 
 local function SetFishView(id)
+  -- id: "catches" | "stats" | "zone" | "fish"
   local ui = GetUI()
   if id == "stats" then
     ui.panel = "stats"
-  else
+  elseif id == "catches" then
     ui.panel = "catches"
-    ui.catchMode = (id == "fish") and "fish" or "zone"
+  elseif id == "fish" or id == "zone" then
+    ui.panel = "catches"
+    ui.catchMode = id
   end
   if NS.FishingSetUIPref then
     NS.FishingSetUIPref("panel", ui.panel)
@@ -272,9 +275,10 @@ local function SetFishView(id)
   if NS.db then
     NS.db.fishingView = (ui.panel == "stats") and "stats" or ((ui.catchMode == "fish") and "fish" or "waters")
   end
-  if fvZone then fvZone:SetActive(ui.panel == "catches" and ui.catchMode == "zone") end
-  if fvFish then fvFish:SetActive(ui.panel == "catches" and ui.catchMode == "fish") end
+  if fvCatches then fvCatches:SetActive(ui.panel == "catches") end
   if fvStats then fvStats:SetActive(ui.panel == "stats") end
+  if modeZone then modeZone:SetActive(ui.catchMode == "zone") end
+  if modeFish then modeFish:SetActive(ui.catchMode == "fish") end
   if watersRoot then if ui.panel == "catches" and ui.catchMode == "zone" then watersRoot:Show() else watersRoot:Hide() end end
   if fishRoot then if ui.panel == "catches" and ui.catchMode == "fish" then fishRoot:Show() else fishRoot:Hide() end end
   if statsRoot then if ui.panel == "stats" then statsRoot:Show() else statsRoot:Hide() end end
@@ -332,11 +336,25 @@ local function RefreshFishList()
       r:SetPoint("TOPLEFT", fishScroll.content, "TOPLEFT", 0, -(i - 1) * (FISH_ROW_H or 36))
       r:SetPoint("RIGHT", fishScroll.content, "RIGHT", 0, 0)
       r.text:SetText(e.name)
-      r.text:SetTextColor(NS.Color(selectedFish == e.name and "liOn" or "listInk"))
-      r.small:SetText(tostring(e.count))
-      local pct = total > 0 and (100 * e.count / total) or 0
-      local tag = e.junk and "junk" or "fish"
-      r.sub:SetText(string.format("%.0f%% of catches · %s", pct, tag))
+      local caught = e.caught and (e.count or 0) > 0
+      r.text:SetTextColor(NS.Color(selectedFish == e.name and "liOn" or (caught and "listInk" or "listSoft")))
+      if caught then
+        r.small:SetText(tostring(e.count))
+        r.small:SetTextColor(NS.Color("gold"))
+      else
+        r.small:SetText("—")
+        r.small:SetTextColor(NS.Color("listSoft"))
+      end
+      local loc = e.lastZone or ""
+      local coords = NS.FishingFormatCoords and NS.FishingFormatCoords(e.lastX, e.lastY)
+      if coords then loc = (loc ~= "" and (loc .. " · ") or "") .. coords end
+      if caught then
+        local pct = total > 0 and (100 * e.count / total) or 0
+        r.sub:SetText(string.format("%.0f%% · %s%s", pct, e.junk and "junk · " or "", loc ~= "" and loc or "location unknown"))
+      else
+        r.sub:SetText(e.junk and "Not caught yet · junk" or "Not caught yet")
+      end
+      r.sub:SetTextColor(NS.Color(caught and "listSoft" or "listSoft"))
       r.icon:SetItem(e.itemId)
       if selectedFish == e.name then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
       r:Show()
@@ -347,7 +365,7 @@ local function RefreshFishList()
   fishScroll:SetContentHeight(math.max(1, n * (FISH_ROW_H or 36)))
   if emptyCatchFish then
     if n == 0 then
-      emptyCatchFish:SetText(ui.showAll and "No catches logged yet." or "No fish logged yet. Enable Show all for junk, or go fish.")
+      emptyCatchFish:SetText(ui.showAll and "Catalog empty (unexpected)." or "No catches logged yet. Enable Show all to browse the fishing catalog.")
       emptyCatchFish:Show()
     else
       emptyCatchFish:Hide()
@@ -423,7 +441,7 @@ local function RefreshFish()
   RefreshFishList()
   RefreshStats()
 
-  SetFishView(ui.panel == "stats" and "stats" or ui.catchMode)
+  if ui.panel == "stats" then SetFishView("stats") else SetFishView("catches"); SetFishView(ui.catchMode or "zone") end
 
   local fdb = NS.GetFishingDB and NS.GetFishingDB() or {}
   if badgeText and NS.db and NS.db.section == "fishing" then
@@ -475,14 +493,11 @@ local function BuildFish(page)
   viewWaters = CreateFrame("Frame", nil, fishPage)
   viewWaters:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -pad)
   viewWaters:SetSize(innerW, 28)
-  fvZone = UI.Pill(viewWaters, "Catches by zone")
-  fvZone:SetPoint("TOPLEFT", viewWaters, "TOPLEFT", 0, 0)
-  fvZone:SetScript("OnClick", function() SetFishView("zone") RefreshFish() end)
-  fvFish = UI.Pill(viewWaters, "Catches by fish")
-  fvFish:SetPoint("TOPLEFT", fvZone, "TOPRIGHT", m.pillGap, 0)
-  fvFish:SetScript("OnClick", function() SetFishView("fish") RefreshFish() end)
+  fvCatches = UI.Pill(viewWaters, "Catches")
+  fvCatches:SetPoint("TOPLEFT", viewWaters, "TOPLEFT", 0, 0)
+  fvCatches:SetScript("OnClick", function() SetFishView("catches") RefreshFish() end)
   fvStats = UI.Pill(viewWaters, "Statistics")
-  fvStats:SetPoint("TOPLEFT", fvFish, "TOPRIGHT", m.pillGap, 0)
+  fvStats:SetPoint("TOPLEFT", fvCatches, "TOPRIGHT", m.pillGap, 0)
   fvStats:SetScript("OnClick", function() SetFishView("stats") RefreshFish() end)
 
   local skillH = 40
@@ -504,14 +519,20 @@ local function BuildFish(page)
   filterBar = CreateFrame("Frame", nil, fishPage)
   filterBar:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -(pad + 32 + skillH + 8))
   filterBar:SetSize(innerW, filterH)
-  searchBox = UI.SearchBox(filterBar, innerW - 160, 24)
-  searchBox:SetPoint("LEFT", filterBar, "LEFT", 0, 0)
+  modeZone = UI.Pill(filterBar, "by zone")
+  modeZone:SetPoint("LEFT", filterBar, "LEFT", 0, 0)
+  modeZone:SetScript("OnClick", function() SetFishView("zone") RefreshFish() end)
+  modeFish = UI.Pill(filterBar, "by fish")
+  modeFish:SetPoint("LEFT", modeZone, "RIGHT", m.pillGap, 0)
+  searchBox = UI.SearchBox(filterBar, math.max(120, innerW - 360), 24)
+  searchBox:SetPoint("LEFT", modeFish, "RIGHT", 12, 0)
   searchBox.onChange = function(t)
     searchText = (t or ""):lower()
     if tab and tab.RefreshFish then tab.RefreshFish() end
   end
   showAllBox = UI.Checkbox(filterBar, "Show all", 18)
-  showAllBox:SetPoint("LEFT", searchBox, "RIGHT", 12, 0)
+  showAllBox:SetPoint("LEFT", searchBox, "RIGHT", 10, 0)
+  showAllBox:EnableMouse(true)
   showAllBox.onToggle = function(_, on)
     if NS.FishingSetUIPref then NS.FishingSetUIPref("showAll", on and true or false) end
     if tab and tab.RefreshFish then tab.RefreshFish() end
@@ -563,7 +584,7 @@ local function BuildFish(page)
   fh:SetText("Catch types")
   local note = UI.Text(fishPanel, "OVERLAY", 11, "listSoft", "LEFT")
   note:SetPoint("TOPRIGHT", fishPanel, "TOPRIGHT", -12, -8)
-  note:SetText("Show all = include junk (quality 0)")
+  note:SetText("Show all = full fishing catalog; caught items on top")
   fishScroll = UI.Scroll(fishPanel, innerW - 8, splitH - 28)
   fishScroll.frame:SetPoint("TOPLEFT", fishPanel, "TOPLEFT", 4, -26)
   emptyCatchFish = UI.Text(fishPanel, "OVERLAY", 12, "listSoft", "CENTER")
@@ -580,7 +601,7 @@ local function BuildFish(page)
 
   tab.RefreshFish = RefreshFish
   local ui = GetUI()
-  if ui.panel == "stats" then SetFishView("stats") else SetFishView(ui.catchMode) end
+  if ui.panel == "stats" then SetFishView("stats") else SetFishView("catches"); SetFishView(ui.catchMode or "zone") end
 end
 
 ---------------------------------------------------------------------------

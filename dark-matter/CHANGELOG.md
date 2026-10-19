@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.4 (P2.4, Catches pill + catalog Show all)
+- Top pills are **Catches** and **Statistics**. Inside Catches: **by zone** / **by fish** toggle (persisted per character with Show all).
+- **Show all** (fixed): checked lists the static Forever/classic fishing-catch catalog (`Data_FishingCatches.lua`); items you have logged are highlighted and sorted to the top; unchecked lists only logged catches.
+- By fish rows show round item icons, count/share, and **last caught zone + map coords** (stored on loot via `C_Map.GetPlayerMapPosition` / `GetPlayerMapPosition` when available).
+- Search still filters the active list. Previewer updated to match.
+
 ## 0.2.3 (P2.3, Catches by zone / by fish)
 - Journals → Fishing: pills **Catches by zone**, **Catches by fish**, and **Statistics**. Zone vs fish choice (and Show all) persist per character in `DarkMatterCharDB.fishing.ui`.
 - Catches by fish: aggregated catch types with circular item icons (`GetItemIcon` / `SetPortraitToTexture`), count and share.

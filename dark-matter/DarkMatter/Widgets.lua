@@ -446,6 +446,7 @@ function UI.Checkbox(parent, label, size)
   size = size or 20
   local b = CreateFrame("CheckButton", nil, parent)
   b:SetSize(size, size)
+  if b.EnableMouse then b:EnableMouse(true) end
   local bg = b:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints(b)
   bg:SetColorTexture(0.05, 0.05, 0.04, 0.95)

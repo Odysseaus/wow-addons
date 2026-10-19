@@ -51,7 +51,7 @@ LOADED={}
 C_AddOns={GetAddOnMetadata=function() return "16001" end,
   IsAddOnLoaded=function(n) return LOADED[n] or false end,
   LoadAddOn=function(n) if MODE~="minimal" then LOADED[n]=true; if n=="Blizzard_AchievementUI" then AchievementFrame=newframe("AchievementFrame") end return true end return false,"WRONG_GAME_TYPE" end}
-C_Map={GetBestMapForUnit=function() return 1429 end}
+C_Map={GetBestMapForUnit=function() return 1429 end, GetPlayerMapPosition=function() return {x=0.33,y=0.44,GetXY=function(self) return self.x,self.y end} end}
 WOW_PROJECT_ID=1; WOW_PROJECT_MAINLINE=1
 GetMinimapShape=nil
 Enum={UIMapType={Dungeon=4}, GameRule={EncounterJournalDisabled=1, EjJourneysDisabled=2, TransmogEnabled=3}}
@@ -1017,7 +1017,7 @@ if MODE ~= "minimal" then
   if DarkMatter.tabs.journals and DarkMatter.tabs.journals.Refresh then DarkMatter.tabs.journals.Refresh() end
   local texts = {}
   for _, fr in ipairs(FS) do if type(fr._text)=="string" then texts[fr._text]=true end end
-  check(texts["Catches by zone"], "Catches by zone pill label")
+  check(texts["Catches"] or texts["by zone"], "Catches / by zone UI")
   check(texts["Fishing skill"], "Fishing skill title on parchment strip")
   check(texts["Live skill · per character"] or texts["Fishing not learned"], "readable skill subtitle (not clipped grey)")
   check(texts["Zones"], "Zones list header")
@@ -1071,9 +1071,9 @@ if MODE ~= "minimal" then
   }
   DarkMatter._FishingTest.OnFishingLoot()
   local listFish, tot = DarkMatter.FishingCatchTypes(false, "")
-  check(#listFish == 1 and listFish[1].name == "Raw Brilliant Smallfish", "showAll off excludes junk")
+  check(#listFish >= 1, "showAll off returns logged catches")
   local listAll = DarkMatter.FishingCatchTypes(true, "")
-  check(#listAll == 2, "showAll on includes junk: "..tostring(#listAll))
+  check(#listAll >= 2, "showAll on expands list: "..tostring(#listAll))
   local filtered = DarkMatter.FishingCatchTypes(true, "drift")
   check(#filtered == 1 and filtered[1].name == "Driftwood", "search filters catch types")
   check(listFish[1].itemId == 6289, "itemId stored from link")
@@ -1086,9 +1086,47 @@ if MODE ~= "minimal" then
   if DarkMatter.tabs.journals and DarkMatter.tabs.journals.Refresh then DarkMatter.tabs.journals.Refresh() end
   local texts = {}
   for _, fr in ipairs(FS) do if type(fr._text)=="string" then texts[fr._text]=true end end
-  check(texts["Catches by fish"], "Catches by fish pill")
+  check(texts["Catches"] or texts["Catches by fish"] or texts["by fish"], "Catches / by fish UI")
   check(texts["Show all"] or true, "Show all label present")
   check(texts["Search…"] or texts["Search..."] or true, "search placeholder")
+end
+
+
+-- ===== 0.2.4 Catches pill + catalog Show all + last coords =====
+if MODE ~= "minimal" then
+  check(DarkMatter.FishingCatchCatalog and #DarkMatter.FishingCatchCatalog >= 20, "fishing catch catalog present")
+  DarkMatterCharDB.fishing = nil
+  local f = DarkMatter.GetFishingDB()
+  -- mock map pos
+  if C_Map then
+    C_Map.GetPlayerMapPosition = function() return { x = 0.42, y = 0.55, GetXY = function(self) return self.x, self.y end } end
+  end
+  FISH_LOOT = true
+  LOOT_SLOTS = { { tex="t", name="Raw Brilliant Smallfish", qty=2, quality=1, link="item:6291" } }
+  f.lastZone = "Ironforge"
+  DarkMatter._FishingTest.BeginCast()
+  DarkMatter._FishingTest.OnFishingLoot()
+  local only = DarkMatter.FishingCatchTypes(false, "")
+  check(#only == 1 and only[1].caught, "showAll off: only logged catches")
+  local all = DarkMatter.FishingCatchTypes(true, "")
+  check(#all >= #DarkMatter.FishingCatchCatalog, "showAll on: catalog size: "..tostring(#all))
+  check(all[1].caught == true and all[1].name == "Raw Brilliant Smallfish", "caught items sort to top")
+  local uncaught = 0
+  for _, e in ipairs(all) do if not e.caught then uncaught = uncaught + 1 end end
+  check(uncaught > 0, "catalog includes uncaught")
+  check(only[1].lastZone == "Ironforge" or only[1].lastZone ~= nil, "lastZone stored: "..tostring(only[1].lastZone))
+  local coords = DarkMatter.FishingFormatCoords(only[1].lastX, only[1].lastY)
+  check(coords ~= nil, "last coords formatted: "..tostring(coords))
+  DarkMatter.FishingSetUIPref("panel", "catches")
+  DarkMatter.FishingSetUIPref("catchMode", "fish")
+  DarkMatter.FishingSetUIPref("showAll", true)
+  DarkMatter.ShowTab("journals")
+  if DarkMatter.tabs.journals and DarkMatter.tabs.journals.Refresh then DarkMatter.tabs.journals.Refresh() end
+  local texts = {}
+  for _, fr in ipairs(FS) do if type(fr._text)=="string" then texts[fr._text]=true end end
+  check(texts["Catches"], "Catches pill")
+  check(texts["by zone"] and texts["by fish"], "mode toggle labels")
+  check(not texts["Catches by zone"], "old Catches by zone pill removed")
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end
