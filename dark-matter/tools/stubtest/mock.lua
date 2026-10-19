@@ -17,7 +17,7 @@ FS={}
 function FrameMT.CreateFontString() local fs=newframe() FS[#FS+1]=fs return fs end
 function FrameMT.CreateTexture() return newframe() end
 function FrameMT.Show(s) s._shown=true if s._scripts.OnShow then s._scripts.OnShow(s) end end
-function FrameMT.Hide(s) s._shown=false end
+function FrameMT.Hide(s) local was=s._shown s._shown=false if was and s._scripts and s._scripts.OnHide then s._scripts.OnHide(s) end end
 function FrameMT.IsShown(s) return s._shown end
 function FrameMT.SetScript(s,k,fn) s._scripts[k]=fn end
 function FrameMT.RegisterEvent(s,e) s._ev=s._ev or {} s._ev[e]=true end
@@ -222,7 +222,12 @@ function FrameMT.CreateFontString(s, name, layer)
 end
 
 function FrameMT.Show(s) s._shown = true s._hid = false if s._scripts.OnShow then s._scripts.OnShow(s) end end
-function FrameMT.Hide(s) s._shown = false s._hid = true end
+function FrameMT.Hide(s)
+  local was = s._shown
+  s._shown = false
+  s._hid = true
+  if was ~= false and s._scripts and s._scripts.OnHide then s._scripts.OnHide(s) end
+end
 
 function FrameMT.SetPoint(s, point, a, b, c, d)
   if not POINTS[point] then error("SetPoint: bad anchor point " .. tostring(point), 2) end
@@ -786,6 +791,47 @@ do
   for k in pairs(UNKNOWN) do names[#names + 1] = k end
   table.sort(names)
   out("UNKNOWN METHODS:", table.concat(names, ","))
+end
+
+-- ===== Settings pop dismiss (0.1.3) =====
+if MODE ~= "minimal" then
+  local W = DarkMatter.windowParts
+  local win = DarkMatterFrame
+  win:Show()
+  check(W and W.pop and W.settingsBtn and W.popCatcher and W.popWorldCatcher, "settings pop and catchers exist")
+  check(not W.pop._shown, "settings pop starts hidden")
+  -- gear opens
+  W.settingsBtn._scripts.OnClick(W.settingsBtn, "LeftButton")
+  check(W.pop._shown, "Settings button opens the pop")
+  check(W.popCatcher._shown and W.popWorldCatcher._shown, "catchers show with the pop")
+  -- Esc target swapped to the pop
+  local function inSpecial(name)
+    for i = 1, #UISpecialFrames do if UISpecialFrames[i] == name then return true end end
+  end
+  check(inSpecial("DarkMatterSettingsPop") and not inSpecial("DarkMatterFrame"), "Esc targets the settings pop while it is open")
+  -- click outside (window catcher) closes
+  W.popCatcher._scripts.OnMouseDown(W.popCatcher, "LeftButton")
+  check(not W.pop._shown, "click outside (window catcher) closes the pop")
+  check(not W.popCatcher._shown and not W.popWorldCatcher._shown, "catchers hide with the pop")
+  check(inSpecial("DarkMatterFrame") and not inSpecial("DarkMatterSettingsPop"), "Esc targets the main window again after pop closes")
+  -- gear toggles open again, world catcher also dismisses
+  W.settingsBtn._scripts.OnClick(W.settingsBtn, "LeftButton")
+  check(W.pop._shown, "Settings button opens again")
+  W.popWorldCatcher._scripts.OnMouseDown(W.popWorldCatcher, "LeftButton")
+  check(not W.pop._shown, "click outside (world catcher) closes the pop")
+  -- gear toggle close while open: catcher sits above the button, so a real click would hit the
+  -- catcher; the button handler itself also hides when already shown (direct toggle still works).
+  W.settingsBtn._scripts.OnClick(W.settingsBtn, "LeftButton")
+  check(W.pop._shown, "Settings opens for toggle-close check")
+  W.settingsBtn._scripts.OnClick(W.settingsBtn, "LeftButton")
+  check(not W.pop._shown, "Settings button toggles the pop closed")
+  -- clicking the pop itself must not dismiss via catcher (pop is above catcher; simulate by not firing catcher)
+  W.settingsBtn._scripts.OnClick(W.settingsBtn, "LeftButton")
+  check(W.pop._shown, "pop open for self-click check")
+  check(W.popCatcher._shown, "catcher still up while pop is open")
+  -- hide via Esc special-frame path (Blizzard would call :Hide on the named frame)
+  DarkMatterSettingsPop:Hide()
+  check(not W.pop._shown and not W.popCatcher._shown, "Esc/special-frame Hide closes pop and catchers")
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

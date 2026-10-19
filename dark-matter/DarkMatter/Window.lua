@@ -99,9 +99,23 @@ local function EdgeLine(parent, point1, rel1, point2, rel2, w, h, r, g, b)
   return t
 end
 
+local function SpecialFrame(name, add)
+  -- Esc closes named frames through Blizzard's UISpecialFrames list (stock, taint-safe).
+  if type(UISpecialFrames) ~= "table" then return end
+  if add then
+    for i = 1, #UISpecialFrames do if UISpecialFrames[i] == name then return end end
+    tinsert(UISpecialFrames, name)
+  else
+    for i = #UISpecialFrames, 1, -1 do
+      if UISpecialFrames[i] == name then table.remove(UISpecialFrames, i) end
+    end
+  end
+end
+
 local function BuildSettings(f)
   local m = NS.theme.m
-  local pop = CreateFrame("Frame", nil, f)
+  -- Named so Esc can close it via UISpecialFrames while it is open (instead of the main window).
+  local pop = CreateFrame("Frame", "DarkMatterSettingsPop", f)
   pop:SetSize(m.popW, m.popH)
   pop:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", m.popX, m.pad + m.popBottom)
   pop:SetFrameLevel(f:GetFrameLevel() + 30)
@@ -133,7 +147,42 @@ local function BuildSettings(f)
   local reset = UI.Button(pop, "Reset window position", m.popW - 28, m.fbtnH, "red", m.fbtnSize)
   reset:SetPoint("BOTTOMLEFT", pop, "BOTTOMLEFT", 14, 14)
   reset:SetScript("OnClick", function() NS.ResetWindowPosition() end)
+
+  -- Click-outside: a catcher over the main window (above content, below the pop) and a
+  -- full-screen catcher under the window so a click on the world also dismisses. Both are
+  -- plain Frames with private OnMouseDown handlers; neither hooks Blizzard code.
+  local catcher = CreateFrame("Frame", nil, f)
+  catcher:SetAllPoints(f)
+  catcher:SetFrameLevel(f:GetFrameLevel() + 20)
+  catcher:EnableMouse(true)
+  catcher:Hide()
+  catcher:SetScript("OnMouseDown", function() pop:Hide() end)
+
+  local world = CreateFrame("Frame", nil, UIParent)
+  world:SetAllPoints(UIParent)
+  world:SetFrameStrata("HIGH")
+  world:SetFrameLevel(math.max(0, (f:GetFrameLevel() or 1) - 1))
+  world:EnableMouse(true)
+  world:Hide()
+  world:SetScript("OnMouseDown", function() pop:Hide() end)
+
+  pop:SetScript("OnShow", function()
+    catcher:Show()
+    world:Show()
+    -- Esc closes the pop first; restore the main window entry when the pop hides.
+    SpecialFrame("DarkMatterFrame", false)
+    SpecialFrame("DarkMatterSettingsPop", true)
+  end)
+  pop:SetScript("OnHide", function()
+    catcher:Hide()
+    world:Hide()
+    SpecialFrame("DarkMatterSettingsPop", false)
+    if f:IsShown() then SpecialFrame("DarkMatterFrame", true) end
+  end)
+
   pop:Hide()
+  W.popCatcher = catcher
+  W.popWorldCatcher = world
   return pop
 end
 
@@ -262,6 +311,10 @@ local function Build()
 
   -- settings popover (Theme, Reset window position)
   W.pop = BuildSettings(f)
+  W.settingsBtn = settings
+  -- Toggle: open shows the pop (and its catchers); close hides it. While the pop is open the
+  -- window catcher sits above this button, so a second click hits the catcher and dismisses
+  -- without re-opening — same end state as a plain toggle close.
   settings:SetScript("OnClick", function()
     if W.pop:IsShown() then W.pop:Hide() else W.pop:Show() end
   end)

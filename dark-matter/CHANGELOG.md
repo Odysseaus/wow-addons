@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 (Settings pop: click-outside / Esc dismiss)
+- Settings popover closes when you click anywhere outside it: a catcher over the main window (above content, below the pop) and a full-screen catcher under the window so a click on the world dismisses too. The Settings button still toggles open; while open, a click on Settings hits the catcher and closes without re-opening.
+- Esc closes the Settings pop first (via `UISpecialFrames` on the named `DarkMatterSettingsPop`); Esc again closes the main window as before. Stock frames and private handlers only.
+
 ## 0.1.2 (fix: inactive pill fill gap)
 - Fix: Journals section pills (Adventure Guide, Achievements) showed a thin horizontal gap of slate background between the metal bezel and the dark burgundy fill. The active (Fishing) pill was fine. Cause: the generated inactive middle piece (`ptab-i-m.webp`) had a transparent band under the top bezel (source rows 5-13 of 64); left/right caps had matching holes. Active pieces are flush. The inactive art is repaired by filling those gaps from the active piece's fill topology with the inactive burgundy; `tools/make_wow_textures.py` applies the same repair when packing the atlas.
 
