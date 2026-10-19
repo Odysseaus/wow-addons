@@ -1400,9 +1400,9 @@ if MODE ~= "minimal" then
   local savedCached = C_Item.IsItemDataCachedByID
   C_Item.IsItemDataCachedByID = function() return true end
   ttreset(); caughtRow._scripts.OnEnter(caughtRow)
-  check(TT.owner == caughtRow and TT.anchor == "ANCHOR_NONE" and TT.shown, "SetOwner(row, ANCHOR_NONE) + Show")
+  check(TT.owner == caughtRow and TT.anchor == "ANCHOR_PRESERVE" and TT.shown, "SetOwner(row, ANCHOR_PRESERVE) + Show")
   local lp = TT.point
-  check(lp and lp[1] == "BOTTOMRIGHT" and lp[2] == caughtRow and lp[3] == "TOPLEFT" and lp[4] == -8 and lp[5] == 8, "tooltip BOTTOMRIGHT to row TOPLEFT, gap -8,8 (" .. tostring(lp and lp[1]) .. "," .. tostring(lp and lp[3]) .. "," .. tostring(lp and lp[4]) .. "," .. tostring(lp and lp[5]) .. "," .. tostring(lp and lp[2] == caughtRow) .. ")")
+  check(lp and lp[1] == "BOTTOMRIGHT" and lp[2] == caughtRow and lp[3] == "TOPLEFT" and lp[4] == -4 and lp[5] == 4, "tooltip BOTTOMRIGHT to row TOPLEFT, gap -4,+4 (" .. tostring(lp and lp[1]) .. "," .. tostring(lp and lp[3]) .. "," .. tostring(lp and lp[4]) .. "," .. tostring(lp and lp[5]) .. "," .. tostring(lp and lp[2] == caughtRow) .. ")")
   check(TT.link == "item:250001", "cached caught item uses stored link via SetHyperlink")
   check(has("Caught=") and has("Last caught=Elwynn Forest") , "caught lines: count + last zone (" .. table.concat(TT.lines, " | ") .. ")")
   caughtRow._scripts.OnLeave(caughtRow)
@@ -1420,32 +1420,93 @@ if MODE ~= "minimal" then
   ttreset(); learnedRow._scripts.OnEnter(learnedRow)
   check(TT.itemId == nil and TT.link == nil and TT.lines[1] == "Hyjal Ember Trout" and TT.lines[2] == "Uncommon", "fallback tooltip: name + quality (" .. table.concat(TT.lines, " | ") .. ")")
   check(has("Dark Matter") and has("Not caught yet") and TT.shown, "fallback tooltip has Dark Matter lines")
-  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -8 and q[5] == 8, "fallback tooltip uses gap placement") end
+  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -4 and q[5] == 4, "fallback tooltip uses gap placement") end
   -- hovering while data arrives: list refresh rebuilds the tooltip with the real item
   C_Item.IsItemDataCachedByID = function() return true end
   ttreset(); DarkMatter.tabs.journals.Refresh()
   check(TT.itemId == 250002 and TT.owner == learnedRow, "refresh while hovered upgrades to item tooltip (" .. tostring(TT.itemId) .. "," .. tostring(TT.owner == learnedRow) .. "," .. tostring(rawget(learnedRow, "_hover")) .. "," .. tostring(learnedRow.entry and learnedRow.entry.name) .. ")")
-  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -8 and q[5] == 8, "refresh tooltip uses gap placement") end
+  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -4 and q[5] == 4, "refresh tooltip uses gap placement") end
   learnedRow._scripts.OnLeave(learnedRow)
   -- OnLeave from a row that no longer owns the tooltip does not hide someone else's tooltip
   ttreset(); TT.owner = "other"; caughtRow._scripts.OnLeave(caughtRow)
   check(not TT.hidden, "OnLeave leaves tooltips owned by others alone")
-  -- screen edges (UIParent 1000 tall); tooltip 200x100
-  local function fr(l, t, w, h) return { GetLeft = function() return l end, GetTop = function() return t end, GetWidth = function() return w end, GetHeight = function() return h end, GetEffectiveScale = function() return 1 end } end
+  -- 0.2.10 placement rules (UIParent 1600x1000, row 400 wide, tooltip 200x100, gap 4)
+  local function fr(l, t, w, h, r) return { GetLeft = function() return l end, GetRight = function() return r or (l and l + 400) end, GetTop = function() return t end, GetWidth = function() return w end, GetHeight = function() return h end, GetEffectiveScale = function() return 1 end } end
   local tip = fr(nil, nil, 200, 100)
   rawset(UIParent, "GetHeight", function() return 1000 end)
+  rawset(UIParent, "GetWidth", function() return 1600 end)
   local A = DarkMatter.FishingTooltipAnchor
-  local p1, r1, x1, y1 = A(tip, fr(500, 500))
-  check(p1 == "BOTTOMRIGHT" and r1 == "TOPLEFT" and x1 == -8 and y1 == 8, "room: BOTTOMRIGHT->TOPLEFT -8,8")
-  local p2, r2, x2, y2 = A(tip, fr(100, 500))
-  check(p2 == "BOTTOMLEFT" and r2 == "TOPRIGHT" and x2 == 8 and y2 == 8, "left edge: flip to TOPRIGHT +8,8")
-  local p3, r3, x3, y3 = A(tip, fr(500, 950))
-  check(p3 == "TOPRIGHT" and r3 == "BOTTOMLEFT" and x3 == -8 and y3 == -8, "top edge: flip below, -8,-8")
-  local p4, r4, x4, y4 = A(tip, fr(50, 980))
-  check(p4 == "TOPLEFT" and r4 == "BOTTOMRIGHT" and x4 == 8 and y4 == -8, "top-left corner: BOTTOMRIGHT +8,-8")
-  local p5 = A(tip, {})
-  check(p5 == "BOTTOMRIGHT", "no geometry: default placement")
+  check(DarkMatter.FISH_TIP_GAP == 4, "gap is 4px")
+  local p, r, x, y, sd, vt = A(tip, fr(500, 500))
+  check(p == "BOTTOMRIGHT" and r == "TOPLEFT" and x == -4 and y == 4 and vt == "up", "(a) no compare: BOTTOMRIGHT->TOPLEFT -4,+4")
+  p, r, x, y = A(tip, fr(100, 500))
+  check(p == "BOTTOMLEFT" and r == "TOPRIGHT" and x == 4 and y == 4, "(a) no room left: BOTTOMLEFT->TOPRIGHT +4,+4")
+  p, r, x, y, sd = A(tip, fr(500, 500), 300, 150)
+  check(p == "BOTTOMLEFT" and r == "TOPRIGHT" and x == 4 and y == 4 and sd == "right", "(b) compare: main BOTTOMLEFT->row TOPRIGHT +4,+4, compares right")
+  p, r, x, y, sd = A(tip, fr(800, 500, 200, 100, 1300), 300, 150)
+  check(p == "BOTTOMRIGHT" and r == "TOPLEFT" and x == -4 and y == 4 and sd == "left", "(b) no room right: mirror BOTTOMRIGHT->TOPLEFT -4,+4, compares left")
+  p, r, x, y, sd, vt = A(tip, fr(500, 950), 300, 150)
+  check(p == "TOPLEFT" and r == "BOTTOMRIGHT" and x == 4 and y == -4 and sd == "right" and vt == "down", "(c) compare near top: below the row, +4,-4")
+  p, r, x, y, sd, vt = A(tip, fr(500, 950))
+  check(p == "TOPRIGHT" and r == "BOTTOMLEFT" and x == -4 and y == -4 and vt == "down", "(c) no compare near top: below the row, -4,-4")
+  p, r, x, y = A(tip, fr(500, 850), 300, 200)
+  check(p == "TOPLEFT" and y == -4, "(c) tall compare decides the top flip")
+  check(A(tip, {}) == "BOTTOMRIGHT" and A(tip, {}, 300, 100) == "BOTTOMLEFT", "no geometry: defaults per rule")
+
+  -- compare chain applied to ShoppingTooltip1/2 (never moves the main tooltip onto the cursor)
+  local function rec(name, w, h)
+    local o = { name = name, pts = {}, shown = true, w = w, h = h }
+    function o:SetPoint(...) self.pts[#self.pts + 1] = { ... } end
+    function o:ClearAllPoints() self.pts = {} end
+    function o:GetWidth() return self.w end
+    function o:GetHeight() return self.h end
+    function o:GetEffectiveScale() return 1 end
+    function o:IsShown() return self.shown end
+    return o
+  end
+  local mt = rec("main", 200, 100)
+  local s1, s2 = rec("s1", 180, 120), rec("s2", 160, 110)
+  function s1:GetOwner() return mt end
+  function s2:GetOwner() return mt end
+  ShoppingTooltip1, ShoppingTooltip2 = s1, s2
+  local row = fr(500, 500)
+  local side, vert, n = DarkMatter._FishingPlaceTooltip(mt, row)
+  local m1, a1, b1 = mt.pts[1], s1.pts[1], s2.pts[1]
+  check(#mt.pts == 1 and m1[1] == "BOTTOMLEFT" and m1[2] == row and m1[3] == "TOPRIGHT" and m1[4] == 4 and m1[5] == 4, "compare shown: main at row TOPRIGHT +4,+4")
+  check(n == 2 and side == "right" and a1[1] == "BOTTOMLEFT" and a1[2] == mt and a1[3] == "BOTTOMRIGHT" and b1[1] == "BOTTOMLEFT" and b1[2] == s1 and b1[3] == "BOTTOMRIGHT", "ShoppingTooltip1 then 2 chained right, bottoms aligned")
+  row = fr(1000, 500, 200, 100, 1400)
+  side = DarkMatter._FishingPlaceTooltip(mt, row)
+  m1, a1, b1 = mt.pts[1], s1.pts[1], s2.pts[1]
+  check(side == "left" and m1[1] == "BOTTOMRIGHT" and m1[3] == "TOPLEFT" and m1[4] == -4 and a1[1] == "BOTTOMRIGHT" and a1[2] == mt and a1[3] == "BOTTOMLEFT" and b1[2] == s1 and b1[3] == "BOTTOMLEFT", "mirrored: main at row TOPLEFT, compares chained left")
+  row = fr(500, 960)
+  DarkMatter._FishingPlaceTooltip(mt, row)
+  check(mt.pts[1][1] == "TOPLEFT" and s1.pts[1][1] == "TOPLEFT" and s1.pts[1][3] == "TOPRIGHT", "near top: below row, compares tops aligned")
+  s2.shown = false; s1.pts, s2.pts = {}, {}
+  DarkMatter._FishingPlaceTooltip(mt, fr(500, 500))
+  check(#s1.pts == 1 and #s2.pts == 0, "only shown compare tooltips are placed")
+  function s1:GetOwner() return "ItemRefTooltip" end
+  s2.pts, s1.pts = {}, {}
+  DarkMatter._FishingPlaceTooltip(mt, fr(500, 500))
+  check(#s1.pts == 0 and mt.pts[1][1] == "BOTTOMRIGHT", "compare owned by another tooltip is ignored (rule a)")
+  ShoppingTooltip1, ShoppingTooltip2 = nil, nil
   rawset(UIParent, "GetHeight", nil)
+  rawset(UIParent, "GetWidth", nil)
+
+  -- shift-compare: own MODIFIER_STATE_CHANGED frame rebuilds the hovered row's tooltip
+  local modFrame
+  for _, f2 in ipairs(ALL) do if rawget(f2, "_ev") and f2._ev.MODIFIER_STATE_CHANGED then modFrame = f2 end end
+  check(modFrame and modFrame ~= GameTooltip and modFrame._scripts.OnEvent, "own frame watches MODIFIER_STATE_CHANGED")
+  C_Item.IsItemDataCachedByID = function() return true end
+  ttreset(); caughtRow._scripts.OnEnter(caughtRow)
+  ttreset(); TT.owner = caughtRow; modFrame._scripts.OnEvent(modFrame, "MODIFIER_STATE_CHANGED", "LSHIFT", 1)
+  check(TT.link == "item:250001" and TT.anchor == "ANCHOR_PRESERVE" and TT.shown, "modifier change while hovered rebuilds tooltip")
+  caughtRow._scripts.OnLeave(caughtRow)
+  ttreset(); modFrame._scripts.OnEvent(modFrame, "MODIFIER_STATE_CHANGED", "LSHIFT", 0)
+  check(TT.link == nil and not TT.shown, "modifier change after leave does nothing")
+  rawset(GameTooltip, "SetAnchorType", function() TT.slid = true end)
+  ttreset(); caughtRow._scripts.OnEnter(caughtRow)
+  check(not TT.slid, "addon never calls SetAnchorType")
+  caughtRow._scripts.OnLeave(caughtRow)
   -- no hooks on GameTooltip
   check(rawget(GameTooltip, "_scripts") == nil or next(GameTooltip._scripts) == nil, "no scripts set on GameTooltip")
   C_Item.IsItemDataCachedByID = savedCached

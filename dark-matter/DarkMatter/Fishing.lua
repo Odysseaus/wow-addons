@@ -528,7 +528,7 @@ end
 function NS._FishingResetExistsCache() existsCache = {} end
 
 -- ---------------------------------------------------------------------------
--- Row tooltips (0.2.8, placement 0.2.9). Plain GameTooltip use from our own rows: SetOwner +
+-- Row tooltips (0.2.8, placement 0.2.10). Plain GameTooltip use from our own rows: SetOwner +
 -- SetHyperlink/SetItemByID, then our lines. No hooks, no secure frames.
 -- ---------------------------------------------------------------------------
 
@@ -572,9 +572,15 @@ NS._FishingItemCached = ItemCached
 
 -- Fill GameTooltip for one catch-type row entry. total = all logged catches (for share %).
 -- Returns "item" when the client item tooltip was used, "fallback" otherwise.
--- Tooltip placement (0.2.9): tooltip BOTTOMRIGHT to row TOPLEFT with an 8px gap.
--- If that would leave the screen (left or top edge), flip to the other side, gap kept.
-local TIP_GAP = 8
+-- Tooltip placement (0.2.10), 4px gap:
+--  no compare:   main BOTTOMRIGHT -> row TOPLEFT (-4,+4); if it doesn't fit, BOTTOMLEFT -> row TOPRIGHT (+4,+4)
+--  compare shown: main BOTTOMLEFT -> row TOPRIGHT (+4,+4), ShoppingTooltip1/2 chained to its RIGHT (bottoms
+--                 aligned); if that set doesn't fit, mirror: main BOTTOMRIGHT -> row TOPLEFT, compares to its LEFT
+--  near the top: everything goes below the row (TOP* -> BOTTOM*, y -4), tops aligned.
+-- We own GameTooltip with ANCHOR_PRESERVE so GameTooltip_AnchorComparisonTooltips never slides it
+-- (it only calls SetAnchorType when the type is not ANCHOR_PRESERVE). No hooks; we just re-point frames.
+local TIP_GAP = 4
+NS.FISH_TIP_GAP = TIP_GAP
 local function Num(f, m)
   local fn = f and f[m]
   if type(fn) ~= "function" then return nil end
@@ -583,31 +589,110 @@ local function Num(f, m)
   return nil
 end
 
-function NS.FishingTooltipAnchor(tt, owner)
-  local fitsLeft, fitsTop = true, true
+-- cw/ch: total width / max height of shown compare tooltips (0/nil when none).
+-- Returns point, relPoint, x, y, compareSide ("right"/"left"), vertical ("up"/"down").
+function NS.FishingTooltipAnchor(tt, owner, cw, ch)
+  cw = cw or 0
+  local hasCompare = cw > 0
   local os, ts = Num(owner, "GetEffectiveScale") or 1, Num(tt, "GetEffectiveScale") or 1
-  local left, top = Num(owner, "GetLeft"), Num(owner, "GetTop")
-  local w, h = Num(tt, "GetWidth"), Num(tt, "GetHeight")
-  local screenH = Num(UIParent, "GetHeight")
   local us = Num(UIParent, "GetEffectiveScale") or 1
-  if left and w then fitsLeft = (left * os - (w + TIP_GAP) * ts) >= 0 end
-  if top and h and screenH then fitsTop = (top * os + (h + TIP_GAP) * ts) <= screenH * us end
-  local point = (fitsTop and "BOTTOM" or "TOP") .. (fitsLeft and "RIGHT" or "LEFT")
-  local rel = (fitsTop and "TOP" or "BOTTOM") .. (fitsLeft and "LEFT" or "RIGHT")
-  return point, rel, fitsLeft and -TIP_GAP or TIP_GAP, fitsTop and TIP_GAP or -TIP_GAP
+  local left, right, top = Num(owner, "GetLeft"), Num(owner, "GetRight"), Num(owner, "GetTop")
+  local w, h = Num(tt, "GetWidth"), Num(tt, "GetHeight")
+  local screenW, screenH = Num(UIParent, "GetWidth"), Num(UIParent, "GetHeight")
+  local g = TIP_GAP * ts
+  -- room for the "up-left" set (main left of the row's left edge; compares further left)
+  local function fitsLeftSet()
+    if not (left and w) then return true end
+    return left * os - g - (w + cw) * ts >= 0
+  end
+  -- room for the "up-right" set (main right of the row's right edge; compares further right)
+  local function fitsRightSet()
+    if not (right and w and screenW) then return true end
+    return right * os + g + (w + cw) * ts <= screenW * us
+  end
+  local useRight
+  if hasCompare then
+    useRight = fitsRightSet() or not fitsLeftSet()
+  else
+    useRight = not fitsLeftSet() and fitsRightSet()
+  end
+  local fitsTop = true
+  local hh = math.max(h or 0, ch or 0)
+  if top and h and screenH then fitsTop = (top * os + g + hh * ts) <= screenH * us end
+  local v1, v2 = fitsTop and "BOTTOM" or "TOP", fitsTop and "TOP" or "BOTTOM"
+  local y = fitsTop and TIP_GAP or -TIP_GAP
+  if useRight then
+    return v1 .. "LEFT", v2 .. "RIGHT", TIP_GAP, y, "right", fitsTop and "up" or "down"
+  end
+  return v1 .. "RIGHT", v2 .. "LEFT", -TIP_GAP, y, "left", fitsTop and "up" or "down"
+end
+
+-- Compare tooltips Blizzard showed for our GameTooltip (ShoppingTooltip1/2), in chain order.
+local function ShownCompares(tt)
+  local list, cw, ch = {}, 0, 0
+  for i = 1, 2 do
+    local st = _G["ShoppingTooltip" .. i]
+    if st and st.IsShown and st:IsShown() then
+      local owned = true
+      if st.GetOwner then
+        local ok, o = pcall(st.GetOwner, st)
+        owned = ok and o == tt
+      end
+      if owned then
+        list[#list + 1] = st
+        cw = cw + (Num(st, "GetWidth") or 0)
+        ch = math.max(ch, Num(st, "GetHeight") or 0)
+      end
+    end
+  end
+  return list, cw, ch
 end
 
 local function PlaceTooltip(tt, owner)
-  local point, rel, x, y = NS.FishingTooltipAnchor(tt, owner)
+  local compares, cw, ch = ShownCompares(tt)
+  local point, rel, x, y, side, vert = NS.FishingTooltipAnchor(tt, owner, cw, ch)
   tt:ClearAllPoints()
   tt:SetPoint(point, owner, rel, x, y)
+  local prev = tt
+  for _, st in ipairs(compares) do
+    st:ClearAllPoints()
+    local v = vert == "up" and "BOTTOM" or "TOP"
+    if side == "right" then
+      st:SetPoint(v .. "LEFT", prev, v .. "RIGHT", 0, 0)
+    else
+      st:SetPoint(v .. "RIGHT", prev, v .. "LEFT", 0, 0)
+    end
+    prev = st
+  end
+  return side, vert, #compares
+end
+NS._FishingPlaceTooltip = PlaceTooltip
+
+-- Shift-compare: this client's GameTooltip has no MODIFIER_STATE_CHANGED handler; compare is decided in
+-- OnTooltipSetItem. While one of our rows is hovered we rebuild the tooltip on modifier changes (own frame).
+local hover -- { owner, e, total }
+local modEv
+local function EnsureModifierWatch()
+  if modEv or not CreateFrame then return end
+  modEv = CreateFrame("Frame")
+  pcall(function() modEv:RegisterEvent("MODIFIER_STATE_CHANGED") end)
+  modEv:SetScript("OnEvent", function()
+    local h = hover
+    if not h then return end
+    local tt = GameTooltip
+    local owned = tt and tt.IsOwned and select(2, pcall(tt.IsOwned, tt, h.owner))
+    if owned then NS.FishingShowCatchTooltip(h.owner, h.e, h.total) else hover = nil end
+  end)
 end
 
 function NS.FishingShowCatchTooltip(owner, e, total)
   local tt = GameTooltip
   if not (tt and owner and type(e) == "table") then return nil end
-  tt:SetOwner(owner, "ANCHOR_NONE")
+  -- ANCHOR_PRESERVE: Blizzard's compare code leaves our points alone (no slide onto the cursor)
+  tt:SetOwner(owner, "ANCHOR_PRESERVE")
   PlaceTooltip(tt, owner)
+  hover = { owner = owner, e = e, total = total }
+  EnsureModifierWatch()
   local itemId = SafeNum(e.itemId)
   local mode = "fallback"
   if itemId and ItemCached(itemId) then
@@ -626,6 +711,8 @@ function NS.FishingShowCatchTooltip(owner, e, total)
     tt:AddLine(e.name or "?", r, g, b)
     tt:AddLine(QUALITY_NAMES[q] or "Item", 0.8, 0.8, 0.8)
     if itemId and NS.FishingRequestItemIcon then NS.FishingRequestItemIcon(itemId) end
+    -- no item on the tooltip: drop any compare tooltips left from a previous row
+    if GameTooltip_HideShoppingTooltips and tt.shoppingTooltips then pcall(GameTooltip_HideShoppingTooltips, tt) end
   end
   -- Dark Matter lines
   tt:AddLine(" ")
@@ -651,8 +738,14 @@ function NS.FishingShowCatchTooltip(owner, e, total)
   end
   if e.junk then tt:AddLine("Junk", 0.62, 0.62, 0.62) end
   tt:Show()
-  -- size is known after Show: re-check the screen edges
+  -- sizes are known after Show: place main + compare tooltips, then once more next frame
   PlaceTooltip(tt, owner)
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0, function()
+      local ok, owned = pcall(tt.IsOwned, tt, owner)
+      if ok and owned and tt:IsShown() then PlaceTooltip(tt, owner) end
+    end)
+  end
   return mode
 end
 
@@ -663,6 +756,7 @@ function NS.FishingHideCatchTooltip(owner)
     local ok, owned = pcall(tt.IsOwned, tt, owner)
     if ok and not owned then return end
   end
+  hover = nil
   tt:Hide()
 end
 
