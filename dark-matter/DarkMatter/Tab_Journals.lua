@@ -1,5 +1,5 @@
 -- Journals tab: Fishing panel with waters list + catch statistics (per-character).
--- Adventure Guide (0.3.0): LFG dungeon list + our Forever-validated drop seed + loot learning. Achievements: placeholder.
+-- Adventure Guide (0.3.1): dungeon dropdown, LFG dungeons/raids only + our Forever-validated drop seed + loot learning. Achievements: placeholder.
 local _, NS = ...
 local UI = NS.UI
 
@@ -660,18 +660,29 @@ local function BuildFish(page)
 end
 
 ---------------------------------------------------------------------------
--- Adventure Guide (0.3.0): dungeon list (search + level/type filter) | dungeon header, bosses, drops
+-- Adventure Guide (0.3.1): top bar = dungeon dropdown (own frames, no UIDropDownMenu) + search + level pills;
+-- dungeon header; bosses in the left column; drops in the wide right panel. Every text is one line with a
+-- fixed height, so nothing wraps into its neighbour.
 ---------------------------------------------------------------------------
-local agPage, agSearch, agCount, agLvlAll, agLvlMine, agKindPills = nil, nil, nil, nil, nil, {}
-local agListScroll, agBossScroll, agDropScroll, agTitle, agMeta, agDropHead, agDropNote, agEmptyList, agEmptyDrops
-local agRows, agBossRows, agDropRows = {}, {}, {}
+local agPage, agSearch, agLvlAll, agLvlMine = nil, nil, nil, nil
+local agDrop, agMenu, agMenuScroll, agMenuHead
+local agBossScroll, agDropScroll, agTitle, agMeta, agBossHead, agDropHead, agDropNote, agEmptyBoss, agEmptyDrops
+local agMenuRows, agBossRows, agDropRows = {}, {}, {}
 local agHover
 local agText, agEv, agPending = "", nil, false
-local AG_ROW_H, AG_DROP_H = 24, 36
+local AG_MENU_H, AG_BOSS_H, AG_DROP_H = 22, 34, 40
+local AG_MENU_MAX = 14
 
 local function AGPrefs()
   local db = NS.db or {}
   return db
+end
+
+-- one line, fixed height: no wrapping into the next row
+local function OneLine(fs, h)
+  if fs.SetWordWrap then fs:SetWordWrap(false) end
+  fs:SetHeight(h)
+  return fs
 end
 
 -- relabel a pill and keep its width fitted to the text
@@ -696,6 +707,7 @@ local function LevelText(d)
     if d.minLevel == d.maxLevel then return tostring(d.minLevel) end
     return d.minLevel .. "–" .. d.maxLevel
   end
+  if d.minLevel then return tostring(d.minLevel) end
   return "?"
 end
 
@@ -712,25 +724,34 @@ local function AGLines(row)
   end
 end
 
-local function GetAGRow(i)
-  local r = agRows[i]
+local function SetMenuOpen(on)
+  if not agMenu then return end
+  if on then agMenu:Show() else agMenu:Hide() end
+  if agDrop and agDrop.arrow then NS.SetPiece(agDrop.arrow, on and "sb_up" or "sb_dn") end
+end
+
+local function GetMenuRow(i)
+  local r = agMenuRows[i]
   if r then return r end
   local m = NS.theme.m
-  r = CreateFrame("Button", nil, agListScroll.content)
-  r:SetSize(agListScroll.w - m.sbWidth, AG_ROW_H)
+  r = CreateFrame("Button", nil, agMenuScroll.content)
+  r:SetSize(agMenuScroll.w - m.sbWidth, AG_MENU_H)
   r.sel = r:CreateTexture(nil, "BACKGROUND")
   r.sel:SetAllPoints(r)
   r.sel:Hide()
-  r.text = UI.Text(r, "OVERLAY", 13, "listInk", "LEFT")
+  r.text = OneLine(UI.Text(r, "OVERLAY", 13, "listInk", "LEFT"), 16)
   r.text:SetPoint("LEFT", r, "LEFT", m.rowPad, 0)
-  r.text:SetPoint("RIGHT", r, "RIGHT", -50, 0)
-  r.small = UI.Text(r, "OVERLAY", 12, "listSoft", "RIGHT")
+  r.text:SetPoint("RIGHT", r, "RIGHT", -56, 0)
+  r.small = OneLine(UI.Text(r, "OVERLAY", 12, "listSoft", "RIGHT"), 14)
   r.small:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
+  r.small:SetWidth(46)
   r:SetScript("OnClick", function(self)
-    if NS.db then NS.db.agDungeon = self.key NS.db.agBoss = nil end
+    if not self.dungeonKey then return end -- group header
+    if NS.db then NS.db.agDungeon = self.dungeonKey NS.db.agBoss = nil end
+    SetMenuOpen(false)
     if tab and tab.RefreshAG then tab.RefreshAG() end
   end)
-  agRows[i] = r
+  agMenuRows[i] = r
   return r
 end
 
@@ -739,15 +760,16 @@ local function GetBossRow(i)
   if r then return r end
   local m = NS.theme.m
   r = CreateFrame("Button", nil, agBossScroll.content)
-  r:SetSize(agBossScroll.w - m.sbWidth, AG_ROW_H)
+  r:SetSize(agBossScroll.w - m.sbWidth, AG_BOSS_H)
   r.sel = r:CreateTexture(nil, "BACKGROUND")
   r.sel:SetAllPoints(r)
   r.sel:Hide()
-  r.text = UI.Text(r, "OVERLAY", 13, "listInk", "LEFT")
-  r.text:SetPoint("LEFT", r, "LEFT", m.rowPad, 0)
-  r.text:SetPoint("RIGHT", r, "RIGHT", -30, 0)
-  r.small = UI.Text(r, "OVERLAY", 12, "listSoft", "RIGHT")
-  r.small:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
+  r.text = OneLine(UI.Text(r, "OVERLAY", 13, "listInk", "LEFT"), 16)
+  r.text:SetPoint("TOPLEFT", r, "TOPLEFT", m.rowPad, -3)
+  r.text:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
+  r.sub = OneLine(UI.Text(r, "OVERLAY", 11, "listSoft", "LEFT"), 13)
+  r.sub:SetPoint("TOPLEFT", r, "TOPLEFT", m.rowPad, -19)
+  r.sub:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
   r:SetScript("OnClick", function(self)
     if NS.db then NS.db.agBoss = self.bossName end
     if tab and tab.RefreshAG then tab.RefreshAG() end
@@ -763,14 +785,12 @@ local function GetDropRow(i)
   r:SetHeight(AG_DROP_H)
   r.icon = UI.RoundIcon(r, 28)
   r.icon:SetPoint("LEFT", r, "LEFT", 8, 0)
-  r.text = UI.Text(r, "OVERLAY", 13, "listInk", "LEFT")
-  r.text:SetPoint("LEFT", r.icon, "RIGHT", 8, 4)
-  r.text:SetPoint("RIGHT", r, "RIGHT", -70, 4)
-  r.sub = UI.Text(r, "OVERLAY", 11, "listSoft", "LEFT")
-  r.sub:SetPoint("TOPLEFT", r.text, "BOTTOMLEFT", 0, -1)
-  r.sub:SetPoint("RIGHT", r, "RIGHT", -70, 0)
-  r.small = UI.Text(r, "OVERLAY", 12, "gold", "RIGHT")
-  r.small:SetPoint("RIGHT", r, "RIGHT", -10, 0)
+  r.text = OneLine(UI.Text(r, "OVERLAY", 13, "listInk", "LEFT"), 16)
+  r.text:SetPoint("TOPLEFT", r, "TOPLEFT", 44, -4)
+  r.text:SetPoint("RIGHT", r, "RIGHT", -10, 0)
+  r.sub = OneLine(UI.Text(r, "OVERLAY", 11, "listSoft", "LEFT"), 13)
+  r.sub:SetPoint("TOPLEFT", r, "TOPLEFT", 44, -22)
+  r.sub:SetPoint("RIGHT", r, "RIGHT", -10, 0)
   -- same tooltip + placement as the fishing rows (icon TOPRIGHT, compares chained right, mirror at the edge)
   r:SetScript("OnEnter", function(self)
     agHover = self
@@ -788,6 +808,70 @@ local function GetDropRow(i)
 end
 
 local QUALITY_WORD = { [0] = "Poor", [1] = "Common", [2] = "Uncommon", [3] = "Rare", [4] = "Epic", [5] = "Legendary" }
+local KIND_ORDER = { Dungeon = 1, Heroic = 2, Raid = 3 }
+local KIND_HEAD = { Dungeon = "Dungeons", Heroic = "Heroic dungeons", Raid = "Raids" }
+
+-- dropdown entries: grouped by type (headers only when there is more than one type)
+local function MenuItems(list)
+  local sorted = {}
+  for i, d in ipairs(list) do sorted[i] = d end
+  table.sort(sorted, function(a, b)
+    local ka, kb = KIND_ORDER[a.kind] or 9, KIND_ORDER[b.kind] or 9
+    if ka ~= kb then return ka < kb end
+    local la, lb = a.minLevel or 999, b.minLevel or 999
+    if la ~= lb then return la < lb end
+    return a.name < b.name
+  end)
+  local kinds, nk = {}, 0
+  for _, d in ipairs(sorted) do if not kinds[d.kind or "?"] then kinds[d.kind or "?"] = true nk = nk + 1 end end
+  local out, last = {}, nil
+  for _, d in ipairs(sorted) do
+    if nk > 1 and d.kind ~= last then
+      out[#out + 1] = { head = KIND_HEAD[d.kind] or (d.kind or "Other") }
+      last = d.kind
+    end
+    out[#out + 1] = { d = d }
+  end
+  return out
+end
+
+local function RefreshMenu(list, all, sel)
+  local items = MenuItems(list)
+  for i = 1, math.max(#items, #agMenuRows) do
+    local it = items[i]
+    local r = agMenuRows[i]
+    if it then
+      r = GetMenuRow(i)
+      r:ClearAllPoints()
+      r:SetPoint("TOPLEFT", agMenuScroll.content, "TOPLEFT", 0, -(i - 1) * AG_MENU_H)
+      if it.head then
+        r.dungeonKey = nil
+        r.text:SetText(it.head)
+        r.text:SetTextColor(NS.Color("listHead"))
+        r.small:SetText("")
+        r.sel:Hide()
+      else
+        local d = it.d
+        r.dungeonKey = d.key
+        r.text:SetText(d.name)
+        local on = (d == sel)
+        r.text:SetTextColor(NS.Color(on and "liOn" or (d.seeded and "listInk" or "listSoft")))
+        r.small:SetText(LevelText(d))
+        if on then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
+      end
+      r:Show()
+    elseif r then
+      r:Hide()
+      r.dungeonKey = nil
+    end
+  end
+  local rows = math.max(1, math.min(#items, AG_MENU_MAX))
+  agMenuScroll:SetContentHeight(math.max(1, #items * AG_MENU_H))
+  agMenu.count = #items
+  agMenuHead:SetText(#list == #all and string.format("%d dungeons & raids", #all)
+    or string.format("%d of %d dungeons & raids", #list, #all))
+  return rows
+end
 
 local function RefreshAG()
   if not agPage or not NS.AG then return end
@@ -795,61 +879,22 @@ local function RefreshAG()
   local db = AGPrefs()
   local all = AGD.Dungeons()
   local lvl = db.agLevel == "mine" and "mine" or "all"
-  local kinds = AGD.Kinds(all)
-  local kind = db.agKind or "all"
-  if kind ~= "all" then
-    local okk = false
-    for _, k in ipairs(kinds) do if k == kind then okk = true end end
-    if not okk then kind = "all" end
-  end
   local plevel = PlayerLevel()
-  local list = AGD.Filter(all, agText, lvl, kind, plevel)
+  local list = AGD.Filter(all, agText, lvl, "all", plevel)
   if agLvlAll then agLvlAll:SetActive(lvl == "all") end
   if agLvlMine then
     agLvlMine:SetActive(lvl == "mine")
     PillLabel(agLvlMine, plevel and ("Near level " .. plevel) or "Near my level")
   end
-  -- type pills only when the LFG data offers more than one type
-  local showKinds = #kinds > 1
-  for i, p in ipairs(agKindPills) do
-    local k = (i == 1) and "all" or kinds[i - 1]
-    if showKinds and k then
-      p.kind = k
-      PillLabel(p, i == 1 and "All types" or k)
-      p:SetActive(kind == k)
-      p:Show()
-    else
-      p:Hide()
-    end
-  end
-  if agCount then agCount:SetText(string.format("%d of %d dungeons", #list, #all)) end
 
-  -- selected dungeon (stays selected only while visible)
+  -- selected dungeon (stays selected only while it passes the filter)
   local sel
   for _, d in ipairs(list) do if d.key == db.agDungeon then sel = d end end
   sel = sel or list[1]
   if NS.db and sel then NS.db.agDungeon = sel.key end
-
-  for i = 1, math.max(#list, #agRows) do
-    local d = list[i]
-    local r = agRows[i]
-    if d then
-      r = GetAGRow(i)
-      r.key = d.key
-      r:ClearAllPoints()
-      r:SetPoint("TOPLEFT", agListScroll.content, "TOPLEFT", 0, -(i - 1) * AG_ROW_H)
-      r.text:SetText(d.name)
-      local on = (d == sel)
-      r.text:SetTextColor(NS.Color(on and "liOn" or (d.seeded and "listInk" or "listSoft")))
-      r.small:SetText(LevelText(d))
-      if on then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
-      r:Show()
-    elseif r then
-      r:Hide()
-    end
-  end
-  agListScroll:SetContentHeight(math.max(1, #list * AG_ROW_H))
-  if agEmptyList then if #list == 0 then agEmptyList:Show() else agEmptyList:Hide() end end
+  RefreshMenu(list, all, sel)
+  agDrop.text:SetText(sel and sel.name or (#all == 0 and "No dungeons" or "No match"))
+  agDrop.small:SetText(sel and LevelText(sel) or "")
 
   -- dungeon header + bosses
   local bosses = sel and sel.bosses or {}
@@ -858,7 +903,7 @@ local function RefreshAG()
   boss = boss or bosses[1]
   if not sel then
     agTitle:SetText("No dungeons")
-    agMeta:SetText(#all == 0 and "The game's dungeon list is empty on this client." or "No dungeons match the search or filter.")
+    agMeta:SetText(#all == 0 and "The game's dungeon list is empty on this client." or "No dungeons match the search or level filter.")
   else
     agTitle:SetText(sel.name)
     local bits = { "Level " .. LevelText(sel) }
@@ -866,9 +911,10 @@ local function RefreshAG()
     if sel.size and sel.size > 0 then bits[#bits + 1] = sel.size .. "-player" end
     bits[#bits + 1] = sel.kind
     if sel.zone then bits[#bits + 1] = sel.zone end
-    bits[#bits + 1] = #bosses .. " bosses"
+    bits[#bits + 1] = #bosses .. (#bosses == 1 and " boss" or " bosses")
     agMeta:SetText(table.concat(bits, " · "))
   end
+  agBossHead:SetText(string.format("Bosses (%d)", #bosses))
   local q = agText ~= "" and agText or nil
   for i = 1, math.max(#bosses, #agBossRows) do
     local b = bosses[i]
@@ -877,21 +923,29 @@ local function RefreshAG()
       r = GetBossRow(i)
       r.bossName = b.name
       r:ClearAllPoints()
-      r:SetPoint("TOPLEFT", agBossScroll.content, "TOPLEFT", 0, -(i - 1) * AG_ROW_H)
+      r:SetPoint("TOPLEFT", agBossScroll.content, "TOPLEFT", 0, -(i - 1) * AG_BOSS_H)
       local label = b.name
-      if b.rare then label = label .. " (rare)" end
       if q and b.name:lower():find(q, 1, true) then label = "> " .. label end
       r.text:SetText(label)
       local on = (b == boss)
       r.text:SetTextColor(NS.Color(on and "liOn" or "listInk"))
-      r.small:SetText(b.seeded and tostring(#b.drops) or "–")
+      local bits = {}
+      if b.rare then bits[#bits + 1] = "rare spawn" end
+      if b.seeded then
+        local n = #b.drops
+        bits[#bits + 1] = n == 1 and "1 drop" or (n .. " drops")
+      else
+        bits[#bits + 1] = "drops not seeded"
+      end
+      r.sub:SetText(table.concat(bits, " · "))
       if on then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
       r:Show()
     elseif r then
       r:Hide()
     end
   end
-  agBossScroll:SetContentHeight(math.max(1, #bosses * AG_ROW_H))
+  agBossScroll:SetContentHeight(math.max(1, #bosses * AG_BOSS_H))
+  if agEmptyBoss then if sel and #bosses == 0 then agEmptyBoss:Show() else agEmptyBoss:Hide() end end
 
   -- drops
   local drops = boss and boss.drops or {}
@@ -916,12 +970,11 @@ local function RefreshAG()
         if okc and type(a1) == "number" then cr, cg, cb = a1, a2, a3 end
       end
       r.text:SetTextColor(cr, cg, cb)
-      r.sub:SetText(string.format("%s · %.1f%% drop", QUALITY_WORD[qq] or "Item", it.pct or 0))
       local n = NS.AG.SeenCount(sel.key, boss.name, it.itemId)
       r.seen = n
       if n > 0 then seenN = seenN + 1 end
-      r.small:SetText(n > 0 and ("seen " .. n .. "×") or "—")
-      r.small:SetTextColor(NS.Color(n > 0 and "gold" or "listSoft"))
+      r.sub:SetText(string.format("%s · %.1f%% drop · %s", QUALITY_WORD[qq] or "Item", it.pct or 0,
+        n > 0 and ("seen " .. n .. "×") or "not seen yet"))
       r.icon:SetItem(it.itemId, qq, it.icon)
       r:Show()
       if r == agHover then
@@ -934,21 +987,19 @@ local function RefreshAG()
     end
   end
   agDropScroll:SetContentHeight(math.max(1, #drops * AG_DROP_H))
-  if agDropHead then
-    agDropHead:SetText(boss and boss.name or "")
-    if sel and sel.seeded and boss and boss.seeded then
-      agDropNote:SetText(string.format("%d drops · %d seen by you", #drops, seenN))
-    else
-      agDropNote:SetText("")
-    end
+  agDropHead:SetText(boss and boss.name or "")
+  if sel and boss and boss.seeded then
+    agDropNote:SetText(string.format("%d %s · %d seen by you", #drops, #drops == 1 and "drop" or "drops", seenN))
+  else
+    agDropNote:SetText("")
   end
   if agEmptyDrops then
     if #drops > 0 then
       agEmptyDrops:Hide()
     else
-      if not sel then
+      if not sel or not boss then
         agEmptyDrops:SetText("")
-      elseif not (boss and boss.seeded) then
+      elseif not boss.seeded then
         agEmptyDrops:SetText("Drops not seeded yet for this boss.\nLoot learning records what you see here.")
       else
         agEmptyDrops:SetText("Wowhead WoW Forever lists no boss-specific drops here.\nLoot learning records what you see.")
@@ -980,6 +1031,7 @@ local function EnsureAGEvents(on)
     pcall(function() agEv:UnregisterEvent("GET_ITEM_INFO_RECEIVED") end)
     if NS.AG then NS.AG.onChange = nil end
   end
+  if not on then SetMenuOpen(false) end
 end
 
 local function BuildAdventure(page)
@@ -988,13 +1040,56 @@ local function BuildAdventure(page)
   agPage:SetAllPoints(page)
   local pad = m.pagePad
   local innerW = m.pageW - pad * 2
+  local baseLevel = agPage.GetFrameLevel and agPage:GetFrameLevel() or 1
 
   local bar = CreateFrame("Frame", nil, agPage)
   bar:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad, -pad)
   bar:SetSize(innerW, 28)
-  if bar.SetFrameLevel then bar:SetFrameLevel((agPage.GetFrameLevel and agPage:GetFrameLevel() or 1) + 20) end
-  agSearch = UI.SearchBox(bar, 220, 24)
-  agSearch:SetPoint("LEFT", bar, "LEFT", 0, 0)
+  if bar.SetFrameLevel then bar:SetFrameLevel(baseLevel + 20) end
+
+  -- dungeon dropdown: a Button + our own menu frame (no UIDropDownMenu: shared Blizzard state, taint risk)
+  local DROP_W = 230
+  agDrop = CreateFrame("Button", nil, bar)
+  agDrop:SetSize(DROP_W, 26)
+  agDrop:SetPoint("LEFT", bar, "LEFT", 0, 0)
+  local dbg = agDrop:CreateTexture(nil, "BACKGROUND")
+  dbg:SetAllPoints(agDrop)
+  dbg:SetColorTexture(0.02, 0.02, 0.02, 0.92)
+  agDrop.border = UI.NineSlice(agDrop, "pane", 4, "BORDER", 1)
+  agDrop.text = OneLine(UI.Text(agDrop, "OVERLAY", 13, "gold", "LEFT"), 16)
+  agDrop.text:SetPoint("LEFT", agDrop, "LEFT", 9, 0)
+  agDrop.text:SetPoint("RIGHT", agDrop, "RIGHT", -64, 0)
+  agDrop.small = OneLine(UI.Text(agDrop, "OVERLAY", 11, "listSoft", "RIGHT"), 14)
+  agDrop.small:SetPoint("RIGHT", agDrop, "RIGHT", -24, 0)
+  agDrop.small:SetWidth(38)
+  -- arrow: the scrollbar's down piece (a texture; the game fonts have no triangle glyphs)
+  agDrop.arrow = agDrop:CreateTexture(nil, "OVERLAY")
+  agDrop.arrow:SetSize(16, 16)
+  agDrop.arrow:SetPoint("RIGHT", agDrop, "RIGHT", -5, 0)
+  NS.OnSkin(function() NS.SetPiece(agDrop.arrow, "sb_dn") end)
+  agDrop:SetScript("OnClick", function()
+    if agMenu:IsShown() then SetMenuOpen(false) else
+      SetMenuOpen(true)
+      if tab and tab.RefreshAG then tab.RefreshAG() end
+    end
+  end)
+
+  local MENU_W = DROP_W + 40
+  local MENU_H = 26 + AG_MENU_MAX * AG_MENU_H + 8
+  agMenu = UI.Panel(agPage, MENU_W, MENU_H)
+  agMenu:SetPoint("TOPLEFT", agDrop, "BOTTOMLEFT", 0, -2)
+  if agMenu.SetFrameLevel then agMenu:SetFrameLevel(baseLevel + 60) end
+  if agMenu.EnableMouse then agMenu:EnableMouse(true) end
+  agMenuHead = OneLine(UI.Text(agMenu, "OVERLAY", 11, "listHead", "LEFT"), 14)
+  agMenuHead:SetPoint("TOPLEFT", agMenu, "TOPLEFT", 10, -8)
+  agMenuHead:SetPoint("RIGHT", agMenu, "RIGHT", -10, 0)
+  agMenuScroll = UI.Scroll(agMenu, MENU_W - 8, AG_MENU_MAX * AG_MENU_H)
+  agMenuScroll.frame:SetPoint("TOPLEFT", agMenu, "TOPLEFT", 4, -26)
+  agMenu:Hide()
+  agPage:SetScript("OnHide", function() SetMenuOpen(false) end)
+
+  agSearch = UI.SearchBox(bar, 140, 24)
+  agSearch:SetPoint("LEFT", agDrop, "RIGHT", 8, 0)
   agSearch.onChange = function(t)
     agText = (t or ""):lower()
     if tab and tab.RefreshAG then tab.RefreshAG() end
@@ -1005,68 +1100,53 @@ local function BuildAdventure(page)
   agLvlMine = UI.Pill(bar, "Near my level")
   agLvlMine:SetPoint("LEFT", agLvlAll, "RIGHT", m.pillGap, 0)
   agLvlMine:SetScript("OnClick", function() if NS.db then NS.db.agLevel = "mine" end RefreshAG() end)
-  local prev = agLvlMine
-  for i = 1, 4 do
-    local p = UI.Pill(bar, i == 1 and "All types" or "Type")
-    p:SetPoint("LEFT", prev, "RIGHT", i == 1 and 10 or m.pillGap, 0)
-    p:SetScript("OnClick", function(self) if NS.db then NS.db.agKind = self.kind end RefreshAG() end)
-    p:Hide()
-    agKindPills[i] = p
-    prev = p
-  end
-  agCount = UI.Text(bar, "OVERLAY", 11, "inkSoft", "RIGHT")
-  agCount:SetPoint("RIGHT", bar, "RIGHT", 0, 0)
 
-  local splitY = pad + 36
+  -- dungeon header: title line + meta line
+  local headY = pad + 36
+  agTitle = OneLine(UI.Text(agPage, "OVERLAY", 18, "gold", "LEFT"), 22)
+  agTitle:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad + 2, -headY)
+  agTitle:SetPoint("RIGHT", agPage, "RIGHT", -pad - 2, 0)
+  agMeta = OneLine(UI.Text(agPage, "OVERLAY", 12, "inkSoft", "LEFT"), 15)
+  agMeta:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad + 2, -(headY + 25))
+  agMeta:SetPoint("RIGHT", agPage, "RIGHT", -pad - 2, 0)
+
+  local splitY = headY + 48
   local splitH = m.sectionPageH - splitY - pad
-  local leftW = 210
-  local left = UI.Panel(agPage, leftW, splitH)
-  left:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad, -splitY)
-  local lh = UI.Text(left, "OVERLAY", 12, "listHead", "LEFT")
-  lh:SetPoint("TOPLEFT", left, "TOPLEFT", 10, -8)
-  lh:SetText("Dungeons")
-  agListScroll = UI.Scroll(left, leftW - 8, splitH - 28)
-  agListScroll.frame:SetPoint("TOPLEFT", left, "TOPLEFT", 4, -26)
-  agEmptyList = UI.Text(left, "OVERLAY", 12, "listSoft", "CENTER")
-  agEmptyList:SetPoint("CENTER", left, "CENTER", 0, 0)
-  agEmptyList:SetText("No dungeons match.")
-  agEmptyList:Hide()
+  local bossW = 220
+  local bp = UI.Panel(agPage, bossW, splitH)
+  bp:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad, -splitY)
+  agBossHead = OneLine(UI.Text(bp, "OVERLAY", 12, "listHead", "LEFT"), 15)
+  agBossHead:SetPoint("TOPLEFT", bp, "TOPLEFT", 10, -8)
+  agBossHead:SetPoint("RIGHT", bp, "RIGHT", -10, 0)
+  agBossScroll = UI.Scroll(bp, bossW - 8, splitH - 32)
+  agBossScroll.frame:SetPoint("TOPLEFT", bp, "TOPLEFT", 4, -28)
+  agEmptyBoss = UI.Text(bp, "OVERLAY", 12, "listSoft", "CENTER")
+  agEmptyBoss:SetPoint("CENTER", bp, "CENTER", 0, 0)
+  agEmptyBoss:SetText("No bosses listed.")
+  agEmptyBoss:Hide()
 
-  local rightW = innerW - leftW - 10
-  local right = CreateFrame("Frame", nil, agPage)
-  right:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad + leftW + 10, -splitY)
-  right:SetSize(rightW, splitH)
-  agTitle = UI.Text(right, "OVERLAY", 18, "gold", "LEFT")
-  agTitle:SetPoint("TOPLEFT", right, "TOPLEFT", 2, -2)
-  agTitle:SetPoint("TOPRIGHT", right, "TOPRIGHT", -2, -2)
-  agMeta = UI.Text(right, "OVERLAY", 12, "inkSoft", "LEFT")
-  agMeta:SetPoint("TOPLEFT", agTitle, "BOTTOMLEFT", 0, -4)
-  agMeta:SetPoint("RIGHT", right, "RIGHT", -2, 0)
-
-  local subY, subH = 46, splitH - 46
-  local bossW = 190
-  local bp = UI.Panel(right, bossW, subH)
-  bp:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -subY)
-  local bh = UI.Text(bp, "OVERLAY", 12, "listHead", "LEFT")
-  bh:SetPoint("TOPLEFT", bp, "TOPLEFT", 10, -8)
-  bh:SetText("Bosses")
-  agBossScroll = UI.Scroll(bp, bossW - 8, subH - 28)
-  agBossScroll.frame:SetPoint("TOPLEFT", bp, "TOPLEFT", 4, -26)
-
-  local dropW = rightW - bossW - 8
-  local dp = UI.Panel(right, dropW, subH)
-  dp:SetPoint("TOPLEFT", right, "TOPLEFT", bossW + 8, -subY)
-  agDropHead = UI.Text(dp, "OVERLAY", 12, "listHead", "LEFT")
+  local dropW = innerW - bossW - 8
+  local dp = UI.Panel(agPage, dropW, splitH)
+  dp:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad + bossW + 8, -splitY)
+  -- header: boss name line, then the count line under it (never side by side)
+  agDropHead = OneLine(UI.Text(dp, "OVERLAY", 13, "listHead", "LEFT"), 16)
   agDropHead:SetPoint("TOPLEFT", dp, "TOPLEFT", 10, -8)
-  agDropNote = UI.Text(dp, "OVERLAY", 11, "listSoft", "RIGHT")
-  agDropNote:SetPoint("TOPRIGHT", dp, "TOPRIGHT", -12, -8)
-  agDropScroll = UI.Scroll(dp, dropW - 8, subH - 28)
-  agDropScroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", 4, -26)
+  agDropHead:SetPoint("RIGHT", dp, "RIGHT", -10, 0)
+  agDropNote = OneLine(UI.Text(dp, "OVERLAY", 11, "listSoft", "LEFT"), 13)
+  agDropNote:SetPoint("TOPLEFT", dp, "TOPLEFT", 10, -26)
+  agDropNote:SetPoint("RIGHT", dp, "RIGHT", -10, 0)
+  agDropScroll = UI.Scroll(dp, dropW - 8, splitH - 48)
+  agDropScroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", 4, -44)
   agEmptyDrops = UI.Text(dp, "OVERLAY", 12, "listSoft", "CENTER")
   agEmptyDrops:SetPoint("CENTER", dp, "CENTER", 0, 0)
   agEmptyDrops:Hide()
 
   tab.RefreshAG = RefreshAG
+  NS.AGWidgets = function()
+    return { drop = agDrop, menu = agMenu, menuRows = agMenuRows, menuScroll = agMenuScroll, bossRows = agBossRows,
+      dropRows = agDropRows, title = agTitle, meta = agMeta, dropHead = agDropHead, dropNote = agDropNote,
+      bossHead = agBossHead, search = agSearch }
+  end
   agPage:Hide()
 end
 
@@ -1165,4 +1245,5 @@ NS.RegisterTab({
     elseif NS.db and NS.db.section == "adventure" then RefreshAG() end
   end,
   SetSection = function(id) ShowSection(id) end,
+  agWidgets = function() return NS.AGWidgets and NS.AGWidgets() end,
 })

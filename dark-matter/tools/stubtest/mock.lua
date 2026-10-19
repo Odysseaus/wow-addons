@@ -1808,8 +1808,10 @@ if MODE ~= "minimal" then
   -- stub client LFG (ids 10/11, names only, placeholder boss names)
   AGm._ResetCaches()
   local stubList = AGm.ScanLFG()
-  out("AG: stub LFG dungeons with encounters:", #stubList, "(real client probe: 67)")
+  out("AG: stub LFG dungeons with encounters:", #stubList, "(0.3.0 real client listed 67 = zones/battlegrounds)")
   check(#stubList == 2, "stub LFG: 2 dungeons with encounters (SECRETNAME and empty ids skipped)")
+  local st0 = AGm.ScanStats()
+  out("AG: stub LFG named rows:", st0.named, "kept:", st0.accepted)
   -- richer LFG mock: full classic return order, a raid, a secret name, a random queue entry
   local LFG = {
     [18] = { "Ragefire Chasm", 1, 1, 13, 18, 15, 13, 18, 0, 0, "", 1, 5, bosses = { "Oggleflint", "Taragaman the Hungerer", "Jergosh the Invoker", "Bazzalan" } },
@@ -1818,6 +1820,15 @@ if MODE ~= "minimal" then
     [48] = { "Molten Core", 2, 3, 60, 60, 60, 60, 60, 0, 0, "", 1, 40, bosses = { "Lucifron", "Ragnaros" } },
     [300] = { "SECRETNAME", 1, 1, 1, 1, 1, 1, 1, 0, 0, "", 1, 5, bosses = { "x" } },
     [301] = { "Random Classic Dungeon", 1, 1, 15, 30, 20, 15, 30, 0, 0, "", 1, 5, bosses = {} },
+    -- 0.3.1: what the real client returned in this id range (zones/battlegrounds reporting encounters)
+    [1] = { "Wailing Caverns", 1, 1, 17, 17, 17, 17, 17, 0, 0, "", 1, 5, bosses = { "Lady Anacondra", "No Longer in Use", "Lord Cobrahn" } },
+    [400] = { "Alterac Mountains", 1, 1, 0, 0, 0, 0, 0, 0, 0, "", 1, 5, bosses = { "Zone Event" } },
+    [401] = { "Arathi Basin", 1, 1, 0, 0, 0, 0, 0, 0, 0, "", 1, 15, bosses = { "Battle" } },
+    [402] = { "Ashenvale Forest", 1, 1, 0, 0, 0, 0, 0, 0, 0, "", 1, 5, bosses = { "x" } },
+    [403] = { "Some Frontier", 4, 0, 0, 0, 0, 0, 0, 0, 0, "", 1, 5, bosses = { "Rare" } },
+    [404] = { "Skirmish Field", 1, 6, 0, 0, 0, 0, 0, 0, 0, "", 1, 5, bosses = { "Boss" } },
+    [405] = { "Empty Hall", 1, 1, 10, 20, 15, 10, 20, 0, 0, "", 1, 5, bosses = {} },
+    [406] = { "zzOld Deadmines", 1, 1, 17, 26, 20, 17, 26, 0, 0, "", 1, 5, bosses = { "Smite" } },
   }
   local sGI, sGN, sGE = GetLFGDungeonInfo, GetLFGDungeonNumEncounters, GetLFGDungeonEncounterInfo
   GetLFGDungeonInfo = function(id) local e = LFG[id] if e then return unpack(e, 1, 13) end end
@@ -1827,7 +1838,29 @@ if MODE ~= "minimal" then
   local list = AGm.Dungeons()
   local by = {}
   for _, d in ipairs(list) do by[d.name] = d end
-  check(#list == 7 and by["Deadmines"] and by["Deadmines"].seeded and by["Gnomeregan"] and not by["Gnomeregan"].seeded and by["Wailing Caverns"] and by["Wailing Caverns"].source == "seed", "LFG merge: 4 LFG + 3 seed-only dungeons (" .. #list .. ")")
+  check(#list == 7 and by["Deadmines"] and by["Deadmines"].seeded and by["Gnomeregan"] and not by["Gnomeregan"].seeded and by["Wailing Caverns"] and by["Wailing Caverns"].source == "lfg" and by["Blackfathom Deeps"].source == "seed", "LFG merge: 5 LFG + 2 seed-only dungeons (" .. #list .. ")")
+  local zoneLeak = {}
+  for _, n in ipairs({ "Alterac Mountains", "Arathi Basin", "Ashenvale Forest", "Some Frontier", "Skirmish Field", "Empty Hall", "zzOld Deadmines", "SECRETNAME", "Random Classic Dungeon" }) do
+    if by[n] then zoneLeak[#zoneLeak + 1] = n end
+  end
+  check(#zoneLeak == 0, "zones, battlegrounds, PvP, empty and placeholder LFG rows are not listed (" .. table.concat(zoneLeak, ",") .. ")")
+  local st = AGm.ScanStats()
+  check(st.named == 13 and st.accepted == 5 and st.rejected.zone == 4 and st.rejected.pvp == 1 and st.rejected.nobosses == 2 and st.rejected.placeholder == 1,
+    string.format("scan stats: %d named, %d kept, zone %s, pvp %s, nobosses %s, placeholder %s", st.named, st.accepted,
+      tostring(st.rejected.zone), tostring(st.rejected.pvp), tostring(st.rejected.nobosses), tostring(st.rejected.placeholder)))
+  local wc = by["Wailing Caverns"]
+  local wcBad = false
+  for _, b in ipairs(wc.bosses) do if b.name == "No Longer in Use" then wcBad = true end end
+  check(#wc.bosses == 9 and not wcBad and wc.minLevel == 17 and wc.maxLevel == 24 and wc.recLevel == 17, "Wailing Caverns: 'No Longer in Use' dropped, 9 bosses, seed level range 17-24 (LFG said 17-17)")
+  local phOk = true
+  for _, n in ipairs({ "No Longer in Use", "UNUSED Boss", "[PH] Boss", "zzOldGuy", "Deprecated Ogre", "PH Kobold" }) do if not AGm.IsPlaceholder(n) then phOk = false end end
+  for _, n in ipairs({ "Deviate Faerie Dragon", "Verdan the Everliving", "Mutanus the Devourer", "Phantom", "Gelihast" }) do if AGm.IsPlaceholder(n) then phOk = false end end
+  check(phOk, "placeholder names matched, real boss names kept")
+  local rep = AGm.ScanReport()
+  check(rep:find("13 LFG names, 5 dungeons/raids kept", 1, true) and type(DarkMatterDB.agscan) == "table" and #DarkMatterDB.agscan.rows == 13, "/dm agscan: chat summary + DarkMatterDB.agscan rows (" .. rep .. ")")
+  local zr
+  for _, r in ipairs(DarkMatterDB.agscan.rows) do if r.name == "Alterac Mountains" then zr = r end end
+  check(zr and zr.accepted == false and zr.reason == "zone", "agscan row records the reject reason")
   check(by["Molten Core"].kind == "Raid" and by["Deadmines"].kind == "Dungeon" and by["Deadmines"].recLevel == 20 and by["Deadmines"].size == 5, "kind/recommended level/size from LFG")
   check(#by["Deadmines"].bosses == 9 and by["Deadmines"].bosses[8].name == "Edwin VanCleef" and #by["Deadmines"].bosses[8].drops == 4, "Deadmines: seed boss list (9) with LFG names matched, VanCleef 4 drops")
   check(list[1].name == "Ragefire Chasm" and list[#list].name == "Molten Core", "sorted by minimum level")
@@ -1896,7 +1929,58 @@ if MODE ~= "minimal" then
   check(#drows == 4 and brows == 9, "VanCleef: 4 drop rows, 9 boss rows (" .. #drows .. "/" .. brows .. ")")
   local barb
   for _, r in ipairs(drows) do if r.entry.itemId == 5191 then barb = r end end
-  check(barb and barb.text:GetText() == "Cruel Barb" and barb.seen == 1 and barb.small:GetText():find("seen 1", 1, true), "drop row: client item name, seen by you = 1")
+  check(barb and barb.text:GetText() == "Cruel Barb" and barb.seen == 1 and barb.sub:GetText() == "Rare · " .. string.format("%.1f", barb.entry.pct or 0) .. "% drop · seen 1×", "drop row: client item name; quality, drop chance and seen count on line 2")
+  -- 0.3.1 layout: no text box overlaps its neighbours, names fit on one line
+  local R = FrameMT._rect
+  local function natural(fs) return #(fs._text or "") * (fs._fsize or 12) * 0.52 end
+  local function apart(a, b)
+    local al, at, ar, ab = R(a)
+    local bl, bt, br, bb = R(b)
+    if not (al and bl) then return false end
+    return ar <= bl or br <= al or ab >= bt or bb >= at
+  end
+  local W = DarkMatter.tabs.journals.agWidgets()
+  local ov = {}
+  for _, r in ipairs(drows) do
+    if not apart(r.text, r.sub) then ov[#ov + 1] = "drop " .. r.text:GetText() end
+    if not apart(r.icon, r.text) then ov[#ov + 1] = "icon/name " .. r.text:GetText() end
+    local l, _, rr = R(r.text)
+    if natural(r.text) > rr - l then ov[#ov + 1] = "truncated " .. r.text:GetText() end
+  end
+  local brs = {}
+  for _, r in ipairs(W.bossRows) do if r._shown then brs[#brs + 1] = r end end
+  for i, r in ipairs(brs) do
+    if not apart(r.text, r.sub) then ov[#ov + 1] = "boss " .. r.text:GetText() end
+    local l, _, rr = R(r.text)
+    if natural(r.text) > rr - l then ov[#ov + 1] = "boss truncated " .. r.text:GetText() end
+    if brs[i + 1] and not apart(r.sub, brs[i + 1].text) then ov[#ov + 1] = "boss rows " .. i end
+  end
+  if not apart(W.dropHead, W.dropNote) then ov[#ov + 1] = "drop header" end
+  if not apart(W.title, W.meta) then ov[#ov + 1] = "dungeon header" end
+  check(#ov == 0, "AG layout: no overlapping or truncated text (" .. table.concat(ov, "; ") .. ")")
+  check(W.dropHead:GetText() == "Edwin VanCleef" and W.dropNote:GetText() == "4 drops · 1 seen by you", "drop header: boss name, count line under it")
+  local vc
+  for _, r in ipairs(brs) do if r.bossName == "Edwin VanCleef" then vc = r end end
+  check(vc and vc.sub:GetText() == "4 drops", "boss row count is labelled as drops")
+  -- dropdown (own frames): closed by default, opens with grouped entries, selecting closes it
+  check(not W.menu._shown or W.menu._hid, "dungeon dropdown starts closed")
+  W.drop._scripts.OnClick(W.drop)
+  check(W.menu:IsShown(), "dropdown opens on click")
+  local heads, entries, bfd = {}, 0, nil
+  for _, r in ipairs(W.menuRows) do
+    if r._shown and not r._hid then
+      if rawget(r, "dungeonKey") then entries = entries + 1 else heads[#heads + 1] = r.text:GetText() end
+      if (r.text:GetText() == "Blackfathom Deeps") then bfd = r end
+    end
+  end
+  check(entries == 7 and #heads == 2 and heads[1] == "Dungeons" and heads[2] == "Raids", "dropdown: 7 entries grouped by type (" .. entries .. ", " .. table.concat(heads, "/") .. ")")
+  bfd._scripts.OnClick(bfd)
+  check(not W.menu:IsShown() and W.title:GetText() == "Blackfathom Deeps" and W.drop.text:GetText() == "Blackfathom Deeps", "picking an entry selects it and closes the dropdown")
+  W.drop._scripts.OnClick(W.drop)
+  DarkMatter.tabs.journals.SetSection("fishing")
+  check(not W.menu:IsShown(), "dropdown closes when the section changes")
+  DarkMatterDB.agDungeon, DarkMatterDB.agBoss = "deadmines", "Edwin VanCleef"
+  DarkMatter.tabs.journals.SetSection("adventure")
   check(barb.icon._quality == 3 and barb.icon._itemId == 5191, "drop icon: rarity rim from quality (Rare)")
   COMPARE = false
   barb._scripts.OnEnter(barb)

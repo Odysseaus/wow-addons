@@ -1,4 +1,4 @@
--- Adventure Guide data layer (0.3.0): dungeon list from the client's LFG data (read-only), merged with our own
+-- Adventure Guide data layer (0.3.1): dungeon list from the client's LFG data (read-only), merged with our own
 -- static drop seed (Data_Dungeons.lua: validated on Wowhead WoW Forever), plus account-wide loot learning.
 -- Taint-safe: read-only API calls (pcall), our own private event frame, no hooks, no Blizzard UI loads.
 local _, NS = ...
@@ -62,51 +62,135 @@ function AG._ResetCaches() exists = {} seedIdx = nil AG._lfg = nil end
 -- LFG scan (read-only; once per session). GetLFGDungeonInfo classic order:
 -- name, typeID, subtypeID, minLevel, maxLevel, recLevel, minRecLevel, maxRecLevel, expansion, groupID, texture,
 -- difficulty, maxPlayers
+-- 0.3.1: Forever's LFG id range also holds zone activities and battlegrounds ("Alterac Mountains",
+-- "Arathi Basin", ...) that report encounters. An entry is a dungeon/raid only if: its type is not zone /
+-- random / world PvP, its name is not a known zone or battleground, it is not a placeholder, and it has at
+-- least one real (non-placeholder) encounter name or matches our seed.
 ---------------------------------------------------------------------------
-local SUBTYPE = { [1] = "Dungeon", [2] = "Heroic", [3] = "Raid", [4] = "Scenario", [5] = "Raid" }
+local SUBTYPE = { [1] = "Dungeon", [2] = "Heroic", [3] = "Raid", [5] = "Raid" }
 local MAX_ID = 1300
+local REJECT_TYPE = { [4] = "zone", [6] = "random" }   -- typeID
+local REJECT_SUBTYPE = { [4] = "scenario", [6] = "pvp" } -- subtypeID
+
+-- Classic zones, capitals and battlegrounds: never dungeons.
+local NOT_DUNGEON = {}
+for _, n in ipairs({
+  "Alterac Mountains", "Arathi Highlands", "Ashenvale", "Ashenvale Forest", "Azshara", "Badlands", "Blasted Lands",
+  "Burning Steppes", "Darkshore", "Darnassus", "Deadwind Pass", "Desolace", "Dun Morogh", "Durotar", "Duskwood",
+  "Dustwallow Marsh", "Eastern Plaguelands", "Elwynn Forest", "Felwood", "Feralas", "Hillsbrad Foothills",
+  "Ironforge", "Loch Modan", "Moonglade", "Mulgore", "Orgrimmar", "Redridge Mountains", "Searing Gorge",
+  "Silithus", "Silverpine Forest", "Stonetalon Mountains", "Stormwind", "Stormwind City", "Stranglethorn Vale",
+  "Swamp of Sorrows", "Tanaris", "Teldrassil", "The Barrens", "Barrens", "The Hinterlands", "Hinterlands",
+  "Thousand Needles", "Thunder Bluff", "Tirisfal Glades", "Undercity", "Un'Goro Crater", "Western Plaguelands",
+  "Westfall", "Wetlands", "Winterspring", "Deeprun Tram", "Alterac Valley", "Arathi Basin", "Warsong Gulch",
+  "World PvP", "Battlegrounds", "Eastern Kingdoms", "Kalimdor",
+}) do NOT_DUNGEON[Norm(n)] = true end
+AG._NotDungeon = NOT_DUNGEON
+
+local PLACEHOLDER = { "no longer in use", "unused", "%[ph%]", "^ph[%s:%-]", "zzold", "^zz", "deprecated",
+  "do not use", "placeholder", "^secretname", "^test[%s_]", "%(old%)", "^old[%s_]" }
+function AG.IsPlaceholder(name)
+  name = Str(name)
+  if not name then return true end
+  local l = name:lower()
+  for _, p in ipairs(PLACEHOLDER) do if l:find(p) then return true end end
+  return false
+end
+
+local function ScanRaw()
+  local rows = {}
+  if type(GetLFGDungeonInfo) ~= "function" then return rows end
+  for id = 1, MAX_ID do
+    local ok, name, typeID, subtypeID, minL, maxL, recL, _, _, _, _, _, _, maxP = pcall(GetLFGDungeonInfo, id)
+    name = ok and Str(name) or nil
+    if name then
+      local n = 0
+      if type(GetLFGDungeonNumEncounters) == "function" then
+        local ok2, c = pcall(GetLFGDungeonNumEncounters, id)
+        n = ok2 and Num(c) or 0
+      end
+      local bosses, dropped, seen = {}, 0, {}
+      if n > 0 and type(GetLFGDungeonEncounterInfo) == "function" then
+        for i = 1, math.min(n, 40) do
+          local ok3, bn = pcall(GetLFGDungeonEncounterInfo, id, i)
+          bn = ok3 and Str(bn) or nil
+          if bn and not seen[bn] then
+            seen[bn] = true
+            if AG.IsPlaceholder(bn) then dropped = dropped + 1 else bosses[#bosses + 1] = bn end
+          end
+        end
+      end
+      rows[#rows + 1] = { lfgId = id, name = name, key = Norm(name), typeID = Num(typeID), subtypeID = Num(subtypeID),
+        minLevel = Num(minL), maxLevel = Num(maxL), recLevel = Num(recL), maxPlayers = Num(maxP),
+        numEncounters = n, bosses = bosses, placeholderBosses = dropped }
+    end
+  end
+  return rows
+end
+
+-- Why an LFG row is not a dungeon/raid (nil = accepted).
+local function RejectReason(e, idx)
+  if not e.key then return "noname" end
+  if AG.IsPlaceholder(e.name) then return "placeholder" end
+  if NOT_DUNGEON[e.key] then return "zone" end
+  if e.typeID and REJECT_TYPE[e.typeID] then return REJECT_TYPE[e.typeID] end
+  if e.subtypeID and REJECT_SUBTYPE[e.subtypeID] then return REJECT_SUBTYPE[e.subtypeID] end
+  if #e.bosses == 0 and not idx.byName[e.key] then return "nobosses" end
+  return nil
+end
 
 function AG.ScanLFG()
   if AG._lfg then return AG._lfg end
+  local idx = SeedIndex()
   local list, byKey = {}, {}
-  if type(GetLFGDungeonInfo) == "function" then
-    for id = 1, MAX_ID do
-      local ok, name, typeID, subtypeID, minL, maxL, recL, _, _, _, _, _, _, maxP = pcall(GetLFGDungeonInfo, id)
-      name = ok and Str(name) or nil
-      if name then
-        local n = 0
-        if type(GetLFGDungeonNumEncounters) == "function" then
-          local ok2, c = pcall(GetLFGDungeonNumEncounters, id)
-          n = ok2 and Num(c) or 0
-        end
-        local bosses = {}
-        if n > 0 and type(GetLFGDungeonEncounterInfo) == "function" then
-          local seen = {}
-          for i = 1, n do
-            local ok3, bn = pcall(GetLFGDungeonEncounterInfo, id, i)
-            bn = ok3 and Str(bn) or nil
-            if bn and not seen[bn] then seen[bn] = true bosses[#bosses + 1] = bn end
-          end
-        end
-        local key = Norm(name)
-        -- dungeons with encounters (random/queue entries have none); one entry per name
-        if key and n > 0 and not byKey[key] then
-          local e = { lfgId = id, name = name, key = key, typeID = Num(typeID), subtypeID = Num(subtypeID),
-            minLevel = Num(minL), maxLevel = Num(maxL), recLevel = Num(recL), maxPlayers = Num(maxP),
-            numEncounters = n, bosses = bosses }
-          byKey[key] = e
-          list[#list + 1] = e
-        end
-      end
+  local stats = { named = 0, accepted = 0, rejected = {} }
+  for _, e in ipairs(ScanRaw()) do
+    stats.named = stats.named + 1
+    local why = RejectReason(e, idx)
+    if not why and byKey[e.key] then why = "duplicate" end
+    if why then
+      stats.rejected[why] = (stats.rejected[why] or 0) + 1
+    else
+      byKey[e.key] = e
+      list[#list + 1] = e
+      stats.accepted = stats.accepted + 1
     end
   end
-  AG._lfg = list
+  AG._lfg, AG._stats = list, stats
   return list
+end
+function AG.ScanStats() AG.ScanLFG() return AG._stats end
+
+-- /dm agscan: raw LFG rows with the accept/reject decision -> DarkMatterDB.agscan; returns a chat summary.
+function AG.ScanReport()
+  local idx = SeedIndex()
+  local rows, out = ScanRaw(), {}
+  local stats = { named = #rows, accepted = 0, rejected = {} }
+  local byKey = {}
+  for i, e in ipairs(rows) do
+    local why = RejectReason(e, idx)
+    if not why and byKey[e.key] then why = "duplicate" end
+    if why then stats.rejected[why] = (stats.rejected[why] or 0) + 1 else stats.accepted = stats.accepted + 1 byKey[e.key] = true end
+    if i <= 300 then
+      out[#out + 1] = { id = e.lfgId, name = e.name, typeID = e.typeID, subtypeID = e.subtypeID, minLevel = e.minLevel,
+        maxLevel = e.maxLevel, recLevel = e.recLevel, maxPlayers = e.maxPlayers, numEncounters = e.numEncounters,
+        bosses = e.bosses, placeholderBosses = e.placeholderBosses, accepted = why == nil, reason = why }
+    end
+  end
+  if type(DarkMatterDB) == "table" then
+    DarkMatterDB.agscan = { at = date("%Y-%m-%d %H:%M:%S"), stats = stats, rows = out }
+  end
+  local parts = {}
+  for k, v in pairs(stats.rejected) do parts[#parts + 1] = k .. " " .. v end
+  table.sort(parts)
+  return string.format("agscan: %d LFG names, %d dungeons/raids kept; rejected: %s", stats.named, stats.accepted,
+    #parts > 0 and table.concat(parts, ", ") or "none")
 end
 
 local function Kind(e)
   local k = e.subtypeID and SUBTYPE[e.subtypeID]
   if k then return k end
+  if e.typeID == 2 then return "Raid" end
   if e.maxPlayers and e.maxPlayers > 5 then return "Raid" end
   return "Dungeon"
 end
@@ -131,7 +215,8 @@ function AG.Dungeons()
       numEncounters = e.numEncounters, seeded = sd ~= nil, zone = sd and sd.zone, short = sd and sd.short, bosses = {} }
     if sd then
       used[e.key] = true
-      if not d.minLevel and sd.levels then d.minLevel, d.maxLevel = sd.levels[1], sd.levels[2] end
+      -- our seed range wins (LFG reports e.g. Wailing Caverns 17-17); LFG keeps the recommended level
+      if sd.levels then d.minLevel, d.maxLevel = sd.levels[1], sd.levels[2] end
       local have = {}
       for _, b in ipairs(sd.bosses or {}) do
         have[Norm(b.name)] = true
@@ -142,6 +227,8 @@ function AG.Dungeons()
       end
     else
       for _, bn in ipairs(e.bosses) do d.bosses[#d.bosses + 1] = { name = bn, drops = {}, seeded = false } end
+      if d.minLevel and d.minLevel <= 0 then d.minLevel = nil end
+      if d.maxLevel and d.minLevel and d.maxLevel < d.minLevel then d.maxLevel = d.minLevel end
     end
     out[#out + 1] = d
   end

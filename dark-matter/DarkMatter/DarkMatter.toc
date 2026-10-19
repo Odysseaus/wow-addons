@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.3.0 (P3.0): Adventure Guide (dungeons, bosses, drops, loot learning); Fishing; Quests; /dm probe.
+## Notes: Dark Matter 0.3.1 (P3.0): Adventure Guide (dungeon dropdown, bosses, drops, loot learning); Fishing; Quests; /dm probe.
 ## Author: Odysseaus
-## Version: 0.3.0
+## Version: 0.3.1
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

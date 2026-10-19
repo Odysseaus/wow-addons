@@ -18,6 +18,7 @@ local function Help()
   print("  /dm options  open the Settings page")
   print("  /dm fishcheck  compare fishing catalog names with the client's item names")
   print("  /dm tipdebug  log fishing tooltip placement (points/rects) to DarkMatterDB.tipdebug")
+  print("  /dm agscan  Adventure Guide: LFG rows kept/rejected -> DarkMatterDB.agscan")
 end
 
 SlashCmdList["DARKMATTER"] = function(msg)
@@ -52,6 +53,8 @@ SlashCmdList["DARKMATTER"] = function(msg)
     NS.Print(NS.db.stockIcon and "using the stock icon." or "using the Dark Matter icon.")
   elseif cmd == "options" then
     NS.OpenOptions()
+  elseif cmd == "agscan" then
+    if NS.AG and NS.AG.ScanReport then NS.Print(NS.AG.ScanReport()) end
   elseif cmd == "tipdebug" then
     local on = NS.FishingToggleTipDebug()
     local td = NS.db.tipdebug or {}
