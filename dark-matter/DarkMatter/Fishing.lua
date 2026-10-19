@@ -233,28 +233,69 @@ function NS.ParseItemId(link)
   return ParseItemId(link)
 end
 
+local function CoerceIcon(tex)
+  if type(tex) == "number" and tex > 0 then return tex end
+  if type(tex) == "string" and tex ~= "" and tex ~= "0" then return tex end
+  return nil
+end
+
 local function ItemIcon(itemId)
   itemId = SafeNum(itemId)
   if not itemId then return nil end
   if GetItemIcon then
     local ok, tex = pcall(GetItemIcon, itemId)
-    if ok then tex = SafeStr(tex) or (type(tex) == "number" and tex) end
-    if ok and tex then return tex end
+    tex = ok and CoerceIcon(tex) or nil
+    if tex then return tex end
   end
   local CI = C_Item
   if CI and CI.GetItemIconByID then
     local ok, tex = pcall(CI.GetItemIconByID, itemId)
-    if ok and tex then return tex end
+    tex = ok and CoerceIcon(tex) or nil
+    if tex then return tex end
   end
   if CI and CI.GetItemInfoInstant then
     local ok, _, _, _, icon = pcall(CI.GetItemInfoInstant, itemId)
-    if ok and icon then return icon end
+    icon = ok and CoerceIcon(icon) or nil
+    if icon then return icon end
+  end
+  -- Forever / Classic: ask the client to load item data (taint-safe pcall); next refresh picks it up.
+  if CI and CI.RequestLoadItemDataByID then
+    pcall(CI.RequestLoadItemDataByID, itemId)
+  elseif RequestLoadItemDataByID then
+    pcall(RequestLoadItemDataByID, itemId)
   end
   return nil
 end
 
 function NS.FishingItemIcon(itemId)
   return ItemIcon(itemId)
+end
+
+-- Quality 0..5 for rarity border (prefer stored, then catalog junk, then item APIs).
+function NS.FishingItemQuality(itemId, stored)
+  local q = SafeNum(stored)
+  if q then return q end
+  itemId = SafeNum(itemId)
+  if not itemId then return 1 end
+  local byId = NS.FishingCatalogById and NS.FishingCatalogById()
+  local cat = byId and byId[itemId]
+  if cat and cat.junk then return 0 end
+  if GetItemInfo then
+    local ok, qual = pcall(function()
+      local _, _, q2 = GetItemInfo(itemId)
+      return SafeNum(q2)
+    end)
+    if ok and qual then return qual end
+  end
+  local CI = C_Item
+  if CI and CI.GetItemInfo then
+    local ok, qual = pcall(function()
+      local t = { CI.GetItemInfo(itemId) }
+      return SafeNum(t[3])
+    end)
+    if ok and qual then return qual end
+  end
+  return 1
 end
 
 local function ItemSellCopper(linkOrId)

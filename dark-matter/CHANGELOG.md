@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5 (P2.5, catch-mode toggle + real fish icons)
+- Fix **by zone / by fish** toggle stuck on by zone: filter bar raised above content roots; Refresh applies view from CharDB without rewriting catchMode.
+- Fix fish icons showing as gold circles: removed opaque Minimap ZoomButton chrome; icons use GetItemIcon / C_Item (RequestLoadItemDataByID when needed) with SetPortraitToTexture or circular mask.
+- Icon **rarity border** (poor→legendary) from item quality.
+- Previewer: rarity-colored fish icons; zone↔fish toggle verified.
+
 ## 0.2.4 (P2.4, Catches pill + catalog Show all)
 - Top pills are **Catches** and **Statistics**. Inside Catches: **by zone** / **by fish** toggle (persisted per character with Show all).
 - **Show all** (fixed): checked lists the static Forever/classic fishing-catch catalog (`Data_FishingCatches.lua`); items you have logged are highlighted and sorted to the top; unchecked lists only logged catches.

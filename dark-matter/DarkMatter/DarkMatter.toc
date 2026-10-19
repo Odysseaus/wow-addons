@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.2.4 (P2.4): Catches view, catalog Show all, last-catch coords; Quests; /dm probe.
+## Notes: Dark Matter 0.2.5 (P2.4): Catches view, catalog Show all, last-catch coords; Quests; /dm probe.
 ## Author: Odysseaus
-## Version: 0.2.4
+## Version: 0.2.5
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

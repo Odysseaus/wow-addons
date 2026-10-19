@@ -257,34 +257,44 @@ local function GetUI()
   return NS.FishingUIPrefs and NS.FishingUIPrefs() or { catchMode = "zone", panel = "catches", showAll = false }
 end
 
+-- Apply Show/Hide + pill active state from CharDB (no write). Keeps mode toggles from being clobbered by Refresh.
+local function ApplyFishView()
+  local ui = GetUI()
+  local panel = ui.panel == "stats" and "stats" or "catches"
+  local mode = ui.catchMode == "fish" and "fish" or "zone"
+  if fvCatches then fvCatches:SetActive(panel == "catches") end
+  if fvStats then fvStats:SetActive(panel == "stats") end
+  if modeZone then modeZone:SetActive(mode == "zone") end
+  if modeFish then modeFish:SetActive(mode == "fish") end
+  if watersRoot then
+    if panel == "catches" and mode == "zone" then watersRoot:Show() else watersRoot:Hide() end
+  end
+  if fishRoot then
+    if panel == "catches" and mode == "fish" then fishRoot:Show() else fishRoot:Hide() end
+  end
+  if statsRoot then
+    if panel == "stats" then statsRoot:Show() else statsRoot:Hide() end
+  end
+  if filterBar then
+    if panel == "catches" then filterBar:Show() else filterBar:Hide() end
+  end
+  if NS.db then
+    NS.db.fishingView = (panel == "stats") and "stats" or ((mode == "fish") and "fish" or "waters")
+  end
+end
+
 local function SetFishView(id)
   -- id: "catches" | "stats" | "zone" | "fish"
   local ui = GetUI()
   if id == "stats" then
-    ui.panel = "stats"
+    NS.FishingSetUIPref("panel", "stats")
   elseif id == "catches" then
-    ui.panel = "catches"
+    NS.FishingSetUIPref("panel", "catches")
   elseif id == "fish" or id == "zone" then
-    ui.panel = "catches"
-    ui.catchMode = id
+    NS.FishingSetUIPref("panel", "catches")
+    NS.FishingSetUIPref("catchMode", id)
   end
-  if NS.FishingSetUIPref then
-    NS.FishingSetUIPref("panel", ui.panel)
-    NS.FishingSetUIPref("catchMode", ui.catchMode)
-  end
-  if NS.db then
-    NS.db.fishingView = (ui.panel == "stats") and "stats" or ((ui.catchMode == "fish") and "fish" or "waters")
-  end
-  if fvCatches then fvCatches:SetActive(ui.panel == "catches") end
-  if fvStats then fvStats:SetActive(ui.panel == "stats") end
-  if modeZone then modeZone:SetActive(ui.catchMode == "zone") end
-  if modeFish then modeFish:SetActive(ui.catchMode == "fish") end
-  if watersRoot then if ui.panel == "catches" and ui.catchMode == "zone" then watersRoot:Show() else watersRoot:Hide() end end
-  if fishRoot then if ui.panel == "catches" and ui.catchMode == "fish" then fishRoot:Show() else fishRoot:Hide() end end
-  if statsRoot then if ui.panel == "stats" then statsRoot:Show() else statsRoot:Hide() end end
-  if filterBar then
-    if ui.panel == "catches" then filterBar:Show() else filterBar:Hide() end
-  end
+  ApplyFishView()
 end
 
 local function MatchesSearch(name)
@@ -355,7 +365,7 @@ local function RefreshFishList()
         r.sub:SetText(e.junk and "Not caught yet · junk" or "Not caught yet")
       end
       r.sub:SetTextColor(NS.Color(caught and "listSoft" or "listSoft"))
-      r.icon:SetItem(e.itemId)
+      r.icon:SetItem(e.itemId, NS.FishingItemQuality and NS.FishingItemQuality(e.itemId, e.quality) or e.quality)
       if selectedFish == e.name then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
       r:Show()
     elseif r then
@@ -441,7 +451,7 @@ local function RefreshFish()
   RefreshFishList()
   RefreshStats()
 
-  if ui.panel == "stats" then SetFishView("stats") else SetFishView("catches"); SetFishView(ui.catchMode or "zone") end
+  ApplyFishView()
 
   local fdb = NS.GetFishingDB and NS.GetFishingDB() or {}
   if badgeText and NS.db and NS.db.section == "fishing" then
@@ -515,15 +525,21 @@ local function BuildFish(page)
   skillBar:SetPoint("RIGHT", skillSub, "LEFT", -12, 0)
   skillBar:SetHeight(20)
 
-  local filterH = 28
+  local filterH = m.pillsH or 32
   filterBar = CreateFrame("Frame", nil, fishPage)
   filterBar:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -(pad + 32 + skillH + 8))
   filterBar:SetSize(innerW, filterH)
+  -- Above watersRoot/fishRoot (created later) so mode pills stay clickable both ways.
+  if filterBar.SetFrameLevel then filterBar:SetFrameLevel((fishPage.GetFrameLevel and fishPage:GetFrameLevel() or 1) + 20) end
+  if filterBar.EnableMouse then filterBar:EnableMouse(true) end
   modeZone = UI.Pill(filterBar, "by zone")
   modeZone:SetPoint("LEFT", filterBar, "LEFT", 0, 0)
+  if modeZone.RegisterForClicks then modeZone:RegisterForClicks("LeftButtonUp") end
   modeZone:SetScript("OnClick", function() SetFishView("zone") RefreshFish() end)
   modeFish = UI.Pill(filterBar, "by fish")
   modeFish:SetPoint("LEFT", modeZone, "RIGHT", m.pillGap, 0)
+  if modeFish.RegisterForClicks then modeFish:RegisterForClicks("LeftButtonUp") end
+  modeFish:SetScript("OnClick", function() SetFishView("fish") RefreshFish() end)
   searchBox = UI.SearchBox(filterBar, math.max(120, innerW - 360), 24)
   searchBox:SetPoint("LEFT", modeFish, "RIGHT", 12, 0)
   searchBox.onChange = function(t)
@@ -542,6 +558,7 @@ local function BuildFish(page)
   local splitH = m.sectionPageH - splitY - pad
 
   watersRoot = CreateFrame("Frame", nil, fishPage)
+  if watersRoot.EnableMouse then watersRoot:EnableMouse(false) end
   watersRoot:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -splitY)
   watersRoot:SetSize(innerW, splitH)
 
@@ -575,6 +592,7 @@ local function BuildFish(page)
   detailBody:SetJustifyV("TOP")
 
   fishRoot = CreateFrame("Frame", nil, fishPage)
+  if fishRoot.EnableMouse then fishRoot:EnableMouse(false) end
   fishRoot:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -splitY)
   fishRoot:SetSize(innerW, splitH)
   local fishPanel = UI.Panel(fishRoot, innerW, splitH)
@@ -593,6 +611,7 @@ local function BuildFish(page)
   fishRoot:Hide()
 
   statsRoot = CreateFrame("Frame", nil, fishPage)
+  if statsRoot.EnableMouse then statsRoot:EnableMouse(false) end
   statsRoot:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -splitY)
   statsRoot:SetSize(innerW, splitH)
   statsScroll = UI.Scroll(statsRoot, innerW, splitH)
@@ -601,7 +620,7 @@ local function BuildFish(page)
 
   tab.RefreshFish = RefreshFish
   local ui = GetUI()
-  if ui.panel == "stats" then SetFishView("stats") else SetFishView("catches"); SetFishView(ui.catchMode or "zone") end
+  ApplyFishView()
 end
 
 ---------------------------------------------------------------------------

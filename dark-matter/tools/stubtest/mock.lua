@@ -83,6 +83,12 @@ if MODE~="minimal" then
   FISH_LURE_ON=false
   function GetItemIcon(id) if id==6289 then return "Interface\\Icons\\INV_Misc_Fish_02" end return "Interface\\Icons\\INV_Misc_QuestionMark" end
   function SetPortraitToTexture(tex, path) if tex and tex.SetTexture then tex:SetTexture(path) end return true end
+  function GetItemQualityColor(q)
+    local m={[0]={0.62,0.62,0.62},[1]={1,1,1},[2]={0.12,1,0},[3]={0,0.44,0.87},[4]={0.64,0.21,0.93},[5]={1,0.5,0}}
+    local c=m[q] or m[1]; return c[1],c[2],c[3],"ffffffff"
+  end
+  function GetItemInfo(id) if id==6289 then return "Raw Longjaw Mud Snapper","item:6289",1 end return "Item","item:"..tostring(id),1 end
+
   function GetWeaponEnchantInfo() if FISH_LURE_ON then return true,600000,0,263,false end return false end
   function GetRealZoneText() return ZONE_TEXT or "Elwynn Forest" end
   function GetZoneText() return ZONE_TEXT or "Elwynn Forest" end
@@ -1127,6 +1133,82 @@ if MODE ~= "minimal" then
   check(texts["Catches"], "Catches pill")
   check(texts["by zone"] and texts["by fish"], "mode toggle labels")
   check(not texts["Catches by zone"], "old Catches by zone pill removed")
+end
+
+
+-- ===== 0.2.5 catchMode toggle both ways + real icon path + rarity border =====
+do
+  DarkMatter.FishingSetUIPref("panel", "catches")
+  DarkMatter.FishingSetUIPref("catchMode", "zone")
+  DarkMatter.ShowTab("journals")
+  if DarkMatter.tabs.journals and DarkMatter.tabs.journals.Refresh then DarkMatter.tabs.journals.Refresh() end
+  local function clickPill(label)
+    for _, fr in ipairs(ALL) do
+      local txt = rawget(fr, "text")
+      if type(txt) == "table" and txt._text == label and fr._scripts and fr._scripts.OnClick then
+        fr._scripts.OnClick(fr)
+        return true
+      end
+    end
+    return false
+  end
+  if MODE ~= "minimal" then
+    check(clickPill("by fish"), "click by fish pill")
+    local ui = DarkMatter.FishingUIPrefs()
+    check(ui.catchMode == "fish", "toggle to by fish: catchMode=" .. tostring(ui.catchMode))
+    check(clickPill("by zone"), "click by zone pill")
+    ui = DarkMatter.FishingUIPrefs()
+    check(ui.catchMode == "zone", "toggle back to by zone")
+    check(clickPill("by fish"), "click by fish again")
+    ui = DarkMatter.FishingUIPrefs()
+    check(ui.catchMode == "fish", "toggle fish both ways ends on fish")
+    if DarkMatter.tabs.journals and DarkMatter.tabs.journals.RefreshFish then
+      DarkMatter.tabs.journals.RefreshFish()
+    elseif DarkMatter.tabs.journals and DarkMatter.tabs.journals.Refresh then
+      DarkMatter.tabs.journals.Refresh()
+    end
+    ui = DarkMatter.FishingUIPrefs()
+    check(ui.catchMode == "fish", "Refresh preserves catchMode fish")
+  else
+    -- API-level persist still verified in minimal
+    DarkMatter.FishingSetUIPref("catchMode", "fish")
+    check(DarkMatter.FishingUIPrefs().catchMode == "fish", "minimal catchMode fish persist")
+    DarkMatter.FishingSetUIPref("catchMode", "zone")
+    check(DarkMatter.FishingUIPrefs().catchMode == "zone", "minimal catchMode zone persist")
+    DarkMatter.FishingSetUIPref("catchMode", "fish")
+    check(DarkMatter.FishingUIPrefs().catchMode == "fish", "minimal catchMode both ways")
+  end
+
+  if MODE ~= "minimal" then
+    local tex = DarkMatter.FishingItemIcon(6289)
+    check(tex ~= nil, "FishingItemIcon(6289)=" .. tostring(tex))
+  end
+  -- UI icon path: only when journals fish list is built (skip stripped minimal stub)
+  if MODE ~= "minimal" and DarkMatter.tabs and DarkMatter.tabs.journals then
+    FISH_LOOT = true
+    LOOT_SLOTS = { { tex="t", name="Raw Longjaw Mud Snapper", qty=1, quality=1, link="item:6289" } }
+    local f = DarkMatter.GetFishingDB()
+    f.lastZone = "Elwynn Forest"
+    DarkMatter._FishingTest.BeginCast()
+    DarkMatter._FishingTest.OnFishingLoot()
+    DarkMatter.FishingSetUIPref("catchMode", "fish")
+    DarkMatter.FishingSetUIPref("showAll", false)
+    if DarkMatter.tabs.journals.RefreshFish then DarkMatter.tabs.journals.RefreshFish() end
+    local iconPath, borderQ
+    for _, fr in ipairs(ALL) do
+      local getp = rawget(fr, "GetIconPath")
+      if type(getp) == "function" then
+        local pth = getp(fr)
+        if pth then iconPath = pth; borderQ = rawget(fr, "_quality"); break end
+      end
+      local ip = rawget(fr, "_iconPath")
+      if ip then iconPath = ip; borderQ = rawget(fr, "_quality"); break end
+    end
+    check(iconPath ~= nil and iconPath ~= "", "fish row icon path set: " .. tostring(iconPath))
+    check(type(iconPath) == "string" or type(iconPath) == "number", "icon path type ok")
+    check(tostring(iconPath):find("Fish") or tostring(iconPath):find("Icons") or type(iconPath)=="number", "icon looks like item texture")
+    check(borderQ ~= nil, "rarity border quality set: " .. tostring(borderQ))
+  end
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

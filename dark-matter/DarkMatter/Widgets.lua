@@ -395,24 +395,76 @@ function UI.Bar(parent, w, h, thin)
 end
 
 
--- Circular item icon (SetPortraitToTexture when available; else plain texture + ring).
+-- Circular item icon: real item texture (SetPortraitToTexture / mask) + rarity-colored border.
+-- (0.2.4 used Minimap ZoomButton chrome as a "ring" — it painted opaque gold circles over the icon.)
 function UI.RoundIcon(parent, size)
   size = size or 28
   local f = CreateFrame("Frame", nil, parent)
   f:SetSize(size, size)
+  -- Outer rarity rim (thin border behind the portrait inset)
+  local border = f:CreateTexture(nil, "BACKGROUND")
+  border:SetAllPoints(f)
+  border:SetColorTexture(0.62, 0.62, 0.62, 1) -- common default
   local tex = f:CreateTexture(nil, "ARTWORK")
-  tex:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
-  tex:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
-  local ring = f:CreateTexture(nil, "OVERLAY")
-  ring:SetAllPoints(f)
-  ring:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Toggle")
-  ring:SetTexCoord(0.05, 0.95, 0.05, 0.95)
-  ring:SetAlpha(0.85)
-  f.tex, f.ring = tex, ring
-  function f.SetItem(_, itemId, fallbackPath)
-    local path = itemId and NS.FishingItemIcon and NS.FishingItemIcon(itemId) or fallbackPath
+  tex:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -2)
+  tex:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
+  f.tex, f.border = tex, border
+  f._iconPath = nil
+  f._quality = 1
+
+  local function ApplyMask()
+    if f.mask or not (tex.AddMaskTexture and f.CreateMaskTexture) then return end
+    local okm, mask = pcall(function()
+      local m = f:CreateMaskTexture()
+      m:SetAllPoints(tex)
+      m:SetTexture("Interface\CharacterFrame\TempPortraitAlphaMask")
+      tex:AddMaskTexture(m)
+      return m
+    end)
+    if okm then f.mask = mask end
+  end
+
+  local function SetBorderQuality(q)
+    q = tonumber(q) or 1
+    f._quality = q
+    local r, g, b = 0.62, 0.62, 0.62
+    if GetItemQualityColor then
+      local ok, rr, gg, bb = pcall(GetItemQualityColor, q)
+      if ok and rr then r, g, b = rr, gg, bb end
+    elseif ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q] then
+      local c = ITEM_QUALITY_COLORS[q]
+      r, g, b = c.r or r, c.g or g, c.b or b
+    else
+      -- poor/common/uncommon/rare/epic/legendary fallbacks
+      local map = {
+        [0] = { 0.62, 0.62, 0.62 },
+        [1] = { 1.00, 1.00, 1.00 },
+        [2] = { 0.12, 1.00, 0.00 },
+        [3] = { 0.00, 0.44, 0.87 },
+        [4] = { 0.64, 0.21, 0.93 },
+        [5] = { 1.00, 0.50, 0.00 },
+      }
+      local c = map[q] or map[1]
+      r, g, b = c[1], c[2], c[3]
+    end
+    border:SetColorTexture(r, g, b, 1)
+  end
+
+  function f.SetItem(_, itemId, quality, fallbackPath)
+    -- quality may be omitted; accept (id, fallbackPath) for older callers
+    if type(quality) == "string" and fallbackPath == nil then
+      fallbackPath = quality
+      quality = nil
+    end
+    SetBorderQuality(quality)
+    local path = nil
+    if itemId and NS.FishingItemIcon then
+      path = NS.FishingItemIcon(itemId)
+    end
+    path = path or fallbackPath
+    f._iconPath = path
     if not path then
-      tex:SetColorTexture(0.15, 0.12, 0.08, 1)
+      tex:SetColorTexture(0.12, 0.10, 0.08, 1)
       return
     end
     local usedPortrait = false
@@ -422,25 +474,12 @@ function UI.RoundIcon(parent, size)
     end
     if not usedPortrait then
       tex:SetTexture(path)
-      -- mild circular crop via mask if the client supports it
-      if not f.mask and tex.AddMaskTexture and f.CreateMaskTexture then
-        local okm, mask = pcall(function()
-          local m = f:CreateMaskTexture()
-          m:SetAllPoints(tex)
-          m:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
-          tex:AddMaskTexture(m)
-          return m
-        end)
-        if okm then f.mask = mask end
-      end
+      ApplyMask()
     end
   end
-  NS.OnSkin(function()
-    ring:SetVertexColor(0.85, 0.75, 0.35, 1)
-  end)
+  function f.GetIconPath(_) return f._iconPath end
   return f
 end
-
 -- Small checkbox with label (stock CheckButton).
 function UI.Checkbox(parent, label, size)
   size = size or 20
