@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.2.2 (P2.2): Fishing UI matched to previewer; lure names; catch tracking; Quests; /dm probe.
+## Notes: Dark Matter 0.2.3 (P2.3): Catches by zone/fish, Show all, search; lure names; Quests; /dm probe.
 ## Author: Odysseaus
-## Version: 0.2.2
+## Version: 0.2.3
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

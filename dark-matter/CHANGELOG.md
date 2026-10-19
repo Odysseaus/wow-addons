@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 (P2.3, Catches by zone / by fish)
+- Journals → Fishing: pills **Catches by zone**, **Catches by fish**, and **Statistics**. Zone vs fish choice (and Show all) persist per character in `DarkMatterCharDB.fishing.ui`.
+- Catches by fish: aggregated catch types with circular item icons (`GetItemIcon` / `SetPortraitToTexture`), count and share.
+- **Show all**: off = fish-focused (excludes quality-0 junk); on = every logged catch type including junk/non-fish.
+- Search bar filters the active list (zone names or catch names).
+- Item ids stored from loot links for icons. Previewer mockup updated to match.
+
 ## 0.2.2 (P2.2, Fishing UI parity + lure names)
 - Journals → Fishing skill strip matches the addon-previewer mockup: horizontal title | bar | subtitle on a light parchment panel (Friz Quadrata). Fixes the clipped unreadable grey line under the skill bar (was slate-grey `listSoft` text overflowing a 52px dark panel).
 - Progress bars restyled (rim, dark track, gold/green fill, gloss, cream label); thin share bars for per-zone catch %. View pills renamed to "Catches by zone" / "Statistics"; zone list header "Zones".

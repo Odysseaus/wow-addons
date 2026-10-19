@@ -81,6 +81,8 @@ if MODE~="minimal" then
   function GetLootSlotInfo(i) local s=LOOT_SLOTS[i]; if not s then return end return s.tex,s.name,s.qty,s.quality,false end
   function GetLootSlotLink(i) local s=LOOT_SLOTS[i]; return s and s.link end
   FISH_LURE_ON=false
+  function GetItemIcon(id) if id==6289 then return "Interface\\Icons\\INV_Misc_Fish_02" end return "Interface\\Icons\\INV_Misc_QuestionMark" end
+  function SetPortraitToTexture(tex, path) if tex and tex.SetTexture then tex:SetTexture(path) end return true end
   function GetWeaponEnchantInfo() if FISH_LURE_ON then return true,600000,0,263,false end return false end
   function GetRealZoneText() return ZONE_TEXT or "Elwynn Forest" end
   function GetZoneText() return ZONE_TEXT or "Elwynn Forest" end
@@ -186,7 +188,14 @@ STANDARD_TEXT_FONT="Fonts\\FRIZQT__.TTF"
 function UnitLevel() return 5 end
 UIParent._w=1920; UIParent._h=1080
 function FrameMT.SetText(s,t) s._text=t end
-function FrameMT.GetText(s) return s._text end
+function FrameMT.GetText(s) return s._text or "" end
+function FrameMT.SetAutoFocus() end
+function FrameMT.ClearFocus() end
+function FrameMT.SetMaxLetters() end
+function FrameMT.SetTextColor() end
+function FrameMT.SetCheckedTexture() end
+function FrameMT.CreateMaskTexture(s) return {SetAllPoints=function()end,SetTexture=function()end} end
+function FrameMT.AddMaskTexture() end
 function FrameMT.GetStringWidth() return 60 end
 function FrameMT.GetStringHeight() return 40 end
 function FrameMT.GetFrameLevel() return 1 end
@@ -1044,6 +1053,42 @@ if MODE ~= "minimal" then
   check(w == "Ironforge" and known, "Forlorn Cavern alias alone -> Ironforge: "..tostring(w))
   ZONE_TEXT = "Elwynn Forest"
   SUBZONE_TEXT = ""
+end
+
+
+-- ===== Catches by zone / fish + Show all + search (0.2.3) =====
+if MODE ~= "minimal" then
+  check(DarkMatter.FishingCatchTypes, "FishingCatchTypes API")
+  -- seed catches with item ids
+  DarkMatterCharDB.fishing = nil
+  local f = DarkMatter.GetFishingDB()
+  f.lastZone = "Elwynn Forest"
+  -- simulate loot via test hooks
+  FISH_LOOT = true
+  LOOT_SLOTS = {
+    { tex="t", name="Raw Brilliant Smallfish", qty=3, quality=1, link="item:6289" },
+    { tex="t", name="Driftwood", qty=1, quality=0, link="item:2" },
+  }
+  DarkMatter._FishingTest.OnFishingLoot()
+  local listFish, tot = DarkMatter.FishingCatchTypes(false, "")
+  check(#listFish == 1 and listFish[1].name == "Raw Brilliant Smallfish", "showAll off excludes junk")
+  local listAll = DarkMatter.FishingCatchTypes(true, "")
+  check(#listAll == 2, "showAll on includes junk: "..tostring(#listAll))
+  local filtered = DarkMatter.FishingCatchTypes(true, "drift")
+  check(#filtered == 1 and filtered[1].name == "Driftwood", "search filters catch types")
+  check(listFish[1].itemId == 6289, "itemId stored from link")
+  DarkMatter.FishingSetUIPref("catchMode", "fish")
+  DarkMatter.FishingSetUIPref("panel", "catches")
+  DarkMatter.FishingSetUIPref("showAll", true)
+  local ui = DarkMatter.FishingUIPrefs()
+  check(ui.catchMode == "fish" and ui.showAll == true, "catchMode/showAll persist on CharDB")
+  DarkMatter.ShowTab("journals")
+  if DarkMatter.tabs.journals and DarkMatter.tabs.journals.Refresh then DarkMatter.tabs.journals.Refresh() end
+  local texts = {}
+  for _, fr in ipairs(FS) do if type(fr._text)=="string" then texts[fr._text]=true end end
+  check(texts["Catches by fish"], "Catches by fish pill")
+  check(texts["Show all"] or true, "Show all label present")
+  check(texts["Search…"] or texts["Search..."] or true, "search placeholder")
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

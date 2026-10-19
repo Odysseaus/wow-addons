@@ -394,6 +394,126 @@ function UI.Bar(parent, w, h, thin)
   return f
 end
 
+
+-- Circular item icon (SetPortraitToTexture when available; else plain texture + ring).
+function UI.RoundIcon(parent, size)
+  size = size or 28
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetSize(size, size)
+  local tex = f:CreateTexture(nil, "ARTWORK")
+  tex:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+  tex:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+  local ring = f:CreateTexture(nil, "OVERLAY")
+  ring:SetAllPoints(f)
+  ring:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Toggle")
+  ring:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+  ring:SetAlpha(0.85)
+  f.tex, f.ring = tex, ring
+  function f.SetItem(_, itemId, fallbackPath)
+    local path = itemId and NS.FishingItemIcon and NS.FishingItemIcon(itemId) or fallbackPath
+    if not path then
+      tex:SetColorTexture(0.15, 0.12, 0.08, 1)
+      return
+    end
+    local usedPortrait = false
+    if SetPortraitToTexture then
+      local ok = pcall(SetPortraitToTexture, tex, path)
+      usedPortrait = ok and true or false
+    end
+    if not usedPortrait then
+      tex:SetTexture(path)
+      -- mild circular crop via mask if the client supports it
+      if not f.mask and tex.AddMaskTexture and f.CreateMaskTexture then
+        local okm, mask = pcall(function()
+          local m = f:CreateMaskTexture()
+          m:SetAllPoints(tex)
+          m:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+          tex:AddMaskTexture(m)
+          return m
+        end)
+        if okm then f.mask = mask end
+      end
+    end
+  end
+  NS.OnSkin(function()
+    ring:SetVertexColor(0.85, 0.75, 0.35, 1)
+  end)
+  return f
+end
+
+-- Small checkbox with label (stock CheckButton).
+function UI.Checkbox(parent, label, size)
+  size = size or 20
+  local b = CreateFrame("CheckButton", nil, parent)
+  b:SetSize(size, size)
+  local bg = b:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(b)
+  bg:SetColorTexture(0.05, 0.05, 0.04, 0.95)
+  local border = b:CreateTexture(nil, "BORDER")
+  border:SetAllPoints(b)
+  border:SetColorTexture(0.45, 0.42, 0.32, 1)
+  local check = b:CreateTexture(nil, "ARTWORK")
+  check:SetPoint("CENTER", b, "CENTER", 0, 0)
+  check:SetSize(size - 6, size - 6)
+  check:SetColorTexture(0.85, 0.72, 0.2, 1)
+  check:Hide()
+  b._check = check
+  function b:SetChecked(on)
+    self._on = on and true or false
+    if self._on then check:Show() else check:Hide() end
+  end
+  function b:GetChecked() return self._on and true or false end
+  b:SetScript("OnClick", function(self)
+    self:SetChecked(not self:GetChecked())
+    if self.onToggle then self:onToggle(self:GetChecked()) end
+  end)
+  local text = UI.Text(parent, "OVERLAY", 12, "listInk", "LEFT")
+  text:SetPoint("LEFT", b, "RIGHT", 6, 0)
+  text:SetText(label or "")
+  b.label = text
+  NS.OnSkin(function()
+    bg:SetColorTexture(0.05, 0.05, 0.04, 0.95)
+    border:SetColorTexture(0.45, 0.42, 0.32, 1)
+    check:SetColorTexture(0.85, 0.72, 0.2, 1)
+  end)
+  return b
+end
+
+-- Single-line search field (stock EditBox).
+function UI.SearchBox(parent, w, h)
+  h = h or 24
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetSize(w, h)
+  local bg = f:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(f)
+  bg:SetColorTexture(0.02, 0.02, 0.02, 0.92)
+  f.border = UI.NineSlice(f, "pane", 4, "BORDER", 1)
+  local eb = CreateFrame("EditBox", nil, f)
+  eb:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -3)
+  eb:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 3)
+  eb:SetAutoFocus(false)
+  eb:SetMaxLetters(60)
+  NS.SetFont(eb, 12, "")
+  eb:SetTextColor(0.9, 0.88, 0.8, 1)
+  eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+  local ph = UI.Text(f, "OVERLAY", 12, "listSoft", "LEFT")
+  ph:SetPoint("LEFT", eb, "LEFT", 0, 0)
+  ph:SetText("Search…")
+  eb:SetScript("OnTextChanged", function(self)
+    local t = self:GetText() or ""
+    if t == "" then ph:Show() else ph:Hide() end
+    if f.onChange then f.onChange(t) end
+  end)
+  f.edit, f.placeholder = eb, ph
+  function f.SetText(_, t) eb:SetText(t or "") end
+  function f.GetText(_) return eb:GetText() or "" end
+  NS.OnSkin(function()
+    bg:SetColorTexture(0.02, 0.02, 0.02, 0.92)
+    eb:SetTextColor(0.9, 0.88, 0.8, 1)
+  end)
+  return f
+end
+
 -- Centred "coming in a later phase" state on a page (glyph, big title, text).
 function UI.Stub(page, glyphKey, title, text)
   local s = CreateFrame("Frame", nil, page)

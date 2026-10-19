@@ -20,6 +20,7 @@ local CHAR_DEFAULTS = {
   rares = {}, -- { { name, zone, when }, ... } capped
   zones = {}, -- [zoneName] = { catches = n, items = { [name] = { count, junk, quality, copper } } }
   lastZone = nil,
+  ui = { catchMode = "zone", panel = "catches", showAll = false },
 }
 
 local state = {
@@ -50,6 +51,10 @@ local function Ensure()
   if type(f.lureCounts) ~= "table" then f.lureCounts = {} end
   if type(f.rares) ~= "table" then f.rares = {} end
   if type(f.skillHistory) ~= "table" then f.skillHistory = {} end
+  if type(f.ui) ~= "table" then f.ui = {} end
+  if f.ui.catchMode ~= "fish" and f.ui.catchMode ~= "zone" then f.ui.catchMode = "zone" end
+  if f.ui.panel ~= "stats" then f.ui.panel = "catches" end
+  if f.ui.showAll ~= true then f.ui.showAll = false end
   NS.cdb = DarkMatterCharDB
   return f
 end
@@ -191,6 +196,41 @@ local function CurrentLureLabel()
   return NS.ResolveLureName(mhID)
 end
 
+local function ParseItemId(link)
+  link = SafeStr(link)
+  if not link then return nil end
+  local id = link:match("item:(%d+)")
+  return id and tonumber(id) or nil
+end
+
+function NS.ParseItemId(link)
+  return ParseItemId(link)
+end
+
+local function ItemIcon(itemId)
+  itemId = SafeNum(itemId)
+  if not itemId then return nil end
+  if GetItemIcon then
+    local ok, tex = pcall(GetItemIcon, itemId)
+    if ok then tex = SafeStr(tex) or (type(tex) == "number" and tex) end
+    if ok and tex then return tex end
+  end
+  local CI = C_Item
+  if CI and CI.GetItemIconByID then
+    local ok, tex = pcall(CI.GetItemIconByID, itemId)
+    if ok and tex then return tex end
+  end
+  if CI and CI.GetItemInfoInstant then
+    local ok, _, _, _, icon = pcall(CI.GetItemInfoInstant, itemId)
+    if ok and icon then return icon end
+  end
+  return nil
+end
+
+function NS.FishingItemIcon(itemId)
+  return ItemIcon(itemId)
+end
+
 local function ItemSellCopper(linkOrId)
   local CI = C_Item
   if not (CI and CI.GetItemInfo) then return nil end
@@ -327,15 +367,17 @@ local function RecordLootSlot(f, zone, itemName, quantity, quality, link)
 
   local zb = ZoneBucket(f, zone)
   zb.catches = (SafeNum(zb.catches) or 0) + quantity
+  local itemId = ParseItemId(link)
   local it = zb.items[itemName]
   if type(it) ~= "table" then
-    it = { count = 0, junk = junk, quality = quality, copper = copper }
+    it = { count = 0, junk = junk, quality = quality, copper = copper, itemId = itemId }
     zb.items[itemName] = it
   end
   it.count = (SafeNum(it.count) or 0) + quantity
   it.junk = junk
   it.quality = quality
   if copper then it.copper = copper end
+  if itemId then it.itemId = itemId end
 end
 
 local function OnFishingLoot()
@@ -413,6 +455,7 @@ function NS.FishingZoneStats(zoneName)
       junk = it.junk and true or false,
       quality = SafeNum(it.quality) or 1,
       copper = SafeNum(it.copper),
+      itemId = SafeNum(it.itemId),
     }
   end
   table.sort(items, function(a, b) return a.count > b.count end)
@@ -508,6 +551,52 @@ local function OnError(_, _, message)
     f.streak = 0
     state.pendingAway = nil
   end
+end
+
+
+--- Aggregate catch types across all zones (for Catches by fish).
+-- showAll false => fish-focused: exclude quality-0 junk. showAll true => every logged type.
+function NS.FishingCatchTypes(showAll, search)
+  local f = Ensure()
+  local byName = {}
+  for zoneName, z in pairs(f.zones or {}) do
+    if type(z) == "table" and type(z.items) == "table" then
+      for name, it in pairs(z.items) do
+        local junk = it.junk and true or false
+        local quality = SafeNum(it.quality) or (junk and 0 or 1)
+        if showAll or quality > 0 then
+          local e = byName[name]
+          if not e then
+            e = { name = name, count = 0, junk = junk, quality = quality, copper = SafeNum(it.copper), itemId = SafeNum(it.itemId), zones = {} }
+            byName[name] = e
+          end
+          e.count = e.count + (SafeNum(it.count) or 0)
+          if SafeNum(it.itemId) then e.itemId = SafeNum(it.itemId) end
+          e.zones[zoneName] = (e.zones[zoneName] or 0) + (SafeNum(it.count) or 0)
+        end
+      end
+    end
+  end
+  local list, total = {}, 0
+  search = search and tostring(search):lower() or ""
+  for _, e in pairs(byName) do
+    if search == "" or (e.name and e.name:lower():find(search, 1, true)) then
+      list[#list + 1] = e
+      total = total + e.count
+    end
+  end
+  table.sort(list, function(a, b) return a.count > b.count end)
+  return list, total
+end
+
+function NS.FishingUIPrefs()
+  local f = Ensure()
+  return f.ui
+end
+
+function NS.FishingSetUIPref(key, value)
+  local f = Ensure()
+  f.ui[key] = value
 end
 
 function NS.StartFishingTracker()
