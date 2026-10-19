@@ -1402,7 +1402,7 @@ if MODE ~= "minimal" then
   ttreset(); caughtRow._scripts.OnEnter(caughtRow)
   check(TT.owner == caughtRow and TT.anchor == "ANCHOR_PRESERVE" and TT.shown, "SetOwner(row, ANCHOR_PRESERVE) + Show")
   local lp = TT.point
-  check(lp and lp[1] == "BOTTOMRIGHT" and lp[2] == caughtRow.itemAnchor and lp[3] == "TOPLEFT" and lp[4] == -4 and lp[5] == 4, "tooltip BOTTOMRIGHT to row TOPLEFT, gap -4,+4 (" .. tostring(lp and lp[1]) .. "," .. tostring(lp and lp[3]) .. "," .. tostring(lp and lp[4]) .. "," .. tostring(lp and lp[5]) .. "," .. tostring(lp and lp[2] == caughtRow.itemAnchor) .. ")")
+  check(lp and lp[1] == "BOTTOMRIGHT" and lp[2] == caughtRow.itemAnchor and lp[3] == "TOPLEFT" and lp[4] == -1 and lp[5] == 1, "tooltip BOTTOMRIGHT to row TOPLEFT, gap -4,+4 (" .. tostring(lp and lp[1]) .. "," .. tostring(lp and lp[3]) .. "," .. tostring(lp and lp[4]) .. "," .. tostring(lp and lp[5]) .. "," .. tostring(lp and lp[2] == caughtRow.itemAnchor) .. ")")
   check(TT.link == "item:250001", "cached caught item uses stored link via SetHyperlink")
   check(has("Caught=") and has("Last caught=Elwynn Forest") , "caught lines: count + last zone (" .. table.concat(TT.lines, " | ") .. ")")
   caughtRow._scripts.OnLeave(caughtRow)
@@ -1420,12 +1420,12 @@ if MODE ~= "minimal" then
   ttreset(); learnedRow._scripts.OnEnter(learnedRow)
   check(TT.itemId == nil and TT.link == nil and TT.lines[1] == "Hyjal Ember Trout" and TT.lines[2] == "Uncommon", "fallback tooltip: name + quality (" .. table.concat(TT.lines, " | ") .. ")")
   check(has("Dark Matter") and has("Not caught yet") and TT.shown, "fallback tooltip has Dark Matter lines")
-  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -4 and q[5] == 4, "fallback tooltip uses gap placement") end
+  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -1 and q[5] == 1, "fallback tooltip uses gap placement (gap 4 - inset 3)") end
   -- hovering while data arrives: list refresh rebuilds the tooltip with the real item
   C_Item.IsItemDataCachedByID = function() return true end
   ttreset(); DarkMatter.tabs.journals.Refresh()
   check(TT.itemId == 250002 and TT.owner == learnedRow, "refresh while hovered upgrades to item tooltip (" .. tostring(TT.itemId) .. "," .. tostring(TT.owner == learnedRow) .. "," .. tostring(rawget(learnedRow, "_hover")) .. "," .. tostring(learnedRow.entry and learnedRow.entry.name) .. ")")
-  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -4 and q[5] == 4, "refresh tooltip uses gap placement") end
+  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -1 and q[5] == 1, "refresh tooltip uses gap placement") end
   learnedRow._scripts.OnLeave(learnedRow)
   -- OnLeave from a row that no longer owns the tooltip does not hide someone else's tooltip
   ttreset(); TT.owner = "other"; caughtRow._scripts.OnLeave(caughtRow)
@@ -1476,12 +1476,12 @@ if MODE ~= "minimal" then
   local row = fr(500, 500)
   local side, vert, n = DarkMatter._FishingPlaceTooltip(mt, row)
   local m1, a1, b1 = mt.pts[1], s1.pts[1], s2.pts[1]
-  check(#mt.pts == 1 and m1[1] == "BOTTOMLEFT" and m1[2] == row and m1[3] == "TOPRIGHT" and m1[4] == 4 and m1[5] == 4, "compare shown: main at row TOPRIGHT +4,+4")
+  check(#mt.pts == 1 and m1[1] == "BOTTOMLEFT" and m1[2] == row and m1[3] == "TOPRIGHT" and m1[4] == 1 and m1[5] == 1, "compare shown: main at row TOPRIGHT +4,+4")
   check(n == 2 and side == "right" and a1[1] == "BOTTOMLEFT" and a1[2] == mt and a1[3] == "BOTTOMRIGHT" and b1[1] == "BOTTOMLEFT" and b1[2] == s1 and b1[3] == "BOTTOMRIGHT", "ShoppingTooltip1 then 2 chained right, bottoms aligned")
   row = fr(1000, 500, 200, 100, 1400)
   side = DarkMatter._FishingPlaceTooltip(mt, row)
   m1, a1, b1 = mt.pts[1], s1.pts[1], s2.pts[1]
-  check(side == "left" and m1[1] == "BOTTOMRIGHT" and m1[3] == "TOPLEFT" and m1[4] == -4 and a1[1] == "BOTTOMRIGHT" and a1[2] == mt and a1[3] == "BOTTOMLEFT" and b1[2] == s1 and b1[3] == "BOTTOMLEFT", "mirrored: main at row TOPLEFT, compares chained left")
+  check(side == "left" and m1[1] == "BOTTOMRIGHT" and m1[3] == "TOPLEFT" and m1[4] == -1 and a1[1] == "BOTTOMRIGHT" and a1[2] == mt and a1[3] == "BOTTOMLEFT" and b1[2] == s1 and b1[3] == "BOTTOMLEFT", "mirrored: main at row TOPLEFT, compares chained left")
   row = fr(500, 960)
   DarkMatter._FishingPlaceTooltip(mt, row)
   check(mt.pts[1][1] == "TOPLEFT" and s1.pts[1][1] == "TOPLEFT" and s1.pts[1][3] == "TOPRIGHT", "near top: below row, compares tops aligned")
@@ -1595,13 +1595,13 @@ if MODE ~= "minimal" then
   -- (a) no compare: BOTTOMRIGHT -> row TOPLEFT
   COMPARE = false
   A._scripts.OnEnter(A)
-  check(T.anchor == "ANCHOR_PRESERVE" and T.pts and T.pts[1] == "BOTTOMRIGHT" and T.pts[2] == A.itemAnchor and T.pts[3] == "TOPLEFT" and T.pts[4] == -4 and T.pts[5] == 4, "no compare: main BOTTOMRIGHT at item (icon) TOPLEFT -4,+4")
+  check(T.anchor == "ANCHOR_PRESERVE" and T.pts and T.pts[1] == "BOTTOMRIGHT" and T.pts[2] == A.itemAnchor and T.pts[3] == "TOPLEFT" and T.pts[4] == -1 and T.pts[5] == 1, "no compare: main BOTTOMRIGHT at item (icon) TOPLEFT -4,+4")
   A._scripts.OnLeave(A)
   -- (b) compare: the client anchors ShoppingTooltip1 TOPLEFT->TOPRIGHT -10 during SetHyperlink; we take over
   COMPARE = true
   A._scripts.OnEnter(A)
   check(not T.slid, "ANCHOR_PRESERVE: client compare code never slides the main tooltip")
-  check(T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A.itemAnchor and T.pts[3] == "TOPRIGHT" and T.pts[4] == 4 and T.pts[5] == 4, "compare: main BOTTOMLEFT at the item (end of name) TOPRIGHT +4,+4, not the full row")
+  check(T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A.itemAnchor and T.pts[3] == "TOPRIGHT" and T.pts[4] == 1 and T.pts[5] == 1, "compare: main BOTTOMLEFT at the item (end of name) TOPRIGHT +4,+4, not the full row")
   local s1 = ShoppingTooltip1
   check(s1.pts[1] == "BOTTOMLEFT" and s1.pts[2] == GameTooltip and s1.pts[3] == "BOTTOMRIGHT" and s1.pts[4] == 0 and s1.pts[5] == 0, "compare: ShoppingTooltip1 chained right, bottoms aligned (not the client's TOPLEFT -10)")
   local W = DarkMatter._FishingTooltipWatch()
@@ -1659,7 +1659,10 @@ if MODE ~= "minimal" then
   DarkMatter.FishingUpdateItemAnchor(A)
   check(wSet == 28 + 8 + 300, "long names capped at the name box")
   local p1 = ia._pts and ia._pts[1]
-  check(p1 and p1[1] == "TOPLEFT" and p1[2] == A and p1[4] == 8 and p1[5] == 0, "item anchor starts at the icon's left edge, row top")
+  check(p1 and p1[1] == "TOPLEFT" and p1[2] == A.icon and p1[3] == "TOPLEFT" and p1[4] == 0 and p1[5] == 0, "item anchor top-left = icon top-left (not the padded row top)")
+  local p2 = ia._pts and ia._pts[2]
+  check(p2 and p2[1] == "BOTTOMLEFT" and p2[2] == A.icon and p2[3] == "BOTTOMLEFT", "item anchor bottom = icon bottom")
+  check(DarkMatter.FISH_TIP_INSET == 3, "tooltip border inset 3 (SetPoint offset = gap 4 - inset 3)")
   -- geometry: row 400 wide at x 100..500, item ends at 100+8+176=284; compare set placed right of 284, not 500
   rawset(ia, "GetLeft", function() return 108 end); rawset(ia, "GetRight", function() return 284 end); rawset(ia, "GetTop", function() return 500 end)
   local pp, rr, xx = DarkMatter.FishingTooltipAnchor(GameTooltip, ia, 220, 160)
@@ -1686,7 +1689,7 @@ if MODE ~= "minimal" then
   local td = DarkMatterDB.tipdebug
   local last = td.last
   check(td.count and td.count >= 2 and #td.log == td.count, "tipdebug: placements logged (" .. tostring(td.count) .. ")")
-  check(last and last.reason == "repoint" and last.item == A.catchName and last.frames.GameTooltip and last.frames.GameTooltip.points[1] == "BOTTOMLEFT>itemAnchor:TOPRIGHT 4,4", "tipdebug: last = repoint, GameTooltip point named (" .. tostring(last and last.frames.GameTooltip and last.frames.GameTooltip.points[1]) .. ")")
+  check(last and last.reason == "repoint" and last.item == A.catchName and last.frames.GameTooltip and last.frames.GameTooltip.points[1] == "BOTTOMLEFT>itemAnchor:TOPRIGHT 1,1", "tipdebug: last = repoint, GameTooltip point named (" .. tostring(last and last.frames.GameTooltip and last.frames.GameTooltip.points[1]) .. ")")
   check(last.frames.ShoppingTooltip1 and last.frames.ShoppingTooltip1.shown and last.frames.anchor and last.frames.row and last.side == "right" and last.compares == 1, "tipdebug: compare, anchor and row recorded")
   check(td.log[1].reason == "show", "tipdebug: first record is the show pass")
   check(printed >= 3, "tipdebug: chat summary printed (" .. printed .. ")")
@@ -1696,6 +1699,22 @@ if MODE ~= "minimal" then
   local n0 = DarkMatterDB.tipdebug.count
   A._scripts.OnEnter(A); A._scripts.OnLeave(A)
   check(DarkMatterDB.tipdebug.count == n0, "nothing logged when off")
+  -- tipdebug: anchor rect vs tooltip rect line (frame gap 1 + inset 3 = visible 4)
+  local lines = {}
+  DarkMatter.Print = function(m) lines[#lines + 1] = tostring(m) end
+  SlashCmdList["DARKMATTER"]("tipdebug")
+  rawset(ia, "GetRect", function() return 108, 450, 176, 28 end)
+  rawset(GameTooltip, "GetRect", function() return 285, 479, 200, 100 end)
+  COMPARE = false
+  A._scripts.OnEnter(A)
+  local dl
+  for _, l in ipairs(lines) do if l:find("tipdebug anchor", 1, true) then dl = l end end
+  local dd = DarkMatterDB.tipdebug.last and DarkMatterDB.tipdebug.last.delta
+  check(dl and dl:find("visible ~x=4 y=4", 1, true), "tipdebug prints anchor vs tip rect line (" .. tostring(dl) .. ")")
+  check(dd and dd.frameX == 1 and dd.frameY == 1 and dd.visibleX == 4 and dd.inset == 3, "tipdebug delta saved")
+  A._scripts.OnLeave(A)
+  SlashCmdList["DARKMATTER"]("tipdebug")
+  rawset(GameTooltip, "GetRect", nil)
   DarkMatter.Print = savedPrint
   COMPARE = false
 

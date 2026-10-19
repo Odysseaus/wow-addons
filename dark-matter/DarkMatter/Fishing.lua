@@ -622,8 +622,8 @@ end
 
 -- Fill GameTooltip for one catch-type row entry. total = all logged catches (for share %).
 -- Returns "item" when the client item tooltip was used, "fallback" otherwise.
--- Tooltip placement (0.2.10; item anchor 0.2.12), 4px gap. "item" = the row's item anchor: an invisible frame
--- spanning the icon's left edge to the end of the name text, full row height (not the full-width row).
+-- Tooltip placement (0.2.10; item anchor 0.2.12/0.2.13), 4px visible gap. "item" = the row's item anchor: an
+-- invisible frame from the icon's top-left to the end of the name text, icon height (not the padded row).
 --  no compare:   main BOTTOMRIGHT -> item TOPLEFT (-4,+4); if it doesn't fit, BOTTOMLEFT -> item TOPRIGHT (+4,+4)
 --  compare shown: main BOTTOMLEFT -> item TOPRIGHT (+4,+4), ShoppingTooltip1/2 chained to its RIGHT (bottoms
 --                 aligned); if that set doesn't fit, mirror: main BOTTOMRIGHT -> item TOPLEFT, compares to its LEFT
@@ -632,6 +632,11 @@ end
 -- (it only calls SetAnchorType when the type is not ANCHOR_PRESERVE). No hooks; we just re-point frames.
 local TIP_GAP = 4
 NS.FISH_TIP_GAP = TIP_GAP
+-- The classic tooltip border art (backdrop insets) is drawn ~3 units inside the frame edge, so a frame placed
+-- 4 units from the item showed its visible border ~7 units away (measured on the 0.2.12 screenshot). SetPoint
+-- offsets are reduced by this inset so the *visible* edge is TIP_GAP from the item corner.
+local TIP_INSET = 3
+NS.FISH_TIP_INSET = TIP_INSET
 local function Num(f, m)
   local fn = f and f[m]
   if type(fn) ~= "function" then return nil end
@@ -769,6 +774,15 @@ local function TipDebugRecord(tt, owner, anchor, reason, side, vert, nc)
       row = DescribeFrame(owner, owner, anchor),
     },
   }
+  -- visible gap estimate: frame gap between the tooltip and the item anchor, plus the border inset
+  local ar, gr = rec.frames.anchor and rec.frames.anchor.rect, rec.frames.GameTooltip and rec.frames.GameTooltip.rect
+  if ar and gr and ar[1] and gr[1] then
+    local aL, aB, aR, aT = ar[1], ar[2], ar[1] + ar[3], ar[2] + ar[4]
+    local gL, gB, gR, gT = gr[1], gr[2], gr[1] + gr[3], gr[2] + gr[4]
+    local dx = side == "right" and (gL - aR) or (aL - gR)
+    local dy = vert == "up" and (gB - aT) or (aB - gT)
+    rec.delta = { frameX = R(dx), frameY = R(dy), visibleX = R(dx + TIP_INSET), visibleY = R(dy + TIP_INSET), inset = TIP_INSET }
+  end
   td.last = rec
   td.log = td.log or {}
   table.insert(td.log, rec)
@@ -780,6 +794,11 @@ local function TipDebugRecord(tt, owner, anchor, reason, side, vert, nc)
     local g, s1 = rec.frames.GameTooltip, rec.frames.ShoppingTooltip1
     NS.Print(string.format("tipdebug %s %s/%s: tip %s [%s] anchor %s cmp1 %s [%s]", reason, tostring(side), tostring(vert),
       g and g.points[1] or "-", rs(g), rs(rec.frames.anchor), (s1 and s1.shown) and (s1.points[1] or "-") or "hidden", rs(s1)))
+    local d = rec.delta
+    if d then
+      NS.Print(string.format("tipdebug anchor %s vs tip %s: frame gap x=%s y=%s, visible ~x=%s y=%s (inset %s, target 4)",
+        rs(rec.frames.anchor), rs(g), tostring(d.frameX), tostring(d.frameY), tostring(d.visibleX), tostring(d.visibleY), tostring(d.inset)))
+    end
   end
 end
 NS._FishingTipDebugRecord = TipDebugRecord
@@ -799,8 +818,10 @@ local function PlaceTooltip(tt, owner, reason)
   local anchor = AnchorOf(owner)
   local point, rel, x, y, side, vert = NS.FishingTooltipAnchor(tt, anchor, cw, ch)
   expected = {}
+  local px = x > 0 and (x - TIP_INSET) or (x + TIP_INSET)
+  local py = y > 0 and (y - TIP_INSET) or (y + TIP_INSET)
   tt:ClearAllPoints()
-  tt:SetPoint(point, anchor, rel, x, y)
+  tt:SetPoint(point, anchor, rel, px, py)
   expected[tt] = { point, anchor }
   local prev = tt
   for _, st in ipairs(compares) do

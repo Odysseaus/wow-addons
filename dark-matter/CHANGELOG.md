@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.13 (P2.13, tooltip corner on the item)
+- **Fix: tooltip "close but not there yet".** Measured on the 0.2.12 screenshot (window on the left, "103 Pound Mightfish" hovered; ~1.19 screen px per UI unit): the tooltip's visible bottom-left was 11 px (~9 units) right of the end of the name and 13 px (~11 units) above the icon's top edge, i.e. ~5 units right and ~7 units up from the target. It sat on the hovered row (not the row above); the gap was just too big. Two causes:
+  - The item anchor spanned the full row height, so its top was the row's padded top, 4 units above the icon.
+  - The classic tooltip border art is drawn ~3 units inside the frame edge (backdrop insets), so a frame placed 4 units away shows its border ~7 units away.
+- The item anchor now uses the icon's top and bottom edges (icon left to the name text end). SetPoint offsets are the 4-unit gap minus a 3-unit border inset (`NS.FISH_TIP_INSET`), so the visible border lands 4 units from the item corner. Mirror, below-row and compare-chain rules unchanged.
+- `/dm tipdebug` adds a chat line comparing the anchor rect with the tooltip rect: frame gap and estimated visible gap (frame gap + inset), saved as `delta` in `DarkMatterDB.tipdebug.last`.
+- Previewer: anchor on the icon top edge (the HTML tooltip has no inset); DM-25 checks it.
+
 ## 0.2.12 (P2.12, tooltips anchor to the item)
 - **Fix: tooltip far from the hovered item (default right-side layout).** Root cause: the placement anchored to the catch row frame, which spans the full width of the list (icon + name + count column, out to the scroll area's right edge). "Row TOPRIGHT" was therefore the far right of the list, hundreds of pixels from the item name. The mirrored layout looked right only because the row's TOPLEFT is next to the icon. The rules themselves were applied (in the 0.2.11 screenshot the main tooltip sits 4px above the row and the compare's bottom lines up with it); the anchor was wrong.
 - Each fish row now has an invisible **item anchor**: from the icon's left edge to the end of the name text (the name's actual string width, capped at its box), full row height. With compare: main BOTTOMLEFT at the item's TOPRIGHT (+4,+4), compares chained right, bottoms aligned; no compare: main BOTTOMRIGHT at the icon's TOPLEFT (-4,+4). Mirror and below-row rules unchanged.

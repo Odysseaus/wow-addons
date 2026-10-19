@@ -323,11 +323,12 @@ local function GetFishRow(i)
   r.sel = r:CreateTexture(nil, "BACKGROUND")
   r.sel:SetAllPoints(r)
   r.sel:Hide()
-  -- tooltip anchor = the item (icon + name text), full row height; width set from the name's string width
+  -- tooltip anchor = the item: icon top/bottom edges (not the row's padded top), icon left to the end of the
+  -- name text; width set from the name's string width
   r.itemGap = 8
   r.itemAnchor = CreateFrame("Frame", nil, r)
-  r.itemAnchor:SetPoint("TOPLEFT", r, "TOPLEFT", 8, 0)
-  r.itemAnchor:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 8, 0)
+  r.itemAnchor:SetPoint("TOPLEFT", r.icon, "TOPLEFT", 0, 0)
+  r.itemAnchor:SetPoint("BOTTOMLEFT", r.icon, "BOTTOMLEFT", 0, 0)
   r.itemAnchor:SetWidth(28)
   r:SetScript("OnClick", function(self)
     selectedFish = self.catchName
