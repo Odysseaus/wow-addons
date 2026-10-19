@@ -677,6 +677,38 @@ do
   for k, r in pairs(a.rects) do
     check(r[1] >= 0 and r[2] >= 0 and r[1] + r[3] <= a.width and r[2] + r[4] <= a.height and r[3] > 0 and r[4] > 0, "atlas rect inside the atlas: " .. k)
   end
+  -- inactive pill middle must be flush under the bezel (0.1.2): no fully-transparent row in the fill band
+  do
+    local r = a.rects.ptab_i_m
+    check(r, "ptab_i_m rect present")
+    local fh = io.open(arg[1] .. "/Media/wow-atlas.tga", "rb")
+    local hdr = fh:read(18)
+    local aw = hdr:byte(13) + hdr:byte(14) * 256
+    local ah = hdr:byte(15) + hdr:byte(16) * 256
+    local data = fh:read("*a"); fh:close()
+    -- TGA bottom-left, 32-bit BGRA. Convert atlas-y (top-left) to file row.
+    local function alpha_at(px, py)
+      local file_y = ah - 1 - py
+      local off = (file_y * aw + px) * 4 + 4  -- 1-based: +4 for A after B,G,R
+      return data:byte(off)
+    end
+    local gaps = 0
+    for row = r[2], r[2] + r[4] - 1 do
+      local opaque = 0
+      for col = r[1], r[1] + r[3] - 1 do
+        if alpha_at(col, row) > 10 then opaque = opaque + 1 end
+      end
+      if opaque == 0 then gaps = gaps + 1 end
+    end
+    check(gaps == 0, "ptab_i_m has no fully-transparent rows (inactive pill fill flush): gaps=" .. gaps)
+    -- mid-column of the upper third (below the 2px metal rim) must stay opaque: near-black holes also read as a gap
+    local mid = r[1] + math.floor(r[3] / 2)
+    local hole = 0
+    for row = r[2] + 2, r[2] + math.floor(r[4] / 3) do
+      if alpha_at(mid, row) < 80 then hole = hole + 1 end
+    end
+    check(hole == 0, "ptab_i_m upper fill is opaque under the bezel (no near-empty band): holes=" .. hole)
+  end
 
   local function audit(tag)
     check(#TCBAD == 0, tag .. ": every SetTexCoord within 0..1 with left<right and top<bottom " .. tostring(TCBAD[1]))

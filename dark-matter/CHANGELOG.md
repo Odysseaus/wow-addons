@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.2 (fix: inactive pill fill gap)
+- Fix: Journals section pills (Adventure Guide, Achievements) showed a thin horizontal gap of slate background between the metal bezel and the dark burgundy fill. The active (Fishing) pill was fine. Cause: the generated inactive middle piece (`ptab-i-m.webp`) had a transparent band under the top bezel (source rows 5-13 of 64); left/right caps had matching holes. Active pieces are flush. The inactive art is repaired by filling those gaps from the active piece's fill topology with the inactive burgundy; `tools/make_wow_textures.py` applies the same repair when packing the atlas.
+
 ## 0.1.1 (fix: window did not assemble)
 - Fix: opening 0.1.0 showed one huge stretched frame corner, a flat slate area and no tabs or content. Cause: in `UI.NineSlice` the corner size was stored in a field named `t`, and the top-edge texture used the same key, so it overwrote the number. `SetSize(<texture>, <texture>)` then raised a Lua error in the client; the corners and edges never got a size and the window build aborted before the rail, tabs, body and footer were created. The size now lives in `n.size`.
 - The window build now runs under `pcall`: if anything ever errors while building, the half-built window is hidden and discarded, and the error is printed to the chat frame (`Dark Matter: the window could not be built: ...`) instead of leaving a broken window.

@@ -50,6 +50,54 @@ def glyphs():
     return out
 
 
+def repair_ptab_inactive(inactive, active):
+    """The generated inactive pill art (ptab-i-*) had a transparent / near-black band
+    under the metal bezel (source rows ~2-13 of 64 on the middle piece). At the 32px
+    display height that reads as a thin gap of slate between the bezel and the burgundy
+    fill. Active pills are flush. Rebuild by keeping the metal rim and painting burgundy
+    wherever the active piece has fill, and by replacing near-black "fill" with burgundy.
+    """
+    assert inactive.size == active.size
+    w, h = inactive.size
+    rs = gs = bs = n = 0
+    for y in range(h // 2, (3 * h) // 4):
+        for x in range(w):
+            r, g, b, a = inactive.getpixel((x, y))
+            if a > 220 and r > g + 20 and r > b + 20 and r > 40:
+                rs += r; gs += g; bs += b; n += 1
+    burg = (rs // n, gs // n, bs // n) if n else (90, 14, 17)
+
+    def metal(r, g, b, a):
+        return a > 30 and abs(r - g) < 50 and abs(r - b) < 50 and abs(g - b) < 50 and (r + g + b) / 3 > 50
+
+    def redish(r, g, b, a):
+        return a > 20 and r > g + 10 and r > b + 10
+
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ip, ap, op = inactive.load(), active.load(), out.load()
+    for y in range(h):
+        for x in range(w):
+            ir, ig, ib, ia = ip[x, y]
+            ar, ag, ab, aa = ap[x, y]
+            if metal(ir, ig, ib, ia):
+                op[x, y] = (ir, ig, ib, ia)
+            elif metal(ar, ag, ab, aa) and ia < 40:
+                op[x, y] = (max(0, ar - 25), max(0, ag - 25), max(0, ab - 25), aa)
+            elif y < h // 3 and aa > 20 and redish(ar, ag, ab, aa):
+                op[x, y] = (burg[0], burg[1], burg[2], max(aa, 220) if aa > 80 else aa)
+            elif ia > 20 and redish(ir, ig, ib, ia):
+                if ir < 40:
+                    op[x, y] = (burg[0], burg[1], burg[2], max(ia, 230))
+                else:
+                    op[x, y] = (ir, ig, ib, ia)
+            elif aa > 20 and redish(ar, ag, ab, aa) and ia < 40:
+                op[x, y] = (burg[0], burg[1], burg[2], aa)
+            else:
+                op[x, y] = (ir, ig, ib, ia)
+    return out
+
+
+
 def pieces():
     P = {}
     W, H = 1760, 1360
@@ -68,7 +116,11 @@ def pieces():
     for n, f in [("title", "title"), ("btn_red", "btn-red"), ("btn_grey", "btn-grey"), ("btn_field", "btn-field"),
                  ("badge", "badge"), ("rtab_i", "rtab-i"), ("rtab_a", "rtab-a"), ("ptab_i", "ptab-i"), ("ptab_a", "ptab-a")]:
         for s in "lmr":
-            P["%s_%s" % (n, s)] = load("%s-%s.webp" % (f, s))
+            im = load("%s-%s.webp" % (f, s))
+            P["%s_%s" % (n, s)] = im
+    # Repair inactive pills after both ptab_i and ptab_a are loaded (gap under the bezel).
+    for s in "lmr":
+        P["ptab_i_%s" % s] = repair_ptab_inactive(P["ptab_i_%s" % s], P["ptab_a_%s" % s])
     for s in "tmb":
         P["sb_thumb_" + s] = load("sb-thumb-%s.webp" % s)
     # pane border image: slice 34 of 132 (corners 34x34, edges are the 64px between)

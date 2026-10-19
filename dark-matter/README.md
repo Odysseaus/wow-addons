@@ -1,6 +1,6 @@
 # Dark Matter (P1 main window)
 
-**Version 0.1.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.1.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -50,7 +50,7 @@ Only the previewer's generated raster art is used. `tools/make_wow_textures.py` 
 | `wow-slate.tga` | 512x256 | window and rail background (stretched) |
 | `dm-icon.tga` | existing | minimap icon |
 
-Regenerate with `python tools/make_wow_textures.py [art dir] [previewer themes.js] [addon dir]`.
+Inactive pill pieces are repaired during packing (the generated `ptab-i-*` art had a transparent band under the bezel). Regenerate with `python tools/make_wow_textures.py [art dir] [previewer themes.js] [addon dir]`.
 
 ## Running the probe (unchanged since 0.0.4)
 
