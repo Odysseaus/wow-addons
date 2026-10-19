@@ -1452,6 +1452,10 @@ if MODE ~= "minimal" then
   p, r, x, y = A(tip, fr(500, 850), 300, 200)
   check(p == "TOPLEFT" and y == -4, "(c) tall compare decides the top flip")
   check(A(tip, {}) == "BOTTOMRIGHT" and A(tip, {}, 300, 100) == "BOTTOMLEFT", "no geometry: defaults per rule")
+  p, r, x, y, sd = A(tip, fr(400, 500, 200, 100, 1300), 900, 150)
+  check(p == "BOTTOMRIGHT" and sd == "left", "(b) neither side fits: side with more room (left)")
+  p, r, x, y, sd = A(tip, fr(300, 500, 200, 100, 1100), 900, 150)
+  check(p == "BOTTOMLEFT" and sd == "right", "(b) neither side fits: side with more room (right)")
 
   -- compare chain applied to ShoppingTooltip1/2 (never moves the main tooltip onto the cursor)
   local function rec(name, w, h)

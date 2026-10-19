@@ -4,6 +4,7 @@
 - Gap between row and tooltip is now **4px** everywhere.
 - **No compare tooltip:** main tooltip BOTTOMRIGHT at the row's TOPLEFT (-4,+4); if it doesn't fit, BOTTOMLEFT at the row's TOPRIGHT (+4,+4).
 - **Compare tooltip shown** (shift-compare or `alwaysCompareItems`): main tooltip BOTTOMLEFT at the row's TOPRIGHT (+4,+4), `ShoppingTooltip1` then `ShoppingTooltip2` chained to its right, bottoms aligned. If that set doesn't fit, it is mirrored: main BOTTOMRIGHT at the row's TOPLEFT (-4,+4), compares chained to the left.
+- If neither side has room for the main + compare set (wide rows on small screens), the side with more free space is used; the client clamps tooltips to the screen.
 - Near the top of the screen everything goes below the row (tops aligned, y -4); the taller of main/compare decides.
 - Fix: the item tooltip no longer jumps onto the cursor when a compare tooltip appears. Cause: this client's `GameTooltip_AnchorComparisonTooltips` slides the main tooltip with `SetAnchorType(anchorType, dx, 0)` unless the anchor type is `ANCHOR_PRESERVE`, which threw away our `ANCHOR_NONE` points. We now own the tooltip with `ANCHOR_PRESERVE`, then place the main and compare tooltips ourselves after `Show()` and again on the next frame.
 - Shift pressed/released while hovering: our own `MODIFIER_STATE_CHANGED` frame rebuilds the hovered row's tooltip (the client decides compare in `OnTooltipSetItem`; GameTooltip has no modifier handler). Item-load refresh uses the same path.

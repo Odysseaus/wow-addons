@@ -610,11 +610,14 @@ function NS.FishingTooltipAnchor(tt, owner, cw, ch)
     if not (right and w and screenW) then return true end
     return right * os + g + (w + cw) * ts <= screenW * us
   end
+  -- free space on each side of the row (screen units); used when neither set fits
+  local function roomLeft() return left and (left * os) or 0 end
+  local function roomRight() return (right and screenW) and (screenW * us - right * os) or 0 end
   local useRight
   if hasCompare then
-    useRight = fitsRightSet() or not fitsLeftSet()
+    useRight = fitsRightSet() or (not fitsLeftSet() and roomRight() >= roomLeft())
   else
-    useRight = not fitsLeftSet() and fitsRightSet()
+    useRight = not fitsLeftSet() and (fitsRightSet() or roomRight() > roomLeft())
   end
   local fitsTop = true
   local hh = math.max(h or 0, ch or 0)
