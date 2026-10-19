@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: Dark Matter
+## Notes: Dark Matter 0.0.1 (P0 scaffold): minimap button, placeholder window, /dm probe. No gameplay features yet.
+## Author: Odysseaus
+## Version: 0.0.1
+## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
+## SavedVariables: DarkMatterDB
+
+Core.lua
+Probe.lua
+Window.lua
+Minimap.lua
+Options.lua
+Slash.lua

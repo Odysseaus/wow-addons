@@ -1,0 +1,61 @@
+-- Dark Matter 0.0.1 (P0 scaffold)
+-- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
+-- no secure frames, no hooks on Blizzard code, nothing that can taint.
+local ADDON, NS = ...
+DarkMatter = NS
+
+NS.name = ADDON
+NS.version = "0.0.1"
+NS.db = nil
+NS.sv = { existedAtLoad = false, previousSession = nil }
+
+local DEFAULTS = {
+  window = { point = "CENTER", relPoint = "CENTER", x = 0, y = 0 },
+  minimap = { angle = 215, hide = false },
+  stockIcon = false,
+  loadCount = 0,
+}
+
+function NS.Print(msg)
+  print("|cff9d7bffDark Matter|r " .. tostring(msg))
+end
+
+local function CopyDefaults(dst, src)
+  for k, v in pairs(src) do
+    if type(v) == "table" then
+      if type(dst[k]) ~= "table" then dst[k] = {} end
+      CopyDefaults(dst[k], v)
+    elseif dst[k] == nil then
+      dst[k] = v
+    end
+  end
+end
+
+local function InitDB()
+  -- Blizzard's beta has been seen not to load SavedVariables at all. Remember
+  -- what we found so /dm probe can say whether they came back from disk.
+  NS.sv.existedAtLoad = type(DarkMatterDB) == "table"
+  if not NS.sv.existedAtLoad then DarkMatterDB = {} end
+  NS.db = DarkMatterDB
+  NS.sv.previousSession = NS.db.lastSession
+  NS.sv.previousLoadCount = NS.db.loadCount
+  CopyDefaults(NS.db, DEFAULTS)
+  NS.db.loadCount = (tonumber(NS.db.loadCount) or 0) + 1
+  NS.db.lastSession = date("%Y-%m-%d %H:%M:%S")
+  NS.db.addonVersion = NS.version
+end
+
+local ev = CreateFrame("Frame")
+ev:RegisterEvent("ADDON_LOADED")
+ev:RegisterEvent("PLAYER_LOGIN")
+ev:SetScript("OnEvent", function(_, event, arg1)
+  if event == "ADDON_LOADED" and arg1 == ADDON then
+    InitDB()
+    NS.initialized = true
+  elseif event == "PLAYER_LOGIN" then
+    if not NS.initialized then InitDB() NS.initialized = true end
+    if NS.CreateMinimapButton then NS.CreateMinimapButton() end
+    if NS.RegisterOptions then NS.RegisterOptions() end
+    NS.Print("v" .. NS.version .. " loaded. /dm toggles the window, /dm probe checks this client.")
+  end
+end)
