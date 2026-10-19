@@ -12,7 +12,7 @@ NS.RegisterTheme({
     slate = "Interface\\AddOns\\DarkMatter\\Media\\wow-slate",
   },
   colors = {
-    ink = "#1a0e04", inkSoft = "#241406", inkHead = "#2b1608", inkFaint = "#6a5434",
+    ink = "#2b1d0e", inkSoft = "#4a3820", inkHead = "#2b1608", inkFaint = "#6a5434",
     gold = "#f0cf4a", goldOn = "#fff0b0", greyBtn = "#7c7a72",
     title = "#e9e6dc", listInk = "#e4e0d2", listSoft = "#a8a496", listHead = "#b9b6ab", liOn = "#ffffff",
     good = "#4cc43a", mid = "#ecd83c", low = "#e8442e", row = "#ecd83c",

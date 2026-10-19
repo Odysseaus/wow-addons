@@ -92,6 +92,21 @@ function UI.Panel(parent, w, h)
   return f
 end
 
+-- Light warm panel on parchment (previewer .dm-panel): translucent wash + pane border.
+-- Use for Fishing skill strip so ink colours stay readable (not slate-grey on slate).
+function UI.PaperPanel(parent, w, h)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetSize(w, h)
+  local bg = f:CreateTexture(nil, "BACKGROUND", nil, 0)
+  bg:SetAllPoints(f)
+  NS.OnSkin(function()
+    -- approximates --dm-panel-bg warm wash over parchment
+    bg:SetColorTexture(0.95, 0.90, 0.65, 0.28)
+  end)
+  f.border = UI.NineSlice(f, "pane", NS.theme.m.listBorder, "BORDER", 1)
+  return f
+end
+
 -- Parchment page with the pane border.
 function UI.Page(parent, w, h)
   local f = CreateFrame("Frame", nil, parent)
@@ -322,42 +337,59 @@ function UI.Scroll(parent, w, h)
 end
 
 
--- Horizontal progress bar (slate track + coloured fill + centred label). Stock textures only.
-function UI.Bar(parent, w, h)
+-- Horizontal progress bar matching previewer .dm-bar (dark track, gold/green fill, gloss, cream label).
+-- Stock ColorTexture only; Friz via NS.SetFont. Optional thin=true for share rows.
+function UI.Bar(parent, w, h, thin)
   local f = CreateFrame("Frame", nil, parent)
+  h = h or (thin and 12 or 20)
   f:SetSize(w, h)
-  local track = f:CreateTexture(nil, "BACKGROUND")
-  track:SetAllPoints(f)
-  local fill = f:CreateTexture(nil, "ARTWORK")
-  fill:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
-  fill:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, 1)
+  -- border rim (~ --dm-bar-border #4b4a44)
+  local rim = f:CreateTexture(nil, "BACKGROUND", nil, 0)
+  rim:SetAllPoints(f)
+  local track = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+  track:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+  track:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+  local fill = f:CreateTexture(nil, "ARTWORK", nil, 0)
+  fill:SetPoint("TOPLEFT", track, "TOPLEFT", 0, 0)
+  fill:SetPoint("BOTTOMLEFT", track, "BOTTOMLEFT", 0, 0)
   fill:SetWidth(1)
-  local gloss = f:CreateTexture(nil, "OVERLAY")
-  gloss:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -1)
-  gloss:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -1)
-  gloss:SetHeight(math.max(2, math.floor(h / 2)))
-  gloss:SetColorTexture(1, 1, 1, 0.12)
+  -- darker lower band to suggest the mockup gradient
+  local fillDeep = f:CreateTexture(nil, "ARTWORK", nil, 1)
+  fillDeep:SetPoint("BOTTOMLEFT", fill, "BOTTOMLEFT", 0, 0)
+  fillDeep:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 0, 0)
+  fillDeep:SetHeight(math.max(2, math.floor(h * 0.45)))
+  local gloss = f:CreateTexture(nil, "OVERLAY", nil, 0)
+  gloss:SetPoint("TOPLEFT", track, "TOPLEFT", 1, 0)
+  gloss:SetPoint("TOPRIGHT", track, "TOPRIGHT", -1, 0)
+  gloss:SetHeight(math.max(2, math.floor(h * 0.45)))
   local label = f:CreateFontString(nil, "OVERLAY")
-  NS.SetFont(label, 11, "")
+  NS.SetFont(label, thin and 9 or 11, "")
   label:SetPoint("CENTER", f, "CENTER", 0, 0)
   label:SetShadowOffset(1, -1)
-  label:SetShadowColor(0, 0, 0, 0.85)
-  f.fill, f.label = fill, label
+  label:SetShadowColor(0.16, 0.08, 0.02, 0.9)
+  f.fill, f.fillDeep, f.label, f._thin = fill, fillDeep, label, thin and true or false
   function f:SetProgress(cur, maxv, text, colorKey)
     maxv = maxv or 1
     if maxv < 1 then maxv = 1 end
     cur = cur or 0
     if cur < 0 then cur = 0 elseif cur > maxv then cur = maxv end
-    local inner = math.max(1, self:GetWidth() - 2)
-    fill:SetWidth(math.max(1, math.floor(inner * cur / maxv + 0.5)))
+    local inner = math.max(1, track:GetWidth())
+    if inner < 2 then inner = math.max(1, self:GetWidth() - 2) end
+    local fw = math.max(1, math.floor(inner * cur / maxv + 0.5))
+    fill:SetWidth(fw)
     label:SetText(text or (tostring(cur) .. " / " .. tostring(maxv)))
-    local r, g, b = NS.Color(colorKey or "gold")
+    local done = cur >= maxv and maxv > 0
+    local key = colorKey or (done and "good" or "gold")
+    local r, g, b = NS.Color(key)
     fill:SetColorTexture(r, g, b, 1)
+    fillDeep:SetColorTexture(r * 0.55, g * 0.55, b * 0.45, 0.85)
   end
   NS.OnSkin(function()
-    track:SetColorTexture(0.06, 0.06, 0.07, 0.95)
-    local r, g, b = NS.Color("goldOn")
-    label:SetTextColor(r, g, b)
+    rim:SetColorTexture(0.294, 0.290, 0.267, 1)       -- #4b4a44
+    track:SetColorTexture(0.02, 0.02, 0.016, 0.98)    -- #050504
+    gloss:SetColorTexture(1, 1, 1, 0.35)
+    -- cream label (~ --dm-bar-ink #fff6d8)
+    label:SetTextColor(1.0, 0.965, 0.847, 1)
   end)
   return f
 end

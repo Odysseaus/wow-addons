@@ -15,9 +15,9 @@ local tab, pills, badgeText
 local fishPage, stubPage, stub
 local skillBar, skillTitle, skillSub
 local viewWaters, watersRoot, statsRoot, statsScroll
-local zoneScroll, detailTitle, detailMeta, detailStatus, detailBody, emptyFish
+local zoneScroll, detailPanel, detailTitle, detailMeta, detailStatus, detailBody, catchHeader, catchRows, emptyFish
 local fvWaters, fvStats
-local rowPool, selectedZone, fishRank, fishMax, fishName = {}, nil, nil, nil, nil
+local rowPool, selectedZone, fishRank, fishMax = {}, nil, nil, nil
 local ev, pending = nil, false
 local ROW_H
 local statCards = {}
@@ -38,7 +38,7 @@ local function BestZoneIndex(rank)
 end
 
 local function ReadSkill()
-  fishName, fishRank, fishMax = NS.ReadFishingSkill()
+  fishRank, fishMax = select(2, NS.ReadFishingSkill())
 end
 
 ---------------------------------------------------------------------------
@@ -71,23 +71,42 @@ local function GetRow(i)
   return r
 end
 
+local function EnsureCatchRow(i, parent)
+  catchRows = catchRows or {}
+  local r = catchRows[i]
+  if r then return r end
+  r = CreateFrame("Frame", nil, parent)
+  r:SetHeight(22)
+  r.name = UI.Text(r, "OVERLAY", 13, "listInk", "LEFT")
+  r.name:SetPoint("LEFT", r, "LEFT", 0, 0)
+  r.name:SetWidth(150)
+  r.count = UI.Text(r, "OVERLAY", 12, "listInk", "RIGHT")
+  r.count:SetPoint("LEFT", r.name, "RIGHT", 6, 0)
+  r.count:SetWidth(36)
+  r.bar = UI.Bar(r, 160, 12, true)
+  r.bar:SetPoint("LEFT", r.count, "RIGHT", 8, 0)
+  r.bar:SetPoint("RIGHT", r, "RIGHT", 0, 0)
+  catchRows[i] = r
+  return r
+end
+
 local function ShowDetail(z)
   if not detailTitle then return end
+  catchRows = catchRows or {}
   if not z then
     detailTitle:SetText("No waters listed")
     detailMeta:SetText("")
     detailStatus:SetText("")
     detailBody:SetText("Fishing waters will show here.")
+    if catchHeader then catchHeader:Hide() end
+    for _, r in ipairs(catchRows) do r:Hide() end
     return
   end
   local st, col = ZoneStatus(z, fishRank)
   local catches, items = NS.FishingZoneStats(z.name)
   detailTitle:SetText(z.name)
-  detailMeta:SetText(string.format("Levels %s  ·  %s", z.levels, z.continent))
+  detailMeta:SetText(string.format("Level %s · %d catches", z.levels, catches))
   local status = NS.ColorCode(col) .. st .. "|r"
-  if catches > 0 then
-    status = status .. "  ·  " .. catches .. " catches logged"
-  end
   detailStatus:SetText(status)
 
   local lines = {
@@ -102,18 +121,39 @@ local function ShowDetail(z)
   else
     lines[#lines + 1] = "Learn Fishing to see which waters you can use."
   end
-  lines[#lines + 1] = ""
-  if catches == 0 then
-    lines[#lines + 1] = "No catches logged here yet. Fish in this zone and Dark Matter will record them."
-  else
-    lines[#lines + 1] = "Catches in this zone (share of zone total):"
-    for _, it in ipairs(items) do
-      local pct = catches > 0 and (100 * it.count / catches) or 0
-      local tag = it.junk and "  (junk)" or ""
-      lines[#lines + 1] = string.format("  %s — %d (%.0f%%)%s", it.name, it.count, pct, tag)
-    end
-  end
   detailBody:SetText(table.concat(lines, "\n"))
+
+  local parent = detailPanel
+  if not parent then return end
+  if not catchHeader then
+    catchHeader = UI.Text(parent, "OVERLAY", 11, "listHead", "LEFT")
+    catchHeader:SetPoint("TOPLEFT", detailBody, "BOTTOMLEFT", 0, -12)
+  end
+  if catches == 0 then
+    catchHeader:SetText("No catches logged here yet.")
+    catchHeader:Show()
+    for _, r in ipairs(catchRows) do r:Hide() end
+  else
+    catchHeader:SetText("Catch · Count · % of zone catches")
+    catchHeader:Show()
+    local y = 0
+    for i, it in ipairs(items) do
+      local r = EnsureCatchRow(i, parent)
+      r:ClearAllPoints()
+      r:SetPoint("TOPLEFT", catchHeader, "BOTTOMLEFT", 0, -6 - y)
+      r:SetPoint("RIGHT", parent, "RIGHT", -14, 0)
+      local pct = catches > 0 and (100 * it.count / catches) or 0
+      local label = it.name
+      if it.junk then label = label .. " (junk)" end
+      r.name:SetText(label)
+      r.name:SetTextColor(NS.Color(it.junk and "listSoft" or "listInk"))
+      r.count:SetText(tostring(it.count))
+      r.bar:SetProgress(it.count, catches, string.format("%.0f%%", pct), it.junk and "low" or "gold")
+      r:Show()
+      y = y + 24
+    end
+    for i = #items + 1, #catchRows do catchRows[i]:Hide() end
+  end
 end
 
 ---------------------------------------------------------------------------
@@ -127,11 +167,11 @@ local function EnsureStatCard(i)
   c:SetSize(statsScroll.w - 24, 72)
   UI.Slate(c, "listShade", "BACKGROUND", 0)
   c.border = UI.NineSlice(c, "pane", 5, "BORDER", 1)
-  c.head = UI.Text(c, "OVERLAY", 12, "listHead", "LEFT")
+  c.head = UI.Text(c, "OVERLAY", 11, "listHead", "LEFT")
   c.head:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -8)
-  c.big = UI.Text(c, "OVERLAY", 22, "gold", "LEFT")
+  c.big = UI.Text(c, "OVERLAY", 18, "goldOn", "LEFT")
   c.big:SetPoint("TOPLEFT", c.head, "BOTTOMLEFT", 0, -4)
-  c.sub = UI.Text(c, "OVERLAY", 11, "listSoft", "LEFT")
+  c.sub = UI.Text(c, "OVERLAY", 11, "listInk", "LEFT")
   c.sub:SetPoint("TOPLEFT", c.big, "BOTTOMLEFT", 0, -2)
   c.sub:SetPoint("RIGHT", c, "RIGHT", -12, 0)
   statCards[i] = c
@@ -223,13 +263,17 @@ local function RefreshFish()
   ReadSkill()
   if skillBar then
     if fishRank and fishMax then
-      skillTitle:SetText(fishName or "Fishing skill")
+      skillTitle:SetText("Fishing skill")
+      skillTitle:SetTextColor(NS.Color("inkHead"))
       skillBar:SetProgress(fishRank, fishMax, fishRank .. " / " .. fishMax, "gold")
-      skillSub:SetText("Live skill · catches saved per character from first cast.")
+      skillSub:SetText("Live skill · per character")
+      skillSub:SetTextColor(NS.Color("inkSoft"))
     else
       skillTitle:SetText("Fishing skill")
+      skillTitle:SetTextColor(NS.Color("inkHead"))
       skillBar:SetProgress(0, 1, "Not learned", "listSoft")
-      skillSub:SetText("No fishing profession on this character.")
+      skillSub:SetText("Fishing not learned")
+      skillSub:SetTextColor(NS.Color("inkSoft"))
     end
     skillBar:Show()
   end
@@ -323,22 +367,29 @@ local function BuildFish(page)
   viewWaters = CreateFrame("Frame", nil, fishPage)
   viewWaters:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -pad)
   viewWaters:SetSize(innerW, 28)
-  fvWaters = UI.Pill(viewWaters, "Waters")
+  fvWaters = UI.Pill(viewWaters, "Catches by zone")
   fvWaters:SetPoint("TOPLEFT", viewWaters, "TOPLEFT", 0, 0)
   fvWaters:SetScript("OnClick", function() SetFishView("waters") RefreshFish() end)
   fvStats = UI.Pill(viewWaters, "Statistics")
   fvStats:SetPoint("TOPLEFT", fvWaters, "TOPRIGHT", m.pillGap, 0)
   fvStats:SetScript("OnClick", function() SetFishView("stats") RefreshFish() end)
 
-  local skillH = 52
-  local skillPanel = UI.Panel(fishPage, innerW, skillH)
+  -- Previewer .dm-skill: one horizontal row on a light panel (title | bar | sub).
+  -- Old 52px slate stack clipped the grey sub under the bar (unreadable).
+  local skillH = 40
+  local skillPanel = UI.PaperPanel(fishPage, innerW, skillH)
   skillPanel:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -(pad + 32))
-  skillTitle = UI.Text(skillPanel, "OVERLAY", 14, "listHead", "LEFT")
-  skillTitle:SetPoint("TOPLEFT", skillPanel, "TOPLEFT", 12, -8)
-  skillBar = UI.Bar(skillPanel, innerW - 24, 18)
-  skillBar:SetPoint("TOPLEFT", skillPanel, "TOPLEFT", 12, -26)
-  skillSub = UI.Text(skillPanel, "OVERLAY", 10, "listSoft", "LEFT")
-  skillSub:SetPoint("TOPLEFT", skillBar, "BOTTOMLEFT", 0, -2)
+  skillTitle = UI.Text(skillPanel, "OVERLAY", 14, "inkHead", "LEFT")
+  skillTitle:SetPoint("LEFT", skillPanel, "LEFT", 12, 0)
+  skillTitle:SetText("Fishing skill")
+  skillTitle:SetWidth(100)
+  skillSub = UI.Text(skillPanel, "OVERLAY", 12, "inkSoft", "RIGHT")
+  skillSub:SetPoint("RIGHT", skillPanel, "RIGHT", -12, 0)
+  skillSub:SetWidth(150)
+  skillBar = UI.Bar(skillPanel, 200, 20)
+  skillBar:SetPoint("LEFT", skillTitle, "RIGHT", 12, 0)
+  skillBar:SetPoint("RIGHT", skillSub, "LEFT", -12, 0)
+  skillBar:SetHeight(20)
 
   local splitY = pad + 32 + skillH + 10
   local splitH = m.sectionPageH - splitY - pad
@@ -353,7 +404,7 @@ local function BuildFish(page)
   left:SetPoint("TOPLEFT", watersRoot, "TOPLEFT", 0, 0)
   local lh = UI.Text(left, "OVERLAY", 12, "listHead", "LEFT")
   lh:SetPoint("TOPLEFT", left, "TOPLEFT", 10, -8)
-  lh:SetText("Waters")
+  lh:SetText("Zones")
   zoneScroll = UI.Scroll(left, leftW - 8, splitH - 28)
   zoneScroll.frame:SetPoint("TOPLEFT", left, "TOPLEFT", 4, -26)
   emptyFish = UI.Text(left, "OVERLAY", 12, "listSoft", "CENTER")
@@ -363,6 +414,7 @@ local function BuildFish(page)
 
   local right = UI.Panel(watersRoot, rightW, splitH)
   right:SetPoint("TOPLEFT", watersRoot, "TOPLEFT", leftW + 10, 0)
+  detailPanel = right
   detailTitle = UI.Text(right, "OVERLAY", 18, "gold", "LEFT")
   detailTitle:SetPoint("TOPLEFT", right, "TOPLEFT", 14, -12)
   detailTitle:SetPoint("TOPRIGHT", right, "TOPRIGHT", -14, -12)
@@ -372,7 +424,9 @@ local function BuildFish(page)
   detailStatus:SetPoint("TOPLEFT", detailMeta, "BOTTOMLEFT", 0, -6)
   detailBody = UI.Text(right, "OVERLAY", 12, "listInk", "LEFT")
   detailBody:SetPoint("TOPLEFT", detailStatus, "BOTTOMLEFT", 0, -10)
-  detailBody:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", -14, 14)
+  detailBody:SetPoint("RIGHT", right, "RIGHT", -14, 0)
+  detailBody:SetJustifyV("TOP")
+  -- catch share rows render below detailBody (see ShowDetail); do not stretch body to panel bottom
 
   statsRoot = CreateFrame("Frame", nil, fishPage)
   statsRoot:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -splitY)

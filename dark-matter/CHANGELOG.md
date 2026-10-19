@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 (P2.2, Fishing UI parity + lure names)
+- Journals → Fishing skill strip matches the addon-previewer mockup: horizontal title | bar | subtitle on a light parchment panel (Friz Quadrata). Fixes the clipped unreadable grey line under the skill bar (was slate-grey `listSoft` text overflowing a 52px dark panel).
+- Progress bars restyled (rim, dark track, gold/green fill, gloss, cream label); thin share bars for per-zone catch %. View pills renamed to "Catches by zone" / "Statistics"; zone list header "Zones".
+- Favorite lure (stat #9) now shows the lure **item name** (e.g. Shiny Bauble) via enchant→item map + `C_Item.GetItemInfo` / `GetItemInfo`, not `Lure #<id>`. Legacy saved keys are migrated on read.
+- Waters list: all six Classic main cities (Ironforge, Stormwind City, Orgrimmar, Undercity, Thunder Bluff, Darnassus) with minSkill 1 and fishing-subzone aliases so `GetRealZoneText` / subzone attribution counts under the city row (not Unknown).
+- Catch tracking and taint safety unchanged. Adventure Guide still stub.
+
 ## 0.2.1 (P2.1, Fishing catch tracking)
 - Per-character fishing stats (`DarkMatterCharDB`), starting at zero on first use: zone catch shares, casts/catches, catch rate, junk vs good, rare first-catches, time fishing, best junk-free streak, gold value (when vendor price is known), got-away casts, skill history, favorite zone and lure.
 - Tracker runs on a private frame from login (casts via fishing channel, loot via `IsFishingLoot` + loot slots, got-away via UI error / timeout, skill via `GetProfessionInfo`). Zone is inferred from `GetRealZoneText` / subzone against the waters table, else last-known / "Unknown".

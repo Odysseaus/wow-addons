@@ -80,7 +80,8 @@ if MODE~="minimal" then
   function GetNumLootItems() return #LOOT_SLOTS end
   function GetLootSlotInfo(i) local s=LOOT_SLOTS[i]; if not s then return end return s.tex,s.name,s.qty,s.quality,false end
   function GetLootSlotLink(i) local s=LOOT_SLOTS[i]; return s and s.link end
-  function GetWeaponEnchantInfo() return false end
+  FISH_LURE_ON=false
+  function GetWeaponEnchantInfo() if FISH_LURE_ON then return true,600000,0,263,false end return false end
   function GetRealZoneText() return ZONE_TEXT or "Elwynn Forest" end
   function GetZoneText() return ZONE_TEXT or "Elwynn Forest" end
   function GetSubZoneText() return SUBZONE_TEXT or "" end
@@ -88,6 +89,7 @@ if MODE~="minimal" then
   function GetTime() return TIME_NOW or 1000 end
   function GetMoneyString(c) return tostring(c).."c" end
   if not C_Item then C_Item={} end
+  function GetItemInfo(id) if id==6529 then return "Shiny Bauble" end end
   function C_Item.GetItemInfo(id) return "Item",nil,1,1,0,"Misc","Junk",20,"",nil,50 end
   function GetTotalAchievementPoints() return 15 end
   function GetCategoryList() return {92,96} end
@@ -131,6 +133,10 @@ if MODE~="minimal" then
     GetItemInfoInstant=function(id) if id==99999999 then return nil end return id,"Weapon","Sword","INVTYPE_WEAPON",134400,2,7 end,
     GetItemInfo=function(id)
       if id==99999999 then return end
+      if id==6529 then return "Shiny Bauble","item:6529",1,1,0,"Consumable","Other",20,"",nil,50 end
+      if id==6530 then return "Nightcrawlers","item:6530",1,1,0,"Consumable","Other",20,"",nil,12 end
+      if id==6532 then return "Bright Baubles","item:6532",1,1,0,"Consumable","Other",20,"",nil,250 end
+      if id==6533 then return "Aquadynamic Fish Attractor","item:6533",1,1,0,"Consumable","Other",20,"",nil,250 end
       if type(id)=="string" and id:find("item:",1,true) then
         return "Item",nil,1,1,0,"Misc","Junk",20,"",nil,50
       end
@@ -975,6 +981,69 @@ if MODE ~= "minimal" then
   end
   check(not bad, "no Complete tags in fishing UI")
   check(DarkMatterCharDB.fishing.casts >= 1, "stats persist on DarkMatterCharDB")
+end
+
+
+-- ===== Fishing UI parity + lure names (0.2.2) =====
+if MODE ~= "minimal" then
+  check(DarkMatter.ResolveLureName(263) == "Shiny Bauble", "ResolveLureName maps Shiny Bauble: "..tostring(DarkMatter.ResolveLureName(263)))
+  check(DarkMatter.ResolveLureName(nil) == "None", "ResolveLureName nil -> None")
+  FISH_LURE_ON = true
+  DarkMatterCharDB.fishing = nil
+  local f = DarkMatter.GetFishingDB()
+  DarkMatter._FishingTest.BeginCast()
+  f = DarkMatter.GetFishingDB()
+  check(f.lastLure == "Shiny Bauble", "cast records lure item name: "..tostring(f.lastLure))
+  check(f.lureCounts["Shiny Bauble"] and f.lureCounts["Shiny Bauble"] >= 1, "lureCounts keyed by item name")
+  -- migrate legacy Lure #id
+  f.lureCounts["Lure #265"] = 9
+  f.lureCounts["None"] = 2
+  local _,_,_, lureName, lureN = nil,nil,nil,nil,nil
+  local z, zn, ln, lc = DarkMatter.FishingFavoriteZoneAndLure()
+  check(ln == "Bright Baubles" or ln == "Shiny Bauble", "favorite lure is item name not id: "..tostring(ln))
+  check(not tostring(ln):find("Lure #"), "favorite lure has no Lure # id")
+  DarkMatter.ShowTab("journals")
+  DarkMatterDB.section = "fishing"
+  DarkMatterDB.fishingView = "waters"
+  if DarkMatter.tabs.journals and DarkMatter.tabs.journals.Refresh then DarkMatter.tabs.journals.Refresh() end
+  local texts = {}
+  for _, fr in ipairs(FS) do if type(fr._text)=="string" then texts[fr._text]=true end end
+  check(texts["Catches by zone"], "Catches by zone pill label")
+  check(texts["Fishing skill"], "Fishing skill title on parchment strip")
+  check(texts["Live skill · per character"] or texts["Fishing not learned"], "readable skill subtitle (not clipped grey)")
+  check(texts["Zones"], "Zones list header")
+  local badGrey
+  -- subtitle must not be the old long clipped string
+  for t in pairs(texts) do
+    if tostring(t):find("catches saved per character from first cast") then badGrey = t end
+  end
+  check(not badGrey, "old clipped skill sub gone")
+end
+
+
+-- ===== City waters + Ironforge attribution (0.2.2) =====
+if MODE ~= "minimal" then
+  local names = {}
+  for _, z in ipairs(DarkMatter.FishingZones) do names[z.name] = z end
+  for _, n in ipairs({"Ironforge","Stormwind City","Orgrimmar","Undercity","Thunder Bluff","Darnassus"}) do
+    check(names[n] ~= nil, "city water listed: "..n)
+    check(names[n].minSkill == 1, "city minSkill 1: "..n)
+  end
+  ZONE_TEXT = "Ironforge"
+  SUBZONE_TEXT = "The Forlorn Cavern"
+  local w, known = DarkMatter.ResolveFishingWater()
+  check(w == "Ironforge" and known == true, "Ironforge+Forlorn Cavern -> Ironforge: "..tostring(w))
+  ZONE_TEXT = "Stormwind City"
+  SUBZONE_TEXT = "Mage Quarter"
+  w, known = DarkMatter.ResolveFishingWater()
+  check(w == "Stormwind City" and known, "Stormwind City attribution: "..tostring(w))
+  -- subzone-only alias (zone blank edge case)
+  ZONE_TEXT = ""
+  SUBZONE_TEXT = "The Forlorn Cavern"
+  w, known = DarkMatter.ResolveFishingWater()
+  check(w == "Ironforge" and known, "Forlorn Cavern alias alone -> Ironforge: "..tostring(w))
+  ZONE_TEXT = "Elwynn Forest"
+  SUBZONE_TEXT = ""
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

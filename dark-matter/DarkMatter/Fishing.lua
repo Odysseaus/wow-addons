@@ -97,17 +97,28 @@ function NS.ResolveFishingWater()
     if not name or name == "" then return end
     for _, z in ipairs(NS.FishingZones or {}) do
       if z.name == name then return z.name end
+      if type(z.aliases) == "table" then
+        for _, a in ipairs(z.aliases) do
+          if a == name then return z.name end
+        end
+      end
     end
   end
   local hit = match(zone) or match(sub) or match(mini)
   if hit then return hit, true end
 
-  -- soft contains match (subzone often nests under zone)
+  -- soft contains match (subzone often nests under zone / city cavern names)
   local candidates = { zone, sub, mini }
   for _, z in ipairs(NS.FishingZones or {}) do
-    for _, c in ipairs(candidates) do
-      if c ~= "" and (c:find(z.name, 1, true) or z.name:find(c, 1, true)) then
-        return z.name, true
+    local names = { z.name }
+    if type(z.aliases) == "table" then
+      for _, a in ipairs(z.aliases) do names[#names + 1] = a end
+    end
+    for _, label in ipairs(names) do
+      for _, c in ipairs(candidates) do
+        if c ~= "" and label ~= "" and (c:find(label, 1, true) or label:find(c, 1, true)) then
+          return z.name, true
+        end
       end
     end
   end
@@ -130,13 +141,54 @@ local function IsFishingChannel()
   return false
 end
 
+-- Classic Forever fishing-lure temp-enchants → item id + fallback English name.
+-- GetWeaponEnchantInfo returns the enchant id, not an item; resolve via C_Item/GetItemInfo.
+local LURE_BY_ENCHANT = {
+  [263]  = { item = 6529,  name = "Shiny Bauble" },
+  [264]  = { item = 6530,  name = "Nightcrawlers" },
+  [265]  = { item = 6532,  name = "Bright Baubles" },
+  [266]  = { item = 6533,  name = "Aquadynamic Fish Attractor" },
+  [456]  = { item = 6811,  name = "Aquadynamic Fish Lens" },
+  [463]  = { item = 7307,  name = "Flesh Eating Worm" },
+}
+
+local function ItemNameById(itemId)
+  if not itemId then return nil end
+  local CI = C_Item
+  if CI and CI.GetItemInfo then
+    local ok, name = pcall(function()
+      local n = CI.GetItemInfo(itemId)
+      return SafeStr(n)
+    end)
+    if ok and name and name ~= "" then return name end
+  end
+  if GetItemInfo then
+    local ok, name = pcall(function()
+      local n = GetItemInfo(itemId)
+      return SafeStr(n)
+    end)
+    if ok and name and name ~= "" then return name end
+  end
+  return nil
+end
+
+--- Display name for the current main-hand fishing lure, or "None".
+function NS.ResolveLureName(enchantId)
+  enchantId = SafeNum(enchantId)
+  if not enchantId then return "None" end
+  local info = LURE_BY_ENCHANT[enchantId]
+  if info then
+    return ItemNameById(info.item) or info.name
+  end
+  -- Unknown enchant: still try nothing item-side; avoid "Lure #id" in the UI.
+  return "Fishing lure"
+end
+
 local function CurrentLureLabel()
   if not GetWeaponEnchantInfo then return "None" end
   local ok, hasMH, _, _, mhID = pcall(GetWeaponEnchantInfo)
   if not ok or not hasMH then return "None" end
-  mhID = SafeNum(mhID)
-  if not mhID then return "Lure" end
-  return "Lure #" .. tostring(mhID)
+  return NS.ResolveLureName(mhID)
 end
 
 local function ItemSellCopper(linkOrId)
@@ -374,10 +426,32 @@ function NS.FishingFavoriteZoneAndLure()
     local n = SafeNum(z.catches) or 0
     if n > bestN then bestN, bestZone = n, name end
   end
-  local bestLure, bestL = "None", -1
+  -- Prefer a real lure name over "None". Migrate legacy "Lure #<enchantId>" keys (two-pass).
+  do
+    local legacy = {}
+    for name, n in pairs(f.lureCounts) do
+      if type(name) == "string" and name:match("^Lure #%d+$") then
+        legacy[#legacy + 1] = { name = name, n = SafeNum(n) or 0 }
+      end
+    end
+    for _, e in ipairs(legacy) do
+      local label = NS.ResolveLureName(tonumber(e.name:match("%d+")))
+      f.lureCounts[label] = (SafeNum(f.lureCounts[label]) or 0) + e.n
+      f.lureCounts[e.name] = nil
+    end
+  end
+  local bestLure, bestL = nil, -1
+  local noneN = 0
   for name, n in pairs(f.lureCounts) do
     n = SafeNum(n) or 0
-    if n > bestL then bestL, bestLure = n, name end
+    if name == "None" then
+      noneN = n
+    elseif n > bestL then
+      bestL, bestLure = n, name
+    end
+  end
+  if not bestLure then
+    bestLure, bestL = "None", noneN
   end
   return bestZone, bestN, bestLure, bestL
 end
@@ -466,4 +540,6 @@ NS._FishingTest = {
   OnFishingLoot = OnFishingLoot,
   Ensure = Ensure,
   state = state,
+  ResolveLureName = NS.ResolveLureName,
+  CurrentLureLabel = CurrentLureLabel,
 }

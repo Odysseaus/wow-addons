@@ -1,7 +1,7 @@
 -- Original Dark Matter fishing waters table for Classic Forever.
 -- This client has no fishing-zone / catch APIs (forever_api + probe: only GetProfessions /
 -- GetProfessionInfo and IsFishingLoot). Zone names and minimum skill floors are authored
--- here for the addon (Classic-style open-water floors), not copied from another addon.
+-- here for the addon (Classic-style open-water floors + main-city spots), not copied from another addon.
 local _, NS = ...
 
 -- minSkill: approximate skill needed to fish the zone's open water without constant escapes.
@@ -13,6 +13,20 @@ NS.FishingZones = {
   { name = "Durotar",                 continent = "Kalimdor",         levels = "1-10",  minSkill = 1 },
   { name = "Mulgore",                 continent = "Kalimdor",         levels = "1-10",  minSkill = 1 },
   { name = "Teldrassil",              continent = "Kalimdor",         levels = "1-10",  minSkill = 1 },
+  -- Main-city fishing (GetRealZoneText names). minSkill 1: canal/cavern open water.
+  -- aliases: common fishing subzones so attribution still hits the city row if zone text is odd.
+  { name = "Ironforge",              continent = "Eastern Kingdoms", levels = "1-60",  minSkill = 1,
+    aliases = { "The Forlorn Cavern", "Forlorn Cavern" } },
+  { name = "Stormwind City",         continent = "Eastern Kingdoms", levels = "1-60",  minSkill = 1,
+    aliases = { "Stormwind", "Mage Quarter" } },
+  { name = "Orgrimmar",              continent = "Kalimdor",         levels = "1-60",  minSkill = 1,
+    aliases = { "Valley of Honor", "The Drag" } },
+  { name = "Undercity",              continent = "Eastern Kingdoms", levels = "1-60",  minSkill = 1,
+    aliases = { "Trade Quarter" } },
+  { name = "Thunder Bluff",          continent = "Kalimdor",         levels = "1-60",  minSkill = 1,
+    aliases = { "Lower Rise", "Elder Rise", "Central Mesa" } },
+  { name = "Darnassus",              continent = "Kalimdor",         levels = "1-60",  minSkill = 1,
+    aliases = { "Temple Gardens", "Craftsmen's Terrace", "The Temple Gardens" } },
   { name = "Westfall",                continent = "Eastern Kingdoms", levels = "10-20", minSkill = 1 },
   { name = "Loch Modan",              continent = "Eastern Kingdoms", levels = "10-20", minSkill = 1 },
   { name = "Darkshore",               continent = "Kalimdor",         levels = "10-20", minSkill = 1 },
