@@ -1,6 +1,6 @@
 # Dark Matter (P0.2 probe)
 
-**Version 0.0.3** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.0.4** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter will be a dark, one-window overview of your quests, fishing, dungeons and achievements. **P0 is only the scaffold**: it adds a minimap button, a plain placeholder window, and a probe that checks which Blizzard APIs this client really has, so P1 can be built on facts instead of guesses. It does nothing else yet.
 
@@ -23,9 +23,9 @@ Dark Matter will be a dark, one-window overview of your quests, fishing, dungeon
 
 Safety: stock Blizzard controls only. No secure frames, no hooks on Blizzard code, nothing changed in combat. The Settings page is registered one frame after login (`C_Timer.After(0)`).
 
-## Running the probe (0.0.3)
+## Running the probe (0.0.4)
 
-1. Copy the `DarkMatter` folder into your AddOns folder (Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`). If the game is running, type `/reload`; if it doesn't show Dark Matter 0.0.3 in the addon list, quit and relaunch once.
+1. Copy the `DarkMatter` folder into your AddOns folder (Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`). If the game is running, type `/reload`; if it doesn't show Dark Matter 0.0.4 in the addon list, quit and relaunch once.
 2. Type `/dm probe`. The window opens with a **summary: one line per area**, each marked `[OK]` (data came back), `[EMPTY]` (the call works but returned nothing) or `[MISSING]` (the API isn't there), with counts. The summary is short enough for one screenshot (scroll with the mouse wheel if needed).
 3. Wait about 5 seconds, then screenshot again: the **Items on demand** line updates once the game has had time to load item data ("[after 3s]").
 4. Optional: `/dm raw` shows or hides the full list of raw call returns in the window.
@@ -33,21 +33,21 @@ Safety: stock Blizzard controls only. No secure frames, no hooks on Blizzard cod
 
 Best results: run `/dm probe` once standing in a city or open world, and once inside a dungeon (the instance lines then show real values).
 
-### What the probe checks (0.0.3)
+### What the probe checks (0.0.4, read-only)
 
 | Area | What it tests |
 |---|---|
-| Quests / Fishing / Achievements | `C_QuestLog` counts, `GetProfessionInfo` Fishing skill, achievement points and categories (loads the Achievement UI on demand) |
+| Quests / Fishing / Achievements | `C_QuestLog` counts, `GetProfessionInfo` Fishing skill, achievement points and categories (no UI is loaded) |
 | Journal API | which `EJ_*` functions and `C_EncounterJournal` functions exist |
-| Journal data (no UI) | `C_EncounterJournal.InitalizeSelectedTier` and `OnOpen`, then tiers, instance counts per tier, well-known instance IDs, bosses, loot via `C_EncounterJournal.GetLootInfoByIndex`; the stock journal selection is restored afterwards |
+| Journal data (no UI) | read-only: tiers, instance counts for the current tier, well-known instance IDs, bosses by instance, loot reads for the current selection. It no longer opens, closes or selects anything in the stock journal |
 | Map discovery | dungeon child maps of the world map, dungeon entrances and encounters on your current map |
 | LFG / dungeons | `C_LFGInfo`, `GetLFDChoiceOrder`, category entries, a scan of dungeon IDs 1 to 1300 with boss counts |
 | Saved instances | `GetNumSavedInstances`, `GetSavedInstanceInfo`, `GetInstanceInfo` |
-| Items on demand | a few well-known classic item IDs plus one that does not exist: `DoesItemExistByID`, `GetItemInfoInstant`, `C_Item.GetItemInfo`, tooltip lines, checked now and again after 3 seconds |
+| Items (read-only) | a few well-known classic item IDs plus one that does not exist: `DoesItemExistByID`, `GetItemInfoInstant`, `C_Item.GetItemInfo`, tooltip lines, checked now and again after 3 seconds; it no longer asks the server to load items |
 | Loot learning | which loot and boss-kill events the client lets an addon register, and whether the loot APIs exist |
-| Game rules | every game rule the client knows, and which are active |
+| Game rules | every game rule the client knows, which are active, and which addon restrictions (Combat, Encounter, Map, ...) are active |
 
-Every call is wrapped in `pcall`, secret values are never compared, and nothing opens a window other than Dark Matter's own.
+Every call is wrapped in `pcall`, secret values are never compared, and nothing opens a window other than Dark Matter's own. The probe never loads Blizzard UI, never changes Encounter Journal state, never requests data from the server, refuses to run in combat, and registers events only on its own private frame.
 
 ### About SavedVariables on the beta
 
@@ -60,3 +60,7 @@ All art is original: the minimap icon (`Media/dm-icon.tga`) was generated proced
 ## Files
 
 `DarkMatter.toc`, `Core.lua` (namespace, defaults), `Probe.lua`, `Window.lua`, `Minimap.lua`, `Options.lua`, `Slash.lua`, `Media/dm-icon.tga`.
+
+### Blocked-action log (0.0.4)
+
+If the client ever reports "DarkMatter has been blocked from an action only available to the Blizzard UI", Dark Matter records the blocked function and the probe step that was running in `DarkMatterDB["blockedLog"]` (also shown as `DarkMatterDB["probe"]["blocked"]`). The probe summary ends with a `[BLOCKED]` line when something was logged, and `/dm blocked` lists the latest entries. Screenshot that line if it happens.

@@ -1,9 +1,11 @@
--- /dm probe (0.0.3): find out what this client really offers, without guessing.
--- Every call is pcall-wrapped and its raw return types are saved in
--- DarkMatterDB.probe.calls. Values are never compared or concatenated before an
--- issecretvalue() check. The window shows a one-line-per-area summary; the full
--- raw list is in SavedVariables (and in the window with /dm raw).
--- Read-only apart from the stock Encounter Journal selection calls (restored).
+-- /dm probe (0.0.4): find out what this client really offers, without guessing.
+-- Taint-safe by construction: READ-ONLY calls only. It never loads Blizzard UI
+-- (no LoadAddOn), never selects/opens/closes the Encounter Journal, never asks
+-- the server for data (no RequestRaidInfo / RequestLoadItemDataByID) and only
+-- registers events on its own private frame. Every call is pcall-wrapped and
+-- its raw return types are saved in DarkMatterDB.probe.calls; values pass an
+-- issecretvalue() check first. NS.step always names the call in progress so the
+-- ADDON_ACTION_BLOCKED listener in Core.lua can name a culprit.
 local _, NS = ...
 
 ---------------------------------------------------------------------------
@@ -75,7 +77,7 @@ local AREA_ORDER = { "quests", "fishing", "achievements", "journalApi", "journal
 local AREA_TITLE = {
   quests = "Quests", fishing = "Fishing", achievements = "Achievements",
   journalApi = "Journal API", journal = "Journal data (no UI)", map = "Map discovery",
-  lfg = "LFG / dungeons", saved = "Saved instances", items = "Items on demand",
+  lfg = "LFG / dungeons", saved = "Saved instances", items = "Items (read-only)",
   loot = "Loot learning", rules = "Game rules",
 }
 
@@ -91,7 +93,9 @@ local function NewContext(out)
       rec.err = "missing"
       r = { n = 1, false }
     else
+      NS.step = tostring(c.area) .. ": " .. name
       r = Pack(pcall(fn, ...))
+      NS.step = nil
       rec.ok = r[1] and true or false
       if r[1] then
         rec.n = r.n - 1
@@ -107,7 +111,10 @@ local function NewContext(out)
 
   function c.quiet(fn, ...)
     if type(fn) ~= "function" then return { n = 1, false } end
-    return Pack(pcall(fn, ...))
+    NS.step = tostring(c.area) .. ": (loop call)"
+    local r = Pack(pcall(fn, ...))
+    NS.step = nil
+    return r
   end
 
   -- Presence of a list of dotted names; returns have, total, missing list.
@@ -136,7 +143,7 @@ local function NewContext(out)
 end
 
 ---------------------------------------------------------------------------
--- areas
+-- areas (all read-only)
 ---------------------------------------------------------------------------
 local function AreaQuests(c)
   local d = {}
@@ -177,8 +184,8 @@ end
 local function AreaAchievements(c)
   local d = {}
   c.out.data.achievements = d
-  local loader = (C_AddOns and C_AddOns.LoadAddOn) or LoadAddOn
-  c.call("LoadAddOn:Blizzard_AchievementUI", loader, "Blizzard_AchievementUI")
+  -- No LoadAddOn: the data APIs work without loading Blizzard_AchievementUI, and loading
+  -- Blizzard UI from addon code can run that UI's code under our taint.
   local present = GetTotalAchievementPoints and GetCategoryList and GetAchievementInfo
   if GetTotalAchievementPoints then d.points = Num(c.call("GetTotalAchievementPoints", GetTotalAchievementPoints)[2]) end
   if GetCategoryList then
@@ -186,8 +193,8 @@ local function AreaAchievements(c)
     d.categories = cats and #cats or nil
   end
   c.line("achievements", c.status(present, d.categories),
-    string.format("points=%s categories=%s frame=%s", tostring(d.points), tostring(d.categories),
-      AchievementFrame and "yes" or "no"))
+    string.format("points=%s categories=%s (data APIs need no UI load; AchievementFrame loaded: %s)",
+      tostring(d.points), tostring(d.categories), AchievementFrame and "yes" or "no"))
 end
 
 local EJ_NAMES = { "EJ_GetNumTiers", "EJ_GetCurrentTier", "EJ_GetTierInfo", "EJ_SelectTier",
@@ -204,7 +211,7 @@ local SAMPLE_INSTANCES = { 63, 228, 741, 1 }
 
 local function AreaJournal(c)
   local out = c.out
-  local d = { tiers = {}, sampleResolved = 0 }
+  local d = { sampleResolved = 0, dungeons = 0, raids = 0 }
   out.data.journal = d
   local eh, et, em = c.presence(EJ_NAMES)
   local ch, ct, cm = c.presence(CEJ_NAMES)
@@ -216,15 +223,12 @@ local function AreaJournal(c)
       #missing > 0 and ("  missing: " .. table.concat(missing, ", ")) or "", EncounterJournal and "yes" or "no"))
 
   local CEJ = C_EncounterJournal or {}
-  if C_EncounterJournal then
-    c.call("C_EncounterJournal.InitalizeSelectedTier", CEJ.InitalizeSelectedTier)
-    c.call("C_EncounterJournal.OnOpen", CEJ.OnOpen)
-  end
-
+  -- READ-ONLY: no tier/instance/encounter selection and no OnOpen/OnClose/Initalize,
+  -- so no Blizzard journal state is touched. Selection-dependent reads reflect whatever
+  -- the client currently has selected (normally nothing).
   local nt = 0
-  local cur
   if EJ_GetNumTiers then nt = Num(c.call("EJ_GetNumTiers", EJ_GetNumTiers)[2]) or 0 end
-  if EJ_GetCurrentTier then cur = Num(c.call("EJ_GetCurrentTier", EJ_GetCurrentTier)[2]) end
+  if EJ_GetCurrentTier then d.currentTier = Num(c.call("EJ_GetCurrentTier", EJ_GetCurrentTier)[2]) end
   if EJ_GetTierInfo then c.call("EJ_GetTierInfo(1)", EJ_GetTierInfo, 1) end
   d.numTiers = nt
 
@@ -242,26 +246,14 @@ local function AreaJournal(c)
     end
     return n, first
   end
-  d.dungeons, d.raids = 0, 0
   if EJ_GetInstanceByIndex then
     local dn, df = CountInstances(false)
     local rn, rf = CountInstances(true)
-    d.noTierDungeons, d.noTierRaids = dn, rn
     d.dungeons, d.raids = dn, rn
     firstInstance = df or rf
-    for tier = 1, math.min(nt, 12) do
-      if EJ_SelectTier then c.call("EJ_SelectTier(" .. tier .. ")", EJ_SelectTier, tier) end
-      local tn = EJ_GetTierInfo and Str(c.quiet(EJ_GetTierInfo, tier)[2]) or nil
-      local a, af = CountInstances(false)
-      local b, bf = CountInstances(true)
-      d.tiers[#d.tiers + 1] = { tier = tier, name = tn, dungeons = a, raids = b }
-      d.dungeons, d.raids = d.dungeons + a, d.raids + b
-      firstInstance = firstInstance or af or bf
-    end
-    if cur and EJ_SelectTier then pcall(EJ_SelectTier, cur) end
   end
 
-  -- Known IDs, straight to EJ_GetInstanceInfo (no tier needed).
+  -- Known IDs, straight to EJ_GetInstanceInfo (read by ID, no selection needed).
   local sampleId
   for _, id in ipairs(SAMPLE_INSTANCES) do
     if EJ_GetInstanceInfo then
@@ -275,8 +267,7 @@ local function AreaJournal(c)
   local inst = firstInstance and firstInstance.id or sampleId
   d.sampleInstance = inst
   if inst then
-    if EJ_SelectInstance then c.call("EJ_SelectInstance", EJ_SelectInstance, inst) end
-    if CEJ.InstanceHasLoot then c.call("C_EncounterJournal.InstanceHasLoot", CEJ.InstanceHasLoot, inst) end
+    if CEJ.InstanceHasLoot then d.hasLoot = Describe(c.call("C_EncounterJournal.InstanceHasLoot", CEJ.InstanceHasLoot, inst)[2]) end
     local bosses, enc = 0, nil
     if EJ_GetEncounterInfoByIndex then
       for i = 1, 40 do
@@ -290,38 +281,25 @@ local function AreaJournal(c)
       end
     end
     d.bosses = bosses
-    if enc then
-      if EJ_GetEncounterInfo then c.call("EJ_GetEncounterInfo", EJ_GetEncounterInfo, enc) end
-      if EJ_SelectEncounter then c.call("EJ_SelectEncounter", EJ_SelectEncounter, enc) end
-      if EJ_GetNumLoot then d.numLoot = Num(c.call("EJ_GetNumLoot", EJ_GetNumLoot)[2]) end
-      -- Fixed in 0.0.3: the loot-by-index call lives in C_EncounterJournal on this client.
-      if CEJ.GetLootInfoByIndex then
-        local r = c.call("C_EncounterJournal.GetLootInfoByIndex(1)", CEJ.GetLootInfoByIndex, 1)
-        d.lootFirst = Describe(r[2])
-        local t = Tbl(r[2])
-        if t then
-          d.lootFirstName = Describe(t.name)
-          local itemId = Num(t.itemID)
-          if itemId and CEJ.GetLootInfo then c.call("C_EncounterJournal.GetLootInfo(itemID)", CEJ.GetLootInfo, itemId) end
-        end
-      end
-    end
+    if enc and EJ_GetEncounterInfo then c.call("EJ_GetEncounterInfo", EJ_GetEncounterInfo, enc) end
   end
-  -- Map-based instance lookup.
-  local map = C_Map and C_Map.GetBestMapForUnit and Num(c.quiet(C_Map.GetBestMapForUnit, "player")[2])
+  -- Current-selection loot reads (empty unless the player has the journal selected).
+  if EJ_GetNumLoot then d.numLoot = Num(c.call("EJ_GetNumLoot", EJ_GetNumLoot)[2]) end
+  if CEJ.GetLootInfoByIndex then
+    local r = c.call("C_EncounterJournal.GetLootInfoByIndex(1)", CEJ.GetLootInfoByIndex, 1)
+    d.lootFirst = Describe(r[2])
+  end
+  -- Map-based instance lookups.
+  local map = C_Map and C_Map.GetBestMapForUnit and Num(c.call("C_Map.GetBestMapForUnit(player)", C_Map.GetBestMapForUnit, "player")[2])
   if map and EJ_GetInstanceForMap then d.forMap = Num(c.call("EJ_GetInstanceForMap(playerMap)", EJ_GetInstanceForMap, map)[2]) end
   if CEJ.GetInstanceForGameMap then c.call("C_EncounterJournal.GetInstanceForGameMap(36)", CEJ.GetInstanceForGameMap, 36) end
-  if C_EncounterJournal and CEJ.OnClose then c.call("C_EncounterJournal.OnClose", CEJ.OnClose) end
 
   local total = d.dungeons + d.raids + d.sampleResolved + (d.bosses or 0)
   local present = EJ_GetNumTiers or EJ_GetInstanceInfo
-  local parts = {}
-  for _, t in ipairs(d.tiers) do parts[#parts + 1] = string.format("%s:%dd/%dr", tostring(t.name or t.tier), t.dungeons, t.raids) end
   c.line("journal", c.status(present, total),
-    string.format("tiers=%d instances d/r=%d/%d%s known-IDs resolved=%d/%d sample=%s bosses=%s loot=%s lootInfo=%s",
-      nt, d.dungeons, d.raids, #parts > 0 and (" [" .. table.concat(parts, " ") .. "]") or "",
-      d.sampleResolved, #SAMPLE_INSTANCES - 1, tostring(d.sampleInstance), tostring(d.bosses),
-      tostring(d.numLoot), tostring(d.lootFirst)))
+    string.format("read-only: tiers=%d instances d/r=%d/%d known-IDs resolved=%d/%d sample=%s bosses=%s loot(current selection)=%s",
+      nt, d.dungeons, d.raids, d.sampleResolved, #SAMPLE_INSTANCES - 1, tostring(d.sampleInstance),
+      tostring(d.bosses), tostring(d.numLoot)))
 end
 
 local function AreaMap(c)
@@ -390,7 +368,7 @@ local function AreaLFG(c)
   end
   if GetNumRFDungeons then d.rfDungeons = Num(c.call("GetNumRFDungeons", GetNumRFDungeons)[2]) end
   if GetRFDungeonInfo then c.call("GetRFDungeonInfo(1)", GetRFDungeonInfo, 1) end
-  -- Direct scan of LFG dungeon IDs: finds dungeons even when the choice list is empty.
+  -- Direct scan of LFG dungeon IDs (read-only): finds dungeons even when the choice list is empty.
   local names, firstId = {}, nil
   if present then
     for id = 1, 1300 do
@@ -410,7 +388,6 @@ local function AreaLFG(c)
             if d.withBosses == 1 then
               c.call("GetLFGDungeonNumEncounters(" .. id .. ")", GetLFGDungeonNumEncounters, id)
               if GetLFGDungeonEncounterInfo then c.call("GetLFGDungeonEncounterInfo(" .. id .. ",1)", GetLFGDungeonEncounterInfo, id, 1) end
-              if GetLFGDungeonRewards then c.call("GetLFGDungeonRewards(" .. id .. ")", GetLFGDungeonRewards, id) end
               if LI and LI.GetDungeonInfo then c.call("C_LFGInfo.GetDungeonInfo(" .. id .. ")", LI.GetDungeonInfo, id) end
             end
           end
@@ -429,7 +406,7 @@ local function AreaSaved(c)
   local d = {}
   c.out.data.saved = d
   local present = GetNumSavedInstances
-  if RequestRaidInfo then c.call("RequestRaidInfo", RequestRaidInfo) end
+  -- No RequestRaidInfo: it asks the server and fires Blizzard's UPDATE_INSTANCE_INFO handlers.
   if present then
     d.saved = Num(c.call("GetNumSavedInstances", GetNumSavedInstances)[2])
     if d.saved and d.saved > 0 and GetSavedInstanceInfo then c.call("GetSavedInstanceInfo(1)", GetSavedInstanceInfo, 1) end
@@ -457,7 +434,7 @@ local function ItemPass(c, phase)
   for _, id in ipairs(SAMPLE_ITEMS) do
     local it = d.items[id] or {}
     d.items[id] = it
-    if phase == 1 and CI.RequestLoadItemDataByID then pcall(CI.RequestLoadItemDataByID, id) end
+    -- Read-only: no RequestLoadItemDataByID (it asks the server and fires Blizzard handlers).
     it.exists = CI.DoesItemExistByID and c.quiet(CI.DoesItemExistByID, id)[2] and true or false
     local ri = c.quiet(CI.GetItemInfoInstant, id)
     it.instantIcon = ri[1] and Num(ri[6]) or nil
@@ -491,31 +468,28 @@ local function ItemPass(c, phase)
     controlExists = control and control.exists or false }
   local real = #SAMPLE_ITEMS - 1
   c.line("items", c.status(present, math.max(exists, instant, named)),
-    string.format("[%s] of %d sample: exist=%d instantInfo=%d name=%d rarity=%d tooltip=%d | control(99999999) exists=%s | ITEM_DATA_LOAD_RESULT events=%d",
+    string.format("[%s] of %d sample: exist=%d instantInfo=%d name=%d rarity=%d tooltip=%d | control(99999999) exists=%s",
       phase == 1 and "now" or "after 3s", real, exists, instant, named, quality, tip,
-      tostring(control and control.exists or false), NS.itemEvents or 0))
+      tostring(control and control.exists or false)))
 end
 
 local function AreaItems(c)
   c.out.data.items = {}
-  if not NS._itemEventFrame then
-    local f = CreateFrame("Frame")
-    if pcall(f.RegisterEvent, f, "ITEM_DATA_LOAD_RESULT") then
-      f:SetScript("OnEvent", function() NS.itemEvents = (NS.itemEvents or 0) + 1 end)
-    end
-    NS._itemEventFrame = f
-  end
   ItemPass(c, 1)
 end
 
+-- COMBAT_LOG_EVENT_UNFILTERED is deliberately not tested (restricted on this client).
 local LOOT_EVENTS = { "LOOT_OPENED", "LOOT_READY", "LOOT_CLOSED", "LOOT_SLOT_CLEARED", "CHAT_MSG_LOOT",
   "ENCOUNTER_START", "ENCOUNTER_END", "BOSS_KILL", "START_LOOT_ROLL", "UPDATE_INSTANCE_INFO",
-  "INSTANCE_ENCOUNTER_ENGAGE_UNIT", "COMBAT_LOG_EVENT_UNFILTERED", "ITEM_DATA_LOAD_RESULT" }
+  "INSTANCE_ENCOUNTER_ENGAGE_UNIT" }
 
 local function AreaLoot(c)
   local d = { registrable = 0, failed = {} }
   c.out.data.loot = d
-  local f = CreateFrame("Frame")
+  -- Private, never-shown frame owned by this addon; events are unregistered at once.
+  if not NS._probeFrame then NS._probeFrame = CreateFrame("Frame", nil, nil) end
+  local f = NS._probeFrame
+  NS.step = "loot: event registration"
   for _, ev in ipairs(LOOT_EVENTS) do
     if pcall(f.RegisterEvent, f, ev) then
       d.registrable = d.registrable + 1
@@ -524,6 +498,7 @@ local function AreaLoot(c)
       d.failed[#d.failed + 1] = ev
     end
   end
+  NS.step = nil
   local have, total, missing = c.presence({ "GetLootInfo", "GetNumLootItems", "GetLootSlotInfo", "GetLootSlotLink",
     "GetLootSourceInfo", "C_LootHistory", "C_EncounterEvents", "C_InstanceEncounter", "C_InstanceEncounter.IsEncounterInProgress" })
   if GetNumLootItems then d.openLoot = Num(c.call("GetNumLootItems", GetNumLootItems)[2]) end
@@ -562,9 +537,24 @@ local function AreaRules(c)
     end
   end
   d.total = total
+  -- Addon restriction states (read-only): tells us if this map/instance restricts addons.
+  d.restrictions = {}
+  local RA = C_RestrictedActions
+  local RT = Enum and Enum.AddOnRestrictionType
+  if RA and RA.IsAddOnRestrictionActive and RT then
+    for name, value in pairs(RT) do
+      if type(name) == "string" and type(value) == "number" then
+        local r = c.quiet(RA.IsAddOnRestrictionActive, value)
+        if r[1] and r[2] == true and not IsSecret(r[2]) then d.restrictions[#d.restrictions + 1] = name end
+      end
+    end
+    table.sort(d.restrictions)
+    if RT.Map then c.call("C_RestrictedActions.IsAddOnRestrictionActive(Map)", RA.IsAddOnRestrictionActive, RT.Map) end
+  end
   c.line("rules", c.status(present, total),
-    string.format("mode=%s rules known=%d active=%d: %s", tostring(d.mode), total, #d.active,
-      #d.active > 0 and Trunc(table.concat(d.active, ", "), 150) or "none"))
+    string.format("mode=%s rules known=%d active=%d: %s | addon restrictions active: %s", tostring(d.mode), total, #d.active,
+      #d.active > 0 and Trunc(table.concat(d.active, ", "), 110) or "none",
+      #d.restrictions > 0 and table.concat(d.restrictions, ", ") or "none"))
 end
 
 ---------------------------------------------------------------------------
@@ -593,6 +583,14 @@ local function BuildSummary(out)
     local a = out.areas[key]
     if a then lines[#lines + 1] = string.format("[%s] %s: %s", a.status, AREA_TITLE[key], a.text) end
   end
+  local log = NS.db and NS.db.blockedLog
+  if log and #log > 0 then
+    local last = log[#log]
+    lines[#lines + 1] = string.format("[BLOCKED] %d blocked action(s) logged; latest: %s / %s during step: %s",
+      #log, tostring(last.addon), tostring(last.func), tostring(last.step))
+  else
+    lines[#lines + 1] = "[OK] Blocked-action listener: nothing logged"
+  end
   return lines
 end
 
@@ -613,7 +611,17 @@ function NS.Rebuild(out)
   out.summary = BuildSummary(out)
 end
 
+local AREA_FUNCS = { { "quests", AreaQuests }, { "fishing", AreaFishing }, { "achievements", AreaAchievements },
+  { "journal", AreaJournal }, { "map", AreaMap }, { "lfg", AreaLFG }, { "saved", AreaSaved },
+  { "items", AreaItems }, { "loot", AreaLoot }, { "rules", AreaRules } }
+
 function NS.RunProbe(quiet)
+  -- Only ever run from our own slash command / button (never from a secure path),
+  -- and not in combat lockdown.
+  if InCombatLockdown() then
+    NS.Print("probe skipped: in combat.")
+    return nil
+  end
   local version, build, bdate, toc = GetBuildInfo()
   local out = {
     when = date("%Y-%m-%d %H:%M:%S"),
@@ -630,26 +638,29 @@ function NS.RunProbe(quiet)
     },
     apis = {}, types = {}, calls = {}, callOrder = {}, areas = {}, data = {},
   }
+  out.blocked = NS.db and NS.db.blockedLog or nil
   local c = NewContext(out)
-  local areas = { AreaQuests, AreaFishing, AreaAchievements, AreaJournal, AreaMap, AreaLFG, AreaSaved,
-    AreaItems, AreaLoot, AreaRules }
-  for _, fn in ipairs(areas) do
-    local ok, err = pcall(fn, c)
+  for _, entry in ipairs(AREA_FUNCS) do
+    c.area = entry[1]
+    local ok, err = pcall(entry[2], c)
     if not ok then
       -- An area that errors must not take the rest down; record why.
       out.areaErrors = out.areaErrors or {}
-      out.areaErrors[#out.areaErrors + 1] = Trunc(err, 120)
+      out.areaErrors[#out.areaErrors + 1] = entry[1] .. ": " .. Trunc(err, 110)
     end
   end
+  NS.step = nil
   NS.Rebuild(out)
   if NS.db then NS.db.probe = out end
   NS.lastProbe = out
 
-  -- Items arrive asynchronously: look again a few seconds later.
+  -- Item data can arrive later on its own: look again a few seconds later (read-only).
   if C_Timer and C_Timer.After then
     C_Timer.After(3, function()
       if NS.lastProbe ~= out then return end
+      c.area = "items(after 3s)"
       pcall(ItemPass, c, 2)
+      NS.step = nil
       NS.Rebuild(out)
       if NS.RefreshWindow then NS.RefreshWindow() end
     end)

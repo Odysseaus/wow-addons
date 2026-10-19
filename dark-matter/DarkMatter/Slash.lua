@@ -11,6 +11,7 @@ local function Help()
   print("  /dm  toggle the window")
   print("  /dm probe  check this client's APIs (saved to DarkMatterDB.probe)")
   print("  /dm raw  show/hide the raw call list in the probe window")
+  print("  /dm blocked  list blocked actions the client reported")
   print("  /dm reset  reset window position   (/dm reset all: also minimap button)")
   print("  /dm minimap  show/hide the minimap button")
   print("  /dm icon  switch between the Dark Matter icon and a stock icon")
@@ -28,6 +29,12 @@ SlashCmdList["DARKMATTER"] = function(msg)
     NS.ToggleWindow(false)
   elseif cmd == "probe" then
     NS.RunProbe(false)
+  elseif cmd == "blocked" then
+    local log = NS.db.blockedLog or {}
+    NS.Print(#log .. " blocked action(s) logged" .. (#log > 0 and ":" or "."))
+    for i = math.max(1, #log - 4), #log do
+      print("  " .. tostring(log[i].when) .. " " .. tostring(log[i].addon) .. " / " .. tostring(log[i].func) .. " during " .. tostring(log[i].step))
+    end
   elseif cmd == "raw" then
     NS.showRaw = not NS.showRaw
     NS.Print("raw call list in the window: " .. (NS.showRaw and "on" or "off"))

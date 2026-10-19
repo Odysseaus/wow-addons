@@ -63,7 +63,7 @@ local function Build()
 
   local head = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   head:SetPoint("TOPLEFT", 16, -34)
-  head:SetText("Dark Matter " .. NS.version .. " (P0.2 probe)")
+  head:SetText("Dark Matter " .. NS.version .. " (P0.3 probe)")
 
   local note = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   note:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -4)

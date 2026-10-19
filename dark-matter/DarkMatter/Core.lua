@@ -1,13 +1,14 @@
--- Dark Matter 0.0.3 (P0.2 probe)
+-- Dark Matter 0.0.4 (P0.3 taint-safe probe)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.0.3"
+NS.version = "0.0.4"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
+NS.step = nil -- name of the probe call in progress (set by Probe.lua)
 
 local DEFAULTS = {
   window = { point = "CENTER", relPoint = "CENTER", x = 0, y = 0 },
@@ -41,10 +42,44 @@ local function InitDB()
   NS.sv.previousLoadCount = NS.db.loadCount
   NS.sv.previousProbeWhen = type(NS.db.probe) == "table" and NS.db.probe.when or nil
   CopyDefaults(NS.db, DEFAULTS)
+  if type(NS.db.blockedLog) ~= "table" then NS.db.blockedLog = {} end
   NS.db.loadCount = (tonumber(NS.db.loadCount) or 0) + 1
   NS.db.lastSession = date("%Y-%m-%d %H:%M:%S")
   NS.db.addonVersion = NS.version
 end
+
+---------------------------------------------------------------------------
+-- Blocked-action recorder. ADDON_ACTION_BLOCKED / ADDON_ACTION_FORBIDDEN are
+-- synchronous events, so NS.step still names the probe call that was running.
+-- Entries are kept in DarkMatterDB.blockedLog and shown as DarkMatterDB.probe.blocked.
+---------------------------------------------------------------------------
+local function SafeStr(v)
+  if type(issecretvalue) == "function" and issecretvalue(v) then return "secret" end
+  return tostring(v)
+end
+
+local function RecordBlocked(event, addon, func)
+  local db = NS.db
+  if not db then return end
+  local log = db.blockedLog
+  if type(log) ~= "table" then log = {} db.blockedLog = log end
+  log[#log + 1] = {
+    when = date("%Y-%m-%d %H:%M:%S"),
+    event = event,
+    addon = SafeStr(addon),
+    func = SafeStr(func),
+    step = NS.step and SafeStr(NS.step) or "none (not during a probe call)",
+  }
+  while #log > 50 do table.remove(log, 1) end
+  if type(db.probe) == "table" then db.probe.blocked = log end
+end
+
+local blockedFrame = CreateFrame("Frame")
+pcall(blockedFrame.RegisterEvent, blockedFrame, "ADDON_ACTION_BLOCKED")
+pcall(blockedFrame.RegisterEvent, blockedFrame, "ADDON_ACTION_FORBIDDEN")
+blockedFrame:SetScript("OnEvent", function(_, event, addon, func)
+  pcall(RecordBlocked, event, addon, func)
+end)
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
