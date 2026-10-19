@@ -1,11 +1,11 @@
--- Dark Matter 0.2.6 (P2.4: Catches pill, catalog Show all, last-catch coords)
+-- Dark Matter 0.2.7 (P2.7: sourced fishing catalog + per-account auto-learn)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.2.6"
+NS.version = "0.2.7"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)

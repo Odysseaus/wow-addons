@@ -528,6 +528,7 @@ function DumpLayout(root, path)
   fh:write('{"w":' .. jnum(root._sw) .. ',"h":' .. jnum(root._sh) .. ',"items":[\n' .. table.concat(parts, ",\n") .. "\n]}\n")
   fh:close()
 end
+DarkMatterCharDB=nil
 -- load addon
 local ns={}
 local toc=io.open(arg[1].."/DarkMatter.toc"):read("*a")
@@ -937,7 +938,6 @@ if MODE ~= "minimal" then
   check(true, "fishing events optional")
 end
 
-
 -- ===== Fishing catch tracking (0.2.1) =====
 if MODE ~= "minimal" then
   check(DarkMatterCharDB and DarkMatterCharDB.fishing, "per-character fishing DB created")
@@ -1267,6 +1267,95 @@ if MODE ~= "minimal" then
     end
   end
   check(greenRim, "uncommon icon rim is green")
+end
+
+
+-- ===== 0.2.7 catalog: static (sourced) + learned (account) + own catches, deduped by itemId =====
+if MODE ~= "minimal" then
+  local CAT = DarkMatter.FishingCatchCatalog
+  check(#CAT >= 120, "static catalog size: " .. #CAT)
+  local ids, forever, gated, bad = {}, 0, 0, 0
+  for _, e in ipairs(CAT) do
+    if ids[e.itemId] then bad = bad + 1 end
+    ids[e.itemId] = true
+    if e.forever then forever = forever + 1 elseif e.classicOnly then gated = gated + 1 else bad = bad + 1 end
+    if type(e.name) ~= "string" or type(e.cat) ~= "string" then bad = bad + 1 end
+  end
+  check(bad == 0, "catalog entries unique and flagged forever|classicOnly (bad=" .. bad .. ")")
+  check(forever == 3 and gated == #CAT - 3, "forever-confirmed=" .. forever .. " classicOnly=" .. gated)
+  check(DarkMatter.FishingCatalogById()[13888].name == "Darkclaw Lobster" and DarkMatter.FishingCatalogById()[12238].name == "Darkshore Grouper", "13888/12238 corrected")
+
+  -- classicOnly gate via C_Item.DoesItemExistByID
+  local savedExist = C_Item.DoesItemExistByID
+  C_Item.DoesItemExistByID = function(id) return id ~= 6303 end
+  DarkMatter._FishingResetExistsCache()
+  check(not DarkMatter.FishingCatalogEntryVisible(DarkMatter.FishingCatalogById()[6303]), "classicOnly hidden when client says item missing")
+  check(DarkMatter.FishingCatalogEntryVisible(DarkMatter.FishingCatalogById()[6361]), "classicOnly shown when client confirms item")
+  C_Item.DoesItemExistByID = nil
+  DarkMatter._FishingResetExistsCache()
+  check(not DarkMatter.FishingCatalogEntryVisible(DarkMatter.FishingCatalogById()[6361]), "classicOnly hidden when API missing")
+  check(DarkMatter.FishingCatalogEntryVisible(DarkMatter.FishingCatalogById()[6289]), "forever entry shown without API")
+  C_Item.DoesItemExistByID = savedExist
+  DarkMatter._FishingResetExistsCache()
+
+  -- auto-learn: fishing loot not in the static catalog goes to the account catalog
+  DarkMatterDB.fishingCatalogLearned = nil
+  local f = DarkMatter.GetFishingDB()
+  FISH_LOOT = true
+  LOOT_SLOTS = { { tex = "Interface\\Icons\\INV_Misc_Fish_99", name = "Riverglades Glimmerfin", qty = 1, quality = 3, link = "item:250001" },
+                 { tex = "Interface\\Icons\\INV_Misc_Fish_32", name = "Raw Longjaw Mud Snapper", qty = 1, quality = 1, link = "item:6289" } }
+  ZONE_TEXT = "Riverglades"
+  DarkMatter._FishingTest.BeginCast()
+  DarkMatter._FishingTest.OnFishingLoot()
+  local L = DarkMatterDB.fishingCatalogLearned
+  local g = L and L[250001]
+  check(g and g.name == "Riverglades Glimmerfin" and g.itemId == 250001, "unknown loot learned by itemId")
+  check(g and g.icon == "Interface\\Icons\\INV_Misc_Fish_99" and g.quality == 3, "learned icon + quality")
+  check(g and g.firstZone == "Riverglades" and type(g.firstSeen) == "string" and g.firstSeen ~= "", "learned first zone + first seen: " .. tostring(g and g.firstSeen))
+  check(L[6289] == nil, "static catalog item not learned")
+  ZONE_TEXT = "Elwynn Forest"
+  DarkMatter._FishingTest.BeginCast()
+  DarkMatter._FishingTest.OnFishingLoot()
+  check(L[250001].firstZone == "Riverglades", "first zone kept on later catches")
+  -- account entry learned elsewhere (not caught by this character)
+  L[250002] = { itemId = 250002, name = "Hyjal Ember Trout", quality = 2, firstZone = "Mount Hyjal", firstSeen = "2026-10-18" }
+
+  local list, total, st = DarkMatter.FishingCatchTypes(true, "")
+  local seen, dup, pos = {}, 0, {}
+  for i, e in ipairs(list) do
+    local k = e.itemId or e.name
+    if seen[k] then dup = dup + 1 end
+    seen[k] = true
+    pos[e.name] = i
+  end
+  check(dup == 0, "Show all deduped by itemId")
+  check(st and st.catalog == #list, "stats.catalog equals list size: " .. tostring(st and st.catalog) .. "/" .. #list)
+  local nCaught = 0
+  for _, e in ipairs(list) do if e.caught then nCaught = nCaught + 1 end end
+  check(st.caught == nCaught and nCaught >= 2, "stats.caught=" .. tostring(st.caught))
+  check(pos["Riverglades Glimmerfin"] and pos["Riverglades Glimmerfin"] <= nCaught, "learned+caught item in caught block")
+  check(pos["Hyjal Ember Trout"] == nCaught + 1, "account-learned (uncaught) ranks right after caught")
+  check(list[#list].caught == false and not list[#list].learned, "plain catalog entries sort last")
+  local filtered, _, st2 = DarkMatter.FishingCatchTypes(true, "glimmer")
+  check(#filtered == 1 and st2.catalog == st.catalog, "search filters rows, header stats unchanged")
+  local off = DarkMatter.FishingCatchTypes(false, "")
+  local hasAcct = false
+  for _, e in ipairs(off) do if e.name == "Hyjal Ember Trout" then hasAcct = true end end
+  check(not hasAcct and #off == nCaught, "Show all off: only own catches")
+
+  -- header text
+  DarkMatter.FishingSetUIPref("panel", "catches")
+  DarkMatter.FishingSetUIPref("catchMode", "fish")
+  DarkMatter.FishingSetUIPref("showAll", true)
+  DarkMatter.tabs.journals.Refresh()
+  local hdr
+  for _, fr in ipairs(FS) do if type(fr._text) == "string" and fr._text:find("^Catalog: %d+ items, %d+ caught$") then hdr = fr._text end end
+  check(hdr == string.format("Catalog: %d items, %d caught", st.catalog, st.caught), "Show all header: " .. tostring(hdr))
+  DarkMatter.FishingSetUIPref("showAll", false)
+  DarkMatter.tabs.journals.Refresh()
+  local hdr2
+  for _, fr in ipairs(FS) do if type(fr._text) == "string" and fr._text:find("caught · Show all for the full catalog", 1, true) then hdr2 = fr._text end end
+  check(hdr2 ~= nil, "Show all off header: " .. tostring(hdr2))
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

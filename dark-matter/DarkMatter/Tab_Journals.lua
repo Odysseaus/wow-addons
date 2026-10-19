@@ -18,7 +18,7 @@ local viewWaters, watersRoot, fishRoot, statsRoot, statsScroll
 local zoneScroll, detailPanel, detailTitle, detailMeta, detailStatus, detailBody, catchHeader, catchRows, emptyFish
 local fvCatches, fvStats, modeZone, modeFish
 local fishScroll, fishRowPool, emptyCatchFish
-local searchBox, showAllBox, filterBar
+local searchBox, showAllBox, filterBar, catalogNote
 local rowPool, selectedZone, selectedFish, fishRank, fishMax = {}, nil, nil, nil, nil
 local ev, pending = nil, false
 local ROW_H, FISH_ROW_H
@@ -285,7 +285,6 @@ end
 
 local function SetFishView(id)
   -- id: "catches" | "stats" | "zone" | "fish"
-  local ui = GetUI()
   if id == "stats" then
     NS.FishingSetUIPref("panel", "stats")
   elseif id == "catches" then
@@ -334,8 +333,16 @@ end
 local function RefreshFishList()
   if not fishScroll then return end
   local ui = GetUI()
-  local list, total = NS.FishingCatchTypes(ui.showAll, searchText)
+  local list, total, stats = NS.FishingCatchTypes(ui.showAll, searchText)
   local n = #list
+  if catalogNote then
+    stats = stats or {}
+    if ui.showAll then
+      catalogNote:SetText(string.format("Catalog: %d items, %d caught", stats.catalog or n, stats.caught or 0))
+    else
+      catalogNote:SetText(string.format("%d caught · Show all for the full catalog", stats.caught or n))
+    end
+  end
   for i = 1, math.max(n, #(fishRowPool or {})) do
     local r = fishRowPool and fishRowPool[i]
     local e = list[i]
@@ -347,7 +354,9 @@ local function RefreshFishList()
       r:SetPoint("RIGHT", fishScroll.content, "RIGHT", 0, 0)
       r.text:SetText(e.name)
       local caught = e.caught and (e.count or 0) > 0
-      r.text:SetTextColor(NS.Color(selectedFish == e.name and "liOn" or (caught and "listInk" or "listSoft")))
+      -- caught and account-learned items stand out; the rest of the catalog is soft
+      local lit = caught or e.learned
+      r.text:SetTextColor(NS.Color(selectedFish == e.name and "liOn" or (lit and "listInk" or "listSoft")))
       if caught then
         r.small:SetText(tostring(e.count))
         r.small:SetTextColor(NS.Color("gold"))
@@ -361,8 +370,14 @@ local function RefreshFishList()
       if caught then
         local pct = total > 0 and (100 * e.count / total) or 0
         r.sub:SetText(string.format("%.0f%% · %s%s", pct, e.junk and "junk · " or "", loc ~= "" and loc or "location unknown"))
+      elseif e.learned then
+        local where = e.firstZone and ("first seen in " .. e.firstZone) or "seen on this account"
+        r.sub:SetText("Learned · " .. where .. (e.firstSeen and (" · " .. e.firstSeen) or ""))
       else
-        r.sub:SetText(e.junk and "Not caught yet · junk" or "Not caught yet")
+        local bits = { e.junk and "Not caught yet · junk" or "Not caught yet" }
+        if e.waters then bits[#bits + 1] = e.waters end
+        if e.skill then bits[#bits + 1] = "skill " .. e.skill end
+        r.sub:SetText(table.concat(bits, " · "))
       end
       r.sub:SetTextColor(NS.Color(caught and "listSoft" or "listSoft"))
       r.icon:SetItem(e.itemId, NS.FishingItemQuality and NS.FishingItemQuality(e.itemId, e.quality) or e.quality, e.icon)
@@ -600,9 +615,9 @@ local function BuildFish(page)
   local fh = UI.Text(fishPanel, "OVERLAY", 12, "listHead", "LEFT")
   fh:SetPoint("TOPLEFT", fishPanel, "TOPLEFT", 10, -8)
   fh:SetText("Catch types")
-  local note = UI.Text(fishPanel, "OVERLAY", 11, "listSoft", "LEFT")
-  note:SetPoint("TOPRIGHT", fishPanel, "TOPRIGHT", -12, -8)
-  note:SetText("Show all = full fishing catalog; caught items on top")
+  catalogNote = UI.Text(fishPanel, "OVERLAY", 11, "listSoft", "RIGHT")
+  catalogNote:SetPoint("TOPRIGHT", fishPanel, "TOPRIGHT", -12, -8)
+  catalogNote:SetText("")
   fishScroll = UI.Scroll(fishPanel, innerW - 8, splitH - 28)
   fishScroll.frame:SetPoint("TOPLEFT", fishPanel, "TOPLEFT", 4, -26)
   emptyCatchFish = UI.Text(fishPanel, "OVERLAY", 12, "listSoft", "CENTER")
@@ -619,7 +634,6 @@ local function BuildFish(page)
   statsRoot:Hide()
 
   tab.RefreshFish = RefreshFish
-  local ui = GetUI()
   ApplyFishView()
 end
 

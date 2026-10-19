@@ -1,0 +1,1426 @@
+{
+ "Raw Brilliant Smallfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Brilliant_Smallfish",
+  "ids": [
+   "6291"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43085,
+  "disamb": false
+ },
+ "Raw Slitherskin Mackerel": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Slitherskin_Mackerel",
+  "ids": [
+   "6303"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42950,
+  "disamb": false
+ },
+ "Raw Longjaw Mud Snapper": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Longjaw_Mud_Snapper",
+  "ids": [
+   "6289"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 44392,
+  "disamb": false
+ },
+ "Raw Rainbow Fin Albacore": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Rainbow_Fin_Albacore",
+  "ids": [
+   "6361"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43656,
+  "disamb": false
+ },
+ "Raw Loch Frenzy": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Loch_Frenzy",
+  "ids": [
+   "6317"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42723,
+  "disamb": false
+ },
+ "Raw Sagefish": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Sagefish",
+  "ids": [
+   "21071"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43187,
+  "disamb": false
+ },
+ "Raw Bristle Whisker Catfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Bristle_Whisker_Catfish",
+  "ids": [
+   "6308"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43130,
+  "disamb": false
+ },
+ "Raw Greater Sagefish": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Greater_Sagefish",
+  "ids": [
+   "21153"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43622,
+  "disamb": false
+ },
+ "Raw Mithril Head Trout": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Mithril_Head_Trout",
+  "ids": [
+   "8365"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43085,
+  "disamb": false
+ },
+ "Raw Rockscale Cod": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Rockscale_Cod",
+  "ids": [
+   "6362"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43035,
+  "disamb": false
+ },
+ "Raw Sunscale Salmon": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Sunscale_Salmon",
+  "ids": [
+   "13760"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43225,
+  "disamb": false
+ },
+ "Raw Nightfin Snapper": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Nightfin_Snapper",
+  "ids": [
+   "13759"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 46080,
+  "disamb": false
+ },
+ "Raw Glossy Mightfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Glossy_Mightfish",
+  "ids": [
+   "13754"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 44072,
+  "disamb": false
+ },
+ "Large Raw Mightfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Large_Raw_Mightfish",
+  "ids": [
+   "13893"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40818,
+  "disamb": false
+ },
+ "Winter Squid": {
+  "url": "https://warcraft.wiki.gg/wiki/Winter_Squid",
+  "ids": [
+   "13755"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42352,
+  "disamb": false
+ },
+ "Raw Summer Bass": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Summer_Bass",
+  "ids": [
+   "13756"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 44076,
+  "disamb": false
+ },
+ "Raw Redgill": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Redgill",
+  "ids": [
+   "13758"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 44389,
+  "disamb": false
+ },
+ "Raw Spotted Yellowtail": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Spotted_Yellowtail",
+  "ids": [
+   "4603"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42854,
+  "disamb": false
+ },
+ "Darkclaw Lobster": {
+  "url": "https://warcraft.wiki.gg/wiki/Darkclaw_Lobster",
+  "ids": [
+   "13888"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 45293,
+  "disamb": false
+ },
+ "Raw Whitescale Salmon": {
+  "url": "https://warcraft.wiki.gg/wiki/Raw_Whitescale_Salmon",
+  "ids": [
+   "13889"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 44420,
+  "disamb": false
+ },
+ "Sickly Looking Fish": {
+  "url": "https://warcraft.wiki.gg/wiki/Sickly_Looking_Fish",
+  "ids": [
+   "6299"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40454,
+  "disamb": false
+ },
+ "Oil Covered Fish": {
+  "url": "https://warcraft.wiki.gg/wiki/Oil_Covered_Fish",
+  "ids": [
+   "6458"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39336,
+  "disamb": false
+ },
+ "Darkshore Grouper": {
+  "url": "https://warcraft.wiki.gg/wiki/Darkshore_Grouper",
+  "ids": [
+   "12238"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41609,
+  "disamb": false
+ },
+ "Oily Blackmouth": {
+  "url": "https://warcraft.wiki.gg/wiki/Oily_Blackmouth",
+  "ids": [
+   "6358"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 47029,
+  "disamb": false
+ },
+ "Firefin Snapper": {
+  "url": "https://warcraft.wiki.gg/wiki/Firefin_Snapper",
+  "ids": [
+   "6359"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 44611,
+  "disamb": false
+ },
+ "Deviate Fish": {
+  "url": "https://warcraft.wiki.gg/wiki/Deviate_Fish",
+  "ids": [
+   "6522"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 55078,
+  "disamb": false
+ },
+ "Threshadon Fang": {
+  "url": "https://warcraft.wiki.gg/wiki/Threshadon_Fang",
+  "ids": [
+   "5516"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40653,
+  "disamb": false
+ },
+ "Stonescale Eel": {
+  "url": "https://warcraft.wiki.gg/wiki/Stonescale_Eel",
+  "ids": [
+   "13422"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 45737,
+  "disamb": false
+ },
+ "Lightning Eel": {
+  "url": "https://warcraft.wiki.gg/wiki/Lightning_Eel",
+  "ids": [
+   "13757"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 45988,
+  "disamb": false
+ },
+ "Spotted Sunfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Spotted_Sunfish",
+  "ids": [
+   "1467"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42576,
+  "disamb": false
+ },
+ "Feralas Ahi": {
+  "url": "https://warcraft.wiki.gg/wiki/Feralas_Ahi",
+  "ids": [
+   "16967"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41332,
+  "disamb": false
+ },
+ "Misty Reed Mahi Mahi": {
+  "url": "https://warcraft.wiki.gg/wiki/Misty_Reed_Mahi_Mahi",
+  "ids": [
+   "16970"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39550,
+  "disamb": false
+ },
+ "Sar'theris Striker": {
+  "url": "https://warcraft.wiki.gg/wiki/Sar'theris_Striker",
+  "ids": [
+   "16968"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39566,
+  "disamb": false
+ },
+ "Savage Coast Blue Sailfin": {
+  "url": "https://warcraft.wiki.gg/wiki/Savage_Coast_Blue_Sailfin",
+  "ids": [
+   "16969"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39639,
+  "disamb": false
+ },
+ "Brownell's Blue Striped Racer": {
+  "url": "https://warcraft.wiki.gg/wiki/Brownell's_Blue_Striped_Racer",
+  "ids": [
+   "19803"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42913,
+  "disamb": false
+ },
+ "Dezian Queenfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Dezian_Queenfish",
+  "ids": [
+   "19806"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42480,
+  "disamb": false
+ },
+ "Keefer's Angelfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Keefer's_Angelfish",
+  "ids": [
+   "19805"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43619,
+  "disamb": false
+ },
+ "Speckled Tastyfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Speckled_Tastyfish",
+  "ids": [
+   "19807"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 46443,
+  "disamb": false
+ },
+ "Zulian Mudskunk": {
+  "url": "https://warcraft.wiki.gg/wiki/Zulian_Mudskunk",
+  "ids": [
+   "19975"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43534,
+  "disamb": false
+ },
+ "Electropeller": {
+  "url": "https://warcraft.wiki.gg/wiki/Electropeller",
+  "ids": [
+   "6718"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41755,
+  "disamb": false
+ },
+ "Gaffer Jack": {
+  "url": "https://warcraft.wiki.gg/wiki/Gaffer_Jack",
+  "ids": [
+   "6717"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 44029,
+  "disamb": false
+ },
+ "10 Pound Mud Snapper": {
+  "url": "https://warcraft.wiki.gg/wiki/10_Pound_Mud_Snapper",
+  "ids": [
+   "6292"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41558,
+  "disamb": false
+ },
+ "12 Pound Mud Snapper": {
+  "url": "https://warcraft.wiki.gg/wiki/12_Pound_Mud_Snapper",
+  "ids": [
+   "6294"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41557,
+  "disamb": false
+ },
+ "15 Pound Mud Snapper": {
+  "url": "https://warcraft.wiki.gg/wiki/15_Pound_Mud_Snapper",
+  "ids": [
+   "6295"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43933,
+  "disamb": false
+ },
+ "17 Pound Catfish": {
+  "url": "https://warcraft.wiki.gg/wiki/17_Pound_Catfish",
+  "ids": [
+   "6309"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43373,
+  "disamb": false
+ },
+ "19 Pound Catfish": {
+  "url": "https://warcraft.wiki.gg/wiki/19_Pound_Catfish",
+  "ids": [
+   "6310"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43591,
+  "disamb": false
+ },
+ "22 Pound Catfish": {
+  "url": "https://warcraft.wiki.gg/wiki/22_Pound_Catfish",
+  "ids": [
+   "6311"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43885,
+  "disamb": false
+ },
+ "26 Pound Catfish": {
+  "url": "https://warcraft.wiki.gg/wiki/26_Pound_Catfish",
+  "ids": [
+   "6363"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43652,
+  "disamb": false
+ },
+ "32 Pound Catfish": {
+  "url": "https://warcraft.wiki.gg/wiki/32_Pound_Catfish",
+  "ids": [],
+  "q": [],
+  "patch": [],
+  "len": 0,
+  "disamb": false
+ },
+ "34 Pound Redgill": {
+  "url": "https://warcraft.wiki.gg/wiki/34_Pound_Redgill",
+  "ids": [
+   "13885"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39041,
+  "disamb": false
+ },
+ "37 Pound Redgill": {
+  "url": "https://warcraft.wiki.gg/wiki/37_Pound_Redgill",
+  "ids": [
+   "13886"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39868,
+  "disamb": false
+ },
+ "42 Pound Redgill": {
+  "url": "https://warcraft.wiki.gg/wiki/42_Pound_Redgill",
+  "ids": [
+   "13882"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38813,
+  "disamb": false
+ },
+ "45 Pound Redgill": {
+  "url": "https://warcraft.wiki.gg/wiki/45_Pound_Redgill",
+  "ids": [
+   "13883"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38892,
+  "disamb": false
+ },
+ "49 Pound Redgill": {
+  "url": "https://warcraft.wiki.gg/wiki/49_Pound_Redgill",
+  "ids": [
+   "13884"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40714,
+  "disamb": false
+ },
+ "52 Pound Redgill": {
+  "url": "https://warcraft.wiki.gg/wiki/52_Pound_Redgill",
+  "ids": [
+   "13887"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40627,
+  "disamb": false
+ },
+ "40 Pound Grouper": {
+  "url": "https://warcraft.wiki.gg/wiki/40_Pound_Grouper",
+  "ids": [
+   "13876"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38837,
+  "disamb": false
+ },
+ "47 Pound Grouper": {
+  "url": "https://warcraft.wiki.gg/wiki/47_Pound_Grouper",
+  "ids": [
+   "13877"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39416,
+  "disamb": false
+ },
+ "53 Pound Grouper": {
+  "url": "https://warcraft.wiki.gg/wiki/53_Pound_Grouper",
+  "ids": [
+   "13878"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38868,
+  "disamb": false
+ },
+ "59 Pound Grouper": {
+  "url": "https://warcraft.wiki.gg/wiki/59_Pound_Grouper",
+  "ids": [
+   "13879"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38862,
+  "disamb": false
+ },
+ "68 Pound Grouper": {
+  "url": "https://warcraft.wiki.gg/wiki/68_Pound_Grouper",
+  "ids": [
+   "13880"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39612,
+  "disamb": false
+ },
+ "15 Pound Salmon": {
+  "url": "https://warcraft.wiki.gg/wiki/15_Pound_Salmon",
+  "ids": [
+   "13901"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40768,
+  "disamb": false
+ },
+ "18 Pound Salmon": {
+  "url": "https://warcraft.wiki.gg/wiki/18_Pound_Salmon",
+  "ids": [],
+  "q": [],
+  "patch": [],
+  "len": 0,
+  "disamb": false
+ },
+ "22 Pound Salmon": {
+  "url": "https://warcraft.wiki.gg/wiki/22_Pound_Salmon",
+  "ids": [
+   "13903"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40768,
+  "disamb": false
+ },
+ "25 Pound Salmon": {
+  "url": "https://warcraft.wiki.gg/wiki/25_Pound_Salmon",
+  "ids": [
+   "13904"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40768,
+  "disamb": false
+ },
+ "29 Pound Salmon": {
+  "url": "https://warcraft.wiki.gg/wiki/29_Pound_Salmon",
+  "ids": [
+   "13905"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41448,
+  "disamb": false
+ },
+ "32 Pound Salmon": {
+  "url": "https://warcraft.wiki.gg/wiki/32_Pound_Salmon",
+  "ids": [
+   "13906"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41337,
+  "disamb": false
+ },
+ "70 Pound Mightfish": {
+  "url": "https://warcraft.wiki.gg/wiki/70_Pound_Mightfish",
+  "ids": [
+   "13914"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39241,
+  "disamb": false
+ },
+ "85 Pound Mightfish": {
+  "url": "https://warcraft.wiki.gg/wiki/85_Pound_Mightfish",
+  "ids": [
+   "13915"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39235,
+  "disamb": false
+ },
+ "92 Pound Mightfish": {
+  "url": "https://warcraft.wiki.gg/wiki/92_Pound_Mightfish",
+  "ids": [
+   "13916"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39235,
+  "disamb": false
+ },
+ "103 Pound Mightfish": {
+  "url": "https://warcraft.wiki.gg/wiki/103_Pound_Mightfish",
+  "ids": [
+   "13917"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39901,
+  "disamb": false
+ },
+ "7 Pound Lobster": {
+  "url": "https://warcraft.wiki.gg/wiki/7_Pound_Lobster",
+  "ids": [
+   "13907"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38290,
+  "disamb": false
+ },
+ "9 Pound Lobster": {
+  "url": "https://warcraft.wiki.gg/wiki/9_Pound_Lobster",
+  "ids": [
+   "13908"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38287,
+  "disamb": false
+ },
+ "12 Pound Lobster": {
+  "url": "https://warcraft.wiki.gg/wiki/12_Pound_Lobster",
+  "ids": [
+   "13909"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38303,
+  "disamb": false
+ },
+ "15 Pound Lobster": {
+  "url": "https://warcraft.wiki.gg/wiki/15_Pound_Lobster",
+  "ids": [
+   "13910"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38299,
+  "disamb": false
+ },
+ "19 Pound Lobster": {
+  "url": "https://warcraft.wiki.gg/wiki/19_Pound_Lobster",
+  "ids": [
+   "13911"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38299,
+  "disamb": false
+ },
+ "21 Pound Lobster": {
+  "url": "https://warcraft.wiki.gg/wiki/21_Pound_Lobster",
+  "ids": [
+   "13912"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38343,
+  "disamb": false
+ },
+ "22 Pound Lobster": {
+  "url": "https://warcraft.wiki.gg/wiki/22_Pound_Lobster",
+  "ids": [
+   "13913"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40431,
+  "disamb": false
+ },
+ "Old Crafty": {
+  "url": "https://warcraft.wiki.gg/wiki/Old_Crafty",
+  "ids": [
+   "34486"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 3.0.2"
+  ],
+  "len": 49990,
+  "disamb": false
+ },
+ "Old Ironjaw": {
+  "url": "https://warcraft.wiki.gg/wiki/Old_Ironjaw",
+  "ids": [
+   "34484"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 44337,
+  "disamb": false
+ },
+ "Stendel's Bane": {
+  "url": "https://warcraft.wiki.gg/wiki/Stendel's_Bane",
+  "ids": [
+   "68795"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 44603,
+  "disamb": false
+ },
+ "Bloated Smallfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Bloated_Smallfish",
+  "ids": [
+   "6643"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41126,
+  "disamb": false
+ },
+ "Bloated Mud Snapper": {
+  "url": "https://warcraft.wiki.gg/wiki/Bloated_Mud_Snapper",
+  "ids": [
+   "6645"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43052,
+  "disamb": false
+ },
+ "Bloated Oily Blackmouth": {
+  "url": "https://warcraft.wiki.gg/wiki/Bloated_Oily_Blackmouth",
+  "ids": [
+   "21162"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40331,
+  "disamb": false
+ },
+ "Bloated Catfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Bloated_Catfish",
+  "ids": [
+   "6647"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41900,
+  "disamb": false
+ },
+ "Bloated Rockscale Cod": {
+  "url": "https://warcraft.wiki.gg/wiki/Bloated_Rockscale_Cod",
+  "ids": [
+   "21164"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42729,
+  "disamb": false
+ },
+ "Bloated Trout": {
+  "url": "https://warcraft.wiki.gg/wiki/Bloated_Trout",
+  "ids": [
+   "8366"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41731,
+  "disamb": false
+ },
+ "Bloated Mightfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Bloated_Mightfish",
+  "ids": [
+   "21243"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38936,
+  "disamb": false
+ },
+ "Bloated Redgill": {
+  "url": "https://warcraft.wiki.gg/wiki/Bloated_Redgill",
+  "ids": [
+   "13881"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43996,
+  "disamb": false
+ },
+ "Bloated Salmon": {
+  "url": "https://warcraft.wiki.gg/wiki/Bloated_Salmon",
+  "ids": [
+   "13891"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42266,
+  "disamb": false
+ },
+ "Small Barnacled Clam": {
+  "url": "https://warcraft.wiki.gg/wiki/Small_Barnacled_Clam",
+  "ids": [
+   "5523"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40599,
+  "disamb": false
+ },
+ "Thick-Shelled Clam": {
+  "url": "https://warcraft.wiki.gg/wiki/Thick-Shelled_Clam",
+  "ids": [
+   "5524"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41072,
+  "disamb": false
+ },
+ "Big-Mouth Clam": {
+  "url": "https://warcraft.wiki.gg/wiki/Big-Mouth_Clam",
+  "ids": [
+   "7973"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43518,
+  "disamb": false
+ },
+ "Dented Crate": {
+  "url": "https://warcraft.wiki.gg/wiki/Dented_Crate",
+  "ids": [
+   "6351"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42566,
+  "disamb": false
+ },
+ "Waterlogged Crate": {
+  "url": "https://warcraft.wiki.gg/wiki/Waterlogged_Crate",
+  "ids": [
+   "6352"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43510,
+  "disamb": false
+ },
+ "Sealed Crate": {
+  "url": "https://warcraft.wiki.gg/wiki/Sealed_Crate",
+  "ids": [],
+  "q": [],
+  "patch": [],
+  "len": 40079,
+  "disamb": true
+ },
+ "Heavy Crate": {
+  "url": "https://warcraft.wiki.gg/wiki/Heavy_Crate",
+  "ids": [
+   "13874"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42371,
+  "disamb": false
+ },
+ "Tightly Sealed Trunk": {
+  "url": "https://warcraft.wiki.gg/wiki/Tightly_Sealed_Trunk",
+  "ids": [
+   "20708"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42841,
+  "disamb": false
+ },
+ "Watertight Trunk": {
+  "url": "https://warcraft.wiki.gg/wiki/Watertight_Trunk",
+  "ids": [
+   "21113"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38956,
+  "disamb": false
+ },
+ "Iron Bound Trunk": {
+  "url": "https://warcraft.wiki.gg/wiki/Iron_Bound_Trunk",
+  "ids": [
+   "21150"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39913,
+  "disamb": false
+ },
+ "Mithril Bound Trunk": {
+  "url": "https://warcraft.wiki.gg/wiki/Mithril_Bound_Trunk",
+  "ids": [
+   "21228"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38798,
+  "disamb": false
+ },
+ "Small Locked Chest": {
+  "url": "https://warcraft.wiki.gg/wiki/Small_Locked_Chest",
+  "ids": [
+   "6354"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39181,
+  "disamb": false
+ },
+ "Sturdy Locked Chest": {
+  "url": "https://warcraft.wiki.gg/wiki/Sturdy_Locked_Chest",
+  "ids": [
+   "6355"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40480,
+  "disamb": false
+ },
+ "Ironbound Locked Chest": {
+  "url": "https://warcraft.wiki.gg/wiki/Ironbound_Locked_Chest",
+  "ids": [
+   "13875"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41601,
+  "disamb": false
+ },
+ "Reinforced Locked Chest": {
+  "url": "https://warcraft.wiki.gg/wiki/Reinforced_Locked_Chest",
+  "ids": [
+   "13918"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41410,
+  "disamb": false
+ },
+ "Message in a Bottle": {
+  "url": "https://warcraft.wiki.gg/wiki/Message_in_a_Bottle",
+  "ids": [
+   "6307"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43869,
+  "disamb": false
+ },
+ "Rumsey Rum Light": {
+  "url": "https://warcraft.wiki.gg/wiki/Rumsey_Rum_Light",
+  "ids": [
+   "20709"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39301,
+  "disamb": false
+ },
+ "Rumsey Rum Dark": {
+  "url": "https://warcraft.wiki.gg/wiki/Rumsey_Rum_Dark",
+  "ids": [
+   "21114"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39283,
+  "disamb": false
+ },
+ "Rumsey Rum Black Label": {
+  "url": "https://warcraft.wiki.gg/wiki/Rumsey_Rum_Black_Label",
+  "ids": [
+   "21151"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43826,
+  "disamb": false
+ },
+ "Deviate Scale": {
+  "url": "https://warcraft.wiki.gg/wiki/Deviate_Scale",
+  "ids": [
+   "6470"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 84440,
+  "disamb": false
+ },
+ "Stranglekelp": {
+  "url": "https://warcraft.wiki.gg/wiki/Stranglekelp",
+  "ids": [
+   "3820"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 84220,
+  "disamb": false
+ },
+ "Elemental Water": {
+  "url": "https://warcraft.wiki.gg/wiki/Elemental_Water",
+  "ids": [
+   "7070"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 63662,
+  "disamb": false
+ },
+ "Essence of Water": {
+  "url": "https://warcraft.wiki.gg/wiki/Essence_of_Water",
+  "ids": [
+   "7080"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 81864,
+  "disamb": false
+ },
+ "Globe of Water": {
+  "url": "https://warcraft.wiki.gg/wiki/Globe_of_Water",
+  "ids": [
+   "7079"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 65706,
+  "disamb": false
+ },
+ "Elemental Fire": {
+  "url": "https://warcraft.wiki.gg/wiki/Elemental_Fire",
+  "ids": [
+   "7068"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 69763,
+  "disamb": false
+ },
+ "Essence of Fire": {
+  "url": "https://warcraft.wiki.gg/wiki/Essence_of_Fire",
+  "ids": [
+   "7078"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 94990,
+  "disamb": false
+ },
+ "Heart of Fire": {
+  "url": "https://warcraft.wiki.gg/wiki/Heart_of_Fire",
+  "ids": [
+   "7077"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 79759,
+  "disamb": false
+ },
+ "The 1 Ring": {
+  "url": "https://warcraft.wiki.gg/wiki/The_1_Ring",
+  "ids": [
+   "8350"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 45345,
+  "disamb": false
+ },
+ "Broken Wine Bottle": {
+  "url": "https://warcraft.wiki.gg/wiki/Broken_Wine_Bottle",
+  "ids": [
+   "6651"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40971,
+  "disamb": false
+ },
+ "Steelscale Crushfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Steelscale_Crushfish",
+  "ids": [
+   "6360"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41994,
+  "disamb": false
+ },
+ "Rockhide Strongfish": {
+  "url": "https://warcraft.wiki.gg/wiki/Rockhide_Strongfish",
+  "ids": [
+   "19808"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42695,
+  "disamb": false
+ },
+ "Darkwood Fishing Pole": {
+  "url": "https://warcraft.wiki.gg/wiki/Darkwood_Fishing_Pole",
+  "ids": [
+   "6366"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 41654,
+  "disamb": false
+ },
+ "Driftwood": {
+  "url": "https://warcraft.wiki.gg/wiki/Driftwood",
+  "ids": [
+   "45190"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 43150,
+  "disamb": false
+ },
+ "Tangled Fishing Line": {
+  "url": "https://warcraft.wiki.gg/wiki/Tangled_Fishing_Line",
+  "ids": [
+   "45194"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 3.1.0",
+   "Patch 3.1.0",
+   "Patch 3.1.0"
+  ],
+  "len": 39467,
+  "disamb": false
+ },
+ "Tattered Cloth": {
+  "url": "https://warcraft.wiki.gg/wiki/Tattered_Cloth",
+  "ids": [
+   "45196"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 3.1.0",
+   "Patch 3.1.0",
+   "Patch 3.1.0"
+  ],
+  "len": 39251,
+  "disamb": false
+ },
+ "Weeds": {
+  "url": "https://warcraft.wiki.gg/wiki/Weeds",
+  "ids": [
+   "45198"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 3.1.0",
+   "Patch 3.1.0",
+   "Patch 3.1.0"
+  ],
+  "len": 38958,
+  "disamb": false
+ },
+ "Sickly Fish": {
+  "url": "https://warcraft.wiki.gg/wiki/Sickly_Fish",
+  "ids": [
+   "45200"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 3.1.0",
+   "Patch 3.1.0",
+   "Patch 3.1.0"
+  ],
+  "len": 40051,
+  "disamb": false
+ },
+ "Empty Rum Bottle": {
+  "url": "https://warcraft.wiki.gg/wiki/Empty_Rum_Bottle",
+  "ids": [
+   "45195"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 3.1.0",
+   "Patch 3.1.0",
+   "Patch 3.1.0"
+  ],
+  "len": 39272,
+  "disamb": false
+ },
+ "Old Boot": {
+  "url": "https://warcraft.wiki.gg/wiki/Old_Boot",
+  "ids": [
+   "45199"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 3.1.0",
+   "Patch 3.1.0",
+   "Patch 3.1.0"
+  ],
+  "len": 40275,
+  "disamb": false
+ },
+ "Rock": {
+  "url": "https://warcraft.wiki.gg/wiki/Rock",
+  "ids": [
+   "45201"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 3.1.0",
+   "Patch 3.1.0",
+   "Patch 3.1.0"
+  ],
+  "len": 39270,
+  "disamb": false
+ },
+ "Tree Branch": {
+  "url": "https://warcraft.wiki.gg/wiki/Tree_Branch",
+  "ids": [
+   "45197"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 3.1.0",
+   "Patch 3.1.0",
+   "Patch 3.1.0"
+  ],
+  "len": 39149,
+  "disamb": false
+ },
+ "Water Snail": {
+  "url": "https://warcraft.wiki.gg/wiki/Water_Snail",
+  "ids": [],
+  "q": [],
+  "patch": [
+   "Patch 10.0.2",
+   "Patch 10.0.2",
+   "Patch 10.0.2"
+  ],
+  "len": 42491,
+  "disamb": false
+ },
+ "Acidic Slime": {
+  "url": "https://warcraft.wiki.gg/wiki/Acidic_Slime",
+  "ids": [
+   "6456"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40047,
+  "disamb": false
+ },
+ "Old Skull": {
+  "url": "https://warcraft.wiki.gg/wiki/Old_Skull",
+  "ids": [
+   "6297"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38679,
+  "disamb": false
+ },
+ "Old Teamster's Skull": {
+  "url": "https://warcraft.wiki.gg/wiki/Old_Teamster's_Skull",
+  "ids": [
+   "6301"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 39708,
+  "disamb": false
+ },
+ "Old Wagonwheel": {
+  "url": "https://warcraft.wiki.gg/wiki/Old_Wagonwheel",
+  "ids": [
+   "6455"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38152,
+  "disamb": false
+ },
+ "Rusted Engineering Parts": {
+  "url": "https://warcraft.wiki.gg/wiki/Rusted_Engineering_Parts",
+  "ids": [
+   "6457"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 38913,
+  "disamb": false
+ },
+ "Seaweed": {
+  "url": "https://warcraft.wiki.gg/wiki/Seaweed",
+  "ids": [
+   "5569"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 40057,
+  "disamb": false
+ },
+ "Steam Pump Debris": {
+  "url": "https://warcraft.wiki.gg/wiki/Steam_Pump_Debris",
+  "ids": [
+   "27443"
+  ],
+  "q": [],
+  "patch": [
+   "Patch 2.0.3",
+   "Patch 2.0.3",
+   "Patch 2.0.3"
+  ],
+  "len": 39673,
+  "disamb": false
+ },
+ "Broken Engine Part": {
+  "url": "https://warcraft.wiki.gg/wiki/Broken_Engine_Part",
+  "ids": [
+   "34476"
+  ],
+  "q": [],
+  "patch": [],
+  "len": 42454,
+  "disamb": false
+ }
+}

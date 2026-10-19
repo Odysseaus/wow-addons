@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.7 (P2.7, fishing catalog: sourced + auto-learned)
+- **Auto-learn:** any fishing loot item (with an item link) that is not in the static catalog is saved per account in `DarkMatterDB.fishingCatalogLearned[itemId] = {itemId, name, icon, quality, firstZone, firstSeen}`. Later sightings only fill a missing icon/quality; first zone/date are kept.
+- **Show all** = static catalog + learned catalog + your own catches, deduped by itemId (name fallback for old link-less catches). Order: caught → learned (not yet caught by this character) → rest; then count, then name.
+- Header shows **"Catalog: N items, M caught"** (Show all on) or "M caught · Show all for the full catalog" (off). Learned rows: "Learned · first seen in <zone> · <date>"; uncaught rows show typical waters and skill hint.
+- **Static catalog expanded to 121 entries** (was ~30): classic fish, alchemic/special, quest, trophy, bloated containers, clams, crates, trunks, locked chests, Message in a Bottle / Rumsey rums, crafting reagents, fishing gear, vendor junk. Facts entered from public sources (warcraft.wiki.gg Fishing items / Fishing locations / per-item pages; source URL per section). No other addon's tables were used.
+- No public Forever-specific fishing loot list exists yet, so only items seen on a live Forever 1.60.1 client are `forever=true` (Raw Brilliant Smallfish, Raw Longjaw Mud Snapper, Raw Slitherskin Mackerel); the rest are `classicOnly=true` and are shown only when `C_Item.DoesItemExistByID` returns true on the client (hidden if the API is missing).
+- Fix: item 13888 is Darkclaw Lobster (12238 is Darkshore Grouper). Removed unsourced entries; post-Classic catches excluded.
+- Generator + source data in `tools/catalog/` (reproduces `Data_FishingCatches.lua` byte-for-byte).
+- luacheck: 0 warnings (added `GetItemInfoInstant`, `GetItemQualityColor`, `ITEM_QUALITY_COLORS` to read_globals; removed two unused locals).
+- Previewer: catalog header count, learned example row, waters/skill sub-text; catalog mirrors the addon's 121 entries; fish-icon colours moved to theme variables (DM-9 check passes again).
+
 ## 0.2.6 (P2.6, Forever item icons)
 - Fix fish icons rendering as **white squares** on Forever 1.60.1: `SetPortraitToTexture` blanks the texture on this client; icons now use plain `SetTexture` with square crop + **rarity rim** (poor→legendary via `GetItemQualityColor`).
 - Fix `GetItemInfoInstant` read: icon is the 5th return (0.2.4/0.2.5 took the 4th, a type/subtype string). Icon values are validated (fileID or `Interface\...` path only).

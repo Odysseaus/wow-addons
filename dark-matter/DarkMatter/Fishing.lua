@@ -461,6 +461,72 @@ local function ConfirmGotAway()
   f.streak = 0
 end
 
+---------------------------------------------------------------------------
+-- Catalog: static (Data_FishingCatches.lua) + per-account learned catalog
+---------------------------------------------------------------------------
+-- Per-account store of fishing loot that is not in the static catalog.
+-- DarkMatterDB.fishingCatalogLearned[itemId] = { itemId, name, icon, quality, firstZone, firstSeen }
+local function LearnedDB()
+  if type(DarkMatterDB) ~= "table" then return nil end
+  if type(DarkMatterDB.fishingCatalogLearned) ~= "table" then DarkMatterDB.fishingCatalogLearned = {} end
+  return DarkMatterDB.fishingCatalogLearned
+end
+
+function NS.FishingLearnedCatalog()
+  return LearnedDB() or {}
+end
+
+-- Add a fished item to the learned catalog the first time it is seen (static catalog items are skipped).
+local function LearnCatalogItem(itemId, name, icon, quality, zone)
+  itemId = SafeNum(itemId)
+  name = SafeStr(name)
+  if not itemId or not name then return false end
+  local byId = NS.FishingCatalogById and NS.FishingCatalogById() or {}
+  if byId[itemId] then return false end
+  local db = LearnedDB()
+  if not db then return false end
+  local e = db[itemId]
+  if type(e) == "table" then
+    -- fill gaps only; first zone / first seen stay as recorded
+    if not CoerceIcon(e.icon) and CoerceIcon(icon) then e.icon = CoerceIcon(icon) end
+    if not SafeNum(e.quality) and SafeNum(quality) then e.quality = SafeNum(quality) end
+    return false
+  end
+  db[itemId] = {
+    itemId = itemId,
+    name = name,
+    icon = CoerceIcon(icon),
+    quality = SafeNum(quality),
+    firstZone = SafeStr(zone),
+    firstSeen = DayKey(),
+  }
+  return true
+end
+NS._FishingLearn = LearnCatalogItem
+
+-- classicOnly entries are hidden unless this client confirms the item exists (cached per session).
+local existsCache = {}
+local function ClientHasItem(itemId)
+  local v = existsCache[itemId]
+  if v ~= nil then return v end
+  v = false
+  local CI = C_Item
+  if CI and CI.DoesItemExistByID then
+    local ok, r = pcall(CI.DoesItemExistByID, itemId)
+    v = (ok and r == true) and true or false
+  end
+  existsCache[itemId] = v
+  return v
+end
+
+function NS.FishingCatalogEntryVisible(e)
+  if type(e) ~= "table" or not e.itemId then return false end
+  if not e.classicOnly then return true end
+  return ClientHasItem(e.itemId)
+end
+
+function NS._FishingResetExistsCache() existsCache = {} end
+
 local function RecordLootSlot(f, zone, itemName, quantity, quality, link, lootTex)
   quantity = SafeNum(quantity) or 1
   quality = SafeNum(quality) or 1
@@ -505,6 +571,7 @@ local function RecordLootSlot(f, zone, itemName, quantity, quality, link, lootTe
   if itemId then it.itemId = itemId end
   local iconTex = CoerceIcon(lootTex)
   if iconTex then it.icon = iconTex end
+  if itemId then LearnCatalogItem(itemId, itemName, iconTex, quality, zone) end
   it.lastZone = zone
   local px, py = NS.ReadPlayerMapPos()
   if px and py then
@@ -691,7 +758,8 @@ end
 
 --- Catch types for Catches-by-fish.
 -- showAll false: only items this character has logged.
--- showAll true: full NS.FishingCatchCatalog; caught items highlighted + sorted to top; uncaught below.
+-- showAll true: static catalog (classicOnly gated by DoesItemExistByID) + learned catalog + own catches,
+-- deduped by itemId; caught, then learned, then uncaught. Third return: { catalog, caught, learned, static }.
 function NS.FishingCatchTypes(showAll, search)
   local f = Ensure()
   local caught = {} -- keyed by name
@@ -740,61 +808,93 @@ function NS.FishingCatchTypes(showAll, search)
     end
   end
 
-  local list, total = {}, 0
   search = search and tostring(search):lower() or ""
-
   local function want(name)
-    return search == "" or (name and name:lower():find(search, 1, true))
+    return search == "" or (name and name:lower():find(search, 1, true)) and true or false
   end
 
+  -- Own catches, keyed by itemId when known (else by name) so every source dedupes on itemId.
+  local merged, order = {}, {}
+  local function key(itemId, name) return itemId and ("i" .. itemId) or ("n" .. tostring(name)) end
+  local function put(k, e)
+    if not merged[k] then order[#order + 1] = k end
+    merged[k] = e
+  end
+  local byNameKey = {}
+  for name, e in pairs(caught) do
+    local k = key(e.itemId, name)
+    if merged[k] then
+      -- same item logged under two names: fold counts
+      merged[k].count = merged[k].count + e.count
+    else
+      e.source = "caught"
+      put(k, e)
+    end
+    byNameKey[name] = k
+  end
+
+  local stats = { catalog = 0, caught = 0, learned = 0, static = 0 }
+
   if showAll then
-    local seen = {}
-    for _, cat in ipairs(NS.FishingCatchCatalog or {}) do
-      local name = cat.name
-      if name and want(name) then
-        seen[name] = true
-        local c = caught[name]
+    -- Learned (per-account) catalog
+    for itemId, l in pairs(NS.FishingLearnedCatalog()) do
+      itemId = SafeNum(itemId) or SafeNum(type(l) == "table" and l.itemId)
+      local name = type(l) == "table" and SafeStr(l.name)
+      if itemId and name then
+        local k = byNameKey[name] or key(itemId, name)
+        local c = merged[k]
         if c then
-          list[#list + 1] = c
-          total = total + c.count
+          c.learned = true
+          c.firstZone = c.firstZone or SafeStr(l.firstZone)
+          c.firstSeen = c.firstSeen or SafeStr(l.firstSeen)
         else
-          list[#list + 1] = {
-            name = name,
-            count = 0,
-            junk = cat.junk and true or false,
-            quality = cat.junk and 0 or 1,
-            itemId = cat.itemId,
-            caught = false,
-            lastZone = nil,
-            lastX = nil,
-            lastY = nil,
-            zones = {},
-          }
+          put(k, {
+            name = name, count = 0, itemId = itemId, caught = false, learned = true, source = "learned",
+            icon = CoerceIcon(l.icon), quality = SafeNum(l.quality) or 1, junk = (SafeNum(l.quality) == 0),
+            firstZone = SafeStr(l.firstZone), firstSeen = SafeStr(l.firstSeen), zones = {},
+          })
         end
       end
     end
-    -- logged items not in catalog still appear (caught, top)
-    for name, c in pairs(caught) do
-      if not seen[name] and want(name) then
-        list[#list + 1] = c
-        total = total + c.count
+    -- Static catalog (classicOnly entries need client confirmation)
+    for _, cat in ipairs(NS.FishingCatchCatalog or {}) do
+      local k = byNameKey[cat.name] or key(cat.itemId, cat.name)
+      local c = merged[k]
+      if c then
+        c.waters = c.waters or cat.waters
+        c.skill = c.skill or cat.skill
+        c.cat = c.cat or cat.cat
+        if not c.icon then c.icon = cat.icon end
+        stats.static = stats.static + 1
+      elseif NS.FishingCatalogEntryVisible(cat) then
+        put(k, {
+          name = cat.name, count = 0, itemId = cat.itemId, caught = false, source = "static",
+          junk = cat.junk and true or false, quality = cat.quality or (cat.junk and 0 or nil),
+          icon = cat.icon, waters = cat.waters, skill = cat.skill, cat = cat.cat, zones = {},
+        })
+        stats.static = stats.static + 1
       end
     end
-    table.sort(list, function(a, b)
-      if a.caught ~= b.caught then return a.caught end
-      if a.count ~= b.count then return a.count > b.count end
-      return (a.name or "") < (b.name or "")
-    end)
-  else
-    for _, c in pairs(caught) do
-      if want(c.name) then
-        list[#list + 1] = c
-        total = total + c.count
-      end
-    end
-    table.sort(list, function(a, b) return a.count > b.count end)
   end
-  return list, total
+
+  local list, total = {}, 0
+  for _, k in ipairs(order) do
+    local e = merged[k]
+    stats.catalog = stats.catalog + 1
+    if e.caught then stats.caught = stats.caught + 1 end
+    if e.learned then stats.learned = stats.learned + 1 end
+    if e.caught then total = total + (e.count or 0) end
+    if want(e.name) then list[#list + 1] = e end
+  end
+  -- caught first, then learned (seen on this account), then the rest of the catalog
+  local function rank(e) return e.caught and 0 or (e.learned and 1 or 2) end
+  table.sort(list, function(a, b)
+    local ra, rb = rank(a), rank(b)
+    if ra ~= rb then return ra < rb end
+    if (a.count or 0) ~= (b.count or 0) then return (a.count or 0) > (b.count or 0) end
+    return (a.name or "") < (b.name or "")
+  end)
+  return list, total, stats
 end
 
 function NS.FishingFormatCoords(x, y)
