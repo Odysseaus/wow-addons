@@ -622,10 +622,11 @@ end
 
 -- Fill GameTooltip for one catch-type row entry. total = all logged catches (for share %).
 -- Returns "item" when the client item tooltip was used, "fallback" otherwise.
--- Tooltip placement (0.2.10), 4px gap:
---  no compare:   main BOTTOMRIGHT -> row TOPLEFT (-4,+4); if it doesn't fit, BOTTOMLEFT -> row TOPRIGHT (+4,+4)
---  compare shown: main BOTTOMLEFT -> row TOPRIGHT (+4,+4), ShoppingTooltip1/2 chained to its RIGHT (bottoms
---                 aligned); if that set doesn't fit, mirror: main BOTTOMRIGHT -> row TOPLEFT, compares to its LEFT
+-- Tooltip placement (0.2.10; item anchor 0.2.12), 4px gap. "item" = the row's item anchor: an invisible frame
+-- spanning the icon's left edge to the end of the name text, full row height (not the full-width row).
+--  no compare:   main BOTTOMRIGHT -> item TOPLEFT (-4,+4); if it doesn't fit, BOTTOMLEFT -> item TOPRIGHT (+4,+4)
+--  compare shown: main BOTTOMLEFT -> item TOPRIGHT (+4,+4), ShoppingTooltip1/2 chained to its RIGHT (bottoms
+--                 aligned); if that set doesn't fit, mirror: main BOTTOMRIGHT -> item TOPLEFT, compares to its LEFT
 --  near the top: everything goes below the row (TOP* -> BOTTOM*, y -4), tops aligned.
 -- We own GameTooltip with ANCHOR_PRESERVE so GameTooltip_AnchorComparisonTooltips never slides it
 -- (it only calls SetAnchorType when the type is not ANCHOR_PRESERVE). No hooks; we just re-point frames.
@@ -690,6 +691,10 @@ local function ShownCompares(tt)
       if st.GetOwner then
         local ok, o = pcall(st.GetOwner, st)
         owned = ok and o == tt
+        if not owned and st.IsOwned then
+          local ok2, yes = pcall(st.IsOwned, st, tt)
+          owned = ok2 and yes and true or false
+        end
       end
       if owned then
         list[#list + 1] = st
@@ -701,14 +706,102 @@ local function ShownCompares(tt)
   return list, cw, ch
 end
 
+-- Size a row's item anchor to icon + name text (string width, capped at the name's box). Rows without an
+-- item anchor (other callers) use the row itself.
+function NS.FishingUpdateItemAnchor(row)
+  local a = row and row.itemAnchor
+  if not a then return row end
+  local iconW = Num(row.icon, "GetWidth") or 28
+  local textW = Num(row.text, "GetStringWidth") or 0
+  local boxW = Num(row.text, "GetWidth")
+  if boxW and boxW > 0 and textW > boxW then textW = boxW end
+  if textW <= 0 then textW = boxW or 0 end
+  local w = iconW + (row.itemGap or 8) + textW
+  if w < iconW then w = iconW end
+  if a.SetWidth then a:SetWidth(w) end
+  return a
+end
+
+local function AnchorOf(owner)
+  return NS.FishingUpdateItemAnchor(owner) or owner
+end
+
+-- /dm tipdebug: after each placement, record the final points/rects of the tooltips and the anchor
+local function FrameLabel(f, owner, anchor)
+  if f == nil then return "nil" end
+  if f == anchor and anchor ~= owner then return "itemAnchor" end
+  if f == owner then return "row" end
+  local ok, n = pcall(function() return f:GetName() end)
+  if ok and n then return n end
+  if f == UIParent then return "UIParent" end
+  return tostring(f)
+end
+local function R(v) return v and math.floor(v * 10 + 0.5) / 10 or nil end
+local function DescribeFrame(f, owner, anchor)
+  if not f then return nil end
+  local d = { shown = (f.IsShown and f:IsShown()) and true or false, points = {} }
+  local okN, n = pcall(function() return f:GetNumPoints() end)
+  n = (okN and type(n) == "number") and n or 0
+  for i = 1, n do
+    local ok, p, rel, rp, x, y = pcall(f.GetPoint, f, i)
+    if ok and p then
+      d.points[#d.points + 1] = string.format("%s>%s:%s %s,%s", p, FrameLabel(rel, owner, anchor), tostring(rp), tostring(R(x)), tostring(R(y)))
+    end
+  end
+  local ok, l, b, w, h = pcall(function() return f:GetRect() end)
+  if ok and l then d.rect = { R(l), R(b), R(w), R(h) } end
+  d.scale = R(Num(f, "GetEffectiveScale"))
+  return d
+end
+local tipDebugPrinted = 0
+local function TipDebugRecord(tt, owner, anchor, reason, side, vert, nc)
+  local db = NS.db
+  local td = db and db.tipdebug
+  if not (td and td.on) then return end
+  local rec = {
+    at = date("%H:%M:%S"), reason = reason, side = side, vert = vert, compares = nc,
+    item = owner and owner.catchName,
+    frames = {
+      GameTooltip = DescribeFrame(tt, owner, anchor),
+      ShoppingTooltip1 = DescribeFrame(_G.ShoppingTooltip1, owner, anchor),
+      ShoppingTooltip2 = DescribeFrame(_G.ShoppingTooltip2, owner, anchor),
+      anchor = DescribeFrame(anchor, owner, anchor),
+      row = DescribeFrame(owner, owner, anchor),
+    },
+  }
+  td.last = rec
+  td.log = td.log or {}
+  table.insert(td.log, rec)
+  while #td.log > 40 do table.remove(td.log, 1) end
+  td.count = (td.count or 0) + 1
+  if tipDebugPrinted < 6 and NS.Print then
+    tipDebugPrinted = tipDebugPrinted + 1
+    local function rs(d) return d and d.rect and string.format("%s,%s %sx%s", d.rect[1], d.rect[2], d.rect[3], d.rect[4]) or "-" end
+    local g, s1 = rec.frames.GameTooltip, rec.frames.ShoppingTooltip1
+    NS.Print(string.format("tipdebug %s %s/%s: tip %s [%s] anchor %s cmp1 %s [%s]", reason, tostring(side), tostring(vert),
+      g and g.points[1] or "-", rs(g), rs(rec.frames.anchor), (s1 and s1.shown) and (s1.points[1] or "-") or "hidden", rs(s1)))
+  end
+end
+NS._FishingTipDebugRecord = TipDebugRecord
+
+function NS.FishingToggleTipDebug()
+  local db = NS.db
+  if not db then return nil end
+  db.tipdebug = db.tipdebug or {}
+  db.tipdebug.on = not db.tipdebug.on
+  tipDebugPrinted = 0
+  return db.tipdebug.on
+end
+
 local expected = {} -- frame -> { point, relativeTo } we last set
-local function PlaceTooltip(tt, owner)
+local function PlaceTooltip(tt, owner, reason)
   local compares, cw, ch = ShownCompares(tt)
-  local point, rel, x, y, side, vert = NS.FishingTooltipAnchor(tt, owner, cw, ch)
+  local anchor = AnchorOf(owner)
+  local point, rel, x, y, side, vert = NS.FishingTooltipAnchor(tt, anchor, cw, ch)
   expected = {}
   tt:ClearAllPoints()
-  tt:SetPoint(point, owner, rel, x, y)
-  expected[tt] = { point, owner }
+  tt:SetPoint(point, anchor, rel, x, y)
+  expected[tt] = { point, anchor }
   local prev = tt
   for _, st in ipairs(compares) do
     st:ClearAllPoints()
@@ -718,6 +811,7 @@ local function PlaceTooltip(tt, owner)
     expected[st] = { sp, prev }
     prev = st
   end
+  if reason then TipDebugRecord(tt, owner, anchor, reason, side, vert, #compares) end
   return side, vert, #compares
 end
 
@@ -758,8 +852,9 @@ local function StartWatch(tt, owner)
       local ok, owned = pcall(w.tt.IsOwned, w.tt, w.owner)
       if not (ok and owned and w.tt:IsShown()) then self.target = nil self:Hide() return end
       local sig = Signature(w.tt)
-      if sig ~= w.sig or PointsChanged() then
-        PlaceTooltip(w.tt, w.owner)
+      local moved = PointsChanged()
+      if sig ~= w.sig or moved then
+        PlaceTooltip(w.tt, w.owner, moved and "repoint" or "resize")
         w.sig = Signature(w.tt)
         w.fixes = (w.fixes or 0) + 1
       end
@@ -841,8 +936,9 @@ function NS.FishingShowCatchTooltip(owner, e, total)
   end
   if e.junk then tt:AddLine("Junk", 0.62, 0.62, 0.62) end
   tt:Show()
-  -- sizes are known after Show: place main + compare tooltips, then once more next frame
-  PlaceTooltip(tt, owner)
+  -- sizes are known after Show: place main + compare tooltips; the watcher keeps them there
+  tipDebugPrinted = 0
+  PlaceTooltip(tt, owner, "show")
   StartWatch(tt, owner)
   return mode
 end

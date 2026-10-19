@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.12 (P2.12, tooltips anchor to the item)
+- **Fix: tooltip far from the hovered item (default right-side layout).** Root cause: the placement anchored to the catch row frame, which spans the full width of the list (icon + name + count column, out to the scroll area's right edge). "Row TOPRIGHT" was therefore the far right of the list, hundreds of pixels from the item name. The mirrored layout looked right only because the row's TOPLEFT is next to the icon. The rules themselves were applied (in the 0.2.11 screenshot the main tooltip sits 4px above the row and the compare's bottom lines up with it); the anchor was wrong.
+- Each fish row now has an invisible **item anchor**: from the icon's left edge to the end of the name text (the name's actual string width, capped at its box), full row height. With compare: main BOTTOMLEFT at the item's TOPRIGHT (+4,+4), compares chained right, bottoms aligned; no compare: main BOTTOMRIGHT at the icon's TOPLEFT (-4,+4). Mirror and below-row rules unchanged.
+- Compare tooltips are recognised via `IsOwned` too when `GetOwner` is unavailable.
+- `/dm tipdebug` toggles a placement log: after each placement (show, resize, re-anchor) the final `GetPoint`/`GetRect`/scale of GameTooltip, ShoppingTooltip1/2, the item anchor and the row go to `DarkMatterDB.tipdebug` (`last` + `log` of 40), with a one-line chat summary (first 6 per hover). `/reload` writes SavedVariables.
+- Previewer: same item anchor (icon + measured name width); DM-25 checks it.
+
 ## 0.2.11 (P2.11, compare placement watcher + catalog audit)
 - **Fix: odd offset with a compare tooltip.** In 0.2.10 placement ran once after `Show()` and once on the next frame. The client's classic compare code (`GameTooltip_ShowCompareItem` / `GameTooltip_AnchorComparisonTooltips`) anchors `ShoppingTooltip1/2` TOPLEFT to GameTooltip's TOPRIGHT (0,-10) and fills them with a second `SetCompareItem`; sizes and anchors can settle after our pass, and the tooltip `OnUpdate` re-runs it via the owner's update. Also, per-row hover flags could let a list refresh (item data arriving) re-show the tooltip from a row the mouse had already left, so it sat over the neighbouring row.
 - Placement now runs from our own watcher frame while a row is hovered: whenever GameTooltip or a compare tooltip changes size, visibility or anchor, the rule set is re-applied (main + compares). Stops when the tooltip is hidden or owned by something else. Still taint-safe: no `hooksecurefunc`, no replaced globals.

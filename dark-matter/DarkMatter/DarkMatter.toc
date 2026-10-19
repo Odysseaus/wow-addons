@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.2.11 (P2.11): Fishing catalog (sourced + auto-learned) with item tooltips; Quests; /dm probe.
+## Notes: Dark Matter 0.2.12 (P2.12): Fishing catalog (sourced + auto-learned) with item tooltips; Quests; /dm probe.
 ## Author: Odysseaus
-## Version: 0.2.11
+## Version: 0.2.12
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

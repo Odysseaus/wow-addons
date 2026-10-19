@@ -1402,7 +1402,7 @@ if MODE ~= "minimal" then
   ttreset(); caughtRow._scripts.OnEnter(caughtRow)
   check(TT.owner == caughtRow and TT.anchor == "ANCHOR_PRESERVE" and TT.shown, "SetOwner(row, ANCHOR_PRESERVE) + Show")
   local lp = TT.point
-  check(lp and lp[1] == "BOTTOMRIGHT" and lp[2] == caughtRow and lp[3] == "TOPLEFT" and lp[4] == -4 and lp[5] == 4, "tooltip BOTTOMRIGHT to row TOPLEFT, gap -4,+4 (" .. tostring(lp and lp[1]) .. "," .. tostring(lp and lp[3]) .. "," .. tostring(lp and lp[4]) .. "," .. tostring(lp and lp[5]) .. "," .. tostring(lp and lp[2] == caughtRow) .. ")")
+  check(lp and lp[1] == "BOTTOMRIGHT" and lp[2] == caughtRow.itemAnchor and lp[3] == "TOPLEFT" and lp[4] == -4 and lp[5] == 4, "tooltip BOTTOMRIGHT to row TOPLEFT, gap -4,+4 (" .. tostring(lp and lp[1]) .. "," .. tostring(lp and lp[3]) .. "," .. tostring(lp and lp[4]) .. "," .. tostring(lp and lp[5]) .. "," .. tostring(lp and lp[2] == caughtRow.itemAnchor) .. ")")
   check(TT.link == "item:250001", "cached caught item uses stored link via SetHyperlink")
   check(has("Caught=") and has("Last caught=Elwynn Forest") , "caught lines: count + last zone (" .. table.concat(TT.lines, " | ") .. ")")
   caughtRow._scripts.OnLeave(caughtRow)
@@ -1595,13 +1595,13 @@ if MODE ~= "minimal" then
   -- (a) no compare: BOTTOMRIGHT -> row TOPLEFT
   COMPARE = false
   A._scripts.OnEnter(A)
-  check(T.anchor == "ANCHOR_PRESERVE" and T.pts and T.pts[1] == "BOTTOMRIGHT" and T.pts[2] == A and T.pts[3] == "TOPLEFT" and T.pts[4] == -4 and T.pts[5] == 4, "no compare: main BOTTOMRIGHT at row TOPLEFT -4,+4")
+  check(T.anchor == "ANCHOR_PRESERVE" and T.pts and T.pts[1] == "BOTTOMRIGHT" and T.pts[2] == A.itemAnchor and T.pts[3] == "TOPLEFT" and T.pts[4] == -4 and T.pts[5] == 4, "no compare: main BOTTOMRIGHT at item (icon) TOPLEFT -4,+4")
   A._scripts.OnLeave(A)
   -- (b) compare: the client anchors ShoppingTooltip1 TOPLEFT->TOPRIGHT -10 during SetHyperlink; we take over
   COMPARE = true
   A._scripts.OnEnter(A)
   check(not T.slid, "ANCHOR_PRESERVE: client compare code never slides the main tooltip")
-  check(T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A and T.pts[3] == "TOPRIGHT" and T.pts[4] == 4 and T.pts[5] == 4, "compare: main BOTTOMLEFT at hovered row TOPRIGHT +4,+4")
+  check(T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A.itemAnchor and T.pts[3] == "TOPRIGHT" and T.pts[4] == 4 and T.pts[5] == 4, "compare: main BOTTOMLEFT at the item (end of name) TOPRIGHT +4,+4, not the full row")
   local s1 = ShoppingTooltip1
   check(s1.pts[1] == "BOTTOMLEFT" and s1.pts[2] == GameTooltip and s1.pts[3] == "BOTTOMRIGHT" and s1.pts[4] == 0 and s1.pts[5] == 0, "compare: ShoppingTooltip1 chained right, bottoms aligned (not the client's TOPLEFT -10)")
   local W = DarkMatter._FishingTooltipWatch()
@@ -1610,7 +1610,7 @@ if MODE ~= "minimal" then
   clientCompare()
   check(s1.pts[1] == "TOPLEFT" and s1.pts[5] == -10, "repro: client re-anchor moves ShoppingTooltip1 back to TOPLEFT -10")
   W._scripts.OnUpdate(W, 0.016)
-  check(s1.pts[1] == "BOTTOMLEFT" and s1.pts[2] == GameTooltip and T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A, "watcher restores our placement after the client re-anchors")
+  check(s1.pts[1] == "BOTTOMLEFT" and s1.pts[2] == GameTooltip and T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A.itemAnchor, "watcher restores our placement after the client re-anchors")
   -- compare tooltip fills in later and grows (second SetCompareItem): re-placed on the size change
   local fixes = W.target.fixes or 0
   s1.h = 320
@@ -1644,6 +1644,60 @@ if MODE ~= "minimal" then
   local fc = DarkMatterDB.fishcheck
   check(fc and fc.checked >= 3 and #fc.mismatches == 1 and fc.mismatches[1].itemId == 6292 and fc.mismatches[1].client == "Ten Pound Test Snapper", "/dm fishcheck: 1 mismatch saved (" .. tostring(fc and fc.checked) .. " checked)")
   check(fc.seen and fc.seen[6292], "fishcheck keeps the names seen on rows")
+
+  -- 0.2.12: item anchor = icon + name string width (capped at the name box), not the full-width row
+  local ia = A.itemAnchor
+  check(ia and ia ~= A and ia ~= A.icon, "row has its own item anchor frame")
+  rawset(A.text, "GetStringWidth", function() return 140 end)
+  rawset(A.text, "GetWidth", function() return 300 end)
+  rawset(A.icon, "GetWidth", function() return 28 end)
+  local wSet
+  rawset(ia, "SetWidth", function(_, w) wSet = w end)
+  DarkMatter.FishingUpdateItemAnchor(A)
+  check(wSet == 28 + 8 + 140, "item anchor width = icon 28 + 8 + name string 140 (" .. tostring(wSet) .. ")")
+  rawset(A.text, "GetStringWidth", function() return 900 end)
+  DarkMatter.FishingUpdateItemAnchor(A)
+  check(wSet == 28 + 8 + 300, "long names capped at the name box")
+  local p1 = ia._pts and ia._pts[1]
+  check(p1 and p1[1] == "TOPLEFT" and p1[2] == A and p1[4] == 8 and p1[5] == 0, "item anchor starts at the icon's left edge, row top")
+  -- geometry: row 400 wide at x 100..500, item ends at 100+8+176=284; compare set placed right of 284, not 500
+  rawset(ia, "GetLeft", function() return 108 end); rawset(ia, "GetRight", function() return 284 end); rawset(ia, "GetTop", function() return 500 end)
+  local pp, rr, xx = DarkMatter.FishingTooltipAnchor(GameTooltip, ia, 220, 160)
+  check(pp == "BOTTOMLEFT" and rr == "TOPRIGHT" and xx == 4, "compare: right of the item end")
+  -- compare ownership through IsOwned when GetOwner is unavailable
+  COMPARE = true
+  A._scripts.OnEnter(A)
+  local s1b = ShoppingTooltip1
+  s1b.GetOwner = function() error("no GetOwner") end
+  s1b.IsOwned = function(_, o) return o == GameTooltip end
+  clientCompare()
+  W._scripts.OnUpdate(W, 0.016)
+  check(s1b.pts[1] == "BOTTOMLEFT" and s1b.pts[2] == GameTooltip, "compare recognised via IsOwned and chained")
+  s1b.GetOwner, s1b.IsOwned = function(self) return self.owner end, nil
+  A._scripts.OnLeave(A)
+  -- /dm tipdebug: toggle; each placement records final points/rects of GameTooltip, ShoppingTooltip1/2, anchor
+  local printed = 0
+  local savedPrint = DarkMatter.Print
+  DarkMatter.Print = function(m) if tostring(m):find("tipdebug", 1, true) then printed = printed + 1 end end
+  SlashCmdList["DARKMATTER"]("tipdebug")
+  check(DarkMatterDB.tipdebug and DarkMatterDB.tipdebug.on == true, "/dm tipdebug turns logging on")
+  A._scripts.OnEnter(A)
+  clientCompare(); W._scripts.OnUpdate(W, 0.016)
+  local td = DarkMatterDB.tipdebug
+  local last = td.last
+  check(td.count and td.count >= 2 and #td.log == td.count, "tipdebug: placements logged (" .. tostring(td.count) .. ")")
+  check(last and last.reason == "repoint" and last.item == A.catchName and last.frames.GameTooltip and last.frames.GameTooltip.points[1] == "BOTTOMLEFT>itemAnchor:TOPRIGHT 4,4", "tipdebug: last = repoint, GameTooltip point named (" .. tostring(last and last.frames.GameTooltip and last.frames.GameTooltip.points[1]) .. ")")
+  check(last.frames.ShoppingTooltip1 and last.frames.ShoppingTooltip1.shown and last.frames.anchor and last.frames.row and last.side == "right" and last.compares == 1, "tipdebug: compare, anchor and row recorded")
+  check(td.log[1].reason == "show", "tipdebug: first record is the show pass")
+  check(printed >= 3, "tipdebug: chat summary printed (" .. printed .. ")")
+  A._scripts.OnLeave(A)
+  SlashCmdList["DARKMATTER"]("tipdebug")
+  check(DarkMatterDB.tipdebug.on == false, "/dm tipdebug toggles off")
+  local n0 = DarkMatterDB.tipdebug.count
+  A._scripts.OnEnter(A); A._scripts.OnLeave(A)
+  check(DarkMatterDB.tipdebug.count == n0, "nothing logged when off")
+  DarkMatter.Print = savedPrint
+  COMPARE = false
 
   GetItemInfo = savedGII
   C_Item.IsItemDataCachedByID = savedCached

@@ -17,6 +17,7 @@ local function Help()
   print("  /dm icon  switch between the Dark Matter icon and a stock icon")
   print("  /dm options  open the Settings page")
   print("  /dm fishcheck  compare fishing catalog names with the client's item names")
+  print("  /dm tipdebug  log fishing tooltip placement (points/rects) to DarkMatterDB.tipdebug")
 end
 
 SlashCmdList["DARKMATTER"] = function(msg)
@@ -51,6 +52,11 @@ SlashCmdList["DARKMATTER"] = function(msg)
     NS.Print(NS.db.stockIcon and "using the stock icon." or "using the Dark Matter icon.")
   elseif cmd == "options" then
     NS.OpenOptions()
+  elseif cmd == "tipdebug" then
+    local on = NS.FishingToggleTipDebug()
+    local td = NS.db.tipdebug or {}
+    NS.Print("tipdebug " .. (on and "on: hover a fish row; placements are saved to DarkMatterDB.tipdebug (last + log) and summarized here." or
+      ("off (" .. tostring(td.count or 0) .. " placement(s) logged; /reload to write SavedVariables).")))
   elseif cmd == "fishcheck" then
     local res = NS.FishingCheckCatalog()
     NS.Print(string.format("fishcheck: %d items checked, %d name mismatch(es), %d not cached yet (saved to DarkMatterDB.fishcheck).",
