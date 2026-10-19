@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (fix: window did not assemble)
+- Fix: opening 0.1.0 showed one huge stretched frame corner, a flat slate area and no tabs or content. Cause: in `UI.NineSlice` the corner size was stored in a field named `t`, and the top-edge texture used the same key, so it overwrote the number. `SetSize(<texture>, <texture>)` then raised a Lua error in the client; the corners and edges never got a size and the window build aborted before the rail, tabs, body and footer were created. The size now lives in `n.size`.
+- The window build now runs under `pcall`: if anything ever errors while building, the half-built window is hidden and discarded, and the error is printed to the chat frame (`Dark Matter: the window could not be built: ...`) instead of leaving a broken window.
+- The active section pill no longer draws its marker over the label.
+- Test harness: the stub client is now strict (argument types, `SetPoint` forms, draw layers, sublevels) and resolves layout, so the tests now assert valid texcoords (0..1, left < right, top < bottom), anchored non-zero-size textures, no texture larger than the window, an 8-piece corner-to-corner window border, content frames above the window art, and atlas rects/TGA sizes. `tools/render_preview.py` composites the window offline from the Lua's own layout and the real TGAs.
+
 ## 0.1.0 (P1, main window)
 - New main window built from the approved previewer mockup: WoW theme, title plate with medal and close button, left tab rail (Quests, Journals, Map, Dungeons), footer with Settings, status field, Share stats (disabled) and Exit. Opens at screen centre, position saved on drag, **Reset window position** in the Settings popover, the Settings page, and `/dm reset`. Scales down on small screens.
 - Quests tab: reads the quest log from `C_QuestLog` (read only, secret-safe, never the `GetNumQuestLogEntries` global): zone headers with collapse and an All button, difficulty colours, detail panel with objectives. Quest events are registered on a private frame only while the tab is showing, and refreshes are coalesced.

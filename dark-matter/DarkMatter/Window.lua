@@ -14,6 +14,7 @@ end
 
 local frame
 local W = {} -- window parts
+NS.windowParts = W
 
 ---------------------------------------------------------------------------
 -- position
@@ -304,10 +305,22 @@ end
 
 function NS.GetWindow()
   if not frame then
-    Build()
-    ApplyPosition()
-    NS.SetStatus("Dark Matter " .. NS.version)
-    NS.ShowTab(NS.db and NS.db.tab or "quests")
+    -- Build under pcall: if anything in the build errors, never leave a half-built window behind.
+    local ok, err = pcall(function()
+      Build()
+      ApplyPosition()
+      NS.SetStatus("Dark Matter " .. NS.version)
+      NS.ShowTab(NS.db and NS.db.tab or "quests")
+    end)
+    if not ok then
+      if frame then frame:Hide() end
+      frame = nil
+      NS.buildError = tostring(err)
+      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff5555Dark Matter: the window could not be built:|r " .. NS.buildError)
+      end
+      return nil
+    end
   end
   return frame
 end
@@ -320,6 +333,7 @@ end
 
 function NS.ToggleWindow(show)
   local f = NS.GetWindow()
+  if not f then return end
   if show == nil then show = not f:IsShown() end
   if show then f:Show() else f:Hide() end
 end

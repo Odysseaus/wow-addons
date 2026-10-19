@@ -51,12 +51,12 @@ end
 
 -- Nine-slice border (no centre): corner pieces t x t, edges stretched between them.
 function UI.NineSlice(owner, prefix, t, layer, sub)
-  local n = { prefix = prefix, t = t }
+  local n = { prefix = prefix, size = t }
   for _, k in ipairs({ "tl", "tr", "bl", "br", "t", "b", "l", "r" }) do
     n[k] = owner:CreateTexture(nil, layer or "BORDER", nil, sub or 0)
   end
   function n:Apply()
-    local p, size = self.prefix, self.t
+    local p, size = self.prefix, self.size
     for _, k in ipairs({ "tl", "tr", "bl", "br", "t", "b", "l", "r" }) do NS.SetPiece(self[k], p .. "_" .. k) end
     self.tl:ClearAllPoints() self.tl:SetPoint("TOPLEFT", owner, "TOPLEFT", 0, 0) self.tl:SetSize(size, size)
     self.tr:ClearAllPoints() self.tr:SetPoint("TOPRIGHT", owner, "TOPRIGHT", 0, 0) self.tr:SetSize(size, size)
@@ -195,6 +195,8 @@ function UI.Pill(parent, label)
     self.glow:Apply(prefix)
     self.text:SetTextColor(NS.Color(self.active and "goldOn" or "gold"))
     if self.active then self.mark:Show() else self.mark:Hide() end
+    self.text:ClearAllPoints()
+    self.text:SetPoint("CENTER", self, "CENTER", self.active and 6 or 0, 1)
   end
   NS.OnSkin(function()
     NS.SetPiece(p.mark, "coin_target")
