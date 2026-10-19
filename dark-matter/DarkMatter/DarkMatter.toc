@@ -1,14 +1,22 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.0.4 (P0.3): minimap button, placeholder window, /dm probe. No gameplay features yet.
+## Notes: Dark Matter 0.1.0 (P1): main window with Quests tab (quest log list), themed with the WoW look; minimap button; /dm probe.
 ## Author: Odysseaus
-## Version: 0.0.4
+## Version: 0.1.0
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 
 Core.lua
 Probe.lua
+Theme.lua
+Atlas_WoW.lua
+Theme_WoW.lua
+Widgets.lua
+ProbeWindow.lua
 Window.lua
+Tab_Quests.lua
+Tab_Journals.lua
+Tab_Stub.lua
 Minimap.lua
 Options.lua
 Slash.lua

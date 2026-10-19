@@ -1,32 +1,61 @@
-# Dark Matter (P0.2 probe)
+# Dark Matter (P1 main window)
 
-**Version 0.0.4** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.1.0** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
-Dark Matter will be a dark, one-window overview of your quests, fishing, dungeons and achievements. **P0 is only the scaffold**: it adds a minimap button, a plain placeholder window, and a probe that checks which Blizzard APIs this client really has, so P1 can be built on facts instead of guesses. It does nothing else yet.
+Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
-## What P0 does
+## What P1 does
 
-- **Minimap button** (round, Dark Matter icon). Click it to open or close the window. Drag it around the minimap edge; the angle is saved. Right-click resets the window position.
-- **Placeholder window** (a stock Blizzard frame with a scrolling report area, not the final design). Opens at screen centre, drag it to move it, the position is saved. **Reset window position** button in the window, in the AddOns page of Settings (Dark Matter), or `/dm reset`.
+- **Main window** (880x680, the mockup's size; it shrinks on small screens, never grows). Opens at screen centre, drag it by the title plate, the position is saved to SavedVariables. **Reset window position** is in the window's Settings popover, in the AddOns page of Settings (Dark Matter), and `/dm reset`. Esc closes it.
+- **Left tab rail:** Quests, Journals, Map, Dungeons. The last tab you used is remembered.
+  - **Quests** lists your quest log from `C_QuestLog` (read only): zone headers with +/- to collapse, quest rows coloured by level difficulty, and a detail panel with level, zone, status and objectives. **All** collapses or expands every zone. The window never touches Blizzard's quest log.
+  - **Journals** has Fishing, Adventure Guide and Achievements sections as placeholders ("Coming soon").
+  - **Map** and **Dungeons** show a "coming in a later phase" page.
+- **Minimap button** (round, Dark Matter icon): click toggles the main window, drag moves it around the minimap edge, right-click resets the window position.
+- **Probe** (`/dm probe`) is the 0.0.4 probe, unchanged; its report opens in a separate small stock window.
 - **Slash commands**
 
   | Command | What it does |
   |---|---|
-  | `/dm` | toggle the window |
-  | `/dm probe` | run the probe (below); opens the summary window |
+  | `/dm` | toggle the main window |
+  | `/dm probe` | run the probe (below); opens the probe report window |
   | `/dm raw` | show or hide the raw call list in the probe window |
+  | `/dm blocked` | list recorded blocked actions |
   | `/dm reset` | reset window position (`/dm reset all` also puts the minimap button back) |
   | `/dm minimap` | show or hide the minimap button |
-  | `/dm icon` | switch the minimap icon between the Dark Matter icon and a stock Blizzard icon (use this if the icon ever shows blank) |
+  | `/dm icon` | switch the minimap icon between the Dark Matter icon and a stock Blizzard icon |
   | `/dm options` | open the Settings page |
   | `/dm help` | list commands |
 
-Safety: stock Blizzard controls only. No secure frames, no hooks on Blizzard code, nothing changed in combat. The Settings page is registered one frame after login (`C_Timer.After(0)`).
+Safety: stock Blizzard frame types only (Frame, Button, ScrollFrame, Slider, Texture, FontString). No secure frames, no hooks on Blizzard code, no `LoadAddOn` of Blizzard UIs, nothing changed in combat. Events live on private frames; quest events are registered only while the Quests tab is showing. The Settings page is registered one frame after login (`C_Timer.After(0)`). The 0.0.4 blocked-action logger is kept.
 
-## Running the probe (0.0.4)
+## Theme layer (data, not code)
+
+Art and layout live in theme data so the nine class themes can be added later without touching the window code.
+
+- `Theme.lua`: registry (`NS.RegisterTheme`), skin hooks (`NS.OnSkin`, `NS.SetTheme`), piece helpers (`NS.SetPiece`, `NS.Color`, `NS.Metric`).
+- `Theme_WoW.lua`: the default `wow` theme: colours, metrics (in mockup pixels), tab glyphs and the media paths.
+- `Atlas_WoW.lua`: generated; the rectangles of the 58 pieces inside `Media/wow-atlas.tga`.
+- `Widgets.lua`: 3-slice and 9-slice builders, buttons, tabs, pills, a custom scrollbar.
+- A class theme is a new `Theme_<Class>.lua` + `Atlas_<Class>.lua` + three `Media` files, registered with `NS.RegisterTheme`.
+
+## Textures
+
+Only the previewer's generated raster art is used. `tools/make_wow_textures.py` crops and packs it into power-of-two, uncompressed 32-bit TGA files in `Media/`:
+
+| File | Size | Use |
+|---|---|---|
+| `wow-atlas.tga` | 1024x512 | frame corners/edges, title plate, buttons, tabs, scrollbar, glyphs, pane borders (3-slice and 9-slice pieces) |
+| `wow-parchment.tga` | 1024x1024 | page background (stretched) |
+| `wow-slate.tga` | 512x256 | window and rail background (stretched) |
+| `dm-icon.tga` | existing | minimap icon |
+
+Regenerate with `python tools/make_wow_textures.py [art dir] [previewer themes.js] [addon dir]`.
+
+## Running the probe (unchanged since 0.0.4)
 
 1. Copy the `DarkMatter` folder into your AddOns folder (Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`). If the game is running, type `/reload`; if it doesn't show Dark Matter 0.0.4 in the addon list, quit and relaunch once.
-2. Type `/dm probe`. The window opens with a **summary: one line per area**, each marked `[OK]` (data came back), `[EMPTY]` (the call works but returned nothing) or `[MISSING]` (the API isn't there), with counts. The summary is short enough for one screenshot (scroll with the mouse wheel if needed).
+2. Type `/dm probe`. The probe window opens with a **summary: one line per area**, each marked `[OK]` (data came back), `[EMPTY]` (the call works but returned nothing) or `[MISSING]` (the API isn't there), with counts. The summary is short enough for one screenshot (scroll with the mouse wheel if needed).
 3. Wait about 5 seconds, then screenshot again: the **Items on demand** line updates once the game has had time to load item data ("[after 3s]").
 4. Optional: `/dm raw` shows or hides the full list of raw call returns in the window.
 5. For the complete data, type `/reload` (or log out) and share `World of Warcraft/_classic_beta_/WTF/Account/<YOUR ACCOUNT>/SavedVariables/DarkMatter.lua`. The raw returns of every call are in `DarkMatterDB["probe"]["calls"]`. Only read or send that file; nothing else in `WTF` needs touching.
@@ -59,7 +88,7 @@ All art is original: the minimap icon (`Media/dm-icon.tga`) was generated proced
 
 ## Files
 
-`DarkMatter.toc`, `Core.lua` (namespace, defaults), `Probe.lua`, `Window.lua`, `Minimap.lua`, `Options.lua`, `Slash.lua`, `Media/dm-icon.tga`.
+`DarkMatter.toc`, `Core.lua` (namespace, defaults, blocked-action logger), `Probe.lua`, `Theme.lua`, `Atlas_WoW.lua`, `Theme_WoW.lua`, `Widgets.lua`, `ProbeWindow.lua`, `Window.lua`, `Tab_Quests.lua`, `Tab_Journals.lua`, `Tab_Stub.lua`, `Minimap.lua`, `Options.lua`, `Slash.lua`, `Media/*.tga`.
 
 ### Blocked-action log (0.0.4)
 

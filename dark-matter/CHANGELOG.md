@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0 (P1, main window)
+- New main window built from the approved previewer mockup: WoW theme, title plate with medal and close button, left tab rail (Quests, Journals, Map, Dungeons), footer with Settings, status field, Share stats (disabled) and Exit. Opens at screen centre, position saved on drag, **Reset window position** in the Settings popover, the Settings page, and `/dm reset`. Scales down on small screens.
+- Quests tab: reads the quest log from `C_QuestLog` (read only, secret-safe, never the `GetNumQuestLogEntries` global): zone headers with collapse and an All button, difficulty colours, detail panel with objectives. Quest events are registered on a private frame only while the tab is showing, and refreshes are coalesced.
+- Journals tab: Fishing, Adventure Guide and Achievements sections as "Coming soon" placeholders. Map and Dungeons: "coming in a later phase" pages.
+- Theme layer: `NS.RegisterTheme`, skin hooks and piece helpers; the default WoW theme is data (`Theme_WoW.lua`, generated `Atlas_WoW.lua`) so the nine class themes can be added later as data.
+- Textures: the previewer's generated art packed into power-of-two uncompressed TGAs (`Media/wow-atlas.tga` 1024x512, `wow-parchment.tga` 1024x1024, `wow-slate.tga` 512x256) by `tools/make_wow_textures.py`; 3-slice and 9-slice pieces.
+- The minimap button toggles the main window.
+- The probe is unchanged (0.0.4) but its report now opens in its own small stock window (`/dm probe`, `/dm raw`). The blocked-action logger is kept.
+- Taint safety: stock frame types only, no hooks of Blizzard functions, no `LoadAddOn`, deferred Settings registration (`C_Timer.After(0)`), private frames for events.
+
 ## 0.0.4 (P0.3, taint-safe probe)
 - Fix: 0.0.3 could make the client report `ADDON_ACTION_BLOCKED` ("DarkMatter has been blocked from an action only available to the Blizzard UI") when run in a dungeon. The probe is now strictly read-only.
 - Removed every call that loads Blizzard UI or mutates/requests shared state: `LoadAddOn("Blizzard_AchievementUI")`, `C_EncounterJournal.InitalizeSelectedTier`/`OnOpen`/`OnClose`, `EJ_SelectTier`/`EJ_SelectInstance`/`EJ_SelectEncounter` and the selection restore, `RequestRaidInfo`, `C_Item.RequestLoadItemDataByID`, `GetLFGDungeonRewards`, and the `ITEM_DATA_LOAD_RESULT` counter.

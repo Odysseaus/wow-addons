@@ -37,8 +37,8 @@ SlashCmdList["DARKMATTER"] = function(msg)
     end
   elseif cmd == "raw" then
     NS.showRaw = not NS.showRaw
-    NS.Print("raw call list in the window: " .. (NS.showRaw and "on" or "off"))
-    if NS.RefreshWindow then NS.RefreshWindow() end
+    NS.Print("raw call list in the probe window: " .. (NS.showRaw and "on" or "off"))
+    if NS.RefreshProbeWindow then NS.RefreshProbeWindow() end
   elseif cmd == "reset" then
     NS.ResetWindowPosition()
     if rest == "all" then NS.ResetMinimapButton() NS.Print("minimap button reset.") end

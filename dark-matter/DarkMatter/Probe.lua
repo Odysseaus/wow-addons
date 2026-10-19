@@ -662,7 +662,7 @@ function NS.RunProbe(quiet)
       pcall(ItemPass, c, 2)
       NS.step = nil
       NS.Rebuild(out)
-      if NS.RefreshWindow then NS.RefreshWindow() end
+      if NS.RefreshProbeWindow then NS.RefreshProbeWindow() end
     end)
   end
 
@@ -670,7 +670,7 @@ function NS.RunProbe(quiet)
     NS.Print("probe done; saved to DarkMatterDB.probe. The window shows the summary (/dm raw toggles the raw call list).")
     for i = 1, 3 do print("  " .. out.summary[i]) end
   end
-  if NS.RefreshWindow then NS.RefreshWindow() end
-  if not quiet and NS.ToggleWindow then NS.ToggleWindow(true) end
+  if NS.RefreshProbeWindow then NS.RefreshProbeWindow() end
+  if not quiet and NS.ShowProbeWindow then NS.ShowProbeWindow() end
   return out
 end

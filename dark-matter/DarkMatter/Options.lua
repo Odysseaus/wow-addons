@@ -16,7 +16,7 @@ local function Register()
 
   local sub = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-  sub:SetText("P0 scaffold. Slash command: /dm   (/dm help lists the rest)")
+  sub:SetText("Dark Matter main window, minimap button and probe. Slash command: /dm   (/dm help lists the rest)")
 
   local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   reset:SetSize(190, 24)

@@ -1,9 +1,23 @@
--- Placeholder main window: a plain stock frame shell (P1 replaces this).
--- Opens at screen centre, remembers where you drag it, has a reset.
+-- Dark Matter main window (P1): the approved mockup layout built from stock frame types and the theme layer.
+-- Opens at screen centre, auto-saves its position, Reset window position lives in the Settings popover.
+-- Left vertical tabs; each tab is a module registered with NS.RegisterTab (Tab_*.lua).
 local _, NS = ...
+local UI = NS.UI
+
+NS.tabs = NS.tabs or {}
+NS.tabOrder = NS.tabOrder or {}
+
+function NS.RegisterTab(def)
+  NS.tabs[def.id] = def
+  NS.tabOrder[#NS.tabOrder + 1] = def.id
+end
 
 local frame
+local W = {} -- window parts
 
+---------------------------------------------------------------------------
+-- position
+---------------------------------------------------------------------------
 local function SavePosition()
   if not frame or not NS.db then return end
   local point, _, relPoint, x, y = frame:GetPoint(1)
@@ -27,104 +41,281 @@ function NS.ResetWindowPosition()
   NS.Print("window position reset to screen centre.")
 end
 
-local function Build()
-  local ok, f = pcall(CreateFrame, "Frame", "DarkMatterFrame", UIParent, "BasicFrameTemplateWithInset")
-  if not ok or not f then
-    f = CreateFrame("Frame", "DarkMatterFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
-    if f.SetBackdrop then
-      f:SetBackdrop({ bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border", edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 } })
-    end
-    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -2, -2)
+-- Shrink (never enlarge) so the 880x680 window fits small screens.
+local function FitScale(f)
+  local m = NS.theme.m
+  local s = 1
+  local uh, uw = NS.Num(UIParent:GetHeight()), NS.Num(UIParent:GetWidth())
+  if uh and uh > 0 then s = math.min(s, uh * m.maxScreenFraction / m.h) end
+  if uw and uw > 0 then s = math.min(s, uw * m.maxScreenFraction / m.w) end
+  f:SetScale(math.max(0.5, s))
+end
+
+---------------------------------------------------------------------------
+-- tabs
+---------------------------------------------------------------------------
+function NS.ShowTab(id)
+  if not frame then return end
+  local def = NS.tabs[id] or NS.tabs[NS.tabOrder[1]]
+  if not def then return end
+  id = def.id
+  local prevId = W.current
+  if prevId and prevId ~= id then
+    local prev = NS.tabs[prevId]
+    if prev and prev.OnHide then pcall(prev.OnHide) end
   end
-  f:SetSize(540, 460)
-  f:SetFrameStrata("MEDIUM")
+  for _, tid in ipairs(NS.tabOrder) do
+    local t = NS.tabs[tid]
+    if t.frame then t.frame:Hide() end
+    if W.railTabs[tid] then W.railTabs[tid]:SetActive(tid == id) end
+  end
+  if not def.frame then def.frame = def.Build(W.body) end
+  def.frame:Show()
+  W.current = id
+  if NS.db then NS.db.tab = id end
+  if W.pop then W.pop:Hide() end
+  if def.OnShow and frame:IsShown() then pcall(def.OnShow) end
+end
+
+function NS.SetStatus(text)
+  if W.statusText then W.statusText:SetText(text or "") end
+end
+
+function NS.SetAllIcon(expanded)
+  if W.allIcon then NS.SetPiece(W.allIcon, expanded and "coin_minus" or "coin_plus") end
+end
+
+---------------------------------------------------------------------------
+-- build
+---------------------------------------------------------------------------
+local function EdgeLine(parent, point1, rel1, point2, rel2, w, h, r, g, b)
+  local t = parent:CreateTexture(nil, "BORDER")
+  t:SetPoint(point1, parent, rel1, 0, 0)
+  t:SetPoint(point2, parent, rel2, 0, 0)
+  if w then t:SetWidth(w) end
+  if h then t:SetHeight(h) end
+  t:SetColorTexture(r, g, b, 1)
+  return t
+end
+
+local function BuildSettings(f)
+  local m = NS.theme.m
+  local pop = CreateFrame("Frame", nil, f)
+  pop:SetSize(m.popW, m.popH)
+  pop:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", m.popX, m.pad + m.popBottom)
+  pop:SetFrameLevel(f:GetFrameLevel() + 30)
+  pop:EnableMouse(true)
+  local bg = pop:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(pop)
+  local lines = {
+    EdgeLine(pop, "TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", nil, 1, 1, 1, 1),
+    EdgeLine(pop, "BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", nil, 1, 1, 1, 1),
+    EdgeLine(pop, "TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", 1, nil, 1, 1, 1),
+    EdgeLine(pop, "TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", 1, nil, 1, 1, 1),
+  }
+  NS.OnSkin(function()
+    bg:SetColorTexture(NS.Color("popBg"))
+    for _, l in ipairs(lines) do l:SetColorTexture(NS.Color("popBorder")) end
+  end)
+  local head = UI.Text(pop, "OVERLAY", 15, "listHead", "LEFT")
+  head:SetPoint("TOPLEFT", pop, "TOPLEFT", 14, -12)
+  head:SetText("Settings")
+  local label = UI.Text(pop, "OVERLAY", 14, "popInk", "LEFT")
+  label:SetPoint("TOPLEFT", pop, "TOPLEFT", 14, -44)
+  label:SetText("Theme")
+  local value = UI.Text(pop, "OVERLAY", 14, "gold", "RIGHT")
+  value:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -14, -44)
+  value:SetText(NS.theme.name)
+  local more = UI.Text(pop, "OVERLAY", 11, "listSoft", "LEFT")
+  more:SetPoint("TOPLEFT", pop, "TOPLEFT", 14, -64)
+  more:SetText("Class themes come in a later phase.")
+  local reset = UI.Button(pop, "Reset window position", m.popW - 28, m.fbtnH, "red", m.fbtnSize)
+  reset:SetPoint("BOTTOMLEFT", pop, "BOTTOMLEFT", 14, 14)
+  reset:SetScript("OnClick", function() NS.ResetWindowPosition() end)
+  pop:Hide()
+  return pop
+end
+
+local function Build()
+  local m = NS.theme.m
+  local f = CreateFrame("Frame", "DarkMatterFrame", UIParent)
+  f:SetSize(m.w, m.h)
+  f:SetFrameStrata("HIGH")
+  f:SetToplevel(true)
   f:SetClampedToScreen(true)
   f:SetMovable(true)
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", function(self) self:StartMoving() end)
   f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() SavePosition() end)
-  f:SetScript("OnShow", function() NS.RefreshWindow() end)
   f:Hide()
+  frame = f
+  FitScale(f)
 
-  local title = f.TitleText or (f.TitleContainer and f.TitleContainer.TitleText)
-  if title then
-    title:SetText("Dark Matter")
-  elseif f.SetTitle then
-    pcall(f.SetTitle, f, "Dark Matter")
-  else
-    title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", 0, -8)
-    title:SetText("Dark Matter")
+  -- dark slate behind everything, footer tint, thin line above the footer
+  local slate = f:CreateTexture(nil, "BACKGROUND", nil, 0)
+  slate:SetPoint("TOPLEFT", f, "TOPLEFT", m.pad, -m.pad)
+  slate:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -m.pad, m.pad)
+  NS.OnSkin(function()
+    slate:SetTexture(NS.theme.media.slate)
+    local s = NS.Metric("slateShade")
+    slate:SetVertexColor(s, s, s, 1)
+  end)
+  local tint = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+  tint:SetPoint("TOPLEFT", f, "TOPLEFT", m.pad, -m.footerTop)
+  tint:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -m.pad, m.pad)
+  local line = f:CreateTexture(nil, "BACKGROUND", nil, 2)
+  line:SetPoint("TOPLEFT", f, "TOPLEFT", m.pad, -m.footerTop)
+  line:SetPoint("TOPRIGHT", f, "TOPRIGHT", -m.pad, -m.footerTop)
+  line:SetHeight(1)
+  NS.OnSkin(function()
+    tint:SetColorTexture(0.016, 0.016, 0.016, NS.Metric("footerTint"))
+    line:SetColorTexture(0, 0, 0, 1)
+  end)
+
+  -- fine border frame
+  UI.NineSlice(f, "frame", m.frameCorner, "BORDER", 2)
+
+  -- title plate + title text (also a drag handle)
+  local tb = CreateFrame("Frame", nil, f)
+  tb:SetPoint("TOPLEFT", f, "TOPLEFT", m.titleX, -m.titleY)
+  tb:SetSize(m.titleW, m.titleH)
+  tb:EnableMouse(true)
+  tb:RegisterForDrag("LeftButton")
+  tb:SetScript("OnDragStart", function() f:StartMoving() end)
+  tb:SetScript("OnDragStop", function() f:StopMovingOrSizing() SavePosition() end)
+  UI.ThreeSlice(tb, "title", m.titleH, "ARTWORK")
+  local title = UI.Text(tb, "OVERLAY", m.titleSize, "title", "CENTER")
+  title:SetPoint("CENTER", tb, "CENTER", 0, 0)
+  NS.OnSkin(function() title:SetText(NS.theme.title or "Dark Matter") end)
+  W.title = title
+
+  -- rail with the vertical tabs
+  local rail = CreateFrame("Frame", nil, f)
+  rail:SetPoint("TOPLEFT", f, "TOPLEFT", m.railX, -m.railY)
+  rail:SetSize(m.railW, m.railH)
+  UI.Slate(rail, "railShade", "BACKGROUND", 3)
+  UI.NineSlice(rail, "pane", m.railBorder, "BORDER", 3)
+  W.rail = rail
+  W.railTabs = {}
+  for i, tid in ipairs(NS.tabOrder) do
+    local def = NS.tabs[tid]
+    local t = UI.RailTab(rail, def.name, NS.theme.glyphs[def.glyph])
+    t:SetPoint("TOPLEFT", rail, "TOPLEFT", m.tabX - m.railX, -(m.tabY - m.railY) - (i - 1) * (m.tabH + m.tabGap))
+    t:SetScript("OnClick", function() NS.ShowTab(tid) end)
+    W.railTabs[tid] = t
   end
 
-  local head = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  head:SetPoint("TOPLEFT", 16, -34)
-  head:SetText("Dark Matter " .. NS.version .. " (P0.3 probe)")
+  -- body host: tabs build into this
+  local body = CreateFrame("Frame", nil, f)
+  body:SetPoint("TOPLEFT", f, "TOPLEFT", m.bodyX, -m.bodyY)
+  body:SetSize(m.bodyW, m.bodyH)
+  W.body = body
 
-  local note = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  note:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -4)
-  note:SetWidth(500)
-  note:SetJustifyH("LEFT")
-  note:SetText("Summary of /dm probe (mouse wheel scrolls). /dm raw shows the raw call list; everything is saved in SavedVariables.")
+  -- quest-log style head row over the rail ("All" collapses/expands the quest list)
+  local allBtn = CreateFrame("Button", nil, f)
+  allBtn:SetPoint("TOPLEFT", f, "TOPLEFT", m.lheadAllX, -m.lheadAllY)
+  allBtn:SetSize(m.lheadAllW, m.lheadAllH)
+  UI.ThreeSlice(allBtn, "ptab_a", m.lheadAllH, "ARTWORK")
+  local allGlow = UI.ThreeSlice(allBtn, "ptab_a", m.lheadAllH, "HIGHLIGHT")
+  allGlow:SetBlend("ADD")
+  allGlow:SetAlpha(0.16)
+  W.allIcon = allBtn:CreateTexture(nil, "OVERLAY")
+  W.allIcon:SetSize(14, 14)
+  W.allIcon:SetPoint("LEFT", allBtn, "LEFT", 8, 0)
+  NS.OnSkin(function() NS.SetPiece(W.allIcon, "coin_minus") end)
+  local allText = UI.Text(allBtn, "OVERLAY", m.lheadSize, "lheadAll", "LEFT")
+  allText:SetPoint("LEFT", W.allIcon, "RIGHT", 5, 0)
+  allText:SetText("All")
+  allBtn:SetScript("OnClick", function()
+    local def = NS.tabs[W.current]
+    if def and def.ToggleAll then def.ToggleAll() end
+  end)
+  local trk = CreateFrame("Frame", nil, f)
+  trk:SetPoint("TOPLEFT", f, "TOPLEFT", m.lheadTrkX, -m.lheadTrkY)
+  trk:SetSize(100, 16)
+  local trkIcon = trk:CreateTexture(nil, "OVERLAY")
+  trkIcon:SetSize(14, 14)
+  trkIcon:SetPoint("LEFT", trk, "LEFT", 0, 0)
+  NS.OnSkin(function() NS.SetPiece(trkIcon, "coin_target") end)
+  local trkText = UI.Text(trk, "OVERLAY", m.lheadSize, "lheadInk", "LEFT")
+  trkText:SetPoint("LEFT", trkIcon, "RIGHT", 5, 0)
+  trkText:SetText("Track Quest")
 
-  local scroll = CreateFrame("ScrollFrame", "DarkMatterProbeScroll", f, "UIPanelScrollFrameTemplate")
-  scroll:SetPoint("TOPLEFT", 14, -78)
-  scroll:SetPoint("BOTTOMRIGHT", -34, 46)
-  local content = CreateFrame("Frame", nil, scroll)
-  content:SetSize(484, 10)
-  scroll:SetScrollChild(content)
-  local probeText = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  probeText:SetPoint("TOPLEFT", 0, 0)
-  probeText:SetWidth(484)
-  probeText:SetJustifyH("LEFT")
-  probeText:SetJustifyV("TOP")
-  probeText:SetText("No probe yet. Press Run probe (or type /dm probe).")
-  f.probeText = probeText
-  f.probeContent = content
-  f.probeScroll = scroll
+  -- footer: Settings, status field, Share stats (later phase), Exit
+  local settings = UI.Button(f, "Settings", m.fbtnW, m.fbtnH, "red", m.fbtnSize)
+  settings:SetPoint("TOPLEFT", f, "TOPLEFT", m.fbtnLeft, -m.fbtnY)
+  local status = CreateFrame("Frame", nil, f)
+  status:SetPoint("TOPLEFT", f, "TOPLEFT", m.statusX, -m.statusY)
+  status:SetSize(m.statusW, m.statusH)
+  UI.ThreeSlice(status, "btn_field", m.statusH, "ARTWORK")
+  W.statusText = UI.Text(status, "OVERLAY", m.statusSize, "status", "CENTER")
+  W.statusText:SetPoint("CENTER", status, "CENTER", 0, 0)
+  W.statusText:SetShadowOffset(0, 0)
+  local share = UI.Button(f, "Share stats", m.fbtnW, m.fbtnH, "grey", m.fbtnSize)
+  share:SetPoint("TOPLEFT", f, "TOPLEFT", m.shareX, -m.fbtnY)
+  share:Disable()
+  local exit = UI.Button(f, "Exit", m.fbtnW, m.fbtnH, "red", m.fbtnSize)
+  exit:SetPoint("TOPLEFT", f, "TOPLEFT", m.exitX, -m.fbtnY)
+  exit:SetScript("OnClick", function() f:Hide() end)
 
-  local probeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  probeBtn:SetSize(130, 24)
-  probeBtn:SetPoint("BOTTOMLEFT", 16, 14)
-  probeBtn:SetText("Run probe")
-  probeBtn:SetScript("OnClick", function() NS.RunProbe(false) end)
+  -- settings popover (Theme, Reset window position)
+  W.pop = BuildSettings(f)
+  settings:SetScript("OnClick", function()
+    if W.pop:IsShown() then W.pop:Hide() else W.pop:Show() end
+  end)
 
-  local resetBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  resetBtn:SetSize(170, 24)
-  resetBtn:SetPoint("LEFT", probeBtn, "RIGHT", 8, 0)
-  resetBtn:SetText("Reset window position")
-  resetBtn:SetScript("OnClick", function() NS.ResetWindowPosition() end)
+  -- medal (above the border, like the mockup) and close button
+  local medal = CreateFrame("Frame", nil, f)
+  medal:SetSize(m.medalSize, m.medalSize)
+  medal:SetPoint("TOPLEFT", f, "TOPLEFT", m.medalX, -m.medalY)
+  medal:SetFrameLevel(f:GetFrameLevel() + 40)
+  local medalTex = medal:CreateTexture(nil, "ARTWORK")
+  medalTex:SetAllPoints(medal)
+  NS.OnSkin(function() NS.SetPiece(medalTex, "medal") end)
 
-  -- ESC closes it, the stock way (plain table insert; no secure code involved).
+  local close = CreateFrame("Button", nil, f)
+  close:SetSize(m.closeSize, m.closeSize)
+  close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -(m.pad + m.closeRight), -(m.pad + m.closeTop))
+  close:SetFrameLevel(f:GetFrameLevel() + 20)
+  local closeTex = close:CreateTexture(nil, "ARTWORK")
+  closeTex:SetAllPoints(close)
+  local closeGlow = close:CreateTexture(nil, "HIGHLIGHT")
+  closeGlow:SetAllPoints(close)
+  closeGlow:SetBlendMode("ADD")
+  closeGlow:SetAlpha(0.25)
+  NS.OnSkin(function() NS.SetPiece(closeTex, "xbtn") NS.SetPiece(closeGlow, "xbtn") end)
+  close:SetScript("OnClick", function() f:Hide() end)
+
+  f:SetScript("OnShow", function()
+    local def = NS.tabs[W.current]
+    if def and def.OnShow then pcall(def.OnShow) end
+  end)
+  f:SetScript("OnHide", function()
+    if W.pop then W.pop:Hide() end
+    local def = NS.tabs[W.current]
+    if def and def.OnHide then pcall(def.OnHide) end
+  end)
+
+  -- ESC closes it, the stock way (plain table insert; Blizzard reads it through securecall).
   if type(UISpecialFrames) == "table" then tinsert(UISpecialFrames, "DarkMatterFrame") end
   return f
 end
 
 function NS.GetWindow()
   if not frame then
-    frame = Build()
+    Build()
     ApplyPosition()
-    NS.RefreshWindow()
+    NS.SetStatus("Dark Matter " .. NS.version)
+    NS.ShowTab(NS.db and NS.db.tab or "quests")
   end
   return frame
 end
 
 function NS.RefreshWindow()
-  if not frame or not frame.probeText then return end
-  local p = NS.lastProbe
-  if p and p.summary then
-    local text = table.concat(p.summary, "\n")
-    if NS.showRaw and NS.RawLines then
-      text = text .. "\n\n-- Raw call returns (type:value) --\n" .. table.concat(NS.RawLines(p), "\n")
-    end
-    frame.probeText:SetText(text)
-    frame.probeContent:SetHeight((frame.probeText:GetStringHeight() or 0) + 8)
-    frame.probeScroll:SetVerticalScroll(0)
-  end
+  if not frame then return end
+  local def = NS.tabs[W.current]
+  if def and def.Refresh then pcall(def.Refresh) end
 end
 
 function NS.ToggleWindow(show)

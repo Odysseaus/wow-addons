@@ -1,11 +1,11 @@
--- Dark Matter 0.0.4 (P0.3 taint-safe probe)
+-- Dark Matter 0.1.0 (P1: main window, Quests tab, WoW theme)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.0.4"
+NS.version = "0.1.0"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -14,6 +14,10 @@ local DEFAULTS = {
   window = { point = "CENTER", relPoint = "CENTER", x = 0, y = 0 },
   minimap = { angle = 215, hide = false },
   stockIcon = false,
+  theme = "wow",
+  tab = "quests",
+  section = "fishing",
+  questCollapsed = {},
   loadCount = 0,
 }
 
@@ -43,6 +47,7 @@ local function InitDB()
   NS.sv.previousProbeWhen = type(NS.db.probe) == "table" and NS.db.probe.when or nil
   CopyDefaults(NS.db, DEFAULTS)
   if type(NS.db.blockedLog) ~= "table" then NS.db.blockedLog = {} end
+  if NS.SetTheme and not NS.SetTheme(NS.db.theme) then NS.db.theme = "wow" end
   NS.db.loadCount = (tonumber(NS.db.loadCount) or 0) + 1
   NS.db.lastSession = date("%Y-%m-%d %H:%M:%S")
   NS.db.addonVersion = NS.version
