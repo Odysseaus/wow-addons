@@ -1,11 +1,11 @@
--- Dark Matter 0.2.14 (P2.14: tipdebug scales/room, settle re-apply, real-client geometry tests)
+-- Dark Matter 0.2.15 (P2.15: tooltip corner on the item icon)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.2.14"
+NS.version = "0.2.15"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)

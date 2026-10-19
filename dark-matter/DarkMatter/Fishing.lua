@@ -622,12 +622,13 @@ end
 
 -- Fill GameTooltip for one catch-type row entry. total = all logged catches (for share %).
 -- Returns "item" when the client item tooltip was used, "fallback" otherwise.
--- Tooltip placement (0.2.10; item anchor 0.2.12/0.2.13), 4px visible gap. "item" = the row's item anchor: an
--- invisible frame from the icon's top-left to the end of the name text, icon height (not the padded row).
---  no compare:   main BOTTOMRIGHT -> item TOPLEFT (-4,+4); if it doesn't fit, BOTTOMLEFT -> item TOPRIGHT (+4,+4)
---  compare shown: main BOTTOMLEFT -> item TOPRIGHT (+4,+4), ShoppingTooltip1/2 chained to its RIGHT (bottoms
---                 aligned); if that set doesn't fit, mirror: main BOTTOMRIGHT -> item TOPLEFT, compares to its LEFT
---  near the top: everything goes below the row (TOP* -> BOTTOM*, y -4), tops aligned.
+-- Tooltip placement (0.2.15 rule, replaces all earlier ones). Anchor = the row's item ICON.
+--  default (with or without compare): the leftmost tooltip of the set (the main GameTooltip; compares chain to
+--    its right, bottoms aligned) has its BOTTOMLEFT 4 units (visible, inset-corrected) right of and above the
+--    icon's TOPRIGHT.
+--  set would run off the right edge: mirror - the rightmost tooltip (main) has its BOTTOMRIGHT 4 units left of
+--    and above the icon's TOPLEFT, compares chained to its LEFT.
+--  no room above: below the icon, corners mirrored vertically (TOP* at the icon's BOTTOM*, tops aligned).
 -- We own GameTooltip with ANCHOR_PRESERVE so GameTooltip_AnchorComparisonTooltips never slides it
 -- (it only calls SetAnchorType when the type is not ANCHOR_PRESERVE). No hooks; we just re-point frames.
 local TIP_GAP = 4
@@ -669,13 +670,9 @@ function NS.FishingTooltipAnchor(tt, owner, cw, ch)
   -- free space on each side of the row (screen units); used when neither set fits
   local function roomLeft() return left and (left * os) or 0 end
   local function roomRight() return (right and screenW) and (screenW * us - right * os) or 0 end
-  local useRight
+  -- default right of the icon; mirror only when the set runs off the right edge (and the left is better)
   local fl, fr = fitsLeftSet(), fitsRightSet()
-  if hasCompare then
-    useRight = fr or (not fl and roomRight() >= roomLeft())
-  else
-    useRight = not fl and (fr or roomRight() > roomLeft())
-  end
+  local useRight = fr or (not fl and roomRight() >= roomLeft())
   local fitsTop = true
   local hh = math.max(h or 0, ch or 0)
   if top and h and screenH then fitsTop = (top * os + g + hh * ts) <= screenH * us end
@@ -718,30 +715,18 @@ local function ShownCompares(tt)
   return list, cw, ch
 end
 
--- Size a row's item anchor to icon + name text (string width, capped at the name's box). Rows without an
--- item anchor (other callers) use the row itself.
-function NS.FishingUpdateItemAnchor(row)
-  local a = row and row.itemAnchor
-  if not a then return row end
-  local iconW = Num(row.icon, "GetWidth") or 28
-  local textW = Num(row.text, "GetStringWidth") or 0
-  local boxW = Num(row.text, "GetWidth")
-  if boxW and boxW > 0 and textW > boxW then textW = boxW end
-  if textW <= 0 then textW = boxW or 0 end
-  local w = iconW + (row.itemGap or 8) + textW
-  if w < iconW then w = iconW end
-  if a.SetWidth then a:SetWidth(w) end
-  return a
-end
-
+-- The placement anchor is the row's item icon (a Frame); rows without one use the row itself.
 local function AnchorOf(owner)
-  return NS.FishingUpdateItemAnchor(owner) or owner
+  local ic = owner and owner.icon
+  if type(ic) == "table" and type(ic.GetRight) == "function" then return ic end
+  return owner
 end
+NS._FishingAnchorOf = AnchorOf
 
 -- /dm tipdebug: after each placement, record the final points/rects of the tooltips and the anchor
 local function FrameLabel(f, owner, anchor)
   if f == nil then return "nil" end
-  if f == anchor and anchor ~= owner then return "itemAnchor" end
+  if f == anchor and anchor ~= owner then return "icon" end
   if f == owner then return "row" end
   local ok, n = pcall(function() return f:GetName() end)
   if ok and n then return n end
@@ -779,11 +764,10 @@ local function TipDebugRecord(tt, owner, anchor, reason, side, vert, nc)
       ShoppingTooltip2 = DescribeFrame(_G.ShoppingTooltip2, owner, anchor),
       anchor = DescribeFrame(anchor, owner, anchor),
       row = DescribeFrame(owner, owner, anchor),
-      icon = owner and owner.icon and DescribeFrame(owner.icon, owner, anchor) or nil,
       UIParent = DescribeFrame(UIParent, owner, anchor),
     },
   }
-  -- visible gap estimate: frame gap between the tooltip and the item anchor, plus the border inset
+  -- visible gap estimate: frame gap between the tooltip and the icon, plus the border inset
   local ar, gr = rec.frames.anchor and rec.frames.anchor.rect, rec.frames.GameTooltip and rec.frames.GameTooltip.rect
   if ar and gr and ar[1] and gr[1] then
     local aL, aB, aR, aT = ar[1], ar[2], ar[1] + ar[3], ar[2] + ar[4]
@@ -802,19 +786,19 @@ local function TipDebugRecord(tt, owner, anchor, reason, side, vert, nc)
     tipDebugPrinted = tipDebugPrinted + 1
     local function rs(d) return d and d.rect and string.format("%s,%s %sx%s", d.rect[1], d.rect[2], d.rect[3], d.rect[4]) or "-" end
     local g, s1 = rec.frames.GameTooltip, rec.frames.ShoppingTooltip1
-    NS.Print(string.format("tipdebug %s %s/%s: tip %s [%s] anchor %s cmp1 %s [%s]", reason, tostring(side), tostring(vert),
+    NS.Print(string.format("tipdebug %s %s/%s: tip %s [%s] icon %s cmp1 %s [%s]", reason, tostring(side), tostring(vert),
       g and g.points[1] or "-", rs(g), rs(rec.frames.anchor), (s1 and s1.shown) and (s1.points[1] or "-") or "hidden", rs(s1)))
     local dc, fr = rec.decision, rec.frames
     if dc then
       local function sc(d) return d and tostring(d.scale) or "-" end
-      NS.Print(string.format("tipdebug scale ui %s tip %s anchor %s row %s icon %s | row %s icon %s | room L %s R %s need %s -> %s%s",
-        sc(fr.UIParent), sc(fr.GameTooltip), sc(fr.anchor), sc(fr.row), sc(fr.icon), rs(fr.row), rs(fr.icon),
+      NS.Print(string.format("tipdebug scale ui %s tip %s icon %s row %s | row %s icon %s | room L %s R %s need %s -> %s%s",
+        sc(fr.UIParent), sc(fr.GameTooltip), sc(fr.anchor), sc(fr.row), rs(fr.row), rs(fr.anchor),
         tostring(R(dc.roomLeft)), tostring(R(dc.roomRight)), tostring(R(dc.need)), tostring(side),
-        (side == "right" and not dc.compare and not dc.fitsLeft) and " (no room on the left)" or ""))
+        (side == "left") and " (mirrored: no room on the right)" or ""))
     end
     local d = rec.delta
     if d then
-      NS.Print(string.format("tipdebug anchor %s vs tip %s: frame gap x=%s y=%s, visible ~x=%s y=%s (inset %s, target 4)",
+      NS.Print(string.format("tipdebug icon %s vs tip %s: frame gap x=%s y=%s, visible ~x=%s y=%s (inset %s, target 4)",
         rs(rec.frames.anchor), rs(g), tostring(d.frameX), tostring(d.frameY), tostring(d.visibleX), tostring(d.visibleY), tostring(d.inset)))
     end
   end

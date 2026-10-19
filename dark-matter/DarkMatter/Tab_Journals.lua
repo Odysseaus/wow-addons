@@ -323,13 +323,6 @@ local function GetFishRow(i)
   r.sel = r:CreateTexture(nil, "BACKGROUND")
   r.sel:SetAllPoints(r)
   r.sel:Hide()
-  -- tooltip anchor = the item: icon top/bottom edges (not the row's padded top), icon left to the end of the
-  -- name text; width set from the name's string width
-  r.itemGap = 8
-  r.itemAnchor = CreateFrame("Frame", nil, r)
-  r.itemAnchor:SetPoint("TOPLEFT", r.icon, "TOPLEFT", 0, 0)
-  r.itemAnchor:SetPoint("BOTTOMLEFT", r.icon, "BOTTOMLEFT", 0, 0)
-  r.itemAnchor:SetWidth(28)
   r:SetScript("OnClick", function(self)
     selectedFish = self.catchName
     if tab and tab.RefreshFish then tab.RefreshFish() end
@@ -377,7 +370,6 @@ local function RefreshFishList()
       local clientName = NS.FishingClientItemName and NS.FishingClientItemName(e.itemId)
       if clientName and clientName ~= e.name then NS.FishingNoteNameMismatch(e.itemId, e.name, clientName) end
       r.text:SetText(clientName or e.name)
-      if NS.FishingUpdateItemAnchor then NS.FishingUpdateItemAnchor(r) end
       local caught = e.caught and (e.count or 0) > 0
       -- caught and account-learned items stand out; the rest of the catalog is soft
       local lit = caught or e.learned

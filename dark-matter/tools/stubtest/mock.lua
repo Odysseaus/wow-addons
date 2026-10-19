@@ -1402,7 +1402,7 @@ if MODE ~= "minimal" then
   ttreset(); caughtRow._scripts.OnEnter(caughtRow)
   check(TT.owner == caughtRow and TT.anchor == "ANCHOR_PRESERVE" and TT.shown, "SetOwner(row, ANCHOR_PRESERVE) + Show")
   local lp = TT.point
-  check(lp and lp[1] == "BOTTOMRIGHT" and lp[2] == caughtRow.itemAnchor and lp[3] == "TOPLEFT" and lp[4] == -1 and lp[5] == 1, "tooltip BOTTOMRIGHT to row TOPLEFT, gap -4,+4 (" .. tostring(lp and lp[1]) .. "," .. tostring(lp and lp[3]) .. "," .. tostring(lp and lp[4]) .. "," .. tostring(lp and lp[5]) .. "," .. tostring(lp and lp[2] == caughtRow.itemAnchor) .. ")")
+  check(lp and lp[1] == "BOTTOMLEFT" and lp[2] == caughtRow.icon and lp[3] == "TOPRIGHT" and lp[4] == 1 and lp[5] == 1, "tooltip BOTTOMLEFT at the icon TOPRIGHT, visible +4,+4 (" .. tostring(lp and lp[1]) .. "," .. tostring(lp and lp[3]) .. "," .. tostring(lp and lp[4]) .. "," .. tostring(lp and lp[5]) .. "," .. tostring(lp and lp[2] == caughtRow.icon) .. ")")
   check(TT.link == "item:250001", "cached caught item uses stored link via SetHyperlink")
   check(has("Caught=") and has("Last caught=Elwynn Forest") , "caught lines: count + last zone (" .. table.concat(TT.lines, " | ") .. ")")
   caughtRow._scripts.OnLeave(caughtRow)
@@ -1420,12 +1420,12 @@ if MODE ~= "minimal" then
   ttreset(); learnedRow._scripts.OnEnter(learnedRow)
   check(TT.itemId == nil and TT.link == nil and TT.lines[1] == "Hyjal Ember Trout" and TT.lines[2] == "Uncommon", "fallback tooltip: name + quality (" .. table.concat(TT.lines, " | ") .. ")")
   check(has("Dark Matter") and has("Not caught yet") and TT.shown, "fallback tooltip has Dark Matter lines")
-  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -1 and q[5] == 1, "fallback tooltip uses gap placement (gap 4 - inset 3)") end
+  do local q = TT.point check(q and q[1] == "BOTTOMLEFT" and q[3] == "TOPRIGHT" and q[4] == 1 and q[5] == 1, "fallback tooltip uses gap placement (gap 4 - inset 3)") end
   -- hovering while data arrives: list refresh rebuilds the tooltip with the real item
   C_Item.IsItemDataCachedByID = function() return true end
   ttreset(); DarkMatter.tabs.journals.Refresh()
   check(TT.itemId == 250002 and TT.owner == learnedRow, "refresh while hovered upgrades to item tooltip (" .. tostring(TT.itemId) .. "," .. tostring(TT.owner == learnedRow) .. "," .. tostring(rawget(learnedRow, "_hover")) .. "," .. tostring(learnedRow.entry and learnedRow.entry.name) .. ")")
-  do local q = TT.point check(q and q[1] == "BOTTOMRIGHT" and q[3] == "TOPLEFT" and q[4] == -1 and q[5] == 1, "refresh tooltip uses gap placement") end
+  do local q = TT.point check(q and q[1] == "BOTTOMLEFT" and q[3] == "TOPRIGHT" and q[4] == 1 and q[5] == 1, "refresh tooltip uses gap placement") end
   learnedRow._scripts.OnLeave(learnedRow)
   -- OnLeave from a row that no longer owns the tooltip does not hide someone else's tooltip
   ttreset(); TT.owner = "other"; caughtRow._scripts.OnLeave(caughtRow)
@@ -1438,7 +1438,9 @@ if MODE ~= "minimal" then
   local A = DarkMatter.FishingTooltipAnchor
   check(DarkMatter.FISH_TIP_GAP == 4, "gap is 4px")
   local p, r, x, y, sd, vt = A(tip, fr(500, 500))
-  check(p == "BOTTOMRIGHT" and r == "TOPLEFT" and x == -4 and y == 4 and vt == "up", "(a) no compare: BOTTOMRIGHT->TOPLEFT -4,+4")
+  check(p == "BOTTOMLEFT" and r == "TOPRIGHT" and x == 4 and y == 4 and vt == "up" and sd == "right", "0.2.15 default, no compare: BOTTOMLEFT->icon TOPRIGHT +4,+4")
+  p, r, x, y, sd = A(tip, fr(1300, 500, 200, 100, 1450))
+  check(p == "BOTTOMRIGHT" and r == "TOPLEFT" and x == -4 and y == 4 and sd == "left", "no compare, no room on the right: mirror BOTTOMRIGHT->icon TOPLEFT -4,+4")
   p, r, x, y = A(tip, fr(100, 500))
   check(p == "BOTTOMLEFT" and r == "TOPRIGHT" and x == 4 and y == 4, "(a) no room left: BOTTOMLEFT->TOPRIGHT +4,+4")
   p, r, x, y, sd = A(tip, fr(500, 500), 300, 150)
@@ -1448,10 +1450,10 @@ if MODE ~= "minimal" then
   p, r, x, y, sd, vt = A(tip, fr(500, 950), 300, 150)
   check(p == "TOPLEFT" and r == "BOTTOMRIGHT" and x == 4 and y == -4 and sd == "right" and vt == "down", "(c) compare near top: below the row, +4,-4")
   p, r, x, y, sd, vt = A(tip, fr(500, 950))
-  check(p == "TOPRIGHT" and r == "BOTTOMLEFT" and x == -4 and y == -4 and vt == "down", "(c) no compare near top: below the row, -4,-4")
+  check(p == "TOPLEFT" and r == "BOTTOMRIGHT" and x == 4 and y == -4 and vt == "down", "(c) no compare near top: below the icon, +4,-4")
   p, r, x, y = A(tip, fr(500, 850), 300, 200)
   check(p == "TOPLEFT" and y == -4, "(c) tall compare decides the top flip")
-  check(A(tip, {}) == "BOTTOMRIGHT" and A(tip, {}, 300, 100) == "BOTTOMLEFT", "no geometry: defaults per rule")
+  check(A(tip, {}) == "BOTTOMLEFT" and A(tip, {}, 300, 100) == "BOTTOMLEFT", "no geometry: default right of the icon")
   p, r, x, y, sd = A(tip, fr(400, 500, 200, 100, 1300), 900, 150)
   check(p == "BOTTOMRIGHT" and sd == "left", "(b) neither side fits: side with more room (left)")
   p, r, x, y, sd = A(tip, fr(300, 500, 200, 100, 1100), 900, 150)
@@ -1491,7 +1493,7 @@ if MODE ~= "minimal" then
   function s1:GetOwner() return "ItemRefTooltip" end
   s2.pts, s1.pts = {}, {}
   DarkMatter._FishingPlaceTooltip(mt, fr(500, 500))
-  check(#s1.pts == 0 and mt.pts[1][1] == "BOTTOMRIGHT", "compare owned by another tooltip is ignored (rule a)")
+  check(#s1.pts == 0 and mt.pts[1][1] == "BOTTOMLEFT", "compare owned by another tooltip is ignored")
   ShoppingTooltip1, ShoppingTooltip2 = nil, nil
   rawset(UIParent, "GetHeight", nil)
   rawset(UIParent, "GetWidth", nil)
@@ -1595,13 +1597,13 @@ if MODE ~= "minimal" then
   -- (a) no compare: BOTTOMRIGHT -> row TOPLEFT
   COMPARE = false
   A._scripts.OnEnter(A)
-  check(T.anchor == "ANCHOR_PRESERVE" and T.pts and T.pts[1] == "BOTTOMRIGHT" and T.pts[2] == A.itemAnchor and T.pts[3] == "TOPLEFT" and T.pts[4] == -1 and T.pts[5] == 1, "no compare: main BOTTOMRIGHT at item (icon) TOPLEFT -4,+4")
+  check(T.anchor == "ANCHOR_PRESERVE" and T.pts and T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A.icon and T.pts[3] == "TOPRIGHT" and T.pts[4] == 1 and T.pts[5] == 1, "no compare: main BOTTOMLEFT at the icon TOPRIGHT (visible +4,+4)")
   A._scripts.OnLeave(A)
   -- (b) compare: the client anchors ShoppingTooltip1 TOPLEFT->TOPRIGHT -10 during SetHyperlink; we take over
   COMPARE = true
   A._scripts.OnEnter(A)
   check(not T.slid, "ANCHOR_PRESERVE: client compare code never slides the main tooltip")
-  check(T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A.itemAnchor and T.pts[3] == "TOPRIGHT" and T.pts[4] == 1 and T.pts[5] == 1, "compare: main BOTTOMLEFT at the item (end of name) TOPRIGHT +4,+4, not the full row")
+  check(T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A.icon and T.pts[3] == "TOPRIGHT" and T.pts[4] == 1 and T.pts[5] == 1, "compare: leftmost (main) BOTTOMLEFT at the icon TOPRIGHT +4,+4")
   local s1 = ShoppingTooltip1
   check(s1.pts[1] == "BOTTOMLEFT" and s1.pts[2] == GameTooltip and s1.pts[3] == "BOTTOMRIGHT" and s1.pts[4] == 0 and s1.pts[5] == 0, "compare: ShoppingTooltip1 chained right, bottoms aligned (not the client's TOPLEFT -10)")
   local W = DarkMatter._FishingTooltipWatch()
@@ -1610,7 +1612,7 @@ if MODE ~= "minimal" then
   clientCompare()
   check(s1.pts[1] == "TOPLEFT" and s1.pts[5] == -10, "repro: client re-anchor moves ShoppingTooltip1 back to TOPLEFT -10")
   W._scripts.OnUpdate(W, 0.016)
-  check(s1.pts[1] == "BOTTOMLEFT" and s1.pts[2] == GameTooltip and T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A.itemAnchor, "watcher restores our placement after the client re-anchors")
+  check(s1.pts[1] == "BOTTOMLEFT" and s1.pts[2] == GameTooltip and T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A.icon, "watcher restores our placement after the client re-anchors")
   -- compare tooltip fills in later and grows (second SetCompareItem): re-placed on the size change
   local fixes = W.target.fixes or 0
   s1.h = 320
@@ -1645,28 +1647,10 @@ if MODE ~= "minimal" then
   check(fc and fc.checked >= 3 and #fc.mismatches == 1 and fc.mismatches[1].itemId == 6292 and fc.mismatches[1].client == "Ten Pound Test Snapper", "/dm fishcheck: 1 mismatch saved (" .. tostring(fc and fc.checked) .. " checked)")
   check(fc.seen and fc.seen[6292], "fishcheck keeps the names seen on rows")
 
-  -- 0.2.12: item anchor = icon + name string width (capped at the name box), not the full-width row
-  local ia = A.itemAnchor
-  check(ia and ia ~= A and ia ~= A.icon, "row has its own item anchor frame")
-  rawset(A.text, "GetStringWidth", function() return 140 end)
-  rawset(A.text, "GetWidth", function() return 300 end)
-  rawset(A.icon, "GetWidth", function() return 28 end)
-  local wSet
-  rawset(ia, "SetWidth", function(_, w) wSet = w end)
-  DarkMatter.FishingUpdateItemAnchor(A)
-  check(wSet == 28 + 8 + 140, "item anchor width = icon 28 + 8 + name string 140 (" .. tostring(wSet) .. ")")
-  rawset(A.text, "GetStringWidth", function() return 900 end)
-  DarkMatter.FishingUpdateItemAnchor(A)
-  check(wSet == 28 + 8 + 300, "long names capped at the name box")
-  local p1 = ia._pts and ia._pts[1]
-  check(p1 and p1[1] == "TOPLEFT" and p1[2] == A.icon and p1[3] == "TOPLEFT" and p1[4] == 0 and p1[5] == 0, "item anchor top-left = icon top-left (not the padded row top)")
-  local p2 = ia._pts and ia._pts[2]
-  check(p2 and p2[1] == "BOTTOMLEFT" and p2[2] == A.icon and p2[3] == "BOTTOMLEFT", "item anchor bottom = icon bottom")
+  -- 0.2.15: the anchor is the item icon itself (no item-anchor frame, no name width)
+  local ia = A.icon
+  check(DarkMatter._FishingAnchorOf(A) == A.icon and rawget(A, "itemAnchor") == nil, "placement anchor = the row's icon frame")
   check(DarkMatter.FISH_TIP_INSET == 3, "tooltip border inset 3 (SetPoint offset = gap 4 - inset 3)")
-  -- geometry: row 400 wide at x 100..500, item ends at 100+8+176=284; compare set placed right of 284, not 500
-  rawset(ia, "GetLeft", function() return 108 end); rawset(ia, "GetRight", function() return 284 end); rawset(ia, "GetTop", function() return 500 end)
-  local pp, rr, xx = DarkMatter.FishingTooltipAnchor(GameTooltip, ia, 220, 160)
-  check(pp == "BOTTOMLEFT" and rr == "TOPRIGHT" and xx == 4, "compare: right of the item end")
   -- compare ownership through IsOwned when GetOwner is unavailable
   COMPARE = true
   A._scripts.OnEnter(A)
@@ -1689,7 +1673,7 @@ if MODE ~= "minimal" then
   local td = DarkMatterDB.tipdebug
   local last = td.last
   check(td.count and td.count >= 2 and #td.log == td.count, "tipdebug: placements logged (" .. tostring(td.count) .. ")")
-  check(last and last.reason == "repoint" and last.item == A.catchName and last.frames.GameTooltip and last.frames.GameTooltip.points[1] == "BOTTOMLEFT>itemAnchor:TOPRIGHT 1,1", "tipdebug: last = repoint, GameTooltip point named (" .. tostring(last and last.frames.GameTooltip and last.frames.GameTooltip.points[1]) .. ")")
+  check(last and last.reason == "repoint" and last.item == A.catchName and last.frames.GameTooltip and last.frames.GameTooltip.points[1] == "BOTTOMLEFT>icon:TOPRIGHT 1,1", "tipdebug: last = repoint, GameTooltip point named (" .. tostring(last and last.frames.GameTooltip and last.frames.GameTooltip.points[1]) .. ")")
   check(last.frames.ShoppingTooltip1 and last.frames.ShoppingTooltip1.shown and last.frames.anchor and last.frames.row and last.side == "right" and last.compares == 1, "tipdebug: compare, anchor and row recorded")
   check(td.log[1].reason == "show", "tipdebug: first record is the show pass")
   check(printed >= 3, "tipdebug: chat summary printed (" .. printed .. ")")
@@ -1708,7 +1692,7 @@ if MODE ~= "minimal" then
   COMPARE = false
   A._scripts.OnEnter(A)
   local dl
-  for _, l in ipairs(lines) do if l:find("tipdebug anchor", 1, true) then dl = l end end
+  for _, l in ipairs(lines) do if l:find("tipdebug icon", 1, true) then dl = l end end
   local dd = DarkMatterDB.tipdebug.last and DarkMatterDB.tipdebug.last.delta
   check(dl and dl:find("visible ~x=4 y=4", 1, true), "tipdebug prints anchor vs tip rect line (" .. tostring(dl) .. ")")
   check(dd and dd.frameX == 1 and dd.frameY == 1 and dd.visibleX == 4 and dd.inset == 3, "tipdebug delta saved")
@@ -1724,7 +1708,7 @@ if MODE ~= "minimal" then
   for _, l in ipairs(lines) do if l:find("tipdebug scale ui", 1, true) then sl = l end end
   check(sl and sl:find("room L", 1, true) and sl:find("icon", 1, true) and sl:find("row", 1, true), "tipdebug prints scales, row/icon rects and room (" .. tostring(sl) .. ")")
   local lr = DarkMatterDB.tipdebug.last
-  check(lr and lr.decision and lr.decision.scales and lr.frames.icon and lr.frames.UIParent, "tipdebug saves decision, scales, icon and UIParent")
+  check(lr and lr.decision and lr.decision.scales and lr.frames.anchor and lr.frames.UIParent, "tipdebug saves decision, scales, icon and UIParent")
   A._scripts.OnLeave(A)
   SlashCmdList["DARKMATTER"]("tipdebug")
   -- watcher re-applies every frame while settling (first 10 frames), without counting as fixes
@@ -1760,31 +1744,42 @@ if MODE ~= "minimal" then
   end
   rawset(UIParent, "GetWidth", function() return 1200 end)
   rawset(UIParent, "GetHeight", function() return 900 end)
-  -- (1) Oily Blackmouth, no compare: anchor 242,593.5 147.7x28; tooltip 364.7x172.3
+  -- 0.2.15 rule on the real-client positions (icon 28x28 at the tipdebug anchor's left/bottom; screen 1200x900)
+  local function visGap(a, b) return a + DarkMatter.FISH_TIP_INSET - b end
+  -- (1) Oily Blackmouth, no compare: icon 242,593.5 28x28; tooltip 364.7x172.3
   rawset(GameTooltip, "GetWidth", function() return 364.7 end)
   rawset(GameTooltip, "GetHeight", function() return 172.3 end)
-  local oily = fakeF(242, 593.5, 147.7, 28)
+  local oily = fakeF(242, 593.5, 28, 28)
   local pt, rl, x1, y1, sd = DarkMatter.FishingTooltipAnchor(GameTooltip, oily, 0, 0)
-  local dc = DarkMatter._FishingLastDecision
-  check(dc.roomLeft == 242 and not dc.fitsLeft and dc.need > 360, "geometry (1): 242 units left of the icon < 369 needed: no room on the left")
-  check(pt == "BOTTOMLEFT" and rl == "TOPRIGHT" and sd == "right", "geometry (1): flips to the item's top-right, above the row")
+  check(pt == "BOTTOMLEFT" and rl == "TOPRIGHT" and sd == "right", "geometry (1): no compare -> BOTTOMLEFT at the icon TOPRIGHT")
   local l1, b1 = resolve(pt, rl, x1, y1, oily, 364.7, 172.3)
-  check(math.abs(l1 - 390.7) < 0.05 and math.abs(b1 - 622.5) < 0.05, "geometry (1): frame at 390.7,622.5 = the real client's tipdebug rect")
-  check(b1 >= oily:GetTop() and l1 >= oily:GetRight(), "geometry (1): tooltip does not overlap the hovered item (bottom above icon top, left past name end)")
-  check(math.abs((b1 - oily:GetTop()) + DarkMatter.FISH_TIP_INSET - 4) < 0.05 and math.abs((l1 - oily:GetRight()) + DarkMatter.FISH_TIP_INSET - 4) < 0.05, "geometry (1): visible border 4 from the item corner")
-  -- same row with room on the left: up-left of the icon
-  local roomy = fakeF(500, 593.5, 147.7, 28)
-  pt, rl, x1 = DarkMatter.FishingTooltipAnchor(GameTooltip, roomy, 0, 0)
-  local l2, b2, w2 = resolve(pt, rl, x1, 4, roomy, 364.7, 172.3)
-  check(pt == "BOTTOMRIGHT" and rl == "TOPLEFT" and l2 + w2 <= roomy:GetLeft() and b2 >= roomy:GetTop(), "geometry: with room on the left the tooltip goes up-left of the icon")
-  -- (2) 103 Pound Mightfish with two compares: anchor 242,485.5 178.5x28; tooltip 250.9x131.3
+  check(math.abs(visGap(l1, oily:GetRight()) - 4) < 0.05 and math.abs(visGap(b1, oily:GetTop()) - 4) < 0.05, "geometry (1): visible bottom-left corner 4,4 from the icon's top-right (frame " .. l1 .. "," .. b1 .. ")")
+  check(b1 >= oily:GetTop() and l1 >= oily:GetRight(), "geometry (1): tooltip never overlaps the hovered icon")
+  -- room on the left no longer matters: still right of the icon
+  local roomy = fakeF(500, 593.5, 28, 28)
+  pt, rl = DarkMatter.FishingTooltipAnchor(GameTooltip, roomy, 0, 0)
+  check(pt == "BOTTOMLEFT" and rl == "TOPRIGHT", "geometry: room on the left does not change the default (right of the icon)")
+  -- near the right edge: mirror, rightmost tooltip BOTTOMRIGHT 4 from the icon TOPLEFT
+  local edge = fakeF(1000, 593.5, 28, 28)
+  pt, rl, x1, y1, sd = DarkMatter.FishingTooltipAnchor(GameTooltip, edge, 0, 0)
+  local l4, b4, w4 = resolve(pt, rl, x1, y1, edge, 364.7, 172.3)
+  check(pt == "BOTTOMRIGHT" and rl == "TOPLEFT" and sd == "left" and math.abs(visGap(edge:GetLeft(), l4 + w4) - 4) < 0.05 and math.abs(visGap(b4, edge:GetTop()) - 4) < 0.05, "geometry: off the right edge -> mirrored, BOTTOMRIGHT 4 from the icon TOPLEFT")
+  -- no room above: below the icon, corners mirrored vertically
+  local top = fakeF(242, 820, 28, 28)
+  pt, rl, x1, y1 = DarkMatter.FishingTooltipAnchor(GameTooltip, top, 0, 0)
+  local l5, b5, _, h5 = resolve(pt, rl, x1, y1, top, 364.7, 172.3)
+  check(pt == "TOPLEFT" and rl == "BOTTOMRIGHT" and math.abs(visGap(top:GetBottom(), b5 + h5) - 4) < 0.05 and math.abs(visGap(l5, top:GetRight()) - 4) < 0.05, "geometry: no room above -> TOPLEFT 4 below/right of the icon BOTTOMRIGHT")
+  -- (2) 103 Pound Mightfish with two compares (420 wide together): icon 242,485.5 28x28; main 250.9x131.3
   rawset(GameTooltip, "GetWidth", function() return 250.9 end)
   rawset(GameTooltip, "GetHeight", function() return 131.3 end)
-  local might = fakeF(242, 485.5, 178.5, 28)
+  local might = fakeF(242, 485.5, 28, 28)
   pt, rl, x1, y1, sd = DarkMatter.FishingTooltipAnchor(GameTooltip, might, 420, 200)
   local l3, b3 = resolve(pt, rl, x1, y1, might, 250.9, 131.3)
-  check(pt == "BOTTOMLEFT" and sd == "right" and math.abs(l3 - 421.5) < 0.05 and math.abs(b3 - 514.5) < 0.05, "geometry (2): compare case frame at 421.5,514.5 = the real client's tipdebug rect")
-  check(b3 >= might:GetTop(), "geometry (2): main tooltip above the hovered item")
+  check(pt == "BOTTOMLEFT" and sd == "right" and math.abs(visGap(l3, might:GetRight()) - 4) < 0.05 and math.abs(visGap(b3, might:GetTop()) - 4) < 0.05, "geometry (2): leftmost tooltip (main) BOTTOMLEFT 4,4 from the icon TOPRIGHT; compares to its right")
+  -- set of main + compares runs off the right edge -> mirrored
+  local edge2 = fakeF(700, 485.5, 28, 28)
+  pt, rl, x1, y1, sd = DarkMatter.FishingTooltipAnchor(GameTooltip, edge2, 420, 200)
+  check(pt == "BOTTOMRIGHT" and rl == "TOPLEFT" and sd == "left", "geometry (2): set would run off the right edge -> mirrored, compares chained left")
   rawset(UIParent, "GetWidth", nil); rawset(UIParent, "GetHeight", nil)
   rawset(GameTooltip, "GetWidth", function() return 200 end)
   rawset(GameTooltip, "GetHeight", function() return 100 end)

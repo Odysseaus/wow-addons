@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.15 (P2.15, tooltip corner on the item icon)
+- New placement rule (replaces all earlier ones): the tooltip's bottom-left corner sits 4px (visible, border-inset corrected) right of and above the **item icon's top-right corner**. With compare tooltips, the leftmost tooltip of the set (the main tooltip) takes that spot and `ShoppingTooltip1/2` chain to its right, bottoms aligned. Same default with or without a compare; the old "no compare goes up-left" default is gone.
+- Fallbacks only for screen space: if the set would run off the right edge it is mirrored (main BOTTOMRIGHT 4px left of / above the icon's TOPLEFT, compares chained left); with no room above it goes below the icon with the corners mirrored vertically (tops aligned).
+- The anchor is the icon frame itself; the 0.2.12 item-anchor frame (icon + name width) is removed. Tooltips cover the names of the rows above, as intended.
+- Kept: `ANCHOR_PRESERVE`, the settle/watch re-apply, `/dm tipdebug` (now labels the anchor `icon` and reports the icon rect).
+- Stub tests: the real-client geometries re-checked under the new rule (no compare, two compares, right-edge mirror, no room above). Previewer: same rule; DM-23..25 rewritten.
+
 ## 0.2.14 (P2.14, placement diagnostics + settle)
 - Investigation of the 0.2.13 "still off" reports using `/dm tipdebug` from the real client: the logged rects match the screen. Oily Blackmouth (no compare): anchor `242,593.5 147.7x28` (icon + name), tooltip frame `390.7,622.5 364.7x172.3`; on screen the tooltip's visible border sits ~4 units right of the end of "Oily Blackmouth" and ~4 above its icon. 103 Pound Mightfish (two compares): anchor right 420.5, tooltip at 421.5,514.5, compares chained right, bottoms aligned. No scale or coordinate-space mismatch: placement is applied exactly as specified.
 - Why it chose right/up without a compare: the icon is only 242 units from the screen's left edge and the tooltip is ~365 wide, so "up-left of the icon" does not fit and rule (a) flips it to the item's top-right. Above the row, it necessarily covers the rows above.

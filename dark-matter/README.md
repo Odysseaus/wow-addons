@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.2.14** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.2.15** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -21,7 +21,7 @@ Dark Matter is a one-window overview of your quests, fishing, dungeons and achie
   | `/dm` | toggle the main window |
   | `/dm probe` | run the probe (below); opens the probe report window |
   | `/dm fishcheck` | compare the fishing catalog with the client's item names; saves the mismatch list to `DarkMatterDB.fishcheck` |
-  | `/dm tipdebug` | toggle logging of fishing tooltip placement (final points and rects of GameTooltip, ShoppingTooltip1/2 and the item anchor) to `DarkMatterDB.tipdebug`, with a short chat summary |
+  | `/dm tipdebug` | toggle logging of fishing tooltip placement (final points and rects of GameTooltip, ShoppingTooltip1/2 and the item icon) to `DarkMatterDB.tipdebug`, with a short chat summary |
   | `/dm raw` | show or hide the raw call list in the probe window |
   | `/dm blocked` | list recorded blocked actions |
   | `/dm reset` | reset window position (`/dm reset all` also puts the minimap button back) |
