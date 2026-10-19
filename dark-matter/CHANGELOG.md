@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.11 (P2.11, compare placement watcher + catalog audit)
+- **Fix: odd offset with a compare tooltip.** In 0.2.10 placement ran once after `Show()` and once on the next frame. The client's classic compare code (`GameTooltip_ShowCompareItem` / `GameTooltip_AnchorComparisonTooltips`) anchors `ShoppingTooltip1/2` TOPLEFT to GameTooltip's TOPRIGHT (0,-10) and fills them with a second `SetCompareItem`; sizes and anchors can settle after our pass, and the tooltip `OnUpdate` re-runs it via the owner's update. Also, per-row hover flags could let a list refresh (item data arriving) re-show the tooltip from a row the mouse had already left, so it sat over the neighbouring row.
+- Placement now runs from our own watcher frame while a row is hovered: whenever GameTooltip or a compare tooltip changes size, visibility or anchor, the rule set is re-applied (main + compares). Stops when the tooltip is hidden or owned by something else. Still taint-safe: no `hooksecurefunc`, no replaced globals.
+- One hover owner: only the row most recently entered (and still under the mouse) can re-show the tooltip on refresh.
+- Rules unchanged: 4px gap; no compare -> BOTTOMRIGHT at the row's TOPLEFT (flip right if needed); compare -> BOTTOMLEFT at the row's TOPRIGHT with compares chained right, bottoms aligned (mirrored left if needed); below the row near the top of the screen; never on the cursor.
+- **Catalog audit** against Wowhead Classic (`nether.wowhead.com/classic/tooltip/item/<id>`) for all 121 entries: 0 wrong item IDs, 0 duplicate IDs or names. Fixed with that evidence: 36 trophy fish quality Uncommon -> Common, 2 name spellings ("Thick-shelled Clam", "Big-mouth Clam"), 19 icon paths corrected, 85 icons filled in. `tools/catalog/verify_wowhead.py` re-checks.
+- Rows show the client's item name once cached; any difference from the catalog is logged.
+- `/dm fishcheck`: checks every catalog/learned entry against the client's item data and saves the mismatch list to `DarkMatterDB.fishcheck` (run again after items load).
+- Stub client now mimics the classic compare anchoring order; tests cover re-anchoring, late resize, second compare tooltip, single hover row, fishcheck, unique IDs/names.
+- Previewer: catalog regenerated from the corrected data.
+
 ## 0.2.10 (P2.10, tooltip + compare placement)
 - Gap between row and tooltip is now **4px** everywhere.
 - **No compare tooltip:** main tooltip BOTTOMRIGHT at the row's TOPLEFT (-4,+4); if it doesn't fit, BOTTOMLEFT at the row's TOPRIGHT (+4,+4).

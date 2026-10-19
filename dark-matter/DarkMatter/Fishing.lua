@@ -570,6 +570,56 @@ local function ItemCached(itemId)
 end
 NS._FishingItemCached = ItemCached
 
+-- Name as the client knows it (only when item data is cached); nil otherwise.
+function NS.FishingClientItemName(itemId)
+  itemId = SafeNum(itemId)
+  if not (itemId and ItemCached(itemId) and GetItemInfo) then return nil end
+  local ok, name = pcall(GetItemInfo, itemId)
+  if ok and type(name) == "string" and name ~= "" then return name end
+  return nil
+end
+
+-- Rows show the client name; any difference from our catalog name is logged for /dm fishcheck.
+function NS.FishingNoteNameMismatch(itemId, ours, client)
+  local db = NS.db
+  if not (db and itemId and ours and client) or ours == client then return end
+  db.fishcheck = db.fishcheck or {}
+  db.fishcheck.seen = db.fishcheck.seen or {}
+  db.fishcheck.seen[itemId] = { itemId = itemId, catalog = ours, client = client, date = DayKey() }
+end
+
+-- /dm fishcheck: compare every static + learned catalog name with the client's item name.
+-- Writes DarkMatterDB.fishcheck = { at, checked, uncached, mismatches = { {itemId, catalog, client} } }.
+function NS.FishingCheckCatalog()
+  local res = { at = DayKey(), checked = 0, uncached = 0, mismatches = {}, uncachedIds = {} }
+  local function one(itemId, name)
+    itemId = SafeNum(itemId)
+    if not (itemId and name) then return end
+    res.checked = res.checked + 1
+    local client = NS.FishingClientItemName(itemId)
+    if not client then
+      res.uncached = res.uncached + 1
+      res.uncachedIds[#res.uncachedIds + 1] = itemId
+      if NS.FishingRequestItemIcon then NS.FishingRequestItemIcon(itemId) end
+    elseif client ~= name then
+      res.mismatches[#res.mismatches + 1] = { itemId = itemId, catalog = name, client = client }
+    end
+  end
+  for _, e in ipairs(NS.FishingCatchCatalog or {}) do
+    if NS.FishingCatalogEntryVisible(e) then one(e.itemId, e.name) end
+  end
+  for itemId, l in pairs(NS.FishingLearnedCatalog()) do
+    if type(l) == "table" then one(itemId, l.name) end
+  end
+  table.sort(res.mismatches, function(a, b) return a.itemId < b.itemId end)
+  if NS.db then
+    local prev = NS.db.fishcheck
+    res.seen = prev and prev.seen or nil
+    NS.db.fishcheck = res
+  end
+  return res
+end
+
 -- Fill GameTooltip for one catch-type row entry. total = all logged catches (for share %).
 -- Returns "item" when the client item tooltip was used, "fallback" otherwise.
 -- Tooltip placement (0.2.10), 4px gap:
@@ -651,24 +701,74 @@ local function ShownCompares(tt)
   return list, cw, ch
 end
 
+local expected = {} -- frame -> { point, relativeTo } we last set
 local function PlaceTooltip(tt, owner)
   local compares, cw, ch = ShownCompares(tt)
   local point, rel, x, y, side, vert = NS.FishingTooltipAnchor(tt, owner, cw, ch)
+  expected = {}
   tt:ClearAllPoints()
   tt:SetPoint(point, owner, rel, x, y)
+  expected[tt] = { point, owner }
   local prev = tt
   for _, st in ipairs(compares) do
     st:ClearAllPoints()
     local v = vert == "up" and "BOTTOM" or "TOP"
-    if side == "right" then
-      st:SetPoint(v .. "LEFT", prev, v .. "RIGHT", 0, 0)
-    else
-      st:SetPoint(v .. "RIGHT", prev, v .. "LEFT", 0, 0)
-    end
+    local sp = v .. (side == "right" and "LEFT" or "RIGHT")
+    st:SetPoint(sp, prev, v .. (side == "right" and "RIGHT" or "LEFT"), 0, 0)
+    expected[st] = { sp, prev }
     prev = st
   end
   return side, vert, #compares
 end
+
+-- Something else (the client's compare code, a late size change) moved a tooltip: true if our points are gone.
+local function PointsChanged()
+  for f, want in pairs(expected) do
+    local ok, p, rel = pcall(f.GetPoint, f, 1)
+    if not ok or p ~= want[1] or rel ~= want[2] then return true end
+    if f.GetNumPoints then
+      local ok2, n = pcall(f.GetNumPoints, f)
+      if ok2 and type(n) == "number" and n > 1 then return true end
+    end
+  end
+  return false
+end
+
+-- size/visibility signature of the main + compare tooltips
+local function Signature(tt)
+  local t = {}
+  for _, f in ipairs({ tt, _G.ShoppingTooltip1, _G.ShoppingTooltip2 }) do
+    local shown = f and f.IsShown and f:IsShown()
+    t[#t + 1] = shown and string.format("%d:%d", math.floor((Num(f, "GetWidth") or 0) + 0.5), math.floor((Num(f, "GetHeight") or 0) + 0.5)) or "-"
+  end
+  return table.concat(t, ",")
+end
+
+-- While one of our rows owns the tooltip, re-apply placement whenever the client re-anchors a tooltip or a
+-- size changes (compare tooltips fill and resize after Show). Own hidden frame; stops when the tooltip goes.
+local watch
+local function StartWatch(tt, owner)
+  if not CreateFrame then return end
+  if not watch then
+    watch = CreateFrame("Frame")
+    watch:Hide()
+    watch:SetScript("OnUpdate", function(self)
+      local w = self.target
+      if not w then self:Hide() return end
+      local ok, owned = pcall(w.tt.IsOwned, w.tt, w.owner)
+      if not (ok and owned and w.tt:IsShown()) then self.target = nil self:Hide() return end
+      local sig = Signature(w.tt)
+      if sig ~= w.sig or PointsChanged() then
+        PlaceTooltip(w.tt, w.owner)
+        w.sig = Signature(w.tt)
+        w.fixes = (w.fixes or 0) + 1
+      end
+    end)
+  end
+  watch.target = { tt = tt, owner = owner, sig = Signature(tt) }
+  watch:Show()
+end
+NS._FishingTooltipWatch = function() return watch end
 NS._FishingPlaceTooltip = PlaceTooltip
 
 -- Shift-compare: this client's GameTooltip has no MODIFIER_STATE_CHANGED handler; compare is decided in
@@ -743,12 +843,7 @@ function NS.FishingShowCatchTooltip(owner, e, total)
   tt:Show()
   -- sizes are known after Show: place main + compare tooltips, then once more next frame
   PlaceTooltip(tt, owner)
-  if C_Timer and C_Timer.After then
-    C_Timer.After(0, function()
-      local ok, owned = pcall(tt.IsOwned, tt, owner)
-      if ok and owned and tt:IsShown() then PlaceTooltip(tt, owner) end
-    end)
-  end
+  StartWatch(tt, owner)
   return mode
 end
 
@@ -760,6 +855,7 @@ function NS.FishingHideCatchTooltip(owner)
     if ok and not owned then return end
   end
   hover = nil
+  if watch then watch.target = nil watch:Hide() end
   tt:Hide()
 end
 

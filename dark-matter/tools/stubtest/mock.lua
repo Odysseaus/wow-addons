@@ -1517,4 +1517,138 @@ if MODE ~= "minimal" then
   DarkMatter.FishingSetUIPref("showAll", false)
 end
 
+
+-- ===== 0.2.11 compare placement vs the client's classic compare code; single hover row; client names; fishcheck =====
+if MODE ~= "minimal" then
+  -- catalog: unique ids + names (case-insensitive), trophy fish are common quality (Wowhead Classic)
+  local ids, names, dup, tq = {}, {}, 0, 0
+  for _, e in ipairs(DarkMatter.FishingCatchCatalog) do
+    local n = e.name:lower()
+    if ids[e.itemId] or names[n] then dup = dup + 1 end
+    ids[e.itemId], names[n] = true, true
+    if e.cat == "trophy" and e.quality ~= 1 then tq = tq + 1 end
+  end
+  check(dup == 0, "catalog ids and names unique (dups=" .. dup .. ")")
+  check(tq == 0, "trophy fish quality 1 (common) per Wowhead Classic")
+  check(DarkMatter.FishingCatalogById()[5524].name == "Thick-shelled Clam" and DarkMatter.FishingCatalogById()[7973].name == "Big-mouth Clam", "clam names spelled as on the client")
+
+  -- recording GameTooltip + ShoppingTooltips that behave like the classic client
+  local T = { pts = nil, shown = false }
+  local function gpts(o) return function() local q = o.pts if not q then return nil end return q[1], q[2], q[3], q[4], q[5] end end
+  rawset(GameTooltip, "SetOwner", function(_, owner, anchor) T.owner, T.anchor = owner, anchor end)
+  rawset(GameTooltip, "ClearAllPoints", function() T.pts = nil end)
+  rawset(GameTooltip, "SetPoint", function(_, ...) T.pts = { ... } end)
+  rawset(GameTooltip, "GetPoint", function() if not T.pts then return nil end return T.pts[1], T.pts[2], T.pts[3], T.pts[4], T.pts[5] end)
+  rawset(GameTooltip, "GetNumPoints", function() return T.pts and 1 or 0 end)
+  rawset(GameTooltip, "IsOwned", function(_, o) return T.owner == o end)
+  rawset(GameTooltip, "IsShown", function() return T.shown end)
+  rawset(GameTooltip, "Show", function() T.shown = true end)
+  rawset(GameTooltip, "Hide", function() T.shown = false if ShoppingTooltip1 then ShoppingTooltip1.shown = false ShoppingTooltip2.shown = false end end)
+  rawset(GameTooltip, "GetWidth", function() return 200 end)
+  rawset(GameTooltip, "GetHeight", function() return 100 end)
+  rawset(GameTooltip, "AddLine", function() end)
+  rawset(GameTooltip, "AddDoubleLine", function() end)
+  rawset(GameTooltip, "SetAnchorType", function(_, a) T.slid = a; T.pts = nil end)
+  local function shop(name)
+    local o = { name = name, shown = false, w = 220, h = 160 }
+    function o:SetOwner(ow) self.owner = ow end
+    function o:GetOwner() return self.owner end
+    function o:ClearAllPoints() self.pts = nil end
+    function o:SetPoint(...) self.pts = { ... } end
+    o.GetPoint = gpts(o)
+    function o:GetNumPoints() return self.pts and 1 or 0 end
+    function o:IsShown() return self.shown end
+    function o:GetWidth() return self.w end
+    function o:GetHeight() return self.h end
+    function o:GetEffectiveScale() return 1 end
+    return o
+  end
+  ShoppingTooltip1, ShoppingTooltip2 = shop("ShoppingTooltip1"), shop("ShoppingTooltip2")
+  -- GameTooltip_ShowCompareItem / GameTooltip_AnchorComparisonTooltips (classic order): slide unless ANCHOR_PRESERVE,
+  -- then ShoppingTooltip1 TOPLEFT -> GameTooltip TOPRIGHT (0,-10), Show.
+  local COMPARE = false
+  local function clientCompare()
+    if not COMPARE then ShoppingTooltip1.shown = false ShoppingTooltip2.shown = false return end
+    if T.anchor ~= "ANCHOR_PRESERVE" then GameTooltip:SetAnchorType(T.anchor, -40, 0) end
+    local s1 = ShoppingTooltip1
+    s1:SetOwner(GameTooltip, "ANCHOR_NONE"); s1:ClearAllPoints(); s1:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", 0, -10); s1.shown = true
+    ShoppingTooltip2.shown = false
+  end
+  rawset(GameTooltip, "SetHyperlink", function() clientCompare() end)
+  rawset(GameTooltip, "SetItemByID", function() clientCompare() end)
+  local savedCached = C_Item.IsItemDataCachedByID
+  C_Item.IsItemDataCachedByID = function() return true end
+  local savedGII = GetItemInfo
+  local CAT = DarkMatter.FishingCatalogById()
+  GetItemInfo = function(id)
+    if id == 6292 then return "Ten Pound Test Snapper", "item:6292", 1 end
+    local c = CAT[id] or (DarkMatterDB.fishingCatalogLearned or {})[id]
+    if c then return c.name, "item:" .. id, c.quality or 1 end
+  end
+
+  DarkMatter.FishingSetUIPref("panel", "catches"); DarkMatter.FishingSetUIPref("catchMode", "fish"); DarkMatter.FishingSetUIPref("showAll", true)
+  DarkMatter.tabs.journals.Refresh()
+  local rows = {}
+  for _, fr in ipairs(ALL) do local e = rawget(fr, "entry") if type(e) == "table" and fr._scripts and fr._scripts.OnEnter then rows[e.name] = fr end end
+  local A, B = rows["Riverglades Glimmerfin"], rows["10 Pound Mud Snapper"]
+
+  -- (a) no compare: BOTTOMRIGHT -> row TOPLEFT
+  COMPARE = false
+  A._scripts.OnEnter(A)
+  check(T.anchor == "ANCHOR_PRESERVE" and T.pts and T.pts[1] == "BOTTOMRIGHT" and T.pts[2] == A and T.pts[3] == "TOPLEFT" and T.pts[4] == -4 and T.pts[5] == 4, "no compare: main BOTTOMRIGHT at row TOPLEFT -4,+4")
+  A._scripts.OnLeave(A)
+  -- (b) compare: the client anchors ShoppingTooltip1 TOPLEFT->TOPRIGHT -10 during SetHyperlink; we take over
+  COMPARE = true
+  A._scripts.OnEnter(A)
+  check(not T.slid, "ANCHOR_PRESERVE: client compare code never slides the main tooltip")
+  check(T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A and T.pts[3] == "TOPRIGHT" and T.pts[4] == 4 and T.pts[5] == 4, "compare: main BOTTOMLEFT at hovered row TOPRIGHT +4,+4")
+  local s1 = ShoppingTooltip1
+  check(s1.pts[1] == "BOTTOMLEFT" and s1.pts[2] == GameTooltip and s1.pts[3] == "BOTTOMRIGHT" and s1.pts[4] == 0 and s1.pts[5] == 0, "compare: ShoppingTooltip1 chained right, bottoms aligned (not the client's TOPLEFT -10)")
+  local W = DarkMatter._FishingTooltipWatch()
+  check(W and W._shown and rawget(W, "target") and W.target.owner == A, "placement watcher runs while the row is hovered")
+  -- client re-anchors after our pass (UpdateTooltip / second compare pass): the watcher puts it back
+  clientCompare()
+  check(s1.pts[1] == "TOPLEFT" and s1.pts[5] == -10, "repro: client re-anchor moves ShoppingTooltip1 back to TOPLEFT -10")
+  W._scripts.OnUpdate(W, 0.016)
+  check(s1.pts[1] == "BOTTOMLEFT" and s1.pts[2] == GameTooltip and T.pts[1] == "BOTTOMLEFT" and T.pts[2] == A, "watcher restores our placement after the client re-anchors")
+  -- compare tooltip fills in later and grows (second SetCompareItem): re-placed on the size change
+  local fixes = W.target.fixes or 0
+  s1.h = 320
+  W._scripts.OnUpdate(W, 0.016)
+  check((W.target.fixes or 0) == fixes + 1 and s1.pts[1] == "BOTTOMLEFT", "late size change re-applies placement")
+  W._scripts.OnUpdate(W, 0.016)
+  check((W.target.fixes or 0) == fixes + 1, "no work when nothing changed")
+  -- second compare tooltip (dual wield): chained after the first
+  ShoppingTooltip2.shown = true; ShoppingTooltip2:SetOwner(GameTooltip)
+  W._scripts.OnUpdate(W, 0.016)
+  check(ShoppingTooltip2.pts and ShoppingTooltip2.pts[1] == "BOTTOMLEFT" and ShoppingTooltip2.pts[2] == s1, "ShoppingTooltip2 chained after ShoppingTooltip1")
+  A._scripts.OnLeave(A)
+  check(not W._shown and rawget(W, "target") == nil, "watcher stops on leave")
+  check(not T.shown, "tooltip hidden on leave")
+
+  -- one hover owner: a refresh can only re-show the tooltip for the row most recently entered
+  COMPARE = false
+  B._scripts.OnEnter(B)
+  A._scripts.OnEnter(A)  -- entered A without B's OnLeave (stale state)
+  T.owner = nil
+  DarkMatter.tabs.journals.Refresh()
+  check(T.owner == A, "refresh re-shows only the current hover row (not a stale one)")
+  A._scripts.OnLeave(A); B._scripts.OnLeave(B)
+
+  -- rows show the client's item name; differences are logged; /dm fishcheck lists them
+  local shownName
+  for _, fs in ipairs(FS) do if fs._text == "Ten Pound Test Snapper" then shownName = true end end
+  check(shownName, "row text uses the client item name when cached")
+  check(DarkMatterDB.fishcheck and DarkMatterDB.fishcheck.seen and DarkMatterDB.fishcheck.seen[6292] and DarkMatterDB.fishcheck.seen[6292].catalog == "10 Pound Mud Snapper", "name difference logged for fishcheck")
+  SlashCmdList["DARKMATTER"]("fishcheck")
+  local fc = DarkMatterDB.fishcheck
+  check(fc and fc.checked >= 3 and #fc.mismatches == 1 and fc.mismatches[1].itemId == 6292 and fc.mismatches[1].client == "Ten Pound Test Snapper", "/dm fishcheck: 1 mismatch saved (" .. tostring(fc and fc.checked) .. " checked)")
+  check(fc.seen and fc.seen[6292], "fishcheck keeps the names seen on rows")
+
+  GetItemInfo = savedGII
+  C_Item.IsItemDataCachedByID = savedCached
+  ShoppingTooltip1, ShoppingTooltip2 = nil, nil
+  DarkMatter.FishingSetUIPref("showAll", false)
+end
+
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

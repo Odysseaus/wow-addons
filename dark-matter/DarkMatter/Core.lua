@@ -1,11 +1,11 @@
--- Dark Matter 0.2.10 (P2.10: fishing row tooltips + compare placement)
+-- Dark Matter 0.2.11 (P2.11: compare placement watcher + catalog audit)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.2.10"
+NS.version = "0.2.11"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)

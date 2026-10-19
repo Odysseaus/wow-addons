@@ -18,6 +18,7 @@ local viewWaters, watersRoot, fishRoot, statsRoot, statsScroll
 local zoneScroll, detailPanel, detailTitle, detailMeta, detailStatus, detailBody, catchHeader, catchRows, emptyFish
 local fvCatches, fvStats, modeZone, modeFish
 local fishScroll, fishRowPool, emptyCatchFish
+local hoverRow -- the one row that owns the fishing tooltip (never more than one)
 local searchBox, showAllBox, filterBar, catalogNote
 local rowPool, selectedZone, selectedFish, fishRank, fishMax = {}, nil, nil, nil, nil
 local ev, pending = nil, false
@@ -328,15 +329,15 @@ local function GetFishRow(i)
   end)
   -- item tooltip + our lines (caught count, last zone/coords or waters/skill)
   r:SetScript("OnEnter", function(self)
-    self._hover = true
+    hoverRow = self
     if self.entry then NS.FishingShowCatchTooltip(self, self.entry, self.total) end
   end)
   r:SetScript("OnLeave", function(self)
-    self._hover = false
+    if hoverRow == self then hoverRow = nil end
     NS.FishingHideCatchTooltip(self)
   end)
   r:SetScript("OnHide", function(self)
-    if self._hover then self._hover = false NS.FishingHideCatchTooltip(self) end
+    if hoverRow == self then hoverRow = nil NS.FishingHideCatchTooltip(self) end
   end)
   fishRowPool[i] = r
   return r
@@ -365,7 +366,10 @@ local function RefreshFishList()
       r:ClearAllPoints()
       r:SetPoint("TOPLEFT", fishScroll.content, "TOPLEFT", 0, -(i - 1) * (FISH_ROW_H or 36))
       r:SetPoint("RIGHT", fishScroll.content, "RIGHT", 0, 0)
-      r.text:SetText(e.name)
+      -- show the client's item name when cached so row text and tooltip always agree
+      local clientName = NS.FishingClientItemName and NS.FishingClientItemName(e.itemId)
+      if clientName and clientName ~= e.name then NS.FishingNoteNameMismatch(e.itemId, e.name, clientName) end
+      r.text:SetText(clientName or e.name)
       local caught = e.caught and (e.count or 0) > 0
       -- caught and account-learned items stand out; the rest of the catalog is soft
       local lit = caught or e.learned
@@ -397,7 +401,10 @@ local function RefreshFishList()
       if selectedFish == e.name then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
       r:Show()
       -- item data arrived (list refresh) while hovering: rebuild the tooltip with the real item
-      if r._hover then NS.FishingShowCatchTooltip(r, e, total) end
+      if r == hoverRow then
+        local okM, over = pcall(r.IsMouseOver, r)
+        if not (okM and over == false) then NS.FishingShowCatchTooltip(r, e, total) end
+      end
     elseif r then
       r:Hide()
       r.entry = nil

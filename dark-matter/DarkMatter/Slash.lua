@@ -16,6 +16,7 @@ local function Help()
   print("  /dm minimap  show/hide the minimap button")
   print("  /dm icon  switch between the Dark Matter icon and a stock icon")
   print("  /dm options  open the Settings page")
+  print("  /dm fishcheck  compare fishing catalog names with the client's item names")
 end
 
 SlashCmdList["DARKMATTER"] = function(msg)
@@ -50,6 +51,15 @@ SlashCmdList["DARKMATTER"] = function(msg)
     NS.Print(NS.db.stockIcon and "using the stock icon." or "using the Dark Matter icon.")
   elseif cmd == "options" then
     NS.OpenOptions()
+  elseif cmd == "fishcheck" then
+    local res = NS.FishingCheckCatalog()
+    NS.Print(string.format("fishcheck: %d items checked, %d name mismatch(es), %d not cached yet (saved to DarkMatterDB.fishcheck).",
+      res.checked, #res.mismatches, res.uncached))
+    for i = 1, math.min(#res.mismatches, 15) do
+      local m = res.mismatches[i]
+      print(string.format("  %d: catalog \"%s\" / client \"%s\"", m.itemId, m.catalog, m.client))
+    end
+    if res.uncached > 0 then print("  run /dm fishcheck again in a few seconds to check the items still loading.") end
   else
     Help()
   end
