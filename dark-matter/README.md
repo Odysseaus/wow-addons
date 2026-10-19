@@ -1,6 +1,6 @@
-# Dark Matter (P2 Journals Fishing)
+# Dark Matter (P2.1 Fishing catch tracking)
 
-**Version 0.2.0** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.2.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -9,7 +9,7 @@ Dark Matter is a one-window overview of your quests, fishing, dungeons and achie
 - **Main window** (880x680, the mockup's size; it shrinks on small screens, never grows). Opens at screen centre, drag it by the title plate, the position is saved to SavedVariables. **Reset window position** is in the window's Settings popover (click outside the pop or Esc closes it), in the AddOns page of Settings (Dark Matter), and `/dm reset`. Esc closes it.
 - **Left tab rail:** Quests, Journals, Map, Dungeons. The last tab you used is remembered.
   - **Quests** lists your quest log from `C_QuestLog` (read only): zone headers with +/- to collapse, quest rows coloured by level difficulty, and a detail panel with level, zone, status and objectives. **All** collapses or expands every zone. The window never touches Blizzard's quest log.
-  - **Journals → Fishing** shows your fishing skill bar and a waters list (original static skill floors; Ready/Locked by skill). This client has no fishing-zone API, so catch counts stay for a later phase. Adventure Guide and Achievements remain "Coming soon".
+  - **Journals → Fishing** shows skill, a Waters list (Ready/Locked + logged catch counts / per-item zone %), and a Statistics panel (casts, rate, junk/good, rares, time, streak, gold, got-away, favorite zone/lure, skill history). Stats are per-character (`DarkMatterCharDB`) from your first cast. Adventure Guide and Achievements remain "Coming soon".
   - **Map** and **Dungeons** show a "coming in a later phase" page.
 - **Minimap button** (round, Dark Matter icon): click toggles the main window, drag moves it around the minimap edge, right-click resets the window position.
 - **Probe** (`/dm probe`) is the 0.0.4 probe, unchanged; its report opens in a separate small stock window.

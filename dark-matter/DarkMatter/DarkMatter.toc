@@ -1,10 +1,11 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.2.0 (P2): Journals Fishing (skill + waters), Quests tab, WoW theme; minimap; /dm probe.
+## Notes: Dark Matter 0.2.1 (P2.1): Fishing catch tracking (per-character stats), Quests; minimap; /dm probe.
 ## Author: Odysseaus
-## Version: 0.2.0
+## Version: 0.2.1
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
+## SavedVariablesPerCharacter: DarkMatterCharDB
 
 Core.lua
 Probe.lua
@@ -16,6 +17,7 @@ ProbeWindow.lua
 Window.lua
 Tab_Quests.lua
 Data_Fishing.lua
+Fishing.lua
 Tab_Journals.lua
 Tab_Stub.lua
 Minimap.lua

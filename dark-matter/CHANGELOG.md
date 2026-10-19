@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 (P2.1, Fishing catch tracking)
+- Per-character fishing stats (`DarkMatterCharDB`), starting at zero on first use: zone catch shares, casts/catches, catch rate, junk vs good, rare first-catches, time fishing, best junk-free streak, gold value (when vendor price is known), got-away casts, skill history, favorite zone and lure.
+- Tracker runs on a private frame from login (casts via fishing channel, loot via `IsFishingLoot` + loot slots, got-away via UI error / timeout, skill via `GetProfessionInfo`). Zone is inferred from `GetRealZoneText` / subzone against the waters table, else last-known / "Unknown".
+- Journals → Fishing: Waters / Statistics views. Waters list shows catch counts; detail shows per-item % of that zone. Statistics cards mirror the previewer layout. No "(Complete)" tags. Adventure Guide / Achievements still stubs.
+
 ## 0.2.0 (P2, Journals Fishing)
 - Journals → Fishing is a real panel: fishing skill bar from `GetProfessionInfo(select(4, GetProfessions()))` (probe-confirmed), and a waters list with minimum skill floors.
 - Zone list is original Dark Matter static data (`Data_Fishing.lua`): this Forever client has no fishing-zone or catch APIs (only profession skill + `IsFishingLoot`). Waters show Ready/Locked by your skill; no fake catch counts or "(Complete)" tags. Catch statistics stay for a later phase.

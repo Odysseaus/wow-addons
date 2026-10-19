@@ -1,11 +1,11 @@
--- Dark Matter 0.2.0 (P2: Journals Fishing, Quests tab, WoW theme)
+-- Dark Matter 0.2.1 (P2.1: Fishing catch tracking, Quests tab, WoW theme)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.2.0"
+NS.version = "0.2.1"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -19,6 +19,7 @@ local DEFAULTS = {
   section = "fishing",
   questCollapsed = {},
   fishingZone = nil,
+  fishingView = "waters",
   loadCount = 0,
 }
 
@@ -37,6 +38,12 @@ local function CopyDefaults(dst, src)
   end
 end
 
+local function InitCharDB()
+  if type(DarkMatterCharDB) ~= "table" then DarkMatterCharDB = {} end
+  NS.cdb = DarkMatterCharDB
+  if NS.GetFishingDB then NS.GetFishingDB() end
+end
+
 local function InitDB()
   -- Blizzard's beta has been seen not to load SavedVariables at all. Remember
   -- what we found so /dm probe can say whether they came back from disk.
@@ -48,6 +55,8 @@ local function InitDB()
   NS.sv.previousProbeWhen = type(NS.db.probe) == "table" and NS.db.probe.when or nil
   CopyDefaults(NS.db, DEFAULTS)
   if type(NS.db.blockedLog) ~= "table" then NS.db.blockedLog = {} end
+  InitCharDB()
+  if NS.StartFishingTracker then NS.StartFishingTracker() end
   if NS.SetTheme and not NS.SetTheme(NS.db.theme) then NS.db.theme = "wow" end
   NS.db.loadCount = (tonumber(NS.db.loadCount) or 0) + 1
   NS.db.lastSession = date("%Y-%m-%d %H:%M:%S")

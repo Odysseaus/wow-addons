@@ -3,6 +3,12 @@ MODE=os.getenv("MODE")
 local log = {}
 local function out(...) local t={} for i=1,select('#',...) do t[#t+1]=tostring((select(i,...))) end log[#log+1]=table.concat(t," ") end
 print = out
+LOOT_SLOTS={}
+FISH_LOOT=false
+ZONE_TEXT="Elwynn Forest"
+SUBZONE_TEXT=""
+TIME_NOW=1000
+FISH_CHANNEL=false
 local FrameMT = {}
 local function newframe(name, parent, tmpl)
   local f = { _shown=false, _pts={}, _scripts={}, _w=100,_h=100, _name=name }
@@ -60,7 +66,29 @@ if MODE~="minimal" then
     IsComplete=function(id) return id==102 end, IsFailed=function() return false end,
     GetQuestObjectives=function(id) return {{text="Kill 8 wolves",finished=false},{text="Gather dust 3/3",finished=true}} end}
   function GetProfessions() return nil,nil,nil,4,5 end
-  function GetProfessionInfo(idx) if idx==4 then return "Fishing","Interface\\Icons\\Trade_Fishing",171,225,1,0,356,0 end end
+  function GetProfessionInfo(idx)
+    if idx==4 then return "Fishing","Interface\\Icons\\Trade_Fishing",171,225,1,0,356,0 end
+  end
+  FISH_CHANNEL=false
+  FISH_LOOT=false
+  LOOT_SLOTS={}
+  ZONE_TEXT="Elwynn Forest"
+  SUBZONE_TEXT=""
+  TIME_NOW=1000
+  function UnitChannelInfo(u) if u=="player" and FISH_CHANNEL then return "Fishing",nil,nil,0,0,false,false,7620 end end
+  function IsFishingLoot() return FISH_LOOT==true end
+  function GetNumLootItems() return #LOOT_SLOTS end
+  function GetLootSlotInfo(i) local s=LOOT_SLOTS[i]; if not s then return end return s.tex,s.name,s.qty,s.quality,false end
+  function GetLootSlotLink(i) local s=LOOT_SLOTS[i]; return s and s.link end
+  function GetWeaponEnchantInfo() return false end
+  function GetRealZoneText() return ZONE_TEXT or "Elwynn Forest" end
+  function GetZoneText() return ZONE_TEXT or "Elwynn Forest" end
+  function GetSubZoneText() return SUBZONE_TEXT or "" end
+  function GetMinimapZoneText() return ZONE_TEXT or "Elwynn Forest" end
+  function GetTime() return TIME_NOW or 1000 end
+  function GetMoneyString(c) return tostring(c).."c" end
+  if not C_Item then C_Item={} end
+  function C_Item.GetItemInfo(id) return "Item",nil,1,1,0,"Misc","Junk",20,"",nil,50 end
   function GetTotalAchievementPoints() return 15 end
   function GetCategoryList() return {92,96} end
   function GetAchievementInfo() return 7,"Achv",10,true end
@@ -101,16 +129,26 @@ if MODE~="minimal" then
   function GetNumSavedWorldBosses() return 0 end
   C_Item={DoesItemExistByID=function(id) return id~=99999999 end,
     GetItemInfoInstant=function(id) if id==99999999 then return nil end return id,"Weapon","Sword","INVTYPE_WEAPON",134400,2,7 end,
-    GetItemInfo=function(id) if LATE and id~=99999999 then return "Item"..id,"link",(id%5)+1 end end,
+    GetItemInfo=function(id)
+      if id==99999999 then return end
+      if type(id)=="string" and id:find("item:",1,true) then
+        return "Item",nil,1,1,0,"Misc","Junk",20,"",nil,50
+      end
+      if LATE then return "Item"..id,"link",(id%5)+1,1,0,"Misc","Junk",20,"",nil,50 end
+    end,
     GetItemNameByID=function(id) if LATE and id~=99999999 then return "Item"..id end end,
     RequestLoadItemDataByID=function() end}
   C_TooltipInfo={GetItemByID=function(id) if id~=99999999 then return {lines={{},{},{}}} end end}
   C_GameRules={GetActiveGameMode=function() return 1 end,IsStandard=function() return false end,IsHardcoreActive=function() return false end,
     IsGameRuleActive=function(r) return r==1 end}
-  function GetNumLootItems() return 0 end
+  function GetNumLootItems() return #LOOT_SLOTS end
   function GetLootInfo() return {} end
-  function GetLootSlotInfo() end
+  function GetLootSlotInfo(i)
+    local s=LOOT_SLOTS[i]; if not s then return end
+    return s.tex,s.name,s.qty,s.quality,false
+  end
   function GetLootSourceInfo() end
+  if not LOOT_SLOTS then LOOT_SLOTS={} end
   C_InstanceEncounter={IsEncounterInProgress=function() return false end}
   C_LootHistory={}
 end
@@ -876,6 +914,67 @@ if MODE ~= "minimal" then
   for _, fr in ipairs(ALL) do if fr._ev and (fr._ev.SKILL_LINES_CHANGED or fr._ev.PLAYER_ENTERING_WORLD) and fr ~= UIParent and fr ~= DarkMatterFrame then fev = fr end end
   -- may only have PLAYER_ENTERING_WORLD if SKILL register failed silently — still private
   check(true, "fishing events optional")
+end
+
+
+-- ===== Fishing catch tracking (0.2.1) =====
+if MODE ~= "minimal" then
+  check(DarkMatterCharDB and DarkMatterCharDB.fishing, "per-character fishing DB created")
+  DarkMatterCharDB.fishing = nil
+  local f = DarkMatter.GetFishingDB()
+  check(f.casts == 0 and f.catches == 0, "fishing stats start at zero")
+  ZONE_TEXT = "Elwynn Forest"
+  local water, known = DarkMatter.ResolveFishingWater()
+  check(water == "Elwynn Forest" and known == true, "ResolveFishingWater maps Elwynn: "..tostring(water))
+  DarkMatter._FishingTest.BeginCast()
+  f = DarkMatter.GetFishingDB()
+  check(f.casts == 1, "cast increments casts")
+  check(f.lastZone == "Elwynn Forest", "zone resolved to Elwynn Forest: "..tostring(f.lastZone))
+  TIME_NOW = 1010
+  DarkMatter._FishingTest.EndChannel()
+  FISH_LOOT = true
+  LOOT_SLOTS = {
+    { tex="t", name="Raw Brilliant Smallfish", qty=1, quality=1, link="item:1" },
+    { tex="t", name="Driftwood", qty=1, quality=0, link="item:2" },
+  }
+  check(IsFishingLoot() == true, "IsFishingLoot true")
+  check(GetNumLootItems() == 2, "loot slots ready: "..tostring(GetNumLootItems()))
+  DarkMatter._FishingTest.OnFishingLoot()
+  f = DarkMatter.GetFishingDB()
+  check(f.catches == 2, "loot records catches: "..tostring(f.catches))
+  check(f.good == 1 and f.junk == 1, "junk vs good split")
+  check(f.zones["Elwynn Forest"] and f.zones["Elwynn Forest"].catches == 2, "zone bucket catches")
+  local zc, items = DarkMatter.FishingZoneStats("Elwynn Forest")
+  check(zc == 2 and #items == 2, "FishingZoneStats returns items")
+  local share
+  for _, it in ipairs(items) do if it.name == "Raw Brilliant Smallfish" then share = it.count / zc end end
+  check(share == 0.5, "per-zone share 50%")
+  LOOT_SLOTS = { { tex="t", name="Stonescale Eel", qty=1, quality=3, link="item:3" } }
+  DarkMatter._FishingTest.OnFishingLoot()
+  f = DarkMatter.GetFishingDB()
+  check(#f.rares >= 1 and f.rares[1].name == "Stonescale Eel", "rare first-catch recorded")
+  local ga0 = f.gotAway
+  FISH_LOOT = false
+  DarkMatter._FishingTest.BeginCast()
+  DarkMatter._FishingTest.EndChannel()
+  DarkMatter._FishingTest.state.lootSeen = false
+  DarkMatter._FishingTest.state.pendingAway = GetTime() - 1
+  for _,a in ipairs(ALL) do
+    if a._scripts and a._scripts.OnUpdate then a._scripts.OnUpdate(a, 0) end
+  end
+  f = DarkMatter.GetFishingDB()
+  check(f.gotAway > ga0, "got-away increments after timeout")
+  check(f.timeSec > 0, "time fishing accrued")
+  DarkMatter.ShowTab("journals")
+  DarkMatterDB.fishingView = "stats"
+  DarkMatterDB.section = "fishing"
+  if DarkMatter.tabs.journals and DarkMatter.tabs.journals.Refresh then DarkMatter.tabs.journals.Refresh() end
+  local bad
+  for _, fr in ipairs(FS) do
+    if type(fr._text)=="string" and fr._text:find("%(Complete%)") then bad = fr._text end
+  end
+  check(not bad, "no Complete tags in fishing UI")
+  check(DarkMatterCharDB.fishing.casts >= 1, "stats persist on DarkMatterCharDB")
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end
