@@ -4,7 +4,7 @@ max_line_length = false
 read_globals = {
   "CreateFrame","GameTooltip_HideShoppingTooltips","UIParent","Minimap","GameTooltip","GetCursorPosition","GetBuildInfo","GetLocale",
   "GetMinimapShape","InCombatLockdown", "debugstack", "GetRealmName", "UnitName","C_Timer","C_AddOns","C_Map","GetAddOnMetadata",
-  "WOW_PROJECT_ID","WOW_PROJECT_MAINLINE","Settings","BackdropTemplateMixin","UISpecialFrames",
+  "WOW_PROJECT_ID","WOW_PROJECT_MAINLINE","Settings","BackdropTemplateMixin","UISpecialFrames","CreateColor",
   "GetNumQuestLogEntries","GetProfessions","GetProfessionInfo","EJ_GetNumTiers",
   "GetTotalAchievementPoints",
   "AchievementFrame","EncounterJournal","C_EncounterJournal","EJ_GetInstanceInfo","EJ_GetInstanceForMap","Enum","C_ContentTracking","C_LFGInfo","GetLFGDungeonInfo","GetLFDChoiceOrder","GetNumRFDungeons","GetRFDungeonInfo","GetLFGDungeonNumEncounters","GetLFGDungeonEncounterInfo","GetLFGDungeonRewards","GetNumSavedInstances","RequestRaidInfo","GetSavedInstanceInfo","GetNumSavedWorldBosses","GetInstanceInfo","IsInInstance","C_Item","C_TooltipInfo","GetNumLootItems","GetLootInfo","GetLootSlotInfo","GetLootSourceInfo","C_InstanceEncounter","C_GameRules","EJ_GetInstanceByIndex",

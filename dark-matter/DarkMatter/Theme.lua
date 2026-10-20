@@ -1,7 +1,8 @@
 -- Theme layer. A theme is plain DATA: an atlas (texture file + piece rectangles), a few big textures,
 -- metrics (sizes and offsets in UI units, taken from the approved previewer mockup), colours and a title.
 -- Window code never branches on a theme id; it asks NS.theme for numbers, colours and atlas pieces.
--- Adding a class theme later = one more NS.RegisterTheme({...}) (+ its atlas file); no widget code changes.
+-- Class themes (Theme_Classes.lua, 0.4.2) set base = "wow": they share the WoW layout (metrics, atlas, glyphs)
+-- and add data only: colours, flat widget looks (theme.flat), tinted surfaces (theme.surface) and frame art (theme.classArt).
 local _, NS = ...
 
 NS.themes = NS.themes or {}
@@ -10,6 +11,9 @@ NS.atlases = NS.atlases or {}
 NS.theme = nil
 
 local skins = {}
+local WHITE = "Interface\\Buttons\\WHITE8X8"
+NS.WHITE = WHITE
+local flatTex = setmetatable({}, { __mode = "k" }) -- textures currently painted flat (side table: no fields on regions)
 
 local function Hex(h)
   local r, g, b = string.match(h, "^#?(%x%x)(%x%x)(%x%x)$")
@@ -18,6 +22,17 @@ end
 NS.Hex = Hex
 
 function NS.RegisterTheme(def)
+  local base = def.base and NS.themes[def.base]
+  if base then
+    def.atlas = def.atlas or base.atlas
+    def.media = def.media or base.media
+    def.m = def.m or base.m
+    def.glyphs = def.glyphs or base.glyphs
+    def.colors = def.colors or {}
+    for k, v in pairs(base.colors) do
+      if def.colors[k] == nil then def.colors[k] = v end
+    end
+  end
   -- colours may be given as "#rrggbb"; convert once
   for k, v in pairs(def.colors or {}) do
     if type(v) == "string" then def.colors[k] = Hex(v) end
@@ -38,8 +53,23 @@ function NS.SetTheme(id)
   if not def then return false end
   NS.theme = def
   if NS.db then NS.db.theme = id end
-  for _, fn in ipairs(skins) do pcall(fn) end
+  NS.lastSkinError = nil
+  for _, fn in ipairs(skins) do
+    local ok, err = pcall(fn)
+    if not ok then NS.lastSkinError = tostring(err) end
+  end
+  -- rows paint their selection highlight on refresh, so repaint the open tab too
+  if NS.RefreshWindow then pcall(NS.RefreshWindow) end
   return true
+end
+
+-- Next theme id in registration order (for /dm theme next).
+function NS.NextThemeId()
+  local cur = NS.theme and NS.theme.id
+  for i, id in ipairs(NS.themeOrder) do
+    if id == cur then return NS.themeOrder[i % #NS.themeOrder + 1] end
+  end
+  return NS.themeOrder[1]
 end
 
 function NS.Color(key)
@@ -56,14 +86,68 @@ function NS.Rect(key)
   return a and a.rects[key]
 end
 
+-- Flat look for an atlas piece in the current theme ("btn_red_l" -> theme.flat.btn_red), or nil.
+function NS.FlatSpec(key)
+  local fl = NS.theme and NS.theme.flat
+  if not fl or type(key) ~= "string" then return nil end
+  if fl[key] then return fl[key] end
+  local p = string.match(key, "^(.-)_[tblrm][lr]?$")
+  return p and fl[p] or nil
+end
+
+-- Paint a texture as a flat colour or a two-stop gradient (a = top/left, b = bottom/right).
+function NS.PaintFlat(tex, a, b, dir)
+  b = b or a
+  tex:SetTexture(WHITE)
+  tex:SetTexCoord(0, 1, 0, 1)
+  flatTex[tex] = true
+  if CreateColor and tex.SetGradient then
+    local lo, hi = a, b
+    if dir ~= "HORIZONTAL" then lo, hi = b, a end -- VERTICAL: min colour is the bottom
+    local ok = pcall(tex.SetGradient, tex, dir == "HORIZONTAL" and "HORIZONTAL" or "VERTICAL",
+      CreateColor(lo[1], lo[2], lo[3], lo[4] or 1), CreateColor(hi[1], hi[2], hi[3], hi[4] or 1))
+    if ok then return end
+  end
+  tex:SetVertexColor((a[1] + b[1]) / 2, (a[2] + b[2]) / 2, (a[3] + b[3]) / 2, ((a[4] or 1) + (b[4] or 1)) / 2)
+end
+
+-- Undo PaintFlat before a texture shows atlas art again.
+local function Unflat(tex)
+  if flatTex[tex] then
+    flatTex[tex] = nil
+    tex:SetVertexColor(1, 1, 1, 1)
+  end
+end
+NS.Unflat = Unflat
+
 -- Point a texture at one atlas piece (half a texel inset so neighbouring pieces never bleed in).
+-- In a class theme the pieces listed in theme.flat are painted as flat gradients instead.
 function NS.SetPiece(tex, key)
+  local spec = NS.FlatSpec(key)
+  if spec then NS.PaintFlat(tex, spec.a, spec.b, spec.dir) return end
   local a = NS.atlases[NS.theme.atlas]
   local r = a and a.rects[key]
   if not r then return end
+  Unflat(tex)
   tex:SetTexture(a.file)
   local e = 0.5
   tex:SetTexCoord((r[1] + e) / a.width, (r[1] + r[3] - e) / a.width, (r[2] + e) / a.height, (r[2] + r[4] - e) / a.height)
+end
+
+-- Class-theme surface for one area ("shell", "rail", "list", "page"): the class texture tinted ({ tint = rgb }) or a
+-- flat colour/gradient ({ flat = true, a, b, dir }) where the previewer uses a plain CSS background.
+-- Returns false (texture untouched) when the theme has no surfaces; the caller then applies the WoW media.
+function NS.ApplySurface(tex, kind)
+  local sf = NS.theme.surface
+  local c = sf and sf[kind]
+  if not c then return false end
+  if c.flat then NS.PaintFlat(tex, c.a, c.b, c.dir) return true end
+  NS.Unflat(tex)
+  local r, z = sf.rect, sf.size
+  tex:SetTexture(sf.file)
+  tex:SetTexCoord((r[1] + 0.5) / z, (r[1] + r[3] - 0.5) / z, (r[2] + 0.5) / z, (r[2] + r[4] - 0.5) / z)
+  tex:SetVertexColor(c.tint[1], c.tint[2], c.tint[3], 1)
+  return true
 end
 
 function NS.PieceSize(key)

@@ -30,10 +30,25 @@ def find_font():
 
 
 _tex = {}
+def apply_grad(piece, g):
+    """SetGradient(orient, min, max): VERTICAL min = bottom, HORIZONTAL min = left; multiplies like vertex colour."""
+    w, h = piece.size
+    lo, hi = g[1:5], g[5:9]
+    ramp = Image.new("RGBA", (w, h))
+    px = ramp.load()
+    for y in range(h):
+        for x in range(w):
+            t = (x / max(1, w - 1)) if g[0] == "HORIZONTAL" else (1 - y / max(1, h - 1))
+            px[x, y] = tuple(int(255 * (lo[i] + (hi[i] - lo[i]) * t)) for i in range(4))
+    return ImageChops.multiply(piece, ramp)
+
+
 
 
 def load_tex(addon, path):
     name = path.replace("\\", "/").split("/")[-1]
+    if name == "WHITE8X8":
+        return Image.new("RGBA", (8, 8), (255, 255, 255, 255))
     if name not in _tex:
         im = Image.open(os.path.join(addon, "Media", name + ".tga"))
         _tex[name] = im.convert("RGBA")
@@ -60,7 +75,7 @@ def main():
     scale = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
     data = json.load(open(layout))
     ww, wh = data["w"], data["h"]
-    margin = 40
+    margin = int(os.environ.get("DM_RENDER_MARGIN", "40"))
     W, H = int((ww + margin * 2) * scale), int((wh + margin * 2) * scale)
     # fake game scene behind the window
     scene = Image.new("RGBA", (W, H))
@@ -88,6 +103,8 @@ def main():
                 piece = Image.new("RGBA", (w, h), tuple(int(v * 255) for v in c))
             else:
                 continue
+            if it.get("grad"):
+                piece = apply_grad(piece, it["grad"])
             vc = it.get("vc") or [1, 1, 1, 1]
             alpha = it.get("alpha", 1)
             if vc[:3] != [1, 1, 1] or vc[3] != 1 or alpha != 1:

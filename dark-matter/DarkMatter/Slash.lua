@@ -16,6 +16,7 @@ local function Help()
   print("  /dm minimap  show/hide the minimap button")
   print("  /dm icon  switch between the Dark Matter icon and a stock icon")
   print("  /dm options  open the Settings page")
+  print("  /dm theme  list themes   /dm theme <name>  apply one   /dm theme next  cycle (saved, applies live)")
   print("  /dm fishcheck  compare fishing catalog names with the client's item names")
   print("  /dm tipdebug  log fishing tooltip placement (points/rects) to DarkMatterDB.tipdebug")
   print("  /dm agscan  Adventure Guide: LFG rows kept/rejected -> DarkMatterDB.agscan")
@@ -56,6 +57,15 @@ SlashCmdList["DARKMATTER"] = function(msg)
     NS.db.stockIcon = not NS.db.stockIcon
     NS.SetMinimapIcon()
     NS.Print(NS.db.stockIcon and "using the stock icon." or "using the Dark Matter icon.")
+  elseif cmd == "theme" then
+    if rest == "" or rest == "list" then
+      local names = {}
+      for _, id in ipairs(NS.themeOrder) do names[#names + 1] = (id == NS.theme.id) and ("[" .. id .. "]") or id end
+      NS.Print("themes: " .. table.concat(names, ", ") .. "   (/dm theme <name> or /dm theme next)")
+    else
+      local id = (rest == "next") and NS.NextThemeId() or rest
+      if NS.SetTheme(id) then NS.Print("theme: " .. NS.theme.name) else NS.Print("unknown theme \"" .. rest .. "\"; /dm theme lists them.") end
+    end
   elseif cmd == "options" then
     NS.OpenOptions()
   elseif cmd == "agscan" then

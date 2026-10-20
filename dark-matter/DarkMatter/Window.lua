@@ -42,14 +42,91 @@ function NS.ResetWindowPosition()
   NS.Print("window position reset to screen centre.")
 end
 
--- Shrink (never enlarge) so the 880x680 window fits small screens.
+-- Class-theme art space: the previewer's 880x680 css window (rim 38, header 46, footer 48). Its shell box
+-- (38..842 x 84..594) is mapped onto ours (pad..w-pad x shellTop..footerTop), so the art frames our layout.
+local function ArtMap()
+  local m = NS.theme.m
+  local sx = (m.w - 2 * m.pad) / 804
+  local sy = (m.footerTop - m.shellTop) / 510
+  return sx, sy, m.pad - 38 * sx, m.shellTop - 84 * sy
+end
+NS.ClassArtMap = ArtMap
+
+-- Shrink (never enlarge) so the 880x680 window (or a class theme's larger frame art) fits small screens.
 local function FitScale(f)
   local m = NS.theme.m
+  local w, h = m.w, m.h
+  if NS.theme.classArt then
+    local sx, sy = ArtMap()
+    w, h = 880 * sx, 680 * sy
+  end
   local s = 1
   local uh, uw = NS.Num(UIParent:GetHeight()), NS.Num(UIParent:GetWidth())
-  if uh and uh > 0 then s = math.min(s, uh * m.maxScreenFraction / m.h) end
-  if uw and uw > 0 then s = math.min(s, uw * m.maxScreenFraction / m.w) end
+  if uh and uh > 0 then s = math.min(s, uh * m.maxScreenFraction / h) end
+  if uw and uw > 0 then s = math.min(s, uw * m.maxScreenFraction / w) end
   f:SetScale(math.max(0.5, s))
+end
+
+-- Class frame art (theme.classArt), all data-driven: backdrop behind the window, the frame bands under the
+-- content, and the overlay bands, corner ornaments, crest and base plate on a no-mouse child above it.
+local function BuildClassArt(f)
+  local A = { under = {}, over = {}, orn = {} }
+  local top = CreateFrame("Frame", nil, f)
+  top:SetAllPoints(f)
+  top:SetFrameLevel(f:GetFrameLevel() + 25)
+  top:EnableMouse(false)
+  A.top = top
+  A.backdrop = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+  for i = 1, 6 do
+    A.under[i] = f:CreateTexture(nil, "BORDER", nil, 0)
+    A.over[i] = top:CreateTexture(nil, "ARTWORK", nil, 0)
+  end
+  for _, k in ipairs({ "tl", "tr", "bl", "br" }) do A.orn[k] = top:CreateTexture(nil, "OVERLAY", nil, 0) end
+  A.crest = top:CreateTexture(nil, "OVERLAY", nil, 1)
+  A.base = top:CreateTexture(nil, "OVERLAY", nil, 1)
+  local all = { A.backdrop, A.crest, A.base }
+  for i = 1, 6 do all[#all + 1] = A.under[i] all[#all + 1] = A.over[i] end
+  for _, k in ipairs({ "tl", "tr", "bl", "br" }) do all[#all + 1] = A.orn[k] end
+  A.all = all
+  local function Place(tex, file, size, r, x, y, w, h)
+    tex:SetTexture(file)
+    tex:SetTexCoord((r[1] + 0.5) / size, (r[1] + r[3] - 0.5) / size, (r[2] + 0.5) / size, (r[2] + r[4] - 0.5) / size)
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPLEFT", f, "TOPLEFT", x, -y)
+    tex:SetSize(w, h)
+    tex:Show()
+  end
+  function A.Apply()
+    local ca = NS.theme.classArt
+    if not ca then
+      for _, t in ipairs(all) do t:Hide() end
+      top:Hide()
+      return
+    end
+    top:Show()
+    local sx, sy, ax, ay = ArtMap()
+    local k = (sx + sy) / 2
+    local z, R, file = ca.size, ca.rects, ca.parts
+    for i, b in ipairs(ca.bands) do
+      local a, t = b[2], b[3]
+      local x, y, w, h = ax + a[1] * sx, ay + a[2] * sy, a[3] * sx, a[4] * sy
+      Place(A.under[i], ca.frame, z, t, x, y, w, h)
+      Place(A.over[i], ca.over, z, t, x, y, w, h)
+    end
+    local aw, ah = 880 * sx, 680 * sy
+    local o = ca.orn * k
+    Place(A.orn.tl, file, z, R.orn_tl, ax, ay, o, o)
+    Place(A.orn.tr, file, z, R.orn_tr, ax + aw - o, ay, o, o)
+    Place(A.orn.bl, file, z, R.orn_bl, ax, ay + ah - o, o, o)
+    Place(A.orn.br, file, z, R.orn_br, ax + aw - o, ay + ah - o, o, o)
+    local cs = ca.crest[1] * k
+    Place(A.crest, file, z, R.crest, ax + (440 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy, cs, cs)
+    local bw, bh = ca.base[1] * k, ca.base[2] * k
+    local bs = math.min(bw, bh)
+    Place(A.base, file, z, R.base, ax + 440 * sx - bs / 2, ay + 642 * sy + (bh - bs) / 2, bs, bs)
+    Place(A.backdrop, file, z, R.backdrop, ax - 44 * sx, ay - 26 * sy, aw + 88 * sx, ah + 86 * sy)
+  end
+  return A
 end
 
 ---------------------------------------------------------------------------
@@ -147,10 +224,28 @@ local function BuildSettings(f)
   label:SetText("Theme")
   local value = UI.Text(pop, "OVERLAY", 14, "gold", "RIGHT")
   value:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -14, -44)
-  value:SetText(NS.theme.name)
-  local more = UI.Text(pop, "OVERLAY", 11, "listSoft", "LEFT")
-  more:SetPoint("TOPLEFT", pop, "TOPLEFT", 14, -64)
-  more:SetText("Class themes come in a later phase.")
+  -- Theme picker: one plain button per registered theme (WoW + the nine class themes), 2 columns.
+  -- A click applies the theme live (NS.SetTheme re-skins every widget) and saves it in DarkMatterDB.theme.
+  local pick = {}
+  local bw, bh = math.floor((m.popW - 28 - 8) / 2), 24
+  for i, id in ipairs(NS.themeOrder) do
+    local def = NS.themes[id]
+    local b = UI.Button(pop, def.name, bw, bh, "grey", 12)
+    local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
+    b:SetPoint("TOPLEFT", pop, "TOPLEFT", 14 + col * (bw + 8), -70 - row * (bh + 6))
+    b:SetScript("OnClick", function() NS.SetTheme(id) end)
+    b.themeId = id
+    pick[#pick + 1] = b
+  end
+  W.themeButtons = pick
+  NS.OnSkin(function()
+    value:SetText(NS.theme.name)
+    for _, b in ipairs(pick) do
+      local on = b.themeId == NS.theme.id
+      b:SetLook(on and "red" or "grey")
+      if not on then b.text:SetTextColor(NS.Color("popInk")) end -- readable, not the disabled grey
+    end
+  end)
   local reset = UI.Button(pop, "Reset window position", m.popW - 28, m.fbtnH, "red", m.fbtnSize)
   reset:SetPoint("BOTTOMLEFT", pop, "BOTTOMLEFT", 14, 14)
   reset:SetScript("OnClick", function() NS.ResetWindowPosition() end)
@@ -214,7 +309,9 @@ local function Build()
   slate:SetPoint("TOPLEFT", f, "TOPLEFT", m.pad, -m.pad)
   slate:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -m.pad, m.pad)
   NS.OnSkin(function()
+    if NS.ApplySurface(slate, "shell") then return end
     slate:SetTexture(NS.theme.media.slate)
+    slate:SetTexCoord(0, 1, 0, 1)
     local s = NS.Metric("slateShade")
     slate:SetVertexColor(s, s, s, 1)
   end)
@@ -231,7 +328,7 @@ local function Build()
   end)
 
   -- fine border frame
-  UI.NineSlice(f, "frame", m.frameCorner, "BORDER", 2)
+  local frameNine = UI.NineSlice(f, "frame", m.frameCorner, "BORDER", 2)
 
   -- title plate + title text (also a drag handle)
   local tb = CreateFrame("Frame", nil, f)
@@ -241,7 +338,7 @@ local function Build()
   tb:RegisterForDrag("LeftButton")
   tb:SetScript("OnDragStart", function() f:StartMoving() end)
   tb:SetScript("OnDragStop", function() f:StopMovingOrSizing() SavePosition() end)
-  UI.ThreeSlice(tb, "title", m.titleH, "ARTWORK")
+  local tbSlice = UI.ThreeSlice(tb, "title", m.titleH, "ARTWORK")
   local title = UI.Text(tb, "OVERLAY", m.titleSize, "title", "CENTER")
   title:SetPoint("CENTER", tb, "CENTER", 0, 0)
   NS.OnSkin(function() title:SetText(NS.theme.title or "Dark Matter") end)
@@ -356,6 +453,50 @@ local function Build()
     if W.pop then W.pop:Hide() end
     local def = NS.tabs[W.current]
     if def and def.OnHide then pcall(def.OnHide) end
+  end)
+
+  -- class themes: frame art on, WoW-only chrome (frame border, title plate, medal, footer tint, quest-log head row) off
+  local art = BuildClassArt(f)
+  W.classArt = art
+  local wowOnly = { frameNine, tbSlice, tint, line, medal, allBtn, trk }
+  NS.OnSkin(function()
+    art.Apply()
+    local ca = NS.theme.classArt
+    for _, o in ipairs(wowOnly) do if ca then o:Hide() else o:Show() end end
+    title:ClearAllPoints()
+    if ca then
+      local sx, sy, ax, ay = ArtMap()
+      NS.SetFont(title, math.floor(ca.titleSize * 0.8 + 0.5), "")
+      title:SetPoint("CENTER", f, "TOPLEFT", ax + 440 * sx, -(ay + (61 + ca.titleDy) * sy))
+      if f.SetClampRectInsets then f:SetClampRectInsets(ax, ax + 880 * sx - m.w, -ay, m.h - (ay + 680 * sy)) end
+    else
+      NS.SetFont(title, m.titleSize, "")
+      title:SetPoint("CENTER", tb, "CENTER", 0, 0)
+      if f.SetClampRectInsets then f:SetClampRectInsets(0, 0, 0, 0) end
+    end
+    FitScale(f)
+    -- footer row + close button: the previewer's class layout (inset from the frame rim) or the WoW positions
+    settings:ClearAllPoints() status:ClearAllPoints() share:ClearAllPoints() exit:ClearAllPoints() close:ClearAllPoints()
+    if ca then
+      local sx, sy, ax, ay = ArtMap()
+      local ft = ca.footer
+      local x, cy = ax + ft.pad * sx, ay + 618 * sy
+      local widths = { 90, ft.cols[2], 90, 90 }
+      for i, b in ipairs({ settings, status, share, exit }) do
+        b:SetWidth(widths[i] * sx)
+        b:SetPoint("LEFT", f, "TOPLEFT", x, -cy)
+        x = x + (ft.cols[i] + ft.gap) * sx
+      end
+      close:SetPoint("TOPRIGHT", f, "TOPLEFT", ax + (880 - ca.close[1]) * sx, -(ay + ca.close[2] * sy))
+      close:SetFrameLevel(f:GetFrameLevel() + 27)
+    else
+      settings:SetWidth(m.fbtnW) settings:SetPoint("TOPLEFT", f, "TOPLEFT", m.fbtnLeft, -m.fbtnY)
+      status:SetWidth(m.statusW) status:SetPoint("TOPLEFT", f, "TOPLEFT", m.statusX, -m.statusY)
+      share:SetWidth(m.fbtnW) share:SetPoint("TOPLEFT", f, "TOPLEFT", m.shareX, -m.fbtnY)
+      exit:SetWidth(m.fbtnW) exit:SetPoint("TOPLEFT", f, "TOPLEFT", m.exitX, -m.fbtnY)
+      close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -(m.pad + m.closeRight), -(m.pad + m.closeTop))
+      close:SetFrameLevel(f:GetFrameLevel() + 20)
+    end
   end)
 
   -- ESC closes it, the stock way (plain table insert; Blizzard reads it through securecall).

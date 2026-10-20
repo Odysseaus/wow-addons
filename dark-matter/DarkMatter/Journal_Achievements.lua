@@ -293,9 +293,7 @@ local function MakeSlot(parent, badgeKey)
   s.badge:SetPoint("LEFT", s, "LEFT", 2, 0)
   s.hasArt = SetArt(s.badge, badgeKey) and true or false
   if not s.hasArt then NS.OnSkin(function() NS.SetPiece(s.badge, "medal") end) end
-  s.num = OneLine(UI.Text(s, "OVERLAY", 12, "badge", "CENTER"), 15)
-  s.num:SetPoint("CENTER", s.badge, "CENTER", 0, badgeKey == "b_legacy" and -2 or 0)
-  s.num:SetWidth(34)
+  -- 0.4.2: the badge is an icon only (no number on it); the figures live in the bar text
   s.label = OneLine(UI.Text(s, "OVERLAY", 11, "listHead", "LEFT"), 14)
   s.label:SetPoint("TOPLEFT", s, "TOPLEFT", 46, -3)
   s.label:SetPoint("RIGHT", s, "RIGHT", -4, 0)
@@ -348,7 +346,6 @@ local function RefreshSummary(mode)
   for i, e in ipairs(show) do
     LayoutSlot(e.s, 6 + (i - 1) * (w + 14), w)
     e.s.label:SetText(e.label)
-    e.s.num:SetText(tostring(e.cur))
     e.s.pbar:SetProgress(e.cur, math.max(1, e.max), e.cur .. " / " .. e.max)
     e.s.cur, e.s.max = e.cur, e.max
     e.s:Show()

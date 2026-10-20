@@ -365,8 +365,29 @@ end
 function FrameMT.SetVertexColor(s, r, g, b, a)
   needNum("SetVertexColor", 1, r) needNum("SetVertexColor", 2, g) needNum("SetVertexColor", 3, b)
   s._vc = { r, g, b, a or 1 }
+  s._grad = nil
 end
 function FrameMT.SetBlendMode(s, m) if m ~= "BLEND" and m ~= "ADD" and m ~= "DISABLE" and m ~= "MOD" and m ~= "ALPHAKEY" then error("SetBlendMode: bad mode " .. tostring(m), 2) end s._blend = m end
+-- 0.4.2: gradients (class-theme flat widgets), ColorMixin-style colours, highlight lock, clamp insets
+function CreateColor(r, g, b, a)
+  needNum("CreateColor", 1, r) needNum("CreateColor", 2, g) needNum("CreateColor", 3, b)
+  local c = { r = r, g = g, b = b, a = a or 1 }
+  function c.GetRGBA(self) return self.r, self.g, self.b, self.a end
+  return c
+end
+function FrameMT.SetGradient(s, orient, minC, maxC)
+  if orient ~= "VERTICAL" and orient ~= "HORIZONTAL" then error("SetGradient: bad orientation " .. tostring(orient), 2) end
+  if type(minC) ~= "table" or type(maxC) ~= "table" or not minC.GetRGBA or not maxC.GetRGBA then error("SetGradient: colour objects expected", 2) end
+  s._grad = { orient, { minC:GetRGBA() }, { maxC:GetRGBA() } }
+  s._vc = nil
+end
+function FrameMT.SetDesaturated(s, on) s._desat = on and true or false end
+function FrameMT.LockHighlight(s) s._locked = true end
+function FrameMT.UnlockHighlight(s) s._locked = false end
+function FrameMT.SetClampRectInsets(s, l, r, t, b)
+  needNum("SetClampRectInsets", 1, l) needNum("SetClampRectInsets", 2, r) needNum("SetClampRectInsets", 3, t) needNum("SetClampRectInsets", 4, b)
+  s._clampIns = { l, r, t, b }
+end
 function FrameMT.SetTextColor(s, r, g, b, a)
   needNum("SetTextColor", 1, r) needNum("SetTextColor", 2, g) needNum("SetTextColor", 3, b)
   s._tcol = { r, g, b, a or 1 }
@@ -522,6 +543,7 @@ function DumpLayout(root, path)
       if r._tc then o[#o + 1] = '"tc":[' .. table.concat({ jnum(r._tc[1]), jnum(r._tc[2]), jnum(r._tc[3]), jnum(r._tc[4]) }, ",") .. "]" end
       if r._color then o[#o + 1] = '"color":[' .. table.concat({ jnum(r._color[1]), jnum(r._color[2]), jnum(r._color[3]), jnum(r._color[4]) }, ",") .. "]" end
       if r._vc then o[#o + 1] = '"vc":[' .. table.concat({ jnum(r._vc[1]), jnum(r._vc[2]), jnum(r._vc[3]), jnum(r._vc[4]) }, ",") .. "]" end
+      if r._grad then o[#o + 1] = '"grad":[' .. jstr(r._grad[1]) .. "," .. table.concat({ jnum(r._grad[2][1]), jnum(r._grad[2][2]), jnum(r._grad[2][3]), jnum(r._grad[2][4]), jnum(r._grad[3][1]), jnum(r._grad[3][2]), jnum(r._grad[3][3]), jnum(r._grad[3][4]) }, ",") .. "]" end
       local a = 1
       local x = r
       while x and x ~= UIParent do a = a * (x._alpha or 1) x = x._parent end
@@ -2471,6 +2493,13 @@ do
     return al and bl and al >= bl - 0.5 and ar <= br + 0.5 and at <= bt + 0.5 and ab >= bb - 0.5
   end
   local function fits(fs) local l, _, r = R(fs) return l and natural(fs) <= r - l + 0.01 end
+  -- 0.4.2: the summary badges carry no number; no visible text of the slot may sit on the badge
+  local function BadgeBare(slot)
+    for _, r in ipairs(REGIONS) do
+      if r._kind == "fontstring" and r._parent == slot and not r._hid and (r._text or "") ~= "" and not apart(r, slot.badge) then return false end
+    end
+    return true
+  end
   local function col(fs, key) local c, r, g, b = fs._tcol, DarkMatter.Color(key) return c and math.abs(c[1] - r) < 0.01 and math.abs(c[2] - g) < 0.01 and math.abs(c[3] - b) < 0.01 end
   local function shownRows() local o = {} for _, r in ipairs(W.treeRows) do if r._shown then o[#o + 1] = r end end return o end
   local function shownCards() local o = {} for _, c in ipairs(W.cards) do if c._shown then o[#o + 1] = c end end return o end
@@ -2483,7 +2512,7 @@ do
   check(badge() == "Earned " .. t.earned .. "/" .. t.count, "badge: " .. tostring(badge()))
   -- summary bar (dm mode: Dark Matter points only, this character)
   local S = W.slots
-  check(S.dm._shown and not S.legacy._shown and S.dm.label:GetText() == "Dark Matter points (this character)" and S.dm.num:GetText() == tostring(t.pointsEarned)
+  check(S.dm._shown and not S.legacy._shown and S.dm.label:GetText() == "Dark Matter points (this character)" and BadgeBare(S.dm)
     and S.dm.pbar.label:GetText() == t.pointsEarned .. " / " .. t.points, "summary bar: Dark Matter points with a progress bar (" .. S.dm.pbar.label:GetText() .. ")")
   check(inside(S.dm, W.summary) and inside(S.dm.pbar, W.summary) and fits(S.dm.label) and apart(S.dm.badge, S.dm.label) and apart(S.dm.label, S.dm.pbar),
     "summary slot fits the bar: badge, label, progress bar apart")
@@ -2694,7 +2723,7 @@ do
   check(not rowFor("g:15585"), "click again collapses it")
   rowFor("n:15076")._scripts.OnClick(rowFor("n:15076"))
   -- summary bar: Dark Matter points and Legacy Points, both this character
-  check(S.dm._shown and S.legacy._shown and S.legacy.label:GetText() == "Legacy Points (this character)" and S.legacy.num:GetText() == "1"
+  check(S.dm._shown and S.legacy._shown and S.legacy.label:GetText() == "Legacy Points (this character)" and BadgeBare(S.legacy)
     and S.legacy.pbar.label:GetText() == "1 / 4" and apart(S.dm, S.legacy) and inside(S.legacy, W.summary) and fits(S.legacy.label) and fits(S.dm.label),
     "summary bar: Dark Matter points + Legacy Points (this character: 1 / 4), side by side")
   local gr1 = rowFor("g:15590")
@@ -2782,6 +2811,176 @@ if MODE == "minimal" then
   DarkMatter.tabs.journals.SetSection("adventure")
   check(DarkMatterDB.section == "adventure", "minimal client: Adventure Guide opens")
   DarkMatter.tabs.journals.SetSection("fishing")
+end
+
+-- ===== 0.4.2 themes: all 10 previewer themes in Settings (popover + Settings canvas + /dm theme), live + saved =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local P = NS.windowParts
+  local win = DarkMatterFrame
+  win:Show()
+  local want = { "wow", "warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid" }
+  check(#NS.themeOrder == 10, "themes: 10 registered (" .. table.concat(NS.themeOrder, ",") .. ")")
+  for i, id in ipairs(want) do check(NS.themeOrder[i] == id and NS.themes[id], "themes: previewer order " .. i .. " = " .. id) end
+  -- class textures: 3 per class, 512x512 power of two, 32-bit uncompressed
+  for _, id in ipairs(want) do
+    if id ~= "wow" then
+      for _, part in ipairs({ "frame", "over", "parts" }) do
+        local fh = io.open(arg[1] .. "/Media/cls-" .. id .. "-" .. part .. ".tga", "rb")
+        check(fh, "themes: texture exists cls-" .. id .. "-" .. part)
+        local h = fh:read(18) fh:close()
+        local w, hh, bpp, ty = h:byte(13) + h:byte(14) * 256, h:byte(15) + h:byte(16) * 256, h:byte(17), h:byte(3)
+        check(w == 512 and hh == 512 and bpp == 32 and ty == 2, "themes: cls-" .. id .. "-" .. part .. " is 512x512 32-bit uncompressed")
+      end
+      local t = NS.themes[id]
+      check(t.base == "wow" and t.m == NS.themes.wow.m and t.atlas == "wow", "themes: " .. id .. " shares the WoW layout")
+      for k in pairs(NS.themes.wow.colors) do check(type(t.colors[k]) == "table" and #t.colors[k] == 3, "themes: " .. id .. " has colour " .. k) end
+      check(t.classArt and t.flat and t.surface, "themes: " .. id .. " has class art, flat looks and surfaces")
+    end
+  end
+  -- WoW colours that replaced literals keep their 0.4.1 values
+  local function near(c, r, g, b) return math.abs(c[1] - r) < 0.003 and math.abs(c[2] - g) < 0.003 and math.abs(c[3] - b) < 0.003 end
+  local wc = NS.themes.wow.colors
+  check(near(wc.barBorder, 0.294, 0.290, 0.267) and near(wc.barTrack, 0.02, 0.02, 0.016) and near(wc.barInk, 1, 0.965, 0.847) and wc.barFill[1] == wc.gold[1],
+    "themes: WoW bar colours equal the 0.4.1 literals")
+
+  -- snapshot of everything the WoW theme draws (to prove a round trip through all themes leaves it unchanged)
+  local function snap()
+    local out, list = {}, LayoutOf(win)
+    for _, e in ipairs(list) do
+      local r = e.r
+      if e.kind == "texture" then
+        out[#out + 1] = table.concat({ tostring(r._file), r._tc and table.concat(r._tc, ",") or "-", (r._vc and table.concat(r._vc, ",") ~= "1,1,1,1") and table.concat(r._vc, ",") or "-",
+          r._color and table.concat(r._color, ",") or "-", r._grad and "G" or "-", string.format("%.2f,%.2f,%.2f,%.2f", e.l or -1, e.t or -1, e.rr or -1, e.b or -1) }, "|")
+      elseif e.kind == "fontstring" then
+        out[#out + 1] = table.concat({ "fs", tostring(r._text), r._tcol and table.concat(r._tcol, ",") or "-", tostring(r._fsize), string.format("%.2f,%.2f", e.l or -1, e.t or -1) }, "|")
+      end
+    end
+    return out
+  end
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+  local before = snap()
+
+  -- popover picker: 10 buttons, the current one in the selected look
+  check(P.themeButtons and #P.themeButtons == 10, "themes: settings popover lists 10 theme buttons")
+  for i, b in ipairs(P.themeButtons) do check(b.themeId == want[i] and b.text._text == NS.themes[want[i]].name, "themes: popover button " .. i .. " = " .. NS.themes[want[i]].name) end
+  local wl, wt, wr, wb = FrameMT._rect(win)
+  local pl, pt, pr, pb = FrameMT._rect(P.pop)
+  check(pl >= wl and pr <= wr and pt <= wt and pb >= wb, "themes: settings popover stays inside the window")
+  for _, b in ipairs(P.themeButtons) do
+    local l, t, r, bb = FrameMT._rect(b)
+    check(l >= pl and r <= pr and t <= pt and bb >= pb + 44, "themes: picker button inside the popover, above Reset: " .. b.themeId)
+  end
+
+  local mainTabs = NS.tabOrder
+  for i, id in ipairs(want) do
+    P.settingsBtn._scripts.OnClick(P.settingsBtn, "LeftButton")
+    check(P.pop._shown, "themes: popover open for " .. id)
+    local b = P.themeButtons[i]
+    b._scripts.OnClick(b, "LeftButton")
+    check(NS.theme.id == id and DarkMatterDB.theme == id, "themes: click applies + saves " .. id)
+    check(NS.lastSkinError == nil, "themes: every widget re-skins without error in " .. id .. " " .. tostring(NS.lastSkinError))
+    check(P.pop._shown, "themes: popover stays open after a pick (" .. id .. ")")
+    for _, o in ipairs(P.themeButtons) do
+      check(o.kind == (o.themeId == id and "red" or "grey"), "themes: picker marks only the current theme (" .. id .. "/" .. o.themeId .. ")")
+    end
+    local t = NS.themes[id]
+    local tr, tg, tb = NS.Color("title")
+    check(P.title._tcol and near(P.title._tcol, tr, tg, tb), "themes: title ink follows the theme (" .. id .. ")")
+    local A = P.classArt
+    check(A and (A.top._shown == (t.classArt ~= nil)), "themes: class art layer " .. (t.classArt and "on" or "off") .. " in " .. id)
+    check(A.top._mouseOff ~= false, "themes: class art overlay takes no mouse")
+    check(A.top._level > P.body._level and A.top._level < P.pop._level, "themes: art overlay above the content, below the settings popover")
+    if t.classArt then
+      check(#TCBAD == 0, "themes: texcoords valid in " .. id .. " " .. tostring(TCBAD[1]))
+      for _, tex in ipairs(A.all) do
+        local l, tt, r, bb = FrameMT._rect(tex)
+        check(l and r - l > 4 and tt - bb > 4, "themes: art piece sized in " .. id)
+        check(l >= wl - 100 and r <= wr + 100 and tt <= wt + 160 and bb >= wb - 140, "themes: art piece near the window in " .. id .. string.format(" (%s %.0f,%.0f,%.0f,%.0f vs %.0f,%.0f,%.0f,%.0f)", tostring(tex._file):match("[^\\]+$"), l, tt, r, bb, wl, wt, wr, wb))
+        check(tostring(tex._file):find("cls%-" .. id .. "%-"), "themes: art piece uses the " .. id .. " textures")
+      end
+      local ins = win._clampIns
+      check(ins and ins[1] < 0 and ins[2] > 0 and ins[3] > 0 and ins[4] < 0, "themes: clamp rect grows to the frame art in " .. id)
+    end
+    for _, tid in ipairs(mainTabs) do
+      NS.ShowTab(tid)
+      local list = LayoutOf(win)
+      local n = 0
+      for _, e in ipairs(list) do
+        if e.kind == "texture" then
+          n = n + 1
+          check(e.l and e.rr - e.l > 0 and e.t - e.b > 0, "themes: visible texture anchored + sized (" .. id .. "/" .. tid .. ")")
+          check(e.r._file or e.r._color, "themes: visible texture has art or colour (" .. id .. "/" .. tid .. ")")
+        end
+      end
+      check(n > 20, "themes: " .. id .. "/" .. tid .. " draws " .. n .. " textures")
+    end
+    local jt = NS.tabs.journals
+    if jt and jt.SetSection then
+      NS.ShowTab("journals")
+      for _, s in ipairs({ "fishing", "adventure", "achievements" }) do
+        local ok, err = pcall(jt.SetSection, s)
+        check(ok, "themes: journals " .. s .. " opens in " .. id .. " " .. tostring(err))
+      end
+      jt.SetSection("fishing")
+    end
+    check(#TCBAD == 0, "themes: texcoords valid after every tab in " .. id)
+    local wl2, wt2, wr2, wb2 = FrameMT._rect(win)
+    check(wr2 - wl2 == 880 and wt2 - wb2 == 680, "themes: window stays 880x680 in " .. id)
+    if os.getenv("DM_RENDER_DIR") and MODE == "full" then
+      NS.ShowTab("quests")
+      DumpLayout(win, os.getenv("DM_RENDER_DIR") .. "/layout-theme-" .. id .. ".json")
+      P.settingsBtn._scripts.OnClick(P.settingsBtn, "LeftButton")
+      DumpLayout(win, os.getenv("DM_RENDER_DIR") .. "/layout-settings-" .. id .. ".json")
+    end
+    P.pop:Hide()
+  end
+
+  -- back to WoW: identical to before the round trip
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+  local after = snap()
+  local same = #before == #after
+  local diff
+  for i = 1, math.max(#before, #after) do if before[i] ~= after[i] then same = false diff = diff or (tostring(before[i]) .. " ~= " .. tostring(after[i])) end end
+  check(same, "themes: WoW draws exactly the same after visiting all 9 class themes " .. tostring(diff))
+
+  -- Settings canvas (stock Settings API): the same picker with stock buttons
+  local panel = DarkMatterOptionsPanel
+  check(panel, "themes: Settings canvas exists")
+  local cbtn = {}
+  for _, f in ipairs(ALL) do if f._parent == panel and type(rawget(f, "themeId")) == "string" then cbtn[#cbtn + 1] = f end end
+  check(#cbtn == 10, "themes: Settings canvas lists 10 theme buttons")
+  for _, b in ipairs(cbtn) do
+    b._scripts.OnClick(b, "LeftButton")
+    check(NS.theme.id == b.themeId and DarkMatterDB.theme == b.themeId, "themes: canvas button applies + saves " .. b.themeId)
+    for _, o in ipairs(cbtn) do check((o._locked == true) == (o.themeId == b.themeId), "themes: canvas highlights only the current theme") end
+  end
+  -- slash
+  NS.SetTheme("wow")
+  SlashCmdList.DARKMATTER("theme next")
+  check(NS.theme.id == "warrior" and DarkMatterDB.theme == "warrior", "themes: /dm theme next cycles wow -> warrior")
+  SlashCmdList.DARKMATTER("theme druid")
+  check(NS.theme.id == "druid", "themes: /dm theme druid")
+  SlashCmdList.DARKMATTER("theme nosuch")
+  check(NS.theme.id == "druid", "themes: unknown /dm theme name keeps the current theme")
+  SlashCmdList.DARKMATTER("theme next")
+  check(NS.theme.id == "wow", "themes: /dm theme next wraps druid -> wow")
+  SlashCmdList.DARKMATTER("theme")
+  -- saved theme is applied at load
+  local core = io.open(arg[1] .. "/Core.lua"):read("*a")
+  check(core:find("NS.SetTheme(NS.db.theme)", 1, true), "themes: the saved theme is applied at load")
+  -- no dropdown menus anywhere (taint-prone UIDropDownMenu / EasyMenu)
+  for _, fn in ipairs({ "Window.lua", "Options.lua", "Theme.lua", "Widgets.lua", "Slash.lua", "Theme_Classes.lua", "Tab_Journals.lua" }) do
+    local src = io.open(arg[1] .. "/" .. fn):read("*a"):gsub("%-%-[^\n]*", "")
+    check(not src:find("UIDropDownMenu", 1, true) and not src:find("EasyMenu", 1, true), "themes: " .. fn .. " uses no UIDropDownMenu/EasyMenu")
+  end
+  local toc = io.open(arg[1] .. "/DarkMatter.toc"):read("*a")
+  check(toc:find("Theme_WoW.lua\nTheme_Classes.lua", 1, true), "themes: Theme_Classes.lua loads right after Theme_WoW.lua")
+  NS.SetTheme("wow")
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("fishing")
 end
 
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====

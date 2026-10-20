@@ -30,6 +30,34 @@ local function Register()
   probe:SetText("Run probe")
   probe:SetScript("OnClick", function() NS.RunProbe(false) end)
 
+  -- Theme picker (same 10 themes as the window's Settings popover): stock buttons, no dropdown menus.
+  -- A click applies the theme live and saves it (DarkMatterDB.theme); the current one stays highlighted.
+  local themeHead = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  themeHead:SetPoint("TOPLEFT", reset, "BOTTOMLEFT", 0, -24)
+  themeHead:SetText("Theme")
+  local themeCur = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+  themeCur:SetPoint("LEFT", themeHead, "RIGHT", 10, 0)
+  local themeBtns = {}
+  for i, id in ipairs(NS.themeOrder) do
+    local b = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    b:SetSize(120, 24)
+    local col, row = (i - 1) % 5, math.floor((i - 1) / 5)
+    b:SetPoint("TOPLEFT", themeHead, "BOTTOMLEFT", col * 126, -10 - row * 30)
+    b:SetText(NS.themes[id].name)
+    b:SetScript("OnClick", function() NS.SetTheme(id) end)
+    b.themeId = id
+    themeBtns[#themeBtns + 1] = b
+  end
+  local themeNote = panel:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+  themeNote:SetPoint("TOPLEFT", themeHead, "BOTTOMLEFT", 0, -76)
+  themeNote:SetText("Also in the window's Settings popover, or type /dm theme <name> (or /dm theme next).")
+  NS.OnSkin(function()
+    themeCur:SetText(NS.theme.name)
+    for _, b in ipairs(themeBtns) do
+      if b.themeId == NS.theme.id then b:LockHighlight() else b:UnlockHighlight() end
+    end
+  end)
+
   local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
   Settings.RegisterAddOnCategory(category)
   NS.settingsCategory = category

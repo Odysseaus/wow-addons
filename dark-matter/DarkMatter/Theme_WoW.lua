@@ -18,6 +18,7 @@ NS.RegisterTheme({
     good = "#4cc43a", mid = "#ecd83c", low = "#e8442e", row = "#ecd83c",
     status = "#6d6b64", lheadAll = "#fff0b0", lheadInk = "#d8d4c6", badge = "#f2d63a",
     popBg = "#1a1a18", popBorder = "#f2d63a", popInk = "#e4e0d2",
+    barFill = "#f0cf4a", barInk = "#fff6d8", barBorder = "#4b4a44", barTrack = "#050504",
   },
   m = {
     -- window
@@ -43,7 +44,7 @@ NS.RegisterTheme({
     -- quest-log style head row above the rail
     lheadAllX = 19, lheadAllY = 51, lheadAllW = 54, lheadAllH = 24, lheadTrkX = 89, lheadTrkY = 56, lheadSize = 13,
     -- settings popover
-    popX = 23, popBottom = 56, popW = 300, popH = 132,
+    popX = 23, popBottom = 56, popW = 300, popH = 270,
   },
   -- tab glyphs: atlas piece keys
   glyphs = { quests = "glyph_quests", journals = "glyph_journals", map = "glyph_map", dungeons = "glyph_dungeons" },

@@ -18,46 +18,94 @@ function UI.Text(parent, layer, size, colorKey, justify)
 end
 
 -- Three-slice strip: two caps (scaled to the strip height) and a stretched middle.
+-- Flat pieces (class themes): the middle carries the gradient, the caps shrink to 1px side borders and
+-- two extra 1px lines (made on first use) draw the top and bottom border.
 function UI.ThreeSlice(owner, prefix, h, layer, sub)
-  local s = { prefix = prefix, h = h }
+  local s = { prefix = prefix, h = h, shown = true }
   s.l = owner:CreateTexture(nil, layer or "BACKGROUND", nil, sub or 0)
   s.m = owner:CreateTexture(nil, layer or "BACKGROUND", nil, sub or 0)
   s.r = owner:CreateTexture(nil, layer or "BACKGROUND", nil, sub or 0)
+  function s:Edges(bc)
+    if not self.bt then
+      self.bt = owner:CreateTexture(nil, layer or "BACKGROUND", nil, sub or 0)
+      self.bt:SetPoint("TOPLEFT", owner, "TOPLEFT", 0, 0)
+      self.bt:SetPoint("TOPRIGHT", owner, "TOPRIGHT", 0, 0)
+      self.bt:SetHeight(1)
+      self.bb = owner:CreateTexture(nil, layer or "BACKGROUND", nil, sub or 0)
+      self.bb:SetPoint("BOTTOMLEFT", owner, "BOTTOMLEFT", 0, 0)
+      self.bb:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT", 0, 0)
+      self.bb:SetHeight(1)
+    end
+    self.edgeOn = bc and true or false
+    if bc then
+      NS.PaintFlat(self.bt, bc) NS.PaintFlat(self.bb, bc)
+      NS.PaintFlat(self.l, bc) NS.PaintFlat(self.r, bc)
+    end
+    if bc and self.shown then self.bt:Show() self.bb:Show() else self.bt:Hide() self.bb:Hide() end
+  end
   function s:Apply(newPrefix)
     if newPrefix then self.prefix = newPrefix end
     local p = self.prefix
     NS.SetPiece(self.l, p .. "_l")
     NS.SetPiece(self.m, p .. "_m")
     NS.SetPiece(self.r, p .. "_r")
-    local lw, lh = NS.PieceSize(p .. "_l")
-    local rw, rh = NS.PieceSize(p .. "_r")
+    local spec = NS.FlatSpec(p .. "_m")
+    local lw, rw
+    if spec then
+      lw, rw = 1, 1
+      self:Edges(spec.border)
+    else
+      local pw, ph = NS.PieceSize(p .. "_l")
+      local qw, qh = NS.PieceSize(p .. "_r")
+      lw, rw = pw * self.h / ph, qw * self.h / qh
+      if self.bt then self:Edges(nil) end
+    end
     self.l:ClearAllPoints()
     self.l:SetPoint("TOPLEFT", owner, "TOPLEFT", 0, 0)
-    self.l:SetSize(lw * self.h / lh, self.h)
+    self.l:SetSize(lw, self.h)
     self.r:ClearAllPoints()
     self.r:SetPoint("TOPRIGHT", owner, "TOPRIGHT", 0, 0)
-    self.r:SetSize(rw * self.h / rh, self.h)
+    self.r:SetSize(rw, self.h)
     self.m:ClearAllPoints()
     self.m:SetPoint("TOPLEFT", self.l, "TOPRIGHT", 0, 0)
     self.m:SetPoint("BOTTOMRIGHT", self.r, "BOTTOMLEFT", 0, 0)
   end
-  function s:SetBlend(mode) self.l:SetBlendMode(mode) self.m:SetBlendMode(mode) self.r:SetBlendMode(mode) end
+  function s:SetBlend(mode)
+    self.l:SetBlendMode(mode) self.m:SetBlendMode(mode) self.r:SetBlendMode(mode)
+  end
   function s:SetAlpha(a) self.l:SetAlpha(a) self.m:SetAlpha(a) self.r:SetAlpha(a) end
-  function s:Show() self.l:Show() self.m:Show() self.r:Show() end
-  function s:Hide() self.l:Hide() self.m:Hide() self.r:Hide() end
+  function s:Show()
+    self.shown = true
+    self.l:Show() self.m:Show() self.r:Show()
+    if self.bt and self.edgeOn then self.bt:Show() self.bb:Show() end
+  end
+  function s:Hide()
+    self.shown = false
+    self.l:Hide() self.m:Hide() self.r:Hide()
+    if self.bt then self.bt:Hide() self.bb:Hide() end
+  end
   NS.OnSkin(function() s:Apply() end)
   return s
 end
 
 -- Nine-slice border (no centre): corner pieces t x t, edges stretched between them.
+-- Flat pieces (class themes): a 1px line in the theme's border colour (or nothing when it has none).
+local NINE = { "tl", "tr", "bl", "br", "t", "b", "l", "r" }
 function UI.NineSlice(owner, prefix, t, layer, sub)
   local n = { prefix = prefix, size = t }
-  for _, k in ipairs({ "tl", "tr", "bl", "br", "t", "b", "l", "r" }) do
+  for _, k in ipairs(NINE) do
     n[k] = owner:CreateTexture(nil, layer or "BORDER", nil, sub or 0)
   end
   function n:Apply()
     local p, size = self.prefix, self.size
-    for _, k in ipairs({ "tl", "tr", "bl", "br", "t", "b", "l", "r" }) do NS.SetPiece(self[k], p .. "_" .. k) end
+    local spec = NS.FlatSpec(p .. "_t")
+    if spec then
+      size = 1
+      local bc = spec.border or { 0, 0, 0, 0 }
+      for _, k in ipairs(NINE) do NS.PaintFlat(self[k], bc) end
+    else
+      for _, k in ipairs(NINE) do NS.SetPiece(self[k], p .. "_" .. k) end
+    end
     self.tl:ClearAllPoints() self.tl:SetPoint("TOPLEFT", owner, "TOPLEFT", 0, 0) self.tl:SetSize(size, size)
     self.tr:ClearAllPoints() self.tr:SetPoint("TOPRIGHT", owner, "TOPRIGHT", 0, 0) self.tr:SetSize(size, size)
     self.bl:ClearAllPoints() self.bl:SetPoint("BOTTOMLEFT", owner, "BOTTOMLEFT", 0, 0) self.bl:SetSize(size, size)
@@ -67,16 +115,21 @@ function UI.NineSlice(owner, prefix, t, layer, sub)
     self.l:ClearAllPoints() self.l:SetPoint("TOPLEFT", self.tl, "BOTTOMLEFT", 0, 0) self.l:SetPoint("BOTTOMRIGHT", self.bl, "TOPRIGHT", 0, 0)
     self.r:ClearAllPoints() self.r:SetPoint("TOPLEFT", self.tr, "BOTTOMLEFT", 0, 0) self.r:SetPoint("BOTTOMRIGHT", self.br, "TOPRIGHT", 0, 0)
   end
+  function n:Show() for _, k in ipairs(NINE) do self[k]:Show() end end
+  function n:Hide() for _, k in ipairs(NINE) do self[k]:Hide() end end
   NS.OnSkin(function() n:Apply() end)
   return n
 end
 
--- Dark slate fill (stretched), optionally shaded darker.
+-- Dark slate fill (stretched), optionally shaded darker. Class themes: the class texture, tinted per area.
+local SURFACE_OF = { slateShade = "shell", railShade = "rail", listShade = "list" }
 function UI.Slate(owner, shadeKey, layer, sub)
   local tex = owner:CreateTexture(nil, layer or "BACKGROUND", nil, sub or 0)
   tex:SetAllPoints(owner)
   NS.OnSkin(function()
+    if NS.ApplySurface(tex, SURFACE_OF[shadeKey or "slateShade"] or "shell") then return end
     tex:SetTexture(NS.theme.media.slate)
+    tex:SetTexCoord(0, 1, 0, 1)
     local s = NS.Metric(shadeKey or "slateShade")
     tex:SetVertexColor(s, s, s, 1)
   end)
@@ -100,23 +153,30 @@ function UI.PaperPanel(parent, w, h)
   local bg = f:CreateTexture(nil, "BACKGROUND", nil, 0)
   bg:SetAllPoints(f)
   NS.OnSkin(function()
-    -- approximates --dm-panel-bg warm wash over parchment
-    bg:SetColorTexture(0.95, 0.90, 0.65, 0.28)
+    -- approximates --dm-panel-bg (WoW: warm wash over parchment; class themes give their own)
+    local c = NS.theme.panelWash or { 0.95, 0.90, 0.65, 0.28 }
+    bg:SetColorTexture(c[1], c[2], c[3], c[4])
   end)
   f.border = UI.NineSlice(f, "pane", NS.theme.m.listBorder, "BORDER", 1)
   return f
 end
 
--- Parchment page with the pane border.
+-- Parchment page with the pane border (class themes: the tinted class texture).
 function UI.Page(parent, w, h)
   local f = CreateFrame("Frame", nil, parent)
   f:SetSize(w, h)
   local parch = f:CreateTexture(nil, "BACKGROUND", nil, 0)
   parch:SetAllPoints(f)
-  NS.OnSkin(function() parch:SetTexture(NS.theme.media.parchment) end)
+  NS.OnSkin(function()
+    if NS.ApplySurface(parch, "page") then return end
+    parch:SetTexture(NS.theme.media.parchment)
+    parch:SetTexCoord(0, 1, 0, 1)
+    parch:SetVertexColor(1, 1, 1, 1)
+  end)
   f.border = UI.NineSlice(f, "pane", NS.theme.m.pageBorder, "BORDER", 1)
   return f
 end
+
 
 -- Plain button with the three-slice art. kind: "red", "grey" or "field".
 local KIND_INK = { red = "gold", grey = "greyBtn", field = "gold" }
@@ -380,17 +440,18 @@ function UI.Bar(parent, w, h, thin)
     fill:SetWidth(fw)
     label:SetText(text or (tostring(cur) .. " / " .. tostring(maxv)))
     local done = cur >= maxv and maxv > 0
-    local key = colorKey or (done and "good" or "gold")
+    local key = colorKey or (done and "good" or "barFill")
     local r, g, b = NS.Color(key)
     fill:SetColorTexture(r, g, b, 1)
     fillDeep:SetColorTexture(r * 0.55, g * 0.55, b * 0.45, 0.85)
   end
   NS.OnSkin(function()
-    rim:SetColorTexture(0.294, 0.290, 0.267, 1)       -- #4b4a44
-    track:SetColorTexture(0.02, 0.02, 0.016, 0.98)    -- #050504
+    rim:SetColorTexture(NS.Color("barBorder"))          -- WoW #4b4a44
+    local tr, tg, tb = NS.Color("barTrack")            -- WoW #050504
+    track:SetColorTexture(tr, tg, tb, 0.98)
     gloss:SetColorTexture(1, 1, 1, 0.35)
     -- cream label (~ --dm-bar-ink #fff6d8)
-    label:SetTextColor(1.0, 0.965, 0.847, 1)
+    label:SetTextColor(NS.Color("barInk"))
   end)
   return f
 end
