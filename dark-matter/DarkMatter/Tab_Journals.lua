@@ -1,13 +1,13 @@
 -- Journals tab: Fishing panel with waters list + catch statistics (per-character).
--- Adventure Guide (0.3.4): dungeon dropdown, LFG dungeons/raids only + our Forever-validated drop seed + loot learning. Achievements: placeholder.
+-- Adventure Guide (0.3.4): dungeon dropdown, LFG dungeons/raids only + our Forever-validated drop seed + loot learning.
+-- Achievements (0.4.0): Journal_Achievements.lua (game Legacy Challenges when the API has data + Dark Matter's own set).
 local _, NS = ...
 local UI = NS.UI
 
 local SECTIONS = {
   { id = "fishing", name = "Fishing" },
   { id = "adventure", name = "Adventure Guide" },
-  { id = "achievements", name = "Achievements",
-    sub = "A themed achievement browser comes in a later phase." },
+  { id = "achievements", name = "Achievements" },
 }
 
 local tab, pills, badgeText
@@ -1228,12 +1228,17 @@ end
 ---------------------------------------------------------------------------
 -- section switching
 ---------------------------------------------------------------------------
+local function AchActive(on)
+  if NS.AchPage and NS.AchPage.SetActive then NS.AchPage.SetActive(on) end
+end
+
 local function ShowSection(id)
   local sec
   for _, s in ipairs(SECTIONS) do if s.id == id then sec = s end end
   if not sec then sec = SECTIONS[1] id = sec.id end
   if NS.db then NS.db.section = id end
   for _, p in ipairs(pills) do p:SetActive(p.sectionId == id) end
+  if id ~= "achievements" then AchActive(false) end
 
   if id == "fishing" then
     EnsureAGEvents(false)
@@ -1249,6 +1254,13 @@ local function ShowSection(id)
     if agPage then agPage:Show() end
     RefreshAG()
     EnsureAGEvents(tab and tab:IsShown())
+  elseif id == "achievements" and NS.AchPage then
+    EnsureFishEvents(false)
+    EnsureAGEvents(false)
+    if fishPage then fishPage:Hide() end
+    if agPage then agPage:Hide() end
+    if stubPage then stubPage:Hide() end
+    AchActive(true)
   else
     EnsureFishEvents(false)
     EnsureAGEvents(false)
@@ -1294,6 +1306,9 @@ NS.RegisterTab({
 
     BuildFish(page)
     BuildAdventure(page)
+    if NS.AchPage then
+      NS.AchPage.Build(page, { badge = function(t) if badgeText then badgeText:SetText(t) end end })
+    end
     stubPage = CreateFrame("Frame", nil, page)
     stubPage:SetAllPoints(page)
     stub = UI.Stub(stubPage, NS.theme.glyphs.journals, "", "")
@@ -1309,16 +1324,24 @@ NS.RegisterTab({
     elseif NS.db and NS.db.section == "adventure" then
       EnsureAGEvents(true)
       RefreshAG()
+    elseif NS.db and NS.db.section == "achievements" then
+      AchActive(true)
     end
   end,
   OnHide = function()
     EnsureFishEvents(false)
     EnsureAGEvents(false)
+    if NS.db and NS.db.section == "achievements" then
+      if NS.AchPage and NS.AchPage.SetMenuOpen then NS.AchPage.SetMenuOpen(false) end
+      if NS.Ach then NS.Ach.onChange = nil end
+    end
   end,
   Refresh = function()
     if NS.db and NS.db.section == "fishing" then RefreshFish()
-    elseif NS.db and NS.db.section == "adventure" then RefreshAG() end
+    elseif NS.db and NS.db.section == "adventure" then RefreshAG()
+    elseif NS.db and NS.db.section == "achievements" and NS.AchPage then NS.AchPage.Refresh() end
   end,
   SetSection = function(id) ShowSection(id) end,
   agWidgets = function() return NS.AGWidgets and NS.AGWidgets() end,
+  achWidgets = function() return NS.AchPage and NS.AchPage.Widgets() end,
 })

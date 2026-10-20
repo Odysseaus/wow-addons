@@ -115,8 +115,9 @@ end
 NS.SpecialFrame = SpecialFrame
 -- Esc target back to the main window (after a popup or the AG dropdown closes), unless another popup is open.
 function NS.RestoreEscMain()
-  local f, pop, catch = _G.DarkMatterFrame, _G.DarkMatterSettingsPop, _G.DarkMatterAGMenuCatcher
-  if f and f:IsShown() and not (pop and pop:IsShown()) and not (catch and catch:IsShown()) then SpecialFrame("DarkMatterFrame", true) end
+  local f, pop, catch, achCatch = _G.DarkMatterFrame, _G.DarkMatterSettingsPop, _G.DarkMatterAGMenuCatcher, _G.DarkMatterAchMenuCatcher
+  if f and f:IsShown() and not (pop and pop:IsShown()) and not (catch and catch:IsShown())
+    and not (achCatch and achCatch:IsShown()) then SpecialFrame("DarkMatterFrame", true) end
 end
 
 local function BuildSettings(f)

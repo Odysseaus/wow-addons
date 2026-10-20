@@ -1047,6 +1047,8 @@ local function RecordLootSlot(f, zone, itemName, quantity, quality, link, lootTe
   if px and py then
     it.lastX, it.lastY = px, py
   end
+  -- 0.4.0: our own achievement tracker (Achievements.lua) counts the catch; a plain callback, no hooks
+  if NS.OnFishCatch then pcall(NS.OnFishCatch, itemName, quality, quantity, itemId, zone) end
 end
 
 local function OnFishingLoot()

@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.3.4 (P3.0): Adventure Guide (all Classic + Forever dungeons and raids, dungeon dropdown, bosses, drops, loot learning); Fishing; Quests; /dm probe.
+## Notes: Dark Matter 0.4.0: Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests; /dm probe.
 ## Author: Odysseaus
-## Version: 0.3.4
+## Version: 0.4.0
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
@@ -21,6 +21,8 @@ Data_FishingCatches.lua
 Fishing.lua
 Data_Dungeons.lua
 AdventureGuide.lua
+Achievements.lua
+Journal_Achievements.lua
 Tab_Journals.lua
 Tab_Stub.lua
 Minimap.lua

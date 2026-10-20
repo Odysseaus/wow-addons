@@ -19,6 +19,7 @@ local function Help()
   print("  /dm fishcheck  compare fishing catalog names with the client's item names")
   print("  /dm tipdebug  log fishing tooltip placement (points/rects) to DarkMatterDB.tipdebug")
   print("  /dm agscan  Adventure Guide: LFG rows kept/rejected -> DarkMatterDB.agscan")
+  print("  /dm achprobe  Achievements: mode, game API counts + 3 samples, Dark Matter counts -> DarkMatterDB.achprobe")
 end
 
 SlashCmdList["DARKMATTER"] = function(msg)
@@ -56,6 +57,11 @@ SlashCmdList["DARKMATTER"] = function(msg)
   elseif cmd == "agscan" then
     if NS.AG and NS.AG.ScanReport then
       local _, lines = NS.AG.ScanReport()
+      for _, l in ipairs(lines or {}) do NS.Print(l) end
+    end
+  elseif cmd == "achprobe" then
+    if NS.Ach and NS.Ach.ProbeReport then
+      local _, lines = NS.Ach.ProbeReport()
       for _, l in ipairs(lines or {}) do NS.Print(l) end
     end
   elseif cmd == "tipdebug" then

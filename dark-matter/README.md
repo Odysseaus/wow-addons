@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.3.4** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.4.0** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -9,7 +9,7 @@ Dark Matter is a one-window overview of your quests, fishing, dungeons and achie
 - **Main window** (880x680, the mockup's size; it shrinks on small screens, never grows). Opens at screen centre, drag it by the title plate, the position is saved to SavedVariables. **Reset window position** is in the window's Settings popover (click outside the pop or Esc closes it), in the AddOns page of Settings (Dark Matter), and `/dm reset`. Esc closes it.
 - **Left tab rail:** Quests, Journals, Map, Dungeons. The last tab you used is remembered.
   - **Quests** lists your quest log from `C_QuestLog` (read only): zone headers with +/- to collapse, quest rows coloured by level difficulty, and a detail panel with level, zone, status and objectives. **All** collapses or expands every zone. The window never touches Blizzard's quest log.
-  - **Journals → Fishing** shows skill, a Waters list (Ready/Locked + logged catch counts / per-item zone %), and a Statistics panel (casts, rate, junk/good, rares, time, streak, gold, got-away, favorite zone/lure, skill history). Stats are per-character (`DarkMatterCharDB`) from your first cast. Adventure Guide and Achievements remain "Coming soon".
+  - **Journals → Fishing** shows skill, a Waters list (Ready/Locked + logged catch counts / per-item zone %), and a Statistics panel (casts, rate, junk/good, rares, time, streak, gold, got-away, favorite zone/lure, skill history). Stats are per-character (`DarkMatterCharDB`) from your first cast. (Adventure Guide since 0.3.0 and Achievements since 0.4.0: see below.)
   - **Fishing → Catches → Show all** lists the static catalog (`Data_FishingCatches.lua`, 121 sourced entries; `classicOnly` ones appear only if `C_Item.DoesItemExistByID` confirms them on your client) plus the per-account **learned catalog** (`DarkMatterDB.fishingCatalogLearned`: any fished item not in the static catalog, with icon, quality, first zone and date) plus your own catches, deduped by item id. Caught first, then learned, then the rest. The header shows "Catalog: N items, M caught". Hovering any row (caught, learned or uncaught) shows the item tooltip plus Dark Matter lines: caught count and last zone/coords, or "Not caught yet" with typical waters and skill. Regenerate the static file with `python3 tools/catalog/gen_catalog.py`.
   - **Map** and **Dungeons** show a "coming in a later phase" page.
 - **Minimap button** (round, Dark Matter icon): click toggles the main window, drag moves it around the minimap edge, right-click resets the window position.
@@ -89,6 +89,14 @@ Early notes on this beta say the client sometimes does not load saved variables 
 
 - `tools/stubtest/mock.py` runs the real addon code in a strict stub client (bad argument types raise like the game; every anchor, size, `SetTexCoord`, frame level and draw layer is modelled). It asserts that every texcoord is within 0..1 with left < right and top < bottom, that every drawn texture is anchored with a non-zero size and no larger than the window, that the window border is exactly 8 pieces spanning corner to corner, that content frames sit above the window art, and that the atlas table matches the real TGA sizes.
 - With `MODE=full DM_RENDER_DIR=out`, it also writes `layout-<tab>.json`; `tools/render_preview.py layout-quests.json DarkMatter out.png` composites the window from the same TGAs and texcoords the Lua uses, so the layout can be checked without the game.
+
+## Achievements (0.4.0)
+
+**Journals → Achievements** shows two groups in an Adventure-Guide-style category dropdown (gold headers, entries indented, closes on an outside click, Esc or window hide), a list (icon, points, earned date or progress, a progress bar each) and a detail pane with criteria. Filters: All / Earned / Not yet.
+
+- **Legacy Challenges (game data).** Forever 1.60.1 keeps the stock achievement API (`GetCategoryList`, `GetCategoryInfo`, `GetCategoryNumAchievements`, `GetAchievementInfo`, `GetAchievementNumCriteria`, `GetAchievementCriteriaInfo`, `ACHIEVEMENT_EARNED`, `CRITERIA_UPDATE`); Blizzard's own Forever UI (`Blizzard_LegacySystem`, wow-ui-source `forever` branch) reads Legacy Challenges through it. Those are 0-point achievements worth 1 Legacy Point each (`C_Traits.GetTraitCurrencyForAchievement(4225, id)`), account-wide. We read them only (no Blizzard UI is loaded) and show them only when the client returns data; "[DNT]"/placeholder rows are skipped.
+- **Dark Matter (our own set, 50 achievements, per character).** General (levels), Quests, Dungeons and Raids, Fishing, Exploration, Loot. Tracked from install on a private event frame (no hooks): `PLAYER_LEVEL_UP`, `QUEST_TURNED_IN`, `ENCOUNTER_END` and combat-log `UNIT_DIED` inside instances (matched to the npc ids in our Wowhead-Forever-cited `Data_Dungeons`), the Fishing module's catch log, your own `CHAT_MSG_LOOT` lines (the client's own format strings), zone/instance changes and `PLAYER_MONEY` gains. Saved in `DarkMatterCharDB.ach` (counters, earned dates, criteria). Nothing is awarded retroactively except your current level, which the game confirms; those show "at install". A small toast (our own frame) and a chat line announce each new one.
+- **Mode** (`/dm achprobe` prints it with the API counts, 3 game samples and the Dark Matter totals; saved to `DarkMatterDB.achprobe`): `game+dm` when the API has data but is thin (Forever's Legacy Challenges), `dm` when the client returns no achievement data, `game` when the API carries a full set (300+ achievements with points); ours is then off.
 
 ## Adventure Guide data (0.3.0 to 0.3.4)
 
