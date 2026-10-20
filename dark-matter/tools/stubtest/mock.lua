@@ -213,6 +213,7 @@ function FrameMT.SetVerticalScroll(s,v) s._vs=v end
 function FrameMT.GetVerticalScroll(s) return s._vs or 0 end
 function FrameMT.Enable(s) s._enabled=true end
 function FrameMT.Disable(s) s._enabled=false end
+function FrameMT.IsEnabled(s) return s._enabled ~= false end
 function FrameMT.SetScale(s,v) s._scale=v end
 function FrameMT.GetScale(s) return s._scale or 1 end
 function FrameMT.UnregisterEvent(s, e) if s._ev then s._ev[e] = nil end end
@@ -408,7 +409,8 @@ function FrameMT.GetFrameStrata(s) return s._strata or "MEDIUM" end
 function FrameMT.SetFont(s, path, size, flags)
   if type(path) ~= "string" then error("SetFont: path expected", 2) end
   needNum("SetFont", 2, size)
-  s._fsize = size return true
+  s._fsize, s._fflags = size, flags
+  return true
 end
 function FrameMT.SetText(s, t) s._text = t end
 function FrameMT.GetText(s) return s._text end
@@ -2843,7 +2845,7 @@ if MODE ~= "minimal" then
       end
       local t = NS.themes[id]
       check(t.base == "wow" and t.m == NS.themes.wow.m and t.atlas == "wow", "themes: " .. id .. " shares the WoW layout")
-      for k in pairs(NS.themes.wow.colors) do check(type(t.colors[k]) == "table" and #t.colors[k] == 3, "themes: " .. id .. " has colour " .. k) end
+      for k in pairs(NS.themes.wow.colors) do check(type(t.colors[k]) == "table" and (#t.colors[k] == 3 or #t.colors[k] == 4), "themes: " .. id .. " has colour " .. k) end
       check(t.classArt and t.flat and t.surface, "themes: " .. id .. " has class art, flat looks and surfaces")
     end
   end
@@ -2976,7 +2978,7 @@ if MODE ~= "minimal" then
         local ok, err = pcall(jt.SetSection, s)
         check(ok, "themes: journals " .. s .. " opens in " .. id .. " " .. tostring(err))
       end
-      if os.getenv("DM_RENDER_DIR") and MODE == "full" and (id == "wow" or id == "druid") then
+      if os.getenv("DM_RENDER_DIR") and MODE == "full" and (id == "wow" or id == "druid" or id == "priest" or id == "shaman") then
         jt.SetSection("achievements")
         DumpLayout(win, os.getenv("DM_RENDER_DIR") .. "/layout-ach-" .. id .. ".json")
       end
@@ -2990,6 +2992,17 @@ if MODE ~= "minimal" then
       DumpLayout(win, os.getenv("DM_RENDER_DIR") .. "/layout-theme-" .. id .. ".json")
       P.settingsBtn._scripts.OnClick(P.settingsBtn, "LeftButton")
       DumpLayout(win, os.getenv("DM_RENDER_DIR") .. "/layout-settings-" .. id .. ".json")
+      local hb
+      for _, f in ipairs(ALL) do
+        local x = f._parent
+        while x and x ~= P.pop do x = x._parent end
+        if not hb and x == P.pop and f.hoverTex and f._scripts.OnEnter and f._enabled ~= false then hb = f end
+      end
+      if hb then
+        hb._hover = true hb._scripts.OnEnter(hb)
+        DumpLayout(win, os.getenv("DM_RENDER_DIR") .. "/layout-settings-hover-" .. id .. ".json")
+        hb._scripts.OnLeave(hb) hb._hover = nil
+      end
     end
     P.pop:Hide()
   end
@@ -3038,6 +3051,126 @@ if MODE ~= "minimal" then
   NS.SetTheme("wow")
   NS.ShowTab("journals")
   NS.tabs.journals.SetSection("fishing")
+end
+
+-- ===== 0.4.4 text contrast: every label, all 10 themes, every view, every button hovered =====
+-- WCAG 2: 4.5:1 for text, 3:1 for large text (>= 18 px). Background = what the client composites under the label.
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local P = NS.windowParts
+  local win = DarkMatterFrame
+  local CT = dofile(arg[1] .. "/../tools/stubtest/contrast.lua")
+  CT.rect = FrameMT._rect
+  local fails, roles, nlab = {}, {}, 0
+  local function note(id, view, x)
+    nlab = nlab + 1
+    local k = id .. "\t" .. (x.roles ~= "" and x.roles or "(literal)")
+    local w = roles[k]
+    if not w or x.ratio < w.ratio then roles[k] = { ratio = x.ratio, text = x.text, view = view, n = (w and w.n or 0) + 1 } else w.n = w.n + 1 end
+    if x.ratio < x.need then
+      fails[#fails + 1] = string.format("%s %s %q %.2f<%.1f fg=%.2f,%.2f,%.2f bg=%.2f,%.2f,%.2f [%s]", id, view, x.text, x.ratio, x.need,
+        x.fg[1], x.fg[2], x.fg[3], x.bg[1], x.bg[2], x.bg[3], x.roles)
+    end
+  end
+  local function scan(id, view)
+    for _, x in ipairs(CT.Scan(win, NS.theme.colors)) do note(id, view, x) end
+    -- every visible, enabled button: hovered (its own OnEnter), its labels against the hovered look
+    for _, f in ipairs(ALL) do
+      if f._ftype == "Button" and under(f, win) and visible(f) and f._enabled ~= false and f._scripts.OnEnter then
+        f._hover = true
+        f._scripts.OnEnter(f)
+        for _, x in ipairs(CT.Scan(win, NS.theme.colors, f)) do note(id, view .. "+hover", x) end
+        if f._scripts.OnLeave then f._scripts.OnLeave(f) end
+        f._hover = nil
+      end
+    end
+  end
+  win:Show()
+  for _, id in ipairs(NS.themeOrder) do
+    NS.SetTheme(id)
+    for _, tid in ipairs(NS.tabOrder) do
+      NS.ShowTab(tid)
+      if tid == "journals" then
+        for _, s in ipairs({ "fishing", "adventure", "achievements" }) do NS.tabs.journals.SetSection(s) scan(id, tid .. "/" .. s) end
+      else
+        scan(id, tid)
+      end
+    end
+    NS.ShowTab("quests")
+    P.settingsBtn._scripts.OnClick(P.settingsBtn, "LeftButton")
+    scan(id, "settings")
+    P.pop:Hide()
+  end
+  local keys = {}
+  for k in pairs(roles) do keys[#keys + 1] = k end
+  table.sort(keys)
+  for _, k in ipairs(keys) do
+    local w = roles[k]
+    io.write(string.format("contrast\t%s\t%.2f\t%d\t%s\t%s\n", k, w.ratio, w.n, w.view, w.text))
+  end
+  for _, f in ipairs(fails) do io.write("cfail\t" .. f .. "\n") end
+  check(nlab > 2000, "contrast: " .. nlab .. " label checks over 10 themes")
+  check(#fails == 0, "contrast: every label >= 4.5:1 (3:1 large) in every theme and state (" .. #fails .. " below)\n  " .. table.concat(fails, "\n  ", 1, math.min(#fails, 12)))
+  NS.SetTheme("wow")
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("fishing")
+end
+
+-- ===== 0.4.4 layout: Journals subtab order, footer status box, quest-log head row (All + Track Quest) in every theme =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local W = NS.windowParts
+  local win = DarkMatterFrame
+  local R = FrameMT._rect
+  local csrc = io.open(arg[1] .. "/Core.lua"):read("*a")
+  check(csrc:find("section = \"adventure\",", 1, true) ~= nil, "layout: Journals opens on Adventure Guide by default")
+  local head0
+  for _, id in ipairs(NS.themeOrder) do
+    NS.SetTheme(id)
+    NS.ShowTab("journals")
+    local order = {}
+    for _, f in ipairs(ALL) do
+      if type(rawget(f, "sectionId")) == "string" and visible(f) and R(f) then
+        local x = R(f)
+        local k = #order + 1
+        while k > 1 and R(order[k - 1]) > x do order[k] = order[k - 1] k = k - 1 end
+        order[k] = f
+      end
+    end
+    local ids = {}
+    for i, f in ipairs(order) do ids[i] = f.sectionId end
+    check(table.concat(ids, ",") == "adventure,fishing,achievements", "layout: " .. id .. " subtabs left to right " .. table.concat(ids, ","))
+    NS.ShowTab("quests")
+    local sl, st, sr, sb = R(W.settingsBtn)
+    local hl, ht, hr, hb = R(W.shareBtn)
+    local xl, xt, xr, xb = R(W.status)
+    local gl, gr = xl - sr, hl - xr
+    check(math.abs(gl - gr) <= 1 and gl >= 6 and gl <= 14, "layout: " .. id .. " status box centred between Settings and Share stats (" .. gl .. " / " .. gr .. ")")
+    check(xt - xb >= 20 and math.abs((xt + xb) / 2 - (st + sb) / 2) <= 2, "layout: " .. id .. " status box tall enough and level with the buttons (" .. (xt - xb) .. ")")
+    check((W.statusText._w or 0) <= xr - xl - 12 and (W.statusText._w or 0) > 0, "layout: " .. id .. " status text padded inside the box")
+    check(visible(W.allBtn) and visible(W.trk), "layout: " .. id .. " shows All and Track Quest")
+    local al, at, ar, ab = R(W.allBtn)
+    local tl, tt, tr, tb = R(W.trk)
+    local Tl, Tt, Tr, Tb = R(W.title)
+    for _, q in ipairs({ { al, at, ar, ab }, { tl, tt, tr, tb } }) do
+      check(q[2] <= Tb or q[1] >= Tr or q[3] <= Tl, "layout: " .. id .. " head row clear of the title")
+      local wl, wt, wr, wb = R(win)
+      check(q[1] >= wl and q[3] <= wr and q[2] <= wt and q[4] >= wb, "layout: " .. id .. " head row inside the window")
+    end
+    NS.ShowTab("journals")
+    for _, f in ipairs(order) do
+      local pl, pt, pr, pb = R(f)
+      check(pl >= tr or pt <= tb or pb >= tt, "layout: " .. id .. " Track Quest clear of the subtabs")
+    end
+    NS.ShowTab("quests")
+    local here = (al - R(win)) .. "," .. (tl - R(win))
+    head0 = head0 or here
+    check(here == head0, "layout: " .. id .. " head row in the same spot as WoW (" .. here .. " vs " .. head0 .. ")")
+    for _, f in ipairs(ALL) do
+      if type(rawget(f, "hoverTex")) == "table" then check(f.hoverTex[1]._layer == "ARTWORK", "layout: hover tint draws under the label (" .. id .. ")") end
+    end
+  end
+  NS.SetTheme("wow")
 end
 
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====

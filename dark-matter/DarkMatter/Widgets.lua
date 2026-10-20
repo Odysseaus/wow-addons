@@ -178,16 +178,54 @@ function UI.Page(parent, w, h)
 end
 
 
+-- Hover look (0.4.4) for every labelled button and list row. It is drawn UNDER the label (ARTWORK sublevel 7, above
+-- the button art), never on the HIGHLIGHT layer (that one draws over the text and washed labels out on light themes):
+-- a soft theme tint plus a 1px theme-coloured edge. Shown on enter, hidden on leave and when the button is disabled.
+function UI.Hover(b, onEnter, onLeave)
+  local h = {}
+  for i = 1, 5 do h[i] = b:CreateTexture(nil, "ARTWORK", nil, 7) end
+  h[1]:SetAllPoints(b)
+  h[2]:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0) h[2]:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0) h[2]:SetHeight(1)
+  h[3]:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0) h[3]:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0) h[3]:SetHeight(1)
+  h[4]:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0) h[4]:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0) h[4]:SetWidth(1)
+  h[5]:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0) h[5]:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0) h[5]:SetWidth(1)
+  local function show(on)
+    if on then
+      -- tint AWAY from the label ink (darker behind light labels, lighter behind dark ones), so hover only adds contrast
+      local k = b.hoverInk or "listInk"
+      if type(k) == "function" then k = k(b) end
+      local ink = NS.theme.colors[k]
+      if ink and NS.Lum(ink) > 0.3 then h[1]:SetColorTexture(0, 0, 0, 0.16) else h[1]:SetColorTexture(1, 1, 1, 0.18) end
+    end
+    for i = 1, 5 do if on then h[i]:Show() else h[i]:Hide() end end
+  end
+  NS.OnSkin(function()
+    local e = NS.theme.colors.hoverEdge or { 1, 0.82, 0.30, 0.75 }
+    for i = 2, 5 do h[i]:SetColorTexture(e[1], e[2], e[3], e[4] or 0.75) end
+  end)
+  show(false)
+  b:SetScript("OnEnter", function(self)
+    if not (self.IsEnabled and self:IsEnabled() == false) then show(true) end
+    if onEnter then onEnter(self) end
+  end)
+  b:SetScript("OnLeave", function(self)
+    show(false)
+    if onLeave then onLeave(self) end
+  end)
+  b:SetScript("OnDisable", function() show(false) end)
+  b.hoverTex = h
+  return h
+end
+
 -- Plain button with the three-slice art. kind: "red", "grey" or "field".
-local KIND_INK = { red = "gold", grey = "greyBtn", field = "gold" }
+local KIND_INK = { red = "btnInk", grey = "greyBtn", field = "gold" }  -- 0.4.4: button faces get their own ink
 function UI.Button(parent, label, w, h, kind, size)
   local b = CreateFrame("Button", nil, parent)
   b:SetSize(w, h)
   b.kind = kind or "red"
   b.slice = UI.ThreeSlice(b, "btn_" .. b.kind, h, "ARTWORK")
-  b.glow = UI.ThreeSlice(b, "btn_" .. b.kind, h, "HIGHLIGHT")
-  b.glow:SetBlend("ADD")
-  b.glow:SetAlpha(0.22)
+  UI.Hover(b)
+  b.hoverInk = KIND_INK[b.kind] or "btnInk"
   b.text = b:CreateFontString(nil, "OVERLAY")
   NS.SetFont(b.text, size or NS.theme.m.fbtnSize, "")
   b.text:SetShadowOffset(1, -1)
@@ -197,7 +235,6 @@ function UI.Button(parent, label, w, h, kind, size)
   function b:SetLook(kindName)
     self.kind = kindName
     self.slice:Apply("btn_" .. kindName)
-    self.glow:Apply("btn_" .. kindName)
     self.text:SetTextColor(NS.Color(KIND_INK[kindName] or "gold"))
   end
   NS.OnSkin(function() b:SetLook(b.kind) end)
@@ -212,9 +249,8 @@ function UI.RailTab(parent, label, glyphKey)
   local t = CreateFrame("Button", nil, parent)
   t:SetSize(m.tabW, m.tabH)
   t.slice = UI.ThreeSlice(t, "rtab_i", m.tabH, "ARTWORK")
-  t.glow = UI.ThreeSlice(t, "rtab_i", m.tabH, "HIGHLIGHT")
-  t.glow:SetBlend("ADD")
-  t.glow:SetAlpha(0.14)
+  UI.Hover(t)
+  t.hoverInk = function(s) return s.active and "goldOn" or "gold" end
   t.icon = t:CreateTexture(nil, "OVERLAY")
   t.icon:SetSize(m.tabIcon, m.tabIcon)
   t.icon:SetPoint("LEFT", t, "LEFT", 12, 0)
@@ -232,7 +268,6 @@ function UI.RailTab(parent, label, glyphKey)
     self:SetWidth(self.active and mm.tabWOn or mm.tabW)
     local p = self.active and "rtab_a" or "rtab_i"
     self.slice:Apply(p)
-    self.glow:Apply(p)
     self.text:SetTextColor(NS.Color(self.active and "goldOn" or "gold"))
     self.icon:SetVertexColor(NS.Color(self.active and "goldOn" or "gold"))
   end
@@ -255,9 +290,8 @@ function UI.Pill(parent, label)
   local tw = NS.Num(p.text:GetStringWidth()) or 60
   p:SetSize(math.floor(tw + m.pillPad * 2 + 0.5), m.pillsH)
   p.slice = UI.ThreeSlice(p, "ptab_i", m.pillsH, "ARTWORK")
-  p.glow = UI.ThreeSlice(p, "ptab_i", m.pillsH, "HIGHLIGHT")
-  p.glow:SetBlend("ADD")
-  p.glow:SetAlpha(0.16)
+  UI.Hover(p)
+  p.hoverInk = function(s) return s.active and "goldOn" or "gold" end
   p.mark = p:CreateTexture(nil, "OVERLAY")
   p.mark:SetSize(11, 11)
   p.mark:SetPoint("LEFT", p, "LEFT", 9, 0)
@@ -267,7 +301,6 @@ function UI.Pill(parent, label)
     self.active = on and true or false
     local prefix = self.active and "ptab_a" or "ptab_i"
     self.slice:Apply(prefix)
-    self.glow:Apply(prefix)
     self.text:SetTextColor(NS.Color(self.active and "goldOn" or "gold"))
     if self.active then self.mark:Show() else self.mark:Hide() end
     self.text:ClearAllPoints()
@@ -424,7 +457,7 @@ function UI.Bar(parent, w, h, thin)
   gloss:SetPoint("TOPRIGHT", track, "TOPRIGHT", -1, 0)
   gloss:SetHeight(math.max(2, math.floor(h * 0.45)))
   local label = f:CreateFontString(nil, "OVERLAY")
-  NS.SetFont(label, thin and 9 or 11, "")
+  NS.SetFont(label, thin and 9 or 11, "OUTLINE") -- 0.4.4: light ink + black outline, legible over fill and track
   label:SetPoint("CENTER", f, "CENTER", 0, 0)
   label:SetShadowOffset(1, -1)
   label:SetShadowColor(0.16, 0.08, 0.02, 0.9)
@@ -451,7 +484,7 @@ function UI.Bar(parent, w, h, thin)
     track:SetColorTexture(tr, tg, tb, 0.98)
     gloss:SetColorTexture(1, 1, 1, 0.35)
     -- cream label (~ --dm-bar-ink #fff6d8)
-    label:SetTextColor(NS.Color("barInk"))
+    label:SetTextColor(NS.Color("barText"))
   end)
   return f
 end
@@ -551,7 +584,7 @@ function UI.RoundIcon(parent, size)
 end
 
 -- Small checkbox with label (stock CheckButton).
-function UI.Checkbox(parent, label, size)
+function UI.Checkbox(parent, label, size, ink)
   size = size or 20
   local b = CreateFrame("CheckButton", nil, parent)
   b:SetSize(size, size)
@@ -577,7 +610,7 @@ function UI.Checkbox(parent, label, size)
     self:SetChecked(not self:GetChecked())
     if self.onToggle then self:onToggle(self:GetChecked()) end
   end)
-  local text = UI.Text(parent, "OVERLAY", 12, "listInk", "LEFT")
+  local text = UI.Text(parent, "OVERLAY", 12, ink or "listInk", "LEFT")
   text:SetPoint("LEFT", b, "RIGHT", 6, 0)
   text:SetText(label or "")
   b.label = text
@@ -618,8 +651,9 @@ function UI.SearchBox(parent, w, h)
   function f.SetText(_, t) eb:SetText(t or "") end
   function f.GetText(_) return eb:GetText() or "" end
   NS.OnSkin(function()
-    bg:SetColorTexture(0.02, 0.02, 0.02, 0.92)
-    eb:SetTextColor(0.9, 0.88, 0.8, 1)
+    local c = NS.theme.colors.fieldBg or { 0.02, 0.02, 0.02, 0.92 }  -- 0.4.4: themed field (search box, dropdown)
+    bg:SetColorTexture(c[1], c[2], c[3], c[4] or 0.92)
+    eb:SetTextColor(NS.Color("listInk"))
   end)
   return f
 end

@@ -16,8 +16,8 @@ NS.WHITE = WHITE
 local flatTex = setmetatable({}, { __mode = "k" }) -- textures currently painted flat (side table: no fields on regions)
 
 local function Hex(h)
-  local r, g, b = string.match(h, "^#?(%x%x)(%x%x)(%x%x)$")
-  return { tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255 }
+  local r, g, b, a = string.match(h, "^#?(%x%x)(%x%x)(%x%x)(%x?%x?)$") -- #rrggbb or #rrggbbaa
+  return { tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255, a ~= "" and tonumber(a, 16) / 255 or nil }
 end
 NS.Hex = Hex
 
@@ -172,6 +172,27 @@ function NS.SetFont(fs, size, flags)
   if not ok and GameFontNormal then fs:SetFontObject(GameFontNormal) end
 end
 
+-- 0.4.4 contrast helpers. Lum/Contrast follow WCAG 2. NS.Legible keeps a fixed colour's hue (item quality, class
+-- colour) but mixes it toward white on dark lists or black on light lists just enough for 6:1 against the theme's
+-- list background (theme.colors.listBg); 6:1 so the lighter page areas still clear 4.5:1.
+local function Lin(v) return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4 end
+function NS.Lum(c) return 0.2126 * Lin(c[1]) + 0.7152 * Lin(c[2]) + 0.0722 * Lin(c[3]) end
+function NS.Contrast(a, b)
+  local la, lb = NS.Lum(a), NS.Lum(b)
+  if la < lb then la, lb = lb, la end
+  return (la + 0.05) / (lb + 0.05)
+end
+function NS.Legible(r, g, b, bgKey)
+  local bg = NS.theme.colors[bgKey or "listBg"] or { 0.07, 0.07, 0.07 }
+  if NS.Contrast({ r, g, b }, bg) >= 6 then return r, g, b end
+  local t = NS.Lum(bg) < 0.25 and 1 or 0
+  for i = 1, 20 do
+    local k = i / 20
+    local m = { r + (t - r) * k, g + (t - g) * k, b + (t - b) * k }
+    if NS.Contrast(m, bg) >= 6 then return m[1], m[2], m[3] end
+  end
+  return t, t, t
+end
 -- "|cffrrggbb" escape for a theme colour key (for coloured lines inside one FontString).
 function NS.ColorCode(key)
   local r, g, b = NS.Color(key)

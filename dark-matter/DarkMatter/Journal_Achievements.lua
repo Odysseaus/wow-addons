@@ -486,6 +486,7 @@ local function GetCard(i)
   c.badge:SetSize(40, 40)
   c.badge:SetPoint("TOPRIGHT", c, "TOPRIGHT", -8, -8)
   c.badgeNum = OneLine(UI.Text(c, "OVERLAY", 13, "badge", "CENTER"), 16)
+  NS.SetFont(c.badgeNum, 13, "OUTLINE")  -- 0.4.4: the number sits on the (dark) orb art in every theme: light ink + outline
   c.badgeNum:SetPoint("CENTER", c.badge, "CENTER", 0, -1)
   c.badgeNum:SetWidth(34)
   c.name = OneLine(UI.Text(c, "OVERLAY", 14, "gold", "LEFT"), 17)
@@ -557,7 +558,9 @@ local function FillCard(c, it, expanded)
     local v = earned and 1 or 0.62
     c.art:SetVertexColor(v, v, v * (earned and 1 or 0.95), 1)
   else
-    c.bg:SetColorTexture(earned and 0.10 or 0.05, earned and 0.09 or 0.05, earned and 0.07 or 0.05, 0.92)
+    -- 0.4.4: the card fill comes from the theme (light themes get light cards, so their dark inks stay readable)
+    local cc = NS.theme.colors[earned and "cardOn" or "card"] or (earned and { 0.10, 0.09, 0.07, 0.92 } or { 0.05, 0.05, 0.05, 0.92 })
+    c.bg:SetColorTexture(cc[1], cc[2], cc[3], cc[4] or 0.92)
   end
   -- icon: our art for Dark Matter achievements, else the game's
   local key = P.IconKey(it)
@@ -575,7 +578,9 @@ local function FillCard(c, it, expanded)
   if not SetArt(c.badge, it.legacyBadge and "b_legacy" or "b_dm") then NS.SetPiece(c.badge, "medal") end
   c.badge:SetVertexColor(earned and 1 or 0.6, earned and 1 or 0.6, earned and 1 or 0.6, 1)
   c.badgeNum:SetText(tostring(it.badge or 0))
-  c.badgeNum:SetTextColor(NS.Color(earned and "badge" or "listSoft"))
+  local nr, ng, nb = NS.Color("barText")
+  local nk = earned and 1 or 0.78
+  c.badgeNum:SetTextColor(nr * nk, ng * nk, nb * nk)
   c.name:SetText(it.name)
   c.name:SetTextColor(NS.Color(earned and "gold" or "listSoft"))
   local d = (it.desc and it.desc ~= "") and it.desc or "No description from the game."

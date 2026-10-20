@@ -194,9 +194,9 @@ def theme(c, v, C, texmean, edges):
         return v.get(k, "")
     cl = {}
     for key, var in [("ink", "--dm-ink"), ("inkSoft", "--dm-ink-soft"), ("inkHead", "--dm-ink-head"), ("inkFaint", "--dm-ink-faint"),
-                     ("gold", "--dm-btn-ink"), ("goldOn", "--dm-tab-ink-on"), ("greyBtn", "--dm-fbtn-grey-ink"), ("title", "--dm-title-ink"),
+                     ("gold", "--dm-tab-ink"), ("btnInk", "--dm-btn-ink"), ("goldOn", "--dm-tab-ink-on"), ("greyBtn", "--dm-fbtn-grey-ink"), ("title", "--dm-title-ink"),
                      ("listInk", "--dm-list-ink"), ("listSoft", "--dm-list-soft"), ("listHead", "--dm-lh-ink"), ("liOn", "--dm-li-on-ink"),
-                     ("good", "--dm-ink-good"), ("mid", "--dm-hl"), ("low", "--dm-ink-bad"), ("row", "--dm-li-ink"), ("status", "--dm-status-ink"),
+                     ("good", "--dm-ink-good"), ("mid", "--dm-ink-mid"), ("low", "--dm-ink-bad"), ("row", "--dm-li-ink"), ("status", "--dm-status-ink"),
                      ("lheadAll", "--dm-tab-ink-on"), ("lheadInk", "--dm-tab-ink"), ("badge", "--dm-badge-ink"), ("popBg", "--dm-select-bg"),
                      ("popBorder", "--dm-hl"), ("popInk", "--dm-select-ink"), ("barInk", "--dm-bar-ink"), ("barBorder", "--dm-bar-border")]:
         x = col(g(var))
@@ -228,6 +228,30 @@ def theme(c, v, C, texmean, edges):
     rail = surf_flat(grad(g("--dm-rail-bg"))) or shell
     lst = surf_flat(grad(g("--dm-list-bg"))) or shell
     page = surf_flat(grad(g("--dm-body-bg"))) or shell
+    # 0.4.4 contrast extras: the list surface colour (for NS.Legible), light/dark achievement card fills that follow the
+    # list, the field colour (search boxes, AG dropdown) and the 1px hover edge (the tint direction follows the label ink)
+    def lum(c):
+        f = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c[:3]]
+        return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2]
+
+    def mean(gr):
+        return [(gr["a"][i] + gr["b"][i]) / 2 for i in range(4)]
+
+    def rgba(c, a):
+        return hexs(c) + "%02x" % round(a * 255)
+    if d.get("tex"):
+        tr_, tg_, tb_, ta_ = [float(x) for x in d["tex"].split(",")]
+        shell_rgb = [(1 - ta_) * texmean[i] / 255 + ta_ * [tr_, tg_, tb_][i] / 255 for i in range(3)]
+    else:
+        shell_rgb = mean(grad(g("--dm-shell-bg")) or grad(g("--dm-rail-bg")))[:3]
+    lm = mean(grad(g("--dm-list-bg")) or {"a": shell_rgb + [1], "b": shell_rgb + [1]})
+    list_rgb = [lm[i] * lm[3] + shell_rgb[i] * (1 - lm[3]) for i in range(3)]
+    cl["listBg"] = hexs(list_rgb)
+    cl["card"] = rgba(col(g("--dm-list-ink")), 0.05)
+    cl["cardOn"] = rgba(col(g("--dm-hl")), 0.10)
+    fk = 0.0 if lum(list_rgb) < 0.25 else 1.0
+    cl["fieldBg"] = rgba([list_rgb[i] + (fk - list_rgb[i]) * 0.35 for i in range(3)], 0.92)
+    cl["hoverEdge"] = rgba(col(g("--dm-hl")), 0.85)
     panel = grad(g("--dm-panel-bg"))
     crest = d["crest"]
     m = re.search(r"calc\(50% - (\d+)px\)", crest["left"])

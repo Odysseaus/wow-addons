@@ -5,8 +5,8 @@ local _, NS = ...
 local UI = NS.UI
 
 local SECTIONS = {
+  { id = "adventure", name = "Adventure Guide" }, -- 0.4.4: Adventure Guide first and the default
   { id = "fishing", name = "Fishing" },
-  { id = "adventure", name = "Adventure Guide" },
   { id = "achievements", name = "Achievements" },
 }
 
@@ -583,7 +583,7 @@ local function BuildFish(page)
     searchText = (t or ""):lower()
     if tab and tab.RefreshFish then tab.RefreshFish() end
   end
-  showAllBox = UI.Checkbox(filterBar, "Show all", 18)
+  showAllBox = UI.Checkbox(filterBar, "Show all", 18, "ink")  -- 0.4.4: it sits on the page: paper ink
   showAllBox:SetPoint("LEFT", searchBox, "RIGHT", 10, 0)
   showAllBox:EnableMouse(true)
   showAllBox.onToggle = function(_, on)
@@ -1009,6 +1009,7 @@ local function RefreshAG()
         bits[#bits + 1] = "drops coming soon"
       end
       r.sub:SetText(table.concat(bits, " · "))
+      r.sub:SetTextColor(NS.Color(on and "liOn" or "listSoft"))
       if on then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
       r:Show()
     elseif r then
@@ -1040,7 +1041,7 @@ local function RefreshAG()
         local okc, a1, a2, a3 = pcall(GetItemQualityColor, qq)
         if okc and type(a1) == "number" then cr, cg, cb = a1, a2, a3 end
       end
-      r.text:SetTextColor(cr, cg, cb)
+      r.text:SetTextColor(NS.Legible(cr, cg, cb))
       local n = NS.AG.SeenCount(sel.key, boss.name, it.itemId)
       r.seen = n
       if n > 0 then seenN = seenN + 1 end
@@ -1128,7 +1129,10 @@ local function BuildAdventure(page)
   agDrop:SetPoint("LEFT", bar, "LEFT", 0, 0)
   local dbg = agDrop:CreateTexture(nil, "BACKGROUND")
   dbg:SetAllPoints(agDrop)
-  dbg:SetColorTexture(0.02, 0.02, 0.02, 0.92)
+  NS.OnSkin(function()  -- 0.4.4: themed (was always near-black, a dark box on the light Priest page)
+    local c = NS.theme.colors.fieldBg or { 0.02, 0.02, 0.02, 0.92 }
+    dbg:SetColorTexture(c[1], c[2], c[3], c[4] or 0.92)
+  end)
   agDrop.border = UI.NineSlice(agDrop, "pane", 4, "BORDER", 1)
   agDrop.text = OneLine(UI.Text(agDrop, "OVERLAY", 13, "gold", "LEFT"), 16)
   agDrop.text:SetPoint("LEFT", agDrop, "LEFT", 9, 0)
@@ -1178,7 +1182,7 @@ local function BuildAdventure(page)
 
   -- dungeon header: title line + meta line
   local headY = pad + 36
-  agTitle = OneLine(UI.Text(agPage, "OVERLAY", 18, "gold", "LEFT"), 22)
+  agTitle = OneLine(UI.Text(agPage, "OVERLAY", 18, "inkHead", "LEFT"), 22)  -- 0.4.4: paper ink (it sits on the page)
   agTitle:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad + 2, -headY)
   agTitle:SetPoint("RIGHT", agPage, "RIGHT", -pad - 2, 0)
   agMeta = OneLine(UI.Text(agPage, "OVERLAY", 12, "inkSoft", "LEFT"), 15)
@@ -1314,7 +1318,7 @@ NS.RegisterTab({
     stub = UI.Stub(stubPage, NS.theme.glyphs.journals, "", "")
 
     selectedZone = NS.db and NS.db.fishingZone or nil
-    ShowSection(NS.db and NS.db.section or "fishing")
+    ShowSection(NS.db and NS.db.section or "adventure")
     return tab
   end,
   OnShow = function()

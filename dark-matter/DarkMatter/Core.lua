@@ -5,7 +5,7 @@ local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.4.3"
+NS.version = "0.4.4"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -16,7 +16,7 @@ local DEFAULTS = {
   stockIcon = false,
   theme = "wow",
   tab = "quests",
-  section = "fishing",
+  section = "adventure", -- 0.4.4: Journals opens on the Adventure Guide unless a last-used subtab is saved
   questCollapsed = {},
   fishingZone = nil,
   fishingView = "waters",

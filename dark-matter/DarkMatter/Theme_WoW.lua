@@ -13,12 +13,16 @@ NS.RegisterTheme({
   },
   colors = {
     ink = "#2b1d0e", inkSoft = "#4a3820", inkHead = "#2b1608", inkFaint = "#6a5434",
-    gold = "#f0cf4a", goldOn = "#fff0b0", greyBtn = "#7c7a72",
+    fieldBg = "#050505eb", gold = "#f0cf4a", btnInk = "#f0cf4a", goldOn = "#fff0b0", greyBtn = "#a09d95",
     title = "#e9e6dc", listInk = "#e4e0d2", listSoft = "#a8a496", listHead = "#b9b6ab", liOn = "#ffffff",
     good = "#4cc43a", mid = "#ecd83c", low = "#e8442e", row = "#ecd83c",
-    status = "#6d6b64", lheadAll = "#fff0b0", lheadInk = "#d8d4c6", badge = "#f2d63a",
+    status = "#9a978f", lheadAll = "#fff0b0", lheadInk = "#d8d4c6", badge = "#f2d63a",
     popBg = "#1a1a18", popBorder = "#f2d63a", popInk = "#e4e0d2",
     barFill = "#f0cf4a", barInk = "#fff6d8", barBorder = "#4b4a44", barTrack = "#050504",
+    -- 0.4.4: achievement card fills and the hover look (tint + 1px edge, drawn under the label)
+    card = "#0d0d0deb", cardOn = "#1a1712eb", hoverEdge = "#ffd14dbf",
+    listBg = "#121210", -- representative list surface (NS.Legible)
+    barText = "#fff6d8", -- bar labels in every theme (outlined)
   },
   m = {
     -- window

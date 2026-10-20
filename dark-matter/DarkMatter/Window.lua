@@ -412,9 +412,8 @@ local function Build()
   allBtn:SetPoint("TOPLEFT", f, "TOPLEFT", m.lheadAllX, -m.lheadAllY)
   allBtn:SetSize(m.lheadAllW, m.lheadAllH)
   UI.ThreeSlice(allBtn, "ptab_a", m.lheadAllH, "ARTWORK")
-  local allGlow = UI.ThreeSlice(allBtn, "ptab_a", m.lheadAllH, "HIGHLIGHT")
-  allGlow:SetBlend("ADD")
-  allGlow:SetAlpha(0.16)
+  UI.Hover(allBtn)
+  allBtn.hoverInk = "lheadAll"
   W.allIcon = allBtn:CreateTexture(nil, "OVERLAY")
   W.allIcon:SetSize(14, 14)
   W.allIcon:SetPoint("LEFT", allBtn, "LEFT", 8, 0)
@@ -443,11 +442,12 @@ local function Build()
   local status = CreateFrame("Frame", nil, f)
   status:SetPoint("TOPLEFT", f, "TOPLEFT", m.statusX, -m.statusY)
   status:SetSize(m.statusW, m.statusH)
-  UI.ThreeSlice(status, "btn_field", m.statusH, "ARTWORK")
+  W.statusSlice = UI.ThreeSlice(status, "btn_field", m.statusH, "ARTWORK")
   W.statusText = UI.Text(status, "OVERLAY", m.statusSize, "status", "CENTER")
   W.statusText:SetPoint("CENTER", status, "CENTER", 0, 0)
   W.statusText:SetShadowOffset(0, 0)
   local share = UI.Button(f, "Share stats", m.fbtnW, m.fbtnH, "grey", m.fbtnSize)
+  W.shareBtn = share
   share:SetPoint("TOPLEFT", f, "TOPLEFT", m.shareX, -m.fbtnY)
   share:Disable()
   local exit = UI.Button(f, "Exit", m.fbtnW, m.fbtnH, "red", m.fbtnSize)
@@ -496,10 +496,12 @@ local function Build()
     if def and def.OnHide then pcall(def.OnHide) end
   end)
 
-  -- class themes: frame art on, WoW-only chrome (frame border, title plate, medal, footer tint, quest-log head row) off
+  -- class themes: frame art on, WoW-only chrome (frame border, title plate, medal, footer tint) off. 0.4.4: the quest-log
+  -- head row (All + Track Quest) stays in every theme, in the same spot above the left nav column
   local art = BuildClassArt(f)
   W.classArt = art
-  local wowOnly = { frameNine, tbSlice, tint, line, medal, allBtn, trk }
+  local wowOnly = { frameNine, tbSlice, tint, line, medal }
+  W.allBtn, W.trk = allBtn, trk
   NS.OnSkin(function()
     art.Apply()
     local ca = NS.theme.classArt
@@ -522,6 +524,7 @@ local function Build()
     FitScale(f)
     -- footer row + close button: the previewer's class layout (inset from the frame rim) or the WoW positions
     settings:ClearAllPoints() status:ClearAllPoints() share:ClearAllPoints() exit:ClearAllPoints() close:ClearAllPoints()
+    local sRight, shLeft, midY
     if ca then
       local sx, sy, ax, ay = ArtMap()
       local ft = ca.footer
@@ -530,18 +533,34 @@ local function Build()
       for i, b in ipairs({ settings, status, share, exit }) do
         b:SetWidth(widths[i] * sx)
         b:SetPoint("LEFT", f, "TOPLEFT", x, -cy)
+        if i == 1 then sRight = x + widths[1] * sx elseif i == 3 then shLeft = x end
         x = x + (ft.cols[i] + ft.gap) * sx
       end
+      midY = cy
       close:SetPoint("TOPRIGHT", f, "TOPLEFT", ax + (880 - ca.close[1]) * sx, -(ay + ca.close[2] * sy))
       close:SetFrameLevel(f:GetFrameLevel() + 27)
     else
       settings:SetWidth(m.fbtnW) settings:SetPoint("TOPLEFT", f, "TOPLEFT", m.fbtnLeft, -m.fbtnY)
-      status:SetWidth(m.statusW) status:SetPoint("TOPLEFT", f, "TOPLEFT", m.statusX, -m.statusY)
       share:SetWidth(m.fbtnW) share:SetPoint("TOPLEFT", f, "TOPLEFT", m.shareX, -m.fbtnY)
       exit:SetWidth(m.fbtnW) exit:SetPoint("TOPLEFT", f, "TOPLEFT", m.exitX, -m.fbtnY)
+      sRight, shLeft, midY = m.fbtnLeft + m.fbtnW, m.shareX, m.fbtnY + m.fbtnH / 2
       close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -(m.pad + m.closeRight), -(m.pad + m.closeTop))
       close:SetFrameLevel(f:GetFrameLevel() + 20)
     end
+    -- 0.4.4 status box, every theme: fills the gap between Settings and Share stats (same margin on both sides, so it
+    -- is centred between them), tall enough for its text plus padding; the text truncates with an ellipsis only when
+    -- it still does not fit.
+    local gapM = 10
+    local sw = math.max(40, shLeft - sRight - 2 * gapM)
+    local sh = math.max(m.statusH, math.floor(m.statusSize * 1.3 + 10 + 0.5))
+    status:ClearAllPoints()
+    status:SetSize(sw, sh)
+    status:SetPoint("LEFT", f, "TOPLEFT", sRight + gapM, -midY)
+    W.statusSlice.h = sh
+    W.statusSlice:Apply()
+    W.statusText:SetWidth(sw - 16)
+    if W.statusText.SetWordWrap then W.statusText:SetWordWrap(false) end
+    W.status = status
   end)
 
   -- ESC closes it, the stock way (plain table insert; Blizzard reads it through securecall).

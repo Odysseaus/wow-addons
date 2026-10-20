@@ -57,6 +57,8 @@ No dropdown menus (`UIDropDownMenu`/`EasyMenu`) anywhere; only plain Buttons, Te
 
 Regenerate the class themes with `python tools/themes/dump_theme_vars.py` (Chromium, reads the previewer) and `python tools/themes/make_class_textures.py`.
 
+**Text contrast (0.4.4).** Every label must reach 4.5:1 against what is drawn under it (3:1 for 18px+ titles; outlined text is scored against its outline), in all 10 themes, every view, with every button hovered. `tools/stubtest/contrast.lua` (run by the stub tests) composites the real textures, and previewer check DM-35 measures screenshots taken with the text made transparent. Colour keys added for it: `btnInk` (button faces; `gold` is the surface accent), `card` / `cardOn` (achievement cards), `listBg` (the list colour `NS.Legible` aims at, for fixed item-quality colours), `fieldBg` (search boxes and the AG dropdown), `hoverEdge` (the 1px hover edge) and `barText` (outlined bar and badge numbers). The hover tint is drawn under the label and moves away from the label ink. Fix a failing role at the source (the previewer theme data), then regenerate.
+
 ## Textures
 
 Only the previewer's generated raster art is used. `tools/make_wow_textures.py` crops and packs it into power-of-two, uncompressed 32-bit TGA files in `Media/`:
