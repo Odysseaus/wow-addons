@@ -9,6 +9,7 @@ Lua asks the client to draw (texture orientation, crops and stretching included)
 usage: render_preview.py LAYOUT_JSON ADDON_DIR OUT_PNG [scale]
 """
 import json
+import math
 import os
 import re
 import sys
@@ -60,6 +61,14 @@ def load_tex(addon, path):
 def crop_tc(im, tc, w, h):
     """Sample tc = (left, right, top, bottom) in 0..1 (top-left origin, like the client) and resize to w x h."""
     W, H = im.size
+    nx, ny = max(1, math.ceil(tc[1] - 1e-9)), max(1, math.ceil(tc[3] - 1e-9))  # REPEAT-wrapped strips run past 1
+    if nx > 1 or ny > 1:
+        big = Image.new(im.mode, (W * nx, H * ny))
+        for i in range(nx):
+            for j in range(ny):
+                big.paste(im, (i * W, j * H))
+        im, tc = big, (tc[0] / nx, tc[1] / nx, tc[2] / ny, tc[3] / ny)
+        W, H = im.size
     box = (tc[0] * W, tc[2] * H, tc[1] * W, tc[3] * H)
     return im.resize((max(1, round(w)), max(1, round(h))), Image.BILINEAR, box=box)
 

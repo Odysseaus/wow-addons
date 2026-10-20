@@ -6,7 +6,7 @@ Dark Matter is a one-window overview of your quests, fishing, dungeons and achie
 
 ## What P1 does
 
-- **Main window** (880x680, the mockup's size; it shrinks on small screens, never grows). Opens at screen centre, drag it by the title plate, the position is saved to SavedVariables. **Reset window position** is in the window's Settings popover (click outside the pop or Esc closes it), in the AddOns page of Settings (Dark Matter), and `/dm reset`. Esc closes it.
+- **Main window** (880x680, the mockup's size; it shrinks on small screens, never grows). Opens at screen centre, drag it by its frame (edge art, title plate, footer bar or any ornament, in every theme), the position is saved to SavedVariables. **Reset window position** is in the window's Settings popover (click outside the pop or Esc closes it), in the AddOns page of Settings (Dark Matter), and `/dm reset`. Esc closes it.
 - **Left tab rail:** Quests, Journals, Map, Dungeons. The last tab you used is remembered.
   - **Quests** lists your quest log from `C_QuestLog` (read only): zone headers with +/- to collapse, quest rows coloured by level difficulty, and a detail panel with level, zone, status and objectives. **All** collapses or expands every zone. The window never touches Blizzard's quest log.
   - **Journals → Fishing** shows skill, a Waters list (Ready/Locked + logged catch counts / per-item zone %), and a Statistics panel (casts, rate, junk/good, rares, time, streak, gold, got-away, favorite zone/lure, skill history). Stats are per-character (`DarkMatterCharDB`) from your first cast. (Adventure Guide since 0.3.0 and Achievements since 0.4.0: see below.)
@@ -51,7 +51,7 @@ No dropdown menus (`UIDropDownMenu`/`EasyMenu`) anywhere; only plain Buttons, Te
   - colours from the previewer's resolved `--dm-*` variables;
   - `flat`: gradient + 1px border looks for buttons, tabs, pills, badge, pane borders and the selection highlight (where the previewer uses CSS gradients);
   - `surface`: the class texture, tinted, for the window shell, and the previewer's flat colours for the rail, lists and page;
-  - `classArt`: the frame and overlay art, corner ornaments, crest, base plate and backdrop, plus the class footer layout.
+  - `classArt`: the frame and overlay art, corner ornaments, crest and base plate (no backdrop since 0.4.3), plus the class footer layout.
 - `Widgets.lua`: 3-slice and 9-slice builders (flat in class themes), buttons, tabs, pills, a custom scrollbar, bars (bar colours are theme keys).
 - `Window.lua`: the class art layer. The previewer's 880x680 art space is mapped onto the window's shell box. The frame bands sit under the content; the overlay, ornaments, crest and base sit on a no-mouse child frame above it. The WoW-only chrome (frame border, title plate, medal, footer tint, quest-log head row) is hidden in class themes, as in the previewer.
 
@@ -67,9 +67,10 @@ Only the previewer's generated raster art is used. `tools/make_wow_textures.py` 
 | `wow-parchment.tga` | 1024x1024 | page background (stretched) |
 | `wow-slate.tga` | 512x256 | window and rail background (stretched) |
 | `dm-icon.tga` | existing | minimap icon |
-| `cls-<class>-frame.tga` | 512x512 x9 | class frame edge bands (the frame art's interior is transparent, so only the 120 px bands are packed) |
-| `cls-<class>-over.tga` | 512x512 x9 | class overlay bands (vines, rivets), drawn above the content |
-| `cls-<class>-parts.tga` | 512x512 x9 | 4 corner ornaments, crest, base plate, shell texture, backdrop |
+| `cls-<class>-fc.tga` | 512x512 x9 | class frame corners at the source density (2 texels per px), fading into the edge strips |
+| `cls-<class>-ftb.tga`, `-flr.tga` | 512x512 x9 each | seamless top/bottom and left/right frame edge tiles, drawn with REPEAT texcoords (sharp, not stretched) |
+| `cls-<class>-oc.tga`, `-os.tga` | 512x512, 512x64..512 x9 | overlay corners and overlay edge sprites (glows, vines, crystals), drawn in place above the content |
+| `cls-<class>-parts.tga` | 512x256 x9 | 4 corner ornaments, crest, base plate, shell texture |
 
 Inactive pill pieces are repaired during packing (the generated `ptab-i-*` art had a transparent band under the bezel). Regenerate with `python tools/make_wow_textures.py [art dir] [previewer themes.js] [addon dir]`.
 

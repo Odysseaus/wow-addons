@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3 (no backdrop, drag by the frame, sharp frame edges)
+- **No backdrop:** none of the themes draws a scenic picture around the main frame any more. Only the frame art and the interior panels are drawn, and the game world shows around them. Ornaments that hang over the frame edge stay: the druid vines and leaves, corner ornaments, crests, crystals and base plates. The previewer matches this.
+- **Drag by the frame:** the whole frame is a drag handle in every theme, WoW included: the frame art, title bar, footer bar and the overhanging ornaments. The window's mouse area (`SetHitRectInsets`) grows to cover all of the drawn art; the art overlay itself takes no mouse. It uses `StartMoving`/`StopMovingOrSizing`, saves the position and clamps to the screen with the same rect. Controls inside keep working, and a drag never triggers a click. The previewer matches this too.
+- **Sharp edges:** in 0.4.2 the top, bottom and side bands were packed at 0.75 texels per px and stretched. Now each class frame has 4 corners at the source art's density (2 texels per px) plus 4 edge strips at the same density. The strips are made seamless (period found by autocorrelation, 16 px cross-fade at the wrap) and drawn with `SetTexture(file, "REPEAT", ...)` texcoord tiling. The corners fade into the strips over 8 px. The overlay layer (glows, vines, crystals) is unique art, so it is not tiled: its corners are kept, and its edge sprites are cropped at source density and drawn in place. All textures are power of two and at most 512 (`cls-<c>-fc/ftb/flr/oc/os/parts.tga`). The parts sheet is 512x256 now that the backdrop is gone. Generator: `tools/themes/edge_tiles.py`.
+
 ## 0.4.2 (all 10 themes in Settings + badge icons without numbers)
 - **Achievements summary bar:** the Dark Matter points and Legacy Points badges are icons only now. The numbers no longer sit on top of them; the figures stay in the progress-bar text (e.g. "170 / 610"). The previewer has the same change.
 - **Gap check, previewer vs addon 0.4.1 (theme options):**

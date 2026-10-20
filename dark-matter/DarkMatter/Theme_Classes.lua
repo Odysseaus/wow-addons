@@ -105,7 +105,8 @@ NS.RegisterTheme({
   surface = {
     file = "Interface\\AddOns\\DarkMatter\\Media\\cls-warrior-parts",
     rect = { 256, 128, 256, 128 },
-    size = 512,
+    w = 512,
+    h = 256,
     shell = {
       tint = { 0.346, 0.343, 0.361 },
     },
@@ -127,11 +128,25 @@ NS.RegisterTheme({
   },
   panelWash = { 0.076, 0.08, 0.088, 0.9 },
   classArt = {
-    frame = "Interface\\AddOns\\DarkMatter\\Media\\cls-warrior-frame",
-    over = "Interface\\AddOns\\DarkMatter\\Media\\cls-warrior-over",
     parts = "Interface\\AddOns\\DarkMatter\\Media\\cls-warrior-parts",
-    size = 512,
-    bands = { { "tl", { 0, 0, 440, 120 }, { 0, 0, 330, 90 } }, { "tr", { 440, 0, 440, 120 }, { 0, 90, 330, 90 } }, { "bl", { 0, 560, 440, 120 }, { 0, 180, 330, 90 } }, { "br", { 440, 560, 440, 120 }, { 0, 270, 330, 90 } }, { "l", { 0, 120, 120, 440 }, { 330, 0, 90, 330 } }, { "r", { 760, 120, 120, 440 }, { 420, 0, 90, 330 } } },
+    pw = 512,
+    ph = 256,
+    edges = {
+      corner = 120,
+      fade = 8,
+      frame = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-warrior-fc",
+        tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-warrior-ftb",
+        lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-warrior-flr",
+        len = { 146, 142, 146, 142 },
+      },
+      over = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-warrior-oc",
+        sprites = "Interface\\AddOns\\DarkMatter\\Media\\cls-warrior-os",
+        sh = 64,
+        list = { { { 159, 3, 563, 20 }, { 0, 0, 485, 17 } } },
+      },
+    },
     rects = {
       orn_tl = { 0, 0, 128, 128 },
       orn_tr = { 128, 0, 128, 128 },
@@ -140,7 +155,6 @@ NS.RegisterTheme({
       crest = { 256, 0, 128, 128 },
       base = { 384, 0, 128, 128 },
       tex = { 256, 128, 256, 128 },
-      backdrop = { 0, 256, 512, 256 },
     },
     orn = 92,
     crest = { 78, 0, -26 },
@@ -259,7 +273,8 @@ NS.RegisterTheme({
   surface = {
     file = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-parts",
     rect = { 256, 128, 256, 128 },
-    size = 512,
+    w = 512,
+    h = 256,
     shell = {
       flat = true,
       dir = "VERTICAL",
@@ -287,11 +302,25 @@ NS.RegisterTheme({
   },
   panelWash = { 0.286, 0.247, 0.208, 0.9 },
   classArt = {
-    frame = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-frame",
-    over = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-over",
     parts = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-parts",
-    size = 512,
-    bands = { { "tl", { 0, 0, 440, 120 }, { 0, 0, 330, 90 } }, { "tr", { 440, 0, 440, 120 }, { 0, 90, 330, 90 } }, { "bl", { 0, 560, 440, 120 }, { 0, 180, 330, 90 } }, { "br", { 440, 560, 440, 120 }, { 0, 270, 330, 90 } }, { "l", { 0, 120, 120, 440 }, { 330, 0, 90, 330 } }, { "r", { 760, 120, 120, 440 }, { 420, 0, 90, 330 } } },
+    pw = 512,
+    ph = 256,
+    edges = {
+      corner = 120,
+      fade = 8,
+      frame = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-fc",
+        tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-ftb",
+        lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-flr",
+        len = { 256, 176, 154, 176 },
+      },
+      over = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-oc",
+        sprites = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-os",
+        sh = 64,
+        list = { { { 198, 1, 484, 23 }, { 0, 0, 463, 22 } }, { { 264, 660, 353, 19 }, { 0, 24, 338, 18 } } },
+      },
+    },
     rects = {
       orn_tl = { 0, 0, 128, 128 },
       orn_tr = { 128, 0, 128, 128 },
@@ -300,7 +329,6 @@ NS.RegisterTheme({
       crest = { 256, 0, 128, 128 },
       base = { 384, 0, 128, 128 },
       tex = { 256, 128, 256, 128 },
-      backdrop = { 0, 256, 512, 256 },
     },
     orn = 86,
     crest = { 92, -168, -12 },
@@ -419,7 +447,8 @@ NS.RegisterTheme({
   surface = {
     file = "Interface\\AddOns\\DarkMatter\\Media\\cls-hunter-parts",
     rect = { 256, 128, 256, 128 },
-    size = 512,
+    w = 512,
+    h = 256,
     shell = {
       tint = { 0.555, 0.501, 0.472 },
     },
@@ -441,11 +470,25 @@ NS.RegisterTheme({
   },
   panelWash = { 0.141, 0.09, 0.059, 0.9 },
   classArt = {
-    frame = "Interface\\AddOns\\DarkMatter\\Media\\cls-hunter-frame",
-    over = "Interface\\AddOns\\DarkMatter\\Media\\cls-hunter-over",
     parts = "Interface\\AddOns\\DarkMatter\\Media\\cls-hunter-parts",
-    size = 512,
-    bands = { { "tl", { 0, 0, 440, 120 }, { 0, 0, 330, 90 } }, { "tr", { 440, 0, 440, 120 }, { 0, 90, 330, 90 } }, { "bl", { 0, 560, 440, 120 }, { 0, 180, 330, 90 } }, { "br", { 440, 560, 440, 120 }, { 0, 270, 330, 90 } }, { "l", { 0, 120, 120, 440 }, { 330, 0, 90, 330 } }, { "r", { 760, 120, 120, 440 }, { 420, 0, 90, 330 } } },
+    pw = 512,
+    ph = 256,
+    edges = {
+      corner = 120,
+      fade = 8,
+      frame = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-hunter-fc",
+        tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-hunter-ftb",
+        lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-hunter-flr",
+        len = { 238, 129, 204, 132 },
+      },
+      over = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-hunter-oc",
+        sprites = "Interface\\AddOns\\DarkMatter\\Media\\cls-hunter-os",
+        sh = 512,
+        list = { { { 819, 120, 59, 233 }, { 0, 0, 118, 466 } }, { { 2, 165, 59, 207 }, { 120, 0, 118, 414 } } },
+      },
+    },
     rects = {
       orn_tl = { 0, 0, 128, 128 },
       orn_tr = { 128, 0, 128, 128 },
@@ -454,7 +497,6 @@ NS.RegisterTheme({
       crest = { 256, 0, 128, 128 },
       base = { 384, 0, 128, 128 },
       tex = { 256, 128, 256, 128 },
-      backdrop = { 0, 256, 512, 256 },
     },
     orn = 102,
     crest = { 104, 0, -48 },
@@ -573,7 +615,8 @@ NS.RegisterTheme({
   surface = {
     file = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-parts",
     rect = { 256, 128, 256, 128 },
-    size = 512,
+    w = 512,
+    h = 256,
     shell = {
       tint = { 0.429, 0.414, 0.452 },
     },
@@ -595,11 +638,25 @@ NS.RegisterTheme({
   },
   panelWash = { 0.049, 0.049, 0.057, 0.9 },
   classArt = {
-    frame = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-frame",
-    over = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-over",
     parts = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-parts",
-    size = 512,
-    bands = { { "tl", { 0, 0, 440, 120 }, { 0, 0, 330, 90 } }, { "tr", { 440, 0, 440, 120 }, { 0, 90, 330, 90 } }, { "bl", { 0, 560, 440, 120 }, { 0, 180, 330, 90 } }, { "br", { 440, 560, 440, 120 }, { 0, 270, 330, 90 } }, { "l", { 0, 120, 120, 440 }, { 330, 0, 90, 330 } }, { "r", { 760, 120, 120, 440 }, { 420, 0, 90, 330 } } },
+    pw = 512,
+    ph = 256,
+    edges = {
+      corner = 120,
+      fade = 8,
+      frame = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-fc",
+        tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-ftb",
+        lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-flr",
+        len = { 215, 129, 215, 129 },
+      },
+      over = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-oc",
+        sprites = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-os",
+        sh = 256,
+        list = { { { 120, 617, 183, 63 }, { 0, 0, 366, 126 } }, { { 578, 617, 182, 63 }, { 0, 128, 364, 126 } } },
+      },
+    },
     rects = {
       orn_tl = { 0, 0, 128, 128 },
       orn_tr = { 128, 0, 128, 128 },
@@ -608,7 +665,6 @@ NS.RegisterTheme({
       crest = { 256, 0, 128, 128 },
       base = { 384, 0, 128, 128 },
       tex = { 256, 128, 256, 128 },
-      backdrop = { 0, 256, 512, 256 },
     },
     orn = 69,
     crest = { 96, -150, -22 },
@@ -727,7 +783,8 @@ NS.RegisterTheme({
   surface = {
     file = "Interface\\AddOns\\DarkMatter\\Media\\cls-priest-parts",
     rect = { 256, 128, 256, 128 },
-    size = 512,
+    w = 512,
+    h = 256,
     shell = {
       flat = true,
       dir = "VERTICAL",
@@ -755,11 +812,25 @@ NS.RegisterTheme({
   },
   panelWash = { 0.975, 0.965, 0.943, 0.9 },
   classArt = {
-    frame = "Interface\\AddOns\\DarkMatter\\Media\\cls-priest-frame",
-    over = "Interface\\AddOns\\DarkMatter\\Media\\cls-priest-over",
     parts = "Interface\\AddOns\\DarkMatter\\Media\\cls-priest-parts",
-    size = 512,
-    bands = { { "tl", { 0, 0, 440, 120 }, { 0, 0, 330, 90 } }, { "tr", { 440, 0, 440, 120 }, { 0, 90, 330, 90 } }, { "bl", { 0, 560, 440, 120 }, { 0, 180, 330, 90 } }, { "br", { 440, 560, 440, 120 }, { 0, 270, 330, 90 } }, { "l", { 0, 120, 120, 440 }, { 330, 0, 90, 330 } }, { "r", { 760, 120, 120, 440 }, { 420, 0, 90, 330 } } },
+    pw = 512,
+    ph = 256,
+    edges = {
+      corner = 120,
+      fade = 8,
+      frame = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-priest-fc",
+        tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-priest-ftb",
+        lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-priest-flr",
+        len = { 230, 240, 186, 240 },
+      },
+      over = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-priest-oc",
+        sprites = "Interface\\AddOns\\DarkMatter\\Media\\cls-priest-os",
+        sh = 128,
+        list = { { { 31, 504, 45, 56 }, { 0, 0, 90, 112 } }, { { 804, 504, 45, 56 }, { 92, 0, 90, 112 } } },
+      },
+    },
     rects = {
       orn_tl = { 0, 0, 128, 128 },
       orn_tr = { 128, 0, 128, 128 },
@@ -768,7 +839,6 @@ NS.RegisterTheme({
       crest = { 256, 0, 128, 128 },
       base = { 384, 0, 128, 128 },
       tex = { 256, 128, 256, 128 },
-      backdrop = { 0, 256, 512, 256 },
     },
     orn = 99,
     crest = { 104, -158, -26 },
@@ -887,7 +957,8 @@ NS.RegisterTheme({
   surface = {
     file = "Interface\\AddOns\\DarkMatter\\Media\\cls-shaman-parts",
     rect = { 256, 128, 256, 128 },
-    size = 512,
+    w = 512,
+    h = 256,
     shell = {
       tint = { 0.294, 0.314, 0.337 },
     },
@@ -909,11 +980,25 @@ NS.RegisterTheme({
   },
   panelWash = { 0.076, 0.086, 0.098, 0.9 },
   classArt = {
-    frame = "Interface\\AddOns\\DarkMatter\\Media\\cls-shaman-frame",
-    over = "Interface\\AddOns\\DarkMatter\\Media\\cls-shaman-over",
     parts = "Interface\\AddOns\\DarkMatter\\Media\\cls-shaman-parts",
-    size = 512,
-    bands = { { "tl", { 0, 0, 440, 120 }, { 0, 0, 330, 90 } }, { "tr", { 440, 0, 440, 120 }, { 0, 90, 330, 90 } }, { "bl", { 0, 560, 440, 120 }, { 0, 180, 330, 90 } }, { "br", { 440, 560, 440, 120 }, { 0, 270, 330, 90 } }, { "l", { 0, 120, 120, 440 }, { 330, 0, 90, 330 } }, { "r", { 760, 120, 120, 440 }, { 420, 0, 90, 330 } } },
+    pw = 512,
+    ph = 256,
+    edges = {
+      corner = 120,
+      fade = 8,
+      frame = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-shaman-fc",
+        tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-shaman-ftb",
+        lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-shaman-flr",
+        len = { 225, 207, 150, 138 },
+      },
+      over = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-shaman-oc",
+        sprites = "Interface\\AddOns\\DarkMatter\\Media\\cls-shaman-os",
+        sh = 64,
+        list = {  },
+      },
+    },
     rects = {
       orn_tl = { 0, 0, 128, 128 },
       orn_tr = { 128, 0, 128, 128 },
@@ -922,7 +1007,6 @@ NS.RegisterTheme({
       crest = { 256, 0, 128, 128 },
       base = { 384, 0, 128, 128 },
       tex = { 256, 128, 256, 128 },
-      backdrop = { 0, 256, 512, 256 },
     },
     orn = 44,
     crest = { 74, 0, -34 },
@@ -1041,7 +1125,8 @@ NS.RegisterTheme({
   surface = {
     file = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-parts",
     rect = { 256, 128, 256, 128 },
-    size = 512,
+    w = 512,
+    h = 256,
     shell = {
       flat = true,
       dir = "VERTICAL",
@@ -1069,11 +1154,25 @@ NS.RegisterTheme({
   },
   panelWash = { 0.039, 0.086, 0.216, 0.9 },
   classArt = {
-    frame = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-frame",
-    over = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-over",
     parts = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-parts",
-    size = 512,
-    bands = { { "tl", { 0, 0, 440, 120 }, { 0, 0, 330, 90 } }, { "tr", { 440, 0, 440, 120 }, { 0, 90, 330, 90 } }, { "bl", { 0, 560, 440, 120 }, { 0, 180, 330, 90 } }, { "br", { 440, 560, 440, 120 }, { 0, 270, 330, 90 } }, { "l", { 0, 120, 120, 440 }, { 330, 0, 90, 330 } }, { "r", { 760, 120, 120, 440 }, { 420, 0, 90, 330 } } },
+    pw = 512,
+    ph = 256,
+    edges = {
+      corner = 120,
+      fade = 8,
+      frame = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-fc",
+        tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-ftb",
+        lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-flr",
+        len = { 172, 256, 172, 255 },
+      },
+      over = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-oc",
+        sprites = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-os",
+        sh = 64,
+        list = { { { 27, 545, 22, 15 }, { 0, 0, 44, 30 } } },
+      },
+    },
     rects = {
       orn_tl = { 0, 0, 128, 128 },
       orn_tr = { 128, 0, 128, 128 },
@@ -1082,7 +1181,6 @@ NS.RegisterTheme({
       crest = { 256, 0, 128, 128 },
       base = { 384, 0, 128, 128 },
       tex = { 256, 128, 256, 128 },
-      backdrop = { 0, 256, 512, 256 },
     },
     orn = 82,
     crest = { 96, 0, -40 },
@@ -1201,7 +1299,8 @@ NS.RegisterTheme({
   surface = {
     file = "Interface\\AddOns\\DarkMatter\\Media\\cls-warlock-parts",
     rect = { 256, 128, 256, 128 },
-    size = 512,
+    w = 512,
+    h = 256,
     shell = {
       tint = { 0.433, 0.381, 0.504 },
     },
@@ -1223,11 +1322,25 @@ NS.RegisterTheme({
   },
   panelWash = { 0.059, 0.059, 0.047, 0.9 },
   classArt = {
-    frame = "Interface\\AddOns\\DarkMatter\\Media\\cls-warlock-frame",
-    over = "Interface\\AddOns\\DarkMatter\\Media\\cls-warlock-over",
     parts = "Interface\\AddOns\\DarkMatter\\Media\\cls-warlock-parts",
-    size = 512,
-    bands = { { "tl", { 0, 0, 440, 120 }, { 0, 0, 330, 90 } }, { "tr", { 440, 0, 440, 120 }, { 0, 90, 330, 90 } }, { "bl", { 0, 560, 440, 120 }, { 0, 180, 330, 90 } }, { "br", { 440, 560, 440, 120 }, { 0, 270, 330, 90 } }, { "l", { 0, 120, 120, 440 }, { 330, 0, 90, 330 } }, { "r", { 760, 120, 120, 440 }, { 420, 0, 90, 330 } } },
+    pw = 512,
+    ph = 256,
+    edges = {
+      corner = 120,
+      fade = 8,
+      frame = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-warlock-fc",
+        tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-warlock-ftb",
+        lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-warlock-flr",
+        len = { 212, 188, 210, 156 },
+      },
+      over = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-warlock-oc",
+        sprites = "Interface\\AddOns\\DarkMatter\\Media\\cls-warlock-os",
+        sh = 128,
+        list = { { { 225, 640, 430, 40 }, { 0, 0, 508, 47 } }, { { 229, 0, 422, 31 }, { 0, 49, 498, 37 } } },
+      },
+    },
     rects = {
       orn_tl = { 0, 0, 128, 128 },
       orn_tr = { 128, 0, 128, 128 },
@@ -1236,7 +1349,6 @@ NS.RegisterTheme({
       crest = { 256, 0, 128, 128 },
       base = { 384, 0, 128, 128 },
       tex = { 256, 128, 256, 128 },
-      backdrop = { 0, 256, 512, 256 },
     },
     orn = 61,
     crest = { 80, 0, -36 },
@@ -1355,7 +1467,8 @@ NS.RegisterTheme({
   surface = {
     file = "Interface\\AddOns\\DarkMatter\\Media\\cls-druid-parts",
     rect = { 256, 128, 256, 128 },
-    size = 512,
+    w = 512,
+    h = 256,
     shell = {
       tint = { 0.315, 0.637, 0.424 },
     },
@@ -1377,11 +1490,25 @@ NS.RegisterTheme({
   },
   panelWash = { 0.098, 0.153, 0.096, 0.9 },
   classArt = {
-    frame = "Interface\\AddOns\\DarkMatter\\Media\\cls-druid-frame",
-    over = "Interface\\AddOns\\DarkMatter\\Media\\cls-druid-over",
     parts = "Interface\\AddOns\\DarkMatter\\Media\\cls-druid-parts",
-    size = 512,
-    bands = { { "tl", { 0, 0, 440, 120 }, { 0, 0, 330, 90 } }, { "tr", { 440, 0, 440, 120 }, { 0, 90, 330, 90 } }, { "bl", { 0, 560, 440, 120 }, { 0, 180, 330, 90 } }, { "br", { 440, 560, 440, 120 }, { 0, 270, 330, 90 } }, { "l", { 0, 120, 120, 440 }, { 330, 0, 90, 330 } }, { "r", { 760, 120, 120, 440 }, { 420, 0, 90, 330 } } },
+    pw = 512,
+    ph = 256,
+    edges = {
+      corner = 120,
+      fade = 8,
+      frame = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-druid-fc",
+        tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-druid-ftb",
+        lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-druid-flr",
+        len = { 174, 144, 174, 144 },
+      },
+      over = {
+        corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-druid-oc",
+        sprites = "Interface\\AddOns\\DarkMatter\\Media\\cls-druid-os",
+        sh = 256,
+        list = { { { 2, 120, 55, 97 }, { 0, 0, 110, 194 } }, { { 825, 463, 53, 97 }, { 112, 0, 106, 194 } } },
+      },
+    },
     rects = {
       orn_tl = { 0, 0, 128, 128 },
       orn_tr = { 128, 0, 128, 128 },
@@ -1390,7 +1517,6 @@ NS.RegisterTheme({
       crest = { 256, 0, 128, 128 },
       base = { 384, 0, 128, 128 },
       tex = { 256, 128, 256, 128 },
-      backdrop = { 0, 256, 512, 256 },
     },
     orn = 98,
     crest = { 72, 0, -34 },

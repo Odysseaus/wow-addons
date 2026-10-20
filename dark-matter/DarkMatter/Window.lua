@@ -67,37 +67,46 @@ local function FitScale(f)
   f:SetScale(math.max(0.5, s))
 end
 
--- Class frame art (theme.classArt), all data-driven: backdrop behind the window, the frame bands under the
--- content, and the overlay bands, corner ornaments, crest and base plate on a no-mouse child above it.
+-- Class frame art (theme.classArt), all data-driven (0.4.3). No backdrop: the game world shows around the frame.
+-- Frame layer (under the content, on the window's own BORDER layer): 4 corners at the source art's density plus 4 edge
+-- strips that REPEAT along their length at the same density (sharp, not stretched); each corner fades into its strips.
+-- Overlay layer (no-mouse child above the content): its 4 corners plus its edge sprites (glows, vines, crystals) at
+-- their own spots, then the corner ornaments, crest and base plate. Overhanging art stays and is part of the drag area.
 local function BuildClassArt(f)
-  local A = { under = {}, over = {}, orn = {} }
+  local A = { fe = {}, fc = {}, oc = {}, os = {}, orn = {} }
   local top = CreateFrame("Frame", nil, f)
   top:SetAllPoints(f)
   top:SetFrameLevel(f:GetFrameLevel() + 25)
   top:EnableMouse(false)
   A.top = top
-  A.backdrop = f:CreateTexture(nil, "BACKGROUND", nil, -8)
-  for i = 1, 6 do
-    A.under[i] = f:CreateTexture(nil, "BORDER", nil, 0)
-    A.over[i] = top:CreateTexture(nil, "ARTWORK", nil, 0)
+  for i = 1, 4 do
+    A.fe[i] = f:CreateTexture(nil, "BORDER", nil, 0)
+    A.fc[i] = f:CreateTexture(nil, "BORDER", nil, 1)
+    A.oc[i] = top:CreateTexture(nil, "ARTWORK", nil, 1)
   end
   for _, k in ipairs({ "tl", "tr", "bl", "br" }) do A.orn[k] = top:CreateTexture(nil, "OVERLAY", nil, 0) end
   A.crest = top:CreateTexture(nil, "OVERLAY", nil, 1)
   A.base = top:CreateTexture(nil, "OVERLAY", nil, 1)
-  local all = { A.backdrop, A.crest, A.base }
-  for i = 1, 6 do all[#all + 1] = A.under[i] all[#all + 1] = A.over[i] end
+  local all = { A.crest, A.base }
+  for i = 1, 4 do all[#all + 1] = A.fe[i] all[#all + 1] = A.fc[i] all[#all + 1] = A.oc[i] end
   for _, k in ipairs({ "tl", "tr", "bl", "br" }) do all[#all + 1] = A.orn[k] end
   A.all = all
-  local function Place(tex, file, size, r, x, y, w, h)
-    tex:SetTexture(file)
-    tex:SetTexCoord((r[1] + 0.5) / size, (r[1] + r[3] - 0.5) / size, (r[2] + 0.5) / size, (r[2] + r[4] - 0.5) / size)
+  -- r = { left, top, width, height } in texels of a tw x th texture (half a texel inset)
+  local function TC(r, tw, th)
+    return (r[1] + 0.5) / tw, (r[1] + r[3] - 0.5) / tw, (r[2] + 0.5) / th, (r[2] + r[4] - 0.5) / th
+  end
+  local function Put(tex, file, l, r, t, b, x, y, w, h, wrapH, wrapV)
+    if wrapH or wrapV then tex:SetTexture(file, wrapH or "CLAMP", wrapV or "CLAMP") else tex:SetTexture(file) end
+    tex:SetTexCoord(l, r, t, b)
     tex:ClearAllPoints()
     tex:SetPoint("TOPLEFT", f, "TOPLEFT", x, -y)
     tex:SetSize(w, h)
     tex:Show()
   end
+  local CORNER = { { 0, 0 }, { 256, 0 }, { 0, 256 }, { 256, 256 } } -- tl, tr, bl, br cells (240x240 used)
   function A.Apply()
     local ca = NS.theme.classArt
+    for _, t in ipairs(A.os) do t:Hide() end
     if not ca then
       for _, t in ipairs(all) do t:Hide() end
       top:Hide()
@@ -106,25 +115,57 @@ local function BuildClassArt(f)
     top:Show()
     local sx, sy, ax, ay = ArtMap()
     local k = (sx + sy) / 2
-    local z, R, file = ca.size, ca.rects, ca.parts
-    for i, b in ipairs(ca.bands) do
-      local a, t = b[2], b[3]
-      local x, y, w, h = ax + a[1] * sx, ay + a[2] * sy, a[3] * sx, a[4] * sy
-      Place(A.under[i], ca.frame, z, t, x, y, w, h)
-      Place(A.over[i], ca.over, z, t, x, y, w, h)
+    local E = ca.edges
+    local c, fd = E.corner, E.fade
+    local fr, ov = E.frame, E.over
+    -- art css rect -> window units
+    local function X(v) return ax + v * sx end
+    local function Y(v) return ay + v * sy end
+    local pos = { { 0, 0 }, { 880 - c, 0 }, { 0, 680 - c }, { 880 - c, 680 - c } }
+    for i = 1, 4 do
+      local cell = { CORNER[i][1], CORNER[i][2], 240, 240 }
+      local l, r, t, b = TC(cell, 512, 512)
+      Put(A.fc[i], fr.corners, l, r, t, b, X(pos[i][1]), Y(pos[i][2]), c * sx, c * sy)
+      Put(A.oc[i], ov.corners, l, r, t, b, X(pos[i][1]), Y(pos[i][2]), c * sx, c * sy)
     end
+    -- edge strips start under the corner fade (c - fd) and repeat len[i] css per tile
+    local s0 = c - fd
+    local hw, vh = 880 - 2 * s0, 680 - 2 * s0
+    local L = fr.len
+    Put(A.fe[1], fr.tb, 0, hw / L[1], 0.5 / 512, 239.5 / 512, X(s0), Y(0), hw * sx, c * sy, "REPEAT", "CLAMP")
+    Put(A.fe[2], fr.tb, 0, hw / L[2], 256.5 / 512, 495.5 / 512, X(s0), Y(680 - c), hw * sx, c * sy, "REPEAT", "CLAMP")
+    Put(A.fe[3], fr.lr, 0.5 / 512, 239.5 / 512, 0, vh / L[3], X(0), Y(s0), c * sx, vh * sy, "CLAMP", "REPEAT")
+    Put(A.fe[4], fr.lr, 256.5 / 512, 495.5 / 512, 0, vh / L[4], X(880 - c), Y(s0), c * sx, vh * sy, "CLAMP", "REPEAT")
+    for i, sp in ipairs(ov.list) do
+      local tex = A.os[i]
+      if not tex then
+        tex = top:CreateTexture(nil, "ARTWORK", nil, 0)
+        A.os[i] = tex
+      end
+      local a, t2 = sp[1], sp[2]
+      local l, r, t, b = TC(t2, 512, ov.sh)
+      Put(tex, ov.sprites, l, r, t, b, X(a[1]), Y(a[2]), a[3] * sx, a[4] * sy)
+    end
+    local R, file, pw, ph = ca.rects, ca.parts, ca.pw, ca.ph
     local aw, ah = 880 * sx, 680 * sy
     local o = ca.orn * k
-    Place(A.orn.tl, file, z, R.orn_tl, ax, ay, o, o)
-    Place(A.orn.tr, file, z, R.orn_tr, ax + aw - o, ay, o, o)
-    Place(A.orn.bl, file, z, R.orn_bl, ax, ay + ah - o, o, o)
-    Place(A.orn.br, file, z, R.orn_br, ax + aw - o, ay + ah - o, o, o)
+    local function P(tex, key, x, y, w, h)
+      local l, r, t, b = TC(R[key], pw, ph)
+      Put(tex, file, l, r, t, b, x, y, w, h)
+    end
+    P(A.orn.tl, "orn_tl", ax, ay, o, o)
+    P(A.orn.tr, "orn_tr", ax + aw - o, ay, o, o)
+    P(A.orn.bl, "orn_bl", ax, ay + ah - o, o, o)
+    P(A.orn.br, "orn_br", ax + aw - o, ay + ah - o, o, o)
     local cs = ca.crest[1] * k
-    Place(A.crest, file, z, R.crest, ax + (440 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy, cs, cs)
+    local cx, cy = ax + (440 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy
+    P(A.crest, "crest", cx, cy, cs, cs)
     local bw, bh = ca.base[1] * k, ca.base[2] * k
     local bs = math.min(bw, bh)
-    Place(A.base, file, z, R.base, ax + 440 * sx - bs / 2, ay + 642 * sy + (bh - bs) / 2, bs, bs)
-    Place(A.backdrop, file, z, R.backdrop, ax - 44 * sx, ay - 26 * sy, aw + 88 * sx, ah + 86 * sy)
+    local bx, by = ax + 440 * sx - bs / 2, ay + 642 * sy + (bh - bs) / 2
+    P(A.base, "base", bx, by, bs, bs)
+    -- everything drawn (art rect + overhanging crest and base), window-relative, y down
+    A.box = { math.min(ax, cx, bx), math.min(ay, cy), math.max(ax + aw, cx + cs, bx + bs), math.max(ay + ah, by + bs) }
   end
   return A
 end
@@ -468,11 +509,15 @@ local function Build()
       local sx, sy, ax, ay = ArtMap()
       NS.SetFont(title, math.floor(ca.titleSize * 0.8 + 0.5), "")
       title:SetPoint("CENTER", f, "TOPLEFT", ax + 440 * sx, -(ay + (61 + ca.titleDy) * sy))
-      if f.SetClampRectInsets then f:SetClampRectInsets(ax, ax + 880 * sx - m.w, -ay, m.h - (ay + 680 * sy)) end
+      local box = art.box -- everything drawn, incl. overhanging crest/base/ornaments: left, top, right, bottom (y down)
+      if f.SetClampRectInsets then f:SetClampRectInsets(box[1], box[3] - m.w, -box[2], m.h - box[4]) end
+      -- the whole frame art is a drag handle: the window's mouse area grows to it (content frames above stay clickable)
+      if f.SetHitRectInsets then f:SetHitRectInsets(box[1], m.w - box[3], box[2], m.h - box[4]) end
     else
       NS.SetFont(title, m.titleSize, "")
       title:SetPoint("CENTER", tb, "CENTER", 0, 0)
       if f.SetClampRectInsets then f:SetClampRectInsets(0, 0, 0, 0) end
+      if f.SetHitRectInsets then f:SetHitRectInsets(0, 0, 0, 0) end
     end
     FitScale(f)
     -- footer row + close button: the previewer's class layout (inset from the frame rim) or the WoW positions

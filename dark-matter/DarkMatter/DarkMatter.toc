@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.4.2: 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests; /dm probe.
+## Notes: Dark Matter 0.4.3: 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests; /dm probe.
 ## Author: Odysseaus
-## Version: 0.4.2
+## Version: 0.4.3
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

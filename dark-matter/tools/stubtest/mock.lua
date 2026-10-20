@@ -341,7 +341,10 @@ function FrameMT.SetScale(s, v) needNum("SetScale", 1, v) s._scale = v end
 function FrameMT.SetFrameLevel(s, n) needNum("SetFrameLevel", 1, n) s._level = n end
 function FrameMT.GetFrameLevel(s) return s._level or 1 end
 function FrameMT.SetFrameStrata(s, v) if not STRATA[v] then error("SetFrameStrata: bad strata " .. tostring(v), 2) end s._strata = v end
-function FrameMT.SetTexture(s, file)
+function FrameMT.SetTexture(s, file, wrapH, wrapV)
+  local WRAP = { REPEAT = 1, CLAMP = 1, MIRROR = 1, CLAMPTOBLACK = 1, CLAMPTOBLACKADDITIVE = 1, CLAMPTOWHITE = 1 }
+  if (wrapH ~= nil and not WRAP[wrapH]) or (wrapV ~= nil and not WRAP[wrapV]) then error("SetTexture: bad wrap mode", 2) end
+  s._wrapH, s._wrapV = wrapH, wrapV
   if file ~= nil and type(file) ~= "string" and not isnum(file) then error("SetTexture: bad file " .. type(file), 2) end
   s._file, s._color = file, nil
 end
@@ -353,7 +356,8 @@ function FrameMT.SetTexCoord(s, ...)
   s._tc = v
   if n == 4 then
     local l, r, t, b = v[1], v[2], v[3], v[4]
-    if l < 0 or r > 1 or t < 0 or b > 1 or l >= r or t >= b then
+    local rh, rv = s._wrapH == "REPEAT", s._wrapV == "REPEAT" -- REPEAT-wrapped axes may run past 1 (tiling)
+    if (l < 0 and not rh) or (r > 1 and not rh) or (t < 0 and not rv) or (b > 1 and not rv) or l >= r or t >= b then
       TCBAD[#TCBAD + 1] = string.format("%s %s: %g %g %g %g", s._name or "?", tostring(s._file), l, r, t, b)
     end
   end
@@ -384,6 +388,10 @@ end
 function FrameMT.SetDesaturated(s, on) s._desat = on and true or false end
 function FrameMT.LockHighlight(s) s._locked = true end
 function FrameMT.UnlockHighlight(s) s._locked = false end
+function FrameMT.SetHitRectInsets(s, l, r, t, b)
+  needNum("SetHitRectInsets", 1, l) needNum("SetHitRectInsets", 2, r) needNum("SetHitRectInsets", 3, t) needNum("SetHitRectInsets", 4, b)
+  s._hitIns = { l, r, t, b }
+end
 function FrameMT.SetClampRectInsets(s, l, r, t, b)
   needNum("SetClampRectInsets", 1, l) needNum("SetClampRectInsets", 2, r) needNum("SetClampRectInsets", 3, t) needNum("SetClampRectInsets", 4, b)
   s._clampIns = { l, r, t, b }
@@ -2825,12 +2833,13 @@ if MODE ~= "minimal" then
   -- class textures: 3 per class, 512x512 power of two, 32-bit uncompressed
   for _, id in ipairs(want) do
     if id ~= "wow" then
-      for _, part in ipairs({ "frame", "over", "parts" }) do
+      for _, part in ipairs({ "fc", "ftb", "flr", "oc", "os", "parts" }) do
         local fh = io.open(arg[1] .. "/Media/cls-" .. id .. "-" .. part .. ".tga", "rb")
         check(fh, "themes: texture exists cls-" .. id .. "-" .. part)
         local h = fh:read(18) fh:close()
         local w, hh, bpp, ty = h:byte(13) + h:byte(14) * 256, h:byte(15) + h:byte(16) * 256, h:byte(17), h:byte(3)
-        check(w == 512 and hh == 512 and bpp == 32 and ty == 2, "themes: cls-" .. id .. "-" .. part .. " is 512x512 32-bit uncompressed")
+        local p2 = (w == 64 or w == 128 or w == 256 or w == 512) and (hh == 64 or hh == 128 or hh == 256 or hh == 512)
+        check(p2 and bpp == 32 and ty == 2, "themes: cls-" .. id .. "-" .. part .. " is power of two <= 512, 32-bit uncompressed (" .. w .. "x" .. hh .. ")")
       end
       local t = NS.themes[id]
       check(t.base == "wow" and t.m == NS.themes.wow.m and t.atlas == "wow", "themes: " .. id .. " shares the WoW layout")
@@ -2902,6 +2911,50 @@ if MODE ~= "minimal" then
       end
       local ins = win._clampIns
       check(ins and ins[1] < 0 and ins[2] > 0 and ins[3] > 0 and ins[4] < 0, "themes: clamp rect grows to the frame art in " .. id)
+      -- 0.4.3: the whole frame art (incl. overhanging crest/base/ornaments) is the drag area; nothing outside it
+      local box = A.box
+      local hi = win._hitIns
+      check(hi and math.abs(hi[1] - box[1]) < 0.01 and math.abs(hi[2] - (880 - box[3])) < 0.01 and math.abs(hi[3] - box[2]) < 0.01
+        and math.abs(hi[4] - (680 - box[4])) < 0.01 and hi[1] < 0 and hi[3] < 0, "themes: the window's mouse area covers all the frame art in " .. id)
+      for _, e in ipairs(LayoutOf(win)) do
+        local clipped, x = false, e.r._parent
+        while x and x ~= UIParent do if x._ftype == "ScrollFrame" then clipped = true break end x = x._parent end
+        if e.kind == "texture" and e.l and not clipped then
+          check(e.l >= wl + box[1] - 0.5 and e.rr <= wl + box[3] + 0.5 and e.t <= wt - box[2] + 0.5 and e.b >= wt - box[4] - 0.5,
+            "themes: nothing drawn outside the frame art (no backdrop) in " .. id)
+          check(not tostring(e.r._file):find("backdrop"), "themes: no backdrop texture in " .. id)
+        end
+      end
+      -- 0.4.3: sharp edges. Strips repeat along their length; texels per window unit match the corners (0.4.2: ~0.7)
+      for i, tex in ipairs(A.fe) do
+        local tc, w, h = tex._tc, tex._sw, tex._sh
+        local along, across
+        if i <= 2 then
+          along, across = (tc[2] - tc[1]) * 512 / w, (tc[4] - tc[3]) * 512 / h
+          check(tex._wrapH == "REPEAT", "themes: horizontal edge strip repeats (" .. id .. ")")
+        else
+          along, across = (tc[4] - tc[3]) * 512 / h, (tc[2] - tc[1]) * 512 / w
+          check(tex._wrapV == "REPEAT", "themes: vertical edge strip repeats (" .. id .. ")")
+        end
+        check(along >= 1.6 and across >= 1.6, string.format("themes: edge %d texel density %.2f x %.2f per unit in %s", i, along, across, id))
+      end
+      for i = 1, 4 do
+        for _, tex in ipairs({ A.fc[i], A.oc[i] }) do
+          local d = (tex._tc[2] - tex._tc[1]) * 512 / tex._sw
+          check(d >= 1.6, string.format("themes: corner texel density %.2f per unit in %s", d, id))
+        end
+      end
+      -- drag: the frame only drags (no click handler of its own), and the new position is saved
+      check(win._scripts.OnDragStart and win._scripts.OnDragStop and not win._scripts.OnClick and not win._scripts.OnMouseUp,
+        "themes: the frame drags and has no click handler in " .. id)
+      win:ClearAllPoints() win:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 120, -90)
+      win._scripts.OnDragStop(win)
+      check(DarkMatterDB.window.point == "TOPLEFT" and DarkMatterDB.window.x == 120 and DarkMatterDB.window.y == -90, "themes: drag position saved in " .. id)
+      win:ClearAllPoints() win:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+      win._scripts.OnDragStop(win)
+    else
+      local hi = win._hitIns
+      check(hi and hi[1] == 0 and hi[2] == 0 and hi[3] == 0 and hi[4] == 0, "themes: WoW theme drags by its own frame (hit rect = window)")
     end
     for _, tid in ipairs(mainTabs) do
       NS.ShowTab(tid)

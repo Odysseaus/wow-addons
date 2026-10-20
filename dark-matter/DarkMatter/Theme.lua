@@ -143,9 +143,9 @@ function NS.ApplySurface(tex, kind)
   if not c then return false end
   if c.flat then NS.PaintFlat(tex, c.a, c.b, c.dir) return true end
   NS.Unflat(tex)
-  local r, z = sf.rect, sf.size
+  local r, zw, zh = sf.rect, sf.w, sf.h
   tex:SetTexture(sf.file)
-  tex:SetTexCoord((r[1] + 0.5) / z, (r[1] + r[3] - 0.5) / z, (r[2] + 0.5) / z, (r[2] + r[4] - 0.5) / z)
+  tex:SetTexCoord((r[1] + 0.5) / zw, (r[1] + r[3] - 0.5) / zw, (r[2] + 0.5) / zh, (r[2] + r[4] - 0.5) / zh)
   tex:SetVertexColor(c.tint[1], c.tint[2], c.tint[3], 1)
   return true
 end
