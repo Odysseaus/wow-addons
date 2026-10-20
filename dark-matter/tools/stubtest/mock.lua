@@ -2923,6 +2923,10 @@ if MODE ~= "minimal" then
         local ok, err = pcall(jt.SetSection, s)
         check(ok, "themes: journals " .. s .. " opens in " .. id .. " " .. tostring(err))
       end
+      if os.getenv("DM_RENDER_DIR") and MODE == "full" and (id == "wow" or id == "druid") then
+        jt.SetSection("achievements")
+        DumpLayout(win, os.getenv("DM_RENDER_DIR") .. "/layout-ach-" .. id .. ".json")
+      end
       jt.SetSection("fishing")
     end
     check(#TCBAD == 0, "themes: texcoords valid after every tab in " .. id)

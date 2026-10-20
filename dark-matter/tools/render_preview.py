@@ -50,7 +50,9 @@ def load_tex(addon, path):
     if name == "WHITE8X8":
         return Image.new("RGBA", (8, 8), (255, 255, 255, 255))
     if name not in _tex:
-        im = Image.open(os.path.join(addon, "Media", name + ".tga"))
+        p = os.path.join(addon, "Media", name + ".tga")
+        # game icons (Interface\Icons\...) are not in the addon: draw a neutral placeholder square
+        im = Image.open(p) if os.path.exists(p) else Image.new("RGBA", (64, 64), (96, 88, 72, 255))
         _tex[name] = im.convert("RGBA")
     return _tex[name]
 
