@@ -1,5 +1,5 @@
 -- Journals tab: Fishing panel with waters list + catch statistics (per-character).
--- Adventure Guide (0.3.2): dungeon dropdown, LFG dungeons/raids only + our Forever-validated drop seed + loot learning. Achievements: placeholder.
+-- Adventure Guide (0.3.3): dungeon dropdown, LFG dungeons/raids only + our Forever-validated drop seed + loot learning. Achievements: placeholder.
 local _, NS = ...
 local UI = NS.UI
 
@@ -667,6 +667,8 @@ end
 local agPage, agSearch, agLvlAll, agLvlMine = nil, nil, nil, nil
 local agDrop, agMenu, agMenuScroll, agMenuHead
 local agDropTextW = 157
+local AG_MENU_INDENT = 12  -- entries sit 12px in from their group header (headers stay flush left)
+local agMenuTextW = 172    -- entry text width in a dropdown row (set from the menu width in BuildAG)
 local agBossScroll, agDropScroll, agTitle, agMeta, agBossHead, agDropHead, agDropNote, agEmptyBoss, agEmptyDrops
 local agMenuRows, agBossRows, agDropRows = {}, {}, {}
 local agHover
@@ -733,9 +735,53 @@ local function AGLines(row)
   end
 end
 
-local function SetMenuOpen(on)
+-- 0.3.3: an open dropdown closes on any click outside it, on Esc and when the window hides; the button still
+-- toggles it. Stock frames only, no hooks: a full-screen invisible catcher (our own UIParent child, one frame
+-- level under the list) takes the outside mouse-down and closes the list (it passes nothing on); a private
+-- frame's GLOBAL_MOUSE_DOWN covers clicks on frames above the catcher (checked with IsMouseOver on the list
+-- and the button); Esc goes through Blizzard's UISpecialFrames list, where the named catcher is listed only
+-- while the list is open (the main window comes off the list meanwhile, as with the Settings popup).
+local agCatch, agMouseEv
+local SetMenuOpen
+local function EnsureCatcher()
+  if agCatch then return agCatch end
+  agCatch = CreateFrame("Frame", "DarkMatterAGMenuCatcher", UIParent)
+  agCatch:SetAllPoints(UIParent)
+  agCatch:EnableMouse(true)
+  agCatch:Hide()
+  agCatch:SetScript("OnMouseDown", function() SetMenuOpen(false) end)
+  agCatch:SetScript("OnHide", function() if agMenu and agMenu:IsShown() then SetMenuOpen(false) end end)
+  agMouseEv = CreateFrame("Frame")
+  agMouseEv:SetScript("OnEvent", function()
+    if not (agMenu and agMenu:IsShown()) then return end
+    local okM, overM = pcall(agMenu.IsMouseOver, agMenu)
+    local okD, overD = pcall(agDrop.IsMouseOver, agDrop)
+    if okM and okD and overM == false and overD == false then SetMenuOpen(false) end
+  end)
+  return agCatch
+end
+
+SetMenuOpen = function(on)
   if not agMenu then return end
-  if on then agMenu:Show() else agMenu:Hide() end
+  if on then
+    agMenu:Show()
+    local c = EnsureCatcher()
+    local okS, strata = pcall(agMenu.GetFrameStrata, agMenu)
+    if okS and type(strata) == "string" then pcall(c.SetFrameStrata, c, strata) end
+    local okL, lvl = pcall(agMenu.GetFrameLevel, agMenu)
+    if okL and type(lvl) == "number" then pcall(c.SetFrameLevel, c, math.max(0, lvl - 1)) end
+    c:Show()
+    pcall(agMouseEv.RegisterEvent, agMouseEv, "GLOBAL_MOUSE_DOWN")
+    if NS.SpecialFrame then NS.SpecialFrame("DarkMatterFrame", false) NS.SpecialFrame("DarkMatterAGMenuCatcher", true) end
+  else
+    agMenu:Hide()
+    if agCatch then
+      if agCatch:IsShown() then agCatch:Hide() end
+      pcall(agMouseEv.UnregisterEvent, agMouseEv, "GLOBAL_MOUSE_DOWN")
+      if NS.SpecialFrame then NS.SpecialFrame("DarkMatterAGMenuCatcher", false) end
+      if NS.RestoreEscMain then NS.RestoreEscMain() end
+    end
+  end
   if agDrop and agDrop.arrow then NS.SetPiece(agDrop.arrow, on and "sb_up" or "sb_dn") end
 end
 
@@ -749,13 +795,11 @@ local function GetMenuRow(i)
   r.sel:SetAllPoints(r)
   r.sel:Hide()
   r.text = OneLine(UI.Text(r, "OVERLAY", 13, "listInk", "LEFT"), 16)
-  r.text:SetPoint("LEFT", r, "LEFT", m.rowPad, 0)
-  r.text:SetPoint("RIGHT", r, "RIGHT", -56, 0)
   r.small = OneLine(UI.Text(r, "OVERLAY", 12, "listSoft", "RIGHT"), 14)
   r.small:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
-  r.small:SetWidth(46)
+  r.small:SetWidth(40)
   r:SetScript("OnClick", function(self)
-    if not self.dungeonKey then return end -- group header
+    if self.isHeader or type(self.dungeonKey) ~= "string" then return end -- group header: not clickable
     if NS.db then NS.db.agDungeon = self.dungeonKey NS.db.agBoss = nil end
     SetMenuOpen(false)
     if tab and tab.RefreshAG then tab.RefreshAG() end
@@ -853,16 +897,27 @@ local function RefreshMenu(list, all, sel)
       r = GetMenuRow(i)
       r:ClearAllPoints()
       r:SetPoint("TOPLEFT", agMenuScroll.content, "TOPLEFT", 0, -(i - 1) * AG_MENU_H)
+      local pad = NS.theme.m.rowPad
+      r.text:ClearAllPoints()
       if it.head then
-        r.dungeonKey = nil
+        -- group header: flush left, gold, not clickable (mouse off, no highlight)
+        r.dungeonKey, r.fullName, r.isHeader = nil, nil, true
+        r.text:SetPoint("LEFT", r, "LEFT", pad, 0)
+        r.text:SetPoint("RIGHT", r, "RIGHT", -pad, 0)
         r.text:SetText(it.head)
-        r.text:SetTextColor(NS.Color("listHead"))
+        r.text:SetTextColor(NS.Color("gold"))
         r.small:SetText("")
         r.sel:Hide()
+        r:EnableMouse(false)
       else
         local d = it.d
-        r.dungeonKey = d.key
+        r.dungeonKey, r.fullName, r.isHeader = d.key, d.name, false
+        r.text:SetPoint("LEFT", r, "LEFT", pad + AG_MENU_INDENT, 0)
+        r.text:SetPoint("RIGHT", r, "RIGHT", -(pad + 44), 0)
         r.text:SetText(d.name)
+        local okW, w = pcall(r.text.GetStringWidth, r.text)
+        if okW and type(w) == "number" and w > agMenuTextW then r.text:SetText(CompactName(d.name)) end
+        r:EnableMouse(true)
         local on = (d == sel)
         r.text:SetTextColor(NS.Color(on and "liOn" or (d.seeded and "listInk" or "listSoft")))
         r.small:SetText(LevelText(d))
@@ -1094,6 +1149,7 @@ local function BuildAdventure(page)
   end)
 
   local MENU_W = DROP_W + 40
+  agMenuTextW = (MENU_W - 8) - NS.theme.m.sbWidth - (NS.theme.m.rowPad + AG_MENU_INDENT) - (NS.theme.m.rowPad + 44)
   local MENU_H = 26 + AG_MENU_MAX * AG_MENU_H + 8
   agMenu = UI.Panel(agPage, MENU_W, MENU_H)
   agMenu:SetPoint("TOPLEFT", agDrop, "BOTTOMLEFT", 0, -2)

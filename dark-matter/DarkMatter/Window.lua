@@ -112,6 +112,13 @@ local function SpecialFrame(name, add)
   end
 end
 
+NS.SpecialFrame = SpecialFrame
+-- Esc target back to the main window (after a popup or the AG dropdown closes), unless another popup is open.
+function NS.RestoreEscMain()
+  local f, pop, catch = _G.DarkMatterFrame, _G.DarkMatterSettingsPop, _G.DarkMatterAGMenuCatcher
+  if f and f:IsShown() and not (pop and pop:IsShown()) and not (catch and catch:IsShown()) then SpecialFrame("DarkMatterFrame", true) end
+end
+
 local function BuildSettings(f)
   local m = NS.theme.m
   -- Named so Esc can close it via UISpecialFrames while it is open (instead of the main window).
@@ -177,7 +184,7 @@ local function BuildSettings(f)
     catcher:Hide()
     world:Hide()
     SpecialFrame("DarkMatterSettingsPop", false)
-    if f:IsShown() then SpecialFrame("DarkMatterFrame", true) end
+    NS.RestoreEscMain()
   end)
 
   pop:Hide()

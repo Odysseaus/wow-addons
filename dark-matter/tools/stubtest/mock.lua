@@ -354,6 +354,10 @@ function FrameMT.SetTextColor(s, r, g, b, a)
   s._tcol = { r, g, b, a or 1 }
 end
 function FrameMT.SetJustifyH(s, j) s._just = j end
+function FrameMT.EnableMouse(s, on) s._mouseOff = not on end
+function FrameMT.IsMouseEnabled(s) return not s._mouseOff end
+function FrameMT.IsMouseOver(s) return s._mouseOver end -- nil unless a test sets it (as the old stub)
+function FrameMT.GetFrameStrata(s) return s._strata or "MEDIUM" end
 function FrameMT.SetFont(s, path, size, flags)
   if type(path) ~= "string" then error("SetFont: path expected", 2) end
   needNum("SetFont", 2, size)
@@ -2019,12 +2023,81 @@ if MODE ~= "minimal" then
   local listed = {}
   for _, r in ipairs(W.menuRows) do
     if r._shown and not r._hid and rawget(r, "dungeonKey") then
-      listed[r.text:GetText()] = true
+      listed[rawget(r, "fullName") or r.text:GetText()] = true
     end
   end
+  -- 0.3.3: entries indented 12px under flush-left gold headers; headers not clickable; entry text fits
+  local gr, gg, gb = DarkMatter.Color("gold")
+  local hx, ex, badIndent, badFit, badHead, compact = nil, {}, 0, {}, 0, {}
+  for _, r in ipairs(W.menuRows) do
+    if r._shown and not r._hid then
+      local rl = FrameMT._rect(r)
+      local tl, _, tr = FrameMT._rect(r.text)
+      if rawget(r, "dungeonKey") then
+        ex[#ex + 1] = tl - rl
+        local sw = r.text:GetStringWidth()
+        if sw > (tr - tl) + 0.01 then badFit[#badFit + 1] = r.text:GetText() end
+        local sl = FrameMT._rect(r.small)
+        if tr > sl + 0.01 and (r.small:GetText() or "") ~= "" then badFit[#badFit + 1] = r.text:GetText() .. " (level)" end
+        if r.text:GetText() ~= r.fullName then compact[#compact + 1] = r.text:GetText() end
+        if r._mouseOff then badHead = badHead + 1 end
+      else
+        hx = hx or (tl - rl)
+        if math.abs((tl - rl) - hx) > 0.01 then badHead = badHead + 1 end
+        local c = r.text._tcol
+        if not (c and math.abs(c[1] - gr) < 0.01 and math.abs(c[2] - gg) < 0.01 and math.abs(c[3] - gb) < 0.01) then badHead = badHead + 1 end
+        if not r._mouseOff then badHead = badHead + 1 end
+        local before = DarkMatterDB.agDungeon
+        if r._scripts.OnClick then r._scripts.OnClick(r) end
+        if DarkMatterDB.agDungeon ~= before or not W.menu:IsShown() then badHead = badHead + 1 end
+      end
+    end
+  end
+  for _, x in ipairs(ex) do if math.abs(x - (hx + 12)) > 0.01 then badIndent = badIndent + 1 end end
+  check(hx and #ex == 37 and badIndent == 0, "dropdown: every entry indented 12px under its group header (" .. #ex .. " entries, " .. badIndent .. " off)")
+  check(badHead == 0, "dropdown: Dungeons/Raids headers flush left, gold, not clickable")
+  check(#badFit == 0, "dropdown: every indented entry fits its row (" .. table.concat(badFit, ", ") .. ")")
+  table.sort(compact)
+  check(table.concat(compact, "|") == "SM: Cathedral|SM: Graveyard|SM: Library", "dropdown: only long wing names use the compact form (" .. table.concat(compact, "|") .. ")")
   local miss = {}
   for _, d in ipairs(seed) do if not listed[d.name] then miss[#miss + 1] = d.name end end
   check(#miss == 0, "dropdown lists every dungeon and raid in the known-good list (" .. table.concat(miss, ", ") .. ")")
+  -- 0.3.3: outside click, GLOBAL_MOUSE_DOWN, Esc, window hide close the open dropdown; the button still toggles
+  local function inSF(name) for i = 1, #UISpecialFrames do if UISpecialFrames[i] == name then return true end end return false end
+  local C = _G.DarkMatterAGMenuCatcher
+  check(W.menu:IsShown() and C and C._shown and C._parent == UIParent and not C._mouseOff and C:GetFrameStrata() == W.menu:GetFrameStrata()
+    and C:GetFrameLevel() == W.menu:GetFrameLevel() - 1, "open dropdown: full-screen catcher (UIParent child) one level under the list")
+  check(inSF("DarkMatterAGMenuCatcher") and not inSF("DarkMatterFrame"), "Esc targets the open dropdown, not the window")
+  local gev
+  for _, r in ipairs(REGLOG) do if r.ev == "GLOBAL_MOUSE_DOWN" then gev = r.frame end end
+  check(gev and gev ~= UIParent and gev ~= DarkMatterFrame and gev._ev and gev._ev.GLOBAL_MOUSE_DOWN, "GLOBAL_MOUSE_DOWN on a private frame while open")
+  C._scripts.OnMouseDown(C, "LeftButton")
+  check(not W.menu:IsShown() and not C._shown and not (gev._ev and gev._ev.GLOBAL_MOUSE_DOWN) and inSF("DarkMatterFrame") and not inSF("DarkMatterAGMenuCatcher"),
+    "click outside (catcher) closes the dropdown, unregisters the event, Esc goes back to the window")
+  W.drop._scripts.OnClick(W.drop)
+  check(W.menu:IsShown() and C._shown, "button reopens the dropdown")
+  W.menu._mouseOver = true
+  gev._scripts.OnEvent(gev, "GLOBAL_MOUSE_DOWN", "LeftButton")
+  check(W.menu:IsShown(), "mouse-down inside the list keeps it open")
+  W.menu._mouseOver, W.drop._mouseOver = false, true
+  gev._scripts.OnEvent(gev, "GLOBAL_MOUSE_DOWN", "LeftButton")
+  check(W.menu:IsShown(), "mouse-down on the button leaves the toggle to the button")
+  W.drop._mouseOver = false
+  gev._scripts.OnEvent(gev, "GLOBAL_MOUSE_DOWN", "LeftButton")
+  check(not W.menu:IsShown() and not C._shown, "mouse-down on a frame above the catcher (GLOBAL_MOUSE_DOWN, not over list or button) closes it")
+  W.drop._scripts.OnClick(W.drop)
+  for i = #UISpecialFrames, 1, -1 do local fr = _G[UISpecialFrames[i]] if fr and fr._shown then fr:Hide() end end -- what Esc (CloseSpecialWindows) does
+  check(not W.menu:IsShown() and not C._shown and DarkMatterFrame._shown and inSF("DarkMatterFrame"), "Esc closes the dropdown only; the window stays open")
+  W.drop._scripts.OnClick(W.drop)
+  W.drop._scripts.OnClick(W.drop)
+  check(not W.menu:IsShown() and not C._shown, "button click toggles the open dropdown closed")
+  W.drop._scripts.OnClick(W.drop)
+  DarkMatterFrame:Hide()
+  check(not W.menu:IsShown() and not C._shown and not inSF("DarkMatterAGMenuCatcher"), "hiding the Dark Matter window closes the dropdown")
+  DarkMatterFrame:Show()
+  DarkMatter.tabs.journals.SetSection("adventure")
+  W.drop._scripts.OnClick(W.drop)
+  check(W.menu:IsShown(), "dropdown opens again after the window is reshown")
   bfd._scripts.OnClick(bfd)
   check(not W.menu:IsShown() and W.title:GetText() == "Blackfathom Deeps" and W.drop.text:GetText() == "Blackfathom Deeps", "picking an entry selects it and closes the dropdown")
   W.drop._scripts.OnClick(W.drop)
