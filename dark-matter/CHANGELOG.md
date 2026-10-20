@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.4.1 (P2 fix + Achievements per character + new layout)
+- **Fixed: the "DarkMatter has been blocked from an action only available to the Blizzard UI" popup.**
+  - **Cause:** 0.4.0 registered and unregistered `COMBAT_LOG_EVENT_UNFILTERED` on every zone change, including the first `PLAYER_ENTERING_WORLD` after login. That is why Odysseaus' `/dm blocked` showed `UNKNOWN()` out of combat at 12:45:08, the second the achievements tracking started.
+  - On Forever 1.60.1 the combat log is a **restricted event**: Blizzard's generated Forever API docs (Gethe/wow-ui-source, `forever` branch, commit 172a387) mark `COMBAT_LOG_EVENT_UNFILTERED` / `COMBAT_LOG_EVENT` with `HasRestrictions = true`, the same as `MINIMAP_PING` and `UNIT_PING_PIN_*`.
+  - Touching a restricted event from addon code raises `ADDON_ACTION_FORBIDDEN` with the function `UNKNOWN()`.
+- **The fix:** Dark Matter no longer uses the combat log at all. Boss kills come from `ENCOUNTER_END` (success) and `BOSS_KILL`, both unrestricted, which count once together. For encounters the client doesn't report, a fallback counts the boss when you loot its corpse, using the loot GUID the Adventure Guide already reads. That fallback is deduped per corpse and per boss for 10 minutes.
+  - Every tracker event is registered once at start-up, through a guard that refuses anything on the restricted list.
+  - The stubtests now model restricted events: touching one fails the run, and the 0.4.0 code is verified to fail this check.
+  - The old SetPropagateKeyboardInput / Esc catcher paths were rechecked and are not involved. The achievements dropdown and its catcher are gone with the new layout.
+- **`/dm blocked`** now prints:
+  - the count;
+  - `last blocked function: <name>  (<event>, addon <name>)`;
+  - when, version, combat yes/no, the Dark Matter context (which event handler was running, e.g. `ach:PLAYER_ENTERING_WORLD`) and the probe step;
+  - up to 6 lines of `debugstack` from the moment of the block, followed by the earlier entries.
+  - `nil` and empty arguments are shown literally. `/dm blocked clear` empties the log.
+- **Achievements count for the current character only.**
+  - Game achievements use `GetAchievementInfo`'s `wasEarnedByMe` (and `earnedBy`) and per-character criteria.
+  - A completion by another character shows muted as "Not yet (earned on another character)". It is excluded from Earned, category counts, the "Done X/Y" badge and the Legacy Points figure.
+  - `/dm achprobe` shows both, e.g. "completed: 7 account / N this character (Name-Realm)", and the same split for Legacy Points.
+  - Dark Matter's own data stays in `DarkMatterCharDB` (per character). Any account-wide copy is moved to the current character once, then removed.
+- **New Achievements layout** (our own design, no Blizzard art):
+  - A per-character summary bar with Dark Matter points and Legacy Points, each with a progress bar.
+  - On the left, search plus a Filter button (All / Earned / Not yet) above a collapsible category tree. The game's categories are nested by their parent ids (Classes > Druid), and Dark Matter is its own top-level section with our 6 categories.
+  - Search covers every category and shows match counts in the tree.
+  - On the right, a scrolling list of cards: icon, name, description, points badge, earned date, and a progress bar for partial ones. Unearned cards are muted grey. Clicking a card expands it in place with its criteria.
+  - It fits the window in all 10 themes, with no overlapping or truncated text across all 50 cards, collapsed and expanded.
+  - It is ready for generated art (`NS.achArt`, from `tools/achievements`). Until that atlas ships it uses the existing theme art.
+- Stubtests: restricted-event model, boss-kill paths (once per kill), logger output, per-character fixtures and migration, the new layout (tree, summary, cards, expand, filter, search) and a layout sweep. Previewer DM-32/33/34 mirror the layout with labelled example data and sweep every card in all 10 themes.
+
 ## 0.4.0 (P2, Journals > Achievements)
 - **API research (no guessing):** Forever 1.60.1 (`classic_beta`, Interface 16001) keeps the stock achievement API. Blizzard's own Forever UI source (Gethe/wow-ui-source, `forever` branch: `Blizzard_LegacySystem`, `Blizzard_LegacyChallengeTracker`, `Blizzard_AchievementUI`) calls `GetCategoryList`, `GetCategoryInfo`, `GetCategoryNumAchievements`, `GetAchievementInfo`, `GetAchievementNumCriteria`, `GetAchievementCriteriaInfo` and `C_Traits.GetTraitCurrencyForAchievement(Constants.LegacyConsts.LEGACY_POINTS_TRAIT_CURRENCY_ID = 4225, id)`. Wowhead Forever's achievement tooltips (`nether.wowhead.com/forever/tooltip/achievement/<id>`) return Forever-only ids (e.g. 62014 Artisan Alchemist, 62054 Lord Valthalak Laid to Rest, 62035 Conqueror of the Deeps, 62382 Explorer): "Points: 0", "Account-wide progress", "Earn 1 Legacy Point". Classic/WotLK achievement ids 404 there. So the API exists, but the set is thin: the Legacy Challenges (65 at launch per Blizzard's announcement) plus hidden tracking rows.
 - **Achievements subtab:** category dropdown in the AG style (gold, non-clickable group headers; entries indented 12px; closes on outside click, `GLOBAL_MOUSE_DOWN` outside, Esc via the named `DarkMatterAchMenuCatcher`, and window hide; the button toggles). Achievement list with icon, points, earned date or progress text, and a progress bar on every row; detail pane with points, status, a progress bar and criteria rows. Filters: All / Earned / Not yet.

@@ -1332,7 +1332,6 @@ NS.RegisterTab({
     EnsureFishEvents(false)
     EnsureAGEvents(false)
     if NS.db and NS.db.section == "achievements" then
-      if NS.AchPage and NS.AchPage.SetMenuOpen then NS.AchPage.SetMenuOpen(false) end
       if NS.Ach then NS.Ach.onChange = nil end
     end
   end,

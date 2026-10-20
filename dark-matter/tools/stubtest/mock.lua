@@ -216,6 +216,24 @@ function FrameMT.Disable(s) s._enabled=false end
 function FrameMT.SetScale(s,v) s._scale=v end
 function FrameMT.GetScale(s) return s._scale or 1 end
 function FrameMT.UnregisterEvent(s, e) if s._ev then s._ev[e] = nil end end
+-- 0.4.1: Forever 1.60.1 restricted events (HasRestrictions = true in Blizzard_APIDocumentationGenerated). Like the
+-- client, any RegisterEvent/UnregisterEvent of one from addon code raises ADDON_ACTION_FORBIDDEN ("UNKNOWN()").
+RESTRICTED_EVENTS = { COMBAT_LOG_EVENT_UNFILTERED = true, COMBAT_LOG_EVENT = true, MINIMAP_PING = true,
+  UNIT_PING_PIN_ADDED = true, UNIT_PING_PIN_REMOVED = true }
+RESTRICTED_TOUCH = {}
+local function Forbidden(how, e)
+  RESTRICTED_TOUCH[#RESTRICTED_TOUCH + 1] = how .. "(" .. e .. ")"
+  for _, f in ipairs(ALL or {}) do
+    if f._ev and f._ev.ADDON_ACTION_FORBIDDEN and f._scripts and f._scripts.OnEvent then
+      f._scripts.OnEvent(f, "ADDON_ACTION_FORBIDDEN", "DarkMatter", "UNKNOWN()")
+    end
+  end
+end
+do
+  local reg, unreg = FrameMT.RegisterEvent, FrameMT.UnregisterEvent
+  function FrameMT.RegisterEvent(s, e) if RESTRICTED_EVENTS[e] then Forbidden("RegisterEvent", e) end return reg(s, e) end
+  function FrameMT.UnregisterEvent(s, e) if RESTRICTED_EVENTS[e] then Forbidden("UnregisterEvent", e) end return unreg(s, e) end
+end
 -- ===== strict widget model + layout resolver (0.1.1) =====
 -- Strict argument checks (the real client raises Lua errors for bad types) and enough layout/draw-order
 -- modelling to resolve every region's rectangle, so tests and the offline renderer see what the game draws.
@@ -652,6 +670,37 @@ if MODE ~= "minimal" then
   check(DarkMatterDB.probe==before,"probe refuses to run in combat")
   InCombatLockdown=function() return false end
   SlashCmdList.DARKMATTER("blocked")
+  -- 0.4.1: richer entries (nil/empty function arg, context, combat, version, trimmed Lua stack) and /dm blocked output
+  local savedStack = debugstack
+  debugstack = function() return "Interface/AddOns/DarkMatter/Core.lua:90: in function `RecordBlocked'\n[C]: in function `pcall'\n"
+    .. "Interface/AddOns/DarkMatter/Achievements.lua:577: in function `OnZone'\nInterface/AddOns/DarkMatter/Achievements.lua:640: in function <...>" end
+  DarkMatter.ctx = "ach:PLAYER_ENTERING_WORLD"
+  bf._scripts.OnEvent(bf, "ADDON_ACTION_BLOCKED", "DarkMatter", nil)
+  DarkMatter.ctx = nil
+  debugstack = savedStack
+  local e = DarkMatterDB.blockedLog[#DarkMatterDB.blockedLog]
+  check(e.func == "nil" and e.event == "ADDON_ACTION_BLOCKED" and e.ctx == "ach:PLAYER_ENTERING_WORLD" and e.combat == false
+    and e.version == DarkMatter.version, "blocked entry: nil function shown as 'nil', event, context, combat, version")
+  check(e.stack and e.stack:find("DarkMatter/Achievements.lua:577: in function `OnZone'", 1, true) and not e.stack:find("RecordBlocked", 1, true)
+    and not e.stack:find("Interface/AddOns", 1, true), "blocked entry keeps the addon caller stack, minus the recorder")
+  bf._scripts.OnEvent(bf, "ADDON_ACTION_FORBIDDEN", "DarkMatter", "UNKNOWN()")
+  local said = {}
+  local sp, sP = print, DarkMatter.Print
+  print = function(...) said[#said + 1] = table.concat({ ... }, " ") end
+  DarkMatter.Print = function(m) said[#said + 1] = m end
+  SlashCmdList.DARKMATTER("blocked")
+  print, DarkMatter.Print = sp, sP
+  check(said[2] and said[2]:find("^last blocked function: UNKNOWN%(%)  %(ADDON_ACTION_FORBIDDEN, addon DarkMatter%)"),
+    "/dm blocked leads with the last blocked function: " .. tostring(said[2]))
+  check(said[3] and said[3]:find("combat no", 1, true) and said[3]:find("ctx none", 1, true), "/dm blocked: time, version, combat, context line")
+  local earlier
+  for _, l in ipairs(said) do if l:find("earlier: .- nil %(ADDON_ACTION_BLOCKED, ctx ach:PLAYER_ENTERING_WORLD%)") then earlier = true end end
+  check(earlier, "/dm blocked lists earlier entries with their context")
+  said = {}
+  DarkMatter.Print = function(m) said[#said + 1] = m end
+  SlashCmdList.DARKMATTER("blocked clear")
+  DarkMatter.Print = sP
+  check(#DarkMatterDB.blockedLog == 0 and said[1] == "blocked-action log cleared.", "/dm blocked clear")
 end
 for _,l in ipairs(log) do io.stdout:write(l,"\n") end
 LASTN=#log
@@ -2258,7 +2307,27 @@ do
     GetAchievementInfo = GetAchievementInfo, GetAchievementNumCriteria = GetAchievementNumCriteria, GetAchievementCriteriaInfo = GetAchievementCriteriaInfo,
     GetNumCompletedAchievements = GetNumCompletedAchievements, C_Traits = C_Traits, UnitLevel = UnitLevel, GetMoney = GetMoney, GetTime = GetTime,
     GetInstanceInfo = GetInstanceInfo, GetRealZoneText = GetRealZoneText, CombatLogGetCurrentEventInfo = CombatLogGetCurrentEventInfo,
-    LOOT_ITEM_SELF = LOOT_ITEM_SELF, LOOT_ITEM_SELF_MULTIPLE = LOOT_ITEM_SELF_MULTIPLE, Print = DarkMatter.Print }
+    LOOT_ITEM_SELF = LOOT_ITEM_SELF, LOOT_ITEM_SELF_MULTIPLE = LOOT_ITEM_SELF_MULTIPLE, Print = DarkMatter.Print,
+    UnitName = UnitName, GetRealmName = GetRealmName }
+  UnitName = function(u) if u == "player" then return "Odysseaus" end end
+  GetRealmName = function() return "Forever" end
+  -- 0.4.1: Dark Matter's own data is per character (SavedVariablesPerCharacter) with an owner stamp; a stray
+  -- account-wide copy moves to the first character without its own data and is removed from the account DB
+  do
+    local keep = DarkMatterCharDB.ach
+    DarkMatterCharDB.ach = nil
+    DarkMatterDB.ach = { v = 1, since = "2026-10-20 12:45", c = { quests = 3 }, s = {}, earned = { q1 = { when = "2026-10-20" } } }
+    local m = ACH.DB()
+    check(m and m.c.quests == 3 and m.earned.q1 and m.migrated and m.owner == "Odysseaus-Forever" and DarkMatterDB.ach == nil
+      and DarkMatterCharDB.ach == m, "account-wide achievement data migrates to the current character only, then leaves the account DB")
+    DarkMatterDB.ach = { v = 1, c = { quests = 99 }, s = {}, earned = {} }
+    local m2 = ACH.DB()
+    check(m2 == m and m2.c.quests == 3 and DarkMatterDB.ach == nil, "a character with its own data keeps it; stray account copy dropped")
+    DarkMatterCharDB.ach = keep
+    if keep then keep.owner = nil end
+    local toc = io.open(arg[1] .. "/DarkMatter.toc"):read("*a")
+    check(toc:find("## SavedVariablesPerCharacter: DarkMatterCharDB", 1, true), "achievement state lives in SavedVariablesPerCharacter")
+  end
   local nMut = #MUTATED
   GetCategoryList, GetCategoryInfo, GetCategoryNumAchievements, GetAchievementInfo = nil, nil, nil, nil
   GetAchievementNumCriteria, GetAchievementCriteriaInfo, GetNumCompletedAchievements, C_Traits = nil, nil, nil, nil
@@ -2318,17 +2387,27 @@ do
   -- levels
   LVL = 13 fire("PLAYER_LEVEL_UP", 20)
   check(db.c.levels == 1 and db.earned.lvl20, "PLAYER_LEVEL_UP uses the event's level (UnitLevel can lag)")
-  -- dungeons: enter, kill a boss (combat log), ENCOUNTER_END for the same kill is not counted twice
+  -- dungeons: enter, kill a boss (ENCOUNTER_END + BOSS_KILL for one kill, then the corpse is looted)
   INST = { "The Deadmines", "party" }
+  local nTouch = #RESTRICTED_TOUCH
   fire("ZONE_CHANGED_NEW_AREA")
-  check(db.s.inst["The Deadmines"] and AF._ev.COMBAT_LOG_EVENT_UNFILTERED, "instance entered; combat log registered only inside instances")
-  CL = { 1, "UNIT_DIED", false, "", "", 0, 0, "Creature-0-1-36-1-12345-000012AB34", "Defias Pirate", 0, 0 }
-  fire("COMBAT_LOG_EVENT_UNFILTERED")
-  check(db.c.bossKills == nil and not next(db.s.bosses), "non-boss deaths are ignored")
-  CL[8] = "Creature-0-1-36-1-639-000012AB35"
-  fire("COMBAT_LOG_EVENT_UNFILTERED")
+  check(db.s.inst["The Deadmines"] and not AF._ev.COMBAT_LOG_EVENT_UNFILTERED and #RESTRICTED_TOUCH == nTouch,
+    "instance entered; no restricted event (combat log) registered or unregistered")
+  fire("ENCOUNTER_END", 1, "Defias Pirate", 1, 5, 1)
+  check(db.c.bossKills == nil and not next(db.s.bosses), "non-boss encounters are ignored")
   fire("ENCOUNTER_END", 1, "Edwin VanCleef", 1, 5, 1)
-  check(db.s.bosses[639] == 1 and db.c.bossKills == 1 and db.earned.dm, "VanCleef (npc 639 from our seed) -> The Brotherhood Broken; counted once")
+  fire("BOSS_KILL", 1, "Edwin VanCleef")
+  check(db.s.bosses[639] == 1 and db.c.bossKills == 1 and db.earned.dm, "VanCleef (npc 639 from our seed) -> The Brotherhood Broken; ENCOUNTER_END + BOSS_KILL counted once")
+  NOW = NOW + 120
+  check(DarkMatter.OnBossLooted == ACH.RecordBossLoot and not ACH.RecordBossLoot(639, "Creature-0-1-36-1-639-0000AA01"),
+    "looting the corpse 2 minutes after the counted kill does not count it again")
+  NOW = NOW + 900
+  check(ACH.RecordBossLoot(639, "Creature-0-1-36-1-639-0000AA02") and db.c.bossKills == 2 and db.s.bosses[639] == 2,
+    "boss corpse looted with no kill event seen -> counted (loot fallback)")
+  NOW = NOW + 900
+  check(not ACH.RecordBossLoot(639, "Creature-0-1-36-1-639-0000AA02") and not ACH.RecordBossLoot(1234567, "Creature-0-1-36-1-1234567-1"),
+    "same corpse never counts twice; non-boss npc ignored")
+  db.s.bosses[639] = 1 db.c.bossKills = 1
   NOW = NOW + 600
   fire("ENCOUNTER_END", 1, "Onyxia", 9, 40, 0)
   check(not db.earned.ony, "failed encounter (success 0) is not a kill")
@@ -2336,8 +2415,10 @@ do
   check(db.earned.ony and db.c.bossKills == 2, "ENCOUNTER_END by name -> Broodmother Slain")
   INST = { "Onyxia's Lair", "raid" } fire("ZONE_CHANGED_NEW_AREA")
   check(db.earned.raid1 and db.s.raids["Onyxia's Lair"], "raid entered -> Raid Ready")
+  nTouch = #RESTRICTED_TOUCH
   INST = { "Westfall", "none" } ZONE = "Westfall" fire("ZONE_CHANGED_NEW_AREA")
-  check(not AF._ev.COMBAT_LOG_EVENT_UNFILTERED, "combat log unregistered outside instances")
+  check(not AF._ev.COMBAT_LOG_EVENT_UNFILTERED and #RESTRICTED_TOUCH == nTouch,
+    "leaving the instance touches no restricted event (0.4.0 unregistered the combat log here -> ADDON_ACTION_FORBIDDEN)")
   for _, z in ipairs({ "Duskwood", "Redridge Mountains", "Loch Modan" }) do ZONE = z fire("ZONE_CHANGED_NEW_AREA") end
   check(db.earned.zones5 and not db.earned.zones15, "5 different zones -> Wanderer")
   -- fishing
@@ -2366,193 +2447,295 @@ do
   printed = {}
   SlashCmdList.DARKMATTER("achprobe")
   check(printed[1]:find("mode = dm", 1, true) and printed[2]:find("GetCategoryList=no", 1, true)
-    and printed[3]:find("Dark Matter: 6 categories, " .. #defs .. " achievements", 1, true) and #printed == 6,
+    and printed[3]:find("Dark Matter (this character, Odysseaus-Forever): 6 categories, " .. #defs .. " achievements", 1, true) and #printed == 6,
     "achprobe (no API): mode, API names, Dark Matter counts + 3 samples (" .. #printed .. " lines)")
   check(printed[4]:find("Getting Started", 1, true) and printed[4]:find("level confirmed at install", 1, true), "achprobe sample: " .. printed[4])
   check(DarkMatterDB.achprobe and DarkMatterDB.achprobe.mode == "dm", "achprobe saved to DarkMatterDB.achprobe")
 
-  -- UI (dm mode)
+  -- UI (dm mode): summary bar, category tree, cards (0.4.1 layout)
   DarkMatter.ToggleWindow(true)
   DarkMatter.ShowTab("journals")
   DarkMatter.tabs.journals.SetSection("achievements")
   local W = DarkMatter.tabs.journals.achWidgets()
+  local R = FrameMT._rect
+  local function natural(fs) return #(fs._text or "") * (fs._fsize or 12) * 0.52 end
+  local function apart(a, b)
+    local al, at, ar, ab = R(a)
+    local bl, bt, br, bb = R(b)
+    if not (al and bl) then return false end
+    return ar <= bl or br <= al or ab >= bt or bb >= at
+  end
+  local function inside(a, b) -- a's rect within b's
+    local al, at, ar, ab = R(a)
+    local bl, bt, br, bb = R(b)
+    return al and bl and al >= bl - 0.5 and ar <= br + 0.5 and at <= bt + 0.5 and ab >= bb - 0.5
+  end
+  local function fits(fs) local l, _, r = R(fs) return l and natural(fs) <= r - l + 0.01 end
+  local function col(fs, key) local c, r, g, b = fs._tcol, DarkMatter.Color(key) return c and math.abs(c[1] - r) < 0.01 and math.abs(c[2] - g) < 0.01 and math.abs(c[3] - b) < 0.01 end
+  local function shownRows() local o = {} for _, r in ipairs(W.treeRows) do if r._shown then o[#o + 1] = r end end return o end
+  local function shownCards() local o = {} for _, c in ipairs(W.cards) do if c._shown then o[#o + 1] = c end end return o end
+  local function rowFor(key) for _, r in ipairs(shownRows()) do if r.catKey == key or r.nodeKey == key then return r end end end
+  local function cardNamed(n) for _, c in ipairs(shownCards()) do if c.name:GetText() == n then return c end end end
+  local function setSearch(q) W.search:SetText(q) W.search.edit._scripts.OnTextChanged(W.search.edit) end
   check(W.page:IsShown() and DarkMatterDB.section == "achievements", "Achievements section opens")
+  check(W.menu == nil and W.drop == nil and _G.DarkMatterAchMenuCatcher == nil, "0.4.1: no dropdown or catcher any more (the tree replaces them)")
   local function badge() for _, fs in ipairs(FS) do if type(fs._text) == "string" and fs._text:match("^Earned %d+/%d+$") then return fs._text end end end
   check(badge() == "Earned " .. t.earned .. "/" .. t.count, "badge: " .. tostring(badge()))
-  W.drop._scripts.OnClick(W.drop)
-  check(W.menu:IsShown(), "category dropdown opens")
-  local heads, entries, hx, bad = {}, {}, nil, 0
-  local gr, gg, gb = DarkMatter.Color("gold")
-  for _, r in ipairs(W.menuRows) do
-    if r._shown then
-      local rl = FrameMT._rect(r)
-      local tl, _, tr = FrameMT._rect(r.text)
-      if r.isHeader then
-        heads[#heads + 1] = r.text:GetText()
-        hx = hx or (tl - rl)
-        local c = r.text._tcol
-        if not (c and math.abs(c[1] - gr) < 0.01 and math.abs(c[2] - gg) < 0.01 and math.abs(c[3] - gb) < 0.01) or not r._mouseOff then bad = bad + 1 end
-        local before = DarkMatterDB.achCat
-        r._scripts.OnClick(r)
-        if DarkMatterDB.achCat ~= before or not W.menu:IsShown() then bad = bad + 1 end
-      else
-        entries[#entries + 1] = r.fullName
-        if math.abs((tl - rl) - (hx + 12)) > 0.01 then bad = bad + 1 end
-        if r.text:GetStringWidth() > (tr - tl) + 0.01 then bad = bad + 1 end
-      end
+  -- summary bar (dm mode: Dark Matter points only, this character)
+  local S = W.slots
+  check(S.dm._shown and not S.legacy._shown and S.dm.label:GetText() == "Dark Matter points (this character)" and S.dm.num:GetText() == tostring(t.pointsEarned)
+    and S.dm.pbar.label:GetText() == t.pointsEarned .. " / " .. t.points, "summary bar: Dark Matter points with a progress bar (" .. S.dm.pbar.label:GetText() .. ")")
+  check(inside(S.dm, W.summary) and inside(S.dm.pbar, W.summary) and fits(S.dm.label) and apart(S.dm.badge, S.dm.label) and apart(S.dm.label, S.dm.pbar),
+    "summary slot fits the bar: badge, label, progress bar apart")
+  -- tree
+  local heads, names, bad = {}, {}, 0
+  for _, r in ipairs(shownRows()) do
+    if r.isHeader then
+      heads[#heads + 1] = r.text:GetText()
+      if not col(r.text, "gold") or not r._mouseOff then bad = bad + 1 end
+      local before = DarkMatterDB.achCat
+      r._scripts.OnClick(r)
+      if DarkMatterDB.achCat ~= before then bad = bad + 1 end
+    else
+      names[#names + 1] = r.text:GetText()
+      if natural(r.text) > r.textW + 0.01 then bad = bad + 1 end
     end
   end
-  check(table.concat(heads, "|") == "Dark Matter" and table.concat(entries, "|") == table.concat(ACH.CATS, "|") and bad == 0,
-    "dm mode dropdown: gold 'Dark Matter' header (not clickable), 6 categories indented 12px (" .. table.concat(entries, ",") .. ")")
-  local function inSF(name) for i = 1, #UISpecialFrames do if UISpecialFrames[i] == name then return true end end return false end
-  local C = _G.DarkMatterAchMenuCatcher
-  check(C and C._shown and C._parent == UIParent and inSF("DarkMatterAchMenuCatcher") and not inSF("DarkMatterFrame")
-    and C:GetFrameLevel() == W.menu:GetFrameLevel() - 1, "open: full-screen catcher one level under the list; Esc targets the list")
-  C._scripts.OnMouseDown(C, "LeftButton")
-  check(not W.menu:IsShown() and not C._shown and inSF("DarkMatterFrame") and not inSF("DarkMatterAchMenuCatcher"), "outside click closes; Esc back to the window")
-  W.drop._scripts.OnClick(W.drop)
-  for i = #UISpecialFrames, 1, -1 do local fr = _G[UISpecialFrames[i]] if fr and fr._shown then fr:Hide() end end
-  check(not W.menu:IsShown() and DarkMatterFrame._shown, "Esc closes only the dropdown")
-  W.drop._scripts.OnClick(W.drop) W.drop._scripts.OnClick(W.drop)
-  check(not W.menu:IsShown(), "button toggles it closed")
-  W.drop._scripts.OnClick(W.drop)
-  DarkMatterFrame:Hide()
-  check(not W.menu:IsShown() and not C._shown and not inSF("DarkMatterAchMenuCatcher"), "window hide closes the dropdown")
-  DarkMatterFrame:Show()
-  DarkMatter.ShowTab("journals")
-  DarkMatter.tabs.journals.SetSection("achievements")
-  W.drop._scripts.OnClick(W.drop)
-  local fishRow
-  for _, r in ipairs(W.menuRows) do if r._shown and r.catKey == "dm:Fishing" then fishRow = r end end
-  fishRow._scripts.OnClick(fishRow)
-  check(not W.menu:IsShown() and W.title:GetText() == "Fishing" and W.drop.text:GetText() == "Fishing", "picking a category selects it and closes the list")
-  check(W.meta:GetText():find("Dark Matter achievements", 1, true) and W.meta:GetText():find("no game achievement API", 1, true), "meta labels the set: " .. W.meta:GetText())
-  local shown = {}
-  for _, r in ipairs(W.listRows) do if r._shown then shown[#shown + 1] = r end end
-  check(#shown == per.Fishing and shown[1].text:GetText() == "Gone Fishing" and shown[1].pts:GetText() == "5 pts" and shown[1].sub:GetText():find("^Earned %d"), "list: name, points, earned date")
-  local barOk = 0
-  for _, r in ipairs(shown) do if r.bar and r.bar._parent == r and not r.bar._hid and (r.bar.fill._w or 0) >= 1 then barOk = barOk + 1 end end
-  check(barOk == #shown, "a progress bar on every achievement row")
-  local fire2
-  for _, r in ipairs(shown) do if r.text:GetText() == "Fire and Oil" then fire2 = r end end
+  check(table.concat(heads, "|") == "Dark Matter" and table.concat(names, "|") == table.concat(ACH.CATS, "|") and bad == 0,
+    "dm mode tree: gold 'Dark Matter' section (not clickable) with the 6 categories, names fit (" .. table.concat(names, ",") .. ")")
+  local rs = shownRows()
+  for i = 2, #rs do if not apart(rs[i - 1], rs[i]) then bad = bad + 1 end end
+  check(bad == 0, "tree rows do not overlap")
+  local fr = rowFor("dm:Fishing")
+  fr._scripts.OnClick(fr)
+  check(W.title:GetText() == "Fishing" and rowFor("dm:Fishing").selected and W.meta:GetText():find("^Dark Matter · %d+ of 8 earned") and W.meta:GetText():find("no game API", 1, true),
+    "picking a category: header + meta (" .. W.meta:GetText() .. ")")
+  local cs = shownCards()
+  local first = cs[1]
+  check(#cs == per.Fishing and first.name:GetText() == "Gone Fishing" and first.badgeNum:GetText() == "5" and first.status:GetText():find("^Earned %d")
+    and col(first.name, "gold"), "cards: name, points badge, earned date; earned card is bright")
+  local salty = cardNamed("Salty")
+  check(salty and salty.status:GetText() == "In progress: 4 / 1000" and salty.bar._shown and salty.bar.label:GetText() == "4 / 1000" and col(salty.name, "listSoft"),
+    "unearned card: muted, progress bar for partial progress")
+  local fire2 = cardNamed("Fire and Oil")
   fire2._scripts.OnClick(fire2)
+  fire2 = cardNamed("Fire and Oil")
   local crit = {}
-  for _, r in ipairs(W.critRows) do if r._shown then crit[#crit + 1] = r.text:GetText() .. "=" .. r.val:GetText() end end
-  check(W.dName:GetText() == "Fire and Oil" and table.concat(crit, "|") == "Oily Blackmouth=done|Firefin Snapper=2×", "detail: criteria rows (" .. table.concat(crit, "|") .. ")")
-  check(W.dNote:GetText():find("not Blizzard", 1, true), "detail labels Dark Matter achievements: " .. W.dNote:GetText())
-  local eel
-  for _, r in ipairs(shown) do if r.text:GetText() == "Fish 1000" or r.text:GetText() == "Salty" then eel = r end end
-  eel._scripts.OnClick(eel)
-  check(W.dStatus:GetText() == "In progress: 4 / 1000" and W.critEmpty._shown, "in-progress status + total-only note")
-  W.fDone._scripts.OnClick(W.fDone)
-  local nd = 0 for _, r in ipairs(W.listRows) do if r._shown then nd = nd + 1 end end
-  W.fTodo._scripts.OnClick(W.fTodo)
-  local nt = 0 for _, r in ipairs(W.listRows) do if r._shown then nt = nt + 1 end end
-  check(nd + nt == per.Fishing and nd == 3, "Earned / Not yet filters (" .. nd .. " + " .. nt .. ")")
-  W.fAll._scripts.OnClick(W.fAll)
-  -- layout: no overlapping or truncated text in any Dark Matter category (list rows + detail pane)
+  for _, r in ipairs(fire2.crit) do if r._shown then crit[#crit + 1] = r.text:GetText() .. "=" .. r.val:GetText() end end
+  check(fire2.expanded and table.concat(crit, "|") == "Oily Blackmouth=done|Firefin Snapper=2×" and fire2.critHead:GetText() == "Criteria (2)"
+    and fire2.note._shown and fire2.note:GetText():find("not Blizzard", 1, true), "click expands the card inline: criteria + note (" .. table.concat(crit, "|") .. ")")
+  local _, _, _, fb = R(fire2)
+  local nextCard
+  for i, c in ipairs(shownCards()) do if c == fire2 then nextCard = shownCards()[i + 1] end end
+  check(not nextCard or apart(fire2, nextCard), "the expanded card pushes the next one down")
+  fire2._scripts.OnClick(fire2)
+  check(not cardNamed("Fire and Oil").expanded and not cardNamed("Fire and Oil").note._shown, "click again collapses it")
+  -- Filter control (All -> Earned -> Not yet -> All)
+  check(W.filterBtn.text:GetText() == "Filter: All", "Filter control starts at All")
+  W.filterBtn._scripts.OnClick(W.filterBtn)
+  local nd = #shownCards()
+  check(W.filterBtn.text:GetText() == "Filter: Earned", "Filter: Earned")
+  W.filterBtn._scripts.OnClick(W.filterBtn)
+  local nt = #shownCards()
+  check(W.filterBtn.text:GetText() == "Filter: Not yet" and nd + nt == per.Fishing and nd == 3, "Earned / Not yet filters (" .. nd .. " + " .. nt .. ")")
+  W.filterBtn._scripts.OnClick(W.filterBtn)
+  check(W.filterBtn.text:GetText() == "Filter: All" and #shownCards() == per.Fishing, "back to All")
+  -- search across every category
+  local q, expect, perCat = "gold", 0, {}
+  for _, a in ipairs(ACH.Defs()) do
+    if a.name:lower():find(q, 1, true) or a.desc:lower():find(q, 1, true) or a.cat:lower():find(q, 1, true) then expect = expect + 1 perCat[a.catKey] = (perCat[a.catKey] or 0) + 1 end
+  end
+  setSearch("Gold")
+  local cats = {}
+  for k in pairs(perCat) do cats[#cats + 1] = k end
+  check(expect > 0 and #shownCards() == expect and W.title:GetText() == "Search results" and W.meta:GetText():find('^Search "Gold" · ' .. expect .. " match"),
+    "search spans every category (" .. expect .. " matches in " .. #cats .. " categories): " .. W.meta:GetText())
+  local cntOk = true
+  for _, r in ipairs(shownRows()) do if type(r.catKey) == "string" and r.small:GetText() ~= tostring(perCat[r.catKey] or 0) then cntOk = false end end
+  local dbg = {} for _, r in ipairs(shownRows()) do if type(r.catKey) == "string" then dbg[#dbg + 1] = r.catKey .. "=" .. tostring(r.small:GetText()) .. "/" .. tostring(perCat[r.catKey] or 0) end end
+  check(cntOk, "tree shows match counts per category while searching (" .. table.concat(dbg, ",") .. ")")
+  local loot = rowFor("dm:Loot")
+  loot._scripts.OnClick(loot)
+  check(#shownCards() == (perCat["dm:Loot"] or 0) and W.title:GetText() == "Loot", "clicking a category narrows the search to it")
+  rowFor("dm:Loot")._scripts.OnClick(rowFor("dm:Loot"))
+  check(#shownCards() == expect, "clicking it again shows every match")
+  setSearch("zzzz no such")
+  check(#shownCards() == 0 and W.empty._shown and W.empty:GetText() == "No achievements match your search.", "no matches: empty state")
+  setSearch("")
+  check(W.title:GetText() == "Fishing" and #shownCards() == per.Fishing, "clearing the search returns to the category")
+  -- layout: every Dark Matter card, collapsed and expanded, fits without overlap or truncation
   do
-    local R = FrameMT._rect
-    local function natural(fs) return #(fs._text or "") * (fs._fsize or 12) * 0.52 end
-    local function apart(a, b)
-      local al, at, ar, ab = R(a)
-      local bl, bt, br, bb = R(b)
-      if not (al and bl) then return false end
-      return ar <= bl or br <= al or ab >= bt or bb >= at
-    end
-    local ov, rowsSeen = {}, 0
+    local ov, seen = {}, 0
     for _, cname in ipairs(ACH.CATS) do
-      DarkMatterDB.achCat, DarkMatterDB.achSel = "dm:" .. cname, nil
+      DarkMatterDB.achCat, DarkMatterDB.achCard = "dm:" .. cname, nil
       DarkMatter.tabs.journals.Refresh()
-      local rs = {}
-      for _, r in ipairs(W.listRows) do if r._shown then rs[#rs + 1] = r end end
-      for i, r in ipairs(rs) do
-        rowsSeen = rowsSeen + 1
-        local n = r.text:GetText()
-        for _, pr in ipairs({ { r.text, r.sub }, { r.text, r.pts }, { r.sub, r.bar }, { r.icon, r.text }, { r.icon, r.sub }, { r.icon, r.bar } }) do
-          if not apart(pr[1], pr[2]) then ov[#ov + 1] = "row " .. n end
+      local n = #shownCards()
+      for i = 1, n do
+        for _, exp in ipairs({ false, true }) do
+          DarkMatterDB.achCard = exp and shownCards()[i].itemKey or nil
+          DarkMatter.tabs.journals.Refresh()
+          local list = shownCards()
+          local c = list[i]
+          local nm = c.name:GetText()
+          if not exp then seen = seen + 1 end
+          for _, pr in ipairs({ { c.icon, c.name }, { c.icon, c.desc }, { c.name, c.desc }, { c.desc, c.status }, { c.name, c.badge }, { c.desc, c.badge }, { c.status, c.badge } }) do
+            if not apart(pr[1], pr[2]) then ov[#ov + 1] = "card " .. nm end
+          end
+          if c.bar._shown and (not apart(c.status, c.bar) or not inside(c.bar, c)) then ov[#ov + 1] = "bar " .. nm end
+          if not fits(c.name) then ov[#ov + 1] = "name truncated " .. nm end
+          if not fits(c.status) then ov[#ov + 1] = "status truncated " .. nm .. ": " .. c.status:GetText() end
+          local dl, dt, dr, dbm = R(c.desc)
+          if natural(c.desc) > (dr - dl) * math.floor((dt - dbm) / 13 + 0.01) + 0.01 then ov[#ov + 1] = "desc truncated " .. nm end
+          for _, fs in ipairs({ c.icon, c.name, c.desc, c.status, c.badge }) do if not inside(fs, c) then ov[#ov + 1] = "outside card " .. nm end end
+          if exp then
+            local last = c.critHead
+            if not apart(c.status, c.critHead) or (c.bar._shown and not apart(c.bar, c.critHead)) then ov[#ov + 1] = "criteria head " .. nm end
+            for _, r in ipairs(c.crit) do
+              if r._shown then
+                if not apart(last, r) then ov[#ov + 1] = "criteria " .. nm end
+                if not fits(r.text) or not fits(r.val) then ov[#ov + 1] = "criterion truncated " .. nm .. ": " .. r.text:GetText() end
+                last = r
+              end
+            end
+            if not apart(last, c.note) or not fits(c.note) or not inside(c.note, c) or not fits(c.critHead) then ov[#ov + 1] = "note " .. nm end
+          end
+          if list[i + 1] and not apart(c, list[i + 1]) then ov[#ov + 1] = "cards overlap " .. nm end
         end
-        local l, _, rr = R(r.text)
-        if natural(r.text) > rr - l then ov[#ov + 1] = "truncated " .. n end
-        local l2, _, r2 = R(r.sub)
-        if natural(r.sub) > r2 - l2 then ov[#ov + 1] = "status truncated " .. n .. ": " .. r.sub:GetText() end
-        if rs[i + 1] and not apart(r.bar, rs[i + 1].text) then ov[#ov + 1] = "rows " .. n end
-        r._scripts.OnClick(r)
-        local dl, _, dr = R(W.dName)
-        if natural(W.dName) > dr - dl then ov[#ov + 1] = "detail name truncated " .. n end
-        for _, pr in ipairs({ { W.dName, W.dPts }, { W.dPts, W.dDesc }, { W.dDesc, W.dStatus }, { W.dStatus, W.dBar }, { W.dBar, W.critHead }, { W.dIcon, W.dName } }) do
-          if not apart(pr[1], pr[2]) then ov[#ov + 1] = "detail " .. n end
-        end
-        local nl, _, nr = R(W.dNote)
-        if natural(W.dNote) > nr - nl then ov[#ov + 1] = "note truncated " .. n end
-        local sl, _, sr = R(W.dStatus)
-        if natural(W.dStatus) > sr - sl then ov[#ov + 1] = "detail status truncated " .. n .. ": " .. W.dStatus:GetText() end
-        local _, _, _, cb = R(W.critRows[1] and W.critRows[1]._shown and W.critRows[#W.critRows] or W.critHead)
-        local _, nt = R(W.dNote)
-        if cb and nt and cb < nt then ov[#ov + 1] = "criteria under the note " .. n end
       end
     end
-    if not apart(W.title, W.meta) then ov[#ov + 1] = "header" end
-    check(#ov == 0 and rowsSeen == #defs, "achievements layout: no overlapping or truncated text across " .. rowsSeen .. " rows (" .. table.concat(ov, "; ") .. ")")
-    DarkMatterDB.achCat, DarkMatterDB.achSel = "dm:Fishing", nil
+    if not apart(W.title, W.meta) or not apart(W.meta, W.cardScroll.frame) then ov[#ov + 1] = "header" end
+    for _, pr in ipairs({ { W.summary, W.search }, { W.summary, W.right }, { W.search, W.tree }, { W.filterBtn, W.tree }, { W.search, W.filterBtn }, { W.tree, W.right } }) do
+      if not apart(pr[1], pr[2]) then ov[#ov + 1] = "page layout" end
+    end
+    for _, f in ipairs({ W.summary, W.search, W.filterBtn, W.tree, W.right }) do if not inside(f, W.page) then ov[#ov + 1] = "outside page" end end
+    check(#ov == 0 and seen == #defs, "achievements layout: no overlapping or truncated text across " .. seen .. " cards, collapsed and expanded (" .. table.concat(ov, "; ") .. ")")
+    DarkMatterDB.achCat, DarkMatterDB.achCard = "dm:Fishing", nil
+    DarkMatter.tabs.journals.Refresh()
+  end
+  -- scroll: expanding the last card brings it into view without jumping; a new category starts at the top
+  do
+    DarkMatterDB.achCat, DarkMatterDB.achCard = "dm:Dungeons and Raids", nil
+    DarkMatter.tabs.journals.Refresh()
+    local sc = shownCards()
+    local last = sc[#sc]
+    last._scripts.OnClick(last)
+    local v1, S = W.cardScroll:GetScroll(), W.cardScroll
+    local top = 0
+    for i = 1, #sc - 1 do top = top + sc[i]:GetHeight() + 6 end
+    local inView = top >= v1 - 0.5 and top + last:GetHeight() <= v1 + S.h + 0.5
+    DarkMatter.tabs.journals.Refresh()
+    local v2 = W.cardScroll:GetScroll()
+    DarkMatterDB.achCat, DarkMatterDB.achCard = "dm:Quests", nil
+    DarkMatter.tabs.journals.Refresh()
+    check(v1 > 0 and inView and v2 == v1 and W.cardScroll:GetScroll() == 0,
+      "cards: expanding the last card scrolls it into view (" .. v1 .. "), a refresh keeps the position, a new category starts at the top")
+    DarkMatterDB.achCat, DarkMatterDB.achCard = "dm:Fishing", nil
     DarkMatter.tabs.journals.Refresh()
   end
 
   -- game API present but thin (Forever: Legacy Challenges) -> game + Dark Matter
   local GCATS = { [15076] = { "Classes", -1 }, [15585] = { "Warrior", 15076 }, [15590] = { "Raids", -1 }, [15999] = { "Do Not Display", -1 } }
   local GACH = {
-    [15585] = { { 62001, "Warrior Mastery", 0, true, 10, 19, 26, "Reach level 60 as a Warrior.", true }, { 62002, "Shield Wall", 0, false, nil, nil, nil, "Complete the Warrior challenge.", false } },
+    [15585] = { { 62001, "Warrior Mastery", 0, true, 10, 19, 26, "Reach level 60 as a Warrior.", true }, { 62002, "Shield Wall", 0, false, nil, nil, nil, "Complete the Warrior challenge.", false },
+      -- account-wide: completed, but by another character (wasEarnedByMe false, earnedBy "Altdruid")
+      { 61502, "Novice Druid", 0, true, 10, 3, 26, "Reach level 10 as a Druid.", false, "Altdruid" } },
     [15590] = { { 62035, "Conqueror of the Deeps", 0, false, nil, nil, nil, "Defeat the following encounters in the Barrow Deeps.", false } },
     [15999] = { { 20134, "[DNT] Self-Found Soul (Level 10)", 0, false } },
   }
-  local GCRIT = { [62035] = { { "Chillhowl", true }, { "Amethrax", false }, { "Sonya Darkhallow", false } }, [62002] = { { "Kills", false, 3, 10 } } }
+  local GCRIT = { [62035] = { { "Chillhowl", true, nil, nil, "Odysseaus" }, { "Amethrax", true, nil, nil, "Altdruid" }, { "Sonya Darkhallow", false } },
+    [62002] = { { "Kills", false, 3, 10 } }, [61502] = { { "Reach level 10", true } } }
   GetCategoryList = function() return { 15076, 15585, 15590, 15999 } end
   GetCategoryInfo = function(id) local c = GCATS[id] if c then return c[1], c[2], 0 end end
   GetCategoryNumAchievements = function(id) local l = GACH[id] or {} local d = 0 for _, a in ipairs(l) do if a[4] then d = d + 1 end end return #l, d, #l - d end
   GetAchievementInfo = function(cat, i)
     local a = GACH[cat] and GACH[cat][i]
-    if a then return a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], 0, 136243, "", false, a[9], "" end
+    if a then return a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], 0, 136243, "", false, a[9], a[10] or "" end
   end
   GetAchievementNumCriteria = function(id) return #(GCRIT[id] or {}) end
-  GetAchievementCriteriaInfo = function(id, i) local c = GCRIT[id][i] return c[1], 0, c[2], c[3] or (c[2] and 1 or 0), c[4] or 1, "", 0, 0, c[4] and ((c[3] or 0) .. "/" .. c[4]) or "" end
-  GetNumCompletedAchievements = function() return 3, 1 end
+  GetAchievementCriteriaInfo = function(id, i) local c = GCRIT[id][i] return c[1], 0, c[2], c[3] or (c[2] and 1 or 0), c[4] or 1, c[5] or "", 0, 0, c[4] and ((c[3] or 0) .. "/" .. c[4]) or "" end
+  GetNumCompletedAchievements = function() return 4, 2 end
   C_Traits = { GetTraitCurrencyForAchievement = function(cur, id) if cur == 4225 then return 1 end end }
   ACH.InvalidateGame()
   local g = ACH.ReadGame()
-  check(ACH.Mode() == "game+dm" and #g.cats == 2 and g.total == 3 and g.done == 1 and g.hidden == 1 and g.legacy == 3 and g.legacyDone == 1,
-    "Forever-shaped API (thin: 3 Legacy Challenges, 0 points) -> game+dm; [DNT] row skipped; Legacy Points via C_Traits")
+  check(ACH.Mode() == "game+dm" and #g.cats == 2 and g.total == 4 and g.done == 1 and g.accountDone == 2 and g.hidden == 1 and g.legacy == 4
+    and g.legacyDone == 1 and g.legacyAccountDone == 2,
+    "Forever-shaped API (thin: 4 Legacy Challenges, 0 points) -> game+dm; [DNT] skipped; per-character done/Legacy Points (1) vs account (2)")
+  local nd = g.byId[61502]
+  check(nd and not nd.completed and nd.other and nd.earnedBy == "Altdruid" and nd.when == nil and nd.accountWhen == "2026-10-03" and g.cats[1].done == 1
+    and g.cats[1].accountDone == 2, "another character's completion (wasEarnedByMe false) does not count here; date kept as account info")
   check(g.cats[1].name == "Classes: Warrior" and g.byId[62001].when == "2026-10-19", "parent-prefixed category names, completion date")
   printed = {}
   SlashCmdList.DARKMATTER("achprobe")
   check(printed[1]:find("mode = game+dm", 1, true) and printed[3]:find("2 categories with achievements", 1, true) == nil
-    and printed[3]:find("4 categories (2 with achievements), 3 achievements, 1 completed", 1, true)
-    and printed[3]:find("placeholder rows skipped", 1, true) and printed[3]:find("GetNumCompletedAchievements = 1/3", 1, true),
+    and printed[3]:find("4 categories (2 with achievements), 4 achievements, 0 points, 4 Legacy Points", 1, true)
+    and printed[3]:find("placeholder rows skipped", 1, true),
     "achprobe (API): " .. tostring(printed[3]))
-  check(printed[4]:find("[62001] Warrior Mastery", 1, true) and printed[4]:find("complete 2026-10-19", 1, true) and printed[6]:find("criteria 1/3", 1, true)
-    and printed[7]:find("^Dark Matter:"), "achprobe: 3 game samples, then the Dark Matter line")
+  check(printed[4] == "completed: 2 account / 1 this character (Odysseaus-Forever); Legacy Points earned: 2 account / 1 this character; GetNumCompletedAchievements = 2/4 (account)",
+    "achprobe: account and this-character numbers side by side: " .. tostring(printed[4]))
+  check(printed[5]:find("[62001] Warrior Mastery", 1, true) and printed[5]:find("complete 2026-10-19", 1, true)
+    and printed[7] == "  [61502] Novice Druid (Classes: Warrior): not yet on this character (earned on Altdruid 2026-10-03), criteria 0/1"
+    and printed[8]:find("^Dark Matter %(this character"), "achprobe: 3 game samples (other-character one marked), then the Dark Matter line: " .. tostring(printed[7]))
+  DarkMatterDB.achOpen = nil
   DarkMatter.tabs.journals.Refresh()
-  W.drop._scripts.OnClick(W.drop)
-  heads, entries = {}, {}
-  for _, r in ipairs(W.menuRows) do if r._shown then if r.isHeader then heads[#heads + 1] = r.text:GetText() else entries[#entries + 1] = r.text:GetText() end end end
-  check(table.concat(heads, "|") == "Legacy Challenges|Dark Matter" and entries[1] == "Classes: Warrior" and entries[2] == "Raids" and #entries == 8,
-    "game+dm dropdown: Legacy Challenges (game) then Dark Matter (" .. table.concat(entries, ",") .. ")")
-  local gr1
-  for _, r in ipairs(W.menuRows) do if r._shown and r.catKey == "g:15590" then gr1 = r end end
-  gr1._scripts.OnClick(gr1)
-  check(W.title:GetText() == "Raids" and W.meta:GetText():find("Game: Legacy Challenges", 1, true) and badge() == nil, "game category: labeled as game data")
-  local lr = W.listRows[1]
-  check(lr.text:GetText() == "Conqueror of the Deeps" and lr.pts:GetText() == "1 LP" and W.dPts:GetText() == "1 Legacy Point", "game row: Legacy Point")
-  crit = {}
-  for _, r in ipairs(W.critRows) do if r._shown then crit[#crit + 1] = r.text:GetText() .. "=" .. r.val:GetText() end end
-  check(table.concat(crit, "|") == "Chillhowl=done|Amethrax=not yet|Sonya Darkhallow=not yet" and W.dStatus:GetText() == "In progress: 1 / 3", "game criteria + progress")
-  check(W.dNote:GetText():find("Game data", 1, true), "detail labels game data")
+  -- tree: game categories nested by parent id (Classes > Warrior), collapsible; then the Dark Matter section
+  local function treeText() local o = {} for _, r in ipairs(shownRows()) do o[#o + 1] = (r.isHeader and "#" or (r.isParent and "+" or "")) .. r.text:GetText() end return table.concat(o, "|") end
+  check(treeText() == "#Legacy Challenges|+Classes|Raids|#Dark Matter|General|Quests|Dungeons and Raids|Fishing|Exploration|Loot",
+    "game+dm tree: Legacy Challenges (parents from GetCategoryInfo parent ids, collapsed) then Dark Matter: " .. treeText())
+  local cls = rowFor("n:15076")
+  check(cls and cls.isParent and cls.small:GetText() == "1/3" and cls.toggle._shown, "parent row: +/- toggle and this character's count (1/3)")
+  cls._scripts.OnClick(cls)
+  check(treeText() == "#Legacy Challenges|+Classes|Warrior|Raids|#Dark Matter|General|Quests|Dungeons and Raids|Fishing|Exploration|Loot"
+    and rowFor("g:15585").small:GetText() == "1/3", "click expands Classes > Warrior: " .. treeText())
   do
-    local l, _, r = FrameMT._rect(W.dNote)
-    check(#W.dNote:GetText() * 11 * 0.52 <= r - l, "game note fits one line")
+    local pl = R(rowFor("n:15076").text) local cl = R(rowFor("g:15585").text)
+    check(cl - pl >= 4, "child rows are indented under their parent")
   end
-  DarkMatterDB.achCat = "g:15585" DarkMatterDB.achSel = "g62002"
-  DarkMatter.tabs.journals.Refresh()
-  check(W.dStatus:GetText() == "In progress: 3 / 10" and W.dBar.label:GetText() == "3 / 10", "single quantity criterion drives the bar (3/10)")
+  rowFor("n:15076")._scripts.OnClick(rowFor("n:15076"))
+  check(not rowFor("g:15585"), "click again collapses it")
+  rowFor("n:15076")._scripts.OnClick(rowFor("n:15076"))
+  -- summary bar: Dark Matter points and Legacy Points, both this character
+  check(S.dm._shown and S.legacy._shown and S.legacy.label:GetText() == "Legacy Points (this character)" and S.legacy.num:GetText() == "1"
+    and S.legacy.pbar.label:GetText() == "1 / 4" and apart(S.dm, S.legacy) and inside(S.legacy, W.summary) and fits(S.legacy.label) and fits(S.dm.label),
+    "summary bar: Dark Matter points + Legacy Points (this character: 1 / 4), side by side")
+  local gr1 = rowFor("g:15590")
+  gr1._scripts.OnClick(gr1)
+  check(W.title:GetText() == "Raids" and W.meta:GetText():find("^Game · 0 of 1 done %(this character%)") and badge() == nil, "game category: labelled as game data (" .. W.meta:GetText() .. ")")
+  local cq = cardNamed("Conqueror of the Deeps")
+  check(cq and cq.badgeNum:GetText() == "1" and cq.status:GetText() == "In progress: 1 / 3" and cq.bar._shown, "game card: Legacy Point badge, progress for this character")
+  cq._scripts.OnClick(cq)
+  cq = cardNamed("Conqueror of the Deeps")
+  crit = {}
+  for _, r in ipairs(cq.crit) do if r._shown then crit[#crit + 1] = r.text:GetText() .. "=" .. r.val:GetText() end end
+  check(table.concat(crit, "|") == "Chillhowl=done|Amethrax=other character|Sonya Darkhallow=not yet" and cq.note:GetText() == "Game data · Legacy Challenge · this character" and fits(cq.note),
+    "game criteria per character: one done by another character is not counted (" .. table.concat(crit, "|") .. ")")
+  rowFor("g:15585")._scripts.OnClick(rowFor("g:15585"))
+  local sw = cardNamed("Shield Wall")
+  check(sw and sw.status:GetText() == "In progress: 3 / 10" and sw.bar.label:GetText() == "3 / 10", "single quantity criterion drives the bar (3/10)")
+  -- earned on another character: muted card with a small note, not in Earned; header/badge per character
+  local nd2 = cardNamed("Novice Druid")
+  check(nd2 and nd2.status:GetText() == "Not yet (earned on another character)" and col(nd2.status, "listSoft") and col(nd2.name, "listSoft") and not nd2.bar._shown and fits(nd2.status),
+    "another character's completion: muted card, 'Not yet (earned on another character)'")
+  nd2._scripts.OnClick(nd2)
+  nd2 = cardNamed("Novice Druid")
+  check(nd2.note:GetText() == "Game data · earned on Altdruid, not this one" and fits(nd2.note) and W.meta:GetText() == "Game · 1 of 3 done (this character) · 1 on other characters" and fits(W.meta),
+    "expanded note + header: per character, other characters counted separately (" .. W.meta:GetText() .. ")")
+  local wm = cardNamed("Warrior Mastery")
+  check(wm and col(wm.name, "gold") and wm.status:GetText() == "Earned 2026-10-19", "card earned by this character: bright, earned date")
+  local gbadge
+  for _, fs in ipairs(FS) do if type(fs._text) == "string" and fs._text:match("^Done %d+/%d+$") then gbadge = fs._text end end
+  check(gbadge == "Done 1/4", "badge counts this character only: " .. tostring(gbadge))
+  W.filterBtn._scripts.OnClick(W.filterBtn)
+  local earnedN = {}
+  for _, c in ipairs(shownCards()) do earnedN[#earnedN + 1] = c.name:GetText() end
+  W.filterBtn._scripts.OnClick(W.filterBtn)
+  local todoHas = cardNamed("Novice Druid") ~= nil
+  W.filterBtn._scripts.OnClick(W.filterBtn)
+  check(table.concat(earnedN, ",") == "Warrior Mastery" and todoHas, "Earned filter hides other characters' completions; Not yet lists them")
+  -- search spans game and Dark Matter categories
+  setSearch("druid")
+  check(#shownCards() == 1 and shownCards()[1].name:GetText() == "Novice Druid" and rowFor("n:15076") and rowFor("g:15585") and rowFor("g:15585").small:GetText() == "1",
+    "search finds game achievements too, parents open to show where")
+  setSearch("")
   -- a full achievement API (300+ with points) -> the game's own; ours off
   local big = {}
   for i = 1, 320 do big[i] = { 70000 + i, "A" .. i, 10, i <= 5, 1, 2, 26, "d", true } end
@@ -2563,14 +2746,13 @@ do
   LVL = 60 fire("PLAYER_LEVEL_UP", 60)
   local after = 0 for _ in pairs(db.earned) do after = after + 1 end
   check(after == before, "game mode: Dark Matter's set awards nothing")
-  local items = P.Categories()
-  local hasDM = false for _, it in ipairs(items) do if it.head == "Dark Matter" then hasDM = true end end
-  check(not hasDM, "game mode: no Dark Matter group")
+  DarkMatter.tabs.journals.Refresh()
+  check(not treeText():find("#Dark Matter", 1, true) and not S.dm._shown and S.legacy._shown and S.legacy.label:GetText() == "Achievement points (this character)"
+    and S.legacy.pbar.label:GetText() == "50 / 3200", "game mode: no Dark Matter section; summary shows this character's achievement points (" .. S.legacy.pbar.label:GetText() .. ")")
   GACH[15590] = { { 62035, "Conqueror of the Deeps", 0, false, nil, nil, nil, "x", false } }
   ACH.InvalidateGame()
-  W.drop._scripts.OnClick(W.drop)
   DarkMatterFrame:Hide()
-  check(not W.menu:IsShown(), "closed with the window")
+  check(not W.page:IsVisible() or not DarkMatterFrame._shown, "page hides with the window")
   DarkMatterFrame:Show()
 
   -- taint safety
@@ -2582,7 +2764,7 @@ do
   check(#MUTATED == nMut, "achievements: no state-changing or server-asking API calls")
   for _, r in ipairs(REGLOG) do
     if r.frame == AF then check(({ PLAYER_ENTERING_WORLD = 1, ZONE_CHANGED_NEW_AREA = 1, PLAYER_LEVEL_UP = 1, QUEST_TURNED_IN = 1, PLAYER_MONEY = 1, CHAT_MSG_LOOT = 1,
-      ENCOUNTER_END = 1, ACHIEVEMENT_EARNED = 1, CRITERIA_UPDATE = 1, COMBAT_LOG_EVENT_UNFILTERED = 1 })[r.ev], "achievement frame event: " .. r.ev) end
+      ENCOUNTER_END = 1, BOSS_KILL = 1, ACHIEVEMENT_EARNED = 1, CRITERIA_UPDATE = 1 })[r.ev], "achievement frame event: " .. r.ev) end
   end
   check(AF ~= UIParent and AF._name == nil, "achievement events on a private unnamed frame")
 
@@ -2600,6 +2782,15 @@ if MODE == "minimal" then
   DarkMatter.tabs.journals.SetSection("adventure")
   check(DarkMatterDB.section == "adventure", "minimal client: Adventure Guide opens")
   DarkMatter.tabs.journals.SetSection("fishing")
+end
+
+-- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====
+check(#RESTRICTED_TOUCH == 0, "no addon code touched a restricted event (" .. table.concat(RESTRICTED_TOUCH, ", ") .. ")")
+for _, fn in ipairs({ "Achievements.lua", "AdventureGuide.lua", "Fishing.lua", "Core.lua", "Window.lua", "Tab_Journals.lua", "Journal_Achievements.lua" }) do
+  local src = io.open(arg[1] .. "/" .. fn):read("*a")
+  local code = src:gsub("%-%-[^\n]*", "")
+  check(not code:find("CombatLogGetCurrentEventInfo", 1, true) and not code:find("SetPropagateKeyboardInput", 1, true),
+    fn .. ": no combat-log reads, no SetPropagateKeyboardInput")
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

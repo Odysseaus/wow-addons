@@ -488,6 +488,7 @@ function AG.OnLootOpened()
         if hit then
           boss = hit.boss.name
           dkey = Norm(hit.dungeon.name) or dkey
+          if NS.OnBossLooted then pcall(NS.OnBossLooted, npc, guid) end -- achievements: kill fallback, deduped there
         elseif lastKill and Now() - lastKill.t <= KILL_WINDOW then
           boss = lastKill.name
         end
@@ -512,6 +513,8 @@ function AG.StartTracker()
     pcall(ev.RegisterEvent, ev, e)
   end
   ev:SetScript("OnEvent", function(_, event, _, a2, _, _, a5)
+    local prev = NS.ctx
+    NS.ctx = "ag:" .. tostring(event)
     if event == "LOOT_OPENED" then
       pcall(AG.OnLootOpened)
       if AG.onChange then pcall(AG.onChange) end
@@ -520,6 +523,7 @@ function AG.StartTracker()
     elseif event == "BOSS_KILL" then
       AG.OnBossKilled(a2)
     end
+    NS.ctx = prev
   end)
 end
 function AG._Frame() return ev end

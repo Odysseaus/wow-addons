@@ -1,4 +1,4 @@
--- Dark Matter 0.4.0: achievements.
+-- Dark Matter 0.4.0/0.4.1: achievements.
 -- 1. The game's own achievement API (read-only): GetCategoryList / GetCategoryInfo / GetCategoryNumAchievements /
 --    GetAchievementInfo / GetAchievementNumCriteria / GetAchievementCriteriaInfo, as used by Blizzard's own Forever
 --    Legacy UI (Blizzard_LegacySystem, wow-ui-source "forever" branch, build 1.60.1). On Forever that API carries the
@@ -6,10 +6,17 @@
 --    C_Traits.GetTraitCurrencyForAchievement(Constants.LegacyConsts.LEGACY_POINTS_TRAIT_CURRENCY_ID = 4225, id)).
 --    We never load Blizzard_AchievementUI / Blizzard_LegacySystem and never call anything that changes state.
 -- 2. Dark Matter's own achievements, tracked per character from safe events on our own private frame (no hooks):
---    PLAYER_LEVEL_UP, QUEST_TURNED_IN, ENCOUNTER_END / COMBAT_LOG UNIT_DIED (in instances, matched to our
---    Data_Dungeons npc ids), our Fishing module's catch callback, CHAT_MSG_LOOT (self lines only), zone changes and
+--    PLAYER_LEVEL_UP, QUEST_TURNED_IN, ENCOUNTER_END (success) / BOSS_KILL by name and the Adventure Guide's
+--    LOOT_OPENED boss-corpse npc id (matched to our Data_Dungeons npc ids), our Fishing module's catch callback, CHAT_MSG_LOOT (self lines only), zone changes and
 --    PLAYER_MONEY. Counting starts at install; nothing is awarded retroactively except what the game confirms now
 --    (current level).
+--    0.4.1: everything is per character. Game achievements count as earned only when GetAchievementInfo's
+--    wasEarnedByMe is true (Legacy Challenges are account-wide, so other characters' completions come back
+--    "completed"); those show as "earned on another character" and are kept in separate account totals. Criteria a
+--    different character completed (GetAchievementCriteriaInfo charName) are not counted for this one.
+--    0.4.1: never touch COMBAT_LOG_EVENT_UNFILTERED. On Forever 1.60.1 it is HasRestrictions = true
+--    (Blizzard_APIDocumentationGenerated/CombatLogDocumentation.lua); 0.4.0's Un/RegisterEvent of it on every zone
+--    change raised ADDON_ACTION_FORBIDDEN "UNKNOWN()" at login. ACH.RESTRICTED_EVENTS lists every restricted event.
 -- Mode: the game API with data and a full achievement set (300+ achievements with points) -> "game" (ours off);
 -- the game API with data but thin (Forever: the Legacy Challenges only) -> "game+dm" (ours under a "Dark Matter"
 -- group); no API or no data -> "dm".
@@ -59,8 +66,9 @@ function ACH.InvalidateGame() gameCache = nil end
 
 function ACH.ReadGame()
   if gameCache then return gameCache end
+  -- done / legacyDone / cat.done: this character (wasEarnedByMe); accountDone / legacyAccountDone: any character
   local g = { present = ACH.ApiPresent(), cats = {}, byId = {}, catCount = 0, total = 0, done = 0, hidden = 0,
-    points = 0, legacy = 0, legacyDone = 0 }
+    points = 0, pointsDone = 0, legacy = 0, legacyDone = 0, accountDone = 0, legacyAccountDone = 0, otherDone = 0, byMeSeen = false }
   gameCache = g
   if not g.present then return g end
   local ok, list = pcall(GetCategoryList)
@@ -76,35 +84,85 @@ function ACH.ReadGame()
     n = okN and Num(n) or 0
     local ci = info[cid] or {}
     local pi = ci.parent and ci.parent ~= -1 and info[ci.parent]
-    local cat = { id = cid, key = "g:" .. tostring(cid), game = true, list = {}, done = 0,
-      name = ci.name or ("Category " .. tostring(cid)) }
+    local cat = { id = cid, key = "g:" .. tostring(cid), game = true, list = {}, done = 0, accountDone = 0,
+      name = ci.name or ("Category " .. tostring(cid)), parentId = (ci.parent and ci.parent ~= -1) and ci.parent or nil }
+    cat.short = cat.name
     if pi and pi.name then cat.name = pi.name .. ": " .. cat.name end
     for i = 1, n do
-      local okA, id, name, points, completed, month, day, year, desc, _, icon, reward, _, mine = pcall(GetAchievementInfo, cid, i)
+      local okA, id, name, points, completed, month, day, year, desc, _, icon, reward, _, byMe, earnedBy =
+        pcall(GetAchievementInfo, cid, i)
       id, name = okA and Num(id) or nil, okA and Str(name) or nil
       if id and name then
         if ACH.IsPlaceholder(name) then
           g.hidden = g.hidden + 1
         else
+          local acct = completed == true
+          if byMe ~= nil then g.byMeSeen = true end
           local a = { id = id, key = "g" .. id, game = true, name = name, desc = Str(desc) or "", points = Num(points) or 0,
-            completed = completed == true, mine = mine == true, reward = Str(reward),
+            accountDone = acct, mine = acct and byMe == true, reward = Str(reward),
             icon = (Num(icon) or Str(icon)), catKey = cat.key, catName = cat.name }
-          if a.completed then a.when = DateText(month, day, year) end
+          a.completed = a.mine                         -- earned by THIS character
+          a.other = acct and not a.mine                -- earned, but on another character of the account
+          if a.other then a.earnedBy = Str(earnedBy) end
+          if acct then a.accountWhen = DateText(month, day, year) end
+          if a.completed then a.when = a.accountWhen end
           a.legacy = LegacyPoints(id)
           cat.list[#cat.list + 1] = a
           g.byId[id] = a
           g.total = g.total + 1
           g.points = g.points + a.points
           if a.legacy then g.legacy = g.legacy + a.legacy end
+          if acct then
+            g.accountDone = g.accountDone + 1
+            cat.accountDone = cat.accountDone + 1
+            if a.legacy then g.legacyAccountDone = g.legacyAccountDone + a.legacy end
+          end
           if a.completed then
             g.done = g.done + 1
             cat.done = cat.done + 1
+            g.pointsDone = (g.pointsDone or 0) + a.points
             if a.legacy then g.legacyDone = g.legacyDone + a.legacy end
+          elseif a.other then
+            g.otherDone = g.otherDone + 1
           end
         end
       end
     end
     if #cat.list > 0 then g.cats[#g.cats + 1] = cat end
+  end
+  -- category tree from GetCategoryInfo's parent ids (Blizzard's Legacy UI nests e.g. Classes > Druid): top-level nodes
+  -- in list order, each with its own achievements (node.cat) and/or children; deeper levels fold into their top ancestor
+  local byCid = {}
+  for _, c in ipairs(g.cats) do byCid[c.id] = c end
+  local function Top(cid)
+    local seen = 0
+    while info[cid] and info[cid].parent and info[cid].parent ~= -1 and info[info[cid].parent] and seen < 10 do
+      cid = info[cid].parent seen = seen + 1
+    end
+    return cid
+  end
+  local nodes, order = {}, {}
+  for _, cid in ipairs(list) do
+    local top = Top(cid)
+    local n = nodes[top]
+    if not n then
+      n = { key = "n:" .. tostring(top), id = top, name = (info[top] and info[top].name) or ("Category " .. tostring(top)), children = {} }
+      nodes[top] = n
+      order[#order + 1] = n
+    end
+    local c = byCid[cid]
+    if c then
+      if cid == top then n.cat = c else n.children[#n.children + 1] = c end
+    end
+  end
+  g.tree = {}
+  for _, n in ipairs(order) do
+    if n.cat or #n.children > 0 then
+      n.done, n.total = 0, 0
+      if n.cat then n.done, n.total = n.cat.done, #n.cat.list end
+      for _, c in ipairs(n.children) do n.done, n.total = n.done + c.done, n.total + #c.list end
+      g.tree[#g.tree + 1] = n
+    end
   end
   g.full = g.total >= ACH.FULL_MIN and g.points > 0
   if type(GetNumCompletedAchievements) == "function" then
@@ -114,17 +172,35 @@ function ACH.ReadGame()
   return g
 end
 
--- criteria of a game achievement: { name, done, cur, need }
+local function PlayerName()
+  if not UnitName then return nil end
+  local ok, n = pcall(UnitName, "player")
+  return ok and Str(n) or nil
+end
+
+-- criteria of a game achievement, for THIS character: { name, done, cur, need, other }. A criterion completed by
+-- another character (charName set and not ours), or any completed criterion of an achievement another character
+-- earned, is not done here (other = true). Account-shared counters can't be split, so those read 0 here.
 function ACH.GameCriteria(id)
   local out = {}
+  local ga = ACH.ReadGame().byId[id]
+  local me = PlayerName()
   if type(GetAchievementNumCriteria) ~= "function" or type(GetAchievementCriteriaInfo) ~= "function" then return out end
   local okN, n = pcall(GetAchievementNumCriteria, id)
   n = okN and Num(n) or 0
   for i = 1, n do
-    local ok, text, _, done, qty, req, _, _, _, qtyText = pcall(GetAchievementCriteriaInfo, id, i)
+    local ok, text, _, done, qty, req, charName, _, _, qtyText = pcall(GetAchievementCriteriaInfo, id, i)
     if ok then
-      out[#out + 1] = { name = Str(text) or ("Criteria " .. i), done = done == true, cur = Num(qty) or 0,
+      local c = { name = Str(text) or ("Criteria " .. i), done = done == true, cur = Num(qty) or 0,
         need = Num(req) or 0, text = Str(qtyText) }
+      charName = Str(charName)
+      local byOther = (charName and charName ~= "" and me and charName ~= me) or (ga and ga.other and c.done)
+      if byOther and (c.done or c.cur > 0) then
+        c.other, c.done, c.cur, c.text = true, false, 0, nil
+        c.otherName = charName ~= "" and charName or (ga and ga.earnedBy) or nil
+      end
+      if ga and ga.completed then c.done = true end
+      out[#out + 1] = c
     end
   end
   return out
@@ -279,11 +355,27 @@ function ACH.BossIndex() BuildDefs() return bossIndex end
 function ACH._Reset() defs = nil gameCache = nil end
 
 -- per-character state: DarkMatterCharDB.ach
+function ACH.CharKey()
+  local n = PlayerName()
+  local r
+  if GetRealmName then local ok, v = pcall(GetRealmName) r = ok and Str(v) or nil end
+  return n and (n .. "-" .. (r or "?")) or nil
+end
+
+-- DarkMatterCharDB is SavedVariablesPerCharacter, so this table is already per character. owner records which
+-- character it belongs to. Any account-wide copy (DarkMatterDB.ach, never written by 0.4.x but guarded) moves to the
+-- first character that loads without its own data, and is then removed from the account DB.
 function ACH.DB()
   local c = NS.cdb
   if type(c) ~= "table" then return nil end
   local a = c.ach
+  local acct = NS.db and NS.db.ach
+  if type(acct) == "table" then
+    if type(a) ~= "table" then a = acct a.migrated = Stamp() c.ach = a end
+    NS.db.ach = nil
+  end
   if type(a) ~= "table" then a = { v = 1, since = Stamp() } c.ach = a end
+  if not a.owner then a.owner = ACH.CharKey() end
   if type(a.c) ~= "table" then a.c = {} end
   if type(a.s) ~= "table" then a.s = {} end
   for _, k in ipairs({ "zones", "inst", "raids", "bosses", "fishItems" }) do
@@ -459,13 +551,29 @@ function ACH.RecordBossKill(npc)
   local db = ACH.DB()
   if not (db and npc and ACH.BossIndex().byNpc[npc]) then return false end
   local t = Now()
-  if recentKill[npc] and t - recentKill[npc] < 60 then return false end -- ENCOUNTER_END + UNIT_DIED for one kill
+  if recentKill[npc] and t - recentKill[npc] < 60 then return false end -- ENCOUNTER_END + BOSS_KILL for one kill
   recentKill[npc] = t
   db.s.bosses[npc] = (Num(db.s.bosses[npc]) or 0) + 1
   Bump("bossKills")
   ACH.Check()
   return true
 end
+
+-- Boss corpse looted (Adventure Guide LOOT_OPENED, npc id from GetLootSourceInfo's GUID): counts the kill only when
+-- no ENCOUNTER_END / BOSS_KILL counted it in the last 10 minutes, once per corpse GUID.
+local lootedCorpse = {}
+function ACH.RecordBossLoot(npc, guid)
+  npc = Num(npc)
+  if not (npc and ACH.BossIndex().byNpc[npc]) then return false end
+  guid = Str(guid)
+  if guid then
+    if lootedCorpse[guid] then return false end
+    lootedCorpse[guid] = true
+  end
+  if recentKill[npc] and Now() - recentKill[npc] < 600 then return false end
+  return ACH.RecordBossKill(npc)
+end
+NS.OnBossLooted = ACH.RecordBossLoot -- called by AdventureGuide.lua's LOOT_OPENED handler
 
 function ACH.RecordBossName(name)
   local k = Norm(name)
@@ -558,10 +666,13 @@ local function InstanceType()
 end
 
 local ev
-local function SetCombatLog(on)
-  if not ev then return end
-  if on then pcall(ev.RegisterEvent, ev, "COMBAT_LOG_EVENT_UNFILTERED")
-  else pcall(ev.UnregisterEvent, ev, "COMBAT_LOG_EVENT_UNFILTERED") end
+-- Events the Forever 1.60.1 docs mark HasRestrictions = true. Registering or unregistering them from addon code is
+-- forbidden; we never pass them to a frame (enforced by SafeRegister and the stubtest).
+ACH.RESTRICTED_EVENTS = { COMBAT_LOG_EVENT_UNFILTERED = true, COMBAT_LOG_EVENT = true, MINIMAP_PING = true,
+  UNIT_PING_PIN_ADDED = true, UNIT_PING_PIN_REMOVED = true }
+local function SafeRegister(frame, e)
+  if ACH.RESTRICTED_EVENTS[e] then return false end
+  return pcall(frame.RegisterEvent, frame, e)
 end
 
 function ACH.OnZone()
@@ -569,7 +680,6 @@ function ACH.OnZone()
   if not db then return end
   local itype, iname = InstanceType()
   local inInst = itype == "party" or itype == "raid"
-  SetCombatLog(inInst)
   if inInst and iname then
     db.s.inst[iname] = true
     if itype == "raid" then db.s.raids[iname] = true end
@@ -598,22 +708,6 @@ function ACH.OnLevelUp(newLevel)
   ACH._level = nil
 end
 
-local NpcId = function(guid)
-  guid = Str(guid)
-  if not guid then return nil end
-  local kind, npc = guid:match("^(%a+)%-[^%-]*%-[^%-]*%-[^%-]*%-[^%-]*%-(%d+)")
-  if kind == "Creature" or kind == "Vehicle" then return tonumber(npc) end
-end
-ACH._NpcId = NpcId
-
-function ACH.OnCombatLog()
-  if type(CombatLogGetCurrentEventInfo) ~= "function" then return end
-  local ok, _, sub, _, _, _, _, _, destGUID = pcall(CombatLogGetCurrentEventInfo)
-  if not ok or (sub ~= "UNIT_DIED" and sub ~= "PARTY_KILL") then return end
-  local npc = NpcId(destGUID)
-  if npc and ACH.BossIndex().byNpc[npc] then ACH.RecordBossKill(npc) end
-end
-
 local started
 function ACH.OnEnterWorld()
   local db = ACH.DB()
@@ -632,12 +726,11 @@ function ACH.Start()
   started = true
   ev = CreateFrame("Frame")
   for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAYER_LEVEL_UP", "QUEST_TURNED_IN",
-    "PLAYER_MONEY", "CHAT_MSG_LOOT", "ENCOUNTER_END", "ACHIEVEMENT_EARNED", "CRITERIA_UPDATE" }) do
-    pcall(ev.RegisterEvent, ev, e)
+    "PLAYER_MONEY", "CHAT_MSG_LOOT", "ENCOUNTER_END", "BOSS_KILL", "ACHIEVEMENT_EARNED", "CRITERIA_UPDATE" }) do
+    SafeRegister(ev, e)
   end
-  ev:SetScript("OnEvent", function(_, event, a1, a2, _, _, a5)
-    if event == "COMBAT_LOG_EVENT_UNFILTERED" then pcall(ACH.OnCombatLog)
-    elseif event == "PLAYER_ENTERING_WORLD" then pcall(ACH.OnEnterWorld)
+  local function Handle(event, a1, a2, a5)
+    if event == "PLAYER_ENTERING_WORLD" then pcall(ACH.OnEnterWorld)
     elseif event == "ZONE_CHANGED_NEW_AREA" then pcall(ACH.OnZone)
     elseif event == "PLAYER_LEVEL_UP" then pcall(ACH.OnLevelUp, a1)
     elseif event == "QUEST_TURNED_IN" then pcall(ACH.OnQuestTurnedIn, a1)
@@ -645,10 +738,18 @@ function ACH.Start()
     elseif event == "CHAT_MSG_LOOT" then pcall(ACH.OnLootMessage, a1)
     elseif event == "ENCOUNTER_END" then
       if a5 == 1 or a5 == true then pcall(ACH.RecordBossName, a2) end
+    elseif event == "BOSS_KILL" then pcall(ACH.RecordBossName, a2)
     elseif event == "ACHIEVEMENT_EARNED" or event == "CRITERIA_UPDATE" then
       ACH.InvalidateGame()
       if ACH.onChange then pcall(ACH.onChange) end
     end
+  end
+  ev:SetScript("OnEvent", function(_, event, a1, a2, _, _, a5)
+    -- NS.ctx is named by /dm blocked if anything in here ever trips a restriction (blocked events are synchronous).
+    local prev = NS.ctx
+    NS.ctx = "ach:" .. tostring(event)
+    pcall(Handle, event, a1, a2, a5)
+    NS.ctx = prev
   end)
 end
 function ACH._Frame() return ev end
@@ -661,7 +762,9 @@ local function GameSampleLine(a)
   local nd = 0
   for _, c in ipairs(crit) do if c.done then nd = nd + 1 end end
   return string.format("  [%d] %s (%s): %s%s", a.id, a.name, a.catName or "?",
-    a.completed and ("complete" .. (a.when and (" " .. a.when) or "")) or "not complete",
+    a.completed and ("complete" .. (a.when and (" " .. a.when) or ""))
+      or (a.other and ("not yet on this character (earned on " .. (a.earnedBy or "another character")
+        .. (a.accountWhen and (" " .. a.accountWhen) or "") .. ")") or "not complete"),
     #crit > 0 and string.format(", criteria %d/%d", nd, #crit) or "")
 end
 
@@ -680,10 +783,15 @@ function ACH.ProbeReport()
   L("game API: " .. table.concat(fns, " ") .. "; C_Traits.GetTraitCurrencyForAchievement="
     .. ((C_Traits and type(C_Traits.GetTraitCurrencyForAchievement) == "function") and "yes" or "no"))
   if g.present then
-    L(string.format("game data: %d categories (%d with achievements), %d achievements, %d completed, %d points, %d Legacy Points (%d earned)%s%s",
-      g.catCount, #g.cats, g.total, g.done, g.points, g.legacy, g.legacyDone,
-      g.hidden > 0 and string.format(", %d placeholder rows skipped", g.hidden) or "",
-      g.apiTotal and string.format("; GetNumCompletedAchievements = %s/%s", tostring(g.apiDone), tostring(g.apiTotal)) or ""))
+    L(string.format("game data: %d categories (%d with achievements), %d achievements, %d points, %d Legacy Points%s",
+      g.catCount, #g.cats, g.total, g.points, g.legacy,
+      g.hidden > 0 and string.format(", %d placeholder rows skipped", g.hidden) or ""))
+    L(string.format("completed: %d account / %d this character (%s); Legacy Points earned: %d account / %d this character%s",
+      g.accountDone, g.done, ACH.CharKey() or "?", g.legacyAccountDone, g.legacyDone,
+      g.apiTotal and string.format("; GetNumCompletedAchievements = %s/%s (account)", tostring(g.apiDone), tostring(g.apiTotal)) or ""))
+    if not g.byMeSeen and g.accountDone > 0 then
+      L("  note: GetAchievementInfo returned no wasEarnedByMe, so nothing counts for this character")
+    end
     local n = 0
     for _, c in ipairs(g.cats) do
       for _, a in ipairs(c.list) do
@@ -694,8 +802,8 @@ function ACH.ProbeReport()
   if mode ~= "game" then
     local t = ACH.Totals()
     local db = ACH.DB()
-    L(string.format("Dark Matter: %d categories, %d achievements, %d earned, %d / %d points, tracking since %s",
-      #ACH.CATS, t.count, t.earned, t.pointsEarned, t.points, db and db.since or "?"))
+    L(string.format("Dark Matter (this character, %s): %d categories, %d achievements, %d earned, %d / %d points, tracking since %s",
+      db and db.owner or "?", #ACH.CATS, t.count, t.earned, t.pointsEarned, t.points, db and db.since or "?"))
     local n = 0
     for _, a in ipairs(BuildDefs()) do
       if n < 3 then

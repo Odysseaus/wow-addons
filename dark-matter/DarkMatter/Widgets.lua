@@ -326,6 +326,7 @@ function UI.Scroll(parent, w, h)
     sf:SetVerticalScroll(v)
   end
   function S:ScrollTo(v) self:ScrollBy(v - (sb:GetValue() or 0)) end
+  function S.GetScroll() return sb:GetValue() or 0 end
   sf:EnableMouseWheel(true)
   sf:SetScript("OnMouseWheel", function(_, delta) S:ScrollBy(-delta * S.step) end)
   f:EnableMouseWheel(true)

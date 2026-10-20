@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.4.0** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.4.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -90,12 +90,17 @@ Early notes on this beta say the client sometimes does not load saved variables 
 - `tools/stubtest/mock.py` runs the real addon code in a strict stub client (bad argument types raise like the game; every anchor, size, `SetTexCoord`, frame level and draw layer is modelled). It asserts that every texcoord is within 0..1 with left < right and top < bottom, that every drawn texture is anchored with a non-zero size and no larger than the window, that the window border is exactly 8 pieces spanning corner to corner, that content frames sit above the window art, and that the atlas table matches the real TGA sizes.
 - With `MODE=full DM_RENDER_DIR=out`, it also writes `layout-<tab>.json`; `tools/render_preview.py layout-quests.json DarkMatter out.png` composites the window from the same TGAs and texcoords the Lua uses, so the layout can be checked without the game.
 
-## Achievements (0.4.0)
+## Achievements (0.4.0, layout and per-character in 0.4.1)
 
-**Journals → Achievements** shows two groups in an Adventure-Guide-style category dropdown (gold headers, entries indented, closes on an outside click, Esc or window hide), a list (icon, points, earned date or progress, a progress bar each) and a detail pane with criteria. Filters: All / Earned / Not yet.
+**Journals → Achievements** (0.4.1 layout):
+- **Top:** a summary bar for this character: Dark Matter points and Legacy Points, each with a progress bar.
+- **Left:** search and a Filter button (All / Earned / Not yet) above a collapsible category tree. The game's categories are nested by parent (Classes > Druid), and Dark Matter has its own section with 6 categories. Search covers every category and shows match counts in the tree.
+- **Right:** cards with icon, name, description, points badge, earned date, and a progress bar while in progress. Unearned cards are muted. Click a card to expand its criteria in place.
+
+Everything counts for **the current character only**. A game achievement another character earned shows muted as "Not yet (earned on another character)". It is not counted as earned, and not in the counts, the badge or Legacy Points.
 
 - **Legacy Challenges (game data).** Forever 1.60.1 keeps the stock achievement API (`GetCategoryList`, `GetCategoryInfo`, `GetCategoryNumAchievements`, `GetAchievementInfo`, `GetAchievementNumCriteria`, `GetAchievementCriteriaInfo`, `ACHIEVEMENT_EARNED`, `CRITERIA_UPDATE`); Blizzard's own Forever UI (`Blizzard_LegacySystem`, wow-ui-source `forever` branch) reads Legacy Challenges through it. Those are 0-point achievements worth 1 Legacy Point each (`C_Traits.GetTraitCurrencyForAchievement(4225, id)`), account-wide. We read them only (no Blizzard UI is loaded) and show them only when the client returns data; "[DNT]"/placeholder rows are skipped.
-- **Dark Matter (our own set, 50 achievements, per character).** General (levels), Quests, Dungeons and Raids, Fishing, Exploration, Loot. Tracked from install on a private event frame (no hooks): `PLAYER_LEVEL_UP`, `QUEST_TURNED_IN`, `ENCOUNTER_END` and combat-log `UNIT_DIED` inside instances (matched to the npc ids in our Wowhead-Forever-cited `Data_Dungeons`), the Fishing module's catch log, your own `CHAT_MSG_LOOT` lines (the client's own format strings), zone/instance changes and `PLAYER_MONEY` gains. Saved in `DarkMatterCharDB.ach` (counters, earned dates, criteria). Nothing is awarded retroactively except your current level, which the game confirms; those show "at install". A small toast (our own frame) and a chat line announce each new one.
+- **Dark Matter (our own set, 50 achievements, per character).** General (levels), Quests, Dungeons and Raids, Fishing, Exploration, Loot. Tracked from install on a private event frame (no hooks): `PLAYER_LEVEL_UP`, `QUEST_TURNED_IN`, `ENCOUNTER_END` + `BOSS_KILL` (and, as a fallback, looting a boss corpse, matched to the npc ids in our Wowhead-Forever-cited `Data_Dungeons`; since 0.4.1 the restricted combat log is never touched), the Fishing module's catch log, your own `CHAT_MSG_LOOT` lines (the client's own format strings), zone/instance changes and `PLAYER_MONEY` gains. Saved in `DarkMatterCharDB.ach` (counters, earned dates, criteria). Nothing is awarded retroactively except your current level, which the game confirms; those show "at install". A small toast (our own frame) and a chat line announce each new one.
 - **Mode** (`/dm achprobe` prints it with the API counts, 3 game samples and the Dark Matter totals; saved to `DarkMatterDB.achprobe`): `game+dm` when the API has data but is thin (Forever's Legacy Challenges), `dm` when the client returns no achievement data, `game` when the API carries a full set (300+ achievements with points); ours is then off.
 
 ## Adventure Guide data (0.3.0 to 0.3.4)
@@ -118,8 +123,8 @@ All art is original: the minimap icon (`Media/dm-icon.tga`) was generated proced
 
 ## Files
 
-`DarkMatter.toc`, `Core.lua` (namespace, defaults, blocked-action logger), `Probe.lua`, `Theme.lua`, `Atlas_WoW.lua`, `Theme_WoW.lua`, `Widgets.lua`, `ProbeWindow.lua`, `Window.lua`, `Tab_Quests.lua`, `Data_Fishing.lua`, `Data_FishingCatches.lua`, `Fishing.lua`, `Data_Dungeons.lua`, `AdventureGuide.lua`, `Tab_Journals.lua`, `Tab_Stub.lua`, `Minimap.lua`, `Options.lua`, `Slash.lua`, `Media/*.tga`.
+`DarkMatter.toc`, `Core.lua` (namespace, defaults, blocked-action logger), `Probe.lua`, `Theme.lua`, `Atlas_WoW.lua`, `Theme_WoW.lua`, `Widgets.lua`, `ProbeWindow.lua`, `Window.lua`, `Tab_Quests.lua`, `Data_Fishing.lua`, `Data_FishingCatches.lua`, `Fishing.lua`, `Data_Dungeons.lua`, `AdventureGuide.lua`, `Achievements.lua`, `Journal_Achievements.lua`, `Tab_Journals.lua`, `Tab_Stub.lua`, `Minimap.lua`, `Options.lua`, `Slash.lua`, `Media/*.tga`.
 
 ### Blocked-action log (0.0.4)
 
-If the client ever reports "DarkMatter has been blocked from an action only available to the Blizzard UI", Dark Matter records the blocked function and the probe step that was running in `DarkMatterDB["blockedLog"]` (also shown as `DarkMatterDB["probe"]["blocked"]`). The probe summary ends with a `[BLOCKED]` line when something was logged, and `/dm blocked` lists the latest entries. Screenshot that line if it happens.
+If the client ever reports "DarkMatter has been blocked from an action only available to the Blizzard UI", Dark Matter records the blocked function and the probe step that was running in `DarkMatterDB["blockedLog"]` (also shown as `DarkMatterDB["probe"]["blocked"]`). The probe summary ends with a `[BLOCKED]` line when something was logged, and `/dm blocked` lists the latest entries. Since 0.4.1 it prints `last blocked function: <name>` first, then the time, combat state, the Dark Matter context (which handler was running) and up to 6 lines of Lua stack. `/dm blocked clear` empties it. Screenshot that output if it happens.

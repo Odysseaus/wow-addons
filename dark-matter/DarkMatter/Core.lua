@@ -1,11 +1,11 @@
--- Dark Matter 0.4.0 (P2: Journals > Achievements)
+-- Dark Matter 0.4.1 (P2: Journals > Achievements; no restricted events; richer /dm blocked)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.4.0"
+NS.version = "0.4.1"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -75,20 +75,75 @@ local function SafeStr(v)
   return tostring(v)
 end
 
+local function ArgStr(v)
+  if v == nil then return "nil" end
+  if v == "" then return "(empty)" end
+  return SafeStr(v)
+end
+
+-- Trimmed Lua stack at the moment of the block (the event is synchronous, so the offending addon caller is on it):
+-- drops this recorder's own frames, keeps the first 6 lines.
+local function StackLines()
+  if type(debugstack) ~= "function" then return nil end
+  local ok, st = pcall(debugstack, 3, 12, 0)
+  if not ok or type(st) ~= "string" then return nil end
+  local out = {}
+  for line in st:gmatch("[^\n]+") do
+    if not line:find("RecordBlocked", 1, true) and not line:find("[C]: in function `pcall'", 1, true) then
+      out[#out + 1] = (line:gsub("^Interface[/\\]AddOns[/\\]", ""))
+      if #out >= 6 then break end
+    end
+  end
+  return #out > 0 and table.concat(out, "\n") or nil
+end
+
 local function RecordBlocked(event, addon, func)
   local db = NS.db
   if not db then return end
   local log = db.blockedLog
   if type(log) ~= "table" then log = {} db.blockedLog = log end
+  local inCombat
+  if InCombatLockdown then local ok, c = pcall(InCombatLockdown) inCombat = ok and c and true or false end
+  local stack = StackLines()
   log[#log + 1] = {
     when = date("%Y-%m-%d %H:%M:%S"),
-    event = event,
-    addon = SafeStr(addon),
-    func = SafeStr(func),
+    event = SafeStr(event),
+    addon = ArgStr(addon),
+    func = ArgStr(func),
     step = NS.step and SafeStr(NS.step) or "none (not during a probe call)",
+    ctx = NS.ctx and SafeStr(NS.ctx) or "none",
+    combat = inCombat,
+    version = NS.version,
+    stack = stack,
   }
   while #log > 50 do table.remove(log, 1) end
   if type(db.probe) == "table" then db.probe.blocked = log end
+end
+
+-- Chat lines for /dm blocked: the latest entry first, in full (function, event, context, stack), then older ones.
+function NS.BlockedLines(maxOlder)
+  local log = NS.db and NS.db.blockedLog or {}
+  local lines = {}
+  lines[1] = #log .. " blocked action(s) logged" .. (#log > 0 and "." or " (none since the log was cleared).")
+  local e = log[#log]
+  if e then
+    lines[#lines + 1] = "last blocked function: " .. tostring(e.func) .. "  (" .. tostring(e.event or "?") .. ", addon "
+      .. tostring(e.addon) .. ")"
+    lines[#lines + 1] = "  at " .. tostring(e.when) .. (e.version and (" · v" .. tostring(e.version)) or "")
+      .. " · combat " .. (e.combat == nil and "?" or (e.combat and "yes" or "no"))
+      .. " · ctx " .. tostring(e.ctx or "n/a") .. " · step " .. tostring(e.step)
+    if e.stack then
+      for l in tostring(e.stack):gmatch("[^\n]+") do lines[#lines + 1] = "    " .. l end
+    else
+      lines[#lines + 1] = "    (no Lua stack: the call came from the client, not from addon code)"
+    end
+  end
+  for i = #log - 1, math.max(1, #log - (maxOlder or 4)), -1 do
+    local o = log[i]
+    lines[#lines + 1] = "  earlier: " .. tostring(o.when) .. " " .. tostring(o.func) .. " (" .. tostring(o.event or "?")
+      .. ", ctx " .. tostring(o.ctx or "n/a") .. ")"
+  end
+  return lines
 end
 
 local blockedFrame = CreateFrame("Frame")
