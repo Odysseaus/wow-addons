@@ -1,4 +1,4 @@
--- Adventure Guide data layer (0.3.2): our known-good list of every Classic + Forever dungeon and raid
+-- Adventure Guide data layer (0.3.4): our known-good list of every Classic + Forever dungeon and raid
 -- (Data_Dungeons.lua: validated on Wowhead WoW Forever) merged with the client's LFG data (read-only, by name or
 -- alias), plus account-wide loot learning.
 -- Taint-safe: read-only API calls (pcall), our own private event frame, no hooks, no Blizzard UI loads.
@@ -25,22 +25,74 @@ AG.Norm = Norm
 ---------------------------------------------------------------------------
 -- static seed index
 ---------------------------------------------------------------------------
+-- 0.3.4 loose key for small spelling variants the alias map does not list: doubled letters collapse and a
+-- plural "s" drops ("zulfarak" = "zulfarrak", "stockades" = "stockade"). Used only when the exact normalized
+-- name, the aliases and the parent names all miss, and only when exactly one of our entries has that loose key.
+local function Loose(k)
+  if not k then return nil end
+  local n
+  repeat k, n = k:gsub("(%a)%1", "%1") until n == 0 -- Lua patterns take no quantifier after %1, so loop
+  k = k:gsub("s$", "")
+  return k
+end
+AG.Loose = Loose
+
 local seedIdx
 local function SeedIndex()
   if seedIdx then return seedIdx end
-  seedIdx = { byName = {}, bossByNpc = {} }
+  -- byName: our name + aliases (Data_Dungeons.lua, from catalog.json) -> one entry. byParent: the LFG row that
+  -- lists several of our wings (d.parent, e.g. "Scarlet Monastery") -> those wings. byLoose: unique loose keys.
+  seedIdx = { byName = {}, byParent = {}, byLoose = {}, bossByNpc = {} }
+  local loose = {}
+  local function AddLoose(k, d)
+    local lk = Loose(k)
+    if not lk then return end
+    local cur = loose[lk]
+    if cur == nil then loose[lk] = d elseif cur ~= d then loose[lk] = false end -- false: ambiguous, never used
+  end
   for _, d in ipairs(NS.AdventureGuideSeed or {}) do
     local k = Norm(d.name)
-    if k then seedIdx.byName[k] = d end
+    if k then seedIdx.byName[k] = d AddLoose(k, d) end
     for _, a in ipairs(d.aliases or {}) do
       local ak = Norm(a)
       if ak and not seedIdx.byName[ak] then seedIdx.byName[ak] = d end
+      AddLoose(ak, d)
+    end
+    local pk = Norm(d.parent)
+    if pk then
+      local t = seedIdx.byParent[pk] or {}
+      t[#t + 1] = d
+      seedIdx.byParent[pk] = t
     end
     for _, b in ipairs(d.bosses or {}) do
       if b.npcId then seedIdx.bossByNpc[b.npcId] = { dungeon = d, boss = b } end
     end
   end
+  for lk, d in pairs(loose) do if d then seedIdx.byLoose[lk] = d end end
   return seedIdx
+end
+
+-- Our entries for an LFG name: list, how ("name" | "parent" | "loose"). Name/alias first, then a parent row
+-- (all its wings), then a unique loose match. nil when the name is not ours.
+local NOT_DUNGEON = {} -- Classic zones, capitals, battlegrounds (filled below)
+local function Match(idx, key)
+  if not key then return nil end
+  if NOT_DUNGEON and NOT_DUNGEON[key] and not idx.byName[key] then return nil end
+  local d = idx.byName[key]
+  if d then return { d }, "name" end
+  local p = idx.byParent[key]
+  if p then return p, "parent" end
+  if idx.byParent[Loose(key) or ""] then return idx.byParent[Loose(key)], "parent" end
+  d = idx.byLoose[Loose(key) or ""]
+  if d then return { d }, "loose" end
+  return nil
+end
+function AG.MatchName(name)
+  local l, how = Match(SeedIndex(), Norm(name))
+  if not l then return nil end
+  local names = {}
+  for i, d in ipairs(l) do names[i] = d.name end
+  return names, how
 end
 
 ---------------------------------------------------------------------------
@@ -78,7 +130,7 @@ local REJECT_TYPE = { [4] = "zone", [6] = "random" }   -- typeID
 local REJECT_SUBTYPE = { [4] = "scenario", [6] = "pvp" } -- subtypeID
 
 -- Classic zones, capitals and battlegrounds: never dungeons.
-local NOT_DUNGEON = {}
+-- (NOT_DUNGEON is declared above Match)
 for _, n in ipairs({
   "Alterac Mountains", "Arathi Highlands", "Ashenvale", "Ashenvale Forest", "Azshara", "Badlands", "Blasted Lands",
   "Burning Steppes", "Darkshore", "Darnassus", "Deadwind Pass", "Desolace", "Dun Morogh", "Durotar", "Duskwood",
@@ -138,7 +190,8 @@ end
 local function RejectReason(e, idx)
   if not e.key then return "noname" end
   if AG.IsPlaceholder(e.name) then return "placeholder" end
-  if idx.byName[e.key] then return nil end
+  local m, how = Match(idx, e.key)
+  if m and not (how == "loose" and NOT_DUNGEON[e.key]) then return nil end -- a loose match never beats the zone list
   if NOT_DUNGEON[e.key] then return "zone" end
   if e.name:lower():find("^random[%s%-]") then return "random" end -- random-queue rows
   if e.typeID and REJECT_TYPE[e.typeID] then return REJECT_TYPE[e.typeID] end
@@ -187,18 +240,32 @@ function AG.ScanReport()
   if type(DarkMatterDB) == "table" then
     DarkMatterDB.agscan = { at = date("%Y-%m-%d %H:%M:%S"), stats = stats, rows = out }
   end
-  local parts, noBoss, unlisted = {}, {}, {}
+  local parts, noBoss, unlisted, mapped, hit = {}, {}, {}, {}, {}
   for k, v in pairs(stats.rejected) do parts[#parts + 1] = k .. " " .. v end
   table.sort(parts)
   for _, r in ipairs(out) do
     if r.accepted and #(r.bosses or {}) == 0 then noBoss[#noBoss + 1] = r.name end
-    if r.accepted and not idx.byName[Norm(r.name)] then unlisted[#unlisted + 1] = r.name end
+    if r.accepted then
+      local l, how = Match(idx, Norm(r.name))
+      if l then
+        local names = {}
+        for i, d in ipairs(l) do hit[d] = true names[i] = d.name end
+        r.ours, r.matchedBy = names, how
+        if how ~= "name" or Norm(r.name) ~= Norm(l[1].name) then mapped[#mapped + 1] = r.name .. " -> " .. table.concat(names, " / ") end
+      else
+        unlisted[#unlisted + 1] = r.name
+      end
+    end
   end
+  -- ours only: our entries no LFG row maps to (informational; the dropdown lists them anyway)
+  local oursOnly = {}
+  for _, d in ipairs(NS.AdventureGuideSeed or {}) do if not hit[d] then oursOnly[#oursOnly + 1] = d.name end end
   if type(DarkMatterDB) == "table" and DarkMatterDB.agscan then
     DarkMatterDB.agscan.noBosses, DarkMatterDB.agscan.notInList = noBoss, unlisted
+    DarkMatterDB.agscan.mapped, DarkMatterDB.agscan.oursOnly = mapped, oursOnly
   end
-  local lines = { string.format("agscan: %d LFG names, %d dungeons/raids kept (%d match our list); rejected: %s", stats.named,
-    stats.accepted, stats.accepted - #unlisted, #parts > 0 and table.concat(parts, ", ") or "none") }
+  local lines = { string.format("agscan: %d LFG names, %d dungeons/raids kept (%d of %d match our list); rejected: %s", stats.named,
+    stats.accepted, stats.accepted - #unlisted, stats.accepted, #parts > 0 and table.concat(parts, ", ") or "none") }
   -- chat lines stay short: names in chunks
   local function Chunk(label, names)
     if #names == 0 then return end
@@ -210,8 +277,10 @@ function AG.ScanReport()
     end
     lines[#lines + 1] = cur
   end
-  Chunk("kept, no LFG bosses", noBoss)
   Chunk("kept, not in our list", unlisted)
+  Chunk("mapped by alias", mapped)
+  Chunk("kept, no LFG bosses (our boss lists are used)", noBoss)
+  Chunk("info: ours only, not in the LFG list", oursOnly)
   return table.concat(lines, "\n"), lines
 end
 
@@ -256,21 +325,32 @@ function AG.Dungeons()
     end
   end
   for _, e in ipairs(AG.ScanLFG()) do
-    local sd = idx.byName[e.key]
-    local d = sd and bySeed[sd]
-    if d then
-      d.lfg, d.source = true, "list+lfg"
-      d.lfgId = d.lfgId or e.lfgId
-      if (not d.recLevel) and e.recLevel and e.recLevel > 0 then d.recLevel = e.recLevel end
-      d.numEncounters = (d.numEncounters or 0) + (e.numEncounters or 0)
-      for _, bn in ipairs(e.bosses) do
-        local bk = Norm(bn) or ""
-        if not d._have[bk] then
-          d._have[bk] = true
-          d.bosses[#d.bosses + 1] = { name = bn, drops = {}, seeded = false, live = true }
+    local sds, how = Match(idx, e.key)
+    if sds then
+      -- a parent row (one LFG "Scarlet Monastery" for our four wings) marks every wing as live but gives none of
+      -- them its level or bosses (they belong to no single wing); our names, levels and bosses stay the source.
+      for _, sd in ipairs(sds) do
+        local d = bySeed[sd]
+        if d then
+          d.lfg, d.source = true, "list+lfg"
+          d.lfgId = d.lfgId or e.lfgId
+          d.lfgNames = d.lfgNames or {}
+          d.lfgNames[#d.lfgNames + 1] = e.name
+          if how ~= "parent" then
+            if (not d.recLevel) and e.recLevel and e.recLevel > 0 then d.recLevel = e.recLevel end
+            d.numEncounters = (d.numEncounters or 0) + (e.numEncounters or 0)
+            for _, bn in ipairs(e.bosses) do
+              local bk = Norm(bn) or ""
+              if not d._have[bk] then
+                d._have[bk] = true
+                d.bosses[#d.bosses + 1] = { name = bn, drops = {}, seeded = false, live = true }
+              end
+            end
+          end
         end
       end
     else
+      local d
       d = { name = e.name, key = e.key, lfgId = e.lfgId, source = "lfg", lfg = true, kind = Kind(e),
         minLevel = e.minLevel, maxLevel = e.maxLevel, recLevel = e.recLevel, size = e.maxPlayers,
         numEncounters = e.numEncounters, seeded = false, dropsSeeded = false, bosses = {}, _have = {} }

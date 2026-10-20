@@ -18,7 +18,7 @@ seed, picked = build(True)
 out = []
 for d in picked:
     out.append({'n': d['name'], 's': d['short'], 'z': d['zone'], 'lv': d['levels'], 'w': d['src'], 'k': d['kind'], 'sz': d['size'],
-                'f': 1 if d.get('forever') else 0, 'ds': 1 if d['drops'] else 0, 'al': d.get('aliases', []),
+                'f': 1 if d.get('forever') else 0, 'ds': 1 if d['drops'] else 0, 'al': d.get('aliases', []), 'pa': d.get('parent') or '',
                 'b': [{'n': b['name'], 'npc': b['npc'], 'r': 1 if b['rare'] else 0, 'p': 1 if b.get('pending') else 0,
                        'd': [{'id': it['id'], 'n': it['name'], 'q': it['fq'], 'p': it['pct'], 'g': glyph(it), 'sl': SLOTN.get(it.get('slot'), '')}
                              for it in b['drops']]} for b in d['bosses']]})

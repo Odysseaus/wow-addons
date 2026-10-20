@@ -1,5 +1,5 @@
 {
- "_comment": "Hand-authored known-good instance list (original entry). Names, level ranges, type and location come from Wowhead WoW Forever zone data (https://www.wowhead.com/forever/zone=<id>, via the Forever tooltip API) unless levelSrc says otherwise (wing ranges: warcraft.wiki.gg fallback). Boss order from warcraft.wiki.gg dungeon pages; every boss NPC ID is resolved and validated on Wowhead Forever by resolve_forever.py. 'drops': true = drops attributed from the Wowhead Classic NPC page (fallback), validated on Forever.",
+ "_comment": "Hand-authored known-good instance list (original entry). Names, level ranges, type and location come from Wowhead WoW Forever zone data (https://www.wowhead.com/forever/zone=<id>, via the Forever tooltip API) unless levelSrc says otherwise (wing ranges: warcraft.wiki.gg fallback). Boss order from warcraft.wiki.gg dungeon pages; every boss NPC ID is resolved and validated on Wowhead Forever by resolve_forever.py. 'drops': true = drops attributed from the Wowhead Classic NPC page (fallback), validated on Forever. aliases: LFG/client spellings (normalized match: case, punctuation, a leading \"The\"); parent: the LFG row that lists several of our wings (Scarlet Monastery).",
  "instances": [
   {
    "name": "Ragefire Chasm",
@@ -150,7 +150,8 @@
    "aliases": [
     "Stormwind Stockade",
     "Stockade",
-    "The Stockades"
+    "The Stockades",
+    "Stormwind Stockades"
    ],
    "bosses": [
     "Targorr the Dread",
@@ -283,7 +284,8 @@
      "Ironspine",
      "rare"
     ]
-   ]
+   ],
+   "parent": "Scarlet Monastery"
   },
   {
    "name": "Scarlet Monastery: Library",
@@ -300,7 +302,8 @@
    "bosses": [
     "Houndmaster Loksey",
     "Arcanist Doan"
-   ]
+   ],
+   "parent": "Scarlet Monastery"
   },
   {
    "name": "Scarlet Monastery: Armory",
@@ -316,7 +319,8 @@
    "drops": true,
    "bosses": [
     "Herod"
-   ]
+   ],
+   "parent": "Scarlet Monastery"
   },
   {
    "name": "Scarlet Monastery: Cathedral",
@@ -334,7 +338,8 @@
     "High Inquisitor Fairbanks",
     "Scarlet Commander Mograine",
     "High Inquisitor Whitemane"
-   ]
+   ],
+   "parent": "Scarlet Monastery"
   },
   {
    "name": "Razorfen Downs",
@@ -416,6 +421,9 @@
      "Zerillis",
      "rare"
     ]
+   ],
+   "aliases": [
+    "Zul'Farak"
    ]
   },
   {
@@ -704,6 +712,9 @@
    ],
    "levelSrc": "https://warcraft.wiki.gg/wiki/Onyxia%27s_Lair",
    "bosses": [
+    "Onyxia"
+   ],
+   "aliases": [
     "Onyxia"
    ]
   },

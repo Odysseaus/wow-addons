@@ -1864,6 +1864,11 @@ if MODE ~= "minimal" then
     [503] = { "Stratholme - Main Gate", 1, 1, 48, 58, 55, 48, 58, 0, 0, "", 1, 5, bosses = {} },
     [504] = { "Stratholme - Service Entrance", 1, 1, 48, 58, 55, 48, 58, 0, 0, "", 1, 5, bosses = {} },
     [505] = { "Ruins of Lordaeron", 1, 1, 15, 20, 17, 15, 20, 0, 0, "", 1, 5, bosses = { "Witherfang", "The Butcher" } },
+    -- 0.3.4: the real client's spellings (Odysseaus' /dm agscan on 0.3.3)
+    [506] = { "Stormwind Stockades", 1, 1, 22, 30, 24, 22, 30, 0, 0, "", 1, 5, bosses = {} },
+    [507] = { "Zul'Farak", 1, 1, 44, 54, 46, 44, 54, 0, 0, "", 1, 5, bosses = {} },
+    [508] = { "Onyxia", 2, 3, 60, 60, 60, 60, 60, 0, 0, "", 1, 40, bosses = {} },
+    [509] = { "Scarlet Monastery", 1, 1, 26, 45, 33, 26, 45, 0, 0, "", 1, 5, bosses = {} },
   }
   local sGI, sGN, sGE = GetLFGDungeonInfo, GetLFGDungeonNumEncounters, GetLFGDungeonEncounterInfo
   GetLFGDungeonInfo = function(id) local e = LFG[id] if e then return unpack(e, 1, 13) end end
@@ -1880,13 +1885,39 @@ if MODE ~= "minimal" then
   local rol, butcher = by["Ruins of Lordaeron"], nil
   for _, b in ipairs(rol.bosses) do if b.name == "The Butcher" then butcher = b end end
   check(#rol.bosses == 7 and butcher and butcher.live and not butcher.seeded, "live LFG boss added to a list entry (Ruins of Lordaeron: The Butcher)")
+  do
+  -- 0.3.4 alias map: LFG spellings -> our entries, our display names kept; "Scarlet Monastery" is the wings' parent
+  local function hasName(t, n) for _, v in ipairs(t or {}) do if v == n then return true end end return false end
+  check(hasName(by["The Stockade"].lfgNames, "Stormwind Stockades") and by["Zul'Farrak"].lfg and hasName(by["Zul'Farrak"].lfgNames, "Zul'Farak")
+    and by["Onyxia's Lair"].lfg and hasName(by["Onyxia's Lair"].lfgNames, "Onyxia") and by["Onyxia's Lair"].kind == "Raid"
+    and not by["Stormwind Stockades"] and not by["Zul'Farak"] and not by["Onyxia"] and not by["Scarlet Monastery"],
+    "alias map: 'Stormwind Stockades', 'Zul'Farak', 'Onyxia' merge into The Stockade, Zul'Farrak, Onyxia's Lair (our names kept)")
+  local smOk = true
+  for _, w in ipairs({ "Graveyard", "Library", "Armory", "Cathedral" }) do
+    local d = by["Scarlet Monastery: " .. w]
+    if not (d and d.lfg and hasName(d.lfgNames, "Scarlet Monastery")) then smOk = false end
+  end
+  check(smOk and by["Scarlet Monastery: Library"].recLevel == nil and by["Scarlet Monastery: Graveyard"].recLevel == 30 and #by["Scarlet Monastery: Library"].bosses == #DarkMatter.AdventureGuideSeed[(function() for i, d in ipairs(DarkMatter.AdventureGuideSeed) do if d.name == "Scarlet Monastery: Library" then return i end end end)()].bosses,
+    "parent row 'Scarlet Monastery' marks all four wings live; wings keep our levels and bosses (no shared LFG level)")
+  local function mn(n) local l, how = AGm.MatchName(n) return l and table.concat(l, "/") or "nil", how end
+  local m1 = mn("the stockades")
+  local m2, h2 = mn("ZUL FARAK")
+  local m3, h3 = mn("Zul'Farrakk")
+  local m4, h4 = mn("Blackfathom Deep")
+  local m5 = mn("Stormwind")
+  local m6, h6 = mn("Scarlet Monastery")
+  local m7 = mn("Ironforge")
+  check(m1 == "The Stockade" and m2 == "Zul'Farrak" and h2 == "name" and m3 == "Zul'Farrak" and h3 == "loose" and m4 == "Blackfathom Deeps" and h4 == "loose"
+    and m5 == "nil" and m7 == "nil" and h6 == "parent" and m6 == "Scarlet Monastery: Graveyard/Scarlet Monastery: Library/Scarlet Monastery: Armory/Scarlet Monastery: Cathedral",
+    "normalized matching: case, punctuation, a leading 'The', unique loose variants; zones never match (" .. table.concat({ m1, m2, m3, m4, m5, m6, m7 }, " | ") .. ")")
+  end
   local zoneLeak = {}
   for _, n in ipairs({ "Alterac Mountains", "Arathi Basin", "Ashenvale Forest", "Some Frontier", "Skirmish Field", "zzOld Deadmines", "SECRETNAME", "Random Classic Dungeon" }) do
     if by[n] then zoneLeak[#zoneLeak + 1] = n end
   end
   check(#zoneLeak == 0, "zones, battlegrounds, PvP, empty and placeholder LFG rows are not listed (" .. table.concat(zoneLeak, ",") .. ")")
   local st = AGm.ScanStats()
-  check(st.named == 19 and st.accepted == 12 and st.rejected.zone == 4 and st.rejected.pvp == 1 and st.rejected.random == 1 and st.rejected.nobosses == nil and st.rejected.placeholder == 1,
+  check(st.named == 23 and st.accepted == 16 and st.rejected.zone == 4 and st.rejected.pvp == 1 and st.rejected.random == 1 and st.rejected.nobosses == nil and st.rejected.placeholder == 1,
     string.format("scan stats (boss-less rows kept): %d named, %d kept, zone %s, pvp %s, random %s, nobosses %s, placeholder %s", st.named, st.accepted,
       tostring(st.rejected.zone), tostring(st.rejected.pvp), tostring(st.rejected.random), tostring(st.rejected.nobosses), tostring(st.rejected.placeholder)))
   local wc = by["Wailing Caverns"]
@@ -1898,13 +1929,57 @@ if MODE ~= "minimal" then
   for _, n in ipairs({ "Deviate Faerie Dragon", "Verdan the Everliving", "Mutanus the Devourer", "Phantom", "Gelihast" }) do if AGm.IsPlaceholder(n) then phOk = false end end
   check(phOk, "placeholder names matched, real boss names kept")
   local rep = AGm.ScanReport()
-  check(rep:find("19 LFG names, 12 dungeons/raids kept (11 match our list)", 1, true) and type(DarkMatterDB.agscan) == "table" and #DarkMatterDB.agscan.rows == 19, "/dm agscan: chat summary + DarkMatterDB.agscan rows (" .. rep:gsub("\n", " | ") .. ")")
+  check(rep:find("23 LFG names, 16 dungeons/raids kept (15 of 16 match our list)", 1, true) and type(DarkMatterDB.agscan) == "table" and #DarkMatterDB.agscan.rows == 23, "/dm agscan: chat summary + DarkMatterDB.agscan rows (" .. rep:gsub("\n", " | ") .. ")")
   local nbn = table.concat(DarkMatterDB.agscan.noBosses, ",")
-  check(rep:find("kept, no LFG bosses (6): ", 1, true) and nbn:find("Empty Hall", 1, true) and nbn:find("Stormwind Stockade", 1, true) and DarkMatterDB.agscan.notInList[1] == "Empty Hall" and #DarkMatterDB.agscan.notInList == 1,
+  check(rep:find("kept, no LFG bosses (our boss lists are used) (10): ", 1, true) and nbn:find("Empty Hall", 1, true) and nbn:find("Stormwind Stockade", 1, true) and DarkMatterDB.agscan.notInList[1] == "Empty Hall" and #DarkMatterDB.agscan.notInList == 1,
     "/dm agscan names the boss-less rows and the rows not in our list (" .. nbn .. ")")
   local zr
   for _, r in ipairs(DarkMatterDB.agscan.rows) do if r.name == "Alterac Mountains" then zr = r end end
   check(zr and zr.accepted == false and zr.reason == "zone", "agscan row records the reject reason")
+  do
+  local mp = table.concat(DarkMatterDB.agscan.mapped, "; ")
+  local oo = table.concat(DarkMatterDB.agscan.oursOnly, ", ")
+  check(mp:find("Onyxia -> Onyxia's Lair", 1, true) and mp:find("Scarlet Monastery -> Scarlet Monastery: Graveyard / Scarlet Monastery: Library / Scarlet Monastery: Armory / Scarlet Monastery: Cathedral", 1, true)
+    and mp:find("Zul'Farak -> Zul'Farrak", 1, true) and rep:find("mapped by alias (", 1, true), "/dm agscan lists the alias mappings (" .. mp .. ")")
+  check(rep:find("info: ours only, not in the LFG list (", 1, true) and oo:find("The Hall of Thanes", 1, true) and oo:find("Naxxramas", 1, true)
+    and not oo:find("The Stockade", 1, true) and not oo:find("Zul'Farrak", 1, true) and not oo:find("Scarlet Monastery", 1, true) and not oo:find("Ruins of Lordaeron", 1, true),
+    "/dm agscan: our entries the LFG list lacks are an info line, 'ours only' (" .. oo .. ")")
+  end
+  -- replay of the real client's 0.3.3 scan: 67 names = the 26 kept names + 41 zones -> 26 of 26 now match our list
+  do
+    local real = { "Wailing Caverns", "Scholomance", "Ragefire Chasm", "Deadmines", "Shadowfang Keep", "Blackfathom Deeps", "Stormwind Stockades",
+      "Gnomeregan", "Razorfen Kraul", "Scarlet Monastery", "Razorfen Downs", "Uldaman", "Zul'Farak", "Maraudon", "Sunken Temple", "Blackrock Depths",
+      "Lower Blackrock Spire", "Dire Maul - East", "Dire Maul - West", "Dire Maul - North", "Stratholme", "Zul'Gurub", "Upper Blackrock Spire",
+      "Onyxia", "Molten Core", "Blackwing Lair" }
+    local zones = { "Alterac Mountains", "Arathi Highlands", "Ashenvale", "Azshara", "Badlands", "Blasted Lands", "Burning Steppes", "Darkshore",
+      "Darnassus", "Deadwind Pass", "Desolace", "Dun Morogh", "Durotar", "Duskwood", "Dustwallow Marsh", "Eastern Plaguelands", "Elwynn Forest",
+      "Felwood", "Feralas", "Hillsbrad Foothills", "Ironforge", "Loch Modan", "Moonglade", "Mulgore", "Orgrimmar", "Redridge Mountains",
+      "Searing Gorge", "Silithus", "Silverpine Forest", "Stonetalon Mountains", "Stormwind City", "Stranglethorn Vale", "Swamp of Sorrows",
+      "Tanaris", "Teldrassil", "The Barrens", "The Hinterlands", "Thousand Needles", "Thunder Bluff", "Tirisfal Glades", "Undercity" }
+    local R = {}
+    for i, n in ipairs(real) do R[i] = { n, 1, 1, 15, 60, 30, 15, 60, 0, 0, "", 1, 5, bosses = {} } end
+    for i, n in ipairs(zones) do R[100 + i] = { n, 1, 1, 0, 0, 0, 0, 0, 0, 0, "", 1, 5, bosses = { "Zone Event" } } end
+    local gi, gn, ge = GetLFGDungeonInfo, GetLFGDungeonNumEncounters, GetLFGDungeonEncounterInfo
+    GetLFGDungeonInfo = function(id) local e = R[id] if e then return unpack(e, 1, 13) end end
+    GetLFGDungeonNumEncounters = function(id) local e = R[id] return e and #e.bosses or 0 end
+    GetLFGDungeonEncounterInfo = function(id, i) local e = R[id] return e and e.bosses[i], "tex", false end
+    AGm._ResetCaches()
+    local rr, rl = AGm.ScanReport()
+    local nl = 0
+    for _ in rr:gmatch("kept, not in our list") do nl = nl + 1 end
+    local oo2 = table.concat(DarkMatterDB.agscan.oursOnly, ", ")
+    check(rl[1] == "agscan: 67 LFG names, 26 dungeons/raids kept (26 of 26 match our list); rejected: zone 41" and nl == 0 and #DarkMatterDB.agscan.notInList == 0,
+      "real-client replay: " .. tostring(rl[1]))
+    check(#DarkMatterDB.agscan.oursOnly == 7 and oo2 == "The Hall of Thanes, Ruins of Lordaeron, Excavation Site: Wetlands, City of Dalaran, Ruins of Ahn'Qiraj, Temple of Ahn'Qiraj, Naxxramas",
+      "real-client replay: ours only = the 4 Forever instances + AQ20, AQ40, Naxx (" .. oo2 .. ")")
+    local L2 = AGm.Dungeons()
+    local nLive, extra = 0, 0
+    for _, d in ipairs(L2) do if d.lfg then nLive = nLive + 1 end if d.source == "lfg" then extra = extra + 1 end end
+    check(#L2 == 36 and extra == 0 and nLive == 29, "real-client replay: 36 entries, no duplicates, 29 of ours live (SM row marks 4 wings) (" .. #L2 .. ", " .. nLive .. ", " .. extra .. ")")
+    GetLFGDungeonInfo, GetLFGDungeonNumEncounters, GetLFGDungeonEncounterInfo = gi, gn, ge
+    AGm._ResetCaches()
+    AGm.ScanReport()
+  end
   check(by["Molten Core"].kind == "Raid" and by["Molten Core"].size == 40 and by["The Deadmines"].kind == "Dungeon" and by["The Deadmines"].recLevel == 20 and by["The Deadmines"].size == 5, "kind/size from our list, recommended level from LFG")
   check(#by["The Deadmines"].bosses == 9 and by["The Deadmines"].bosses[8].name == "Edwin VanCleef" and #by["The Deadmines"].bosses[8].drops == 4, "Deadmines: list boss order (9) with LFG names matched, VanCleef 4 drops")
   local sorted = true

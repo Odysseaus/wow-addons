@@ -20,6 +20,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Oggleflint",
@@ -60,6 +61,7 @@
    "size": 5,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Faldrim Anvilmar",
@@ -98,6 +100,7 @@
    "size": 5,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Witherfang",
@@ -144,6 +147,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Lady Anacondra",
@@ -205,6 +209,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Rhahk'Zor",
@@ -264,6 +269,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Rethilgore",
@@ -323,6 +329,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Ghamoo-ra",
@@ -376,11 +383,13 @@
    "aliases": [
     "Stormwind Stockade",
     "Stockade",
-    "The Stockades"
+    "The Stockades",
+    "Stormwind Stockades"
    ],
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Targorr the Dread",
@@ -430,6 +439,7 @@
    "size": 5,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Saltspine",
@@ -468,6 +478,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Grubbis",
@@ -517,6 +528,7 @@
    "size": 5,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Arcane Anomaly",
@@ -575,6 +587,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Roogug",
@@ -631,6 +644,7 @@
    "size": 5,
    "drops": true,
    "wing": "Graveyard",
+   "parent": "Scarlet Monastery",
    "bosses": [
     [
      "Interrogator Vishas",
@@ -676,6 +690,7 @@
    "size": 5,
    "drops": true,
    "wing": "Library",
+   "parent": "Scarlet Monastery",
    "bosses": [
     [
      "Houndmaster Loksey",
@@ -706,6 +721,7 @@
    "size": 5,
    "drops": true,
    "wing": "Armory",
+   "parent": "Scarlet Monastery",
    "bosses": [
     [
      "Herod",
@@ -732,6 +748,7 @@
    "size": 5,
    "drops": true,
    "wing": "Cathedral",
+   "parent": "Scarlet Monastery",
    "bosses": [
     [
      "High Inquisitor Fairbanks",
@@ -766,6 +783,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Tuten'kash",
@@ -814,6 +832,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Revelosh",
@@ -868,6 +887,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Noxxion",
@@ -923,10 +943,13 @@
    "src": "https://www.wowhead.com/forever/zone=1176",
    "levelSrc": "https://www.wowhead.com/forever/zone=1176",
    "bossSrc": null,
-   "aliases": [],
+   "aliases": [
+    "Zul'Farak"
+   ],
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Antu'sul",
@@ -994,6 +1017,7 @@
    "size": 5,
    "drops": true,
    "wing": "East",
+   "parent": null,
    "bosses": [
     [
      "Pusillin",
@@ -1041,6 +1065,7 @@
    "size": 5,
    "drops": true,
    "wing": "West",
+   "parent": null,
    "bosses": [
     [
      "Tendris Warpwood",
@@ -1088,6 +1113,7 @@
    "size": 5,
    "drops": true,
    "wing": "North",
+   "parent": null,
    "bosses": [
     [
      "Guard Mol'dar",
@@ -1141,6 +1167,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Atal'alarion",
@@ -1206,6 +1233,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Skul",
@@ -1287,6 +1315,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Lord Roccor",
@@ -1405,6 +1434,7 @@
    "size": 5,
    "drops": true,
    "wing": "Lower",
+   "parent": null,
    "bosses": [
     [
      "Spirestone Butcher",
@@ -1491,6 +1521,7 @@
    "size": 5,
    "drops": true,
    "wing": "Upper",
+   "parent": null,
    "bosses": [
     [
      "Pyroguard Emberseer",
@@ -1546,6 +1577,7 @@
    "size": 5,
    "drops": true,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Kirtonos the Herald",
@@ -1620,6 +1652,7 @@
    "size": 40,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Lucifron",
@@ -1678,10 +1711,13 @@
    "src": "https://www.wowhead.com/forever/zone=2159",
    "levelSrc": "https://warcraft.wiki.gg/wiki/Onyxia%27s_Lair",
    "bossSrc": null,
-   "aliases": [],
+   "aliases": [
+    "Onyxia"
+   ],
    "size": 40,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Onyxia",
@@ -1708,6 +1744,7 @@
    "size": 20,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "High Priestess Jeklik",
@@ -1782,6 +1819,7 @@
    "size": 40,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Razorgore the Untamed",
@@ -1836,6 +1874,7 @@
    "size": 20,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Kurinnaxx",
@@ -1885,6 +1924,7 @@
    "size": 40,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "The Prophet Skeram",
@@ -1943,6 +1983,7 @@
    "size": 40,
    "drops": false,
    "wing": null,
+   "parent": null,
    "bosses": [
     [
      "Anub'Rekhan",

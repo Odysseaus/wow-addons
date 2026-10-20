@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.4 (P3.0, LFG alias map)
+- **Every kept LFG row now maps to our list.** Odysseaus' in-game `/dm agscan` on 0.3.3 said "67 LFG names, 26 dungeons/raids kept (22 match our list); rejected: zone 41". The 4 unmatched were the client's spellings "Stormwind Stockades", "Zul'Farak", "Onyxia" and one "Scarlet Monastery" row.
+  - The alias map lives in our data (`tools/dungeons/catalog.json` -> `Data_Dungeons.lua`): "Stormwind Stockades" -> The Stockade, "Zul'Farak" -> Zul'Farrak, "Onyxia" -> Onyxia's Lair.
+  - New `parent = "Scarlet Monastery"` on the four SM wings: the single LFG row marks all four live, and the wings stay separate in the dropdown with our names, levels and bosses. A parent row gives the wings no shared LFG level or boss names.
+  - Our display names are kept, and our bosses and drops stay the source: Forever's LFG API reports no bosses for any of the 26.
+- **Normalized matching** (case, punctuation, a leading "The") applies to names, aliases and parent names. A loose fallback catches small variants the map doesn't list: doubled letters collapse and a plural "s" drops ("Zul'Farrakk", "Blackfathom Deep"). It is used only when exactly one of our entries has that loose key, and never for a known zone, capital or battleground.
+- **`/dm agscan`:** the summary now reads "N dungeons/raids kept (M of N match our list)". A replay of the real-client scan in the stubtests gives "67 LFG names, 26 dungeons/raids kept (26 of 26 match our list); rejected: zone 41". New lines:
+  - "mapped by alias (N): LFG name -> our entry".
+  - "info: ours only, not in the LFG list (N): ..." for our entries the LFG list lacks; in the replay these are Hall of Thanes, Ruins of Lordaeron, Excavation Site: Wetlands, City of Dalaran, AQ20, AQ40 and Naxxramas. This is informational, not an error.
+  - The boss-less line now says our boss lists are used.
+  - `DarkMatterDB.agscan.mapped` / `.oursOnly` are saved, and each kept row records `ours` and `matchedBy`.
+- Stubtests: the alias merges, the SM parent, `AG.MatchName` cases, the agscan mapped/ours-only lines and a replay of the real-client scan (26 of 26, 7 ours-only, 36 entries, no duplicates). Previewer DM-31 mirrors the alias map.
+
 ## 0.3.3 (P3.0, dropdown polish)
 - **Indented dropdown:** every dungeon/raid entry sits 12px in from its group header. The "Dungeons" / "Raids" headers stay flush left in the gold header colour and are not clickable (mouse off, no highlight; the click handler also ignores them). Entry rows give the level column 40px and measure the name. A name that doesn't fit the indented row uses the existing compact form, which today is only the three long Scarlet Monastery wings: "SM: Graveyard", "SM: Library", "SM: Cathedral". The full name stays in the header under the bar.
 - **Open dropdown closes on any outside click, on Esc and when the window hides; the button still toggles it.** Stock frames only, no hooks:

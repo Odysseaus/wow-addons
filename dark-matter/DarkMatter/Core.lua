@@ -1,11 +1,11 @@
--- Dark Matter 0.3.3 (P3.0: Adventure Guide v1.3)
+-- Dark Matter 0.3.4 (P3.0: Adventure Guide v1.4)
 -- Namespace, SavedVariables defaults, event wiring. Stock Blizzard controls only;
 -- no secure frames, no hooks on Blizzard code, nothing that can taint.
 local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.3.3"
+NS.version = "0.3.4"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)

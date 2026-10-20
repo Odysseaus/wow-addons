@@ -89,6 +89,7 @@ def main():
     for d in picked:
         extra = ""
         if d.get("aliases"): extra += " aliases = { %s }," % ", ".join(lua(a) for a in d["aliases"])
+        if d.get("parent"): extra += " parent = %s," % lua(d["parent"])  # LFG lists the wings under one parent row
         if d.get("forever"): extra += " forever = true,"
         if d.get("bossSrc"): extra += " bossSrc = %s," % lua(d["bossSrc"])
         L.append("  { name = %s, short = %s, kind = %s, size = %d, zone = %s, levels = { %d, %d }, dropsSeeded = %s,%s src = %s, levelSrc = %s, bosses = {" % (

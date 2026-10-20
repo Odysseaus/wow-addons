@@ -198,7 +198,7 @@ NS.AdventureGuideSeed = {
       { itemId = 6909, name = "Strike of the Hydra", quality = 3, icon = "Interface\\Icons\\inv_sword_42", pct = 19.9, src = "https://www.wowhead.com/forever/item=6909" },
     } },
   } },
-  { name = "The Stockade", short = "Stocks", kind = "Dungeon", size = 5, zone = "Stormwind City", levels = { 22, 32 }, dropsSeeded = true, aliases = { "Stormwind Stockade", "Stockade", "The Stockades" }, src = "https://www.wowhead.com/forever/zone=717", levelSrc = "https://www.wowhead.com/forever/zone=717", bosses = {
+  { name = "The Stockade", short = "Stocks", kind = "Dungeon", size = 5, zone = "Stormwind City", levels = { 22, 32 }, dropsSeeded = true, aliases = { "Stormwind Stockade", "Stockade", "The Stockades", "Stormwind Stockades" }, src = "https://www.wowhead.com/forever/zone=717", levelSrc = "https://www.wowhead.com/forever/zone=717", bosses = {
     { name = "Targorr the Dread", npcId = 1696, src = "https://www.wowhead.com/forever/npc=1696", dropSrc = "https://www.wowhead.com/classic/npc=1696", drops = {
     } },
     { name = "Kam Deepfury", npcId = 1666, src = "https://www.wowhead.com/forever/npc=1666", dropSrc = "https://www.wowhead.com/classic/npc=1666", drops = {
@@ -320,7 +320,7 @@ NS.AdventureGuideSeed = {
       { itemId = 14405, name = "Resilient Robe", quality = 2, icon = "Interface\\Icons\\inv_chest_cloth_40", pct = 3.2, src = "https://www.wowhead.com/forever/item=14405" },
     } },
   } },
-  { name = "Scarlet Monastery: Graveyard", short = "SM GY", kind = "Dungeon", size = 5, zone = "Tirisfal Glades", levels = { 26, 36 }, dropsSeeded = true, src = "https://www.wowhead.com/forever/zone=796", levelSrc = "https://warcraft.wiki.gg/wiki/Scarlet_Monastery", bosses = {
+  { name = "Scarlet Monastery: Graveyard", short = "SM GY", kind = "Dungeon", size = 5, zone = "Tirisfal Glades", levels = { 26, 36 }, dropsSeeded = true, parent = "Scarlet Monastery", src = "https://www.wowhead.com/forever/zone=796", levelSrc = "https://warcraft.wiki.gg/wiki/Scarlet_Monastery", bosses = {
     { name = "Interrogator Vishas", npcId = 3983, src = "https://www.wowhead.com/forever/npc=3983", dropSrc = "https://www.wowhead.com/classic/npc=3983", drops = {
       { itemId = 7682, name = "Torturing Poker", quality = 3, icon = "Interface\\Icons\\inv_spear_01", pct = 6.5, src = "https://www.wowhead.com/forever/item=7682" },
     } },
@@ -344,7 +344,7 @@ NS.AdventureGuideSeed = {
       { itemId = 7687, name = "Ironspine's Fist", quality = 3, icon = "Interface\\Icons\\inv_hammer_19", pct = 20.1, src = "https://www.wowhead.com/forever/item=7687" },
     } },
   } },
-  { name = "Scarlet Monastery: Library", short = "SM Lib", kind = "Dungeon", size = 5, zone = "Tirisfal Glades", levels = { 29, 39 }, dropsSeeded = true, src = "https://www.wowhead.com/forever/zone=796", levelSrc = "https://warcraft.wiki.gg/wiki/Scarlet_Monastery", bosses = {
+  { name = "Scarlet Monastery: Library", short = "SM Lib", kind = "Dungeon", size = 5, zone = "Tirisfal Glades", levels = { 29, 39 }, dropsSeeded = true, parent = "Scarlet Monastery", src = "https://www.wowhead.com/forever/zone=796", levelSrc = "https://warcraft.wiki.gg/wiki/Scarlet_Monastery", bosses = {
     { name = "Houndmaster Loksey", npcId = 3974, src = "https://www.wowhead.com/forever/npc=3974", dropSrc = "https://www.wowhead.com/classic/npc=3974", drops = {
       { itemId = 7710, name = "Loksey's Training Stick", quality = 3, icon = "Interface\\Icons\\inv_staff_18", pct = 14.3, src = "https://www.wowhead.com/forever/item=7710" },
       { itemId = 7756, name = "Dog Training Gloves", quality = 3, icon = "Interface\\Icons\\inv_gauntlets_07", pct = 56.0, src = "https://www.wowhead.com/forever/item=7756" },
@@ -357,7 +357,7 @@ NS.AdventureGuideSeed = {
       { itemId = 7711, name = "Robe of Doan", quality = 2, icon = "Interface\\Icons\\inv_chest_cloth_25", pct = 46.4, src = "https://www.wowhead.com/forever/item=7711" },
     } },
   } },
-  { name = "Scarlet Monastery: Armory", short = "SM Arm", kind = "Dungeon", size = 5, zone = "Tirisfal Glades", levels = { 32, 42 }, dropsSeeded = true, src = "https://www.wowhead.com/forever/zone=796", levelSrc = "https://warcraft.wiki.gg/wiki/Scarlet_Monastery", bosses = {
+  { name = "Scarlet Monastery: Armory", short = "SM Arm", kind = "Dungeon", size = 5, zone = "Tirisfal Glades", levels = { 32, 42 }, dropsSeeded = true, parent = "Scarlet Monastery", src = "https://www.wowhead.com/forever/zone=796", levelSrc = "https://warcraft.wiki.gg/wiki/Scarlet_Monastery", bosses = {
     { name = "Herod", npcId = 3975, src = "https://www.wowhead.com/forever/npc=3975", dropSrc = "https://www.wowhead.com/classic/npc=3975", drops = {
       { itemId = 7718, name = "Herod's Shoulder", quality = 3, icon = "Interface\\Icons\\inv_shoulder_01", pct = 33.5, src = "https://www.wowhead.com/forever/item=7718" },
       { itemId = 7719, name = "Raging Berserker's Helm", quality = 3, icon = "Interface\\Icons\\inv_helmet_25", pct = 32.9, src = "https://www.wowhead.com/forever/item=7719" },
@@ -365,7 +365,7 @@ NS.AdventureGuideSeed = {
       { itemId = 7717, name = "Ravager", quality = 3, icon = "Interface\\Icons\\inv_weapon_halberd_05", pct = 14.0, src = "https://www.wowhead.com/forever/item=7717" },
     } },
   } },
-  { name = "Scarlet Monastery: Cathedral", short = "SM Cath", kind = "Dungeon", size = 5, zone = "Tirisfal Glades", levels = { 35, 45 }, dropsSeeded = true, src = "https://www.wowhead.com/forever/zone=796", levelSrc = "https://warcraft.wiki.gg/wiki/Scarlet_Monastery", bosses = {
+  { name = "Scarlet Monastery: Cathedral", short = "SM Cath", kind = "Dungeon", size = 5, zone = "Tirisfal Glades", levels = { 35, 45 }, dropsSeeded = true, parent = "Scarlet Monastery", src = "https://www.wowhead.com/forever/zone=796", levelSrc = "https://warcraft.wiki.gg/wiki/Scarlet_Monastery", bosses = {
     { name = "High Inquisitor Fairbanks", npcId = 4542, src = "https://www.wowhead.com/forever/npc=4542", dropSrc = "https://www.wowhead.com/classic/npc=4542", drops = {
       { itemId = 19507, name = "Inquisitor's Shawl", quality = 3, icon = "Interface\\Icons\\inv_shoulder_27", pct = 33.8, src = "https://www.wowhead.com/forever/item=19507" },
       { itemId = 19508, name = "Branded Leather Bracers", quality = 3, icon = "Interface\\Icons\\inv_bracer_11", pct = 32.4, src = "https://www.wowhead.com/forever/item=19508" },
@@ -519,7 +519,7 @@ NS.AdventureGuideSeed = {
       { itemId = 17766, name = "Princess Theradras' Scepter", quality = 3, icon = "Interface\\Icons\\inv_hammer_10", pct = 19.5, src = "https://www.wowhead.com/forever/item=17766" },
     } },
   } },
-  { name = "Zul'Farrak", short = "ZF", kind = "Dungeon", size = 5, zone = "Tanaris", levels = { 46, 56 }, dropsSeeded = true, src = "https://www.wowhead.com/forever/zone=1176", levelSrc = "https://www.wowhead.com/forever/zone=1176", bosses = {
+  { name = "Zul'Farrak", short = "ZF", kind = "Dungeon", size = 5, zone = "Tanaris", levels = { 46, 56 }, dropsSeeded = true, aliases = { "Zul'Farak" }, src = "https://www.wowhead.com/forever/zone=1176", levelSrc = "https://www.wowhead.com/forever/zone=1176", bosses = {
     { name = "Antu'sul", npcId = 8127, src = "https://www.wowhead.com/forever/npc=8127", dropSrc = "https://www.wowhead.com/classic/npc=8127", drops = {
       { itemId = 9640, name = "Vice Grips", quality = 3, icon = "Interface\\Icons\\inv_gauntlets_26", pct = 31.8, src = "https://www.wowhead.com/forever/item=9640" },
       { itemId = 9639, name = "The Hand of Antu'sul", quality = 3, icon = "Interface\\Icons\\inv_mace_11", pct = 17.8, src = "https://www.wowhead.com/forever/item=9639" },
@@ -975,7 +975,7 @@ NS.AdventureGuideSeed = {
     { name = "Majordomo Executus", npcId = 12018, src = "https://www.wowhead.com/forever/npc=12018", drops = {} },
     { name = "Ragnaros", npcId = 11502, src = "https://www.wowhead.com/forever/npc=11502", drops = {} },
   } },
-  { name = "Onyxia's Lair", short = "Ony", kind = "Raid", size = 40, zone = "Dustwallow Marsh", levels = { 60, 60 }, dropsSeeded = false, src = "https://www.wowhead.com/forever/zone=2159", levelSrc = "https://warcraft.wiki.gg/wiki/Onyxia%27s_Lair", bosses = {
+  { name = "Onyxia's Lair", short = "Ony", kind = "Raid", size = 40, zone = "Dustwallow Marsh", levels = { 60, 60 }, dropsSeeded = false, aliases = { "Onyxia" }, src = "https://www.wowhead.com/forever/zone=2159", levelSrc = "https://warcraft.wiki.gg/wiki/Onyxia%27s_Lair", bosses = {
     { name = "Onyxia", npcId = 10184, src = "https://www.wowhead.com/forever/npc=10184", drops = {} },
   } },
   { name = "Zul'Gurub", short = "ZG", kind = "Raid", size = 20, zone = "Stranglethorn Vale", levels = { 60, 60 }, dropsSeeded = false, src = "https://www.wowhead.com/forever/zone=1977", levelSrc = "https://www.wowhead.com/forever/zone=1977", bosses = {

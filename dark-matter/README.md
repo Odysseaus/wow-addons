@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.3.3** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.3.4** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -90,7 +90,9 @@ Early notes on this beta say the client sometimes does not load saved variables 
 - `tools/stubtest/mock.py` runs the real addon code in a strict stub client (bad argument types raise like the game; every anchor, size, `SetTexCoord`, frame level and draw layer is modelled). It asserts that every texcoord is within 0..1 with left < right and top < bottom, that every drawn texture is anchored with a non-zero size and no larger than the window, that the window border is exactly 8 pieces spanning corner to corner, that content frames sit above the window art, and that the atlas table matches the real TGA sizes.
 - With `MODE=full DM_RENDER_DIR=out`, it also writes `layout-<tab>.json`; `tools/render_preview.py layout-quests.json DarkMatter out.png` composites the window from the same TGAs and texcoords the Lua uses, so the layout can be checked without the game.
 
-## Adventure Guide data (0.3.0 to 0.3.3)
+## Adventure Guide data (0.3.0 to 0.3.4)
+
+0.3.4: an alias map in our data maps the client's LFG names to our entries ("Stormwind Stockades" -> The Stockade, "Zul'Farak" -> Zul'Farrak, "Onyxia" -> Onyxia's Lair). "Scarlet Monastery" is the parent of the four SM wings, which stay separate in the dropdown. Matching is normalized (case, punctuation, a leading "The") with a unique loose fallback for small variants. `/dm agscan` reports "M of N match our list", the alias mappings, and an informational "ours only" line for our entries the LFG list lacks.
 
 0.3.3: dropdown entries are indented 12px under flush-left gold "Dungeons" / "Raids" headers, which are not clickable. The open dropdown closes on any click outside it, on Esc and when the window hides, and the button still toggles it. This uses our own full-screen catcher frame plus `GLOBAL_MOUSE_DOWN` on a private frame, with Esc through `UISpecialFrames`, and no hooks.
 

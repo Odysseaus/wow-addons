@@ -1,5 +1,5 @@
 -- Journals tab: Fishing panel with waters list + catch statistics (per-character).
--- Adventure Guide (0.3.3): dungeon dropdown, LFG dungeons/raids only + our Forever-validated drop seed + loot learning. Achievements: placeholder.
+-- Adventure Guide (0.3.4): dungeon dropdown, LFG dungeons/raids only + our Forever-validated drop seed + loot learning. Achievements: placeholder.
 local _, NS = ...
 local UI = NS.UI
 

@@ -70,7 +70,7 @@ def main():
              "src": "https://www.wowhead.com/forever/zone=%d" % ins["zoneId"],
              "levelSrc": ins.get("levelSrc") or "https://www.wowhead.com/forever/zone=%d" % ins["zoneId"],
              "bossSrc": ins.get("bossSrc"), "aliases": ins.get("aliases", []), "size": ins.get("size", 5),
-             "drops": bool(ins.get("drops")), "wing": ins.get("wing"), "bosses": []}
+             "drops": bool(ins.get("drops")), "wing": ins.get("wing"), "parent": ins.get("parent"), "bosses": []}
         for b in ins["bosses"]:
             name, rare = (b[0], True) if isinstance(b, list) else (b, False)
             hits = search(cache, name)
