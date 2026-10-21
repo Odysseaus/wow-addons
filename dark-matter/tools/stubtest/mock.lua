@@ -3482,6 +3482,95 @@ if MODE ~= "minimal" then
   NS.ShowTab("journals")
 end
 
+-- ===== 0.4.7 /dm mapprobe: read-only, short numbered lines, SavedVariables copy =====
+do
+  local saveMap, saveEnum, saveSuper, saveNav, saveWMF = C_Map, Enum, C_SuperTrack, C_Navigation, WorldMapFrame
+  local saveQOM = C_QuestLog and C_QuestLog.GetQuestsOnMap
+  local saveUMT = type(Enum) == "table" and Enum.UIMapType or nil
+  local WRITES = {}
+  local function spy(n) return function() WRITES[#WRITES + 1] = n end end
+  local MAPS = {
+    [1426] = { mapID = 1426, name = "Dun Morogh", mapType = 3, parentMapID = 1415 },
+    [1415] = { mapID = 1415, name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+    [1414] = { mapID = 1414, name = "Kalimdor", mapType = 2, parentMapID = 947 },
+    [947] = { mapID = 947, name = "Azeroth", mapType = 1, parentMapID = 0 },
+  }
+  Enum = Enum or {}
+  Enum.UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, Dungeon = 4, Micro = 5, Orphan = 6 }
+  local here = 1426
+  C_Map = {
+    GetBestMapForUnit = function() return here end,
+    GetPlayerMapPosition = function(id) if id == 1426 then return { x = 0.483, y = 0.524, GetXY = function(s) return s.x, s.y end } end end,
+    GetMapInfo = function(id) return MAPS[id] end,
+    GetMapChildrenInfo = function(id, t)
+      if id == 947 then return { MAPS[1414], MAPS[1415] } end
+      if id == 1415 then local r = {} for i = 1, 21 do r[i] = { mapID = 2000 + i, mapType = 3 } end return r end
+      if id == 1414 then local r = {} for i = 1, 20 do r[i] = { mapID = 3000 + i, mapType = 3 } end return r end
+      return {}
+    end,
+    GetMapArtLayers = function(id) return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256, minScale = 1, maxScale = 1 } } end,
+    GetMapArtLayerTextures = function(id, l) local r = {} for i = 1, 12 do r[i] = 100000 + i end return r end,
+    GetMapRectOnMap = function(a, b) if a == 1426 then return 0.39, 0.51, 0.62, 0.70 end return 0.55, 0.95, 0.10, 0.90 end,
+    GetWorldPosFromMapPos = function(id, v) return 0, { x = v.x * 4925, y = v.y * 3283 } end,
+    GetMapLevels = function(id) if id == 1426 then return 1, 10, 0, 0 end end,
+    CanSetUserWaypointOnMap = function() return true end,
+    HasUserWaypoint = function() return false end,
+    SetUserWaypoint = spy("SetUserWaypoint"), ClearUserWaypoint = spy("ClearUserWaypoint"),
+  }
+  C_SuperTrack = { SetSuperTrackedUserWaypoint = spy("SetSuperTrackedUserWaypoint") }
+  C_Navigation = nil
+  local saveCQ = C_QuestLog
+  C_QuestLog = C_QuestLog or {}
+  C_QuestLog.GetQuestsOnMap = function() return { {}, {}, {} } end
+  WorldMapFrame = { ScrollContainer = {}, Show = spy("WorldMapFrame:Show"), SetMapID = spy("WorldMapFrame:SetMapID") }
+  DarkMatterDB.mapprobe = nil
+  local nlog = #log
+  SlashCmdList.DARKMATTER("mapprobe")
+  local mp = DarkMatterDB.mapprobe
+  check(type(mp) == "table" and mp.last and #mp.runs == 1 and mp.last.version == "0.4.7", "0.4.7 mapprobe: results saved to DarkMatterDB.mapprobe (last + runs)")
+  local L = mp.last.lines
+  local all = table.concat(L, "\n")
+  local function has(s) return all:find(s, 1, true) ~= nil end
+  local longest = 0
+  for _, l in ipairs(L) do longest = math.max(longest, #l) end
+  check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
+  check(L[1] == "mapprobe 0.4.7 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
+  check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
+  check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
+  check(has("map 5: art here: 1 layer(s); 4x3 tiles of 256, 12 textures, 1002x668 px") and has("map 5: art continent: ") and has("map 5: art world: ") and has("map 5: explored overlays here: n/a"), "0.4.7 mapprobe: art layers per level")
+  check(has("map 6: rect here on continent: x 0.39-0.51, y 0.62-0.70") and has("map 6: rect continent on world: x 0.55-0.95"), "0.4.7 mapprobe: map rects (stitching)")
+  check(has("map 7: world pos: yes (instance 0); this map is 4925 x 3283 yd"), "0.4.7 mapprobe: world position + map size in yards")
+  check(has("map 8: levels: 1-10"), "0.4.7 mapprobe: level range")
+  check(has("map 9: waypoint API yes; allowed here yes; one set now no") and has("map 9: super-track yes; navigation no"), "0.4.7 mapprobe: waypoint / minimap pointing support")
+  check(has("map 10: quests on this map: 3 (GetQuestsOnMap)"), "0.4.7 mapprobe: quest markers")
+  check(has("map 11: drawing: CreateLine ") and has("map 12: share: addon messages ") and has("map 13: map addons loaded: ") and has("map 14: WorldMapFrame yes; ScrollContainer yes"), "0.4.7 mapprobe: drawing, share, other map addons, game map window")
+  check(#WRITES == 0, "0.4.7 mapprobe: read-only (never set/cleared a waypoint or touched the game map: " .. table.concat(WRITES, ", ") .. ")")
+  local printed = 0
+  for i = nlog + 1, #log do if tostring(log[i]):find("map %d") or tostring(log[i]):find("mapprobe") then printed = printed + 1 end end
+  check(printed >= #L, "0.4.7 mapprobe: every line printed to chat")
+  -- inside an instance: no position, no continent; still answers
+  here = 9999
+  MAPS[9999] = { mapID = 9999, name = "The Deadmines", mapType = 4, parentMapID = 0 }
+  SlashCmdList.DARKMATTER("mapprobe")
+  all = table.concat(DarkMatterDB.mapprobe.last.lines, "\n")
+  check(has('map 2: you: map 9999 "The Deadmines" (dungeon)') and has("map 2 pos: not available here") and has("map 6: rect: no continent above this map") and #DarkMatterDB.mapprobe.runs == 2,
+    "0.4.7 mapprobe: dungeon run is honest (no position, no rect) and both runs are kept")
+  -- bare client: only two C_Map functions, no Enum
+  C_Map = { GetBestMapForUnit = function() return nil end }
+  Enum.UIMapType = nil
+  for _ = 1, 6 do SlashCmdList.DARKMATTER("mapprobe") end
+  all = table.concat(DarkMatterDB.mapprobe.last.lines, "\n")
+  check(has("map 2: you: map nil") and has("map 3: tree: not available") and has("map 7: world pos: not available") and has("map 8: levels: not provided") and #DarkMatterDB.mapprobe.runs == 6,
+    "0.4.7 mapprobe: a client without map APIs gets honest 'not available' lines; at most 6 runs kept")
+  C_Map, Enum, C_SuperTrack, C_Navigation, WorldMapFrame = saveMap, saveEnum, saveSuper, saveNav, saveWMF
+  if saveCQ then saveCQ.GetQuestsOnMap = saveQOM else C_QuestLog = nil end
+  if type(Enum) == "table" then Enum.UIMapType = saveUMT end
+  local src = io.open(arg[1] .. "/MapProbe.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  check(not src:find("hooksecurefunc", 1, true) and not src:find("RegisterEvent", 1, true) and not src:find("SetUserWaypoint%(") and not src:find("CreateFrame", 1, true),
+    "0.4.7 MapProbe.lua: no hooks, no events, no waypoint writes, no frames")
+end
+
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====
 check(#RESTRICTED_TOUCH == 0, "no addon code touched a restricted event (" .. table.concat(RESTRICTED_TOUCH, ", ") .. ")")
 for _, fn in ipairs({ "Achievements.lua", "AdventureGuide.lua", "Fishing.lua", "Core.lua", "Window.lua", "Tab_Journals.lua", "Journal_Achievements.lua" }) do

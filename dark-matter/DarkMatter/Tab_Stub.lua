@@ -16,5 +16,5 @@ local function Stub(id, name, glyph, text)
   })
 end
 
-Stub("map", "Map", "map", "The Map tab comes in a later phase: zone and world map helpers.")
+Stub("map", "Map", "map", "The Map tab is being built. Type /dm mapprobe and send a screenshot of the results.")
 Stub("dungeons", "Dungeons", "dungeons", "The Dungeons tab comes in a later phase: lockouts and run tracking.")

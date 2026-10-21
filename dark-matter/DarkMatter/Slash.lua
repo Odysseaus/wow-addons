@@ -21,6 +21,7 @@ local function Help()
   print("  /dm tipdebug  log fishing tooltip placement (points/rects) to DarkMatterDB.tipdebug")
   print("  /dm agscan  Adventure Guide: LFG rows kept/rejected -> DarkMatterDB.agscan")
   print("  /dm questprobe  Quests: which quest log, reward and watch APIs this client has -> DarkMatterDB.questprobe")
+  print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
   print("  /dm achprobe  Achievements: mode, game API counts + 3 samples, Dark Matter counts -> DarkMatterDB.achprobe")
 end
 
@@ -79,6 +80,11 @@ SlashCmdList["DARKMATTER"] = function(msg)
       local _, lines = NS.QL.ProbeReport()
       for _, x in ipairs(lines or {}) do NS.Print(x) end
       NS.Print(NS.QL.WatchReport())
+    end
+  elseif cmd == "mapprobe" then
+    if NS.MapProbe and NS.MapProbe.Report then
+      local lines = NS.MapProbe.Report()
+      for _, l in ipairs(lines or {}) do NS.Print(l) end
     end
   elseif cmd == "achprobe" then
     if NS.Ach and NS.Ach.ProbeReport then
