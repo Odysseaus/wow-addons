@@ -254,6 +254,8 @@ local function CreateRow()
   r.fill:SetAllPoints(r.seat)
   r.fill:SetTexture(TEX .. "BarFill")
   r.fill:Hide()
+  -- 1.4.0: the 'wow' theme draws the track and the plain fill with the stock status bar (fallback: as before)
+  if NS.ThemeStyleBar then NS.ThemeStyleBar(r.bg, r.fill) end
   -- Player row: outline around the bar in the theme's accent color.
   r.outline = {}
   local o
@@ -637,8 +639,12 @@ function NS.RestyleRows()
     r.solid:SetColorTexture(NS.ThemeColor("rowBg"))
     r.fireKey = nil
     if r.outline[1]:IsShown() then SetOutline(r, true) end
+    if NS.ThemeStyleBar then NS.ThemeStyleBar(r.bg, r.fill) end
   end
-  for k, r in ipairs(pool) do r.solid:SetColorTexture(NS.ThemeColor("rowBg")); r.fireKey = nil end
+  for k, r in ipairs(pool) do
+    r.solid:SetColorTexture(NS.ThemeColor("rowBg")); r.fireKey = nil
+    if NS.ThemeStyleBar then NS.ThemeStyleBar(r.bg, r.fill) end
+  end
   if main then StartAnim() end
 end
 

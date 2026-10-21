@@ -12,8 +12,13 @@ local function hex(s, a)
   return tonumber(s:sub(1, 2), 16) / 255, tonumber(s:sub(3, 4), 16) / 255, tonumber(s:sub(5, 6), 16) / 255, a or 1
 end
 
-NS.THEME_IDS = { "emberhall", "ironforged", "ursinegrove", "dawnward", "voidbound" }
+NS.THEME_IDS = { "wow", "emberhall", "ironforged", "ursinegrove", "dawnward", "voidbound" }
 local THEMES = {
+  -- 1.4.0 'wow': the game's own art (Stock.lua): tooltip-style border and background, the dialog title plate,
+  -- the stock status bar, stock fonts (GameFontNormal gold title, GameFontHighlightSmall white rows). Pieces the
+  -- client lacks fall back to the silver ring / plain colours below. The default for fresh installs.
+  wow = { title = "WoWThreat", stock = true, trim = { "#e6e6e6", "#9a9a9a", "#2a2a2a" }, well = { 0, 0, 0, 0 }, header = { 0, 0, 0, 0 },
+    plaque = "#ffd100", rowBg = "#0b0b0e", you = "#ffd100", youText = "#ffd100", text = "#ffffff", fire = "#ff5f14", studs = 1, studSize = 11, studStep = 34, pivot = 14 },
   emberhall = { title = "Ember Hall", trim = { "#fff0b0", "#c8962e", "#5a3a0c" }, well = { 8, 4, 2, 0.35 }, header = { 0, 0, 0, 0.35 },
     plaque = "#f6d47a", rowBg = "#140f0e", you = "#e9c46a", youText = "#ffe6a3", text = "#eee3cc", fire = "#ff9628", studs = 1, studSize = 11, studStep = 34, pivot = 14 },
   ironforged = { title = "Ironforged", trim = { "#e4e8ec", "#7a8189", "#25282c" }, well = { 0, 0, 0, 0.25 }, header = { 60, 0, 0, 0.45 },
@@ -133,6 +138,9 @@ local function Build(parent)
   P.plaqueL, P.plaqueM, P.plaqueR = Tex("ARTWORK", 1), Tex("ARTWORK", 1), Tex("ARTWORK", 1)
   P.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   P.title:SetShadowColor(0, 0, 0, 0.85); P.title:SetShadowOffset(0, -1)
+  -- 1.4.0 'wow' theme: the 8 pieces of a stock backdrop edge (hidden in the other themes)
+  P.edge = {}
+  for _, k in ipairs({ "tl", "tr", "bl", "br", "t", "b", "l", "r" }) do P.edge[k] = Tex("BORDER", 5); P.edge[k]:Hide() end
 end
 
 -- previewer studPos (skips corners and the crest)
@@ -270,6 +278,7 @@ local CORNER_SGN = { { 1, -1 }, { -1, -1 }, { 1, 1 }, { -1, 1 } }
 local function BuildFx(id, W, H)
   ClearFx()
   local th = THEMES[id]
+  if th.stock then return end  -- 1.4.0 'wow': a still, stock frame (no theme animations)
   local CS = 52
   local i
   if id == "emberhall" then
@@ -402,8 +411,132 @@ function NS.ThemeAnimate(on)
 end
 
 -- -------------------------------------------------------------- layout ---
+-- 1.4.0: a stock backdrop edge file drawn the way the game's Backdrop.lua cuts it (8 cells of size x size).
+local function EdgeTC(rx, ry)
+  local cs, ce = 0.0625, 0.9375
+  return {
+    tl = { 0.5078125, cs, 0.5078125, ce, 0.6171875, cs, 0.6171875, ce },
+    tr = { 0.6328125, cs, 0.6328125, ce, 0.7421875, cs, 0.7421875, ce },
+    bl = { 0.7578125, cs, 0.7578125, ce, 0.8671875, cs, 0.8671875, ce },
+    br = { 0.8828125, cs, 0.8828125, ce, 0.9921875, cs, 0.9921875, ce },
+    t = { 0.2578125, rx, 0.3671875, rx, 0.2578125, cs, 0.3671875, cs },
+    b = { 0.3828125, rx, 0.4921875, rx, 0.3828125, cs, 0.4921875, cs },
+    l = { 0.0078125, cs, 0.0078125, ry, 0.1171875, cs, 0.1171875, ry },
+    r = { 0.1328125, cs, 0.1328125, ry, 0.2421875, cs, 0.2421875, ry },
+  }
+end
+
+local function HideEdge() for _, t in pairs(P.edge) do t:Hide() end end
+
+local function PlaceEdge(file, size, W, H)
+  local tc = EdgeTC(math.max(0, W / size - 2 - 0.0625), math.max(0, H / size - 2 - 0.0625))
+  local E = P.edge
+  for k, t in pairs(E) do
+    local ok = pcall(t.SetTexture, t, file, "REPEAT", "REPEAT")
+    if not ok then t:SetTexture(file) end
+    t:SetTexCoord(unpack(tc[k]))
+    t:SetVertexColor(1, 1, 1, 1)
+    t:ClearAllPoints()
+    t:Show()
+  end
+  E.tl:SetSize(size, size); E.tl:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+  E.tr:SetSize(size, size); E.tr:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+  E.bl:SetSize(size, size); E.bl:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+  E.br:SetSize(size, size); E.br:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+  E.t:SetPoint("TOPLEFT", E.tl, "TOPRIGHT"); E.t:SetPoint("BOTTOMRIGHT", E.tr, "BOTTOMLEFT")
+  E.b:SetPoint("TOPLEFT", E.bl, "TOPRIGHT"); E.b:SetPoint("BOTTOMRIGHT", E.br, "BOTTOMLEFT")
+  E.l:SetPoint("TOPLEFT", E.tl, "BOTTOMLEFT"); E.l:SetPoint("BOTTOMRIGHT", E.bl, "TOPRIGHT")
+  E.r:SetPoint("TOPLEFT", E.tr, "BOTTOMLEFT"); E.r:SetPoint("BOTTOMRIGHT", E.br, "TOPRIGHT")
+end
+
+local function ShowThemedPieces(on)
+  local i
+  for i = 1, 4 do if on then P.corner[i]:Show() else P.corner[i]:Hide() end end
+  for _, t in ipairs({ P.crest, P.medallion, P.diamond, P.well, P.wellTint, P.header }) do if on then t:Show() else t:Hide() end end
+  if not on then for i = 1, #studs do studs[i]:Hide() end end
+end
+
+-- 1.4.0 'wow' theme: a stock tooltip-style frame. Every piece asks NS.Stock first and has a fallback.
+NS.stockUsed = {}
+local function SkinStock(th)
+  local W, H = sizeW, sizeH
+  local St = NS.Stock
+  local used = {}
+  NS.stockUsed = used
+  ShowThemedPieces(false)
+  -- background: the tooltip background tinted dark (fallback: the same colour, flat)
+  P.body:ClearAllPoints(); P.body:SetPoint("TOPLEFT", 4, -4); P.body:SetPoint("BOTTOMRIGHT", -4, 4)
+  local bg = St and St.Get("bg")
+  if bg then
+    P.body:SetTexture(bg); P.body:SetTexCoord(0, 1, 0, 1); P.body:SetVertexColor(0.06, 0.06, 0.08, 0.94)
+    used.bg = bg
+  else
+    P.body:SetVertexColor(1, 1, 1, 1); P.body:SetColorTexture(0.06, 0.06, 0.08, 0.94)
+  end
+  P.shade:SetColorTexture(0, 0, 0, 0)
+  -- border: the tooltip edge file, 16 px (fallback: a silver ring)
+  local edge = St and St.Get("edge")
+  local r1, g1, b1 = hex(th.trim[1]); local r2, g2, b2 = hex(th.trim[2])
+  if edge then
+    PlaceEdge(edge, 16, W, H)
+    used.edge = edge
+    PlaceRing("rim", 0, 1, 0, 0, 0, 0)
+    PlaceRing("shadow", 0, 1, 0, 0, 0, 0)
+    PlaceRing("trim", 0, 1, 0, 0, 0, 0)
+    PlaceRing("trimHi", 0, 1, 0, 0, 0, 0)
+  else
+    HideEdge()
+    PlaceRing("rim", 0, 1, 0, 0, 0, 0.95)
+    PlaceRing("shadow", 3, 1, 0, 0, 0, 0.7)
+    PlaceRing("trim", 2, 2, r2, g2, b2, 1)
+    PlaceRing("trimHi", 2, 1, r1, g1, b1, 0.8)
+  end
+  P.divider:SetColorTexture(r2, g2, b2, 0.45)
+  -- title: the dialog title plate (3-slice) with the GameFontNormal gold title (fallback: the gold title alone)
+  local hdr = St and St.Get("header")
+  local hw = math.min(W - 40, 205)
+  local cap = math.min(51, math.floor(hw / 3))
+  if hdr then
+    P.plaqueL:SetTexture(hdr); P.plaqueL:SetTexCoord(0, 0.25, 0, 0.625)
+    P.plaqueM:SetTexture(hdr); P.plaqueM:SetTexCoord(0.25, 0.75, 0, 0.625)
+    P.plaqueR:SetTexture(hdr); P.plaqueR:SetTexCoord(0.75, 1, 0, 0.625)
+    P.plaqueL:ClearAllPoints(); P.plaqueL:SetSize(cap, 32); P.plaqueL:SetPoint("TOPLEFT", frame, "TOP", -hw / 2, 0)
+    P.plaqueR:ClearAllPoints(); P.plaqueR:SetSize(cap, 32); P.plaqueR:SetPoint("TOPRIGHT", frame, "TOP", hw / 2, 0)
+    P.plaqueM:ClearAllPoints(); P.plaqueM:SetPoint("TOPLEFT", P.plaqueL, "TOPRIGHT"); P.plaqueM:SetPoint("BOTTOMRIGHT", P.plaqueR, "BOTTOMLEFT")
+    for _, t in ipairs({ P.plaqueL, P.plaqueM, P.plaqueR }) do t:SetVertexColor(1, 1, 1, 1); t:Show() end
+    P.title:ClearAllPoints(); P.title:SetPoint("CENTER", frame, "TOP", 0, -14)
+    used.header = hdr
+  else
+    for _, t in ipairs({ P.plaqueL, P.plaqueM, P.plaqueR }) do t:Hide() end
+    P.title:ClearAllPoints(); P.title:SetPoint("CENTER", frame, "TOP", 0, -(B + TB / 2 - 4))
+  end
+  P.title:SetText(th.title); P.title:SetTextColor(hex(th.plaque))
+end
+
+-- 1.4.0: the bar track and the plain fill. In the 'wow' theme they use the stock status bar; otherwise (and as
+-- the fallback) the 1.3.0 black track and WoWThreat's own BarFill.
+function NS.ThemeStyleBar(bgTex, fillTex)
+  local th = T()
+  local sb = th.stock and NS.Stock and NS.Stock.Get("bar") or nil
+  if bgTex then
+    if sb then
+      bgTex:SetTexture(sb); bgTex:SetVertexColor(0.16, 0.16, 0.16, 1)
+    else
+      bgTex:SetVertexColor(1, 1, 1, 1); bgTex:SetColorTexture(0, 0, 0, 1)
+    end
+  end
+  if fillTex then fillTex:SetTexture(sb or "Interface\\AddOns\\WoWThreat\\Textures\\BarFill") end
+  return sb ~= nil
+end
+
 local function Skin(id)
   local th = THEMES[id]
+  if th.stock then return SkinStock(th) end
+  HideEdge()
+  ShowThemedPieces(true)
+  P.body:ClearAllPoints(); P.body:SetPoint("TOPLEFT", 1, -1); P.body:SetPoint("BOTTOMRIGHT", -1, 1)
+  P.body:SetVertexColor(1, 1, 1, 1)
+  for _, t in ipairs({ P.plaqueL, P.plaqueM, P.plaqueR }) do t:SetVertexColor(1, 1, 1, 1); t:Show() end
   local p = ART .. id .. "_"
   local W, H = sizeW, sizeH
   SetTiled(P.body, p .. "material", W, H, 128)
