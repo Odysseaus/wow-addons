@@ -203,6 +203,8 @@ local function DItem(i)
   return b
 end
 
+local debugged = {} -- quests whose empty detail panel was already explained in chat (0.4.6)
+
 local function Detail(q)
   local d = detail
   selQuest = q
@@ -275,6 +277,11 @@ local function Detail(q)
     line(det.desc or "Not available from this client.", 13, det.desc and "listInk" or "listSoft")
     -- Rewards
     local hasApi = det.src.rewards or det.src.choices or det.xp ~= nil or det.money ~= nil
+    -- 0.4.6: an empty panel prints one diagnostic line per quest (index values, which selection methods were tried)
+    if not det.desc and not det.objText and (det.xp or 0) <= 0 and #(det.rewards or {}) + #(det.choices or {}) == 0 then
+      local dk = q.questID or q.title
+      if dk and not debugged[dk] then debugged[dk] = true NS.Print(QL.DebugLine(q, det)) end
+    end
     line("Rewards", 15, "listHead", 8)
     if not hasApi then
       line("Not available from this client.", 13, "listSoft")
@@ -433,7 +440,9 @@ end
 local function Events(on)
   if not ev then
     ev = CreateFrame("Frame") -- private frame, read-only handler
-    ev:SetScript("OnEvent", function(_, e)
+    ev:SetScript("OnEvent", function(_, e, a1)
+      -- 0.4.6: quest data we asked for (C_QuestLog.RequestLoadQuestByID) arrived: read that quest again
+      if e == "QUEST_DATA_LOAD_RESULT" then local id = NS.Num(a1) if id then QL.Forget(id) end end
       if QL.reading then return end
       -- our own brief selection (detail read, reward tooltip) fires QUEST_LOG_UPDATE: skip that echo
       if e == "QUEST_LOG_UPDATE" and (Now() < quietUntil or Now() - (QL.lastSelect or -99) < 0.5) then return end

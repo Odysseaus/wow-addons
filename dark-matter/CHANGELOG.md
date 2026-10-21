@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.6 (fix: quest description and rewards on WoW Forever)
+- **Bug (0.4.5, in game):** every quest showed "Not available from this client." for description and rewards.
+  - Root cause: WoW Forever has no `SelectQuestLogEntry` / `GetQuestLogSelection`. The 0.4.5 reader gave up before calling any reader when `SelectQuestLogEntry` was missing, so even `GetQuestLogRewardXP(questID)` was never called.
+- **Fix:** the readers always run, under the first selection method that makes `GetQuestLogQuestText` return text:
+  1. `SelectQuestLogEntry(log index)`, restoring `GetQuestLogSelection`.
+  2. `C_QuestLog.SetSelectedQuest(questID)`, restoring `C_QuestLog.GetSelectedQuest`.
+  3. Direct calls with explicit questID / log-index arguments. This is used only when the client has no selection API at all; otherwise a selection-free read could show the player's selected quest instead.
+  - The working method is remembered. Reward tooltips select the same way and pass the questID to `SetQuestLogItem`.
+- **Quest data loading:** if there is still no text, Dark Matter asks the client to load the quest once (`C_QuestLog.RequestLoadQuestByID`) and reads it again on `QUEST_DATA_LOAD_RESULT`. Nothing is made up meanwhile.
+- **Money:** without `GetCoinTextureString`, the gold/silver/copper string is built with the game's coin icons (`Interface\MoneyFrame\UI-GoldIcon` etc.).
+- **Watch cap:**
+  - The cap comes from `C_QuestLog.GetMaxNumQuestsCanWatch`, then `Constants.QuestWatchConsts.MAX_QUEST_WATCHES`, then `MAX_WATCHABLE_QUESTS`. Otherwise it is 25, labelled as assumed in the probe.
+  - After ticking a box, Dark Matter checks that the game really added the watch. If it didn't, the box stays unticked and chat says so.
+- **`/dm questprobe`** now also prints:
+  - the selection methods,
+  - the client's real quest-log reader functions (a C_QuestLog scan and a global scan),
+  - the sample quest's index values (C_QuestLog.GetInfo list index vs GetLogIndexForQuestID vs GetQuestLogIndexByID, current selections, HaveQuestData),
+  - one `try <method>` line per method showing whether `GetQuestLogQuestText` returned text,
+  - the method the detail panel uses.
+- **Detail debug:** when a clicked quest's panel comes back empty, one `detail debug` line per quest is printed to chat.
+- **Tests:** the stub runs a WoW Forever mode (no SelectQuestLogEntry) covering text, XP, rewards, coins, selection restore, the tooltip, no-selection reads, the debug line, the load retry, the assumed cap and the probe lines.
+
 ## 0.4.5 (quest log: toolbar, search, WoW-style quest details, watch boxes)
 - **Toolbar above the quest list, every theme:** All (expand/collapse every zone), a Track Quest box for the selected quest, and a search box at the far right. The old head row above the left nav is gone.
 - **Search:** a stock EditBox (no hooks, no UIDropDownMenu). It filters live and ignores case and punctuation. Every word must match the quest's title, zone, objectives summary, objective lines, description or reward item names. Zones expand while searching and headers show matches/total. A "x" button or Esc clears it; with nothing left, "No matching quests" shows.

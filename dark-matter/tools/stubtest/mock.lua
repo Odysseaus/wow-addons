@@ -3369,6 +3369,119 @@ if MODE ~= "minimal" then
   NS.ShowTab("journals")
 end
 
+-- ===== 0.4.6 WoW Forever quest log: no SelectQuestLogEntry / GetQuestLogSelection (the in-game 0.4.5 bug) =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local Q = NS.tabs.quests
+  local QL = NS.QL
+  DarkMatterFrame:Show()
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+  Q.SetSearch("")
+  local _, det = Q.Parts()
+  local C = det.scroll.content
+  local function has(s) for _, fr in ipairs(FS) do if fr._text == s and visible(fr) and under(fr, C) then return true end end return false end
+  local function hasPart(s) for _, fr in ipairs(FS) do if type(fr._text) == "string" and visible(fr) and under(fr, C) and fr._text:find(s, 1, true) then return fr._text end end end
+  local function rowFor(title)
+    for _, f in ipairs(ALL) do local q = rawget(f, "quest") if q and q.title == title and visible(f) and rawget(f, "kind") == "q" then return f end end
+  end
+  local function said(s) local n = 0 for _, l in ipairs(log) do if tostring(l):find(s, 1, true) then n = n + 1 end end return n end
+  local K = { "SelectQuestLogEntry", "GetQuestLogSelection", "GetQuestLogQuestText", "GetQuestLogRewardXP", "GetQuestLogRewardMoney", "GetNumQuestLogRewards",
+    "GetQuestLogRewardInfo", "GetNumQuestLogChoices", "GetQuestLogChoiceInfo", "GetQuestLogItemLink", "GetNumQuestLogRewardFactions", "GetQuestLogRewardFactionInfo" }
+  local keep = {}
+  for _, k in ipairs(K) do keep[k] = _G[k] end
+  local keepCap = MAX_WATCHABLE_QUESTS
+  -- Forever: the classic selection functions are gone; the readers act on C_QuestLog's selected questID
+  SelectQuestLogEntry, GetQuestLogSelection = nil, nil
+  local BYID = { [101] = 2, [103] = 6 }
+  local CSEL, CSEL_N = 101, 0
+  C_QuestLog.GetSelectedQuest = function() return CSEL end
+  C_QuestLog.SetSelectedQuest = function(id) CSEL = id CSEL_N = CSEL_N + 1 end
+  local function cd() return QDATA[BYID[CSEL] or -1] end
+  local function readers(get)
+    GetQuestLogQuestText = function(...) local d = get(...) if d then return d.desc, d.obj end return "", "" end
+    GetQuestLogRewardXP = function(...) local d = get(...) return d and d.xp or 0 end
+    GetQuestLogRewardMoney = function(...) local d = get(...) return d and d.money or 0 end
+    GetNumQuestLogRewards = function(...) local d = get(...) return d and #d.rewards or 0 end
+    GetQuestLogRewardInfo = function(i, ...) local d = get(...) local e = d and d.rewards[i] if e then return unpack(e) end end
+    GetNumQuestLogChoices = function(...) local d = get(...) return d and #d.choices or 0 end
+    GetQuestLogChoiceInfo = function(i, ...) local d = get(...) local e = d and d.choices[i] if e then return unpack(e) end end
+    GetQuestLogItemLink = function(kind, i, ...) local d = get(...) local e = d and (kind == "choice" and d.choices or d.rewards)[i] if e then return "|cff1eff00|Hitem:" .. e[6] .. "::::|h[" .. e[1] .. "]|h|r" end end
+    GetNumQuestLogRewardFactions = function(...) local d = get(...) return d and #d.rep or 0 end
+    GetQuestLogRewardFactionInfo = function(i, ...) local d = get(...) local r = d and d.rep[i] if r then return r[1], r[2] end end
+  end
+  readers(function() return cd() end)
+  QL.method = nil
+  QL.Forget()
+  local dq = rowFor("The Defias")
+  dq._scripts.OnClick(dq)
+  check(has("VanCleef leads the Defias Brotherhood from his hideout.") and has("Experience: 4300") and has("You will be able to choose one of these rewards:"),
+    "0.4.6 Forever: description, XP and choice rewards shown via C_QuestLog.SetSelectedQuest (no SelectQuestLogEntry)")
+  local money = hasPart("Money: ")
+  check(money and money:find("UI%-GoldIcon") and money:find("UI%-SilverIcon") and money:find("UI%-CopperIcon"), "0.4.6 Forever: money built with our own coin icons (no GetCoinTextureString)")
+  check(CSEL == 101 and CSEL_N > 0, "0.4.6 Forever: the player's C_QuestLog selection is put back after the read")
+  check(QL.method == "C_QuestLog.SetSelectedQuest", "0.4.6 Forever: the working selection method is remembered (" .. tostring(QL.method) .. ")")
+  local rec = {}
+  rawset(GameTooltip, "SetQuestLogItem", function(_, kind, i, qid) rec[#rec + 1] = { kind, i, CSEL, qid } end)
+  local items = {}
+  for _, b in ipairs(det.items) do if visible(b) and b.entry then items[#items + 1] = b end end
+  items[2]._scripts.OnEnter(items[2])
+  check(rec[1] and rec[1][1] == "choice" and rec[1][2] == 2 and rec[1][3] == 103 and rec[1][4] == 103 and CSEL == 101,
+    "0.4.6 Forever: reward tooltip selects the quest by questID for SetQuestLogItem, then restores the selection")
+  items[2]._scripts.OnLeave(items[2])
+  rawset(GameTooltip, "SetQuestLogItem", nil)
+  -- /dm questprobe: index values, a try line per method, the reader functions the client has, the cap source
+  MAX_WATCHABLE_QUESTS = nil
+  local nlog = #log
+  SlashCmdList.DARKMATTER("questprobe")
+  local lines = table.concat(DarkMatterDB.questprobe.lines, "\n")
+  check(lines:find("selection methods: C_QuestLog.SetSelectedQuest, direct", 1, true), "0.4.6 probe: lists the selection methods this client has")
+  check(lines:find('index "The Defias": questID 103, list index (C_QuestLog.GetInfo) 6', 1, true), "0.4.6 probe: prints the quest's index values")
+  check(lines:find("try C_QuestLog.SetSelectedQuest: GetQuestLogQuestText text (", 1, true) and lines:find("try direct: ", 1, true),
+    "0.4.6 probe: reports which selection method makes GetQuestLogQuestText return text")
+  check(lines:find("client quest-log globals: ", 1, true) and lines:find("GetQuestLogQuestText", 1, true) and lines:find("detail reads use C_QuestLog.SetSelectedQuest", 1, true),
+    "0.4.6 probe: lists the client's quest-log reader functions and the method in use")
+  local capLine = false
+  for i = nlog + 1, #log do if tostring(log[i]):find("cap 25 (assumed default", 1, true) then capLine = true end end
+  check(capLine, "0.4.6 probe: no cap from the client -> 25, labelled as assumed")
+  local cap, _, src = QL.WatchCap()
+  check(cap == 25 and src:find("assumed"), "0.4.6 watch: cap falls back to 25 (assumed) when the client reports none")
+  MAX_WATCHABLE_QUESTS = keepCap
+  -- no selection API at all: the readers still run with explicit questID / log index arguments
+  C_QuestLog.SetSelectedQuest, C_QuestLog.GetSelectedQuest = nil, nil
+  readers(function(a) return QDATA[BYID[a] or a or -1] end)
+  QL.method = nil
+  QL.Forget()
+  Q.Refresh()
+  check(has("VanCleef leads the Defias Brotherhood from his hideout.") and has("Experience: 4300") and QL.method == "direct",
+    "0.4.6: with no selection API the readers run directly (questID / log index arguments)")
+  -- an empty panel: one 'detail debug' line per quest, and the client is asked to load the quest's data
+  readers(function() return nil end)
+  local REQ = {}
+  C_QuestLog.RequestLoadQuestByID = function(id) REQ[id] = (REQ[id] or 0) + 1 end
+  QL.method = nil
+  QL.Forget()
+  local wv = rowFor("Wolves")
+  wv._scripts.OnClick(wv)
+  Q.Refresh()
+  check(said('detail debug "Wolves": questID 101, list index 2') == 1, "0.4.6: an empty panel prints one detail debug line with the index values")
+  check(has("Not available from this client.") and REQ[101] == 1, "0.4.6: still honest 'Not available'; quest data requested once (RequestLoadQuestByID)")
+  -- the data arrives: QUEST_DATA_LOAD_RESULT re-reads that quest
+  readers(function(a) return QDATA[BYID[a] or a or -1] end)
+  local wf
+  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_DATA_LOAD_RESULT then wf = fr end end
+  check(wf ~= nil, "0.4.6: QUEST_DATA_LOAD_RESULT registered while the tab is shown")
+  TIME_NOW = TIME_NOW + 5
+  if wf then wf._scripts.OnEvent(wf, "QUEST_DATA_LOAD_RESULT", 101, true) end
+  check(has("Eagan Peltskinner needs wolf meat for the abbey.") and has("Experience: 170"), "0.4.6: QUEST_DATA_LOAD_RESULT fills the panel once the data has loaded")
+  -- restore the classic mock
+  C_QuestLog.RequestLoadQuestByID = nil
+  for _, k in ipairs(K) do _G[k] = keep[k] end
+  QL.method = nil
+  QL.Forget()
+  NS.ShowTab("journals")
+end
+
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====
 check(#RESTRICTED_TOUCH == 0, "no addon code touched a restricted event (" .. table.concat(RESTRICTED_TOUCH, ", ") .. ")")
 for _, fn in ipairs({ "Achievements.lua", "AdventureGuide.lua", "Fishing.lua", "Core.lua", "Window.lua", "Tab_Journals.lua", "Journal_Achievements.lua" }) do

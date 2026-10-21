@@ -39,14 +39,15 @@ Quest list on the left with a toolbar on top (All, Track Quest, search at the fa
 **Quest APIs used (feature-detected; each falls back as listed):**
 - Log and objectives: `C_QuestLog.GetNumQuestLogEntries` + `C_QuestLog.GetInfo` for the list (no other fallback; without them the list is empty), `C_QuestLog.GetQuestObjectives` (else `GetNumQuestLeaderBoards` + `GetQuestLogLeaderBoard`), `C_QuestLog.GetLogIndexForQuestID` (else `GetQuestLogIndexByID`, else the log index read with the list).
 - Text and rewards: `GetQuestLogQuestText`, `GetQuestLogRewardXP`, `GetQuestLogRewardMoney`, `GetQuestLogRequiredMoney`, `GetNumQuestLogRewards` / `GetQuestLogRewardInfo`, `GetNumQuestLogChoices` / `GetQuestLogChoiceInfo`, `GetQuestLogItemLink`, `GetQuestLogRewardSpell`, `GetQuestLogRewardHonor`, `GetQuestLogRewardTitle`, `GetNumQuestLogRewardFactions` / `GetQuestLogRewardFactionInfo`, `GetQuestLogGroupNum`.
-  - These read the *selected* log entry, so Dark Matter selects with `SelectQuestLogEntry` and always restores the previous `GetQuestLogSelection()`.
+  - These read the *selected* quest. Dark Matter selects with `SelectQuestLogEntry` (log index; restores `GetQuestLogSelection`), else `C_QuestLog.SetSelectedQuest` (questID; restores `C_QuestLog.GetSelectedQuest`), else (only with no selection API at all) calls the readers directly with questID / log-index arguments. WoW Forever 1.60.1 has no `SelectQuestLogEntry` (0.4.6 fix).
+  - With no text yet, `C_QuestLog.RequestLoadQuestByID` is called once and the quest is re-read on `QUEST_DATA_LOAD_RESULT`.
   - Results are cached per quest; a read is retried (up to 3 times) while item names are still loading.
   - Anything missing reads "Not available from this client."
 - Money: `GetCoinTextureString`, else coin icons from `Interface\MoneyFrame`.
 - Item tooltip: `GameTooltip:SetQuestLogItem`, else `SetHyperlink` (item link), else `SetItemByID`.
 - Watch list:
   - Calls: `C_QuestLog.AddQuestWatch` / `RemoveQuestWatch` / `IsQuestWatched` / `GetQuestWatchType` (questID), else the classic `AddQuestWatch` / `RemoveQuestWatch` / `IsQuestWatched` (log index).
-  - Cap: `C_QuestLog.GetMaxNumQuestsCanWatch`, else `MAX_WATCHABLE_QUESTS`; count from `GetNumQuestWatches`.
+  - Cap: `C_QuestLog.GetMaxNumQuestsCanWatch`, else `Constants.QuestWatchConsts.MAX_QUEST_WATCHES`, else `MAX_WATCHABLE_QUESTS`, else 25 (assumed, labelled so in the probe); count from `GetNumQuestWatches`.
   - After a change, `QuestWatch_Update` (classic) or `WatchFrame_Update` is called. `ObjectiveTracker_Update` is never called from addon code, because it holds secure buttons; that tracker updates itself from `QUEST_WATCH_LIST_CHANGED`.
   - The boxes re-sync on `QUEST_WATCH_LIST_CHANGED`, `QUEST_WATCH_UPDATE`, `QUEST_LOG_UPDATE`, `QUEST_ACCEPTED`, `QUEST_REMOVED` and `QUEST_TURNED_IN`.
   - In combat, changes are queued until `PLAYER_REGEN_ENABLED`.
