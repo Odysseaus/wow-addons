@@ -1,27 +1,97 @@
 -- WoW default theme (data only). Numbers are the approved previewer mockup's CSS pixels (window 880x680).
--- The art is the mockup's generated raster art, converted by tools/make_wow_textures.py (see Atlas_WoW.lua).
+-- 0.5.1: the window is drawn with the game's own built-in art (stock textures referenced by path, plus the
+-- UIPanelCloseButton template), like a stock WoW window. Nothing from the game is copied into the addon.
+-- Each stock piece is checked at runtime (Stock.lua); a piece the client lacks falls back to Dark Matter's own art
+-- (the generated atlas and media below), so nothing is ever blank. /dm artprobe lists them with ok/missing.
 local _, NS = ...
+
+-- The 0.5.0 WoW colours. The class themes inherit missing colour keys from these (not from the 0.5.1 stock colours),
+-- so the class themes look exactly as before.
+local CLASSIC_BASE = {
+  gold = "#f0cf4a", btnInk = "#f0cf4a", goldOn = "#fff0b0", greyBtn = "#a09d95",
+  title = "#e9e6dc", listInk = "#e4e0d2", listSoft = "#a8a496", listHead = "#b9b6ab", hoverEdge = "#ffd14dbf",
+  status = "#9a978f", listBg = "#121210", low = "#e8442e",
+}
 
 NS.RegisterTheme({
   id = "wow",
   name = "WoW",
   title = "Dark Matter",
   atlas = "wow",
+  baseColors = CLASSIC_BASE, -- read by RegisterTheme for themes with base = "wow"
+  -- stock pieces by atlas key: file, texcoords (4 numbers, or 8 for a flipped piece), nominal piece size in pixels
+  -- (w, h: used for the three-slice cap widths), optional blend mode. Texcoords are the ones Blizzard's own XML uses.
+  stock = {
+    frame = { edge = true, file = "Interface\\DialogFrame\\UI-DialogBox-Border", size = 24 },
+    pane = { edge = true, file = "Interface\\Tooltips\\UI-Tooltip-Border", size = 12 },
+    title_l = { file = "Interface\\DialogFrame\\UI-DialogBox-Header", tc = { 0, 0.25, 0, 0.625 }, w = 64, h = 40 },
+    title_m = { file = "Interface\\DialogFrame\\UI-DialogBox-Header", tc = { 0.25, 0.75, 0, 0.625 }, w = 128, h = 40 },
+    title_r = { file = "Interface\\DialogFrame\\UI-DialogBox-Header", tc = { 0.75, 1, 0, 0.625 }, w = 64, h = 40 },
+    medal = { file = "Interface\\QuestFrame\\UI-QuestLog-BookIcon", w = 64, h = 64 },
+    xbtn = { file = "Interface\\Buttons\\UI-Panel-MinimizeButton-Up", w = 32, h = 32 },
+    btn_red_l = { file = "Interface\\Buttons\\UI-Panel-Button-Up", tc = { 0, 0.09375, 0, 0.6875 }, w = 12, h = 22 },
+    btn_red_m = { file = "Interface\\Buttons\\UI-Panel-Button-Up", tc = { 0.09375, 0.53125, 0, 0.6875 }, w = 56, h = 22 },
+    btn_red_r = { file = "Interface\\Buttons\\UI-Panel-Button-Up", tc = { 0.53125, 0.625, 0, 0.6875 }, w = 12, h = 22 },
+    btn_grey_l = { file = "Interface\\Buttons\\UI-Panel-Button-Disabled", tc = { 0, 0.09375, 0, 0.6875 }, w = 12, h = 22 },
+    btn_grey_m = { file = "Interface\\Buttons\\UI-Panel-Button-Disabled", tc = { 0.09375, 0.53125, 0, 0.6875 }, w = 56, h = 22 },
+    btn_grey_r = { file = "Interface\\Buttons\\UI-Panel-Button-Disabled", tc = { 0.53125, 0.625, 0, 0.6875 }, w = 12, h = 22 },
+    btn_field_l = { file = "Interface\\Common\\Common-Input-Border", tc = { 0, 0.0625, 0, 0.625 }, w = 8, h = 20 },
+    btn_field_m = { file = "Interface\\Common\\Common-Input-Border", tc = { 0.0625, 0.9375, 0, 0.625 }, w = 112, h = 20 },
+    btn_field_r = { file = "Interface\\Common\\Common-Input-Border", tc = { 0.9375, 1, 0, 0.625 }, w = 8, h = 20 },
+    -- rail tabs: the stock red panel button, pressed (Down) when active
+    rtab_i_l = { file = "Interface\\Buttons\\UI-Panel-Button-Up", tc = { 0, 0.09375, 0, 0.6875 }, w = 12, h = 22 },
+    rtab_i_m = { file = "Interface\\Buttons\\UI-Panel-Button-Up", tc = { 0.09375, 0.53125, 0, 0.6875 }, w = 56, h = 22 },
+    rtab_i_r = { file = "Interface\\Buttons\\UI-Panel-Button-Up", tc = { 0.53125, 0.625, 0, 0.6875 }, w = 12, h = 22 },
+    rtab_a_l = { file = "Interface\\Buttons\\UI-Panel-Button-Down", tc = { 0, 0.09375, 0, 0.6875 }, w = 12, h = 22 },
+    rtab_a_m = { file = "Interface\\Buttons\\UI-Panel-Button-Down", tc = { 0.09375, 0.53125, 0, 0.6875 }, w = 56, h = 22 },
+    rtab_a_r = { file = "Interface\\Buttons\\UI-Panel-Button-Down", tc = { 0.53125, 0.625, 0, 0.6875 }, w = 12, h = 22 },
+    -- section tabs (Fishing / Adventure Guide / Achievements): the character-panel tabs, flipped to open downward
+    ptab_i_l = { file = "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab", tc = { 0, 1, 0, 0, 0.15625, 1, 0.15625, 0 }, w = 20, h = 32 },
+    ptab_i_m = { file = "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab", tc = { 0.15625, 1, 0.15625, 0, 0.84375, 1, 0.84375, 0 }, w = 88, h = 32 },
+    ptab_i_r = { file = "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab", tc = { 0.84375, 1, 0.84375, 0, 1, 1, 1, 0 }, w = 20, h = 32 },
+    ptab_a_l = { file = "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab", tc = { 0, 0.546875, 0, 0, 0.15625, 0.546875, 0.15625, 0 }, w = 20, h = 35 },
+    ptab_a_m = { file = "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab", tc = { 0.15625, 0.546875, 0.15625, 0, 0.84375, 0.546875, 0.84375, 0 }, w = 88, h = 35 },
+    ptab_a_r = { file = "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab", tc = { 0.84375, 0.546875, 0.84375, 0, 1, 0.546875, 1, 0 }, w = 20, h = 35 },
+    -- scroll bar (UIPanelScrollUpButtonTemplate / ScrollDown / the knob)
+    sb_up = { file = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up", tc = { 0.2, 0.8, 0.25, 0.75 }, w = 18, h = 16 },
+    sb_dn = { file = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up", tc = { 0.2, 0.8, 0.25, 0.75 }, w = 18, h = 16 },
+    sb_thumb_m = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.3, 0.7 }, w = 18, h = 12 },
+    sb_thumb_t = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.125, 0.3 }, w = 18, h = 6 },
+    sb_thumb_b = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.7, 0.875 }, w = 18, h = 6 },
+    -- quest-log style expand/collapse and the selected-row glow
+    coin_minus = { file = "Interface\\Buttons\\UI-MinusButton-Up", w = 32, h = 32 },
+    coin_plus = { file = "Interface\\Buttons\\UI-PlusButton-Up", w = 32, h = 32 },
+    hilite = { file = "Interface\\QuestFrame\\UI-QuestTitleHighlight", blend = "ADD", vc = { 1, 0.82, 0, 0.5 }, w = 256, h = 16 },
+    -- check box (UICheckButtonTemplate's textures)
+    check_box = { file = "Interface\\Buttons\\UI-CheckBox-Up", w = 32, h = 32 },
+    check_mark = { file = "Interface\\Buttons\\UI-CheckBox-Check", w = 32, h = 32 },
+  },
+  -- stock surfaces by area (tile = repeat every N pixels; shade darkens)
+  stockMedia = {
+    shell = { file = "Interface\\FrameGeneral\\UI-Background-Rock", tile = 256, shade = 0.75 },
+    rail = { file = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", tile = 128 },
+    list = { file = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", tile = 128 },
+    page = { file = "Interface\\QuestFrame\\QuestBG" },
+  },
+  -- stock templates used (each checked first): { name, frame type }
+  stockTemplates = { { "UIPanelCloseButton", "Button" } },
   media = {
     parchment = "Interface\\AddOns\\DarkMatter\\Media\\wow-parchment",
     slate = "Interface\\AddOns\\DarkMatter\\Media\\wow-slate",
   },
   colors = {
     ink = "#2b1d0e", inkSoft = "#4a3820", inkHead = "#2b1608", inkFaint = "#6a5434",
-    fieldBg = "#050505eb", gold = "#f0cf4a", btnInk = "#f0cf4a", goldOn = "#fff0b0", greyBtn = "#a09d95",
-    title = "#e9e6dc", listInk = "#e4e0d2", listSoft = "#a8a496", listHead = "#b9b6ab", liOn = "#ffffff",
-    good = "#4cc43a", mid = "#ecd83c", low = "#e8442e", row = "#ecd83c",
-    status = "#9a978f", lheadAll = "#fff0b0", lheadInk = "#d8d4c6", badge = "#f2d63a",
+    -- 0.5.1: the game's own font colours: GameFontNormal gold (1, 0.82, 0) for headers and buttons,
+    -- GameFontHighlight white for body text on dark panels, dark quest ink on the parchment
+    fieldBg = "#050505eb", gold = "#ffd100", btnInk = "#ffd100", goldOn = "#ffffff", greyBtn = "#d8d8d8",
+    title = "#ffd100", listInk = "#ffffff", listSoft = "#c8c8c8", listHead = "#ffd100", liOn = "#ffffff",
+    good = "#4cc43a", mid = "#ecd83c", low = "#ff6b55", row = "#ecd83c", -- 0.5.1: low is lighter (reads on the stock dark panel)
+    status = "#d0d0d0", lheadAll = "#fff0b0", lheadInk = "#d8d4c6", badge = "#f2d63a",
     popBg = "#1a1a18", popBorder = "#f2d63a", popInk = "#e4e0d2",
     barFill = "#f0cf4a", barInk = "#fff6d8", barBorder = "#4b4a44", barTrack = "#050504",
     -- 0.4.4: achievement card fills and the hover look (tint + 1px edge, drawn under the label)
-    card = "#0d0d0deb", cardOn = "#1a1712eb", hoverEdge = "#ffd14dbf",
-    listBg = "#121210", -- representative list surface (NS.Legible)
+    card = "#0d0d0deb", cardOn = "#1a1712eb", hoverEdge = "#ffd10033", -- 0.5.1: hover is a subtle tint
+    listBg = "#2a2a2a", -- representative list surface (NS.Legible); 0.5.1: the lighter end of the stock dark panel
     barText = "#fff6d8", -- bar labels in every theme (outlined)
   },
   m = {

@@ -99,7 +99,37 @@ function UI.NineSlice(owner, prefix, t, layer, sub)
   function n:Apply()
     local p, size = self.prefix, self.size
     local spec = NS.FlatSpec(p .. "_t")
-    if spec then
+    -- 0.5.1 WoW theme: a stock backdrop edge file (dialog / tooltip border), drawn the way the game's Backdrop does
+    local ed = not spec and NS.Stock and NS.Stock.Spec(p)
+    self.edgeOn = ed and ed.edge and true or false
+    if ed and ed.edge then
+      size = ed.size or size
+      local w, h = NS.Num(owner:GetWidth()) or 0, NS.Num(owner:GetHeight()) or 0
+      -- small boxes get a thinner edge (corners never overlap)
+      if w > 0 and h > 0 then size = math.max(1, math.min(size, math.floor((math.min(w, h) - 2) / 2))) end
+      local cs, ce = 0.0625, 0.9375
+      local rx = w > 0 and math.max(0, w / size - 2 - cs) or 1
+      local ry = h > 0 and math.max(0, h / size - 2 - cs) or 1
+      local TC = {
+        tl = { 0.5078125, cs, 0.5078125, ce, 0.6171875, cs, 0.6171875, ce },
+        tr = { 0.6328125, cs, 0.6328125, ce, 0.7421875, cs, 0.7421875, ce },
+        bl = { 0.7578125, cs, 0.7578125, ce, 0.8671875, cs, 0.8671875, ce },
+        br = { 0.8828125, cs, 0.8828125, ce, 0.9921875, cs, 0.9921875, ce },
+        t = { 0.2578125, rx, 0.3671875, rx, 0.2578125, cs, 0.3671875, cs },
+        b = { 0.3828125, rx, 0.4921875, rx, 0.3828125, cs, 0.4921875, cs },
+        l = { 0.0078125, cs, 0.0078125, ry, 0.1171875, cs, 0.1171875, ry },
+        r = { 0.1328125, cs, 0.1328125, ry, 0.2421875, cs, 0.2421875, ry },
+      }
+      for _, k in ipairs(NINE) do
+        local tex = self[k]
+        NS.Unflat(tex)
+        NS.Stock.Reset(tex)
+        tex:SetTexture(ed.file, "REPEAT", "REPEAT")
+        tex:SetTexCoord(unpack(TC[k]))
+        local vc = ed.vc or { 1, 1, 1, 1 }
+        tex:SetVertexColor(vc[1], vc[2], vc[3], vc[4] or 1)
+      end
+    elseif spec then
       size = 1
       local bc = spec.border or { 0, 0, 0, 0 }
       for _, k in ipairs(NINE) do NS.PaintFlat(self[k], bc) end
@@ -118,6 +148,8 @@ function UI.NineSlice(owner, prefix, t, layer, sub)
   function n:Show() for _, k in ipairs(NINE) do self[k]:Show() end end
   function n:Hide() for _, k in ipairs(NINE) do self[k]:Hide() end end
   NS.OnSkin(function() n:Apply() end)
+  -- a stock edge tiles by the frame's size, so redraw it when the frame is resized
+  if owner.HookScript then owner:HookScript("OnSizeChanged", function() if n.edgeOn then n:Apply() end end) end
   return n
 end
 
@@ -127,12 +159,16 @@ function UI.Slate(owner, shadeKey, layer, sub)
   local tex = owner:CreateTexture(nil, layer or "BACKGROUND", nil, sub or 0)
   tex:SetAllPoints(owner)
   NS.OnSkin(function()
-    if NS.ApplySurface(tex, SURFACE_OF[shadeKey or "slateShade"] or "shell") then return end
-    tex:SetTexture(NS.theme.media.slate)
-    tex:SetTexCoord(0, 1, 0, 1)
-    local s = NS.Metric(shadeKey or "slateShade")
-    tex:SetVertexColor(s, s, s, 1)
+    local area = SURFACE_OF[shadeKey or "slateShade"] or "shell"
+    if NS.ApplySurface(tex, area) then return end
+    NS.Stock.Media(tex, area, "slate", NS.Metric(shadeKey or "slateShade"))
   end)
+  if owner.HookScript then
+    owner:HookScript("OnSizeChanged", function()
+      local area = SURFACE_OF[shadeKey or "slateShade"] or "shell"
+      if NS.theme.stockMedia and not NS.theme.surface then NS.Stock.Media(tex, area, "slate", NS.Metric(shadeKey or "slateShade")) end
+    end)
+  end
   return tex
 end
 
@@ -169,9 +205,7 @@ function UI.Page(parent, w, h)
   parch:SetAllPoints(f)
   NS.OnSkin(function()
     if NS.ApplySurface(parch, "page") then return end
-    parch:SetTexture(NS.theme.media.parchment)
-    parch:SetTexCoord(0, 1, 0, 1)
-    parch:SetVertexColor(1, 1, 1, 1)
+    NS.Stock.Media(parch, "page", "parchment", 1)
   end)
   f.border = UI.NineSlice(f, "pane", NS.theme.m.pageBorder, "BORDER", 1)
   return f
@@ -615,6 +649,18 @@ function UI.Checkbox(parent, label, size, ink)
   text:SetText(label or "")
   b.label = text
   NS.OnSkin(function()
+    -- 0.5.1 WoW theme: the stock check box (UICheckButtonTemplate's own textures) when the client has them
+    local box, mark = NS.Stock.Spec("check_box"), NS.Stock.Spec("check_mark")
+    if box and mark then
+      NS.Stock.Apply(bg, box)
+      border:Hide()
+      NS.Stock.Apply(check, mark)
+      check:SetSize(size + 4, size + 4)
+      return
+    end
+    NS.Stock.Reset(bg) NS.Stock.Reset(check)
+    border:Show()
+    check:SetSize(size - 6, size - 6)
     bg:SetColorTexture(0.05, 0.05, 0.04, 0.95)
     border:SetColorTexture(0.45, 0.42, 0.32, 1)
     check:SetColorTexture(0.85, 0.72, 0.2, 1)

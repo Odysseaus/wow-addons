@@ -30,7 +30,7 @@ function NS.RegisterTheme(def)
     def.glyphs = def.glyphs or base.glyphs
     def.colors = def.colors or {}
     for k, v in pairs(base.colors) do
-      if def.colors[k] == nil then def.colors[k] = v end
+      if def.colors[k] == nil then def.colors[k] = (base.baseColors and base.baseColors[k]) or v end
     end
   end
   -- colours may be given as "#rrggbb"; convert once
@@ -125,10 +125,14 @@ NS.Unflat = Unflat
 function NS.SetPiece(tex, key)
   local spec = NS.FlatSpec(key)
   if spec then NS.PaintFlat(tex, spec.a, spec.b, spec.dir) return end
+  -- 0.5.1: the WoW theme's stock (built-in game) texture for this piece, when the client has it
+  local sp = NS.Stock and NS.Stock.Spec(key)
+  if sp then NS.Stock.Apply(tex, sp) return end
   local a = NS.atlases[NS.theme.atlas]
   local r = a and a.rects[key]
   if not r then return end
   Unflat(tex)
+  if NS.Stock then NS.Stock.Reset(tex) end
   tex:SetTexture(a.file)
   local e = 0.5
   tex:SetTexCoord((r[1] + e) / a.width, (r[1] + r[3] - e) / a.width, (r[2] + e) / a.height, (r[2] + r[4] - e) / a.height)
@@ -151,6 +155,8 @@ function NS.ApplySurface(tex, kind)
 end
 
 function NS.PieceSize(key)
+  local sp = NS.Stock and NS.Stock.Spec(key)
+  if sp and sp.w then return sp.w, sp.h end
   local r = NS.Rect(key)
   if not r then return 1, 1 end
   return r[3], r[4]

@@ -57,11 +57,14 @@ Quest list on the left with a toolbar on top (All, Track Quest, search at the fa
 - Only quests in your log are listed.
 - Whether the client's objective tracker ("All Objectives") follows the quest watch list depends on the client. Check with `/dm questprobe` and by ticking a box in game.
 
+## WoW theme (0.5.1)
+The default theme 'WoW' looks like a stock WoW window. It draws the game's own textures (dialog frame and header, tooltip-border panes, quest parchment, panel buttons, character-panel tabs, scroll bars, check boxes) and the stock close button template, all referenced in game by path; no Blizzard file ships with Dark Matter. Each piece is checked at runtime and falls back to Dark Matter's own art if the client lacks it. `/dm artprobe` lists what this client has (ok / MISSING) and saves it to `DarkMatterDB.artprobe`.
+
 ## Map tab (0.5.0)
 The game's own map pictures, read at runtime for every zone of Kalimdor and Eastern Kingdoms. Nothing is bundled and nothing is probed per zone.
 - **Zoom:** the mouse wheel zooms toward the cursor, continuously, from the world through a continent to a zone; the pictures crossfade between levels. Drag to pan; neighbouring zones are drawn side by side from their rects on the continent. Double-click zooms in, right-click goes up one level.
 - **Top bar:** a breadcrumb (World > Continent > Zone; click a level to go there) and zone search (continents first, then names that start with the text, then names that contain it).
-- **Right tool strip:** Starpen (0.5.2), Drop a pin (0.5.1) and Town Pins (0.5.3) are shown disabled with the version they come in; Find me flies to you; Full screen fills the screen (click again or press Esc to go back).
+- **Right tool strip:** Starpen (0.5.3), Drop a pin (0.5.2) and Town Pins (0.5.4) are shown disabled with the version they come in; Find me flies to you; Full screen fills the screen (click again or press Esc to go back).
 - **On the map:**
   - the player arrow;
   - explored-area overlays (fog of war);

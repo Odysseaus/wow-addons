@@ -351,10 +351,7 @@ local function Build()
   slate:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -m.pad, m.pad)
   NS.OnSkin(function()
     if NS.ApplySurface(slate, "shell") then return end
-    slate:SetTexture(NS.theme.media.slate)
-    slate:SetTexCoord(0, 1, 0, 1)
-    local s = NS.Metric("slateShade")
-    slate:SetVertexColor(s, s, s, 1)
+    NS.Stock.Media(slate, "shell", "slate", NS.Metric("slateShade"))
   end)
   local tint = f:CreateTexture(nil, "BACKGROUND", nil, 1)
   tint:SetPoint("TOPLEFT", f, "TOPLEFT", m.pad, -m.footerTop)
@@ -458,6 +455,14 @@ local function Build()
   closeGlow:SetAlpha(0.25)
   NS.OnSkin(function() NS.SetPiece(closeTex, "xbtn") NS.SetPiece(closeGlow, "xbtn") end)
   close:SetScript("OnClick", function() f:Hide() end)
+  -- 0.5.1 WoW theme: the game's own close button (UIPanelCloseButton template) when the client has it
+  local stockClose = NS.Stock.FromTemplate("Button", f, "UIPanelCloseButton")
+  if stockClose then
+    stockClose:SetScript("OnClick", function() f:Hide() end)
+    stockClose:SetFrameLevel(f:GetFrameLevel() + 21)
+    stockClose:Hide()
+  end
+  W.stockClose = stockClose
 
   f:SetScript("OnShow", function()
     local def = NS.tabs[W.current]
@@ -517,6 +522,16 @@ local function Build()
       sRight, shLeft, midY = m.fbtnLeft + m.fbtnW, m.shareX, m.fbtnY + m.fbtnH / 2
       close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -(m.pad + m.closeRight), -(m.pad + m.closeTop))
       close:SetFrameLevel(f:GetFrameLevel() + 20)
+    end
+    local useStock = stockClose and NS.theme.stockTemplates and not ca and NS.Stock.TemplateOK("UIPanelCloseButton", "Button")
+    if useStock then
+      stockClose:ClearAllPoints()
+      stockClose:SetPoint("CENTER", close, "CENTER", 0, 0)
+      stockClose:SetSize(m.closeSize + 4, m.closeSize + 4)
+      stockClose:Show() close:Hide()
+    else
+      if stockClose then stockClose:Hide() end
+      close:Show()
     end
     -- 0.4.4 status box, every theme: fills the gap between Settings and Share stats (same margin on both sides, so it
     -- is centred between them), tall enough for its text plus padding; the text truncates with an ellipsis only when

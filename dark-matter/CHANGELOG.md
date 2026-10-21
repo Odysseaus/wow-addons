@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.1 (the WoW theme in the game's own art)
+- **The default theme 'WoW' now looks like a stock WoW window** (quest log / character panel). It uses the client's own textures, referenced by path at runtime; no Blizzard file is copied or bundled:
+  - frame: `DialogFrame\UI-DialogBox-Border` (edge file, cut like `Backdrop.lua`), title bar `DialogFrame\UI-DialogBox-Header`, portrait icon `QuestFrame\UI-QuestLog-BookIcon`;
+  - panes: `Tooltips\UI-Tooltip-Border` edges over `DialogFrame\UI-DialogBox-Background-Dark`; window background `FrameGeneral\UI-Background-Rock`; quest detail on `QuestFrame\QuestBG` parchment;
+  - buttons `Buttons\UI-Panel-Button-Up/Down/Disabled`, search field `Common\Common-Input-Border`, section tabs `PaperDollInfoFrame\UI-Character-ActiveTab/InActiveTab`;
+  - scroll bars `Buttons\UI-ScrollBar-ScrollUp/DownButton-Up` and `UI-ScrollBar-Knob`, check boxes `Buttons\UI-CheckBox-Up/Check`, +/- `Buttons\UI-PlusButton-Up/UI-MinusButton-Up`, selected row `QuestFrame\UI-QuestTitleHighlight` (a subtle gold tint);
+  - the close button is the `UIPanelCloseButton` template.
+  - Colours follow the stock fonts: GameFontNormal gold `#ffd100` headers, GameFontHighlight white body. Hover stays a subtle tint.
+- **Feature-detected, per piece:** each texture is checked with `GetFileIDFromPath` (or a trial load) and each template with `C_XMLUtil.GetTemplateInfo` (or a protected `CreateFrame`). A missing piece falls back to Dark Matter's own 0.5.0 art, so nothing is ever blank.
+- **`/dm artprobe`:** short `ok` / `MISSING` lines for every stock texture and template the WoW theme asks for, plus a summary; saved to `DarkMatterDB.artprobe`.
+- The Map tab gets the stock framing in the WoW theme. The nine class themes are unchanged.
+- **Roadmap shift:** pins 0.5.2, Starpen + share 0.5.3, Town Pins 0.5.4 (tool-strip tooltips updated).
+- **Tests:** the contrast scan covers the WoW theme at light and dark estimates of the stock art and with all stock art missing; new checks for stock art drawn, the template close button, fallback, `/dm artprobe`, and the class themes staying unchanged.
+
 ## 0.5.0 (Map tab: the game's own map, world > continent > zone)
 - **Map tab** (replaces the "Coming soon" stub):
   - the game's own map pictures (`C_Map.GetMapArtLayerTextures`, per mapID), read at runtime for every Kalimdor and Eastern Kingdoms zone;

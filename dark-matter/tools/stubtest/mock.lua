@@ -296,6 +296,21 @@ local function mk(kind, name, parent, tmpl)
   return f
 end
 
+-- 0.5.1 stock art: the client's file-ID lookup and template list (test data). STOCK_MISSING = true makes every stock
+-- texture and template missing, so the fallback to Dark Matter's own art can be checked.
+STOCK_MISSING = false
+STOCK_CALLS = 0
+function GetFileIDFromPath(p)
+  STOCK_CALLS = STOCK_CALLS + 1
+  if type(p) ~= "string" then error("GetFileIDFromPath: string expected", 2) end
+  if STOCK_MISSING or p:find("^Interface\\AddOns\\") then return nil end
+  return 130000 + #p
+end
+C_XMLUtil = { GetTemplateInfo = function(n)
+  if STOCK_MISSING then return nil end
+  if n == "UIPanelCloseButton" then return { type = "Button", width = 32, height = 32 } end
+  return nil
+end }
 function CreateFrame(ftype, name, parent, tmpl)
   if type(ftype) ~= "string" then error("CreateFrame: frame type expected", 2) end
   if parent ~= nil and type(parent) ~= "table" then error("CreateFrame: parent must be a frame", 2) end
@@ -918,6 +933,9 @@ do
         if not clipped then
           check(e.l >= wl - 30 and e.rr <= wr + 30 and e.t <= wt + 30 and e.b >= wb - 30, tag .. ": texture lies within the window " .. nm)
         end
+        local stockPiece = r._file and type(r._file) == "string" and r._file:find("^Interface\\") and not r._file:find("^Interface\\AddOns\\")
+          and not r._file:upper():find("WHITE8X8", 1, true) -- 0.5.1: the game's own art counts as a piece too
+        if stockPiece then nPieces = nPieces + 1 end
         if r._file and tostring(r._file):find("wow%-atlas") then
           nPieces = nPieces + 1
           check(r._tc ~= nil, tag .. ": atlas texture has SetTexCoord (otherwise the whole atlas shows) " .. nm)
@@ -940,7 +958,7 @@ do
     local minl, maxr, maxt, minb = 1e9, -1e9, -1e9, 1e9
     for _, e in ipairs(pieces) do
       minl = math.min(minl, e.l) maxr = math.max(maxr, e.rr) maxt = math.max(maxt, e.t) minb = math.min(minb, e.b)
-      check(math.min(e.rr - e.l, e.t - e.b) <= 16.01, tag .. ": border piece is thin (<=16 units)")
+      check(math.min(e.rr - e.l, e.t - e.b) <= 24.01, tag .. ": border piece is thin (<=24 units; the stock dialog border is 24)")
     end
     check(minl == wl and maxr == wr and maxt == wt and minb == wb, tag .. ": border pieces span corner to corner")
     -- background art (window-owned BACKGROUND/BORDER textures) is drawn before every content frame
@@ -2883,7 +2901,7 @@ if MODE ~= "minimal" then
   -- WoW colours that replaced literals keep their 0.4.1 values
   local function near(c, r, g, b) return math.abs(c[1] - r) < 0.003 and math.abs(c[2] - g) < 0.003 and math.abs(c[3] - b) < 0.003 end
   local wc = NS.themes.wow.colors
-  check(near(wc.barBorder, 0.294, 0.290, 0.267) and near(wc.barTrack, 0.02, 0.02, 0.016) and near(wc.barInk, 1, 0.965, 0.847) and wc.barFill[1] == wc.gold[1],
+  check(near(wc.barBorder, 0.294, 0.290, 0.267) and near(wc.barTrack, 0.02, 0.02, 0.016) and near(wc.barInk, 1, 0.965, 0.847) and near(wc.barFill, 0.941, 0.812, 0.290), -- 0.5.1: gold text is now GameFontNormal; the bar fill keeps 0.4.1's gold
     "themes: WoW bar colours equal the 0.4.1 literals")
 
   -- snapshot of everything the WoW theme draws (to prove a round trip through all themes leaves it unchanged)
@@ -3117,8 +3135,24 @@ if MODE ~= "minimal" then
     end
   end
   win:Show()
+  -- 0.5.1: the WoW theme draws the game's own art. It is scanned with the stock textures at their light and dark
+  -- estimate (contrast.lua C.STOCK), and once more with every stock texture missing (Dark Matter's own art).
+  local passes = {}
   for _, id in ipairs(NS.themeOrder) do
-    NS.SetTheme(id)
+    if id == "wow" then
+      passes[#passes + 1] = { id = id, tone = "light" }
+      passes[#passes + 1] = { id = id, tone = "dark", tag = "wow@stockdark" }
+      passes[#passes + 1] = { id = id, missing = true, tag = "wow@fallback" }
+    else
+      passes[#passes + 1] = { id = id }
+    end
+  end
+  for _, ps in ipairs(passes) do
+    local id = ps.tag or ps.id
+    CT.tone = ps.tone or "light"
+    STOCK_MISSING = ps.missing and true or false
+    NS.Stock.ClearCache()
+    NS.SetTheme(ps.id)
     for _, tid in ipairs(NS.tabOrder) do
       NS.ShowTab(tid)
       if tid == "journals" then
@@ -3141,7 +3175,10 @@ if MODE ~= "minimal" then
     io.write(string.format("contrast\t%s\t%.2f\t%d\t%s\t%s\n", k, w.ratio, w.n, w.view, w.text))
   end
   for _, f in ipairs(fails) do io.write("cfail\t" .. f .. "\n") end
-  check(nlab > 2000, "contrast: " .. nlab .. " label checks over 10 themes")
+  STOCK_MISSING = false
+  CT.tone = "light"
+  NS.Stock.ClearCache()
+  check(nlab > 2000, "contrast: " .. nlab .. " label checks over 10 themes (WoW: stock art at light + dark estimates, and its fallback)")
   check(#fails == 0, "contrast: every label >= 4.5:1 (3:1 large) in every theme and state (" .. #fails .. " below)\n  " .. table.concat(fails, "\n  ", 1, math.min(#fails, 12)))
   NS.SetTheme("wow")
   NS.ShowTab("journals")
@@ -3527,7 +3564,7 @@ do
   local nlog = #log
   SlashCmdList.DARKMATTER("mapprobe")
   local mp = DarkMatterDB.mapprobe
-  check(type(mp) == "table" and mp.last and #mp.runs == 1 and mp.last.version == "0.5.0", "0.4.7 mapprobe: results saved to DarkMatterDB.mapprobe (last + runs)")
+  check(type(mp) == "table" and mp.last and #mp.runs == 1 and mp.last.version == ns.version, "0.4.7 mapprobe: results saved to DarkMatterDB.mapprobe (last + runs)")
   local L = mp.last.lines
   local all = table.concat(L, "\n")
   local function has(s) return all:find(s, 1, true) ~= nil end
@@ -3841,7 +3878,7 @@ do
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
   check(table.concat(keys, ",") == "starpen,pin,town,findme,full", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen")
   check(soon.starpen and soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen, Pin and Town Pins are disabled")
-  local wantV = { starpen = "0.5.2", pin = "0.5.1", town = "0.5.3" }
+  local wantV = { starpen = "0.5.3", pin = "0.5.2", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
   local origSS = NS.SetStatus
   NS.SetStatus = function(t) STATUS_SEEN = t return origSS(t) end
   for k, b in pairs(soon) do
@@ -3994,6 +4031,102 @@ do
   GetPlayerFacing, WorldMapFrame, GameTooltip, Enum.UIMapType, hooksecurefunc = save.GetPlayerFacing, save.WorldMapFrame, save.GameTooltip, save.UIMapType, save.hook
   M.Reset() MD.Forget()
   NS.ShowTab("quests")
+end
+
+-- ===== 0.5.1: the WoW theme in the game's own art (stock textures + UIPanelCloseButton), fallback, /dm artprobe =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local W = NS.windowParts
+  local win = DarkMatterFrame
+  local function drawn()
+    local set, blank = {}, {}
+    for _, r in ipairs(REGIONS) do
+      if r._kind == "texture" and under(r, win) and visible(r) then
+        if r._file ~= nil then set[tostring(r._file)] = (set[tostring(r._file)] or 0) + 1 end
+      end
+    end
+    return set
+  end
+  local function stockFiles(set)
+    local n = 0
+    for f in pairs(set) do if not f:find("^Interface\\AddOns\\") and not f:find("^Interface\\Icons\\") and not f:upper():find("WHITE8X8", 1, true) and type(tonumber(f)) ~= "number" then n = n + 1 end end
+    return n
+  end
+  STOCK_MISSING = false
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  win:Show()
+  NS.ShowTab("quests")
+  local d = drawn()
+  local want = { "Interface\\DialogFrame\\UI-DialogBox-Border", "Interface\\Tooltips\\UI-Tooltip-Border", "Interface\\DialogFrame\\UI-DialogBox-Header",
+    "Interface\\QuestFrame\\UI-QuestLog-BookIcon", "Interface\\Buttons\\UI-Panel-Button-Up", "Interface\\Buttons\\UI-Panel-Button-Down",
+    "Interface\\Buttons\\UI-Panel-Button-Disabled", "Interface\\Common\\Common-Input-Border", "Interface\\FrameGeneral\\UI-Background-Rock",
+    "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", "Interface\\QuestFrame\\QuestBG" }
+  local miss = {}
+  for _, f in ipairs(want) do if not d[f] then miss[#miss + 1] = f end end
+  check(#miss == 0, "0.5.1 WoW theme: the window draws the game's own art (frame, header, portrait, buttons, tabs, panels, parchment)" .. (#miss > 0 and (" missing: " .. table.concat(miss, ", ")) or ""))
+  check(not d["Interface\\AddOns\\DarkMatter\\Media\\wow-slate"] and not d["Interface\\AddOns\\DarkMatter\\Media\\wow-parchment"],
+    "0.5.1 WoW theme: Dark Matter's own slate/parchment are not used while the stock art loads")
+  check(W.stockClose and W.stockClose:IsShown(), "0.5.1 WoW theme: the stock UIPanelCloseButton is shown")
+  W.stockClose._scripts.OnClick(W.stockClose, "LeftButton")
+  check(not win:IsShown(), "0.5.1 WoW theme: the stock close button closes the window")
+  win:Show()
+  -- Journals: section tabs are the character-panel tabs; the Map tab gets the stock framing too
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("fishing")
+  d = drawn()
+  check(d["Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab"] and d["Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab"], "0.5.1 WoW theme: section tabs use the character-panel tabs")
+  local knobSet = false
+  for _, r in ipairs(REGIONS) do if r._kind == "texture" and under(r, win) and r._file == "Interface\\Buttons\\UI-ScrollBar-Knob" then knobSet = true end end -- the knob shows only when a list overflows
+  check(d["Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up"] and knobSet, "0.5.1 WoW theme: scroll bars use the stock scroll buttons and knob")
+  NS.ShowTab("map")
+  d = drawn()
+  check(d["Interface\\Tooltips\\UI-Tooltip-Border"] and d["Interface\\DialogFrame\\UI-DialogBox-Background-Dark"], "0.5.1 WoW theme: the Map tab's panels get the stock framing")
+  NS.ShowTab("quests")
+  -- /dm artprobe: short lines, ok for everything here, saved
+  local said = {}
+  local oldPrint = NS.Print
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("artprobe")
+  NS.Print = oldPrint
+  local ap = NS.db.artprobe
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  local longest = 0
+  for _, l in ipairs(said) do longest = math.max(longest, #l) end
+  check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
+  check(type(ap) == "table" and ap.missing == 0 and ap.ok >= 20 and #ap.items == ap.ok and ap.method == "file-ID lookup", "0.5.1 /dm artprobe: saved to DarkMatterDB.artprobe (" .. tostring(ap and ap.ok) .. " ok)")
+  local hasTmpl = false
+  for _, it in ipairs(ap.items) do if it.kind == "template" and it.name == "UIPanelCloseButton" then hasTmpl = it.ok end end
+  check(hasTmpl, "0.5.1 /dm artprobe: lists the UIPanelCloseButton template")
+  -- fallback: every stock texture missing -> Dark Matter's own art, nothing blank
+  STOCK_MISSING = true
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  d = drawn()
+  check(stockFiles(d) == 0, "0.5.1 fallback: with the stock art missing no stock file is drawn")
+  check(d["Interface\\AddOns\\DarkMatter\\Media\\wow-slate"] and d["Interface\\AddOns\\DarkMatter\\Media\\wow-parchment"] and d["Interface\\AddOns\\DarkMatter\\Media\\wow-atlas"],
+    "0.5.1 fallback: Dark Matter's own slate, parchment and atlas are drawn instead")
+  local blank = 0
+  for _, r in ipairs(REGIONS) do
+    if r._kind == "texture" and under(r, win) and visible(r) and r._file == nil and r._color == nil then blank = blank + 1 end
+  end
+  check(blank == 0, "0.5.1 fallback: no visible texture is left blank (" .. blank .. ")")
+  check(W.stockClose and not W.stockClose:IsShown(), "0.5.1 fallback: the template close button is hidden; Dark Matter's own close shows")
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("artprobe")
+  NS.Print = oldPrint
+  check(said[#said]:find("^artprobe: 0 ok, %d+ missing %(missing pieces use Dark Matter's own art%)$") and said[2]:find("^MISSING "), "0.5.1 /dm artprobe: reports missing pieces (" .. tostring(said[#said]) .. ")")
+  -- a class theme never draws stock art and keeps its own colours
+  STOCK_MISSING = false
+  NS.Stock.ClearCache()
+  NS.SetTheme("warrior")
+  check(stockFiles(drawn()) == 0, "0.5.1 class themes: no stock art (unchanged)")
+  NS.SetTheme("wow")
+  check(NS.Stock.Spec("btn_red_m") and drawn()["Interface\\Buttons\\UI-Panel-Button-Up"], "0.5.1 WoW theme: switching back draws the stock art again")
+  -- hover is a subtle tint
+  local e = NS.themes.wow.colors.hoverEdge
+  check(e[4] and e[4] <= 0.3, "0.5.1 WoW theme: the hover edge is subtle (alpha " .. tostring(e[4]) .. ")")
 end
 
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====

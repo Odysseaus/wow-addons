@@ -831,9 +831,9 @@ local function Build(body)
   sbg:SetColorTexture(0, 0, 0, 0.55)
   UI.NineSlice(strip, "pane", 4, "BORDER", 1)
   local tools = {
-    ToolButton("starpen", "Starpen", "Draw on the map. Coming in 0.5.2.", true),
-    ToolButton("pin", "Drop a pin", "Pins with notes, colours and minimap follow. Coming in 0.5.1.", true),
-    ToolButton("town", "Town Pins", "Flight masters, innkeepers, vendors, trainers and more. Coming in 0.5.3.", true),
+    ToolButton("starpen", "Starpen", "Draw on the map. Coming in 0.5.3.", true),
+    ToolButton("pin", "Drop a pin", "Pins with notes, colours and minimap follow. Coming in 0.5.2.", true),
+    ToolButton("town", "Town Pins", "Flight masters, innkeepers, vendors, trainers and more. Coming in 0.5.4.", true),
     ToolButton("findme", "Find me", "Jump to where you are.", false, function() M.FindMe() end),
     ToolButton("full", "Full screen", "", false, function() M.SetFull(not M.full) end),
   }
