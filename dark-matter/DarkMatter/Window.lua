@@ -407,34 +407,7 @@ local function Build()
   body:SetSize(m.bodyW, m.bodyH)
   W.body = body
 
-  -- quest-log style head row over the rail ("All" collapses/expands the quest list)
-  local allBtn = CreateFrame("Button", nil, f)
-  allBtn:SetPoint("TOPLEFT", f, "TOPLEFT", m.lheadAllX, -m.lheadAllY)
-  allBtn:SetSize(m.lheadAllW, m.lheadAllH)
-  UI.ThreeSlice(allBtn, "ptab_a", m.lheadAllH, "ARTWORK")
-  UI.Hover(allBtn)
-  allBtn.hoverInk = "lheadAll"
-  W.allIcon = allBtn:CreateTexture(nil, "OVERLAY")
-  W.allIcon:SetSize(14, 14)
-  W.allIcon:SetPoint("LEFT", allBtn, "LEFT", 8, 0)
-  NS.OnSkin(function() NS.SetPiece(W.allIcon, "coin_minus") end)
-  local allText = UI.Text(allBtn, "OVERLAY", m.lheadSize, "lheadAll", "LEFT")
-  allText:SetPoint("LEFT", W.allIcon, "RIGHT", 5, 0)
-  allText:SetText("All")
-  allBtn:SetScript("OnClick", function()
-    local def = NS.tabs[W.current]
-    if def and def.ToggleAll then def.ToggleAll() end
-  end)
-  local trk = CreateFrame("Frame", nil, f)
-  trk:SetPoint("TOPLEFT", f, "TOPLEFT", m.lheadTrkX, -m.lheadTrkY)
-  trk:SetSize(100, 16)
-  local trkIcon = trk:CreateTexture(nil, "OVERLAY")
-  trkIcon:SetSize(14, 14)
-  trkIcon:SetPoint("LEFT", trk, "LEFT", 0, 0)
-  NS.OnSkin(function() NS.SetPiece(trkIcon, "coin_target") end)
-  local trkText = UI.Text(trk, "OVERLAY", m.lheadSize, "lheadInk", "LEFT")
-  trkText:SetPoint("LEFT", trkIcon, "RIGHT", 5, 0)
-  trkText:SetText("Track Quest")
+  -- 0.4.5: All + Track Quest moved into the Quests tab (toolbar row above the quest list)
 
   -- footer: Settings, status field, Share stats (later phase), Exit
   local settings = UI.Button(f, "Settings", m.fbtnW, m.fbtnH, "red", m.fbtnSize)
@@ -496,12 +469,10 @@ local function Build()
     if def and def.OnHide then pcall(def.OnHide) end
   end)
 
-  -- class themes: frame art on, WoW-only chrome (frame border, title plate, medal, footer tint) off. 0.4.4: the quest-log
-  -- head row (All + Track Quest) stays in every theme, in the same spot above the left nav column
+  -- class themes: frame art on, WoW-only chrome (frame border, title plate, medal, footer tint) off
   local art = BuildClassArt(f)
   W.classArt = art
   local wowOnly = { frameNine, tbSlice, tint, line, medal }
-  W.allBtn, W.trk = allBtn, trk
   NS.OnSkin(function()
     art.Apply()
     local ca = NS.theme.classArt

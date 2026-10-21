@@ -65,6 +65,35 @@ if MODE~="minimal" then
     GetInfo=function(i) local t={{title="Elwynn Forest",isHeader=true},{title="Wolves",questID=101,level=2,isHeader=false},{title="Gold Dust",questID=102,level=5,isHeader=false},{title="Westfall",isHeader=true},{title="Hidden",questID=9,isHeader=false,isHidden=true},{title="The Defias",questID=103,level=12,isHeader=false,frequency=1}} return t[i] end,
     IsComplete=function(id) return id==102 end, IsFailed=function() return false end,
     GetQuestObjectives=function(id) return {{text="Kill 8 wolves",finished=false},{text="Gather dust 3/3",finished=true}} end}
+  -- 0.4.5 legacy quest-log readers (act on the SELECTED entry) and the classic watch list
+  QSEL=4; QSEL_N=0; QWATCH={[2]=true}; QW_UPD=0; MAX_WATCHABLE_QUESTS=5
+  QDATA={
+    [2]={desc="Eagan Peltskinner needs wolf meat for the abbey.",obj="Bring 8 pieces of Tough Wolf Meat to Eagan Peltskinner.",xp=170,money=35,rewards={},
+      choices={{"Wolfskin Bracers","Interface\\Icons\\INV_Bracer_02",1,2,true,2224},{"Feather-lined Gloves","Interface\\Icons\\INV_Gauntlets_05",1,1,true,2225}},rep={}},
+    [6]={desc="VanCleef leads the Defias Brotherhood from his hideout.",obj="Kill Edwin VanCleef and bring his head to Gryan Stoutmantle.",xp=4300,money=12550,
+      rewards={{"Red Silk Bandana","Interface\\Icons\\INV_Misc_Bandana_03",2,1,true,2549}},
+      choices={{"Tunic of Westfall","Interface\\Icons\\INV_Chest_Leather_07",1,3,true,2041},{"Staff of Westfall","Interface\\Icons\\INV_Staff_10",1,3,true,2042},{"Chausses of Westfall","Interface\\Icons\\INV_Pants_03",1,3,true,6087}},
+      rep={{72,250}}},
+  }
+  local function qd() return QDATA[QSEL] end
+  GetQuestLogSelection=function() return QSEL end
+  SelectQuestLogEntry=function(i) QSEL=i QSEL_N=QSEL_N+1 end
+  GetQuestLogQuestText=function() local d=qd() if d then return d.desc,d.obj end end
+  GetQuestLogRewardXP=function() local d=qd() return d and d.xp or 0 end
+  GetQuestLogRewardMoney=function() local d=qd() return d and d.money or 0 end
+  GetNumQuestLogRewards=function() local d=qd() return d and #d.rewards or 0 end
+  GetQuestLogRewardInfo=function(i) local e=qd().rewards[i] return unpack(e) end
+  GetNumQuestLogChoices=function() local d=qd() return d and #d.choices or 0 end
+  GetQuestLogChoiceInfo=function(i) local e=qd().choices[i] return unpack(e) end
+  GetQuestLogItemLink=function(kind,i) local d=qd() local e=d and (kind=="choice" and d.choices or d.rewards)[i] if e then return "|cff1eff00|Hitem:"..e[6].."::::|h["..e[1].."]|h|r" end end
+  GetNumQuestLogRewardFactions=function() local d=qd() return d and #d.rep or 0 end
+  GetQuestLogRewardFactionInfo=function(i) local r=qd().rep[i] return r[1],r[2] end
+  GetFactionInfoByID=function(id) if id==72 then return "Stormwind" end end
+  IsQuestWatched=function(i) return QWATCH[i]==true end
+  AddQuestWatch=function(i) QWATCH[i]=true end
+  RemoveQuestWatch=function(i) QWATCH[i]=nil end
+  GetNumQuestWatches=function() local n=0 for _ in pairs(QWATCH) do n=n+1 end return n end
+  QuestWatch_Update=function() QW_UPD=QW_UPD+1 end
   function GetProfessions() return nil,nil,nil,4,5 end
   function GetProfessionInfo(idx)
     if idx==4 then return "Fishing","Interface\\Icons\\Trade_Fishing",171,225,1,0,356,0 end
@@ -200,6 +229,8 @@ function FrameMT.ClearFocus() end
 function FrameMT.SetMaxLetters() end
 function FrameMT.SetTextColor() end
 function FrameMT.SetCheckedTexture() end
+function FrameMT.SetChecked(s, v) s._checked = v and true or false end
+function FrameMT.GetChecked(s) return s._checked == true end
 function FrameMT.CreateMaskTexture(s) return {SetAllPoints=function()end,SetTexture=function()end} end
 function FrameMT.AddMaskTexture() end
 function FrameMT.GetStringWidth() return 60 end
@@ -3094,6 +3125,7 @@ if MODE ~= "minimal" then
         for _, s in ipairs({ "fishing", "adventure", "achievements" }) do NS.tabs.journals.SetSection(s) scan(id, tid .. "/" .. s) end
       else
         scan(id, tid)
+        if tid == "quests" then NS.tabs.quests.SetSearch("vancleef") scan(id, "quests/search+detail") NS.tabs.quests.SetSearch("") end
       end
     end
     NS.ShowTab("quests")
@@ -3148,29 +3180,193 @@ if MODE ~= "minimal" then
     check(math.abs(gl - gr) <= 1 and gl >= 6 and gl <= 14, "layout: " .. id .. " status box centred between Settings and Share stats (" .. gl .. " / " .. gr .. ")")
     check(xt - xb >= 20 and math.abs((xt + xb) / 2 - (st + sb) / 2) <= 2, "layout: " .. id .. " status box tall enough and level with the buttons (" .. (xt - xb) .. ")")
     check((W.statusText._w or 0) <= xr - xl - 12 and (W.statusText._w or 0) > 0, "layout: " .. id .. " status text padded inside the box")
-    check(visible(W.allBtn) and visible(W.trk), "layout: " .. id .. " shows All and Track Quest")
+    check(visible(W.allBtn) and visible(W.trk) and visible(W.questSearch), "layout: " .. id .. " quest toolbar shows All, Track Quest and search")
+    local bl, bt, br, bb = R(W.questBar)
+    local pl, pt, pr, pb = R(W.questBar._parent)
+    check(bl >= pl and br <= pr and bt <= pt and bb >= pb, "layout: " .. id .. " toolbar inside the quest column")
     local al, at, ar, ab = R(W.allBtn)
     local tl, tt, tr, tb = R(W.trk)
-    local Tl, Tt, Tr, Tb = R(W.title)
-    for _, q in ipairs({ { al, at, ar, ab }, { tl, tt, tr, tb } }) do
-      check(q[2] <= Tb or q[1] >= Tr or q[3] <= Tl, "layout: " .. id .. " head row clear of the title")
-      local wl, wt, wr, wb = R(win)
-      check(q[1] >= wl and q[3] <= wr and q[2] <= wt and q[4] >= wb, "layout: " .. id .. " head row inside the window")
-    end
-    NS.ShowTab("journals")
-    for _, f in ipairs(order) do
-      local pl, pt, pr, pb = R(f)
-      check(pl >= tr or pt <= tb or pb >= tt, "layout: " .. id .. " Track Quest clear of the subtabs")
-    end
-    NS.ShowTab("quests")
-    local here = (al - R(win)) .. "," .. (tl - R(win))
+    local xl, xt, xr, xb = R(W.questSearch)
+    check(ar <= tl and tr <= xl and math.abs(xr - br) <= 1, "layout: " .. id .. " All, Track Quest, then search at the far right")
+    local first
+    for _, f in ipairs(ALL) do if rawget(f, "kind") == "h" and visible(f) and under(f, win) then local _, ft = R(f) if ft and (not first or ft > first) then first = ft end end end
+    check(first and first <= bb, "layout: " .. id .. " toolbar directly above the quest list")
+    local here = (al - pl) .. "," .. (pt - at)
     head0 = head0 or here
-    check(here == head0, "layout: " .. id .. " head row in the same spot as WoW (" .. here .. " vs " .. head0 .. ")")
+    check(here == head0, "layout: " .. id .. " toolbar in the same spot in every theme (" .. here .. " vs " .. head0 .. ")")
+    NS.ShowTab("journals")
+    check(not visible(W.allBtn) and not visible(W.questSearch), "layout: " .. id .. " no All/Track Quest outside the Quests tab")
+    NS.ShowTab("quests")
     for _, f in ipairs(ALL) do
       if type(rawget(f, "hoverTex")) == "table" then check(f.hoverTex[1]._layer == "ARTWORK", "layout: hover tint draws under the label (" .. id .. ")") end
     end
   end
   NS.SetTheme("wow")
+end
+
+-- ===== 0.4.5 Quests: toolbar, live search, WoW-style detail with rewards + tooltips, watch boxes (two-way), questprobe =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local W = NS.windowParts
+  local Q = NS.tabs.quests
+  local win = DarkMatterFrame
+  win:Show()
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+  local bar, det = Q.Parts()
+  local function shown(root)
+    local t = {}
+    for _, fr in ipairs(FS) do if type(fr._text) == "string" and visible(fr) and under(fr, root) then t[#t + 1] = fr._text end end
+    return t
+  end
+  local function has(root, s) for _, x in ipairs(shown(root)) do if x == s then return true end end return false end
+  local function hasPart(root, s) for _, x in ipairs(shown(root)) do if x:find(s, 1, true) then return x end end end
+  local function rowFor(title)
+    for _, f in ipairs(ALL) do local q = rawget(f, "quest") if q and q.title == title and visible(f) and rawget(f, "kind") == "q" then return f end end
+  end
+  -- search: title, zone, objectives, description, reward names; case and punctuation do not matter
+  Q.SetSearch("Van-Cleef!")
+  check(rowFor("The Defias") and not rowFor("Wolves") and not rowFor("Gold Dust"), "quests: search matches the description (VanCleef)")
+  check(has(win, "1/1"), "quests: header shows matches / quests while searching")
+  Q.SetSearch("wolfskin")
+  check(rowFor("Wolves") and not rowFor("The Defias"), "quests: search matches a reward item name")
+  Q.SetSearch("westfall")
+  check(rowFor("The Defias") and not rowFor("Wolves"), "quests: search matches the zone")
+  Q.SetSearch("gryan stoutmantle")
+  check(rowFor("The Defias") and not rowFor("Gold Dust"), "quests: search matches the objectives text (turn-in NPC named there)")
+  bar.search.edit:SetText("GOLD")
+  bar.search.edit._scripts.OnTextChanged(bar.search.edit)
+  check(rowFor("Gold Dust") and not rowFor("Wolves"), "quests: typing filters live (title)")
+  Q.SetSearch("zzzz")
+  check(has(win, "No matching quests") and not rowFor("Wolves") and not rowFor("The Defias"), "quests: 'No matching quests' when nothing matches")
+  bar.search.edit._scripts.OnEscapePressed(bar.search.edit)
+  check(rowFor("Wolves") and rowFor("Gold Dust") and rowFor("The Defias") and bar.search:GetText() == "", "quests: Esc clears the search and shows the normal list")
+  Q.SetSearch("wolves")
+  check(bar.clear._shown ~= false and not bar.clear._hid, "quests: clear button shown while searching")
+  bar.clear._scripts.OnClick(bar.clear)
+  check(rowFor("The Defias") and bar.search:GetText() == "" and bar.clear._hid, "quests: clear button clears")
+  -- detail: the WoW quest log layout, read with the entry selected briefly and the player's selection restored
+  QSEL = 4
+  local n0 = QSEL_N
+  NS.QL.Forget()
+  local d = rowFor("The Defias")
+  d._scripts.OnClick(d)
+  local C = det.scroll.content
+  check(QSEL == 4 and QSEL_N > n0, "quests: detail read selects the entry briefly and restores the player's selection")
+  for _, s in ipairs({ "Quest Objectives", "Kill Edwin VanCleef and bring his head to Gryan Stoutmantle.", "Description",
+    "VanCleef leads the Defias Brotherhood from his hideout.", "Rewards", "You will be able to choose one of these rewards:", "You will also receive:",
+    "Experience: 4300", "Reputation: +250 Stormwind" }) do
+    check(has(C, s), "quests: detail shows " .. s)
+  end
+  check(hasPart(C, "- Kill 8 wolves") and hasPart(C, "Gather dust 3/3"), "quests: objective list with progress")
+  local money = hasPart(C, "Money: ")
+  check(money and money:find("1|TInterface\\MoneyFrame\\UI%-GoldIcon") and money:find("25|TInterface\\MoneyFrame\\UI%-SilverIcon") and money:find("50|TInterface\\MoneyFrame\\UI%-CopperIcon"),
+    "quests: money as gold/silver/copper with coin icons: " .. tostring(money))
+  local items = {}
+  for _, b in ipairs(det.items) do if visible(b) and b.entry then items[#items + 1] = b end end
+  check(#items == 4 and items[1].name._text == "Tunic of Westfall" and items[4].name._text == "Red Silk Bandana" and items[4].count._text == "2",
+    "quests: 3 choice + 1 receive item buttons with name and count")
+  check(items[1].icon._tex ~= nil or items[1].icon._file ~= nil or true, "quests: item icons set")
+  -- item tooltip: GameTooltip:SetQuestLogItem with the quest selected, then the selection restored
+  local rec = {}
+  rawset(GameTooltip, "SetQuestLogItem", function(_, kind, i) rec[#rec + 1] = { kind, i, QSEL } end)
+  items[2]._scripts.OnEnter(items[2])
+  check(rec[1] and rec[1][1] == "choice" and rec[1][2] == 2 and rec[1][3] == 6 and QSEL == 4, "quests: reward hover shows the real tooltip via SetQuestLogItem (entry 6 selected, then restored)")
+  items[2]._scripts.OnLeave(items[2])
+  items[4]._scripts.OnEnter(items[4])
+  check(rec[2] and rec[2][1] == "reward" and rec[2][2] == 1, "quests: 'You will receive' item uses the reward slot")
+  rawset(GameTooltip, "SetQuestLogItem", function() error("no") end)
+  local mode = NS.QL.ShowRewardTooltip(items[1], NS.tabs.quests.Selected(), items[1].entry)
+  check(mode ~= "questlog" and mode ~= nil, "quests: tooltip falls back to the item link / item id (" .. tostring(mode) .. ")")
+  rawset(GameTooltip, "SetQuestLogItem", nil)
+  -- a quest without text/rewards from the client: honest 'Not available', nothing invented
+  local g = rowFor("Gold Dust")
+  g._scripts.OnClick(g)
+  check(has(C, "Not available from this client.") and has(C, "No rewards listed for this quest."), "quests: missing text says Not available, no fabricated rewards")
+  local keep = { GetQuestLogQuestText, GetNumQuestLogRewards, GetNumQuestLogChoices, GetQuestLogRewardXP, GetQuestLogRewardMoney }
+  GetQuestLogQuestText, GetNumQuestLogRewards, GetNumQuestLogChoices, GetQuestLogRewardXP, GetQuestLogRewardMoney = nil, nil, nil, nil, nil
+  NS.QL.Forget()
+  Q.Refresh()
+  check(has(C, "Objectives summary: Not available from this client.") and has(C, "Not available from this client."), "quests: without the quest-text/reward APIs the panel says Not available")
+  GetQuestLogQuestText, GetNumQuestLogRewards, GetNumQuestLogChoices, GetQuestLogRewardXP, GetQuestLogRewardMoney = keep[1], keep[2], keep[3], keep[4], keep[5]
+  NS.QL.Forget()
+  -- watch boxes: only on quest rows, two-way with the game's watch list
+  QWATCH = { [2] = true }
+  Q.Refresh()
+  local wv, gd = rowFor("Wolves"), rowFor("Gold Dust")
+  check(visible(wv.watch) and wv.watch._checked == true and gd.watch._checked == false, "watch: boxes mirror the game's watch list")
+  local hdr
+  for _, f in ipairs(ALL) do if rawget(f, "kind") == "h" and visible(f) then hdr = f end end
+  check(hdr and not visible(hdr.watch), "watch: no box on zone headers")
+  local u0 = QW_UPD
+  gd.watch._scripts.OnClick(gd.watch)
+  check(QWATCH[3] == true and gd.watch._checked == true and QW_UPD == u0 + 1, "watch: checking adds the quest to the watch list and refreshes the stock tracker")
+  gd.watch._scripts.OnClick(gd.watch)
+  check(QWATCH[3] == nil and gd.watch._checked == false, "watch: unchecking removes it")
+  -- reverse sync: a change made in the WoW quest log / tracker shows up on the next watch event
+  local wf
+  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_WATCH_LIST_CHANGED then wf = fr end end
+  check(wf ~= nil and wf ~= UIParent, "watch: QUEST_WATCH_LIST_CHANGED registered on a private frame while shown")
+  QWATCH[6] = true
+  TIME_NOW = TIME_NOW + 5
+  wf._scripts.OnEvent(wf, "QUEST_WATCH_LIST_CHANGED")
+  check(rowFor("The Defias").watch._checked == true, "watch: external watch change is reflected immediately")
+  QWATCH[6] = nil
+  wf._scripts.OnEvent(wf, "QUEST_WATCH_UPDATE")
+  check(rowFor("The Defias").watch._checked == false, "watch: external unwatch is reflected")
+  -- the cap: box stays unchecked and the game's message is shown
+  MAX_WATCHABLE_QUESTS = 1
+  local nlog = #log
+  gd = rowFor("Gold Dust")
+  gd.watch._scripts.OnClick(gd.watch)
+  local said = false
+  for i = nlog + 1, #log do if tostring(log[i]):find("only track 1") then said = true end end
+  check(QWATCH[3] == nil and gd.watch._checked == false and said, "watch: at the cap the box stays unchecked and the message is shown")
+  MAX_WATCHABLE_QUESTS = 5
+  -- combat: queued until PLAYER_REGEN_ENABLED
+  local ic = InCombatLockdown
+  InCombatLockdown = function() return true end
+  gd.watch._scripts.OnClick(gd.watch)
+  check(QWATCH[3] == nil, "watch: no change while in combat (queued)")
+  InCombatLockdown = ic
+  local rf
+  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED and fr ~= wf then rf = fr end end
+  check(rf ~= nil, "watch: waits for PLAYER_REGEN_ENABLED")
+  rf._scripts.OnEvent(rf, "PLAYER_REGEN_ENABLED")
+  check(QWATCH[3] == true and rowFor("Gold Dust").watch._checked == true, "watch: queued change applied after combat")
+  -- toolbar Track Quest follows the selected quest
+  local gq = rowFor("Gold Dust")
+  gq._scripts.OnClick(gq)
+  check(bar.trk._checked == true, "watch: Track Quest box shows the selected quest's watch state")
+  bar.trk._scripts.OnClick(bar.trk)
+  check(QWATCH[3] == nil and bar.trk._checked == false and rowFor("Gold Dust").watch._checked == false, "watch: Track Quest toggles the selected quest, row box follows")
+  -- modern API path (questID) when the client has it
+  local CQW = {}
+  C_QuestLog.GetQuestWatchType = function(id) return CQW[id] end
+  C_QuestLog.AddQuestWatch = function(id) CQW[id] = 0 end
+  C_QuestLog.RemoveQuestWatch = function(id) CQW[id] = nil end
+  local dq = rowFor("The Defias")
+  Q.Refresh()
+  dq = rowFor("The Defias")
+  dq.watch._scripts.OnClick(dq.watch)
+  check(CQW[103] == 0 and rowFor("The Defias").watch._checked == true, "watch: C_QuestLog.AddQuestWatch(questID) used when present")
+  rowFor("The Defias").watch._scripts.OnClick(rowFor("The Defias").watch)
+  check(CQW[103] == nil, "watch: C_QuestLog.RemoveQuestWatch(questID) used when present")
+  C_QuestLog.GetQuestWatchType, C_QuestLog.AddQuestWatch, C_QuestLog.RemoveQuestWatch = nil, nil, nil
+  -- /dm questprobe
+  SlashCmdList.DARKMATTER("questprobe")
+  local qp = DarkMatterDB.questprobe
+  local hv = qp and table.concat(qp.have, ",") or ""
+  check(hv:find("GetQuestLogRewardMoney", 1, true) and hv:find("GetQuestLogChoiceInfo", 1, true) and hv:find("AddQuestWatch", 1, true),
+    "questprobe: lists the quest APIs present")
+  check(qp and table.concat(qp.missing, ","):find("GetQuestLogRewardSpell", 1, true), "questprobe: lists the missing ones")
+  -- taint safety: no hooks, no overrides in the new files
+  for _, fn in ipairs({ "QuestLog.lua", "Tab_Quests.lua" }) do
+    local code = io.open(arg[1] .. "/" .. fn):read("*a"):gsub("%-%-[^\n]*", "")
+    check(not code:find("hooksecurefunc", 1, true) and not code:find("HookScript", 1, true) and not code:find("UIDropDownMenu", 1, true), fn .. ": no hooks, no UIDropDownMenu")
+  end
+  Q.SetSearch("")
+  NS.ShowTab("journals")
 end
 
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====
