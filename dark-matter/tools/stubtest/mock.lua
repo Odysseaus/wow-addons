@@ -4083,6 +4083,11 @@ if MODE ~= "minimal" then
   d = drawn()
   check(d["Interface\\Tooltips\\UI-Tooltip-Border"] and d["Interface\\DialogFrame\\UI-DialogBox-Background-Dark"], "0.5.1 WoW theme: the Map tab's panels get the stock framing")
   NS.ShowTab("quests")
+  -- the quest-detail panel is the stock QuestBG parchment with dark quest ink
+  local qb, qd = NS.tabs.quests.Parts()
+  local function lumOf(fs) local c = fs._tcol or { 0, 0, 0 } local r, g, b = c[1], c[2], c[3] return 0.2126 * r + 0.7152 * g + 0.0722 * b end
+  check(qd.panel.parch == true and lumOf(qd.title) < 0.2 and qd.texts[1] and lumOf(qd.texts[1]) < 0.2,
+    "0.5.1 WoW theme: the quest detail panel is parchment with dark ink (title " .. string.format("%.2f", lumOf(qd.title)) .. ")")
   -- /dm artprobe: short lines, ok for everything here, saved
   local said = {}
   local oldPrint = NS.Print
@@ -4112,6 +4117,8 @@ if MODE ~= "minimal" then
   end
   check(blank == 0, "0.5.1 fallback: no visible texture is left blank (" .. blank .. ")")
   check(W.stockClose and not W.stockClose:IsShown(), "0.5.1 fallback: the template close button is hidden; Dark Matter's own close shows")
+  check(qd.panel.parch == false and lumOf(qd.title) > 0.5 and lumOf(qd.texts[1]) > 0.5,
+    "0.5.1 fallback: the quest detail panel goes back to the dark panel with light text")
   said = {}
   NS.Print = function(m) said[#said + 1] = m end
   SlashCmdList["DARKMATTER"]("artprobe")
@@ -4122,6 +4129,7 @@ if MODE ~= "minimal" then
   NS.Stock.ClearCache()
   NS.SetTheme("warrior")
   check(stockFiles(drawn()) == 0, "0.5.1 class themes: no stock art (unchanged)")
+  check(qd.panel.parch == false and lumOf(qd.texts[1]) > 0.5, "0.5.1 class themes: the quest detail panel stays dark with light text")
   NS.SetTheme("wow")
   check(NS.Stock.Spec("btn_red_m") and drawn()["Interface\\Buttons\\UI-Panel-Button-Up"], "0.5.1 WoW theme: switching back draws the stock art again")
   -- hover is a subtle tint

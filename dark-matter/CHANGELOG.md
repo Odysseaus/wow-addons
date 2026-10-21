@@ -3,7 +3,7 @@
 ## 0.5.1 (the WoW theme in the game's own art)
 - **The default theme 'WoW' now looks like a stock WoW window** (quest log / character panel). It uses the client's own textures, referenced by path at runtime; no Blizzard file is copied or bundled:
   - frame: `DialogFrame\UI-DialogBox-Border` (edge file, cut like `Backdrop.lua`), title bar `DialogFrame\UI-DialogBox-Header`, portrait icon `QuestFrame\UI-QuestLog-BookIcon`;
-  - panes: `Tooltips\UI-Tooltip-Border` edges over `DialogFrame\UI-DialogBox-Background-Dark`; window background `FrameGeneral\UI-Background-Rock`; quest detail on `QuestFrame\QuestBG` parchment;
+  - panes: `Tooltips\UI-Tooltip-Border` edges over `DialogFrame\UI-DialogBox-Background-Dark`; window background `FrameGeneral\UI-Background-Rock`; quest detail on `QuestFrame\QuestBG` parchment, written in dark quest ink, with rewards on dark name plates like the stock quest log;
   - buttons `Buttons\UI-Panel-Button-Up/Down/Disabled`, search field `Common\Common-Input-Border`, section tabs `PaperDollInfoFrame\UI-Character-ActiveTab/InActiveTab`;
   - scroll bars `Buttons\UI-ScrollBar-ScrollUp/DownButton-Up` and `UI-ScrollBar-Knob`, check boxes `Buttons\UI-CheckBox-Up/Check`, +/- `Buttons\UI-PlusButton-Up/UI-MinusButton-Up`, selected row `QuestFrame\UI-QuestTitleHighlight` (a subtle gold tint);
   - the close button is the `UIPanelCloseButton` template.

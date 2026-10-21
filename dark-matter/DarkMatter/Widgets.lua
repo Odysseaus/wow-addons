@@ -154,29 +154,43 @@ function UI.NineSlice(owner, prefix, t, layer, sub)
 end
 
 -- Dark slate fill (stretched), optionally shaded darker. Class themes: the class texture, tinted per area.
-local SURFACE_OF = { slateShade = "shell", railShade = "rail", listShade = "list" }
+-- 0.5.1: "detailShade" is the quest-detail panel. The WoW theme draws it on the stock QuestBG parchment (stockMedia.detail);
+-- every other theme, and the WoW theme without that texture, draws it like a list panel. owner.parch tells the caller
+-- which one was drawn, so it can pick dark ink for parchment.
+local SURFACE_OF = { slateShade = "shell", railShade = "rail", listShade = "list", detailShade = "detail" }
+local function SlateArea(shadeKey)
+  local area = SURFACE_OF[shadeKey or "slateShade"] or "shell"
+  if area == "detail" and not (NS.theme.stockMedia and NS.theme.stockMedia.detail) then area = "list" end
+  return area
+end
+local function SlateShade(shadeKey)
+  if shadeKey == "detailShade" then shadeKey = "listShade" end
+  return NS.Metric(shadeKey or "slateShade")
+end
 function UI.Slate(owner, shadeKey, layer, sub)
   local tex = owner:CreateTexture(nil, layer or "BACKGROUND", nil, sub or 0)
   tex:SetAllPoints(owner)
   NS.OnSkin(function()
-    local area = SURFACE_OF[shadeKey or "slateShade"] or "shell"
-    if NS.ApplySurface(tex, area) then return end
-    NS.Stock.Media(tex, area, "slate", NS.Metric(shadeKey or "slateShade"))
+    local area = SlateArea(shadeKey)
+    owner.parch = false
+    if NS.ApplySurface(tex, area == "detail" and "list" or area) then return end
+    local stock = NS.Stock.Media(tex, area, "slate", SlateShade(shadeKey))
+    owner.parch = (area == "detail") and stock or false
   end)
   if owner.HookScript then
     owner:HookScript("OnSizeChanged", function()
-      local area = SURFACE_OF[shadeKey or "slateShade"] or "shell"
-      if NS.theme.stockMedia and not NS.theme.surface then NS.Stock.Media(tex, area, "slate", NS.Metric(shadeKey or "slateShade")) end
+      local area = SlateArea(shadeKey)
+      if NS.theme.stockMedia and not NS.theme.surface then NS.Stock.Media(tex, area, "slate", SlateShade(shadeKey)) end
     end)
   end
   return tex
 end
 
--- Dark list/detail panel with the pane border.
-function UI.Panel(parent, w, h)
+-- Dark list/detail panel with the pane border. shadeKey "detailShade" (0.5.1) = the quest-detail panel.
+function UI.Panel(parent, w, h, shadeKey)
   local f = CreateFrame("Frame", nil, parent)
   f:SetSize(w, h)
-  UI.Slate(f, "listShade", "BACKGROUND", 0)
+  UI.Slate(f, shadeKey or "listShade", "BACKGROUND", 0)
   f.border = UI.NineSlice(f, "pane", NS.theme.m.listBorder, "BORDER", 1)
   return f
 end

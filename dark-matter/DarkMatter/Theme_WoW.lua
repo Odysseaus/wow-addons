@@ -72,6 +72,7 @@ NS.RegisterTheme({
     rail = { file = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", tile = 128 },
     list = { file = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", tile = 128 },
     page = { file = "Interface\\QuestFrame\\QuestBG" },
+    detail = { file = "Interface\\QuestFrame\\QuestBG" }, -- the quest-detail panel, like the stock quest log
   },
   -- stock templates used (each checked first): { name, frame type }
   stockTemplates = { { "UIPanelCloseButton", "Button" } },
@@ -93,6 +94,8 @@ NS.RegisterTheme({
     card = "#0d0d0deb", cardOn = "#1a1712eb", hoverEdge = "#ffd10033", -- 0.5.1: hover is a subtle tint
     listBg = "#2a2a2a", -- representative list surface (NS.Legible); 0.5.1: the lighter end of the stock dark panel
     barText = "#fff6d8", -- bar labels in every theme (outlined)
+    -- 0.5.1: state colours on the parchment quest-detail panel (dark enough for the QuestBG parchment)
+    pGood = "#0f3f08", pMid = "#4a3000", pLow = "#6e1006",
   },
   m = {
     -- window

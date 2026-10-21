@@ -165,7 +165,15 @@ local function QualityRGB(q)
   return c[1], c[2], c[3]
 end
 
+-- 0.5.1: on the parchment detail panel (WoW theme, stock QuestBG found) the text uses the dark quest ink.
+local PARCH_KEY = { listInk = "ink", listSoft = "inkSoft", listHead = "inkHead", gold = "inkHead", good = "pGood", mid = "pMid", low = "pLow" }
+local function DK(key)
+  if detail and detail.panel and detail.panel.parch then return PARCH_KEY[key] or key end
+  return key
+end
+
 local function DText(i, size, colorKey)
+  colorKey = DK(colorKey)
   local d = detail
   local fs = d.texts[i]
   if not fs then
@@ -176,6 +184,7 @@ local function DText(i, size, colorKey)
   end
   NS.SetFont(fs, size, "")
   fs:SetTextColor(NS.Color(colorKey))
+  fs:SetShadowColor(0, 0, 0, (d.panel and d.panel.parch) and 0 or 0.9) -- no shadow under dark ink on parchment
   return fs
 end
 
@@ -191,6 +200,11 @@ local function DItem(i)
   b.count = b:CreateFontString(nil, "OVERLAY")
   NS.SetFont(b.count, 11, "OUTLINE")
   b.count:SetPoint("BOTTOMRIGHT", b.icon, "BOTTOMRIGHT", -1, 2)
+  -- 0.5.1: a dark name plate behind each reward on the parchment panel, like the stock quest log's item frame
+  b.plate = b:CreateTexture(nil, "BACKGROUND")
+  b.plate:SetAllPoints(b)
+  b.plate:SetColorTexture(0.05, 0.045, 0.04, 0.92)
+  b.plate:Hide()
   b.name = UI.Text(b, "OVERLAY", 12, "listInk", "LEFT")
   b.name:SetPoint("LEFT", b.icon, "RIGHT", 6, 0)
   b.name:SetWidth(d.iw - 48)
@@ -208,6 +222,13 @@ local debugged = {} -- quests whose empty detail panel was already explained in 
 local function Detail(q)
   local d = detail
   selQuest = q
+  d.title:SetTextColor(NS.Color(DK("gold")))
+  d.meta:SetTextColor(NS.Color(DK("listSoft")))
+  d.status:SetTextColor(NS.Color(DK("mid")))
+  local sh = (d.panel and d.panel.parch) and 0 or 0.9
+  d.title:SetShadowColor(0, 0, 0, sh)
+  d.meta:SetShadowColor(0, 0, 0, sh)
+  d.status:SetShadowColor(0, 0, 0, sh)
   local nt, ni, y = 0, 0, -4
   local function line(text, size, key, gapAbove)
     nt = nt + 1
@@ -234,6 +255,7 @@ local function Detail(q)
       b.count:SetTextColor(NS.Color("barText"))
       b.name:SetText(e.name or "Item not loaded yet")
       b.name:SetTextColor(NS.Legible(QualityRGB(e.quality)))
+      if d.panel.parch then b.plate:Show() else b.plate:Hide() end
       b:Show()
       col = col + 1
       if col == 2 then col = 0 y = y - 44 end
@@ -256,11 +278,11 @@ local function Detail(q)
     if q.questID then meta[#meta + 1] = "Quest " .. q.questID end
     d.meta:SetText(table.concat(meta, "  \194\183  "))
     if q.failed then
-      d.status:SetText(NS.ColorCode("low") .. "Failed|r")
+      d.status:SetText(NS.ColorCode(DK("low")) .. "Failed|r")
     elseif q.complete then
-      d.status:SetText(NS.ColorCode("good") .. "Ready to turn in|r")
+      d.status:SetText(NS.ColorCode(DK("good")) .. "Ready to turn in|r")
     else
-      d.status:SetText(NS.ColorCode("mid") .. "In progress|r")
+      d.status:SetText(NS.ColorCode(DK("mid")) .. "In progress|r")
     end
     local det = QL.Details(q)
     local objs = QL.Objectives(q)
@@ -545,9 +567,9 @@ NS.RegisterTab({
     empty:SetText("No quests in your log.")
     empty:Hide()
 
-    local dp = UI.Panel(page, dw, ph)
+    local dp = UI.Panel(page, dw, ph, "detailShade")
     dp:SetPoint("TOPLEFT", page, "TOPLEFT", pad + lw + gap, -pad)
-    detail = { texts = {}, items = {} }
+    detail = { texts = {}, items = {}, panel = dp }
     detail.title = UI.Text(dp, "OVERLAY", 17, "gold", "LEFT")
     detail.title:SetPoint("TOPLEFT", dp, "TOPLEFT", 14, -14)
     detail.title:SetWidth(dw - 28)
@@ -564,6 +586,8 @@ NS.RegisterTab({
     detail.scroll.step = 60
     detail.cw = dw - 2 * b - m.sbWidth - 20
     detail.iw = math.floor((detail.cw - 8) / 2)
+    -- 0.5.1: redraw after a theme change so the detail ink follows the panel (parchment or dark)
+    NS.OnSkin(function() if detail then Refresh() end end)
     Refresh()
     return tab
   end,
