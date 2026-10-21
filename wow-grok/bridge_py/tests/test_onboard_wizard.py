@@ -722,7 +722,7 @@ class MenuVersionLabelTests(unittest.TestCase):
     def test_menu_version_label_uses_explicit_version(self):
         from bridge_py import menubar
 
-        self.assertEqual(menubar.menu_version_label("0.1.31"), "WoWGrok 0.1.31")
+        self.assertEqual(menubar.menu_version_label("0.1.32"), "WoWGrok 0.1.32")
         self.assertEqual(menubar.menu_version_label("9.9.9"), "WoWGrok 9.9.9")
 
     def test_menu_version_label_defaults_to_package_version(self):
@@ -736,14 +736,14 @@ class StartupPathLogTests(unittest.TestCase):
         from bridge_py import first_run
 
         line = first_run.format_startup_path_log(
-            app_version="0.1.31",
+            app_version="0.1.32",
             executable="/Applications/WoWGrok.app/Contents/MacOS/WoWGrok",
             frozen=True,
             applications=True,
         )
         self.assertEqual(
             line,
-            "[startup] app_version=0.1.31 "
+            "[startup] app_version=0.1.32 "
             "executable=/Applications/WoWGrok.app/Contents/MacOS/WoWGrok "
             "frozen=true applications=true",
         )

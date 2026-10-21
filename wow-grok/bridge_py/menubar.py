@@ -24,7 +24,7 @@ _SETUP_APPLIED = 0
 def menu_version_label(version: str | None = None) -> str:
     """Disabled menu-row title showing the running package version.
 
-    Pure helper (no rumps): ``WoWGrok 0.1.31`` from ``bridge_py.__version__`` so a
+    Pure helper (no rumps): ``WoWGrok 0.1.32`` from ``bridge_py.__version__`` so a
     wrong-binary launch (e.g. an old ``~/wowgrok-build-*`` copy) is obvious in the
     menu bar dropdown.
     """
