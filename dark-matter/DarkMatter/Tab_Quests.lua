@@ -165,8 +165,9 @@ local function QualityRGB(q)
   return c[1], c[2], c[3]
 end
 
--- 0.5.1: on the parchment detail panel (WoW theme, stock QuestBG found) the text uses the dark quest ink.
-local PARCH_KEY = { listInk = "ink", listSoft = "inkSoft", listHead = "inkHead", gold = "inkHead", good = "pGood", mid = "pMid", low = "pLow" }
+-- 0.5.1: on the parchment detail panel (WoW theme, stock QuestBG found) the text uses the dark quest ink
+-- (0.5.1.1: the pInk keys; the WoW theme's ink keys are now the light page ink).
+local PARCH_KEY = { listInk = "pInk", listSoft = "pInkSoft", listHead = "pInkHead", gold = "pInkHead", ink = "pInk", inkSoft = "pInkSoft", inkHead = "pInkHead", good = "pGood", mid = "pMid", low = "pLow" }
 local function DK(key)
   if detail and detail.panel and detail.panel.parch then return PARCH_KEY[key] or key end
   return key

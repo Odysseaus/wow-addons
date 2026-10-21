@@ -672,6 +672,20 @@ local agMenuTextW = 172    -- entry text width in a dropdown row (set from the m
 local agBossScroll, agDropScroll, agTitle, agMeta, agBossHead, agDropHead, agDropNote, agEmptyBoss, agEmptyDrops
 local agMenuRows, agBossRows, agDropRows = {}, {}, {}
 local agHover
+local agDropPanel -- 0.5.1.1: the boss-detail (drops) panel; parchment in the WoW theme (agDropPanel.parch)
+-- 0.5.1.1: the boss-detail texts follow their panel: dark quest ink on the WoW theme's parchment, theme ink otherwise.
+-- Drop rows keep their item-quality colours on a dark name plate (like the quest rewards on the parchment).
+local function DropParch() return agDropPanel and agDropPanel.parch and true or false end
+local function DropInk()
+  if not agDropHead then return end
+  local p = DropParch()
+  agDropHead:SetTextColor(NS.Color(p and "pInkHead" or "listHead"))
+  agDropNote:SetTextColor(NS.Color(p and "pInkSoft" or "listSoft"))
+  agEmptyDrops:SetTextColor(NS.Color(p and "pInkSoft" or "listSoft"))
+  local sh = p and 0 or 0.9
+  agDropHead:SetShadowColor(0, 0, 0, sh) agDropNote:SetShadowColor(0, 0, 0, sh) agEmptyDrops:SetShadowColor(0, 0, 0, sh)
+  for _, r in ipairs(agDropRows) do if p then r.plate:Show() else r.plate:Hide() end end
+end
 local agText, agEv, agPending = "", nil, false
 local AG_MENU_H, AG_BOSS_H, AG_DROP_H = 22, 34, 40
 local AG_MENU_MAX = 14
@@ -836,6 +850,12 @@ local function GetDropRow(i)
   if r then return r end
   r = CreateFrame("Button", nil, agDropScroll.content)
   r:SetHeight(AG_DROP_H)
+  -- 0.5.1.1: a dark name plate behind the row on the parchment boss-detail panel (quality colours stay readable)
+  r.plate = r:CreateTexture(nil, "BACKGROUND")
+  r.plate:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -2)
+  r.plate:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -4, 2)
+  r.plate:SetColorTexture(0.05, 0.045, 0.04, 0.92)
+  if DropParch() then r.plate:Show() else r.plate:Hide() end
   r.icon = UI.RoundIcon(r, 28)
   r.icon:SetPoint("LEFT", r, "LEFT", 8, 0)
   r.text = OneLine(UI.Text(r, "OVERLAY", 13, "listInk", "LEFT"), 16)
@@ -1081,6 +1101,7 @@ local function RefreshAG()
       agEmptyDrops:Show()
     end
   end
+  DropInk()
   if badgeText and NS.db and NS.db.section == "adventure" then badgeText:SetText("Dungeons: " .. #all) end
 end
 
@@ -1205,7 +1226,9 @@ local function BuildAdventure(page)
   agEmptyBoss:Hide()
 
   local dropW = innerW - bossW - 8
-  local dp = UI.Panel(agPage, dropW, splitH)
+  -- 0.5.1.1: the boss detail is a detail panel (the WoW theme's parchment, like the quest detail)
+  local dp = UI.Panel(agPage, dropW, splitH, "detailShade")
+  agDropPanel = dp
   dp:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad + bossW + 8, -splitY)
   -- header: boss name line, then the count line under it (never side by side)
   agDropHead = OneLine(UI.Text(dp, "OVERLAY", 13, "listHead", "LEFT"), 16)
@@ -1219,6 +1242,7 @@ local function BuildAdventure(page)
   agEmptyDrops = UI.Text(dp, "OVERLAY", 12, "listSoft", "CENTER")
   agEmptyDrops:SetPoint("CENTER", dp, "CENTER", 0, 0)
   agEmptyDrops:Hide()
+  NS.OnSkin(DropInk)
 
   tab.RefreshAG = RefreshAG
   NS.AGWidgets = function()

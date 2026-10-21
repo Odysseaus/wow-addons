@@ -212,6 +212,12 @@ function UI.PaperPanel(parent, w, h)
 end
 
 -- Parchment page with the pane border (class themes: the tinted class texture).
+-- 0.5.1.1: the WoW theme (pageDark) draws the page on the stock rock and falls back to the dark slate, never to a
+-- light parchment under its light page ink. The texture is anchored to both corners and re-tiled on resize, so it
+-- always fills the page.
+local function PageFallback()
+  return NS.theme.pageDark and "slate" or "parchment"
+end
 function UI.Page(parent, w, h)
   local f = CreateFrame("Frame", nil, parent)
   f:SetSize(w, h)
@@ -219,8 +225,13 @@ function UI.Page(parent, w, h)
   parch:SetAllPoints(f)
   NS.OnSkin(function()
     if NS.ApplySurface(parch, "page") then return end
-    NS.Stock.Media(parch, "page", "parchment", 1)
+    NS.Stock.Media(parch, "page", PageFallback(), NS.theme.pageDark and NS.Metric("slateShade") or 1)
   end)
+  if f.HookScript then
+    f:HookScript("OnSizeChanged", function()
+      if NS.theme.stockMedia and not NS.theme.surface then NS.Stock.Media(parch, "page", PageFallback(), NS.theme.pageDark and NS.Metric("slateShade") or 1) end
+    end)
+  end
   f.border = UI.NineSlice(f, "pane", NS.theme.m.pageBorder, "BORDER", 1)
   return f
 end
@@ -362,6 +373,8 @@ function UI.Pill(parent, label)
 end
 
 -- Scroll area with the generated scrollbar art: up/down buttons, track, three-slice thumb.
+-- 0.5.1.1 WoW theme: the game's own scroll buttons at their stock 16x16 size (Up / Down when pressed / Disabled at the
+-- ends / Highlight on hover) and the stock 18x24 knob, like UIPanelScrollBarTemplate; any missing file: the old art.
 function UI.Scroll(parent, w, h)
   local m = NS.theme.m
   local sbw = m.sbWidth
@@ -423,16 +436,76 @@ function UI.Scroll(parent, w, h)
   capB:SetPoint("BOTTOMRIGHT", thumb, "BOTTOMRIGHT", 0, 0)
   capB:SetHeight(capH)
 
+  local stockUp, stockDn, stockKnob -- stock specs while the WoW theme's scroll art is in use (nil otherwise)
+  local function ButtonArt(btn, tex, sp)
+    if not sp then return end
+    local f2 = sp.file
+    if btn:IsEnabled() == false then f2 = sp.disabled elseif btn._down then f2 = sp.down end
+    tex:SetTexture(f2)
+    tex:SetTexCoord(unpack(sp.tc))
+  end
+  local function RefreshButtons()
+    if not (stockUp and stockDn) then return end
+    local maxScroll = math.max(0, S.contentH - S.h)
+    local v = sb:GetValue() or 0
+    if v > 0 then up:Enable() else up:Disable() up._down = nil end
+    if v < maxScroll then down:Enable() else down:Disable() down._down = nil end
+    ButtonArt(up, upTex, stockUp) ButtonArt(down, downTex, stockDn)
+  end
+  S.RefreshButtons = RefreshButtons
+  local function Press(btn, on)
+    btn._down = on or nil
+    if stockUp and stockDn then ButtonArt(up, upTex, stockUp) ButtonArt(down, downTex, stockDn) end
+  end
+  up:SetScript("OnMouseDown", function(self) Press(self, true) end)
+  up:SetScript("OnMouseUp", function(self) Press(self, false) end)
+  down:SetScript("OnMouseDown", function(self) Press(self, true) end)
+  down:SetScript("OnMouseUp", function(self) Press(self, false) end)
+
   NS.OnSkin(function()
-    NS.SetPiece(upTex, "sb_up") NS.SetPiece(upGlow, "sb_up")
-    NS.SetPiece(downTex, "sb_dn") NS.SetPiece(downGlow, "sb_dn")
-    NS.SetPiece(thumb, "sb_thumb_m") NS.SetPiece(capT, "sb_thumb_t") NS.SetPiece(capB, "sb_thumb_b")
+    stockUp, stockDn = NS.Stock.ButtonStates("sb_up"), NS.Stock.ButtonStates("sb_dn")
+    if not (stockUp and stockDn) then stockUp, stockDn = nil, nil end
+    stockKnob = stockUp and NS.Stock.Spec("sb_thumb") or nil
+    if stockUp then
+      for _, pr in ipairs({ { up, upTex, upGlow, stockUp }, { down, downTex, downGlow, stockDn } }) do
+        local btn, tex, glow, sp = pr[1], pr[2], pr[3], pr[4]
+        NS.Unflat(tex) NS.Stock.Reset(tex)
+        tex:ClearAllPoints() tex:SetPoint("CENTER", btn, "CENTER", 0, 0) tex:SetSize(sp.w, sp.h)
+        tex:SetVertexColor(1, 1, 1, 1)
+        NS.Unflat(glow)
+        glow:ClearAllPoints() glow:SetPoint("CENTER", btn, "CENTER", 0, 0) glow:SetSize(sp.w, sp.h)
+        glow:SetTexture(sp.highlight) glow:SetTexCoord(unpack(sp.tc))
+        glow:SetVertexColor(1, 1, 1, 1) glow:SetBlendMode("ADD") glow:SetAlpha(1)
+      end
+      RefreshButtons()
+    else
+      for _, pr in ipairs({ { up, upTex, upGlow }, { down, downTex, downGlow } }) do
+        local btn, tex, glow = pr[1], pr[2], pr[3]
+        tex:ClearAllPoints() tex:SetAllPoints(btn)
+        glow:ClearAllPoints() glow:SetAllPoints(btn)
+        glow:SetBlendMode("ADD") glow:SetAlpha(0.2)
+        btn:Enable() btn._down = nil
+      end
+      NS.SetPiece(upTex, "sb_up") NS.SetPiece(upGlow, "sb_up")
+      NS.SetPiece(downTex, "sb_dn") NS.SetPiece(downGlow, "sb_dn")
+    end
+    if stockKnob then
+      NS.Stock.Apply(thumb, stockKnob)
+      thumb:SetSize(stockKnob.w, stockKnob.h)
+      capT:SetAlpha(0) capB:SetAlpha(0)
+    else
+      thumb:SetWidth(sbw)
+      capT:SetAlpha(1) capB:SetAlpha(1)
+      NS.SetPiece(thumb, "sb_thumb_m") NS.SetPiece(capT, "sb_thumb_t") NS.SetPiece(capB, "sb_thumb_b")
+    end
+    if S.Update then S:Update() end
   end)
 
   local updating = false
   sb:SetScript("OnValueChanged", function(_, value)
     if updating then return end
     sf:SetVerticalScroll(value or 0)
+    RefreshButtons()
   end)
   function S:Update()
     local maxScroll = math.max(0, self.contentH - self.h)
@@ -445,12 +518,14 @@ function UI.Scroll(parent, w, h)
     sf:SetVerticalScroll(v)
     if maxScroll > 0 then
       local track = math.max(1, self.h - 2 * sbw)
-      thumb:SetHeight(math.max(26, track * self.h / self.contentH))
+      if stockKnob then thumb:SetHeight(stockKnob.h)
+      else thumb:SetHeight(math.max(26, track * self.h / self.contentH)) end
       sb:Show()
       capT:Show() capB:Show() thumb:Show()
     else
       capT:Hide() capB:Hide() thumb:Hide()
     end
+    RefreshButtons()
   end
   function S:SetContentHeight(ch)
     self.contentH = math.max(1, ch)
@@ -465,6 +540,7 @@ function UI.Scroll(parent, w, h)
     sb:SetValue(v)
     updating = false
     sf:SetVerticalScroll(v)
+    RefreshButtons()
   end
   function S:ScrollTo(v) self:ScrollBy(v - (sb:GetValue() or 0)) end
   function S.GetScroll() return sb:GetValue() or 0 end

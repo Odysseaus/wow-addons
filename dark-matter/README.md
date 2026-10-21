@@ -60,6 +60,8 @@ Quest list on the left with a toolbar on top (All, Track Quest, search at the fa
 ## WoW theme (0.5.1)
 The default theme 'WoW' looks like a stock WoW window. It draws the game's own textures (dialog frame and header, tooltip-border panes, quest parchment, panel buttons, character-panel tabs, scroll bars, check boxes) and the stock close button template, all referenced in game by path; no Blizzard file ships with Dark Matter. Each piece is checked at runtime and falls back to Dark Matter's own art if the client lacks it. `/dm artprobe` lists what this client has (ok / MISSING) and saves it to `DarkMatterDB.artprobe`.
 
+**0.5.1.1:** every surface fills its panel corner to corner. The page behind the lists is the stock rock (light text); only the quest detail and the Adventure Guide boss detail are parchment (dark ink), drawn from the clean inside of `QuestBG` so no torn edge shows (`/dm parchment l r t b` tunes the crop). Scroll buttons are the stock 16x16 buttons with Up / Down / Disabled / Highlight. `/dm testtoast` previews the achievement toast.
+
 ## Map tab (0.5.0)
 The game's own map pictures, read at runtime for every zone of Kalimdor and Eastern Kingdoms. Nothing is bundled and nothing is probed per zone.
 - **Zoom:** the mouse wheel zooms toward the cursor, continuously, from the world through a continent to a zone; the pictures crossfade between levels. Drag to pan; neighbouring zones are drawn side by side from their rects on the continent. Double-click zooms in, right-click goes up one level.

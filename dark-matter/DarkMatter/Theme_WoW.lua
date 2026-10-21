@@ -52,9 +52,15 @@ NS.RegisterTheme({
     ptab_a_l = { file = "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab", tc = { 0, 0.546875, 0, 0, 0.15625, 0.546875, 0.15625, 0 }, w = 20, h = 35 },
     ptab_a_m = { file = "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab", tc = { 0.15625, 0.546875, 0.15625, 0, 0.84375, 0.546875, 0.84375, 0 }, w = 88, h = 35 },
     ptab_a_r = { file = "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab", tc = { 0.84375, 0.546875, 0.84375, 0, 1, 0.546875, 1, 0 }, w = 20, h = 35 },
-    -- scroll bar (UIPanelScrollUpButtonTemplate / ScrollDown / the knob)
-    sb_up = { file = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up", tc = { 0.2, 0.8, 0.25, 0.75 }, w = 18, h = 16 },
-    sb_dn = { file = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up", tc = { 0.2, 0.8, 0.25, 0.75 }, w = 18, h = 16 },
+    -- scroll bar: UIPanelScrollUpButtonTemplate / UIPanelScrollDownButtonTemplate (16x16, the four button states) and
+    -- UIPanelScrollBarTemplate's thumb (UI-ScrollBar-Knob, 18x24). 0.5.1.1: drawn at the stock size, not stretched.
+    sb_up = { file = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up", tc = { 0.2, 0.8, 0.25, 0.75 }, w = 16, h = 16,
+      down = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down", disabled = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Disabled",
+      highlight = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight" },
+    sb_dn = { file = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up", tc = { 0.2, 0.8, 0.25, 0.75 }, w = 16, h = 16,
+      down = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down", disabled = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled",
+      highlight = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight" },
+    sb_thumb = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.125, 0.875 }, w = 18, h = 24 },
     sb_thumb_m = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.3, 0.7 }, w = 18, h = 12 },
     sb_thumb_t = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.125, 0.3 }, w = 18, h = 6 },
     sb_thumb_b = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.7, 0.875 }, w = 18, h = 6 },
@@ -66,14 +72,25 @@ NS.RegisterTheme({
     check_box = { file = "Interface\\Buttons\\UI-CheckBox-Up", w = 32, h = 32 },
     check_mark = { file = "Interface\\Buttons\\UI-CheckBox-Check", w = 32, h = 32 },
   },
-  -- stock surfaces by area (tile = repeat every N pixels; shade darkens)
+  -- stock surfaces by area. Every surface is anchored to both corners of its panel (SetAllPoints) and FILLS it:
+  -- tile = repeat every N pixels; shade darkens; tc = the part of the file that is drawn (stretched to the panel).
+  -- 0.5.1.1: the page (the area behind the lists) is the stock rock, not parchment. QuestBG is a 512x512 file whose
+  -- parchment only covers about the top-left 300x336 texels, with torn edges and transparency beyond; 0.5.1 drew the
+  -- whole file, so the parchment covered the top-left ~59% x 66% of each panel with a torn edge mid-panel. Now only the
+  -- clean inside of the sheet (tc below, inside the torn border) is drawn, stretched over the whole detail panel.
+  -- /dm parchment l r t b adjusts that crop in game (saved; /dm parchment reset).
   stockMedia = {
     shell = { file = "Interface\\FrameGeneral\\UI-Background-Rock", tile = 256, shade = 0.75 },
     rail = { file = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", tile = 128 },
     list = { file = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", tile = 128 },
-    page = { file = "Interface\\QuestFrame\\QuestBG" },
-    detail = { file = "Interface\\QuestFrame\\QuestBG" }, -- the quest-detail panel, like the stock quest log
+    page = { file = "Interface\\FrameGeneral\\UI-Background-Rock", tile = 256, shade = 0.5 },
+    -- the quest-detail and boss-detail panels, like the stock quest log
+    detail = { file = "Interface\\QuestFrame\\QuestBG", tc = { 0.04, 0.545, 0.04, 0.615 }, crop = true },
   },
+  -- 0.5.1.1: the page is dark here, so text that sits on the page uses light ink (pageDark); the fallback is the
+  -- dark slate (never Dark Matter's light parchment under light ink)
+  pageDark = true,
+  panelWash = { 0, 0, 0, 0.35 }, -- the Fishing skill strip on the dark page (was a cream wash over parchment)
   -- stock templates used (each checked first): { name, frame type }
   stockTemplates = { { "UIPanelCloseButton", "Button" } },
   media = {
@@ -81,7 +98,10 @@ NS.RegisterTheme({
     slate = "Interface\\AddOns\\DarkMatter\\Media\\wow-slate",
   },
   colors = {
-    ink = "#2b1d0e", inkSoft = "#4a3820", inkHead = "#2b1608", inkFaint = "#6a5434",
+    -- 0.5.1.1: page text (dungeon header, Fishing skill strip, stubs, "Show all") sits on the dark stock rock:
+    -- gold headings, white/grey body. The parchment detail panels use the pInk keys (dark quest ink).
+    ink = "#ffffff", inkSoft = "#d0d0d0", inkHead = "#ffd100", inkFaint = "#b8b8b8",
+    pInk = "#2b1d0e", pInkSoft = "#4a3820", pInkHead = "#2b1608", pInkFaint = "#6a5434",
     -- 0.5.1: the game's own font colours: GameFontNormal gold (1, 0.82, 0) for headers and buttons,
     -- GameFontHighlight white for body text on dark panels, dark quest ink on the parchment
     fieldBg = "#050505eb", gold = "#ffd100", btnInk = "#ffd100", goldOn = "#ffffff", greyBtn = "#d8d8d8",

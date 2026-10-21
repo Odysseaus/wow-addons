@@ -105,8 +105,22 @@ function S.Reset(tex)
   if blended[tex] then tex:SetBlendMode("BLEND") blended[tex] = nil end
 end
 
--- Big surfaces: the theme's stock media for an area ("shell", "rail", "list", "page") when it loads, else Dark
--- Matter's own file (media.slate / media.parchment) shaded as before. Returns true when stock art was used.
+-- 0.5.1.1: the crop of a "crop" surface (QuestBG): the theme's texcoords, or the player's /dm parchment override
+-- (DarkMatterDB.parchTC, four numbers 0..1 with left < right and top < bottom).
+function S.CropTC(sp)
+  local o = NS.db and NS.db.parchTC
+  if sp.crop and type(o) == "table" then
+    local l, r, t, b = NS.Num(o[1]), NS.Num(o[2]), NS.Num(o[3]), NS.Num(o[4])
+    if l and r and t and b and l >= 0 and r <= 1 and t >= 0 and b <= 1 and l < r and t < b then return { l, r, t, b } end
+  end
+  return sp.tc or { 0, 1, 0, 1 }
+end
+
+-- Big surfaces: the theme's stock media for an area ("shell", "rail", "list", "page", "detail") when it loads, else
+-- Dark Matter's own file (media.slate / media.parchment) shaded as before. Returns true when stock art was used.
+-- The caller anchors tex to BOTH corners of its panel (SetAllPoints), so the art always fills the panel: a tiled
+-- surface repeats every sp.tile pixels; any other surface stretches sp.tc (the clean part of the file) over the whole
+-- panel. 0.5.1.1: never the whole file of a sheet that only fills part of it (QuestBG: torn edges mid-panel).
 function S.Media(tex, area, fallbackKind, shade)
   local sm = NS.theme and NS.theme.stockMedia
   local sp = sm and sm[area]
@@ -120,7 +134,8 @@ function S.Media(tex, area, fallbackKind, shade)
       if par and par.GetWidth then w, h = NS.Num(par:GetWidth()) or 0, NS.Num(par:GetHeight()) or 0 end
     end
     if sp.tile and w > 1 and h > 1 then tex:SetTexCoord(0, w / sp.tile, 0, h / sp.tile)
-    else tex:SetTexCoord(unpack(sp.tc or { 0, 1, 0, 1 })) end
+    elseif sp.tile then tex:SetTexCoord(0, 1, 0, 1)
+    else tex:SetTexCoord(unpack(S.CropTC(sp))) end
     local c, k = sp.vc or { 1, 1, 1, 1 }, sp.shade or 1
     tex:SetVertexColor(c[1] * k, c[2] * k, c[3] * k, c[4] or 1)
     return true
@@ -133,12 +148,23 @@ function S.Media(tex, area, fallbackKind, shade)
   return false
 end
 
+-- 0.5.1.1 scroll buttons: the stock button states of a piece (sb_up / sb_dn) when the client has all four files.
+function S.ButtonStates(key)
+  local sp = S.Spec(key)
+  if not (sp and sp.down and sp.disabled and sp.highlight) then return nil end
+  if not (S.TextureOK(sp.down) and S.TextureOK(sp.disabled) and S.TextureOK(sp.highlight)) then return nil end
+  return sp
+end
+
 -- /dm artprobe: one short line per stock texture/template the WoW theme uses, ok or missing.
 function S.Report()
   -- ask for everything the WoW theme lists, even pieces not drawn yet
   local wow = NS.themes and NS.themes.wow
   if wow then
-    for _, sp in pairs(wow.stock or {}) do S.TextureOK(sp.file) end
+    for _, sp in pairs(wow.stock or {}) do
+      S.TextureOK(sp.file)
+      if sp.down then S.TextureOK(sp.down) S.TextureOK(sp.disabled) S.TextureOK(sp.highlight) end
+    end
     for _, sp in pairs(wow.stockMedia or {}) do S.TextureOK(sp.file) end
     for _, t in ipairs(wow.stockTemplates or {}) do S.TemplateOK(t[1], t[2]) end
   end
@@ -149,7 +175,7 @@ function S.Report()
     return a < b
   end)
   local lines, okN, missN, saved = {}, 0, 0, {}
-  lines[1] = "artprobe 0.5.1 (" .. S.Method() .. "):"
+  lines[1] = "artprobe " .. tostring(NS.version) .. " (" .. S.Method() .. "):"
   for _, n in ipairs(names) do
     local ok = (S.used[n] == "texture") and texCache[n] or tmplCache[n]
     if ok then okN = okN + 1 else missN = missN + 1 end

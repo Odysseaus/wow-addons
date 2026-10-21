@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.1.1 (fix: every panel fully filled; stock scroll buttons; achievement toast)
+- **Parchment no longer stops mid-panel.** The stock `QuestFrame\QuestBG` file is 512x512 but its parchment sheet only covers about the top-left 300x336 texels, with torn edges and transparency beyond. 0.5.1 drew the whole file (texcoords 0..1) over each panel, so the parchment covered only the top-left ~59% x 66% of the page and the quest detail, with a torn edge in the middle. Now:
+  - the page (the area behind the lists, on every tab) is the stock `FrameGeneral\UI-Background-Rock`, tiled, a little darker than the window; its text (dungeon header, Fishing skill strip, "Show all", stubs) is gold / white / grey;
+  - the **quest detail** and the **Adventure Guide boss detail** are parchment: only the clean inside of the sheet (texcoords 0.04-0.545 x 0.04-0.615) is drawn, anchored corner to corner, so it fills the panel with no torn edge. Dark quest ink there (new `pInk*` colour keys); drop rows sit on dark name plates like the quest rewards;
+  - lists stay on `UI-DialogBox-Background-Dark` with light text;
+  - `/dm parchment l r t b` adjusts the parchment crop in game if a client's file differs (saved; `/dm parchment reset`);
+  - without the stock art the page falls back to the dark slate (never a light parchment under light ink).
+- **Scroll bars:** the stock `UI-ScrollBar-ScrollUp/DownButton` at their stock 16x16 size (was stretched to 20x20) with all four states: Up, Down while pressed, Disabled at the top / bottom, Highlight on hover; the thumb is the stock 18x24 `UI-ScrollBar-Knob`. Any missing file: the old art. Class themes unchanged.
+- **Achievement toast:** showed only the icon. Its background panel is a child frame (one frame level up) and 0.5.1 put the title, name and points text on the toast itself, i.e. under that panel; with the stock opaque dialog background only the icon (a later child frame) showed. Icon and text now live on a content frame above the background, in every theme. **`/dm testtoast`** shows a sample (nothing is recorded).
+- **Tests:** every stock surface fills its panel (Quests, Adventure Guide, Fishing, Achievements, Map, Dungeons); parchment only on the two detail panels and only from inside its torn edge; readable ink on each surface; stock scroll buttons 16x16 with highlight; class themes without stock art; `/dm parchment`; the toast's background, text and icon in all 10 themes.
+
 ## 0.5.1 (the WoW theme in the game's own art)
 - **The default theme 'WoW' now looks like a stock WoW window** (quest log / character panel). It uses the client's own textures, referenced by path at runtime; no Blizzard file is copied or bundled:
   - frame: `DialogFrame\UI-DialogBox-Border` (edge file, cut like `Backdrop.lua`), title bar `DialogFrame\UI-DialogBox-Header`, portrait icon `QuestFrame\UI-QuestLog-BookIcon`;

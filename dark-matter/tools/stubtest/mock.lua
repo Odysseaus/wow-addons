@@ -4078,7 +4078,10 @@ if MODE ~= "minimal" then
   check(d["Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab"] and d["Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab"], "0.5.1 WoW theme: section tabs use the character-panel tabs")
   local knobSet = false
   for _, r in ipairs(REGIONS) do if r._kind == "texture" and under(r, win) and r._file == "Interface\\Buttons\\UI-ScrollBar-Knob" then knobSet = true end end -- the knob shows only when a list overflows
-  check(d["Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up"] and knobSet, "0.5.1 WoW theme: scroll bars use the stock scroll buttons and knob")
+  -- 0.5.1.1: at the top of a list the stock up button is disabled (its Disabled file), like the game's scroll bars
+  check((d["Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up"] or d["Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Disabled"])
+    and (d["Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up"] or d["Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled"]) and knobSet,
+    "0.5.1 WoW theme: scroll bars use the stock scroll buttons and knob")
   NS.ShowTab("map")
   d = drawn()
   check(d["Interface\\Tooltips\\UI-Tooltip-Border"] and d["Interface\\DialogFrame\\UI-DialogBox-Background-Dark"], "0.5.1 WoW theme: the Map tab's panels get the stock framing")
@@ -4095,7 +4098,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -4109,8 +4112,9 @@ if MODE ~= "minimal" then
   NS.SetTheme("wow")
   d = drawn()
   check(stockFiles(d) == 0, "0.5.1 fallback: with the stock art missing no stock file is drawn")
-  check(d["Interface\\AddOns\\DarkMatter\\Media\\wow-slate"] and d["Interface\\AddOns\\DarkMatter\\Media\\wow-parchment"] and d["Interface\\AddOns\\DarkMatter\\Media\\wow-atlas"],
-    "0.5.1 fallback: Dark Matter's own slate, parchment and atlas are drawn instead")
+  -- 0.5.1.1: the WoW page is dark (light page ink), so its fallback is the slate, never the light parchment
+  check(d["Interface\\AddOns\\DarkMatter\\Media\\wow-slate"] and not d["Interface\\AddOns\\DarkMatter\\Media\\wow-parchment"] and d["Interface\\AddOns\\DarkMatter\\Media\\wow-atlas"],
+    "0.5.1 fallback: Dark Matter's own slate and atlas are drawn instead (0.5.1.1: dark page, no light parchment)")
   local blank = 0
   for _, r in ipairs(REGIONS) do
     if r._kind == "texture" and under(r, win) and visible(r) and r._file == nil and r._color == nil then blank = blank + 1 end
@@ -4135,6 +4139,113 @@ if MODE ~= "minimal" then
   -- hover is a subtle tint
   local e = NS.themes.wow.colors.hoverEdge
   check(e[4] and e[4] <= 0.3, "0.5.1 WoW theme: the hover edge is subtle (alpha " .. tostring(e[4]) .. ")")
+
+  -- ===== 0.5.1.1: every stock surface fills its panel; parchment only in the detail panels; stock scroll buttons; toast =====
+  STOCK_MISSING = false
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  win:Show()
+  local SURF = { ["Interface\\QuestFrame\\QuestBG"] = true, ["Interface\\FrameGeneral\\UI-Background-Rock"] = true,
+    ["Interface\\DialogFrame\\UI-DialogBox-Background-Dark"] = true }
+  local function fillCheck(where)
+    local n, bad, parchN, parchBad, tcBad = 0, {}, 0, {}, {}
+    for _, r in ipairs(REGIONS) do
+      if r._kind == "texture" and under(r, win) and visible(r) and SURF[tostring(r._file)] then
+        n = n + 1
+        local l, t, rr, b = FrameMT._rect(r)
+        local o = r._parent
+        local ol, ot, orr, ob = FrameMT._rect(o)
+        local slate = (o == win) -- the window's own slate sits inside the window padding
+        if not (l and ol) then bad[#bad + 1] = "unresolved"
+        elseif not slate and (math.abs(l - ol) > 0.5 or math.abs(t - ot) > 0.5 or math.abs(rr - orr) > 0.5 or math.abs(b - ob) > 0.5) then
+          bad[#bad + 1] = string.format("%s %.0fx%.0f in %.0fx%.0f", tostring(r._file):match("[^\\]+$"), rr - l, t - b, orr - ol, ot - ob)
+        end
+        if r._file == "Interface\\QuestFrame\\QuestBG" then
+          parchN = parchN + 1
+          if not o.parch then parchBad[#parchBad + 1] = tostring(o._name or "panel") end
+          local tc = r._tc or {}
+          if not (#tc == 4 and tc[1] > 0.01 and tc[2] < 0.58 and tc[3] > 0.01 and tc[4] < 0.65) then tcBad[#tcBad + 1] = table.concat(tc, ",") end
+        elseif r._wrapH == "REPEAT" then
+          local tc = r._tc or {}
+          local w = rr and (rr - l) or 0
+          if w > 1 and not (#tc == 4 and tc[2] > 0) then tcBad[#tcBad + 1] = "tile " .. table.concat(tc, ",") end
+        end
+      end
+    end
+    check(n > 0 and #bad == 0, "0.5.1.1 " .. where .. ": every stock surface fills its panel corner to corner (" .. n .. " surfaces" .. (#bad > 0 and (": " .. table.concat(bad, "; ")) or "") .. ")")
+    check(#parchBad == 0, "0.5.1.1 " .. where .. ": parchment only on detail panels (" .. parchN .. ")" .. (#parchBad > 0 and (" not detail: " .. table.concat(parchBad, ", ")) or ""))
+    check(#tcBad == 0, "0.5.1.1 " .. where .. ": parchment drawn from inside its torn edge, tiles repeat (" .. table.concat(tcBad, " | ") .. ")")
+    return parchN
+  end
+  NS.ShowTab("quests")
+  check(fillCheck("Quests") == 1, "0.5.1.1 Quests: exactly one parchment (the quest detail)")
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("adventure")
+  check(fillCheck("Adventure Guide") == 1, "0.5.1.1 Adventure Guide: exactly one parchment (the boss detail)")
+  local ag = NS.AGWidgets()
+  local function lum(fs) local c = fs._tcol or { 0, 0, 0 } return 0.2126 * c[1] + 0.7152 * c[2] + 0.0722 * c[3] end
+  check(lum(ag.title) > 0.5 and lum(ag.meta) > 0.5, string.format("0.5.1.1 Adventure Guide: the dungeon header on the dark page is light (%.2f, %.2f)", lum(ag.title), lum(ag.meta)))
+  check(lum(ag.dropHead) < 0.2 and lum(ag.emptyDrops) < 0.3, string.format("0.5.1.1 Adventure Guide: boss detail on parchment uses dark ink (%.2f, %.2f)", lum(ag.dropHead), lum(ag.emptyDrops)))
+  check(lum(ag.bossHead) > 0.5, "0.5.1.1 Adventure Guide: the boss list (dark panel) keeps light text")
+  NS.tabs.journals.SetSection("fishing")
+  fillCheck("Fishing")
+  NS.tabs.journals.SetSection("achievements")
+  fillCheck("Achievements")
+  NS.ShowTab("map")
+  fillCheck("Map")
+  NS.ShowTab("dungeons")
+  fillCheck("Dungeons")
+  -- scroll buttons: the stock files at the stock 16x16 size, with a stock highlight; never the whole button stretched
+  local sbN, sbBad, hl = 0, {}, 0
+  for _, r in ipairs(REGIONS) do
+    local f = tostring(r._file)
+    if r._kind == "texture" and f:find("^Interface\\Buttons\\UI%-ScrollBar%-Scroll") then
+      sbN = sbN + 1
+      if r._sw ~= 16 or r._sh ~= 16 then sbBad[#sbBad + 1] = f:match("[^\\]+$") .. " " .. tostring(r._sw) .. "x" .. tostring(r._sh) end
+      if f:find("Highlight$") and r._layer == "HIGHLIGHT" then hl = hl + 1 end
+    end
+  end
+  check(sbN > 0 and #sbBad == 0 and hl > 0, "0.5.1.1 WoW theme: stock scroll buttons at 16x16 with the stock highlight (" .. sbN .. (#sbBad > 0 and (" bad: " .. table.concat(sbBad, ", ")) or "") .. ")")
+  -- class themes keep their own scroll art
+  NS.SetTheme("warrior")
+  local classStock = 0
+  for _, r in ipairs(REGIONS) do if r._kind == "texture" and tostring(r._file):find("^Interface\\Buttons\\UI%-ScrollBar") then classStock = classStock + 1 end end
+  check(classStock == 0, "0.5.1.1 class themes: no stock scroll art (unchanged)")
+  NS.SetTheme("wow")
+  -- /dm parchment: crop override, validated, reset
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("parchment 0.05 0.5 0.05 0.6")
+  local ok1 = NS.db.parchTC and NS.db.parchTC[2] == 0.5
+  SlashCmdList["DARKMATTER"]("parchment 0.9 0.1 0 1")
+  local ok2 = NS.db.parchTC and NS.db.parchTC[2] == 0.5
+  SlashCmdList["DARKMATTER"]("parchment reset")
+  NS.Print = oldPrint
+  check(ok1 and ok2 and NS.db.parchTC == nil and said[#said]:find("%(default%)"), "0.5.1.1 /dm parchment: sets, rejects a bad crop, resets (" .. tostring(said[#said]) .. ")")
+  -- the achievement toast: icon AND background AND every text line, at once, in every theme
+  for _, id in ipairs(NS.themeOrder) do
+    NS.SetTheme(id)
+    said = {}
+    NS.Print = function(m) said[#said + 1] = m end
+    SlashCmdList["DARKMATTER"]("testtoast")
+    NS.Print = oldPrint
+    local T = NS.Ach._ToastFrame()
+    check(T and T._shown and T.bg and T.fg, "0.5.1.1 /dm testtoast shows the toast (" .. id .. ")")
+    T._scripts.OnUpdate(T, 0.3)
+    local fgL, bgL = T.fg._level or 0, T.bg._level or 0
+    local textsOK = true
+    for _, fs in ipairs({ T.head, T.name, T.sub }) do
+      if fs._parent ~= T.fg or not visible(fs) or (fs:GetText() or "") == "" then textsOK = false end
+    end
+    local bgTex = 0
+    for _, r in ipairs(REGIONS) do if r._kind == "texture" and r._parent == T.bg and visible(r) and (r._file or r._color) then bgTex = bgTex + 1 end end
+    check(fgL > bgL and T.icon._parent == T.fg and textsOK and bgTex > 0 and T._alpha == 1,
+      string.format("0.5.1.1 toast (%s): background drawn (%d), text and icon above it (levels %d > %d), full alpha after the fade-in", id, bgTex, fgL, bgL))
+    check(said[1] and said[1]:find("^test toast: ") , "0.5.1.1 /dm testtoast: says it is a preview (" .. id .. ")")
+    for _ = 1, 50 do if not T._shown then break end T._scripts.OnUpdate(T, 1) end
+    check(not T._shown, "0.5.1.1 toast (" .. id .. "): fades out and hides")
+  end
+  NS.SetTheme("wow")
 end
 
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====

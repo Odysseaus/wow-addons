@@ -24,6 +24,8 @@ local function Help()
   print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
   print("  /dm artprobe  WoW theme: which of the game's own textures/templates this client has (ok/missing) -> DarkMatterDB.artprobe")
   print("  /dm achprobe  Achievements: mode, game API counts + 3 samples, Dark Matter counts -> DarkMatterDB.achprobe")
+  print("  /dm testtoast  show a sample achievement toast (nothing is recorded)")
+  print("  /dm parchment l r t b  WoW theme: crop of the parchment (QuestBG) inside its torn edge, 0..1   /dm parchment reset")
 end
 
 SlashCmdList["DARKMATTER"] = function(msg)
@@ -94,6 +96,29 @@ SlashCmdList["DARKMATTER"] = function(msg)
       local _, lines = NS.Ach.ProbeReport()
       for _, l in ipairs(lines or {}) do NS.Print(l) end
     end
+  elseif cmd == "testtoast" then
+    if NS.Ach and NS.Ach.TestToast then
+      local a = NS.Ach.TestToast()
+      NS.Print("test toast: " .. tostring(a and a.name or "?") .. " (a preview; nothing was recorded).")
+    end
+  elseif cmd == "parchment" then
+    local wow = NS.themes and NS.themes.wow
+    local def = wow and wow.stockMedia and wow.stockMedia.detail and wow.stockMedia.detail.tc or { 0, 1, 0, 1 }
+    if rest == "reset" then
+      NS.db.parchTC = nil
+    elseif rest ~= "" then
+      local l, r, t, b = strmatch(rest, "^([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)$")
+      l, r, t, b = tonumber(l), tonumber(r), tonumber(t), tonumber(b)
+      if l and r and t and b and l >= 0 and r <= 1 and t >= 0 and b <= 1 and l < r and t < b then
+        NS.db.parchTC = { l, r, t, b }
+      else
+        NS.Print("parchment: four numbers 0..1, left < right and top < bottom (e.g. /dm parchment 0.04 0.545 0.04 0.615).")
+        return
+      end
+    end
+    local c = NS.db.parchTC or def
+    NS.Print(string.format("parchment crop: %.3f %.3f %.3f %.3f%s", c[1], c[2], c[3], c[4], NS.db.parchTC and " (yours)" or " (default)"))
+    if NS.SetTheme and NS.theme then NS.SetTheme(NS.theme.id) end
   elseif cmd == "tipdebug" then
     local on = NS.FishingToggleTipDebug()
     local td = NS.db.tipdebug or {}
