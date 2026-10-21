@@ -201,11 +201,6 @@ local function DItem(i)
   b.count = b:CreateFontString(nil, "OVERLAY")
   NS.SetFont(b.count, 11, "OUTLINE")
   b.count:SetPoint("BOTTOMRIGHT", b.icon, "BOTTOMRIGHT", -1, 2)
-  -- 0.5.1: a dark name plate behind each reward on the parchment panel, like the stock quest log's item frame
-  b.plate = b:CreateTexture(nil, "BACKGROUND")
-  b.plate:SetAllPoints(b)
-  b.plate:SetColorTexture(0.05, 0.045, 0.04, 0.92)
-  b.plate:Hide()
   b.name = UI.Text(b, "OVERLAY", 12, "listInk", "LEFT")
   b.name:SetPoint("LEFT", b.icon, "RIGHT", 6, 0)
   b.name:SetWidth(d.iw - 48)
@@ -214,6 +209,8 @@ local function DItem(i)
     if self.entry and selQuest then QL.ShowRewardTooltip(self, selQuest, self.entry) end
   end, function(self) QL.HideRewardTooltip(self) end)
   b.hoverInk = "listInk"
+  -- 0.5.1.2: no name plate on the parchment; hover there is a faint warm tint only (UI.Hover hoverSoft)
+  b.hoverSoft = function() return d.panel and d.panel.parch end
   d.items[i] = b
   return b
 end
@@ -255,8 +252,14 @@ local function Detail(q)
       b.count:SetText((e.count or 1) > 1 and tostring(e.count) or "")
       b.count:SetTextColor(NS.Color("barText"))
       b.name:SetText(e.name or "Item not loaded yet")
-      b.name:SetTextColor(NS.Legible(QualityRGB(e.quality)))
-      if d.panel.parch then b.plate:Show() else b.plate:Hide() end
+      -- 0.5.1.2: straight on the parchment, the quality colour darkened to read on it (no name plate)
+      if d.panel.parch then
+        b.name:SetTextColor(NS.ParchQuality(QualityRGB(e.quality)))
+        b.name:SetShadowColor(0, 0, 0, 0)
+      else
+        b.name:SetTextColor(NS.Legible(QualityRGB(e.quality)))
+        b.name:SetShadowColor(0, 0, 0, 0.9)
+      end
       b:Show()
       col = col + 1
       if col == 2 then col = 0 y = y - 44 end
@@ -517,7 +520,7 @@ NS.RegisterTab({
     local allBtn = CreateFrame("Button", nil, tb)
     allBtn:SetPoint("LEFT", tb, "LEFT", 0, 0)
     allBtn:SetSize(48, 22)
-    UI.ThreeSlice(allBtn, "ptab_a", 22, "ARTWORK")
+    local allSlice = UI.ThreeSlice(allBtn, "ptab_a", 22, "ARTWORK")
     UI.Hover(allBtn)
     allBtn.hoverInk = "lheadAll"
     bar.allIcon = allBtn:CreateTexture(nil, "OVERLAY")
@@ -527,6 +530,26 @@ NS.RegisterTab({
     local allText = UI.Text(allBtn, "OVERLAY", 12, "lheadAll", "LEFT")
     allText:SetPoint("LEFT", bar.allIcon, "RIGHT", 4, 0)
     allText:SetText("All")
+    allBtn.text = allText
+    allBtn.slice = allSlice
+    -- 0.5.1.2 WoW theme: a stock panel button labelled "All" (no expand/collapse icon); class themes keep the icon
+    UI.StockFeel(allBtn, {
+      slice = allSlice,
+      place = function(self, dx, dy)
+        allText:ClearAllPoints()
+        if self.stockOn then
+          bar.allIcon:Hide()
+          allText:SetPoint("CENTER", self, "CENTER", dx, 1 + dy)
+        else
+          bar.allIcon:Show()
+          allText:SetPoint("LEFT", bar.allIcon, "RIGHT", 4, 0)
+        end
+      end,
+      classic = function()
+        allSlice:Apply("ptab_a")
+        allText:SetTextColor(NS.Color("lheadAll"))
+      end,
+    })
     allBtn:SetScript("OnClick", ToggleAll)
     bar.all = allBtn
     local trk = CreateFrame("CheckButton", nil, tb, "UICheckButtonTemplate")

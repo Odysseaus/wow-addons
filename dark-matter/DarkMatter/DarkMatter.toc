@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.1.1: the WoW theme uses the game's own window art, every panel fully filled (/dm artprobe); Map (the game's own map, zoom world to zone, search, Find me, full screen, /dm mapprobe); 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests (search, watch boxes, rewards, /dm questprobe); /dm probe.
+## Notes: Dark Matter 0.5.1.2: the WoW theme uses the game's own window art, buttons, tabs and scroll bars (/dm artprobe); Map (the game's own map, zoom world to zone, search, Find me, full screen, /dm mapprobe); 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests (search, watch boxes, rewards, /dm questprobe); /dm probe.
 ## Author: Odysseaus
-## Version: 0.5.1.1
+## Version: 0.5.1.2
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

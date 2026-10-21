@@ -283,8 +283,9 @@ local function BuildSettings(f)
     value:SetText(NS.theme.name)
     for _, b in ipairs(pick) do
       local on = b.themeId == NS.theme.id
+      b.active = on -- 0.5.1.2 WoW theme: the current theme's button shows held down (stock button feel)
       b:SetLook(on and "red" or "grey")
-      if not on then b.text:SetTextColor(NS.Color("popInk")) end -- readable, not the disabled grey
+      if not on and not b.stockOn then b.text:SetTextColor(NS.Color("popInk")) end -- readable, not the disabled grey
     end
   end)
   local reset = UI.Button(pop, "Reset window position", m.popW - 28, m.fbtnH, "red", m.fbtnSize)

@@ -188,16 +188,25 @@ function NS.Contrast(a, b)
   if la < lb then la, lb = lb, la end
   return (la + 0.05) / (lb + 0.05)
 end
-function NS.Legible(r, g, b, bgKey)
+function NS.Legible(r, g, b, bgKey, minC)
   local bg = NS.theme.colors[bgKey or "listBg"] or { 0.07, 0.07, 0.07 }
-  if NS.Contrast({ r, g, b }, bg) >= 6 then return r, g, b end
+  local need = minC or 6
+  if NS.Contrast({ r, g, b }, bg) >= need then return r, g, b end
   local t = NS.Lum(bg) < 0.25 and 1 or 0
   for i = 1, 20 do
     local k = i / 20
     local m = { r + (t - r) * k, g + (t - g) * k, b + (t - b) * k }
-    if NS.Contrast(m, bg) >= 6 then return m[1], m[2], m[3] end
+    if NS.Contrast(m, bg) >= need then return m[1], m[2], m[3] end
   end
   return t, t, t
+end
+-- 0.5.1.2: an item-quality colour for an item row drawn straight on the WoW theme's parchment (quest rewards, boss
+-- drops; no name plate): Common (white) becomes the dark quest ink, every other quality keeps its hue, darkened just
+-- enough for 4.5:1 against the parchment (theme.colors.parchBg).
+function NS.ParchQuality(r, g, b)
+  if r > 0.9 and g > 0.9 and b > 0.9 then return NS.Color("pInk") end
+  if not NS.theme.colors.parchBg then return NS.Color("pInk") end
+  return NS.Legible(r, g, b, "parchBg", 4.5)
 end
 -- "|cffrrggbb" escape for a theme colour key (for coloured lines inside one FontString).
 function NS.ColorCode(key)

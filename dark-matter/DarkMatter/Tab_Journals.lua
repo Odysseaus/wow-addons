@@ -540,10 +540,10 @@ local function BuildFish(page)
   viewWaters = CreateFrame("Frame", nil, fishPage)
   viewWaters:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -pad)
   viewWaters:SetSize(innerW, 28)
-  fvCatches = UI.Pill(viewWaters, "Catches")
+  fvCatches = UI.Pill(viewWaters, "Catches", "toggle")
   fvCatches:SetPoint("TOPLEFT", viewWaters, "TOPLEFT", 0, 0)
   fvCatches:SetScript("OnClick", function() SetFishView("catches") RefreshFish() end)
-  fvStats = UI.Pill(viewWaters, "Statistics")
+  fvStats = UI.Pill(viewWaters, "Statistics", "toggle")
   fvStats:SetPoint("TOPLEFT", fvCatches, "TOPRIGHT", m.pillGap, 0)
   fvStats:SetScript("OnClick", function() SetFishView("stats") RefreshFish() end)
 
@@ -569,11 +569,11 @@ local function BuildFish(page)
   -- Above watersRoot/fishRoot (created later) so mode pills stay clickable both ways.
   if filterBar.SetFrameLevel then filterBar:SetFrameLevel((fishPage.GetFrameLevel and fishPage:GetFrameLevel() or 1) + 20) end
   if filterBar.EnableMouse then filterBar:EnableMouse(true) end
-  modeZone = UI.Pill(filterBar, "by zone")
+  modeZone = UI.Pill(filterBar, "by zone", "toggle")
   modeZone:SetPoint("LEFT", filterBar, "LEFT", 0, 0)
   if modeZone.RegisterForClicks then modeZone:RegisterForClicks("LeftButtonUp") end
   modeZone:SetScript("OnClick", function() SetFishView("zone") RefreshFish() end)
-  modeFish = UI.Pill(filterBar, "by fish")
+  modeFish = UI.Pill(filterBar, "by fish", "toggle")
   modeFish:SetPoint("LEFT", modeZone, "RIGHT", m.pillGap, 0)
   if modeFish.RegisterForClicks then modeFish:RegisterForClicks("LeftButtonUp") end
   modeFish:SetScript("OnClick", function() SetFishView("fish") RefreshFish() end)
@@ -674,7 +674,8 @@ local agMenuRows, agBossRows, agDropRows = {}, {}, {}
 local agHover
 local agDropPanel -- 0.5.1.1: the boss-detail (drops) panel; parchment in the WoW theme (agDropPanel.parch)
 -- 0.5.1.1: the boss-detail texts follow their panel: dark quest ink on the WoW theme's parchment, theme ink otherwise.
--- Drop rows keep their item-quality colours on a dark name plate (like the quest rewards on the parchment).
+-- 0.5.1.2: drop rows sit straight on the parchment (no name plate): the item name in its quality colour darkened for
+-- the parchment (NS.ParchQuality), the detail line in dark-brown ink, no text shadow.
 local function DropParch() return agDropPanel and agDropPanel.parch and true or false end
 local function DropInk()
   if not agDropHead then return end
@@ -684,7 +685,11 @@ local function DropInk()
   agEmptyDrops:SetTextColor(NS.Color(p and "pInkSoft" or "listSoft"))
   local sh = p and 0 or 0.9
   agDropHead:SetShadowColor(0, 0, 0, sh) agDropNote:SetShadowColor(0, 0, 0, sh) agEmptyDrops:SetShadowColor(0, 0, 0, sh)
-  for _, r in ipairs(agDropRows) do if p then r.plate:Show() else r.plate:Hide() end end
+  for _, r in ipairs(agDropRows) do
+    r.sub:SetTextColor(NS.Color(p and "pInkSoft" or "listSoft"))
+    r.text:SetShadowColor(0, 0, 0, sh) r.sub:SetShadowColor(0, 0, 0, sh)
+    if p then r.hl:SetColorTexture(0.35, 0.2, 0.05, 0.14) else r.hl:SetColorTexture(1, 1, 1, 0.07) end
+  end
 end
 local agText, agEv, agPending = "", nil, false
 local AG_MENU_H, AG_BOSS_H, AG_DROP_H = 22, 34, 40
@@ -850,18 +855,20 @@ local function GetDropRow(i)
   if r then return r end
   r = CreateFrame("Button", nil, agDropScroll.content)
   r:SetHeight(AG_DROP_H)
-  -- 0.5.1.1: a dark name plate behind the row on the parchment boss-detail panel (quality colours stay readable)
-  r.plate = r:CreateTexture(nil, "BACKGROUND")
-  r.plate:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -2)
-  r.plate:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -4, 2)
-  r.plate:SetColorTexture(0.05, 0.045, 0.04, 0.92)
-  if DropParch() then r.plate:Show() else r.plate:Hide() end
+  -- 0.5.1.2: no name plate; the row sits straight on its panel (parchment in the WoW theme). A subtle highlight on
+  -- hover: a faint warm-brown wash on the parchment, a faint light wash on a dark panel.
+  r.hl = r:CreateTexture(nil, "HIGHLIGHT")
+  r.hl:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -1)
+  r.hl:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -4, 1)
+  if DropParch() then r.hl:SetColorTexture(0.35, 0.2, 0.05, 0.14) else r.hl:SetColorTexture(1, 1, 1, 0.07) end
   r.icon = UI.RoundIcon(r, 28)
   r.icon:SetPoint("LEFT", r, "LEFT", 8, 0)
   r.text = OneLine(UI.Text(r, "OVERLAY", 13, "listInk", "LEFT"), 16)
   r.text:SetPoint("TOPLEFT", r, "TOPLEFT", 44, -4)
   r.text:SetPoint("RIGHT", r, "RIGHT", -10, 0)
-  r.sub = OneLine(UI.Text(r, "OVERLAY", 11, "listSoft", "LEFT"), 13)
+  r.sub = OneLine(UI.Text(r, "OVERLAY", 11, nil, "LEFT"), 13) -- coloured by DropInk (parchment or dark panel)
+  r.sub:SetTextColor(NS.Color(DropParch() and "pInkSoft" or "listSoft"))
+  if DropParch() then r.text:SetShadowColor(0, 0, 0, 0) r.sub:SetShadowColor(0, 0, 0, 0) end
   r.sub:SetPoint("TOPLEFT", r, "TOPLEFT", 44, -22)
   r.sub:SetPoint("RIGHT", r, "RIGHT", -10, 0)
   -- same tooltip + placement as the fishing rows (icon TOPRIGHT, compares chained right, mirror at the edge)
@@ -1061,7 +1068,7 @@ local function RefreshAG()
         local okc, a1, a2, a3 = pcall(GetItemQualityColor, qq)
         if okc and type(a1) == "number" then cr, cg, cb = a1, a2, a3 end
       end
-      r.text:SetTextColor(NS.Legible(cr, cg, cb))
+      if DropParch() then r.text:SetTextColor(NS.ParchQuality(cr, cg, cb)) else r.text:SetTextColor(NS.Legible(cr, cg, cb)) end
       local n = NS.AG.SeenCount(sel.key, boss.name, it.itemId)
       r.seen = n
       if n > 0 then seenN = seenN + 1 end
@@ -1194,10 +1201,10 @@ local function BuildAdventure(page)
     agText = (t or ""):lower()
     if tab and tab.RefreshAG then tab.RefreshAG() end
   end
-  agLvlAll = UI.Pill(bar, "All levels")
+  agLvlAll = UI.Pill(bar, "All levels", "toggle")
   agLvlAll:SetPoint("LEFT", agSearch, "RIGHT", 10, 0)
   agLvlAll:SetScript("OnClick", function() if NS.db then NS.db.agLevel = "all" end RefreshAG() end)
-  agLvlMine = UI.Pill(bar, "Near my level")
+  agLvlMine = UI.Pill(bar, "Near my level", "toggle")
   agLvlMine:SetPoint("LEFT", agLvlAll, "RIGHT", m.pillGap, 0)
   agLvlMine:SetScript("OnClick", function() if NS.db then NS.db.agLevel = "mine" end RefreshAG() end)
 
@@ -1248,7 +1255,8 @@ local function BuildAdventure(page)
   NS.AGWidgets = function()
     return { drop = agDrop, menu = agMenu, menuRows = agMenuRows, menuScroll = agMenuScroll, bossRows = agBossRows,
       dropRows = agDropRows, title = agTitle, meta = agMeta, dropHead = agDropHead, dropNote = agDropNote,
-      bossHead = agBossHead, search = agSearch, emptyBoss = agEmptyBoss, emptyDrops = agEmptyDrops }
+      bossHead = agBossHead, search = agSearch, emptyBoss = agEmptyBoss, emptyDrops = agEmptyDrops,
+      lvlAll = agLvlAll, lvlMine = agLvlMine, pills = pills, dropPanel = agDropPanel }
   end
   agPage:Hide()
 end

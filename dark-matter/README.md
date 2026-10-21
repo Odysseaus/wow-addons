@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.4.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.1.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -61,6 +61,8 @@ Quest list on the left with a toolbar on top (All, Track Quest, search at the fa
 The default theme 'WoW' looks like a stock WoW window. It draws the game's own textures (dialog frame and header, tooltip-border panes, quest parchment, panel buttons, character-panel tabs, scroll bars, check boxes) and the stock close button template, all referenced in game by path; no Blizzard file ships with Dark Matter. Each piece is checked at runtime and falls back to Dark Matter's own art if the client lacks it. `/dm artprobe` lists what this client has (ok / MISSING) and saves it to `DarkMatterDB.artprobe`.
 
 **0.5.1.1:** every surface fills its panel corner to corner. The page behind the lists is the stock rock (light text); only the quest detail and the Adventure Guide boss detail are parchment (dark ink), drawn from the clean inside of `QuestBG` so no torn edge shows (`/dm parchment l r t b` tunes the crop). Scroll buttons are the stock 16x16 buttons with Up / Down / Disabled / Highlight. `/dm testtoast` previews the achievement toast.
+
+**0.5.1.2:** every button behaves like the stock `UIPanelButtonTemplate` (Up / Down / Disabled faces, ADD highlight, label 1px down-right while pressed, the click sound, gold / white / grey labels); the Adventure Guide / Fishing / Achievements tabs behave like the character-frame tabs; no marker dots on tabs or toggles; boss drops and quest rewards sit straight on the parchment in a readable quality colour; scroll bars sit in the stock `UI-Character-ScrollBar` groove.
 
 ## Map tab (0.5.0)
 The game's own map pictures, read at runtime for every zone of Kalimdor and Eastern Kingdoms. Nothing is bundled and nothing is probed per zone.

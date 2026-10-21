@@ -309,6 +309,10 @@ end
 C_XMLUtil = { GetTemplateInfo = function(n)
   if STOCK_MISSING then return nil end
   if n == "UIPanelCloseButton" then return { type = "Button", width = 32, height = 32 } end
+  -- 0.5.1.2: the templates the stock button / tab / scroll bar look is modelled on (reported by /dm artprobe)
+  if n == "UIPanelButtonTemplate" or n == "CharacterFrameTabButtonTemplate" then return { type = "Button" } end
+  if n == "UIPanelScrollFrameTemplate" then return { type = "ScrollFrame" } end
+  if n == "UIPanelScrollBarTemplate" then return { type = "Slider" } end
   return nil
 end }
 function CreateFrame(ftype, name, parent, tmpl)
@@ -4098,7 +4102,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -4245,6 +4249,130 @@ if MODE ~= "minimal" then
     for _ = 1, 50 do if not T._shown then break end T._scripts.OnUpdate(T, 1) end
     check(not T._shown, "0.5.1.1 toast (" .. id .. "): fades out and hides")
   end
+  -- ===== 0.5.1.2: stock button feel, character-frame tabs, no marker dots, item rows on the parchment, stock groove =====
+  local played = {}
+  local savePS, saveSK = PlaySound, SOUNDKIT
+  SOUNDKIT = { IG_MAINMENU_OPTION_CHECKBOX_ON = 856, IG_CHARACTER_INFO_TAB = 841, U_CHAT_SCROLL_BUTTON = 1115 }
+  PlaySound = function(id) played[#played + 1] = id end
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  local function mid(b) return tostring(b.slice.m._file) end
+  local function tcIs(t, want) if not t then return false end for i = 1, #want do if math.abs((t[i] or -1) - want[i]) > 1e-6 then return false end end return true end
+  local sb = W.settingsBtn
+  local hlOK = sb.stockOn and sb.stockHL._file == "Interface\\Buttons\\UI-Panel-Button-Highlight" and sb.stockHL._layer == "HIGHLIGHT"
+    and sb.stockHL._blend == "ADD" and tcIs(sb.stockHL._tc, { 0, 0.625, 0, 0.6875 })
+  check(hlOK, "0.5.1.2 WoW buttons: stock UI-Panel-Button-Highlight on the HIGHLIGHT layer, ADD blend, texcoords 0..0.625 x 0..0.6875")
+  local upFace = mid(sb)
+  local c0 = sb.text._tcol
+  sb._scripts.OnMouseDown(sb, "LeftButton")
+  local downFace, pt = mid(sb), sb.text._pts[#sb.text._pts]
+  sb._scripts.OnMouseUp(sb, "LeftButton")
+  sb._scripts.PostClick(sb, "LeftButton")
+  check(upFace:find("UI%-Panel%-Button%-Up$") and downFace:find("UI%-Panel%-Button%-Down$") and mid(sb):find("UI%-Panel%-Button%-Up$"),
+    "0.5.1.2 WoW buttons: Up face, Down face while held, Up again on release (" .. upFace .. " / " .. downFace .. ")")
+  check(pt and pt[4] == 1 and pt[5] == 0, "0.5.1.2 WoW buttons: the label moves 1px right and down while held (" .. tostring(pt and pt[4]) .. "," .. tostring(pt and pt[5]) .. ")")
+  check(c0 and math.abs(c0[1] - 1) < 0.01 and math.abs(c0[2] - 0.82) < 0.01 and c0[3] < 0.01, "0.5.1.2 WoW buttons: gold normal label")
+  sb._scripts.OnEnter(sb)
+  local ch = sb.text._tcol
+  sb._scripts.OnLeave(sb)
+  check(ch[1] == 1 and ch[2] == 1 and ch[3] == 1 and not sb.hoverTex[1]._shown, "0.5.1.2 WoW buttons: white label on hover, no Dark Matter tint/edge (the stock highlight does the hover)")
+  check(played[#played] == 856, "0.5.1.2 WoW buttons: the stock click sound (SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)")
+  local sh = W.shareBtn
+  check(mid(sh):find("UI%-Panel%-Button%-Disabled$") and sh.text._tcol[1] < 0.9 and sh.text._tcol[1] == sh.text._tcol[3] and sh.stockHL._alpha == 0,
+    "0.5.1.2 WoW buttons: a disabled button (Share stats) shows the Disabled face, a grey label, no highlight")
+  local nPlayed = #played
+  sh._scripts.OnMouseDown(sh, "LeftButton")
+  check(mid(sh):find("Disabled$"), "0.5.1.2 WoW buttons: a disabled button does not press")
+  sh._scripts.OnMouseUp(sh, "LeftButton")
+  -- rail tabs: stock panel buttons, the active one held down
+  local railOK, railN = true, 0
+  for _, t in pairs(W.railTabs) do
+    railN = railN + 1
+    local f = mid(t)
+    if not t.stockOn or (t.active and not f:find("Down$")) or (not t.active and not f:find("Up$")) or t.stockHL._file ~= "Interface\\Buttons\\UI-Panel-Button-Highlight" then railOK = false end
+  end
+  check(railN == 4 and railOK, "0.5.1.2 WoW rail tabs: stock panel buttons (active held down), stock highlight")
+  -- section tabs: character-frame tabs; toggles: panel buttons; never a marker dot
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("adventure")
+  local ag = NS.AGWidgets()
+  local tabOK, dotN = true, 0
+  for _, p in ipairs(ag.pills) do
+    local f = mid(p)
+    if p.stockStyle ~= "tab" or (p.active and not f:find("ActiveTab$")) or (not p.active and not f:find("InActiveTab$")) then tabOK = false end
+    if p.stockHL._file ~= "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight" or (p.active and p.stockHL._alpha ~= 0) then tabOK = false end
+    if visible(p.mark) then dotN = dotN + 1 end
+  end
+  local pa = ag.pills[1]
+  pa._scripts.OnMouseDown(pa, "LeftButton")
+  local tabPt = pa.text._pts[#pa.text._pts]
+  pa._scripts.OnMouseUp(pa, "LeftButton")
+  check(tabOK and tabPt[4] == 0 and tabPt[5] == 1, "0.5.1.2 WoW section tabs: ActiveTab raised / InActiveTab, tab highlight on the unselected ones, no press offset")
+  local tg = ag.lvlAll
+  check(tg.stockStyle == "button" and (tg.active and mid(tg):find("Down$") or mid(tg):find("Up$")), "0.5.1.2 WoW filter toggles (All levels): stock panel buttons, held down while on")
+  for _, p in ipairs({ ag.lvlAll, ag.lvlMine }) do if visible(p.mark) then dotN = dotN + 1 end end
+  NS.ShowTab("quests")
+  if visible(W.allBtn) then end
+  local qbar = NS.tabs.quests.Parts()
+  if visible(qbar.allIcon) then dotN = dotN + 1 end
+  check(dotN == 0 and W.allBtn.stockOn and mid(W.allBtn):find("UI%-Panel%-Button%-Up$"), "0.5.1.2 WoW: no marker dot / icon on any tab, sub-tab or the All toggles (" .. dotN .. ")")
+  -- boss drops and quest rewards straight on the parchment
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("adventure")
+  ag = NS.AGWidgets()
+  local parchBg = NS.theme.colors.parchBg
+  local dropOK, dropN = true, 0
+  for _, r in ipairs(ag.dropRows) do
+    if r._shown then
+      dropN = dropN + 1
+      if rawget(r, "plate") then dropOK = false end
+      local c = r.text._tcol
+      if not c or NS.Contrast({ c[1], c[2], c[3] }, parchBg) < 4.5 then dropOK = false end
+      if lum(r.sub) > 0.3 or r.hl._layer ~= "HIGHLIGHT" then dropOK = false end
+    end
+  end
+  check(ag.dropPanel.parch and dropOK, "0.5.1.2 Adventure Guide drops: no name plate, quality colour readable on the parchment, dark detail ink, a highlight (" .. dropN .. " rows)")
+  local r1 = ag.dropRows[1]
+  check(not r1 or (r1.text._tcol[3] > r1.text._tcol[1]), "0.5.1.2 Adventure Guide drops: a Rare item stays blue (darkened), not brown")
+  NS.ShowTab("quests")
+  local _, qd2 = NS.tabs.quests.Parts()
+  local rewOK = true
+  for _, b in ipairs(qd2.items or {}) do if rawget(b, "plate") then rewOK = false end if b._shown and NS.Contrast(b.name._tcol, parchBg) < 4.5 then rewOK = false end end
+  check(rewOK, "0.5.1.2 quest rewards: no name plate, names readable on the parchment")
+  -- scroll bars: the stock groove, no solid dark track
+  local grooveN = 0
+  for _, r in ipairs(REGIONS) do
+    if r._kind == "texture" and r._file == "Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar" and under(r, win) and visible(r) then grooveN = grooveN + 1 end
+  end
+  check(grooveN >= 4, "0.5.1.2 WoW scroll bars: the stock UI-Character-ScrollBar groove is drawn (" .. grooveN .. " pieces)")
+  -- artprobe reports the new files and templates
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("artprobe")
+  NS.Print = oldPrint
+  local all = table.concat(said, "\n")
+  local need = { "UIPanelButtonTemplate %(template%)", "CharacterFrameTabButtonTemplate %(template%)", "UIPanelScrollFrameTemplate %(template%)",
+    "UIPanelScrollBarTemplate %(template%)", "UI%-Panel%-Button%-Highlight", "UI%-Panel%-Button%-Down", "UI%-Character%-Tab%-Highlight", "UI%-Character%-ScrollBar" }
+  local miss = {}
+  for _, n in ipairs(need) do if not all:find("ok [^\n]*" .. n) then miss[#miss + 1] = n end end
+  check(#miss == 0 and said[#said]:find(", 0 missing$"), "0.5.1.2 /dm artprobe: reports the button / tab / scroll templates and files (" .. tostring(said[#said]) .. (#miss > 0 and (" missing: " .. table.concat(miss, ", ")) or "") .. ")")
+  -- class themes: unchanged (no stock feel, their own marker dot on the active section tab)
+  NS.SetTheme("warrior")
+  NS.ShowTab("journals")
+  local cl = NS.AGWidgets()
+  local act
+  for _, p in ipairs(cl.pills) do if p.active then act = p end end
+  check(not W.settingsBtn.stockOn and W.settingsBtn.stockHL._file == nil and act and visible(act.mark), "0.5.1.2 class themes: own button feel and the marker dot (unchanged)")
+  -- fallback: the stock button files missing -> Dark Matter's own feel
+  STOCK_MISSING = true
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  check(not W.settingsBtn.stockOn, "0.5.1.2 fallback: without the stock button files the WoW buttons keep Dark Matter's own art")
+  STOCK_MISSING = false
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+  PlaySound, SOUNDKIT = savePS, saveSK
   NS.SetTheme("wow")
 end
 

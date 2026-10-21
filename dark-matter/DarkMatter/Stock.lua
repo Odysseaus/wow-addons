@@ -156,6 +156,24 @@ function S.ButtonStates(key)
   return sp
 end
 
+
+-- 0.5.1.2 stock button feel: the theme's UIPanelButtonTemplate files (stockButtons) when the client has all four.
+function S.PanelButton()
+  local sb = NS.theme and NS.theme.stockButtons
+  if not sb then return nil end
+  for _, k in ipairs({ "up", "down", "disabled", "highlight" }) do
+    if not S.TextureOK(sb[k]) then return nil end
+  end
+  return sb
+end
+-- the character-frame tab look (both tab files + the tab highlight), for the section tabs
+function S.TabButton()
+  local sb = NS.theme and NS.theme.stockButtons
+  if not (sb and sb.tabHighlight) then return nil end
+  if not (S.Spec("ptab_a_m") and S.Spec("ptab_i_m") and S.TextureOK(sb.tabHighlight)) then return nil end
+  return { highlight = sb.tabHighlight, highlightTC = sb.tabHighlightTC or { 0, 1, 0, 1 } }
+end
+
 -- /dm artprobe: one short line per stock texture/template the WoW theme uses, ok or missing.
 function S.Report()
   -- ask for everything the WoW theme lists, even pieces not drawn yet
@@ -166,6 +184,9 @@ function S.Report()
       if sp.down then S.TextureOK(sp.down) S.TextureOK(sp.disabled) S.TextureOK(sp.highlight) end
     end
     for _, sp in pairs(wow.stockMedia or {}) do S.TextureOK(sp.file) end
+    for _, k in ipairs({ "up", "down", "disabled", "highlight", "tabHighlight" }) do
+      if wow.stockButtons and wow.stockButtons[k] then S.TextureOK(wow.stockButtons[k]) end
+    end
     for _, t in ipairs(wow.stockTemplates or {}) do S.TemplateOK(t[1], t[2]) end
   end
   local names = {}

@@ -240,6 +240,8 @@ end
 -- Hover look (0.4.4) for every labelled button and list row. It is drawn UNDER the label (ARTWORK sublevel 7, above
 -- the button art), never on the HIGHLIGHT layer (that one draws over the text and washed labels out on light themes):
 -- a soft theme tint plus a 1px theme-coloured edge. Shown on enter, hidden on leave and when the button is disabled.
+-- 0.5.1.2: b.hoverSoft (true or a function) = a faint dark tint only, no edge (item rows on the parchment); a button with
+-- the stock WoW behaviour (b.stockOn) draws no tint at all: its stock Highlight texture does the hover.
 function UI.Hover(b, onEnter, onLeave)
   local h = {}
   for i = 1, 5 do h[i] = b:CreateTexture(nil, "ARTWORK", nil, 7) end
@@ -249,14 +251,26 @@ function UI.Hover(b, onEnter, onLeave)
   h[4]:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0) h[4]:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0) h[4]:SetWidth(1)
   h[5]:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0) h[5]:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0) h[5]:SetWidth(1)
   local function show(on)
-    if on then
-      -- tint AWAY from the label ink (darker behind light labels, lighter behind dark ones), so hover only adds contrast
-      local k = b.hoverInk or "listInk"
-      if type(k) == "function" then k = k(b) end
-      local ink = NS.theme.colors[k]
-      if ink and NS.Lum(ink) > 0.3 then h[1]:SetColorTexture(0, 0, 0, 0.16) else h[1]:SetColorTexture(1, 1, 1, 0.18) end
+    b._over = on and true or nil
+    if b.stockOn then
+      for i = 1, 5 do h[i]:Hide() end
+      if b.StockPaint then b:StockPaint() end
+      return
     end
-    for i = 1, 5 do if on then h[i]:Show() else h[i]:Hide() end end
+    local soft = b.hoverSoft
+    if type(soft) == "function" then soft = soft(b) end
+    if on then
+      if soft then
+        h[1]:SetColorTexture(0.25, 0.12, 0, 0.12)
+      else
+        -- tint AWAY from the label ink (darker behind light labels, lighter behind dark ones), so hover only adds contrast
+        local k = b.hoverInk or "listInk"
+        if type(k) == "function" then k = k(b) end
+        local ink = NS.theme.colors[k]
+        if ink and NS.Lum(ink) > 0.3 then h[1]:SetColorTexture(0, 0, 0, 0.16) else h[1]:SetColorTexture(1, 1, 1, 0.18) end
+      end
+    end
+    for i = 1, 5 do if on and (i == 1 or not soft) then h[i]:Show() else h[i]:Hide() end end
   end
   NS.OnSkin(function()
     local e = NS.theme.colors.hoverEdge or { 1, 0.82, 0.30, 0.75 }
@@ -276,7 +290,131 @@ function UI.Hover(b, onEnter, onLeave)
   return h
 end
 
+-- 0.5.1.2 stock button feel (WoW theme). Every WoW-theme button behaves like the game's own UIPanelButtonTemplate:
+-- Normal / Pushed / Disabled faces from Interface\Buttons\UI-Panel-Button-Up / -Down / -Disabled (texcoords
+-- 0..0.625 x 0..0.6875, drawn as the template's left / middle / right slices), the -Highlight texture over the whole
+-- button (same texcoords, ADD blend) on hover, the label 1px down-right while the mouse is held, the stock click
+-- sound, gold normal / white highlight / grey disabled font colours (GameFontNormal / GameFontHighlight /
+-- GameFontDisable). Section tabs behave like CharacterFrameTabButtonTemplate: the selected tab raised (ActiveTab) with
+-- a white label and no hover, the others darker (InActiveTab) with a gold label and UI-Character-Tab-Highlight on
+-- hover; no press offset. The buttons are built by hand rather than created from the templates because the window
+-- switches theme live: a template button cannot drop its art again for the class themes. /dm artprobe still reports
+-- the templates. Any of the files missing (or a class theme): the button keeps Dark Matter's own art and feel.
+local STOCK_FONT = { normal = { 1, 0.82, 0 }, highlight = { 1, 1, 1 }, disabled = { 0.8, 0.8, 0.8 } }
+-- (disabled: GameFontDisable's grey, lifted from 0.5 to 0.8 so the label still reads 4.5:1 on the stock Disabled face)
+UI.STOCK_FONT = STOCK_FONT
+-- The stock click sound (SOUNDKIT where the client has it, the old sound names otherwise). kind "tab": the tab sound.
+function NS.ClickSound(kind)
+  if type(PlaySound) ~= "function" then return end
+  local sk = type(SOUNDKIT) == "table" and SOUNDKIT or nil
+  local id
+  if sk then
+    if kind == "tab" then id = sk.IG_CHARACTER_INFO_TAB end
+    id = id or sk.IG_MAINMENU_OPTION_CHECKBOX_ON or sk.IGMAINMENUOPTIONCHECKBOXON or sk.U_CHAT_SCROLL_BUTTON
+  end
+  if id then pcall(PlaySound, id) return end
+  pcall(PlaySound, kind == "tab" and "igCharacterInfoTab" or "igMainMenuOptionCheckBoxOn")
+end
+
+-- opts: slice (the button's ThreeSlice), style "button" | "tab", toggle (active = held down), place(self, dx, dy)
+-- (moves the label), classic(self) (repaints Dark Matter's own look), classicDown(self, on) (its own press feel).
+function UI.StockFeel(b, opts)
+  local style = opts.style or "button"
+  b.stockStyle = style
+  b.stockOn = false
+  b.active = (rawget(b, "active") == true)
+  local hl = b:CreateTexture(nil, "HIGHLIGHT")
+  b.stockHL = hl
+  local function enabled(self) return not (self.IsEnabled and self:IsEnabled() == false) end
+  function b:StockPaint()
+    if not self.stockOn then return end
+    local en = enabled(self)
+    local col
+    if style == "tab" then
+      opts.slice:Apply(self.active and "ptab_a" or "ptab_i")
+      col = (self.active or self._over) and STOCK_FONT.highlight or STOCK_FONT.normal
+      if not en then col = STOCK_FONT.disabled end
+      hl:SetAlpha((self.active or not en) and 0 or 1)
+      opts.place(self, 0, 0)
+    else
+      local held = en and (self._pressed or (opts.toggle and self.active))
+      opts.slice:Apply((not en) and "btn_grey" or (held and "btn_down" or "btn_red"))
+      if not en then col = STOCK_FONT.disabled
+      elseif self._over or (opts.toggle and self.active) then col = STOCK_FONT.highlight
+      else col = STOCK_FONT.normal end
+      hl:SetAlpha(en and 1 or 0)
+      if held then opts.place(self, 1, -1) else opts.place(self, 0, 0) end
+    end
+    self.text:SetTextColor(col[1], col[2], col[3])
+    self.text:SetShadowColor(0, 0, 0, 1)
+    if opts.icon then opts.icon:SetVertexColor(col[1], col[2], col[3]) end
+  end
+  -- repaint on enable / disable (the client's OnEnable/OnDisable scripts are not relied on)
+  for _, k in ipairs({ "Enable", "Disable" }) do
+    local orig = b[k]
+    if type(orig) == "function" then
+      b[k] = function(self, ...)
+        local r = orig(self, ...)
+        if not enabled(self) then self._pressed = nil end
+        if self.stockOn then self:StockPaint() end
+        return r
+      end
+    end
+  end
+  b:SetScript("OnMouseDown", function(self, button)
+    if self.stockOn then
+      if style ~= "tab" and enabled(self) and (button == nil or button == "LeftButton") then self._pressed = true self:StockPaint() end
+    elseif opts.classicDown then opts.classicDown(self, true) end
+  end)
+  b:SetScript("OnMouseUp", function(self)
+    if self.stockOn then
+      self._pressed = nil
+      self:StockPaint()
+    elseif opts.classicDown then opts.classicDown(self, false) end
+  end)
+  b:SetScript("PostClick", function(self)
+    if self.stockOn then NS.ClickSound(style) end
+  end)
+  NS.OnSkin(function()
+    local st = NS.Stock.PanelButton()
+    local on = st and true or false
+    if on and style == "tab" then on = NS.Stock.TabButton() and true or false end
+    b.stockOn = on
+    b._pressed = nil
+    if on then
+      NS.Unflat(hl)
+      if style == "tab" then
+        local tb = NS.Stock.TabButton()
+        hl:ClearAllPoints()
+        hl:SetPoint("TOPLEFT", b, "TOPLEFT", 10, -2)
+        hl:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -10, 2)
+        hl:SetTexture(tb.highlight)
+        hl:SetTexCoord(unpack(tb.highlightTC))
+      else
+        hl:ClearAllPoints()
+        hl:SetAllPoints(b)
+        hl:SetTexture(st.highlight)
+        hl:SetTexCoord(unpack(st.tc))
+      end
+      hl:SetBlendMode("ADD")
+      hl:SetVertexColor(1, 1, 1, 1)
+      if b.hoverTex then for i = 1, 5 do b.hoverTex[i]:Hide() end end
+      b:StockPaint()
+    else
+      hl:SetTexture(nil)
+      hl:SetAlpha(0)
+      if b.text then b.text:SetShadowColor(0, 0, 0, 0.9) end
+      if opts.icon then opts.icon:SetVertexColor(1, 1, 1, 1) end
+      opts.place(b, 0, 0)
+      if opts.classic then opts.classic(b) end
+    end
+  end)
+end
+
 -- Plain button with the three-slice art. kind: "red", "grey" or "field".
+-- 0.5.1.2: the WoW theme gives "red" and "grey" buttons the stock UIPanelButtonTemplate feel (UI.StockFeel; "grey" is the
+-- same stock button, it only differs in the class themes). Like every stock-feel button it shows held down while
+-- b.active (the Settings theme picker).
 local KIND_INK = { red = "btnInk", grey = "greyBtn", field = "gold" }  -- 0.4.4: button faces get their own ink
 function UI.Button(parent, label, w, h, kind, size)
   local b = CreateFrame("Button", nil, parent)
@@ -293,16 +431,31 @@ function UI.Button(parent, label, w, h, kind, size)
   b.text:SetText(label or "")
   function b:SetLook(kindName)
     self.kind = kindName
+    if self.stockOn then self:StockPaint() return end
     self.slice:Apply("btn_" .. kindName)
     self.text:SetTextColor(NS.Color(KIND_INK[kindName] or "gold"))
   end
-  NS.OnSkin(function() b:SetLook(b.kind) end)
-  b:SetScript("OnMouseDown", function(self) self.text:SetPoint("CENTER", self, "CENTER", 1, 0) end)
-  b:SetScript("OnMouseUp", function(self) self.text:SetPoint("CENTER", self, "CENTER", 0, 1) end)
+  local function place(self, dx, dy)
+    self.text:ClearAllPoints()
+    self.text:SetPoint("CENTER", self, "CENTER", dx, 1 + dy)
+  end
+  if b.kind == "field" then
+    NS.OnSkin(function() b:SetLook(b.kind) end)
+    b:SetScript("OnMouseDown", function(self) place(self, 1, -1) end)
+    b:SetScript("OnMouseUp", function(self) place(self, 0, 0) end)
+    return b
+  end
+  UI.StockFeel(b, {
+    slice = b.slice, place = place,
+    toggle = true,
+    classic = function(self) self:SetLook(self.kind) end,
+    classicDown = function(self, on) if on then place(self, 1, -1) else place(self, 0, 0) end end,
+  })
   return b
 end
 
 -- Left-rail tab: icon + label, three-slice art, wider when active.
+-- 0.5.1.2 WoW theme: the stock panel button feel (UI.StockFeel); the active tab stays held down with a white label.
 function UI.RailTab(parent, label, glyphKey)
   local m = NS.theme.m
   local t = CreateFrame("Button", nil, parent)
@@ -321,15 +474,26 @@ function UI.RailTab(parent, label, glyphKey)
   t.text:SetText(label)
   t.glyphKey = glyphKey
   t.active = false
-  function t:SetActive(on)
-    self.active = on and true or false
-    local mm = NS.theme.m
-    self:SetWidth(self.active and mm.tabWOn or mm.tabW)
+  local function classic(self)
     local p = self.active and "rtab_a" or "rtab_i"
     self.slice:Apply(p)
     self.text:SetTextColor(NS.Color(self.active and "goldOn" or "gold"))
     self.icon:SetVertexColor(NS.Color(self.active and "goldOn" or "gold"))
   end
+  function t:SetActive(on)
+    self.active = on and true or false
+    local mm = NS.theme.m
+    self:SetWidth(self.active and mm.tabWOn or mm.tabW)
+    if self.stockOn then self:StockPaint() else classic(self) end
+  end
+  UI.StockFeel(t, {
+    slice = t.slice, toggle = true, icon = t.icon,
+    place = function(self, dx, dy)
+      self.icon:ClearAllPoints()
+      self.icon:SetPoint("LEFT", self, "LEFT", 12 + dx, dy)
+    end,
+    classic = classic,
+  })
   NS.OnSkin(function()
     NS.SetPiece(t.icon, t.glyphKey)
     t:SetActive(t.active)
@@ -338,9 +502,13 @@ function UI.RailTab(parent, label, glyphKey)
 end
 
 -- Section pill (like the mockup's Fishing / Adventure Guide / Achievements buttons).
-function UI.Pill(parent, label)
+-- 0.5.1.2: kind "toggle" = a filter toggle (All levels / Near my level, by zone / by fish, Catches / Statistics): in the
+-- WoW theme a stock panel button, held down while active. Otherwise a section tab: in the WoW theme a stock
+-- character-frame tab. The WoW theme shows no marker dot on either (class themes keep theirs).
+function UI.Pill(parent, label, kind)
   local m = NS.theme.m
   local p = CreateFrame("Button", nil, parent)
+  p.kind = kind or "tab"
   p.text = p:CreateFontString(nil, "OVERLAY")
   NS.SetFont(p.text, m.pillSize, "")
   p.text:SetShadowOffset(1, -1)
@@ -356,8 +524,7 @@ function UI.Pill(parent, label)
   p.mark:SetPoint("LEFT", p, "LEFT", 9, 0)
   p.text:SetPoint("CENTER", p, "CENTER", 0, 1)
   p.active = false
-  function p:SetActive(on)
-    self.active = on and true or false
+  local function classic(self)
     local prefix = self.active and "ptab_a" or "ptab_i"
     self.slice:Apply(prefix)
     self.text:SetTextColor(NS.Color(self.active and "goldOn" or "gold"))
@@ -365,6 +532,19 @@ function UI.Pill(parent, label)
     self.text:ClearAllPoints()
     self.text:SetPoint("CENTER", self, "CENTER", self.active and 6 or 0, 1)
   end
+  function p:SetActive(on)
+    self.active = on and true or false
+    if self.stockOn then self.mark:Hide() self:StockPaint() else classic(self) end
+  end
+  UI.StockFeel(p, {
+    slice = p.slice, style = (p.kind == "toggle") and "button" or "tab", toggle = true,
+    place = function(self, dx, dy)
+      self.mark:Hide()
+      self.text:ClearAllPoints()
+      self.text:SetPoint("CENTER", self, "CENTER", dx, 1 + dy)
+    end,
+    classic = classic,
+  })
   NS.OnSkin(function()
     NS.SetPiece(p.mark, "coin_target")
     p:SetActive(p.active)
@@ -373,6 +553,7 @@ function UI.Pill(parent, label)
 end
 
 -- Scroll area with the generated scrollbar art: up/down buttons, track, three-slice thumb.
+-- 0.5.1.2: plus the stock groove (UI-Character-ScrollBar) instead of the solid dark track, and the stock scroll sound.
 -- 0.5.1.1 WoW theme: the game's own scroll buttons at their stock 16x16 size (Up / Down when pressed / Disabled at the
 -- ends / Highlight on hover) and the stock 18x24 knob, like UIPanelScrollBarTemplate; any missing file: the old art.
 function UI.Scroll(parent, w, h)
@@ -414,6 +595,37 @@ function UI.Scroll(parent, w, h)
   trackBg:SetPoint("TOPLEFT", up, "BOTTOMLEFT", 0, 0)
   trackBg:SetPoint("BOTTOMRIGHT", down, "TOPRIGHT", 0, 0)
   trackBg:SetColorTexture(0.02, 0.02, 0.035, 0.85)
+
+  -- 0.5.1.2 WoW theme: the stock groove (UI-Character-ScrollBar, like the quest log's scroll bar) behind the buttons and
+  -- the knob, instead of the solid dark track. Laid out from the bar's height (top piece, stretched middle, bottom piece).
+  local grooveT = f:CreateTexture(nil, "BACKGROUND", nil, 3)
+  local grooveM = f:CreateTexture(nil, "BACKGROUND", nil, 3)
+  local grooveB = f:CreateTexture(nil, "BACKGROUND", nil, 3)
+  local grooveOn = false
+  local function LayoutGroove()
+    if not grooveOn then grooveT:Hide() grooveM:Hide() grooveB:Hide() return end
+    local gw = sbw + 8
+    local total = math.max(8, S.h + 3) -- 2px above the up button, 1px below the down button
+    local bh = math.min(106, math.floor(total / 2))
+    local th = math.min(256, total - bh)
+    local mh = total - bh - th
+    grooveT:ClearAllPoints() grooveT:SetPoint("TOP", up, "TOP", 0, 2) grooveT:SetSize(gw, th)
+    grooveT:SetTexCoord(0, 0.484375, 0, th / 256)
+    grooveB:ClearAllPoints() grooveB:SetPoint("BOTTOM", down, "BOTTOM", 0, -1) grooveB:SetSize(gw, bh)
+    grooveB:SetTexCoord(0.515625, 1, 0.4140625 - bh / 256, 0.4140625)
+    if mh > 0 then
+      grooveM:ClearAllPoints()
+      grooveM:SetPoint("TOP", grooveT, "BOTTOM", 0, 0) grooveM:SetSize(gw, mh)
+      grooveM:SetTexCoord(0, 0.484375, 0.25, 0.75)
+      grooveM:Show()
+    else
+      grooveM:Hide()
+    end
+    grooveT:Show() grooveB:Show()
+  end
+  S.LayoutGroove = LayoutGroove
+  S.groove = { grooveT, grooveM, grooveB }
+
 
   local sb = CreateFrame("Slider", nil, f)
   sb:SetOrientation("VERTICAL")
@@ -466,6 +678,15 @@ function UI.Scroll(parent, w, h)
     stockUp, stockDn = NS.Stock.ButtonStates("sb_up"), NS.Stock.ButtonStates("sb_dn")
     if not (stockUp and stockDn) then stockUp, stockDn = nil, nil end
     stockKnob = stockUp and NS.Stock.Spec("sb_thumb") or nil
+    local gt, gm, gb = NS.Stock.Spec("sb_track_t"), NS.Stock.Spec("sb_track_m"), NS.Stock.Spec("sb_track_b")
+    grooveOn = (stockUp and gt and gm and gb) and true or false
+    if grooveOn then
+      NS.Stock.Apply(grooveT, gt) NS.Stock.Apply(grooveM, gm) NS.Stock.Apply(grooveB, gb)
+      trackBg:Hide()
+    else
+      trackBg:Show()
+    end
+    LayoutGroove()
     if stockUp then
       for _, pr in ipairs({ { up, upTex, upGlow, stockUp }, { down, downTex, downGlow, stockDn } }) do
         local btn, tex, glow, sp = pr[1], pr[2], pr[3], pr[4]
@@ -526,6 +747,7 @@ function UI.Scroll(parent, w, h)
       capT:Hide() capB:Hide() thumb:Hide()
     end
     RefreshButtons()
+    LayoutGroove()
   end
   function S:SetContentHeight(ch)
     self.contentH = math.max(1, ch)
@@ -548,8 +770,14 @@ function UI.Scroll(parent, w, h)
   sf:SetScript("OnMouseWheel", function(_, delta) S:ScrollBy(-delta * S.step) end)
   f:EnableMouseWheel(true)
   f:SetScript("OnMouseWheel", function(_, delta) S:ScrollBy(-delta * S.step) end)
-  up:SetScript("OnClick", function() S:ScrollBy(-S.step) end)
-  down:SetScript("OnClick", function() S:ScrollBy(S.step) end)
+  -- the stock scroll buttons click with the chat-scroll sound (UIPanelScrollUpButtonTemplate)
+  local function ScrollSound()
+    if stockUp and type(PlaySound) == "function" and type(SOUNDKIT) == "table" and SOUNDKIT.U_CHAT_SCROLL_BUTTON then
+      pcall(PlaySound, SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+    end
+  end
+  up:SetScript("OnClick", function() ScrollSound() S:ScrollBy(-S.step) end)
+  down:SetScript("OnClick", function() ScrollSound() S:ScrollBy(S.step) end)
   S:Update()
   return S
 end

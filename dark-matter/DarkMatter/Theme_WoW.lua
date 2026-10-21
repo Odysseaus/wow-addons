@@ -45,6 +45,10 @@ NS.RegisterTheme({
     rtab_a_l = { file = "Interface\\Buttons\\UI-Panel-Button-Down", tc = { 0, 0.09375, 0, 0.6875 }, w = 12, h = 22 },
     rtab_a_m = { file = "Interface\\Buttons\\UI-Panel-Button-Down", tc = { 0.09375, 0.53125, 0, 0.6875 }, w = 56, h = 22 },
     rtab_a_r = { file = "Interface\\Buttons\\UI-Panel-Button-Down", tc = { 0.53125, 0.625, 0, 0.6875 }, w = 12, h = 22 },
+    -- 0.5.1.2: the pressed face of the stock panel button (UIPanelButtonTemplate's PushedTexture)
+    btn_down_l = { file = "Interface\\Buttons\\UI-Panel-Button-Down", tc = { 0, 0.09375, 0, 0.6875 }, w = 12, h = 22 },
+    btn_down_m = { file = "Interface\\Buttons\\UI-Panel-Button-Down", tc = { 0.09375, 0.53125, 0, 0.6875 }, w = 56, h = 22 },
+    btn_down_r = { file = "Interface\\Buttons\\UI-Panel-Button-Down", tc = { 0.53125, 0.625, 0, 0.6875 }, w = 12, h = 22 },
     -- section tabs (Fishing / Adventure Guide / Achievements): the character-panel tabs, flipped to open downward
     ptab_i_l = { file = "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab", tc = { 0, 1, 0, 0, 0.15625, 1, 0.15625, 0 }, w = 20, h = 32 },
     ptab_i_m = { file = "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab", tc = { 0.15625, 1, 0.15625, 0, 0.84375, 1, 0.84375, 0 }, w = 88, h = 32 },
@@ -64,6 +68,11 @@ NS.RegisterTheme({
     sb_thumb_m = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.3, 0.7 }, w = 18, h = 12 },
     sb_thumb_t = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.125, 0.3 }, w = 18, h = 6 },
     sb_thumb_b = { file = "Interface\\Buttons\\UI-ScrollBar-Knob", tc = { 0.2, 0.8, 0.7, 0.875 }, w = 18, h = 6 },
+    -- 0.5.1.2: the scroll bar's groove, like the quest log's (UI-Character-ScrollBar: a 256-texel top piece and a
+    -- 106-texel bottom piece; a taller bar stretches the plain middle of the top piece between them)
+    sb_track_t = { file = "Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar", tc = { 0, 0.484375, 0, 1 }, w = 31, h = 256 },
+    sb_track_m = { file = "Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar", tc = { 0, 0.484375, 0.25, 0.75 }, w = 31, h = 128 },
+    sb_track_b = { file = "Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar", tc = { 0.515625, 1, 0, 0.4140625 }, w = 31, h = 106 },
     -- quest-log style expand/collapse and the selected-row glow
     coin_minus = { file = "Interface\\Buttons\\UI-MinusButton-Up", w = 32, h = 32 },
     coin_plus = { file = "Interface\\Buttons\\UI-PlusButton-Up", w = 32, h = 32 },
@@ -91,8 +100,19 @@ NS.RegisterTheme({
   -- dark slate (never Dark Matter's light parchment under light ink)
   pageDark = true,
   panelWash = { 0, 0, 0, 0.35 }, -- the Fishing skill strip on the dark page (was a cream wash over parchment)
-  -- stock templates used (each checked first): { name, frame type }
-  stockTemplates = { { "UIPanelCloseButton", "Button" } },
+  -- 0.5.1.2: the stock button feel (Widgets UI.StockFeel): UIPanelButtonTemplate's four files and texcoords, and the
+  -- character-frame tab highlight (flipped like the tabs, which open downward)
+  stockButtons = {
+    up = "Interface\\Buttons\\UI-Panel-Button-Up", down = "Interface\\Buttons\\UI-Panel-Button-Down",
+    disabled = "Interface\\Buttons\\UI-Panel-Button-Disabled", highlight = "Interface\\Buttons\\UI-Panel-Button-Highlight",
+    tc = { 0, 0.625, 0, 0.6875 },
+    tabHighlight = "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight", tabHighlightTC = { 0, 1, 0, 0, 1, 1, 1, 0 },
+  },
+  -- stock templates (each checked first): { name, frame type }. UIPanelCloseButton is created from its template; the
+  -- others (0.5.1.2) are reproduced by hand and reported by /dm artprobe so the client's set is on record.
+  stockTemplates = { { "UIPanelCloseButton", "Button" }, { "UIPanelButtonTemplate", "Button" },
+    { "CharacterFrameTabButtonTemplate", "Button" }, { "UIPanelScrollFrameTemplate", "ScrollFrame" },
+    { "UIPanelScrollBarTemplate", "Slider" } },
   media = {
     parchment = "Interface\\AddOns\\DarkMatter\\Media\\wow-parchment",
     slate = "Interface\\AddOns\\DarkMatter\\Media\\wow-slate",
@@ -116,6 +136,7 @@ NS.RegisterTheme({
     barText = "#fff6d8", -- bar labels in every theme (outlined)
     -- 0.5.1: state colours on the parchment quest-detail panel (dark enough for the QuestBG parchment)
     pGood = "#0f3f08", pMid = "#4a3000", pLow = "#6e1006",
+    parchBg = "#b39a6c", -- 0.5.1.2: representative QuestBG parchment (NS.ParchQuality: item names drawn on it)
   },
   m = {
     -- window
