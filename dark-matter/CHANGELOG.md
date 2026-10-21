@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.0 (Map tab: the game's own map, world > continent > zone)
+- **Map tab** (replaces the "Coming soon" stub):
+  - the game's own map pictures (`C_Map.GetMapArtLayerTextures`, per mapID), read at runtime for every Kalimdor and Eastern Kingdoms zone;
+  - continuous wheel zoom toward the cursor from the world to a zone, with crossfades between levels;
+  - drag to pan; zones are stitched with their `GetMapRectOnMap` rects;
+  - breadcrumb, zone search, Find me, player arrow;
+  - explored overlays (fog of war), quest markers (`GetQuestsOnMap`) and zone level badges (public data, captioned);
+  - zone and player coordinates at the bottom right;
+  - a full-screen toggle (its own frame; Esc or the button returns).
+- **Right tool strip:** Starpen (0.5.2), Drop a pin (0.5.1) and Town Pins (0.5.3) are present but disabled, with tooltips naming the version.
+- **Taint-safe:** no hooks, no `WorldMapFrame`, works in combat.
+- **Continent placement:** Forever's continent-on-world rect is unusable (EK x 0.37-1.16), so the land is sampled once with `GetMapInfoAtPosition`, fitted with one scale, and saved in `DarkMatterDB.map.place`.
+- **`/dm mapprobe`:**
+  - line 5 now shows each level's first and last tile file IDs, proving art is read per mapID (every Classic map shares the 1002x668, 4x3-tile layout, so the geometry looked identical in 0.4.7);
+  - map size in yards was swapped (world X runs north-south) and is fixed;
+  - new line 15 shows how the Map tab placed your continent.
+- **Tests:** a C_Map fixture (world, two continents, seven zones, overlays, quests, player) covers:
+  - art per mapID, placement, stitching, zoom-to-cursor, crossfades;
+  - breadcrumb, right-click and double-click, drag across a border;
+  - search, Find me, the tool strip;
+  - badges, full screen and Esc, combat;
+  - no WorldMapFrame access or hooks, instances, clients without world art, and clients with no art at all;
+  - a 10-theme contrast scan of the live map (1120 label checks).
+
+## 0.4.7 (read-only `/dm mapprobe`)
+- `/dm mapprobe`: numbered "map N" lines checking the map APIs the Map tab needs. It is read-only and saved to `DarkMatterDB.mapprobe` (last result + 6 runs).
+
 ## 0.4.6 (fix: quest description and rewards on WoW Forever)
 - **Bug (0.4.5, in game):** every quest showed "Not available from this client." for description and rewards.
   - Root cause: WoW Forever has no `SelectQuestLogEntry` / `GetQuestLogSelection`. The 0.4.5 reader gave up before calling any reader when `SelectQuestLogEntry` was missing, so even `GetQuestLogRewardXP(questID)` was never called.

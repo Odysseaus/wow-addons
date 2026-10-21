@@ -1,4 +1,4 @@
--- Map and Dungeons tabs: "coming in a later phase" pages (same stub look as the mockup).
+-- Dungeons tab: "coming in a later phase" pages (same stub look as the mockup).
 local _, NS = ...
 
 local function Stub(id, name, glyph, text)
@@ -16,5 +16,4 @@ local function Stub(id, name, glyph, text)
   })
 end
 
-Stub("map", "Map", "map", "The Map tab is being built. Type /dm mapprobe and send a screenshot of the results.")
 Stub("dungeons", "Dungeons", "dungeons", "The Dungeons tab comes in a later phase: lockouts and run tracking.")

@@ -70,15 +70,17 @@ local function ArtLine(id)
   local cols = lw and math.ceil(lw / tw) or "?"
   local rows = lh and math.ceil(lh / th) or "?"
   local tex = Call("C_Map.GetMapArtLayerTextures", id, 1)
-  return string.format("%d layer(s); %sx%s tiles of %s, %s textures, %sx%s px", #layers, tostring(cols), tostring(rows), tostring(tw),
-    type(tex) == "table" and #tex or "?", tostring(lw), tostring(lh))
+  -- 0.5.0: the file IDs prove each level is read for its own mapID (Classic maps all share the 1002x668, 4x3 layout)
+  local ids = type(tex) == "table" and #tex > 0 and string.format("; files %s..%s", tostring(tex[1]), tostring(tex[#tex])) or ""
+  return string.format("map %s: %sx%s tiles, %s textures%s", tostring(id), tostring(cols), tostring(rows),
+    type(tex) == "table" and #tex or "?", ids)
 end
 
 local function Run()
   local lines, have, miss, data = {}, {}, {}, {}
   for _, a in ipairs(MP.API) do if Fn(a) then have[#have + 1] = a else miss[#miss + 1] = a end end
   data.have, data.missing = have, miss
-  lines[#lines + 1] = "mapprobe 0.4.7 (read-only)"
+  lines[#lines + 1] = "mapprobe 0.5.0 (read-only)"
   lines[#lines + 1] = string.format("map 1: %d of %d map APIs present", #have, #MP.API)
   -- chat shows only what is MISSING, grouped by namespace (the full present list is in DarkMatterDB.mapprobe)
   local groups, order = {}, {}
@@ -177,7 +179,8 @@ local function Run()
   local c0, ax, ay, bx, by
   if here then c0, ax, ay = World(here, 0, 0) local _ _, bx, by = World(here, 1, 1) end
   if type(ax) == "number" and type(bx) == "number" then
-    data.yardsW, data.yardsH = math.abs(bx - ax), math.abs(by - ay)
+    -- world X runs north-south and Y east-west, so the map's width is the Y span (0.5.0 fix: 0.4.7 printed them swapped)
+    data.yardsW, data.yardsH = math.abs(by - ay), math.abs(bx - ax)
     lines[#lines + 1] = string.format("map 7: world pos: yes (instance %s); this map is %d x %d yd", tostring(c0), math.floor(data.yardsW + 0.5), math.floor(data.yardsH + 0.5))
   else
     lines[#lines + 1] = "map 7: world pos: not available"
@@ -232,6 +235,15 @@ local function Run()
   local W = _G.WorldMapFrame
   lines[#lines + 1] = string.format("map 14: WorldMapFrame %s; ScrollContainer %s; MapCanvasMixin %s", YN(type(W) == "table"),
     YN(type(W) == "table" and type(W.ScrollContainer) == "table"), YN(type(_G.MapCanvasMixin) == "table"))
+  -- 15 (0.5.0): how the Map tab places this continent on the world picture
+  if continent and NS.MapData then
+    local ok, pl, src = pcall(NS.MapData.Placement, continent)
+    if ok and type(pl) == "table" then
+      data.placement = { src = src, pl[1], pl[2], pl[3], pl[4] }
+      lines[#lines + 1] = string.format("map 15: Map tab places continent %s by %s: x %s-%s, y %s-%s", tostring(continent), tostring(src),
+        R2(pl[1]), R2(pl[2]), R2(pl[3]), R2(pl[4]))
+    end
+  end
   return lines, data
 end
 

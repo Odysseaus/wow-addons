@@ -3509,9 +3509,9 @@ do
       return {}
     end,
     GetMapArtLayers = function(id) return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256, minScale = 1, maxScale = 1 } } end,
-    GetMapArtLayerTextures = function(id, l) local r = {} for i = 1, 12 do r[i] = 100000 + i end return r end,
+    GetMapArtLayerTextures = function(id, l) local r = {} for i = 1, 12 do r[i] = id * 100 + i end return r end, -- 0.5.0: per-map file IDs
     GetMapRectOnMap = function(a, b) if a == 1426 then return 0.39, 0.51, 0.62, 0.70 end return 0.55, 0.95, 0.10, 0.90 end,
-    GetWorldPosFromMapPos = function(id, v) return 0, { x = v.x * 4925, y = v.y * 3283 } end,
+    GetWorldPosFromMapPos = function(id, v) return 0, { x = v.y * 3283, y = v.x * 4925 } end, -- world X runs north-south
     GetMapLevels = function(id) if id == 1426 then return 1, 10, 0, 0 end end,
     CanSetUserWaypointOnMap = function() return true end,
     HasUserWaypoint = function() return false end,
@@ -3527,18 +3527,18 @@ do
   local nlog = #log
   SlashCmdList.DARKMATTER("mapprobe")
   local mp = DarkMatterDB.mapprobe
-  check(type(mp) == "table" and mp.last and #mp.runs == 1 and mp.last.version == "0.4.7", "0.4.7 mapprobe: results saved to DarkMatterDB.mapprobe (last + runs)")
+  check(type(mp) == "table" and mp.last and #mp.runs == 1 and mp.last.version == "0.5.0", "0.4.7 mapprobe: results saved to DarkMatterDB.mapprobe (last + runs)")
   local L = mp.last.lines
   local all = table.concat(L, "\n")
   local function has(s) return all:find(s, 1, true) ~= nil end
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.4.7 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.0 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
-  check(has("map 5: art here: 1 layer(s); 4x3 tiles of 256, 12 textures, 1002x668 px") and has("map 5: art continent: ") and has("map 5: art world: ") and has("map 5: explored overlays here: n/a"), "0.4.7 mapprobe: art layers per level")
+  check(has("map 5: art here: map 1426: 4x3 tiles, 12 textures; files 142601..142612") and has("map 5: art continent: map 1415: 4x3 tiles, 12 textures; files 141501..141512") and has("map 5: art world: map 947: 4x3 tiles, 12 textures; files 94701..94712") and has("map 5: explored overlays here: n/a"), "0.5.0 mapprobe: art read per mapID (each level shows its own file IDs)")
   check(has("map 6: rect here on continent: x 0.39-0.51, y 0.62-0.70") and has("map 6: rect continent on world: x 0.55-0.95"), "0.4.7 mapprobe: map rects (stitching)")
   check(has("map 7: world pos: yes (instance 0); this map is 4925 x 3283 yd"), "0.4.7 mapprobe: world position + map size in yards")
   check(has("map 8: levels: 1-10"), "0.4.7 mapprobe: level range")
@@ -3569,6 +3569,426 @@ do
   local src = io.open(arg[1] .. "/MapProbe.lua"):read("*a"):gsub("%-%-[^\n]*", "")
   check(not src:find("hooksecurefunc", 1, true) and not src:find("RegisterEvent", 1, true) and not src:find("SetUserWaypoint%(") and not src:find("CreateFrame", 1, true),
     "0.4.7 MapProbe.lua: no hooks, no events, no waypoint writes, no frames")
+end
+
+-- ===== 0.5.0: Map tab (the game's own map pictures; world > continent > zone) =====
+do
+  local NS = DarkMatter
+  local M, MD = NS.MapTab, NS.MapData
+  check(type(M) == "table" and type(MD) == "table", "0.5.0 map: Map tab + map data loaded")
+  -- the mock keeps no parent links on SetParent; the map's full screen reparents its root
+  FrameMT.SetParent = function(s, p) s._parent = p end
+  FrameMT.GetParent = function(s) return s._parent end
+  local save = { C_Map = C_Map, C_MapExplorationInfo = C_MapExplorationInfo, C_QuestLog = C_QuestLog,
+    GetPlayerFacing = GetPlayerFacing, WorldMapFrame = WorldMapFrame, InCombatLockdown = InCombatLockdown,
+    GameTooltip = GameTooltip, UIMapType = Enum.UIMapType, hook = hooksecurefunc }
+  Enum.UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, Dungeon = 4, Micro = 5, Orphan = 6 }
+  local MAPS = {
+    [947] = { "Azeroth", 1, 0 },
+    [1414] = { "Kalimdor", 2, 947 }, [1415] = { "Eastern Kingdoms", 2, 947 },
+    [1426] = { "Dun Morogh", 3, 1415, { 0.40, 0.54, 0.48, 0.62 } },
+    [1455] = { "Ironforge", 3, 1415, { 0.47, 0.50, 0.51, 0.54 } },
+    [1432] = { "Loch Modan", 3, 1415, { 0.54, 0.64, 0.47, 0.59 } },
+    [1429] = { "Elwynn Forest", 3, 1415, { 0.40, 0.52, 0.70, 0.80 } },
+    [1453] = { "Stormwind City", 3, 1415, { 0.40, 0.44, 0.66, 0.71 } },
+    [1411] = { "Durotar", 3, 1414, { 0.56, 0.66, 0.40, 0.56 } },
+    [1412] = { "Mulgore", 3, 1414, { 0.40, 0.52, 0.55, 0.75 } },
+    [1581] = { "The Deadmines", 4, 1429 },
+  }
+  local KAL_ON_WORLD = { 0.02, 0.42, 0.12, 0.95 } -- a sane rect: placed by "rect"
+  local EK_P = { 0.40, 0.95, 0.03, 0.58 }         -- where EK's art truly sits on the world art (one scale, 0.55)
+  -- its land (the union of its zone rects, 0.40-0.64 x 0.47-0.80) as the world picture shows it (what sampling finds)
+  local EK_LAND = { 0.40 + 0.40 * 0.55, 0.40 + 0.64 * 0.55, 0.03 + 0.47 * 0.55, 0.03 + 0.80 * 0.55 }
+  local artCalls, texCalls = {}, {}
+  local PLAYER = { map = 1426, x = 0.523, y = 0.375 }
+  local wmAccess = {}
+  WorldMapFrame = setmetatable({}, { __index = function(_, k) wmAccess[#wmAccess + 1] = tostring(k) end,
+    __newindex = function(_, k) wmAccess[#wmAccess + 1] = "set " .. tostring(k) end })
+  local hooked = {}
+  hooksecurefunc = function(a, b) hooked[#hooked + 1] = tostring(b or a) if save.hook then return save.hook(a, b) end end
+  local function smallest(cont, x, y)
+    local best, ba
+    for id, m in pairs(MAPS) do
+      local r = m[4]
+      if m[3] == cont and r and x >= r[1] and x <= r[2] and y >= r[3] and y <= r[4] then
+        local a = (r[2] - r[1]) * (r[4] - r[3])
+        if not ba or a < ba then best, ba = id, a end
+      end
+    end
+    return best
+  end
+  local function vec(x, y) return { x = x, y = y, GetXY = function(self) return self.x, self.y end } end
+  C_Map = {
+    GetMapInfo = function(id) local m = MAPS[id] if m then return { mapID = id, name = m[1], mapType = m[2], parentMapID = m[3] } end end,
+    GetBestMapForUnit = function() return PLAYER.map end,
+    GetFallbackWorldMapID = function() return 947 end,
+    GetMapArtLayers = function(id)
+      artCalls[#artCalls + 1] = id
+      if MAPS[id] and MAPS[id][2] <= 3 then return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256, minScale = 1, maxScale = 1 } } end
+    end,
+    GetMapArtLayerTextures = function(id, l)
+      texCalls[#texCalls + 1] = id
+      if not (MAPS[id] and MAPS[id][2] <= 3) then return nil end
+      local r = {} for i = 1, 12 do r[i] = id * 100 + i end return r
+    end,
+    GetMapChildrenInfo = function(id, t)
+      local out = {}
+      for cid, m in pairs(MAPS) do if m[3] == id and (t == nil or m[2] == t) then out[#out + 1] = { mapID = cid, name = m[1], mapType = m[2], parentMapID = id } end end
+      table.sort(out, function(a, b) return a.mapID < b.mapID end)
+      return out
+    end,
+    GetMapRectOnMap = function(c, p)
+      if p == 947 and c == 1414 then return KAL_ON_WORLD[1], KAL_ON_WORLD[2], KAL_ON_WORLD[3], KAL_ON_WORLD[4] end
+      if p == 947 and c == 1415 then return 0.37, 1.16, 0.08, 0.87 end -- the probe's unusable answer
+      local m = MAPS[c]
+      if m and m[3] == p and m[4] then return m[4][1], m[4][2], m[4][3], m[4][4] end
+    end,
+    GetMapInfoAtPosition = function(id, x, y)
+      if id == 947 then
+        if x >= EK_LAND[1] and x <= EK_LAND[2] and y >= EK_LAND[3] and y <= EK_LAND[4] then return { mapID = 1415 } end
+        return nil
+      end
+      local z = smallest(id, x, y)
+      if z then return { mapID = z } end
+    end,
+    GetPlayerMapPosition = function(id)
+      if PLAYER.map ~= 1426 then return nil end
+      if id == 1426 then return vec(PLAYER.x, PLAYER.y) end
+      if id == 1415 then local r = MAPS[1426][4] return vec(r[1] + PLAYER.x * (r[2] - r[1]), r[3] + PLAYER.y * (r[4] - r[3])) end
+    end,
+  }
+  C_MapExplorationInfo = { GetExploredMapTextures = function(id)
+    if id ~= 1426 then return {} end
+    return { { textureWidth = 300, textureHeight = 200, offsetX = 100, offsetY = 50, numTexturesWide = 2, numTexturesTall = 1, fileDataIDs = { 777001, 777002 } },
+      { textureWidth = 128, textureHeight = 128, offsetX = 600, offsetY = 300, numTexturesWide = 1, numTexturesTall = 1, fileDataIDs = { 777003 }, isShownByMouseOver = true } }
+  end }
+  C_QuestLog = { GetQuestsOnMap = function(id) if id == 1426 then return { { questID = 501, x = 0.30, y = 0.40 }, { questID = 502, x = 0.60, y = 0.70 } } end return {} end,
+    GetTitleForQuestID = function(q) if q == 501 then return "Dwarven Outfitters" end end }
+  GetPlayerFacing = function() return 1.25 end
+  local tip = { lines = {} }
+  GameTooltip = setmetatable({ SetOwner = function() end, Show = function() tip.shown = true end, Hide = function() tip.shown = false end,
+    SetText = function(_, t) tip.title = t tip.lines = {} end, AddLine = function(_, t) tip.lines[#tip.lines + 1] = t end }, { __index = function() return function() end end })
+
+  -- 1. art is read per mapID: each level asks the game for its own map and gets its own file IDs
+  MD.Forget()
+  local a1, a2, a3 = MD.Art(1426), MD.Art(1415), MD.Art(947)
+  check(a1 and a2 and a3 and a1.tex[1] == 142601 and a1.tex[12] == 142612 and a2.tex[1] == 141501 and a3.tex[1] == 94701,
+    "0.5.0 map: art read per mapID (zone, continent and world each get their own file IDs)")
+  check(texCalls[1] == 1426 and texCalls[2] == 1415 and texCalls[3] == 947 and artCalls[1] == 1426 and artCalls[3] == 947,
+    "0.5.0 map: GetMapArtLayers/GetMapArtLayerTextures are called with each map's own mapID")
+  check(a1.w == 1002 and a1.h == 668 and a1.cols == 4 and a1.rows == 3, "0.5.0 map: Classic art geometry 1002x668 in 4x3 tiles of 256")
+  check(MD.Art(1581) == nil, "0.5.0 map: a map without art (dungeon) gives no art")
+  -- 2. the map tree comes from the game at runtime
+  check(MD.World() == 947, "0.5.0 map: world map found from the player's map chain")
+  local conts = MD.Continents()
+  check(#conts == 2 and conts[1].id == 1414 and conts[2].id == 1415, "0.5.0 map: both continents read from GetMapChildrenInfo")
+  local zs = MD.Zones(1415)
+  check(#zs == 5 and zs[1].name == "Dun Morogh" and zs[#zs].name == "Ironforge", "0.5.0 map: zones of a continent read with their rects, biggest first (cities on top)")
+  check(#MD.Zones(1414) == 2, "0.5.0 map: Kalimdor zones read too (no per-zone probing)")
+  -- 3. continent placement on the world picture
+  NS.db.map = NS.db.map or {}
+  NS.db.map.place = nil
+  local pk, sk = MD.Placement(1414)
+  check(sk == "rect" and math.abs(pk[1] - 0.02) < 1e-9 and math.abs(pk[4] - 0.95) < 1e-9, "0.5.0 map: a sane continent rect is used as is")
+  local pe, se = MD.Placement(1415)
+  local err = 0
+  for i = 1, 4 do err = math.max(err, math.abs(pe[i] - EK_P[i])) end
+  check(math.abs((pe[2] - pe[1]) - (pe[4] - pe[3])) < 1e-9, "0.5.0 map: a sampled placement keeps the art's shape (one scale)")
+  check(se == "sampled" and err < 0.03,
+    "0.5.0 map: an unusable continent rect (x to 1.16) is replaced by the land sampled on the world picture")
+  check(type(NS.db.map.place) == "table" and type(NS.db.map.place[1415]) == "table" and NS.db.map.place[1415].v == 1, "0.5.0 map: the sampled placement is saved (sampled once)")
+  -- 4. open the tab on a real-sized viewport
+  NS.db.map.view = nil
+  if M.Reset then M.Reset() end
+  NS.ShowTab("map")
+  check(M.vp ~= nil and M.vp._kind ~= nil, "0.5.0 map: map view built")
+  M.vp:SetSize(812, 520)
+  M.Refit()
+  local function run(n, dt) for _ = 1, n do M.Tick(dt or 0.05) end end
+  local CX, CY = 406, 260
+  M.testCursor = function() return CX, CY end
+  run(20)
+  local trail = M.Trail()
+  check(M.ready and M.hasWorld and M.started, "0.5.0 map: started with the world picture")
+  check(table.concat(trail, " > ") == "Azeroth > Eastern Kingdoms > Dun Morogh", "0.5.0 map: opens on the player's zone (breadcrumb " .. table.concat(trail, " > ") .. ")")
+  check(M.crumbText == "Azeroth > Eastern Kingdoms > Dun Morogh", "0.5.0 map: breadcrumb bar shows the trail")
+  for id, L in pairs(M.layers) do
+    if L.built then
+      check(L.art.tex[1] == id * 100 + 1 and L.tiles[1]._file == id * 100 + 1 and L.tiles[12]._file == id * 100 + 12, "0.5.0 map: layer " .. id .. " draws its own map's tiles")
+    end
+  end
+  local dm = M.layers[1426]
+  check(dm and dm.shown and dm.alpha > 0.99 and #dm.tiles == 12, "0.5.0 map: the zone's 12 tiles are shown")
+  local last = dm.tiles[12]
+  check(math.abs(last._tc[2] - (1002 - 768) / 256) < 1e-9 and math.abs(last._tc[4] - (668 - 512) / 256) < 1e-9, "0.5.0 map: edge tiles are cropped to the art (234x156)")
+  check(#dm.ov == 2 and dm.ov[1]._file == 777001 and dm.ov[2]._file == 777002, "0.5.0 map: explored overlays drawn (fog of war); mouse-over-only overlays skipped")
+  check(math.abs(dm.ov[2]._tc[2] - 44 / 64) < 1e-9 and math.abs(dm.ov[1]._tc[4] - 200 / 256) < 1e-9, "0.5.0 map: overlay tiles cropped like the game's map")
+  check(M.layers[1432] and M.layers[1432].shown, "0.5.0 map: the neighbour zone is drawn too (zones stitched)")
+  -- stitching: Loch Modan's left edge on screen meets Dun Morogh's right edge (both from GetMapRectOnMap)
+  local function edges(L) local p = L.frame._pts[#L.frame._pts] local sc = L.frame._scale return p[4] * sc, -p[5] * sc, L.art.w * sc, L.art.h * sc end
+  local dl, dt_, dw = edges(dm)
+  local ll = edges(M.layers[1432])
+  check(math.abs((dl + dw) - ll) < 0.01, "0.5.0 map: neighbour zones meet exactly (no gap/overlap)")
+  check(M.layers[947] and not M.layers[947].shown, "0.5.0 map: the world picture is hidden when the continent covers the view")
+  -- 5. player arrow, coordinates
+  check(M.arrow:IsShown() and M.player and M.player.map == 1426, "0.5.0 map: player arrow shown")
+  local wx, wy = M.ToScreen(M.player[1], M.player[2])
+  local ap = M.arrow._pts[#M.arrow._pts]
+  check(math.abs(ap[4] - wx) < 0.01 and math.abs(-ap[5] - wy) < 0.01, "0.5.0 map: arrow sits at the player's position")
+  check(M.playerText == "Player  52.3, 37.5", "0.5.0 map: player coordinates " .. tostring(M.playerText))
+  local zr = MAPS[1426][4]
+  local pp = MD.Placement(1415)
+  local tx, ty = M.ToScreen(pp[1] + (zr[1] + 0.25 * (zr[2] - zr[1])) * (pp[2] - pp[1]), pp[3] + (zr[3] + 0.75 * (zr[4] - zr[3])) * (pp[4] - pp[3]))
+  CX, CY = tx, ty
+  run(2)
+  check(M.coordText == "Dun Morogh  25.0, 75.0", "0.5.0 map: cursor coordinates " .. tostring(M.coordText))
+  check(M.coordCur.text._text == M.coordText and M.coordMe.text._text == M.playerText, "0.5.0 map: coordinates shown bottom right")
+  -- 6. quest markers
+  local qp = M.pools.quest
+  check(qp and qp.n == 2 and qp[1]:IsShown() and qp[1].qid == 501, "0.5.0 map: quest markers from GetQuestsOnMap")
+  qp[1]._scripts.OnEnter(qp[1])
+  check(tip.title == "Dwarven Outfitters", "0.5.0 map: quest marker tooltip names the quest")
+  -- 7. wheel zoom keeps the point under the cursor fixed
+  CX, CY = 300, 180
+  local u0, v0 = M.ToWorld(CX, CY)
+  local z0 = M.Zoom()
+  M.Wheel(-1) run(30)
+  local u1, v1 = M.ToWorld(CX, CY)
+  check(M.Zoom() < z0 and math.abs(u1 - u0) < 1e-6 and math.abs(v1 - v0) < 1e-6, "0.5.0 map: wheel zoom out keeps the point under the cursor")
+  M.Wheel(1) run(30)
+  local u2, v2 = M.ToWorld(CX, CY)
+  check(math.abs(M.Zoom() - z0) < 1e-6 and math.abs(u2 - u0) < 1e-6 and math.abs(v2 - v0) < 1e-6, "0.5.0 map: wheel zoom in returns exactly")
+  -- 8. zoom all the way out: zone > continent > world, with crossfades on the way
+  CX, CY = 406, 260
+  local sawZoneFade, sawContFade, sawCont = false, false, false
+  for _ = 1, 30 do
+    M.Wheel(-1)
+    for _ = 1, 30 do
+      M.Tick(0.016)
+      local za, ca = M.ZoneAlpha(MD.ZoneEntry(1426)), M.ContAlpha(1415)
+      if za > 0.02 and za < 0.98 and M.layers[1426].shown and math.abs(M.layers[1426].alpha - za) < 1e-9 then sawZoneFade = true end
+      if ca > 0.02 and ca < 0.98 and M.layers[1415].shown and math.abs(M.layers[1415].alpha - ca) < 1e-9 then sawContFade = true end
+    end
+    if table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms" then sawCont = true end
+  end
+  check(sawZoneFade and sawContFade, "0.5.0 map: zone and continent pictures crossfade while zooming")
+  check(sawCont, "0.5.0 map: passes through the continent level")
+  check(math.abs(M.Zoom() - 1) < 1e-6 and table.concat(M.Trail(), ">") == "Azeroth" and M.layers[947].shown, "0.5.0 map: zoomed out fully shows the world")
+  -- 9. zoom in toward Kalimdor (cursor on its land): focus moves there
+  local kx, ky = M.ToScreen(0.20, 0.55)
+  CX, CY = kx, ky
+  for _ = 1, 8 do M.Wheel(1) run(30) end
+  local kt = M.Trail()
+  check(kt[2] == "Kalimdor", "0.5.0 map: wheel toward Kalimdor zooms into Kalimdor (" .. table.concat(kt, " > ") .. ")")
+  -- 10. breadcrumb click / right-click / double-click
+  M.FlyTo(1426) run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh", "0.5.0 map: fly to a zone")
+  M.vp._scripts.OnMouseUp(M.vp, "RightButton") run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms", "0.5.0 map: right-click zooms out one level")
+  M.vp._scripts.OnMouseUp(M.vp, "RightButton") run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth", "0.5.0 map: right-click again shows the world")
+  local zb = M.Zoom()
+  CX, CY = 406, 260
+  M.vp._scripts.OnMouseDown(M.vp, "LeftButton") M.vp._scripts.OnMouseUp(M.vp, "LeftButton")
+  M.vp._scripts.OnMouseDown(M.vp, "LeftButton") M.vp._scripts.OnMouseUp(M.vp, "LeftButton")
+  run(30)
+  check(math.abs(M.Zoom() - zb * 2) < 1e-6, "0.5.0 map: double-click zooms in x2")
+  -- 11. drag to pan across a zone border
+  M.FlyTo(1426) run(20)
+  local lm = MD.ZoneEntry(1432)
+  local dmz = MD.ZoneEntry(1426)
+  local ax, ay = M.ToScreen(MD.ToWorld(1426, 0.5, 0.5))
+  local bx, by = M.ToScreen(MD.ToWorld(1432, 0.5, 0.5))
+  CX, CY = 406, 260
+  M.vp._scripts.OnMouseDown(M.vp, "LeftButton")
+  local both = false
+  for i = 1, 10 do
+    CX, CY = 406 - (bx - ax) * i / 10, 260 - (by - ay) * i / 10
+    run(1)
+    if M.layers[1426].shown and M.layers[1432] and M.layers[1432].shown then both = true end
+  end
+  M.vp._scripts.OnMouseUp(M.vp, "LeftButton") run(2)
+  check(both and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Loch Modan", "0.5.0 map: drag pans across the border into the next zone")
+  -- 12. search and pick
+  local r = M.Search("loch")
+  check(#r == 1 and r[1].name == "Loch Modan" and r[1].sub == "Eastern Kingdoms" and M.results:IsShown(), "0.5.0 map: zone search finds Loch Modan")
+  r = M.Search("kal")
+  check(r[1] and r[1].name == "Kalimdor" and r[1].sub == "Continent", "0.5.0 map: search lists continents first")
+  r = M.Search("or")
+  local nm = {} for i, e in ipairs(r) do nm[i] = e.name end
+  check(table.concat(nm, ",") == "Kalimdor,Dun Morogh,Elwynn Forest,Ironforge,Mulgore,Stormwind City", "0.5.0 map: search matches inside names (" .. table.concat(nm, ",") .. ")")
+  r = M.Search("st") nm = {} for i, e in ipairs(r) do nm[i] = e.name end
+  check(table.concat(nm, ",") == "Eastern Kingdoms,Stormwind City,Elwynn Forest", "0.5.0 map: search order continents, starts-with, contains (" .. table.concat(nm, ",") .. ")")
+  r = M.Search("zzz")
+  check(#r == 0 and M.results:IsShown() and M.results.rows[1].name._text == "No matching zones", "0.5.0 map: no match says so")
+  M.Search("elwynn")
+  M.results.rows[1]._scripts.OnClick(M.results.rows[1]) run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Elwynn Forest" and not M.results:IsShown(), "0.5.0 map: picking a result flies there")
+  -- 13. Find me
+  local fm
+  for _, b in ipairs(M.tools) do if b.key == "findme" then fm = b end end
+  fm._scripts.OnClick(fm) run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh", "0.5.0 map: Find me flies to your zone")
+  local cx, cy = M.Center()
+  check(math.abs(cx - M.player[1]) < 1e-6 and math.abs(cy - M.player[2]) < 1e-6, "0.5.0 map: Find me centres on you")
+  -- 14. the tool strip: three slots are disabled with the version they come in
+  local keys, soon = {}, {}
+  for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
+  check(table.concat(keys, ",") == "starpen,pin,town,findme,full", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen")
+  check(soon.starpen and soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen, Pin and Town Pins are disabled")
+  local wantV = { starpen = "0.5.2", pin = "0.5.1", town = "0.5.3" }
+  local origSS = NS.SetStatus
+  NS.SetStatus = function(t) STATUS_SEEN = t return origSS(t) end
+  for k, b in pairs(soon) do
+    b._scripts.OnEnter(b)
+    check(tip.title == b.tipTitle and tip.lines[1] and tip.lines[1]:find(wantV[k], 1, true), "0.5.0 map: " .. k .. " tooltip says coming in " .. wantV[k])
+    local before = table.concat(M.Trail(), ">")
+    b._scripts.OnClick(b)
+    check(table.concat(M.Trail(), ">") == before and not M.full and tostring(STATUS_SEEN or ""):find(wantV[k], 1, true) ~= nil,
+      "0.5.0 map: " .. k .. " click only explains (status line names " .. wantV[k] .. ")")
+    check(b.icon._alpha and b.icon._alpha < 0.5, "0.5.0 map: " .. k .. " icon is dimmed")
+  end
+  NS.SetStatus = origSS
+  -- 15. level badges (public data) at the continent view; the caption names the source
+  M.FlyTo(1415) run(20)
+  local bp, names = M.pools.badge, {}
+  for i = 1, (bp and bp.n or 0) do names[bp[i].zone] = bp[i].text._text end
+  check(names["Dun Morogh"] == "1-10" and names["Loch Modan"] == "10-20" and names["Elwynn Forest"] == "1-10", "0.5.0 map: zone level badges at the continent view")
+  check(names["Ironforge"] == nil, "0.5.0 map: no badge for a city without a level range")
+  check(M.caption:IsShown() and M.caption.text._text == "Levels: public data", "0.5.0 map: badges are captioned as public data")
+  M.caption._scripts.OnEnter(M.caption)
+  check(tip.lines[1] and tip.lines[1]:find("Wowhead", 1, true), "0.5.0 map: caption tooltip names the source")
+  -- 16. full screen and back (button, Esc, closing the window)
+  local fb = M.fullBtn
+  local W, H = M.vp._w, M.vp._h
+  fb._scripts.OnClick(fb)
+  local full = _G.DarkMatterMapFull
+  local function inEsc(n) for _, v in ipairs(UISpecialFrames) do if v == n then return true end end return false end
+  check(M.full and full and full:IsShown() and M.root._parent == full, "0.5.0 map: full screen moves the map into its own frame")
+  check(inEsc("DarkMatterMapFull") and not inEsc("DarkMatterFrame"), "0.5.0 map: in full screen Esc closes the full-screen map only")
+  check(fb.tipTitle == "Back to window", "0.5.0 map: the button switches back")
+  M.vp:SetSize(1880, 1020) M.Refit() run(2)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms", "0.5.0 map: full screen keeps the place")
+  fb._scripts.OnClick(fb)
+  check(not M.full and not full:IsShown() and M.root._parent ~= full, "0.5.0 map: button returns to the window")
+  check(inEsc("DarkMatterFrame") and not inEsc("DarkMatterMapFull"), "0.5.0 map: Esc closes the main window again")
+  fb._scripts.OnClick(fb)
+  full:Hide() -- what Esc does through UISpecialFrames
+  check(not M.full and M.root._parent ~= full and inEsc("DarkMatterFrame"), "0.5.0 map: Esc in full screen returns to the window")
+  fb._scripts.OnClick(fb)
+  DarkMatterFrame:Hide()
+  M.Tick(0.05)
+  check(not M.full and not full:IsShown(), "0.5.0 map: closing the main window leaves full screen too")
+  DarkMatterFrame:Show() NS.ShowTab("map")
+  M.vp:SetSize(812, 520) M.Refit()
+  -- 17. combat: everything works with InCombatLockdown() true (nothing protected is touched)
+  InCombatLockdown = function() return true end
+  local ok, err = pcall(function()
+    M.Wheel(1) run(10) M.FlyTo(1429) run(20) M.FindMe() run(20) M.SetFull(true) M.SetFull(false) M.Search("dun") M.Pick(M.results.list[1]) run(20)
+  end)
+  InCombatLockdown = save.InCombatLockdown
+  check(ok and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh", "0.5.0 map: works in combat " .. tostring(err))
+  -- 18. taint safety
+  check(#wmAccess == 0, "0.5.0 map: never touches WorldMapFrame " .. table.concat(wmAccess, ","))
+  check(#hooked == 0, "0.5.0 map: installs no hooks")
+  for _, f in ipairs({ "DarkMatter/Tab_Map.lua", "DarkMatter/MapData.lua" }) do
+    local fh = io.open(arg[1] .. "/" .. f:gsub("^DarkMatter/", "")) local src = fh and fh:read("*a") or "" if fh then fh:close() end
+    local code = src:gsub("%-%-[^\n]*", "")
+    check(#src > 0 and not code:find("WorldMapFrame", 1, true) and not code:find("hooksecurefunc", 1, true) and not code:find("SetUserWaypoint", 1, true) and not code:find("SetSuperTrack", 1, true),
+      "0.5.0 map: " .. f .. " has no WorldMapFrame access, hooks, waypoints or super-track")
+  end
+  -- 19. the map's pictures are clipped by a ScrollFrame
+  check(M.vp._ftype == "ScrollFrame", "0.5.0 map: viewport is a ScrollFrame (clips the map pictures)")
+  for _, L in pairs(M.layers) do
+    local x, inside = L.frame, false
+    while x do if x == M.vp then inside = true end x = x._parent end
+    check(inside, "0.5.0 map: layer " .. L.id .. " lives inside the clipping ScrollFrame")
+  end
+  -- 20. view is remembered
+  local sv = NS.db.map.view
+  check(type(sv) == "table" and type(sv.cx) == "number" and type(sv.z) == "number", "0.5.0 map: view saved")
+  -- 21. instance: no position -> Find me explains, arrow hides
+  PLAYER.map = 1581
+  MD.Forget()
+  run(2)
+  check(not M.arrow:IsShown() and M.playerText == "Player  --", "0.5.0 map: no arrow and no coordinates where the game gives no position")
+  check(M.FindMe() == false, "0.5.0 map: Find me reports no position (instance)")
+  PLAYER.map = 1426
+  MD.Forget()
+  -- 22. a client without a world picture shows one continent at a time
+  local gl = C_Map.GetMapArtLayers
+  C_Map.GetMapArtLayers = function(id) if id == 947 then return nil end return gl(id) end
+  M.Reset() NS.db.map.view = nil
+  NS.ShowTab("quests") NS.ShowTab("map")
+  M.vp:SetSize(812, 520) M.Refit() run(20)
+  check(M.ready and not M.hasWorld and M.only == 1415 and M.Trail()[1] == "Eastern Kingdoms", "0.5.0 map: without world art the player's continent is the base")
+  M.Search("durotar") M.Pick(M.results.list[1]) run(20)
+  check(M.only == 1414 and table.concat(M.Trail(), ">") == "Kalimdor>Durotar", "0.5.0 map: search switches continent without world art")
+  C_Map.GetMapArtLayers = gl
+  -- 23. a client with no map art at all says so
+  C_Map.GetMapArtLayers = function() return nil end
+  M.Reset() NS.ShowTab("quests") NS.ShowTab("map")
+  check(not M.ready and M.empty:IsShown(), "0.5.0 map: no map art -> a clear message instead of a blank box")
+  C_Map.GetMapArtLayers = gl
+  M.Reset() NS.db.map.view = nil
+  NS.ShowTab("quests") NS.ShowTab("map")
+  M.vp:SetSize(812, 520) M.Refit() run(20)
+  -- 24. contrast: the live map view in all 10 themes (continent view with badges, crumbs, coordinates, caption;
+  -- search results; every map button hovered; full screen). The game's map pictures (file IDs) are not
+  -- judged, so every map label sits on its own solid plate.
+  if MODE ~= "minimal" then
+    local CT = dofile(arg[1] .. "/../tools/stubtest/contrast.lua")
+    CT.rect = FrameMT._rect
+    local win = DarkMatterFrame
+    local fails, n = {}, 0
+    local function scan(root, id, view, hovered)
+      for _, x in ipairs(CT.Scan(root, NS.theme.colors, hovered)) do
+        n = n + 1
+        if x.ratio < x.need then fails[#fails + 1] = string.format("%s %s %q %.2f<%.1f [%s]", id, view, x.text, x.ratio, x.need, x.roles) end
+      end
+    end
+    local function hoverAll(root, id, view)
+      for _, f in ipairs(ALL) do
+        if f._ftype == "Button" and under(f, root) and visible(f) and f._scripts.OnEnter and under(f, M.root) then
+          f._hover = true f._scripts.OnEnter(f)
+          scan(root, id, view .. "+hover", f)
+          if f._scripts.OnLeave then f._scripts.OnLeave(f) end
+          f._hover = nil
+        end
+      end
+    end
+    M.testCursor = function() return 300, 200 end
+    for _, id in ipairs(NS.themeOrder) do
+      NS.SetTheme(id)
+      NS.ShowTab("map")
+      M.FlyTo(1415) run(20)
+      check(M.pools.badge and M.pools.badge.n >= 3 and M.caption:IsShown(), "0.5.0 map: badges + caption shown for the contrast scan (" .. id .. ")")
+      scan(win, id, "map/continent")
+      hoverAll(win, id, "map/continent")
+      M.Search("o")
+      scan(win, id, "map/search")
+      hoverAll(win, id, "map/search")
+      M.Search("zzz")
+      scan(win, id, "map/no-match")
+      M.Search("")
+      M.FlyTo(1426) run(20)
+      scan(win, id, "map/zone")
+      M.SetFull(true) run(2)
+      scan(_G.DarkMatterMapFull, id, "map/fullscreen")
+      hoverAll(_G.DarkMatterMapFull, id, "map/fullscreen")
+      M.SetFull(false)
+    end
+    NS.SetTheme("wow")
+    for _, f in ipairs(fails) do io.write("cfail\t" .. f .. "\n") end
+    check(n > 300, "0.5.0 map contrast: " .. n .. " label checks over 10 themes")
+    check(#fails == 0, "0.5.0 map contrast: every map label >= 4.5:1 (3:1 large) in every theme (" .. #fails .. " below)\n  " .. table.concat(fails, "\n  ", 1, math.min(#fails, 12)))
+    M.testCursor = nil
+  end
+  -- restore the game fixture
+  C_Map, C_MapExplorationInfo, C_QuestLog = save.C_Map, save.C_MapExplorationInfo, save.C_QuestLog
+  GetPlayerFacing, WorldMapFrame, GameTooltip, Enum.UIMapType, hooksecurefunc = save.GetPlayerFacing, save.WorldMapFrame, save.GameTooltip, save.UIMapType, save.hook
+  M.Reset() MD.Forget()
+  NS.ShowTab("quests")
 end
 
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====

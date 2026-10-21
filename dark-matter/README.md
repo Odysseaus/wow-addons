@@ -57,6 +57,33 @@ Quest list on the left with a toolbar on top (All, Track Quest, search at the fa
 - Only quests in your log are listed.
 - Whether the client's objective tracker ("All Objectives") follows the quest watch list depends on the client. Check with `/dm questprobe` and by ticking a box in game.
 
+## Map tab (0.5.0)
+The game's own map pictures, read at runtime for every zone of Kalimdor and Eastern Kingdoms. Nothing is bundled and nothing is probed per zone.
+- **Zoom:** the mouse wheel zooms toward the cursor, continuously, from the world through a continent to a zone; the pictures crossfade between levels. Drag to pan; neighbouring zones are drawn side by side from their rects on the continent. Double-click zooms in, right-click goes up one level.
+- **Top bar:** a breadcrumb (World > Continent > Zone; click a level to go there) and zone search (continents first, then names that start with the text, then names that contain it).
+- **Right tool strip:** Starpen (0.5.2), Drop a pin (0.5.1) and Town Pins (0.5.3) are shown disabled with the version they come in; Find me flies to you; Full screen fills the screen (click again or press Esc to go back).
+- **On the map:**
+  - the player arrow;
+  - explored-area overlays (fog of war);
+  - quest objective markers;
+  - zone level badges.
+- **Bottom right:** the zone under the cursor with its coordinates, and the player's coordinates.
+
+**Map APIs used (read-only):**
+- `C_Map.GetMapArtLayers` / `GetMapArtLayerTextures` (art per mapID), `GetMapChildrenInfo`, `GetMapRectOnMap`, `GetMapInfo`, `GetMapInfoAtPosition`, `GetBestMapForUnit`, `GetPlayerMapPosition`, `GetFallbackWorldMapID`.
+- `C_MapExplorationInfo.GetExploredMapTextures` (overlays shown only on mouse-over in the game's map are skipped).
+- `C_QuestLog.GetQuestsOnMap` / `GetTitleForQuestID`.
+- `GetPlayerFacing`.
+
+**Taint safety:** no hooks, no `WorldMapFrame`, no waypoints, nothing protected. It works in combat.
+
+**Limits:**
+- The continent's place on the world picture is sampled once with `GetMapInfoAtPosition` (Forever's `GetMapRectOnMap` answer for a continent on the world is unusable) and saved in `DarkMatterDB.map.place`. Only the world-to-continent crossfade depends on it; zone stitching uses the game's rects.
+- Zoomed far into a zone, the picture gets soft: the game's zone art is 1002x668.
+- Level badges are public data (Warcraft Wiki Classic zone table; Wowhead WoW Forever for the new zones) and are captioned "Levels: public data" on the map. Cities and zones without a published range get no badge.
+
+`/dm mapprobe` (0.4.7, read-only) checks these APIs. Since 0.5.0 it prints each level's tile file IDs (line 5), and line 15 shows how the Map tab placed your continent.
+
 ## Theme layer (data, not code)
 
 Art and layout live in theme data; the window code never branches on a theme id. Ten themes ship (0.4.2): **WoW** (default) and the nine class themes from the previewer: Warrior, Paladin, Hunter, Rogue, Priest, Shaman, Mage, Warlock, Druid.
@@ -164,11 +191,11 @@ Everything counts for **the current character only**. A game achievement another
 
 ## Art
 
-All art is original: the minimap icon (`Media/dm-icon.tga`) was generated procedurally for this addon. The minimap ring and background are stock built-in game textures referenced by path (`Interface\Minimap\...`); no Blizzard art is copied into the addon.
+All art is original: the minimap icon (`Media/dm-icon.tga`) was generated procedurally for this addon. The minimap ring and background are stock built-in game textures referenced by path (`Interface\Minimap\...`); no Blizzard art is copied into the addon. The map icons (`Media/dm-map-icons.tga`) are generated for this addon. The Map tab shows the game's own map pictures by file ID at runtime; none are copied into the addon.
 
 ## Files
 
-`DarkMatter.toc`, `Core.lua` (namespace, defaults, blocked-action logger), `Probe.lua`, `Theme.lua`, `Atlas_WoW.lua`, `Theme_WoW.lua`, `Theme_Classes.lua`, `Widgets.lua`, `ProbeWindow.lua`, `Window.lua`, `Tab_Quests.lua`, `Data_Fishing.lua`, `Data_FishingCatches.lua`, `Fishing.lua`, `Data_Dungeons.lua`, `AdventureGuide.lua`, `Achievements.lua`, `Journal_Achievements.lua`, `Tab_Journals.lua`, `Tab_Stub.lua`, `Minimap.lua`, `Options.lua`, `Slash.lua`, `Media/*.tga`.
+`DarkMatter.toc`, `Core.lua` (namespace, defaults, blocked-action logger), `Probe.lua`, `Theme.lua`, `Atlas_WoW.lua`, `Theme_WoW.lua`, `Theme_Classes.lua`, `Widgets.lua`, `ProbeWindow.lua`, `Window.lua`, `Tab_Quests.lua`, `Data_Fishing.lua`, `Data_FishingCatches.lua`, `Fishing.lua`, `Data_Dungeons.lua`, `AdventureGuide.lua`, `Achievements.lua`, `Journal_Achievements.lua`, `Tab_Journals.lua`, `MapProbe.lua`, `MapData.lua`, `Data_ZoneLevels.lua`, `Tab_Map.lua`, `Tab_Stub.lua`, `Minimap.lua`, `Options.lua`, `Slash.lua`, `Media/*.tga`.
 
 ### Blocked-action log (0.0.4)
 
