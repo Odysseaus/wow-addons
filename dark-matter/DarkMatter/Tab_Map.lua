@@ -313,7 +313,7 @@ local function UpdatePlayer()
   a:Show()
 end
 
-local function LayoutOverlay(focus)
+local function LayoutOverlay()
   PoolReset("badge") PoolReset("quest")
   local vw, vh = VW(), VH()
   local anyBadge = false
@@ -360,7 +360,7 @@ end
 ---------------------------------------------------------------------------
 -- breadcrumb + coordinates
 ---------------------------------------------------------------------------
-local function FlyTo() end -- forward
+local FlyTo -- forward (assigned below)
 local Crumbs
 local function Trail()
   local out = {}
@@ -448,7 +448,7 @@ function M.Layout()
       end
     end
   end
-  LayoutOverlay(M.focus)
+  LayoutOverlay()
   UpdatePlayer()
   if Crumbs then Crumbs() end
   local cx, cy = M.Center()
