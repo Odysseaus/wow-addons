@@ -16,7 +16,7 @@ You need **macOS**, **World of Warcraft: Forever** (or another local WoW client)
 4. First open (unsigned build) — a plain double-click often only shows **Done** and does **not** launch:
    - Hold **Control** and click `WoWGrok.app` → click **Open**.
    - If macOS still blocks it, open **System Settings → Privacy & Security** and click **Open Anyway** (if shown).
-5. Confirm your WoW **Interface/AddOns** folder. WoWGrok looks for it automatically and shows a folder picker if it finds none or several. The app creates the `WoWGrok` addon and reply slots (`WoWGrok_S001`–`WoWGrok_S200`) for you — don't copy any folders yourself.
+5. Confirm your WoW **Interface/AddOns** folder on the wizard's **Download** step. It shows the folder WoWGrok uses now (from `config.json`) and lists every AddOns folder it finds as a clickable row — WoW Forever (`_forever_`) first and preselected. Click the one you play (it is saved right away), or **Choose another folder…** for the native picker. Switching folders also moves the SavedVariables path to the same flavor and reinstalls the addon there. The app creates the `WoWGrok` addon and reply slots (`WoWGrok_S001`–`WoWGrok_S200`) for you — don't copy any folders yourself.
 
 ## 2. Connect your AI
 
@@ -30,7 +30,7 @@ You need **macOS**, **World of Warcraft: Forever** (or another local WoW client)
 5. **Screen Recording** (needed so the app can read the top-left pixel strip):
    - On first launch WoWGrok may show an in-app sheet and request access so a **WoWGrok** row appears under **System Settings → Privacy & Security → Screen Recording** (or Screen & System Audio Recording). Turn **WoWGrok** ON.
    - If the app offers **Quit WoWGrok**, click it so the permission sticks, then reopen from Applications.
-6. **Leave WoWGrok running.** After first-run it sits in the **menu bar** (quiet companion; no Dock icon). The menu shows a disabled **WoWGrok <version>** row (for example `WoWGrok 0.1.31`) so you can confirm which binary is live — if that version does not match the DMG you just installed, Quit and reopen from `/Applications`. It's the live bridge between WoW and your AI, not a one-time installer.
+6. **Leave WoWGrok running.** After first-run it sits in the **menu bar** (quiet companion; no Dock icon). The menu shows a disabled **WoWGrok <version>** row (for example `WoWGrok 0.1.32`) so you can confirm which binary is live — if that version does not match the DMG you just installed, Quit and reopen from `/Applications`. It's the live bridge between WoW and your AI, not a one-time installer.
 
 ## 3. Start questing
 

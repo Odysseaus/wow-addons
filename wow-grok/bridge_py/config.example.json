@@ -1,7 +1,7 @@
 {
-  "addonDir": "/Applications/World of Warcraft/_classic_beta_/Interface/AddOns",
-  "savedVariablesFile": "/Applications/World of Warcraft/_classic_beta_/WTF/Account/YOUR_ACCOUNT/SavedVariables/WoWGrok.lua",
-  "inboxFile": "/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/WoWGrok/Inbox.lua",
+  "addonDir": "/Applications/World of Warcraft/_forever_/Interface/AddOns",
+  "savedVariablesFile": "/Applications/World of Warcraft/_forever_/WTF/Account/YOUR_ACCOUNT/SavedVariables/WoWGrok.lua",
+  "inboxFile": "/Applications/World of Warcraft/_forever_/Interface/AddOns/WoWGrok/Inbox.lua",
   "defaultCwd": "/path/to/your/project",
   "tocInterface": "16001",
   "slots": 200,

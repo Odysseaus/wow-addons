@@ -259,20 +259,56 @@ def has_provider_api_key(cfg: dict | None = None) -> bool:
     return has_api_key(cfg)
 
 
+ACCOUNT_PLACEHOLDER = "YOUR_ACCOUNT"
+
+
+def account_from_saved_variables(path: str | None) -> str | None:
+    """``…/WTF/Account/<acct>/SavedVariables/WoWGrok.lua`` → ``<acct>`` (None if not shaped so).
+
+    The placeholder ``YOUR_ACCOUNT`` counts as unknown.
+    """
+    if not path:
+        return None
+    parts = Path(str(path)).parts
+    for i in range(len(parts) - 3):
+        if (
+            parts[i].lower() == "wtf"
+            and parts[i + 1].lower() == "account"
+            and parts[i + 3].lower() == "savedvariables"
+        ):
+            acct = parts[i + 2]
+            return None if acct == ACCOUNT_PLACEHOLDER else acct
+    return None
+
+
+def saved_variables_path(client_root: str | Path, account: str | None) -> Path:
+    """``<flavor>/WTF/Account/<account>/SavedVariables/WoWGrok.lua`` (path only; never created)."""
+    return (
+        Path(client_root)
+        / "WTF"
+        / "Account"
+        / (account or ACCOUNT_PLACEHOLDER)
+        / "SavedVariables"
+        / "WoWGrok.lua"
+    )
+
+
 def derive_paths_from_addon_dir(cfg: dict, addon_dir: str, account: str | None = None) -> dict:
-    """Fill inboxFile / savedVariablesFile from AddOns dir (and optional account)."""
+    """Point addonDir / inboxFile / savedVariablesFile at one flavor root.
+
+    All three always move together (0.1.32): switching ``_classic_beta_`` →
+    ``_forever_`` used to keep the old ``savedVariablesFile`` when the new
+    flavor had no account folder yet, so the bridge kept watching the old
+    client. ``account`` defaults to the account in the current
+    ``savedVariablesFile`` (same Battle.net account name across flavors), then
+    the ``YOUR_ACCOUNT`` placeholder. Only paths are computed — nothing under
+    ``WTF`` is created here.
+    """
     cfg = dict(cfg)
     addon_dir = str(Path(addon_dir).resolve())
     cfg["addonDir"] = addon_dir
     cfg["inboxFile"] = str(Path(addon_dir) / "WoWGrok" / "Inbox.lua")
-    client = str(Path(addon_dir).parent.parent)  # .../Interface/AddOns -> client root
-    if account:
-        cfg["savedVariablesFile"] = str(
-            Path(client) / "WTF" / "Account" / account / "SavedVariables" / "WoWGrok.lua"
-        )
-    elif not cfg.get("savedVariablesFile"):
-        # placeholder until account is known
-        cfg["savedVariablesFile"] = str(
-            Path(client) / "WTF" / "Account" / "YOUR_ACCOUNT" / "SavedVariables" / "WoWGrok.lua"
-        )
+    client = Path(addon_dir).parent.parent  # .../Interface/AddOns -> client root
+    acct = account or account_from_saved_variables(cfg.get("savedVariablesFile"))
+    cfg["savedVariablesFile"] = str(saved_variables_path(client, acct))
     return cfg

@@ -5,9 +5,12 @@ import os
 import sys
 from pathlib import Path
 
+# Order matters: detection lists, the WoW-root coercion in
+# :func:`coerce_client` and the wizard's default selection all follow it.
+# ``_forever_`` (WoW Forever) is first since 0.1.32.
 FLAVORS = (
-    "_classic_beta_",
     "_forever_",
+    "_classic_beta_",
     "_retail_",
     "_classic_era_",
     "_classic_",
@@ -76,6 +79,12 @@ def is_client(dir_path: Path, platform: str | None = None) -> bool:
 
 
 def coerce_client(dir_path: str | Path, platform: str | None = None) -> Path | None:
+    """Map a picked folder to a WoW client (flavor) root.
+
+    A bare ``World of Warcraft`` root with several flavors resolves to the
+    first flavor in :data:`FLAVORS` order (``_forever_`` first). Callers that
+    must not guess should check :func:`flavor_clients_under` first.
+    """
     d = Path(dir_path).resolve()
     if is_client(d, platform):
         return d
@@ -86,6 +95,64 @@ def coerce_client(dir_path: str | Path, platform: str | None = None) -> Path | N
         if is_client(nested, platform):
             return nested
     return None
+
+
+def flavor_clients_under(root: str | Path) -> list[Path]:
+    """Flavor folders (``_forever_`` …) with an Interface/AddOns under ``root``.
+
+    In :data:`FLAVORS` order. Empty when ``root`` is not a WoW root.
+    """
+    base = Path(root).expanduser()
+    out: list[Path] = []
+    for flavor in FLAVORS:
+        if (base / flavor / "Interface" / "AddOns").is_dir():
+            out.append((base / flavor).resolve())
+    return out
+
+
+def flavor_of(addons_dir: str | Path) -> str:
+    """Flavor folder name for an ``…/<flavor>/Interface/AddOns`` path (``""`` if unknown)."""
+    p = Path(str(addons_dir))
+    if p.name.lower() == "addons" and p.parent.name.lower() == "interface":
+        return p.parent.parent.name
+    return ""
+
+
+def client_root_for_addons(addons_dir: str | Path) -> Path:
+    """``…/<flavor>/Interface/AddOns`` → ``…/<flavor>`` (the client / flavor root)."""
+    return Path(str(addons_dir)).parent.parent
+
+
+FLAVOR_LABELS = {
+    "_forever_": "WoW Forever",
+    "_classic_beta_": "Classic beta",
+    "_retail_": "Retail",
+    "_classic_era_": "Classic Era",
+    "_classic_": "Classic",
+}
+
+
+def flavor_label(addons_dir: str | Path) -> str:
+    """Human label for a wizard choice, e.g. ``WoW Forever (_forever_)``."""
+    flavor = flavor_of(addons_dir)
+    if not flavor:
+        return Path(str(addons_dir)).name or str(addons_dir)
+    nice = FLAVOR_LABELS.get(flavor)
+    return f"{nice} ({flavor})" if nice else flavor
+
+
+def sort_by_flavor(paths: list[Path]) -> list[Path]:
+    """Stable sort: known flavors in :data:`FLAVORS` order, unknown last."""
+    order = {f: i for i, f in enumerate(FLAVORS)}
+    return sorted(paths, key=lambda p: order.get(flavor_of(p), len(FLAVORS)))
+
+
+def preferred_addons_dir(candidates: list[Path] | list[str]) -> Path | None:
+    """Default wizard selection: ``_forever_`` when present, else the first by flavor order."""
+    paths = [Path(str(c)) for c in candidates or []]
+    if not paths:
+        return None
+    return sort_by_flavor(paths)[0]
 
 
 def find_addons_dirs(platform: str | None = None, exist_only: bool = True) -> list[Path]:
@@ -116,18 +183,32 @@ def find_addons_dirs(platform: str | None = None, exist_only: bool = True) -> li
 
 def find_existing_addons(platform: str | None = None) -> list[Path]:
     found: list[Path] = []
+    seen: set[str] = set()
     for c in addon_candidates(platform):
         p = Path(c)
         if p.is_dir():
-            found.append(p.resolve())
+            r = p.resolve()
+            k = str(r).lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            found.append(r)
     return found
 
 
 def normalize_addons_selection(path: str | Path) -> Path | None:
-    """Accept AddOns folder or WoW client/flavor root; return AddOns Path."""
+    """Accept AddOns folder or WoW client/flavor root; return AddOns Path.
+
+    A bare ``World of Warcraft`` root resolves to the first flavor in
+    :data:`FLAVORS` (``_forever_`` first since 0.1.32 — it used to be
+    ``_classic_beta_``, so picking the root silently kept classic beta).
+    """
     p = Path(path).expanduser().resolve()
     if p.name.lower() == "addons" and p.parent.name.lower() == "interface":
         return p
+    # Picked a folder *inside* AddOns (e.g. …/AddOns/WoWGrok): use its AddOns.
+    if p.parent.name.lower() == "addons" and p.parent.parent.name.lower() == "interface":
+        return p.parent
     if (p / "Interface" / "AddOns").is_dir():
         return (p / "Interface" / "AddOns").resolve()
     client = coerce_client(p)

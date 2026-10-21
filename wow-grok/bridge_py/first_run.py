@@ -259,68 +259,119 @@ def prompt_provider(parent=None) -> str:
     return tk_util.ask_provider_dialog()
 
 
-def prompt_addons_dir(
-    candidates: list[Path] | None = None,
+def pick_addons_dir_native(
     parent=None,
-) -> Path | None:
-    """Pick Interface/AddOns (or WoW root). Returns normalized AddOns path."""
-    tk, filedialog = _tk()
-    own = parent is None
-    root = parent or _ensure_root()
-    try:
-        candidates = candidates if candidates is not None else setup_detect.find_existing_addons()
-        if len(candidates) == 1:
-            if tk_util.ask_yes_no(
-                "WoW Grok — AddOns folder",
-                f"Found World of Warcraft AddOns at:\n\n{candidates[0]}\n\nUse this folder?",
-            ):
-                return candidates[0]
-        elif len(candidates) > 1:
-            listing = "\n".join(f"  {i+1}. {c}" for i, c in enumerate(candidates[:12]))
-            tk_util.show_info_dialog(
-                "WoW Grok — multiple AddOns folders",
-                "Several World of Warcraft AddOns folders were found:\n\n"
-                f"{listing}\n\n"
-                "Next you will pick the correct Interface/AddOns folder "
-                "(or the WoW client / flavor folder).",
-            )
-        else:
-            tk_util.show_info_dialog(
-                "WoW Grok — locate AddOns",
-                "Could not auto-find World of Warcraft.\n\n"
-                "Select your Interface/AddOns folder, or the WoW client folder "
-                "(e.g. …/World of Warcraft/_classic_beta_).\n\n"
-                "GeForce Now / cloud WoW is NOT supported — the bridge must run "
-                "on the same PC as a local WoW install.",
-            )
+    *,
+    initialdir: str | Path | None = None,
+) -> tuple[Path | None, str | None]:
+    """Native folder picker → ``(AddOns, None)``; cancel → ``(None, None)``;
+    a folder that is not AddOns / a WoW flavor → ``(None, message)``.
 
-        # Native folder dialog — parent root already centered via prepare_dialog_root
+    With ``parent`` (the wizard window) the panel is parented on that window
+    and the window's ``-topmost`` is dropped while it is open, then restored.
+    Before 0.1.32 the wizard called :func:`prompt_addons_dir`, which spun up a
+    separate hidden Tk root (plus another for an info dialog) beside the
+    topmost wizard, and picking the ``World of Warcraft`` root coerced to
+    ``_classic_beta_`` (first in FLAVORS) — so the pick never stuck.
+    """
+    _tk_mod, filedialog = _tk()
+    own = parent is None
+    root = _ensure_root() if own else parent
+    restore_topmost = False
+    try:
+        if not own:
+            try:
+                restore_topmost = bool(int(root.attributes("-topmost")))
+            except Exception:  # noqa: BLE001
+                restore_topmost = False
+            try:
+                root.attributes("-topmost", False)
+            except Exception:  # noqa: BLE001
+                pass
         try:
             root.update_idletasks()
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
-        chosen = filedialog.askdirectory(
-            parent=root,
-            title="Select WoW Interface/AddOns (or WoW client folder)",
-            mustexist=True,
-        )
+        kwargs: dict[str, Any] = {
+            "parent": root,
+            "title": "Select WoW Interface/AddOns (or a flavor folder such as _forever_)",
+            "mustexist": True,
+        }
+        if initialdir and Path(str(initialdir)).is_dir():
+            kwargs["initialdir"] = str(initialdir)
+        chosen = filedialog.askdirectory(**kwargs)
         if not chosen:
-            return None
-        normalized = setup_detect.normalize_addons_selection(chosen)
+            _append_bridge_log("[addons-picker] cancelled")
+            return None, None
+        normalized = setup_detect.normalize_addons_selection(str(chosen))
+        _append_bridge_log(
+            f"[addons-picker] chosen={str(chosen)!r} -> "
+            f"{str(normalized) if normalized else None!r}"
+        )
         if not normalized:
-            tk_util.show_info_dialog(
-                "WoW Grok",
-                "That path does not look like Interface/AddOns or a WoW client folder.\n"
-                "Expected …/Interface/AddOns or …/_classic_beta_ (etc).",
+            return None, (
+                "That folder is not a WoW Interface/AddOns folder or a WoW flavor "
+                "folder. Pick …/World of Warcraft/_forever_/Interface/AddOns "
+                "(or the _forever_ folder itself)."
             )
-            return None
-        return normalized
+        return Path(normalized), None
     finally:
         if own:
             try:
                 root.destroy()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
+        elif restore_topmost:
+            try:
+                root.attributes("-topmost", True)
+                root.lift()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def prompt_addons_dir(
+    candidates: list[Path] | None = None,
+    parent=None,
+) -> Path | None:
+    """Legacy (no-wizard) AddOns prompt. Returns normalized AddOns path.
+
+    Several folders found → offer the preferred one (``_forever_`` first),
+    "No" opens the native picker. The Mac/Windows wizard does not use this; it
+    lists every folder as a clickable row instead.
+    """
+    if candidates is None:
+        candidates = setup_detect.find_existing_addons()
+    candidates = setup_detect.sort_by_flavor(list(candidates))
+    if len(candidates) == 1:
+        if tk_util.ask_yes_no(
+            "WoW Grok — AddOns folder",
+            f"Found World of Warcraft AddOns at:\n\n{candidates[0]}\n\nUse this folder?",
+        ):
+            return candidates[0]
+    elif len(candidates) > 1:
+        pref = setup_detect.preferred_addons_dir(candidates)
+        listing = "\n".join(f"  {i+1}. {c}" for i, c in enumerate(candidates[:12]))
+        if tk_util.ask_yes_no(
+            "WoW Grok — multiple AddOns folders",
+            "Several World of Warcraft AddOns folders were found:\n\n"
+            f"{listing}\n\nUse {pref}?\n\n"
+            "Choose No to pick a different Interface/AddOns (or flavor) folder.",
+        ):
+            return pref
+    else:
+        tk_util.show_info_dialog(
+            "WoW Grok — locate AddOns",
+            "Could not auto-find World of Warcraft.\n\n"
+            "Select your Interface/AddOns folder, or the WoW client folder "
+            "(e.g. …/World of Warcraft/_forever_).\n\n"
+            "GeForce Now / cloud WoW is NOT supported — the bridge must run "
+            "on the same PC as a local WoW install.",
+        )
+    picked, err = pick_addons_dir_native(parent)
+    if err:
+        tk_util.show_info_dialog("WoW Grok", err)
+        return None
+    return picked
 
 
 def _mark_screen_recording_onboarded(cfg: dict[str, Any] | None) -> None:
@@ -437,16 +488,48 @@ def prompt_mac_screen_recording(cfg: dict[str, Any] | None = None) -> None:
         raise
 
 
-def _apply_addon_dir(cfg: dict[str, Any], addon_dir: Path) -> dict[str, Any]:
-    """Fill addonDir / inbox / SavedVariables / capture process from AddOns path."""
-    cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(addon_dir))
-    client = addon_dir.parent.parent
-    accounts = setup_detect.find_accounts(client)
+def choose_account(accounts: list[str], previous: str | None) -> str | None:
+    """Account folder for savedVariablesFile under a (new) flavor root.
+
+    Keep the account already in config when that flavor has it (or has no
+    account folders yet — WoW creates ``WTF/Account/<name>`` on first login,
+    same name across flavors); otherwise the first account found.
+    """
+    if previous and previous in accounts:
+        return previous
     if accounts:
-        cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(addon_dir), accounts[0])
-    cap = cfg.setdefault("capture", {})
+        return accounts[0]
+    return previous or None
+
+
+def _apply_addon_dir(cfg: dict[str, Any], addon_dir: Path) -> dict[str, Any]:
+    """Point addonDir / inboxFile / savedVariablesFile / capture at ONE flavor root.
+
+    savedVariablesFile is ``<flavor>/WTF/Account/<account>/SavedVariables/WoWGrok.lua``
+    for the same flavor as addonDir. Paths are computed only — nothing is
+    created under ``WTF``.
+    """
+    addon_dir = Path(addon_dir).resolve()
+    client = setup_detect.client_root_for_addons(addon_dir)
+    previous = cfgmod.account_from_saved_variables(cfg.get("savedVariablesFile"))
+    account = choose_account(setup_detect.find_accounts(client), previous)
+    cfg = cfgmod.derive_paths_from_addon_dir(cfg, str(addon_dir), account)
+    cap = dict(cfg.get("capture") or {})
     cap["processName"] = setup_detect.detect_process_name(client)
+    cfg["capture"] = cap
     return cfg
+
+
+def _wow_root_hint(candidates: list[Path]) -> Path | None:
+    """Start the native picker in the WoW install root when one is known."""
+    for c in candidates:
+        root = setup_detect.client_root_for_addons(c).parent
+        if root.is_dir():
+            return root
+    for r in setup_detect.candidate_roots():
+        if r.is_dir():
+            return r
+    return None
 
 
 def _run_onboard_wizard(
@@ -455,28 +538,50 @@ def _run_onboard_wizard(
     """Two-pane wizard (Mac + Windows). Mutates and returns ``cfg``.
 
     Always records ``lastSeenAppVersion`` afterwards (done / finish later /
-    cancelled) so the same app build is not auto-shown again.
+    cancelled) so the same app build is not auto-shown again. A folder picked
+    on the Download step is saved to config.json immediately (addonDir +
+    inboxFile + savedVariablesFile together, ``addonDirChosen``).
     """
     from . import onboard_wizard
 
-    existing = setup_detect.find_existing_addons()
+    existing = setup_detect.sort_by_flavor(setup_detect.find_existing_addons())
+    initialdir = _wow_root_hint(existing)
+    holder: dict[str, dict[str, Any]] = {"cfg": cfg}
 
-    def _pick() -> Path | None:
-        return prompt_addons_dir(existing)
+    def _pick(parent=None) -> tuple[Path | None, str | None]:
+        return pick_addons_dir_native(parent, initialdir=initialdir)
+
+    def _on_addon_dir_selected(path: str) -> dict[str, Any]:
+        new_cfg = _apply_addon_dir(holder["cfg"], Path(str(path)))
+        new_cfg[onboard_wizard.ADDON_DIR_CHOSEN_KEY] = True
+        holder["cfg"] = new_cfg
+        cfgmod.save_config(new_cfg)
+        _append_bridge_log(
+            f"[onboard-wizard] addonDir={new_cfg.get('addonDir')!r} "
+            f"savedVariablesFile={new_cfg.get('savedVariablesFile')!r} saved"
+        )
+        return {
+            "addonDir": new_cfg.get("addonDir"),
+            "savedVariablesFile": new_cfg.get("savedVariablesFile"),
+            "inboxFile": new_cfg.get("inboxFile"),
+        }
 
     result = onboard_wizard.run_onboard_wizard(
         cfg=cfg,
         initial_addon_dir=cfg.get("addonDir") or None,
+        addon_candidates=existing,
         pick_addons_dir=_pick,
+        on_addon_dir_selected=_on_addon_dir_selected,
         secure_store_label=cfgmod.secure_store_label(),
         provider_key_present=(not key_invalid) and cfgmod.has_provider_api_key(cfg),
     )
+    cfg = holder["cfg"]
     onboard_wizard.apply_wizard_result(cfg, result)
     if result.addon_dir:
         cfg = _apply_addon_dir(cfg, Path(result.addon_dir))
     _append_bridge_log(
         f"[onboard-wizard] status={result.status} provider={result.provider!r} "
-        f"connected={result.connected_label!r}"
+        f"connected={result.connected_label!r} addonDir={cfg.get('addonDir')!r}"
     )
     mark_onboard_wizard_seen(cfg)
     try:
@@ -724,6 +829,8 @@ def _setup_fingerprint(cfg: dict[str, Any]) -> tuple:
     return (
         cfgmod.resolve_provider(cfg),
         str(cfg.get("addonDir") or ""),
+        str(cfg.get("savedVariablesFile") or ""),
+        str(cfg.get("inboxFile") or ""),
         cfgmod.resolve_api_key(cfg),
         cfgmod.resolve_claude_api_key(cfg),
     )
@@ -736,8 +843,9 @@ def run_setup_wizard_on_demand() -> int:
     --onboard-setup`` so Tk never shares the AppKit run loop with rumps.
     Saves config (and reinstalls addon/slots when AddOns is valid).
 
-    Exit codes: ``0`` = provider / key / AddOns changed (caller restarts the
-    bridge to apply), ``3`` = nothing relevant changed, ``4`` = no GUI.
+    Exit codes: ``0`` = provider / key / AddOns (incl. savedVariablesFile /
+    inboxFile) changed — addon + slots are reinstalled into the new AddOns
+    folder and the caller restarts the bridge to apply, ``3`` = nothing relevant changed, ``4`` = no GUI.
     """
     from . import onboard_wizard
 

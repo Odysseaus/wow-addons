@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from . import setup_detect
+
 # --- Pure logic (no tkinter) -------------------------------------------------
 
 STEP_DOWNLOAD = "download"
@@ -136,6 +138,123 @@ def download_step_complete(
     return bool(running_from_applications)
 
 
+# config.json flag: the player explicitly picked the AddOns folder in the wizard
+# (a folder row, Continue on Download, or "Choose another folder…"). Without it
+# a machine with several AddOns folders opens on Download with ``_forever_``
+# preselected (0.1.32).
+ADDON_DIR_CHOSEN_KEY = "addonDirChosen"
+
+CHOOSE_OTHER_FOLDER_LABEL = "Choose another folder…"
+
+
+def _norm_path(p: str | Path | None) -> str:
+    if not p:
+        return ""
+    try:
+        return str(Path(str(p)).expanduser().resolve())
+    except Exception:  # noqa: BLE001
+        return str(p)
+
+
+def same_path(a: str | Path | None, b: str | Path | None) -> bool:
+    """Path equality after resolve (case-insensitive, like default macOS / Windows)."""
+    na, nb = _norm_path(a), _norm_path(b)
+    return bool(na) and na.lower() == nb.lower()
+
+
+def _flavor_rank(p: str | Path | None) -> int:
+    flavor = setup_detect.flavor_of(p or "")
+    try:
+        return setup_detect.FLAVORS.index(flavor)
+    except ValueError:
+        return len(setup_detect.FLAVORS)
+
+
+def addon_choice_rows(
+    candidates: list[Path] | list[str] | None,
+    current: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Download-step folder rows: detected AddOns dirs (+ the configured one).
+
+    Sorted by :data:`setup_detect.FLAVORS` (``_forever_`` first), de-duplicated.
+    Each row: ``path``, ``label`` (e.g. ``WoW Forever (_forever_)``), ``flavor``,
+    ``current`` (the folder config.json uses now).
+    """
+    paths = [Path(str(c)) for c in (candidates or [])]
+    if current and Path(str(current)).is_dir() and not any(same_path(current, p) for p in paths):
+        paths.append(Path(str(current)))
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for p in setup_detect.sort_by_flavor(paths):
+        key = _norm_path(p).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            {
+                "path": str(p),
+                "label": setup_detect.flavor_label(p),
+                "flavor": setup_detect.flavor_of(p),
+                "current": same_path(p, current),
+            }
+        )
+    return out
+
+
+def initial_addon_selection(
+    current: str | Path | None,
+    candidates: list[Path] | list[str] | None,
+    *,
+    chosen: bool = False,
+) -> str | None:
+    """Folder preselected on the Download step.
+
+    - The player already picked one (``addonDirChosen``) → keep it.
+    - Otherwise ``_forever_`` when detected (preferred flavor), unless the
+      configured folder is already that flavor (or better) → keep config.
+    - Nothing detected → the configured folder (or ``None``).
+    """
+    cur_ok = bool(current) and Path(str(current)).is_dir()
+    if cur_ok and chosen:
+        return str(current)
+    pref = setup_detect.preferred_addons_dir([Path(str(c)) for c in (candidates or [])])
+    if pref is None:
+        return str(current) if cur_ok else None
+    if cur_ok and _flavor_rank(current) <= _flavor_rank(pref):
+        return str(current)
+    return str(pref)
+
+
+def download_needs_review(
+    current: str | Path | None,
+    candidates: list[Path] | list[str] | None,
+    selection: str | Path | None,
+    *,
+    chosen: bool = False,
+) -> bool:
+    """Open the wizard on Download instead of skipping it.
+
+    True when the preselection differs from config (e.g. ``_forever_`` found
+    while config still says ``_classic_beta_``), or several AddOns folders
+    exist and the player never picked one.
+    """
+    if selection and not same_path(selection, current):
+        return True
+    if not chosen and len(addon_choice_rows(candidates, current)) > 1:
+        return True
+    return False
+
+
+def unpack_pick_result(out: Any) -> tuple[Path | None, str | None]:
+    """Picker callbacks may return ``Path | None`` or ``(Path | None, error)``."""
+    if isinstance(out, tuple):
+        picked = out[0] if len(out) > 0 else None
+        err = out[1] if len(out) > 1 else None
+    else:
+        picked, err = out, None
+    return (Path(str(picked)) if picked else None), (str(err) if err else None)
+
+
 @dataclass
 class WizardState:
     """In-memory wizard progress (display-free)."""
@@ -149,11 +268,30 @@ class WizardState:
     api_key: str | None = None
     key_field: str | None = None
     addon_dir: str | None = None
+    # Folder config.json used when the wizard opened (updated on each save).
+    current_addon_dir: str | None = None
+    # True once the player picked / confirmed a folder on the Download step.
+    addon_dir_confirmed: bool = False
     finished_later: bool = False
     completed: bool = False
     # Row whose key is already stored (config / keychain / env) — set when the
     # wizard re-opens on a configured install (upgrade gate or menu Setup…).
     existing_key_row_id: str | None = None
+
+    def select_addon_dir(self, path: str | Path) -> None:
+        """Player picked ``path`` (folder row, Continue, or the native picker)."""
+        self.addon_dir = str(path)
+        self.addon_dir_confirmed = True
+
+    def result_addon_dir(self) -> str | None:
+        """AddOns folder to hand back: the confirmed pick, else config's folder.
+
+        An unconfirmed preselection (e.g. ``_forever_`` highlighted but the
+        player closed the wizard) never silently switches folders.
+        """
+        if self.addon_dir_confirmed and self.addon_dir:
+            return self.addon_dir
+        return self.current_addon_dir
 
     def mark_download_done(self) -> None:
         self.completed_steps.add(STEP_DOWNLOAD)
@@ -211,12 +349,15 @@ class WizardResult:
     key_field: str | None = None
     addon_dir: str | None = None
     connected_label: str | None = None
+    addon_dir_confirmed: bool = False
 
 
 def apply_wizard_result(cfg: dict[str, Any], result: WizardResult) -> dict[str, Any]:
     """Merge a successful / partial wizard result into ``cfg`` (returns same dict)."""
     if result.addon_dir:
         cfg["addonDir"] = result.addon_dir
+        if result.addon_dir_confirmed:
+            cfg[ADDON_DIR_CHOSEN_KEY] = True
     if result.provider:
         cfg["provider"] = result.provider
     if result.api_key and result.key_field:
@@ -240,6 +381,7 @@ _FG_MUTED = "#9a9aa0"
 _ACCENT = "#e8a317"  # warm gold / orange (Continue)
 _ACCENT_FG = "#1a1a1c"
 _OK = "#3dcc7a"
+_ERR = "#e8735c"
 _BORDER = "#3a3a40"
 
 
@@ -306,14 +448,22 @@ def run_onboard_wizard(
     *,
     cfg: dict[str, Any] | None = None,
     initial_addon_dir: str | Path | None = None,
-    pick_addons_dir: Callable[[], Path | None] | None = None,
+    addon_candidates: list[Path] | None = None,
+    pick_addons_dir: Callable[[Any], Any] | None = None,
+    on_addon_dir_selected: Callable[[str], dict[str, Any] | None] | None = None,
     secure_store_label: str | None = None,
     provider_key_present: bool = False,
 ) -> WizardResult:
     """Show the two-pane onboarding wizard (Mac + Windows). Blocks until closed.
 
-    ``pick_addons_dir`` is injected so first_run can reuse
-    :func:`first_run.prompt_addons_dir` without a circular import at module load.
+    Download step: every detected AddOns folder (``addon_candidates``) is a
+    clickable row (``_forever_`` first and preselected), plus
+    **Choose another folder…**. ``pick_addons_dir(parent)`` opens the native
+    picker parented on the wizard window and returns ``Path | None`` or
+    ``(Path | None, error)``. ``on_addon_dir_selected(path)`` persists a pick
+    right away (first_run updates addonDir + inboxFile + savedVariablesFile and
+    saves config.json) and returns the saved paths, shown as
+    "Currently using".
 
     ``provider_key_present``: the configured provider already has a key, so
     Connect starts as "<provider> is connected" (paste a new key to replace it).
@@ -324,10 +474,24 @@ def run_onboard_wizard(
 
     cfg = dict(cfg or {})
     state = WizardState()
+    current: str | None = None
     if initial_addon_dir and Path(initial_addon_dir).is_dir():
-        state.addon_dir = str(Path(initial_addon_dir))
+        current = str(Path(initial_addon_dir))
     elif cfg.get("addonDir") and Path(str(cfg["addonDir"])).is_dir():
-        state.addon_dir = str(cfg["addonDir"])
+        current = str(cfg["addonDir"])
+    state.current_addon_dir = current
+    chosen = bool(cfg.get(ADDON_DIR_CHOSEN_KEY))
+    candidates = [Path(str(c)) for c in (addon_candidates or [])]
+    addon_rows = addon_choice_rows(candidates, current)
+    state.addon_dir = initial_addon_selection(current, candidates, chosen=chosen)
+    review_download = download_needs_review(
+        current, candidates, state.addon_dir, chosen=chosen
+    )
+    # What config.json says right now (Download → "Currently using").
+    shown: dict[str, str] = {
+        "addonDir": str(cfg.get("addonDir") or ""),
+        "savedVariablesFile": str(cfg.get("savedVariablesFile") or ""),
+    }
 
     # Prefer an already-configured live provider as the selection.
     existing = (cfg.get("provider") or "xai").strip().lower()
@@ -337,7 +501,7 @@ def run_onboard_wizard(
         if provider_key_present and row.get("live"):
             state.mark_existing_key(row)
 
-    if download_step_complete(addon_dir=state.addon_dir):
+    if not review_download and download_step_complete(addon_dir=state.addon_dir):
         state.mark_download_done()
     else:
         state.active_step = STEP_DOWNLOAD
@@ -439,8 +603,9 @@ def run_onboard_wizard(
             provider=state.provider,
             api_key=state.api_key,
             key_field=state.key_field,
-            addon_dir=state.addon_dir,
+            addon_dir=state.result_addon_dir(),
             connected_label=state.connected_label,
+            addon_dir_confirmed=state.addon_dir_confirmed,
         )
         try:
             root.destroy()
@@ -469,7 +634,65 @@ def run_onboard_wizard(
         for child in content.winfo_children():
             child.destroy()
 
-    def _show_download() -> None:
+    def _choose(path: str, *, rerender: bool = True) -> str | None:
+        """Select + persist ``path``. Returns an error message or ``None``."""
+        state.select_addon_dir(path)
+        err: str | None = None
+        if on_addon_dir_selected is not None:
+            try:
+                saved = on_addon_dir_selected(path) or {}
+            except Exception as e:  # noqa: BLE001
+                saved = {}
+                err = f"Could not save that folder: {e}"
+            if saved.get("addonDir"):
+                state.addon_dir = str(saved["addonDir"])
+                state.current_addon_dir = state.addon_dir
+                for k in ("addonDir", "savedVariablesFile"):
+                    if saved.get(k):
+                        shown[k] = str(saved[k])
+        if rerender:
+            msg = None if err else (
+                f"Saved — WoWGrok now uses {setup_detect.flavor_label(state.addon_dir or path)}."
+            )
+            # Re-render after the click handler returns (it destroys the row widgets).
+            try:
+                root.after_idle(lambda: _show_download(message=msg, error=err))
+            except Exception:  # noqa: BLE001
+                _show_download(message=msg, error=err)
+        return err
+
+    def _choose_other() -> None:
+        if pick_addons_dir is None:
+            return
+        try:
+            picked, err = unpack_pick_result(pick_addons_dir(root))
+        except Exception as e:  # noqa: BLE001
+            picked, err = None, f"Folder picker failed: {e}"
+        if err:
+            _show_download(error=err)
+            return
+        if not picked:
+            return  # cancelled
+        p = str(picked)
+        if not any(same_path(p, r["path"]) for r in addon_rows):
+            addon_rows[:] = addon_choice_rows(
+                [Path(r["path"]) for r in addon_rows] + [Path(p)], shown.get("addonDir")
+            )
+        _choose(p)
+
+    def _continue_download() -> None:
+        if state.addon_dir and Path(state.addon_dir).is_dir():
+            err = _choose(state.addon_dir, rerender=False)
+            if err:
+                _show_download(error=err)
+                return
+            state.mark_download_done()
+            _refresh_sidebar()
+            _show_step()
+            return
+        _choose_other()
+
+    def _show_download(message: str | None = None, error: str | None = None) -> None:
         _clear_content()
         tk.Label(
             content,
@@ -488,49 +711,100 @@ def run_onboard_wizard(
             wraplength=440,
             justify="left",
             anchor="w",
-        ).pack(anchor="w", pady=(10, 18))
+        ).pack(anchor="w", pady=(10, 12))
 
-        path_var = tk.StringVar(value=state.addon_dir or "(not set yet)")
-        path_lbl = tk.Label(
+        # Folder the app uses right now — read from config.json.
+        cur = shown.get("addonDir") or ""
+        cur_txt = cur or "(not set yet)"
+        if cur and not Path(cur).is_dir():
+            cur_txt += "  (folder not found)"
+        sv = shown.get("savedVariablesFile") or ""
+        if cur and sv:
+            cur_txt += f"\nSavedVariables: {sv}"
+        tk.Label(
             content,
-            textvariable=path_var,
+            text="Currently using (config.json)",
+            bg=_BG,
+            fg=_FG_MUTED,
+            font=_ui_font(10),
+            anchor="w",
+        ).pack(anchor="w")
+        tk.Label(
+            content,
+            text=cur_txt,
             bg=_BG_CARD,
             fg=_FG,
             font=_ui_font(10),
-            wraplength=420,
+            wraplength=440,
             justify="left",
             anchor="w",
             padx=12,
-            pady=10,
-        )
-        path_lbl.pack(fill="x")
+            pady=8,
+        ).pack(fill="x", pady=(2, 12))
+
+        sel_var = tk.StringVar(value=state.addon_dir or "")
+        ui["addon_sel_var"] = sel_var
+        if addon_rows:
+            head = (
+                "Found these AddOns folders — click the one for the WoW you play:"
+                if len(addon_rows) > 1
+                else "Found this AddOns folder:"
+            )
+            tk.Label(
+                content,
+                text=head,
+                bg=_BG,
+                fg=_FG_MUTED,
+                font=_ui_font(10),
+                anchor="w",
+            ).pack(anchor="w")
+            box = tk.Frame(
+                content, bg=_BG_CARD, highlightbackground=_BORDER, highlightthickness=1
+            )
+            box.pack(fill="x", pady=(4, 0))
+            for r in addon_rows:
+                txt = r["label"]
+                if same_path(r["path"], shown.get("addonDir")):
+                    txt += "  · in use"
+                txt += "\n" + r["path"]
+                tk.Radiobutton(
+                    box,
+                    text=txt,
+                    variable=sel_var,
+                    value=r["path"],
+                    command=lambda p=r["path"]: _choose(p),
+                    bg=_BG_CARD,
+                    fg=_FG,
+                    selectcolor=_BG_ROW,
+                    activebackground=_BG_ROW_SEL,
+                    activeforeground=_FG,
+                    anchor="w",
+                    justify="left",
+                    wraplength=420,
+                    font=_ui_font(10),
+                    highlightthickness=0,
+                    padx=10,
+                    pady=4,
+                ).pack(fill="x", anchor="w")
+
+        if error or message:
+            tk.Label(
+                content,
+                text=error or message,
+                bg=_BG,
+                fg=_ERR if error else _OK,
+                font=_ui_font(10),
+                wraplength=440,
+                justify="left",
+                anchor="w",
+            ).pack(anchor="w", pady=(8, 0))
 
         btns = tk.Frame(content, bg=_BG)
-        btns.pack(fill="x", pady=(16, 0))
-
-        def _pick() -> None:
-            picked = None
-            if pick_addons_dir is not None:
-                picked = pick_addons_dir()
-            if picked:
-                state.addon_dir = str(picked)
-                path_var.set(state.addon_dir)
-                state.mark_download_done()
-                _refresh_sidebar()
-                _show_step()
-
-        def _continue_download() -> None:
-            if state.addon_dir and Path(state.addon_dir).is_dir():
-                state.mark_download_done()
-                _refresh_sidebar()
-                _show_step()
-                return
-            _pick()
-
+        btns.pack(fill="x", pady=(14, 0))
         tk.Button(
             btns,
-            text="Choose AddOns folder…",
-            command=_pick,
+            text=CHOOSE_OTHER_FOLDER_LABEL,
+            command=_choose_other,
             bg=_BG_ROW,
             fg=_FG,
             activebackground=_BG_ROW_SEL,
@@ -812,8 +1086,9 @@ def run_onboard_wizard(
                 provider=state.provider,
                 api_key=state.api_key,
                 key_field=state.key_field,
-                addon_dir=state.addon_dir,
+                addon_dir=state.result_addon_dir(),
                 connected_label=state.connected_label,
+                addon_dir_confirmed=state.addon_dir_confirmed,
             )
             try:
                 root.destroy()

@@ -90,8 +90,8 @@ app = BUNDLE(
     icon=None,
     bundle_identifier='com.wowgrok.bridge',
     info_plist={
-        'CFBundleShortVersionString': '0.1.31',
-        'CFBundleVersion': '0.1.31',
+        'CFBundleShortVersionString': '0.1.32',
+        'CFBundleVersion': '0.1.32',
         'NSHighResolutionCapable': True,
         'LSUIElement': True,  # menu-bar agent; no Dock icon in steady state
         'NSAppleEventsUsageDescription':
