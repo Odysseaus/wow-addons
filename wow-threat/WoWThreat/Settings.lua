@@ -122,7 +122,7 @@ end
 
 local COLUMN_CHOICES = { { "auto", "Auto" }, { "1", "1" }, { "2", "2" }, { "3", "3" }, { "4", "4" } }
 local FORMAT_CHOICES = { { "short", "Short (12.3k)" }, { "full", "Full (12345)" } }
-local THEME_CHOICES = { { "auto", "Auto (by class)" }, { "emberhall", "Ember Hall" }, { "ironforged", "Ironforged" },
+local THEME_CHOICES = { { "wow", "WoW" }, { "auto", "Auto (by class)" }, { "emberhall", "Ember Hall" }, { "ironforged", "Ironforged" },
   { "ursinegrove", "Ursine Grove" }, { "dawnward", "Dawnward" }, { "voidbound", "Voidbound" } }
 local STYLE_CHOICES = { { "fireplace", "Fireplace" }, { "classic", "Classic" }, { "castbar", "Castbar fire" }, { "gem", "Gem" }, { "off", "Off (plain bar)" } }
 NS.THEME_CHOICE_LIST, NS.STYLE_CHOICE_LIST = THEME_CHOICES, STYLE_CHOICES
@@ -147,7 +147,7 @@ local function BuildVertical()
   all = AddSlider("barWidth", "Bar width", 160, 320, 4, "%d", "Width of each bar in pixels.") and all
   all = AddSlider("rowHeight", "Row height", 20, 32, 1, "%d", "Height of each row in pixels.") and all
   all = AddSlider("scale", "Scale", 0.6, 1.6, 0.05, "%.2f", "Meter scale for the active Edit Mode layout.") and all
-  all = AddDropdown("theme", "Theme", THEME_CHOICES, "Frame theme. Auto: Warrior Ironforged, Druid Ursine Grove, Paladin Dawnward, Warlock Voidbound, others Ember Hall.") and all
+  all = AddDropdown("theme", "Theme", THEME_CHOICES, "Frame theme. WoW (default): the game's own tooltip-style frame and status bar. Auto: Warrior Ironforged, Druid Ursine Grove, Paladin Dawnward, Warlock Voidbound, others Ember Hall.") and all
   all = AddCheckbox("animateFrame", "Animate frame", "Theme frame animations (swords, leaves, sun, runes, gems).") and all
   all = AddCheckbox("showFire", "Show fire", "The fire is the bar.") and all
   all = AddDropdown("fireStyle", "Style", STYLE_CHOICES, "Fireplace (default), Classic (lighter), Castbar fire (layered scrolling fire), Gem (polished stone by rank) or Off (plain bar). Every style sits in the same bronze frame.") and all

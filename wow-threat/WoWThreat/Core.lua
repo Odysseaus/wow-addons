@@ -4,7 +4,7 @@ WoWThreat = NS
 -- Do not register a custom Edit Mode system. EditModeSystem is a closed HUD
 -- enum. Meter.lua only listens for EventRegistry "EditMode.Enter"/"Exit".
 
-NS.VERSION = "1.3.0"
+NS.VERSION = "1.4.0"
 NS.DB_VERSION = 3
 NS.apiMissing = true
 NS.forceTest = false
@@ -33,7 +33,7 @@ local DEFAULTS = {
   onlyInGroup = false,
   hideOutOfCombat = true,
   -- v3 (1.1.0 visuals)
-  theme = "auto",
+  theme = "wow", -- 1.4.0: the game's own art is the default for fresh installs
   fireStyle = "fireplace",
   fireSpeed = 1,
   flameOverflow = 10,
@@ -41,7 +41,7 @@ local DEFAULTS = {
   reducedEffects = false,
   fireSound = false,
 }
-NS.THEME_CHOICES = { auto = true, emberhall = true, ironforged = true, ursinegrove = true, dawnward = true, voidbound = true }
+NS.THEME_CHOICES = { wow = true, auto = true, emberhall = true, ironforged = true, ursinegrove = true, dawnward = true, voidbound = true }
 
 -- Pre-0.2.0 keys removed by the v2 migration.
 local OLD_KEYS = { "mode", "locked", "lock", "point", "relativePoint", "xOfs", "yOfs", "scale" }
@@ -208,6 +208,12 @@ function NS.MigrateDB()
   -- v2 -> v3: Row height default moves 28 -> 30 (fire needs the room);
   -- only bump it when the user still had the old default.
   if from < 3 and db.rowHeight == 28 then db.rowHeight = 30 end
+  -- 1.4.0: the new 'wow' theme replaces a saved 'auto' once. The flag records that it ran, so choosing Auto
+  -- again later sticks. A fresh install has no theme yet and gets the 'wow' default below.
+  if not db.themeWowMigrated then
+    if db.theme == "auto" then db.theme = "wow" end
+    db.themeWowMigrated = true
+  end
   local i
   for i = 1, #OLD_KEYS do
     db[OLD_KEYS[i]] = nil
@@ -225,7 +231,7 @@ function NS.MigrateDB()
   db.maxRows = Clamp(db.maxRows, 1, 10, 5)
   db.barWidth = Clamp(db.barWidth, 160, 320, 240)
   db.rowHeight = Clamp(db.rowHeight, 20, 32, 30)
-  if not NS.THEME_CHOICES[db.theme] then db.theme = "auto" end
+  if not NS.THEME_CHOICES[db.theme] then db.theme = "wow" end
   -- 1.3.0: "Flame tongues" (tongues) was removed; it and any unknown style migrate to Fireplace.
   if db.fireStyle == "tongues" then db.fireStyle = "fireplace" end
   if not NS.OPTION_SPEC.fireStyle[2][db.fireStyle] then db.fireStyle = "fireplace" end
@@ -364,7 +370,7 @@ function NS.Probe()
   print("GetBuildInfo: " .. build)
 end
 
-local HELP = "v" .. NS.VERSION .. " commands: /wtm options (settings) | /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm theme <auto|emberhall|ironforged|ursinegrove|dawnward|voidbound> | /wtm style <fireplace|classic|castbar|off> | /wtm reset (position) | /wtm debug (threat scale line) | /wtm probe (API check). Move it in Edit Mode."
+local HELP = "v" .. NS.VERSION .. " commands: /wtm options (settings) | /wtm test [raid20|raid40|swap|swapfast] | /wtm fire <0-1|off|on> | /wtm theme <wow|auto|emberhall|ironforged|ursinegrove|dawnward|voidbound> | /wtm style <fireplace|classic|castbar|gem|off> | /wtm reset (position) | /wtm debug (threat scale line) | /wtm probe (API check) | /wtm artprobe (which stock textures the WoW theme found). Move it in Edit Mode."
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
@@ -448,7 +454,7 @@ SlashCmdList["WOWTHREAT"] = function(msg)
       local id = NS.ThemeId and NS.ThemeId() or themeArg
       NS.Print("theme " .. themeArg .. (themeArg == "auto" and (" -> " .. id) or "") .. ".")
     else
-      NS.Print("usage: /wtm theme <auto|emberhall|ironforged|ursinegrove|dawnward|voidbound>")
+      NS.Print("usage: /wtm theme <wow|auto|emberhall|ironforged|ursinegrove|dawnward|voidbound>")
     end
     return
   end
@@ -475,6 +481,12 @@ SlashCmdList["WOWTHREAT"] = function(msg)
     NS.ResetDB()
   elseif msg == "probe" then
     NS.Probe()
+  elseif msg == "artprobe" then
+    -- 1.4.0: which of the game's own textures the 'wow' theme found (ok / MISSING), saved to WoWThreatDB.artprobe
+    local lines = NS.Stock.Report()
+    NS.Print(lines[1])
+    local i
+    for i = 2, #lines do print(lines[i]) end
   else
     NS.Print(HELP)
   end
