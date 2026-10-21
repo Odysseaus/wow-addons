@@ -92,7 +92,10 @@ function M.Zoom() return V.s / SFit() end
 local function SetView(cx, cy, s)
   local sf = SFit()
   V.s = Clamp(s, sf, sf * ZMax())
-  cx, cy = Clamp(cx, 0, 1), Clamp(cy, 0, 1)
+  -- keep the picture covering the view (centred where it is smaller than the view, e.g. fully zoomed out)
+  local hw, hh = VW() / 2 / (BW * V.s), VH() / 2 / (BH * V.s)
+  cx = hw >= 0.5 and 0.5 or Clamp(cx, hw, 1 - hw)
+  cy = hh >= 0.5 and 0.5 or Clamp(cy, hh, 1 - hh)
   V.ox, V.oy = VW() / 2 - cx * BW * V.s, VH() / 2 - cy * BH * V.s
   M.dirty = true
 end

@@ -3774,6 +3774,11 @@ do
   check(sawZoneFade and sawContFade, "0.5.0 map: zone and continent pictures crossfade while zooming")
   check(sawCont, "0.5.0 map: passes through the continent level")
   check(math.abs(M.Zoom() - 1) < 1e-6 and table.concat(M.Trail(), ">") == "Azeroth" and M.layers[947].shown, "0.5.0 map: zoomed out fully shows the world")
+  local wcx, wcy = M.Center()
+  check(math.abs(wcx - 0.5) < 1e-9 and math.abs(wcy - 0.5) < 1e-9, "0.5.0 map: fully zoomed out the world is centred (zooming out at the cursor never leaves the view half empty)")
+  local sl, st = M.ToScreen(0, 0)
+  local sr, sb = M.ToScreen(1, 1)
+  check(sl <= 0.01 or sr - sl < M.vp:GetWidth() + 0.01, "0.5.0 map: the picture covers the view")
   -- 9. zoom in toward Kalimdor (cursor on its land): focus moves there
   local kx, ky = M.ToScreen(0.20, 0.55)
   CX, CY = kx, ky
