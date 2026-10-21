@@ -1,0 +1,32 @@
+## Interface: 16001
+## Title: Dark Matter
+## Notes: Dark Matter 0.4.6: 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests (search, watch boxes, rewards, /dm questprobe); /dm probe.
+## Author: Odysseaus
+## Version: 0.4.6
+## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
+## SavedVariables: DarkMatterDB
+## SavedVariablesPerCharacter: DarkMatterCharDB
+
+Core.lua
+Probe.lua
+Theme.lua
+Atlas_WoW.lua
+Theme_WoW.lua
+Theme_Classes.lua
+Widgets.lua
+ProbeWindow.lua
+Window.lua
+QuestLog.lua
+Tab_Quests.lua
+Data_Fishing.lua
+Data_FishingCatches.lua
+Fishing.lua
+Data_Dungeons.lua
+AdventureGuide.lua
+Achievements.lua
+Journal_Achievements.lua
+Tab_Journals.lua
+Tab_Stub.lua
+Minimap.lua
+Options.lua
+Slash.lua

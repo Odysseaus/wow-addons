@@ -1,0 +1,352 @@
+{
+ "Firefin Snapper": {
+  "skill": 75,
+  "zones": [
+   "Redridge Mountains",
+   "Azshara",
+   "Arathi Highlands"
+  ]
+ },
+ "Oily Blackmouth": {
+  "skill": 75,
+  "zones": [
+   "Ghostlands",
+   "Redridge Mountains",
+   "Silverpine Forest"
+  ]
+ },
+ "Raw Bristle Whisker Catfish": {
+  "skill": 25,
+  "zones": [
+   "Ironforge",
+   "The Deadmines",
+   "Ghostlands"
+  ]
+ },
+ "Raw Mithril Head Trout": {
+  "skill": 75,
+  "zones": [
+   "Redridge Mountains",
+   "Arathi Highlands",
+   "The Cape of Stranglethorn"
+  ]
+ },
+ "Raw Greater Sagefish": {
+  "skill": 75,
+  "zones": [
+   "Redridge Mountains",
+   "Arathi Highlands",
+   "Hillsbrad Foothills"
+  ]
+ },
+ "Raw Rockscale Cod": {
+  "skill": 225,
+  "zones": [
+   "Desolace",
+   "Dustwallow Marsh",
+   "Southern Barrens"
+  ]
+ },
+ "Raw Spotted Yellowtail": {
+  "skill": 225,
+  "zones": [
+   "The Cape of Stranglethorn",
+   "Desolace",
+   "Arathi Highlands"
+  ]
+ },
+ "Essence of Fire": {
+  "skill": null,
+  "zones": [
+   "Burning Steppes"
+  ]
+ },
+ "Coal": {
+  "skill": null,
+  "zones": [
+   "Burning Steppes"
+  ]
+ },
+ "Raw Glossy Mightfish": {
+  "skill": 225,
+  "zones": [
+   "The Cape of Stranglethorn",
+   "Eastern Plaguelands",
+   "Feralas"
+  ]
+ },
+ "Raw Summer Bass": {
+  "skill": 225,
+  "zones": [
+   "The Cape of Stranglethorn",
+   "Feralas",
+   "Tanaris"
+  ]
+ },
+ "Winter Squid": {
+  "skill": 225,
+  "zones": [
+   "The Cape of Stranglethorn",
+   "Feralas",
+   "Tanaris"
+  ]
+ },
+ "Raw Brilliant Smallfish": {
+  "skill": 25,
+  "zones": [
+   "Dun Morogh",
+   "Elwynn Forest",
+   "Eversong Woods"
+  ]
+ },
+ "Raw Longjaw Mud Snapper": {
+  "skill": 25,
+  "zones": [
+   "Dun Morogh",
+   "Elwynn Forest",
+   "Eversong Woods"
+  ]
+ },
+ "Barbed Gill Trout": {
+  "skill": 425,
+  "zones": [
+   "Deadwind Pass"
+  ]
+ },
+ "Lightning Eel": {
+  "skill": 300,
+  "zones": [
+   "Eastern Plaguelands",
+   "Moonglade",
+   "Deadwind Pass"
+  ]
+ },
+ "Bloodfin Catfish": {
+  "skill": 425,
+  "zones": [
+   "Deadwind Pass"
+  ]
+ },
+ "Crescent-Tail Skullfish": {
+  "skill": 425,
+  "zones": [
+   "Deadwind Pass"
+  ]
+ },
+ "Arctic Char": {
+  "skill": 25,
+  "zones": [
+   "Dun Morogh"
+  ]
+ },
+ "10-90 Daily": {
+  "skill": 25,
+  "zones": [
+   "Dun Morogh",
+   "Ironforge",
+   "Tirisfal Glades"
+  ]
+ },
+ "Raw Sagefish": {
+  "skill": 75,
+  "zones": [
+   "Loch Modan",
+   "Redridge Mountains",
+   "Silverpine Forest"
+  ]
+ },
+ "Plated Armorfish": {
+  "skill": 300,
+  "zones": [
+   "Eastern Plaguelands",
+   "Scholomance",
+   "Stratholme"
+  ]
+ },
+ "Raw Sunscale Salmon": {
+  "skill": 300,
+  "zones": [
+   "Eastern Plaguelands",
+   "Felwood",
+   "Feralas"
+  ]
+ },
+ "Raw Nightfin Snapper": {
+  "skill": 300,
+  "zones": [
+   "Eastern Plaguelands",
+   "Felwood",
+   "Feralas"
+  ]
+ },
+ "Raw Whitescale Salmon": {
+  "skill": 300,
+  "zones": [
+   "Eastern Plaguelands",
+   "Un'Goro Crater",
+   "Scholomance"
+  ]
+ },
+ "Raw Redgill": {
+  "skill": 300,
+  "zones": [
+   "Eastern Plaguelands",
+   "Felwood",
+   "Feralas"
+  ]
+ },
+ "Stonescale Eel": {
+  "skill": 300,
+  "zones": [
+   "Eastern Plaguelands",
+   "Feralas",
+   "Tanaris"
+  ]
+ },
+ "Violet Perch": {
+  "skill": 25,
+  "zones": [
+   "Elwynn Forest"
+  ]
+ },
+ "Raw Slitherskin Mackerel": {
+  "skill": 25,
+  "zones": [
+   "Eversong Woods",
+   "Tirisfal Glades",
+   "Azuremyst Isle"
+  ]
+ },
+ "Raw Rainbow Fin Albacore": {
+  "skill": 75,
+  "zones": [
+   "Ghostlands",
+   "Silverpine Forest",
+   "Stormwind City"
+  ]
+ },
+ "Young Ironjaw": {
+  "skill": 25,
+  "zones": [
+   "Ironforge"
+  ]
+ },
+ "Giant Sunfish": {
+  "skill": 450,
+  "zones": [
+   "Isle of Quel'Danas"
+  ]
+ },
+ "Bloated Giant Sunfish": {
+  "skill": 450,
+  "zones": [
+   "Isle of Quel'Danas"
+  ]
+ },
+ "Raw Loch Frenzy": {
+  "skill": 75,
+  "zones": [
+   "Loch Modan"
+  ]
+ },
+ "Sickly Looking Fish": {
+  "skill": 25,
+  "zones": [
+   "Tirisfal Glades",
+   "Silverpine Forest",
+   "Undercity"
+  ]
+ },
+ "Gigantic Catfish": {
+  "skill": 75,
+  "zones": [
+   "Stormwind City"
+  ]
+ },
+ "Royal Monkfish": {
+  "skill": 75,
+  "zones": [
+   "Stormwind City"
+  ]
+ },
+ "Hardened Walleye": {
+  "skill": 75,
+  "zones": [
+   "Stormwind City"
+  ]
+ },
+ "Crystal Bass": {
+  "skill": 75,
+  "zones": [
+   "Stormwind City"
+  ]
+ },
+ "Baby Crocolisk": {
+  "skill": 75,
+  "zones": [
+   "Stormwind City"
+  ]
+ },
+ "30 Daily": {
+  "skill": 75,
+  "zones": [
+   "Stormwind City"
+  ]
+ },
+ "Darkclaw Lobster": {
+  "skill": 425,
+  "zones": [
+   "Swamp of Sorrows"
+  ]
+ },
+ "Large Raw Mightfish": {
+  "skill": 425,
+  "zones": [
+   "Swamp of Sorrows"
+  ]
+ },
+ "Corpse-Fed Pike": {
+  "skill": 25,
+  "zones": [
+   "Tirisfal Glades"
+  ]
+ },
+ "Giant Flesh-Eating Tadpole": {
+  "skill": 25,
+  "zones": [
+   "Tirisfal Glades"
+  ]
+ },
+ "Severed Abomination Head": {
+  "skill": 75,
+  "zones": [
+   "Undercity"
+  ]
+ },
+ "Sharptooth": {
+  "skill": null,
+  "zones": [
+   "Zul'Aman",
+   "Zul'Gurub"
+  ]
+ },
+ "Striped Lurker": {
+  "skill": null,
+  "zones": [
+   "Zul'Aman",
+   "Zul'Gurub"
+  ]
+ },
+ "Darkshore Grouper": {
+  "skill": 75,
+  "zones": [
+   "Darkshore"
+  ]
+ },
+ "Deviate Fish": {
+  "skill": 75,
+  "zones": [
+   "Northern Barrens"
+  ]
+ }
+}

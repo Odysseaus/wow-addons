@@ -1,0 +1,728 @@
+{
+ "12238": {
+  "icon": "inv_misc_fish_26",
+  "name": "Darkshore Grouper",
+  "offhand": false,
+  "quality": 1
+ },
+ "13422": {
+  "icon": "inv_misc_fish_11",
+  "name": "Stonescale Eel",
+  "offhand": false,
+  "quality": 1
+ },
+ "13754": {
+  "icon": "inv_misc_monsterhead_03",
+  "name": "Raw Glossy Mightfish",
+  "offhand": false,
+  "quality": 1
+ },
+ "13755": {
+  "icon": "inv_misc_fish_13",
+  "name": "Winter Squid",
+  "offhand": false,
+  "quality": 1
+ },
+ "13756": {
+  "icon": "inv_misc_fish_03",
+  "name": "Raw Summer Bass",
+  "offhand": false,
+  "quality": 1
+ },
+ "13757": {
+  "icon": "inv_misc_fish_12",
+  "name": "Lightning Eel",
+  "offhand": false,
+  "quality": 1
+ },
+ "13758": {
+  "icon": "inv_misc_fish_06",
+  "name": "Raw Redgill",
+  "offhand": false,
+  "quality": 1
+ },
+ "13759": {
+  "icon": "inv_misc_fish_23",
+  "name": "Raw Nightfin Snapper",
+  "offhand": false,
+  "quality": 1
+ },
+ "13760": {
+  "icon": "inv_misc_fish_19",
+  "name": "Raw Sunscale Salmon",
+  "offhand": false,
+  "quality": 1
+ },
+ "13874": {
+  "icon": "inv_crate_03",
+  "name": "Heavy Crate",
+  "offhand": false,
+  "quality": 1
+ },
+ "13875": {
+  "icon": "inv_box_01",
+  "name": "Ironbound Locked Chest",
+  "offhand": false,
+  "quality": 1
+ },
+ "13876": {
+  "icon": "inv_misc_fish_06",
+  "name": "40 Pound Grouper",
+  "offhand": false,
+  "quality": 1
+ },
+ "13877": {
+  "icon": "inv_misc_fish_06",
+  "name": "47 Pound Grouper",
+  "offhand": false,
+  "quality": 1
+ },
+ "13878": {
+  "icon": "inv_misc_fish_06",
+  "name": "53 Pound Grouper",
+  "offhand": false,
+  "quality": 1
+ },
+ "13879": {
+  "icon": "inv_misc_fish_06",
+  "name": "59 Pound Grouper",
+  "offhand": false,
+  "quality": 1
+ },
+ "13880": {
+  "icon": "inv_misc_fish_06",
+  "name": "68 Pound Grouper",
+  "offhand": false,
+  "quality": 1
+ },
+ "13881": {
+  "icon": "inv_misc_fish_06",
+  "name": "Bloated Redgill",
+  "offhand": false,
+  "quality": 1
+ },
+ "13882": {
+  "icon": "inv_misc_fish_06",
+  "name": "42 Pound Redgill",
+  "offhand": true,
+  "quality": 1
+ },
+ "13883": {
+  "icon": "inv_misc_fish_06",
+  "name": "45 Pound Redgill",
+  "offhand": true,
+  "quality": 1
+ },
+ "13884": {
+  "icon": "inv_misc_fish_06",
+  "name": "49 Pound Redgill",
+  "offhand": true,
+  "quality": 1
+ },
+ "13885": {
+  "icon": "inv_misc_fish_06",
+  "name": "34 Pound Redgill",
+  "offhand": true,
+  "quality": 1
+ },
+ "13886": {
+  "icon": "inv_misc_fish_06",
+  "name": "37 Pound Redgill",
+  "offhand": true,
+  "quality": 1
+ },
+ "13887": {
+  "icon": "inv_misc_fish_06",
+  "name": "52 Pound Redgill",
+  "offhand": true,
+  "quality": 1
+ },
+ "13888": {
+  "icon": "inv_misc_fish_14",
+  "name": "Darkclaw Lobster",
+  "offhand": false,
+  "quality": 1
+ },
+ "13889": {
+  "icon": "inv_misc_fish_20",
+  "name": "Raw Whitescale Salmon",
+  "offhand": false,
+  "quality": 1
+ },
+ "13891": {
+  "icon": "inv_misc_fish_06",
+  "name": "Bloated Salmon",
+  "offhand": false,
+  "quality": 1
+ },
+ "13893": {
+  "icon": "inv_misc_monsterhead_02",
+  "name": "Large Raw Mightfish",
+  "offhand": false,
+  "quality": 1
+ },
+ "13901": {
+  "icon": "inv_misc_fish_02",
+  "name": "15 Pound Salmon",
+  "offhand": true,
+  "quality": 1
+ },
+ "13902": {
+  "icon": "inv_misc_fish_02",
+  "name": "18 Pound Salmon",
+  "offhand": true,
+  "quality": 1
+ },
+ "13903": {
+  "icon": "inv_misc_fish_02",
+  "name": "22 Pound Salmon",
+  "offhand": true,
+  "quality": 1
+ },
+ "13904": {
+  "icon": "inv_misc_fish_02",
+  "name": "25 Pound Salmon",
+  "offhand": true,
+  "quality": 1
+ },
+ "13905": {
+  "icon": "inv_misc_fish_02",
+  "name": "29 Pound Salmon",
+  "offhand": true,
+  "quality": 1
+ },
+ "13906": {
+  "icon": "inv_misc_fish_02",
+  "name": "32 Pound Salmon",
+  "offhand": true,
+  "quality": 1
+ },
+ "13907": {
+  "icon": "inv_misc_fish_14",
+  "name": "7 Pound Lobster",
+  "offhand": false,
+  "quality": 1
+ },
+ "13908": {
+  "icon": "inv_misc_fish_14",
+  "name": "9 Pound Lobster",
+  "offhand": false,
+  "quality": 1
+ },
+ "13909": {
+  "icon": "inv_misc_fish_14",
+  "name": "12 Pound Lobster",
+  "offhand": false,
+  "quality": 1
+ },
+ "13910": {
+  "icon": "inv_misc_fish_14",
+  "name": "15 Pound Lobster",
+  "offhand": false,
+  "quality": 1
+ },
+ "13911": {
+  "icon": "inv_misc_fish_14",
+  "name": "19 Pound Lobster",
+  "offhand": false,
+  "quality": 1
+ },
+ "13912": {
+  "icon": "inv_misc_fish_14",
+  "name": "21 Pound Lobster",
+  "offhand": false,
+  "quality": 1
+ },
+ "13913": {
+  "icon": "inv_misc_fish_14",
+  "name": "22 Pound Lobster",
+  "offhand": false,
+  "quality": 1
+ },
+ "13914": {
+  "icon": "inv_misc_monsterhead_02",
+  "name": "70 Pound Mightfish",
+  "offhand": true,
+  "quality": 1
+ },
+ "13915": {
+  "icon": "inv_misc_monsterhead_02",
+  "name": "85 Pound Mightfish",
+  "offhand": true,
+  "quality": 1
+ },
+ "13916": {
+  "icon": "inv_misc_monsterhead_02",
+  "name": "92 Pound Mightfish",
+  "offhand": true,
+  "quality": 1
+ },
+ "13917": {
+  "icon": "inv_misc_monsterhead_02",
+  "name": "103 Pound Mightfish",
+  "offhand": true,
+  "quality": 1
+ },
+ "13918": {
+  "icon": "inv_box_01",
+  "name": "Reinforced Locked Chest",
+  "offhand": false,
+  "quality": 1
+ },
+ "16967": {
+  "icon": "inv_misc_monsterhead_02",
+  "name": "Feralas Ahi",
+  "offhand": true,
+  "quality": 1
+ },
+ "16968": {
+  "icon": "inv_misc_fish_32",
+  "name": "Sar'theris Striker",
+  "offhand": false,
+  "quality": 1
+ },
+ "16969": {
+  "icon": "inv_misc_fish_08",
+  "name": "Savage Coast Blue Sailfin",
+  "offhand": false,
+  "quality": 1
+ },
+ "16970": {
+  "icon": "inv_misc_fish_21",
+  "name": "Misty Reed Mahi Mahi",
+  "offhand": false,
+  "quality": 1
+ },
+ "19803": {
+  "icon": "inv_misc_fish_10",
+  "name": "Brownell's Blue Striped Racer",
+  "offhand": false,
+  "quality": 2
+ },
+ "19805": {
+  "icon": "inv_misc_fish_08",
+  "name": "Keefer's Angelfish",
+  "offhand": false,
+  "quality": 2
+ },
+ "19806": {
+  "icon": "inv_misc_fish_09",
+  "name": "Dezian Queenfish",
+  "offhand": false,
+  "quality": 2
+ },
+ "19807": {
+  "icon": "inv_misc_fish_21",
+  "name": "Speckled Tastyfish",
+  "offhand": false,
+  "quality": 1
+ },
+ "19808": {
+  "icon": "inv_misc_fish_27",
+  "name": "Rockhide Strongfish",
+  "offhand": false,
+  "quality": 2
+ },
+ "19975": {
+  "icon": "inv_misc_fish_05",
+  "name": "Zulian Mudskunk",
+  "offhand": false,
+  "quality": 1
+ },
+ "20708": {
+  "icon": "inv_box_01",
+  "name": "Tightly Sealed Trunk",
+  "offhand": false,
+  "quality": 1
+ },
+ "20709": {
+  "icon": "inv_drink_08",
+  "name": "Rumsey Rum Light",
+  "offhand": false,
+  "quality": 1
+ },
+ "21071": {
+  "icon": "inv_misc_fish_20",
+  "name": "Raw Sagefish",
+  "offhand": false,
+  "quality": 1
+ },
+ "21113": {
+  "icon": "inv_box_01",
+  "name": "Watertight Trunk",
+  "offhand": false,
+  "quality": 1
+ },
+ "21114": {
+  "icon": "inv_drink_04",
+  "name": "Rumsey Rum Dark",
+  "offhand": false,
+  "quality": 1
+ },
+ "21150": {
+  "icon": "inv_box_01",
+  "name": "Iron Bound Trunk",
+  "offhand": false,
+  "quality": 1
+ },
+ "21151": {
+  "icon": "inv_drink_04",
+  "name": "Rumsey Rum Black Label",
+  "offhand": false,
+  "quality": 1
+ },
+ "21153": {
+  "icon": "inv_misc_fish_21",
+  "name": "Raw Greater Sagefish",
+  "offhand": false,
+  "quality": 1
+ },
+ "21162": {
+  "icon": "inv_misc_monsterhead_04",
+  "name": "Bloated Oily Blackmouth",
+  "offhand": false,
+  "quality": 1
+ },
+ "21164": {
+  "icon": "inv_misc_fish_04",
+  "name": "Bloated Rockscale Cod",
+  "offhand": false,
+  "quality": 1
+ },
+ "21228": {
+  "icon": "inv_box_02",
+  "name": "Mithril Bound Trunk",
+  "offhand": false,
+  "quality": 1
+ },
+ "21243": {
+  "icon": "inv_misc_monsterhead_03",
+  "name": "Bloated Mightfish",
+  "offhand": false,
+  "quality": 1
+ },
+ "3820": {
+  "icon": "inv_misc_herb_11",
+  "name": "Stranglekelp",
+  "offhand": false,
+  "quality": 1
+ },
+ "4603": {
+  "icon": "inv_misc_fish_01",
+  "name": "Raw Spotted Yellowtail",
+  "offhand": false,
+  "quality": 1
+ },
+ "5516": {
+  "icon": "inv_misc_bone_06",
+  "name": "Threshadon Fang",
+  "offhand": false,
+  "quality": 0
+ },
+ "5523": {
+  "icon": "inv_misc_shell_01",
+  "name": "Small Barnacled Clam",
+  "offhand": false,
+  "quality": 1
+ },
+ "5524": {
+  "icon": "inv_misc_shell_02",
+  "name": "Thick-shelled Clam",
+  "offhand": false,
+  "quality": 1
+ },
+ "5569": {
+  "icon": "inv_misc_herb_06",
+  "name": "Seaweed",
+  "offhand": false,
+  "quality": 0
+ },
+ "6289": {
+  "icon": "inv_misc_fish_32",
+  "name": "Raw Longjaw Mud Snapper",
+  "offhand": false,
+  "quality": 1
+ },
+ "6291": {
+  "icon": "inv_misc_fish_08",
+  "name": "Raw Brilliant Smallfish",
+  "offhand": false,
+  "quality": 1
+ },
+ "6292": {
+  "icon": "inv_misc_fish_33",
+  "name": "10 Pound Mud Snapper",
+  "offhand": true,
+  "quality": 1
+ },
+ "6294": {
+  "icon": "inv_misc_fish_33",
+  "name": "12 Pound Mud Snapper",
+  "offhand": true,
+  "quality": 1
+ },
+ "6295": {
+  "icon": "inv_misc_fish_33",
+  "name": "15 Pound Mud Snapper",
+  "offhand": true,
+  "quality": 1
+ },
+ "6297": {
+  "icon": "inv_misc_bone_orcskull_01",
+  "name": "Old Skull",
+  "offhand": false,
+  "quality": 0
+ },
+ "6299": {
+  "icon": "inv_misc_fish_28",
+  "name": "Sickly Looking Fish",
+  "offhand": false,
+  "quality": 1
+ },
+ "6301": {
+  "icon": "inv_misc_bone_dwarfskull_01",
+  "name": "Old Teamster's Skull",
+  "offhand": false,
+  "quality": 0
+ },
+ "6303": {
+  "icon": "inv_misc_fish_24",
+  "name": "Raw Slitherskin Mackerel",
+  "offhand": false,
+  "quality": 1
+ },
+ "6307": {
+  "icon": "inv_drink_12",
+  "name": "Message in a Bottle",
+  "offhand": false,
+  "quality": 1
+ },
+ "6308": {
+  "icon": "inv_misc_fish_30",
+  "name": "Raw Bristle Whisker Catfish",
+  "offhand": false,
+  "quality": 1
+ },
+ "6309": {
+  "icon": "inv_misc_fish_30",
+  "name": "17 Pound Catfish",
+  "offhand": true,
+  "quality": 1
+ },
+ "6310": {
+  "icon": "inv_misc_fish_30",
+  "name": "19 Pound Catfish",
+  "offhand": true,
+  "quality": 1
+ },
+ "6311": {
+  "icon": "inv_misc_fish_30",
+  "name": "22 Pound Catfish",
+  "offhand": true,
+  "quality": 1
+ },
+ "6317": {
+  "icon": "inv_misc_fish_03",
+  "name": "Raw Loch Frenzy",
+  "offhand": false,
+  "quality": 1
+ },
+ "6351": {
+  "icon": "inv_crate_05",
+  "name": "Dented Crate",
+  "offhand": false,
+  "quality": 1
+ },
+ "6352": {
+  "icon": "inv_crate_06",
+  "name": "Waterlogged Crate",
+  "offhand": false,
+  "quality": 1
+ },
+ "6354": {
+  "icon": "inv_box_03",
+  "name": "Small Locked Chest",
+  "offhand": false,
+  "quality": 1
+ },
+ "6355": {
+  "icon": "inv_box_01",
+  "name": "Sturdy Locked Chest",
+  "offhand": false,
+  "quality": 1
+ },
+ "6357": {
+  "icon": "inv_crate_03",
+  "name": "Sealed Crate",
+  "offhand": false,
+  "quality": 1
+ },
+ "6358": {
+  "icon": "inv_misc_monsterhead_04",
+  "name": "Oily Blackmouth",
+  "offhand": false,
+  "quality": 1
+ },
+ "6359": {
+  "icon": "inv_misc_monsterhead_01",
+  "name": "Firefin Snapper",
+  "offhand": false,
+  "quality": 1
+ },
+ "6360": {
+  "icon": "inv_misc_fish_04",
+  "name": "Steelscale Crushfish",
+  "offhand": false,
+  "quality": 2
+ },
+ "6361": {
+  "icon": "inv_misc_fish_25",
+  "name": "Raw Rainbow Fin Albacore",
+  "offhand": false,
+  "quality": 1
+ },
+ "6362": {
+  "icon": "inv_misc_fish_04",
+  "name": "Raw Rockscale Cod",
+  "offhand": false,
+  "quality": 1
+ },
+ "6363": {
+  "icon": "inv_misc_fish_30",
+  "name": "26 Pound Catfish",
+  "offhand": true,
+  "quality": 1
+ },
+ "6364": {
+  "icon": "inv_misc_fish_30",
+  "name": "32 Pound Catfish",
+  "offhand": true,
+  "quality": 1
+ },
+ "6366": {
+  "icon": "inv_fishingpole_02",
+  "name": "Darkwood Fishing Pole",
+  "offhand": false,
+  "quality": 1
+ },
+ "6455": {
+  "icon": "inv_shield_09",
+  "name": "Old Wagonwheel",
+  "offhand": false,
+  "quality": 0
+ },
+ "6456": {
+  "icon": "inv_misc_slime_01",
+  "name": "Acidic Slime",
+  "offhand": false,
+  "quality": 0
+ },
+ "6457": {
+  "icon": "inv_misc_gear_02",
+  "name": "Rusted Engineering Parts",
+  "offhand": false,
+  "quality": 0
+ },
+ "6458": {
+  "icon": "inv_misc_monsterhead_02",
+  "name": "Oil Covered Fish",
+  "offhand": false,
+  "quality": 1
+ },
+ "6470": {
+  "icon": "inv_misc_monsterscales_02",
+  "name": "Deviate Scale",
+  "offhand": false,
+  "quality": 1
+ },
+ "6522": {
+  "icon": "inv_misc_monsterhead_01",
+  "name": "Deviate Fish",
+  "offhand": false,
+  "quality": 1
+ },
+ "6643": {
+  "icon": "inv_misc_fish_08",
+  "name": "Bloated Smallfish",
+  "offhand": false,
+  "quality": 1
+ },
+ "6645": {
+  "icon": "inv_misc_fish_31",
+  "name": "Bloated Mud Snapper",
+  "offhand": false,
+  "quality": 1
+ },
+ "6647": {
+  "icon": "inv_misc_fish_29",
+  "name": "Bloated Catfish",
+  "offhand": false,
+  "quality": 1
+ },
+ "6651": {
+  "icon": "inv_drink_10",
+  "name": "Broken Wine Bottle",
+  "offhand": false,
+  "quality": 1
+ },
+ "7068": {
+  "icon": "spell_fire_fire",
+  "name": "Elemental Fire",
+  "offhand": false,
+  "quality": 1
+ },
+ "7070": {
+  "icon": "inv_potion_03",
+  "name": "Elemental Water",
+  "offhand": false,
+  "quality": 1
+ },
+ "7077": {
+  "icon": "spell_fire_lavaspawn",
+  "name": "Heart of Fire",
+  "offhand": false,
+  "quality": 1
+ },
+ "7078": {
+  "icon": "spell_fire_volcano",
+  "name": "Essence of Fire",
+  "offhand": false,
+  "quality": 2
+ },
+ "7079": {
+  "icon": "inv_misc_orb_01",
+  "name": "Globe of Water",
+  "offhand": false,
+  "quality": 1
+ },
+ "7080": {
+  "icon": "spell_nature_acid_01",
+  "name": "Essence of Water",
+  "offhand": false,
+  "quality": 2
+ },
+ "7973": {
+  "icon": "inv_misc_shell_03",
+  "name": "Big-mouth Clam",
+  "offhand": false,
+  "quality": 1
+ },
+ "8350": {
+  "icon": "inv_jewelry_ring_03",
+  "name": "The 1 Ring",
+  "offhand": false,
+  "quality": 2
+ },
+ "8365": {
+  "icon": "inv_misc_fish_02",
+  "name": "Raw Mithril Head Trout",
+  "offhand": false,
+  "quality": 1
+ },
+ "8366": {
+  "icon": "inv_misc_fish_02",
+  "name": "Bloated Trout",
+  "offhand": false,
+  "quality": 1
+ }
+}

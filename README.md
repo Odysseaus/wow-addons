@@ -9,6 +9,7 @@ World of Warcraft: Forever addons by Odysseaus, built for the classic beta clien
 | [WoW Grok](#wow-grok) | [`wow-grok/`](wow-grok/) | Released (Mac app, Windows app, addon zip) | [Releases](https://github.com/Odysseaus/wow-addons/releases) (`wow-grok-mac-v…`, `wow-grok-win-v…`) |
 | [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v1.3.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.3.0) |
 | [QuestGrind](#questgrind) | [`quest-grind/`](quest-grind/) | 🚧 Under construction, not released | No release yet |
+| [Dark Matter](dark-matter/) | [`dark-matter/`](dark-matter/) | 🚧 P2.4 Catches pill + catalog Show all (0.2.6), not released | No release yet |
 
 ## Where AddOns go
 
