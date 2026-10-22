@@ -88,8 +88,13 @@ NS.RegisterTheme({
   -- whole file, so the parchment covered the top-left ~59% x 66% of each panel with a torn edge mid-panel. Now only the
   -- clean inside of the sheet (tc below, inside the torn border) is drawn, stretched over the whole detail panel.
   -- /dm parchment l r t b adjusts that crop in game (saved; /dm parchment reset).
+  -- 0.5.1.4: the window wears the frame of the game's own map window (Window.lua BuildMapChrome, NS.MapWindow)
+  mapWindow = true,
+  -- 0.5.1.4: the map's breadcrumb is drawn like the stock map's top-bar buttons (World / Kalimdor / Darkshore)
+  crumbFaces = true,
   stockMedia = {
-    shell = { file = "Interface\\FrameGeneral\\UI-Background-Rock", tile = 256, shade = 0.75 },
+    -- 0.5.1.4: the map window's dark inset (InsetFrameTemplate's marble) instead of the heavy rock behind everything
+    shell = { file = "Interface\\FrameGeneral\\UI-Background-Marble", tile = 256, shade = 0.42 },
     rail = { file = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", tile = 128 },
     list = { file = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", tile = 128 },
     page = { file = "Interface\\FrameGeneral\\UI-Background-Rock", tile = 256, shade = 0.5 },
@@ -122,6 +127,8 @@ NS.RegisterTheme({
     UIPanelScrollFrameTemplate = "Dark Matter's own scroll frame",
     UIPanelScrollBarTemplate = "bars use the UI-ScrollBar files",
     UIPanelCloseButton = "Dark Matter's own close button",
+    ["Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up"] = "map crumbs without the arrow",
+    ["Interface\\FrameGeneral\\UI-Background-Marble"] = "Dark Matter's own slate",
   },
   media = {
     parchment = "Interface\\AddOns\\DarkMatter\\Media\\wow-parchment",

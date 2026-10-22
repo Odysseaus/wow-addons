@@ -23,6 +23,7 @@ local function Help()
   print("  /dm questprobe  Quests: which quest log, reward and watch APIs this client has -> DarkMatterDB.questprobe")
   print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
   print("  /dm artprobe  WoW theme: which of the game's own textures/templates this client has (ok/missing) -> DarkMatterDB.artprobe")
+  print("  /dm frameprobe  the game's map window: its size and the border, title and close textures it is drawn with -> DarkMatterDB.frameprobe")
   print("  /dm achprobe  Achievements: mode, game API counts + 3 samples, Dark Matter counts -> DarkMatterDB.achprobe")
   print("  /dm testtoast  show a sample achievement toast (nothing is recorded)")
   print("  /dm parchment l r t b  WoW theme: crop of the parchment (QuestBG) inside its torn edge, 0..1   /dm parchment reset")
@@ -91,6 +92,9 @@ SlashCmdList["DARKMATTER"] = function(msg)
     end
   elseif cmd == "artprobe" then
     for _, l in ipairs(NS.Stock.Report()) do NS.Print(l) end
+  elseif cmd == "frameprobe" then
+    -- 0.5.1.4: what the game's map window is drawn with (read only) and the size Dark Matter took from it
+    for _, l in ipairs(NS.MapWindow.Report()) do NS.Print(l) end
   elseif cmd == "achprobe" then
     if NS.Ach and NS.Ach.ProbeReport then
       local _, lines = NS.Ach.ProbeReport()

@@ -1,7 +1,7 @@
 -- 0.4.7 /dm mapprobe: READ-ONLY check of the map APIs the Map tab plan needs (dark-matter-map-plan.md, section 8).
 -- It only asks the game questions: it never sets or clears a waypoint, never touches WorldMapFrame (type checks only),
 -- registers nothing and hooks nothing. Every call is feature-detected and pcall'd.
--- Output: short numbered lines ("map 1" .. "map 14") so a chat screenshot is easy to read, plus a SavedVariables copy
+-- Output: short numbered lines ("map 1" .. "map 19") so a chat screenshot is easy to read, plus a SavedVariables copy
 -- in DarkMatterDB.mapprobe (last run + the last 6 runs, so a zone run and a city/dungeon run are both kept).
 local _, NS = ...
 local MP = {}
@@ -80,7 +80,7 @@ local function Run()
   local lines, have, miss, data = {}, {}, {}, {}
   for _, a in ipairs(MP.API) do if Fn(a) then have[#have + 1] = a else miss[#miss + 1] = a end end
   data.have, data.missing = have, miss
-  lines[#lines + 1] = "mapprobe 0.5.0 (read-only)"
+  lines[#lines + 1] = "mapprobe " .. tostring(NS.version) .. " (read-only)"
   lines[#lines + 1] = string.format("map 1: %d of %d map APIs present", #have, #MP.API)
   -- chat shows only what is MISSING, grouped by namespace (the full present list is in DarkMatterDB.mapprobe)
   local groups, order = {}, {}
@@ -150,6 +150,24 @@ local function Run()
   if here then data.art.zone = ArtLine(here) lines[#lines + 1] = "map 5: art here: " .. data.art.zone end
   if continent then data.art.continent = ArtLine(continent) lines[#lines + 1] = "map 5: art continent: " .. data.art.continent end
   if world then data.art.world = ArtLine(world) lines[#lines + 1] = "map 5: art world: " .. data.art.world end
+  -- 0.5.1.4: how many art layers each level has and each one's zoom range (Dark Matter draws layer 1 only)
+  data.layers = {}
+  for _, lv in ipairs({ { "here", here }, { "continent", continent }, { "world", world } }) do
+    local layers = lv[2] and Call("C_Map.GetMapArtLayers", lv[2])
+    if lv[2] then
+      local txt = "none"
+      if type(layers) == "table" and #layers > 0 then
+        local sc = {}
+        for i, Li in ipairs(layers) do
+          if i > 3 then sc[#sc + 1] = "..." break end
+          sc[#sc + 1] = string.format("%s-%s", R2(tonumber(Li.minScale)), R2(tonumber(Li.maxScale)))
+        end
+        txt = string.format("%d layer%s, scale %s", #layers, #layers == 1 and "" or "s", table.concat(sc, " / "))
+      end
+      data.layers[lv[1]] = txt
+      lines[#lines + 1] = "map 5 layers " .. lv[1] .. ": " .. txt
+    end
+  end
   local ex = here and Call("C_MapExplorationInfo.GetExploredMapTextures", here)
   data.explored = type(ex) == "table" and #ex or nil
   lines[#lines + 1] = "map 5: explored overlays here: " .. (type(ex) == "table" and #ex or "n/a")
@@ -243,6 +261,52 @@ local function Run()
       lines[#lines + 1] = string.format("map 15: Map tab places continent %s by %s: x %s-%s, y %s-%s", tostring(continent), tostring(src),
         R2(pl[1]), R2(pl[2]), R2(pl[3]), R2(pl[4]))
     end
+  end
+  -- 16-19 (0.5.1.4): the close-up detail (the game's own minimap tiles)
+  local CU = NS.MapCloseUp
+  local F = CU and here and CU.Frame(here)
+  local inst, tx, ty, X, Y
+  if F then
+    inst = F.inst
+    if px then X, Y = CU.ToYards(F, px, py) tx, ty = CU.TileAt(X, Y) end
+    data.yards = { inst = inst, X0 = F.X0, Y0 = F.Y0, X1 = F.X1, Y1 = F.Y1 }
+    lines[#lines + 1] = string.format("map 16: yards: top-left %d,%d bottom-right %d,%d (continent %s)",
+      math.floor(F.X0 + 0.5), math.floor(F.Y0 + 0.5), math.floor(F.X1 + 0.5), math.floor(F.Y1 + 0.5), tostring(inst))
+  else
+    lines[#lines + 1] = "map 16: yards: not available here"
+  end
+  local fid = tx and CU.FileFor(inst, tx, ty)
+  if tx then
+    data.tile = { tx = tx, ty = ty, file = fid, X = X, Y = Y }
+    lines[#lines + 1] = string.format("map 17: you at %d,%d yd; minimap tile %d_%d; file %s", math.floor(X + 0.5), math.floor(Y + 0.5), tx, ty,
+      fid and tostring(fid) or "none in the table")
+  else
+    lines[#lines + 1] = "map 17: minimap tile: no position here"
+  end
+  local function Load(file)
+    if not (CU and file) then return "not tried" end
+    local ok, a, b = pcall(CU.TestLoad, file)
+    if not ok then return "error" end
+    if a == true then return "yes" .. (b and (" (file " .. tostring(b) .. ")") or "") end
+    if a == false then return "no" end
+    return "no answer"
+  end
+  local folder = (inst == 0 and "Azeroth") or (inst == 1 and "Kalimdor") or nil
+  local path = folder and tx and string.format("World\\Minimaps\\%s\\map%d_%d", folder, tx, ty) or nil
+  data.loads = { byID = Load(fid), byPath = Load(path), path = path }
+  lines[#lines + 1] = string.format("map 18: tile loads by file ID %s; by path %s", data.loads.byID, data.loads.byPath)
+  -- informational only: Dark Matter never uses OpenMap's files and draws the same with or without it
+  local om = Call("C_AddOns.IsAddOnLoaded", "OpenMap")
+  if om == nil then om = Call("IsAddOnLoaded", "OpenMap") end
+  data.openMap = om and true or false
+  data.source = CU and CU.Label() or "Map: the game's own map pictures"
+  lines[#lines + 1] = string.format("map 19: OpenMap loaded %s (not used); close-up %s", YN(om),
+    CU and (CU.Enabled() and string.format("on, %d%%", math.floor(CU.Strength() * 100 + 0.5)) or "off") or "n/a")
+  lines[#lines + 1] = "map 19 source: " .. data.source
+  local last = CU and CU.last
+  if last then
+    data.closeNow = { tiles = last.tiles, pieces = last.pieces, mix = last.mix, ppy = last.ppy }
+    lines[#lines + 1] = string.format("map 19 now: %s tiles, %s pieces, mix %s at %s px/yd", tostring(last.tiles), tostring(last.pieces), R2(last.mix), R2(last.ppy))
   end
   return lines, data
 end

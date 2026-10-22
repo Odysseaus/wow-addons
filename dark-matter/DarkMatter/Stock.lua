@@ -221,6 +221,10 @@ function S.Report()
     end
     for _, t in ipairs(wow.stockTemplates or {}) do S.TemplateOK(t[1], t[2]) end
   end
+  -- 0.5.1.4: anything else asked for since (the map crumbs' arrow, ...) is checked again too
+  for _, n in ipairs(S.order) do
+    if S.used[n] == "texture" and texCache[n] == nil then S.TextureOK(n) end
+  end
   local names = {}
   for _, n in ipairs(S.order) do names[#names + 1] = n end
   table.sort(names, function(a, b)

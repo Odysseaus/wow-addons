@@ -8,18 +8,19 @@
 -- the screen width and a zone as it grows past ~half the screen, so the crossfade follows the wheel both ways.
 local _, NS = ...
 local UI, MD = NS.UI, NS.MapData
+local CU = NS.MapCloseUp -- 0.5.1.4: the game's minimap tiles up close (MapCloseUp.lua)
 local M = { layers = {}, fade = {}, pools = {}, view = { s = 1, ox = 0, oy = 0 }, layersOn = { levels = true, quests = true } }
 NS.MapTab = M
 
 local ICONS = "Interface\\AddOns\\DarkMatter\\Media\\dm-map-icons"
-local I = { findme = 0, pin = 1, starpen = 2, town = 3, full = 4, back = 5, arrow = 6, quest = 7 }
+local I = { findme = 0, pin = 1, starpen = 2, town = 3, full = 4, back = 5, arrow = 6, quest = 7, closeup = 0 }
 local function Icon(tex, key) tex:SetTexture(ICONS) tex:SetTexCoord(I[key] / 8, (I[key] + 1) / 8, 0, 1) end
 
 local function Clamp(v, a, b) if v < a then return a elseif v > b then return b end return v end
 local function Smooth(t) t = Clamp(t, 0, 1) return t * t * (3 - 2 * t) end
 local function Fmt(x, y) return string.format("%.1f, %.1f", x * 100, y * 100) end
 
-local tab, page, root, bar, vpBox, vp, canvas, over, strip, full, empty
+local tab, page, root, bar, vpBox, vp, canvas, over, strip, full, empty, closeHost
 local crumbs, crumbKey, search, results, coordCur, coordMe, caption
 local ev, drag, lastClick, zoomT, fly
 local V = M.view
@@ -83,8 +84,18 @@ local function SFit() return math.min(VW() / BW, VH() / BH) end
 local function ZMax()
   local m = 40
   for _, c in ipairs(ContList()) do local p = Place(c.id) m = math.max(m, 40 / math.max(0.05, p[2] - p[1])) end
-  return math.min(m, 250)
+  m = math.min(m, 250)
+  -- 0.5.1.4: no deeper than twice the minimap's own sharpness (MapCloseUp MAX_PPY); past that every picture only blurs
+  local cap
+  for _, c in ipairs(ContList()) do
+    local p = Place(c.id)
+    local sMax = CU and CU.MaxScale(c.id, (p[2] - p[1]) * BW)
+    if sMax then cap = math.max(cap or 0, sMax / SFit()) end
+  end
+  if cap then m = math.min(m, math.max(8, cap)) end
+  return m
 end
+M.ZMax = function() return ZMax() end
 function M.ToScreen(wx, wy) return V.ox + wx * BW * V.s, V.oy + wy * BH * V.s end
 function M.ToWorld(px, py) return (px - V.ox) / (BW * V.s), (py - V.oy) / (BH * V.s) end
 function M.Center() return M.ToWorld(VW() / 2, VH() / 2) end
@@ -448,6 +459,12 @@ function M.Layout()
       end
     end
   end
+  -- 0.5.1.4: the game's minimap tiles over the zones when zoomed in (explored ground only), then the paper grain
+  if CU and closeHost then
+    local cl = {}
+    for _, c in ipairs(ContList()) do cl[#cl + 1] = { id = c.id, alpha = M.ContAlpha(c.id) } end
+    M.close = CU.Layout({ host = closeHost, conts = cl, place = Place, toScreen = M.ToScreen, vw = VW(), vh = VH() })
+  end
   LayoutOverlay()
   UpdatePlayer()
   if Crumbs then Crumbs() end
@@ -610,6 +627,7 @@ local function Refit()
   if not vp then return end
   canvas:SetSize(VW(), VH())
   over:SetSize(VW(), VH())
+  if closeHost then closeHost:SetSize(VW(), VH()) end
   if not ApplyFit() then
     -- the view as last laid out (centre + zoom relative to the fit), so a new box size keeps the place
     local lv = M.lastView
@@ -706,19 +724,30 @@ local function Pick(r)
 end
 M.Pick = Pick
 
+-- 0.5.1.4 WoW theme (theme.crumbFaces): each crumb is drawn like the stock map's top-bar buttons: the first (the
+-- world) on the red panel-button face, the rest on the dark field face with a small down arrow, and no ">" between
+-- them. Class themes keep the plain text crumbs with ">".
+local ARROW = "Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up"
 Crumbs = function()
   local t = Trail()
-  local key = ""
+  local faces = NS.theme.crumbFaces and true or false
+  local key = faces and "f:" or ""
   for _, s in ipairs(t) do key = key .. s.id .. ">" end
   if key == crumbKey then return end
   crumbKey = key
-  for _, c in ipairs(crumbs) do c:Hide() if c.sep then c.sep:Hide() end end
-  local x = 8
+  for _, c in ipairs(crumbs) do
+    c:Hide() if c.sep then c.sep:Hide() end
+  end
+  local x = faces and 4 or 8
   for i, s in ipairs(t) do
     local c = crumbs[i]
     if not c then
       c = CreateFrame("Button", nil, bar)
       c:SetHeight(22)
+      c.face = UI.ThreeSlice(c, i == 1 and "btn_red" or "btn_field", 22, "BACKGROUND", 1)
+      c.arrow = c:CreateTexture(nil, "ARTWORK")
+      c.arrow:SetSize(16, 16)
+      c.arrow:SetPoint("RIGHT", c, "RIGHT", -3, 0)
       c.text = UI.Text(c, "OVERLAY", 13, nil, "LEFT")
       c.text:SetPoint("LEFT", c, "LEFT", 4, 0)
       UI.Hover(c)
@@ -730,20 +759,40 @@ Crumbs = function()
     local last = (i == #t)
     c.mapID = s.id
     c.text:SetText(s.name)
-    c.text:SetTextColor(NS.Color(last and "gold" or "listInk"))
-    c.hoverInk = last and "gold" or "listInk"
-    c:SetWidth((c.text:GetStringWidth() or 60) + 8)
+    local tw = c.text:GetStringWidth() or 60
+    c.text:ClearAllPoints()
+    if faces then
+      c.face:Show()
+      local arrow = i > 1 and NS.Stock.TextureOK(ARROW)
+      if arrow then c.arrow:SetTexture(ARROW) c.arrow:Show() else c.arrow:Hide() end
+      c.text:SetPoint("LEFT", c, "LEFT", 10, 0)
+      c.text:SetTextColor(1, 0.82, 0)
+      c.hoverInk = "gold"
+      c.faceW = tw + 20 + (arrow and 14 or 0)
+      c:SetWidth(c.faceW)
+    else
+      c.face:Hide() c.arrow:Hide()
+      c.text:SetPoint("LEFT", c, "LEFT", 4, 0)
+      c.text:SetTextColor(NS.Color(last and "gold" or "listInk"))
+      c.hoverInk = last and "gold" or "listInk"
+      c:SetWidth(tw + 8)
+    end
     c:ClearAllPoints()
     c:SetPoint("LEFT", bar, "LEFT", x, 0)
     c:Show()
-    x = x + (c.text:GetStringWidth() or 60) + 8
-    if not last then
-      c.sep:ClearAllPoints()
-      c.sep:SetPoint("LEFT", bar, "LEFT", x + 2, 0)
-      c.sep:Show()
-      x = x + 16
+    if faces then
+      x = x + c.faceW - 2
+    else
+      x = x + tw + 8
+      if not last then
+        c.sep:ClearAllPoints()
+        c.sep:SetPoint("LEFT", bar, "LEFT", x + 2, 0)
+        c.sep:Show()
+        x = x + 16
+      end
     end
   end
+  M.crumbFaces = faces
   M.crumbText = table.concat(M.Trail(), " > ")
 end
 
@@ -764,6 +813,9 @@ local function Build(body)
   bar:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)
   bar:SetHeight(32)
   crumbs = {}
+  M.crumbs = crumbs
+  -- 0.5.1.4: a theme change redraws the crumbs (stock-button faces in the WoW theme, plain text in class themes)
+  NS.OnSkin(function() crumbKey = nil if bar and bar:IsShown() ~= nil then Crumbs() end end)
   search = UI.SearchBox(bar, 190, 22)
   search:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
   search.placeholder:SetText("Search zones…")
@@ -789,7 +841,13 @@ local function Build(body)
   over:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
   over:SetSize(VW(), VH())
   over:SetFrameLevel(canvas:GetFrameLevel() + 8)
-  M.vp, M.canvas, M.over = vp, canvas, over
+  -- 0.5.1.4: the close-up minimap tiles sit above the zone layers (levels 1-4) and under the markers
+  closeHost = CreateFrame("Frame", nil, canvas)
+  closeHost:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
+  closeHost:SetSize(VW(), VH())
+  closeHost:SetFrameLevel(canvas:GetFrameLevel() + 6)
+  if closeHost.EnableMouse then closeHost:EnableMouse(false) end
+  M.vp, M.canvas, M.over, M.closeHost = vp, canvas, over, closeHost
   local arrow = over:CreateTexture(nil, "OVERLAY")
   arrow:SetSize(26, 26)
   Icon(arrow, "arrow")
@@ -824,7 +882,7 @@ local function Build(body)
   -- right tool strip
   strip = CreateFrame("Frame", nil, vpBox)
   strip:SetFrameLevel(canvas:GetFrameLevel() + 20)
-  strip:SetSize(40, 5 * 34 + 8)
+  strip:SetSize(40, 6 * 34 + 8)
   strip:SetPoint("TOPRIGHT", vp, "TOPRIGHT", -6, -6)
   local sbg = strip:CreateTexture(nil, "BACKGROUND")
   sbg:SetAllPoints(strip)
@@ -836,11 +894,21 @@ local function Build(body)
     ToolButton("town", "Town Pins", "Flight masters, innkeepers, vendors, trainers and more. Coming in 0.5.4.", true),
     ToolButton("findme", "Find me", "Jump to where you are.", false, function() M.FindMe() end),
     ToolButton("full", "Full screen", "", false, function() M.SetFull(not M.full) end),
+    ToolButton("closeup", "Close-up detail", "The game's minimap tiles when you zoom in close (explored ground only). On/off and strength.", false,
+      function() M.ToggleClosePanel() end),
   }
+  -- the close-up button shows the game's spyglass icon (stock art by path); the strip's own find-me icon if missing
+  do
+    local cb = tools[6]
+    local ok, r = pcall(cb.icon.SetTexture, cb.icon, "Interface\\Icons\\INV_Misc_Spyglass_02")
+    if ok and r ~= false then cb.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) cb.icon:SetVertexColor(1, 1, 1) else Icon(cb.icon, "closeup") end
+    M.closeBtn = cb
+  end
   for i, tb in ipairs(tools) do tb:SetPoint("TOP", strip, "TOP", 0, -5 - (i - 1) * 34) end
   M.tools = tools
   M.fullBtn = tools[5]
   SetFullIcon()
+  M.BuildClosePanel(vpBox, strip, canvas:GetFrameLevel() + 30)
 
   -- coordinates (bottom right) and the public-data caption (bottom left), each on a solid plate
   local function Box(anchor, rel, x)
@@ -922,6 +990,7 @@ local function Events(on)
       if e == "QUEST_LOG_UPDATE" or e == "QUEST_WATCH_LIST_CHANGED" then MD.Forget("quests")
       elseif e == "MAP_EXPLORATION_UPDATED" then
         MD.Forget("explored")
+        if CU then CU.Forget() end
         for _, L in pairs(M.layers) do L.ovBuilt = false end
       end
       M.dirty = true
@@ -958,7 +1027,7 @@ local function Start()
   if M.ready then empty:Hide() end
   Refit()
   UpdateCoords()
-  NS.SetStatus("Dark Matter " .. NS.version .. "  \194\183  Map: the game's own map pictures")
+  M.UpdateStatus()
 end
 
 -- re-read everything from the game (drops the built layers; the next show starts fresh)
@@ -969,6 +1038,83 @@ function M.Reset()
   M.pendingFit, M.lastView = nil, nil
   drag, zoomT, fly, crumbKey = nil, nil, nil, nil
   MD.Forget()
+  if CU then CU.Reset() end
+end
+
+-- the status line names the map's sources honestly (0.5.1.4: + the game's minimap tiles up close, when on and loading)
+function M.UpdateStatus()
+  NS.SetStatus("Dark Matter " .. NS.version .. "  \194\183  " .. (CU and CU.Label() or "Map: the game's own map pictures"))
+end
+
+---------------------------------------------------------------------------
+-- 0.5.1.4 close-up options: a small themed panel by the tool strip (check box + strength slider), saved in
+-- DarkMatterDB.map.closeUp / closeMix
+---------------------------------------------------------------------------
+function M.BuildClosePanel(host, anchor, level)
+  local p = UI.Panel(host, 262, 92)
+  p:ClearAllPoints()
+  p:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -6, 0)
+  p:SetFrameLevel(level)
+  p:EnableMouse(true)
+  local head = UI.Text(p, "OVERLAY", 13, "listHead", "LEFT")
+  head:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -10)
+  head:SetText("Close-up detail")
+  local box = UI.Checkbox(p, "The game's minimap tiles up close", 18, "listInk")
+  box:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -30)
+  box.onToggle = function(_, on) CU.SetEnabled(on) M.SyncClosePanel() M.UpdateStatus() end
+  local label = UI.Text(p, "OVERLAY", 12, "listInk", "LEFT")
+  label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -60)
+  label:SetText("Strength")
+  local val = UI.Text(p, "OVERLAY", 12, "gold", "RIGHT")
+  val:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -60)
+  -- the slider: a stock-looking field groove with the stock scroll knob as its thumb (themed pieces)
+  local sl = CreateFrame("Slider", nil, p)
+  sl:SetPoint("TOPLEFT", p, "TOPLEFT", 78, -56)
+  sl:SetSize(130, 18)
+  if sl.SetOrientation then sl:SetOrientation("HORIZONTAL") end
+  sl:SetMinMaxValues(0, 1)
+  if sl.SetValueStep then sl:SetValueStep(0.05) end
+  if sl.SetObeyStepOnDrag then sl:SetObeyStepOnDrag(true) end
+  sl:EnableMouse(true)
+  UI.ThreeSlice(sl, "btn_field", 14, "BACKGROUND") -- the groove (re-skinned with the theme by ThreeSlice itself)
+  local thumb = sl:CreateTexture(nil, "OVERLAY")
+  thumb:SetSize(14, 18)
+  NS.OnSkin(function() NS.SetPiece(thumb, "sb_thumb") NS.Stock.Recolor(thumb, NS.Stock.Tint("sb")) end) -- class themes: recoloured like their scroll knobs
+  sl:SetThumbTexture(thumb)
+  sl:SetScript("OnValueChanged", function(_, v)
+    if p.syncing then return end
+    v = math.floor((tonumber(v) or 0) * 20 + 0.5) / 20
+    CU.SetStrength(v)
+    val:SetText(string.format("%d%%", math.floor(v * 100 + 0.5)))
+  end)
+  if sl.EnableMouseWheel then sl:EnableMouseWheel(true) end
+  sl:SetScript("OnMouseWheel", function(_, d) M.SetCloseStrength(CU.Strength() + (d > 0 and 0.05 or -0.05)) end)
+  p.box, p.slider, p.value = box, sl, val
+  p:Hide()
+  M.closePanel = p
+  M.SyncClosePanel()
+  return p
+end
+function M.SyncClosePanel()
+  local p = M.closePanel
+  if not p then return end
+  p.syncing = true
+  p.box:SetChecked(CU.Enabled())
+  p.slider:SetValue(CU.Strength())
+  p.syncing = false
+  p.value:SetText(string.format("%d%%", math.floor(CU.Strength() * 100 + 0.5)))
+  if p.slider.SetEnabled then p.slider:SetEnabled(CU.Enabled()) end
+  p.slider:SetAlpha(CU.Enabled() and 1 or 0.45)
+end
+function M.SetCloseStrength(v)
+  CU.SetStrength(v)
+  M.SyncClosePanel()
+end
+function M.ToggleClosePanel(show)
+  local p = M.closePanel
+  if not p then return end
+  if show == nil then show = not p:IsShown() end
+  if show then M.SyncClosePanel() p:Show() else p:Hide() end
 end
 
 NS.RegisterTab({

@@ -419,6 +419,11 @@ function FrameMT.SetColorTexture(s, r, g, b, a)
   needNum("SetColorTexture", 1, r) needNum("SetColorTexture", 2, g) needNum("SetColorTexture", 3, b)
   s._color, s._file = { r, g, b, a or 1 }, nil
 end
+-- 0.5.1.4: an atlas by name (the game's map-window frame pieces); the layout dump shows it as "atlas:<name>"
+function FrameMT.SetAtlas(s, a)
+  if type(a) ~= "string" then error("SetAtlas: string expected", 2) end
+  s._file, s._color, s._atlas, s._tc = "atlas:" .. a, nil, a, nil
+end
 function FrameMT.SetVertexColor(s, r, g, b, a)
   needNum("SetVertexColor", 1, r) needNum("SetVertexColor", 2, g) needNum("SetVertexColor", 3, b)
   s._vc = { r, g, b, a or 1 }
@@ -635,6 +640,59 @@ function DumpLayout(root, path)
   fh:close()
 end
 DarkMatterCharDB=nil
+-- 0.5.1.4: the game's own map window (read only). DM_WMF=WxH runs the whole suite with a WorldMapFrame of that size
+-- whose frame art (NineSlice pieces by atlas, title, close button, portrait) can be read; without it there is none.
+WMF_CALLS, WMF_WRITES = {}, {}
+function MakeWMF(w, h, opts)
+  opts = opts or {}
+  local function spyObj(t)
+    return setmetatable({}, { __index = function(_, k)
+      local v = t[k]
+      if type(v) == "function" then return function(self, ...) WMF_CALLS[#WMF_CALLS + 1] = tostring(k) return v(t, ...) end end
+      return v
+    end, __newindex = function(_, k) WMF_WRITES[#WMF_WRITES + 1] = tostring(k) end })
+  end
+  local function Tex(atlas, tw, th, pt, x, y)
+    return spyObj({ GetObjectType = function() return "Texture" end, GetAtlas = function() return atlas end,
+      GetTextureFileID = function() return 5000000 + #atlas end, GetTexture = function() return 5000000 + #atlas end,
+      GetTexCoord = function() return 0, 0, 0, 1, 1, 0, 1, 1 end, GetWidth = function() return tw end, GetHeight = function() return th end,
+      GetPoint = function() return pt, nil, pt, x or 0, y or 0 end, GetVertexColor = function() return 1, 1, 1, 1 end,
+      GetHorizTile = function() return atlas:sub(1, 1) == "_" end, GetVertTile = function() return atlas:sub(1, 1) == "!" end,
+      IsShown = function() return true end })
+  end
+  local nine = {
+    TopLeftCorner = Tex("UI-Frame-Map-CornerTopLeft", 24, 24, "TOPLEFT", 0, 0),
+    TopRightCorner = Tex("UI-Frame-Map-CornerTopRight", 24, 24, "TOPRIGHT", 0, 0),
+    BottomLeftCorner = Tex("UI-Frame-Map-CornerBottomLeft", 12, 12, "BOTTOMLEFT", 0, 0),
+    BottomRightCorner = Tex("UI-Frame-Map-CornerBottomRight", 12, 12, "BOTTOMRIGHT", 0, 0),
+    TopEdge = Tex("_UI-Frame-Map-EdgeTop", 32, 24, "TOPLEFT", 0, 0), BottomEdge = Tex("_UI-Frame-Map-EdgeBottom", 32, 12, "BOTTOMLEFT", 0, 0),
+    LeftEdge = Tex("!UI-Frame-Map-EdgeLeft", 12, 32, "TOPLEFT", 0, 0), RightEdge = Tex("!UI-Frame-Map-EdgeRight", 12, 32, "TOPRIGHT", 0, 0) }
+  if opts.noBorder then nine = {} end
+  local title = spyObj({ GetObjectType = function() return "FontString" end, GetText = function() return "Map & Quest Log" end,
+    GetTextColor = function() return 1, 0.82, 0 end, GetFont = function() return "Fonts\\FRIZQT__.TTF", 12 end,
+    GetWidth = function() return 120 end, GetHeight = function() return 12 end, GetPoint = function() return "TOP", nil, "TOP", 0, -5 end, IsShown = function() return true end })
+  local closeN = Tex("RedButton-Exit", 24, 24, "TOPRIGHT", 0, 0)
+  local closeB = spyObj({ GetObjectType = function() return "Button" end, GetWidth = function() return 24 end, GetHeight = function() return 24 end,
+    GetNormalTexture = function() return closeN end, GetPushedTexture = function() return Tex("RedButton-exit-pressed", 24, 24, "TOPRIGHT") end,
+    GetHighlightTexture = function() return Tex("RedButton-Highlight", 24, 24, "TOPRIGHT") end, GetDisabledTexture = function() return nil end })
+  local border = spyObj({ NineSlice = spyObj(nine), TitleContainer = spyObj({ TitleText = title }), CloseButton = closeB,
+    portrait = Tex("UI-HUD-Map-Portrait", 58, 58, "TOPLEFT", -6, 7), Bg = Tex("UI-Frame-Map-Bg", w, h, "TOPLEFT", 0, 0) })
+  return spyObj({ BorderFrame = border, isMaximized = opts.maximized or false, minimizedWidth = opts.minW, minimizedHeight = opts.minH,
+    questLogWidth = opts.ql, GetWidth = function() return w end, GetHeight = function() return h end,
+    GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return false end,
+    IsMaximized = function() return opts.maximized or false end, ScrollContainer = {},
+    Show = function() WMF_WRITES[#WMF_WRITES + 1] = "Show()" end, SetSize = function() WMF_WRITES[#WMF_WRITES + 1] = "SetSize()" end })
+end
+C_Texture = { GetAtlasInfo = function(a) if not STOCK_MISSING and type(a) == "string" and (a:find("UI%-Frame%-Map") or a:find("RedButton") or a:find("Portrait")) then return { width = 24, height = 24 } end end }
+do
+  local spec = os.getenv("DM_WMF")
+  local ww, hh
+  if spec then ww, hh = spec:match("^(%d+)x(%d+)$") end
+  if ww then WorldMapFrame = MakeWMF(tonumber(ww), tonumber(hh)) end
+  -- the size the window should take (clamped like NS.MapWindow: 880x500 .. 1800x1300)
+  EXP_W = ww and math.max(880, math.min(1800, tonumber(ww))) or 880
+  EXP_H = hh and math.max(500, math.min(1300, tonumber(hh))) or 680
+end
 -- load addon
 local ns={}
 local toc=io.open(arg[1].."/DarkMatter.toc"):read("*a")
@@ -795,7 +853,7 @@ LASTN=#log
 -- ===== P1 window assertions (0.1.0) =====
 if MODE ~= "minimal" then
   local W=DarkMatterFrame
-  check(W._w==880 and W._h==680,"main window is 880x680 (mockup size)")
+  check(W._w==EXP_W and W._h==EXP_H,"main window is "..EXP_W.."x"..EXP_H.." (880x680 without a game map window; 0.5.1.4: the game map window's size)")
   check(W._scale and W._scale<=1,"window scale never above 1: "..tostring(W._scale))
   check(DarkMatterDB.window.point=="CENTER","window default at centre")
   check(DarkMatter and true,"namespace global")
@@ -919,7 +977,8 @@ do
     check(#TCBAD == 0, tag .. ": every SetTexCoord within 0..1 with left<right and top<bottom " .. tostring(TCBAD[1]))
     local win = { W:GetWidth(), W:GetHeight() }
     local wl, wt, wr, wb = FrameMT._rect(W)
-    check(wl and wr - wl == 880 and wt - wb == 680, tag .. ": window resolves to 880x680")
+    local MWW, MWH = DarkMatter.theme.m.w, DarkMatter.theme.m.h -- 0.5.1.4: the game's map window size (880x680 without one)
+    check(wl and wr - wl == MWW and wt - wb == MWH, tag .. ": window resolves to " .. MWW .. "x" .. MWH)
     local list = LayoutOf(W)
     local nTex, nFrame, nPieces = 0, 0, 0
     for _, e in ipairs(list) do
@@ -931,7 +990,7 @@ do
         local w, h = e.rr - e.l, e.t - e.b
         check(w > 0 and h > 0, tag .. ": texture has non-zero size " .. nm .. " " .. w .. "x" .. h)
         -- nothing may be bigger than the window plus the medal overhang
-        check(w <= 880 + 1 and h <= 680 + 1, tag .. ": texture is not larger than the window " .. nm .. " " .. w .. "x" .. h)
+        check(w <= MWW + 1 and h <= MWH + 1, tag .. ": texture is not larger than the window " .. nm .. " " .. w .. "x" .. h)
         local clipped = false
         do local x = e.r._parent
           while x and x ~= UIParent do
@@ -940,7 +999,7 @@ do
           end
         end
         if not clipped then
-          check(e.l >= wl - 30 and e.rr <= wr + 30 and e.t <= wt + 30 and e.b >= wb - 30, tag .. ": texture lies within the window " .. nm)
+          check(e.l >= wl - 30 and e.rr <= wr + 30 and e.t <= wt + 30 and e.b >= wb - 30, tag .. ": texture lies within the window " .. nm .. string.format(" (%.0f,%.0f,%.0f,%.0f in %.0f,%.0f,%.0f,%.0f)", e.l, e.t, e.rr, e.b, wl, wt, wr, wb))
         end
         local stockPiece = r._file and type(r._file) == "string" and r._file:find("^Interface\\") and not r._file:find("^Interface\\AddOns\\")
           and not r._file:upper():find("WHITE8X8", 1, true) -- 0.5.1: the game's own art counts as a piece too
@@ -2974,8 +3033,8 @@ if MODE ~= "minimal" then
       -- 0.4.3: the whole frame art (incl. overhanging crest/base/ornaments) is the drag area; nothing outside it
       local box = A.box
       local hi = win._hitIns
-      check(hi and math.abs(hi[1] - box[1]) < 0.01 and math.abs(hi[2] - (880 - box[3])) < 0.01 and math.abs(hi[3] - box[2]) < 0.01
-        and math.abs(hi[4] - (680 - box[4])) < 0.01 and hi[1] < 0 and hi[3] < 0, "themes: the window's mouse area covers all the frame art in " .. id)
+      check(hi and math.abs(hi[1] - box[1]) < 0.01 and math.abs(hi[2] - (EXP_W - box[3])) < 0.01 and math.abs(hi[3] - box[2]) < 0.01
+        and math.abs(hi[4] - (EXP_H - box[4])) < 0.01 and hi[1] < 0 and hi[3] < 0, "themes: the window's mouse area covers all the frame art in " .. id)
       for _, e in ipairs(LayoutOf(win)) do
         local clipped, x = false, e.r._parent
         while x and x ~= UIParent do if x._ftype == "ScrollFrame" then clipped = true break end x = x._parent end
@@ -3044,7 +3103,7 @@ if MODE ~= "minimal" then
     end
     check(#TCBAD == 0, "themes: texcoords valid after every tab in " .. id)
     local wl2, wt2, wr2, wb2 = FrameMT._rect(win)
-    check(wr2 - wl2 == 880 and wt2 - wb2 == 680, "themes: window stays 880x680 in " .. id)
+    check(wr2 - wl2 == EXP_W and wt2 - wb2 == EXP_H, "themes: window keeps its size in " .. id)
     if os.getenv("DM_RENDER_DIR") and MODE == "full" then
       NS.ShowTab("quests")
       DumpLayout(win, os.getenv("DM_RENDER_DIR") .. "/layout-theme-" .. id .. ".json")
@@ -3580,7 +3639,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.0 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.1.4 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3591,6 +3650,13 @@ do
   check(has("map 9: waypoint API yes; allowed here yes; one set now no") and has("map 9: super-track yes; navigation no"), "0.4.7 mapprobe: waypoint / minimap pointing support")
   check(has("map 10: quests on this map: 3 (GetQuestsOnMap)"), "0.4.7 mapprobe: quest markers")
   check(has("map 11: drawing: CreateLine ") and has("map 12: share: addon messages ") and has("map 13: map addons loaded: ") and has("map 14: WorldMapFrame yes; ScrollContainer yes"), "0.4.7 mapprobe: drawing, share, other map addons, game map window")
+  if os.getenv("DM_DUMP") then for _, l in ipairs(L) do io.stderr:write("PROBE ", l, "\n") end end
+  -- 0.5.1.4: art layers + zoom range per level; the close-up's yards, tile, loads; OpenMap informational only
+  check(has("map 5 layers here: 1 layer, scale ") and has("map 5 layers continent: ") and has("map 5 layers world: "), "0.5.1.4 mapprobe: art layer count and min/max scale for zone, continent and world")
+  check(has("map 16: yards: top-left ") and has("map 17: you at ") and has("; minimap tile ") and has("map 18: tile loads by file ID ") and has("; by path "),
+    "0.5.1.4 mapprobe: yard corners, the minimap tile you stand on, and whether it loads by file ID and by path")
+  check(has("map 19: OpenMap loaded no (not used); close-up on, 45%") and has("map 19 source: Map: the game's map pictures + the game's minimap tiles up close"),
+    "0.5.1.4 mapprobe: OpenMap is only reported (informational) and the map source is named")
   check(#WRITES == 0, "0.4.7 mapprobe: read-only (never set/cleared a waypoint or touched the game map: " .. table.concat(WRITES, ", ") .. ")")
   local printed = 0
   for i = nlog + 1, #log do if tostring(log[i]):find("map %d") or tostring(log[i]):find("mapprobe") then printed = printed + 1 end end
@@ -3885,7 +3951,7 @@ do
   -- 14. the tool strip: three slots are disabled with the version they come in
   local keys, soon = {}, {}
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
-  check(table.concat(keys, ",") == "starpen,pin,town,findme,full", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen")
+  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail)")
   check(soon.starpen and soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen, Pin and Town Pins are disabled")
   local wantV = { starpen = "0.5.3", pin = "0.5.2", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
   local origSS = NS.SetStatus
@@ -4067,8 +4133,10 @@ if MODE ~= "minimal" then
   win:Show()
   NS.ShowTab("quests")
   local d = drawn()
-  local want = { "Interface\\DialogFrame\\UI-DialogBox-Border", "Interface\\Tooltips\\UI-Tooltip-Border", "Interface\\DialogFrame\\UI-DialogBox-Header",
-    "Interface\\QuestFrame\\UI-QuestLog-BookIcon", "Interface\\Buttons\\UI-Panel-Button-Up", "Interface\\Buttons\\UI-Panel-Button-Down",
+  -- 0.5.1.4: the dialog border + header plate gave way to the map-window frame (its own thin frame here: no WorldMapFrame);
+  -- the shell is the inset marble
+  local want = { "Interface\\Tooltips\\UI-Tooltip-Border", "Interface\\FrameGeneral\\UI-Background-Marble",
+    os.getenv("DM_WMF") and "atlas:UI-HUD-Map-Portrait" or "Interface\\QuestFrame\\UI-QuestLog-BookIcon", "Interface\\Buttons\\UI-Panel-Button-Up", "Interface\\Buttons\\UI-Panel-Button-Down",
     "Interface\\Buttons\\UI-Panel-Button-Disabled", "Interface\\Common\\Common-Input-Border", "Interface\\FrameGeneral\\UI-Background-Rock",
     "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", "Interface\\QuestFrame\\QuestBG" }
   local miss = {}
@@ -4076,8 +4144,17 @@ if MODE ~= "minimal" then
   check(#miss == 0, "0.5.1 WoW theme: the window draws the game's own art (frame, header, portrait, buttons, tabs, panels, parchment)" .. (#miss > 0 and (" missing: " .. table.concat(miss, ", ")) or ""))
   check(not d["Interface\\AddOns\\DarkMatter\\Media\\wow-slate"] and not d["Interface\\AddOns\\DarkMatter\\Media\\wow-parchment"],
     "0.5.1 WoW theme: Dark Matter's own slate/parchment are not used while the stock art loads")
-  check(W.stockClose and W.stockClose:IsShown(), "0.5.1 WoW theme: the stock UIPanelCloseButton is shown")
-  W.stockClose._scripts.OnClick(W.stockClose, "LeftButton")
+  if os.getenv("DM_WMF") then
+    -- 0.5.1.4: the map window's own close-button art is drawn on Dark Matter's close button
+    check(W.closeFrom == "map window" and not W.stockClose:IsShown(), "0.5.1.4 WoW theme: the close button wears the map window's close art")
+    local cb
+    for _, f in ipairs(ALL) do if f._ftype == "Button" and f._parent == win and f:IsShown() and f._w == 24 and f._scripts.OnClick then cb = f end end
+    check(cb ~= nil, "0.5.1.4 WoW theme: the close button is shown at the map window's size (24)")
+    cb._scripts.OnClick(cb, "LeftButton")
+  else
+    check(W.stockClose and W.stockClose:IsShown() and W.closeFrom == "UIPanelCloseButton", "0.5.1 WoW theme: the stock UIPanelCloseButton is shown")
+    W.stockClose._scripts.OnClick(W.stockClose, "LeftButton")
+  end
   check(not win:IsShown(), "0.5.1 WoW theme: the stock close button closes the window")
   win:Show()
   -- Journals: section tabs are the character-panel tabs; the Map tab gets the stock framing too
@@ -4107,7 +4184,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.3 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.4 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -4605,6 +4682,216 @@ if MODE ~= "minimal" then
   QL.Forget()
   NS.tabs.quests.Refresh()
   PlaySound, SOUNDKIT = savePS, saveSK
+  NS.SetTheme("wow")
+end
+
+-- ===== 0.5.1.4: close-up detail (the game's minimap tiles), the map-window size and the WoW theme's map-window frame =====
+if MODE == "full" then
+  local NS = DarkMatter
+  local CU, MW, W = NS.MapCloseUp, NS.MapWindow, NS.windowParts
+  -- 1. no OpenMap file path anywhere in Dark Matter (code, data, docs, art)
+  local hits = {}
+  for _, path in ipairs(DM_FILES or {}) do
+    local fh = io.open(path, "rb") local src = fh and fh:read("*a") or "" if fh then fh:close() end
+    if src:find("Interface\\AddOns\\OpenMap", 1, true) or src:find("Interface\\\\AddOns\\\\OpenMap", 1, true) or src:lower():find("interface[\\/]+addons[\\/]+openmap") then hits[#hits + 1] = path end
+  end
+  check(#(DM_FILES or {}) > 30 and #hits == 0, "0.5.1.4: the string Interface\\AddOns\\OpenMap appears nowhere in Dark Matter " .. table.concat(hits, ", "))
+  check(io.open(arg[1] .. "/LICENSES/THIRD_PARTY.md") ~= nil and io.open(arg[1] .. "/Data_Minimap.lua"):read("*a"):find("Permission is hereby granted", 1, true),
+    "0.5.1.4: the minimap tile table carries OpenMap's MIT notice; LICENSES/THIRD_PARTY.md is shipped")
+  -- excluded art never referenced: no OpenMap texture folders, no Blizzard file bundled (Media holds only our own art)
+  local media = {}
+  for _, path in ipairs(DM_FILES or {}) do local f = path:match("[/\\]Media[/\\]([^/\\]+)$") if f then media[#media + 1] = f end end
+  local odd = {}
+  for _, f in ipairs(media) do if not f:find("^wow%-") and not f:find("^cls%-") and not f:find("^dm%-") then odd[#odd + 1] = f end end
+  local srcAll = ""
+  for _, f in ipairs({ "MapCloseUp.lua", "Tab_Map.lua", "MapProbe.lua", "MapWindow.lua", "Window.lua" }) do srcAll = srcAll .. io.open(arg[1] .. "/" .. f):read("*a") end
+  local excluded = {}
+  for _, k in ipairs({ "MapMiniLOD", "MapDungeonDrawn", "MapChart", "MapGapFill" }) do if srcAll:find(k, 1, true) then excluded[#excluded + 1] = k end end
+  check(#excluded == 0, "0.5.1.4: OpenMap's art folders (MapMiniLOD, MapDungeonDrawn, MapChart, MapGapFill) are never referenced " .. table.concat(excluded, ","))
+  check(#media > 10 and #odd == 0, "0.5.1.4: Media holds only Dark Matter's own art (no game or OpenMap file bundled) " .. table.concat(odd, ","))
+
+  -- 2. the close-up on a made-up continent (16000 yd square, every tile has a file, the zone covers it)
+  local MD = NS.MapData
+  local saveZoneAt, saveArt, saveEx, saveTiles = MD.ZoneAt, MD.Art, MD.Explored, NS.MinimapTiles
+  local saveFrames, saveCells = CU.frames, CU.cells
+  CU.frames, CU.cells = { [9001] = { inst = 0, X0 = 8000, Y0 = 8000, X1 = -8000, Y1 = -8000 } }, {}
+  NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) return 1000000 + k end }) }
+  MD.ZoneAt = function(_, x, y) return { id = 77 }, x, y end
+  MD.Art = function() return { w = 1000, h = 1000 } end
+  local exploredHalf = { { offsetX = 0, offsetY = 0, textureWidth = 500, textureHeight = 1000 } }
+  MD.Explored = function() return exploredHalf end
+  local host = CreateFrame("Frame", nil, UIParent)
+  local function ctxAt(S, vw, vh)
+    local ox, oy = 0.5 * S - vw / 2, 0.5 * S - vh / 2
+    return { host = host, conts = { { id = 9001, alpha = 1 } }, place = function() return { 0, 1, 0, 1 } end,
+      toScreen = function(wx, wy) return wx * S - ox, wy * S - oy end, vw = vw, vh = vh }
+  end
+  local function shown()
+    local list = {}
+    for _, t in ipairs(CU.pool) do if t:IsShown() then list[#list + 1] = t end end
+    return list
+  end
+  NS.db.map = NS.db.map or {}
+  NS.db.map.closeUp, NS.db.map.closeMix = true, nil
+  CU.unavailable, CU.failed, CU.fails, CU.loaded = nil, {}, 0, 0
+  -- fades keyed to pixels per yard
+  check(CU.Mix(0.10) == 0 and CU.Mix(0.20) == 0 and CU.Mix(0.27) > 0 and CU.Mix(0.27) < 0.45 and math.abs(CU.Mix(0.48) - 0.855) < 1e-6 and math.abs(CU.Mix(0.9) - 0.855) < 1e-6 and CU.Mix(0.5, 0) == 0,
+    "0.5.1.4 close-up: tiles mix in from 0.20 px/yd and run deep toward 85% by 0.48 px/yd (0 below; strength 0 = off)")
+  check(math.abs(CU.MaxScale(9001, 1000) - 0.96 * 16000 / 1000) < 1e-6, "0.5.1.4 close-up: the deepest zoom stops at twice the minimap's own sharpness")
+  local r1 = CU.Layout(ctxAt(8000, 600, 400)) -- 0.5 px/yd
+  local list = shown()
+  local bad, over = 0, 0
+  for i, t in ipairs(list) do
+    local p = t._pts[1]
+    local x1, y1 = p[4], -p[5]
+    if x1 >= 300 - 1e-6 then bad = bad + 1 end
+    for j = i + 1, #list do
+      local q = list[j]._pts[1]
+      local ax2, ay2, bx1, by1 = x1 + t._w, y1 + t._h, q[4], -q[5]
+      local ix = math.min(ax2, bx1 + list[j]._w) - math.max(x1, bx1)
+      local iy = math.min(ay2, by1 + list[j]._h) - math.max(y1, by1)
+      if ix > 0.01 and iy > 0.01 then over = over + 1 end
+    end
+  end
+  check(r1.pieces > 0 and bad == 0, "0.5.1.4 close-up: explored ground only (" .. r1.pieces .. " pieces, " .. bad .. " on unexplored ground)")
+  check(over == 0, "0.5.1.4 close-up: strips never overlap (" .. over .. ")")
+  check(r1.tiles <= 64 and math.abs(r1.mix - 0.855) < 1e-3 and r1.grain and r1.grain > 0, "0.5.1.4 close-up: deep mix, paper grain on, tiles in view " .. r1.tiles)
+  local alphaOK = true
+  for _, t in ipairs(list) do if math.abs((t._alpha or 1) - r1.mix) > 1e-6 then alphaOK = false end end
+  check(alphaOK and list[1] and list[1]._vc and list[1]._vc[3] < 0.9, "0.5.1.4 close-up: tiles at the mix strength, tinted toward parchment")
+  local poolN = #CU.pool
+  CU.Layout(ctxAt(8000, 600, 400))
+  check(#CU.pool == poolN, "0.5.1.4 close-up: textures are pooled (no new ones on redraw)")
+  exploredHalf = {}
+  CU.Forget()
+  local r0 = CU.Layout(ctxAt(8000, 600, 400))
+  check(r0.pieces == 0, "0.5.1.4 close-up: nothing explored -> no tiles at all")
+  exploredHalf = { { offsetX = 0, offsetY = 0, textureWidth = 1000, textureHeight = 1000 } }
+  CU.Forget()
+  local rBig = CU.Layout(ctxAt(4000, 3000, 3000)) -- 0.25 px/yd over ~22x22 tiles
+  check(rBig.tiles > 64 and rBig.pieces == 0, "0.5.1.4 close-up: more than 64 tiles in view -> none drawn (" .. rBig.tiles .. ")")
+  local rLow = CU.Layout(ctxAt(1600, 600, 400)) -- 0.1 px/yd: mid zoom keeps the parchment only
+  check(rLow.pieces == 0 and rLow.mix == 0, "0.5.1.4 close-up: mid zoom shows the map pictures only (no middle layer)")
+  -- OpenMap installed or not: the same drawing
+  LOADED.OpenMap = true
+  local a1 = CU.Layout(ctxAt(8000, 600, 400))
+  LOADED.OpenMap = nil
+  local a2 = CU.Layout(ctxAt(8000, 600, 400))
+  check(a1.pieces == a2.pieces and a1.tiles == a2.tiles and a1.mix == a2.mix and CU.Label() == CU.LABEL_ON, "0.5.1.4 close-up: OpenMap present or absent draws the same (" .. a1.pieces .. "/" .. a2.pieces .. ")")
+  -- the client refuses the tiles -> plain map art and the plain label
+  local saveST = FrameMT.SetTexture
+  FrameMT.SetTexture = function(t, f, ...) if type(f) == "number" and f >= 1000000 then return false end return saveST(t, f, ...) end
+  CU.failed, CU.fails, CU.loaded = {}, 0, 0
+  for _, t in ipairs(CU.pool) do t.dmFile = nil end
+  CU.Layout(ctxAt(8000, 600, 400))
+  local rF = CU.Layout(ctxAt(8000, 600, 400))
+  FrameMT.SetTexture = saveST
+  check(CU.unavailable == true and rF.pieces == 0 and CU.Label() == CU.LABEL_OFF, "0.5.1.4 close-up: tiles that do not load -> plain map pictures, label '" .. CU.Label() .. "'")
+  CU.unavailable, CU.failed, CU.fails, CU.loaded = nil, {}, 0, 0
+  NS.db.map.closeUp = false
+  check(CU.Layout(ctxAt(8000, 600, 400)).pieces == 0 and CU.Label() == CU.LABEL_OFF, "0.5.1.4 close-up: switched off -> none drawn, plain label")
+  NS.db.map.closeUp = true
+  for _, t in ipairs(CU.pool) do t:Hide() end
+  if CU.grain then CU.grain:Hide() end
+  MD.ZoneAt, MD.Art, MD.Explored, NS.MinimapTiles = saveZoneAt, saveArt, saveEx, saveTiles
+  CU.frames, CU.cells = saveFrames, saveCells
+  check(CU.TileAt(0, 0) == 32 and select(2, CU.TileAt(533.4, 0)) == 30 and CU.TileAt(0, -1) == 32, "0.5.1.4 close-up: tile grid 533.33 yd, x east / y south from the centre")
+
+  -- 3. the window size from the game's map window (read only), with its fallbacks
+  local saveWMF = WorldMapFrame
+  if os.getenv("DM_DUMP") then local l = MW.last or {} io.stderr:write("MWLAST ", tostring(l.w), "x", tostring(l.h), " ", tostring(l.source), " ", tostring(NS.theme.m.w), " win ", tostring(DarkMatterFrame._w), "\n") end
+  local function copyM() local c = {} for k, v in pairs(NS.theme.m) do c[k] = v end return c end
+  local base = NS.theme.m
+  WMF_CALLS, WMF_WRITES = {}, {}
+  WorldMapFrame = MakeWMF(1035, 640)
+  local c = copyM()
+  local res = MW.Apply(c)
+  check(res.w == 1035 and res.h == 640 and c.w == 1035 and c.h == 640 and res.source == "WorldMapFrame size" and not res.fallback and not res.clamped,
+    "0.5.1.4 window: as large as the game's map window (1035x640)")
+  check(c.bodyW - c.w == base.bodyW - base.w and c.pageW - c.w == base.pageW - base.w and c.footerTop - c.h == base.footerTop - base.h and c.exitX - c.w == base.exitX - base.w
+    and c.railW == base.railW and c.tabY == base.tabY and c.bodyX == base.bodyX, "0.5.1.4 window: the body and footer follow the size, the rail and tabs keep their place")
+  WorldMapFrame = MakeWMF(1035, 640, { scale = 1.25 })
+  res = MW.Apply(copyM())
+  check(res.w == 1294 and res.h == 800, "0.5.1.4 window: the map window's own scale is taken into account (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  WorldMapFrame = MakeWMF(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
+  res = MW.Apply(copyM())
+  check(res.w == 1035 and res.h == 534 and res.source == "WorldMapFrame windowed size", "0.5.1.4 window: a maximized map uses its windowed size (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  WorldMapFrame = MakeWMF(500, 300)
+  res = MW.Apply(copyM())
+  check(res.w == 880 and res.h == 500 and res.clamped, "0.5.1.4 window: a tiny map window is clamped to 880x500")
+  local n0 = copyM()
+  WorldMapFrame = nil
+  res = MW.Apply(n0)
+  check(res.fallback and n0.w == base.w and n0.h == base.h, "0.5.1.4 window: no map window -> Dark Matter's own size")
+  WorldMapFrame = MakeWMF(1035, 640)
+  local saveICL = InCombatLockdown
+  InCombatLockdown = function() return true end
+  res = MW.Apply(copyM())
+  InCombatLockdown = saveICL
+  check(res.w == 1035, "0.5.1.4 window: reading the size works in combat")
+  local badCall = {}
+  for _, k in ipairs(WMF_CALLS) do if not (k:find("^Get") or k:find("^Is")) then badCall[#badCall + 1] = k end end
+  check(#WMF_WRITES == 0 and #badCall == 0, "0.5.1.4 window: WorldMapFrame is only read (no Show, no writes, no hooks): " .. table.concat(WMF_WRITES, ",") .. table.concat(badCall, ","))
+  local win = NS.GetWindow()
+  check(win._w == NS.theme.m.w and win._h == NS.theme.m.h, "0.5.1.4 window: the built window has the metrics' size " .. win._w .. "x" .. win._h)
+
+  -- 4. the WoW theme's map-window frame; class themes untouched
+  NS.SetTheme("wow")
+  win:Show()
+  local Ch = W.mapChrome
+  local ownOn, nineOn = 0, 0
+  for _, t in ipairs(Ch.own) do if t:IsShown() then ownOn = ownOn + 1 end end
+  for _, k in ipairs(MW.NINE) do if Ch.nine[k]:IsShown() then nineOn = nineOn + 1 end end
+  if os.getenv("DM_WMF") then
+    check(Ch.mirrored and nineOn == 8 and ownOn == 0 and Ch.nine.TopLeftCorner._file == "atlas:UI-Frame-Map-CornerTopLeft" and Ch.nine.TopEdge._file == "atlas:_UI-Frame-Map-EdgeTop",
+      "0.5.1.4 WoW theme: the map window's 8 border pieces are drawn around ours (by atlas)")
+    check(W.medalFrom == "map window" and W.closeFrom == "map window", "0.5.1.4 WoW theme: the map window's portrait and close-button art")
+  else
+    check(not Ch.mirrored and nineOn == 0 and ownOn == 8, "0.5.1.4 WoW theme: no map window to read -> Dark Matter's own thin bronze frame (8 lines)")
+    check(W.medalFrom == "book" and W.closeFrom == "UIPanelCloseButton", "0.5.1.4 WoW theme: small book portrait, the stock close button")
+  end
+  check(W.mapLook and Ch.strip:IsShown() and Ch.strip._h == NS.MAP_TITLE_H and W.title._pts[#W.title._pts][2] == Ch.strip, "0.5.1.4 WoW theme: a slim dark title strip with the title centred on it")
+  local tC = W.title._tcol or {}
+  check(tC[1] and tC[1] > 0.9 and tC[2] > 0.7 and tC[3] < 0.3, "0.5.1.4 WoW theme: the title is gold")
+  NS.ShowTab("map")
+  local M = NS.MapTab
+  local cr = M.crumbs
+  M.FlyTo(1426) for _ = 1, 30 do if M.Tick then M.Tick(0.05) end end
+  if M.Crumbs then M.Crumbs() end
+  check(M.crumbFaces and cr[1] and cr[1].face.shown and cr[1].face.prefix == "btn_red" and (not (cr[2] and cr[2]:IsShown()) or (cr[2].face.prefix == "btn_field" and cr[2].arrow:IsShown())) and not cr[1].sep:IsShown(),
+    "0.5.1.4 WoW theme: the breadcrumb is drawn like the stock map's top-bar buttons (red World, dark buttons with arrows)")
+  NS.SetTheme("warrior")
+  local anyOn = 0
+  for _, t in ipairs(Ch.all) do if t:IsShown() then anyOn = anyOn + 1 end end
+  check(anyOn == 0 and not W.mapLook and W.medalFrom == nil, "0.5.1.4 class themes: none of the map-window frame is drawn")
+  check(not M.crumbFaces and not cr[1].face.shown and (not (cr[2] and cr[2]:IsShown()) or cr[1].sep:IsShown()), "0.5.1.4 class themes: the plain text breadcrumb with '>' is unchanged")
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+
+  -- 5. /dm frameprobe
+  WorldMapFrame = MakeWMF(1035, 640)
+  local said = {}
+  local oldPrint = NS.Print
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("frameprobe")
+  NS.Print = oldPrint
+  local all = table.concat(said, "\n")
+  if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
+  check(said[1] == "frameprobe 0.5.1.4 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+    and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
+    and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
+    and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
+    "0.5.1.4 /dm frameprobe: the map window's size, border pieces, title, close button and portrait (saved)")
+  WorldMapFrame = nil
+  MW.art = nil
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("frameprobe")
+  NS.Print = oldPrint
+  check(table.concat(said, "\n"):find("frame 1: WorldMapFrame no", 1, true) and table.concat(said, "\n"):find("frame 3: border: not readable", 1, true), "0.5.1.4 /dm frameprobe: no map window -> says so")
+  WorldMapFrame = saveWMF
+  MW.art = nil
+  MW.Art()
   NS.SetTheme("wow")
 end
 

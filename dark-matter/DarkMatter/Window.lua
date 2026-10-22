@@ -44,11 +44,16 @@ end
 
 -- Class-theme art space: the previewer's 880x680 css window (rim 38, header 46, footer 48). Its shell box
 -- (38..842 x 84..594) is mapped onto ours (pad..w-pad x shellTop..footerTop), so the art frames our layout.
+-- 0.5.1.4: the art keeps the scale it has on the 880x680 window; a window sized to the game's map window only makes the
+-- art space wider / taller (aw x ah css), so the frame's edges run longer and every piece keeps its density.
 local function ArtMap()
   local m = NS.theme.m
-  local sx = (m.w - 2 * m.pad) / 804
-  local sy = (m.footerTop - m.shellTop) / 510
-  return sx, sy, m.pad - 38 * sx, m.shellTop - 84 * sy
+  local b = NS.MapWindow and NS.MapWindow.bases and NS.MapWindow.bases[m] or m
+  local sx = (b.w - 2 * m.pad) / 804
+  local sy = (b.footerTop - m.shellTop) / 510
+  local aw = 880 + (m.w - b.w) / sx
+  local ah = 680 + (m.h - b.h) / sy
+  return sx, sy, m.pad - 38 * sx, m.shellTop - 84 * sy, aw, ah
 end
 NS.ClassArtMap = ArtMap
 
@@ -57,8 +62,8 @@ local function FitScale(f)
   local m = NS.theme.m
   local w, h = m.w, m.h
   if NS.theme.classArt then
-    local sx, sy = ArtMap()
-    w, h = 880 * sx, 680 * sy
+    local sx, sy, _, _, aw, ah = ArtMap()
+    w, h = aw * sx, ah * sy
   end
   local s = 1
   local uh, uw = NS.Num(UIParent:GetHeight()), NS.Num(UIParent:GetWidth())
@@ -113,7 +118,7 @@ local function BuildClassArt(f)
       return
     end
     top:Show()
-    local sx, sy, ax, ay = ArtMap()
+    local sx, sy, ax, ay, AW, AH = ArtMap()
     local k = (sx + sy) / 2
     local E = ca.edges
     local c, fd = E.corner, E.fade
@@ -121,7 +126,7 @@ local function BuildClassArt(f)
     -- art css rect -> window units
     local function X(v) return ax + v * sx end
     local function Y(v) return ay + v * sy end
-    local pos = { { 0, 0 }, { 880 - c, 0 }, { 0, 680 - c }, { 880 - c, 680 - c } }
+    local pos = { { 0, 0 }, { AW - c, 0 }, { 0, AH - c }, { AW - c, AH - c } }
     for i = 1, 4 do
       local cell = { CORNER[i][1], CORNER[i][2], 240, 240 }
       local l, r, t, b = TC(cell, 512, 512)
@@ -130,12 +135,12 @@ local function BuildClassArt(f)
     end
     -- edge strips start under the corner fade (c - fd) and repeat len[i] css per tile
     local s0 = c - fd
-    local hw, vh = 880 - 2 * s0, 680 - 2 * s0
+    local hw, vh = AW - 2 * s0, AH - 2 * s0
     local L = fr.len
     Put(A.fe[1], fr.tb, 0, hw / L[1], 0.5 / 512, 239.5 / 512, X(s0), Y(0), hw * sx, c * sy, "REPEAT", "CLAMP")
-    Put(A.fe[2], fr.tb, 0, hw / L[2], 256.5 / 512, 495.5 / 512, X(s0), Y(680 - c), hw * sx, c * sy, "REPEAT", "CLAMP")
+    Put(A.fe[2], fr.tb, 0, hw / L[2], 256.5 / 512, 495.5 / 512, X(s0), Y(AH - c), hw * sx, c * sy, "REPEAT", "CLAMP")
     Put(A.fe[3], fr.lr, 0.5 / 512, 239.5 / 512, 0, vh / L[3], X(0), Y(s0), c * sx, vh * sy, "CLAMP", "REPEAT")
-    Put(A.fe[4], fr.lr, 256.5 / 512, 495.5 / 512, 0, vh / L[4], X(880 - c), Y(s0), c * sx, vh * sy, "CLAMP", "REPEAT")
+    Put(A.fe[4], fr.lr, 256.5 / 512, 495.5 / 512, 0, vh / L[4], X(AW - c), Y(s0), c * sx, vh * sy, "CLAMP", "REPEAT")
     for i, sp in ipairs(ov.list) do
       local tex = A.os[i]
       if not tex then
@@ -144,10 +149,13 @@ local function BuildClassArt(f)
       end
       local a, t2 = sp[1], sp[2]
       local l, r, t, b = TC(t2, 512, ov.sh)
-      Put(tex, ov.sprites, l, r, t, b, X(a[1]), Y(a[2]), a[3] * sx, a[4] * sy)
+      -- sprites on the right / bottom half stay at their edge when the art space is wider / taller
+      local px = a[1] + ((a[1] + a[3] / 2 > 440) and (AW - 880) or 0)
+      local py = a[2] + ((a[2] + a[4] / 2 > 340) and (AH - 680) or 0)
+      Put(tex, ov.sprites, l, r, t, b, X(px), Y(py), a[3] * sx, a[4] * sy)
     end
     local R, file, pw, ph = ca.rects, ca.parts, ca.pw, ca.ph
-    local aw, ah = 880 * sx, 680 * sy
+    local aw, ah = AW * sx, AH * sy
     local o = ca.orn * k
     local function P(tex, key, x, y, w, h)
       local l, r, t, b = TC(R[key], pw, ph)
@@ -158,11 +166,11 @@ local function BuildClassArt(f)
     P(A.orn.bl, "orn_bl", ax, ay + ah - o, o, o)
     P(A.orn.br, "orn_br", ax + aw - o, ay + ah - o, o, o)
     local cs = ca.crest[1] * k
-    local cx, cy = ax + (440 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy
+    local cx, cy = ax + (AW / 2 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy
     P(A.crest, "crest", cx, cy, cs, cs)
     local bw, bh = ca.base[1] * k, ca.base[2] * k
     local bs = math.min(bw, bh)
-    local bx, by = ax + 440 * sx - bs / 2, ay + 642 * sy + (bh - bs) / 2
+    local bx, by = ax + AW / 2 * sx - bs / 2, ay + (642 + AH - 680) * sy + (bh - bs) / 2
     P(A.base, "base", bx, by, bs, bs)
     -- everything drawn (art rect + overhanging crest and base), window-relative, y down
     A.box = { math.min(ax, cx, bx), math.min(ay, cy), math.max(ax + aw, cx + cs, bx + bs), math.max(ay + ah, by + bs) }
@@ -330,8 +338,94 @@ local function BuildSettings(f)
   return pop
 end
 
+
+-- 0.5.1.4 WoW theme: the frame of the game's own map window (WorldMapFrame), drawn on ours. When the map window's
+-- border pieces can be read (NS.MapWindow.Art), the same 8 game textures are placed around our window the way its
+-- NineSlice places them; otherwise Dark Matter draws its own thin bronze frame. A slim dark title strip with the gold
+-- title sits under either. Class themes never show any of it.
+local MAP_TITLE_H = 24
+local BRONZE = { 0.72, 0.57, 0.30, 1 }
+local function BuildMapChrome(f)
+  local MW = NS.MapWindow
+  local C = { nine = {}, own = {}, all = {} }
+  local function T(layer, sub) local t = f:CreateTexture(nil, layer, nil, sub) C.all[#C.all + 1] = t return t end
+  C.strip = T("BACKGROUND", 6)
+  C.strip:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -2)
+  C.strip:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
+  C.strip:SetHeight(MAP_TITLE_H)
+  C.stripLine = T("BACKGROUND", 7)
+  C.stripLine:SetPoint("TOPLEFT", C.strip, "BOTTOMLEFT", 0, 0)
+  C.stripLine:SetPoint("TOPRIGHT", C.strip, "BOTTOMRIGHT", 0, 0)
+  C.stripLine:SetHeight(1)
+  -- own thin frame: a dark outer line and a bronze inner line on each side
+  local sides = { { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true }, { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false } }
+  for i, sd in ipairs(sides) do
+    for j = 0, 1 do
+      local t = T("BORDER", 4)
+      local ix = (sd[1]:find("RIGHT") and -j or j)
+      local iy = (sd[1]:find("BOTTOM") and j or -j)
+      local ix2 = (sd[2]:find("RIGHT") and -j or j)
+      local iy2 = (sd[2]:find("BOTTOM") and j or -j)
+      t:SetPoint(sd[1], f, sd[1], ix, iy)
+      t:SetPoint(sd[2], f, sd[2], ix2, iy2)
+      if sd[3] then t:SetHeight(1) else t:SetWidth(1) end
+      t.inner = j == 1
+      C.own[#C.own + 1] = t
+    end
+    C.own[i * 2 - 1].side = i
+  end
+  for _, k in ipairs(MW.NINE) do C.nine[k] = T("BORDER", 5) end
+  local CORNER_PT = { TopLeftCorner = "TOPLEFT", TopRightCorner = "TOPRIGHT", BottomLeftCorner = "BOTTOMLEFT", BottomRightCorner = "BOTTOMRIGHT" }
+  -- edge: its two corners, the points it joins them at, and whether it runs across (its height is the art's)
+  local EDGE = { TopEdge = { "TopLeftCorner", "TOPLEFT", "TOPRIGHT", "TopRightCorner", "TOPRIGHT", "TOPLEFT", true },
+    BottomEdge = { "BottomLeftCorner", "BOTTOMLEFT", "BOTTOMRIGHT", "BottomRightCorner", "BOTTOMRIGHT", "BOTTOMLEFT", true },
+    LeftEdge = { "TopLeftCorner", "TOPLEFT", "BOTTOMLEFT", "BottomLeftCorner", "BOTTOMLEFT", "TOPLEFT", false },
+    RightEdge = { "TopRightCorner", "TOPRIGHT", "BOTTOMRIGHT", "BottomRightCorner", "BOTTOMRIGHT", "TOPRIGHT", false } }
+  function C.Mirror()
+    local A = MW.Art()
+    if not (A and A.full) then return false end
+    for _, k in ipairs(MW.NINE) do
+      if not MW.Paint(C.nine[k], A.nine[k]) then return false end
+    end
+    for k, pt in pairs(CORNER_PT) do
+      local p, t = A.nine[k], C.nine[k]
+      t:ClearAllPoints()
+      local own = p.point == pt
+      t:SetPoint(pt, f, pt, own and p.x or 0, own and p.y or 0)
+      t:SetSize(p.w or 32, p.h or 32)
+    end
+    for k, e in pairs(EDGE) do
+      local p, t = A.nine[k], C.nine[k]
+      t:ClearAllPoints()
+      t:SetPoint(e[2], C.nine[e[1]], e[3], 0, 0)
+      t:SetPoint(e[5], C.nine[e[4]], e[6], 0, 0)
+      if e[7] then t:SetHeight(p.h or 16) else t:SetWidth(p.w or 16) end
+    end
+    return true
+  end
+  function C.Apply(on)
+    C.mirrored = false
+    if not on then for _, t in ipairs(C.all) do t:Hide() end return end
+    C.strip:SetColorTexture(0.055, 0.05, 0.045, 0.97) C.strip:Show()
+    C.stripLine:SetColorTexture(BRONZE[1] * 0.6, BRONZE[2] * 0.6, BRONZE[3] * 0.6, 1) C.stripLine:Show()
+    C.mirrored = C.Mirror()
+    for _, k in ipairs(MW.NINE) do if C.mirrored then C.nine[k]:Show() else C.nine[k]:Hide() end end
+    for _, t in ipairs(C.own) do
+      if C.mirrored then t:Hide()
+      else
+        if t.inner then t:SetColorTexture(BRONZE[1], BRONZE[2], BRONZE[3], BRONZE[4]) else t:SetColorTexture(0, 0, 0, 0.9) end
+        t:Show()
+      end
+    end
+  end
+  return C
+end
+NS.MAP_TITLE_H = MAP_TITLE_H
+
 local function Build()
   local m = NS.theme.m
+  -- 0.5.1.4: as large as the game's own map window (read only; Dark Matter's own size when it cannot be read)
+  if NS.MapWindow then NS.MapWindow.Apply(m) end
   local f = CreateFrame("Frame", "DarkMatterFrame", UIParent)
   f:SetSize(m.w, m.h)
   f:SetFrameStrata("HIGH")
@@ -479,19 +573,60 @@ local function Build()
   local art = BuildClassArt(f)
   W.classArt = art
   local wowOnly = { frameNine, tbSlice, tint, line, medal }
+  local mapChrome = BuildMapChrome(f)
+  W.mapChrome = mapChrome
   NS.OnSkin(function()
     art.Apply()
     local ca = NS.theme.classArt
+    -- 0.5.1.4: the WoW theme wears the game's map-window frame (theme.mapWindow) instead of the dialog border + plate
+    local mapLook = (not ca) and NS.theme.mapWindow and true or false
+    W.mapLook = mapLook
     for _, o in ipairs(wowOnly) do if ca then o:Hide() else o:Show() end end
+    if mapLook then frameNine:Hide() tbSlice:Hide() end
+    mapChrome.Apply(mapLook)
+    tb:ClearAllPoints()
+    if mapLook then
+      tb:SetPoint("TOPLEFT", f, "TOPLEFT", 40, -2)
+      tb:SetPoint("TOPRIGHT", f, "TOPRIGHT", -34, -2)
+      tb:SetHeight(MAP_TITLE_H)
+    else
+      tb:SetPoint("TOPLEFT", f, "TOPLEFT", m.titleX, -m.titleY)
+      tb:SetSize(m.titleW, m.titleH)
+    end
+    -- the portrait: the map window's own when it can be read, else the quest-log book, small, at the corner
+    medal:ClearAllPoints()
+    local A = mapLook and NS.MapWindow.Art()
+    local pp = A and A.portrait
+    if mapLook and pp and pp.shown and NS.MapWindow.Paint(medalTex, pp) then
+      medal:SetSize(pp.w or 58, pp.h or 58)
+      medal:SetPoint("TOPLEFT", f, "TOPLEFT", pp.point == "TOPLEFT" and pp.x or -6, pp.point == "TOPLEFT" and pp.y or 6)
+      W.medalFrom = "map window"
+    elseif mapLook then
+      NS.SetPiece(medalTex, "medal")
+      medal:SetSize(40, 40)
+      medal:SetPoint("TOPLEFT", f, "TOPLEFT", -10, 10)
+      W.medalFrom = "book"
+    else
+      NS.SetPiece(medalTex, "medal")
+      medal:SetSize(m.medalSize, m.medalSize)
+      medal:SetPoint("TOPLEFT", f, "TOPLEFT", m.medalX, -m.medalY)
+      W.medalFrom = nil
+    end
     title:ClearAllPoints()
     if ca then
-      local sx, sy, ax, ay = ArtMap()
+      local sx, sy, ax, ay, AW = ArtMap()
       NS.SetFont(title, math.floor(ca.titleSize * 0.8 + 0.5), "")
-      title:SetPoint("CENTER", f, "TOPLEFT", ax + 440 * sx, -(ay + (61 + ca.titleDy) * sy))
+      title:SetPoint("CENTER", f, "TOPLEFT", ax + AW / 2 * sx, -(ay + (61 + ca.titleDy) * sy))
       local box = art.box -- everything drawn, incl. overhanging crest/base/ornaments: left, top, right, bottom (y down)
       if f.SetClampRectInsets then f:SetClampRectInsets(box[1], box[3] - m.w, -box[2], m.h - box[4]) end
       -- the whole frame art is a drag handle: the window's mouse area grows to it (content frames above stay clickable)
       if f.SetHitRectInsets then f:SetHitRectInsets(box[1], m.w - box[3], box[2], m.h - box[4]) end
+    elseif mapLook then
+      local tp = A and A.title
+      NS.SetFont(title, math.floor(math.max(11, math.min(15, tp and tp.size or 13)) + 0.5), "")
+      title:SetPoint("CENTER", mapChrome.strip, "CENTER", 0, 0)
+      if f.SetClampRectInsets then f:SetClampRectInsets(0, 0, 0, 0) end
+      if f.SetHitRectInsets then f:SetHitRectInsets(0, 0, 0, 0) end
     else
       NS.SetFont(title, m.titleSize, "")
       title:SetPoint("CENTER", tb, "CENTER", 0, 0)
@@ -503,33 +638,52 @@ local function Build()
     settings:ClearAllPoints() status:ClearAllPoints() share:ClearAllPoints() exit:ClearAllPoints() close:ClearAllPoints()
     local sRight, shLeft, midY
     if ca then
-      local sx, sy, ax, ay = ArtMap()
+      local sx, sy, ax, ay, AW, AH = ArtMap()
       local ft = ca.footer
-      local x, cy = ax + ft.pad * sx, ay + 618 * sy
-      local widths = { 90, ft.cols[2], 90, 90 }
+      local x, cy = ax + ft.pad * sx, ay + (618 + AH - 680) * sy
+      local widths = { 90, ft.cols[2] + (AW - 880), 90, 90 }
+      local cols = { ft.cols[1], ft.cols[2] + (AW - 880), ft.cols[3], ft.cols[4] }
       for i, b in ipairs({ settings, status, share, exit }) do
         b:SetWidth(widths[i] * sx)
         b:SetPoint("LEFT", f, "TOPLEFT", x, -cy)
         if i == 1 then sRight = x + widths[1] * sx elseif i == 3 then shLeft = x end
-        x = x + (ft.cols[i] + ft.gap) * sx
+        x = x + (cols[i] + ft.gap) * sx
       end
       midY = cy
-      close:SetPoint("TOPRIGHT", f, "TOPLEFT", ax + (880 - ca.close[1]) * sx, -(ay + ca.close[2] * sy))
+      close:SetSize(m.closeSize, m.closeSize)
+      close:SetPoint("TOPRIGHT", f, "TOPLEFT", ax + (AW - ca.close[1]) * sx, -(ay + ca.close[2] * sy))
       close:SetFrameLevel(f:GetFrameLevel() + 27)
     else
       settings:SetWidth(m.fbtnW) settings:SetPoint("TOPLEFT", f, "TOPLEFT", m.fbtnLeft, -m.fbtnY)
       share:SetWidth(m.fbtnW) share:SetPoint("TOPLEFT", f, "TOPLEFT", m.shareX, -m.fbtnY)
       exit:SetWidth(m.fbtnW) exit:SetPoint("TOPLEFT", f, "TOPLEFT", m.exitX, -m.fbtnY)
       sRight, shLeft, midY = m.fbtnLeft + m.fbtnW, m.shareX, m.fbtnY + m.fbtnH / 2
-      close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -(m.pad + m.closeRight), -(m.pad + m.closeTop))
       close:SetFrameLevel(f:GetFrameLevel() + 20)
+      if mapLook then
+        close:SetSize(22, 22)
+        close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -3, -3)
+      else
+        close:SetSize(m.closeSize, m.closeSize)
+        close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -(m.pad + m.closeRight), -(m.pad + m.closeTop))
+      end
     end
-    local useStock = stockClose and NS.theme.stockTemplates and not ca and NS.Stock.TemplateOK("UIPanelCloseButton", "Button")
+    -- the close button: the map window's own close-button art (map look), else the stock UIPanelCloseButton template
+    local cA = mapLook and A and A.close
+    W.closeFrom = nil
+    if cA and NS.MapWindow.Paint(closeTex, cA.normal) then
+      if not NS.MapWindow.Paint(closeGlow, cA.highlight) then NS.MapWindow.Paint(closeGlow, cA.normal) end
+      if cA.w and cA.h and cA.w >= 12 and cA.h >= 12 and cA.w <= 40 then close:SetSize(cA.w, cA.h) end
+      W.closeFrom = "map window"
+    else
+      NS.SetPiece(closeTex, "xbtn") NS.SetPiece(closeGlow, "xbtn")
+    end
+    local useStock = (not W.closeFrom) and stockClose and NS.theme.stockTemplates and not ca and NS.Stock.TemplateOK("UIPanelCloseButton", "Button")
     if useStock then
       stockClose:ClearAllPoints()
       stockClose:SetPoint("CENTER", close, "CENTER", 0, 0)
-      stockClose:SetSize(m.closeSize + 4, m.closeSize + 4)
+      if mapLook then stockClose:SetSize(28, 28) else stockClose:SetSize(m.closeSize + 4, m.closeSize + 4) end
       stockClose:Show() close:Hide()
+      W.closeFrom = W.closeFrom or "UIPanelCloseButton"
     else
       if stockClose then stockClose:Hide() end
       close:Show()
