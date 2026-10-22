@@ -22,8 +22,7 @@ local function Help()
   print("  /dm agscan  Adventure Guide: LFG rows kept/rejected -> DarkMatterDB.agscan")
   print("  /dm questprobe  Quests: which quest log, reward and watch APIs this client has -> DarkMatterDB.questprobe")
   print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
-  print("  /dm mapsweep  Map: check the map layers over every continent and zone (read-only; saved with the probes)")
-  print("  /dm mapmask on|off  Map: zone pictures cut to their shapes (on) or feathered rectangles")
+  print("  /dm mapsweep  Map: check the map layers over every continent and zone (read-only; saved with the probes): a masks line, then OK or FLAGGED per continent")
   print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
   print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (on by default)")
   print("  /dm trackorder on|off  keep the objective tracker in quest-log order (on by default)")
@@ -169,10 +168,8 @@ SlashCmdList["DARKMATTER"] = function(msg)
     -- 0.5.2b.3: the map layer check over every continent and zone at several zooms -> DarkMatterDB (read only)
     if NS.MapTab and NS.MapTab.Sweep then Say("mapsweep", NS.MapTab.Sweep()) end
   elseif cmd == "mapmask" then
-    if NS.MapTab and NS.MapTab.SetZoneMask then
-      NS.MapTab.SetZoneMask(rest ~= "off")
-      NS.Print("map zone shapes: " .. (rest == "off" and "off (feathered rectangles)" or "on"))
-    end
+    -- 0.5.2b.4: removed with the zone masks
+    NS.Print("/dm mapmask was removed in 0.5.2b.4: no zone is cut with a mask any more (one feathered zone picture at a time)")
   elseif cmd == "artprobe" then
     Say("artprobe", NS.Stock.Report())
   elseif cmd == "frameprobe" then

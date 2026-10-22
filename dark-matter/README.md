@@ -77,6 +77,11 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
 
+### 0.5.2b.4 changes
+- Map without masks, across all of Azeroth. At continent view you see only the continent picture (no zone rectangles, labels or torn edges). Zoomed in, only the zone under the middle of the view is drawn over the continent picture, feathered at its rim, so a zone's margin never covers another zone. Panning into the next zone crossfades the two.
+- The 0.5.2b.3 zone shape masks did not cut on 1.60.1. They left every zone as a full hard-edged rectangle, so they are gone, and so is `/dm mapmask`.
+- `/dm mapsweep` also flags overlap (more than one zone picture at once). It prints a `mapsweep masks:` line and one OK/FLAGGED line per continent.
+
 ### 0.5.2b.3 changes
 - Map layers fixed across all of Azeroth (every continent and zone):
   - At zone view the neighbouring zones are drawn at full strength, so they are crisp. Before, they faded out and the blown-up continent picture showed through as a blurry band with a seam.
@@ -91,7 +96,7 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
   - unmasked neighbours.
   The result is saved with the probes in DarkMatterDB.probeLog.
 - `/dm mapprobe` line 23 runs the same check for the current view and lists how many zones have a shape mask.
-- `/dm mapmask off` draws zones as feathered rectangles if a shape ever looks wrong. `/dm mapmask on` (the default) turns the shapes back on.
+- `/dm mapmask` (0.5.2b.3 only; removed in 0.5.2b.4).
 
 ### 0.5.2b.2 changes
 - Ready to Turn In is its own frame just below the visible bottom of the whole objective tracker (under Quests and Professions). It follows the tracker as it grows or shrinks (checked 10 times a second), slides up when Professions is collapsed or empty, and never overlaps it. With the tracker hidden it sits where the tracker would be.

@@ -3686,7 +3686,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.3 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.4 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3902,9 +3902,11 @@ do
   check(of[777001] and of[777002] and not of[777003], "0.5.0 map: explored overlays drawn (fog of war); mouse-over-only overlays skipped")
   check(math.abs(tcMax(dm.ov, 777002, 2) - 44 / 64) < 1e-9 and math.abs(tcMax(dm.ov, 777001, 4) - 200 / 256) < 1e-9, "0.5.0 map: overlay tiles cropped like the game's map")
   -- 0.5.1.6: the picture's rim fades to 0 (no rectangular edge); pieces well inside are whole
-  -- 0.5.2b.3: the focus zone's feathered picture is its underlay (the zone itself is cut to its shape)
-  local du = M.layers["u1426"]
-  check(du and du.feather and du.shown and du.level == 3 and du.alpha > 0.99 and not du.masked, "0.5.2b.3 map: the focus zone's own picture is drawn unmasked and feathered under the zones (its coast and sea)")
+  -- 0.5.2b.4: the focus zone's picture is feathered at its rim (no mask) and drawn over the continent picture
+  local du = M.layers[1426]
+  local noMask = true
+  for _, t in ipairs(du.tiles) do if rawget(t, "_masks") then noMask = false end end
+  check(du and du.feather and du.shown and du.level == 4 and du.alpha > 0.99 and noMask, "0.5.2b.4 map: the focus zone's own picture is feathered (no mask) at level 4 over the continent")
   local rim, rimOK, whole = 0, true, 0
   for _, t in ipairs(du.tiles) do
     local p = t._pts[1]
@@ -3924,8 +3926,12 @@ do
     for _, L in pairs(M.layers) do
       if L.id ~= M.world and NS.MapData.Is(L.id, "continent") then check(L.feather == (M.hasWorld and true or false), "0.5.1.7 map: a continent picture over the world picture is feathered") end
     end
-    local zs = NS.MapData.Zones(1415)
-    if zs and #zs >= 2 then check(math.abs(M.ZoneDrawAlpha(zs[1]) - M.ZoneDrawAlpha(zs[2])) < 1e-9, "0.5.1.7 map: a continent's zones fade in together (no patchwork)") end
+    local others = 0
+    for _, L in pairs(M.layers) do
+      local z = NS.MapData.ZoneEntry(L.id)
+      if z and L.shown and (L.alpha or 0) > 0.01 and L.id ~= 1426 and z.r and (z.r[2] - z.r[1]) * (z.r[4] - z.r[3]) >= 0.004 then others = others + 1 end
+    end
+    check(others == 0, "0.5.2b.4 map: at zone view only the focus zone's picture is drawn (no neighbour margins over it; " .. others .. " others)")
     local ref = M.RefMag()
     check(ref and M.ref and M.ref.level >= 3 and math.abs(ref - M.layers[M.ref.id].sc) < 1e-9,
       "0.5.1.8 map: the art magnification is read from the zone picture under the middle of the view (x" .. tostring(ref) .. ")")
@@ -3957,60 +3963,69 @@ do
   local q = M.OverlayTiles({ textureWidth = 300, textureHeight = 400, offsetX = 10, offsetY = 20, numTexturesWide = 1, numTexturesTall = 1, fileDataIDs = { 1, 2, 3, 4 } })
   check(#q == 4 and q[2][1] == 2 and q[2][2] == 266 and q[2][4] == 44 and q[2][6] == 64 and q[3][3] == 276 and q[3][5] == 144 and q[3][7] == 256
     and q[4][4] / q[4][6] == 44 / 64, "0.5.1.10 map: explored overlays tiled from their size like the game's map (2x2 for 300x400 even when the entry says 1x1)")
-  -- 0.5.2b.3: at zone view EVERY zone is drawn at full strength, cut to its own shape (the game's highlight as a mask)
-  local function zonesDrawn()
+  -- 0.5.2b.4: at zone view ONE zone picture (the zone under the middle of the view), feathered, no masks; panning into
+  -- the neighbour crossfades the two pictures, then only the neighbour is drawn
+  local function zonesDrawn(minA)
     local ids = {}
     for _, L in pairs(M.layers) do
       local id = L.id
-      if L.shown and not L.under and (L.alpha or 0) > 0.01 and id ~= M.world and not MD.Is(id, "continent") then ids[#ids + 1] = id end
+      local z = MD.ZoneEntry(id)
+      if L.shown and (L.alpha or 0) > (minA or 0.01) and id ~= M.world and not MD.Is(id, "continent") and not (z and z.r and (z.r[2] - z.r[1]) * (z.r[4] - z.r[3]) < 0.004) then ids[#ids + 1] = id end
     end
     table.sort(ids)
     return #ids, ids
   end
   do
     local lc = M.LayerCheck()
-    check(#lc.flags == 0 and lc.land > 0 and lc.base == 0, "0.5.2b.3 map: layer check at Dun Morogh's zone view: " .. lc.text)
-    M.Pan(-406, 0) run(2)
-    local lm = M.layers[1432]
-    check(lm and lm.shown and lm.alpha > 0.999 and dm.alpha > 0.999 and dm.masked and lm.masked and dm.level == 5 and lm.level == 5,
-      "0.5.2b.3 map: at zone view the neighbour (Loch Modan) is drawn at full strength next to Dun Morogh, both cut to their shapes")
+    check(#lc.flags == 0 and lc.land > 0 and lc.base == 0 and lc.zones == 1, "0.5.2b.4 map: layer check at Dun Morogh's zone view: " .. lc.text)
     check(not (M.layers[1455] and M.layers[1455].shown), "0.5.1.9 map: no Ironforge city picture over Dun Morogh at zone view")
-    local mk = dm.mask
-    check(mk and rawget(mk, "_isMask") and mk._file == 881426 and mk._wrapH == "CLAMPTOBLACKADDITIVE" and math.abs(mk._w - 1002 / 0.75) < 1e-6 and math.abs(mk._h - 668 / 0.5) < 1e-6
-      and math.abs(mk._pts[1][4]) < 1e-9 and math.abs(mk._pts[1][5]) < 1e-9, "0.5.2b.3 map: the zone's mask is its highlight file, sized to the whole file (content = the zone) at the zone's corner")
-    local allMasked = true
-    for _, t in ipairs(dm.tiles) do if not (t._masks and t._masks[1] == mk) then allMasked = false end end
-    for _, t in ipairs(dm.ov) do if not (t._masks and t._masks[1] == mk) then allMasked = false end end
-    check(allMasked and #dm.ov > 0 and not dm.feather, "0.5.2b.3 map: every tile and explored overlay of a zone is cut by its mask (no feathered rectangle)")
+    M.Pan(-500, 0) run(1)
+    local fz1 = M.focusZone
+    local nz1 = zonesDrawn()
+    run(10)
     local nz, zids = zonesDrawn()
-    check(nz >= 2, "0.5.2b.3 map: zones drawn at the edge: " .. table.concat(zids, ","))
+    local lm = M.layers[fz1]
+    check(fz1 == 1432 and nz1 == 2 and nz == 1 and zids[1] == 1432 and lm and lm.feather and lm.level == 4 and lm.alpha > 0.99 and not dm.shown,
+      "0.5.2b.4 map: panning into Loch Modan crossfades Dun Morogh out and Loch Modan in, then only Loch Modan is drawn (" .. tostring(fz1) .. "; " .. nz1 .. " then " .. table.concat(zids, ",") .. ")")
     local lc2 = M.LayerCheck()
-    check(#lc2.flags == 0 and lc2.land > 0 and lc2.base == 0, "0.5.2b.3 map: layer check at the Dun Morogh / Loch Modan edge: " .. lc2.text)
-    M.Pan(406, 0) run(2)
+    check(#lc2.flags == 0 and lc2.land > 0, "0.5.2b.4 map: layer check in Loch Modan: " .. lc2.text)
+    -- the check catches the faults: two zone pictures at once (a neighbour's margin over the zone) ...
+    M.zfade[1426] = 1 M.Layout()
+    local lc3 = M.LayerCheck()
+    check(table.concat(lc3.flags, ","):find("overlap"), "0.5.2b.4 map: the check flags two zone pictures at once: " .. lc3.text)
+    -- ... and a zone picture with a hard edge
+    lm.feather = false
+    lc3 = M.LayerCheck()
+    lm.feather = true
+    check(table.concat(lc3.flags, ","):find("hard%-seam"), "0.5.2b.4 map: the check flags a zone picture without a feathered rim: " .. lc3.text)
+    M.Pan(500, 0) run(12)
+    check(M.focusZone == 1426 and dm.shown and dm.alpha > 0.99 and select(1, zonesDrawn()) == 1, "0.5.2b.4 map: back in Dun Morogh, only its picture")
   end
-  -- zoomed out to the continent, then in until the zone pictures are drawn: all of them together, over the continent
-  -- picture (always drawn underneath as the base), stitched exactly
+  -- zoomed out to the continent: the continent picture only; zooming in: one zone picture comes in (the one under the
+  -- middle), over the continent picture (always drawn underneath as the base)
   M.ZoomOutLevel() run(30)
   check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms", "0.5.1.11 map: zoom out one level from the zone shows the continent (" .. table.concat(M.Trail(), ">") .. ")")
   do
     local nz, zids = zonesDrawn()
     local lc = M.LayerCheck()
-    check(nz == 0 and #lc.flags == 0, "0.5.2b.3 map: the continent view is the clean continent picture, no zone rectangles (" .. table.concat(zids, ",") .. "; " .. lc.text .. ")")
+    check(nz == 0 and #lc.flags == 0, "0.5.2b.4 map: the continent view is the clean continent picture, no zone rectangles (" .. table.concat(zids, ",") .. "; " .. lc.text .. ")")
   end
-  local baseGone = false
-  CX, CY = 300, 200
+  local baseGone, most = false, 0
+  do local zr0, pp0 = MAPS[1426][4], MD.Placement(1415) CX, CY = M.ToScreen(pp0[1] + (zr0[1] + zr0[2]) / 2 * (pp0[2] - pp0[1]), pp0[3] + (zr0[3] + zr0[4]) / 2 * (pp0[4] - pp0[3])) end -- the middle of Dun Morogh
   local inSteps = 0
-  while not (M.layers[1432] and M.layers[1432].shown and M.layers[1432].alpha > 0.5) and inSteps < 8 do
+  while not (M.focusZone and M.layers[M.focusZone] and M.layers[M.focusZone].shown and M.layers[M.focusZone].alpha > 0.5) and inSteps < 10 do
     M.Wheel(1) inSteps = inSteps + 1
-    for _ = 1, 30 do M.Tick(0.016) local cl = M.layers[1415] if not (cl and cl.shown and cl.alpha >= M.BASE_FADE[3] - 1e-9 and math.abs(cl.alpha - M.ContAlpha(1415) * M.BaseFade(1415)) < 1e-9) then baseGone = true end end
+    for _ = 1, 30 do
+      M.Tick(0.016)
+      local cl = M.layers[1415]
+      if not (cl and cl.shown and cl.alpha >= M.BASE_FADE[3] - 1e-9 and math.abs(cl.alpha - M.ContAlpha(1415) * M.BaseFade(1415)) < 1e-9) then baseGone = true end
+      most = math.max(most, (zonesDrawn(0.05)))
+    end
   end
   CX, CY = 406, 260
   check(not baseGone, "0.5.1.11 map: while zooming in from the continent its art stays drawn underneath (0.5.2b.3: faded toward the backdrop only as it is magnified)")
-  check(M.layers[1432] and M.layers[1432].shown and M.layers[1432].alpha > 0.01, "0.5.0 map: at continent zoom the neighbour zone is drawn too (zones stitched)")
-  local function edges(L) local p = L.frame._pts[#L.frame._pts] local sc = L.frame._scale return p[4] * sc, -p[5] * sc, L.art.w * sc, L.art.h * sc end
-  local dl, dt_, dw = edges(dm)
-  local ll = edges(M.layers[1432])
-  check(math.abs((dl + dw) - ll) < 0.01, "0.5.0 map: neighbour zones meet exactly (no gap/overlap)")
+  check(M.focusZone and M.layers[M.focusZone].shown and M.layers[M.focusZone].feather and most <= 2 and select(1, zonesDrawn()) == 1,
+    "0.5.2b.4 map: zooming in brings in one feathered zone picture, never the whole continent's zones (" .. inSteps .. " steps, at most " .. most .. " at once; focus " .. tostring(M.focusZone) .. string.format(" share %.2f, zoom k %.2f, art x%.2f)", M.focusZone and M.ZoneShare(MD.ZoneEntry(M.focusZone)) or -1, M.ContZoomK(1415), M.ContMag(1415)))
   check(not (M.layers[1455] and M.layers[1455].shown), "0.5.1.9 map: the Ironforge city picture is not drawn over Dun Morogh at continent zoom either")
   M.FlyTo(1426) run(30)
   check(M.lock == nil and (dm.box or {})[1] <= 1e-6, "0.5.1.11 map: flying to a zone frames it (fills the view), no lock")
@@ -4022,8 +4037,11 @@ do
     local out = M.Sweep()
     local sw = M.sweep
     local built1 = 0 for _, L in pairs(M.layers) do if L.built then built1 = built1 + 1 end end
-    check(sw and sw.views == 2 * 3 + 5 * 7 and sw.flagged == 0, "0.5.2b.3 map: sweep of every continent and zone, no flags: " .. tostring(out[2]) .. " | " .. tostring(out[4]))
-    check(out[3] == "mapsweep masks: 5/5 zones", "0.5.2b.3 map: sweep reports the zone shapes: " .. tostring(out[3]))
+    local all = table.concat(out, "\n")
+    check(sw and sw.views == 2 * 3 + 5 * 7 and sw.flagged == 0, "0.5.2b.4 map: sweep of every continent and zone, no flags: " .. tostring(out[2]) .. " | " .. tostring(out[4]))
+    check(out[3] == "mapsweep masks: " .. M.MASK_LINE and all:find("\nmapsweep Eastern Kingdoms: %d+ views, 0 flagged %-> OK") and all:find("\nmapsweep Kalimdor: %d+ views, 0 flagged %-> OK")
+      and all:find("\nmapsweep highlight info %(diagnostic, not drawn%): the game answered for 5/5 zones"),
+      "0.5.2b.4 map: sweep says masks are not used, one OK line per continent: " .. all:gsub("\n", " | "))
     check(M.view.s == s0 and M.view.ox == ox0 and M.view.oy == oy0 and dm.shown and dm.frame:IsShown() and not M.dry and built1 >= built0,
       "0.5.2b.3 map: the sweep puts the view back as it was")
     local nwm = #wmAccess
@@ -4031,55 +4049,43 @@ do
     for i = #wmAccess, nwm + 1, -1 do wmAccess[i] = nil end -- the probe's own type checks are tested with the probe
     local l23, m23
     for _, l in ipairs(lines) do if l:find("^map 23 layers:") then l23 = l end if l:find("^map 23 masks:") then m23 = l end end
-    check(l23 and l23:find("%-> OK$") and m23 and m23:find("3/3 zones cut to their shape %(on%)") and m23:find("focus underlay 1.00"),
-      "0.5.2b.3 mapprobe: the layer check line for this view: " .. tostring(l23) .. " / " .. tostring(m23))
-    -- the check catches the old faults: neighbours faded out at zone view (the pixelated continent band) ...
-    local zda, bf = M.ZoneDrawAlpha, M.BaseFade
-    M.ZoneDrawAlpha = function(z) return z.id == M.focusZone and zda(z) or 0 end
+    check(l23 and l23:find("%-> OK$") and m23 == "map 23 masks: " .. M.MASK_LINE,
+      "0.5.2b.4 mapprobe: the layer check line for this view: " .. tostring(l23) .. " / " .. tostring(m23))
+    -- the check catches the old faults: the zone left to the magnified continent picture (the pixelated band) ...
+    local zi, bf = M.ZoneIn, M.BaseFade
+    M.ZoneIn = function() return 0 end
     M.BaseFade = function() return 1 end
-    M.Pan(-300, 0) run(2)
+    M.Layout()
     local lc = M.LayerCheck()
-    check(table.concat(lc.flags, ","):find("magnified%-base"), "0.5.2b.3 map: the check flags a magnified continent picture as the surface (old fade): " .. lc.text)
-    M.Pan(300, 0)
-    -- ... and zone pictures drawn at continent zoom
-    M.ZoneDrawAlpha = function(z) return M.ContAlpha(z.cont) end
+    check(table.concat(lc.flags, ","):find("magnified%-base"), "0.5.2b.4 map: the check flags a magnified continent picture as the surface: " .. lc.text)
+    -- ... and zone pictures drawn at continent zoom (0.5.2b.3's rectangles)
+    M.ZoneIn = function() return 1 end
     M.BaseFade = bf
     M.ZoomOutLevel() run(30)
     lc = M.LayerCheck()
-    check(table.concat(lc.flags, ","):find("zone%-rect"), "0.5.2b.3 map: the check flags zone pictures at continent zoom (old rectangles): " .. lc.text)
-    M.ZoneDrawAlpha = zda
+    check(table.concat(lc.flags, ","):find("zone%-rect"), "0.5.2b.4 map: the check flags zone pictures at continent zoom: " .. lc.text)
+    M.ZoneIn = zi
     M.FlyTo(1426) run(30)
-    -- /dm mapmask off: zones drawn as feathered rectangles (flagged honestly); on again: cut to their shapes
-    M.SetZoneMask(false) run(2)
-    local l2 = M.layers[1426]
-    check(l2 and l2 ~= dm and not l2.masked and l2.feather and l2.shown and l2.level == 4 and not (M.layers["u1426"] and M.layers["u1426"].shown),
-      "0.5.2b.3 map: /dm mapmask off draws the zone unmasked and feathered (no underlay needed): " .. tostring(l2 and l2.masked) .. " " .. tostring(l2 and l2.feather) .. " " .. tostring(l2 and l2.shown) .. " " .. tostring(l2 and l2.level) .. " " .. tostring(M.layers["u1426"] and M.layers["u1426"].shown))
-    M.Pan(-300, 0) run(2)
-    lc = M.LayerCheck()
-    check(table.concat(lc.flags, ","):find("unmasked"), "0.5.2b.3 map: with the shapes off the check reports the rectangles: " .. lc.text)
-    M.Pan(300, 0)
-    M.SetZoneMask(true) run(2)
-    check(M.layers[1426] and M.layers[1426].masked and NS.db.map.zoneMask == nil, "0.5.2b.3 map: /dm mapmask on cuts the zones to their shapes again")
     dm = M.layers[1426]
-    -- a client without the highlight API: every zone falls back to feathered rectangles, the sweep names them
+    -- a client without the highlight API: nothing changes in the drawing; the diagnostic line says so
     HL.on = false
-    M.SetZoneMask(true) run(2)
+    M.hl = {}
     local out2 = M.Sweep()
-    check(out2[3] and out2[3]:find("^mapsweep masks: 0/5 zones; missing: ") and M.layers[1426] and not M.layers[1426].masked and M.layers[1426].feather,
-      "0.5.2b.3 map: no highlight from the game: zones drawn feathered, the sweep names the missing shapes: " .. tostring(out2[3]))
+    local all2 = table.concat(out2, "\n")
+    check(M.sweep.flagged == 0 and all2:find("the game answered for 0/5 zones", 1, true) and dm.shown and dm.feather,
+      "0.5.2b.4 map: no highlight from the game: the same map, the diagnostic line says 0/5: " .. all2:gsub("\n", " | "))
     HL.on = true
-    M.SetZoneMask(true) run(2)
-    dm = M.layers[1426]
-    -- the slash commands: /dm mapsweep is saved with the probes; /dm mapmask off|on
+    M.hl = {}
+    -- the slash commands: /dm mapsweep is saved with the probes; /dm mapmask is gone
     SlashCmdList.DARKMATTER("mapsweep")
     local pe = NS.db.probeLog and NS.db.probeLog.mapsweep
-    check(pe and pe.lines[1] == "Dark Matter " .. NS.version .. " mapsweep" and pe.lines[2]:find("^mapsweep: 41 views, 0 flagged") and pe.lines[3] == "mapsweep masks: 5/5 zones",
-      "0.5.2b.3 /dm mapsweep: saved in DarkMatterDB.probeLog: " .. tostring(pe and pe.lines[2]))
+    check(pe and pe.lines[1] == "Dark Matter " .. NS.version .. " mapsweep" and pe.lines[2]:find("^mapsweep: 41 views, 0 flagged") and pe.lines[3] == "mapsweep masks: " .. M.MASK_LINE,
+      "0.5.2b.4 /dm mapsweep: saved in DarkMatterDB.probeLog: " .. tostring(pe and pe.lines[2]))
+    local said, oldPrint = {}, NS.Print
+    NS.Print = function(m) said[#said + 1] = m end
     SlashCmdList.DARKMATTER("mapmask off") run(2)
-    check(NS.db.map.zoneMask == false and not M.layers[1426].masked, "0.5.2b.3 /dm mapmask off")
-    SlashCmdList.DARKMATTER("mapmask on") run(2)
-    dm = M.layers[1426]
-    check(NS.db.map.zoneMask == nil and dm.masked, "0.5.2b.3 /dm mapmask on")
+    NS.Print = oldPrint
+    check(said[1] and said[1]:find("removed in 0.5.2b.4", 1, true) and dm.shown and dm.feather, "0.5.2b.4 /dm mapmask: says it was removed, the map is unchanged")
   end
   -- 5. player arrow, coordinates
   check(M.arrow:IsShown() and M.player and M.player.map == 1426, "0.5.0 map: player arrow shown")
@@ -4193,7 +4199,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.3 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.4 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4810,7 +4816,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.3 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.4 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5758,7 +5764,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.3 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.4 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -6274,7 +6280,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.3 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.4 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

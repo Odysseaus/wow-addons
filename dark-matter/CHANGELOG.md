@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.2b.4
+
+Map: no masks, one zone picture at a time, across all of Azeroth.
+
+### Root causes (0.5.2b.3 regression)
+- (a) 0.5.2b.3 cut every zone picture with a mask made from the game's zone highlight file. On 1.60.1 that mask does not cut: the highlight files are additive glow images with no usable alpha, so the whole picture stayed. Marking a zone "masked" also switched its rim feathering off. Every zone was drawn as a hard-edged full rectangle, with its parchment, torn border and sea.
+- (b) Zones came in at 1.15x–1.6x past the continent's fitted view. That point is reached while you are still looking at the whole continent, so every zone rectangle and its level label showed at once, stacked (Eastern Kingdoms, Kalimdor).
+- (c) Neighbouring zones were drawn at full strength around the focus zone, so their torn margins lay over each other and gave the hard seams and misaligned patches (Ashenvale).
+- (d) /dm mapsweep trusted the "masked" mark, so it could not see (a) to (c).
+
+### Changes
+- No zone masks. The continent picture is the base, and at most one zone picture (the zone under the middle of the view) is drawn over it, always feathered at its rim. A zone's margin is never drawn over another zone.
+- At continent view you see only the continent picture. The zone picture comes in as you zoom toward the zone (from 60% to 90% of the view), or once the continent picture is magnified past 2x–2.8x (small zones). That way the continent picture is never blurry under the middle of the view.
+- Panning into the next zone crossfades the two zone pictures (about 0.2 s). Cities still draw over their zone only when they are the focus.
+- `/dm mapmask` is removed. It now prints that it was removed.
+- `/dm mapsweep` flags magnified-base, open-base, hard-seam, zone-rect (zone art at continent view) and overlap (more than one zone picture at once). It prints a `mapsweep masks:` line saying that masks are not used, so none can fail. It then prints one `OK`/`FLAGGED` line per continent and a diagnostic count of the game's zone highlight answers (not drawn).
+- `/dm mapprobe` line 23 shows the same masks line and the highlight count, with no focus underlay.
+
 ## 0.5.2b.3
 
 Map layers fixed across all of Azeroth.
