@@ -474,7 +474,7 @@ local function LayoutOverlay()
                 QS.PaintIcon(mk.glow, role)
                 mk.qid, mk.status, mk.map, mk.mx, mk.my = q.id, status, z.id, q.x, q.y
                 mk.wx, mk.wy = ToW(z.id, q.x, q.y)
-                if status == "failed" then mk.icon:SetVertexColor(1, 0.35, 0.3) else mk.icon:SetVertexColor(1, 1, 1) end
+                mk.icon:SetVertexColor(1, 1, 1) -- 0.5.2a.1: the game icon as it is (no tint), like the game map
                 local hot = QS.IsHot(q.id)
                 mk:SetSize(hot and 24 or 18, hot and 24 or 18)
                 if hot then mk.glow:Show() else mk.glow:Hide() end
@@ -854,7 +854,7 @@ function M.ShowQuest(q, wp)
   return "none"
 end
 
--- a marker click: select the quest (Quests tab) and fly to it, smoothly; shift-click: the game's waypoint + arrow
+-- a marker click: select the quest (no glide: 0.5.2a.1; Show on map glides); shift-click: the game's waypoint + arrow
 QuestClick = function(mk)
   local QS = NS.QS
   if not (QS and mk and mk.qid) then return end
@@ -864,8 +864,7 @@ QuestClick = function(mk)
     return
   end
   QS.Select(mk.qid, "map")
-  FlyTo(FrameId(mk.map), mk.wx, mk.wy, true, V.s)
-  NS.SetStatus("Selected \"" .. QS.Title(mk.qid) .. "\" (Quests tab). Shift-click a marker for the game's waypoint and arrow.")
+  NS.SetStatus("Selected \"" .. QS.Title(mk.qid) .. "\" (quest list). Shift-click a marker for the game's waypoint and arrow.")
   M.dirty = true
 end
 M.QuestClick = function(mk) return QuestClick(mk) end
@@ -996,6 +995,14 @@ function M.SetViewAt(cx, cy, zoom) SetView(cx, cy, zoom * SFit()) M.Layout() end
 -- move the view by dx, dy screen px (free, like a drag)
 function M.Pan(dx, dy) V.ox, V.oy = V.ox + dx, V.oy + dy ClampView() M.Layout() end
 
+-- 0.5.2a.1: the quest-log button is lit while the docked panel is open
+function M.SetPanelIcon()
+  local b = M.panelBtn
+  if not b then return end
+  local on = NS.QuestPanel and NS.QuestPanel.Wanted()
+  b.icon:SetAlpha(on and 1 or 0.55)
+  b.tipTitle = on and "Hide quest log" or "Show quest log"
+end
 local function SetFullIcon()
   if not M.fullBtn then return end
   Icon(M.fullBtn.icon, M.full and "back" or "full")
@@ -1243,7 +1250,7 @@ local function Build(body)
   -- right tool strip
   strip = CreateFrame("Frame", nil, vpBox)
   strip:SetFrameLevel(canvas:GetFrameLevel() + 20)
-  strip:SetSize(40, 6 * 34 + 8)
+  strip:SetSize(40, 7 * 34 + 8)
   strip:SetPoint("TOPRIGHT", vp, "TOPRIGHT", -6, -6)
   local sbg = strip:CreateTexture(nil, "BACKGROUND")
   sbg:SetAllPoints(strip)
@@ -1257,6 +1264,8 @@ local function Build(body)
     ToolButton("full", "Full screen", "", false, function() M.SetFull(not M.full) end),
     ToolButton("closeup", "Close-up detail", "The game's minimap tiles when you zoom in close (blended across the whole zone). On/off and strength.", false,
       function() M.ToggleClosePanel() end),
+    -- 0.5.2a.1: the docked quest panel beside the window (open or closed, remembered)
+    ToolButton("quest", "Quest log", "Show or hide the quest list docked beside the window.", false, function() if NS.QuestPanel then NS.QuestPanel.Toggle() end end),
   }
   -- the close-up button shows the game's spyglass icon (stock art by path); the strip's own find-me icon if missing
   do
@@ -1268,6 +1277,8 @@ local function Build(body)
   for i, tb in ipairs(tools) do tb:SetPoint("TOP", strip, "TOP", 0, -5 - (i - 1) * 34) end
   M.tools = tools
   M.fullBtn = tools[5]
+  M.panelBtn = tools[7]
+  M.SetPanelIcon()
   SetFullIcon()
   M.BuildClosePanel(vpBox, strip, canvas:GetFrameLevel() + 30)
 
@@ -1482,9 +1493,10 @@ end
 NS.RegisterTab({
   id = "map", name = "Map", glyph = "map",
   Build = Build,
-  OnShow = function() Events(true) Start() end,
+  OnShow = function() Events(true) Start() if NS.QuestPanel then NS.QuestPanel.Sync(true) end end,
   OnHide = function()
     Events(false)
+    if NS.QuestPanel then NS.QuestPanel.Sync(false) end
     drag, zoomT, fly = nil, nil, nil
     if M.full then M.SetFull(false) end
   end,
@@ -1495,6 +1507,7 @@ NS.RegisterTab({
     if full then full:Hide() end
     full = nil
     if CU and CU.Drop then CU.Drop() end
+    if NS.QuestPanel then NS.QuestPanel.Drop() end
   end,
 })
 

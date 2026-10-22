@@ -224,6 +224,7 @@ function S.Report()
   -- 0.5.1.4: anything else asked for since (the map crumbs' arrow, ...) is checked again too
   for _, n in ipairs(S.order) do
     if S.used[n] == "texture" and texCache[n] == nil then S.TextureOK(n) end
+    if S.used[n] == "template" and tmplCache[n] == nil then S.TemplateOK(n) end -- 0.5.2a.1: the quest panel's SearchBoxTemplate
   end
   local names = {}
   for _, n in ipairs(S.order) do names[#names + 1] = n end

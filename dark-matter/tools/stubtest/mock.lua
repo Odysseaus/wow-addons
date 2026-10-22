@@ -315,6 +315,7 @@ C_XMLUtil = { GetTemplateInfo = function(n)
   if n == "UIPanelButtonTemplate" or n == "CharacterFrameTabButtonTemplate" then return { type = "Button" } end
   if n == "UIPanelScrollFrameTemplate" then return { type = "ScrollFrame" } end
   if n == "UIPanelScrollBarTemplate" then return { type = "Slider" } end
+  if n == "SearchBoxTemplate" then return { type = "EditBox" } end -- 0.5.2a.1: the quest panel's search bar
   return nil
 end }
 function CreateFrame(ftype, name, parent, tmpl)
@@ -1015,10 +1016,14 @@ do
     local wl, wt, wr, wb = FrameMT._rect(W)
     local MWW, MWH = DarkMatter.theme.m.w, DarkMatter.theme.m.h -- 0.5.1.4: the game's map window size (880x680 without one)
     check(wl and wr - wl == MWW and wt - wb == MWH, tag .. ": window resolves to " .. MWW .. "x" .. MWH)
+    -- 0.5.2a.1: the docked quest panel sits beside the window (audited on its own below)
+    local QPF = DarkMatter.QuestPanel and DarkMatter.QuestPanel.frame
+    local function inPanel(x) while x do if x == QPF then return true end x = x._parent end return false end
     local list = LayoutOf(W)
     local nTex, nFrame, nPieces = 0, 0, 0
     for _, e in ipairs(list) do
       local r = e.r
+      repeat if QPF and inPanel(r) then break end
       local nm = (r._name or "") .. (r._file and (" " .. tostring(r._file):match("[^\\]+$")) or "")
       if e.kind == "texture" then
         nTex = nTex + 1
@@ -1051,6 +1056,11 @@ do
         check(e.l ~= nil and w > 0 and h > 0, tag .. ": frame has non-zero size " .. tostring(r._name or r._ftype) .. " " .. w .. "x" .. h)
         check((r._level or 1) > (W._level or 1), tag .. ": content frame level " .. tostring(r._level) .. " is above the window art level " .. tostring(W._level))
       end
+      until true
+    end
+    if QPF and QPF:IsVisible() then
+      local pl, pt, pr, pb = FrameMT._rect(QPF)
+      check(pl and pl >= wr and pr > pl and pt - pb == MWH, tag .. ": docked quest panel lies beside the window, as tall as it")
     end
     check(nTex > 20 and nPieces > 10, tag .. ": many pieces drawn (" .. nTex .. " textures, " .. nPieces .. " atlas pieces)")
     -- the 9-slice window border: 8 pieces, corners 16x16, edges thin, spanning the whole window
@@ -3675,7 +3685,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2a (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2a.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4009,16 +4019,17 @@ do
     QS.Hover(nil, "list") run(1)
     check(not m2.glow:IsShown(), "0.5.2a pins: leaving the row unlights it")
     check(#MUTATED == nMut, "0.5.2a pins: hover made no mutating calls")
-    -- a plain click selects the quest and flies there with a hop (zooms out on the way, ends at the same zoom)
+    -- 0.5.2a.1: a plain click only selects the quest (no glide; Show on map glides)
     for _ = 1, 4 do M.Wheel(1) run(30) end
     local zs = M.Zoom()
+    local cx0, cy0 = M.Center()
     QS.selected = nil
     m2._scripts.OnMouseDown(m2, "LeftButton")
     m2._scripts.OnMouseUp(m2, "LeftButton")
     check(QS.selected == 502, "0.5.2a pins: clicking a pin selects its quest")
-    local zmin = M.Zoom()
-    for _ = 1, 60 do run(1) if M.Zoom() < zmin then zmin = M.Zoom() end end
-    check(zmin < zs * 0.95 and math.abs(M.Zoom() - zs) < 1e-6, "0.5.2a pins: the flight zooms out, pans and zooms back in (" .. zmin .. " < " .. zs .. ")")
+    run(60)
+    local cx1, cy1 = M.Center()
+    check(math.abs(M.Zoom() - zs) < 1e-9 and math.abs(cx1 - cx0) < 1e-9 and math.abs(cy1 - cy0) < 1e-9, "0.5.2a.1 pins: a click does not move the map (no glide)")
     -- shift-click: the game's own waypoint + arrow
     local wp, st = {}, {}
     local saveShift, saveUMP, saveST, saveSet, saveCan = _G.IsShiftKeyDown, UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap
@@ -4040,6 +4051,14 @@ do
     CX, CY = 340, 220 run(2)
     m2._scripts.OnMouseUp(m2, "LeftButton")
     check(math.abs(M.ToWorld(300, 200) - cx0) > 1e-6 and #wp == 1, "0.5.2a pins: dragging over a pin pans the map (no click)")
+    -- 0.5.2a.1: Show on map glides: zooms out on the way, pans, zooms in
+    do
+      for _ = 1, 3 do M.Wheel(1) run(30) end
+      M.ShowQuest(502)
+      local zmin, zprev = M.Zoom(), M.Zoom()
+      for _ = 1, 60 do run(1) if M.Zoom() < zmin then zmin = M.Zoom() end end
+      check(zmin < M.Zoom() * 0.99, "0.5.2a.1 Show on map: the glide zooms out below its end zoom, then in (" .. zmin .. " < " .. M.Zoom() .. ", from " .. zprev .. ")")
+    end
     -- Show on map: a point flies there; no point -> the zone and the themed note
     check(M.ShowQuest(501) == "point" and QS.selected == 501, "0.5.2a Show on map: quest with a location flies to it")
     run(60)
@@ -4055,7 +4074,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2a (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2a.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4230,7 +4249,7 @@ do
   -- 14. the tool strip: three slots are disabled with the version they come in
   local keys, soon = {}, {}
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
-  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail)")
+  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup,quest", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2a.1: + Quest log)")
   check(soon.starpen and soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen, Pin and Town Pins are disabled")
   local wantV = { starpen = "0.5.3", pin = "0.5.2", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
   local origSS = NS.SetStatus
@@ -4392,6 +4411,121 @@ do
   NS.ShowTab("quests")
 end
 
+-- ===== 0.5.2a.1: the docked quest panel beside the window (Map tab), the trimmed tab column, the probe log =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local P = NS.QuestPanel
+  local W = NS.windowParts
+  local m = NS.theme.m
+  -- the tab column hugs its buttons; the content area got the width; the window keeps its size
+  check(m.railW == 150 and m.tabX - m.railX == 14 and m.railX + m.railW - (m.tabX + m.tabWOn) == 10 and m.bodyX == m.railX + m.railW + 12,
+    "0.5.2a.1 tab column: hugs the buttons (14 left, 10 right of the active tab), body follows")
+  check(DarkMatterFrame:GetWidth() == m.w and DarkMatterFrame:GetHeight() == m.h, "0.5.2a.1 tab column: window size unchanged (" .. m.w .. "x" .. m.h .. ")")
+  local saveVis, saveGP = FrameMT.IsVisible, FrameMT.GetParent
+  FrameMT.GetParent = function(s) return s._parent end
+  FrameMT.IsVisible = function(s) local x = s while x and x ~= UIParent do if x._hid then return false end x = x._parent end return true end
+  if not DarkMatterFrame._shown then DarkMatterFrame:Show() end
+  NS.db.questPanel = nil
+  C_QuestLog.GetMaxNumQuestsCanAccept = function() return 25 end
+  NS.ShowTab("map")
+  print("DBG", P.frame, P.frame and P.frame:IsShown(), DarkMatterFrame:IsShown(), P.mapShown, NS.MapTab.panelBtn) check(P.frame and P.frame:IsShown(), "0.5.2a.1 panel: shown with the Map tab (open by default)")
+  check(P.frame:GetParent() == DarkMatterFrame, "0.5.2a.1 panel: a child of the window (moves and scales with it, locked)")
+  local pl, pt, pr = FrameMT._rect(P.frame)
+  local wl, wt, wr = FrameMT._rect(DarkMatterFrame)
+  check(pl >= wr and pt == wt and pr - pl == P.w, "0.5.2a.1 panel: docked to the right of the window, top aligned")
+  check(P.frame.search and P.frame.search.edit, "0.5.2a.1 panel: search bar at the top")
+  local ct = P.CountText()
+  check(ct:find("Quests:", 1, true) and ct:find("4", 1, true) and ct:find("/25", 1, true), "0.5.2a.1 panel: quest count from the API " .. ct)
+  -- the list: same rows as the Quests tab
+  local V = P.view
+  local function shownTitles()
+    local t = {}
+    for _, r in ipairs(V.rows) do if r:IsShown() and r.kind == "q" then t[#t + 1] = r.quest.title end end
+    return table.concat(t, ",")
+  end
+  check(shownTitles():find("Wolves", 1, true) and shownTitles():find("Gold Dust", 1, true), "0.5.2a.1 panel: lists the quest log (" .. shownTitles() .. ")")
+  -- search filters as you type
+  P.frame.search:SetText("defias")
+  V.SetQuery("defias")
+  check(shownTitles() == "The Defias", "0.5.2a.1 panel: search filters the list (" .. shownTitles() .. ")")
+  -- hover both ways
+  local row
+  for _, r in ipairs(V.rows) do if r:IsShown() and r.kind == "q" then row = r end end
+  row._scripts.OnEnter(row)
+  check(NS.QS.hovered == 103 and NS.QS.hoverSrc == "list", "0.5.2a.1 panel: hovering a row lights its pins (shared hover)")
+  row._scripts.OnLeave(row)
+  NS.QS.Hover(103, "map")
+  check(row.link:IsShown(), "0.5.2a.1 panel: hovering a pin lights its row")
+  NS.QS.Hover(nil, "map")
+  check(not row.link:IsShown(), "0.5.2a.1 panel: leaving the pin unlights it")
+  -- click a row: the detail view with Back; the selection is shared
+  row._scripts.OnClick(row)
+  check(NS.QS.selected == 103 and P.detailPanel:IsShown() and not P.list:IsShown(), "0.5.2a.1 panel: a row click opens its detail and selects the quest")
+  check(P.detail.title._text == "The Defias" and not P.back._hid, "0.5.2a.1 panel: detail shows the quest with a Back button")
+  local texts = {}
+  for _, fs in ipairs(P.detail.texts) do if not fs._hid then texts[#texts + 1] = fs._text end end
+  local all = table.concat(texts, "\n")
+  check(all:find("Quest Objectives", 1, true) and all:find("Description", 1, true) and all:find("Rewards", 1, true), "0.5.2a.1 panel: detail has objectives, description and rewards (the Quests tab's detail)")
+  P.back._scripts.OnClick(P.back)
+  check(P.list:IsShown() and not P.detailPanel:IsShown() and V.query == "defias" and shownTitles() == "The Defias", "0.5.2a.1 panel: Back returns to the list, search kept")
+  V.SetQuery("") P.frame.search:SetText("")
+  -- toggle (tool strip), remembered
+  local tb = NS.MapTab.panelBtn
+  tb._scripts.OnClick(tb)
+  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: the Quest log button closes it (saved)")
+  tb._scripts.OnClick(tb)
+  check(P.frame:IsShown() and NS.db.questPanel == true, "0.5.2a.1 panel: and opens it again")
+  P.frame.close._scripts.OnClick(P.frame.close)
+  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: its close button closes it (saved)")
+  P.SetOpen(true)
+  -- only with the Map tab
+  NS.ShowTab("quests")
+  check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")
+  NS.ShowTab("map")
+  check(P.frame:IsShown(), "0.5.2a.1 panel: back with the Map tab")
+  -- 1080p-class screen at UI scale 0.64: the window and the panel fit side by side
+  local s = DarkMatterFrame:GetScale() or 1
+  local needW = (m.w + P.Extent()) * s * 0.64
+  check(needW <= 1920, "0.5.2a.1 panel: window + panel fit 1920 px at UI scale 0.64 (" .. math.floor(needW) .. " px)")
+  local src = io.open(arg[1] .. "/QuestPanel.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  check(not src:find("hooksecurefunc", 1, true) and not src:find("HookScript", 1, true) and not src:find("LoadAddOn", 1, true) and not src:find("WorldMapFrame", 1, true),
+    "0.5.2a.1 QuestPanel.lua: no hooks, no LoadAddOn, no stock map frames")
+  -- pins: every quest in the log draws the game's yellow ? (QuestTurnin / ActiveQuestIcon), untinted
+  local QSx = NS.QS
+  check(QSx.ICONS[1].role == "progress" and QSx.ICONS[1].c[1].atlas == "QuestTurnin" and QSx.ICONS[1].c[2].file == "Interface\\GossipFrame\\ActiveQuestIcon"
+    and QSx.ICONS[2].c[1].atlas == "QuestTurnin" and QSx.ICONS[3].c[1].atlas == "QuestNormal", "0.5.2a.1 pins: yellow ? for in progress and ready, yellow ! for available")
+  local tm = io.open(arg[1] .. "/Tab_Map.lua"):read("*a")
+  local tinted = false
+  for args in tm:gmatch("mk%.icon:SetVertexColor%(([^)]*)%)") do if args:gsub("%s", "") ~= "1,1,1" then tinted = true end end
+  check(not tinted and not tm:find("mk.icon:SetDesaturated(true", 1, true), "0.5.2a.1 pins: no tint, no grey, no failed red")
+  -- probe log: each /dm probe keeps its last run with a timestamp, capped
+  NS.db.probeLog = nil
+  SlashCmdList["DARKMATTER"]("artprobe")
+  local pe = NS.db.probeLog and NS.db.probeLog.artprobe
+  check(type(pe) == "table" and type(pe.time) == "string" and pe.time:find("^%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d$") and pe.version == NS.version
+    and type(pe.lines) == "table" and #pe.lines > 1 and pe.lines[1]:find("^artprobe "), "0.5.2a.1 probeLog: /dm artprobe saved with a timestamp")
+  SlashCmdList["DARKMATTER"]("frameprobe")
+  SlashCmdList["DARKMATTER"]("artprobe")
+  local np = 0 for _ in pairs(NS.db.probeLog) do np = np + 1 end
+  check(np == 2 and NS.db.probeLog.frameprobe and NS.db.probeLog.frameprobe.lines[1]:find("^frameprobe "), "0.5.2a.1 probeLog: one entry per probe, the last run kept")
+  local big = {} for i = 1, 1000 do big[i] = string.rep("x", 900) end
+  NS.LogProbe("big", big)
+  local bl = NS.db.probeLog.big.lines
+  check(#bl == NS.PROBE_LOG_LINES + 1 and #bl[1] <= NS.PROBE_LOG_CHARS + 3 and bl[#bl]:find("more lines not kept", 1, true), "0.5.2a.1 probeLog: lines and line length capped")
+  for i = 1, 30 do NS.db.probeLog["p" .. i] = { at = -i, lines = {} } end
+  NS.LogProbe("questmap", { "questmap test" })
+  np = 0 for _ in pairs(NS.db.probeLog) do np = np + 1 end
+  check(np == NS.PROBE_LOG_MAX and NS.db.probeLog.questmap and NS.db.probeLog.p1 and not NS.db.probeLog.p30 and NS.db.probeLog.artprobe, "0.5.2a.1 probeLog: at most " .. NS.PROBE_LOG_MAX .. " probes, oldest dropped")
+  local ss = io.open(arg[1] .. "/Slash.lua"):read("*a")
+  for _, k in ipairs({ "probe", "blocked", "agscan", "questprobe", "questmap", "mapprobe", "artprobe", "frameprobe", "achprobe" }) do
+    check(ss:find('"' .. k .. '", ', 1, true) or ss:find('LogProbe("' .. k .. '"', 1, true), "0.5.2a.1 probeLog: /dm " .. k .. " is logged")
+  end
+  NS.db.probeLog = nil
+  C_QuestLog.GetMaxNumQuestsCanAccept = nil
+  FrameMT.IsVisible, FrameMT.GetParent = saveVis, saveGP
+  NS.ShowTab("quests")
+end
+
 -- ===== 0.5.1: the WoW theme in the game's own art (stock textures + UIPanelCloseButton), fallback, /dm artprobe =====
 if MODE ~= "minimal" then
   local NS = DarkMatter
@@ -4468,7 +4602,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2a %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2a%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5413,7 +5547,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2a (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2a.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,

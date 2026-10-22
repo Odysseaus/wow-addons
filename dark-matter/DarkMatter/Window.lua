@@ -15,6 +15,17 @@ end
 local frame
 local W = {} -- window parts
 NS.windowParts = W
+-- 0.5.2a.1: the window keeps the docked quest panel on screen too (its clamp rect reaches over the panel)
+local clampBase, clampExtra = { 0, 0, 0, 0 }, 0
+local function SetClamp(f, l, r, t, b)
+  clampBase = { l, r, t, b }
+  if f.SetClampRectInsets then f:SetClampRectInsets(l, r + clampExtra, t, b) end
+end
+function NS.WindowClampExtra(px)
+  clampExtra = NS.Num(px) or 0
+  local f = _G.DarkMatterFrame
+  if f and f.SetClampRectInsets then f:SetClampRectInsets(clampBase[1], clampBase[2] + clampExtra, clampBase[3], clampBase[4]) end
+end
 
 ---------------------------------------------------------------------------
 -- position
@@ -761,19 +772,19 @@ local function Build()
         W.titlePlate:Hide()
       end
       local box = art.box -- everything drawn, incl. overhanging crest/base/ornaments: left, top, right, bottom (y down)
-      if f.SetClampRectInsets then f:SetClampRectInsets(box[1], box[3] - m.w, -box[2], m.h - box[4]) end
+      SetClamp(f, box[1], box[3] - m.w, -box[2], m.h - box[4])
       -- the whole frame art is a drag handle: the window's mouse area grows to it (content frames above stay clickable)
       if f.SetHitRectInsets then f:SetHitRectInsets(box[1], m.w - box[3], box[2], m.h - box[4]) end
     elseif mapLook then
       local tp = A and A.title
       NS.SetFont(title, math.floor(math.max(11, math.min(15, tp and tp.size or 13)) + 0.5), "")
       title:SetPoint("CENTER", mapChrome.strip, "CENTER", 0, 0)
-      if f.SetClampRectInsets then f:SetClampRectInsets(0, 0, 0, 0) end
+      SetClamp(f, 0, 0, 0, 0)
       if f.SetHitRectInsets then f:SetHitRectInsets(0, 0, 0, 0) end
     else
       NS.SetFont(title, m.titleSize, "")
       title:SetPoint("CENTER", tb, "CENTER", 0, 0)
-      if f.SetClampRectInsets then f:SetClampRectInsets(0, 0, 0, 0) end
+      SetClamp(f, 0, 0, 0, 0)
       if f.SetHitRectInsets then f:SetHitRectInsets(0, 0, 0, 0) end
     end
     FitScale(f)

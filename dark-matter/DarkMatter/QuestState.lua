@@ -76,8 +76,8 @@ end
 -- draws nothing and is listed by /dm questmap.
 ---------------------------------------------------------------------------
 QS.ICONS = {
-  { role = "progress", what = "quest in progress (grey ?)", c = { { file = "Interface\\GossipFrame\\IncompleteQuestIcon" }, { atlas = "SideInProgressquesticon" } } },
-  { role = "ready", what = "ready to turn in (yellow ?)", c = { { file = "Interface\\GossipFrame\\ActiveQuestIcon" }, { atlas = "QuestTurnin" } } },
+  { role = "progress", what = "quest in progress (yellow ?, as the game map)", c = { { atlas = "QuestTurnin" }, { file = "Interface\\GossipFrame\\ActiveQuestIcon" } } },
+  { role = "ready", what = "ready to turn in (yellow ?)", c = { { atlas = "QuestTurnin" }, { file = "Interface\\GossipFrame\\ActiveQuestIcon" } } },
   { role = "available", what = "quest available (yellow !)", c = { { atlas = "QuestNormal" }, { file = "Interface\\GossipFrame\\AvailableQuestIcon" } } },
   { role = "trivial", what = "low-level quest available (grey !)", c = { { atlas = "TrivialQuests" }, { atlas = "QuestTrivial" } } },
   { role = "daily", what = "repeatable quest available (blue !)", c = { { file = "Interface\\GossipFrame\\DailyQuestIcon" }, { atlas = "QuestDaily" } } },

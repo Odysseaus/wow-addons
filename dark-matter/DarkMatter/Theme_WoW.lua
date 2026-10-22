@@ -165,10 +165,10 @@ NS.RegisterTheme({
     closeSize = 28, closeRight = 3, closeTop = 3,
     -- shell: rail, body, footer
     shellTop = 37, footerTop = 630, footerH = 41,
-    railX = 15, railY = 77, railW = 176, railH = 547, railBorder = 9, railShade = 0.45,
-    tabX = 34, tabY = 100, tabH = 48, tabW = 132, tabWOn = 146, tabGap = 8, tabIcon = 20, tabSize = 13,
-    bodyX = 203, bodyY = 37, bodyW = 668, bodyH = 593,
-    pageX = 4, pageW = 656, pageH = 587, pageBorder = 9, pagePad = 23,
+    railX = 15, railY = 77, railW = 150, railH = 547, railBorder = 9, railShade = 0.45,
+    tabX = 29, tabY = 100, tabH = 48, tabW = 120, tabWOn = 126, tabGap = 8, tabIcon = 20, tabSize = 13,
+    bodyX = 177, bodyY = 37, bodyW = 694, bodyH = 593,
+    pageX = 4, pageW = 682, pageH = 587, pageBorder = 9, pagePad = 23,
     pillsH = 32, pillGap = 6, pillPad = 16, pillSize = 13, sectionPageY = 40, sectionPageH = 547,
     listBorder = 5, listShade = 0.38, sbWidth = 20,
     -- 0.5.1.3: the scroll bar's own gutter to the right of its pane (bar 20 + 5 each side, the stock groove 28 wide)

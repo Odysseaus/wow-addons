@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.2a.1
+
+- Map quest pins all use the game's own yellow icons, as the game map does: yellow ? (QuestTurnin / ActiveQuestIcon) for every quest in your log, in progress or ready; yellow ! (QuestNormal / AvailableQuestIcon) for available. No grey, no tints, no red failed tint, nothing bundled.
+- Clicking a pin now only selects its quest (the map stays put). Shift-click still sets the game's waypoint. The smooth fly (zoom out, pan, zoom in) is used only by "Show on map".
+- New docked quest panel: while the Map tab is open, a Quest Log panel sits beside the window, like the game's map and quest log. It is locked to the window (it moves and scales with it) and themed in every theme.
+  - The top is the stock quest log's search bar: the game's SearchBoxTemplate (magnifier, "Search Quest Log") and the yellow "Quests: n/max" count box. The count and maximum come from the game's API. Typing filters the list.
+  - Same list, groups and Track boxes as the Quests tab (shared code, no copy), with hover both ways between rows and map pins.
+  - A row click selects the quest (its pins glow) and opens its detail: title, objectives with progress, description and rewards (the Quests tab's detail). Back returns to the list with the scroll position and search text kept.
+  - Open or close it with the new "Quest log" button on the map's tool strip or the panel's close button. Dark Matter remembers the choice (DarkMatterDB.questPanel).
+  - The window plus the panel fit a 1920x1080 screen at UI scale 0.64.
+  - The Quests tab stays as it was.
+- Left tab column (Quests, Journals, Map, Dungeons): the inset now hugs the buttons with a small margin in every theme. The 26 px freed go to the content area; the window keeps its size.
+- Every /dm probe (probe, blocked, agscan, questprobe, questmap, mapprobe, artprobe, frameprobe, achprobe) also saves its output lines with a timestamp in DarkMatterDB.probeLog. Only the last run of each probe is kept, capped at 400 lines of 400 characters and 16 probes. It is written to disk on /reload or logout.
+- /dm artprobe re-checks templates asked for since the last check (no false MISSING after a theme change).
+- Tests: the panel (docking, count, search, detail and Back, hover both ways, toggle remembered, shown only with the Map tab, fits 1080p at 0.64, no hooks), pin clicks do not move the map, Show on map still flies, yellow untinted pins, the narrower tab column with the window size unchanged, the probe log and its caps.
+
 ## 0.5.2a
 
 - Quests on the map, game data only (first part of the quest work; the database and Ready to Turn In come in 0.5.2b / 0.6.0).
