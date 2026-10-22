@@ -150,7 +150,7 @@ end
 
 -- 0.5.1.1 scroll buttons: the stock button states of a piece (sb_up / sb_dn) when the client has all four files.
 function S.ButtonStates(key)
-  local sp = S.Spec(key)
+  local sp = S.KitSpec(key) -- 0.5.1.3: the class themes borrow the WoW theme's scroll buttons too
   if not (sp and sp.down and sp.disabled and sp.highlight) then return nil end
   if not (S.TextureOK(sp.down) and S.TextureOK(sp.disabled) and S.TextureOK(sp.highlight)) then return nil end
   return sp
@@ -158,20 +158,52 @@ end
 
 
 -- 0.5.1.2 stock button feel: the theme's UIPanelButtonTemplate files (stockButtons) when the client has all four.
+-- 0.5.1.3: every theme. The WoW theme draws them as they are; a class theme (theme.stockTint) borrows the WoW theme's
+-- files and draws them desaturated and recoloured in its own palette (S.Tint).
+local function Wow() return NS.themes and NS.themes.wow end
+local function KitOn()
+  local th = NS.theme
+  return th and (th.stockButtons or th.stockTint) and true or false
+end
 function S.PanelButton()
-  local sb = NS.theme and NS.theme.stockButtons
+  if not KitOn() then return nil end
+  local sb = NS.theme.stockButtons or (Wow() and Wow().stockButtons)
   if not sb then return nil end
   for _, k in ipairs({ "up", "down", "disabled", "highlight" }) do
     if not S.TextureOK(sb[k]) then return nil end
   end
   return sb
 end
--- the character-frame tab look (both tab files + the tab highlight), for the section tabs
+-- a stock piece spec for the current theme: its own (WoW) or, for a class theme with a stock tint, the WoW theme's
+function S.KitSpec(key)
+  local th = NS.theme
+  local sp = th and th.stock and th.stock[key]
+  if not sp and th and th.stockTint then local w = Wow() sp = w and w.stock and w.stock[key] end
+  if sp and S.TextureOK(sp.file) then return sp end
+  return nil
+end
+-- the character-frame tab look (both tab files + the tab highlight), for the section tabs. 0.5.1.3: built from the
+-- UI-Character-ActiveTab / InActiveTab textures alone; the CharacterFrameTabButtonTemplate template itself is never
+-- needed (the 1.60.1 client does not have it).
 function S.TabButton()
-  local sb = NS.theme and NS.theme.stockButtons
+  local sb = S.PanelButton()
   if not (sb and sb.tabHighlight) then return nil end
-  if not (S.Spec("ptab_a_m") and S.Spec("ptab_i_m") and S.TextureOK(sb.tabHighlight)) then return nil end
+  for _, k in ipairs({ "ptab_a_l", "ptab_a_m", "ptab_a_r", "ptab_i_l", "ptab_i_m", "ptab_i_r" }) do
+    if not S.KitSpec(k) then return nil end
+  end
+  if not S.TextureOK(sb.tabHighlight) then return nil end
   return { highlight = sb.tabHighlight, highlightTC = sb.tabHighlightTC or { 0, 1, 0, 1 } }
+end
+-- the recolour for one kind of stock piece in a class theme ({ r, g, b }); nil in the WoW theme (drawn as is)
+function S.Tint(kind)
+  local t = NS.theme and NS.theme.stockTint
+  if not t then return nil end
+  return t[kind] or t.face
+end
+-- desaturate + recolour a stock texture (class theme), or undo both (WoW theme)
+function S.Recolor(tex, tint, alpha)
+  if tex.SetDesaturated then tex:SetDesaturated(tint and true or false) end
+  if tint then tex:SetVertexColor(tint[1], tint[2], tint[3], alpha or 1) else tex:SetVertexColor(1, 1, 1, alpha or 1) end
 end
 
 -- /dm artprobe: one short line per stock texture/template the WoW theme uses, ok or missing.
@@ -196,18 +228,32 @@ function S.Report()
     return a < b
   end)
   local lines, okN, missN, saved = {}, 0, 0, {}
+  -- 0.5.1.3: what stands in for a missing piece (said on its line and in the one-line summary)
+  local fb = wow and wow.stockFallback or {}
+  local missing = {}
   lines[1] = "artprobe " .. tostring(NS.version) .. " (" .. S.Method() .. "):"
   for _, n in ipairs(names) do
     local ok = (S.used[n] == "texture") and texCache[n] or tmplCache[n]
     if ok then okN = okN + 1 else missN = missN + 1 end
     local short = n:gsub("^Interface\\", "")
-    lines[#lines + 1] = string.format("%s %s%s", ok and "ok" or "MISSING", short, S.used[n] == "template" and " (template)" or "")
-    saved[#saved + 1] = { name = n, kind = S.used[n], ok = ok and true or false }
+    local kind = S.used[n] == "template" and " (template)" or ""
+    local instead = fb[n] or "Dark Matter's own art"
+    lines[#lines + 1] = string.format("%s %s%s%s", ok and "ok" or "MISSING", short, kind, ok and "" or (" -> " .. instead))
+    if not ok then missing[#missing + 1] = short .. kind .. " -> " .. instead end
+    saved[#saved + 1] = { name = n, kind = S.used[n], ok = ok and true or false, instead = (not ok) and instead or nil }
   end
-  lines[#lines + 1] = string.format("artprobe: %d ok, %d missing%s", okN, missN,
-    missN > 0 and " (missing pieces use Dark Matter's own art)" or "")
+  -- the summary names a missing piece (up to 3) on the one line with its stand-in (the list above can scroll out of the
+  -- chat frame); with more missing, the client has no stock art at all and Dark Matter's own art is drawn
+  local tail = ""
+  if missN > 3 then
+    tail = " (missing pieces use Dark Matter's own art)"
+  elseif missN > 0 then
+    tail = ": " .. table.concat(missing, "; ")
+  end
+  lines[#lines + 1] = string.format("artprobe: %d ok, %d missing%s", okN, missN, tail)
   if NS.db then
-    NS.db.artprobe = { version = NS.version, method = S.Method(), ok = okN, missing = missN, items = saved, theme = NS.theme and NS.theme.id }
+    NS.db.artprobe = { version = NS.version, method = S.Method(), ok = okN, missing = missN, items = saved, theme = NS.theme and NS.theme.id,
+      missingNames = missing }
   end
   return lines
 end

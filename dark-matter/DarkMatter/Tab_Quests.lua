@@ -108,7 +108,7 @@ local function GetRow(i)
   if r then return r end
   local m = NS.theme.m
   r = CreateFrame("Button", nil, list.content)
-  r:SetSize(list.w - m.sbWidth, ROW_H)
+  r:SetSize(list.cw, ROW_H)
   r.sel = r:CreateTexture(nil, "BACKGROUND", nil, 1)
   r.sel:SetAllPoints(r)
   r.hover = UI.Hover(r)
@@ -251,9 +251,12 @@ local function Detail(q)
       b.icon:SetTexture(ic)
       b.count:SetText((e.count or 1) > 1 and tostring(e.count) or "")
       b.count:SetTextColor(NS.Color("barText"))
-      b.name:SetText(e.name or "Item not loaded yet")
+      -- 0.5.1.3: an item the client has not loaded yet says so; its GET_ITEM_INFO_RECEIVED / ITEM_DATA_LOAD_RESULT redraws
+      b.name:SetText(e.name or "Loading\226\128\166")
       -- 0.5.1.2: straight on the parchment, the quality colour darkened to read on it (no name plate)
-      if d.panel.parch then
+      if not e.name then
+        b.name:SetTextColor(NS.Color(DK("listSoft")))
+      elseif d.panel.parch then
         b.name:SetTextColor(NS.ParchQuality(QualityRGB(e.quality)))
         b.name:SetShadowColor(0, 0, 0, 0)
       else
@@ -467,6 +470,11 @@ local function Events(on)
   if not ev then
     ev = CreateFrame("Frame") -- private frame, read-only handler
     ev:SetScript("OnEvent", function(_, e, a1)
+      -- 0.5.1.3: a reward item we are waiting for loaded: read its quest again (other items' events are ignored)
+      if e == "GET_ITEM_INFO_RECEIVED" or e == "ITEM_DATA_LOAD_RESULT" then
+        if QL.ItemArrived(a1) then Schedule() end
+        return
+      end
       -- 0.4.6: quest data we asked for (C_QuestLog.RequestLoadQuestByID) arrived: read that quest again
       if e == "QUEST_DATA_LOAD_RESULT" then local id = NS.Num(a1) if id then QL.Forget(id) end end
       if QL.reading then return end
@@ -503,19 +511,21 @@ NS.RegisterTab({
     tab:SetAllPoints(body)
     local page = UI.Page(tab, m.pageW, m.pageH)
     page:SetPoint("TOPLEFT", tab, "TOPLEFT", m.pageX, 0)
-    local pad, gap, lw = m.pagePad, 12, 270
+    -- 0.5.1.3: each pane gives up a gutter (G) on its right for its scroll bar, like the stock quest log
+    local pad, gap, lw = m.pagePad, 10, 276
+    local G = UI.Gutter()
     local ph = m.pageH - 2 * pad
     local dw = m.pageW - 2 * pad - lw - gap
     local b = m.listBorder
     local tbH = 24
 
-    local lp = UI.Panel(page, lw, ph)
+    local lp = UI.Panel(page, lw - G, ph)
     lp:SetPoint("TOPLEFT", page, "TOPLEFT", pad, -pad)
 
     -- 0.4.5 toolbar row at the top of the quest column: All, Track Quest (selected quest), search at the far right
     local tb = CreateFrame("Frame", nil, lp)
     tb:SetPoint("TOPLEFT", lp, "TOPLEFT", b + 4, -(b + 4))
-    tb:SetSize(lw - 2 * b - 8, tbH)
+    tb:SetSize(lw - G - 2 * b - 8, tbH)
     bar.frame = tb
     local allBtn = CreateFrame("Button", nil, tb)
     allBtn:SetPoint("LEFT", tb, "LEFT", 0, 0)
@@ -564,7 +574,7 @@ NS.RegisterTab({
     trkText:SetPoint("LEFT", trk, "RIGHT", 3, 0)
     trkText:SetText("Track Quest")
     bar.trkText = trkText
-    local sw = lw - 2 * b - 8 - 48 - 6 - 18 - 3 - 66 - 6
+    local sw = lw - G - 2 * b - 8 - 48 - 6 - 18 - 3 - 66 - 6
     local search = UI.SearchBox(tb, sw, 22)
     search:SetPoint("RIGHT", tb, "RIGHT", 0, 0)
     search.onChange = SetQuery
@@ -582,33 +592,33 @@ NS.RegisterTab({
     local W = NS.windowParts
     if W then W.allBtn, W.trk, W.questSearch, W.questBar = allBtn, trk, search, tb end
 
-    list = UI.Scroll(lp, lw - 2 * b, ph - 2 * b - tbH - 8)
+    list = UI.Scroll(lp, lw - G - 2 * b, ph - 2 * b - tbH - 8, lp)
     list.frame:SetPoint("TOPLEFT", lp, "TOPLEFT", b, -(b + tbH + 8))
     list.step = ROW_H * 3
     empty = UI.Text(lp, "OVERLAY", 13, "listSoft", "CENTER")
     empty:SetPoint("CENTER", lp, "CENTER", 0, -tbH / 2)
-    empty:SetWidth(lw - 40)
+    empty:SetWidth(lw - G - 40)
     empty:SetText("No quests in your log.")
     empty:Hide()
 
-    local dp = UI.Panel(page, dw, ph, "detailShade")
+    local dp = UI.Panel(page, dw - G, ph, "detailShade")
     dp:SetPoint("TOPLEFT", page, "TOPLEFT", pad + lw + gap, -pad)
     detail = { texts = {}, items = {}, panel = dp }
     detail.title = UI.Text(dp, "OVERLAY", 17, "gold", "LEFT")
     detail.title:SetPoint("TOPLEFT", dp, "TOPLEFT", 14, -14)
-    detail.title:SetWidth(dw - 28)
+    detail.title:SetWidth(dw - G - 28)
     detail.title:SetWordWrap(false)
     detail.meta = UI.Text(dp, "OVERLAY", 12, "listSoft", "LEFT")
     detail.meta:SetPoint("TOPLEFT", detail.title, "BOTTOMLEFT", 0, -6)
-    detail.meta:SetWidth(dw - 28)
+    detail.meta:SetWidth(dw - G - 28)
     detail.status = UI.Text(dp, "OVERLAY", 13, "mid", "LEFT")
     detail.status:SetPoint("TOPLEFT", detail.meta, "BOTTOMLEFT", 0, -8)
-    detail.status:SetWidth(dw - 28)
+    detail.status:SetWidth(dw - G - 28)
     local headH = 82
-    detail.scroll = UI.Scroll(dp, dw - 2 * b, ph - 2 * b - headH)
+    detail.scroll = UI.Scroll(dp, dw - G - 2 * b, ph - 2 * b - headH, dp)
     detail.scroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", b, -(b + headH))
     detail.scroll.step = 60
-    detail.cw = dw - 2 * b - m.sbWidth - 20
+    detail.cw = dw - G - 2 * b - 20
     detail.iw = math.floor((detail.cw - 8) / 2)
     -- 0.5.1: redraw after a theme change so the detail ink follows the panel (parchment or dark)
     NS.OnSkin(function() if detail then Refresh() end end)
@@ -624,5 +634,5 @@ NS.RegisterTab({
   ToggleAll = ToggleAll,
   SetSearch = function(t) if bar.search then bar.search:SetText(t or "") end SetQuery(t or "") end,
   Selected = function() return selQuest end,
-  Parts = function() return bar, detail end,
+  Parts = function() return bar, detail, list end,
 })

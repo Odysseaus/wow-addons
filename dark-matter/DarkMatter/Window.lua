@@ -388,7 +388,7 @@ local function Build()
   rail:SetPoint("TOPLEFT", f, "TOPLEFT", m.railX, -m.railY)
   rail:SetSize(m.railW, m.railH)
   UI.Slate(rail, "railShade", "BACKGROUND", 3)
-  UI.NineSlice(rail, "pane", m.railBorder, "BORDER", 3)
+  UI.NineSlice(rail, "pane", m.railBorder, "BORDER", 3, "rail") -- 0.5.1.3: an inset divider in the class themes
   W.rail = rail
   W.railTabs = {}
   for i, tid in ipairs(NS.tabOrder) do

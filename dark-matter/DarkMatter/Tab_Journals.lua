@@ -52,7 +52,7 @@ local function GetRow(i)
   if r then return r end
   local m = NS.theme.m
   r = CreateFrame("Button", nil, zoneScroll.content)
-  r:SetSize(zoneScroll.w - m.sbWidth, ROW_H)
+  r:SetSize(zoneScroll.cw, ROW_H)
   r.sel = r:CreateTexture(nil, "BACKGROUND")
   r.sel:SetAllPoints(r)
   r.sel:Hide()
@@ -599,14 +599,17 @@ local function BuildFish(page)
   watersRoot:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -splitY)
   watersRoot:SetSize(innerW, splitH)
 
+  -- 0.5.1.3: every scrolling pane gives up a gutter (G) on its right; its scroll bar sits there, outside the pane,
+  -- top arrow level with the pane top, bottom arrow level with its bottom (the stock quest log placement)
+  local G = UI.Gutter()
   local leftW = 240
   local rightW = innerW - leftW - 10
-  local left = UI.Panel(watersRoot, leftW, splitH)
+  local left = UI.Panel(watersRoot, leftW - G, splitH)
   left:SetPoint("TOPLEFT", watersRoot, "TOPLEFT", 0, 0)
   local lh = UI.Text(left, "OVERLAY", 12, "listHead", "LEFT")
   lh:SetPoint("TOPLEFT", left, "TOPLEFT", 10, -8)
   lh:SetText("Zones")
-  zoneScroll = UI.Scroll(left, leftW - 8, splitH - 28)
+  zoneScroll = UI.Scroll(left, leftW - G - 8, splitH - 28, left)
   zoneScroll.frame:SetPoint("TOPLEFT", left, "TOPLEFT", 4, -26)
   emptyFish = UI.Text(left, "OVERLAY", 12, "listSoft", "CENTER")
   emptyFish:SetPoint("CENTER", left, "CENTER", 0, 0)
@@ -632,7 +635,7 @@ local function BuildFish(page)
   if fishRoot.EnableMouse then fishRoot:EnableMouse(false) end
   fishRoot:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -splitY)
   fishRoot:SetSize(innerW, splitH)
-  local fishPanel = UI.Panel(fishRoot, innerW, splitH)
+  local fishPanel = UI.Panel(fishRoot, innerW - G, splitH)
   fishPanel:SetPoint("TOPLEFT", fishRoot, "TOPLEFT", 0, 0)
   local fh = UI.Text(fishPanel, "OVERLAY", 12, "listHead", "LEFT")
   fh:SetPoint("TOPLEFT", fishPanel, "TOPLEFT", 10, -8)
@@ -640,7 +643,7 @@ local function BuildFish(page)
   catalogNote = UI.Text(fishPanel, "OVERLAY", 11, "listSoft", "RIGHT")
   catalogNote:SetPoint("TOPRIGHT", fishPanel, "TOPRIGHT", -12, -8)
   catalogNote:SetText("")
-  fishScroll = UI.Scroll(fishPanel, innerW - 8, splitH - 28)
+  fishScroll = UI.Scroll(fishPanel, innerW - G - 8, splitH - 28, fishPanel)
   fishScroll.frame:SetPoint("TOPLEFT", fishPanel, "TOPLEFT", 4, -26)
   emptyCatchFish = UI.Text(fishPanel, "OVERLAY", 12, "listSoft", "CENTER")
   emptyCatchFish:SetPoint("CENTER", fishPanel, "CENTER", 0, 0)
@@ -651,11 +654,14 @@ local function BuildFish(page)
   if statsRoot.EnableMouse then statsRoot:EnableMouse(false) end
   statsRoot:SetPoint("TOPLEFT", fishPage, "TOPLEFT", pad, -splitY)
   statsRoot:SetSize(innerW, splitH)
-  statsScroll = UI.Scroll(statsRoot, innerW, splitH)
+  statsScroll = UI.Scroll(statsRoot, innerW - G, splitH, true)
   statsScroll.frame:SetPoint("TOPLEFT", statsRoot, "TOPLEFT", 0, 0)
   statsRoot:Hide()
 
   tab.RefreshFish = RefreshFish
+  NS.FishWidgets = function() -- 0.5.1.3 (tests): the fishing panes and their scroll bars
+    return { zoneScroll = zoneScroll, fishScroll = fishScroll, statsScroll = statsScroll }
+  end
   ApplyFishView()
 end
 
@@ -809,7 +815,7 @@ local function GetMenuRow(i)
   if r then return r end
   local m = NS.theme.m
   r = CreateFrame("Button", nil, agMenuScroll.content)
-  r:SetSize(agMenuScroll.w - m.sbWidth, AG_MENU_H)
+  r:SetSize(agMenuScroll.cw, AG_MENU_H)
   r.sel = r:CreateTexture(nil, "BACKGROUND")
   r.sel:SetAllPoints(r)
   r.sel:Hide()
@@ -832,7 +838,7 @@ local function GetBossRow(i)
   if r then return r end
   local m = NS.theme.m
   r = CreateFrame("Button", nil, agBossScroll.content)
-  r:SetSize(agBossScroll.w - m.sbWidth, AG_BOSS_H)
+  r:SetSize(agBossScroll.cw, AG_BOSS_H)
   r.sel = r:CreateTexture(nil, "BACKGROUND")
   r.sel:SetAllPoints(r)
   r.sel:Hide()
@@ -1128,9 +1134,11 @@ local function EnsureAGEvents(on)
       agEv:SetScript("OnEvent", function() ScheduleAG() end)
     end
     pcall(function() agEv:RegisterEvent("GET_ITEM_INFO_RECEIVED") end)
+    pcall(function() agEv:RegisterEvent("ITEM_DATA_LOAD_RESULT") end) -- 0.5.1.3: the modern item-data event too
     if NS.AG then NS.AG.onChange = ScheduleAG end
   elseif agEv then
     pcall(function() agEv:UnregisterEvent("GET_ITEM_INFO_RECEIVED") end)
+    pcall(function() agEv:UnregisterEvent("ITEM_DATA_LOAD_RESULT") end)
     if NS.AG then NS.AG.onChange = nil end
   end
   if not on then SetMenuOpen(false) end
@@ -1219,20 +1227,22 @@ local function BuildAdventure(page)
 
   local splitY = headY + 48
   local splitH = m.sectionPageH - splitY - pad
-  local bossW = 220
-  local bp = UI.Panel(agPage, bossW, splitH)
+  -- 0.5.1.3: the boss list and the boss detail each give up a gutter (G) for their scroll bars
+  local G = UI.Gutter()
+  local bossW = 224
+  local bp = UI.Panel(agPage, bossW - G, splitH)
   bp:SetPoint("TOPLEFT", agPage, "TOPLEFT", pad, -splitY)
   agBossHead = OneLine(UI.Text(bp, "OVERLAY", 12, "listHead", "LEFT"), 15)
   agBossHead:SetPoint("TOPLEFT", bp, "TOPLEFT", 10, -8)
   agBossHead:SetPoint("RIGHT", bp, "RIGHT", -10, 0)
-  agBossScroll = UI.Scroll(bp, bossW - 8, splitH - 32)
+  agBossScroll = UI.Scroll(bp, bossW - G - 8, splitH - 32, bp)
   agBossScroll.frame:SetPoint("TOPLEFT", bp, "TOPLEFT", 4, -28)
   agEmptyBoss = UI.Text(bp, "OVERLAY", 12, "listSoft", "CENTER")
   agEmptyBoss:SetPoint("CENTER", bp, "CENTER", 0, 0)
   agEmptyBoss:SetText("Boss and drop data\ncoming soon.")
   agEmptyBoss:Hide()
 
-  local dropW = innerW - bossW - 8
+  local dropW = innerW - bossW - 8 - G
   -- 0.5.1.1: the boss detail is a detail panel (the WoW theme's parchment, like the quest detail)
   local dp = UI.Panel(agPage, dropW, splitH, "detailShade")
   agDropPanel = dp
@@ -1244,7 +1254,7 @@ local function BuildAdventure(page)
   agDropNote = OneLine(UI.Text(dp, "OVERLAY", 11, "listSoft", "LEFT"), 13)
   agDropNote:SetPoint("TOPLEFT", dp, "TOPLEFT", 10, -26)
   agDropNote:SetPoint("RIGHT", dp, "RIGHT", -10, 0)
-  agDropScroll = UI.Scroll(dp, dropW - 8, splitH - 48)
+  agDropScroll = UI.Scroll(dp, dropW - 8, splitH - 48, dp)
   agDropScroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", 4, -44)
   agEmptyDrops = UI.Text(dp, "OVERLAY", 12, "listSoft", "CENTER")
   agEmptyDrops:SetPoint("CENTER", dp, "CENTER", 0, 0)
@@ -1256,7 +1266,7 @@ local function BuildAdventure(page)
     return { drop = agDrop, menu = agMenu, menuRows = agMenuRows, menuScroll = agMenuScroll, bossRows = agBossRows,
       dropRows = agDropRows, title = agTitle, meta = agMeta, dropHead = agDropHead, dropNote = agDropNote,
       bossHead = agBossHead, search = agSearch, emptyBoss = agEmptyBoss, emptyDrops = agEmptyDrops,
-      lvlAll = agLvlAll, lvlMine = agLvlMine, pills = pills, dropPanel = agDropPanel }
+      lvlAll = agLvlAll, lvlMine = agLvlMine, pills = pills, dropPanel = agDropPanel, bossScroll = agBossScroll, dropScroll = agDropScroll }
   end
   agPage:Hide()
 end

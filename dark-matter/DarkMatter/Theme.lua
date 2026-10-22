@@ -32,6 +32,14 @@ function NS.RegisterTheme(def)
     for k, v in pairs(base.colors) do
       if def.colors[k] == nil then def.colors[k] = (base.baseColors and base.baseColors[k]) or v end
     end
+    -- 0.5.1.3: a class theme's inner content blends into its frame instead of reading as a second boxed window: the
+    -- page behind the lists is see-through (the frame's own surface shows), the rail a light wash of its surface, the
+    -- lists a little see-through, and the page / rail edges are subtle inset dividers (dark top-left, faint light
+    -- bottom-right) instead of a box border. Alphas per surface; Theme_ClassStock.lua may tune them per theme.
+    if def.blend == nil then
+      def.blend = { page = 0, rail = 0.35, list = 0.8, edge = 0.5,
+        shadow = { 0, 0, 0, 0.5 }, light = { 1, 1, 1, 0.08 } }
+    end
   end
   -- colours may be given as "#rrggbb"; convert once
   for k, v in pairs(def.colors or {}) do
@@ -141,8 +149,12 @@ end
 -- Class-theme surface for one area ("shell", "rail", "list", "page"): the class texture tinted ({ tint = rgb }) or a
 -- flat colour/gradient ({ flat = true, a, b, dir }) where the previewer uses a plain CSS background.
 -- Returns false (texture untouched) when the theme has no surfaces; the caller then applies the WoW media.
+-- 0.5.1.3: the surface's alpha follows theme.blend (1 for every surface of a theme without it, e.g. the WoW theme).
 function NS.ApplySurface(tex, kind)
   local sf = NS.theme.surface
+  local bl = NS.theme.blend
+  local a = bl and sf and NS.Num(bl[kind]) or 1
+  if tex.SetAlpha then tex:SetAlpha(a) end
   local c = sf and sf[kind]
   if not c then return false end
   if c.flat then NS.PaintFlat(tex, c.a, c.b, c.dir) return true end

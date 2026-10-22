@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.1.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.1.3** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -63,6 +63,8 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 **0.5.1.1:** every surface fills its panel corner to corner. The page behind the lists is the stock rock (light text); only the quest detail and the Adventure Guide boss detail are parchment (dark ink), drawn from the clean inside of `QuestBG` so no torn edge shows (`/dm parchment l r t b` tunes the crop). Scroll buttons are the stock 16x16 buttons with Up / Down / Disabled / Highlight. `/dm testtoast` previews the achievement toast.
 
 **0.5.1.2:** every button behaves like the stock `UIPanelButtonTemplate` (Up / Down / Disabled faces, ADD highlight, label 1px down-right while pressed, the click sound, gold / white / grey labels); the Adventure Guide / Fishing / Achievements tabs behave like the character-frame tabs; no marker dots on tabs or toggles; boss drops and quest rewards sit straight on the parchment in a readable quality colour; scroll bars sit in the stock `UI-Character-ScrollBar` groove.
+
+**0.5.1.3:** every theme uses the stock button, tab and scroll-bar art; the nine class themes draw it desaturated and recoloured in their own palette (Hunter green and brown, Druid leaf and bark, ...) and their inner content blends into the frame (subtle inset dividers, no second boxed window). Pressed faces fill the button at any width (fixed 12 px / 20 px caps; every nav tab one width). Every scroll bar sits in its own gutter right of its pane, arrows level with the pane's top and bottom. No marker dots in any theme. Quest rewards that are still loading say "Loading…" and fill in when the item arrives. `/dm artprobe` names a missing piece on one line with what stands in (1.60.1: `CharacterFrameTabButtonTemplate`, not needed: tabs use `UI-Character-ActiveTab / InActiveTab`).
 
 ## Map tab (0.5.0)
 The game's own map pictures, read at runtime for every zone of Kalimdor and Eastern Kingdoms. Nothing is bundled and nothing is probed per zone.

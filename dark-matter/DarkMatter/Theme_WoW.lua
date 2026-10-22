@@ -113,6 +113,16 @@ NS.RegisterTheme({
   stockTemplates = { { "UIPanelCloseButton", "Button" }, { "UIPanelButtonTemplate", "Button" },
     { "CharacterFrameTabButtonTemplate", "Button" }, { "UIPanelScrollFrameTemplate", "ScrollFrame" },
     { "UIPanelScrollBarTemplate", "Slider" } },
+  -- 0.5.1.3: what /dm artprobe says stands in for a piece the client lacks. The 1.60.1 client has no
+  -- CharacterFrameTabButtonTemplate (35 ok, 1 missing in game); the section tabs never used it: they are built from the
+  -- UI-Character-ActiveTab / InActiveTab textures, which the client has.
+  stockFallback = {
+    CharacterFrameTabButtonTemplate = "tabs use UI-Character-ActiveTab/InActiveTab",
+    UIPanelButtonTemplate = "buttons use the UI-Panel-Button files",
+    UIPanelScrollFrameTemplate = "Dark Matter's own scroll frame",
+    UIPanelScrollBarTemplate = "bars use the UI-ScrollBar files",
+    UIPanelCloseButton = "Dark Matter's own close button",
+  },
   media = {
     parchment = "Interface\\AddOns\\DarkMatter\\Media\\wow-parchment",
     slate = "Interface\\AddOns\\DarkMatter\\Media\\wow-slate",
@@ -154,6 +164,8 @@ NS.RegisterTheme({
     pageX = 4, pageW = 656, pageH = 587, pageBorder = 9, pagePad = 23,
     pillsH = 32, pillGap = 6, pillPad = 16, pillSize = 13, sectionPageY = 40, sectionPageH = 547,
     listBorder = 5, listShade = 0.38, sbWidth = 20,
+    -- 0.5.1.3: the scroll bar's own gutter to the right of its pane (bar 20 + 5 each side, the stock groove 28 wide)
+    sbGutter = 30,
     rowH = 26, rowSize = 13, rowPad = 7,
     -- footer
     fbtnW = 104, fbtnH = 30, fbtnY = 635, fbtnSize = 13, fbtnLeft = 17,

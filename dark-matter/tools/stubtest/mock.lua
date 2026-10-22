@@ -308,6 +308,8 @@ function GetFileIDFromPath(p)
 end
 C_XMLUtil = { GetTemplateInfo = function(n)
   if STOCK_MISSING then return nil end
+  -- 0.5.1.3: STOCK_MISSING_TMPL = { name = true } leaves just those templates out (1.60.1 has no CharacterFrameTabButtonTemplate)
+  if STOCK_MISSING_TMPL and STOCK_MISSING_TMPL[n] then return nil end
   if n == "UIPanelCloseButton" then return { type = "Button", width = 32, height = 32 } end
   -- 0.5.1.2: the templates the stock button / tab / scroll bar look is modelled on (reported by /dm artprobe)
   if n == "UIPanelButtonTemplate" or n == "CharacterFrameTabButtonTemplate" then return { type = "Button" } end
@@ -718,10 +720,13 @@ if os.getenv("DUMP") then for _,l in ipairs(DarkMatterDB.probe.summary) do io.st
 -- ===== taint-safety assertions (0.0.4) =====
 if MODE ~= "minimal" then
   check(#MUTATED==0, "probe made no mutating/server-asking calls (found: "..table.concat(MUTATED,",")..")")
-  local bad={ITEM_DATA_LOAD_RESULT=1,COMBAT_LOG_EVENT_UNFILTERED=1}
+  -- 0.5.1.3: ITEM_DATA_LOAD_RESULT is allowed on the quest / Adventure Guide refresh frames (late reward items),
+  -- never on the probe frame; the combat log is never registered
   local okreg=true
-  for _,r in ipairs(REGLOG) do if bad[r.ev] then okreg=false end end
-  check(okreg,"never registered ITEM_DATA_LOAD_RESULT / COMBAT_LOG_EVENT_UNFILTERED")
+  for _,r in ipairs(REGLOG) do
+    if r.ev=="COMBAT_LOG_EVENT_UNFILTERED" or (r.ev=="ITEM_DATA_LOAD_RESULT" and r.frame==DarkMatter._probeFrame) then okreg=false end
+  end
+  check(okreg,"never registered COMBAT_LOG_EVENT_UNFILTERED; the probe frame never registers ITEM_DATA_LOAD_RESULT")
   -- probe frame must be private (no events left registered, not UIParent/Minimap/etc.)
   local pf=DarkMatter._probeFrame
   check(pf and pf~=UIParent and pf~=Minimap and next(pf._ev or {})==nil,"probe frame is private and has no events left registered")
@@ -4102,7 +4107,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.3 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -4110,6 +4115,32 @@ if MODE ~= "minimal" then
   local hasTmpl = false
   for _, it in ipairs(ap.items) do if it.kind == "template" and it.name == "UIPanelCloseButton" then hasTmpl = it.ok end end
   check(hasTmpl, "0.5.1 /dm artprobe: lists the UIPanelCloseButton template")
+  -- 0.5.1.3: the 1.60.1 case: CharacterFrameTabButtonTemplate is missing. The summary names it on ONE line with what
+  -- stands in, and the tabs still draw the stock UI-Character-ActiveTab / InActiveTab art (the template is never needed)
+  STOCK_MISSING_TMPL = { CharacterFrameTabButtonTemplate = true }
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("artprobe")
+  NS.Print = oldPrint
+  local last = said[#said] or ""
+  local missLines = 0
+  for _, l in ipairs(said) do if l:find("^MISSING ") then missLines = missLines + 1 end end
+  check(last:find("^artprobe: %d+ ok, 1 missing: CharacterFrameTabButtonTemplate %(template%) %-> tabs use UI%-Character%-ActiveTab/InActiveTab$")
+    and not last:find("\n") and missLines == 1 and NS.db.artprobe.missing == 1
+    and NS.db.artprobe.missingNames[1]:find("^CharacterFrameTabButtonTemplate"),
+    "0.5.1.3 /dm artprobe on 1.60.1: one summary line names the missing CharacterFrameTabButtonTemplate and its stand-in (" .. last .. ")")
+  NS.ShowTab("journals")
+  local tabArt = 0
+  for f, n in pairs(drawn()) do
+    if f:find("UI%-Character%-ActiveTab") or f:find("UI%-Character%-InActiveTab") then tabArt = tabArt + n end
+  end
+  check(NS.Stock.TabButton() and tabArt > 0, "0.5.1.3 the tab template missing: tabs still use the stock UI-Character-ActiveTab / InActiveTab art (" .. tabArt .. " pieces)")
+  NS.ShowTab("quests")
+  STOCK_MISSING_TMPL = nil
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
   -- fallback: every stock texture missing -> Dark Matter's own art, nothing blank
   STOCK_MISSING = true
   NS.Stock.ClearCache()
@@ -4132,11 +4163,25 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   check(said[#said]:find("^artprobe: 0 ok, %d+ missing %(missing pieces use Dark Matter's own art%)$") and said[2]:find("^MISSING "), "0.5.1 /dm artprobe: reports missing pieces (" .. tostring(said[#said]) .. ")")
-  -- a class theme never draws stock art and keeps its own colours
+  -- 0.5.1.3: a class theme draws the stock button / tab / scroll-bar kit (desaturated, recoloured in its palette) and
+  -- none of the stock window art (its own frame, surfaces and colours)
   STOCK_MISSING = false
   NS.Stock.ClearCache()
   NS.SetTheme("warrior")
-  check(stockFiles(drawn()) == 0, "0.5.1 class themes: no stock art (unchanged)")
+  local KIT = { "UI%-Panel%-Button%-", "UI%-Character%-ActiveTab", "UI%-Character%-InActiveTab", "UI%-Character%-Tab%-Highlight",
+    "UI%-ScrollBar%-", "UI%-Character%-ScrollBar" }
+  local function isKit(f) for _, p in ipairs(KIT) do if f:find(p) then return true end end return false end
+  local nonKit, kitN, undesat, kitNames = {}, 0, 0, {}
+  for f in pairs(drawn()) do
+    if not f:find("^Interface\\AddOns\\") and not f:find("^Interface\\Icons\\") and not f:upper():find("WHITE8X8", 1, true) and type(tonumber(f)) ~= "number" then
+      if isKit(f) then kitN = kitN + 1 kitNames[#kitNames + 1] = f:match("[^\\]+$") else nonKit[#nonKit + 1] = f end
+    end
+  end
+  for _, r in ipairs(REGIONS) do
+    if r._kind == "texture" and under(r, win) and visible(r) and type(r._file) == "string" and isKit(r._file) and not r._desat then undesat = undesat + 1 end
+  end
+  check(kitN > 0 and #nonKit == 0 and undesat == 0,
+    "0.5.1.3 class themes: only the stock button/tab/scroll kit, desaturated + recoloured (kit " .. kitN .. ": " .. table.concat(kitNames, ",") .. ", other: " .. table.concat(nonKit, ",") .. ", not desaturated " .. undesat .. ")")
   check(qd.panel.parch == false and lumOf(qd.texts[1]) > 0.5, "0.5.1 class themes: the quest detail panel stays dark with light text")
   NS.SetTheme("wow")
   check(NS.Stock.Spec("btn_red_m") and drawn()["Interface\\Buttons\\UI-Panel-Button-Up"], "0.5.1 WoW theme: switching back draws the stock art again")
@@ -4210,11 +4255,12 @@ if MODE ~= "minimal" then
     end
   end
   check(sbN > 0 and #sbBad == 0 and hl > 0, "0.5.1.1 WoW theme: stock scroll buttons at 16x16 with the stock highlight (" .. sbN .. (#sbBad > 0 and (" bad: " .. table.concat(sbBad, ", ")) or "") .. ")")
-  -- class themes keep their own scroll art
+  -- 0.5.1.3: class themes draw the same stock scroll art, desaturated and recoloured
   NS.SetTheme("warrior")
   local classStock = 0
-  for _, r in ipairs(REGIONS) do if r._kind == "texture" and tostring(r._file):find("^Interface\\Buttons\\UI%-ScrollBar") then classStock = classStock + 1 end end
-  check(classStock == 0, "0.5.1.1 class themes: no stock scroll art (unchanged)")
+  local classUndesat = 0
+  for _, r in ipairs(REGIONS) do if r._kind == "texture" and tostring(r._file):find("^Interface\\Buttons\\UI%-ScrollBar") then classStock = classStock + 1 if not r._desat then classUndesat = classUndesat + 1 end end end
+  check(classStock > 0 and classUndesat == 0, "0.5.1.3 class themes: the stock scroll art, desaturated and recoloured (" .. classStock .. ")")
   NS.SetTheme("wow")
   -- /dm parchment: crop override, validated, reset
   said = {}
@@ -4256,12 +4302,12 @@ if MODE ~= "minimal" then
   PlaySound = function(id) played[#played + 1] = id end
   NS.Stock.ClearCache()
   NS.SetTheme("wow")
-  local function mid(b) return tostring(b.slice.m._file) end
+  local function mid(b) local F = rawget(b, "face") return tostring(F and F.m._file or b.slice.m._file) end -- 0.5.1.3: the stock faces
   local function tcIs(t, want) if not t then return false end for i = 1, #want do if math.abs((t[i] or -1) - want[i]) > 1e-6 then return false end end return true end
   local sb = W.settingsBtn
   local hlOK = sb.stockOn and sb.stockHL._file == "Interface\\Buttons\\UI-Panel-Button-Highlight" and sb.stockHL._layer == "HIGHLIGHT"
-    and sb.stockHL._blend == "ADD" and tcIs(sb.stockHL._tc, { 0, 0.625, 0, 0.6875 })
-  check(hlOK, "0.5.1.2 WoW buttons: stock UI-Panel-Button-Highlight on the HIGHLIGHT layer, ADD blend, texcoords 0..0.625 x 0..0.6875")
+    and sb.stockHL._blend == "ADD" and tcIs(sb.face.hl.l._tc, { 0, 0.09375, 0, 0.6875 }) and tcIs(sb.stockHL._tc, { 0.09375, 0.53125, 0, 0.6875 }) and tcIs(sb.face.hl.r._tc, { 0.53125, 0.625, 0, 0.6875 })
+  check(hlOK, "0.5.1.2 WoW buttons: stock UI-Panel-Button-Highlight on the HIGHLIGHT layer, ADD blend (0.5.1.3: 3-slice like the faces, 0..0.625 x 0..0.6875)")
   local upFace = mid(sb)
   local c0 = sb.text._tcol
   sb._scripts.OnMouseDown(sb, "LeftButton")
@@ -4301,7 +4347,7 @@ if MODE ~= "minimal" then
     local f = mid(p)
     if p.stockStyle ~= "tab" or (p.active and not f:find("ActiveTab$")) or (not p.active and not f:find("InActiveTab$")) then tabOK = false end
     if p.stockHL._file ~= "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight" or (p.active and p.stockHL._alpha ~= 0) then tabOK = false end
-    if visible(p.mark) then dotN = dotN + 1 end
+    if rawget(p, "mark") and visible(p.mark) then dotN = dotN + 1 end
   end
   local pa = ag.pills[1]
   pa._scripts.OnMouseDown(pa, "LeftButton")
@@ -4310,7 +4356,7 @@ if MODE ~= "minimal" then
   check(tabOK and tabPt[4] == 0 and tabPt[5] == 1, "0.5.1.2 WoW section tabs: ActiveTab raised / InActiveTab, tab highlight on the unselected ones, no press offset")
   local tg = ag.lvlAll
   check(tg.stockStyle == "button" and (tg.active and mid(tg):find("Down$") or mid(tg):find("Up$")), "0.5.1.2 WoW filter toggles (All levels): stock panel buttons, held down while on")
-  for _, p in ipairs({ ag.lvlAll, ag.lvlMine }) do if visible(p.mark) then dotN = dotN + 1 end end
+  for _, p in ipairs({ ag.lvlAll, ag.lvlMine }) do if rawget(p, "mark") and visible(p.mark) then dotN = dotN + 1 end end
   NS.ShowTab("quests")
   if visible(W.allBtn) then end
   local qbar = NS.tabs.quests.Parts()
@@ -4356,13 +4402,14 @@ if MODE ~= "minimal" then
   local miss = {}
   for _, n in ipairs(need) do if not all:find("ok [^\n]*" .. n) then miss[#miss + 1] = n end end
   check(#miss == 0 and said[#said]:find(", 0 missing$"), "0.5.1.2 /dm artprobe: reports the button / tab / scroll templates and files (" .. tostring(said[#said]) .. (#miss > 0 and (" missing: " .. table.concat(miss, ", ")) or "") .. ")")
-  -- class themes: unchanged (no stock feel, their own marker dot on the active section tab)
+  -- 0.5.1.3 class themes: the stock button feel recoloured in the theme's palette, and no marker dot
   NS.SetTheme("warrior")
   NS.ShowTab("journals")
   local cl = NS.AGWidgets()
-  local act
-  for _, p in ipairs(cl.pills) do if p.active then act = p end end
-  check(not W.settingsBtn.stockOn and W.settingsBtn.stockHL._file == nil and act and visible(act.mark), "0.5.1.2 class themes: own button feel and the marker dot (unchanged)")
+  local clDot = 0
+  for _, p in ipairs(cl.pills) do if rawget(p, "mark") and visible(p.mark) then clDot = clDot + 1 end end
+  check(W.settingsBtn.stockOn and W.settingsBtn.face.m._desat and W.settingsBtn.stockHL._file == "Interface\\Buttons\\UI-Panel-Button-Highlight" and clDot == 0,
+    "0.5.1.3 class themes: the stock button feel, desaturated and recoloured, no marker dot")
   -- fallback: the stock button files missing -> Dark Matter's own feel
   STOCK_MISSING = true
   NS.Stock.ClearCache()
@@ -4372,6 +4419,191 @@ if MODE ~= "minimal" then
   NS.Stock.ClearCache()
   NS.SetTheme("wow")
   NS.ShowTab("quests")
+  -- ===== 0.5.1.3: every face anchored alike at any width; scroll bars in their own gutter; no dots; late reward items =====
+  local UI = NS.UI
+  local function near(a, b) return a ~= nil and b ~= nil and math.abs(a - b) < 0.01 end
+  local function sameRect(a, b)
+    local al, at, ar, ab = rect(a)
+    local bl, bt, br, bb = rect(b)
+    return near(al, bl) and near(at, bt) and near(ar, br) and near(ab, bb)
+  end
+  -- the face's left cap at the button's left edge, the right cap at its right edge, both the full height and the same
+  -- width, the middle exactly between them; the highlight (buttons) on the very same rectangles
+  local function facesFill(b)
+    local F = b.face
+    local l, t, r, bo = rect(b)
+    local ll, lt, lr, lb = rect(F.l)
+    local ml, mt, mr, mb = rect(F.m)
+    local rl, rt, rr, rb = rect(F.r)
+    if not (l and ll and ml and rl) then return false, "unresolved" end
+    local ok = near(ll, l) and near(rr, r) and near(lt, t) and near(lb, bo) and near(rt, t) and near(rb, bo) and near(mt, t) and near(mb, bo)
+      and near(lr, ml) and near(mr, rl) and near(lr - ll, rr - rl) and (mr - ml) >= -0.01 and F.shown
+    if b.stockStyle ~= "tab" then
+      for _, k in ipairs({ "l", "m", "r" }) do if not sameRect(F.hl[k], F[k]) then ok = false end end
+    end
+    return ok, string.format("%.0fx%.0f cap %.0f", r - l, t - bo, lr - ll)
+  end
+  local host = CreateFrame("Frame", nil, win)
+  host:SetPoint("TOPLEFT", win, "TOPLEFT", 0, 0)
+  host:SetSize(400, 100)
+  for _, id in ipairs({ "wow", "hunter", "priest" }) do
+    NS.SetTheme(id)
+    NS.ShowTab("quests")
+    local bad, n = {}, 0
+    for _, w in ipairs({ 40, 80, 132, 146, 300 }) do
+      for _, h in ipairs({ 22, 48 }) do
+        local b = UI.Button(host, "Test", w, h, "red", 11)
+        b:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        for _, st in ipairs({ "Up", "Down" }) do
+          if st == "Down" then b._scripts.OnMouseDown(b, "LeftButton") end
+          local ok, why = facesFill(b)
+          n = n + 1
+          if not ok or not tostring(b.face.m._file):find("UI%-Panel%-Button%-" .. st .. "$") then bad[#bad + 1] = w .. "x" .. h .. " " .. st .. " (" .. tostring(why) .. ")" end
+        end
+        b._scripts.OnMouseUp(b, "LeftButton")
+        b:Hide()
+      end
+    end
+    -- the nav rail: every tab (the held-down one too) one width, its faces filling it
+    local railW
+    for _, t in pairs(W.railTabs) do
+      local ok, why = facesFill(t)
+      n = n + 1
+      if not ok then bad[#bad + 1] = "rail " .. tostring(t.text:GetText()) .. " (" .. why .. ")" end
+      local l, _, r = rect(t)
+      if railW and not near(railW, r - l) then bad[#bad + 1] = "rail widths differ" end
+      railW = r - l
+    end
+    -- section tabs and filter toggles
+    NS.ShowTab("journals")
+    NS.tabs.journals.SetSection("adventure")
+    local ag = NS.AGWidgets()
+    for _, p in ipairs(ag.pills) do local ok, why = facesFill(p) n = n + 1 if not ok then bad[#bad + 1] = "tab " .. why end end
+    for _, p in ipairs({ ag.lvlAll, ag.lvlMine }) do local ok, why = facesFill(p) n = n + 1 if not ok then bad[#bad + 1] = "toggle " .. why end end
+    check(#bad == 0 and n >= 26, "0.5.1.3 " .. id .. ": Normal / Pushed faces and the Highlight anchored alike at widths 40-300 and heights 22 / 48, rail tabs one width (" .. n .. " checked" .. (#bad > 0 and ("; " .. table.concat(bad, ", ")) or "") .. ")")
+  end
+  host:Hide()
+
+  -- scroll bars: outside the pane, in its own gutter; top arrow level with the pane's top, bottom arrow with its bottom
+  local function gutterOK(S, name, bad)
+    if not S or not S.pane then bad[#bad + 1] = name .. ": no pane" return end
+    local pl, pt, pr, pb = rect(S.pane)
+    local ul, ut, ur = rect(S.up)
+    local dl, _, dr, db = rect(S.down)
+    local _, _, fr = rect(S.scroll)
+    local G = UI.Gutter()
+    if not (pl and ul and dl and fr) then bad[#bad + 1] = name .. ": unresolved" return end
+    local ok = ul >= pr - 0.01 and ur <= pr + G + 0.01 and dl >= pr - 0.01 and dr <= pr + G + 0.01 and near(ut, pt) and near(db, pb) and fr <= pr + 0.01
+    if not ok then
+      bad[#bad + 1] = string.format("%s: pane %.0f..%.0f x %.0f..%.0f, up x %.0f..%.0f top %.0f, down bottom %.0f, content right %.0f", name, pl, pr, pb, pt, ul, ur, ut, db, fr)
+    end
+  end
+  for _, id in ipairs({ "wow", "hunter" }) do
+    NS.SetTheme(id)
+    local bad = {}
+    NS.ShowTab("quests")
+    local _, qdt, qlist = NS.tabs.quests.Parts()
+    gutterOK(qlist, "quest list", bad)
+    gutterOK(qdt.scroll, "quest detail", bad)
+    NS.ShowTab("journals")
+    NS.tabs.journals.SetSection("adventure")
+    local ag = NS.AGWidgets()
+    gutterOK(ag.bossScroll, "boss list", bad)
+    gutterOK(ag.dropScroll, "boss detail", bad)
+    NS.tabs.journals.SetSection("fishing")
+    local fw = NS.FishWidgets()
+    gutterOK(fw.zoneScroll, "fishing zones", bad)
+    gutterOK(fw.fishScroll, "fishing list", bad)
+    gutterOK(fw.statsScroll, "fishing statistics", bad)
+    NS.tabs.journals.SetSection("achievements")
+    local aw = NS.AchPage.Widgets()
+    gutterOK(aw.treeScroll, "achievement categories", bad)
+    gutterOK(aw.cardScroll, "achievement list", bad)
+    -- the groove spans the pane exactly (WoW theme: the stock groove; class themes: the same, recoloured)
+    local S = ag.dropScroll
+    if S.groove and S.groove[1]._shown ~= false and visible(S.groove[1]) then
+      local _, gt = rect(S.groove[1])
+      local _, _, _, gb = rect(S.groove[3])
+      local _, pt, _, pb = rect(S.pane)
+      if not (near(gt, pt) and near(gb, pb)) then bad[#bad + 1] = "boss detail groove not the pane's height" end
+    end
+    -- the stock scroll bar pieces in every theme (class themes: desaturated and recoloured)
+    local ut = S.upTex
+    if not (type(ut._file) == "string" and ut._file:find("UI%-ScrollBar%-ScrollUpButton") and S.groove[1]._file and tostring(S.groove[1]._file):find("UI%-Character%-ScrollBar")) then
+      bad[#bad + 1] = "not the stock scroll pieces (" .. tostring(ut._file) .. ")"
+    end
+    if (id ~= "wow") ~= (ut._desat == true) or (id ~= "wow") ~= (S.thumb._desat == true) then bad[#bad + 1] = "recolour wrong (" .. tostring(ut._desat) .. ")" end
+    check(#bad == 0, "0.5.1.3 " .. id .. ": every scroll bar in its own gutter right of its pane, arrows level with the pane's top and bottom (" .. (#bad > 0 and table.concat(bad, "; ") or "9 panes") .. ")")
+  end
+
+  -- no marker dot / radial on any tab or toggle in any theme
+  local origSP = NS.SetPiece
+  NS.SetPiece = function(tex, key) tex._dmKey = key return origSP(tex, key) end
+  local dotThemes = {}
+  for _, id in ipairs(NS.themeOrder) do
+    NS.SetTheme(id)
+    local dots = 0
+    for _, view in ipairs({ { "quests" }, { "journals", "adventure" }, { "journals", "fishing" }, { "journals", "achievements" } }) do
+      NS.ShowTab(view[1])
+      if view[2] then NS.tabs.journals.SetSection(view[2]) end
+      for _, r in ipairs(REGIONS) do
+        if r._kind == "texture" and under(r, win) and visible(r) and type(r._dmKey) == "string" and (r._dmKey:find("target") or r._dmKey:find("dot") or r._dmKey:find("radial")) then dots = dots + 1 end
+      end
+      for _, f in ipairs(ALL) do
+        if rawget(f, "stockStyle") and rawget(f, "mark") and visible(f.mark) and under(f, win) then dots = dots + 1 end
+      end
+      local qb = NS.tabs.quests.Parts()
+      if qb.allIcon and visible(qb.allIcon) and under(qb.allIcon, win) then dots = dots + 1 end
+    end
+    if dots > 0 then dotThemes[#dotThemes + 1] = id .. "=" .. dots end
+  end
+  NS.SetPiece = origSP
+  check(#dotThemes == 0 and #NS.themeOrder == 10, "0.5.1.3 no marker dot / radial on any tab or toggle in any of the " .. #NS.themeOrder .. " themes (" .. table.concat(dotThemes, ", ") .. ")")
+
+  -- a reward item the client has not loaded: 'Loading...', then the real name when its item event arrives
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+  local QL = NS.QL
+  local oRI, oCI, oGII = GetQuestLogRewardInfo, GetQuestLogChoiceInfo, GetItemInfo
+  local LATE_ID, loaded = 990001, false
+  local function lateWrap(orig)
+    return function(i, ...)
+      local r = { orig(i, ...) }
+      if r[1] ~= nil and i == 1 then r[1] = nil r[6] = LATE_ID end
+      return unpack(r, 1, 6)
+    end
+  end
+  GetQuestLogRewardInfo, GetQuestLogChoiceInfo = lateWrap(oRI), lateWrap(oCI)
+  GetItemInfo = function(id, ...) if id == LATE_ID then if loaded then return "Late Loaded Blade", "item:990001", 3 end return nil end if oGII then return oGII(id, ...) end end
+  local reqBefore = #MUTATED
+  QL.Forget()
+  NS.tabs.quests.Refresh()
+  local _, qdl = NS.tabs.quests.Parts()
+  local function itemNames()
+    local t = {}
+    for _, b in ipairs(qdl.items or {}) do if b._shown and visible(b) then t[#t + 1] = b.name:GetText() end end
+    return t
+  end
+  local before = table.concat(itemNames(), "|")
+  local asked = false
+  for i = reqBefore + 1, #MUTATED do if MUTATED[i] == "C_Item.RequestLoadItemDataByID" then asked = true end end
+  local waiting = QL.awaitItems[LATE_ID] ~= nil
+  check(before:find("Loading\226\128\166", 1, true) and asked and waiting and QL.ItemArrived(424242) == false,
+    "0.5.1.3 quest rewards: an unloaded item says 'Loading...' and its data is requested (" .. before .. ")")
+  loaded = true
+  local fired = 0
+  for _, f in ipairs(ALL) do
+    if f._ev and f._ev.ITEM_DATA_LOAD_RESULT and f._scripts and f._scripts.OnEvent then
+      f._scripts.OnEvent(f, "ITEM_DATA_LOAD_RESULT", LATE_ID, true)
+      fired = fired + 1
+    end
+  end
+  local after = table.concat(itemNames(), "|")
+  check(fired > 0 and after:find("Late Loaded Blade", 1, true) and not after:find("Loading", 1, true),
+    "0.5.1.3 quest rewards: ITEM_DATA_LOAD_RESULT for the awaited item redraws the detail with its name (" .. after .. ")")
+  GetQuestLogRewardInfo, GetQuestLogChoiceInfo, GetItemInfo = oRI, oCI, oGII
+  QL.Forget()
+  NS.tabs.quests.Refresh()
   PlaySound, SOUNDKIT = savePS, saveSK
   NS.SetTheme("wow")
 end
