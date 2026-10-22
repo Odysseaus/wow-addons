@@ -3675,7 +3675,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.1.10 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.1.11 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3905,17 +3905,17 @@ do
     check(ref and M.ref and M.ref.level >= 3 and math.abs(ref - M.layers[M.ref.id].sc) < 1e-9,
       "0.5.1.8 map: the art magnification is read from the zone picture under the middle of the view (x" .. tostring(ref) .. ")")
   end
-  -- 0.5.1.10: at zone view the zone's art FILLS the view (cover) and the view is locked inside it; no continent art
+  -- 0.5.1.10: at zone view the zone's art FILLS the view (cover framing); 0.5.1.11: no lock, the continent art is the base
   local vwN, vhN = M.vp:GetWidth(), M.vp:GetHeight()
   local bx = dm.box or {}
-  check(M.lock == 1426 and bx[1] and bx[1] <= 1e-6 and bx[2] <= 1e-6 and bx[3] >= vwN - 1e-6 and bx[4] >= vhN - 1e-6,
-    string.format("0.5.1.10 map: zone view locked on Dun Morogh; its art covers the whole view (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
-  check(not (M.layers[1415] and M.layers[1415].shown) and M.ContMag(1415) > M.BASE_MAG[2], string.format("0.5.1.10 map: no continent art behind the zone (continent art x%.2f)", M.ContMag(1415)))
-  -- dragging and zooming out stay inside the zone's art
-  M.Pan(5000, 3000)
-  bx = dm.box or {}
-  check(bx[1] and bx[1] <= 1e-6 and bx[3] >= vwN - 1e-6, "0.5.1.10 map: panning past the zone's edge is held at the edge")
-  M.Pan(-5000, -3000)
+  check(M.lock == nil and bx[1] and bx[1] <= 1e-6 and bx[2] <= 1e-6 and bx[3] >= vwN - 1e-6 and bx[4] >= vhN - 1e-6,
+    string.format("0.5.1.10 map: opened on Dun Morogh, its art covers the whole view (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
+  check(M.layers[1415] and M.layers[1415].shown and M.layers[1415].alpha > 0.999, string.format("0.5.1.11 map: the continent art stays drawn underneath as the base (art x%.2f)", M.ContMag(1415)))
+  -- dragging is free: the view moves by exactly the drag
+  local ox0 = M.view.ox
+  M.Pan(120, -80)
+  check(math.abs(M.view.ox - ox0 - 120) < 1e-9, "0.5.1.11 map: panning past the zone's edge is free (moved by the full delta)")
+  M.Pan(-120, 80)
   -- every zone-art tile and overlay piece: one texel per map pixel (texcoord range x file size = drawn size)
   local worstR = 0
   for _, t in ipairs(dm.tiles) do
@@ -3939,20 +3939,19 @@ do
   local nz, zids = zonesDrawn()
   check(nz == 1 and zids[1] == 1426 and M.focusZone == 1426 and not (M.layers[1455] and M.layers[1455].shown),
     "0.5.1.9 map: at zone view one zone art set is drawn: Dun Morogh's own (no neighbour, no Ironforge over it): " .. table.concat(zids, ","))
-  -- zoomed out (past the zone's fit -> up to the continent, like the game's map), then one step in: the zone pictures
-  -- of the continent are drawn together (the continent art itself is off by then), stitched exactly
-  M.Wheel(-1) run(30)
-  check(M.lock == nil and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms" and M.ContMag(1415) <= M.ZONE_IN[1] + 1e-6,
-    string.format("0.5.1.10 map: zooming out at the zone's fit goes up to the continent (%s, continent art x%.2f)", table.concat(M.Trail(), ">"), M.ContMag(1415)))
-  local sawBlur = false
+  -- zoomed out to the continent, then in until the zone pictures are drawn: all of them together, over the continent
+  -- picture (always drawn underneath as the base), stitched exactly
+  M.ZoomOutLevel() run(30)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms", "0.5.1.11 map: zoom out one level from the zone shows the continent (" .. table.concat(M.Trail(), ">") .. ")")
+  local baseGone = false
   CX, CY = 300, 200
   local inSteps = 0
-  while M.ContMag(1415) <= M.BASE_MAG[2] and inSteps < 6 do
+  while not (M.layers[1432] and M.layers[1432].shown and M.layers[1432].alpha > 0.5) and inSteps < 8 do
     M.Wheel(1) inSteps = inSteps + 1
-    for _ = 1, 30 do M.Tick(0.016) local cl = M.layers[1415] if cl and cl.shown and cl.alpha > 0.01 and M.ContMag(1415) > M.BASE_MAG[2] + 1e-6 then sawBlur = true end end
+    for _ = 1, 30 do M.Tick(0.016) local cl = M.layers[1415] if not (cl and cl.shown and cl.alpha > 0.999) then baseGone = true end end
   end
   CX, CY = 406, 260
-  check(not sawBlur and M.ContMag(1415) > M.BASE_MAG[2], string.format("0.5.1.10 map: the continent art is never drawn above x%.2f (now x%.2f)", M.BASE_MAG[2], M.ContMag(1415)))
+  check(not baseGone, "0.5.1.11 map: while zooming in from the continent its art stays drawn underneath at full strength")
   check(M.layers[1432] and M.layers[1432].shown and M.layers[1432].alpha > 0.01, "0.5.0 map: at continent zoom the neighbour zone is drawn too (zones stitched)")
   local function edges(L) local p = L.frame._pts[#L.frame._pts] local sc = L.frame._scale return p[4] * sc, -p[5] * sc, L.art.w * sc, L.art.h * sc end
   local dl, dt_, dw = edges(dm)
@@ -3960,7 +3959,7 @@ do
   check(math.abs((dl + dw) - ll) < 0.01, "0.5.0 map: neighbour zones meet exactly (no gap/overlap)")
   check(not (M.layers[1455] and M.layers[1455].shown), "0.5.1.9 map: the Ironforge city picture is not drawn over Dun Morogh at continent zoom either")
   M.FlyTo(1426) run(30)
-  check(M.lock == 1426, "0.5.1.10 map: flying to a zone locks the view on it again")
+  check(M.lock == nil and (dm.box or {})[1] <= 1e-6, "0.5.1.11 map: flying to a zone frames it (fills the view), no lock")
   check(M.layers[947] and not M.layers[947].shown, "0.5.0 map: the world picture is hidden when the continent covers the view")
   -- 5. player arrow, coordinates
   check(M.arrow:IsShown() and M.player and M.player.map == 1426, "0.5.0 map: player arrow shown")
@@ -4008,10 +4007,9 @@ do
   check(sawCont, "0.5.0 map: passes through the continent level")
   check(math.abs(M.Zoom() - 1) < 1e-6 and table.concat(M.Trail(), ">") == "Azeroth" and M.layers[947].shown, "0.5.0 map: zoomed out fully shows the world")
   local wcx, wcy = M.Center()
-  check(math.abs(wcx - 0.5) < 1e-9 and math.abs(wcy - 0.5) < 1e-9, "0.5.0 map: fully zoomed out the world is centred (zooming out at the cursor never leaves the view half empty)")
   local sl, st = M.ToScreen(0, 0)
   local sr, sb = M.ToScreen(1, 1)
-  check(sl <= 0.01 or sr - sl < M.vp:GetWidth() + 0.01, "0.5.0 map: the picture covers the view")
+  check(wcx > 0 and wcy > 0 and sl <= 1e-6 and st <= 1e-6 and sr >= M.vp:GetWidth() - 1e-6 and sb >= M.vp:GetHeight() - 1e-6, "0.5.1.11 map: fully zoomed out the world art fills the whole view (no empty band)")
   -- 9. zoom in toward Kalimdor (cursor on its land): focus moves there
   local kx, ky = M.ToScreen(0.20, 0.55)
   CX, CY = kx, ky
@@ -4046,10 +4044,7 @@ do
     if M.layers[1426].shown and M.layers[1432] and M.layers[1432].shown then both = true end
   end
   M.vp._scripts.OnMouseUp(M.vp, "LeftButton") run(2)
-  -- 0.5.1.10: like the game's map, a zone view is locked on its zone: the drag stops at its edge (zoom out to go on)
-  local dbx = M.layers[1426].box or {}
-  check(not both and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh" and dbx[1] <= 1e-6 and dbx[3] >= M.vp:GetWidth() - 1e-6,
-    "0.5.1.10 map: a drag at zone view stays inside the zone's art (no neighbour, no edge in sight)")
+  check(both and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Loch Modan", "0.5.0 map: drag pans across the border into the next zone (0.5.1.11: free again) " .. tostring(both) .. " " .. table.concat(M.Trail(), ">") .. " " .. M.Zoom())
   -- 12. search and pick
   local r = M.Search("loch")
   check(#r == 1 and r[1].name == "Loch Modan" and r[1].sub == "Eastern Kingdoms" and M.results:IsShown(), "0.5.0 map: zone search finds Loch Modan")
@@ -4072,7 +4067,81 @@ do
   check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh", "0.5.0 map: Find me flies to your zone")
   local cx, cy = M.Center()
   local psx, psy = M.ToScreen(M.player[1], M.player[2])
-  check(M.lock == 1426 and psx >= 0 and psx <= M.vp:GetWidth() and psy >= 0 and psy <= M.vp:GetHeight(), "0.5.0 map: Find me shows you (0.5.1.10: centred as far as the zone's art allows)")
+  check(math.abs(psx - M.vp:GetWidth() / 2) < 1e-6 and math.abs(psy - M.vp:GetHeight() / 2) < 1e-6, "0.5.0 map: Find me centres on you (0.5.1.11 again)")
+  -- 0.5.1.11: a map base under EVERY pixel at every zoom, in the fit and full-screen sizes and every theme: the drawn
+  -- layers (alpha x feathered rim) add up to full strength everywhere; no darkening vignette; dragging at each zoom moves
+  -- the view by exactly the drag, no clamping or snapping
+  do
+    local function coverage(nx, ny)
+      local vw, vh = M.vp:GetWidth(), M.vp:GetHeight()
+      local worst, at = 1, nil
+      for i = 0, nx do for j = 0, ny do
+        local px, py = (i + 0.5) / (nx + 1) * vw, (j + 0.5) / (ny + 1) * vh
+        local clear = 1
+        for _, L in pairs(M.layers) do
+          local b = L.box
+          if L.shown and b and px >= b[1] and px <= b[3] and py >= b[2] and py <= b[4] then
+            local a = L.alpha or 0
+            if L.feather then a = a * M.EdgeW(L.art, (px - b[1]) / L.sc, (py - b[2]) / L.sc) end
+            clear = clear * (1 - a)
+          end
+        end
+        if 1 - clear < worst then worst, at = 1 - clear, string.format("%d,%d", px, py) end
+      end end
+      return worst, at
+    end
+    local saveTheme = NS.theme.id
+    local w0, h0 = M.vp:GetWidth(), M.vp:GetHeight()
+    local spots = { { MD.ToWorld(1426, 0.5, 0.5) }, { MD.ToWorld(1429, 0.05, 0.5) }, { 0.5, 0.5 }, { 0.38, 0.30 } }
+    local zooms = { 1, 1.35, 2, 3, 5, 8, 13, 21, 34, 55, 1e9 }
+    local worst, where, n, vign, dragBad = 1, "", 0, 0, {}
+    for ti, id in ipairs(NS.themeOrder) do
+      NS.SetTheme(id)
+      for _, sz in ipairs({ { 978, 544 }, { 1880, 1020 } }) do
+        M.vp:SetSize(sz[1], sz[2]) M.Refit()
+        for si, sp in ipairs(spots) do
+          for _, z in ipairs(zooms) do
+            if ti == 1 or (si == 1 and (z == 1 or z == 5 or z == 1e9)) then
+              M.SetViewAt(sp[1], sp[2], math.min(z, M.ZMax()))
+              run(12)
+              local c, at = coverage(16, 10)
+              n = n + 1
+              if c < worst then worst, where = c, string.format("%s %dx%d at %.3f,%.3f zoom %.2f: %s", id, sz[1], sz[2], sp[1], sp[2], M.Zoom(), tostring(at)) end
+              if ti == 1 and z > 1 then
+                -- a real drag (mouse down, move, up): the view moves by the delta
+                local ox, oy = M.view.ox, M.view.oy
+                local x0, y0 = M.ToWorld(0, 0)
+                local x1, y1 = M.ToWorld(sz[1], sz[2])
+                if x0 > 0.02 and x1 < 0.98 and y0 > 0.02 and y1 < 0.98 then
+                  CX, CY = 400, 260
+                  M.vp._scripts.OnMouseDown(M.vp, "LeftButton")
+                  CX, CY = 400 - 37, 260 + 23 run(1)
+                  M.vp._scripts.OnMouseUp(M.vp, "LeftButton") run(1)
+                  if math.abs(M.view.ox - ox + 37) > 1e-6 or math.abs(M.view.oy - oy - 23) > 1e-6 then
+                    dragBad[#dragBad + 1] = string.format("%dx%d zoom %.2f moved %.2f,%.2f", sz[1], sz[2], M.Zoom(), M.view.ox - ox, M.view.oy - oy)
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+    for _, L in pairs(M.layers) do
+      for _, list in ipairs({ L.tiles or {}, L.ov or {} }) do
+        for _, t in ipairs(list) do
+          local g = rawget(t, "_grad")
+          if g and (g[2][1] < 0.999 or g[2][2] < 0.999 or g[2][3] < 0.999 or g[3][1] < 0.999 or g[3][2] < 0.999 or g[3][3] < 0.999) then vign = vign + 1 end
+        end
+      end
+    end
+    check(worst >= 0.999, string.format("0.5.1.11 map: %d views (world to deepest, fit and full-screen, every theme): a map base under every pixel (worst %.4f: %s)", n, worst, where))
+    check(vign == 0, "0.5.1.11 map: the feathered rims only fade (white vertex colours), no darkening vignette (" .. vign .. ")")
+    check(#dragBad == 0, "0.5.1.11 map: dragging at every zoom moves the view by exactly the drag (" .. table.concat(dragBad, "; ") .. ")")
+    NS.SetTheme(saveTheme)
+    M.vp:SetSize(w0, h0) M.Refit()
+    M.FlyTo(1426) run(30)
+  end
   -- 14. the tool strip: three slots are disabled with the version they come in
   local keys, soon = {}, {}
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
@@ -4314,7 +4383,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.10 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.11 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5259,7 +5328,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.1.10 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.1.11 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,

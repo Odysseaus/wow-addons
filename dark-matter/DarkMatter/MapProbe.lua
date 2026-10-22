@@ -349,11 +349,12 @@ local function Run()
     data.drawn = { zone = MT.focusZone, others = others, city = cityOn }
     lines[#lines + 1] = string.format("map 22 drawn: zone %s; other zones %d; city %s",
       tostring(MT.focusZone and NS.MapData.Name(MT.focusZone) or "none"), others, cityOn)
-    -- 0.5.1.10: the zone the view is locked on (its art fills the view) and the continent picture's magnification
+    -- 0.5.1.11: the base under everything (the continent picture, the world picture around it) and its magnification
     local cm = MT.focus and MT.ContMag and MT.ContMag(MT.focus) or 0
-    data.lock, data.contMag = MT.lock, cm
-    lines[#lines + 1] = string.format("map 22 view: locked on %s; continent art x%.2f (%s)",
-      tostring(MT.lock and NS.MapData.Name(MT.lock) or "nothing"), cm, cm <= MT.BASE_MAG[2] and "drawn" or "off: too blurry")
+    local wl, cl = MT.layers and MT.layers[MT.world], MT.focus and MT.layers and MT.layers[MT.focus]
+    local function On(L) return L and L.shown and (L.alpha or 0) > 0.01 and string.format("%.2f", L.alpha) or "off" end
+    data.contMag = cm
+    lines[#lines + 1] = string.format("map 22 base: continent %s (art x%.2f); world %s", On(cl), cm, On(wl))
   end
   return lines, data
 end

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1.11
+
+- Map: no more empty gaps. The continent art is always drawn as the base under its zones (at any magnification), and the world art shows wherever the continents' full-strength interior doesn't cover the view. Zone edges feather into the continent (never to black, no vignette). Zones fade in over the continent as one fills the view, like the stock map.
+- Map: the world fills the whole view when fully zoomed out (cover fit, no empty band).
+- Map: drag is free again at every zoom. The hard pan lock is gone; cover framing is used only to open the map, for Find me (which centres on you again), search and fly-to. While dragging, at most one new layer is built per frame, so there are no stalls.
+- Map: neighbouring zones come back as you drag off a zone (the zone's share of the view is now the area it actually covers).
+- Tests: a coverage sweep (142 views from world to deepest zoom, fit and full-screen sizes, every theme) shows a full-strength map base under every pixel. No darkening vertex colours. Dragging at every zoom moves the view by exactly the drag.
+
 ## 0.5.1.10
 
 - Window size: unchanged (passed in 0.5.1.9).

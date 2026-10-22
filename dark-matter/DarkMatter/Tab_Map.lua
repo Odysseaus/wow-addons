@@ -80,7 +80,8 @@ end
 ---------------------------------------------------------------------------
 local function VW() return math.max(1, vp and vp:GetWidth() or 1) end
 local function VH() return math.max(1, vp and vp:GetHeight() or 1) end
-local function SFit() return math.min(VW() / BW, VH() / BH) end
+-- 0.5.1.11: fully zoomed out the world picture COVERS the box (no empty band around it, like the stock map)
+local function SFit() return math.max(VW() / BW, VH() / BH) end
 local function ZMax()
   local m = 40
   for _, c in ipairs(ContList()) do local p = Place(c.id) m = math.max(m, 40 / math.max(0.05, p[2] - p[1])) end
@@ -109,17 +110,6 @@ function M.Zoom() return V.s / SFit() end
 local function SetView(cx, cy, s)
   local sf = SFit()
   V.s = Clamp(s, sf, sf * ZMax())
-  -- 0.5.1.10: locked on a zone (like the game's map at zone level): the zone's art always fills the view (cover, not
-  -- contain) and the view never shows past its edges; zooming out at that fit goes up to the continent (M.Wheel)
-  if M.lock then
-    local x1, x2, y1, y2 = WorldRect(M.lock)
-    if x1 then
-      V.s = math.max(V.s, M.CoverScale(M.lock))
-      local lw, lh = VW() / 2 / (BW * V.s), VH() / 2 / (BH * V.s)
-      cx = Clamp(cx, x1 + lw, math.max(x1 + lw, x2 - lw))
-      cy = Clamp(cy, y1 + lh, math.max(y1 + lh, y2 - lh))
-    end
-  end
   -- keep the picture covering the view (centred where it is smaller than the view, e.g. fully zoomed out)
   local hw, hh = VW() / 2 / (BW * V.s), VH() / 2 / (BH * V.s)
   cx = hw >= 0.5 and 0.5 or Clamp(cx, hw, 1 - hw)
@@ -165,10 +155,8 @@ local function ContBand(cont)
   return lo, lo + 0.35
 end
 local ZONE_LO, ZONE_HI = 0.40, 0.70
-local ZONE_IN = { 1.00, 1.12 }  -- 0.5.1.10: zone pictures drawn as the continent picture is magnified 1.00x to 1.12x
-local BASE_MAG = { 1.12, 1.20 } -- 0.5.1.10: the continent picture is gone by 1.20x (never drawn blurry)
-local WORLD_MAG = { 1.30, 1.50 } -- 0.5.1.10: the world picture likewise (it only shows around the continents)
-M.ZONE_IN, M.BASE_MAG, M.WORLD_MAG = ZONE_IN, BASE_MAG, WORLD_MAG
+local ZONE_DRAW = { 0.40, 0.55 } -- 0.5.1.11: zone pictures fade in over the continent picture (largest zone's share of the view)
+M.ZONE_DRAW = ZONE_DRAW
 function M.ContAlpha(cont)
   if not M.hasWorld then return 1 end
   local p = Place(cont)
@@ -186,16 +174,27 @@ function M.ZoneAlpha(z)
   return Smooth((frac - ZONE_LO) / (ZONE_HI - ZONE_LO)) * M.ContAlpha(z.cont)
 end
 -- how strongly a zone's picture is DRAWN (the breadcrumb and focus keep ZoneAlpha)
--- 0.5.1.10: keyed to how magnified the CONTINENT picture is: the zone pictures (all together) take over from it between
--- ZONE_IN, and the continent picture is gone by BASE_MAG[2], so it is never drawn blurry behind a zone
+-- 0.5.1.11: all of a continent's zone pictures fade in TOGETHER over the continent picture, keyed to the share of the view
+-- the continent's largest zone fills (ZONE_DRAW); the continent picture always stays underneath as the base
 function M.ArtMag(id, worldW)
   local a = MD.Art(id)
   return a and a.w > 0 and worldW * BW * V.s / a.w or 0
 end
 function M.ContMag(cont) local p = Place(cont) return M.ArtMag(cont, p[2] - p[1]) end
-function M.BaseAlpha(mag, band) band = band or BASE_MAG return 1 - Smooth((mag - band[1]) / (band[2] - band[1])) end
+M.zoneSpan = {}
+local function ZoneSpan(cont)
+  local s = M.zoneSpan[cont]
+  if s then return s[1], s[2] end
+  local w, h = 0, 0
+  for _, z in ipairs(MD.Zones(cont)) do w, h = math.max(w, z.r[2] - z.r[1]), math.max(h, z.r[4] - z.r[3]) end
+  M.zoneSpan[cont] = { w, h }
+  return w, h
+end
 function M.ZoneDrawAlpha(z)
-  return Smooth((M.ContMag(z.cont) - ZONE_IN[1]) / (ZONE_IN[2] - ZONE_IN[1])) * M.ContAlpha(z.cont)
+  local p = Place(z.cont)
+  local zw, zh = ZoneSpan(z.cont)
+  local frac = math.max(zw * (p[2] - p[1]) * BW * V.s / VW(), zh * (p[4] - p[3]) * BH * V.s / VH())
+  return Smooth((frac - ZONE_DRAW[1]) / (ZONE_DRAW[2] - ZONE_DRAW[1])) * M.ContAlpha(z.cont)
 end
 
 ---------------------------------------------------------------------------
@@ -308,6 +307,12 @@ local function Show(L, x1, x2, y1, y2, a)
   local l, t = M.ToScreen(x1, y1)
   local r, b = M.ToScreen(x2, y2)
   if a < 0.01 or r < 0 or b < 0 or l > VW() or t > VH() then L.frame:Hide() L.shown = false return false end
+  -- 0.5.1.11: while dragging, at most one picture is built per frame (the base under it shows meanwhile), so a drag
+  -- never stalls on building a zone's tiles and overlays
+  if M.buildBudget and (not L.built or (not L.ovBuilt and L.wantOv)) then
+    if M.buildBudget <= 0 then L.frame:Hide() L.shown = false M.dirty = true return false end
+    M.buildBudget = M.buildBudget - 1
+  end
   if not L.built then BuildTiles(L) L.built = true end
   if not L.ovBuilt and L.wantOv then BuildOverlays(L) end
   local sc = (r - l) / L.art.w
@@ -548,9 +553,14 @@ local CITY = { 0.45, 0.60 }
 M.SOLO, M.CITY = SOLO, CITY
 local function IsCity(z) return z.area < 0.004 end
 M.IsCity = IsCity
+-- 0.5.1.11: the share of the view the zone actually covers (so dragging off it brings its neighbours back in)
 local function Frac(z)
   local p = Place(z.cont)
-  return math.max((z.r[2] - z.r[1]) * (p[2] - p[1]) * BW * V.s / VW(), (z.r[4] - z.r[3]) * (p[4] - p[3]) * BH * V.s / VH())
+  local l, t = M.ToScreen(p[1] + z.r[1] * (p[2] - p[1]), p[3] + z.r[3] * (p[4] - p[3]))
+  local r, b = M.ToScreen(p[1] + z.r[2] * (p[2] - p[1]), p[3] + z.r[4] * (p[4] - p[3]))
+  local w = math.max(0, math.min(r, VW()) - math.max(l, 0))
+  local h = math.max(0, math.min(b, VH()) - math.max(t, 0))
+  return w * h / (VW() * VH())
 end
 M.Frac = Frac
 local function Inside(r, x, y) return x >= r[1] and x <= r[2] and y >= r[3] and y <= r[4] end
@@ -576,6 +586,7 @@ end
 
 function M.Layout()
   M.dirty = false
+  M.buildBudget = drag and 1 or nil
   if not M.ready then return end
   M.focus = Focus()
   -- world picture underneath
@@ -586,11 +597,13 @@ function M.Layout()
       local p = Place(c.id)
       local l, t = M.ToScreen(p[1], p[3])
       local r, b = M.ToScreen(p[2], p[4])
-      if M.ContAlpha(c.id) >= 0.999 and l <= 0 and t <= 0 and r >= VW() and b >= VH() then covered = true end
+      -- 0.5.1.11: covered only where the continent is at full strength: inside its feathered rim
+      local art = MD.Art(c.id)
+      local fe = art and art.w > 0 and FEATHER * (r - l) / art.w or 0
+      if M.ContAlpha(c.id) >= 0.999 and l + fe <= 0 and t + fe <= 0 and r - fe >= VW() and b - fe >= VH() then covered = true end
     end
-    -- 0.5.1.10: never drawn blurry: gone by WORLD_MAG
-    local wa = L and M.BaseAlpha(M.ArtMag(M.world, 1), WORLD_MAG) or 0
-    if L then if covered or wa < 0.01 then L.frame:Hide() L.shown = false else Show(L, 0, 1, 0, 1, wa) end end
+    -- 0.5.1.11: the world picture is the base wherever the continents do not cover the view (any magnification)
+    if L then if covered then L.frame:Hide() L.shown = false else Show(L, 0, 1, 0, 1, 1) end end
   end
   local fz, city = M.FocusZones(M.focus)
   M.focusZone, M.focusCity = fz and fz.id, city and city.id
@@ -601,8 +614,8 @@ function M.Layout()
   for _, c in ipairs(ContList()) do
     local cl = Layer(c.id, 2)
     local a = M.ContAlpha(c.id)
-    -- 0.5.1.10: the continent picture only up to BASE_MAG (never blurry behind a zone; parchment or tiles there instead)
-    if cl then local p = Place(c.id) Show(cl, p[1], p[2], p[3], p[4], a * M.BaseAlpha(M.ContMag(c.id))) end
+    -- 0.5.1.11: the continent picture is always drawn (the base under its zones, at any magnification)
+    if cl then local p = Place(c.id) Show(cl, p[1], p[2], p[3], p[4], a) end
     for _, z in ipairs(MD.Zones(c.id)) do
       local isCity, isFocus = IsCity(z), fz and z.id == fz.id
       local lv = isCity and 5 or (isFocus and 4 or 3)
@@ -642,14 +655,6 @@ function M.Wheel(delta)
   local u, v = M.ToWorld(px, py)
   local base = zoomT and zoomT.s or V.s
   local sf = SFit()
-  -- 0.5.1.10: at a locked zone's fit, zooming out goes up to the continent (like the game's map)
-  if M.lock and delta < 0 then
-    local cs = M.CoverScale(M.lock)
-    if base <= cs * 1.001 then if M.ZoomOutLevel then M.ZoomOutLevel() end return end
-    zoomT = { s = math.max(cs, Clamp(base * (1.35 ^ delta), sf, sf * ZMax())), u = u, v = v, px = px, py = py }
-    fly = nil
-    return
-  end
   zoomT = { s = Clamp(base * (1.35 ^ delta), sf, sf * ZMax()), u = u, v = v, px = px, py = py }
   fly = nil
 end
@@ -678,7 +683,7 @@ FlyTo = function(id, wx, wy)
   if M.hasWorld and id == M.world then s = SFit()
   else
     s = 0.94 * math.min(VW() / ((x2 - x1) * BW), VH() / ((y2 - y1) * BH))
-    -- 0.5.1.10: a zone or city fills the view (cover) and is locked once there
+    -- 0.5.1.10: a zone or city fills the view (cover); 0.5.1.11: the framing only, the view stays free to drag
     if not MD.Is(id, "continent") then s = M.CoverScale(id) end
     if MD.Is(id, "continent") then
       local _, hi = ContBand(id)
@@ -686,9 +691,7 @@ FlyTo = function(id, wx, wy)
     end
   end
   local cx, cy = M.Center()
-  M.lock = nil
-  fly = { t = 0, dur = 0.45, c0 = { cx, cy }, s0 = V.s, c1 = { wx or (x1 + x2) / 2, wy or (y1 + y2) / 2 }, s1 = s,
-    lockTo = not (M.hasWorld and id == M.world) and not MD.Is(id, "continent") and id or nil }
+  fly = { t = 0, dur = 0.45, c0 = { cx, cy }, s0 = V.s, c1 = { wx or (x1 + x2) / 2, wy or (y1 + y2) / 2 }, s1 = s }
   zoomT = nil
   M.flyTarget = id
 end
@@ -728,12 +731,7 @@ function M.Tick(dt)
     local e = Smooth(fly.t / fly.dur)
     local s = math.exp(math.log(fly.s0) + (math.log(fly.s1) - math.log(fly.s0)) * e)
     SetView(fly.c0[1] + (fly.c1[1] - fly.c0[1]) * e, fly.c0[2] + (fly.c1[2] - fly.c0[2]) * e, s)
-    if fly.t >= fly.dur then M.lock = fly.lockTo fly = nil ClampView() end
-  end
-  -- 0.5.1.10: zoomed in until the zone under the middle of the view fills it -> locked on that zone (no edge in sight)
-  if not M.lock and not fly and M.focus and M.ready then
-    local fz = M.FocusZones(M.focus)
-    if fz and not IsCity(fz) and V.s >= M.CoverScale(fz.id) * 0.999 then M.lock = fz.id ClampView() end
+    if fly.t >= fly.dur then fly = nil end
   end
   -- focus fade (a quarter second when the view moves from one continent to the other)
   local f = Focus()
@@ -796,13 +794,16 @@ local function ApplyFit()
   if not f or VW() < 50 or VH() < 50 then return false end
   local x1, x2, y1, y2 = WorldRect(f.id)
   if not x1 then M.pendingFit = nil return false end
-  -- 0.5.1.10: a zone (or city) is opened like the game's map: its art fills the box and the view is locked on it
+  -- 0.5.1.10: a zone (or city) is opened like the game's map: its art fills the box (0.5.1.11: a framing only, no lock)
   if MD.Is(f.id, "continent") or (M.hasWorld and f.id == M.world) then
-    M.lock = nil
     SetView(f.wx or (x1 + x2) / 2, f.wy or (y1 + y2) / 2, 0.94 * math.min(VW() / ((x2 - x1) * BW), VH() / ((y2 - y1) * BH)))
   else
-    M.lock = f.id
-    SetView(f.wx or (x1 + x2) / 2, f.wy or (y1 + y2) / 2, M.CoverScale(f.id))
+    -- the first view is framed so the zone's art fills the box (the player as near the middle as that allows)
+    local s = M.CoverScale(f.id)
+    local hw, hh = VW() / 2 / (BW * s), VH() / 2 / (BH * s)
+    local cx = Clamp(f.wx or (x1 + x2) / 2, x1 + hw, math.max(x1 + hw, x2 - hw))
+    local cy = Clamp(f.wy or (y1 + y2) / 2, y1 + hh, math.max(y1 + hh, y2 - hh))
+    SetView(cx, cy, s)
   end
   return true
 end
@@ -820,7 +821,9 @@ local function Refit()
   M.Layout()
 end
 M.Refit = Refit
--- move the view by dx, dy screen px (held inside a locked zone)
+-- tests and probes: put the view at world point cx, cy and zoom (1 = fully zoomed out)
+function M.SetViewAt(cx, cy, zoom) SetView(cx, cy, zoom * SFit()) M.Layout() end
+-- move the view by dx, dy screen px (free, like a drag)
 function M.Pan(dx, dy) V.ox, V.oy = V.ox + dx, V.oy + dy ClampView() M.Layout() end
 
 local function SetFullIcon()
@@ -1220,7 +1223,7 @@ function M.Reset()
   for _, L in pairs(M.layers) do L.frame:Hide() end
   M.layers, M.fade = {}, {}
   M.started, M.ready, M.only, M.hasWorld, M.player = false, false, nil, nil, nil
-  M.pendingFit, M.lastView, M.lock = nil, nil, nil
+  M.pendingFit, M.lastView = nil, nil
   drag, zoomT, fly, crumbKey = nil, nil, nil, nil
   MD.Forget()
   if CU then CU.Reset() end
@@ -1314,7 +1317,7 @@ NS.RegisterTab({
   Refresh = function() if M.started then M.dirty = true end end,
   -- 0.5.1.6: the window is being built again; drop everything that hangs off the old one
   Reset = function()
-    M.layers, M.fade, M.pools, M.started, M.full, M.lock = {}, {}, {}, nil, nil, nil
+    M.layers, M.fade, M.pools, M.started, M.full = {}, {}, {}, nil, nil
     if full then full:Hide() end
     full = nil
     if CU and CU.Drop then CU.Drop() end
