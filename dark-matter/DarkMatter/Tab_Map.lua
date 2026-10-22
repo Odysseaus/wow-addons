@@ -493,6 +493,7 @@ local function LayoutOverlay()
     end
   end
   PoolHideRest("badge") PoolHideRest("quest")
+  if M.DrawUserPins then M.DrawUserPins() end
   if caption then if anyBadge then caption:Show() else caption:Hide() end end
 end
 -- 0.5.1.7: map pictures on screen: total, feathered at their rim, the world base, and hard-edged ones (mapprobe 21)
@@ -787,6 +788,117 @@ local function FrameId(map)
   return MD.ContinentOf(map) or map
 end
 M.WorldOf, M.FrameId = WorldOf, FrameId
+
+---------------------------------------------------------------------------
+-- 0.5.2b your own pins: the Drop a pin tool, then a click on the map drops one there (saved in DarkMatterDB.userPins)
+-- and points the game's waypoint and minimap arrow at it. Drawn with the game's own map pin icon only (nothing drawn
+-- on a client without it). A pin click points the arrow there again; right-click removes it.
+---------------------------------------------------------------------------
+M.USER_PIN_MAX = 50
+local function UserPins()
+  if not NS.db then return {} end
+  if type(NS.db.userPins) ~= "table" then NS.db.userPins = {} end
+  return NS.db.userPins
+end
+M.UserPins = UserPins
+function M.SetPinMode(on)
+  M.pinMode = on and true or nil
+  local b = M.pinBtn
+  if b then
+    if on then b.icon:SetVertexColor(1, 0.82, 0.25) else b.icon:SetVertexColor(0.93, 0.89, 0.8) end
+  end
+  if on then NS.SetStatus("Drop a pin: click the map where you want it (click the tool again to cancel).") end
+end
+local function PointPin(p)
+  local QS = NS.QS
+  if not (QS and p) then return false end
+  local ok, why = QS.SetWaypoint(p.map, p.x, p.y)
+  NS.SetStatus("Your pin in " .. tostring(MD.Name(p.map) or "?") .. ": " .. (ok and why or ("no waypoint: " .. tostring(why))))
+  return ok
+end
+M.PointPin = PointPin
+-- drop a pin at view point (px, py): the zone under it (the game's own answer first), zone coords. Returns the pin or nil.
+function M.DropPin(px, py)
+  local wx, wy = M.ToWorld(px, py)
+  local pin
+  for _, c in ipairs(ContList()) do
+    local p = Place(c.id)
+    local cx, cy = (wx - p[1]) / (p[2] - p[1]), (wy - p[3]) / (p[4] - p[3])
+    if cx >= 0 and cx <= 1 and cy >= 0 and cy <= 1 then
+      local z, zx, zy = MD.ZoneAt(c.id, cx, cy)
+      if z then pin = { map = z.id, x = zx, y = zy } break end
+    end
+  end
+  M.SetPinMode(false)
+  if not pin then
+    M.Note("No zone under that point: pins go on a zone of the map.")
+    return nil
+  end
+  local list = UserPins()
+  list[#list + 1] = pin
+  while #list > M.USER_PIN_MAX do table.remove(list, 1) end
+  PointPin(pin)
+  M.dirty = true
+  return pin
+end
+function M.RemovePin(p)
+  local list = UserPins()
+  for i = #list, 1, -1 do if list[i] == p then table.remove(list, i) end end
+  NS.SetStatus("Pin removed.")
+  M.dirty = true
+end
+local function MakeUserPin()
+  local b = CreateFrame("Button", nil, over)
+  b:SetSize(20, 20)
+  b.icon = b:CreateTexture(nil, "ARTWORK")
+  b.icon:SetAllPoints(b)
+  b:SetScript("OnEnter", function(self)
+    if not (GameTooltip and self.pin) then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Your pin", 1, 0.82, 0)
+    GameTooltip:AddLine(string.format("%s (%.1f, %.1f)", tostring(MD.Name(self.pin.map) or "?"), self.pin.x * 100, self.pin.y * 100), 1, 1, 1)
+    GameTooltip:AddLine("Click: the game's waypoint and arrow", 0.5, 0.8, 1)
+    GameTooltip:AddLine("Right-click: remove", 0.5, 0.8, 1)
+    GameTooltip:Show()
+  end)
+  b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  b:SetScript("OnMouseDown", function(_, btn) if btn == "LeftButton" and M.VpDown then M.VpDown(btn) end end)
+  b:SetScript("OnMouseUp", function(self, btn)
+    if btn == "RightButton" then if self.pin then M.RemovePin(self.pin) end return end
+    if btn == "LeftButton" and drag and not drag.moved then
+      drag = nil
+      PointPin(self.pin)
+      return
+    end
+    if M.VpUp then M.VpUp(btn) end
+  end)
+  return b
+end
+function M.DrawUserPins()
+  PoolReset("upin")
+  local QS = NS.QS
+  local vw, vh = VW(), VH()
+  for _, p in ipairs(UserPins()) do
+    local wx, wy = WorldOf(p.map, p.x, p.y)
+    if wx then
+      local sx, sy = M.ToScreen(wx, wy)
+      if sx > 0 and sy > 0 and sx < vw and sy < vh then
+        local b = Pool("upin", MakeUserPin)
+        if QS and QS.PaintIcon(b.icon, "userPin") then
+          b.pin = p
+          b:SetFrameLevel(over:GetFrameLevel() + 4)
+          b:ClearAllPoints()
+          b:SetPoint("BOTTOM", over, "TOPLEFT", sx, -sy) -- the pin's point sits on the spot
+          b:Show()
+        else
+          b.pin = nil
+          b:Hide()
+        end
+      end
+    end
+  end
+  PoolHideRest("upin")
+end
 
 -- a themed note across the top of the map (our own plate: the theme's pane border on a dark plate); click or 8 s hides it
 local note
@@ -1239,6 +1351,7 @@ local function Build(body)
     if btn ~= "LeftButton" then return end
     local was = drag
     drag = nil
+    if was and not was.moved and M.pinMode then M.DropPin(was.x, was.y) return end
     if was and not was.moved then
       local now = (type(GetTime) == "function" and GetTime()) or 0
       if lastClick and now - lastClick < 0.35 then lastClick = nil M.ZoomAt(was.x, was.y, 2) else lastClick = now end
@@ -1260,7 +1373,8 @@ local function Build(body)
   UI.NineSlice(strip, "pane", 4, "BORDER", 1)
   local tools = {
     ToolButton("starpen", "Starpen", "Draw on the map. Coming in 0.5.3.", true),
-    ToolButton("pin", "Drop a pin", "Pins with notes, colours and minimap follow. Coming in 0.5.2.", true),
+    ToolButton("pin", "Drop a pin", "Click this, then click the map: a pin there, and the game's waypoint and minimap arrow point at it. Click a pin to point at it again; right-click removes it.", false,
+      function() M.SetPinMode(not M.pinMode) end),
     ToolButton("town", "Town Pins", "Flight masters, innkeepers, vendors, trainers and more. Coming in 0.5.4.", true),
     ToolButton("findme", "Find me", "Jump to where you are.", false, function() M.FindMe() end),
     ToolButton("full", "Full screen", "", false, function() M.SetFull(not M.full) end),
@@ -1280,6 +1394,7 @@ local function Build(body)
   M.tools = tools
   M.fullBtn = tools[5]
   M.panelBtn = tools[7]
+  M.pinBtn = tools[2]
   M.SetPanelIcon()
   SetFullIcon()
   M.BuildClosePanel(vpBox, strip, canvas:GetFrameLevel() + 30)

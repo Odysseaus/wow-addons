@@ -917,10 +917,10 @@ if MODE ~= "minimal" then
   check(#MUTATED==0,"window build/tabs made no mutating calls")
   -- window events: quest events only on a private frame, only while shown
   local qev
-  for _,fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_LOG_UPDATE then qev=fr end end
+  for _,fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_LOG_UPDATE and fr ~= DarkMatter.Tracker.frame then qev=fr end end
   DarkMatter.ShowTab("quests")
   qev=nil
-  for _,fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_LOG_UPDATE then qev=fr end end
+  for _,fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_LOG_UPDATE and fr ~= DarkMatter.Tracker.frame then qev=fr end end
   check(qev~=nil and qev~=UIParent and qev~=DarkMatterFrame,"quest events registered on a private frame while shown")
   W:Hide()
   W._scripts.OnHide(W)
@@ -3457,7 +3457,7 @@ if MODE ~= "minimal" then
   check(QWATCH[3] == nil and gd.watch._checked == false, "watch: unchecking removes it")
   -- reverse sync: a change made in the WoW quest log / tracker shows up on the next watch event
   local wf
-  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_WATCH_LIST_CHANGED then wf = fr end end
+  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_WATCH_LIST_CHANGED and fr ~= DarkMatter.Tracker.frame then wf = fr end end
   check(wf ~= nil and wf ~= UIParent, "watch: QUEST_WATCH_LIST_CHANGED registered on a private frame while shown")
   QWATCH[6] = true
   TIME_NOW = TIME_NOW + 5
@@ -3482,7 +3482,7 @@ if MODE ~= "minimal" then
   check(QWATCH[3] == nil, "watch: no change while in combat (queued)")
   InCombatLockdown = ic
   local rf
-  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED and fr ~= wf then rf = fr end end
+  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED and fr ~= wf and fr ~= DarkMatter.Tracker.frame then rf = fr end end
   check(rf ~= nil, "watch: waits for PLAYER_REGEN_ENABLED")
   rf._scripts.OnEvent(rf, "PLAYER_REGEN_ENABLED")
   check(QWATCH[3] == true and rowFor("Gold Dust").watch._checked == true, "watch: queued change applied after combat")
@@ -3686,7 +3686,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2a.2 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4075,7 +4075,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2a.2 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4251,8 +4251,8 @@ do
   local keys, soon = {}, {}
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
   check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup,quest", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2a.1: + Quest log)")
-  check(soon.starpen and soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen, Pin and Town Pins are disabled")
-  local wantV = { starpen = "0.5.3", pin = "0.5.2", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
+  check(soon.starpen and not soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen and Town Pins are disabled (0.5.2b: Pin works)")
+  local wantV = { starpen = "0.5.3", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
   local origSS = NS.SetStatus
   NS.SetStatus = function(t) STATUS_SEEN = t return origSS(t) end
   for k, b in pairs(soon) do
@@ -4265,6 +4265,48 @@ do
     check(b.icon._alpha and b.icon._alpha < 0.5, "0.5.0 map: " .. k .. " icon is dimmed")
   end
   NS.SetStatus = origSS
+  -- 14b. 0.5.2b: your own pins (Pin tool): drop, saved in DarkMatterDB, the game's waypoint + arrow, right-click removes
+  do
+    local pb = M.pinBtn
+    check(pb and pb.key == "pin" and not pb.soon and M.tools[2] == pb, "0.5.2b map pins: the Pin tool is enabled")
+    local wp, st = {}, {}
+    local saveUMP, saveST, saveSet, saveCan, saveAtlas = UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap, C_Texture.GetAtlasInfo
+    UiMapPoint = { CreateFromCoordinates = function(m, x, y) return { m = m, x = x, y = y } end }
+    C_Map.SetUserWaypoint = function(p) wp[#wp + 1] = p end
+    C_Map.CanSetUserWaypointOnMap = function() return true end
+    C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) st[#st + 1] = v end }
+    NS.db.userPins = {}
+    M.FlyTo(1426) run(30)
+    local z0 = M.Zoom()
+    pb._scripts.OnClick(pb, "LeftButton")
+    check(M.pinMode, "0.5.2b map pins: the Pin tool arms pin mode")
+    CX, CY = 406, 260
+    M.vp._scripts.OnMouseDown(M.vp, "LeftButton") M.vp._scripts.OnMouseUp(M.vp, "LeftButton")
+    local up = NS.db.userPins
+    check(#up == 1 and up[1].map == 1426 and up[1].x > 0 and up[1].x < 1 and not M.pinMode and math.abs(M.Zoom() - z0) < 1e-9,
+      "0.5.2b map pins: a click drops one pin on the zone under it, saved in DarkMatterDB (pin mode ends, no zoom)")
+    check(#wp == 1 and wp[1].m == 1426 and math.abs(wp[1].x - up[1].x) < 1e-9 and st[1] == true, "0.5.2b map pins: the game's waypoint and minimap arrow point at it")
+    run(2)
+    local pool = M.pools.upin
+    check(not pool or (pool[1] == nil or not pool[1]._shown), "0.5.2b map pins: without the game's pin icon nothing is drawn (no substitute)")
+    C_Texture.GetAtlasInfo = function(a) if a == "Waypoint-MapPin-ChatIcon" then return { width = 24, height = 24 } end return saveAtlas(a) end
+    NS.QS.ForgetIcons() M.dirty = true run(2)
+    pool = M.pools.upin
+    local pin = pool and pool[1]
+    check(pin and pin._shown and pin.icon._file == "atlas:Waypoint-MapPin-ChatIcon" and pin.pin == up[1], "0.5.2b map pins: drawn with the game's own pin icon")
+    pin._scripts.OnEnter(pin)
+    check(tip.title == "Your pin" and tip.lines[1] and tip.lines[1]:find("Dun Morogh", 1, true), "0.5.2b map pins: tooltip names the zone")
+    wp = {}
+    pin._scripts.OnMouseDown(pin, "LeftButton") pin._scripts.OnMouseUp(pin, "LeftButton")
+    check(#wp == 1 and wp[1].m == 1426, "0.5.2b map pins: clicking a pin points the arrow at it again")
+    pin._scripts.OnMouseUp(pin, "RightButton")
+    run(2)
+    check(#NS.db.userPins == 0 and not pin._shown, "0.5.2b map pins: right-click removes it")
+    pb._scripts.OnClick(pb, "LeftButton") pb._scripts.OnClick(pb, "LeftButton")
+    check(not M.pinMode, "0.5.2b map pins: a second click on the tool disarms it")
+    UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap, C_Texture.GetAtlasInfo = saveUMP, saveST, saveSet, saveCan, saveAtlas
+    NS.QS.ForgetIcons()
+  end
   -- 15. level badges (public data) at the continent view; the caption names the source
   M.FlyTo(1415) run(20)
   local bp, names = M.pools.badge, {}
@@ -4640,7 +4682,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2a%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5588,7 +5630,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2a.2 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -5604,6 +5646,261 @@ if MODE == "full" then
   MW.art = nil
   MW.Art()
   NS.SetTheme("wow")
+end
+
+-- ===== 0.5.2b: the objective tracker overlays, Ready to Turn In, zone auto-track, the M / L keys =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local Tr, K, QL = NS.Tracker, NS.Keys, NS.QL
+  local mut0 = #MUTATED
+  check(Tr and K and Tr.frame and Tr.frame ~= UIParent and not Tr.frame._scripts.OnClick, "0.5.2b tracker: started at login on a private frame")
+  for _, r in ipairs(REGLOG) do
+    if r.frame == Tr.frame then check(r.frame ~= UIParent and r.frame ~= Minimap and r.frame ~= GameTooltip, "0.5.2b tracker: events only on its own frame (" .. r.ev .. ")") end
+  end
+  check(DarkMatterDB.autoTrack == false and DarkMatterDB.mlKeys == true and type(DarkMatterDB.userPins) == "table" and type(DarkMatterDB.keepTracked) == "table",
+    "0.5.2b defaults: auto-track off, M/L keys on, pins saved in DarkMatterDB")
+  -- 1. keep-tracked pins from the watch list
+  QWATCH = { [2] = true }
+  DarkMatterDB.keepTracked, DarkMatterDB.keepInit = {}, nil
+  Tr.watch, Tr.log, Tr.own = nil, {}, {}
+  QL.Forget()
+  Tr.Diff()
+  local P = DarkMatterDB.keepTracked
+  check(P[101] == true and DarkMatterDB.keepInit == true and P[102] == nil, "0.5.2b keep: on the first run the quests you track become pins")
+  QWATCH[3] = true Tr.Diff()
+  check(P[102] == true, "0.5.2b keep: tracking a quest yourself pins it")
+  Tr.log[103] = nil QWATCH[6] = true Tr.Diff()
+  check(P[103] == nil, "0.5.2b keep: the game's auto-watch of a quest new to the log does not pin it")
+  QWATCH[6] = nil Tr.Diff()
+  TIME_NOW = TIME_NOW + 100
+  Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+  QWATCH[3] = nil Tr.Diff()
+  check(QWATCH[3] == true and P[102] == true, "0.5.2b keep: a pinned quest the game untracks on a zone change is tracked again")
+  Tr.Diff()
+  check(Tr.own[102] == nil and P[102] == true, "0.5.2b keep: our own re-track is not taken as yours")
+  TIME_NOW = TIME_NOW + 10
+  QWATCH[3] = nil Tr.Diff()
+  check(QWATCH[3] == nil and P[102] == nil, "0.5.2b keep: untracking it yourself unpins it")
+  Tr.OnEvent("QUEST_REMOVED", 101)
+  check(P[101] == nil, "0.5.2b keep: abandoning a quest unpins it")
+  Tr.SetPinned(103, true)
+  check(P[103] == true and QWATCH[6] == true, "0.5.2b keep: pinning an untracked quest tracks it")
+  Tr.Diff()
+  check(P[103] == true and Tr.own[103] == nil, "0.5.2b keep: and that track is ours (still pinned)")
+  -- 2. the tracker rows: our own pin button and title click area, positioned by the blocks (read only)
+  local function vis(f) return f._shown == true end
+  local function block(q, top, withItem)
+    local b = CreateFrame("Frame", nil, UIParent)
+    b._shown = true b.id = q
+    b.IsVisible = function(s) return vis(s) end
+    b.GetTop = function() return top end
+    b.GetBottom = function() return top - 30 end
+    b.GetFrameStrata = function() return "LOW" end
+    b.GetFrameLevel = function() return 7 end
+    b.HeaderText = CreateFrame("Frame", nil, b)
+    b.HeaderText.GetLeft = function() return 1000 end
+    b.HeaderText.GetRight = function() return 1200 end
+    b.poiButton = CreateFrame("Button", nil, b)
+    b.poiButton._shown = true
+    b.poiButton.IsVisible = function(s) return vis(s) end
+    b.poiButton.GetLeft = function() return 975 end
+    b.poiButton.GetRight = function() return 995 end
+    if withItem then
+      b.ItemButton = CreateFrame("Button", nil, b)
+      b.ItemButton._shown = true
+      b.ItemButton.IsVisible = function(s) return vis(s) end
+      b.ItemButton.GetLeft = function() return 1150 end
+      b.ItemButton.GetRight = function() return 1180 end
+    end
+    return b
+  end
+  local T = CreateFrame("Frame", "ObjectiveTrackerFrame", UIParent)
+  T._shown = true
+  T.IsVisible = function(s) return vis(s) end
+  T.GetLeft = function() return 990 end
+  T.GetTop = function() return 760 end
+  T.GetWidth = function() return 240 end
+  local b1, b2 = block(101, 700, false), block(102, 640, true)
+  QuestObjectiveTracker = { usedBlocks = { Template = { [101] = b1, [102] = b2 } } }
+  P[101] = true
+  Tr.Layout()
+  local r1, r2 = Tr.rows[1], Tr.rows[2]
+  check(Tr.shown == 2 and r1.pin.q == 101 and r2.pin.q == 102, "0.5.2b tracker: one row per visible quest block, top to bottom")
+  check(r1.pin._parent == UIParent and r1.click._parent == UIParent and r1.pin._pts[1][2] == b1.poiButton and r1.pin._pts[1][1] == "RIGHT",
+    "0.5.2b tracker: our pin is a UIParent button beside the quest's map button (nothing put into the tracker)")
+  local style = Tr.KeepStyle()
+  check(style and style.key == "lock" and r1.pin._shown and r1.pin.icon._file == "Interface\\Buttons\\LockButton-Locked-Up" and r2.pin.icon._file == "Interface\\Buttons\\LockButton-Unlocked-Up",
+    "0.5.2b tracker: keep icon is a game icon (the map pin atlases are missing here, so the lock); pinned / not pinned differ")
+  check(r1.pin._strata == "LOW" and r1.pin._level == 12, "0.5.2b tracker: our buttons sit just above the block")
+  check(r1.click._pts[1][2] == b1.HeaderText and r1.click._pts[2][1] == "BOTTOMRIGHT" and rawget(r1.click, "cut") == nil, "0.5.2b tracker: the title click area covers the title")
+  check(r2.click.cut == 1150 and r2.click._w == 148 and r2.click._pts[2][1] == "BOTTOMLEFT", "0.5.2b tracker: the title area stops before the item button (uncovered)")
+  for _, f in ipairs({ T, b1, b2, b1.HeaderText, b1.poiButton, b2.ItemButton }) do
+    check(next(f._scripts) == nil and #f._pts == 0 and (f == T or f == b1 or f == b2 or f._parent ~= UIParent),
+      "0.5.2b taint: the tracker's frames get no script, no anchor and no new parent")
+  end
+  r2.pin._scripts.OnClick(r2.pin, "LeftButton")
+  check(P[102] == true, "0.5.2b tracker: our pin click pins the quest")
+  Tr.Layout()
+  check(r2.pin.icon._file == "Interface\\Buttons\\LockButton-Locked-Up", "0.5.2b tracker: and its icon follows")
+  r2.pin._scripts.OnClick(r2.pin, "LeftButton")
+  check(P[102] == nil, "0.5.2b tracker: a second click unpins it")
+  -- a chosen style the client lacks: nothing drawn (no substitute)
+  local ok1, msg1 = Tr.SetKeepIcon("pin")
+  Tr.Layout()
+  check(ok1 and msg1:find("MISSING", 1, true) and not r1.pin._shown, "0.5.2b tracker: a chosen keep icon this client lacks draws nothing")
+  Tr.SetKeepIcon("auto") Tr.Layout()
+  check(r1.pin._shown and DarkMatterDB.keepIcon == nil, "0.5.2b tracker: /dm keepicon auto goes back to the first available")
+  -- the title click opens Dark Matter on the Map tab with the quest's detail in the Quest Log panel
+  local saveST, saveOQ, saveShow = NS.MapTab.ShowQuest, NS.QuestPanel.OpenQuest, nil
+  local shownQ, openedQ
+  NS.MapTab.ShowQuest = function(q) shownQ = q end
+  NS.QuestPanel.OpenQuest = function(q) openedQ = q end
+  NS.ToggleWindow(false)
+  NS.db.questPanel = false
+  r1.click._scripts.OnClick(r1.click, "LeftButton")
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map" and NS.db.questPanel ~= false and shownQ == 101 and openedQ == 101,
+    "0.5.2b tracker: a title click opens Dark Matter on the Map tab, glides to the quest and opens its detail in the panel")
+  -- 3. Ready to Turn In (Gold Dust is complete)
+  Tr.FillReady() Tr.Layout()
+  local R = DarkMatterReadyFrame
+  check(R and R._parent == UIParent and R._shown and R.n == 1 and R.rows[1].q == 102 and R.rows[1].title._text == "Gold Dust" and R.rows[1].zone._text == "Elwynn Forest",
+    "0.5.2b ready: our own section lists the quest and its zone")
+  check(R._pts[1][1] == "TOPLEFT" and R._pts[1][2] == UIParent and R._pts[1][4] == 990 and R._pts[1][5] == 640 - 30 - 6,
+    "0.5.2b ready: placed under the tracker's lowest visible quest (read from its bottom)")
+  local wp, st, sq = {}, {}, {}
+  local saveSuper = C_SuperTrack
+  C_SuperTrack = { SetSuperTrackedQuestID = function(q) sq[#sq + 1] = q end, SetSuperTrackedUserWaypoint = function(v) st[#st + 1] = v end }
+  shownQ, openedQ = nil, nil
+  NS.ToggleWindow(false)
+  R.rows[1]._scripts.OnClick(R.rows[1], "LeftButton")
+  check(sq[1] == 102 and shownQ == 102 and openedQ == 102 and DarkMatterFrame:IsShown(), "0.5.2b ready: a row click sets the arrow and opens Dark Matter on that quest")
+  C_SuperTrack = saveSuper
+  NS.MapTab.ShowQuest, NS.QuestPanel.OpenQuest = saveST, saveOQ
+  T._shown = false Tr.Layout()
+  check(not R._shown and not r1.pin._shown and not r1.click._shown, "0.5.2b ready: everything hides with the tracker")
+  T._shown = true
+  NS.db.readySection = false Tr.FillReady() Tr.Layout()
+  check(not R._shown, "0.5.2b ready: the section can be turned off")
+  NS.db.readySection = nil Tr.FillReady() Tr.Layout()
+  check(R._shown, "0.5.2b ready: and back on")
+  -- the Quests tab and the Quest Log panel: a Ready to Turn In group on top
+  local QT = NS.tabs.quests
+  local rq = QT.Ready()
+  check(#rq == 1 and rq[1].questID == 102 and QT.READY_TITLE == "Ready to Turn In", "0.5.2b ready: the Quests tab and the panel get a Ready to Turn In group")
+  -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat
+  QWATCH = { [6] = true }
+  for k in pairs(P) do P[k] = nil end
+  Tr.watch, Tr.own = nil, {}
+  Tr.Diff()
+  for k in pairs(P) do P[k] = nil end
+  check(Tr.AutoWanted() == false, "0.5.2b auto: off by default")
+  Tr.Tick(TIME_NOW)
+  check(QWATCH[6] == true and not QWATCH[2], "0.5.2b auto: nothing changes while it is off")
+  local taxi = false
+  UnitOnTaxi = function() return taxi end
+  SlashCmdList.DARKMATTER("autotrack on")
+  check(NS.db.autoTrack == true, "0.5.2b auto: /dm autotrack on")
+  taxi = true
+  Tr.Tick(TIME_NOW)
+  check(QWATCH[6] == true and not QWATCH[2] and Tr.waitingTaxi, "0.5.2b auto: on a flight it waits for the landing")
+  taxi = false
+  local ic = InCombatLockdown
+  InCombatLockdown = function() return true end
+  Tr.Tick(TIME_NOW)
+  check(QWATCH[6] == true and not QWATCH[2], "0.5.2b auto: no watch change in combat")
+  InCombatLockdown = ic
+  Tr.BATCH = 2
+  Tr.Tick(TIME_NOW)
+  check(QWATCH[6] == nil and QWATCH[2] == true and not QWATCH[3] and Tr.batches and #Tr.queue == 1, "0.5.2b auto: the first batch (removals first, then adds)")
+  Tr.Tick(TIME_NOW + 0.5)
+  check(not QWATCH[3], "0.5.2b auto: the next batch waits about a second")
+  Tr.Tick(TIME_NOW + 1.1)
+  check(QWATCH[3] == true and QWATCH[2] == true and not QWATCH[6] and #Tr.queue == 0, "0.5.2b auto: this zone's quests tracked, the other zone's untracked")
+  Tr.Diff()
+  check(next(P) == nil, "0.5.2b auto: its own changes pin nothing")
+  -- a pinned quest from another zone stays tracked
+  P[103] = true
+  Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+  Tr.Tick(TIME_NOW + 3) Tr.Tick(TIME_NOW + 5)
+  check(QWATCH[6] == true and QWATCH[2] == true and QWATCH[3] == true, "0.5.2b auto: kept (pinned) quests stay tracked in any zone")
+  Tr.BATCH = 5
+  SlashCmdList.DARKMATTER("autotrack off")
+  UnitOnTaxi = nil
+  check(NS.db.autoTrack == false, "0.5.2b auto: /dm autotrack off")
+  P[103] = nil
+  -- 5. the M / L keys: override bindings owned by our frame, out of combat only, never saved
+  local binds, cleared, saved = {}, 0, 0
+  ClearOverrideBindings = function(o) check(o == K.owner, "0.5.2b keys: cleared on our own frame") binds = {} cleared = cleared + 1 end
+  SetOverrideBinding = function(o, prio, key, action) check(o == K.owner and prio == false, "0.5.2b keys: owned by our frame") binds[key] = action end
+  SetOverrideBindingClick = function(o, prio, key, btn, mb) check(o == K.owner and prio == false and mb == "LeftButton", "0.5.2b keys: click binding on our frame") binds[key] = "CLICK " .. btn end
+  SaveBindings = function() saved = saved + 1 end
+  check(K.Apply() == "on" and binds.M == "CLICK DarkMatterKeyMap" and binds.L == "CLICK DarkMatterKeyLog" and binds["ALT-M"] == "TOGGLEWORLDMAP" and binds["ALT-L"] == "TOGGLEQUESTLOG",
+    "0.5.2b keys: M and L open Dark Matter; ALT-M / ALT-L the game's map and quest log")
+  check(K.owner._name == "DarkMatterKeyOwner" and K.owner ~= UIParent, "0.5.2b keys: owned by a Dark Matter frame")
+  NS.ToggleWindow(false)
+  local kb = DarkMatterKeyMap
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  kb._scripts.OnClick(kb, "LeftButton", false)
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map" and NS.QuestPanel.IsShown(), "0.5.2b keys: M opens Dark Matter on the Map tab with the Quest Log panel (once per press)")
+  TIME_NOW = TIME_NOW + 5
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b keys: M again closes it")
+  local kl = DarkMatterKeyLog
+  TIME_NOW = TIME_NOW + 5
+  kl._scripts.OnClick(kl, "LeftButton", false)
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map" and NS.QuestPanel.IsShown(), "0.5.2b keys: L opens it too")
+  NS.ToggleWindow(false)
+  InCombatLockdown = function() return true end
+  local c0 = cleared
+  binds = {}
+  check(K.Set(false) == "queued" and cleared == c0 and K.pending, "0.5.2b keys: in combat nothing changes (queued)")
+  local rf = REGLOG[#REGLOG].ev == "PLAYER_REGEN_ENABLED" and REGLOG[#REGLOG].frame or nil
+  InCombatLockdown = ic
+  check(rf and rf ~= UIParent, "0.5.2b keys: waits for the end of combat on a private frame")
+  local found = rf and rf._scripts.OnEvent and true
+  if found then rf._scripts.OnEvent(rf, "PLAYER_REGEN_ENABLED") end
+  check(not (rf and rf._ev and rf._ev.PLAYER_REGEN_ENABLED), "0.5.2b keys: the combat-end frame lets go of the event")
+  check(found and cleared == c0 + 1 and next(binds) == nil and not K.pending, "0.5.2b keys: after combat the option (off) is applied: no overrides")
+  SlashCmdList.DARKMATTER("keys on")
+  check(NS.db.mlKeys == true and binds.M == "CLICK DarkMatterKeyMap", "0.5.2b keys: /dm keys on")
+  check(saved == 0, "0.5.2b keys: SaveBindings is never called")
+  ClearOverrideBindings, SetOverrideBinding, SetOverrideBindingClick, SaveBindings = nil, nil, nil, nil
+  -- 6. /dm trackerprobe
+  local said = {}
+  local oldPrint = NS.Print
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList.DARKMATTER("trackerprobe")
+  NS.Print = oldPrint
+  local all = table.concat(said, "\n")
+  check(said[1] == "trackerprobe 0.5.2b (read-only)" and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+    and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
+  -- the Settings page: two plain checkboxes
+  local boxes = {}
+  for _, f in ipairs(ALL) do if f._parent == DarkMatterOptionsPanel and rawget(f, "_scripts").OnClick and f._checked ~= nil then boxes[#boxes + 1] = f end end
+  check(#boxes == 2, "0.5.2b options: two checkboxes (zone auto-track, M/L keys)")
+  -- taint: no mutating calls, no hooks, nothing saved, no shared frames
+  check(#MUTATED == mut0, "0.5.2b taint: the tracker, ready and key code made no mutating calls (" .. table.concat(MUTATED, ",", mut0 + 1) .. ")")
+  ObjectiveTrackerFrame, QuestObjectiveTracker = nil, nil
+  Tr.Layout()
+  QWATCH = { [2] = true }
+  QL.Forget()
+end
+if MODE == "minimal" then
+  local Tr = DarkMatter.Tracker
+  Tr.Tick(TIME_NOW)
+  check(Tr.frame and Tr.shown == 0 and (Tr.readyCount or 0) == 0, "0.5.2b tracker: a client without the quest log or the tracker: nothing drawn, no error")
+  check(DarkMatter.Tracker.Report()[2]:find("not present", 1, true), "0.5.2b tracker: the probe says the tracker is not present")
+end
+for _, fn in ipairs({ "Tracker.lua", "Keys.lua" }) do
+  local src = io.open(arg[1] .. "/" .. fn):read("*a")
+  local code = src:gsub("%-%-[^\n]*", "")
+  for _, bad in ipairs({ "hooksecurefunc", "HookScript", "SaveBindings", "LoadAddOn", "SetParent", "UIParent:RegisterEvent", "SecureHandler", "WorldMapFrame" }) do
+    check(not code:find(bad, 1, true), "0.5.2b taint: " .. fn .. " has no " .. bad)
+  end
+end
+do
+  local code = io.open(arg[1] .. "/Tab_Map.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  check(not code:find("SetUserWaypoint", 1, true) and not code:find("SetSuperTrack", 1, true), "0.5.2b taint: your map pins set the waypoint only through QuestState")
 end
 
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====

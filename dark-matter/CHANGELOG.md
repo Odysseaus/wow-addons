@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2b
+
+- Keep-tracked pins on the objective tracker. Beside each quest row there is a small Dark Matter button (our own button on UIParent, only positioned next to the row's map button; nothing is put into the tracker). A pinned quest stays tracked when the game untracks it on a zone change. Tracking a quest yourself pins it; untracking or abandoning it unpins it. On the first run the quests you track now become pins. Saved in DarkMatterDB.keepTracked.
+- The keep icon is a game icon, checked at runtime, never bundled: map pin (atlas Waypoint-MapPin-Tracked / -Untracked, the default when present), lock (Interface\Buttons\LockButton-Locked-Up / -Unlocked-Up) or star (atlas PetJournal-FavoritesIcon). `/dm keepicon pin|lock|star|auto` chooses. A chosen icon this client lacks draws nothing.
+- Tracker title click: a transparent area over each quest title opens Dark Matter on the Map tab, glides to the quest and shows its detail in the docked Quest Log panel. The item and map buttons stay uncovered (the area stops before them).
+- Ready to Turn In: our own themed section under the tracker (placed by reading the tracker's lowest visible row). Each row shows the quest and its zone; a click sets the game's arrow (super-track) and opens Dark Matter on that quest. The Quests tab and the Quest Log panel also get a "Ready to Turn In" group at the top. NPC names come with 0.6.0.
+- Zone auto-track (option, off by default; Settings page or `/dm autotrack on|off`): tracks this zone's quests plus pinned ones and untracks the rest. On a flight it waits for the landing, then switches once. Changes go out in batches of 5 about a second apart, only out of combat.
+- Your own map pins: the Pin tool on the map's tool strip now works. Click it, then click the map to drop a pin (saved in DarkMatterDB.userPins, up to 50). The game's own waypoint and minimap arrow point at it. Click a pin to point at it again; right-click removes it. Drawn with the game's Waypoint-MapPin-ChatIcon atlas only (nothing drawn without it).
+- M and L keys: M and L open Dark Matter on the Map tab with the Quest Log panel (pressed again they close it); ALT-M opens the game's world map and ALT-L its quest log. Session-only override bindings owned by a Dark Matter frame, set out of combat only (re-applied after combat), never saved to your key bindings. Off with `/dm keys off` or the Settings page.
+- New `/dm trackerprobe` (read-only): the tracker, the keep icon candidates (ok / missing) and the counts, saved in DarkMatterDB.probeLog.
+- No hooks on the tracker, its clicks or the quest log; no LoadAddOn.
+- Tests: keep pins (first run, your track, the game's auto-watch, zone-change re-track, untrack, abandon), the overlays (UIParent parents, anchors, the title area stopping before the item button, no script, anchor or parent on any tracker frame), title click, the Ready section and its click, auto-track (off, flight, combat, batches, pins kept), the keys (owner, combat queue, off, M/L press, SaveBindings never called), your map pins, and source scans for hooks, SaveBindings, LoadAddOn and SetParent.
+
 ## 0.5.2a.2
 
 - Clicking a quest pin on the map opens THAT quest's detail in the docked Quest Log panel. If the panel is closed it opens; if it shows the list or another quest it switches to this one. Back still returns to the list. The map stays still (no glide). Shift-click still only sets the game's waypoint. A quest not in your log leaves the panel on its list.

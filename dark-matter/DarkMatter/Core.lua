@@ -5,7 +5,7 @@ local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.5.2a.2"
+NS.version = "0.5.2b"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -21,6 +21,11 @@ local DEFAULTS = {
   fishingZone = nil,
   fishingView = "waters",
   loadCount = 0,
+  -- 0.5.2b
+  keepTracked = {},   -- quests kept in the objective tracker across zone changes
+  autoTrack = false,  -- zone auto-track (off by default)
+  mlKeys = true,      -- M and L open Dark Matter (ALT-M / ALT-L the game's own windows)
+  userPins = {},      -- your own pins on the map
 }
 
 function NS.Print(msg)
@@ -165,6 +170,9 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if NS.CreateMinimapButton then NS.CreateMinimapButton() end
     if NS.RegisterOptions then NS.RegisterOptions() end
     if NS.MapWindow and NS.MapWindow.Watch then NS.MapWindow.Watch() end
+    -- 0.5.2b: the tracker overlays (read only) and the M / L keys (override bindings, out of combat)
+    if NS.Tracker and NS.Tracker.Start then NS.Tracker.Start() end
+    if NS.Keys and NS.Keys.Start then NS.Keys.Start() end
     -- 0.5.1.9: size the metrics to the map window at login, before Dark Matter is first shown
     if NS.MapWindow and NS.MapWindow.Apply and NS.theme and NS.theme.m then pcall(NS.MapWindow.Apply, NS.theme.m) end
     NS.Print("v" .. NS.version .. " loaded. /dm toggles the window, /dm probe checks this client.")

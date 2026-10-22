@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.1.6: the WoW theme looks like the game's Map & Quest Log window and the window matches its size; Map close-up detail (the game's own minimap tiles, blended across the zone; /dm mapprobe, /dm frameprobe); every theme uses the game's own buttons, tabs and scroll bars; Map (the game's own map, zoom world to zone, search, Find me, full screen); 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests (search, watch boxes, rewards, /dm questprobe); /dm probe.
+## Notes: Dark Matter 0.5.2b: keep-tracked pins and quest clicks on the objective tracker, Ready to Turn In, optional zone auto-track, your own map pins, M / L open Dark Matter (ALT for the game's windows); the WoW theme looks like the game's Map & Quest Log window and the window matches its size; Map close-up detail (the game's own minimap tiles, blended across the zone; /dm mapprobe, /dm frameprobe); every theme uses the game's own buttons, tabs and scroll bars; Map (the game's own map, zoom world to zone, search, Find me, full screen); 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests (search, watch boxes, rewards, /dm questprobe); /dm probe.
 ## Author: Odysseaus
-## Version: 0.5.2a.2
+## Version: 0.5.2b
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
@@ -38,6 +38,8 @@ MapCloseUp.lua
 Data_ZoneLevels.lua
 Tab_Map.lua
 Tab_Stub.lua
+Tracker.lua
+Keys.lua
 Minimap.lua
 Options.lua
 Slash.lua

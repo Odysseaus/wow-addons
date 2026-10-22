@@ -98,6 +98,13 @@ QS.ICONS = {
   { role = "reagents", what = "reagent vendor", c = { { file = "Interface\\Minimap\\Tracking\\Reagents" } } },
   { role = "poisons", what = "poison vendor", c = { { file = "Interface\\Minimap\\Tracking\\Poisons" } } },
   { role = "battlemaster", what = "battlemaster", c = { { file = "Interface\\Minimap\\Tracking\\BattleMaster" } } },
+  -- 0.5.2b: the keep-tracked pin beside each tracker row (three styles, /dm keepicon) and your own pins on the map
+  { role = "keepPin", what = "keep tracked, pinned (map pin)", c = { { atlas = "Waypoint-MapPin-Tracked" } } },
+  { role = "keepPinOff", what = "keep tracked, not pinned (map pin)", c = { { atlas = "Waypoint-MapPin-Untracked" } } },
+  { role = "keepLock", what = "keep tracked, pinned (lock)", c = { { file = "Interface\\Buttons\\LockButton-Locked-Up" } } },
+  { role = "keepLockOff", what = "keep tracked, not pinned (open lock)", c = { { file = "Interface\\Buttons\\LockButton-Unlocked-Up" } } },
+  { role = "keepStar", what = "keep tracked (favourite star)", c = { { atlas = "PetJournal-FavoritesIcon" } } },
+  { role = "userPin", what = "your own pin on the map", c = { { atlas = "Waypoint-MapPin-ChatIcon" }, { atlas = "Waypoint-MapPin-Untracked" } } },
 }
 QS.ICON_BY_ROLE = {}
 for _, e in ipairs(QS.ICONS) do QS.ICON_BY_ROLE[e.role] = e end

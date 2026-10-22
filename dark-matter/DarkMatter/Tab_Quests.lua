@@ -15,6 +15,7 @@ local views = {}   -- every list view built
 local main         -- the Quests tab's own view (its rows, list and empty text)
 local list, empty
 local groups, total = {}, 0
+local T_READY = "Ready to Turn In"
 local selectedId, selQuest
 local pending = false
 local quietUntil = 0
@@ -77,6 +78,15 @@ local function ReadLog()
       end
     end
   end
+  -- 0.5.2b: a "Ready to Turn In" group on top (the same quests also stay under their zone)
+  local ready = {}
+  for _, g in ipairs(groups) do
+    for _, q in ipairs(g.quests) do
+      local st = q.questID and NS.QS and NS.QS.Status(q.questID)
+      if st == "ready" or (st == nil and q.complete) then ready[#ready + 1] = q end
+    end
+  end
+  if #ready > 0 then table.insert(groups, 1, { title = T_READY, quests = ready, ready = true }) end
   return true
 end
 
@@ -385,14 +395,14 @@ local function FillRows(V)
     for _, q in ipairs(g.quests) do
       if not searching or Matches(q, words) then hits[#hits + 1] = q end
     end
-    matched = matched + #hits
+    if not g.ready then matched = matched + #hits end
     if #hits > 0 or not searching then
       rows[#rows + 1] = { kind = "h", group = g, n = #hits }
       if searching or not collapsed[g.title] then
         for _, q in ipairs(hits) do rows[#rows + 1] = { kind = "q", quest = q } end
       end
       for _, q in ipairs(hits) do
-        firstVisible = firstVisible or q
+        if not g.ready then firstVisible = firstVisible or q end
         if (q.questID or q.title) == selectedId then sel = q end
       end
     end
@@ -749,6 +759,9 @@ NS.RegisterTab({
   FindQuest = function(id) ReadLog() return FindQuest(id) end,
   Events = Events,
   Count = function() ReadLog() return total end,
+  -- 0.5.2b: the quests ready to turn in (each with its zone in q.group)
+  Ready = function() ReadLog() return (groups[1] and groups[1].ready) and groups[1].quests or {} end,
+  READY_TITLE = T_READY,
   -- the window is being built again: forget the views that hung off the old one
   Reset = function()
     views, main, tab, detail, list, empty = {}, nil, nil, nil, nil, nil

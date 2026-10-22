@@ -23,6 +23,10 @@ local function Help()
   print("  /dm questprobe  Quests: which quest log, reward and watch APIs this client has -> DarkMatterDB.questprobe")
   print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
   print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
+  print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (off by default)")
+  print("  /dm keys on|off  M and L open Dark Matter (ALT-M / ALT-L the game's own map and quest log)")
+  print("  /dm keepicon [pin|lock|star|auto]  the keep-tracked icon on the objective tracker")
+  print("  /dm trackerprobe  the objective tracker, the keep icons (ok/missing) and the pin counts (read-only) -> DarkMatterDB.trackerprobe")
   print("  /dm artprobe  WoW theme: which of the game's own textures/templates this client has (ok/missing) -> DarkMatterDB.artprobe")
   print("  /dm frameprobe  the game's map window: its size and the border, title and close textures it is drawn with -> DarkMatterDB.frameprobe")
   print("  /dm achprobe  Achievements: mode, game API counts + 3 samples, Dark Matter counts -> DarkMatterDB.achprobe")
@@ -127,6 +131,26 @@ SlashCmdList["DARKMATTER"] = function(msg)
     if NS.QS and NS.QS.ProbeReport then
       Say("questmap", NS.QS.ProbeReport())
     end
+  elseif cmd == "autotrack" then
+    -- 0.5.2b: zone auto-track (off by default)
+    if NS.Tracker then
+      local on = rest == "on" or (rest ~= "off" and not (NS.db and NS.db.autoTrack))
+      NS.Tracker.SetAuto(on)
+      NS.Print("zone auto-track " .. (on and "on: this zone's quests and kept ones are tracked (after a flight lands)" or "off"))
+    end
+  elseif cmd == "keys" then
+    if NS.Keys then
+      local on = rest == "on" or (rest ~= "off" and NS.db and NS.db.mlKeys == false)
+      local r = NS.Keys.Set(on)
+      NS.Print("M / L keys " .. (on and "on" or "off") .. (r == "queued" and " (after combat)" or ""))
+    end
+  elseif cmd == "keepicon" then
+    if NS.Tracker then
+      local _, said = NS.Tracker.SetKeepIcon(rest)
+      NS.Print(said)
+    end
+  elseif cmd == "trackerprobe" then
+    if NS.Tracker then Say("trackerprobe", NS.Tracker.Report()) end
   elseif cmd == "mapprobe" then
     if NS.MapProbe and NS.MapProbe.Report then
       Say("mapprobe", NS.MapProbe.Report())
