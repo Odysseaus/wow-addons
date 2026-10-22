@@ -105,16 +105,24 @@ local function Measure(W)
   local bl, bt, br, bb = MW.MapBorder()
   return (w + bl + br) * k, (h + bt + bb) * k, src, w * k, h * k
 end
--- 0.5.1.8: the map window is measured only while it is OPEN (a never-opened map window does not have its real size yet);
--- each open measurement is kept in Dark Matter's SavedVariables (DarkMatterDB.mapWindowSize: outer and frame size in
--- UIParent units, with UIParent's scale) and used whenever the map window is closed, so our window opens at the right
--- size at once, also right after login. Only before the very first open does the closed map window's own size stand in.
+-- 0.5.1.9: the map window's size must be right the first time Dark Matter opens, without the stock map ever being
+-- opened. A map window that was never shown this session still reports the old 1002-wide size (and a stale rect), so:
+--   1. open now                 -> measured on screen (rect), and saved;
+--   2. shown earlier this login -> measured (its size and rect are real now);
+--   3. never shown              -> WorldMapFrame:GetSize() x its scale, if it is a real size (at least REAL_MIN),
+--                                  with the client's border (DEFAULT.border);
+--   4. else                     -> the size saved the last time it was open (same UI scale), then the built-in
+--                                  default for this client (1232x705 at the map's scale = UIParent's; border 16,19,2,10
+--                                  px = outer 1247x729 UIParent units at UIParent 0.64).
+MW.DEFAULT = { w = 1232, h = 705, ues = 0.64, border = { 40 / 3, 95 / 6, 5 / 3, 25 / 3 } }
+MW.REAL_MIN_W, MW.REAL_MIN_H = 1100, 600
 function MW.Size()
   local W = Frame()
   if not W then return nil, nil, "no WorldMapFrame" end
-  local _, ues = MW.Scales()
+  local es, ues = MW.Scales()
   local db = NS.db
-  if Call(W, "IsShown") == true then
+  if W and Call(W, "IsShown") == true then
+    MW.seenShown = W
     local ow, oh, src, fw, fh = Measure(W)
     if ow and type(db) == "table" then
       local sv = db.mapWindowSize
@@ -124,12 +132,23 @@ function MW.Size()
     end
     return ow, oh, src, fw, fh
   end
-  local sv = type(db) == "table" and db.mapWindowSize
-  if type(sv) == "table" and N(sv.w) and N(sv.h) and sv.w >= 200 and sv.h >= 150 then
-    local k = (N(sv.ues) and ues and ues > 0) and sv.ues / ues or 1
-    return sv.w * k, sv.h * k, "saved: the map window when last open", (N(sv.fw) or sv.w) * k, (N(sv.fh) or sv.h) * k
+  if W and MW.seenShown == W then return Measure(W) end
+  local D = MW.DEFAULT
+  if W then
+    local w, h = N(Call(W, "GetWidth")), N(Call(W, "GetHeight"))
+    local k = (es and ues and es > 0 and ues > 0) and es / ues or 1
+    if w and h and w >= MW.REAL_MIN_W and h >= MW.REAL_MIN_H then
+      local b = D.border
+      return (w + b[1] + b[3]) * k, (h + b[2] + b[4]) * k, "WorldMapFrame size (not shown yet) + the client's border", w * k, h * k
+    end
   end
-  return Measure(W)
+  local sv = type(db) == "table" and db.mapWindowSize
+  if type(sv) == "table" and N(sv.w) and N(sv.h) and sv.w >= 200 and sv.h >= 150 and N(sv.ues) and ues and math.abs(sv.ues - ues) < 0.001 then
+    return sv.w, sv.h, "saved: the map window when last open", N(sv.fw) or sv.w, N(sv.fh) or sv.h
+  end
+  local k = (ues and ues > 0) and D.ues / ues or 1
+  local b = D.border
+  return (D.w + b[1] + b[3]) * k, (D.h + b[2] + b[4]) * k, "built-in default for this client (map not shown yet)", D.w * k, D.h * k
 end
 
 -- Metrics that follow the window's width (dw) or height (dh); everything else keeps its place (rail, title, tabs).

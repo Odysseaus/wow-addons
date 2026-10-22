@@ -233,8 +233,13 @@ local function BuildClassArt(f)
     P(A.orn.br, "orn_br", ax + aw - o, ay + ah - o, o, o)
     local cx, cy, cs = parts.crest[1], parts.crest[2], parts.crest[3]
     P(A.crest, "crest", cx, cy, cs, cs)
+    A.crestRect = { cx, cy, cs }
+    -- 0.5.1.9: the title must never sit under the crest: OnSkin moves the crest beside the title when they would overlap
+    function A.crestAt(x, y) P(A.crest, "crest", x, y, cs, cs) A.crestRect = { x, y, cs } end
     local bx, by, bs = parts.base[1], parts.base[2], parts.base[3]
     P(A.base, "base", bx, by, bs, bs)
+    A.baseRect = { bx, by, bs }
+    function A.baseAt(x, y) P(A.base, "base", x, y, bs, bs) A.baseRect = { x, y, bs } end
     -- everything drawn (art rect + overhanging crest and base), window-relative, y down
     A.box = NS.ClassArtBox(ca, NS.theme.m) -- 0.5.1.6: incl. the edge sprites
     A.drawn = { math.min(ax, cx, bx), math.min(ay, cy), math.max(ax + aw, cx + cs, bx + bs), math.max(ay + ah, by + bs) }
@@ -673,13 +678,23 @@ local function Build()
     if what ~= "scale" or not need.scale then return end
     local s = math.max(0.3, need.scale)
     local old = f:GetScale() or 1
-    if math.abs(s - old) < 0.0005 then return end
-    local point, rel, relPoint, x, y = f:GetPoint(1)
-    f:SetScale(s)
-    if point then
-      f:ClearAllPoints()
-      f:SetPoint(point, rel or UIParent, relPoint or point, (x or 0) * old / s, (y or 0) * old / s)
-      SavePosition()
+    if math.abs(s - old) >= 0.0005 then
+      local point, rel, relPoint, x, y = f:GetPoint(1)
+      f:SetScale(s)
+      if point then
+        f:ClearAllPoints()
+        f:SetPoint(point, rel or UIParent, relPoint or point, (x or 0) * old / s, (y or 0) * old / s)
+        SavePosition()
+      end
+    end
+    -- 0.5.1.9: verify after layout: our window's MEASURED outer size (frame + the theme's drawn border, on screen)
+    -- against the target; more than 1 px off -> built again (once per theme and target size, so it never loops)
+    local tw, th = MW.Size()
+    local ow, oh = MW.OurOuter()
+    W.verify = { tw = tw, th = th, ow = ow, oh = oh }
+    if tw and ow and (math.abs(ow - tw) > 1 or math.abs(oh - th) > 1) then
+      local key = string.format("%s:%d:%d", tostring(NS.theme.id), math.floor(tw + 0.5), math.floor(th + 0.5))
+      if NS.verifiedRebuild ~= key then NS.verifiedRebuild = key W.rebuildWanted = true end
     end
   end
   W.Refit = Refit
@@ -747,6 +762,20 @@ local function Build()
         W.titlePlate:Hide()
       end
       local box = art.box -- everything drawn, incl. overhanging crest/base/ornaments: left, top, right, bottom (y down)
+      -- 0.5.1.9: no letter of the title under the crest: when they would overlap, the crest goes left of the title
+      -- (vertically centred on it, inside the frame art)
+      do
+        local sx2, sy2, ax2, ay2, AW2 = ArtMap()
+        local tx, ty = ax2 + AW2 / 2 * sx2, ay2 + (61 + ca.titleDy) * sy2
+        local hw = ((title:GetStringWidth() or 80) + 28) / 2
+        local hh = (math.floor(ca.titleSize * 0.8 + 0.5) + 8) / 2
+        W.titleRect = { tx - hw, ty - hh, tx + hw, ty + hh }
+        local cr = art.crestRect
+        if cr and art.crestAt and cr[1] < tx + hw and cr[1] + cr[3] > tx - hw and cr[2] < ty + hh and cr[2] + cr[3] > ty - hh then
+          art.crestAt(tx - hw - 6 - cr[3], math.max(ay2 + 2, ty - cr[3] / 2))
+          W.crestMoved = true
+        end
+      end
       if f.SetClampRectInsets then f:SetClampRectInsets(box[1], box[3] - m.w, -box[2], m.h - box[4]) end
       -- the whole frame art is a drag handle: the window's mouse area grows to it (content frames above stay clickable)
       if f.SetHitRectInsets then f:SetHitRectInsets(box[1], m.w - box[3], box[2], m.h - box[4]) end
@@ -837,6 +866,20 @@ local function Build()
     W.statusText:SetWidth(sw - 16)
     if W.statusText.SetWordWrap then W.statusText:SetWordWrap(false) end
     W.status = status
+    -- 0.5.1.9: the bottom emblem (class themes' base plate) never covers the status text: when it would overlap the
+    -- status box, it moves to the box's right end (same height, inside the frame art) and the text keeps clear of it on
+    -- both sides (still centred; an ellipsis only if it then does not fit)
+    W.baseMoved = nil
+    local tw = sw - 16
+    local bR = ca and W.classArt and W.classArt.baseRect
+    local sl, st = sRight + gapM, midY - sh / 2
+    if bR and W.classArt.baseAt and bR[1] < sl + sw and bR[1] + bR[3] > sl and bR[2] < st + sh and bR[2] + bR[3] > st then
+      W.classArt.baseAt(sl + sw - bR[3] - 4, bR[2])
+      tw = math.max(40, sw - 2 * (bR[3] + 12))
+      W.baseMoved = true
+    end
+    W.statusText:SetWidth(tw)
+    W.statusTextRect = { sl + (sw - tw) / 2, st, sl + (sw + tw) / 2, st + sh }
   end)
 
   -- ESC closes it, the stock way (plain table insert; Blizzard reads it through securecall).

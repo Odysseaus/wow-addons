@@ -509,6 +509,42 @@ end
 ---------------------------------------------------------------------------
 -- the frame: lay out every visible layer for the current view
 ---------------------------------------------------------------------------
+-- 0.5.1.9: at zone view ONE zone picture is drawn, like the game's map: the zone under the middle of the view (with its
+-- explored overlays), over the continent picture. Its neighbours fade out as it fills the view (SOLO: its share of the
+-- view) and only come back at continent zoom, all together. A city's own picture (Ironforge, Stormwind City...) is never
+-- drawn over its zone; only when the city itself is the focus (the middle of the view on it and the city filling CITY
+-- of the view) it fades in, cleanly, on top.
+local SOLO = { 0.55, 0.70 }
+local CITY = { 0.45, 0.60 }
+M.SOLO, M.CITY = SOLO, CITY
+local function IsCity(z) return z.area < 0.004 end
+M.IsCity = IsCity
+local function Frac(z)
+  local p = Place(z.cont)
+  return math.max((z.r[2] - z.r[1]) * (p[2] - p[1]) * BW * V.s / VW(), (z.r[4] - z.r[3]) * (p[4] - p[3]) * BH * V.s / VH())
+end
+M.Frac = Frac
+local function Inside(r, x, y) return x >= r[1] and x <= r[2] and y >= r[3] and y <= r[4] end
+-- the zone (never a city) and the city under the middle of the view, on continent cont
+function M.FocusZones(cont)
+  if not cont then return nil, nil end
+  local cx, cy = M.Center()
+  local p = Place(cont)
+  local x, y = (cx - p[1]) / (p[2] - p[1]), (cy - p[3]) / (p[4] - p[3])
+  local z = MD.ZoneAt(cont, x, y)
+  local city
+  if z and IsCity(z) then
+    city = z
+    local mx, my, best = (z.r[1] + z.r[2]) / 2, (z.r[3] + z.r[4]) / 2, nil
+    for _, e in ipairs(MD.Zones(cont)) do
+      if not IsCity(e) and Inside(e.r, mx, my) and (not best or e.area < best.area) then best = e end
+    end
+    z = best
+  end
+  if z and IsCity(z) then z = nil end
+  return z, city
+end
+
 function M.Layout()
   M.dirty = false
   if not M.ready then return end
@@ -525,16 +561,28 @@ function M.Layout()
     end
     if L then if covered then L.frame:Hide() L.shown = false else Show(L, 0, 1, 0, 1, 1) end end
   end
+  local fz, city = M.FocusZones(M.focus)
+  M.focusZone, M.focusCity = fz and fz.id, city and city.id
+  local solo = fz and Smooth((Frac(fz) - SOLO[1]) / (SOLO[2] - SOLO[1])) or 0
+  local cityA = city and Smooth((Frac(city) - CITY[1]) / (CITY[2] - CITY[1])) or 0
+  M.solo, M.cityA = solo, cityA
+  local base = canvas:GetFrameLevel()
   for _, c in ipairs(ContList()) do
     local cl = Layer(c.id, 2)
     local a = M.ContAlpha(c.id)
     if cl then local p = Place(c.id) Show(cl, p[1], p[2], p[3], p[4], a) end
     for _, z in ipairs(MD.Zones(c.id)) do
-      local zl = Layer(z.id, z.area < 0.004 and 4 or 3)
+      local isCity, isFocus = IsCity(z), fz and z.id == fz.id
+      local lv = isCity and 5 or (isFocus and 4 or 3)
+      local zl = Layer(z.id, lv)
       if zl then
         zl.wantOv = true
+        if zl.level ~= lv then zl.level = lv zl.frame:SetFrameLevel(base + lv) end
+        local d = a > 0 and M.ZoneDrawAlpha(z) or 0
+        if isCity then d = (city and z.id == city.id) and d * cityA or 0
+        elseif not isFocus then d = d * (1 - solo) end
         local x1, x2, y1, y2 = WorldRect(z.id)
-        Show(zl, x1, x2, y1, y2, a > 0 and M.ZoneDrawAlpha(z) or 0)
+        Show(zl, x1, x2, y1, y2, d)
       end
     end
   end

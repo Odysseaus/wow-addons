@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.5.1.9
+
+- **Window size is right on the first open, with no need to open the stock map.** A map window that has never been
+  shown still reports the old 1002-wide size and a stale rect. That stale size is what built the 1019x713 Warrior
+  window: the frameprobe's computed rows used the live size, while the window had been built from the stale one.
+  Order now:
+  1. The stock map is open: measured on screen.
+  2. It was shown earlier this login: measured.
+  3. Never shown: `GetSize()` x its scale, if that is a real size (at least 1100x600), plus the client's border
+     (16,19,2,10 px).
+  4. Otherwise the saved size (same UI scale), then the built-in default for this client: 1232x705 at the map's
+     scale, outer 1247x729 UIParent units at UIParent 0.64.
+
+  The metrics are sized at PLAYER_LOGIN and again before every open. After the window is laid out, it is measured
+  (frame + the theme's drawn border). If it is more than 1 px off, it is built again (once per theme and size, so it
+  can never loop). Box tests: a fresh login with the map never shown (real size, 0x0, stale 1002x694), every theme:
+  outer 1247x729 within 0.33 px, no rebuild.
+- **Map, zone view: one zone picture.** At zone view only the focused zone's own art and explored overlays are drawn,
+  over the continent picture, as on the stock map.
+  - Neighbours fade out as the zone fills 55-70% of the view and only come back at continent zoom, together.
+  - A city's picture (Ironforge, Stormwind City) is never drawn over its zone. It fades in cleanly on top only when
+    the city itself is the focus (it fills 45-60% of the view).
+  - mapprobe line 22 lists what is drawn: the zone, the number of other zones, the city.
+- **Title and emblems.** In the class themes:
+  - The top crest moves beside the title when it would cover a letter.
+  - The bottom emblem moves to the right end of the status box when it would cover the status text, and the text
+    keeps clear of it on both sides.
+  - Tested for every theme.
+- Zoom thresholds unchanged: art alone to x2.0, tiles full by x2.6.
+
 ## 0.5.1.8
 
 - Map: the drawn place-name labels are gone (code, probe line and tests). The game's own map art carries the names.

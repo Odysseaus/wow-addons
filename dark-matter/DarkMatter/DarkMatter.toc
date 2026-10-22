@@ -2,7 +2,7 @@
 ## Title: Dark Matter
 ## Notes: Dark Matter 0.5.1.6: the WoW theme looks like the game's Map & Quest Log window and the window matches its size; Map close-up detail (the game's own minimap tiles, blended across the zone; /dm mapprobe, /dm frameprobe); every theme uses the game's own buttons, tabs and scroll bars; Map (the game's own map, zoom world to zone, search, Find me, full screen); 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests (search, watch boxes, rewards, /dm questprobe); /dm probe.
 ## Author: Odysseaus
-## Version: 0.5.1.8
+## Version: 0.5.1.9
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

@@ -708,7 +708,7 @@ function MakeWMF(w, h, opts)
     portrait = Tex("UI-HUD-Map-Portrait", 58, 58, "TOPLEFT", -6, 7), Bg = Tex("UI-Frame-Map-Bg", w, h, "TOPLEFT", 0, 0) })
   return spyObj({ BorderFrame = border, isMaximized = opts.maximized or false, minimizedWidth = opts.minW, minimizedHeight = opts.minH,
     questLogWidth = opts.ql, GetWidth = function() return w end, GetHeight = function() return h end,
-    GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return opts.shown and true or false end,
+    GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return opts.shown ~= false end, -- 0.5.1.9: shown unless opts.shown == false
     GetLeft = opts.rectFns and opts.rectFns[1], GetRight = opts.rectFns and opts.rectFns[2], GetTop = opts.rectFns and opts.rectFns[3], GetBottom = opts.rectFns and opts.rectFns[4],
     IsMaximized = function() return opts.maximized or false end, ScrollContainer = {},
     Show = function() WMF_WRITES[#WMF_WRITES + 1] = "Show()" end, SetSize = function() WMF_WRITES[#WMF_WRITES + 1] = "SetSize()" end })
@@ -3675,7 +3675,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.1.8 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.1.9 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3905,12 +3905,28 @@ do
     check(ref and M.ref and M.ref.level >= 3 and math.abs(ref - M.layers[M.ref.id].sc) < 1e-9,
       "0.5.1.8 map: the art magnification is read from the zone picture under the middle of the view (x" .. tostring(ref) .. ")")
   end
-  check(M.layers[1432] and M.layers[1432].shown, "0.5.0 map: the neighbour zone is drawn too (zones stitched)")
-  -- stitching: Loch Modan's left edge on screen meets Dun Morogh's right edge (both from GetMapRectOnMap)
+  -- 0.5.1.9: at zone view ONLY the focus zone's picture is drawn (no neighbour, no city over it), like the game's map
+  local function zonesDrawn()
+    local ids = {}
+    for id, L in pairs(M.layers) do
+      if L.shown and (L.alpha or 0) > 0.01 and id ~= M.world and not MD.Is(id, "continent") then ids[#ids + 1] = id end
+    end
+    table.sort(ids)
+    return #ids, ids
+  end
+  local nz, zids = zonesDrawn()
+  check(nz == 1 and zids[1] == 1426 and M.focusZone == 1426 and not (M.layers[1455] and M.layers[1455].shown),
+    "0.5.1.9 map: at zone view one zone art set is drawn: Dun Morogh's own (no neighbour, no Ironforge over it): " .. table.concat(zids, ","))
+  -- zoomed out towards the continent the neighbours come back, all together; stitched exactly
+  local outSteps = 0
+  while (M.solo or 0) > 0.01 and outSteps < 6 do M.Wheel(-1) run(30) outSteps = outSteps + 1 end
+  check(M.layers[1432] and M.layers[1432].shown and M.layers[1432].alpha > 0.01, "0.5.0 map: at continent zoom the neighbour zone is drawn too (zones stitched)")
   local function edges(L) local p = L.frame._pts[#L.frame._pts] local sc = L.frame._scale return p[4] * sc, -p[5] * sc, L.art.w * sc, L.art.h * sc end
   local dl, dt_, dw = edges(dm)
   local ll = edges(M.layers[1432])
   check(math.abs((dl + dw) - ll) < 0.01, "0.5.0 map: neighbour zones meet exactly (no gap/overlap)")
+  check(not (M.layers[1455] and M.layers[1455].shown), "0.5.1.9 map: the Ironforge city picture is not drawn over Dun Morogh at continent zoom either")
+  for _ = 1, outSteps do M.Wheel(1) run(30) end
   check(M.layers[947] and not M.layers[947].shown, "0.5.0 map: the world picture is hidden when the continent covers the view")
   -- 5. player arrow, coordinates
   check(M.arrow:IsShown() and M.player and M.player.map == 1426, "0.5.0 map: player arrow shown")
@@ -4259,7 +4275,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.8 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.9 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -4949,7 +4965,7 @@ if MODE == "full" then
     local open = MW.Apply(copyM())
     local sv = NS.db.mapWindowSize
     check(sv and math.abs(sv.fw - 986) < 1 and sv.ues == 0.8, "0.5.1.8 window: measured while the map window is open and saved (" .. tostring(sv and sv.fw) .. ")")
-    wmf(702, 534, { scale = 0.64 }) -- closed, never laid out: a wrong size of its own
+    wmf(702, 534, { scale = 0.64, shown = false }) -- closed, never laid out: a wrong size of its own
     local closed = MW.Apply(copyM())
     check(closed.w == open.w and closed.h == open.h and closed.source:find("^saved"),
       "0.5.1.8 window: while the map window is closed the saved size is used at once (" .. tostring(closed.w) .. "x" .. tostring(closed.h) .. ", " .. tostring(closed.source) .. ")")
@@ -5111,6 +5127,48 @@ if MODE == "full" then
     W = DarkMatter.windowParts
   end
 
+  -- 0.5.1.9: a fresh login, the stock map NEVER shown and nothing saved: every theme opens at the map window's real
+  -- outer size (1247x729 UIParent units at UIParent 0.64) at once, whether the closed map window reports its real size,
+  -- 0x0, or the stale 1002-wide size; and no letter of the title sits under the crest
+  do
+    local saveWMF9, saveU9, saveTheme9, saveSV9 = WorldMapFrame, UIParent.GetEffectiveScale, NS.theme.id, NS.db.mapWindowSize
+    UIParent.GetEffectiveScale = function() return 0.64 end
+    local cases = { { "its real size", 1232, 705 }, { "0x0", 0, 0 }, { "the stale 1002x694", 1002, 694 } }
+    local worst, n, crestBad = 0, 0, {}
+    local moved = 0
+    local bmoved = 0
+    for _, id in ipairs(NS.themeOrder) do
+      for _, cs in ipairs(cases) do
+        wmf(cs[2], cs[3], { scale = 0.64, real = true, rect = cs[2] > 0, shown = false })
+        NS.db.mapWindowSize = nil MW.last = nil MW.live = nil MW.seenShown = nil NS.verifiedRebuild = nil
+        NS.SetTheme(id)
+        local f = NS.RebuildWindow()
+        W = DarkMatter.windowParts
+        local before = NS.windowRebuilds
+        NS.ToggleWindow(true)
+        local ow, oh = MW.OurOuter()
+        local bad = math.max(math.abs((ow or 0) - 1247.33), math.abs((oh or 0) - 729))
+        worst, n = math.max(worst, bad), n + 1
+        check(f:IsShown() and NS.windowRebuilds == before and not W.rebuildWanted and bad <= 1,
+          string.format("0.5.1.9 window: fresh login, map never shown (%s), %s: opens at outer %.1fx%.1f (want 1247x729), no rebuild",
+            cs[1], id, ow or -1, oh or -1))
+        local tr, cr = W.titleRect, W.classArt and W.classArt.crestRect
+        if NS.theme.classArt and tr and cr and cr[1] < tr[3] and cr[1] + cr[3] > tr[1] and cr[2] < tr[4] and cr[2] + cr[3] > tr[2] then crestBad[#crestBad + 1] = id end
+        if NS.theme.classArt and not tr then crestBad[#crestBad + 1] = id .. " (no title rect)" end
+        if W.crestMoved then moved = moved + 1 end
+        local sr, br = W.statusTextRect, W.classArt and W.classArt.baseRect
+        if NS.theme.classArt and sr and br and br[1] < sr[3] and br[1] + br[3] > sr[1] and br[2] < sr[4] and br[2] + br[3] > sr[2] then crestBad[#crestBad + 1] = id .. " (status text under the bottom emblem)" end
+        if W.baseMoved then bmoved = bmoved + 1 end
+        f:Hide()
+      end
+    end
+    check(n == #NS.themeOrder * #cases, string.format("0.5.1.9 window: %d fresh-login opens, worst %.2f px off 1247x729", n, worst))
+    check(#crestBad == 0, "0.5.1.9 window: every theme: the title clear of the top crest, the status text clear of the bottom emblem (" .. table.concat(crestBad, ", ") .. "; crest moved beside the title in " .. moved .. ", bottom emblem moved off the status text in " .. bmoved .. " opens)")
+    UIParent.GetEffectiveScale = saveU9 WorldMapFrame = saveWMF9 MW.art = nil MW.seenShown = nil
+    NS.db.mapWindowSize = saveSV9
+    NS.SetTheme(saveTheme9) win = NS.RebuildWindow() W = DarkMatter.windowParts
+  end
+
   -- 4. the WoW theme's map-window frame; class themes untouched
   NS.SetTheme("wow")
   win:Show()
@@ -5155,7 +5213,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.1.8 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.1.9 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,

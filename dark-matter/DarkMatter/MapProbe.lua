@@ -339,6 +339,16 @@ local function Run()
     data.seams = { shown = shown, feathered = fe, base = base, hard = hard }
     lines[#lines + 1] = string.format("map 21: pictures %d: %d feathered, %d base", shown, fe, base)
     lines[#lines + 1] = string.format("map 21 seams: %d unfeathered picture edges", hard)
+    -- 22 (0.5.1.9): which zone pictures are drawn: the focus zone, how many other zones, the city (only when it is the focus)
+    local others, cityOn = 0, "none"
+    for lid, L in pairs(MT.layers or {}) do
+      if L.shown and (L.alpha or 0) > 0.01 and lid ~= MT.world and not NS.MapData.Is(lid, "continent") and lid ~= MT.focusZone then
+        if lid == MT.focusCity then cityOn = string.format("%s %.2f", tostring(NS.MapData.Name(lid) or lid), L.alpha) else others = others + 1 end
+      end
+    end
+    data.drawn = { zone = MT.focusZone, others = others, city = cityOn }
+    lines[#lines + 1] = string.format("map 22 drawn: zone %s; other zones %d; city %s",
+      tostring(MT.focusZone and NS.MapData.Name(MT.focusZone) or "none"), others, cityOn)
   end
   return lines, data
 end
