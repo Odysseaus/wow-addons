@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.2b** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.2b.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -69,13 +69,21 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 **0.5.1.4:** the WoW theme looks like the game's own Map & Quest Log window: it reads `WorldMapFrame` at runtime (read only) and draws its border pieces, title strip, red close button and portrait on Dark Matter's frame with the same game textures (nothing bundled), or a thin bronze frame of its own when they cannot be read; the map breadcrumb uses the stock top-bar button faces. In every theme the window is the game's map window's size on screen (0.5.1.5: its size times its effective scale; followed live while shown; 880x680 if unreadable). `/dm frameprobe` lists what was read. **0.5.1.6:** no portrait in any theme (a plain top-left corner), and the window's whole outer rectangle, border included, equals the stock map window's on screen in every theme (`/dm frameprobe` lines 2c-2d).
 
 ## Tracker, Ready to Turn In, map pins and keys (0.5.2b)
-- **Keep-tracked pins**: a small game-icon button beside each quest in the objective tracker (Dark Matter's own button, only placed next to the row). A pinned quest stays tracked when you change zone. Tracking a quest yourself pins it; untracking or abandoning it unpins it. `/dm keepicon pin|lock|star|auto` picks the icon (map pin by default when the client has it).
+- **Keep-tracked pins**: a small game-icon button beside each quest in the objective tracker (Dark Matter's own button, only placed next to the row). Click it to pin: a pinned quest stays in the tracker in every zone. Only a click pins or unpins (since 0.5.2b.1); tracking or untracking does not. `/dm keepicon pin|lock|star|auto` picks the icon (map pin by default when the client has it).
 - **Title click**: clicking a quest title in the tracker opens Dark Matter on the Map tab, glides to the quest and shows it in the Quest Log panel. The item and map buttons are not covered. (The area also covers the title's right-click menu.)
 - **Ready to Turn In**: a themed section under the tracker with each ready quest and its zone; a click points the game's arrow at it and opens it in Dark Matter. The Quests tab and the Quest Log panel list the same group on top.
-- **Zone auto-track** (off by default): `/dm autotrack on|off` or the Settings page. This zone's quests plus pinned ones are tracked, the rest untracked; waits for flights to land; batches about a second apart; never in combat.
+- **Zone auto-track** (on by default since 0.5.2b.1): `/dm autotrack on|off` or the Settings page. This zone's quests plus pinned ones are tracked, the rest untracked; waits for flights to land; batches about a second apart; never in combat.
 - **Your map pins**: the Pin tool on the map, then a click on the map. The game's waypoint and minimap arrow point at the pin; right-click a pin to remove it.
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
+
+### 0.5.2b.1 changes
+- Keep pins are bigger (17 px).
+- Zone auto-track is on by default (also after a flight lands). `/dm autotrack off` turns it off.
+- Keep pins are a sticky flag that changes only when you click the pin. A pinned quest stays in the tracker in every zone; an unpinned one follows zone auto-track. Track boxes only track or untrack. All pins start unpinned (0.5.2b pins are cleared once).
+- The map glide (zoom out, pan, zoom in) is about a third slower.
+- Removing a map pin also clears the game's waypoint and minimap arrow, when that waypoint is the pin's.
+- The objective tracker follows quest-log order: out of combat, out-of-place quests are re-tracked in log order. `/dm trackorder off` keeps the game's order.
 
 ## Map tab (0.5.0)
 The game's own map pictures, read at runtime for every zone of Kalimdor and Eastern Kingdoms. Nothing is bundled and nothing is probed per zone.

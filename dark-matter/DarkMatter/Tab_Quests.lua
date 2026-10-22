@@ -112,11 +112,18 @@ end
 -- list rows
 ---------------------------------------------------------------------------
 local RefreshAll -- forward
+-- 0.5.2b.1: what a Track box shows: checked = kept tracked (pinned); checked and faded = tracked now, not pinned
+local function BoxState(q, canWatch)
+  if not (canWatch and type(q) == "table") then return nil end
+  if NS.Tracker and NS.Tracker.CheckState then return NS.Tracker.CheckState(q) end
+  return QL.IsWatched(q), false
+end
 local function OnWatchClick(self)
   local r = self.row
   local q = r and r.quest
   if type(q) ~= "table" then return end
-  QL.SetWatched(q, not QL.IsWatched(q))
+  -- 0.5.2b.1: the box is the keep-tracked pin (checked = pinned and tracked; unchecked = unpinned and untracked)
+  if NS.Tracker and NS.Tracker.UserToggle then NS.Tracker.UserToggle(q) else QL.SetWatched(q, not QL.IsWatched(q)) end
   RefreshAll()
 end
 
@@ -152,6 +159,15 @@ local function GetRow(V, i)
   r.watch:SetPoint("RIGHT", r, "RIGHT", -m.rowPad + 2, 0)
   r.watch:SetScript("OnClick", OnWatchClick)
   r.watch.isWatchBox = true
+  r.watch:SetScript("OnEnter", function(self)
+    if not GameTooltip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Track", 1, 0.82, 0)
+    GameTooltip:AddLine("Checked: shown in the objective tracker.", 1, 1, 1, true)
+    GameTooltip:AddLine("Zone auto-track may change it on your next zone change. To keep a quest in every zone, click its pin in the tracker.", 0.7, 0.7, 0.7, true)
+    GameTooltip:Show()
+  end)
+  r.watch:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
   r.watch.row = r
   r.small = r:CreateFontString(nil, "OVERLAY")
   NS.SetFont(r.small, 12, "")
@@ -442,10 +458,11 @@ local function FillRows(V)
         local q = data.quest
         isSel = ((q.questID or q.title) == selectedId)
         r.icon:Hide()
-        local watched = canWatch and QL.IsWatched(q)
+        local watched, partly = BoxState(q, canWatch)
         if canWatch and watched ~= nil then
           r.watch:Show()
           r.watch:SetChecked(watched and true or false)
+          r.watch:SetAlpha(partly and 0.5 or 1)
           r.small:SetPoint("RIGHT", r.watch, "LEFT", -2, 0)
         else
           r.watch:Hide()
@@ -505,8 +522,9 @@ local function Refresh()
   for _, g in ipairs(groups) do if not collapsed[g.title] then expanded = true end end
   if bar.allIcon then NS.SetPiece(bar.allIcon, expanded and "coin_minus" or "coin_plus") end
   if bar.trk then
-    local w = sel and canWatch and QL.IsWatched(sel)
+    local w, partly = BoxState(sel, canWatch)
     bar.trk:SetChecked(w and true or false)
+    bar.trk:SetAlpha(partly and 0.5 or 1)
     if sel and canWatch then bar.trk:Enable() else bar.trk:Disable() end
   end
   if detail and detail.showMap then
@@ -700,7 +718,9 @@ NS.RegisterTab({
     trk:SetSize(18, 18)
     trk:SetPoint("LEFT", allBtn, "RIGHT", 6, 0)
     trk:SetScript("OnClick", function()
-      if selQuest then QL.SetWatched(selQuest, not QL.IsWatched(selQuest)) end
+      if selQuest then
+        if NS.Tracker and NS.Tracker.UserToggle then NS.Tracker.UserToggle(selQuest) else QL.SetWatched(selQuest, not QL.IsWatched(selQuest)) end
+      end
       Refresh()
     end)
     bar.trk = trk

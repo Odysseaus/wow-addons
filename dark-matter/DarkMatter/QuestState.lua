@@ -232,6 +232,32 @@ function QS.SetWaypoint(map, x, y, q)
   Fire("arrow", N(q), "waypoint")
   return true, string.format("waypoint set (%.1f, %.1f): the game's arrow points there", x * 100, y * 100)
 end
+-- 0.5.2b.1: take the game's user waypoint (and its arrow) away, but only when it is the one at map/x/y (ours).
+-- Returns true when it was cleared.
+local function Near(a, b) return N(a) and N(b) and math.abs(a - b) < 0.0005 end
+function QS.ClearWaypoint(map, x, y)
+  local mine = false
+  local cur = Call("C_Map.GetUserWaypoint")
+  if type(cur) == "table" then
+    local pos = cur.position
+    local cx, cy = type(pos) == "table" and pos.x, type(pos) == "table" and pos.y
+    mine = N(cur.uiMapID) == N(map) and Near(cx, x) and Near(cy, y)
+  elseif not Fn("C_Map.GetUserWaypoint") then
+    local a = QS.arrow
+    mine = type(a) == "table" and N(a.map) == N(map) and Near(a.x, x) and Near(a.y, y)
+  end
+  local a = QS.arrow
+  local arrowMine = type(a) == "table" and a.map and N(a.map) == N(map) and Near(a.x, x) and Near(a.y, y)
+  if not (mine or arrowMine) then return false end
+  if mine then
+    if Fn("C_SuperTrack.IsSuperTrackingUserWaypoint") == nil or Call("C_SuperTrack.IsSuperTrackingUserWaypoint") == true then
+      if Fn("C_SuperTrack.SetSuperTrackedUserWaypoint") then pcall(Fn("C_SuperTrack.SetSuperTrackedUserWaypoint"), false) end
+    end
+    if Fn("C_Map.ClearUserWaypoint") then pcall(Fn("C_Map.ClearUserWaypoint")) end
+  end
+  if arrowMine then QS.arrow = nil Fire("arrow", nil, "cleared") end
+  return mine
+end
 -- no location: let the game's arrow follow the quest itself, when it can
 function QS.TrackQuest(q)
   q = N(q)

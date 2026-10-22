@@ -23,7 +23,8 @@ local function Help()
   print("  /dm questprobe  Quests: which quest log, reward and watch APIs this client has -> DarkMatterDB.questprobe")
   print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
   print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
-  print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (off by default)")
+  print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (on by default)")
+  print("  /dm trackorder on|off  keep the objective tracker in quest-log order (on by default)")
   print("  /dm keys on|off  M and L open Dark Matter (ALT-M / ALT-L the game's own map and quest log)")
   print("  /dm keepicon [pin|lock|star|auto]  the keep-tracked icon on the objective tracker")
   print("  /dm trackerprobe  the objective tracker, the keep icons (ok/missing) and the pin counts (read-only) -> DarkMatterDB.trackerprobe")
@@ -132,11 +133,18 @@ SlashCmdList["DARKMATTER"] = function(msg)
       Say("questmap", NS.QS.ProbeReport())
     end
   elseif cmd == "autotrack" then
-    -- 0.5.2b: zone auto-track (off by default)
+    -- 0.5.2b: zone auto-track (on by default since 0.5.2b.1)
     if NS.Tracker then
       local on = rest == "on" or (rest ~= "off" and not (NS.db and NS.db.autoTrack))
       NS.Tracker.SetAuto(on)
       NS.Print("zone auto-track " .. (on and "on: this zone's quests and kept ones are tracked (after a flight lands)" or "off"))
+    end
+  elseif cmd == "trackorder" then
+    -- 0.5.2b.1: the objective tracker in quest-log order (on by default)
+    if NS.Tracker then
+      local on = rest == "on" or (rest ~= "off" and NS.db and NS.db.trackOrder == false)
+      NS.Tracker.SetOrder(on)
+      NS.Print("tracker in quest-log order " .. (on and "on" or "off: the game's own order"))
     end
   elseif cmd == "keys" then
     if NS.Keys then

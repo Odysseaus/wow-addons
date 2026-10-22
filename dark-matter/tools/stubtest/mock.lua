@@ -3686,7 +3686,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4060,6 +4060,15 @@ do
       for _ = 1, 60 do run(1) if M.Zoom() < zmin then zmin = M.Zoom() end end
       check(zmin < M.Zoom() * 0.99, "0.5.2a.1 Show on map: the glide zooms out below its end zoom, then in (" .. zmin .. " < " .. M.Zoom() .. ", from " .. zprev .. ")")
     end
+    -- 0.5.2b.1: the glide is about a third slower (0.8-1.4 s became about 1.06-1.85 s), same easing
+    do
+      for _ = 1, 3 do M.Wheel(1) run(30) end
+      M.ShowQuest(502) run(20)
+      local zmid, cmid = M.Zoom(), M.ToWorld(300, 200)
+      run(40)
+      check(M.HOP_SLOW >= 1.30 and M.HOP_SLOW <= 1.35 and (math.abs(zmid - M.Zoom()) > 1e-9 or math.abs(cmid - M.ToWorld(300, 200)) > 1e-9),
+        "0.5.2b.1 Show on map: the glide is about a third slower (still moving after 1 s)")
+    end
     -- Show on map: a point flies there; no point -> the zone and the themed note
     check(M.ShowQuest(501) == "point" and QS.selected == 501, "0.5.2a Show on map: quest with a location flies to it")
     run(60)
@@ -4075,7 +4084,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4299,9 +4308,17 @@ do
     wp = {}
     pin._scripts.OnMouseDown(pin, "LeftButton") pin._scripts.OnMouseUp(pin, "LeftButton")
     check(#wp == 1 and wp[1].m == 1426, "0.5.2b map pins: clicking a pin points the arrow at it again")
+    -- 0.5.2b.1: removing the pin takes the game's waypoint and arrow away too, only when that waypoint is this pin's
+    local saveGet, saveClr, nclr = C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint, 0
+    C_Map.GetUserWaypoint = function() local p = wp[#wp] if p then return { uiMapID = p.m, position = { x = p.x, y = p.y } } end end
+    C_Map.ClearUserWaypoint = function() nclr = nclr + 1 wp = {} end
+    C_SuperTrack.IsSuperTrackingUserWaypoint = function() return st[#st] == true end
+    check(NS.QS.ClearWaypoint(1426, 0.5, 0.5) == false and nclr == 0 and #wp == 1, "0.5.2b.1 map pins: a waypoint that is not this pin's is left alone")
     pin._scripts.OnMouseUp(pin, "RightButton")
     run(2)
     check(#NS.db.userPins == 0 and not pin._shown, "0.5.2b map pins: right-click removes it")
+    check(nclr == 1 and #wp == 0 and st[#st] == false and NS.QS.arrow == nil, "0.5.2b.1 map pins: removing it clears the game's waypoint and minimap arrow")
+    C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint = saveGet, saveClr
     pb._scripts.OnClick(pb, "LeftButton") pb._scripts.OnClick(pb, "LeftButton")
     check(not M.pinMode, "0.5.2b map pins: a second click on the tool disarms it")
     UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap, C_Texture.GetAtlasInfo = saveUMP, saveST, saveSet, saveCan, saveAtlas
@@ -4682,7 +4699,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5630,7 +5647,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -5657,21 +5674,24 @@ if MODE ~= "minimal" then
   for _, r in ipairs(REGLOG) do
     if r.frame == Tr.frame then check(r.frame ~= UIParent and r.frame ~= Minimap and r.frame ~= GameTooltip, "0.5.2b tracker: events only on its own frame (" .. r.ev .. ")") end
   end
-  check(DarkMatterDB.autoTrack == false and DarkMatterDB.mlKeys == true and type(DarkMatterDB.userPins) == "table" and type(DarkMatterDB.keepTracked) == "table",
-    "0.5.2b defaults: auto-track off, M/L keys on, pins saved in DarkMatterDB")
-  -- 1. keep-tracked pins from the watch list
+  check(DarkMatterDB.autoTrack == true and DarkMatterDB.autoTrackV == 1 and DarkMatterDB.mlKeys == true and type(DarkMatterDB.userPins) == "table" and type(DarkMatterDB.keepTracked) == "table",
+    "0.5.2b.1 defaults: auto-track on, M/L keys on, pins saved in DarkMatterDB")
+  Tr.SetAuto(false) Tr.zonePending = nil -- the overlay tests below run with it off; section 4 turns it on
+  -- 1. keep-tracked pins: a sticky flag that only a click on the pin changes (0.5.2b.1)
+  check(DarkMatterDB.keepV == 1 and next(DarkMatterDB.keepTracked) == nil, "0.5.2b.1 keep: every pin starts unpinned (the one-time 0.5.2b reset ran)")
   QWATCH = { [2] = true }
-  DarkMatterDB.keepTracked, DarkMatterDB.keepInit = {}, nil
+  DarkMatterDB.keepTracked = {}
   Tr.watch, Tr.log, Tr.own = nil, {}, {}
   QL.Forget()
   Tr.Diff()
   local P = DarkMatterDB.keepTracked
-  check(P[101] == true and DarkMatterDB.keepInit == true and P[102] == nil, "0.5.2b keep: on the first run the quests you track become pins")
+  check(next(P) == nil, "0.5.2b.1 keep: quests already tracked are not pinned")
   QWATCH[3] = true Tr.Diff()
-  check(P[102] == true, "0.5.2b keep: tracking a quest yourself pins it")
-  Tr.log[103] = nil QWATCH[6] = true Tr.Diff()
-  check(P[103] == nil, "0.5.2b keep: the game's auto-watch of a quest new to the log does not pin it")
-  QWATCH[6] = nil Tr.Diff()
+  check(P[102] == nil, "0.5.2b.1 keep: tracking a quest yourself does not pin it")
+  Tr.SetPinned(102, true)
+  check(P[102] == true and QWATCH[3] == true, "0.5.2b.1 keep: a click on the pin pins it")
+  QWATCH[6] = true Tr.Diff() QWATCH[6] = nil Tr.Diff()
+  check(P[103] == nil, "0.5.2b keep: the game's auto-watch does not pin")
   TIME_NOW = TIME_NOW + 100
   Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
   QWATCH[3] = nil Tr.Diff()
@@ -5680,13 +5700,17 @@ if MODE ~= "minimal" then
   check(Tr.own[102] == nil and P[102] == true, "0.5.2b keep: our own re-track is not taken as yours")
   TIME_NOW = TIME_NOW + 10
   QWATCH[3] = nil Tr.Diff()
-  check(QWATCH[3] == nil and P[102] == nil, "0.5.2b keep: untracking it yourself unpins it")
+  check(QWATCH[3] == nil and P[102] == true, "0.5.2b.1 keep: untracking it yourself does not unpin it")
+  Tr.SetPinned(101, true)
   Tr.OnEvent("QUEST_REMOVED", 101)
   check(P[101] == nil, "0.5.2b keep: abandoning a quest unpins it")
   Tr.SetPinned(103, true)
   check(P[103] == true and QWATCH[6] == true, "0.5.2b keep: pinning an untracked quest tracks it")
   Tr.Diff()
   check(P[103] == true and Tr.own[103] == nil, "0.5.2b keep: and that track is ours (still pinned)")
+  Tr.SetPinned(103, false)
+  check(P[103] == nil and QWATCH[6] == true, "0.5.2b.1 keep: unpinning does not untrack (auto-track decides at the next zone change)")
+  Tr.SetPinned(103, true) P[102] = nil Tr.zonePending = nil
   -- 2. the tracker rows: our own pin button and title click area, positioned by the blocks (read only)
   local function vis(f) return f._shown == true end
   local function block(q, top, withItem)
@@ -5793,7 +5817,7 @@ if MODE ~= "minimal" then
   Tr.watch, Tr.own = nil, {}
   Tr.Diff()
   for k in pairs(P) do P[k] = nil end
-  check(Tr.AutoWanted() == false, "0.5.2b auto: off by default")
+  check(Tr.AutoWanted() == false, "0.5.2b auto: off (turned off for these tests)")
   Tr.Tick(TIME_NOW)
   check(QWATCH[6] == true and not QWATCH[2], "0.5.2b auto: nothing changes while it is off")
   local taxi = false
@@ -5828,6 +5852,160 @@ if MODE ~= "minimal" then
   UnitOnTaxi = nil
   check(NS.db.autoTrack == false, "0.5.2b auto: /dm autotrack off")
   P[103] = nil
+  -- ===== 0.5.2b.1: Track boxes and the game's log only track/untrack; pins change only on a pin click; auto-track =====
+  do
+    local log = Tr.ReadLog()
+    QWATCH = {}
+    for k in pairs(P) do P[k] = nil end
+    Tr.watch, Tr.own, Tr.ownAt = nil, {}, {}
+    QL.Forget() Tr.Diff()
+    Tr.UserToggle(log[101])
+    local c, partly = Tr.CheckState(log[101])
+    check(P[101] == nil and QWATCH[2] == true and c == true and partly == false, "0.5.2b.1 box: checking a Track box tracks the quest, no pin")
+    QL.Forget() Tr.Diff()
+    check(P[101] == nil and Tr.own[101] == nil, "0.5.2b.1 box: still not pinned after the diff")
+    Tr.SetPinned(101, true)
+    Tr.UserToggle(log[101])
+    QL.Forget() Tr.Diff()
+    check(P[101] == true and QWATCH[2] == nil and Tr.CheckState(log[101]) == false, "0.5.2b.1 box: unchecking untracks it, the pin stays")
+    P[101] = nil
+    -- the game's quest log checkbox (QUEST_WATCH_LIST_CHANGED): never pins or unpins
+    TIME_NOW = TIME_NOW + 10
+    QWATCH[3] = true QL.Forget() Tr.Diff()
+    check(P[102] == nil and Tr.CheckState(log[102]) == true, "0.5.2b.1 game log: tracking there does not pin it")
+    P[102] = true
+    QWATCH[3] = nil QL.Forget() Tr.Diff()
+    check(P[102] == true and QWATCH[3] == nil, "0.5.2b.1 game log: untracking there does not unpin it")
+    P[102] = nil
+    -- the Quests tab box: plain tracking
+    local box
+    for _, f in ipairs(ALL) do
+      if rawget(f, "isWatchBox") and type(rawget(f, "row")) == "table" and type(f.row.quest) == "table" and f.row.quest.questID == 101 and f._scripts.OnClick then box = f break end
+    end
+    if box then
+      box._scripts.OnClick(box)
+      check(P[101] == nil and QWATCH[2] == true and Tr.CheckState(box.row.quest) == true, "0.5.2b.1 box: the Quests tab box tracks (no pin)")
+      box._scripts.OnClick(box)
+      check(P[101] == nil and QWATCH[2] == nil and Tr.CheckState(box.row.quest) == false, "0.5.2b.1 box: the Quests tab box untracks")
+    else
+      check(MODE ~= "full", "0.5.2b.1 box: a Quests tab Track box exists")
+    end
+    -- auto-track: fires after landing, its changes pin nothing
+    QL.Forget() Tr.Diff()
+    for k in pairs(P) do P[k] = nil end
+    Tr.SetAuto(true)
+    Tr.queue, Tr.zonePending = {}, nil
+    QWATCH = { [6] = true }
+    QL.Forget() Tr.Diff()
+    local taxi = true
+    UnitOnTaxi = function() return taxi end
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW)
+    check(Tr.waitingTaxi and QWATCH[6] == true and not QWATCH[2], "0.5.2b.1 auto: a zone change in flight waits")
+    taxi = false
+    Tr.OnEvent("PLAYER_CONTROL_GAINED")
+    Tr.Tick(TIME_NOW + 0.2) Tr.Tick(TIME_NOW + 1.5) Tr.Tick(TIME_NOW + 3)
+    check(QWATCH[2] == true and QWATCH[3] == true and not QWATCH[6] and not Tr.waitingTaxi, "0.5.2b.1 auto: after landing, this zone's quests tracked and the rest untracked")
+    QL.Forget() Tr.Diff()
+    check(next(P) == nil, "0.5.2b.1 auto: its changes are not taken as yours (nothing pinned)")
+    Tr.OnEvent("PLAYER_ENTERING_WORLD")
+    check(Tr.zonePending ~= nil, "0.5.2b.1 auto: PLAYER_ENTERING_WORLD also re-plans")
+    -- a pinned quest stays in every zone; an unpinned one follows auto-track
+    P[103] = true
+    QWATCH = { [6] = true }
+    QL.Forget() Tr.Diff()
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW + 0.2) Tr.Tick(TIME_NOW + 1.5) Tr.Tick(TIME_NOW + 3)
+    check(QWATCH[6] == true and QWATCH[2] == true and P[103] == true, "0.5.2b.1 auto: a pinned quest from another zone stays tracked")
+    -- auto-track off: an untracked pinned quest is tracked again after a zone change; the rest is the game's
+    Tr.SetAuto(false)
+    QWATCH = { [3] = true }
+    QL.Forget() Tr.Diff()
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW + 4)
+    check(QWATCH[6] == true and QWATCH[3] == true and not QWATCH[2] and P[103] == true, "0.5.2b.1 auto off: a pinned quest is tracked again after a zone change, the rest left as the game has it")
+    P[103] = nil
+    UnitOnTaxi = nil
+    Tr.SetAuto(false) Tr.zonePending = nil
+    QWATCH = {}
+    QL.Forget() Tr.Diff()
+    for k in pairs(P) do P[k] = nil end
+  end
+  -- 0.5.2b.1 item 6: the tracker follows the watch order; we re-track out of place quests in log order (public API only)
+  do
+    local log = Tr.ReadLog()
+    local fx = Tr.OrderFix({ 103, 101, 102 }, log)
+    local fy = Tr.OrderFix({ 101, 103, 102 }, log)
+    check(#fx == 3 and fx[1] == 101 and fx[2] == 102 and fx[3] == 103 and #fy == 2 and fy[1] == 102 and fy[2] == 103
+      and #Tr.OrderFix({ 101, 102, 103 }, log) == 0, "0.5.2b.1 order: from the first quest out of place on, re-tracked in log order")
+    local ID = { [2] = 101, [3] = 102, [6] = 103 }
+    local IX = { [101] = 2, [102] = 3, [103] = 6 }
+    local WL = {}
+    local prepend = false
+    local oA, oR, oN, oI = AddQuestWatch, RemoveQuestWatch, C_QuestLog.GetNumQuestWatches, C_QuestLog.GetQuestIDForQuestWatchIndex
+    AddQuestWatch = function(i) QWATCH[i] = true if prepend then table.insert(WL, 1, ID[i]) else WL[#WL + 1] = ID[i] end end
+    RemoveQuestWatch = function(i) QWATCH[i] = nil for k = #WL, 1, -1 do if WL[k] == ID[i] then table.remove(WL, k) end end end
+    C_QuestLog.GetNumQuestWatches = function() return #WL end
+    C_QuestLog.GetQuestIDForQuestWatchIndex = function(i) return WL[i] end
+    local function setWL(ids) WL = {} QWATCH = {} for _, id in ipairs(ids) do WL[#WL + 1] = id QWATCH[IX[id]] = true end end
+    for k in pairs(P) do P[k] = nil end
+    Tr.own, Tr.ownAt, Tr.queue, Tr.zonePending, Tr.orderRuns, Tr.orderFixed = {}, {}, {}, nil, {}, 0
+    setWL({ 103, 101 })
+    QL.Forget() Tr.Diff()
+    for k in pairs(P) do P[k] = nil end
+    P[103] = true
+    Tr.SetOrder(true)
+    local t0 = GetTime()
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(t0 + 0.2)
+    check(WL[1] == 103, "0.5.2b.1 order: waits a moment after the game's own zone re-sort")
+    Tr.Tick(t0 + 1.5)
+    check(WL[1] == 101 and WL[2] == 103 and #WL == 2 and Tr.orderFixed == 1, "0.5.2b.1 order: the tracker's watch list is put in quest-log order")
+    QL.Forget() Tr.Tick(t0 + 3)
+    check(P[103] == true and P[101] == nil and Tr.own[101] == nil and Tr.own[103] == nil, "0.5.2b.1 order: re-tracking changes no pins (not taken as yours)")
+    -- in combat: nothing until it ends
+    setWL({ 103, 101 })
+    local oc = InCombatLockdown
+    InCombatLockdown = function() return true end
+    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED")
+    Tr.Tick(t0 + 5)
+    check(WL[1] == 103, "0.5.2b.1 order: never in combat")
+    InCombatLockdown = oc
+    Tr.Tick(t0 + 6)
+    check(WL[1] == 101, "0.5.2b.1 order: done after combat")
+    -- a client that keeps its own order: stop, no loop; a new zone tries again
+    setWL({ 103, 101 }) prepend = true
+    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED")
+    Tr.Tick(t0 + 8)
+    local n1 = Tr.orderFixed
+    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 10)
+    check(Tr.orderGaveUp == true and Tr.orderFixed == n1 and #WL == 2 and P[103] == true, "0.5.2b.1 order: if the game keeps its own order it stops (no loop, nothing lost)")
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    check(Tr.orderGaveUp == nil, "0.5.2b.1 order: a new zone tries again")
+    prepend = false
+    -- /dm trackorder off: the game's order stays
+    local oldP = NS.Print NS.Print = function() end
+    SlashCmdList.DARKMATTER("trackorder off")
+    NS.Print = oldP
+    setWL({ 103, 101 })
+    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 12)
+    check(NS.db.trackOrder == false and WL[1] == 103, "0.5.2b.1 order: /dm trackorder off leaves the game's order")
+    Tr.SetOrder(true)
+    AddQuestWatch, RemoveQuestWatch, C_QuestLog.GetNumQuestWatches, C_QuestLog.GetQuestIDForQuestWatchIndex = oA, oR, oN, oI
+    Tr.orderDirty, Tr.orderGaveUp = nil, nil
+    QWATCH = {}
+    QL.Forget() Tr.Diff()
+    for k in pairs(P) do P[k] = nil end
+  end
+  check(Tr.PIN_SIZE >= 17 and Tr.PIN_SIZE <= 18, "0.5.2b.1 tracker: keep pins 17-18 px (were 14)")
+  -- item 5 stays out: nothing is ever registered with the game's tracker (its quest item buttons call protected code)
+  do
+    local fh = io.open(arg[1] .. "/Tracker.lua") local src = fh:read("*a") fh:close()
+    local code = src:gsub("%-%-[^\n]*", "")
+    check(not code:find("ObjectiveTrackerManager", 1, true) and not code:find("SetModuleContainer", 1, true) and not code:find("AddModule", 1, true)
+      and not code:find("AddTopPaddingProvider", 1, true) and not code:find("EventRegistry", 1, true) and not code:find("uiOrder", 1, true),
+      "0.5.2b.1 taint: no module, padding provider or callback is added to the game's objective tracker")
+  end
   -- 5. the M / L keys: override bindings owned by our frame, out of combat only, never saved
   local binds, cleared, saved = {}, 0, 0
   ClearOverrideBindings = function(o) check(o == K.owner, "0.5.2b keys: cleared on our own frame") binds = {} cleared = cleared + 1 end
@@ -5872,7 +6050,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b (read-only)" and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.1 (read-only)" and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

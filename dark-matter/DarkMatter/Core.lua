@@ -5,7 +5,7 @@ local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.5.2b"
+NS.version = "0.5.2b.1"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -23,7 +23,8 @@ local DEFAULTS = {
   loadCount = 0,
   -- 0.5.2b
   keepTracked = {},   -- quests kept in the objective tracker across zone changes
-  autoTrack = false,  -- zone auto-track (off by default)
+  autoTrack = true,   -- zone auto-track (0.5.2b.1: on by default)
+  trackOrder = true,  -- 0.5.2b.1: keep the objective tracker in quest-log order
   mlKeys = true,      -- M and L open Dark Matter (ALT-M / ALT-L the game's own windows)
   userPins = {},      -- your own pins on the map
 }
@@ -59,6 +60,10 @@ local function InitDB()
   NS.sv.previousLoadCount = NS.db.loadCount
   NS.sv.previousProbeWhen = type(NS.db.probe) == "table" and NS.db.probe.when or nil
   CopyDefaults(NS.db, DEFAULTS)
+  -- 0.5.2b.1: zone auto-track is on by default; 0.5.2b saved it off for everyone, so turn it on once
+  if NS.db.autoTrackV ~= 1 then NS.db.autoTrack = true NS.db.autoTrackV = 1 end
+  -- 0.5.2b.1: pins start unpinned and change only by a click; 0.5.2b may have pinned on track, so clear them ONCE
+  if NS.db.keepV ~= 1 then NS.db.keepTracked = {} NS.db.keepV = 1 end
   if type(NS.db.blockedLog) ~= "table" then NS.db.blockedLog = {} end
   InitCharDB()
   if NS.StartFishingTracker then NS.StartFishingTracker() end

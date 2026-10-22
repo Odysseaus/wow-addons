@@ -533,6 +533,7 @@ end
 -- breadcrumb + coordinates
 ---------------------------------------------------------------------------
 local FlyTo -- forward (assigned below)
+M.HOP_SLOW = 1.32 -- 0.5.2b.1: the zoom-out, pan, zoom-in glide takes 32% longer (was 0.8-1.4 s, now about 1.06-1.85 s)
 local Crumbs
 local function Trail()
   local out = {}
@@ -750,7 +751,7 @@ FlyTo = function(id, wx, wy, hop, sMin)
     sm = math.max(sm, SFit())
     fly.dip = math.max(0, (math.log(V.s) + math.log(s)) / 2 - math.log(sm))
     fly.hop = true
-    fly.dur = 0.8 + math.min(0.6, fly.dip * 0.2)
+    fly.dur = (0.8 + math.min(0.6, fly.dip * 0.2)) * M.HOP_SLOW -- 0.5.2b.1: about a third slower, same easing
   end
   zoomT = nil
   M.flyTarget = id
@@ -844,7 +845,9 @@ end
 function M.RemovePin(p)
   local list = UserPins()
   for i = #list, 1, -1 do if list[i] == p then table.remove(list, i) end end
-  NS.SetStatus("Pin removed.")
+  -- 0.5.2b.1: its waypoint and arrow go too (only when the game's waypoint is this pin's)
+  local cleared = p and NS.QS and NS.QS.ClearWaypoint and NS.QS.ClearWaypoint(p.map, p.x, p.y)
+  NS.SetStatus(cleared and "Pin removed, with its waypoint and arrow." or "Pin removed.")
   M.dirty = true
 end
 local function MakeUserPin()

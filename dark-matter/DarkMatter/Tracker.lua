@@ -1,13 +1,13 @@
 -- Dark Matter 0.5.2b: the game's objective tracker, READ ONLY. Beside each quest row: our own keep-tracked pin button;
 -- over each quest title: our own transparent click area that opens the quest in Dark Matter; under the tracker: our own
--- "Ready to Turn In" section; and an optional zone auto-track (off by default).
+-- "Ready to Turn In" section; and zone auto-track (on by default since 0.5.2b.1).
 -- Taint rules: every frame here is Dark Matter's own, parented to UIParent and only POSITIONED by the tracker's blocks
 -- (read-only anchors). Nothing is inserted into the tracker, no tracker frame gets a script, a hook or a new parent, and
 -- watch-list changes happen only out of combat (queued until it ends).
 local _, NS = ...
 local UI = NS.UI
 
-local Tr = { pins = {}, rows = {}, own = {}, queue = {}, log = {} }
+local Tr = { pins = {}, rows = {}, own = {}, ownAt = {}, queue = {}, log = {} }
 NS.Tracker = Tr
 
 local MODULES = { "QuestObjectiveTracker", "CampaignQuestObjectiveTracker" }
@@ -16,6 +16,8 @@ Tr.BATCH = 5        -- auto-track: changes per batch
 Tr.BATCH_GAP = 1    -- auto-track: seconds between batches
 Tr.ZONE_GUARD = 3   -- a pinned quest the game untracks this soon after a zone change is tracked again
 Tr.READY_MAX = 8
+Tr.PIN_SIZE = 17   -- 0.5.2b.1: keep pins about 20% larger (were 14)
+Tr.OWN_TTL = 5     -- our own watch changes are recognised for this long
 
 local function N(v) return NS.Num(v) end
 local function Now() return (type(GetTime) == "function" and GetTime()) or 0 end
@@ -71,15 +73,23 @@ Tr.Watched = Watched
 -- change a watch, remembering it is ours (the snapshot diff then does not take it as yours)
 local function SetWatch(e, want)
   if not NS.QL then return "noapi" end
-  Tr.own[e.id] = want and "add" or "remove"
+  local id = N(e.id or e.questID)
+  if id then Tr.own[id] = want and "add" or "remove" Tr.ownAt[id] = Now() end
   local r = NS.QL.SetWatched(e, want)
-  if r ~= "ok" and r ~= "queued" then Tr.own[e.id] = nil end
+  if id and r ~= "ok" and r ~= "queued" then Tr.own[id] = nil Tr.ownAt[id] = nil end
   return r
+end
+Tr.SetWatch = SetWatch
+local function Own(id, kind, now)
+  if Tr.own[id] ~= kind then return false end
+  local at = Tr.ownAt[id]
+  Tr.own[id], Tr.ownAt[id] = nil, nil
+  return at == nil or now - at <= Tr.OWN_TTL or InCombat()
 end
 
 ---------------------------------------------------------------------------
--- keep-tracked pins: tracking a quest yourself pins it, untracking or abandoning unpins it; a pinned quest stays
--- tracked when the game untracks it on a zone change. Saved in DarkMatterDB.keepTracked = { [questID] = true }.
+-- keep-tracked pins (0.5.2b.1: a sticky flag, changed ONLY by a click on the pin). A pinned quest stays tracked in every
+-- zone; an unpinned one follows zone auto-track (or the game, with auto-track off). Abandoning a quest drops its pin. Saved in DarkMatterDB.keepTracked = { [questID] = true }.
 ---------------------------------------------------------------------------
 function Tr.SetPinned(q, on)
   q = N(q)
@@ -90,7 +100,33 @@ function Tr.SetPinned(q, on)
     if e and Tr.watch and not Tr.watch[q] then SetWatch(e, true) end
   end
   Tr.layoutDirty = true
+  Tr.NotifyPins()
   if NS.SetStatus then NS.SetStatus(on and "Kept tracked: it stays in the objective tracker when you change zone." or "No longer kept tracked.") end
+end
+
+-- tell the Quests tab and the Quest Log panel to redraw
+function Tr.NotifyPins()
+  Tr.layoutDirty = true
+  local t = NS.tabs and NS.tabs.quests
+  if t and type(t.Refresh) == "function" then pcall(t.Refresh) end
+end
+
+-- 0.5.2b.1: the Track checkboxes are plain tracking (the pin is only the tracker's keep button). Returns checked, partly
+-- (always false now), or nil when the client has no watch API.
+function Tr.CheckState(q)
+  local w = NS.QL and NS.QL.CanWatch() and type(q) == "table" and NS.QL.IsWatched(q)
+  if w == nil then return nil end
+  return w and true or false, false
+end
+-- a click on a Track box: track or untrack, nothing else (the pin is not touched; zone auto-track may change an
+-- unpinned quest again on the next zone change)
+function Tr.UserToggle(q)
+  if type(q) ~= "table" or not NS.QL then return end
+  local watched = NS.QL.IsWatched(q)
+  local r = SetWatch(q, not watched) -- marked as ours: a deliberate untrack of a pinned quest is not taken for a zone drop
+  Tr.diffDirty = true
+  Tr.NotifyPins()
+  return r
 end
 
 function Tr.Diff()
@@ -98,28 +134,17 @@ function Tr.Diff()
   local w = Watched(log)
   if n == 0 and not Tr.watch then return end -- the log is not loaded yet: look again later
   local pins, now = Pins(), Now()
-  local db = DB()
-  if not Tr.watch then
-    -- first look after login: on the very first run every quest you track now becomes a pin
-    if db and not db.keepInit and n > 0 then
-      for id in pairs(w) do pins[id] = true end
-      db.keepInit = true
-    end
-  else
-    for id in pairs(w) do
-      if not Tr.watch[id] then
-        if Tr.own[id] == "add" then Tr.own[id] = nil
-        elseif Tr.log[id] then pins[id] = true -- tracked by you (a quest new to the log is the game's own auto-watch)
-        end
-      end
-    end
+  local changed = false
+  if Tr.watch then
+    -- 0.5.2b.1: a pin changes only when you click it. Tracking and untracking (our boxes, the game's log, the game's
+    -- auto-watch, zone auto-track) never pin or unpin; only a quest leaving the log drops its pin.
+    for id in pairs(w) do if not Tr.watch[id] then Own(id, "add", now) end end -- consume our own marks
     for id in pairs(Tr.watch) do
       if not w[id] then
-        if Tr.own[id] == "remove" then Tr.own[id] = nil
-        elseif not log[id] then pins[id] = nil -- abandoned or turned in
-        elseif pins[id] and Tr.zoneAt and now - Tr.zoneAt <= Tr.ZONE_GUARD then
-          SetWatch(log[id], true) -- the game dropped it on a zone change: keep it (the next look sees it back, as ours)
-        else pins[id] = nil -- untracked by you
+        local ours = Own(id, "remove", now)
+        if not log[id] then if pins[id] then changed = true end pins[id] = nil -- abandoned or turned in
+        elseif not ours and pins[id] and Tr.zoneAt and now - Tr.zoneAt <= Tr.ZONE_GUARD then
+          SetWatch(log[id], true) -- the game dropped a pinned quest on a zone change: keep it
         end
       end
     end
@@ -128,6 +153,8 @@ function Tr.Diff()
   if n > 0 then for id in pairs(pins) do if not log[id] then pins[id] = nil end end end
   Tr.log, Tr.watch = log, w
   Tr.layoutDirty, Tr.readyDirty = true, true
+  for id in pairs(Tr.own) do if Tr.ownAt[id] and now - Tr.ownAt[id] > Tr.OWN_TTL and not InCombat() then Tr.own[id], Tr.ownAt[id] = nil, nil end end
+  if changed then Tr.NotifyPins() end
 end
 
 ---------------------------------------------------------------------------
@@ -204,15 +231,15 @@ local function Untip() if GameTooltip then GameTooltip:Hide() end end
 local function MakeRow()
   local r = {}
   local pin = CreateFrame("Button", nil, UIParent)
-  pin:SetSize(14, 14)
+  pin:SetSize(Tr.PIN_SIZE, Tr.PIN_SIZE)
   pin.icon = pin:CreateTexture(nil, "ARTWORK")
   pin.icon:SetAllPoints(pin)
   pin:RegisterForClicks("LeftButtonUp")
   pin:SetScript("OnClick", function(self) Tr.SetPinned(self.q, not Tr.IsPinned(self.q)) end)
   pin:SetScript("OnEnter", function(self)
     self.tipTitle = Tr.IsPinned(self.q) and "Kept tracked (Dark Matter)" or "Keep tracked (Dark Matter)"
-    self.tipText = Tr.IsPinned(self.q) and "Click: stop keeping it. It stays in the tracker when you change zone while pinned."
-      or "Click: keep this quest in the tracker when you change zone."
+    self.tipText = Tr.IsPinned(self.q) and "Pinned: it stays in the tracker in every zone. Click to unpin (it then follows zone auto-track from the next zone change)."
+      or "Click to pin: this quest then stays in the tracker in every zone. Only this button pins or unpins."
     Tip(self)
   end)
   pin:SetScript("OnLeave", Untip)
@@ -455,7 +482,7 @@ function Tr.ReadyClick(q)
 end
 
 ---------------------------------------------------------------------------
--- zone auto-track (off by default): this zone's quests plus pinned ones tracked, the rest untracked. Waits for a
+-- zone auto-track (on by default since 0.5.2b.1): this zone's quests plus pinned ones tracked, the rest untracked. Waits for a
 -- flight to land, then switches once; changes go out in batches about a second apart, and never in combat.
 ---------------------------------------------------------------------------
 function Tr.ZoneSet(log)
@@ -495,7 +522,22 @@ function Tr.SetAuto(on)
 end
 local function OnTaxi() return type(_G.UnitOnTaxi) == "function" and _G.UnitOnTaxi("player") == true end
 function Tr.AutoStep(now)
-  if not Tr.AutoWanted() then Tr.zonePending = nil Tr.queue = {} return end
+  if not Tr.AutoWanted() then
+    -- auto-track off: the game's own tracking, except that pinned quests are tracked again after a zone change
+    Tr.queue = {}
+    if Tr.zonePending then
+      if OnTaxi() then Tr.waitingTaxi = true return end
+      if InCombat() then return end
+      Tr.waitingTaxi, Tr.zonePending = nil, nil
+      local log = ReadLog()
+      local w = Watched(log)
+      local ids = {}
+      for id in pairs(Pins()) do if log[id] and not w[id] then ids[#ids + 1] = id end end
+      table.sort(ids, function(a, b) return log[a].idx < log[b].idx end)
+      for _, id in ipairs(ids) do if SetWatch(log[id], true) == "cap" then break end end
+    end
+    return
+  end
   if Tr.zonePending then
     if OnTaxi() then Tr.waitingTaxi = true return end -- a flight: wait for the landing
     if InCombat() then return end
@@ -521,14 +563,94 @@ function Tr.AutoStep(now)
 end
 
 ---------------------------------------------------------------------------
+-- 0.5.2b.1: the tracker in quest-log order (zone groups, lowest level first, as the log shows them). The game's tracker
+-- lists quests in WATCH order (C_QuestLog.GetQuestIDForQuestWatchIndex) and the game itself re-sorts that order on zone
+-- changes (C_QuestLog.SortQuestWatches). So, out of combat and not in flight, about a second after the game's sort and
+-- after auto-track: the quests from the first one out of place on are untracked and tracked again in log order (a new
+-- watch goes to the end of the list). Only the public watch API is used; no tracker code or frame is touched. If the
+-- order is still wrong afterwards (or a watch did not come back) it stops until the next zone change.
+---------------------------------------------------------------------------
+Tr.ORDER_SETTLE = 1  -- seconds after the last watch / zone event
+Tr.ORDER_MAX = 10    -- re-orders a minute at most
+function Tr.OrderWanted() return DB() ~= nil and DB().trackOrder ~= false end
+function Tr.WatchOrder()
+  local CQ = C_QuestLog
+  if not (CQ and type(CQ.GetNumQuestWatches) == "function" and type(CQ.GetQuestIDForQuestWatchIndex) == "function") then return nil end
+  local ok, n = pcall(CQ.GetNumQuestWatches)
+  n = ok and N(n) or 0
+  local out = {}
+  for i = 1, n do
+    local ok2, id = pcall(CQ.GetQuestIDForQuestWatchIndex, i)
+    id = ok2 and N(id)
+    if id then out[#out + 1] = id end
+  end
+  return out
+end
+-- the quests to track again, in log order (empty when the order is already right)
+function Tr.OrderFix(order, log)
+  local have = {}
+  for _, id in ipairs(order) do if log[id] then have[#have + 1] = id end end
+  local want = {}
+  for i, id in ipairs(have) do want[i] = id end
+  table.sort(want, function(a, b) return log[a].idx < log[b].idx end)
+  local k = 0
+  while k < #have and have[k + 1] == want[k + 1] do k = k + 1 end
+  local fix = {}
+  for i = k + 1, #want do fix[#fix + 1] = want[i] end
+  return fix
+end
+function Tr.SetOrder(on)
+  if DB() then DB().trackOrder = on and true or false end
+  Tr.orderGaveUp = nil
+  if on then Tr.orderDirty = Now() - Tr.ORDER_SETTLE end
+end
+function Tr.OrderStep(now)
+  if not Tr.orderDirty or not Tr.OrderWanted() or Tr.orderGaveUp then return end
+  if now < Tr.orderDirty + Tr.ORDER_SETTLE or InCombat() or OnTaxi() or Tr.zonePending or #Tr.queue > 0 then return end
+  local order = Tr.WatchOrder()
+  if not order then Tr.orderDirty = nil Tr.orderNote = "no watch-order API: the game's order stays" return end
+  local log = ReadLog()
+  local fix = Tr.OrderFix(order, log)
+  Tr.orderDirty = nil
+  if #fix == 0 then Tr.orderNote = "in log order" return end
+  Tr.orderRuns = Tr.orderRuns or {}
+  local recent = 0
+  for _, t in ipairs(Tr.orderRuns) do if now - t < 60 then recent = recent + 1 end end
+  if recent >= Tr.ORDER_MAX then Tr.orderGaveUp = true Tr.orderNote = "stopped: re-ordered too often this minute" return end
+  Tr.orderRuns[#Tr.orderRuns + 1] = now
+  while #Tr.orderRuns > Tr.ORDER_MAX do table.remove(Tr.orderRuns, 1) end
+  -- all in this one tick, so the snapshot diff never sees a quest half way (it is tracked before and after: not yours)
+  for _, id in ipairs(fix) do SetWatch(log[id], false) end
+  local lost = 0
+  for _, id in ipairs(fix) do if SetWatch(log[id], true) ~= "ok" then lost = lost + 1 end end
+  for _, id in ipairs(fix) do Tr.own[id], Tr.ownAt[id] = nil, nil end
+  Tr.orderFixed = (Tr.orderFixed or 0) + 1
+  local again = Tr.WatchOrder()
+  if lost > 0 or (again and #Tr.OrderFix(again, log) > 0) then
+    Tr.orderGaveUp = true
+    Tr.orderNote = lost > 0 and (lost .. " watch(es) did not come back: stopped until the next zone change")
+      or "the game kept its own order: stopped until the next zone change"
+  else
+    Tr.orderNote = "re-ordered " .. #fix .. " to log order"
+  end
+end
+
+---------------------------------------------------------------------------
 -- events and the tick (our own private frame; the tracker itself is never touched)
 ---------------------------------------------------------------------------
 Tr.EVENTS = { "QUEST_WATCH_LIST_CHANGED", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN",
-  "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED" }
+  "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_CONTROL_GAINED", "ZONE_CHANGED" }
 function Tr.OnEvent(event, a1)
+  if event == "QUEST_WATCH_LIST_CHANGED" or event == "QUEST_ACCEPTED" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA"
+    or event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_CONTROL_GAINED" then
+    Tr.orderDirty = Now() -- 0.5.2b.1: keep the tracker in log order (after the game's own re-sort)
+    if event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then Tr.orderGaveUp = nil end
+  end
   if event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
     Tr.zoneAt = Now()
-    if Tr.AutoWanted() then Tr.zonePending = Now() end
+    Tr.zonePending = Now() -- auto-track re-plans; with it off, pinned quests are still tracked again
+  elseif event == "PLAYER_CONTROL_GAINED" then -- 0.5.2b.1: landing after a flight (also after a stun or a cinematic)
+    if Tr.waitingTaxi or Tr.zonePending then Tr.zonePending = Now() end
   elseif event == "QUEST_ACCEPTED" then
     if Tr.AutoWanted() then Tr.zonePending = Now() end
   elseif event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN" then
@@ -541,6 +663,7 @@ function Tr.Tick(now)
   now = now or Now()
   if Tr.diffDirty then Tr.diffDirty = false Tr.Diff() end
   Tr.AutoStep(now)
+  Tr.OrderStep(now)
   if Tr.readyDirty then Tr.FillReady() end
   Tr.Layout()
 end
@@ -558,9 +681,10 @@ function Tr.Start()
   end)
   Tr.frame = f
   Tr.zoneAt = Now()
-  if Tr.AutoWanted() then Tr.zonePending = Now() end
+  Tr.zonePending = Now()
   Tr.Diff()
   Tr.FillReady()
+  Tr.orderDirty = Now()
 end
 
 -- /dm trackerprobe: what the overlays found (read only)
@@ -581,5 +705,7 @@ function Tr.Report()
   for _ in pairs(Pins()) do np = np + 1 end
   lines[#lines + 1] = string.format("kept tracked: %d; ready to turn in: %d; zone auto-track %s; queued changes %d%s",
     np, Tr.readyCount or 0, Tr.AutoWanted() and "on" or "off", #Tr.queue, Tr.waitingTaxi and " (waiting for the flight to land)" or "")
+  lines[#lines + 1] = string.format("tracker in log order: %s; watch-order API %s; re-orders %d; %s", Tr.OrderWanted() and "on" or "off",
+    Tr.WatchOrder() and "ok" or "missing", Tr.orderFixed or 0, Tr.orderNote or "not checked yet")
   return lines
 end
