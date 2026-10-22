@@ -3675,7 +3675,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.1.6 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.1.7 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3891,6 +3891,42 @@ do
   end
   check(rim > 0 and rimOK and whole >= 1 and math.abs(M.EdgeW(dm.art, 0, 300)) < 1e-9 and M.EdgeW(dm.art, 64, 300) == 1,
     "0.5.1.6 map: a zone picture's outer 64 px fade to 0 (" .. rim .. " rim cells, " .. whole .. " whole pieces inside; art " .. dm.art.w .. "x" .. dm.art.h .. " tiles " .. dm.art.tw .. "x" .. dm.art.th .. ")")
+  -- 0.5.1.7: place names on top of the tiles (the game's explored-area names), fading in with the tiles
+  do
+    C_MapExplorationInfo.GetExploredAreaIDsAtPosition = function(id, v)
+      if id ~= 1426 then return nil end
+      local x = v.x or (v.GetXY and select(1, v:GetXY()))
+      if x < 0.5 then return { 131 } end
+      return { 132 }
+    end
+    local saveArea = C_Map.GetAreaInfo
+    C_Map.GetAreaInfo = function(a) return ({ [131] = "Kharanos", [132] = "Gnomeregan" })[a] end
+    local saveV = CreateVector2D
+    CreateVector2D = CreateVector2D or function(x, y) return { x = x, y = y } end
+    M.labelCache = {}
+    local lab = M.AreaLabels(1426)
+    check(#lab == 2 and lab[1].name and math.abs(lab[1].y - 0.5) < 1e-6, "0.5.1.7 map: place names from the explored-area IDs (" .. #lab .. ")")
+    local saveClose = M.close
+    M.close = { mix = 0 }
+    M.LayoutLabels()
+    check(M.labelsShown == 0, "0.5.1.7 map: no extra names while the tiles are off (the art's own names show)")
+    M.close = { mix = 0.4 }
+    M.LayoutLabels()
+    local p = M.pools.label
+    local okA = p and p[1] and p[1]:IsShown() and (p[1]._alpha or 1) > 0.9 and p[1]._text and (p[1]._text == "Kharanos" or p[1]._text == "Gnomeregan")
+    check(M.labelsShown >= 1 and okA, "0.5.1.7 map: as the tiles take over, the names are drawn on top of them (" .. tostring(M.labelsShown) .. ")")
+    local shown, fe, base, hard = M.SeamReport()
+    check(shown > 0 and hard == 0 and fe >= 1, string.format("0.5.1.7 map: every map picture on screen is feathered or the base (%d shown, %d feathered, %d base, %d hard)", shown, fe, base, hard))
+    for _, L in pairs(M.layers) do
+      if L.id ~= M.world and NS.MapData.Is(L.id, "continent") then check(L.feather == (M.hasWorld and true or false), "0.5.1.7 map: a continent picture over the world picture is feathered") end
+    end
+    local zs = NS.MapData.Zones(1415)
+    if zs and #zs >= 2 then check(math.abs(M.ZoneDrawAlpha(zs[1]) - M.ZoneDrawAlpha(zs[2])) < 1e-9, "0.5.1.7 map: a continent's zones fade in together (no patchwork)") end
+    M.close = saveClose
+    M.LayoutLabels()
+    C_MapExplorationInfo.GetExploredAreaIDsAtPosition, C_Map.GetAreaInfo, CreateVector2D = nil, saveArea, saveV
+    M.labelCache = {}
+  end
   check(M.layers[1432] and M.layers[1432].shown, "0.5.0 map: the neighbour zone is drawn too (zones stitched)")
   -- stitching: Loch Modan's left edge on screen meets Dun Morogh's right edge (both from GetMapRectOnMap)
   local function edges(L) local p = L.frame._pts[#L.frame._pts] local sc = L.frame._scale return p[4] * sc, -p[5] * sc, L.art.w * sc, L.art.h * sc end
@@ -4245,7 +4281,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.6 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.7 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5001,14 +5037,27 @@ if MODE == "full" then
     local sizes = { { 1232, 705, { scale = 0.64, real = true }, 0.64 }, { 1232, 705, { real = true } }, { 1232, 705 }, { 1035, 640 },
       { 1920, 1080, { real = true } }, { 600, 420, { real = true } }, { 1600, 760, { scale = 0.8 } } }
     local worst, n, portraits, rebuilt = 0, 0, {}, 0
+    local areas, nAreas = {}, 0
     for _, id in ipairs(NS.themeOrder) do
-      for _, sz in ipairs(sizes) do
+      for si, sz in ipairs(sizes) do
         UIParent.GetEffectiveScale = function() return sz[4] or 1 end
         wmf(sz[1], sz[2], sz[3])
         NS.SetTheme(id)
         local f = NS.RebuildWindow()
         rebuilt = rebuilt + 1
         f:Show()
+        NS.ShowTab("map")
+        -- 0.5.1.7: the Map tab's map rectangle in this theme (compared with the WoW theme's below)
+        local vp = NS.MapTab and NS.MapTab.vp
+        if vp then
+          areas[id .. "|" .. si] = { vp:GetWidth(), vp:GetHeight() }
+          if id ~= "wow" and sz[3] and sz[3].real and areas["wow|" .. si] then
+            local a0, a1 = areas["wow|" .. si], areas[id .. "|" .. si]
+            check(math.abs(a1[1] - a0[1]) <= 2 and math.abs(a1[2] - a0[2]) <= 2, string.format(
+              "0.5.1.7 window: %s at map %dx%d: its map rectangle %.1fx%.1f equals the WoW theme's %.1fx%.1f (within 2 px)", id, sz[1], sz[2], a1[1], a1[2], a0[1], a0[2]))
+            nAreas = nAreas + 1
+          end
+        end
         NS.ShowTab("quests")
         local tw, th = MW.Size()
         local l, t, r, b = drawnBox(f)
@@ -5033,6 +5082,7 @@ if MODE == "full" then
       end
     end
     check(#portraits == 0, "0.5.1.6: no portrait icon in any theme " .. table.concat(portraits, ", "))
+    check(nAreas == (#NS.themeOrder - 1) * 4, "0.5.1.7 window: every class theme's map rectangle was compared with the WoW theme's at 4 map sizes (" .. nAreas .. ")")
     check(n == #NS.themeOrder * #sizes and rebuilt == n, string.format("0.5.1.6 window: %d themes x %d map sizes, worst outer difference %.2f px", #NS.themeOrder, #sizes, worst))
     UIParent.GetEffectiveScale = saveU
     WorldMapFrame = saveWMF MW.art = nil
@@ -5106,7 +5156,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.1.6 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.1.7 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,

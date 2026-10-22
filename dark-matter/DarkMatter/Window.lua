@@ -42,46 +42,80 @@ function NS.ResetWindowPosition()
   NS.Print("window position reset to screen centre.")
 end
 
--- Class-theme art space: the previewer's 880x680 css window (rim 38, header 46, footer 48). Its shell box
--- (38..842 x 84..594) is mapped onto ours (pad..w-pad x shellTop..footerTop), so the art frames our layout.
--- 0.5.1.4: the art keeps the scale it has on the 880x680 window; a window sized to the game's map window only makes the
--- art space wider / taller (aw x ah css), so the frame's edges run longer and every piece keeps its density.
+-- 0.5.1.7: with the game's map window readable, a class theme's frame art is fitted into the same outer rectangle the
+-- WoW theme fills (our frame + the map window's border reach): its rim + header band (84 css) spans the border's top
+-- reach + our shellTop, its side rim (38 css) the border's side reach + our pad, its footer band the rest. So a class
+-- theme gets the WoW theme's layout, and its Map tab the same map rectangle; the art is drawn finer (thinner rim, smaller
+-- crest), never larger. Crest, base plate and edge sprites stay inside that rectangle. Without the map window the 0.5.1.4
+-- mapping stands (the art at its 880x680 scale around our layout).
+local FIT_MIN = 0.45
 local function ArtMap(m)
   m = m or NS.theme.m
-  local b = NS.MapWindow and NS.MapWindow.bases and NS.MapWindow.bases[m] or m
-  local sx = (b.w - 2 * m.pad) / 804
-  local sy = (b.footerTop - m.shellTop) / 510
-  local aw = 880 + (m.w - b.w) / sx
-  local ah = 680 + (m.h - b.h) / sy
-  return sx, sy, m.pad - 38 * sx, m.shellTop - 84 * sy, aw, ah
+  local MW = NS.MapWindow
+  local A = MW and MW.Art and MW.Art()
+  if A and A.full and MW.MapBorder then
+    local l, t, r, b = MW.MapBorder()
+    local sx = math.max(FIT_MIN, (l + m.pad) / 38)
+    local sy = math.max(FIT_MIN, (t + m.shellTop) / 84)
+    local lo, to = 38 * sx - m.pad, 84 * sy - m.shellTop -- reach past our frame (the map border's, unless clamped)
+    local ro, bo = r + (lo - l), b + (to - t)
+    local ax, ay = -lo, -to
+    return sx, sy, ax, ay, (m.w + ro - ax) / sx, (m.h + bo - ay) / sy, true
+  end
+  local bb = MW and MW.bases and MW.bases[m] or m
+  local sx = (bb.w - 2 * m.pad) / 804
+  local sy = (bb.footerTop - m.shellTop) / 510
+  local aw = 880 + (m.w - bb.w) / sx
+  local ah = 680 + (m.h - bb.h) / sy
+  return sx, sy, m.pad - 38 * sx, m.shellTop - 84 * sy, aw, ah, false
 end
 NS.ClassArtMap = ArtMap
+
+-- where a class theme's crest, base plate and edge sprites go (window-relative, y down); fitted art keeps them inside
+local function ArtParts(ca, m)
+  local sx, sy, ax, ay, AW, AH, fit = ArtMap(m)
+  local k = (sx + sy) / 2
+  local aw, ah = AW * sx, AH * sy
+  local function In(x, y, w, h)
+    if not fit then return x, y end
+    return math.max(ax, math.min(x, ax + aw - w)), math.max(ay, math.min(y, ay + ah - h))
+  end
+  local P = { sx = sx, sy = sy, ax = ax, ay = ay, AW = AW, AH = AH, fit = fit, k = k, sprites = {} }
+  local ov = ca.edges and ca.edges.over
+  for i, sp in ipairs(ov and ov.list or {}) do
+    local a = sp[1]
+    local px = a[1] + ((a[1] + a[3] / 2 > 440) and (AW - 880) or 0)
+    local py = a[2] + ((a[2] + a[4] / 2 > 340) and (AH - 680) or 0)
+    local w, h = a[3] * sx, a[4] * sy
+    local x, y = In(ax + px * sx, ay + py * sy, w, h)
+    P.sprites[i] = { x, y, w, h }
+  end
+  if ca.crest then
+    local cs = ca.crest[1] * k
+    local x, y = In(ax + (AW / 2 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy, cs, cs)
+    P.crest = { x, y, cs }
+  end
+  if ca.base then
+    local bw, bh = ca.base[1] * k, ca.base[2] * k
+    local bs = math.min(bw, bh)
+    local x, y = In(ax + AW / 2 * sx - bs / 2, ay + (642 + AH - 680) * sy + (bh - bs) / 2, bs, bs)
+    P.base = { x, y, bs }
+  end
+  return P
+end
+NS.ClassArtParts = ArtParts
 
 -- 0.5.1.6: everything a class theme's frame art draws at metrics m, window-relative (y down): left, top, right, bottom.
 -- The art rect, its edge sprites (glows, vines, crystals), the crest and the base plate. Used to size the window so its
 -- OUTER bounds equal the game's map window's, and for the window's hit and clamp rects.
 function NS.ClassArtBox(ca, m)
   if not ca then return nil end
-  local sx, sy, ax, ay, AW, AH = ArtMap(m)
-  local k = (sx + sy) / 2
-  local l, t, r, b = ax, ay, ax + AW * sx, ay + AH * sy
+  local P = ArtParts(ca, m)
+  local l, t, r, b = P.ax, P.ay, P.ax + P.AW * P.sx, P.ay + P.AH * P.sy
   local function U(x, y, w, h) l, t, r, b = math.min(l, x), math.min(t, y), math.max(r, x + w), math.max(b, y + h) end
-  local ov = ca.edges and ca.edges.over
-  for _, sp in ipairs(ov and ov.list or {}) do
-    local a = sp[1]
-    local px = a[1] + ((a[1] + a[3] / 2 > 440) and (AW - 880) or 0)
-    local py = a[2] + ((a[2] + a[4] / 2 > 340) and (AH - 680) or 0)
-    U(ax + px * sx, ay + py * sy, a[3] * sx, a[4] * sy)
-  end
-  if ca.crest then
-    local cs = ca.crest[1] * k
-    U(ax + (AW / 2 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy, cs, cs)
-  end
-  if ca.base then
-    local bw, bh = ca.base[1] * k, ca.base[2] * k
-    local bs = math.min(bw, bh)
-    U(ax + AW / 2 * sx - bs / 2, ay + (642 + AH - 680) * sy + (bh - bs) / 2, bs, bs)
-  end
+  for _, q in ipairs(P.sprites) do U(q[1], q[2], q[3], q[4]) end
+  if P.crest then U(P.crest[1], P.crest[2], P.crest[3], P.crest[3]) end
+  if P.base then U(P.base[1], P.base[2], P.base[3], P.base[3]) end
   return { l, t, r, b }
 end
 
@@ -151,6 +185,7 @@ local function BuildClassArt(f)
     end
     top:Show()
     local sx, sy, ax, ay, AW, AH = ArtMap()
+    local parts = ArtParts(ca, NS.theme.m)
     local k = (sx + sy) / 2
     local E = ca.edges
     local c, fd = E.corner, E.fade
@@ -179,12 +214,11 @@ local function BuildClassArt(f)
         tex = top:CreateTexture(nil, "ARTWORK", nil, 0)
         A.os[i] = tex
       end
-      local a, t2 = sp[1], sp[2]
+      local t2 = sp[2]
       local l, r, t, b = TC(t2, 512, ov.sh)
-      -- sprites on the right / bottom half stay at their edge when the art space is wider / taller
-      local px = a[1] + ((a[1] + a[3] / 2 > 440) and (AW - 880) or 0)
-      local py = a[2] + ((a[2] + a[4] / 2 > 340) and (AH - 680) or 0)
-      Put(tex, ov.sprites, l, r, t, b, X(px), Y(py), a[3] * sx, a[4] * sy)
+      -- sprites on the right / bottom half stay at their edge when the art space is wider / taller (ArtParts)
+      local q = parts.sprites[i]
+      Put(tex, ov.sprites, l, r, t, b, q[1], q[2], q[3], q[4])
     end
     local R, file, pw, ph = ca.rects, ca.parts, ca.pw, ca.ph
     local aw, ah = AW * sx, AH * sy
@@ -197,12 +231,9 @@ local function BuildClassArt(f)
     P(A.orn.tr, "orn_tr", ax + aw - o, ay, o, o)
     P(A.orn.bl, "orn_bl", ax, ay + ah - o, o, o)
     P(A.orn.br, "orn_br", ax + aw - o, ay + ah - o, o, o)
-    local cs = ca.crest[1] * k
-    local cx, cy = ax + (AW / 2 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy
+    local cx, cy, cs = parts.crest[1], parts.crest[2], parts.crest[3]
     P(A.crest, "crest", cx, cy, cs, cs)
-    local bw, bh = ca.base[1] * k, ca.base[2] * k
-    local bs = math.min(bw, bh)
-    local bx, by = ax + AW / 2 * sx - bs / 2, ay + (642 + AH - 680) * sy + (bh - bs) / 2
+    local bx, by, bs = parts.base[1], parts.base[2], parts.base[3]
     P(A.base, "base", bx, by, bs, bs)
     -- everything drawn (art rect + overhanging crest and base), window-relative, y down
     A.box = NS.ClassArtBox(ca, NS.theme.m) -- 0.5.1.6: incl. the edge sprites
@@ -531,6 +562,9 @@ local function Build()
   tb:SetScript("OnDragStop", function() f:StopMovingOrSizing() SavePosition() end)
   local tbSlice = UI.ThreeSlice(tb, "title", m.titleH, "ARTWORK")
   local title = UI.Text(tb, "OVERLAY", m.titleSize, "title", "CENTER")
+  W.titlePlate = tb:CreateTexture(nil, "ARTWORK")
+  W.titlePlate:SetColorTexture(0.05, 0.035, 0.02, 0.78)
+  W.titlePlate:Hide()
   title:SetPoint("CENTER", tb, "CENTER", 0, 0)
   NS.OnSkin(function() title:SetText(NS.theme.title or "Dark Matter") end)
   W.title = title
@@ -693,11 +727,25 @@ local function Build()
     medal:Hide()
     local A = mapLook and NS.MapWindow.Art()
     W.medalFrom = nil
+    W.titlePlate:Hide()
     title:ClearAllPoints()
     if ca then
       local sx, sy, ax, ay, AW = ArtMap()
       NS.SetFont(title, math.floor(ca.titleSize * 0.8 + 0.5), "")
       title:SetPoint("CENTER", f, "TOPLEFT", ax + AW / 2 * sx, -(ay + (61 + ca.titleDy) * sy))
+      -- 0.5.1.7: fitted class art: the title sits on a slim dark plate (like the WoW theme's title strip), readable over
+      -- the frame's top band
+      if select(7, ArtMap()) then
+        W.titlePlate:ClearAllPoints()
+        local tr, tg, tb2 = NS.Color("title")
+        local lum = 0.2126 * (tr or 1) + 0.7152 * (tg or 1) + 0.0722 * (tb2 or 1)
+        if lum < 0.45 then W.titlePlate:SetColorTexture(0.95, 0.9, 0.78, 0.9) else W.titlePlate:SetColorTexture(0.05, 0.035, 0.02, 0.78) end
+        W.titlePlate:SetPoint("CENTER", title, "CENTER", 0, 0)
+        W.titlePlate:SetSize((title:GetStringWidth() or 80) + 28, math.floor(ca.titleSize * 0.8 + 0.5) + 8)
+        W.titlePlate:Show()
+      else
+        W.titlePlate:Hide()
+      end
       local box = art.box -- everything drawn, incl. overhanging crest/base/ornaments: left, top, right, bottom (y down)
       if f.SetClampRectInsets then f:SetClampRectInsets(box[1], box[3] - m.w, -box[2], m.h - box[4]) end
       -- the whole frame art is a drag handle: the window's mouse area grows to it (content frames above stay clickable)
@@ -718,7 +766,9 @@ local function Build()
     -- footer row + close button: the previewer's class layout (inset from the frame rim) or the WoW positions
     settings:ClearAllPoints() status:ClearAllPoints() share:ClearAllPoints() exit:ClearAllPoints() close:ClearAllPoints()
     local sRight, shLeft, midY
-    if ca then
+    -- 0.5.1.7: fitted class art takes the WoW footer row (its own footer band is too thin for the previewer's columns)
+    local fitArt = ca and select(7, ArtMap())
+    if ca and not fitArt then
       local sx, sy, ax, ay, AW, AH = ArtMap()
       local ft = ca.footer
       local x, cy = ax + ft.pad * sx, ay + (618 + AH - 680) * sy
@@ -739,8 +789,12 @@ local function Build()
       share:SetWidth(m.fbtnW) share:SetPoint("TOPLEFT", f, "TOPLEFT", m.shareX, -m.fbtnY)
       exit:SetWidth(m.fbtnW) exit:SetPoint("TOPLEFT", f, "TOPLEFT", m.exitX, -m.fbtnY)
       sRight, shLeft, midY = m.fbtnLeft + m.fbtnW, m.shareX, m.fbtnY + m.fbtnH / 2
-      close:SetFrameLevel(f:GetFrameLevel() + 20)
-      if mapLook then
+      close:SetFrameLevel(f:GetFrameLevel() + (fitArt and 27 or 20))
+      if fitArt then
+        local sx, sy, ax, ay, AW = ArtMap()
+        close:SetSize(m.closeSize, m.closeSize)
+        close:SetPoint("TOPRIGHT", f, "TOPLEFT", ax + (AW - ca.close[1]) * sx, -(ay + ca.close[2] * sy))
+      elseif mapLook then
         close:SetSize(22, 22)
         close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -3, -3)
       else

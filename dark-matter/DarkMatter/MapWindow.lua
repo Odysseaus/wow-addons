@@ -359,17 +359,26 @@ function MW.RectLines(tag)
   end
   return out
 end
--- per theme: the outer size each theme gives (the current one measured) against the map's, and the difference
+-- per theme: the outer size each theme gives (the current one measured) against the map's, the difference, and the
+-- size of the Map tab's map rectangle in that theme (0.5.1.7: the same in every theme)
 function MW.ThemeLines(tag)
   local out = {}
   local mw, mh = MW.Size()
+  local mt = NS.MapTab
+  local vp = mt and mt.vp
+  local vw, vh = vp and N(Call(vp, "GetWidth")), vp and N(Call(vp, "GetHeight"))
+  local cm = NS.theme and NS.theme.m
   for i, id in ipairs(NS.themeOrder or {}) do
     local th = NS.themes[id]
     if th then
       local ow, oh, how
+      local need = MW.Need(th, th.m)
       if th == NS.theme and _G.DarkMatterFrame then ow, oh = MW.OurOuter() how = "current, measured"
-      else local need = MW.Need(th, th.m) ow, oh = need.outerW, need.outerH how = "when chosen" end
-      out[#out + 1] = string.format("%s.%d %s: outer %s vs map %s, diff %s,%s (%s)", tag, i, id, WH(ow, oh), WH(mw, mh), D(ow, mw), D(oh, mh), how)
+      else ow, oh = need.outerW, need.outerH how = "when chosen" end
+      local area = "?"
+      if vw and vh and cm and need.w then area = WH(vw + (need.w - cm.w), vh + (need.h - cm.h)) end
+      out[#out + 1] = string.format("%s.%d %s: outer %s vs map %s, diff %s,%s; map area %s (%s)", tag, i, id, WH(ow, oh), WH(mw, mh),
+        D(ow, mw), D(oh, mh), area, how)
     end
   end
   return out

@@ -326,6 +326,15 @@ local function Run()
       lines[#lines + 1] = l20
     end
   end
+  -- 21 (0.5.1.7): place names drawn over the tiles, and the seams: map pictures on screen, how many fade at their rim,
+  -- and how many are drawn with hard edges (0 expected; the world picture is the base, never feathered)
+  local MT = NS.MapTab
+  if MT and MT.SeamReport then
+    local shown, fe, base, hard = MT.SeamReport()
+    data.seams = { shown = shown, feathered = fe, base = base, hard = hard, names = MT.labelsShown or 0 }
+    lines[#lines + 1] = string.format("map 21: names on top: %d; pictures %d: %d feathered, %d base", MT.labelsShown or 0, shown, fe, base)
+    lines[#lines + 1] = string.format("map 21 seams: %d unfeathered picture edges", hard)
+  end
   return lines, data
 end
 
