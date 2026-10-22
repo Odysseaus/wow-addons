@@ -51,9 +51,15 @@ function NS.RegisterTheme(def)
 end
 
 -- A widget registers a function that (re)applies theme data to itself; it runs now and on every theme change.
+local skinOwner = setmetatable({}, { __mode = "k" })
 function NS.OnSkin(fn)
   fn()
   skins[#skins + 1] = fn
+  if NS.skinOwner then skinOwner[fn] = NS.skinOwner end
+end
+-- 0.5.1.6: the main window is built again when its size must change; its old parts' skin functions are dropped
+function NS.DropSkins(owner)
+  for i = #skins, 1, -1 do if skinOwner[skins[i]] == owner then table.remove(skins, i) end end
 end
 
 function NS.SetTheme(id)
@@ -68,6 +74,8 @@ function NS.SetTheme(id)
   end
   -- rows paint their selection highlight on refresh, so repaint the open tab too
   if NS.RefreshWindow then pcall(NS.RefreshWindow) end
+  -- 0.5.1.6: another theme's border may need another window size (outer bounds = the map window's)
+  if NS.AfterThemeChange then pcall(NS.AfterThemeChange) end
   return true
 end
 

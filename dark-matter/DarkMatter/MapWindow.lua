@@ -30,9 +30,11 @@ MW.Call, MW.Field = Call, Field
 
 local function Frame() local W = _G.WorldMapFrame if type(W) == "table" then return W end end
 
--- The game's map window size ON SCREEN, in UIParent units (0.5.1.5): its GetWidth/GetHeight times its effective scale
--- over UIParent's. One rule, maximized or windowed: whatever size the map window has now. Only when its size cannot be
--- read does the windowed size (minimizedWidth + questLogWidth, minimizedHeight) stand in.
+-- 0.5.1.6: OUTER bounds. Each window is measured by everything its frame draws: the frame itself plus the border pieces
+-- that reach past it (the map window: its NineSlice corners' offsets; ours: the theme's border art). Our window's outer
+-- bounds equal the map window's outer bounds on screen, width and height, in every theme; our layout takes the map's
+-- exact shape. Sizes are in UIParent units. One rule, maximized or windowed; only when the map's size cannot be read
+-- does its windowed size (minimizedWidth + questLogWidth, minimizedHeight) stand in.
 function MW.Scales()
   local W = Frame()
   local es = W and N(Call(W, "GetEffectiveScale"))
@@ -41,18 +43,69 @@ function MW.Scales()
   local des = type(f) == "table" and N(Call(f, "GetEffectiveScale"))
   return es, ues, des
 end
+local CORNERS = { TopLeftCorner = true, TopRightCorner = true, BottomLeftCorner = true, BottomRightCorner = true }
+-- how far the map window's border corners reach past its frame (map units): left, top, right, bottom
+function MW.MapBorder()
+  local A = MW.Art()
+  local l, t, r, b = 0, 0, 0, 0
+  if A and A.nine then
+    for k, p in pairs(A.nine) do
+      if CORNERS[k] then
+        local pt, x, y = p.point or "", N(p.x) or 0, N(p.y) or 0
+        if pt:find("LEFT") then l = math.max(l, -x) end
+        if pt:find("RIGHT") then r = math.max(r, x) end
+        if pt:find("TOP") then t = math.max(t, y) end
+        if pt:find("BOTTOM") then b = math.max(b, -y) end
+      end
+    end
+  end
+  return l, t, r, b
+end
+-- 0.5.1.6: the map window's OUTER rectangle on screen, in UIParent units (left, top, right, bottom; y up as the game's):
+-- the union of WorldMapFrame's own rect, the border corner pieces drawn around it (they can reach past it) and the quest
+-- log panel when it is shown on the map window. Read-only (GetLeft/GetRight/GetTop/GetBottom). nil when not readable.
+local function RectOf(o, k)
+  local l, r, t, b = N(Call(o, "GetLeft")), N(Call(o, "GetRight")), N(Call(o, "GetTop")), N(Call(o, "GetBottom"))
+  if l and r and t and b and r > l and t > b then return l * k, t * k, r * k, b * k end
+end
+MW.RectOf = RectOf
+function MW.MapRect()
+  local W = Frame()
+  if not W then return nil end
+  local es, ues = MW.Scales()
+  local k = (es and ues and es > 0 and ues > 0) and es / ues or 1
+  local l, t, r, b = RectOf(W, k)
+  if not l then return nil end
+  local fl, ft, fr, fb = l, t, r, b
+  local nine = Field(Field(W, "BorderFrame"), "NineSlice")
+  local function U(o)
+    if type(o) ~= "table" or Call(o, "IsShown") == false then return end
+    local a1, a2, a3, a4 = RectOf(o, k)
+    if a1 then l, t, r, b = math.min(l, a1), math.max(t, a2), math.max(r, a3), math.min(b, a4) end
+  end
+  for kk in pairs(CORNERS) do U(Field(nine, kk)) end
+  local q = _G.QuestMapFrame
+  if type(q) == "table" and Call(q, "IsShown") == true then U(q) end
+  return l, t, r, b, { fl, ft, fr, fb }
+end
+-- the map window's OUTER size on screen (UIParent units), where it came from, and its frame's own size on screen. From
+-- its rectangles when they can be read; else its size plus the border corners' offsets.
 function MW.Size()
   local W = Frame()
   if not W then return nil, nil, "no WorldMapFrame" end
+  local l, t, r, b, fr = MW.MapRect()
+  if l then return r - l, t - b, "WorldMapFrame outer rect on screen", fr[3] - fr[1], fr[2] - fr[4] end
   local es, ues = MW.Scales()
   local k = (es and ues and es > 0 and ues > 0) and es / ues or 1
   local w, h = N(Call(W, "GetWidth")), N(Call(W, "GetHeight"))
-  if w and h and w >= 200 and h >= 150 then return w * k, h * k, "WorldMapFrame size on screen" end
-  local mw, mh = N(Field(W, "minimizedWidth")), N(Field(W, "minimizedHeight"))
-  if mw and mh and mw >= 200 and mh >= 150 then
-    return (mw + (N(Field(W, "questLogWidth")) or 0)) * k, mh * k, "WorldMapFrame windowed size on screen"
+  local src = "WorldMapFrame size + border on screen"
+  if not (w and h and w >= 200 and h >= 150) then
+    local mw, mh = N(Field(W, "minimizedWidth")), N(Field(W, "minimizedHeight"))
+    if not (mw and mh and mw >= 200 and mh >= 150) then return nil, nil, "WorldMapFrame size not readable" end
+    w, h, src = mw + (N(Field(W, "questLogWidth")) or 0), mh, "WorldMapFrame windowed size + border on screen"
   end
-  return nil, nil, "WorldMapFrame size not readable"
+  local bl, bt, br, bb = MW.MapBorder()
+  return (w + bl + br) * k, (h + bt + bb) * k, src, w * k, h * k
 end
 
 -- Metrics that follow the window's width (dw) or height (dh); everything else keeps its place (rail, title, tabs).
@@ -61,11 +114,7 @@ local H_KEYS = { "footerTop", "railH", "bodyH", "pageH", "sectionPageH", "fbtnY"
 MW.W_KEYS, MW.H_KEYS = W_KEYS, H_KEYS
 local bases = setmetatable({}, { __mode = "k" })
 MW.bases = bases -- 0.5.1.4: each metrics table's own 880x680 values (the class art keeps their scale)
-
-
--- Sizes the shared metrics table (WoW and class themes) to the game's map window. Called before the window is built.
-function MW.Apply(m)
-  if type(m) ~= "table" then return nil end
+local function Base(m)
   local b = bases[m]
   if not b then
     b = {}
@@ -74,40 +123,80 @@ function MW.Apply(m)
     b.w, b.h = m.w, m.h
     bases[m] = b
   end
-  local w, h, src = MW.Size()
-  local res = { source = src, readW = w and math.floor(w + 0.5), readH = h and math.floor(h + 0.5) }
-  local cw, ch
-  if not w then
-    res.fallback = true
-    cw, ch = b.w, b.h
-  else
-    -- 0.5.1.5: the window takes the map window's on-screen size exactly. The layout needs at least MIN_W x MIN_H
-    -- (and at most MAX_W x MAX_H), so a smaller (or larger) map window is matched by our own scale instead.
-    local s = math.min(1, w / MW.MIN_W, h / MW.MIN_H)
-    s = math.max(s, w / MW.MAX_W, h / MW.MAX_H, 0.3)
-    cw, ch = math.floor(w / s + 0.5), math.floor(h / s + 0.5)
-    res.scale = s
-  end
-  res.clamped = (not res.fallback) and res.scale ~= 1 or false
-  local dw, dh = cw - b.w, ch - b.h
+  return b
+end
+local function Fill(m, b, cw, ch)
   m.w, m.h = cw, ch
-  for _, k in ipairs(W_KEYS) do m[k] = b[k] + dw end
-  for _, k in ipairs(H_KEYS) do m[k] = b[k] + dh end
-  res.w, res.h = cw, ch
+  for _, k in ipairs(W_KEYS) do m[k] = b[k] + (cw - b.w) end
+  for _, k in ipairs(H_KEYS) do m[k] = b[k] + (ch - b.h) end
+end
+
+-- how far a theme's border art reaches past our frame at metrics m (layout units): left, top, right, bottom
+function MW.ThemeBorder(theme, m)
+  if theme and theme.classArt and NS.ClassArtBox then
+    local box = NS.ClassArtBox(theme.classArt, m)
+    if box then return math.max(0, -box[1]), math.max(0, -box[2]), math.max(0, box[3] - m.w), math.max(0, box[4] - m.h) end
+  elseif theme and theme.mapWindow then
+    local A = MW.Art()
+    if A and A.full then return MW.MapBorder() end -- the WoW theme puts the map's own corners at the map's offsets
+  end
+  return 0, 0, 0, 0
+end
+
+-- What our window needs in a theme (nothing is changed): layout w x h, our scale, our border, and the outer size it
+-- gives on screen. Below MIN_W x MIN_H (or above MAX_W x MAX_H) inside the border, our own scale makes up the rest.
+function MW.Need(theme, m)
+  theme = theme or NS.theme
+  m = m or (theme and theme.m)
+  local b = Base(m)
+  local tw, th, src = MW.Size()
+  local res = { source = src, mapW = tw, mapH = th, readW = tw and math.floor(tw + 0.5), readH = th and math.floor(th + 0.5) }
+  if not tw then
+    res.fallback, res.w, res.h = true, b.w, b.h
+    res.border = { MW.ThemeBorder(theme, m) }
+    return res
+  end
+  local tm = {}
+  for k, v in pairs(m) do tm[k] = v end
+  bases[tm] = b
+  local l, t, r, bo = MW.ThemeBorder(theme, m)
+  local s, cw, ch
+  for _ = 1, 4 do
+    local ox, oy = l + r, t + bo
+    s = math.min(1, tw / (MW.MIN_W + ox), th / (MW.MIN_H + oy))
+    s = math.max(s, tw / (MW.MAX_W + ox), th / (MW.MAX_H + oy), 0.3)
+    cw, ch = math.floor(tw / s - ox + 0.5), math.floor(th / s - oy + 0.5)
+    Fill(tm, b, cw, ch)
+    l, t, r, bo = MW.ThemeBorder(theme, tm)
+  end
+  bases[tm] = nil
+  res.w, res.h, res.scale, res.border = cw, ch, s, { l, t, r, bo }
+  res.outerW, res.outerH = (cw + l + r) * s, (ch + t + bo) * s
+  return res
+end
+
+-- Sizes the shared metrics table to the game's map window for the current theme. Called before the window is built.
+function MW.Apply(m, theme)
+  if type(m) ~= "table" then return nil end
+  theme = theme or NS.theme
+  local res = MW.Need(theme, m)
+  Fill(m, Base(m), res.w, res.h)
+  res.clamped = (not res.fallback) and res.scale ~= 1 or false
+  res.theme = theme and theme.id
   if m == (NS.theme and NS.theme.m) then MW.last = res MW.live = nil end
   return res
 end
 
--- 0.5.1.5: the scale our window needs so it covers what the map window covers on screen, for the layout it was built
--- with (w x h). Read again while our window is shown (Window.lua polls from its own frame: no hooks on WorldMapFrame).
--- Returns scale, mapW, mapH (UIParent units), and whether the map's shape differs from our layout's.
-function MW.LiveScale(w, h)
-  local tw, th = MW.Size()
-  if not tw or not w or w <= 0 or h <= 0 then return nil end
-  local sx, sy = tw / w, th / h
-  local s = math.min(sx, sy)
-  MW.live = { w = tw, h = th, scale = s, shapeOff = math.abs(sx - sy) / math.max(sx, sy) > 0.01 }
-  return s, tw, th, MW.live.shapeOff
+-- 0.5.1.6: read again while our window is shown (Window.lua polls from its own frame: no hooks on WorldMapFrame).
+-- "scale" when only our scale must follow; "layout" when the layout must take another size (another shape, or another
+-- theme's border) and the window is rebuilt; nil when the map window cannot be read.
+function MW.Check(m)
+  m = m or NS.theme.m
+  local need = MW.Need(NS.theme, m)
+  MW.live = need
+  if need.fallback then return nil, need end
+  if math.abs(need.w - m.w) >= 1 or math.abs(need.h - m.h) >= 1 then return "layout", need end
+  return "scale", need
 end
 
 -- One texture or font string, as plain values (secret values read as nil).
@@ -212,19 +301,78 @@ end
 MW.Name = Name
 
 function MW.R3(v) v = N(v) return v and string.format("%.3f", v) or "?" end
--- one line: both windows' effective scale and their on-screen sizes (UIParent units); used by frameprobe and mapprobe
+-- our window's OUTER size on screen now (frame + the current theme's border), UIParent units
+function MW.OurOuter()
+  local f = _G.DarkMatterFrame
+  local _, ues, des = MW.Scales()
+  if type(f) ~= "table" or not (des and ues and ues > 0) then return nil end
+  local w, h = N(Call(f, "GetWidth")), N(Call(f, "GetHeight"))
+  if not (w and h) then return nil end
+  local l, t, r, b = MW.ThemeBorder(NS.theme, NS.theme.m)
+  return (w + l + r) * des / ues, (h + t + b) * des / ues
+end
+local function WH(w, h) return (w and h) and string.format("%dx%d", math.floor(w + 0.5), math.floor(h + 0.5)) or "?" end
+local function D(a, b) return (a and b) and string.format("%+d", math.floor(a - b + 0.5)) or "?" end
+-- one line: both windows' effective scale and their OUTER on-screen sizes (UIParent units); frameprobe and mapprobe
 function MW.ScaleLine(tag)
   local es, ues, des = MW.Scales()
-  local W, f = Frame(), _G.DarkMatterFrame
-  local function OnScreen(o, e)
-    local w, h = N(Call(o, "GetWidth")), N(Call(o, "GetHeight"))
-    if not (w and h and e and ues and ues > 0) then return "?" end
-    return string.format("%dx%d", math.floor(w * e / ues + 0.5), math.floor(h * e / ues + 0.5))
+  local mw, mh = MW.Size()
+  local ow, oh = MW.OurOuter()
+  return string.format("%s: scale: map %s, Dark Matter %s, UIParent %s; on screen: map %s, Dark Matter %s, diff %s,%s",
+    tag, MW.R3(es), MW.R3(des), MW.R3(ues), WH(mw, mh), WH(ow, oh), D(ow, mw), D(oh, mh))
+end
+-- both OUTER rectangles in screen pixels (left, top, right, bottom from the screen's top-left), and the map frame's own
+-- rect, so it shows whether the map's border reaches past WorldMapFrame:GetSize()
+function MW.RectLines(tag)
+  local out = {}
+  local _, ues, des = MW.Scales()
+  local px, unit = ues or 1, "px"
+  local okP, _, ph = pcall(_G.GetPhysicalScreenSize or function() end)
+  if okP and N(ph) and ph > 0 then px = (ues or 1) * ph / 768 else unit = "units" end
+  local sh = (N(Call(UIParent, "GetTop")) or 768) -- UIParent units; y counted down from the top
+  local function R(l, t, r, b)
+    if not l then return "?" end
+    return string.format("%d,%d to %d,%d = %dx%d", math.floor(l * px + 0.5), math.floor((sh - t) * px + 0.5),
+      math.floor(r * px + 0.5), math.floor((sh - b) * px + 0.5), math.floor((r - l) * px + 0.5), math.floor((t - b) * px + 0.5))
   end
-  local line = string.format("%s: scale: map %s, Dark Matter %s, UIParent %s; on screen: map %s, Dark Matter %s",
-    tag, MW.R3(es), MW.R3(des), MW.R3(ues), W and OnScreen(W, es) or "-", type(f) == "table" and OnScreen(f, des) or "-")
-  if MW.live and MW.live.shapeOff then line = line .. " (map changed shape: /reload)" end
-  return line
+  local l, t, r, b, fr = MW.MapRect()
+  if l then
+    out[#out + 1] = string.format("%s map: outer %s %s (border+quest log)", tag, R(l, t, r, b), unit)
+    out[#out + 1] = string.format("%s map: frame %s %s; border sticks out %d,%d,%d,%d", tag, R(fr[1], fr[2], fr[3], fr[4]), unit,
+      math.floor((fr[1] - l) * px + 0.5), math.floor((t - fr[2]) * px + 0.5), math.floor((r - fr[3]) * px + 0.5), math.floor((fr[4] - b) * px + 0.5))
+  else
+    out[#out + 1] = tag .. " map: rect not readable (map never shown?): size + border offsets used"
+  end
+  local f = _G.DarkMatterFrame
+  if type(f) == "table" and des and ues and ues > 0 then
+    local k = des / ues
+    local a1, a2, a3, a4 = RectOf(f, k)
+    if a1 then
+      local bl, bt, br, bb = MW.ThemeBorder(NS.theme, NS.theme.m)
+      local o1, o2, o3, o4 = a1 - bl * k, a2 + bt * k, a3 + br * k, a4 - bb * k
+      out[#out + 1] = string.format("%s ours: outer %s %s (%s border)", tag, R(o1, o2, o3, o4), unit, tostring(NS.theme and NS.theme.id))
+      if l then
+        out[#out + 1] = string.format("%s diff: width %+d, height %+d %s", tag, math.floor(((o3 - o1) - (r - l)) * px + 0.5),
+          math.floor(((o2 - o4) - (t - b)) * px + 0.5), unit)
+      end
+    end
+  end
+  return out
+end
+-- per theme: the outer size each theme gives (the current one measured) against the map's, and the difference
+function MW.ThemeLines(tag)
+  local out = {}
+  local mw, mh = MW.Size()
+  for i, id in ipairs(NS.themeOrder or {}) do
+    local th = NS.themes[id]
+    if th then
+      local ow, oh, how
+      if th == NS.theme and _G.DarkMatterFrame then ow, oh = MW.OurOuter() how = "current, measured"
+      else local need = MW.Need(th, th.m) ow, oh = need.outerW, need.outerH how = "when chosen" end
+      out[#out + 1] = string.format("%s.%d %s: outer %s vs map %s, diff %s,%s (%s)", tag, i, id, WH(ow, oh), WH(mw, mh), D(ow, mw), D(oh, mh), how)
+    end
+  end
+  return out
 end
 
 -- /dm frameprobe
@@ -243,8 +391,10 @@ function MW.Report()
   end
   local r = MW.last or {}
   L(string.format("frame 2: Dark Matter window %sx%s from %s%s%s", tostring(r.w), tostring(r.h), tostring(r.source or "not built yet"),
-    r.fallback and " (fallback: Dark Matter's own 880x680)" or "", r.readW and string.format(" (map on screen %sx%s, our scale %s)", tostring(r.readW), tostring(r.readH), MW.R3(r.scale)) or ""))
+    r.fallback and " (fallback: Dark Matter's own 880x680)" or "", r.readW and string.format(" (map outer %sx%s on screen, our scale %s)", tostring(r.readW), tostring(r.readH), MW.R3(r.scale)) or ""))
   L(MW.ScaleLine("frame 2b"))
+  for _, l in ipairs(MW.ThemeLines("frame 2c")) do L(l) end
+  for _, l in ipairs(MW.RectLines("frame 2d")) do L(l) end
   local A = MW.Art(true)
   if not A then
     L("frame 3: border: not readable (Dark Matter's own thin frame is drawn)")

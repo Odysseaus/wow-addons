@@ -166,20 +166,49 @@ end
 ---------------------------------------------------------------------------
 -- layers: one frame per map, holding its tiles + explored overlays (built the first time it is on screen)
 ---------------------------------------------------------------------------
-local function BuildTiles(L)
+-- 0.5.1.6: a zone's picture (and its explored overlays) fades out over its outer FEATHER px, so zones drawn side by side
+-- on the continent and over the continent picture leave no rectangular edge. A piece inside that rim is one texture; a
+-- piece reaching into it is cut into 4 x 4 cells whose alpha ramps to 0 at the picture's edge (vertex gradients).
+local FEATHER = 64
+local function S01(t) if t <= 0 then return 0 elseif t >= 1 then return 1 end return t * t * (3 - 2 * t) end
+local function EdgeW(a, x, y) return S01(math.min(x, y, a.w - x, a.h - y) / FEATHER) end
+M.EdgeW = EdgeW
+local function Piece(L, fid, layer, x, y, w, h, u2, v2, list)
   local a, f = L.art, L.frame
+  local function New(px, py, pw, ph, u1, uu2, v1, vv2)
+    local t = f:CreateTexture(nil, layer)
+    t:SetSize(pw, ph)
+    t:SetPoint("TOPLEFT", f, "TOPLEFT", px, -py)
+    t:SetTexture(fid, nil, nil, "TRILINEAR")
+    t:SetTexCoord(u1, uu2, v1, vv2)
+    list[#list + 1] = t
+    return t
+  end
+  if not L.feather or (x >= FEATHER and y >= FEATHER and x + w <= a.w - FEATHER and y + h <= a.h - FEATHER) then
+    New(x, y, w, h, 0, u2, 0, v2)
+    return
+  end
+  local n = 4
+  for r = 0, n - 1 do
+    for c = 0, n - 1 do
+      local cx, cy, cw, ch = x + c * w / n, y + r * h / n, w / n, h / n
+      local w00, w10, w01, w11 = EdgeW(a, cx, cy), EdgeW(a, cx + cw, cy), EdgeW(a, cx, cy + ch), EdgeW(a, cx + cw, cy + ch)
+      if w00 + w10 + w01 + w11 > 0.001 then
+        local t = New(cx, cy, cw, ch, c / n * u2, (c + 1) / n * u2, r / n * v2, (r + 1) / n * v2)
+        local o, a1, a2 = CU.CornerGrad(w00, w10, w01, w11)
+        CU.Grad(t, o, a1, a2, 1, 1, 1)
+        t.dmEdge = true
+      end
+    end
+  end
+end
+local function BuildTiles(L)
+  local a = L.art
   for i, fid in ipairs(a.tex) do
     local col, row = (i - 1) % a.cols, math.floor((i - 1) / a.cols)
     local x, y = col * a.tw, row * a.th
     local w, h = math.min(a.tw, a.w - x), math.min(a.th, a.h - y)
-    if w > 0 and h > 0 then
-      local t = f:CreateTexture(nil, "BACKGROUND")
-      t:SetSize(w, h)
-      t:SetPoint("TOPLEFT", f, "TOPLEFT", x, -y)
-      t:SetTexture(fid, nil, nil, "TRILINEAR")
-      t:SetTexCoord(0, w / a.tw, 0, h / a.th)
-      L.tiles[#L.tiles + 1] = t
-    end
+    if w > 0 and h > 0 then Piece(L, fid, "BACKGROUND", x, y, w, h, w / a.tw, h / a.th, L.tiles) end
   end
 end
 -- explored overlays, laid out like the game's own map (tiles of 256; the last row/column cut to the overlay size)
@@ -188,7 +217,6 @@ local function BuildOverlays(L)
   L.ov = {}
   local list = MD.Explored(L.id)
   if not list then return end
-  local f = L.frame
   for _, e in ipairs(list) do
     local nw, nt = tonumber(e.numTexturesWide) or 1, tonumber(e.numTexturesTall) or 1
     local ow, oh = tonumber(e.textureWidth) or 0, tonumber(e.textureHeight) or 0
@@ -203,12 +231,7 @@ local function BuildOverlays(L)
         if k == nw then tw = 16 while tw < pw do tw = tw * 2 end end
         local fid = e.fileDataIDs[(j - 1) * nw + k]
         if fid and pw > 0 and ph > 0 then
-          local t = f:CreateTexture(nil, "ARTWORK")
-          t:SetSize(pw, ph)
-          t:SetPoint("TOPLEFT", f, "TOPLEFT", ox + 256 * (k - 1), -(oy + 256 * (j - 1)))
-          t:SetTexture(fid, nil, nil, "TRILINEAR")
-          t:SetTexCoord(0, pw / tw, 0, ph / th)
-          L.ov[#L.ov + 1] = t
+          Piece(L, fid, "ARTWORK", ox + 256 * (k - 1), oy + 256 * (j - 1), pw, ph, pw / tw, ph / th, L.ov)
         end
       end
     end
@@ -225,6 +248,7 @@ local function Layer(id, level)
   f:SetFrameLevel(canvas:GetFrameLevel() + level)
   f:Hide()
   L = { id = id, art = art, frame = f, tiles = {}, ov = {}, built = false }
+  L.feather = CU and CU.CornerGrad and id ~= M.world and not MD.Is(id, "continent") or false -- 0.5.1.6: zones only
   M.layers[id] = L
   return L
 end
@@ -1127,4 +1151,11 @@ NS.RegisterTab({
     if M.full then M.SetFull(false) end
   end,
   Refresh = function() if M.started then M.dirty = true end end,
+  -- 0.5.1.6: the window is being built again; drop everything that hangs off the old one
+  Reset = function()
+    M.layers, M.fade, M.pools, M.started, M.full = {}, {}, {}, nil, nil
+    if full then full:Hide() end
+    full = nil
+    if CU and CU.Drop then CU.Drop() end
+  end,
 })

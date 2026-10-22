@@ -391,6 +391,7 @@ function FrameMT.SetWidth(s, w) needNum("SetWidth", 1, w) s._sw, s._w = w, w end
 function FrameMT.SetHeight(s, h) needNum("SetHeight", 1, h) s._sh, s._h = h, h end
 function FrameMT.SetAlpha(s, a) needNum("SetAlpha", 1, a) s._alpha = a end
 function FrameMT.SetScale(s, v) needNum("SetScale", 1, v) s._scale = v end
+function FrameMT.GetEffectiveScale(s) local e = s._scale or 1 local p = s._parent if p and p.GetEffectiveScale then e = e * p:GetEffectiveScale() end return e end
 function FrameMT.SetFrameLevel(s, n) needNum("SetFrameLevel", 1, n) s._level = n end
 function FrameMT.GetFrameLevel(s) return s._level or 1 end
 function FrameMT.SetFrameStrata(s, v) if not STRATA[v] then error("SetFrameStrata: bad strata " .. tostring(v), 2) end s._strata = v end
@@ -414,6 +415,12 @@ function FrameMT.SetTexCoord(s, ...)
       TCBAD[#TCBAD + 1] = string.format("%s %s: %g %g %g %g", s._name or "?", tostring(s._file), l, r, t, b)
     end
   end
+end
+function FrameMT.GetTexCoord(s)
+  local v = s._tc
+  if not v then return 0, 0, 0, 1, 1, 0, 1, 1 end
+  if #v == 8 then return unpack(v) end
+  return v[1], v[3], v[1], v[4], v[2], v[3], v[2], v[4]
 end
 function FrameMT.SetColorTexture(s, r, g, b, a)
   needNum("SetColorTexture", 1, r) needNum("SetColorTexture", 2, g) needNum("SetColorTexture", 3, b)
@@ -667,6 +674,28 @@ function MakeWMF(w, h, opts)
     BottomRightCorner = Tex("UI-Frame-Map-CornerBottomRight", 12, 12, "BOTTOMRIGHT", 0, 0),
     TopEdge = Tex("_UI-Frame-Map-EdgeTop", 32, 24, "TOPLEFT", 0, 0), BottomEdge = Tex("_UI-Frame-Map-EdgeBottom", 32, 12, "BOTTOMLEFT", 0, 0),
     LeftEdge = Tex("!UI-Frame-Map-EdgeLeft", 12, 32, "TOPLEFT", 0, 0), RightEdge = Tex("!UI-Frame-Map-EdgeRight", 12, 32, "TOPRIGHT", 0, 0) }
+  if opts.real then -- the client's own offsets: the portrait-metal corner reaches 13 left / 16 up, the others 4 right / 3 down
+    nine.TopLeftCorner = Tex("UI-Frame-PortraitMetal-CornerTopLeft", 95, 95, "TOPLEFT", -13, 16)
+    nine.TopRightCorner = Tex("UI-Frame-Metal-CornerTopRightDouble", 33, 73, "TOPRIGHT", 4, 16)
+    nine.BottomLeftCorner = Tex("UI-Frame-Metal-CornerBottomLeft", 32, 32, "BOTTOMLEFT", -13, -3)
+    nine.BottomRightCorner = Tex("UI-Frame-Metal-CornerBottomRight", 32, 32, "BOTTOMRIGHT", 4, -3)
+  end
+  if opts.rect then -- rectangles too (frame at 100,800 top-left); a corner's rect from its anchor + offset + size
+    local L0, T0 = 100, 800
+    local function R(t, pt, x, y, tw, th)
+      local l = pt:find("LEFT") and (L0 + x) or (L0 + w + x - tw)
+      local tp = pt:find("TOP") and (T0 + y) or (T0 - h + y + th)
+      t.GetLeft, t.GetRight, t.GetTop, t.GetBottom = function() return l end, function() return l + tw end, function() return tp end, function() return tp - th end
+    end
+    for k, p in pairs({ TopLeftCorner = { "TOPLEFT", -13, 16, 95, 95 }, TopRightCorner = { "TOPRIGHT", 4, 16, 33, 73 },
+        BottomLeftCorner = { "BOTTOMLEFT", -13, -3, 32, 32 }, BottomRightCorner = { "BOTTOMRIGHT", 4, -3, 32, 32 } }) do
+      local raw = {}
+      R(raw, p[1], p[2], p[3], p[4], p[5])
+      local old = nine[k]
+      nine[k] = setmetatable({}, { __index = function(_, kk) if raw[kk] then return function() return raw[kk]() end end return old[kk] end })
+    end
+    opts.rectFns = { function() return L0 end, function() return L0 + w end, function() return T0 end, function() return T0 - h end }
+  end
   if opts.noBorder then nine = {} end
   local title = spyObj({ GetObjectType = function() return "FontString" end, GetText = function() return "Map & Quest Log" end,
     GetTextColor = function() return 1, 0.82, 0 end, GetFont = function() return "Fonts\\FRIZQT__.TTF", 12 end,
@@ -680,6 +709,7 @@ function MakeWMF(w, h, opts)
   return spyObj({ BorderFrame = border, isMaximized = opts.maximized or false, minimizedWidth = opts.minW, minimizedHeight = opts.minH,
     questLogWidth = opts.ql, GetWidth = function() return w end, GetHeight = function() return h end,
     GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return false end,
+    GetLeft = opts.rectFns and opts.rectFns[1], GetRight = opts.rectFns and opts.rectFns[2], GetTop = opts.rectFns and opts.rectFns[3], GetBottom = opts.rectFns and opts.rectFns[4],
     IsMaximized = function() return opts.maximized or false end, ScrollContainer = {},
     Show = function() WMF_WRITES[#WMF_WRITES + 1] = "Show()" end, SetSize = function() WMF_WRITES[#WMF_WRITES + 1] = "SetSize()" end })
 end
@@ -3645,7 +3675,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.1.5 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.1.6 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3830,17 +3860,37 @@ do
   check(M.ready and M.hasWorld and M.started, "0.5.0 map: started with the world picture")
   check(table.concat(trail, " > ") == "Azeroth > Eastern Kingdoms > Dun Morogh", "0.5.0 map: opens on the player's zone (breadcrumb " .. table.concat(trail, " > ") .. ")")
   check(M.crumbText == "Azeroth > Eastern Kingdoms > Dun Morogh", "0.5.0 map: breadcrumb bar shows the trail")
+  -- 0.5.1.6: a zone's pieces near its picture's edge are cut into feathered cells, so compare by file
+  local function files(list) local f = {} for _, t in ipairs(list) do f[t._file] = (f[t._file] or 0) + 1 end return f end
+  local function tcMax(list, fid, i) local v = 0 for _, t in ipairs(list) do if t._file == fid then v = math.max(v, t._tc[i]) end end return v end
   for id, L in pairs(M.layers) do
     if L.built then
-      check(L.art.tex[1] == id * 100 + 1 and L.tiles[1]._file == id * 100 + 1 and L.tiles[12]._file == id * 100 + 12, "0.5.0 map: layer " .. id .. " draws its own map's tiles")
+      local f = files(L.tiles)
+      local own = true
+      for k in pairs(f) do if type(k) ~= "number" or k < id * 100 + 1 or k > id * 100 + 12 then own = false end end
+      check(L.art.tex[1] == id * 100 + 1 and own and f[id * 100 + 1] and f[id * 100 + 12], "0.5.0 map: layer " .. id .. " draws its own map's tiles")
     end
   end
   local dm = M.layers[1426]
-  check(dm and dm.shown and dm.alpha > 0.99 and #dm.tiles == 12, "0.5.0 map: the zone's 12 tiles are shown")
-  local last = dm.tiles[12]
-  check(math.abs(last._tc[2] - (1002 - 768) / 256) < 1e-9 and math.abs(last._tc[4] - (668 - 512) / 256) < 1e-9, "0.5.0 map: edge tiles are cropped to the art (234x156)")
-  check(#dm.ov == 2 and dm.ov[1]._file == 777001 and dm.ov[2]._file == 777002, "0.5.0 map: explored overlays drawn (fog of war); mouse-over-only overlays skipped")
-  check(math.abs(dm.ov[2]._tc[2] - 44 / 64) < 1e-9 and math.abs(dm.ov[1]._tc[4] - 200 / 256) < 1e-9, "0.5.0 map: overlay tiles cropped like the game's map")
+  local dmf = files(dm.tiles)
+  local n12 = 0 for k = 1, 12 do if dmf[142600 + k] then n12 = n12 + 1 end end
+  check(dm and dm.shown and dm.alpha > 0.99 and n12 == 12, "0.5.0 map: the zone's 12 tiles are shown")
+  check(math.abs(tcMax(dm.tiles, 142612, 2) - (1002 - 768) / 256) < 1e-9 and math.abs(tcMax(dm.tiles, 142612, 4) - (668 - 512) / 256) < 1e-9, "0.5.0 map: edge tiles are cropped to the art (234x156)")
+  local of = files(dm.ov)
+  check(of[777001] and of[777002] and not of[777003], "0.5.0 map: explored overlays drawn (fog of war); mouse-over-only overlays skipped")
+  check(math.abs(tcMax(dm.ov, 777002, 2) - 44 / 64) < 1e-9 and math.abs(tcMax(dm.ov, 777001, 4) - 200 / 256) < 1e-9, "0.5.0 map: overlay tiles cropped like the game's map")
+  -- 0.5.1.6: the picture's rim fades to 0 (no rectangular edge); pieces well inside are whole
+  local rim, rimOK, whole = 0, true, 0
+  for _, t in ipairs(dm.tiles) do
+    local p = t._pts[1]
+    local x, y = p[4], -p[5]
+    if rawget(t, "dmEdge") then
+      rim = rim + 1
+      if (x < 0.5 or y < 0.5) and not t._grad and (t._vc and t._vc[4] > 0.01) then rimOK = false end
+    elseif (t._sw or 0) >= 255 then whole = whole + 1 end
+  end
+  check(rim > 0 and rimOK and whole >= 1 and math.abs(M.EdgeW(dm.art, 0, 300)) < 1e-9 and M.EdgeW(dm.art, 64, 300) == 1,
+    "0.5.1.6 map: a zone picture's outer 64 px fade to 0 (" .. rim .. " rim cells, " .. whole .. " whole pieces inside; art " .. dm.art.w .. "x" .. dm.art.h .. " tiles " .. dm.art.tw .. "x" .. dm.art.th .. ")")
   check(M.layers[1432] and M.layers[1432].shown, "0.5.0 map: the neighbour zone is drawn too (zones stitched)")
   -- stitching: Loch Modan's left edge on screen meets Dun Morogh's right edge (both from GetMapRectOnMap)
   local function edges(L) local p = L.frame._pts[#L.frame._pts] local sc = L.frame._scale return p[4] * sc, -p[5] * sc, L.art.w * sc, L.art.h * sc end
@@ -4014,9 +4064,10 @@ do
   -- 18. taint safety
   -- 0.5.1.5: the main window reads the map window's size and scale (read only, from its own frame); nothing else
   local wmOther = {}
-  local READ_OK = { GetEffectiveScale = 1, GetWidth = 1, GetHeight = 1, minimizedWidth = 1, minimizedHeight = 1, questLogWidth = 1, isMaximized = 1, IsMaximized = 1 }
+  local READ_OK = { GetEffectiveScale = 1, GetWidth = 1, GetHeight = 1, minimizedWidth = 1, minimizedHeight = 1, questLogWidth = 1, isMaximized = 1, IsMaximized = 1,
+    GetLeft = 1, GetRight = 1, GetTop = 1, GetBottom = 1, BorderFrame = 1, IsShown = 1 } -- 0.5.1.6: its outer rectangle, read only
   for _, k in ipairs(wmAccess) do if not READ_OK[k] then wmOther[#wmOther + 1] = k end end
-  check(#wmOther == 0, "0.5.0 map: never touches WorldMapFrame (0.5.1.5: only its size and scale are read) " .. table.concat(wmOther, ","))
+  check(#wmOther == 0, "0.5.0 map: never touches WorldMapFrame (0.5.1.6: only its size, scale and outer rectangle are read) " .. table.concat(wmOther, ","))
   check(#hooked == 0, "0.5.0 map: installs no hooks")
   for _, f in ipairs({ "DarkMatter/Tab_Map.lua", "DarkMatter/MapData.lua" }) do
     local fh = io.open(arg[1] .. "/" .. f:gsub("^DarkMatter/", "")) local src = fh and fh:read("*a") or "" if fh then fh:close() end
@@ -4146,7 +4197,7 @@ if MODE ~= "minimal" then
   -- 0.5.1.4: the dialog border + header plate gave way to the map-window frame (its own thin frame here: no WorldMapFrame);
   -- the shell is the inset marble
   local want = { "Interface\\Tooltips\\UI-Tooltip-Border", "Interface\\FrameGeneral\\UI-Background-Marble",
-    os.getenv("DM_WMF") and "atlas:UI-HUD-Map-Portrait" or "Interface\\QuestFrame\\UI-QuestLog-BookIcon", "Interface\\Buttons\\UI-Panel-Button-Up", "Interface\\Buttons\\UI-Panel-Button-Down",
+    "Interface\\Buttons\\UI-Panel-Button-Up", "Interface\\Buttons\\UI-Panel-Button-Down",
     "Interface\\Buttons\\UI-Panel-Button-Disabled", "Interface\\Common\\Common-Input-Border", "Interface\\FrameGeneral\\UI-Background-Rock",
     "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", "Interface\\QuestFrame\\QuestBG" }
   local miss = {}
@@ -4194,7 +4245,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.5 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.6 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -4744,10 +4795,13 @@ if MODE == "full" then
   NS.db.map = NS.db.map or {}
   NS.db.map.closeUp, NS.db.map.closeMix = true, nil
   CU.unavailable, CU.failed, CU.fails, CU.loaded = nil, {}, 0, 0
-  -- fades keyed to pixels per yard (0.5.1.5: in from 0.12, at the strength by 0.24, deep by 0.48)
-  check(CU.Mix(0.10) == 0 and CU.Mix(0.12) == 0 and CU.Mix(0.18) > 0 and CU.Mix(0.18) < 0.45 and math.abs(CU.Mix(0.24) - 0.45) < 1e-6
-    and math.abs(CU.Mix(0.48) - 0.855) < 1e-6 and math.abs(CU.Mix(0.9) - 0.855) < 1e-6 and CU.Mix(0.5, 0) == 0,
-    "0.5.1.5 close-up: tiles mix in from 0.12 px/yd, 45% by 0.24, deep 85% by 0.48 (0 below; strength 0 = off)")
+  -- fades keyed to pixels per yard (0.5.1.6: a middle step of 35% of the deep strength from 0.10 to 0.30, deep from
+  -- 0.35 to 0.80; the zone picture stays visible under the tiles through mid zoom)
+  local mid = 0.855 * 0.35
+  check(CU.Mix(0.10) == 0 and CU.Mix(0.2) > 0 and CU.Mix(0.2) < mid and math.abs(CU.Mix(0.30) - mid) < 1e-6 and math.abs(CU.Mix(0.35) - mid) < 1e-6
+    and CU.Mix(0.5) > mid and CU.Mix(0.5) < 0.855 and math.abs(CU.Mix(0.80) - 0.855) < 1e-6 and math.abs(CU.Mix(0.96) - 0.855) < 1e-6 and CU.Mix(0.5, 0) == 0,
+    "0.5.1.6 close-up: a wide crossfade: tiles 0 at 0.10 px/yd, a middle step of 30% from 0.30 to 0.35, deep 85% by 0.80 (strength 0 = off)")
+  check(CU.Mix(0.24) < 0.3 and CU.Mix(0.3, 1) <= 0.35 + 1e-6, "0.5.1.6 close-up: at mid zoom (0.24-0.30 px/yd) the zone picture shows through (tiles at most 35% even at strength 100%)")
   check(math.abs(CU.MaxScale(9001, 1000) - 0.96 * 16000 / 1000) < 1e-6, "0.5.1.4 close-up: the deepest zoom stops at twice the minimap's own sharpness")
   local function rects(list)
     local out = {}
@@ -4772,7 +4826,7 @@ if MODE == "full" then
     end
     return area / (vw * vh)
   end
-  local r1 = CU.Layout(ctxAt(8000, 600, 400)) -- 0.5 px/yd; half the zone explored: no longer matters
+  local r1 = CU.Layout(ctxAt(13600, 600, 400)) -- 0.85 px/yd (0.5.1.6: deep from 0.80); explored or not: no longer matters
   local list = shown()
   local R = rects(list)
   local left, right = 0, 0
@@ -4784,8 +4838,11 @@ if MODE == "full" then
   local alphaOK = true
   for _, t in ipairs(list) do if math.abs((t._alpha or 1) - r1.mix) > 1e-6 then alphaOK = false end end
   check(alphaOK and list[1] and list[1]._vc and list[1]._vc[3] < 0.9, "0.5.1.4 close-up: tiles at the mix strength, tinted toward parchment")
+  local g1 = list[1] and rawget(list[1], "glow")
+  check(g1 and g1:IsShown() and g1._file == list[1]._file and math.abs((g1._alpha or 1) - r1.mix) < 1e-6 and g1._vc and g1._vc[1] > g1._vc[3],
+    "0.5.1.6 close-up: each tile is lifted by a warm ADD pass of itself (lighter, toward the parchment)")
   local poolN = #CU.pool
-  CU.Layout(ctxAt(8000, 600, 400))
+  CU.Layout(ctxAt(13600, 600, 400))
   check(#CU.pool == poolN, "0.5.1.4 close-up: textures are pooled (no new ones on redraw)")
   -- a gap (column of tiles x = 32 missing: sea / void): no piece there, its neighbours fade to 0 toward it
   NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) if math.floor(k / 64) == 32 then return nil end return 1000000 + k end }) }
@@ -4850,52 +4907,67 @@ if MODE == "full" then
   local function copyM() local c = {} for k, v in pairs(NS.theme.m) do c[k] = v end return c end
   local base = NS.theme.m
   WMF_CALLS, WMF_WRITES = {}, {}
-  WorldMapFrame = MakeWMF(1035, 640)
+  local function wmf(...) WorldMapFrame = MakeWMF(...) MW.art = nil end
+  local function outer(r) local bd = r.border or { 0, 0, 0, 0 } return (r.w + bd[1] + bd[3]) * r.scale, (r.h + bd[2] + bd[4]) * r.scale end
+  wmf(1035, 640)
   local c = copyM()
   local res = MW.Apply(c)
-  check(res.w == 1035 and res.h == 640 and c.w == 1035 and c.h == 640 and res.source == "WorldMapFrame size on screen" and not res.fallback and res.scale == 1,
-    "0.5.1.4 window: as large as the game's map window (1035x640)")
+  check(res.w == 1035 and res.h == 640 and c.w == 1035 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
+    "0.5.1.4 window: as large as the game's map window (1035x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
   check(c.bodyW - c.w == base.bodyW - base.w and c.pageW - c.w == base.pageW - base.w and c.footerTop - c.h == base.footerTop - base.h and c.exitX - c.w == base.exitX - base.w
     and c.railW == base.railW and c.tabY == base.tabY and c.bodyX == base.bodyX, "0.5.1.4 window: the body and footer follow the size, the rail and tabs keep their place")
-  WorldMapFrame = MakeWMF(1035, 640, { scale = 1.25 })
+  wmf(1035, 640, { scale = 1.25 })
   res = MW.Apply(copyM())
   check(res.w == 1294 and res.h == 800, "0.5.1.4 window: the map window's own scale is taken into account (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.5: the in-game case (1.60.1, Wetlands): map 1232x705 at effective scale 0.64; UIParent at 0.80
   local saveUES = UIParent.GetEffectiveScale
   UIParent.GetEffectiveScale = function() return 0.8 end
-  WorldMapFrame = MakeWMF(1232, 705, { scale = 0.64, minW = 702, minH = 534, ql = 333 })
+  wmf(1232, 705, { scale = 0.64, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
   check(res.w == 986 and res.h == 564 and res.scale == 1,
     "0.5.1.5 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> ours 986x564 at scale 1 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
-  local function onScreen(r) return r.w * r.scale, r.h * r.scale end
-  WorldMapFrame = MakeWMF(1035, 640, { scale = 0.64 })
+  wmf(1035, 640, { scale = 0.64 })
   res = MW.Apply(copyM())
-  local ow, oh = onScreen(res)
+  local ow, oh = outer(res)
   check(res.w >= 880 and res.h >= 500 and res.scale < 1 and math.abs(ow - 1035 * 0.8) < 1 and math.abs(oh - 640 * 0.8) < 1,
     "0.5.1.5 window: a map smaller on screen than 880x500 is matched by our scale (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
   UIParent.GetEffectiveScale = saveUES
-  WorldMapFrame = MakeWMF(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
+  wmf(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
-  ow, oh = onScreen(res)
-  check(res.w <= 1800 and res.h <= 1300 and math.abs(ow - 1920) < 1 and math.abs(oh - 1080) < 1 and res.source == "WorldMapFrame size on screen",
+  ow, oh = outer(res)
+  check(res.w <= 1800 and res.h <= 1300 and math.abs(ow - 1920) < 1 and math.abs(oh - 1080) < 1,
     "0.5.1.5 window: maximized follows the same rule: its size on screen (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
-  WorldMapFrame = MakeWMF(500, 300)
+  wmf(500, 300)
   res = MW.Apply(copyM())
-  ow, oh = onScreen(res)
+  ow, oh = outer(res)
   check(res.w >= 880 and res.h >= 500 and math.abs(ow - 500) < 1 and math.abs(oh - 300) < 1, "0.5.1.5 window: a tiny map window: our layout stays 880x500 or more, our scale matches it")
-  -- live: the map window grows by 10%: same shape, our scale follows; another shape is reported
-  WorldMapFrame = MakeWMF(1100, 700)
-  local ls, _, _, off = MW.LiveScale(1000, 636.36)
-  check(math.abs(ls - 1.1) < 1e-3 and not off, "0.5.1.5 window: the scale follows the map window while shown (" .. string.format("%.3f", ls) .. ")")
-  WorldMapFrame = MakeWMF(1100, 500)
-  ls, _, _, off = MW.LiveScale(1000, 636.36)
-  check(off == true and MW.ScaleLine("x"):find("changed shape", 1, true), "0.5.1.5 window: a map window of another shape is fitted inside and reported")
+  -- 0.5.1.6: the map's border corners reach past its frame (the real offsets): the target is the OUTER rectangle
+  wmf(1232, 705, { real = true })
+  local ml, mt, mr, mb = MW.MapBorder()
+  local mw0, mh0 = MW.Size()
+  check(ml == 13 and mt == 16 and mr == 4 and mb == 3 and math.abs(mw0 - 1249) < 1e-6 and math.abs(mh0 - 724) < 1e-6,
+    "0.5.1.6 window: the map's outer bounds include its border (13,16,4,3 past the frame -> 1249x724): " .. tostring(mw0) .. "x" .. tostring(mh0))
+  wmf(1232, 705, { real = true, rect = true })
+  local rl, rt, rr, rb, fr = MW.MapRect()
+  mw0, mh0 = MW.Size()
+  check(rl and math.abs(mw0 - 1249) < 1e-6 and math.abs(mh0 - 724) < 1e-6 and fr[3] - fr[1] == 1232,
+    "0.5.1.6 window: read from the rectangles (frame + border corners): outer " .. tostring(mw0) .. "x" .. tostring(mh0))
+  local rl2 = MW.RectLines("t")
+  check(#rl2 >= 2 and rl2[1]:find("map: outer", 1, true) and rl2[2]:find("border sticks out 13,16,4,3", 1, true),
+    "0.5.1.6 frameprobe: both outer rectangles (and how far the map's border sticks out) " .. tostring(rl2[1]) .. " | " .. tostring(rl2[2]))
+  -- live: the map window changes size -> the layout must follow ("layout"); same size -> only our scale ("scale")
+  wmf(1100, 700)
+  local m1 = copyM()
+  MW.Apply(m1)
+  check(MW.Check(m1) == "scale", "0.5.1.6 window: same map window -> nothing to rebuild")
+  wmf(1100, 500)
+  check(MW.Check(m1) == "layout" and not MW.ScaleLine("x"):find("changed shape", 1, true), "0.5.1.6 window: a map window of another shape -> the layout follows (no 'changed shape' fallback)")
   MW.live = nil
   local n0 = copyM()
-  WorldMapFrame = nil
+  WorldMapFrame = nil MW.art = nil
   res = MW.Apply(n0)
   check(res.fallback and n0.w == base.w and n0.h == base.h, "0.5.1.4 window: no map window -> Dark Matter's own size")
-  WorldMapFrame = MakeWMF(1035, 640)
+  wmf(1035, 640)
   local saveICL = InCombatLockdown
   InCombatLockdown = function() return true end
   res = MW.Apply(copyM())
@@ -4904,23 +4976,90 @@ if MODE == "full" then
   local badCall = {}
   for _, k in ipairs(WMF_CALLS) do if not (k:find("^Get") or k:find("^Is")) then badCall[#badCall + 1] = k end end
   check(#WMF_WRITES == 0 and #badCall == 0, "0.5.1.4 window: WorldMapFrame is only read (no Show, no writes, no hooks): " .. table.concat(WMF_WRITES, ",") .. table.concat(badCall, ","))
+  WorldMapFrame = saveWMF MW.art = nil
   local win = NS.GetWindow()
   check(win._w == NS.theme.m.w and win._h == NS.theme.m.h, "0.5.1.4 window: the built window has the metrics' size " .. win._w .. "x" .. win._h)
-  -- 0.5.1.5: while shown, our scale follows the map window (read from our own frame), the position keeps its screen spot
+
+  -- 0.5.1.6: EVERY theme, several map windows: our OUTER visible bounds (everything drawn, border included) equal the
+  -- map window's outer bounds on screen, width and height, to 1 px. The window is built again for each.
+  do
+    local saveTheme = NS.theme.id
+    local saveU = UIParent.GetEffectiveScale
+    local function drawnBox(f)
+      local l, t, r, b
+      for _, e in ipairs(LayoutOf(f)) do
+        if e.kind == "texture" and e.l and (e.r._alpha or 1) > 0.01 then
+          local clipped, x = false, e.r._parent
+          while x and x ~= UIParent do if x._ftype == "ScrollFrame" then clipped = true break end x = x._parent end
+          if not clipped then
+            l, t, r, b = math.min(l or e.l, e.l), math.max(t or e.t, e.t), math.max(r or e.rr, e.rr), math.min(b or e.b, e.b)
+          end
+        end
+      end
+      return l, t, r, b
+    end
+    local sizes = { { 1232, 705, { scale = 0.64, real = true }, 0.64 }, { 1232, 705, { real = true } }, { 1232, 705 }, { 1035, 640 },
+      { 1920, 1080, { real = true } }, { 600, 420, { real = true } }, { 1600, 760, { scale = 0.8 } } }
+    local worst, n, portraits, rebuilt = 0, 0, {}, 0
+    for _, id in ipairs(NS.themeOrder) do
+      for _, sz in ipairs(sizes) do
+        UIParent.GetEffectiveScale = function() return sz[4] or 1 end
+        wmf(sz[1], sz[2], sz[3])
+        NS.SetTheme(id)
+        local f = NS.RebuildWindow()
+        rebuilt = rebuilt + 1
+        f:Show()
+        NS.ShowTab("quests")
+        local tw, th = MW.Size()
+        local l, t, r, b = drawnBox(f)
+        local k = f:GetScale() / (sz[4] or 1) * (sz[4] or 1)
+        local ow2, oh2 = (r - l) * k, (t - b) * k
+        local dw, dh = ow2 - tw, oh2 - th
+        n = n + 1
+        local bad = math.max(math.abs(dw), math.abs(dh))
+        if bad > worst then worst = bad end
+        check(bad <= 1, string.format("0.5.1.6 window: %s at map %dx%d%s: outer %.1fx%.1f vs map outer %.1fx%.1f (diff %+.1f,%+.1f)",
+          id, sz[1], sz[2], sz[3] and sz[3].real and " (real border)" or "", ow2, oh2, tw, th, dw, dh))
+        local pl = MW.ThemeLines("t")
+        for _, line in ipairs(pl) do
+          if line:find(" " .. id .. ":", 1, true) then
+            check(line:find("diff %+0,%+0") or line:find("diff %-0,%+0") or line:find("diff [%+%-][01],[%+%-][01]"), "0.5.1.6 frameprobe per theme: " .. line)
+          end
+        end
+        for _, e in ipairs(LayoutOf(f)) do
+          local fl = e.r._file and tostring(e.r._file) or ""
+          if e.kind == "texture" and (fl:find("Portrait", 1, true) or fl:find("BookIcon", 1, true)) then portraits[#portraits + 1] = id .. " " .. fl end
+        end
+      end
+    end
+    check(#portraits == 0, "0.5.1.6: no portrait icon in any theme " .. table.concat(portraits, ", "))
+    check(n == #NS.themeOrder * #sizes and rebuilt == n, string.format("0.5.1.6 window: %d themes x %d map sizes, worst outer difference %.2f px", #NS.themeOrder, #sizes, worst))
+    UIParent.GetEffectiveScale = saveU
+    WorldMapFrame = saveWMF MW.art = nil
+    NS.SetTheme(saveTheme)
+    win = NS.RebuildWindow()
+    W = DarkMatter.windowParts
+  end
+  -- 0.5.1.6: while shown, a map window of another size -> the window is built again at that size (asked twice in a row);
+  -- the saved position keeps its screen spot
   if W.Refit and MW.last and not MW.last.fallback then
     local m0 = NS.theme.m
     local saveW2 = WorldMapFrame
-    WorldMapFrame = MakeWMF(m0.w * 1.1, m0.h * 1.1)
-    win:SetScale(1)
+    wmf(m0.w * 1.1, m0.h * 1.1)
+    win:Show()
     win:ClearAllPoints() win:SetPoint("CENTER", UIParent, "CENTER", 110, -55)
     WMF_CALLS, WMF_WRITES = {}, {}
-    W.Refit()
-    local _, _, _, x, y = win:GetPoint(1)
-    check(math.abs(win:GetScale() - 1.1) < 1e-3 and math.abs(x - 100) < 1e-3 and math.abs(y + 50) < 1e-3 and #WMF_WRITES == 0,
-      "0.5.1.5 window: the map window grows 10% -> our scale 1.1, position kept on screen (" .. string.format("%.3f; %.1f,%.1f", win:GetScale(), x, y) .. ")")
-    WorldMapFrame = saveW2
-    MW.live = nil
-    win:SetScale(MW.last.scale or 1)
+    local before = NS.windowRebuilds or 0
+    W.Refit() W.Refit()
+    check(W.rebuildWanted, "0.5.1.6 window: the map window grew -> a rebuild is asked for")
+    local nw = NS.RebuildWindow()
+    local _, _, _, x, y = nw:GetPoint(1)
+    check(NS.windowRebuilds == before + 1 and math.abs(nw._w - m0.w) < 1e-6 and math.abs(NS.theme.m.w - math.floor(saveW2:GetWidth() * 1.1 + 0.5)) <= 1
+      and math.abs(x - 110) < 1e-3 and math.abs(y + 55) < 1e-3 and #WMF_WRITES == 0 and nw:IsShown(),
+      "0.5.1.6 window: built again at the new size, shown, position kept (" .. string.format("%.1f; %.1f,%.1f", nw._w, x, y) .. ")")
+    WorldMapFrame = saveW2 MW.art = nil
+    win = NS.RebuildWindow()
+    W = DarkMatter.windowParts
   end
 
   -- 4. the WoW theme's map-window frame; class themes untouched
@@ -4931,12 +5070,14 @@ if MODE == "full" then
   for _, t in ipairs(Ch.own) do if t:IsShown() then ownOn = ownOn + 1 end end
   for _, k in ipairs(MW.NINE) do if Ch.nine[k]:IsShown() then nineOn = nineOn + 1 end end
   if os.getenv("DM_WMF") then
-    check(Ch.mirrored and nineOn == 8 and ownOn == 0 and Ch.nine.TopLeftCorner._file == "atlas:UI-Frame-Map-CornerTopLeft" and Ch.nine.TopEdge._file == "atlas:_UI-Frame-Map-EdgeTop",
+    check(Ch.mirrored and nineOn == 8 and ownOn == 0 and Ch.nine.TopLeftCorner._file == "atlas:UI-Frame-Map-CornerTopRight" and Ch.cornerFrom == "the top-right corner, mirrored" and Ch.nine.TopEdge._file == "atlas:_UI-Frame-Map-EdgeTop",
       "0.5.1.4 WoW theme: the map window's 8 border pieces are drawn around ours (by atlas)")
-    check(W.medalFrom == "map window" and W.closeFrom == "map window", "0.5.1.4 WoW theme: the map window's portrait and close-button art")
+    check(W.medalFrom == nil and W.closeFrom == "map window", "0.5.1.6 WoW theme: no portrait; the map window's close-button art")
+    local tc = { Ch.nine.TopLeftCorner:GetTexCoord() }
+    check(#tc == 8 and tc[1] > tc[5], "0.5.1.6 WoW theme: the plain top-left corner is the top-right corner mirrored (" .. table.concat(tc, ",") .. ")")
   else
     check(not Ch.mirrored and nineOn == 0 and ownOn == 8, "0.5.1.4 WoW theme: no map window to read -> Dark Matter's own thin bronze frame (8 lines)")
-    check(W.medalFrom == "book" and W.closeFrom == "UIPanelCloseButton", "0.5.1.4 WoW theme: small book portrait, the stock close button")
+    check(W.medalFrom == nil and W.closeFrom == "UIPanelCloseButton", "0.5.1.6 WoW theme: no portrait, the stock close button")
   end
   check(W.mapLook and Ch.strip:IsShown() and Ch.strip._h == NS.MAP_TITLE_H and W.title._pts[#W.title._pts][2] == Ch.strip, "0.5.1.4 WoW theme: a slim dark title strip with the title centred on it")
   local tC = W.title._tcol or {}
@@ -4965,7 +5106,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.1.5 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.1.6 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,

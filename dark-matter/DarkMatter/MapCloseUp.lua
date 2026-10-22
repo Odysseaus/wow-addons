@@ -3,7 +3,7 @@
 -- tile is the client's file. Self-contained: it never needs (or looks at) any other addon's files.
 -- Rules (ideas from OpenMap's Map/Close.lua, MIT; see LICENSES/THIRD_PARTY.md):
 --   * tiles are 533.33 yards; tile x = 32 - worldY / 533.33 (runs east), tile y = 32 - worldX / 533.33 (runs south)
---   * fades are keyed to screen pixels per yard (ppy). 0.5.1.5: the tiles mix in from 0.12 to 0.24 ppy at the chosen
+--   * fades are keyed to screen pixels per yard (ppy); 0.5.1.6 values below (C.MIX_FADE, C.MID_K, C.DEEP_FADE). 0.5.1.5 was: the tiles mix in from 0.12 to 0.24 ppy at the chosen
 --     strength and take over (toward 1.9x the strength, 85% at the default 45%) from 0.24 to 0.48 ppy (0.48 = one tile
 --     pixel per screen pixel), so a zone seen whole already carries them faintly and close up they carry the map
 --   * up to 144 tiles in view, faded out from 96 on (no pop); further out the parchment zone map alone shows
@@ -19,8 +19,12 @@ NS.MapCloseUp = C
 
 C.TILE = 1600 / 3
 C.NATIVE_PPY = 256 / C.TILE          -- 0.48: one minimap pixel per screen pixel
-C.MIX_FADE = { 0.12, 0.24 }          -- ppy where the tiles mix in (to the chosen strength)
-C.DEEP_FADE = { 0.24, 0.48 }         -- ppy where they take over (toward DEEP_K x the strength, at most 1)
+-- 0.5.1.6: a wide crossfade with a middle step. From 0.10 to 0.30 ppy the tiles come in at MID_K of their deep strength
+-- (the zone picture and its explored overlays stay visible underneath, so a zone seen whole keeps its colours); from
+-- 0.35 to 0.80 ppy they take over (toward DEEP_K x the strength, at most 1); the deepest zoom is 0.96.
+C.MIX_FADE = { 0.10, 0.30 }          -- ppy where the middle step comes in
+C.MID_K = 0.35                       -- the middle step: this share of the deep strength
+C.DEEP_FADE = { 0.35, 0.80 }         -- ppy where they take over
 C.DEEP_K = 1.9
 C.SOFT_FADE = { 0.08, 0.18 }         -- ppy where the paper grain comes in
 C.GRAIN_ALPHA = 0.16
@@ -29,8 +33,12 @@ C.MAX_TILES = 144
 C.FADE_TILES = 96                    -- from here to MAX_TILES the tiles fade out (no pop)
 C.FEATHER = 0.5                      -- tiles: how far the edge fade reaches into a tile next to a gap
 C.CELLS = 4
-C.DESAT = 0.35
-C.PAPER = { 1, 0.93, 0.80 }
+-- 0.5.1.6: lighter and warmer, toward the zone pictures' parchment palette: desaturated half way, tinted warm, and a
+-- second pass of the same tile added (ADD blend) in a warm parchment tone, which lifts the dark minimap tiles to the
+-- zone art's brightness instead of darkening it
+C.DESAT = 0.5
+C.PAPER = { 1, 0.93, 0.78 }
+C.GLOW = { 0.46, 0.38, 0.24 }
 C.DEFAULT_MIX = 0.45
 C.GRAIN = "Interface\\AddOns\\DarkMatter\\Media\\wow-parchment" -- Dark Matter's own generated parchment (no game art)
 C.LABEL_ON = "Map: the game's map pictures + the game's minimap tiles up close"
@@ -116,9 +124,9 @@ function C.PixelsPerYard(F, px) return px / math.abs(F.Y1 - F.Y0) end
 function C.Mix(ppy, strength)
   strength = strength or C.Strength()
   if strength <= 0 then return 0 end
-  local mix = strength * Smooth(ppy, C.MIX_FADE)
   local deep = math.min(1, strength * C.DEEP_K)
-  return mix + (deep - mix) * Smooth(ppy, C.DEEP_FADE)
+  local mid = deep * C.MID_K
+  return mid * Smooth(ppy, C.MIX_FADE) + (deep - mid) * Smooth(ppy, C.DEEP_FADE)
 end
 
 ---------------------------------------------------------------------------
@@ -165,10 +173,8 @@ function C.Cells(inst, tx, ty)
     for col = 0, n - 1 do
       local w00, w10, w01, w11 = g[col][r], g[col + 1][r], g[col][r + 1], g[col + 1][r + 1]
       if w00 + w10 + w01 + w11 > 0.001 then
-        local dh = math.abs((w10 + w11) - (w00 + w01))
-        local dv = math.abs((w01 + w11) - (w00 + w10))
-        if dh >= dv then c[#c + 1] = { col, r, (w00 + w01) / 2, (w10 + w11) / 2, "HORIZONTAL" }
-        else c[#c + 1] = { col, r, (w00 + w10) / 2, (w01 + w11) / 2, "VERTICAL" } end
+        local o, a1, a2 = C.CornerGrad(w00, w10, w01, w11)
+        c[#c + 1] = { col, r, a1, a2, o }
       end
     end
   end
@@ -235,6 +241,12 @@ local function Piece(host, i)
     t = host:CreateTexture(nil, "ARTWORK")
     if t.SetDesaturation then pcall(t.SetDesaturation, t, C.DESAT) end
     t:SetVertexColor(C.PAPER[1], C.PAPER[2], C.PAPER[3], 1)
+    local g = host:CreateTexture(nil, "ARTWORK", nil, 1)
+    if g.SetDesaturation then pcall(g.SetDesaturation, g, 1) end
+    if g.SetBlendMode then pcall(g.SetBlendMode, g, "ADD") end
+    g:SetVertexColor(C.GLOW[1], C.GLOW[2], C.GLOW[3], 1)
+    g:Hide()
+    t.glow = g
     C.pool[i] = t
   end
   return t
@@ -244,18 +256,32 @@ local PR, PG, PB = C.PAPER[1], C.PAPER[2], C.PAPER[3]
 local CreateColor = _G.CreateColor
 -- alpha a1 -> a2 across the texture (orient "HORIZONTAL": left -> right; "VERTICAL": top -> bottom). The game's
 -- SetGradient runs min -> max as left -> right and bottom -> top.
-local function Grad(t, orient, a1, a2)
-  if math.abs(a1 - a2) < 0.01 then t:SetVertexColor(PR, PG, PB, (a1 + a2) / 2) return end
+local function Grad(t, orient, a1, a2, cr, cg, cb)
+  local R, G, B = cr or PR, cg or PG, cb or PB
+  if math.abs(a1 - a2) < 0.01 then t:SetVertexColor(R, G, B, (a1 + a2) / 2) return end
   local lo, hi = a1, a2
   if orient == "VERTICAL" then lo, hi = a2, a1 end
   if t.SetGradient and type(CreateColor) == "function" then
-    local ok = pcall(t.SetGradient, t, orient, CreateColor(PR, PG, PB, lo), CreateColor(PR, PG, PB, hi))
+    local ok = pcall(t.SetGradient, t, orient, CreateColor(R, G, B, lo), CreateColor(R, G, B, hi))
     if ok then return end
   end
-  if t.SetGradientAlpha and pcall(t.SetGradientAlpha, t, orient, PR, PG, PB, lo, PR, PG, PB, hi) then return end
-  t:SetVertexColor(PR, PG, PB, (a1 + a2) / 2)
+  if t.SetGradientAlpha and pcall(t.SetGradientAlpha, t, orient, R, G, B, lo, R, G, B, hi) then return end
+  t:SetVertexColor(R, G, B, (a1 + a2) / 2)
 end
 C.Grad = Grad
+-- a cell's four corner weights -> one gradient (the axis along which they change most): orient, a1, a2
+function C.CornerGrad(w00, w10, w01, w11)
+  local dh = math.abs((w10 + w11) - (w00 + w01))
+  local dv = math.abs((w01 + w11) - (w00 + w10))
+  if dh >= dv then return "HORIZONTAL", (w00 + w01) / 2, (w10 + w11) / 2 end
+  return "VERTICAL", (w00 + w10) / 2, (w01 + w11) / 2
+end
+-- 0.5.1.6: the window is built again: the pooled textures hang off the old map
+function C.Drop()
+  for _, t in ipairs(C.pool) do t:Hide() if t.glow then t.glow:Hide() end end
+  if C.grain then C.grain:Hide() end
+  C.pool, C.grain, C.cells = {}, nil, {}
+end
 
 -- ctx = { host, conts = { { id = cont, alpha } }, place(cont) -> {x1,x2,y1,y2} on the world, toScreen(wx, wy), vw, vh }
 -- Returns a summary { shown pieces, tiles in view, mix, ppy } for tests and the probe.
@@ -305,8 +331,19 @@ function C.Layout(ctx)
                 tex:SetAlpha(a)
                 tex.dmA1, tex.dmA2 = a1 or 1, a2 or 1
                 tex:Show()
+                local g = tex.glow
+                if g then
+                  if g.dmFile ~= fid then g.dmFile = fid pcall(g.SetTexture, g, fid, nil, nil, "LINEAR") end
+                  g:SetTexCoord(u1, u2, v1, v2)
+                  g:ClearAllPoints()
+                  g:SetAllPoints(tex)
+                  Grad(g, orient or "HORIZONTAL", a1 or 1, a2 or 1, C.GLOW[1], C.GLOW[2], C.GLOW[3])
+                  g:SetAlpha(a)
+                  g:Show()
+                end
               else
                 tex:Hide()
+                if tex.glow then tex.glow:Hide() end
               end
             end
           end
@@ -334,7 +371,7 @@ function C.Layout(ctx)
       end
     end
   end
-  for i = used + 1, #C.pool do C.pool[i]:Hide() C.pool[i].dmTile = nil end
+  for i = used + 1, #C.pool do C.pool[i]:Hide() C.pool[i].dmTile = nil if C.pool[i].glow then C.pool[i].glow:Hide() end end
   for i = 1, used do if C.pool[i]:IsShown() then sum.pieces = sum.pieces + 1 end end
   C.last = sum
   -- the paper grain: Dark Matter's own parchment, faint, anchored to the map so it pans with it

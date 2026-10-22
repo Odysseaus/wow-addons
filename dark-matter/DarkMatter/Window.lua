@@ -46,8 +46,8 @@ end
 -- (38..842 x 84..594) is mapped onto ours (pad..w-pad x shellTop..footerTop), so the art frames our layout.
 -- 0.5.1.4: the art keeps the scale it has on the 880x680 window; a window sized to the game's map window only makes the
 -- art space wider / taller (aw x ah css), so the frame's edges run longer and every piece keeps its density.
-local function ArtMap()
-  local m = NS.theme.m
+local function ArtMap(m)
+  m = m or NS.theme.m
   local b = NS.MapWindow and NS.MapWindow.bases and NS.MapWindow.bases[m] or m
   local sx = (b.w - 2 * m.pad) / 804
   local sy = (b.footerTop - m.shellTop) / 510
@@ -57,12 +57,40 @@ local function ArtMap()
 end
 NS.ClassArtMap = ArtMap
 
+-- 0.5.1.6: everything a class theme's frame art draws at metrics m, window-relative (y down): left, top, right, bottom.
+-- The art rect, its edge sprites (glows, vines, crystals), the crest and the base plate. Used to size the window so its
+-- OUTER bounds equal the game's map window's, and for the window's hit and clamp rects.
+function NS.ClassArtBox(ca, m)
+  if not ca then return nil end
+  local sx, sy, ax, ay, AW, AH = ArtMap(m)
+  local k = (sx + sy) / 2
+  local l, t, r, b = ax, ay, ax + AW * sx, ay + AH * sy
+  local function U(x, y, w, h) l, t, r, b = math.min(l, x), math.min(t, y), math.max(r, x + w), math.max(b, y + h) end
+  local ov = ca.edges and ca.edges.over
+  for _, sp in ipairs(ov and ov.list or {}) do
+    local a = sp[1]
+    local px = a[1] + ((a[1] + a[3] / 2 > 440) and (AW - 880) or 0)
+    local py = a[2] + ((a[2] + a[4] / 2 > 340) and (AH - 680) or 0)
+    U(ax + px * sx, ay + py * sy, a[3] * sx, a[4] * sy)
+  end
+  if ca.crest then
+    local cs = ca.crest[1] * k
+    U(ax + (AW / 2 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy, cs, cs)
+  end
+  if ca.base then
+    local bw, bh = ca.base[1] * k, ca.base[2] * k
+    local bs = math.min(bw, bh)
+    U(ax + AW / 2 * sx - bs / 2, ay + (642 + AH - 680) * sy + (bh - bs) / 2, bs, bs)
+  end
+  return { l, t, r, b }
+end
+
 -- Shrink (never enlarge) so the 880x680 window (or a class theme's larger frame art) fits small screens.
 local function FitScale(f)
   local m = NS.theme.m
   -- 0.5.1.5: sized to the game's map window: our scale is the one that makes it the map window's on-screen size
   local MW = NS.MapWindow
-  local live = MW and MW.last and not MW.last.fallback and (MW.live and MW.live.scale or MW.last.scale)
+  local live = MW and MW.last and not MW.last.fallback and (MW.live and not MW.live.fallback and MW.live.scale or MW.last.scale)
   if live then f:SetScale(math.max(0.3, live)) return end
   local w, h = m.w, m.h
   if NS.theme.classArt then
@@ -177,7 +205,8 @@ local function BuildClassArt(f)
     local bx, by = ax + AW / 2 * sx - bs / 2, ay + (642 + AH - 680) * sy + (bh - bs) / 2
     P(A.base, "base", bx, by, bs, bs)
     -- everything drawn (art rect + overhanging crest and base), window-relative, y down
-    A.box = { math.min(ax, cx, bx), math.min(ay, cy), math.max(ax + aw, cx + cs, bx + bs), math.max(ay + ah, by + bs) }
+    A.box = NS.ClassArtBox(ca, NS.theme.m) -- 0.5.1.6: incl. the edge sprites
+    A.drawn = { math.min(ax, cx, bx), math.min(ay, cy), math.max(ax + aw, cx + cs, bx + bs), math.max(ay + ah, by + bs) }
   end
   return A
 end
@@ -200,7 +229,13 @@ function NS.ShowTab(id)
     if t.frame then t.frame:Hide() end
     if W.railTabs[tid] then W.railTabs[tid]:SetActive(tid == id) end
   end
-  if not def.frame then def.frame = def.Build(W.body) end
+  if not def.frame then
+    NS.skinOwner = "window"
+    local ok, fr = pcall(def.Build, W.body)
+    NS.skinOwner = nil
+    if not ok then error(fr, 0) end
+    def.frame = fr
+  end
   def.frame:Show()
   W.current = id
   if NS.db then NS.db.tab = id end
@@ -385,18 +420,37 @@ local function BuildMapChrome(f)
     BottomEdge = { "BottomLeftCorner", "BOTTOMLEFT", "BOTTOMRIGHT", "BottomRightCorner", "BOTTOMRIGHT", "BOTTOMLEFT", true },
     LeftEdge = { "TopLeftCorner", "TOPLEFT", "BOTTOMLEFT", "BottomLeftCorner", "BOTTOMLEFT", "TOPLEFT", false },
     RightEdge = { "TopRightCorner", "TOPRIGHT", "BOTTOMRIGHT", "BottomRightCorner", "BOTTOMRIGHT", "TOPRIGHT", false } }
+  local PLAIN_TL = "UI-Frame-Metal-CornerTopLeft"
   function C.Mirror()
     local A = MW.Art()
     if not (A and A.full) then return false end
     for _, k in ipairs(MW.NINE) do
       if not MW.Paint(C.nine[k], A.nine[k]) then return false end
     end
+    -- 0.5.1.6: a plain top-left corner (no portrait seat, no icon): the game's own plain metal corner by atlas when the
+    -- client has it, else its top-right corner drawn mirrored. It sits where the map's own top-left corner sits, so the
+    -- outer bounds stay the map's.
+    local tl, pr = C.nine.TopLeftCorner, A.nine.TopRightCorner
+    local plainW, plainH
+    local okI, info = false, nil
+    if C_Texture and type(C_Texture.GetAtlasInfo) == "function" then okI, info = pcall(C_Texture.GetAtlasInfo, PLAIN_TL) end
+    if okI and type(info) == "table" and tl.SetAtlas and pcall(tl.SetAtlas, tl, PLAIN_TL, false) then
+      plainW, plainH = NS.Num(info.width) or (pr and pr.w), NS.Num(info.height) or (pr and pr.h)
+      C.cornerFrom = "atlas " .. PLAIN_TL
+    elseif pr and MW.Paint(tl, pr) then
+      local tc = { tl:GetTexCoord() }
+      if #tc == 8 then tl:SetTexCoord(tc[5], tc[6], tc[7], tc[8], tc[1], tc[2], tc[3], tc[4]) end
+      plainW, plainH = pr.w, pr.h
+      C.cornerFrom = "the top-right corner, mirrored"
+    else
+      return false
+    end
     for k, pt in pairs(CORNER_PT) do
       local p, t = A.nine[k], C.nine[k]
       t:ClearAllPoints()
       local own = p.point == pt
       t:SetPoint(pt, f, pt, own and p.x or 0, own and p.y or 0)
-      t:SetSize(p.w or 32, p.h or 32)
+      if k == "TopLeftCorner" then t:SetSize(plainW or 32, plainH or 32) else t:SetSize(p.w or 32, p.h or 32) end
     end
     for k, e in pairs(EDGE) do
       local p, t = A.nine[k], C.nine[k]
@@ -569,14 +623,23 @@ local function Build()
   fit:SetSize(1, 1)
   fit:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
   local fitT = 0
-  local function Refit()
+  -- 0.5.1.6: "scale" -> our scale follows; "layout" (another shape, or another theme's border) -> the window is built
+  -- again at the new size (asked twice in a row, so a map window still resizing is not chased)
+  local pendingLayout = 0
+  local function Refit(now)
     local MW = NS.MapWindow
     if not (MW and MW.last and not MW.last.fallback) then return end
-    local s = MW.LiveScale(NS.theme.m.w, NS.theme.m.h)
-    if not s then return end
-    s = math.max(0.3, s)
+    local what, need = MW.Check(NS.theme.m)
+    if what == "layout" then
+      pendingLayout = pendingLayout + 1
+      if now or pendingLayout >= 2 then pendingLayout = 0 W.rebuildWanted = true end
+      return
+    end
+    pendingLayout = 0
+    if what ~= "scale" or not need.scale then return end
+    local s = math.max(0.3, need.scale)
     local old = f:GetScale() or 1
-    if math.abs(s - old) < 0.002 then return end
+    if math.abs(s - old) < 0.0005 then return end
     local point, rel, relPoint, x, y = f:GetPoint(1)
     f:SetScale(s)
     if point then
@@ -587,6 +650,7 @@ local function Build()
   end
   W.Refit = Refit
   fit:SetScript("OnUpdate", function(_, el)
+    if W.rebuildWanted and NS.RebuildWindow then NS.RebuildWindow() return end
     fitT = fitT + (el or 0)
     if fitT >= 0.5 then fitT = 0 Refit() end
   end)
@@ -613,37 +677,22 @@ local function Build()
     -- 0.5.1.4: the WoW theme wears the game's map-window frame (theme.mapWindow) instead of the dialog border + plate
     local mapLook = (not ca) and NS.theme.mapWindow and true or false
     W.mapLook = mapLook
-    for _, o in ipairs(wowOnly) do if ca then o:Hide() else o:Show() end end
+    for _, o in ipairs(wowOnly) do if ca or o == medal then o:Hide() else o:Show() end end
     if mapLook then frameNine:Hide() tbSlice:Hide() end
     mapChrome.Apply(mapLook)
     tb:ClearAllPoints()
     if mapLook then
-      tb:SetPoint("TOPLEFT", f, "TOPLEFT", 40, -2)
+      tb:SetPoint("TOPLEFT", f, "TOPLEFT", 34, -2)
       tb:SetPoint("TOPRIGHT", f, "TOPRIGHT", -34, -2)
       tb:SetHeight(MAP_TITLE_H)
     else
       tb:SetPoint("TOPLEFT", f, "TOPLEFT", m.titleX, -m.titleY)
       tb:SetSize(m.titleW, m.titleH)
     end
-    -- the portrait: the map window's own when it can be read, else the quest-log book, small, at the corner
-    medal:ClearAllPoints()
+    -- 0.5.1.6: no portrait in any theme (the corner is a plain metal corner; see BuildMapChrome)
+    medal:Hide()
     local A = mapLook and NS.MapWindow.Art()
-    local pp = A and A.portrait
-    if mapLook and pp and pp.shown and NS.MapWindow.Paint(medalTex, pp) then
-      medal:SetSize(pp.w or 58, pp.h or 58)
-      medal:SetPoint("TOPLEFT", f, "TOPLEFT", pp.point == "TOPLEFT" and pp.x or -6, pp.point == "TOPLEFT" and pp.y or 6)
-      W.medalFrom = "map window"
-    elseif mapLook then
-      NS.SetPiece(medalTex, "medal")
-      medal:SetSize(40, 40)
-      medal:SetPoint("TOPLEFT", f, "TOPLEFT", -10, 10)
-      W.medalFrom = "book"
-    else
-      NS.SetPiece(medalTex, "medal")
-      medal:SetSize(m.medalSize, m.medalSize)
-      medal:SetPoint("TOPLEFT", f, "TOPLEFT", m.medalX, -m.medalY)
-      W.medalFrom = nil
-    end
+    W.medalFrom = nil
     title:ClearAllPoints()
     if ca then
       local sx, sy, ax, ay, AW = ArtMap()
@@ -737,19 +786,25 @@ local function Build()
   end)
 
   -- ESC closes it, the stock way (plain table insert; Blizzard reads it through securecall).
-  if type(UISpecialFrames) == "table" then tinsert(UISpecialFrames, "DarkMatterFrame") end
+  if type(UISpecialFrames) == "table" then
+    local have = false
+    for _, n in ipairs(UISpecialFrames) do if n == "DarkMatterFrame" then have = true end end
+    if not have then tinsert(UISpecialFrames, "DarkMatterFrame") end
+  end
   return f
 end
 
 function NS.GetWindow()
   if not frame then
     -- Build under pcall: if anything in the build errors, never leave a half-built window behind.
+    NS.skinOwner = "window"
     local ok, err = pcall(function()
       Build()
       ApplyPosition()
       NS.SetStatus("Dark Matter " .. NS.version)
       NS.ShowTab(NS.db and NS.db.tab or "quests")
     end)
+    NS.skinOwner = nil
     if not ok then
       if frame then frame:Hide() end
       frame = nil
@@ -769,9 +824,59 @@ function NS.RefreshWindow()
   if def and def.Refresh then pcall(def.Refresh) end
 end
 
+-- 0.5.1.6: build the window again at a new size (the map window changed shape, or a theme with another border was
+-- chosen). The old frames are hidden and silenced, each tab drops what it built, and the saved position keeps its spot.
+function NS.RebuildWindow()
+  local old = frame
+  if not old then return NS.GetWindow() end
+  local shown = old:IsShown()
+  local point, _, relPoint, x, y = old:GetPoint(1)
+  local oldScale = old:GetScale() or 1
+  old:Hide()
+  local function Quiet(o, depth)
+    if depth > 40 or type(o) ~= "table" then return end
+    if o.UnregisterAllEvents then pcall(o.UnregisterAllEvents, o) end
+    if o.SetScript and o.HasScript and select(2, pcall(o.HasScript, o, "OnUpdate")) then pcall(o.SetScript, o, "OnUpdate", nil) end
+    if o.GetChildren then for _, c in ipairs({ o:GetChildren() }) do Quiet(c, depth + 1) end end
+  end
+  Quiet(old, 0)
+  for _, id in ipairs(NS.tabOrder) do
+    local d = NS.tabs[id]
+    if d then
+      if d.frame then d.frame:Hide() end
+      d.frame = nil
+      if d.Reset then pcall(d.Reset) end
+    end
+  end
+  if NS.DropSkins then NS.DropSkins("window") end
+  for k in pairs(W) do W[k] = nil end
+  frame = nil
+  local f = NS.GetWindow()
+  if f then
+    local s = f:GetScale() or 1
+    if point then
+      f:ClearAllPoints()
+      f:SetPoint(point, UIParent, relPoint or point, (x or 0) * oldScale / s, (y or 0) * oldScale / s)
+      SavePosition()
+    end
+    if shown then f:Show() end
+  end
+  NS.windowRebuilds = (NS.windowRebuilds or 0) + 1
+  return f
+end
+
+function NS.AfterThemeChange()
+  if not (frame and NS.MapWindow and NS.MapWindow.last and not NS.MapWindow.last.fallback) then return end
+  if NS.MapWindow.Check(NS.theme.m) == "layout" then W.rebuildWanted = true end
+end
+
 function NS.ToggleWindow(show)
   local f = NS.GetWindow()
   if not f then return end
   if show == nil then show = not f:IsShown() end
+  if show and not f:IsShown() and (W.rebuildWanted or (NS.MapWindow and NS.MapWindow.last and not NS.MapWindow.last.fallback
+      and NS.MapWindow.Check(NS.theme.m) == "layout")) then
+    f = NS.RebuildWindow() or f
+  end
   if show then f:Show() else f:Hide() end
 end
