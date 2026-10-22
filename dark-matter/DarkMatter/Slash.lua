@@ -22,6 +22,7 @@ local function Help()
   print("  /dm agscan  Adventure Guide: LFG rows kept/rejected -> DarkMatterDB.agscan")
   print("  /dm questprobe  Quests: which quest log, reward and watch APIs this client has -> DarkMatterDB.questprobe")
   print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
+  print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
   print("  /dm artprobe  WoW theme: which of the game's own textures/templates this client has (ok/missing) -> DarkMatterDB.artprobe")
   print("  /dm frameprobe  the game's map window: its size and the border, title and close textures it is drawn with -> DarkMatterDB.frameprobe")
   print("  /dm achprobe  Achievements: mode, game API counts + 3 samples, Dark Matter counts -> DarkMatterDB.achprobe")
@@ -84,6 +85,10 @@ SlashCmdList["DARKMATTER"] = function(msg)
       local _, lines = NS.QL.ProbeReport()
       for _, x in ipairs(lines or {}) do NS.Print(x) end
       NS.Print(NS.QL.WatchReport())
+    end
+  elseif cmd == "questmap" then
+    if NS.QS and NS.QS.ProbeReport then
+      for _, l in ipairs(NS.QS.ProbeReport() or {}) do NS.Print(l) end
     end
   elseif cmd == "mapprobe" then
     if NS.MapProbe and NS.MapProbe.Report then

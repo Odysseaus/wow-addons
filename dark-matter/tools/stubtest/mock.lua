@@ -3675,7 +3675,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.1.11 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2a (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3979,6 +3979,91 @@ do
   check(qp and qp.n == 2 and qp[1]:IsShown() and qp[1].qid == 501, "0.5.0 map: quest markers from GetQuestsOnMap")
   qp[1]._scripts.OnEnter(qp[1])
   check(tip.title == "Dwarven Outfitters", "0.5.0 map: quest marker tooltip names the quest")
+  -- ===== 0.5.2a: quest pins with the game's own icons, click / shift-click, hover both ways, Show on map =====
+  do
+    local QS = NS.QS
+    check(QS and QS.hovered == 501 and QS.hoverSrc == "map", "0.5.2a pins: hovering a pin sets the shared hovered quest")
+    qp[1]._scripts.OnLeave(qp[1])
+    check(QS.hovered == nil, "0.5.2a pins: leaving the pin clears it")
+    -- every pin is painted with a game icon (path or atlas), never our own art
+    local r = QS.Icon("progress")
+    check(r and (r.atlas or (r.file and not r.file:find("AddOns", 1, true))), "0.5.2a pins: the in-progress pin uses a game icon")
+    -- a missing game icon draws nothing (no substitute)
+    local saveTex, saveOK = C_Texture, NS.Stock.TextureOK
+    C_Texture = { GetAtlasInfo = function() return nil end }
+    NS.Stock.TextureOK = function() return false end
+    QS.ForgetIcons()
+    local t = qp[1]:CreateTexture()
+    check(QS.Icon("progress") == nil and QS.PaintIcon(t, "progress") == false, "0.5.2a pins: a missing game icon is not substituted")
+    M.dirty = true run(1)
+    check(not qp[1]:IsShown(), "0.5.2a pins: no game icon -> no pin drawn")
+    C_Texture, NS.Stock.TextureOK = saveTex, saveOK
+    QS.ForgetIcons()
+    M.dirty = true run(1)
+    check(qp[1]:IsShown() and qp[1].qid == 501, "0.5.2a pins: icons back -> pin drawn again")
+    -- hover from the Quests tab lights the pin (glow, bigger)
+    local nMut = #MUTATED
+    QS.Hover(502, "list") run(1)
+    local m2 = qp[1].qid == 502 and qp[1] or qp[2]
+    check(m2.qid == 502 and m2.glow:IsShown(), "0.5.2a pins: a Quests-tab row hover lights its pin")
+    QS.Hover(nil, "list") run(1)
+    check(not m2.glow:IsShown(), "0.5.2a pins: leaving the row unlights it")
+    check(#MUTATED == nMut, "0.5.2a pins: hover made no mutating calls")
+    -- a plain click selects the quest and flies there with a hop (zooms out on the way, ends at the same zoom)
+    for _ = 1, 4 do M.Wheel(1) run(30) end
+    local zs = M.Zoom()
+    QS.selected = nil
+    m2._scripts.OnMouseDown(m2, "LeftButton")
+    m2._scripts.OnMouseUp(m2, "LeftButton")
+    check(QS.selected == 502, "0.5.2a pins: clicking a pin selects its quest")
+    local zmin = M.Zoom()
+    for _ = 1, 60 do run(1) if M.Zoom() < zmin then zmin = M.Zoom() end end
+    check(zmin < zs * 0.95 and math.abs(M.Zoom() - zs) < 1e-6, "0.5.2a pins: the flight zooms out, pans and zooms back in (" .. zmin .. " < " .. zs .. ")")
+    -- shift-click: the game's own waypoint + arrow
+    local wp, st = {}, {}
+    local saveShift, saveUMP, saveST, saveSet, saveCan = _G.IsShiftKeyDown, UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap
+    _G.IsShiftKeyDown = function() return true end
+    UiMapPoint = { CreateFromCoordinates = function(m, x, y) return { m = m, x = x, y = y } end }
+    C_Map.SetUserWaypoint = function(p) wp[#wp + 1] = p end
+    C_Map.CanSetUserWaypointOnMap = function() return true end
+    C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) st[#st + 1] = v end }
+    check(#wp == 0, "0.5.2a pins: no waypoint without a click")
+    m2._scripts.OnMouseDown(m2, "LeftButton")
+    m2._scripts.OnMouseUp(m2, "LeftButton")
+    check(#wp == 1 and wp[1].m == 1426 and math.abs(wp[1].x - 0.60) < 1e-9 and st[1] == true and QS.arrow and QS.arrow.q == 502,
+      "0.5.2a pins: shift-click sets the game's waypoint and arrow")
+    _G.IsShiftKeyDown = saveShift
+    -- a press then drag on a pin still pans the map
+    local cx0 = M.ToWorld(300, 200)
+    CX, CY = 300, 200
+    m2._scripts.OnMouseDown(m2, "LeftButton")
+    CX, CY = 340, 220 run(2)
+    m2._scripts.OnMouseUp(m2, "LeftButton")
+    check(math.abs(M.ToWorld(300, 200) - cx0) > 1e-6 and #wp == 1, "0.5.2a pins: dragging over a pin pans the map (no click)")
+    -- Show on map: a point flies there; no point -> the zone and the themed note
+    check(M.ShowQuest(501) == "point" and QS.selected == 501, "0.5.2a Show on map: quest with a location flies to it")
+    run(60)
+    local saveUi = C_QuestLog.GetQuestUiMapID
+    C_QuestLog.GetQuestUiMapID = function(q) if q == 777 then return 1426 end end
+    check(M.ShowQuest(777) == "zone" and M.note and M.note:IsShown(), "0.5.2a Show on map: no location -> its zone, with the note")
+    C_QuestLog.GetQuestUiMapID = saveUi
+    check(M.ShowQuest(778) == "none", "0.5.2a Show on map: no location and no zone -> note only")
+    run(200)
+    check(not M.note:IsShown(), "0.5.2a Show on map: the note goes away by itself")
+    UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap = saveUMP, saveST, saveSet, saveCan
+    -- /dm questmap
+    local lines = QS.ProbeReport()
+    local all = table.concat(lines, "\n")
+    if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
+    check(lines[1] == "questmap 0.5.2a (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+      and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
+      "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
+    local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+    check(not src:find("hooksecurefunc", 1, true) and not src:find("HookScript", 1, true) and not src:find("LoadAddOn", 1, true)
+      and not src:find("CreateFrame", 1, true) and not src:find("RegisterEvent", 1, true), "0.5.2a QuestState.lua: no hooks, no LoadAddOn, no frames or events")
+    QS.selected, QS.arrow = nil, nil
+    for _ = 1, 4 do M.Wheel(-1) run(30) end
+  end
   -- 7. wheel zoom keeps the point under the cursor fixed
   CX, CY = 300, 180
   M.Wheel(1) run(30) -- 0.5.1.10: from one step in (at the zone's fit, zooming out goes up to the continent)
@@ -4383,7 +4468,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.11 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2a %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5328,7 +5413,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.1.11 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2a (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,

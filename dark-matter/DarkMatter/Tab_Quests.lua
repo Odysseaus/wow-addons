@@ -5,6 +5,7 @@
 local _, NS = ...
 local UI = NS.UI
 local QL = NS.QL
+local QS = NS.QS -- 0.5.2a shared quest state (selection, hover) with the Map tab
 
 local ROW_H
 local tab, list, detail, empty, rowPool = nil, nil, nil, nil, {}
@@ -111,7 +112,14 @@ local function GetRow(i)
   r:SetSize(list.cw, ROW_H)
   r.sel = r:CreateTexture(nil, "BACKGROUND", nil, 1)
   r.sel:SetAllPoints(r)
-  r.hover = UI.Hover(r)
+  -- 0.5.2a: hovering a quest row lights its markers on the Map tab (shared state)
+  r.hover = UI.Hover(r, function(self) if QS and type(self.quest) == "table" and self.quest.questID then QS.Hover(self.quest.questID, "list") end end,
+    function() if QS then QS.Hover(nil, "list") end end)
+  -- 0.5.2a: lit when this quest's marker is hovered on the map (drawn in code: a soft gold wash)
+  r.link = r:CreateTexture(nil, "BACKGROUND", nil, 2)
+  r.link:SetAllPoints(r)
+  r.link:SetColorTexture(1, 0.82, 0.25, 0.22)
+  r.link:Hide()
   r.hoverInk = "listInk"
   r.line = r:CreateTexture(nil, "BORDER")
   r.line:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 0)
@@ -145,6 +153,7 @@ local function GetRow(i)
       NS.tabs.quests.Refresh()
     elseif self.quest then
       selectedId = self.quest.questID or self.quest.title
+      if QS and self.quest.questID then QS.Select(self.quest.questID, "list") end
       NS.tabs.quests.Refresh()
     end
   end)
@@ -377,6 +386,7 @@ local function Refresh()
     sel = firstVisible
     selectedId = sel and (sel.questID or sel.title) or (searching and selectedId or nil)
   end
+  if QS and sel and sel.questID then QS.selected = sel.questID end -- the Map tab lights the selected quest's markers
   local canWatch = QL.CanWatch()
   local nrows = #rows
   for i = 1, math.max(nrows, #rowPool) do
@@ -424,6 +434,8 @@ local function Refresh()
         r.small:SetTextColor(NS.Color("listSoft"))
       end
       if isSel then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
+      local lit = data.kind == "q" and QS and data.quest.questID ~= nil and QS.hovered == data.quest.questID and QS.hoverSrc == "map"
+      if lit then r.link:Show() else r.link:Hide() end
       r:Show()
     elseif r then
       r:Hide()
@@ -451,6 +463,9 @@ local function Refresh()
     local w = sel and canWatch and QL.IsWatched(sel)
     bar.trk:SetChecked(w and true or false)
     if sel and canWatch then bar.trk:Enable() else bar.trk:Disable() end
+  end
+  if detail and detail.showMap then
+    if sel and sel.questID then detail.showMap:Enable() detail.showMap:SetAlpha(1) else detail.showMap:Disable() detail.showMap:SetAlpha(0.5) end
   end
   local s = string.format("Dark Matter %s  \194\183  %d %s in your log", NS.version, total, total == 1 and "quest" or "quests")
   if searching then s = s .. string.format("  \194\183  %d matching", matched) end
@@ -613,7 +628,19 @@ NS.RegisterTab({
     detail.meta:SetWidth(dw - G - 28)
     detail.status = UI.Text(dp, "OVERLAY", 13, "mid", "LEFT")
     detail.status:SetPoint("TOPLEFT", detail.meta, "BOTTOMLEFT", 0, -8)
-    detail.status:SetWidth(dw - G - 28)
+    detail.status:SetWidth(dw - G - 28 - 124)
+    -- 0.5.2a: Show on map: the Map tab flies to the quest (zoom out, pan, zoom in) and sets the game's waypoint + arrow
+    local sm = UI.Button(dp, "Show on map", 116, 22, "red", 11)
+    sm:SetPoint("TOPRIGHT", dp, "TOPRIGHT", -14, -50)
+    sm:SetScript("OnClick", function()
+      local q = selQuest and selQuest.questID
+      if not q or not NS.MapTab then return end
+      if QS then QS.Select(q, "list") end
+      NS.ShowTab("map")
+      NS.MapTab.ShowQuest(q, true)
+    end)
+    detail.showMap = sm
+    if W then W.showOnMap = sm end
     local headH = 82
     detail.scroll = UI.Scroll(dp, dw - G - 2 * b, ph - 2 * b - headH, dp)
     detail.scroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", b, -(b + headH))
@@ -636,3 +663,19 @@ NS.RegisterTab({
   Selected = function() return selQuest end,
   Parts = function() return bar, detail, list end,
 })
+
+-- 0.5.2a: the shared quest state. A marker clicked on the map selects its quest here; a marker hovered there lights
+-- its row here (rows are only redrawn when this tab is showing; the selection is kept for the next show).
+if QS then
+  QS.On(function(what, q, src)
+    if what == "select" and src ~= "list" and q then
+      selectedId = q
+      if tab and tab:IsShown() then Refresh() end
+    elseif what == "hover" then
+      for _, r in ipairs(rowPool) do
+        local lit = r.kind == "q" and type(r.quest) == "table" and q ~= nil and r.quest.questID == q and src == "map"
+        if r.link then if lit then r.link:Show() else r.link:Hide() end end
+      end
+    end
+  end)
+end

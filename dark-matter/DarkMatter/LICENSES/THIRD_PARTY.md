@@ -42,6 +42,13 @@ SOFTWARE.
 art or painted by a named artist and are *not* covered by its MIT licence. Dark Matter does not ship, copy or
 reference them, and does not need OpenMap to be installed.
 
+## daves_map (ideas only)
+
+Source: https://github.com/DavidWhit/daves-wow-addons/tree/main/wowaddons/daves_map by DavidWhit. The repository has
+no licence, so **no code, data or art is copied** from it. Dark Matter credits it for ideas that its own code implements
+from scratch: clickable quest pins that select the quest, hover highlighting between the quest list and the map, a
+"show on map" fly-to, and using the game's own waypoint and arrow.
+
 ## Blizzard Entertainment
 
 Every map picture, minimap tile and stock UI texture Dark Matter shows is loaded from the game client at runtime by

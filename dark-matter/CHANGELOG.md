@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.2a
+
+- Quests on the map, game data only (first part of the quest work; the database and Ready to Turn In come in 0.5.2b / 0.6.0).
+- Map quest pins use the game's own icon textures only (file path or atlas, checked at runtime; nothing bundled): grey ? for a quest in progress, yellow ? when it is ready to turn in, a red tint when failed. If this client lacks an icon, no pin is drawn for it (no substitute); `/dm questmap` lists any missing ones.
+- Pins are clickable: a click selects the quest in the Quests tab and flies the map there smoothly (zooms out, pans, zooms back in). Shift-click sets the game's own waypoint and arrow. Dragging over a pin still pans the map.
+- Hover sync both ways: hovering a pin lights its row in the Quests tab; hovering a row (or selecting it) makes its pins bigger with a glow.
+- Quests tab: new "Show on map" button. It opens the Map tab and flies to the quest (and sets the game's waypoint and arrow). If the game gives no location, it shows the quest's zone with a note.
+- New `/dm questmap` (read only, saved): which quest, waypoint and arrow APIs this client has; what GetQuestsOnMap returns; what Show on map would use; each candidate game icon (ok or MISSING); the objective tracker's structure, and whether its quest rows could take an extra click target in 0.5.2b.
+- New QuestState.lua: the shared selected, hovered and arrow quest. No hooks, no LoadAddOn, no stock frames touched. Waypoint and arrow calls happen only on a click.
+- Tests: pins, game icons with a missing icon drawing nothing, click, shift-click, drag over a pin, hover both ways, the hop flight, Show on map (point, zone with note, none), the probe, and taint checks for QuestState.lua.
+
 ## 0.5.1.11
 
 - Map: no more empty gaps. The continent art is always drawn as the base under its zones (at any magnification), and the world art shows wherever the continents' full-strength interior doesn't cover the view. Zone edges feather into the continent (never to black, no vignette). Zones fade in over the continent as one fills the view, like the stock map.

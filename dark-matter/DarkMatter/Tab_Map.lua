@@ -359,21 +359,52 @@ local function MakeBadge()
   b.text:SetTextColor(1, 0.84, 0.3, 1)
   return b
 end
+-- 0.5.2a quest markers: the game's own quest icons (QuestState.lua: grey ? in progress, yellow ? ready to turn in),
+-- clickable. Hover highlights the quest's row in the Quests tab (and a row's hover highlights its markers here); click
+-- selects the quest there and flies to it; shift-click sets the game's waypoint + arrow. A press that turns into a drag
+-- still pans the map (the press is handed to the map).
+local QuestClick -- forward (assigned below)
 local function MakeQuest()
   local q = CreateFrame("Button", nil, over)
   q:SetSize(18, 18)
+  q.glow = q:CreateTexture(nil, "BACKGROUND")
+  q.glow:SetPoint("CENTER", q, "CENTER", 0, 0)
+  q.glow:SetSize(32, 32)
+  q.glow:SetBlendMode("ADD")
+  q.glow:SetAlpha(0.55)
+  q.glow:Hide()
   q.icon = q:CreateTexture(nil, "ARTWORK")
   q.icon:SetAllPoints(q)
-  Icon(q.icon, "quest")
-  if q.SetMouseClickEnabled then pcall(q.SetMouseClickEnabled, q, false) end -- clicks pass through to the map (drag)
   q:SetScript("OnEnter", function(self)
+    if NS.QS then NS.QS.Hover(self.qid, "map") end
     if not GameTooltip then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText(MD.QuestTitle(self.qid), 1, 0.82, 0)
-    GameTooltip:AddLine("Quest objective (from the game's quest log)", 0.85, 0.85, 0.85, true)
+    local st = self.status
+    GameTooltip:AddLine(st == "ready" and "Ready to turn in" or (st == "failed" and "Failed" or "In progress"), 0.85, 0.85, 0.85, true)
+    if NS.QL and NS.QL.Objectives then
+      local ok, objs = pcall(NS.QL.Objectives, { questID = self.qid })
+      if ok and type(objs) == "table" then
+        for _, o in ipairs(objs) do if type(o.text) == "string" then GameTooltip:AddLine((o.done and "\226\156\147 " or "- ") .. o.text, o.done and 0.5 or 1, o.done and 0.9 or 1, o.done and 0.5 or 1, true) end end
+      end
+    end
+    GameTooltip:AddLine("Click: select it in the Quests tab", 0.5, 0.8, 1)
+    GameTooltip:AddLine("Shift-click: the game's waypoint and arrow", 0.5, 0.8, 1)
     GameTooltip:Show()
   end)
-  q:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  q:SetScript("OnLeave", function()
+    if NS.QS then NS.QS.Hover(nil, "map") end
+    if GameTooltip then GameTooltip:Hide() end
+  end)
+  q:SetScript("OnMouseDown", function(_, btn) if M.VpDown then M.VpDown(btn) end end)
+  q:SetScript("OnMouseUp", function(self, btn)
+    if btn == "LeftButton" and drag and not drag.moved then
+      drag = nil
+      QuestClick(self)
+      return
+    end
+    if M.VpUp then M.VpUp(btn) end
+  end)
   return q
 end
 
@@ -434,11 +465,27 @@ local function LayoutOverlay()
           for _, q in ipairs(MD.Quests(z.id) or {}) do
             local qx, qy = M.ToScreen(ToW(z.id, q.x, q.y))
             if qx > 0 and qy > 0 and qx < vw and qy < vh then
+              local QS = NS.QS
+              local role, status = "progress", "progress"
+              if QS then role, status = QS.MarkerRole(q.id) end
               local mk = Pool("quest", MakeQuest)
-              mk.qid = q.id
-              mk:ClearAllPoints()
-              mk:SetPoint("CENTER", over, "TOPLEFT", qx, -qy)
-              mk:Show()
+              -- 0.5.2a: the game's own icon for the quest's status; a client without it draws no marker (/dm questmap)
+              if QS and QS.PaintIcon(mk.icon, role) then
+                QS.PaintIcon(mk.glow, role)
+                mk.qid, mk.status, mk.map, mk.mx, mk.my = q.id, status, z.id, q.x, q.y
+                mk.wx, mk.wy = ToW(z.id, q.x, q.y)
+                if status == "failed" then mk.icon:SetVertexColor(1, 0.35, 0.3) else mk.icon:SetVertexColor(1, 1, 1) end
+                local hot = QS.IsHot(q.id)
+                mk:SetSize(hot and 24 or 18, hot and 24 or 18)
+                if hot then mk.glow:Show() else mk.glow:Hide() end
+                mk:SetFrameLevel(over:GetFrameLevel() + (hot and 3 or 1))
+                mk:ClearAllPoints()
+                mk:SetPoint("CENTER", over, "TOPLEFT", qx, -qy)
+                mk:Show()
+              else
+                mk.qid = nil
+                mk:Hide()
+              end
             end
           end
         end
@@ -666,7 +713,8 @@ function M.ZoomAt(px, py, factor)
   fly = nil
 end
 -- fly to a map (fits it) or, with wx/wy, centre on that world point at the map's fit
-FlyTo = function(id, wx, wy)
+-- 0.5.2a: hop = a smooth "zoom out, pan, zoom in" (Show on map, a quest marker click); sMin = never end wider than this
+FlyTo = function(id, wx, wy, hop, sMin)
   if not M.ready or not id then return end
   M.pendingFit = nil
   if not M.hasWorld then
@@ -690,8 +738,19 @@ FlyTo = function(id, wx, wy)
       s = math.max(s, (hi + 0.02) * VW() / ((x2 - x1) * BW))
     end
   end
+  if sMin and s < sMin then s = sMin end
   local cx, cy = M.Center()
   fly = { t = 0, dur = 0.45, c0 = { cx, cy }, s0 = V.s, c1 = { wx or (x1 + x2) / 2, wy or (y1 + y2) / 2 }, s1 = s }
+  if hop then
+    -- out far enough to see where you are and where you go (never past the whole world), across, then in
+    local dxp = math.abs(fly.c1[1] - cx) * BW
+    local dyp = math.abs(fly.c1[2] - cy) * BH
+    local sm = math.min(V.s, s, 0.8 * math.min(VW() / math.max(dxp, 1e-6), VH() / math.max(dyp, 1e-6)))
+    sm = math.max(sm, SFit())
+    fly.dip = math.max(0, (math.log(V.s) + math.log(s)) / 2 - math.log(sm))
+    fly.hop = true
+    fly.dur = 0.8 + math.min(0.6, fly.dip * 0.2)
+  end
   zoomT = nil
   M.flyTarget = id
 end
@@ -708,8 +767,113 @@ function M.FindMe()
   return true
 end
 
+---------------------------------------------------------------------------
+-- 0.5.2a quests on the map: Show on map (Quests tab), a marker click, the "no map location" note
+---------------------------------------------------------------------------
+-- world coords of a point on any map the game gives (a zone, a continent, or a city/cave inside a zone)
+local function WorldOf(map, x, y)
+  if (M.hasWorld and map == M.world) or MD.Is(map, "continent") or MD.ZoneEntry(map) then return ToW(map, x, y) end
+  local z = MD.ZoneOf(map)
+  local x1, x2, y1, y2 = MD.Rect(map, z)
+  if z and x1 then return ToW(z, x1 + x * (x2 - x1), y1 + y * (y2 - y1)) end
+  local c = MD.ContinentOf(map)
+  x1, x2, y1, y2 = MD.Rect(map, c)
+  if c and x1 then return ToW(c, x1 + x * (x2 - x1), y1 + y * (y2 - y1)) end
+end
+-- the map our view frames for a map id: its zone when it has one we draw, else its continent
+local function FrameId(map)
+  local z = MD.ZoneOf(map) or map
+  if MD.ZoneEntry(z) then return z end
+  return MD.ContinentOf(map) or map
+end
+M.WorldOf, M.FrameId = WorldOf, FrameId
+
+-- a themed note across the top of the map (our own plate: the theme's pane border on a dark plate); click or 8 s hides it
+local note
+function M.Note(text)
+  if not vpBox then return end
+  if not note then
+    note = CreateFrame("Button", nil, vpBox)
+    note:SetFrameLevel(canvas:GetFrameLevel() + 30)
+    note:SetSize(420, 46)
+    note:SetPoint("TOP", vp, "TOP", 0, -10)
+    local bg = note:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(note)
+    bg:SetColorTexture(0.03, 0.03, 0.03, 0.88)
+    UI.NineSlice(note, "pane", 4, "BORDER", 1)
+    note.text = UI.Text(note, "OVERLAY", 12, "gold", "CENTER")
+    note.text:SetPoint("CENTER", note, "CENTER", 0, 0)
+    note.text:SetWidth(396)
+    note:SetScript("OnClick", function(self) self:Hide() end)
+  end
+  note.text:SetText(text or "")
+  note:SetHeight(math.max(46, (NS.Num(note.text:GetStringHeight()) or 14) + 22))
+  note.left = 8
+  note:Show()
+  M.note = note
+end
+function M.HideNote() if note then note:Hide() end end
+
+-- fly smoothly to a quest (zoom out, pan, zoom in): its location when the game gives one, else its zone with the note.
+-- wp: also set the game's waypoint + arrow there. Returns what it did ("point", "zone" or "none").
+function M.ShowQuest(q, wp)
+  local QS = NS.QS
+  if not (QS and q) then return "none" end
+  if not M.ready or VW() < 50 or VH() < 50 then M.pendingQuest = { q = q, wp = wp } return "pending" end
+  MD.Forget("quests")
+  local title = QS.Title(q)
+  QS.Select(q, "map")
+  local loc = QS.Locate(q)
+  if loc and not loc.zoneOnly then
+    local wx, wy = WorldOf(loc.map, loc.x, loc.y)
+    if wx then
+      local fid = FrameId(loc.map)
+      FlyTo(fid, wx, wy, true)
+      M.HideNote()
+      local msg = "Showing \"" .. title .. "\" on the map."
+      if wp then
+        local ok, why = QS.SetWaypoint(loc.map, loc.x, loc.y, q)
+        msg = msg .. (ok and " The game's arrow points there." or (" No waypoint: " .. tostring(why) .. "."))
+      end
+      NS.SetStatus(msg)
+      M.dirty = true
+      return "point"
+    end
+  end
+  if loc and loc.zoneOnly then
+    local fid = FrameId(loc.map)
+    FlyTo(fid, nil, nil, true)
+    if wp then QS.TrackQuest(q) end
+    M.Note("No map location from the game for \"" .. title .. "\". Showing its zone, " .. tostring(MD.Name(loc.map) or "?") .. ".")
+    NS.SetStatus("\"" .. title .. "\": no map location from the game; showing its zone.")
+    M.dirty = true
+    return "zone"
+  end
+  M.Note("No map location from the game for \"" .. title .. "\", and no zone to show.")
+  NS.SetStatus("\"" .. title .. "\": the game gives no map location or zone for it.")
+  return "none"
+end
+
+-- a marker click: select the quest (Quests tab) and fly to it, smoothly; shift-click: the game's waypoint + arrow
+QuestClick = function(mk)
+  local QS = NS.QS
+  if not (QS and mk and mk.qid) then return end
+  if type(_G.IsShiftKeyDown) == "function" and _G.IsShiftKeyDown() then
+    local ok, why = QS.SetWaypoint(mk.map, mk.mx, mk.my, mk.qid)
+    NS.SetStatus("\"" .. QS.Title(mk.qid) .. "\": " .. (ok and why or ("no waypoint: " .. tostring(why))))
+    return
+  end
+  QS.Select(mk.qid, "map")
+  FlyTo(FrameId(mk.map), mk.wx, mk.wy, true, V.s)
+  NS.SetStatus("Selected \"" .. QS.Title(mk.qid) .. "\" (Quests tab). Shift-click a marker for the game's waypoint and arrow.")
+  M.dirty = true
+end
+M.QuestClick = function(mk) return QuestClick(mk) end
+
 function M.Tick(dt)
   dt = math.min(dt or 0, 0.1)
+  if M.pendingQuest and M.ready and VW() >= 50 and VH() >= 50 then local p = M.pendingQuest M.pendingQuest = nil M.ShowQuest(p.q, p.wp) end
+  if note and note:IsShown() then note.left = (note.left or 0) - dt if note.left <= 0 then note:Hide() end end
   -- the main window was closed (/dm, a keybind) while the map was full screen: come back with it
   if M.full and _G.DarkMatterFrame and not _G.DarkMatterFrame:IsShown() then M.SetFull(false) return end
   if drag then
@@ -729,8 +893,14 @@ function M.Tick(dt)
   elseif fly then
     fly.t = fly.t + dt
     local e = Smooth(fly.t / fly.dur)
-    local s = math.exp(math.log(fly.s0) + (math.log(fly.s1) - math.log(fly.s0)) * e)
-    SetView(fly.c0[1] + (fly.c1[1] - fly.c0[1]) * e, fly.c0[2] + (fly.c1[2] - fly.c0[2]) * e, s)
+    local ls = math.log(fly.s0) + (math.log(fly.s1) - math.log(fly.s0)) * e
+    local ce = e
+    if fly.hop then
+      -- 0.5.2a: the scale dips in the middle (zoom out), the pan happens mostly while zoomed out
+      ls = ls - fly.dip * 4 * e * (1 - e)
+      ce = Smooth((fly.t / fly.dur - 0.15) / 0.7)
+    end
+    SetView(fly.c0[1] + (fly.c1[1] - fly.c0[1]) * ce, fly.c0[2] + (fly.c1[2] - fly.c0[2]) * ce, math.exp(ls))
     if fly.t >= fly.dur then fly = nil end
   end
   -- focus fade (a quarter second when the view moves from one continent to the other)
@@ -1051,10 +1221,11 @@ local function Build(body)
   vp:EnableMouse(true)
   if vp.EnableMouseWheel then vp:EnableMouseWheel(true) end
   vp:SetScript("OnMouseWheel", function(_, delta) M.Wheel(delta) end)
-  vp:SetScript("OnMouseDown", function(_, btn)
+  -- 0.5.2a: the same press and release handlers serve the quest markers (a press on a marker can still drag the map)
+  M.VpDown = function(btn)
     if btn == "LeftButton" then M.pendingFit = nil local x, y = Cursor() drag = { x = x, y = y, ox = V.ox, oy = V.oy } fly, zoomT = nil, nil end
-  end)
-  vp:SetScript("OnMouseUp", function(_, btn)
+  end
+  M.VpUp = function(btn)
     if btn == "RightButton" then M.ZoomOutLevel() return end
     if btn ~= "LeftButton" then return end
     local was = drag
@@ -1063,7 +1234,9 @@ local function Build(body)
       local now = (type(GetTime) == "function" and GetTime()) or 0
       if lastClick and now - lastClick < 0.35 then lastClick = nil M.ZoomAt(was.x, was.y, 2) else lastClick = now end
     end
-  end)
+  end
+  vp:SetScript("OnMouseDown", function(_, btn) M.VpDown(btn) end)
+  vp:SetScript("OnMouseUp", function(_, btn) M.VpUp(btn) end)
   vp:SetScript("OnSizeChanged", function() Refit() end)
   root:SetScript("OnUpdate", function(_, dt) M.Tick(dt) end)
 
@@ -1175,7 +1348,7 @@ local function Events(on)
   if not ev then
     ev = CreateFrame("Frame")
     ev:SetScript("OnEvent", function(_, e)
-      if e == "QUEST_LOG_UPDATE" or e == "QUEST_WATCH_LIST_CHANGED" then MD.Forget("quests")
+      if e == "QUEST_LOG_UPDATE" or e == "QUEST_WATCH_LIST_CHANGED" or e == "QUEST_ACCEPTED" or e == "QUEST_REMOVED" or e == "QUEST_TURNED_IN" then MD.Forget("quests")
       elseif e == "MAP_EXPLORATION_UPDATED" then
         MD.Forget("explored")
         if CU then CU.Forget() end
@@ -1184,7 +1357,8 @@ local function Events(on)
       M.dirty = true
     end)
   end
-  for _, e in ipairs({ "ZONE_CHANGED", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED_INDOORS", "QUEST_LOG_UPDATE", "MAP_EXPLORATION_UPDATED" }) do
+  for _, e in ipairs({ "ZONE_CHANGED", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED_INDOORS", "QUEST_LOG_UPDATE", "MAP_EXPLORATION_UPDATED",
+    "QUEST_WATCH_LIST_CHANGED", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "SUPER_TRACKING_CHANGED" }) do
     if on then pcall(ev.RegisterEvent, ev, e) else pcall(ev.UnregisterEvent, ev, e) end
   end
 end
@@ -1323,3 +1497,10 @@ NS.RegisterTab({
     if CU and CU.Drop then CU.Drop() end
   end,
 })
+
+-- 0.5.2a: the shared quest state (QuestState.lua): a hover or selection from the Quests tab redraws the markers
+if NS.QS then
+  NS.QS.On(function(what)
+    if (what == "hover" or what == "select") and M.started then M.dirty = true end
+  end)
+end
