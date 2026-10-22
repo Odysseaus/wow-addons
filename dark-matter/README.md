@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.2b.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.2b.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -71,11 +71,16 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 ## Tracker, Ready to Turn In, map pins and keys (0.5.2b)
 - **Keep-tracked pins**: a small game-icon button beside each quest in the objective tracker (Dark Matter's own button, only placed next to the row). Click it to pin: a pinned quest stays in the tracker in every zone. Only a click pins or unpins (since 0.5.2b.1); tracking or untracking does not. `/dm keepicon pin|lock|star|auto` picks the icon (map pin by default when the client has it).
 - **Title click**: clicking a quest title in the tracker opens Dark Matter on the Map tab, glides to the quest and shows it in the Quest Log panel. The item and map buttons are not covered. (The area also covers the title's right-click menu.)
-- **Ready to Turn In**: a themed section under the tracker with each ready quest and its zone; a click points the game's arrow at it and opens it in Dark Matter. The Quests tab and the Quest Log panel list the same group on top.
+- **Ready to Turn In**: its own section just below the whole objective tracker, with a header like the tracker's module headers and the same collapse/expand button (collapsed by default, remembered). Expanded it lists each ready quest and its zone; a click points the game's arrow at it and opens it in Dark Matter. The Quests tab and the Quest Log panel list the same group on top.
 - **Zone auto-track** (on by default since 0.5.2b.1): `/dm autotrack on|off` or the Settings page. This zone's quests plus pinned ones are tracked, the rest untracked; waits for flights to land; batches about a second apart; never in combat.
 - **Your map pins**: the Pin tool on the map, then a click on the map. The game's waypoint and minimap arrow point at the pin; right-click a pin to remove it.
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
+
+### 0.5.2b.2 changes
+- Ready to Turn In is its own frame just below the visible bottom of the whole objective tracker (under Quests and Professions). It follows the tracker as it grows or shrinks (checked 10 times a second), slides up when Professions is collapsed or empty, and never overlaps it. With the tracker hidden it sits where the tracker would be.
+- Its header looks like the tracker's module headers (the game's own header art, font and collapse/expand button). It starts collapsed; the choice is saved.
+- The objective tracker now really follows the quest log's order. On this client a newly tracked quest goes to the top of the tracker, so 0.5.2b.1 came out reversed; Dark Matter now learns that from the game and re-tracks in reverse, which gives log order. `/dm trackerprobe` logs the log order against the tracker's order ("tracker vs log: SAME order").
 
 ### 0.5.2b.1 changes
 - Keep pins are bigger (17 px).

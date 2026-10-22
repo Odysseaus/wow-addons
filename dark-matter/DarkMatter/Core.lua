@@ -5,7 +5,7 @@ local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.5.2b.1"
+NS.version = "0.5.2b.2"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -27,6 +27,7 @@ local DEFAULTS = {
   trackOrder = true,  -- 0.5.2b.1: keep the objective tracker in quest-log order
   mlKeys = true,      -- M and L open Dark Matter (ALT-M / ALT-L the game's own windows)
   userPins = {},      -- your own pins on the map
+  readyCollapsed = true, -- 0.5.2b.2: the Ready to Turn In section starts collapsed (its header button saves the choice)
 }
 
 function NS.Print(msg)

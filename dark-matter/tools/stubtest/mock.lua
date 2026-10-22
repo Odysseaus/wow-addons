@@ -3686,7 +3686,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.2 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4084,7 +4084,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.2 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4699,7 +4699,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5647,7 +5647,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.2 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -5784,13 +5784,32 @@ if MODE ~= "minimal" then
   r1.click._scripts.OnClick(r1.click, "LeftButton")
   check(DarkMatterFrame:IsShown() and NS.db.tab == "map" and NS.db.questPanel ~= false and shownQ == 101 and openedQ == 101,
     "0.5.2b tracker: a title click opens Dark Matter on the Map tab, glides to the quest and opens its detail in the panel")
-  -- 3. Ready to Turn In (Gold Dust is complete)
+  -- 3. Ready to Turn In (Gold Dust is complete). 0.5.2b.2: our own section below the tracker's real visible bottom
+  local saveAtlasR = C_Texture.GetAtlasInfo
+  local RA = {}
+  for _, a in pairs(Tr.READY_ATLAS) do RA[a] = true end
+  C_Texture.GetAtlasInfo = function(a) if RA[a] then return { width = 16, height = 16 } end return saveAtlasR(a) end
   Tr.FillReady() Tr.Layout()
   local R = DarkMatterReadyFrame
-  check(R and R._parent == UIParent and R._shown and R.n == 1 and R.rows[1].q == 102 and R.rows[1].title._text == "Gold Dust" and R.rows[1].zone._text == "Elwynn Forest",
-    "0.5.2b ready: our own section lists the quest and its zone")
-  check(R._pts[1][1] == "TOPLEFT" and R._pts[1][2] == UIParent and R._pts[1][4] == 990 and R._pts[1][5] == 640 - 30 - 6,
-    "0.5.2b ready: placed under the tracker's lowest visible quest (read from its bottom)")
+  check(R and R._parent == UIParent and R._shown and R.collapsed and R.n == 0 and R._h == 26 and NS.db.readyCollapsed == true and not (R.rows[1] and R.rows[1]._shown),
+    "0.5.2b.2 ready: our own UIParent section, collapsed by default (header only)")
+  local H = R.header
+  check(H._h == 26 and H.bg._atlas == "UI-QuestTracker-Secondary-Objective-Header" and H.bg._shown and H.text._text == "Ready to Turn In" and H.text._w == 200
+    and H.text._pts[1][1] == "LEFT" and H.text._pts[1][4] == 7,
+    "0.5.2b.2 ready: the header is the tracker's module header (same atlas, text at LEFT 7, width 200) ")
+  local B = R.toggle
+  check(B._w == 16 and B._h == 16 and B._pts[1][1] == "RIGHT" and B._pts[1][4] == 1 and B.icon._atlas == "ui-questtrackerbutton-secondary-expand"
+    and B.hl._atlas == "ui-questtrackerbutton-yellow-highlight" and B.hl._blend == "ADD",
+    "0.5.2b.2 ready: the same collapse/expand button (16x16 at RIGHT 1, expand atlas while collapsed, yellow ADD highlight)")
+  check(R._pts[1][1] == "TOPLEFT" and R._pts[1][2] == UIParent and R._pts[1][4] == 990 and R._pts[1][5] == 610 - 10,
+    "0.5.2b.2 ready: placed one module spacing below the tracker's lowest visible content")
+  B._scripts.OnMouseDown(B, "LeftButton")
+  check(B.icon._atlas == "ui-questtrackerbutton-secondary-expand-pressed", "0.5.2b.2 ready: the pressed atlas while held")
+  B._scripts.OnMouseUp(B, "LeftButton")
+  B._scripts.OnClick(B, "LeftButton")
+  check(NS.db.readyCollapsed == false and not R.collapsed and R.n == 1 and R.rows[1]._shown and R._h == 26 + 10 + 32 and B.icon._atlas == "ui-questtrackerbutton-secondary-collapse"
+    and R.rows[1].q == 102 and R.rows[1].title._text == "Gold Dust" and R.rows[1].zone._text == "Elwynn Forest",
+    "0.5.2b.2 ready: expanding lists the quest and its zone and is saved in DarkMatterDB")
   local wp, st, sq = {}, {}, {}
   local saveSuper = C_SuperTrack
   C_SuperTrack = { SetSuperTrackedQuestID = function(q) sq[#sq + 1] = q end, SetSuperTrackedUserWaypoint = function(v) st[#st + 1] = v end }
@@ -5800,9 +5819,69 @@ if MODE ~= "minimal" then
   check(sq[1] == 102 and shownQ == 102 and openedQ == 102 and DarkMatterFrame:IsShown(), "0.5.2b ready: a row click sets the arrow and opens Dark Matter on that quest")
   C_SuperTrack = saveSuper
   NS.MapTab.ShowQuest, NS.QuestPanel.OpenQuest = saveST, saveOQ
+  -- the tracker's height changes (Quests grows and shrinks; Professions expanded, collapsed, empty): never an overlap, never a gap
+  local qBot, pBot, pVis, hdrVis = 590, 470, true, true
+  local THdr = CreateFrame("Frame", nil, T)
+  THdr.IsVisible = function() return hdrVis and T._shown end
+  THdr.GetBottom = function() return 728 end
+  local MQ = CreateFrame("Frame", nil, T)
+  MQ.IsVisible = function() return T._shown end
+  MQ.GetBottom = function() return qBot end
+  local MP = CreateFrame("Frame", nil, T)
+  MP.IsVisible = function() return pVis and T._shown end
+  MP.GetBottom = function() return pBot end
+  T.Header, T.modules, T.moduleSpacing = THdr, { MQ, MP }, 10
+  local bad, cases = {}, 0
+  local function Poll()
+    if Tr.frame and Tr.frame._scripts.OnUpdate then Tr.frame._scripts.OnUpdate(Tr.frame, Tr.READY_POLL) else Tr.PlaceReady() end
+  end
+  for _, sc in ipairs({ 1, 0.8 }) do
+    T:SetScale(sc)
+    for _, q in ipairs({ 600, 450, 300 }) do
+      for _, pst in ipairs({ "expanded", "collapsed", "empty" }) do
+        qBot = q
+        pVis = pst ~= "empty"
+        pBot = pst == "expanded" and q - 10 - 120 or q - 10 - 26
+        Poll()
+        cases = cases + 1
+        local top = R._pts[1][5] * (R._scale or 1)  -- in UIParent units, like the tracker's (T-space * scale)
+        local want = ((pVis and pBot or math.min(qBot, 610)) - 10) * sc
+        local ok = R._shown and #R._pts == 1 and math.abs(top - want) < 1e-6 and math.abs((R._scale or 1) - sc) < 1e-6
+        for _, f in ipairs({ THdr, MQ, MP, b1, b2 }) do
+          if f:IsVisible() and top > (f:GetBottom() - 10) * sc + 1e-6 then ok = false end
+        end
+        if not ok then bad[#bad + 1] = sc .. "/" .. q .. "/" .. pst .. "=" .. tostring(top) .. "~" .. tostring(want) end
+      end
+    end
+  end
+  T:SetScale(1)
+  check(cases == 18 and #bad == 0, "0.5.2b.2 ready: the frame never overlaps when the tracker height changes, and slides up with no gap (" .. table.concat(bad, " ") .. ")")
+  -- the tracker's background reaching lower than its content: we stay below it too
+  local NSl = CreateFrame("Frame", nil, T)
+  NSl.IsVisible = function() return T._shown end
+  NSl.GetBottom = function() return qBot - 40 end
+  T.NineSlice = NSl
+  pVis = false Poll()
+  check(R._pts[1][5] == qBot - 40, "0.5.2b.2 ready: never over the tracker's background either")
+  T.NineSlice = nil
+  for _, f in ipairs({ T, THdr, MQ, MP, NSl }) do
+    check(next(f._scripts) == nil and (f == T or #f._pts == 0) and f._parent == (f == T and UIParent or T),
+      "0.5.2b.2 taint: the tracker's modules get no script, no anchor and no new parent (only read)")
+  end
+  check(R._pts[1][2] == UIParent and R._parent == UIParent, "0.5.2b.2 ready: never anchored to or parented by the tracker")
+  -- a hidden tracker: we sit where it would be
   T._shown = false Tr.Layout()
-  check(not R._shown and not r1.pin._shown and not r1.click._shown, "0.5.2b ready: everything hides with the tracker")
+  check(R._shown and R._pts[1][4] == 990 and R._pts[1][5] == 760 and not r1.pin._shown and not r1.click._shown,
+    "0.5.2b.2 ready: with the tracker hidden the section sits where the tracker would be (pins and clicks hide)")
   T._shown = true
+  T.Header, T.modules, T.moduleSpacing = nil, nil, nil
+  B._scripts.OnClick(B, "LeftButton")
+  check(NS.db.readyCollapsed == true and R.collapsed and R._h == 26 and not R.rows[1]._shown, "0.5.2b.2 ready: collapsing again is saved too")
+  C_Texture.GetAtlasInfo = function(a) if RA[a] then return nil end return saveAtlasR(a) end
+  B._scripts.OnClick(B, "LeftButton")
+  check(not B.icon._shown, "0.5.2b.2 ready: a missing game atlas draws nothing (no substitute)")
+  C_Texture.GetAtlasInfo = saveAtlasR
+  B._scripts.OnClick(B, "LeftButton")
   NS.db.readySection = false Tr.FillReady() Tr.Layout()
   check(not R._shown, "0.5.2b ready: the section can be turned off")
   NS.db.readySection = nil Tr.FillReady() Tr.Layout()
@@ -5941,9 +6020,9 @@ if MODE ~= "minimal" then
     local ID = { [2] = 101, [3] = 102, [6] = 103 }
     local IX = { [101] = 2, [102] = 3, [103] = 6 }
     local WL = {}
-    local prepend = false
+    local prepend, keep = false, false
     local oA, oR, oN, oI = AddQuestWatch, RemoveQuestWatch, C_QuestLog.GetNumQuestWatches, C_QuestLog.GetQuestIDForQuestWatchIndex
-    AddQuestWatch = function(i) QWATCH[i] = true if prepend then table.insert(WL, 1, ID[i]) else WL[#WL + 1] = ID[i] end end
+    AddQuestWatch = function(i) QWATCH[i] = true if prepend then table.insert(WL, 1, ID[i]) else WL[#WL + 1] = ID[i] end if keep then table.sort(WL, function(a, b) return a > b end) end end
     RemoveQuestWatch = function(i) QWATCH[i] = nil for k = #WL, 1, -1 do if WL[k] == ID[i] then table.remove(WL, k) end end end
     C_QuestLog.GetNumQuestWatches = function() return #WL end
     C_QuestLog.GetQuestIDForQuestWatchIndex = function(i) return WL[i] end
@@ -5973,16 +6052,50 @@ if MODE ~= "minimal" then
     InCombatLockdown = oc
     Tr.Tick(t0 + 6)
     check(WL[1] == 101, "0.5.2b.1 order: done after combat")
-    -- a client that keeps its own order: stop, no loop; a new zone tries again
-    setWL({ 103, 101 }) prepend = true
-    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED")
-    Tr.Tick(t0 + 8)
+    -- a client that keeps its own order (here: always by quest ID, highest first): stop, no loop; a new zone tries again
+    setWL({ 103, 101 }) keep = true
+    for i = 1, 4 do Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 7 + i * 0.5) end
     local n1 = Tr.orderFixed
     Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 10)
-    check(Tr.orderGaveUp == true and Tr.orderFixed == n1 and #WL == 2 and P[103] == true, "0.5.2b.1 order: if the game keeps its own order it stops (no loop, nothing lost)")
+    check(Tr.orderGaveUp == true and Tr.orderFixed == n1 and n1 <= 5 and #WL == 2 and P[103] == true, "0.5.2b.1 order: if the game keeps its own order it stops (no loop, nothing lost)")
     Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
     check(Tr.orderGaveUp == nil, "0.5.2b.1 order: a new zone tries again")
+    keep = false
+    -- 0.5.2b.2: on 1.60.1 a new watch goes to the FRONT. 0.5.2b.1 then came out exactly reversed; now the end is learned
+    local fz = Tr.OrderFix({ 103, 101, 102 }, log, "front")
+    local fw = Tr.OrderFix({ 102, 101, 103 }, log, "front")
+    check(#fz == 3 and fz[1] == 103 and fz[2] == 102 and fz[3] == 101 and #fw == 2 and fw[1] == 102 and fw[2] == 101
+      and #Tr.OrderFix({ 101, 102, 103 }, log, "front") == 0, "0.5.2b.2 order: front end: the quests before the right tail, re-tracked in reverse log order")
+    NS.db.watchInsert, Tr.orderLearned = nil, nil
+    prepend = true
+    setWL({ 103, 102, 101 })  -- what 0.5.2b.1 left: the exact reverse of the log
+    Tr.orderLearnTried = nil Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 20)
+    check(NS.db.watchInsert == "front" and Tr.WatchSide() == "front", "0.5.2b.2 order: learns that new watches go to the front (saved)")
+    Tr.Tick(t0 + 20.5)
+    check(WL[1] == 101 and WL[2] == 102 and WL[3] == 103 and #WL == 3 and P[103] == true and not Tr.orderGaveUp, "0.5.2b.2 order: then the watch list (the tracker) is in log order, not reversed")
+    local adds = 0
+    local oA2 = AddQuestWatch
+    AddQuestWatch = function(i) adds = adds + 1 return oA2(i) end
+    setWL({ 102, 101, 103 })
+    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 22)
+    check(WL[1] == 101 and WL[2] == 102 and WL[3] == 103 and adds == 2, "0.5.2b.2 order: with the front known, only the quests before the right tail are re-tracked")
+    AddQuestWatch = oA2
+    -- a client that shows the change a moment later: checked again after the next settle, then learned
+    NS.db.watchInsert, Tr.orderLearned = nil, nil
+    local oN2 = C_QuestLog.GetQuestIDForQuestWatchIndex
+    local frozen
+    C_QuestLog.GetQuestIDForQuestWatchIndex = function(i) return (frozen or WL)[i] end
+    setWL({ 102, 101, 103 })
+    frozen = { 102, 101, 103 }
+    Tr.orderLearnTried = nil Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 30)
+    check(Tr.orderVerify ~= nil and NS.db.watchInsert == nil, "0.5.2b.2 order: a result not visible yet is checked again")
+    frozen = nil
+    Tr.Tick(t0 + 31.5)
+    check(NS.db.watchInsert == "front" and WL[1] == 101 and WL[2] == 102 and WL[3] == 103, "0.5.2b.2 order: then learned and put right")
+    C_QuestLog.GetQuestIDForQuestWatchIndex = oN2
     prepend = false
+    NS.db.watchInsert, Tr.orderLearned = nil, nil
+    Tr.orderLearnTried, Tr.orderVerify = nil, nil
     -- /dm trackorder off: the game's order stays
     local oldP = NS.Print NS.Print = function() end
     SlashCmdList.DARKMATTER("trackorder off")
@@ -6050,7 +6163,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.1 (read-only)" and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.2 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

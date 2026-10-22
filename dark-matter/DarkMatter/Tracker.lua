@@ -363,9 +363,52 @@ function Tr.OpenQuest(q)
 end
 
 ---------------------------------------------------------------------------
--- Ready to Turn In: our own themed section under the tracker (placed by reading its bottom; never anchored into it)
+-- Ready to Turn In (0.5.2b.2, option C): our OWN frame, a child of UIParent, placed just below the visible bottom of the
+-- whole objective tracker. The tracker is only READ (positions, sizes, IsVisible): never a parent, never an anchor
+-- target, no hook, nothing inserted. The header copies the tracker's module headers (the Professions header): the same
+-- header atlas, header font and collapse/expand button. Starts collapsed; DarkMatterDB.readyCollapsed keeps the choice.
 ---------------------------------------------------------------------------
+Tr.READY_POLL = 0.1  -- the section re-reads the tracker's bottom 10 times a second
+Tr.HEADER_H = 26     -- ObjectiveTrackerModuleHeaderTemplate: 260 x 26
+Tr.HEADER_GAP = 10   -- the module's fromHeaderOffsetY (header -> first block)
+Tr.READY_ATLAS = {
+  bg = "UI-QuestTracker-Secondary-Objective-Header",
+  collapse = "ui-questtrackerbutton-secondary-collapse", collapsePressed = "ui-questtrackerbutton-secondary-collapse-pressed",
+  expand = "ui-questtrackerbutton-secondary-expand", expandPressed = "ui-questtrackerbutton-secondary-expand-pressed",
+  highlight = "ui-questtrackerbutton-yellow-highlight",
+}
 local ready
+-- a game atlas, or nothing (no substitute) where this client lacks it
+local function Atlas(t, name)
+  local CT = C_Texture
+  if type(CT) == "table" and type(CT.GetAtlasInfo) == "function" then
+    local ok, info = pcall(CT.GetAtlasInfo, name)
+    if ok and not info then t:Hide() return false end
+  end
+  t:SetAtlas(name, true)
+  t:Show()
+  return true
+end
+function Tr.ReadyCollapsed()
+  local db = DB()
+  return not (db and db.readyCollapsed == false)
+end
+local function PaintToggle()
+  local A, b = Tr.READY_ATLAS, ready.toggle
+  local c = Tr.ReadyCollapsed()
+  local name = c and (rawget(b, "down") and A.expandPressed or A.expand) or (rawget(b, "down") and A.collapsePressed or A.collapse)
+  Atlas(b.icon, name)
+  b.atlas = name
+  if ready.header and not ready.header.bg:IsShown() then Atlas(ready.header.bg, A.bg) end -- (atlas data can arrive late)
+  if not b.hl:IsShown() and Atlas(b.hl, A.highlight) then b.hl:SetBlendMode("ADD") end
+end
+function Tr.SetReadyCollapsed(on)
+  local db = DB()
+  if db then db.readyCollapsed = on and true or false end
+  if ready then PaintToggle() end
+  Tr.FillReady()
+  Tr.PlaceReady()
+end
 local function ReadyRow(i)
   local r = ready.rows[i]
   if r then return r end
@@ -396,18 +439,72 @@ local function ReadyRow(i)
 end
 local function BuildReady()
   if ready then return ready end
+  local A = Tr.READY_ATLAS
   ready = CreateFrame("Frame", "DarkMatterReadyFrame", UIParent)
-  ready:SetSize(240, 40)
+  ready:SetSize(260, Tr.HEADER_H)
   ready:SetFrameStrata("LOW")
+  -- the header: a copy of the tracker's module header (Professions, Quests), built from the same game atlases and font
+  local h = CreateFrame("Frame", nil, ready)
+  h:SetPoint("TOPLEFT", ready, "TOPLEFT", 0, 0)
+  h:SetPoint("TOPRIGHT", ready, "TOPRIGHT", 0, 0)
+  h:SetHeight(Tr.HEADER_H)
+  h.bg = h:CreateTexture(nil, "BACKGROUND")
+  h.bg:SetPoint("CENTER", h, "CENTER", 0, 0)
+  Atlas(h.bg, A.bg)
+  h.text = h:CreateFontString(nil, "ARTWORK")
+  local font = _G.ObjectiveTrackerHeaderFont
+  if type(font) == "table" and pcall(h.text.SetFontObject, h.text, font) then
+    h.font = "ObjectiveTrackerHeaderFont"
+  elseif (_G.GameFontNormalMed2 or _G.GameFontNormal) and pcall(h.text.SetFontObject, h.text, _G.GameFontNormalMed2 or _G.GameFontNormal) then
+    h.font = "GameFontNormal"
+  else
+    pcall(h.text.SetFont, h.text, STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 14, "")
+  end
+  -- the live module header's colour, read only (whichever module header exists)
+  for _, name in ipairs({ "ProfessionsRecipeTracker", "QuestObjectiveTracker", "CampaignQuestObjectiveTracker" }) do
+    local m = _G[name]
+    local src = type(m) == "table" and type(m.Header) == "table" and m.Header.Text or nil
+    local ok, r2, g2, b2 = false, nil, nil, nil
+    if M(src, "GetTextColor") then ok, r2, g2, b2 = pcall(src.GetTextColor, src) end
+    if ok and N(r2) and N(g2) and N(b2) then h.text:SetTextColor(r2, g2, b2) h.color = name break end
+  end
+  h.text:SetJustifyH("LEFT")
+  h.text:SetWidth(200)
+  h.text:SetPoint("LEFT", h, "LEFT", 7, 0)
+  h.text:SetText("Ready to Turn In")
+  -- the collapse/expand button (ObjectiveTrackerModuleMinimizeButtonTemplate: 16 x 16, RIGHT x=1)
+  local b = CreateFrame("Button", nil, h)
+  b:SetSize(16, 16)
+  b:SetPoint("RIGHT", h, "RIGHT", 1, 0)
+  b.icon = b:CreateTexture(nil, "ARTWORK")
+  b.icon:SetPoint("CENTER", b, "CENTER", 0, 0)
+  b.hl = b:CreateTexture(nil, "HIGHLIGHT")
+  b.hl:SetPoint("CENTER", b, "CENTER", 0, 0)
+  if Atlas(b.hl, A.highlight) then b.hl:SetBlendMode("ADD") end
+  b:RegisterForClicks("LeftButtonUp")
+  b:SetScript("OnMouseDown", function(self) self.down = true PaintToggle() end)
+  b:SetScript("OnMouseUp", function(self) self.down = nil PaintToggle() end)
+  b:SetScript("OnClick", function()
+    if NS.ClickSound then NS.ClickSound() end
+    Tr.SetReadyCollapsed(not Tr.ReadyCollapsed())
+  end)
+  b:SetScript("OnEnter", function(self)
+    self.tipTitle = "Ready to Turn In"
+    self.tipText = Tr.ReadyCollapsed() and "Expand: list the quests ready to turn in." or "Collapse: show only this header."
+    Tip(self)
+  end)
+  b:SetScript("OnLeave", Untip)
+  h.button = b
+  ready.header, ready.toggle = h, b
+  ready.head = h.text
+  -- the rows' backdrop (header excluded, like the tracker's blocks)
   ready.bg = ready:CreateTexture(nil, "BACKGROUND")
-  ready.bg:SetAllPoints(ready)
-  ready.bg:SetColorTexture(0.03, 0.03, 0.03, 0.78)
-  UI.NineSlice(ready, "pane", 4, "BORDER", 1)
-  ready.head = UI.Text(ready, "OVERLAY", 13, "gold", "LEFT")
-  ready.head:SetPoint("TOPLEFT", ready, "TOPLEFT", 8, -6)
-  ready.head:SetText("Ready to Turn In")
+  ready.bg:SetPoint("TOPLEFT", ready, "TOPLEFT", 0, -Tr.HEADER_H)
+  ready.bg:SetPoint("BOTTOMRIGHT", ready, "BOTTOMRIGHT", 0, 0)
+  ready.bg:SetColorTexture(0, 0, 0, 0.35)
   ready.rows = {}
   ready:Hide()
+  PaintToggle()
   Tr.ready = ready
   return ready
 end
@@ -429,7 +526,8 @@ function Tr.FillReady()
   Tr.readyCount = #list
   if #list == 0 then if ready then ready:Hide() end return end
   BuildReady()
-  local n = math.min(#list, Tr.READY_MAX)
+  local collapsed = Tr.ReadyCollapsed()
+  local n = collapsed and 0 or math.min(#list, Tr.READY_MAX)
   for i = 1, n do
     local e, r = list[i], ReadyRow(i)
     r.q, r.titleText = e.id, e.title
@@ -437,37 +535,78 @@ function Tr.FillReady()
     r.zone:SetText(e.zone or "")
     if not (NS.QS and NS.QS.PaintIcon(r.icon, "ready")) then r.icon:Hide() else r.icon:Show() end
     r:ClearAllPoints()
-    r:SetPoint("TOPLEFT", ready, "TOPLEFT", 6, -24 - (i - 1) * 32)
+    r:SetPoint("TOPLEFT", ready, "TOPLEFT", 6, -Tr.HEADER_H - Tr.HEADER_GAP - (i - 1) * 32)
     r:SetPoint("RIGHT", ready, "RIGHT", -6, 0)
     r:Show()
   end
   for i = n + 1, #ready.rows do ready.rows[i]:Hide() end
-  ready:SetHeight(30 + n * 32)
+  if n > 0 then
+    ready.bg:Show()
+    ready:SetHeight(Tr.HEADER_H + Tr.HEADER_GAP + n * 32)
+  else
+    ready.bg:Hide()
+    ready:SetHeight(Tr.HEADER_H)
+  end
   ready.n = n
+  ready.collapsed = collapsed
+  PaintToggle()
 end
--- below the lowest visible quest row (or the tracker's header), converted to UIParent units; hidden without a tracker
-function Tr.PlaceReady(blocks)
-  if not ready or not ready.n or (Tr.readyCount or 0) == 0 or (DB() and DB().readySection == false) then if ready then ready:Hide() end return end
+-- The tracker's real visible bottom, read only, in screen pixels: the lowest of its visible header, visible modules
+-- (Quests, Professions, ...; a collapsed, hidden or empty module is hidden or only its header) and visible quest blocks.
+-- Returns left, top for our section (one module spacing below that bottom, never above the tracker's background), and
+-- how it was found. A hidden tracker: where it would be (its own top left).
+local function Px(f, v)
+  if not v then return nil end
+  return v * (N(Try(f, "GetEffectiveScale")) or 1)
+end
+function Tr.ReadyTarget(blocks)
   local T = Tr.TrackerFrame()
-  if not (T and Visible(T)) then ready:Hide() return end
+  if not T then return nil end
+  local left, top = Px(T, N(Try(T, "GetLeft"))), Px(T, N(Try(T, "GetTop")))
+  if not (left and top) then return nil end
+  if not Visible(T) then return left, top, "hidden" end
+  local low
+  local function Take(f)
+    if not Visible(f) then return end
+    local b = Px(f, N(Try(f, "GetBottom")))
+    if b and (not low or b < low) then low = b end
+  end
+  Take(rawget(T, "Header"))
+  local mods = rawget(T, "modules")
+  if type(mods) == "table" then for _, m in ipairs(mods) do Take(m) end end
+  for _, name in ipairs(MODULES) do Take(_G[name]) end
+  Take(_G.ProfessionsRecipeTracker)
+  for _, it in ipairs(blocks or {}) do Take(it.b) end
+  if not low then return left, top, "empty" end
+  local sp = (N(rawget(T, "moduleSpacing")) or 10) * (N(Try(T, "GetEffectiveScale")) or 1)
+  local y = low - sp
+  local ns = rawget(T, "NineSlice")
+  if Visible(ns) then
+    local nb = Px(ns, N(Try(ns, "GetBottom")))
+    if nb and nb < y then y = nb end
+  end
+  return left, y, "below"
+end
+function Tr.PlaceReady(blocks)
+  if not ready or not rawget(ready, "n") or (Tr.readyCount or 0) == 0 or (DB() and DB().readySection == false) then if ready then ready:Hide() end return end
+  local T = Tr.TrackerFrame()
+  local left, top, how = Tr.ReadyTarget(blocks or ((T and Visible(T)) and Tr.Blocks()) or nil)
+  if not left then ready:Hide() return end
+  -- the tracker's scale, so the header matches its module headers exactly
   local us = N(Try(UIParent, "GetEffectiveScale")) or 1
-  local function Y(f, v) return v and v * (N(Try(f, "GetEffectiveScale")) or us) / us end
-  local left = Y(T, N(Try(T, "GetLeft")))
-  local bottom
-  for _, it in ipairs(blocks or {}) do
-    local b = Y(it.b, N(Try(it.b, "GetBottom")))
-    if b and (not bottom or b < bottom) then bottom = b end
-  end
-  if not bottom and type(T.Header) == "table" then bottom = Y(T.Header, N(Try(T.Header, "GetBottom"))) end
-  if not bottom then bottom = Y(T, N(Try(T, "GetTop"))) end
-  if not (left and bottom) then ready:Hide() return end
-  local w = Y(T, N(Try(T, "GetWidth"))) or 240
-  ready:SetWidth(math.max(180, math.min(w, 280)))
-  if ready.x ~= left or ready.y ~= bottom then
+  local ts = N(Try(T, "GetEffectiveScale")) or us
+  local sc = (us > 0 and ts > 0) and ts / us or 1
+  if math.abs((rawget(ready, "sc") or 1) - sc) > 1e-4 then ready:SetScale(sc) ready.sc = sc end
+  local eff = us * sc
+  local x, y = left / eff, top / eff
+  local w = (N(Try(T, "GetWidth")) or 260)
+  if rawget(ready, "w") ~= w then ready:SetWidth(w) ready.w = w end
+  if rawget(ready, "x") ~= x or rawget(ready, "y") ~= y then
     ready:ClearAllPoints()
-    ready:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, bottom - 6)
-    ready.x, ready.y = left, bottom
+    ready:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+    ready.x, ready.y = x, y
   end
+  ready.how = how
   ready:Show()
 end
 function Tr.ReadyClick(q)
@@ -563,12 +702,20 @@ function Tr.AutoStep(now)
 end
 
 ---------------------------------------------------------------------------
--- 0.5.2b.1: the tracker in quest-log order (zone groups, lowest level first, as the log shows them). The game's tracker
--- lists quests in WATCH order (C_QuestLog.GetQuestIDForQuestWatchIndex) and the game itself re-sorts that order on zone
--- changes (C_QuestLog.SortQuestWatches). So, out of combat and not in flight, about a second after the game's sort and
--- after auto-track: the quests from the first one out of place on are untracked and tracked again in log order (a new
--- watch goes to the end of the list). Only the public watch API is used; no tracker code or frame is touched. If the
--- order is still wrong afterwards (or a watch did not come back) it stops until the next zone change.
+-- 0.5.2b.1 / 0.5.2b.2: the tracker in quest-log order (zone groups, lowest level first, as the log shows them).
+-- The game's tracker (Blizzard_QuestObjectiveTracker.lua, BuildQuestWatchInfos + CompareQuestWatchInfos) lists the
+-- quests in WATCH order: index 1..C_QuestLog.GetNumQuestWatches() from GetQuestIDForQuestWatchIndex, sorted only to put
+-- callings and quests that override the sort order first; there is no sort setting. The game re-sorts the watch list
+-- on zone changes (C_QuestLog.SortQuestWatches on ZONE_CHANGED_NEW_AREA and on ZONE_CHANGED to a new map).
+-- 0.5.2b.1 re-tracked the out-of-place quests in log order assuming a new watch goes to the END of the list. On 1.60.1 a
+-- new watch goes to the FRONT (index 1), so that came out exactly reversed (Wetlands 35, 34, 32, 31, ..., 30).
+-- 0.5.2b.2: which end a new watch goes to is learned from the result (the watch list after a re-order is compared with
+-- both predictions, at once and again after the next settle in case the change arrives later) and saved in
+-- DarkMatterDB.watchInsert ("front" / "end"). Front: the quests before the longest correct tail are re-tracked in
+-- REVERSE log order, so the first one in the log ends at index 1. End: the tail from the first out-of-place one is
+-- re-tracked in log order. Only the public watch API is used; no tracker code or frame is touched. Out of combat, not
+-- in flight, about a second after the game's sort and after auto-track. If the order is still wrong for any other
+-- reason (or a watch did not come back) it stops until the next zone change.
 ---------------------------------------------------------------------------
 Tr.ORDER_SETTLE = 1  -- seconds after the last watch / zone event
 Tr.ORDER_MAX = 10    -- re-orders a minute at most
@@ -586,18 +733,57 @@ function Tr.WatchOrder()
   end
   return out
 end
--- the quests to track again, in log order (empty when the order is already right)
-function Tr.OrderFix(order, log)
+-- which end of the watch list a new watch goes to: "front" or "end" (learned; "end" until then)
+function Tr.WatchSide()
+  local db = DB()
+  return (db and db.watchInsert == "front") and "front" or "end"
+end
+-- the quests to track again, in the order to track them (empty when the order is already right)
+function Tr.OrderFix(order, log, side)
+  side = side or Tr.WatchSide()
   local have = {}
   for _, id in ipairs(order) do if log[id] then have[#have + 1] = id end end
   local want = {}
   for i, id in ipairs(have) do want[i] = id end
   table.sort(want, function(a, b) return log[a].idx < log[b].idx end)
-  local k = 0
-  while k < #have and have[k + 1] == want[k + 1] do k = k + 1 end
   local fix = {}
-  for i = k + 1, #want do fix[#fix + 1] = want[i] end
+  if side == "front" then
+    local n, k = #have, 0
+    while k < n and have[n - k] == want[n - k] do k = k + 1 end
+    for i = n - k, 1, -1 do fix[#fix + 1] = want[i] end
+  else
+    local k = 0
+    while k < #have and have[k + 1] == want[k + 1] do k = k + 1 end
+    for i = k + 1, #want do fix[#fix + 1] = want[i] end
+  end
   return fix
+end
+-- the watch list after untracking and tracking `fix` again, when a new watch goes to `side`
+function Tr.PredictOrder(order, fix, side)
+  local drop = {}
+  for _, id in ipairs(fix) do drop[id] = true end
+  local out = {}
+  for _, id in ipairs(order) do if not drop[id] then out[#out + 1] = id end end
+  for _, id in ipairs(fix) do
+    if side == "front" then table.insert(out, 1, id) else out[#out + 1] = id end
+  end
+  return out
+end
+local function Same(a, b)
+  if not (a and b) or #a ~= #b then return false end
+  for i = 1, #a do if a[i] ~= b[i] then return false end end
+  return true
+end
+-- did the watch list come out as the OTHER end predicts? Then learn that end (saved).
+local function LearnSide(v, now)
+  if Tr.orderLearnTried then return false end -- once per zone change, so an odd client can never flip back and forth
+  local other = v.side == "front" and "end" or "front"
+  if Same(now, Tr.PredictOrder(v.order, v.fix, other)) and not Same(now, Tr.PredictOrder(v.order, v.fix, v.side)) then
+    if DB() then DB().watchInsert = other end
+    Tr.orderLearned = other
+    Tr.orderLearnTried = true
+    return true
+  end
 end
 function Tr.SetOrder(on)
   if DB() then DB().trackOrder = on and true or false end
@@ -610,9 +796,21 @@ function Tr.OrderStep(now)
   local order = Tr.WatchOrder()
   if not order then Tr.orderDirty = nil Tr.orderNote = "no watch-order API: the game's order stays" return end
   local log = ReadLog()
-  local fix = Tr.OrderFix(order, log)
   Tr.orderDirty = nil
-  if #fix == 0 then Tr.orderNote = "in log order" return end
+  local v, learned = Tr.orderVerify, false
+  Tr.orderVerify = nil
+  if v then learned = LearnSide(v, order) end
+  local side = Tr.WatchSide()
+  local fix = Tr.OrderFix(order, log, side)
+  if #fix == 0 then
+    Tr.orderNote = v and ("re-ordered " .. #v.fix .. " to log order (new watches go to the " .. side .. ")") or "in log order"
+    return
+  end
+  if v and not learned then
+    Tr.orderGaveUp = true
+    Tr.orderNote = "the game kept its own order: stopped until the next zone change"
+    return
+  end
   Tr.orderRuns = Tr.orderRuns or {}
   local recent = 0
   for _, t in ipairs(Tr.orderRuns) do if now - t < 60 then recent = recent + 1 end end
@@ -626,12 +824,21 @@ function Tr.OrderStep(now)
   for _, id in ipairs(fix) do Tr.own[id], Tr.ownAt[id] = nil, nil end
   Tr.orderFixed = (Tr.orderFixed or 0) + 1
   local again = Tr.WatchOrder()
-  if lost > 0 or (again and #Tr.OrderFix(again, log) > 0) then
+  local vNow = { order = order, fix = fix, side = side }
+  if lost > 0 then
     Tr.orderGaveUp = true
-    Tr.orderNote = lost > 0 and (lost .. " watch(es) did not come back: stopped until the next zone change")
-      or "the game kept its own order: stopped until the next zone change"
+    Tr.orderNote = lost .. " watch(es) did not come back: stopped until the next zone change"
+  elseif again and #Tr.OrderFix(again, log, side) == 0 then
+    Tr.orderNote = "re-ordered " .. #fix .. " to log order (new watches go to the " .. side .. ")"
+  elseif again and LearnSide(vNow, again) then
+    -- new watches went to the other end: learned; put it right on the next tick
+    Tr.orderNote = "learned: new watches go to the " .. Tr.WatchSide() .. "; re-ordering again"
+    Tr.orderDirty = Now() - Tr.ORDER_SETTLE
   else
-    Tr.orderNote = "re-ordered " .. #fix .. " to log order"
+    -- not visible yet (the change may arrive a moment later): look again after the next settle
+    Tr.orderVerify = vNow
+    Tr.orderDirty = Now()
+    Tr.orderNote = "re-ordered " .. #fix .. "; checking the result"
   end
 end
 
@@ -644,7 +851,7 @@ function Tr.OnEvent(event, a1)
   if event == "QUEST_WATCH_LIST_CHANGED" or event == "QUEST_ACCEPTED" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA"
     or event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_CONTROL_GAINED" then
     Tr.orderDirty = Now() -- 0.5.2b.1: keep the tracker in log order (after the game's own re-sort)
-    if event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then Tr.orderGaveUp = nil end
+    if event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then Tr.orderGaveUp, Tr.orderVerify, Tr.orderLearnTried = nil, nil, nil end
   end
   if event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
     Tr.zoneAt = Now()
@@ -672,9 +879,10 @@ function Tr.Start()
   local f = CreateFrame("Frame") -- private
   for _, e in ipairs(Tr.EVENTS) do pcall(f.RegisterEvent, f, e) end
   f:SetScript("OnEvent", function(_, e, a1) Tr.OnEvent(e, a1) end)
-  local acc = 0
+  local acc, racc = 0, 0
   f:SetScript("OnUpdate", function(_, dt)
-    acc = acc + (dt or 0)
+    acc, racc = acc + (dt or 0), racc + (dt or 0)
+    if racc >= Tr.READY_POLL then racc = 0 if ready and rawget(ready, "n") then Tr.PlaceReady() end end -- 0.5.2b.2: follow the tracker's bottom
     if acc < Tr.TICK then return end
     acc = 0
     Tr.Tick()
@@ -705,7 +913,50 @@ function Tr.Report()
   for _ in pairs(Pins()) do np = np + 1 end
   lines[#lines + 1] = string.format("kept tracked: %d; ready to turn in: %d; zone auto-track %s; queued changes %d%s",
     np, Tr.readyCount or 0, Tr.AutoWanted() and "on" or "off", #Tr.queue, Tr.waitingTaxi and " (waiting for the flight to land)" or "")
+  if ready then
+    lines[#lines + 1] = string.format("ready section: %s, %s, placed %s at %s, %s (own frame on UIParent; the tracker is only read)",
+      ready:IsShown() and "shown" or "hidden", Tr.ReadyCollapsed() and "collapsed" or "expanded", tostring(rawget(ready, "how")), tostring(rawget(ready, "x")), tostring(rawget(ready, "y")))
+  end
   lines[#lines + 1] = string.format("tracker in log order: %s; watch-order API %s; re-orders %d; %s", Tr.OrderWanted() and "on" or "off",
     Tr.WatchOrder() and "ok" or "missing", Tr.orderFixed or 0, Tr.orderNote or "not checked yet")
+  -- 0.5.2b.2: the quest log's order against the watch list and the tracker's blocks (top to bottom)
+  local db = DB()
+  lines[#lines + 1] = string.format("new watches go to the: %s (%s)", Tr.WatchSide(),
+    Tr.orderLearned and "learned this session" or ((db and db.watchInsert) and "saved" or "not learned yet; assumed"))
+  local log = ReadLog()
+  local wo = Tr.WatchOrder() or {}
+  local watched = {}
+  for _, id in ipairs(wo) do watched[id] = true end
+  local logList = {}
+  for id, e in pairs(log) do if watched[id] then logList[#logList + 1] = e end end
+  table.sort(logList, function(a, b) return a.idx < b.idx end)
+  local function Name(id)
+    if not id then return "none" end
+    local e = log[id]
+    return id .. " " .. (e and e.title or "?")
+  end
+  local parts = {}
+  for i, e in ipairs(logList) do parts[i] = Name(e.id) end
+  lines[#lines + 1] = "log order (tracked quests): " .. (#parts > 0 and table.concat(parts, " | ") or "none")
+  parts = {}
+  for i, id in ipairs(wo) do parts[i] = Name(id) end
+  lines[#lines + 1] = "watch order (index 1 first): " .. (#parts > 0 and table.concat(parts, " | ") or "none")
+  parts = {}
+  local blockIds = {}
+  for i, it in ipairs((T and Visible(T)) and Tr.Blocks() or {}) do parts[i] = Name(it.q) blockIds[i] = it.q end
+  lines[#lines + 1] = "tracker blocks (top to bottom): " .. (#parts > 0 and table.concat(parts, " | ") or "none visible")
+  local seen, k = {}, 0
+  for _, id in ipairs(blockIds) do if log[id] then k = k + 1 seen[k] = id end end
+  local sub = {}
+  for i, id in ipairs(seen) do sub[i] = id end
+  table.sort(sub, function(a, b) return log[a].idx < log[b].idx end)
+  local diff
+  for i = 1, #seen do if seen[i] ~= sub[i] then diff = i break end end
+  if #blockIds == 0 then
+    lines[#lines + 1] = "tracker vs log: no visible blocks to compare"
+  else
+    lines[#lines + 1] = diff and ("tracker vs log: DIFFERENT from position " .. diff .. " (" .. Name(seen[diff]) .. " where the log has " .. Name(sub[diff]) .. ")")
+      or "tracker vs log: SAME order"
+  end
   return lines
 end
