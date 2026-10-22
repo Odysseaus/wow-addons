@@ -3,14 +3,14 @@
 -- tile is the client's file. Self-contained: it never needs (or looks at) any other addon's files.
 -- Rules (ideas from OpenMap's Map/Close.lua, MIT; see LICENSES/THIRD_PARTY.md):
 --   * tiles are 533.33 yards; tile x = 32 - worldY / 533.33 (runs east), tile y = 32 - worldX / 533.33 (runs south)
---   * fades are keyed to screen pixels per yard (ppy): the tiles mix in from 0.20 to 0.34 ppy at the chosen strength and
---     take over toward ~1.9x that strength (85% at the default 45%) from 0.30 to 0.48 ppy (0.48 = one tile pixel per
---     screen pixel). OpenMap's 20-34x / 30-48x zoom points, in Dark Matter's own units.
---   * at most 64 tiles in view; further out there is no middle layer: the parchment zone map alone shows
+--   * fades are keyed to screen pixels per yard (ppy). 0.5.1.5: the tiles mix in from 0.12 to 0.24 ppy at the chosen
+--     strength and take over (toward 1.9x the strength, 85% at the default 45%) from 0.24 to 0.48 ppy (0.48 = one tile
+--     pixel per screen pixel), so a zone seen whole already carries them faintly and close up they carry the map
+--   * up to 144 tiles in view, faded out from 96 on (no pop); further out the parchment zone map alone shows
 --   * softened toward the parchment: desaturated 0.35 and tinted (1, 0.93, 0.80)
---   * explored only: a tile is cut into 4 x 4 cells and a cell shows only where its zone's explored overlays
---     (C_MapExplorationInfo) cover it, so unexplored ground is never revealed; cells of one row are merged into strips
---     (no overlap, so no double-dark seams)
+--   * 0.5.1.5: blended across the whole view (no explored-only cut-outs, so no square seams). Where the tiles end (open
+--     sea, the void: no tile in the table, or a file that will not load) the last half tile fades out: such a tile's
+--     neighbours are cut into 4 x 4 cells whose alpha ramps to 0 toward the gap (vertex gradients), so no block edge
 -- Taint-safe: own frames and textures only; no hooks, no WorldMapFrame, nothing protected; works in combat.
 local _, NS = ...
 local MD = NS.MapData
@@ -19,13 +19,15 @@ NS.MapCloseUp = C
 
 C.TILE = 1600 / 3
 C.NATIVE_PPY = 256 / C.TILE          -- 0.48: one minimap pixel per screen pixel
-C.MIX_FADE = { 0.20, 0.34 }          -- ppy where the tiles mix in (to the chosen strength)
-C.DEEP_FADE = { 0.30, 0.48 }         -- ppy where they take over (toward DEEP_K x the strength, at most 1)
+C.MIX_FADE = { 0.12, 0.24 }          -- ppy where the tiles mix in (to the chosen strength)
+C.DEEP_FADE = { 0.24, 0.48 }         -- ppy where they take over (toward DEEP_K x the strength, at most 1)
 C.DEEP_K = 1.9
 C.SOFT_FADE = { 0.08, 0.18 }         -- ppy where the paper grain comes in
 C.GRAIN_ALPHA = 0.16
 C.MAX_PPY = 2 * C.NATIVE_PPY         -- the deepest zoom: twice the minimap's own sharpness
-C.MAX_TILES = 64
+C.MAX_TILES = 144
+C.FADE_TILES = 96                    -- from here to MAX_TILES the tiles fade out (no pop)
+C.FEATHER = 0.5                      -- tiles: how far the edge fade reaches into a tile next to a gap
 C.CELLS = 4
 C.DESAT = 0.35
 C.PAPER = { 1, 0.93, 0.80 }
@@ -120,8 +122,60 @@ function C.Mix(ppy, strength)
 end
 
 ---------------------------------------------------------------------------
--- explored only: a tile's 4 x 4 cells, shown only where the zone's explored overlays cover them; merged into row strips
+-- 0.5.1.5: feathered edges. A tile is "there" when the table has it and it has not failed to load. A tile with a gap
+-- among its 8 neighbours is drawn as 4 x 4 cells whose alpha falls to 0 over FEATHER tiles toward the gap; any other
+-- tile is one texture. Cached per tile until a load fails.
 ---------------------------------------------------------------------------
+local function There(inst, tx, ty)
+  if tx < 0 or ty < 0 or tx > 63 or ty > 63 then return false end
+  local fid = C.FileFor(inst, tx, ty)
+  return fid ~= nil and not C.failed[fid]
+end
+C.There = There
+-- weight (0..1) of a point u, v (0..1 inside tile tx, ty): 0 at a gap, 1 from FEATHER tiles away
+local function Weight(inst, tx, ty, u, v)
+  local w = 1
+  for dx = -1, 1 do
+    for dy = -1, 1 do
+      if (dx ~= 0 or dy ~= 0) and not There(inst, tx + dx, ty + dy) then
+        local ex = dx < 0 and u or (dx > 0 and 1 - u) or 0
+        local ey = dy < 0 and v or (dy > 0 and 1 - v) or 0
+        local d
+        if dx ~= 0 and dy ~= 0 then d = math.sqrt(ex * ex + ey * ey) elseif dx ~= 0 then d = ex else d = ey end
+        w = math.min(w, Smooth(d, { 0, C.FEATHER }))
+      end
+    end
+  end
+  return w
+end
+C.Weight = Weight
+-- nil for a tile with no gap around it, else its cells { c, r, a1, a2, orient } (alpha a1 -> a2 left->right or top->bottom)
+function C.Cells(inst, tx, ty)
+  local key = inst * 65536 + tx * 64 + ty
+  local c = C.cells[key]
+  if c ~= nil then return c or nil end
+  local gap = false
+  for dx = -1, 1 do for dy = -1, 1 do if not There(inst, tx + dx, ty + dy) then gap = true end end end
+  if not gap then C.cells[key] = false return nil end
+  local n = C.CELLS
+  local g = {}
+  for i = 0, n do g[i] = {} for j = 0, n do g[i][j] = Weight(inst, tx, ty, i / n, j / n) end end
+  c = {}
+  for r = 0, n - 1 do
+    for col = 0, n - 1 do
+      local w00, w10, w01, w11 = g[col][r], g[col + 1][r], g[col][r + 1], g[col + 1][r + 1]
+      if w00 + w10 + w01 + w11 > 0.001 then
+        local dh = math.abs((w10 + w11) - (w00 + w01))
+        local dv = math.abs((w01 + w11) - (w00 + w10))
+        if dh >= dv then c[#c + 1] = { col, r, (w00 + w01) / 2, (w10 + w11) / 2, "HORIZONTAL" }
+        else c[#c + 1] = { col, r, (w00 + w10) / 2, (w01 + w11) / 2, "VERTICAL" } end
+      end
+    end
+  end
+  C.cells[key] = c
+  return c
+end
+-- kept for the probe and tests (0.5.1.4 name): the explored test, informational now
 local function Explored(z, zx, zy)
   local art = MD.Art(z.id)
   local list = MD.Explored(z.id)
@@ -135,28 +189,6 @@ local function Explored(z, zx, zy)
   return false
 end
 C.ExploredAt = Explored
--- strips { col1, col2, row } (cells 0..3) of a tile on continent `cont`; cached until the explored map changes
-function C.Strips(cont, F, tx, ty)
-  local key = cont * 65536 + tx * 64 + ty
-  local s = C.cells[key]
-  if s then return s end
-  s = {}
-  local x1, x2, y1, y2 = C.TileRect(F, tx, ty)
-  local n = C.CELLS
-  for row = 0, n - 1 do
-    local run
-    for col = 0, n - 1 do
-      local cx, cy = x1 + (col + 0.5) / n * (x2 - x1), y1 + (row + 0.5) / n * (y2 - y1)
-      local z, zx, zy = MD.ZoneAt(cont, cx, cy)
-      local on = z and Explored(z, zx, zy) or false
-      if on then
-        if run then run[2] = col else run = { col, col, row } s[#s + 1] = run end
-      else run = nil end
-    end
-  end
-  C.cells[key] = s
-  return s
-end
 function C.Forget() C.cells = {} end
 function C.Reset() C.cells, C.frames = {}, {} end
 
@@ -185,6 +217,7 @@ local function SetFile(t, fid)
   local ok, r = pcall(t.SetTexture, t, fid, nil, nil, "LINEAR")
   if not ok or r == false then
     C.failed[fid] = true
+    C.cells = {} -- its neighbours now feather toward it
     C.fails = C.fails + 1
     if C.loaded == 0 and C.fails >= 4 then C.unavailable = true end
     return false
@@ -206,6 +239,23 @@ local function Piece(host, i)
   end
   return t
 end
+
+local PR, PG, PB = C.PAPER[1], C.PAPER[2], C.PAPER[3]
+local CreateColor = _G.CreateColor
+-- alpha a1 -> a2 across the texture (orient "HORIZONTAL": left -> right; "VERTICAL": top -> bottom). The game's
+-- SetGradient runs min -> max as left -> right and bottom -> top.
+local function Grad(t, orient, a1, a2)
+  if math.abs(a1 - a2) < 0.01 then t:SetVertexColor(PR, PG, PB, (a1 + a2) / 2) return end
+  local lo, hi = a1, a2
+  if orient == "VERTICAL" then lo, hi = a2, a1 end
+  if t.SetGradient and type(CreateColor) == "function" then
+    local ok = pcall(t.SetGradient, t, orient, CreateColor(PR, PG, PB, lo), CreateColor(PR, PG, PB, hi))
+    if ok then return end
+  end
+  if t.SetGradientAlpha and pcall(t.SetGradientAlpha, t, orient, PR, PG, PB, lo, PR, PG, PB, hi) then return end
+  t:SetVertexColor(PR, PG, PB, (a1 + a2) / 2)
+end
+C.Grad = Grad
 
 -- ctx = { host, conts = { { id = cont, alpha } }, place(cont) -> {x1,x2,y1,y2} on the world, toScreen(wx, wy), vw, vh }
 -- Returns a summary { shown pieces, tiles in view, mix, ppy } for tests and the probe.
@@ -237,37 +287,50 @@ function C.Layout(ctx)
         tx1, ty1, tx2, ty2 = Clamp(tx1, 0, 63), Clamp(ty1, 0, 63), Clamp(tx2, 0, 63), Clamp(ty2, 0, 63)
         local count = (tx2 - tx1 + 1) * (ty2 - ty1 + 1)
         sum.tiles = sum.tiles + count
-        if count <= C.MAX_TILES then
+        -- 0.5.1.5: fade out as the view holds more tiles (no pop at the limit)
+        local a = mix * (1 - Smooth(count, { C.FADE_TILES, C.MAX_TILES }))
+        if count <= C.MAX_TILES and a > 0.005 then
+          local function Put(fid, u1, u2, v1, v2, x1, x2, y1, y2, orient, a1, a2)
+            local sx1, sx2 = l + (x1 + u1 * (x2 - x1)) * cw, l + (x1 + u2 * (x2 - x1)) * cw
+            local sy1, sy2 = t + (y1 + v1 * (y2 - y1)) * ch, t + (y1 + v2 * (y2 - y1)) * ch
+            if sx2 > 0 and sy2 > 0 and sx1 < ctx.vw and sy1 < ctx.vh then
+              used = used + 1
+              local tex = Piece(host, used)
+              if SetFile(tex, fid) then
+                tex:SetTexCoord(u1, u2, v1, v2)
+                tex:ClearAllPoints()
+                tex:SetPoint("TOPLEFT", host, "TOPLEFT", sx1, -sy1)
+                tex:SetSize(math.max(0.01, sx2 - sx1), math.max(0.01, sy2 - sy1))
+                Grad(tex, orient or "HORIZONTAL", a1 or 1, a2 or 1)
+                tex:SetAlpha(a)
+                tex.dmA1, tex.dmA2 = a1 or 1, a2 or 1
+                tex:Show()
+              else
+                tex:Hide()
+              end
+            end
+          end
           for tx = tx1, tx2 do
             for ty = ty1, ty2 do
-              local fid = C.FileFor(inst, tx, ty)
-              if fid and not C.failed[fid] then
+              local fid = There(inst, tx, ty) and C.FileFor(inst, tx, ty)
+              if fid then
                 local x1, x2, y1, y2 = C.TileRect(F, tx, ty)
-                local n = C.CELLS
-                for _, st in ipairs(C.Strips(cont, F, tx, ty)) do
-                  local c1, c2, row = st[1], st[2], st[3]
-                  local sx1, sx2 = l + (x1 + c1 / n * (x2 - x1)) * cw, l + (x1 + (c2 + 1) / n * (x2 - x1)) * cw
-                  local sy1, sy2 = t + (y1 + row / n * (y2 - y1)) * ch, t + (y1 + (row + 1) / n * (y2 - y1)) * ch
-                  if sx2 > 0 and sy2 > 0 and sx1 < ctx.vw and sy1 < ctx.vh then
-                    used = used + 1
-                    local tex = Piece(host, used)
-                    if SetFile(tex, fid) then
-                      tex:SetTexCoord(c1 / n, (c2 + 1) / n, row / n, (row + 1) / n)
-                      tex:ClearAllPoints()
-                      tex:SetPoint("TOPLEFT", host, "TOPLEFT", sx1, -sy1)
-                      tex:SetSize(math.max(0.01, sx2 - sx1), math.max(0.01, sy2 - sy1))
-                      tex:SetAlpha(mix)
-                      tex.dmTile = tx * 64 + ty
-                      tex:Show()
-                    else
-                      tex:Hide()
-                    end
+                local cells = C.Cells(inst, tx, ty)
+                local before = used
+                if not cells then
+                  Put(fid, 0, 1, 0, 1, x1, x2, y1, y2)
+                else
+                  local n = C.CELLS
+                  for _, cl in ipairs(cells) do
+                    Put(fid, cl[1] / n, (cl[1] + 1) / n, cl[2] / n, (cl[2] + 1) / n, x1, x2, y1, y2, cl[5], cl[3], cl[4])
                   end
                 end
+                for i = before + 1, used do C.pool[i].dmTile = tx * 64 + ty end
               end
             end
           end
         end
+        sum.alpha = math.max(sum.alpha or 0, a)
       end
     end
   end

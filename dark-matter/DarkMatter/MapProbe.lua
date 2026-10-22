@@ -280,6 +280,12 @@ local function Run()
     data.tile = { tx = tx, ty = ty, file = fid, X = X, Y = Y }
     lines[#lines + 1] = string.format("map 17: you at %d,%d yd; minimap tile %d_%d; file %s", math.floor(X + 0.5), math.floor(Y + 0.5), tx, ty,
       fid and tostring(fid) or "none in the table")
+    -- 0.5.1.5: the tile's rectangle on this map must hold you (the yard-to-tile math, checked against the game)
+    local x1, x2, y1, y2 = CU.TileRect(F, tx, ty)
+    local inside = px >= x1 and px <= x2 and py >= y1 and py <= y2
+    data.tile.inside = inside
+    lines[#lines + 1] = string.format("map 17 tile: x %s-%s, y %s-%s; you %s,%s", R2(x1), R2(x2), R2(y1), R2(y2), R2(px), R2(py))
+    lines[#lines + 1] = "map 17 check: " .. (inside and "you are inside your tile (placement right)" or "you are OUTSIDE your tile (placement wrong)")
   else
     lines[#lines + 1] = "map 17: minimap tile: no position here"
   end
@@ -306,7 +312,19 @@ local function Run()
   local last = CU and CU.last
   if last then
     data.closeNow = { tiles = last.tiles, pieces = last.pieces, mix = last.mix, ppy = last.ppy }
-    lines[#lines + 1] = string.format("map 19 now: %s tiles, %s pieces, mix %s at %s px/yd", tostring(last.tiles), tostring(last.pieces), R2(last.mix), R2(last.ppy))
+    lines[#lines + 1] = string.format("map 19 now: %s tiles, %s pieces, mix %s (shown %s) at %s px/yd", tostring(last.tiles), tostring(last.pieces), R2(last.mix), R2(last.alpha or 0), R2(last.ppy))
+  end
+  -- 20 (0.5.1.5): both windows' effective scale and on-screen size
+  if NS.MapWindow then
+    local l20 = NS.MapWindow.ScaleLine("map 20")
+    data.scales = l20
+    local cut = l20:find("; on screen")
+    if cut then
+      lines[#lines + 1] = l20:sub(1, cut - 1)
+      lines[#lines + 1] = "map 20 size" .. l20:sub(cut + 1)
+    else
+      lines[#lines + 1] = l20
+    end
   end
   return lines, data
 end

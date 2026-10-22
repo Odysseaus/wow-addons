@@ -1,4 +1,4 @@
--- 0.5.1.4: the game's own map window (WorldMapFrame), read only. Dark Matter takes its size (so our window is as large
+-- 0.5.1.4 (0.5.1.5: on-screen size): the game's own map window (WorldMapFrame), read only. Dark Matter takes its size (so our window is as large
 -- as the game's map window) and, in the WoW theme, the look of its frame: the border pieces, title, close button and
 -- portrait, which it draws again on its own frame with the same game textures (by atlas, path or file ID; nothing is
 -- copied into the addon). It never shows, hides, sizes, hooks or writes to WorldMapFrame, so nothing is tainted and it
@@ -30,20 +30,29 @@ MW.Call, MW.Field = Call, Field
 
 local function Frame() local W = _G.WorldMapFrame if type(W) == "table" then return W end end
 
--- The game's map window size in Dark Matter's units (our window sits on UIParent), and where it came from.
+-- The game's map window size ON SCREEN, in UIParent units (0.5.1.5): its GetWidth/GetHeight times its effective scale
+-- over UIParent's. One rule, maximized or windowed: whatever size the map window has now. Only when its size cannot be
+-- read does the windowed size (minimizedWidth + questLogWidth, minimizedHeight) stand in.
+function MW.Scales()
+  local W = Frame()
+  local es = W and N(Call(W, "GetEffectiveScale"))
+  local ues = UIParent and N(Call(UIParent, "GetEffectiveScale"))
+  local f = _G.DarkMatterFrame
+  local des = type(f) == "table" and N(Call(f, "GetEffectiveScale"))
+  return es, ues, des
+end
 function MW.Size()
   local W = Frame()
   if not W then return nil, nil, "no WorldMapFrame" end
-  local es, ues = N(Call(W, "GetEffectiveScale")), UIParent and N(Call(UIParent, "GetEffectiveScale"))
+  local es, ues = MW.Scales()
   local k = (es and ues and es > 0 and ues > 0) and es / ues or 1
-  local maxed = Field(W, "isMaximized") == true or Call(W, "IsMaximized") == true
   local w, h = N(Call(W, "GetWidth")), N(Call(W, "GetHeight"))
-  if not maxed and w and h and w >= 300 and h >= 200 then return w * k, h * k, "WorldMapFrame size" end
+  if w and h and w >= 200 and h >= 150 then return w * k, h * k, "WorldMapFrame size on screen" end
   local mw, mh = N(Field(W, "minimizedWidth")), N(Field(W, "minimizedHeight"))
-  if mw and mh and mw >= 300 and mh >= 200 then
-    return (mw + (N(Field(W, "questLogWidth")) or 0)) * k, mh * k, "WorldMapFrame windowed size"
+  if mw and mh and mw >= 200 and mh >= 150 then
+    return (mw + (N(Field(W, "questLogWidth")) or 0)) * k, mh * k, "WorldMapFrame windowed size on screen"
   end
-  return nil, nil, maxed and "WorldMapFrame is maximized and has no windowed size" or "WorldMapFrame size not readable"
+  return nil, nil, "WorldMapFrame size not readable"
 end
 
 -- Metrics that follow the window's width (dw) or height (dh); everything else keeps its place (rail, title, tabs).
@@ -53,7 +62,6 @@ MW.W_KEYS, MW.H_KEYS = W_KEYS, H_KEYS
 local bases = setmetatable({}, { __mode = "k" })
 MW.bases = bases -- 0.5.1.4: each metrics table's own 880x680 values (the class art keeps their scale)
 
-local function Clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 
 -- Sizes the shared metrics table (WoW and class themes) to the game's map window. Called before the window is built.
 function MW.Apply(m)
@@ -68,19 +76,38 @@ function MW.Apply(m)
   end
   local w, h, src = MW.Size()
   local res = { source = src, readW = w and math.floor(w + 0.5), readH = h and math.floor(h + 0.5) }
+  local cw, ch
   if not w then
-    w, h, res.fallback = b.w, b.h, true
+    res.fallback = true
+    cw, ch = b.w, b.h
+  else
+    -- 0.5.1.5: the window takes the map window's on-screen size exactly. The layout needs at least MIN_W x MIN_H
+    -- (and at most MAX_W x MAX_H), so a smaller (or larger) map window is matched by our own scale instead.
+    local s = math.min(1, w / MW.MIN_W, h / MW.MIN_H)
+    s = math.max(s, w / MW.MAX_W, h / MW.MAX_H, 0.3)
+    cw, ch = math.floor(w / s + 0.5), math.floor(h / s + 0.5)
+    res.scale = s
   end
-  local cw = math.floor(Clamp(w, MW.MIN_W, MW.MAX_W) + 0.5)
-  local ch = math.floor(Clamp(h, MW.MIN_H, MW.MAX_H) + 0.5)
-  res.clamped = (not res.fallback) and (cw ~= res.readW or ch ~= res.readH) or false
+  res.clamped = (not res.fallback) and res.scale ~= 1 or false
   local dw, dh = cw - b.w, ch - b.h
   m.w, m.h = cw, ch
   for _, k in ipairs(W_KEYS) do m[k] = b[k] + dw end
   for _, k in ipairs(H_KEYS) do m[k] = b[k] + dh end
   res.w, res.h = cw, ch
-  if m == (NS.theme and NS.theme.m) then MW.last = res end
+  if m == (NS.theme and NS.theme.m) then MW.last = res MW.live = nil end
   return res
+end
+
+-- 0.5.1.5: the scale our window needs so it covers what the map window covers on screen, for the layout it was built
+-- with (w x h). Read again while our window is shown (Window.lua polls from its own frame: no hooks on WorldMapFrame).
+-- Returns scale, mapW, mapH (UIParent units), and whether the map's shape differs from our layout's.
+function MW.LiveScale(w, h)
+  local tw, th = MW.Size()
+  if not tw or not w or w <= 0 or h <= 0 then return nil end
+  local sx, sy = tw / w, th / h
+  local s = math.min(sx, sy)
+  MW.live = { w = tw, h = th, scale = s, shapeOff = math.abs(sx - sy) / math.max(sx, sy) > 0.01 }
+  return s, tw, th, MW.live.shapeOff
 end
 
 -- One texture or font string, as plain values (secret values read as nil).
@@ -184,6 +211,22 @@ local function Name(p)
 end
 MW.Name = Name
 
+function MW.R3(v) v = N(v) return v and string.format("%.3f", v) or "?" end
+-- one line: both windows' effective scale and their on-screen sizes (UIParent units); used by frameprobe and mapprobe
+function MW.ScaleLine(tag)
+  local es, ues, des = MW.Scales()
+  local W, f = Frame(), _G.DarkMatterFrame
+  local function OnScreen(o, e)
+    local w, h = N(Call(o, "GetWidth")), N(Call(o, "GetHeight"))
+    if not (w and h and e and ues and ues > 0) then return "?" end
+    return string.format("%dx%d", math.floor(w * e / ues + 0.5), math.floor(h * e / ues + 0.5))
+  end
+  local line = string.format("%s: scale: map %s, Dark Matter %s, UIParent %s; on screen: map %s, Dark Matter %s",
+    tag, MW.R3(es), MW.R3(des), MW.R3(ues), W and OnScreen(W, es) or "-", type(f) == "table" and OnScreen(f, des) or "-")
+  if MW.live and MW.live.shapeOff then line = line .. " (map changed shape: /reload)" end
+  return line
+end
+
 -- /dm frameprobe
 function MW.Report()
   local lines = { "frameprobe " .. tostring(NS.version) .. " (the game's map window, read only):" }
@@ -200,7 +243,8 @@ function MW.Report()
   end
   local r = MW.last or {}
   L(string.format("frame 2: Dark Matter window %sx%s from %s%s%s", tostring(r.w), tostring(r.h), tostring(r.source or "not built yet"),
-    r.fallback and " (fallback: Dark Matter's own 880x680)" or "", r.clamped and string.format(" (read %sx%s, clamped)", tostring(r.readW), tostring(r.readH)) or ""))
+    r.fallback and " (fallback: Dark Matter's own 880x680)" or "", r.readW and string.format(" (map on screen %sx%s, our scale %s)", tostring(r.readW), tostring(r.readH), MW.R3(r.scale)) or ""))
+  L(MW.ScaleLine("frame 2b"))
   local A = MW.Art(true)
   if not A then
     L("frame 3: border: not readable (Dark Matter's own thin frame is drawn)")

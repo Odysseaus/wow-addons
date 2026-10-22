@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.1.4** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.1.5** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -66,7 +66,7 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 
 **0.5.1.3:** every theme uses the stock button, tab and scroll-bar art; the nine class themes draw it desaturated and recoloured in their own palette (Hunter green and brown, Druid leaf and bark, ...) and their inner content blends into the frame (subtle inset dividers, no second boxed window). Pressed faces fill the button at any width (fixed 12 px / 20 px caps; every nav tab one width). Every scroll bar sits in its own gutter right of its pane, arrows level with the pane's top and bottom. No marker dots in any theme. Quest rewards that are still loading say "Loading…" and fill in when the item arrives. `/dm artprobe` names a missing piece on one line with what stands in (1.60.1: `CharacterFrameTabButtonTemplate`, not needed: tabs use `UI-Character-ActiveTab / InActiveTab`).
 
-**0.5.1.4:** the WoW theme looks like the game's own Map & Quest Log window: it reads `WorldMapFrame` at runtime (read only) and draws its border pieces, title strip, red close button and portrait on Dark Matter's frame with the same game textures (nothing bundled), or a thin bronze frame of its own when they cannot be read; the map breadcrumb uses the stock top-bar button faces. In every theme the window is the size of the game's map window (880-1800 x 500-1300; 880x680 if unreadable). `/dm frameprobe` lists what was read.
+**0.5.1.4:** the WoW theme looks like the game's own Map & Quest Log window: it reads `WorldMapFrame` at runtime (read only) and draws its border pieces, title strip, red close button and portrait on Dark Matter's frame with the same game textures (nothing bundled), or a thin bronze frame of its own when they cannot be read; the map breadcrumb uses the stock top-bar button faces. In every theme the window is the game's map window's size on screen (0.5.1.5: its size times its effective scale; followed live while shown; 880x680 if unreadable). `/dm frameprobe` lists what was read.
 
 ## Map tab (0.5.0)
 The game's own map pictures, read at runtime for every zone of Kalimdor and Eastern Kingdoms. Nothing is bundled and nothing is probed per zone.
@@ -86,7 +86,7 @@ The game's own map pictures, read at runtime for every zone of Kalimdor and East
 - `C_QuestLog.GetQuestsOnMap` / `GetTitleForQuestID`.
 - `GetPlayerFacing`.
 
-**Close-up detail (0.5.1.4):** zoomed in past the zone picture's sharpness, the game's own minimap tiles, loaded by file ID at runtime, fade in over the zone maps (0.20-0.48 screen px per yard), softened toward the parchment with a faint paper grain. Only explored ground shows (cells covered by the zone's explored overlays); at most 64 tiles in view; the deepest zoom is 0.96 px/yd. Tool strip button 6 toggles it and sets its strength (default 45%). The tile file-ID table is OpenMap's MIT `Data/Minimap.lua` (credit and licence in `LICENSES/THIRD_PARTY.md`); Dark Matter neither needs nor reads OpenMap, and ships none of its textures.
+**Close-up detail (0.5.1.4):** zoomed in past the zone picture's sharpness, the game's own minimap tiles, loaded by file ID at runtime, fade in over the zone maps (0.12-0.48 screen px per yard), softened toward the parchment with a faint paper grain. 0.5.1.5: blended across the whole view, feathered where the tiles end (sea, void); up to 144 tiles in view; the deepest zoom is 0.96 px/yd. Tool strip button 6 toggles it and sets its strength (default 45%). The tile file-ID table is OpenMap's MIT `Data/Minimap.lua` (credit and licence in `LICENSES/THIRD_PARTY.md`); Dark Matter neither needs nor reads OpenMap, and ships none of its textures.
 
 **Taint safety:** no hooks, no waypoints, nothing protected; `WorldMapFrame` is only read (its size and frame textures, 0.5.1.4), never shown, hooked or changed. It works in combat.
 

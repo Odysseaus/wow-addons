@@ -60,6 +60,10 @@ NS.ClassArtMap = ArtMap
 -- Shrink (never enlarge) so the 880x680 window (or a class theme's larger frame art) fits small screens.
 local function FitScale(f)
   local m = NS.theme.m
+  -- 0.5.1.5: sized to the game's map window: our scale is the one that makes it the map window's on-screen size
+  local MW = NS.MapWindow
+  local live = MW and MW.last and not MW.last.fallback and (MW.live and MW.live.scale or MW.last.scale)
+  if live then f:SetScale(math.max(0.3, live)) return end
   local w, h = m.w, m.h
   if NS.theme.classArt then
     local sx, sy, _, _, aw, ah = ArtMap()
@@ -559,7 +563,35 @@ local function Build()
   end
   W.stockClose = stockClose
 
+  -- 0.5.1.5: follow the game's map window while we are shown (read every half second from our own frame; nothing on
+  -- WorldMapFrame is hooked). Only our scale changes; the saved position keeps its screen spot.
+  local fit = CreateFrame("Frame", nil, f)
+  fit:SetSize(1, 1)
+  fit:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+  local fitT = 0
+  local function Refit()
+    local MW = NS.MapWindow
+    if not (MW and MW.last and not MW.last.fallback) then return end
+    local s = MW.LiveScale(NS.theme.m.w, NS.theme.m.h)
+    if not s then return end
+    s = math.max(0.3, s)
+    local old = f:GetScale() or 1
+    if math.abs(s - old) < 0.002 then return end
+    local point, rel, relPoint, x, y = f:GetPoint(1)
+    f:SetScale(s)
+    if point then
+      f:ClearAllPoints()
+      f:SetPoint(point, rel or UIParent, relPoint or point, (x or 0) * old / s, (y or 0) * old / s)
+      SavePosition()
+    end
+  end
+  W.Refit = Refit
+  fit:SetScript("OnUpdate", function(_, el)
+    fitT = fitT + (el or 0)
+    if fitT >= 0.5 then fitT = 0 Refit() end
+  end)
   f:SetScript("OnShow", function()
+    Refit()
     local def = NS.tabs[W.current]
     if def and def.OnShow then pcall(def.OnShow) end
   end)

@@ -459,7 +459,7 @@ function M.Layout()
       end
     end
   end
-  -- 0.5.1.4: the game's minimap tiles over the zones when zoomed in (explored ground only), then the paper grain
+  -- 0.5.1.4: the game's minimap tiles over the zones when zoomed in (0.5.1.5: blended across the whole view, feathered where the tiles end), then the paper grain
   if CU and closeHost then
     local cl = {}
     for _, c in ipairs(ContList()) do cl[#cl + 1] = { id = c.id, alpha = M.ContAlpha(c.id) } end
@@ -894,7 +894,7 @@ local function Build(body)
     ToolButton("town", "Town Pins", "Flight masters, innkeepers, vendors, trainers and more. Coming in 0.5.4.", true),
     ToolButton("findme", "Find me", "Jump to where you are.", false, function() M.FindMe() end),
     ToolButton("full", "Full screen", "", false, function() M.SetFull(not M.full) end),
-    ToolButton("closeup", "Close-up detail", "The game's minimap tiles when you zoom in close (explored ground only). On/off and strength.", false,
+    ToolButton("closeup", "Close-up detail", "The game's minimap tiles when you zoom in close (blended across the whole zone). On/off and strength.", false,
       function() M.ToggleClosePanel() end),
   }
   -- the close-up button shows the game's spyglass icon (stock art by path); the strip's own find-me icon if missing

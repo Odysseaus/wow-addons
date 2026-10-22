@@ -690,8 +690,14 @@ do
   if spec then ww, hh = spec:match("^(%d+)x(%d+)$") end
   if ww then WorldMapFrame = MakeWMF(tonumber(ww), tonumber(hh)) end
   -- the size the window should take (clamped like NS.MapWindow: 880x500 .. 1800x1300)
-  EXP_W = ww and math.max(880, math.min(1800, tonumber(ww))) or 880
-  EXP_H = hh and math.max(500, math.min(1300, tonumber(hh))) or 680
+  -- 0.5.1.5: the layout takes the map's on-screen size; below 880x500 (or above 1800x1300) our scale makes up the rest
+  if ww then
+    local w0, h0 = tonumber(ww), tonumber(hh)
+    local sc = math.max(math.min(1, w0 / 880, h0 / 500), w0 / 1800, h0 / 1300, 0.3)
+    EXP_W, EXP_H, EXP_S = math.floor(w0 / sc + 0.5), math.floor(h0 / sc + 0.5), sc
+  else
+    EXP_W, EXP_H, EXP_S = 880, 680, 1
+  end
 end
 -- load addon
 local ns={}
@@ -854,7 +860,7 @@ LASTN=#log
 if MODE ~= "minimal" then
   local W=DarkMatterFrame
   check(W._w==EXP_W and W._h==EXP_H,"main window is "..EXP_W.."x"..EXP_H.." (880x680 without a game map window; 0.5.1.4: the game map window's size)")
-  check(W._scale and W._scale<=1,"window scale never above 1: "..tostring(W._scale))
+  check(W._scale and W._scale<=math.max(1, EXP_S or 1)+1e-6,"window scale never above 1 (0.5.1.5: unless the map window is larger on screen than 1800x1300): "..tostring(W._scale))
   check(DarkMatterDB.window.point=="CENTER","window default at centre")
   check(DarkMatter and true,"namespace global")
   -- tabs registered in order and built
@@ -3639,7 +3645,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.1.4 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.1.5 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4006,7 +4012,11 @@ do
   InCombatLockdown = save.InCombatLockdown
   check(ok and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh", "0.5.0 map: works in combat " .. tostring(err))
   -- 18. taint safety
-  check(#wmAccess == 0, "0.5.0 map: never touches WorldMapFrame " .. table.concat(wmAccess, ","))
+  -- 0.5.1.5: the main window reads the map window's size and scale (read only, from its own frame); nothing else
+  local wmOther = {}
+  local READ_OK = { GetEffectiveScale = 1, GetWidth = 1, GetHeight = 1, minimizedWidth = 1, minimizedHeight = 1, questLogWidth = 1, isMaximized = 1, IsMaximized = 1 }
+  for _, k in ipairs(wmAccess) do if not READ_OK[k] then wmOther[#wmOther + 1] = k end end
+  check(#wmOther == 0, "0.5.0 map: never touches WorldMapFrame (0.5.1.5: only its size and scale are read) " .. table.concat(wmOther, ","))
   check(#hooked == 0, "0.5.0 map: installs no hooks")
   for _, f in ipairs({ "DarkMatter/Tab_Map.lua", "DarkMatter/MapData.lua" }) do
     local fh = io.open(arg[1] .. "/" .. f:gsub("^DarkMatter/", "")) local src = fh and fh:read("*a") or "" if fh then fh:close() end
@@ -4184,7 +4194,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.4 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.5 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -4734,44 +4744,81 @@ if MODE == "full" then
   NS.db.map = NS.db.map or {}
   NS.db.map.closeUp, NS.db.map.closeMix = true, nil
   CU.unavailable, CU.failed, CU.fails, CU.loaded = nil, {}, 0, 0
-  -- fades keyed to pixels per yard
-  check(CU.Mix(0.10) == 0 and CU.Mix(0.20) == 0 and CU.Mix(0.27) > 0 and CU.Mix(0.27) < 0.45 and math.abs(CU.Mix(0.48) - 0.855) < 1e-6 and math.abs(CU.Mix(0.9) - 0.855) < 1e-6 and CU.Mix(0.5, 0) == 0,
-    "0.5.1.4 close-up: tiles mix in from 0.20 px/yd and run deep toward 85% by 0.48 px/yd (0 below; strength 0 = off)")
+  -- fades keyed to pixels per yard (0.5.1.5: in from 0.12, at the strength by 0.24, deep by 0.48)
+  check(CU.Mix(0.10) == 0 and CU.Mix(0.12) == 0 and CU.Mix(0.18) > 0 and CU.Mix(0.18) < 0.45 and math.abs(CU.Mix(0.24) - 0.45) < 1e-6
+    and math.abs(CU.Mix(0.48) - 0.855) < 1e-6 and math.abs(CU.Mix(0.9) - 0.855) < 1e-6 and CU.Mix(0.5, 0) == 0,
+    "0.5.1.5 close-up: tiles mix in from 0.12 px/yd, 45% by 0.24, deep 85% by 0.48 (0 below; strength 0 = off)")
   check(math.abs(CU.MaxScale(9001, 1000) - 0.96 * 16000 / 1000) < 1e-6, "0.5.1.4 close-up: the deepest zoom stops at twice the minimap's own sharpness")
-  local r1 = CU.Layout(ctxAt(8000, 600, 400)) -- 0.5 px/yd
-  local list = shown()
-  local bad, over = 0, 0
-  for i, t in ipairs(list) do
-    local p = t._pts[1]
-    local x1, y1 = p[4], -p[5]
-    if x1 >= 300 - 1e-6 then bad = bad + 1 end
-    for j = i + 1, #list do
-      local q = list[j]._pts[1]
-      local ax2, ay2, bx1, by1 = x1 + t._w, y1 + t._h, q[4], -q[5]
-      local ix = math.min(ax2, bx1 + list[j]._w) - math.max(x1, bx1)
-      local iy = math.min(ay2, by1 + list[j]._h) - math.max(y1, by1)
-      if ix > 0.01 and iy > 0.01 then over = over + 1 end
-    end
+  local function rects(list)
+    local out = {}
+    for _, t in ipairs(list) do local p = t._pts[1] out[#out + 1] = { p[4], -p[5], p[4] + t._w, -p[5] + t._h, t } end
+    return out
   end
-  check(r1.pieces > 0 and bad == 0, "0.5.1.4 close-up: explored ground only (" .. r1.pieces .. " pieces, " .. bad .. " on unexplored ground)")
-  check(over == 0, "0.5.1.4 close-up: strips never overlap (" .. over .. ")")
-  check(r1.tiles <= 64 and math.abs(r1.mix - 0.855) < 1e-3 and r1.grain and r1.grain > 0, "0.5.1.4 close-up: deep mix, paper grain on, tiles in view " .. r1.tiles)
+  local function overlaps(R)
+    local over = 0
+    for i = 1, #R do for j = i + 1, #R do
+      local ix = math.min(R[i][3], R[j][3]) - math.max(R[i][1], R[j][1])
+      local iy = math.min(R[i][4], R[j][4]) - math.max(R[i][2], R[j][2])
+      if ix > 0.01 and iy > 0.01 then over = over + 1 end
+    end end
+    return over
+  end
+  local function covered(R, vw, vh)
+    local area = 0
+    for _, r in ipairs(R) do
+      local w = math.min(r[3], vw) - math.max(r[1], 0)
+      local h = math.min(r[4], vh) - math.max(r[2], 0)
+      if w > 0 and h > 0 then area = area + w * h end
+    end
+    return area / (vw * vh)
+  end
+  local r1 = CU.Layout(ctxAt(8000, 600, 400)) -- 0.5 px/yd; half the zone explored: no longer matters
+  local list = shown()
+  local R = rects(list)
+  local left, right = 0, 0
+  for _, r in ipairs(R) do if r[1] < 300 then left = left + 1 end if r[3] > 300 then right = right + 1 end end
+  check(r1.pieces > 0 and left > 0 and right > 0 and math.abs(covered(R, 600, 400) - 1) < 1e-3,
+    "0.5.1.5 close-up: blended across the whole view, explored or not (covers " .. string.format("%.3f", covered(R, 600, 400)) .. " of it)")
+  check(overlaps(R) == 0 and r1.pieces == r1.tiles, "0.5.1.5 close-up: whole tiles, one texture each, never overlapping (" .. r1.pieces .. "/" .. r1.tiles .. ")")
+  check(r1.tiles <= 144 and math.abs(r1.mix - 0.855) < 1e-3 and r1.grain and r1.grain > 0, "0.5.1.5 close-up: deep mix, paper grain on, tiles in view " .. r1.tiles)
   local alphaOK = true
   for _, t in ipairs(list) do if math.abs((t._alpha or 1) - r1.mix) > 1e-6 then alphaOK = false end end
   check(alphaOK and list[1] and list[1]._vc and list[1]._vc[3] < 0.9, "0.5.1.4 close-up: tiles at the mix strength, tinted toward parchment")
   local poolN = #CU.pool
   CU.Layout(ctxAt(8000, 600, 400))
   check(#CU.pool == poolN, "0.5.1.4 close-up: textures are pooled (no new ones on redraw)")
-  exploredHalf = {}
+  -- a gap (column of tiles x = 32 missing: sea / void): no piece there, its neighbours fade to 0 toward it
+  NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) if math.floor(k / 64) == 32 then return nil end return 1000000 + k end }) }
   CU.Forget()
-  local r0 = CU.Layout(ctxAt(8000, 600, 400))
-  check(r0.pieces == 0, "0.5.1.4 close-up: nothing explored -> no tiles at all")
-  exploredHalf = { { offsetX = 0, offsetY = 0, textureWidth = 1000, textureHeight = 1000 } }
+  local rG = CU.Layout(ctxAt(8000, 600, 400))
+  local gapX1, gapX2 = 300, 300 + 8000 * CU.TILE / 16000 -- tile x 32 spans screen x 300 .. 566.7
+  local inGap, edgeA, farA, grads = 0, 1, 0, 0
+  for _, r in ipairs(rects(shown())) do
+    local t = r[5]
+    if r[1] > gapX1 + 0.5 and r[3] < gapX2 - 0.5 then inGap = inGap + 1 end
+    if t._grad then grads = grads + 1 end
+    local a1, a2 = t.dmA1 or 1, t.dmA2 or 1
+    if math.abs(r[3] - gapX1) < 0.5 then edgeA = math.min(edgeA, a2) end       -- cells touching the gap from the west
+    if r[3] < gapX1 - 140 then farA = math.max(farA, math.min(a1, a2)) end      -- over half a tile away
+  end
+  check(rG.pieces > 0 and inGap == 0 and edgeA < 0.01 and farA > 0.99 and grads > 0,
+    "0.5.1.5 close-up: where the tiles end the edge feathers to 0 (edge " .. string.format("%.2f", edgeA) .. ", " .. grads .. " gradient cells, none in the gap)")
+  NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) return 1000000 + k end }) }
   CU.Forget()
   local rBig = CU.Layout(ctxAt(4000, 3000, 3000)) -- 0.25 px/yd over ~22x22 tiles
-  check(rBig.tiles > 64 and rBig.pieces == 0, "0.5.1.4 close-up: more than 64 tiles in view -> none drawn (" .. rBig.tiles .. ")")
+  check(rBig.tiles > 144 and rBig.pieces == 0, "0.5.1.5 close-up: more than 144 tiles in view -> none drawn (" .. rBig.tiles .. ")")
+  local rMid = CU.Layout(ctxAt(4000, 1250, 1250)) -- ~10x10 to 11x11 tiles: faded, not popped
+  check(rMid.tiles > 96 and rMid.tiles <= 144 and rMid.pieces > 0 and rMid.alpha < rMid.mix and rMid.alpha > 0,
+    "0.5.1.5 close-up: between 96 and 144 tiles the tiles fade out (" .. rMid.tiles .. " tiles, " .. string.format("%.2f of %.2f", rMid.alpha, rMid.mix) .. ")")
   local rLow = CU.Layout(ctxAt(1600, 600, 400)) -- 0.1 px/yd: mid zoom keeps the parchment only
   check(rLow.pieces == 0 and rLow.mix == 0, "0.5.1.4 close-up: mid zoom shows the map pictures only (no middle layer)")
+  -- placement against the game's numbers (mapprobe in Wetlands): corners -2148,-390 / -4904,-4525, you -4254,-3108 = tile 37_39
+  local Fw = { inst = 0, X0 = -2148, Y0 = -390, X1 = -4904, Y1 = -4525 }
+  local wtx, wty = CU.TileAt(-4254, -3108)
+  local px, py = CU.FromYards(Fw, -4254, -3108)
+  local x1, x2, y1, y2 = CU.TileRect(Fw, wtx, wty)
+  check(wtx == 37 and wty == 39 and px >= x1 and px <= x2 and py >= y1 and py <= y2 and math.abs((x2 - x1) * 4135 - CU.TILE) < 0.01,
+    "0.5.1.5 close-up: Wetlands: you at -4254,-3108 yd sit inside tile 37_39 on the zone map (" .. string.format("%.3f in %.3f-%.3f", px, x1, x2) .. ")")
   -- OpenMap installed or not: the same drawing
   LOADED.OpenMap = true
   local a1 = CU.Layout(ctxAt(8000, 600, 400))
@@ -4806,19 +4853,44 @@ if MODE == "full" then
   WorldMapFrame = MakeWMF(1035, 640)
   local c = copyM()
   local res = MW.Apply(c)
-  check(res.w == 1035 and res.h == 640 and c.w == 1035 and c.h == 640 and res.source == "WorldMapFrame size" and not res.fallback and not res.clamped,
+  check(res.w == 1035 and res.h == 640 and c.w == 1035 and c.h == 640 and res.source == "WorldMapFrame size on screen" and not res.fallback and res.scale == 1,
     "0.5.1.4 window: as large as the game's map window (1035x640)")
   check(c.bodyW - c.w == base.bodyW - base.w and c.pageW - c.w == base.pageW - base.w and c.footerTop - c.h == base.footerTop - base.h and c.exitX - c.w == base.exitX - base.w
     and c.railW == base.railW and c.tabY == base.tabY and c.bodyX == base.bodyX, "0.5.1.4 window: the body and footer follow the size, the rail and tabs keep their place")
   WorldMapFrame = MakeWMF(1035, 640, { scale = 1.25 })
   res = MW.Apply(copyM())
   check(res.w == 1294 and res.h == 800, "0.5.1.4 window: the map window's own scale is taken into account (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  -- 0.5.1.5: the in-game case (1.60.1, Wetlands): map 1232x705 at effective scale 0.64; UIParent at 0.80
+  local saveUES = UIParent.GetEffectiveScale
+  UIParent.GetEffectiveScale = function() return 0.8 end
+  WorldMapFrame = MakeWMF(1232, 705, { scale = 0.64, minW = 702, minH = 534, ql = 333 })
+  res = MW.Apply(copyM())
+  check(res.w == 986 and res.h == 564 and res.scale == 1,
+    "0.5.1.5 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> ours 986x564 at scale 1 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  local function onScreen(r) return r.w * r.scale, r.h * r.scale end
+  WorldMapFrame = MakeWMF(1035, 640, { scale = 0.64 })
+  res = MW.Apply(copyM())
+  local ow, oh = onScreen(res)
+  check(res.w >= 880 and res.h >= 500 and res.scale < 1 and math.abs(ow - 1035 * 0.8) < 1 and math.abs(oh - 640 * 0.8) < 1,
+    "0.5.1.5 window: a map smaller on screen than 880x500 is matched by our scale (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  UIParent.GetEffectiveScale = saveUES
   WorldMapFrame = MakeWMF(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
-  check(res.w == 1035 and res.h == 534 and res.source == "WorldMapFrame windowed size", "0.5.1.4 window: a maximized map uses its windowed size (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  ow, oh = onScreen(res)
+  check(res.w <= 1800 and res.h <= 1300 and math.abs(ow - 1920) < 1 and math.abs(oh - 1080) < 1 and res.source == "WorldMapFrame size on screen",
+    "0.5.1.5 window: maximized follows the same rule: its size on screen (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
   WorldMapFrame = MakeWMF(500, 300)
   res = MW.Apply(copyM())
-  check(res.w == 880 and res.h == 500 and res.clamped, "0.5.1.4 window: a tiny map window is clamped to 880x500")
+  ow, oh = onScreen(res)
+  check(res.w >= 880 and res.h >= 500 and math.abs(ow - 500) < 1 and math.abs(oh - 300) < 1, "0.5.1.5 window: a tiny map window: our layout stays 880x500 or more, our scale matches it")
+  -- live: the map window grows by 10%: same shape, our scale follows; another shape is reported
+  WorldMapFrame = MakeWMF(1100, 700)
+  local ls, _, _, off = MW.LiveScale(1000, 636.36)
+  check(math.abs(ls - 1.1) < 1e-3 and not off, "0.5.1.5 window: the scale follows the map window while shown (" .. string.format("%.3f", ls) .. ")")
+  WorldMapFrame = MakeWMF(1100, 500)
+  ls, _, _, off = MW.LiveScale(1000, 636.36)
+  check(off == true and MW.ScaleLine("x"):find("changed shape", 1, true), "0.5.1.5 window: a map window of another shape is fitted inside and reported")
+  MW.live = nil
   local n0 = copyM()
   WorldMapFrame = nil
   res = MW.Apply(n0)
@@ -4834,6 +4906,22 @@ if MODE == "full" then
   check(#WMF_WRITES == 0 and #badCall == 0, "0.5.1.4 window: WorldMapFrame is only read (no Show, no writes, no hooks): " .. table.concat(WMF_WRITES, ",") .. table.concat(badCall, ","))
   local win = NS.GetWindow()
   check(win._w == NS.theme.m.w and win._h == NS.theme.m.h, "0.5.1.4 window: the built window has the metrics' size " .. win._w .. "x" .. win._h)
+  -- 0.5.1.5: while shown, our scale follows the map window (read from our own frame), the position keeps its screen spot
+  if W.Refit and MW.last and not MW.last.fallback then
+    local m0 = NS.theme.m
+    local saveW2 = WorldMapFrame
+    WorldMapFrame = MakeWMF(m0.w * 1.1, m0.h * 1.1)
+    win:SetScale(1)
+    win:ClearAllPoints() win:SetPoint("CENTER", UIParent, "CENTER", 110, -55)
+    WMF_CALLS, WMF_WRITES = {}, {}
+    W.Refit()
+    local _, _, _, x, y = win:GetPoint(1)
+    check(math.abs(win:GetScale() - 1.1) < 1e-3 and math.abs(x - 100) < 1e-3 and math.abs(y + 50) < 1e-3 and #WMF_WRITES == 0,
+      "0.5.1.5 window: the map window grows 10% -> our scale 1.1, position kept on screen (" .. string.format("%.3f; %.1f,%.1f", win:GetScale(), x, y) .. ")")
+    WorldMapFrame = saveW2
+    MW.live = nil
+    win:SetScale(MW.last.scale or 1)
+  end
 
   -- 4. the WoW theme's map-window frame; class themes untouched
   NS.SetTheme("wow")
@@ -4877,7 +4965,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.1.4 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.1.5 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
