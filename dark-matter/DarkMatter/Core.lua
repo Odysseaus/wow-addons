@@ -5,7 +5,7 @@ local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.5.1.7"
+NS.version = "0.5.1.8"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -164,6 +164,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if not NS.initialized then InitDB() NS.initialized = true end
     if NS.CreateMinimapButton then NS.CreateMinimapButton() end
     if NS.RegisterOptions then NS.RegisterOptions() end
+    if NS.MapWindow and NS.MapWindow.Watch then NS.MapWindow.Watch() end
     NS.Print("v" .. NS.version .. " loaded. /dm toggles the window, /dm probe checks this client.")
   end
 end)

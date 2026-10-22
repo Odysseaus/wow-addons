@@ -313,6 +313,11 @@ local function Run()
   if last then
     data.closeNow = { tiles = last.tiles, pieces = last.pieces, mix = last.mix, ppy = last.ppy }
     lines[#lines + 1] = string.format("map 19 now: %s tiles, %s pieces, mix %s (shown %s) at %s px/yd", tostring(last.tiles), tostring(last.pieces), R2(last.mix), R2(last.alpha or 0), R2(last.ppy))
+    -- 0.5.1.8: which layer is showing, and how magnified the map art under the middle of the view is
+    local ref = NS.MapTab and NS.MapTab.ref
+    data.layer = last.layer
+    lines[#lines + 1] = string.format("map 19 layer: %s; art x%s (%s); tiles x%s-%s", tostring(last.layer or "zone art"),
+      R2(last.mag or 0), ref and tostring(NS.MapData.Name(ref.id) or ref.id) or "no map art", R2(CU.MAG_FADE[1]), R2(CU.MAG_FADE[2]))
   end
   -- 20 (0.5.1.5): both windows' effective scale and on-screen size
   if NS.MapWindow then
@@ -326,13 +331,13 @@ local function Run()
       lines[#lines + 1] = l20
     end
   end
-  -- 21 (0.5.1.7): place names drawn over the tiles, and the seams: map pictures on screen, how many fade at their rim,
+  -- 21 (0.5.1.7): the seams: map pictures on screen, how many fade at their rim,
   -- and how many are drawn with hard edges (0 expected; the world picture is the base, never feathered)
   local MT = NS.MapTab
   if MT and MT.SeamReport then
     local shown, fe, base, hard = MT.SeamReport()
-    data.seams = { shown = shown, feathered = fe, base = base, hard = hard, names = MT.labelsShown or 0 }
-    lines[#lines + 1] = string.format("map 21: names on top: %d; pictures %d: %d feathered, %d base", MT.labelsShown or 0, shown, fe, base)
+    data.seams = { shown = shown, feathered = fe, base = base, hard = hard }
+    lines[#lines + 1] = string.format("map 21: pictures %d: %d feathered, %d base", shown, fe, base)
     lines[#lines + 1] = string.format("map 21 seams: %d unfeathered picture edges", hard)
   end
   return lines, data

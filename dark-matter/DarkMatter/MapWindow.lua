@@ -90,9 +90,7 @@ function MW.MapRect()
 end
 -- the map window's OUTER size on screen (UIParent units), where it came from, and its frame's own size on screen. From
 -- its rectangles when they can be read; else its size plus the border corners' offsets.
-function MW.Size()
-  local W = Frame()
-  if not W then return nil, nil, "no WorldMapFrame" end
+local function Measure(W)
   local l, t, r, b, fr = MW.MapRect()
   if l then return r - l, t - b, "WorldMapFrame outer rect on screen", fr[3] - fr[1], fr[2] - fr[4] end
   local es, ues = MW.Scales()
@@ -106,6 +104,32 @@ function MW.Size()
   end
   local bl, bt, br, bb = MW.MapBorder()
   return (w + bl + br) * k, (h + bt + bb) * k, src, w * k, h * k
+end
+-- 0.5.1.8: the map window is measured only while it is OPEN (a never-opened map window does not have its real size yet);
+-- each open measurement is kept in Dark Matter's SavedVariables (DarkMatterDB.mapWindowSize: outer and frame size in
+-- UIParent units, with UIParent's scale) and used whenever the map window is closed, so our window opens at the right
+-- size at once, also right after login. Only before the very first open does the closed map window's own size stand in.
+function MW.Size()
+  local W = Frame()
+  if not W then return nil, nil, "no WorldMapFrame" end
+  local _, ues = MW.Scales()
+  local db = NS.db
+  if Call(W, "IsShown") == true then
+    local ow, oh, src, fw, fh = Measure(W)
+    if ow and type(db) == "table" then
+      local sv = db.mapWindowSize
+      if type(sv) ~= "table" or math.abs((N(sv.w) or 0) - ow) > 0.25 or math.abs((N(sv.h) or 0) - oh) > 0.25 or sv.ues ~= ues then
+        db.mapWindowSize = { w = ow, h = oh, fw = fw, fh = fh, ues = ues }
+      end
+    end
+    return ow, oh, src, fw, fh
+  end
+  local sv = type(db) == "table" and db.mapWindowSize
+  if type(sv) == "table" and N(sv.w) and N(sv.h) and sv.w >= 200 and sv.h >= 150 then
+    local k = (N(sv.ues) and ues and ues > 0) and sv.ues / ues or 1
+    return sv.w * k, sv.h * k, "saved: the map window when last open", (N(sv.fw) or sv.w) * k, (N(sv.fh) or sv.h) * k
+  end
+  return Measure(W)
 end
 
 -- Metrics that follow the window's width (dw) or height (dh); everything else keeps its place (rail, title, tabs).
@@ -195,7 +219,7 @@ function MW.Check(m)
   local need = MW.Need(NS.theme, m)
   MW.live = need
   if need.fallback then return nil, need end
-  if math.abs(need.w - m.w) >= 1 or math.abs(need.h - m.h) >= 1 then return "layout", need end
+  if math.abs(need.w - m.w) > 1 or math.abs(need.h - m.h) > 1 then return "layout", need end -- 0.5.1.8: only past 1 px
   return "scale", need
 end
 
@@ -426,4 +450,22 @@ function MW.Report()
   L("frame 9: Dark Matter only reads WorldMapFrame: no Show, no hooks, no changes")
   if NS.db then NS.db.frameprobe = { version = NS.version, lines = lines } end
   return lines
+end
+
+-- 0.5.1.8: while the stock map window is open (with or without Dark Matter open), measure it twice a second, so the
+-- saved size is ready for the next time Dark Matter opens. It is only looked at: no hooks, nothing changed on it.
+function MW.Watch()
+  if MW.watcher or type(CreateFrame) ~= "function" then return end
+  local f = CreateFrame("Frame")
+  MW.watcher = f
+  local t, was = 0, false
+  f:SetScript("OnUpdate", function(_, dt)
+    t = t + (dt or 0)
+    if t < 0.5 then return end
+    t = 0
+    local W = _G.WorldMapFrame
+    local open = type(W) == "table" and Call(W, "IsShown") == true
+    if open and was then pcall(MW.Size) end -- skip the first tick after it opens: let it lay out
+    was = open
+  end)
 end

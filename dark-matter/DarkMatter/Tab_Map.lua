@@ -148,6 +148,7 @@ local function ContBand(cont)
   return lo, lo + 0.35
 end
 local ZONE_LO, ZONE_HI = 0.40, 0.70
+local ZONE_DRAW = { 0.45, 0.55 } -- 0.5.1.8: zone pictures drawn: a short crossfade over the continent picture
 function M.ContAlpha(cont)
   if not M.hasWorld then return 1 end
   local p = Place(cont)
@@ -178,7 +179,8 @@ function M.ZoneDrawAlpha(z)
   local p = Place(z.cont)
   local zw, zh = ZoneSpan(z.cont)
   local frac = math.max(zw * (p[2] - p[1]) * BW * V.s / VW(), zh * (p[4] - p[3]) * BH * V.s / VH())
-  return Smooth((frac - ZONE_LO) / (ZONE_HI - ZONE_LO)) * M.ContAlpha(z.cont)
+  -- 0.5.1.8: a short crossfade from the continent picture to the zone pictures (no long half-and-half range)
+  return Smooth((frac - ZONE_DRAW[1]) / (ZONE_DRAW[2] - ZONE_DRAW[1])) * M.ContAlpha(z.cont)
 end
 
 ---------------------------------------------------------------------------
@@ -265,7 +267,7 @@ local function Layer(id, level)
   f:SetSize(art.w, art.h)
   f:SetFrameLevel(canvas:GetFrameLevel() + level)
   f:Hide()
-  L = { id = id, art = art, frame = f, tiles = {}, ov = {}, built = false }
+  L = { id = id, art = art, frame = f, tiles = {}, ov = {}, built = false, level = level }
   -- 0.5.1.6: zone pictures are feathered at their rim; 0.5.1.7: continent pictures too when the world picture lies under
   -- them (the world picture is the base and is never feathered)
   L.feather = CU and CU.CornerGrad and id ~= M.world and (M.hasWorld or not MD.Is(id, "continent")) or false
@@ -286,6 +288,7 @@ local function Show(L, x1, x2, y1, y2, a)
   L.frame:SetAlpha(a)
   L.frame:Show()
   L.shown, L.alpha = true, a
+  L.sc, L.box = sc, { l, t, r, b } -- 0.5.1.8: screen px per art texel, and where it is on screen
   return true
 end
 
@@ -411,100 +414,6 @@ local function LayoutOverlay()
   PoolHideRest("badge") PoolHideRest("quest")
   if caption then if anyBadge then caption:Show() else caption:Hide() end end
 end
-
----------------------------------------------------------------------------
--- 0.5.1.7: place names ON TOP of the close-up tiles. The zone pictures carry their names drawn into the art, and the
--- minimap tiles cover them as they take over; so the names the game knows for the ground you have explored (its
--- explored-area IDs sampled across the zone, named by C_Map.GetAreaInfo) are drawn as text above the tiles, fading in
--- as the tiles do. Read once per zone (cached; cleared when exploration changes). Game data only, no art.
----------------------------------------------------------------------------
-local LGX, LGY = 16, 12
-M.labelCache = {}
-local function AreaLabels(zid)
-  local c = M.labelCache[zid]
-  if c then return c end
-  c = {}
-  M.labelCache[zid] = c
-  local E, CM, Vec = _G.C_MapExplorationInfo, _G.C_Map, _G.CreateVector2D
-  if not (E and type(E.GetExploredAreaIDsAtPosition) == "function" and CM and type(CM.GetAreaInfo) == "function" and type(Vec) == "function") then
-    return c
-  end
-  local acc, order = {}, {}
-  for j = 0, LGY - 1 do
-    for i = 0, LGX - 1 do
-      local x, y = (i + 0.5) / LGX, (j + 0.5) / LGY
-      local ok, ids = pcall(E.GetExploredAreaIDsAtPosition, zid, Vec(x, y))
-      if ok and type(ids) == "table" then
-        for _, aid in ipairs(ids) do
-          if type(aid) == "number" then
-            local a = acc[aid]
-            if not a then a = { n = 0, x = 0, y = 0 } acc[aid] = a order[#order + 1] = aid end
-            a.n, a.x, a.y = a.n + 1, a.x + x, a.y + y
-          end
-        end
-      end
-    end
-  end
-  local zname = MD.Name(zid)
-  for _, aid in ipairs(order) do
-    local ok, name = pcall(CM.GetAreaInfo, aid)
-    name = ok and NS.Str(name) or nil
-    if name and name ~= "" and name ~= zname then
-      local a = acc[aid]
-      c[#c + 1] = { name = name, x = a.x / a.n, y = a.y / a.n, n = a.n }
-    end
-  end
-  table.sort(c, function(p, q) return p.n > q.n end) -- the larger areas first (they win a crowded spot)
-  return c
-end
-M.AreaLabels = AreaLabels
-local function MakeLabel()
-  local fs = over:CreateFontString(nil, "OVERLAY")
-  fs:SetFont(_G.STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-  fs:SetTextColor(1, 0.87, 0.58)
-  if fs.SetShadowOffset then fs:SetShadowOffset(1, -1) end
-  if fs.SetShadowColor then fs:SetShadowColor(0, 0, 0, 0.8) end
-  return fs
-end
-local function LayoutLabels()
-  PoolReset("label")
-  local mix = M.close and M.close.mix or 0
-  local la = math.max(0, math.min(1, (mix - 0.03) / 0.15))
-  M.labelsShown = 0
-  if la > 0.02 then
-    local vw, vh = VW(), VH()
-    local placed = {}
-    for _, c in ipairs(ContList()) do
-      if M.ContAlpha(c.id) > 0.5 then
-        for _, z in ipairs(MD.Zones(c.id)) do
-          local L = M.layers[z.id]
-          local za = M.ZoneDrawAlpha(z)
-          if L and L.shown and za > 0.3 then
-            for _, p in ipairs(AreaLabels(z.id)) do
-              local sx, sy = M.ToScreen(ToW(z.id, p.x, p.y))
-              if sx > 20 and sy > 10 and sx < vw - 20 and sy < vh - 10 then
-                local free = true
-                for _, q in ipairs(placed) do if math.abs(q[1] - sx) < 70 and math.abs(q[2] - sy) < 16 then free = false break end end
-                if free then
-                  placed[#placed + 1] = { sx, sy }
-                  local fs = Pool("label", MakeLabel)
-                  fs:SetText(p.name)
-                  fs:ClearAllPoints()
-                  fs:SetPoint("CENTER", over, "TOPLEFT", sx, -sy)
-                  fs:SetAlpha(la * math.min(1, za))
-                  fs:Show()
-                  M.labelsShown = M.labelsShown + 1
-                end
-              end
-            end
-          end
-        end
-      end
-    end
-  end
-  PoolHideRest("label")
-end
-M.LayoutLabels = LayoutLabels
 -- 0.5.1.7: map pictures on screen: total, feathered at their rim, the world base, and hard-edged ones (mapprobe 21)
 function M.SeamReport()
   local shown, fe, base, hard = 0, 0, 0, 0
@@ -517,6 +426,25 @@ function M.SeamReport()
     end
   end
   return shown, fe, base, hard
+end
+
+-- 0.5.1.8: how magnified the map art under the middle of the view is (screen px per art texel): the top-most map
+-- picture there that is shown at full strength (a city map over its zone, a zone over its continent). The close-up
+-- tiles come in only when THAT art starts to blur. nil when no picture covers the middle.
+function M.RefMag()
+  local cx, cy = VW() / 2, VH() / 2
+  local best
+  for _, L in pairs(M.layers) do
+    local b = L.box
+    if L.shown and (L.alpha or 0) > 0.5 and b and cx >= b[1] and cx <= b[3] and cy >= b[2] and cy <= b[4] then
+      local lv = L.level or 0
+      if not best or lv > best.level or (lv == best.level and (b[3] - b[1]) < (best.box[3] - best.box[1])) then
+        best = { level = lv, box = b, sc = L.sc, id = L.id }
+      end
+    end
+  end
+  M.ref = best
+  return best and best.sc or nil
 end
 
 ---------------------------------------------------------------------------
@@ -614,10 +542,9 @@ function M.Layout()
   if CU and closeHost then
     local cl = {}
     for _, c in ipairs(ContList()) do cl[#cl + 1] = { id = c.id, alpha = M.ContAlpha(c.id) } end
-    M.close = CU.Layout({ host = closeHost, conts = cl, place = Place, toScreen = M.ToScreen, vw = VW(), vh = VH() })
+    M.close = CU.Layout({ host = closeHost, conts = cl, place = Place, toScreen = M.ToScreen, vw = VW(), vh = VH(), mag = M.RefMag() })
   end
   LayoutOverlay()
-  LayoutLabels()
   UpdatePlayer()
   if Crumbs then Crumbs() end
   local cx, cy = M.Center()
@@ -1144,7 +1071,6 @@ local function Events(on)
         MD.Forget("explored")
         if CU then CU.Forget() end
         for _, L in pairs(M.layers) do L.ovBuilt = false end
-        M.labelCache = {}
       end
       M.dirty = true
     end)

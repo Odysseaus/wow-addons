@@ -19,14 +19,14 @@ NS.MapCloseUp = C
 
 C.TILE = 1600 / 3
 C.NATIVE_PPY = 256 / C.TILE          -- 0.48: one minimap pixel per screen pixel
--- 0.5.1.6: a wide crossfade with a middle step. From 0.10 to 0.30 ppy the tiles come in at MID_K of their deep strength
--- (the zone picture and its explored overlays stay visible underneath, so a zone seen whole keeps its colours); from
--- 0.35 to 0.80 ppy they take over (toward DEEP_K x the strength, at most 1); the deepest zoom is 0.96.
-C.MIX_FADE = { 0.10, 0.30 }          -- ppy where the middle step comes in
-C.MID_K = 0.35                       -- the middle step: this share of the deep strength
-C.DEEP_FADE = { 0.35, 0.80 }         -- ppy where they take over
-C.DEEP_K = 1.9
-C.SOFT_FADE = { 0.08, 0.18 }         -- ppy where the paper grain comes in
+-- 0.5.1.8: two clean layers, like OpenMap. The game's own map art (zone pictures with their names painted in, city maps,
+-- continent pictures) shows at 100% with NO tiles, tint or grain, until it is magnified past MAG_FADE[1] screen pixels
+-- per art texel (the art starts to blur); then the minimap tiles take over quickly, fully in by MAG_FADE[2] (about one
+-- wheel step later). No long middle range with both half visible. The magnification is the art layer under the middle
+-- of the view (a city map wins over its zone); where no map art is there, about YD_PER_TEXEL yards per texel is assumed.
+C.MAG_FADE = { 2.0, 2.6 }
+C.YD_PER_TEXEL = 5
+C.DEEP_K = 2.25                      -- full strength (1.0) at the default 45%
 C.GRAIN_ALPHA = 0.16
 C.MAX_PPY = 2 * C.NATIVE_PPY         -- the deepest zoom: twice the minimap's own sharpness
 C.MAX_TILES = 144
@@ -121,12 +121,17 @@ end
 -- screen pixels per yard for a continent drawn `px` screen pixels wide
 function C.PixelsPerYard(F, px) return px / math.abs(F.Y1 - F.Y0) end
 -- the tiles' strength at a ppy (0 off)
-function C.Mix(ppy, strength)
+function C.Mix(mag, strength)
   strength = strength or C.Strength()
   if strength <= 0 then return 0 end
-  local deep = math.min(1, strength * C.DEEP_K)
-  local mid = deep * C.MID_K
-  return mid * Smooth(ppy, C.MIX_FADE) + (deep - mid) * Smooth(ppy, C.DEEP_FADE)
+  return math.min(1, strength * C.DEEP_K) * Smooth(mag, C.MAG_FADE)
+end
+-- which layer shows at this mix: "zone art", "crossfading" or "tiles"
+function C.LayerName(mix, strength)
+  local deep = math.min(1, (strength or C.Strength()) * C.DEEP_K)
+  if not mix or mix < 0.005 then return "zone art" end
+  if mix >= deep - 0.005 then return "tiles" end
+  return "crossfading"
 end
 
 ---------------------------------------------------------------------------
@@ -300,8 +305,9 @@ function C.Layout(ctx)
       local r, b = ctx.toScreen(p[2], p[4])
       local cw, ch = r - l, b - t
       local ppy = C.PixelsPerYard(F, cw)
-      local mix = C.Mix(ppy) * calpha
-      sum.ppy, sum.mix = math.max(sum.ppy, ppy), math.max(sum.mix, mix)
+      local mag = ctx.mag or ppy * C.YD_PER_TEXEL
+      local mix = C.Mix(mag) * calpha
+      sum.ppy, sum.mix, sum.mag = math.max(sum.ppy, ppy), math.max(sum.mix, mix), math.max(sum.mag or 0, mag)
       if mix > 0.005 and cw > 0 and ch > 0 then
         -- the view on this continent's map (map coords), then in tiles
         local vx1, vx2 = (0 - l) / cw, (ctx.vw - l) / cw
@@ -373,6 +379,7 @@ function C.Layout(ctx)
   end
   for i = used + 1, #C.pool do C.pool[i]:Hide() C.pool[i].dmTile = nil if C.pool[i].glow then C.pool[i].glow:Hide() end end
   for i = 1, used do if C.pool[i]:IsShown() then sum.pieces = sum.pieces + 1 end end
+  sum.layer = C.LayerName(sum.mix)
   C.last = sum
   -- the paper grain: Dark Matter's own parchment, faint, anchored to the map so it pans with it
   local g = C.grain
@@ -385,7 +392,7 @@ function C.Layout(ctx)
     C.grain = g
   end
   if g then
-    local ga = on and C.GRAIN_ALPHA * Smooth(sum.ppy, C.SOFT_FADE) or 0
+    local ga = on and C.GRAIN_ALPHA * sum.mix or 0 -- 0.5.1.8: no grain on the clean map art
     if ga > 0.005 then
       local ox, oy = ctx.toScreen(0, 0)
       local u0, v0 = -ox / 512, -oy / 512

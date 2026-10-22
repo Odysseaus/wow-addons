@@ -708,7 +708,7 @@ function MakeWMF(w, h, opts)
     portrait = Tex("UI-HUD-Map-Portrait", 58, 58, "TOPLEFT", -6, 7), Bg = Tex("UI-Frame-Map-Bg", w, h, "TOPLEFT", 0, 0) })
   return spyObj({ BorderFrame = border, isMaximized = opts.maximized or false, minimizedWidth = opts.minW, minimizedHeight = opts.minH,
     questLogWidth = opts.ql, GetWidth = function() return w end, GetHeight = function() return h end,
-    GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return false end,
+    GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return opts.shown and true or false end,
     GetLeft = opts.rectFns and opts.rectFns[1], GetRight = opts.rectFns and opts.rectFns[2], GetTop = opts.rectFns and opts.rectFns[3], GetBottom = opts.rectFns and opts.rectFns[4],
     IsMaximized = function() return opts.maximized or false end, ScrollContainer = {},
     Show = function() WMF_WRITES[#WMF_WRITES + 1] = "Show()" end, SetSize = function() WMF_WRITES[#WMF_WRITES + 1] = "SetSize()" end })
@@ -3675,7 +3675,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.1.7 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.1.8 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3891,30 +3891,9 @@ do
   end
   check(rim > 0 and rimOK and whole >= 1 and math.abs(M.EdgeW(dm.art, 0, 300)) < 1e-9 and M.EdgeW(dm.art, 64, 300) == 1,
     "0.5.1.6 map: a zone picture's outer 64 px fade to 0 (" .. rim .. " rim cells, " .. whole .. " whole pieces inside; art " .. dm.art.w .. "x" .. dm.art.h .. " tiles " .. dm.art.tw .. "x" .. dm.art.th .. ")")
-  -- 0.5.1.7: place names on top of the tiles (the game's explored-area names), fading in with the tiles
+  -- 0.5.1.7 seams (0.5.1.8: the drawn place names are gone; the game's own map art carries the names)
   do
-    C_MapExplorationInfo.GetExploredAreaIDsAtPosition = function(id, v)
-      if id ~= 1426 then return nil end
-      local x = v.x or (v.GetXY and select(1, v:GetXY()))
-      if x < 0.5 then return { 131 } end
-      return { 132 }
-    end
-    local saveArea = C_Map.GetAreaInfo
-    C_Map.GetAreaInfo = function(a) return ({ [131] = "Kharanos", [132] = "Gnomeregan" })[a] end
-    local saveV = CreateVector2D
-    CreateVector2D = CreateVector2D or function(x, y) return { x = x, y = y } end
-    M.labelCache = {}
-    local lab = M.AreaLabels(1426)
-    check(#lab == 2 and lab[1].name and math.abs(lab[1].y - 0.5) < 1e-6, "0.5.1.7 map: place names from the explored-area IDs (" .. #lab .. ")")
-    local saveClose = M.close
-    M.close = { mix = 0 }
-    M.LayoutLabels()
-    check(M.labelsShown == 0, "0.5.1.7 map: no extra names while the tiles are off (the art's own names show)")
-    M.close = { mix = 0.4 }
-    M.LayoutLabels()
-    local p = M.pools.label
-    local okA = p and p[1] and p[1]:IsShown() and (p[1]._alpha or 1) > 0.9 and p[1]._text and (p[1]._text == "Kharanos" or p[1]._text == "Gnomeregan")
-    check(M.labelsShown >= 1 and okA, "0.5.1.7 map: as the tiles take over, the names are drawn on top of them (" .. tostring(M.labelsShown) .. ")")
+    check(M.AreaLabels == nil and M.LayoutLabels == nil and M.labelsShown == nil, "0.5.1.8 map: no drawn place-name labels")
     local shown, fe, base, hard = M.SeamReport()
     check(shown > 0 and hard == 0 and fe >= 1, string.format("0.5.1.7 map: every map picture on screen is feathered or the base (%d shown, %d feathered, %d base, %d hard)", shown, fe, base, hard))
     for _, L in pairs(M.layers) do
@@ -3922,10 +3901,9 @@ do
     end
     local zs = NS.MapData.Zones(1415)
     if zs and #zs >= 2 then check(math.abs(M.ZoneDrawAlpha(zs[1]) - M.ZoneDrawAlpha(zs[2])) < 1e-9, "0.5.1.7 map: a continent's zones fade in together (no patchwork)") end
-    M.close = saveClose
-    M.LayoutLabels()
-    C_MapExplorationInfo.GetExploredAreaIDsAtPosition, C_Map.GetAreaInfo, CreateVector2D = nil, saveArea, saveV
-    M.labelCache = {}
+    local ref = M.RefMag()
+    check(ref and M.ref and M.ref.level >= 3 and math.abs(ref - M.layers[M.ref.id].sc) < 1e-9,
+      "0.5.1.8 map: the art magnification is read from the zone picture under the middle of the view (x" .. tostring(ref) .. ")")
   end
   check(M.layers[1432] and M.layers[1432].shown, "0.5.0 map: the neighbour zone is drawn too (zones stitched)")
   -- stitching: Loch Modan's left edge on screen meets Dun Morogh's right edge (both from GetMapRectOnMap)
@@ -3969,7 +3947,7 @@ do
     M.Wheel(-1)
     for _ = 1, 30 do
       M.Tick(0.016)
-      local za, ca = M.ZoneAlpha(MD.ZoneEntry(1426)), M.ContAlpha(1415)
+      local za, ca = M.ZoneDrawAlpha(MD.ZoneEntry(1426)), M.ContAlpha(1415) -- 0.5.1.7+: as drawn
       if za > 0.02 and za < 0.98 and M.layers[1426].shown and math.abs(M.layers[1426].alpha - za) < 1e-9 then sawZoneFade = true end
       if ca > 0.02 and ca < 0.98 and M.layers[1415].shown and math.abs(M.layers[1415].alpha - ca) < 1e-9 then sawContFade = true end
     end
@@ -4281,7 +4259,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.7 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.8 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -4818,10 +4796,10 @@ if MODE == "full" then
   local exploredHalf = { { offsetX = 0, offsetY = 0, textureWidth = 500, textureHeight = 1000 } }
   MD.Explored = function() return exploredHalf end
   local host = CreateFrame("Frame", nil, UIParent)
-  local function ctxAt(S, vw, vh)
+  local function ctxAt(S, vw, vh, mag) -- 0.5.1.8: mag = the art magnification (else 5 yd per texel)
     local ox, oy = 0.5 * S - vw / 2, 0.5 * S - vh / 2
     return { host = host, conts = { { id = 9001, alpha = 1 } }, place = function() return { 0, 1, 0, 1 } end,
-      toScreen = function(wx, wy) return wx * S - ox, wy * S - oy end, vw = vw, vh = vh }
+      toScreen = function(wx, wy) return wx * S - ox, wy * S - oy end, vw = vw, vh = vh, mag = mag }
   end
   local function shown()
     local list = {}
@@ -4831,13 +4809,13 @@ if MODE == "full" then
   NS.db.map = NS.db.map or {}
   NS.db.map.closeUp, NS.db.map.closeMix = true, nil
   CU.unavailable, CU.failed, CU.fails, CU.loaded = nil, {}, 0, 0
-  -- fades keyed to pixels per yard (0.5.1.6: a middle step of 35% of the deep strength from 0.10 to 0.30, deep from
-  -- 0.35 to 0.80; the zone picture stays visible under the tiles through mid zoom)
-  local mid = 0.855 * 0.35
-  check(CU.Mix(0.10) == 0 and CU.Mix(0.2) > 0 and CU.Mix(0.2) < mid and math.abs(CU.Mix(0.30) - mid) < 1e-6 and math.abs(CU.Mix(0.35) - mid) < 1e-6
-    and CU.Mix(0.5) > mid and CU.Mix(0.5) < 0.855 and math.abs(CU.Mix(0.80) - 0.855) < 1e-6 and math.abs(CU.Mix(0.96) - 0.855) < 1e-6 and CU.Mix(0.5, 0) == 0,
-    "0.5.1.6 close-up: a wide crossfade: tiles 0 at 0.10 px/yd, a middle step of 30% from 0.30 to 0.35, deep 85% by 0.80 (strength 0 = off)")
-  check(CU.Mix(0.24) < 0.3 and CU.Mix(0.3, 1) <= 0.35 + 1e-6, "0.5.1.6 close-up: at mid zoom (0.24-0.30 px/yd) the zone picture shows through (tiles at most 35% even at strength 100%)")
+  -- 0.5.1.8: fades keyed to how magnified the map art is (screen px per art texel): the zone art alone up to x2.0,
+  -- a quick crossfade to the tiles by x2.6, then tiles at full strength (default 45%); grain only with the tiles
+  check(CU.Mix(1.0) == 0 and CU.Mix(1.99) == 0 and CU.Mix(2.3) > 0.2 and CU.Mix(2.3) < 0.8 and math.abs(CU.Mix(2.6) - 1) < 1e-9
+    and math.abs(CU.Mix(6) - 1) < 1e-9 and CU.Mix(3, 0) == 0 and CU.Mix(3, 0.2) < 0.5,
+    "0.5.1.8 close-up: zone art alone to x2.0, quick crossfade to full tiles by x2.6 (strength 0 = off)")
+  check(CU.LayerName(0) == "zone art" and CU.LayerName(1) == "tiles" and CU.LayerName(0.5) == "crossfading",
+    "0.5.1.8 close-up: the layer names (zone art / crossfading / tiles)")
   check(math.abs(CU.MaxScale(9001, 1000) - 0.96 * 16000 / 1000) < 1e-6, "0.5.1.4 close-up: the deepest zoom stops at twice the minimap's own sharpness")
   local function rects(list)
     local out = {}
@@ -4870,7 +4848,7 @@ if MODE == "full" then
   check(r1.pieces > 0 and left > 0 and right > 0 and math.abs(covered(R, 600, 400) - 1) < 1e-3,
     "0.5.1.5 close-up: blended across the whole view, explored or not (covers " .. string.format("%.3f", covered(R, 600, 400)) .. " of it)")
   check(overlaps(R) == 0 and r1.pieces == r1.tiles, "0.5.1.5 close-up: whole tiles, one texture each, never overlapping (" .. r1.pieces .. "/" .. r1.tiles .. ")")
-  check(r1.tiles <= 144 and math.abs(r1.mix - 0.855) < 1e-3 and r1.grain and r1.grain > 0, "0.5.1.5 close-up: deep mix, paper grain on, tiles in view " .. r1.tiles)
+  check(r1.tiles <= 144 and math.abs(r1.mix - 1) < 1e-3 and r1.layer == "tiles" and r1.grain and r1.grain > 0, "0.5.1.8 close-up: full tiles, paper grain on, tiles in view " .. r1.tiles)
   local alphaOK = true
   for _, t in ipairs(list) do if math.abs((t._alpha or 1) - r1.mix) > 1e-6 then alphaOK = false end end
   check(alphaOK and list[1] and list[1]._vc and list[1]._vc[3] < 0.9, "0.5.1.4 close-up: tiles at the mix strength, tinted toward parchment")
@@ -4898,9 +4876,9 @@ if MODE == "full" then
     "0.5.1.5 close-up: where the tiles end the edge feathers to 0 (edge " .. string.format("%.2f", edgeA) .. ", " .. grads .. " gradient cells, none in the gap)")
   NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) return 1000000 + k end }) }
   CU.Forget()
-  local rBig = CU.Layout(ctxAt(4000, 3000, 3000)) -- 0.25 px/yd over ~22x22 tiles
+  local rBig = CU.Layout(ctxAt(4000, 3000, 3000, 3)) -- 0.25 px/yd over ~22x22 tiles (art at x3: tiles on)
   check(rBig.tiles > 144 and rBig.pieces == 0, "0.5.1.5 close-up: more than 144 tiles in view -> none drawn (" .. rBig.tiles .. ")")
-  local rMid = CU.Layout(ctxAt(4000, 1250, 1250)) -- ~10x10 to 11x11 tiles: faded, not popped
+  local rMid = CU.Layout(ctxAt(4000, 1250, 1250, 3)) -- ~10x10 to 11x11 tiles: faded, not popped
   check(rMid.tiles > 96 and rMid.tiles <= 144 and rMid.pieces > 0 and rMid.alpha < rMid.mix and rMid.alpha > 0,
     "0.5.1.5 close-up: between 96 and 144 tiles the tiles fade out (" .. rMid.tiles .. " tiles, " .. string.format("%.2f of %.2f", rMid.alpha, rMid.mix) .. ")")
   local rLow = CU.Layout(ctxAt(1600, 600, 400)) -- 0.1 px/yd: mid zoom keeps the parchment only
@@ -4962,6 +4940,27 @@ if MODE == "full" then
   res = MW.Apply(copyM())
   check(res.w == 986 and res.h == 564 and res.scale == 1,
     "0.5.1.5 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> ours 986x564 at scale 1 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  -- 0.5.1.8: the size is measured while the map window is open and saved in DarkMatterDB; while it is closed (e.g.
+  -- never opened since login, where its own size is not real yet) the saved size is used; rebuild only past 1 px
+  do
+    local saveSV = NS.db.mapWindowSize
+    NS.db.mapWindowSize = nil
+    wmf(1232, 705, { scale = 0.64, shown = true })
+    local open = MW.Apply(copyM())
+    local sv = NS.db.mapWindowSize
+    check(sv and math.abs(sv.fw - 986) < 1 and sv.ues == 0.8, "0.5.1.8 window: measured while the map window is open and saved (" .. tostring(sv and sv.fw) .. ")")
+    wmf(702, 534, { scale = 0.64 }) -- closed, never laid out: a wrong size of its own
+    local closed = MW.Apply(copyM())
+    check(closed.w == open.w and closed.h == open.h and closed.source:find("^saved"),
+      "0.5.1.8 window: while the map window is closed the saved size is used at once (" .. tostring(closed.w) .. "x" .. tostring(closed.h) .. ", " .. tostring(closed.source) .. ")")
+    local c2 = copyM()
+    MW.Apply(c2)
+    c2.w = c2.w + 0.8
+    check(MW.Check(c2) == "scale", "0.5.1.8 window: under 1 px off is no rebuild")
+    c2.w = c2.w + 1
+    check(MW.Check(c2) == "layout", "0.5.1.8 window: over 1 px off rebuilds")
+    NS.db.mapWindowSize = saveSV
+  end
   wmf(1035, 640, { scale = 0.64 })
   res = MW.Apply(copyM())
   local ow, oh = outer(res)
@@ -5156,7 +5155,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.1.7 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.1.8 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,

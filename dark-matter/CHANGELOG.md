@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.1.8
+
+- Map: the drawn place-name labels are gone (code, probe line and tests). The game's own map art carries the names.
+- Map zoom layers work like OpenMap's now. The game's map art (continent, zone or city) shows on its own at full
+  strength, with no minimap tiles, tint or grain, until that art is magnified past **x2.0** (px per art texel, read
+  from the top-most map picture under the middle of the view, so a city uses its own art). The tiles then crossfade
+  in quickly and are at full strength by **x2.6**, about one wheel step. Default strength 45% = full tiles
+  (DEEP_K 2.25). Without map art under the view the fallback is 5 yd per texel.
+- Map: zone pictures fade in over the continent picture quicker: the largest zone at 45-55% of the view, before 40-70%.
+- mapprobe line 19 shows the layer ("zone art" / "crossfading" / "tiles"), the art magnification and the
+  thresholds. Line 21 shows only the seam counts.
+- Window size: the stock map window is measured only while it is open, and that size is saved in DarkMatterDB
+  (mapWindowSize). The saved size is used straight away at login and on open, before the stock map was ever opened.
+  Dark Matter rebuilds only when the size is more than 1 px off. Applies to every theme.
+  Blizzard_WorldMap is NOT force-loaded: the add-on's no-LoadAddOn safety rule stays. It is already loaded at login.
+
 ## 0.5.1.7 (fix: place names stay readable up close; no patches at continent/world view; class themes get the WoW theme's map space)
 From the in-game 0.5.1.6 check. Frame size and portrait removal passed and are unchanged.
 - **Place names on top of the tiles.** The zone pictures carry their names in the art, and the minimap tiles covered them as they took over. Dark Matter now draws the names of the ground you have explored as text above the tiles: the game's explored-area IDs, sampled across the zone (`C_MapExplorationInfo.GetExploredAreaIDsAtPosition`), named by `C_Map.GetAreaInfo`. They fade in as the tiles do (none while the tiles are off, so the art's own names show), and are kept apart so they don't pile up. Read once per zone; read again when exploration changes. Game data only, no art.
