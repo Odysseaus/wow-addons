@@ -2,7 +2,7 @@
 -- as the game's map window) and, in the WoW theme, the look of its frame: the border pieces, title, close button and
 -- portrait, which it draws again on its own frame with the same game textures (by atlas, path or file ID; nothing is
 -- copied into the addon). It never shows, hides, sizes, hooks or writes to WorldMapFrame, so nothing is tainted and it
--- is safe in combat. Anything unreadable falls back: Dark Matter's own 880x680 size and its own thin frame.
+-- is safe in combat. Anything unreadable falls back: Dark Matter's own 880x680 size less the tab column's trim (854x680, 0.5.2a.2) and its own thin frame.
 -- /dm frameprobe lists what was read (saved to DarkMatterDB.frameprobe).
 local _, NS = ...
 
@@ -186,6 +186,9 @@ function MW.ThemeBorder(theme, m)
   return 0, 0, 0, 0
 end
 
+-- 0.5.2a.2: the window is the map window's width minus what the narrower tab column freed (m.railTrim, layout units),
+-- so the content and the Map tab's map area keep their 0.5.2a size and the docked Quest Log panel has room.
+function MW.Trim(m) return (type(m) == "table" and NS.Num and NS.Num(m.railTrim)) or 0 end
 -- What our window needs in a theme (nothing is changed): layout w x h, our scale, our border, and the outer size it
 -- gives on screen. Below MIN_W x MIN_H (or above MAX_W x MAX_H) inside the border, our own scale makes up the rest.
 function MW.Need(theme, m)
@@ -195,10 +198,12 @@ function MW.Need(theme, m)
   local tw, th, src = MW.Size()
   local res = { source = src, mapW = tw, mapH = th, readW = tw and math.floor(tw + 0.5), readH = th and math.floor(th + 0.5) }
   if not tw then
-    res.fallback, res.w, res.h = true, b.w, b.h
+    res.fallback, res.w, res.h = true, b.w - MW.Trim(m), b.h
     res.border = { MW.ThemeBorder(theme, m) }
     return res
   end
+  local trim = MW.Trim(m)
+  res.trim = trim
   local tm = {}
   for k, v in pairs(m) do tm[k] = v end
   bases[tm] = b
@@ -208,7 +213,7 @@ function MW.Need(theme, m)
     local ox, oy = l + r, t + bo
     s = math.min(1, tw / (MW.MIN_W + ox), th / (MW.MIN_H + oy))
     s = math.max(s, tw / (MW.MAX_W + ox), th / (MW.MAX_H + oy), 0.3)
-    cw, ch = math.floor(tw / s - ox + 0.5), math.floor(th / s - oy + 0.5)
+    cw, ch = math.floor(tw / s - ox + 0.5) - trim, math.floor(th / s - oy + 0.5) -- 0.5.2a.2: narrower by the tab column's trim
     Fill(tm, b, cw, ch)
     l, t, r, bo = MW.ThemeBorder(theme, tm)
   end
@@ -216,6 +221,14 @@ function MW.Need(theme, m)
   res.w, res.h, res.scale, res.border = cw, ch, s, { l, t, r, bo }
   res.outerW, res.outerH = (cw + l + r) * s, (ch + t + bo) * s
   return res
+end
+
+-- 0.5.2a.2: the outer size our window must measure on screen (the map window's, less the tab column's trim): the
+-- self-measure check and the size probes use this. nil when the map window cannot be read.
+function MW.Target(theme, m)
+  local need = MW.Need(theme, m)
+  if need.fallback or not need.outerW then return nil, nil, need end
+  return need.outerW, need.outerH, need
 end
 
 -- Sizes the shared metrics table to the game's map window for the current theme. Called before the window is built.
@@ -360,9 +373,10 @@ local function D(a, b) return (a and b) and string.format("%+d", math.floor(a - 
 function MW.ScaleLine(tag)
   local es, ues, des = MW.Scales()
   local mw, mh = MW.Size()
+  local tw, th, need = MW.Target()
   local ow, oh = MW.OurOuter()
-  return string.format("%s: scale: map %s, Dark Matter %s, UIParent %s; on screen: map %s, Dark Matter %s, diff %s,%s",
-    tag, MW.R3(es), MW.R3(des), MW.R3(ues), WH(mw, mh), WH(ow, oh), D(ow, mw), D(oh, mh))
+  return string.format("%s: scale: map %s, Dark Matter %s, UIParent %s; on screen: map %s, Dark Matter %s; target %s (map less the tab column's %s), diff %s,%s",
+    tag, MW.R3(es), MW.R3(des), MW.R3(ues), WH(mw, mh), WH(ow, oh), WH(tw, th), tostring(need and need.trim or MW.Trim(NS.theme and NS.theme.m)), D(ow, tw), D(oh, th))
 end
 -- both OUTER rectangles in screen pixels (left, top, right, bottom from the screen's top-left), and the map frame's own
 -- rect, so it shows whether the map's border reaches past WorldMapFrame:GetSize()
@@ -416,12 +430,13 @@ function MW.ThemeLines(tag)
     if th then
       local ow, oh, how
       local need = MW.Need(th, th.m)
+      local tw, tht = need.outerW, need.outerH -- 0.5.2a.2: the target (map less the tab column's trim)
       if th == NS.theme and _G.DarkMatterFrame then ow, oh = MW.OurOuter() how = "current, measured"
       else ow, oh = need.outerW, need.outerH how = "when chosen" end
       local area = "?"
       if vw and vh and cm and need.w then area = WH(vw + (need.w - cm.w), vh + (need.h - cm.h)) end
-      out[#out + 1] = string.format("%s.%d %s: outer %s vs map %s, diff %s,%s; map area %s (%s)", tag, i, id, WH(ow, oh), WH(mw, mh),
-        D(ow, mw), D(oh, mh), area, how)
+      out[#out + 1] = string.format("%s.%d %s: outer %s vs target %s (map %s less %s), diff %s,%s; map area %s (%s)", tag, i, id, WH(ow, oh),
+        WH(tw, tht), WH(mw, mh), tostring(need.trim or 0), D(ow, tw), D(oh, tht), area, how)
     end
   end
   return out
@@ -443,7 +458,7 @@ function MW.Report()
   end
   local r = MW.last or {}
   L(string.format("frame 2: Dark Matter window %sx%s from %s%s%s", tostring(r.w), tostring(r.h), tostring(r.source or "not built yet"),
-    r.fallback and " (fallback: Dark Matter's own 880x680)" or "", r.readW and string.format(" (map outer %sx%s on screen, our scale %s)", tostring(r.readW), tostring(r.readH), MW.R3(r.scale)) or ""))
+    r.fallback and string.format(" (fallback: Dark Matter's own %sx%s)", tostring(r.w), tostring(r.h)) or "", r.readW and string.format(" (map outer %sx%s on screen, less the tab column's %s, our scale %s)", tostring(r.readW), tostring(r.readH), tostring(r.trim or 0), MW.R3(r.scale)) or ""))
   L(MW.ScaleLine("frame 2b"))
   for _, l in ipairs(MW.ThemeLines("frame 2c")) do L(l) end
   for _, l in ipairs(MW.RectLines("frame 2d")) do L(l) end

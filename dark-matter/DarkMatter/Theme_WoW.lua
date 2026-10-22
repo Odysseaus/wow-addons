@@ -165,7 +165,8 @@ NS.RegisterTheme({
     closeSize = 28, closeRight = 3, closeTop = 3,
     -- shell: rail, body, footer
     shellTop = 37, footerTop = 630, footerH = 41,
-    railX = 15, railY = 77, railW = 150, railH = 547, railBorder = 9, railShade = 0.45,
+    -- railTrim: what the 0.5.2a.1 tab column freed (railW 176 -> 150); 0.5.2a.2 takes it off the window's width
+    railX = 15, railY = 77, railW = 150, railTrim = 26, railH = 547, railBorder = 9, railShade = 0.45,
     tabX = 29, tabY = 100, tabH = 48, tabW = 120, tabWOn = 126, tabGap = 8, tabIcon = 20, tabSize = 13,
     bodyX = 177, bodyY = 37, bodyW = 694, bodyH = 593,
     pageX = 4, pageW = 682, pageH = 587, pageBorder = 9, pagePad = 23,

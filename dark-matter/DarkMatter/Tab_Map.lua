@@ -854,7 +854,8 @@ function M.ShowQuest(q, wp)
   return "none"
 end
 
--- a marker click: select the quest (no glide: 0.5.2a.1; Show on map glides); shift-click: the game's waypoint + arrow
+-- a marker click: select the quest and open its detail in the docked Quest Log panel (0.5.2a.2; the map stays still,
+-- Show on map glides); shift-click: the game's waypoint + arrow
 QuestClick = function(mk)
   local QS = NS.QS
   if not (QS and mk and mk.qid) then return end
@@ -864,7 +865,8 @@ QuestClick = function(mk)
     return
   end
   QS.Select(mk.qid, "map")
-  NS.SetStatus("Selected \"" .. QS.Title(mk.qid) .. "\" (quest list). Shift-click a marker for the game's waypoint and arrow.")
+  if NS.QuestPanel and NS.QuestPanel.OpenQuest then NS.QuestPanel.OpenQuest(mk.qid) end
+  NS.SetStatus("Selected \"" .. QS.Title(mk.qid) .. "\" (Quest Log panel). Shift-click a marker for the game's waypoint and arrow.")
   M.dirty = true
 end
 M.QuestClick = function(mk) return QuestClick(mk) end

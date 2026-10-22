@@ -203,6 +203,18 @@ function P.Build(win)
   return f
 end
 
+-- 0.5.2a.2: a map pin click opens THAT quest's detail here (opening the panel if it was closed; from the list or
+-- another quest's detail). A quest not in the log shows the list. Returns true when the detail is shown.
+function P.OpenQuest(q)
+  if q == nil then return false end
+  if not P.Wanted() then P.SetOpen(true) elseif not (frame and frame:IsShown()) then P.Sync() end
+  if not (frame and frame:IsShown() and T()) then return false end
+  local found = T().FindQuest and T().FindQuest(q)
+  if not found then ShowList() return false end
+  ShowDetail(found)
+  return true
+end
+
 -- shown while the Map tab is showing and the panel is wanted
 function P.Sync(mapShown)
   if mapShown ~= nil then P.mapShown = mapShown end

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.2a.2
+
+- Clicking a quest pin on the map opens THAT quest's detail in the docked Quest Log panel. If the panel is closed it opens; if it shows the list or another quest it switches to this one. Back still returns to the list. The map stays still (no glide). Shift-click still only sets the game's waypoint. A quest not in your log leaves the panel on its list.
+- The window is 26 px narrower in every theme: the width the narrower tab column freed in 0.5.2a.1 now comes off the window instead of going to the content. The content area and the Map tab's map area keep their 0.5.2a size (978x544 map area at the stock map's size). The height stays the stock map's height, and the saved position is kept. Target width = the stock map window's outer width less 26 (theme metric railTrim). Without a readable map window the fallback is 854x680.
+- The self-measure check after layout and the size probes use the new target: /dm frameprobe (frame 2, 2b and 2c: "outer ... vs target ... (map ... less 26)") and /dm mapprobe (new line "map 20 target").
+- Tests: pin click opens the detail (from closed, from another quest, from the list), Back, unknown quest, no map movement, shift-click leaves the panel alone. Window sizes are now expected at the map's width less 26 in every theme and map size, and the content keeps its 0.5.2a widths.
+
 ## 0.5.2a.1
 
 - Map quest pins all use the game's own yellow icons, as the game map does: yellow ? (QuestTurnin / ActiveQuestIcon) for every quest in your log, in progress or ready; yellow ! (QuestNormal / AvailableQuestIcon) for available. No grey, no tints, no red failed tint, nothing bundled.

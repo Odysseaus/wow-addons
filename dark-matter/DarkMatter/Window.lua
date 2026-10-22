@@ -699,7 +699,7 @@ local function Build()
     end
     -- 0.5.1.9: verify after layout: our window's MEASURED outer size (frame + the theme's drawn border, on screen)
     -- against the target; more than 1 px off -> built again (once per theme and target size, so it never loops)
-    local tw, th = MW.Size()
+    local tw, th = MW.Target() -- 0.5.2a.2: the map window less the tab column's trim
     local ow, oh = MW.OurOuter()
     W.verify = { tw = tw, th = th, ow = ow, oh = oh }
     if tw and ow and (math.abs(ow - tw) > 1 or math.abs(oh - th) > 1) then

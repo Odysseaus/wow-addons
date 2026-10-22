@@ -725,9 +725,10 @@ do
   if ww then
     local w0, h0 = tonumber(ww), tonumber(hh)
     local sc = math.max(math.min(1, w0 / 880, h0 / 500), w0 / 1800, h0 / 1300, 0.3)
-    EXP_W, EXP_H, EXP_S = math.floor(w0 / sc + 0.5), math.floor(h0 / sc + 0.5), sc
+    -- 0.5.2a.2: less the 26 the narrower tab column freed (the content keeps its 0.5.2a size)
+    EXP_W, EXP_H, EXP_S = math.floor(w0 / sc + 0.5) - 26, math.floor(h0 / sc + 0.5), sc
   else
-    EXP_W, EXP_H, EXP_S = 880, 680, 1
+    EXP_W, EXP_H, EXP_S = 880 - 26, 680, 1
   end
 end
 -- load addon
@@ -890,7 +891,7 @@ LASTN=#log
 -- ===== P1 window assertions (0.1.0) =====
 if MODE ~= "minimal" then
   local W=DarkMatterFrame
-  check(W._w==EXP_W and W._h==EXP_H,"main window is "..EXP_W.."x"..EXP_H.." (880x680 without a game map window; 0.5.1.4: the game map window's size)")
+  check(W._w==EXP_W and W._h==EXP_H,"main window is "..EXP_W.."x"..EXP_H.." (854x680 without a game map window; 0.5.1.4: the game map window's size; 0.5.2a.2: less the tab column's 26)")
   check(W._scale and W._scale<=math.max(1, EXP_S or 1)+1e-6,"window scale never above 1 (0.5.1.5: unless the map window is larger on screen than 1800x1300): "..tostring(W._scale))
   check(DarkMatterDB.window.point=="CENTER","window default at centre")
   check(DarkMatter and true,"namespace global")
@@ -3685,7 +3686,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2a.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2a.2 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4074,7 +4075,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2a.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2a.2 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4420,7 +4421,13 @@ if MODE ~= "minimal" then
   -- the tab column hugs its buttons; the content area got the width; the window keeps its size
   check(m.railW == 150 and m.tabX - m.railX == 14 and m.railX + m.railW - (m.tabX + m.tabWOn) == 10 and m.bodyX == m.railX + m.railW + 12,
     "0.5.2a.1 tab column: hugs the buttons (14 left, 10 right of the active tab), body follows")
-  check(DarkMatterFrame:GetWidth() == m.w and DarkMatterFrame:GetHeight() == m.h, "0.5.2a.1 tab column: window size unchanged (" .. m.w .. "x" .. m.h .. ")")
+  check(DarkMatterFrame:GetWidth() == m.w and DarkMatterFrame:GetHeight() == m.h and m.w == EXP_W and m.h == EXP_H, "0.5.2a.1 tab column: window size as expected (" .. m.w .. "x" .. m.h .. ")")
+  -- 0.5.2a.2: the freed 26 came off the window, not into the content: body and page keep their 0.5.2a widths
+  -- (0.5.2a: bodyW 668, pageW 656 in an 880 window; now the window is 26 narrower and the body ends 9 from its edge)
+  check(m.railTrim == 26 and m.bodyW == (m.w + 26) - 880 + 668 and m.pageW == (m.w + 26) - 880 + 656 and m.bodyX + m.bodyW == m.w - 9,
+    "0.5.2a.2 window: 26 narrower, content keeps its 0.5.2a size (body " .. m.bodyW .. ", page " .. m.pageW .. " in " .. m.w .. ")")
+  local fpl = table.concat(NS.MapWindow.ThemeLines("t"), "\n") .. "\n" .. NS.MapWindow.ScaleLine("s")
+  check(NS.MapWindow.last and (NS.MapWindow.last.fallback or (fpl:find("vs target", 1, true) and fpl:find("less the tab column", 1, true))), "0.5.2a.2 frameprobe: sizes reported against the trimmed target")
   local saveVis, saveGP = FrameMT.IsVisible, FrameMT.GetParent
   FrameMT.GetParent = function(s) return s._parent end
   FrameMT.IsVisible = function(s) local x = s while x and x ~= UIParent do if x._hid then return false end x = x._parent end return true end
@@ -4469,6 +4476,37 @@ if MODE ~= "minimal" then
   P.back._scripts.OnClick(P.back)
   check(P.list:IsShown() and not P.detailPanel:IsShown() and V.query == "defias" and shownTitles() == "The Defias", "0.5.2a.1 panel: Back returns to the list, search kept")
   V.SetQuery("") P.frame.search:SetText("")
+  -- 0.5.2a.2: a pin click opens THAT quest's detail in the panel (opening the panel if closed), the map stays still
+  do
+    local MT = NS.MapTab
+    local saveShift = _G.IsShiftKeyDown
+    _G.IsShiftKeyDown = function() return false end
+    local z0 = MT.Zoom() local cx0, cy0 = MT.Center()
+    P.SetOpen(false)
+    check(not P.frame:IsShown(), "0.5.2a.2 pin click: panel closed first")
+    MT.QuestClick({ qid = 103, map = 1426, mx = 0.5, my = 0.5 })
+    check(P.frame:IsShown() and NS.db.questPanel == true and P.detailPanel:IsShown() and not P.list:IsShown() and P.detail.quest and P.detail.quest.questID == 103
+      and P.detail.title._text == "The Defias" and NS.QS.selected == 103, "0.5.2a.2 pin click: a closed panel opens on that quest's detail")
+    MT.QuestClick({ qid = 101, map = 1426, mx = 0.5, my = 0.5 })
+    check(P.detailPanel:IsShown() and P.detail.quest.questID == 101 and P.detail.title._text == "Wolves" and NS.QS.selected == 101, "0.5.2a.2 pin click: another quest's detail switches to the clicked quest")
+    P.back._scripts.OnClick(P.back)
+    check(P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 pin click: Back returns to the list")
+    MT.QuestClick({ qid = 102, map = 1426, mx = 0.5, my = 0.5 })
+    check(P.detailPanel:IsShown() and P.detail.quest.questID == 102, "0.5.2a.2 pin click: from the list it opens the clicked quest's detail")
+    MT.QuestClick({ qid = 99999, map = 1426, mx = 0.5, my = 0.5 })
+    check(P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 pin click: a quest not in the log shows the list (nothing invented)")
+    local cx1, cy1 = MT.Center()
+    check(math.abs(MT.Zoom() - z0) < 1e-9 and math.abs(cx1 - cx0) < 1e-9 and math.abs(cy1 - cy0) < 1e-9, "0.5.2a.2 pin click: the map stays still")
+    -- shift-click: the waypoint only; the panel is not switched
+    P.ShowList()
+    local wpN = 0
+    local saveSW = NS.QS.SetWaypoint
+    NS.QS.SetWaypoint = function() wpN = wpN + 1 return true, "waypoint set" end
+    _G.IsShiftKeyDown = function() return true end
+    MT.QuestClick({ qid = 103, map = 1426, mx = 0.5, my = 0.5 })
+    check(wpN == 1 and P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 shift-click: sets the waypoint, panel unchanged")
+    NS.QS.SetWaypoint, _G.IsShiftKeyDown = saveSW, saveShift
+  end
   -- toggle (tool strip), remembered
   local tb = NS.MapTab.panelBtn
   tb._scripts.OnClick(tb)
@@ -4602,7 +4640,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2a%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2a%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5269,20 +5307,20 @@ if MODE == "full" then
   wmf(1035, 640)
   local c = copyM()
   local res = MW.Apply(c)
-  check(res.w == 1035 and res.h == 640 and c.w == 1035 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
-    "0.5.1.4 window: as large as the game's map window (1035x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
+  check(res.w == 1009 and res.h == 640 and c.w == 1009 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
+    "0.5.1.4 window: as large as the game's map window (1035x640; 0.5.2a.2: less the tab column's 26 = 1009x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
   check(c.bodyW - c.w == base.bodyW - base.w and c.pageW - c.w == base.pageW - base.w and c.footerTop - c.h == base.footerTop - base.h and c.exitX - c.w == base.exitX - base.w
     and c.railW == base.railW and c.tabY == base.tabY and c.bodyX == base.bodyX, "0.5.1.4 window: the body and footer follow the size, the rail and tabs keep their place")
   wmf(1035, 640, { scale = 1.25 })
   res = MW.Apply(copyM())
-  check(res.w == 1294 and res.h == 800, "0.5.1.4 window: the map window's own scale is taken into account (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  check(res.w == 1268 and res.h == 800, "0.5.1.4 window: the map window's own scale is taken into account (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.5: the in-game case (1.60.1, Wetlands): map 1232x705 at effective scale 0.64; UIParent at 0.80
   local saveUES = UIParent.GetEffectiveScale
   UIParent.GetEffectiveScale = function() return 0.8 end
   wmf(1232, 705, { scale = 0.64, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
-  check(res.w == 986 and res.h == 564 and res.scale == 1,
-    "0.5.1.5 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> ours 986x564 at scale 1 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  check(res.w == 960 and res.h == 564 and res.scale == 1,
+    "0.5.1.5 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> ours 986x564 less 26 = 960x564 at scale 1 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.8: the size is measured while the map window is open and saved in DarkMatterDB; while it is closed (e.g.
   -- never opened since login, where its own size is not real yet) the saved size is used; rebuild only past 1 px
   do
@@ -5307,18 +5345,18 @@ if MODE == "full" then
   wmf(1035, 640, { scale = 0.64 })
   res = MW.Apply(copyM())
   local ow, oh = outer(res)
-  check(res.w >= 880 and res.h >= 500 and res.scale < 1 and math.abs(ow - 1035 * 0.8) < 1 and math.abs(oh - 640 * 0.8) < 1,
+  check(res.w >= 854 and res.h >= 500 and res.scale < 1 and math.abs(ow - (1035 * 0.8 - 26 * res.scale)) < 1 and math.abs(oh - 640 * 0.8) < 1,
     "0.5.1.5 window: a map smaller on screen than 880x500 is matched by our scale (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
   UIParent.GetEffectiveScale = saveUES
   wmf(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
   ow, oh = outer(res)
-  check(res.w <= 1800 and res.h <= 1300 and math.abs(ow - 1920) < 1 and math.abs(oh - 1080) < 1,
+  check(res.w <= 1800 and res.h <= 1300 and math.abs(ow - (1920 - 26 * res.scale)) < 1 and math.abs(oh - 1080) < 1,
     "0.5.1.5 window: maximized follows the same rule: its size on screen (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
   wmf(500, 300)
   res = MW.Apply(copyM())
   ow, oh = outer(res)
-  check(res.w >= 880 and res.h >= 500 and math.abs(ow - 500) < 1 and math.abs(oh - 300) < 1, "0.5.1.5 window: a tiny map window: our layout stays 880x500 or more, our scale matches it")
+  check(res.w >= 854 and res.h >= 500 and math.abs(ow - (500 - 26 * res.scale)) < 1 and math.abs(oh - 300) < 1, "0.5.1.5 window: a tiny map window: our layout stays 880x500 or more, our scale matches it")
   -- 0.5.1.6: the map's border corners reach past its frame (the real offsets): the target is the OUTER rectangle
   wmf(1232, 705, { real = true })
   local ml, mt, mr, mb = MW.MapBorder()
@@ -5342,15 +5380,16 @@ if MODE == "full" then
   check(MW.Check(m1) == "layout" and not MW.ScaleLine("x"):find("changed shape", 1, true), "0.5.1.6 window: a map window of another shape -> the layout follows (no 'changed shape' fallback)")
   MW.live = nil
   local n0 = copyM()
+  MW.bases[n0] = MW.bases[base] -- 0.5.2a.2: the theme's own base (a plain copy would take its applied size as its base)
   WorldMapFrame = nil MW.art = nil
   res = MW.Apply(n0)
-  check(res.fallback and n0.w == base.w and n0.h == base.h, "0.5.1.4 window: no map window -> Dark Matter's own size")
+  check(res.fallback and n0.w == MW.BASE_W - 26 and n0.h == MW.BASE_H, "0.5.1.4 window: no map window -> Dark Matter's own size (0.5.2a.2: less the tab column's 26 = 854x680)")
   wmf(1035, 640)
   local saveICL = InCombatLockdown
   InCombatLockdown = function() return true end
   res = MW.Apply(copyM())
   InCombatLockdown = saveICL
-  check(res.w == 1035, "0.5.1.4 window: reading the size works in combat")
+  check(res.w == 1009, "0.5.1.4 window: reading the size works in combat")
   local badCall = {}
   for _, k in ipairs(WMF_CALLS) do if not (k:find("^Get") or k:find("^Is")) then badCall[#badCall + 1] = k end end
   check(#WMF_WRITES == 0 and #badCall == 0, "0.5.1.4 window: WorldMapFrame is only read (no Show, no writes, no hooks): " .. table.concat(WMF_WRITES, ",") .. table.concat(badCall, ","))
@@ -5401,7 +5440,9 @@ if MODE == "full" then
           end
         end
         NS.ShowTab("quests")
-        local tw, th = MW.Size()
+        local tw, th = MW.Target() -- 0.5.2a.2: the map window less the tab column's trim
+        local mw0 = MW.Size()
+        check(tw and mw0 and math.abs(tw - (mw0 - 26 * f:GetScale() / (sz[4] or 1) * (sz[4] or 1))) < 0.6, string.format("0.5.2a.2 window: %s target width %.1f = map %.1f less the tab column's 26 (scaled)", id, tw or -1, mw0 or -1))
         local l, t, r, b = drawnBox(f)
         local k = f:GetScale() / (sz[4] or 1) * (sz[4] or 1)
         local ow2, oh2 = (r - l) * k, (t - b) * k
@@ -5409,7 +5450,7 @@ if MODE == "full" then
         n = n + 1
         local bad = math.max(math.abs(dw), math.abs(dh))
         if bad > worst then worst = bad end
-        check(bad <= 1, string.format("0.5.1.6 window: %s at map %dx%d%s: outer %.1fx%.1f vs map outer %.1fx%.1f (diff %+.1f,%+.1f)",
+        check(bad <= 1, string.format("0.5.1.6 window: %s at map %dx%d%s: outer %.1fx%.1f vs target %.1fx%.1f (diff %+.1f,%+.1f)",
           id, sz[1], sz[2], sz[3] and sz[3].real and " (real border)" or "", ow2, oh2, tw, th, dw, dh))
         local pl = MW.ThemeLines("t")
         for _, line in ipairs(pl) do
@@ -5473,10 +5514,10 @@ if MODE == "full" then
         local before = NS.windowRebuilds
         NS.ToggleWindow(true)
         local ow, oh = MW.OurOuter()
-        local bad = math.max(math.abs((ow or 0) - 1247.33), math.abs((oh or 0) - 729))
+        local bad = math.max(math.abs((ow or 0) - (1247.33 - 26)), math.abs((oh or 0) - 729))
         worst, n = math.max(worst, bad), n + 1
         check(f:IsShown() and NS.windowRebuilds == before and not W.rebuildWanted and bad <= 1,
-          string.format("0.5.1.9 window: fresh login, map never shown (%s), %s: opens at outer %.1fx%.1f (want 1247x729), no rebuild",
+          string.format("0.5.1.9 window: fresh login, map never shown (%s), %s: opens at outer %.1fx%.1f (want 1221x729: the map's 1247 less the tab column's 26), no rebuild",
             cs[1], id, ow or -1, oh or -1))
         -- 0.5.1.10: no title text in any theme; class crests centred on the frame; status text left-aligned, clear of
         -- the centred bottom emblem
@@ -5496,7 +5537,7 @@ if MODE == "full" then
         f:Hide()
       end
     end
-    check(n == #NS.themeOrder * #cases, string.format("0.5.1.9 window: %d fresh-login opens, worst %.2f px off 1247x729", n, worst))
+    check(n == #NS.themeOrder * #cases, string.format("0.5.1.9 window: %d fresh-login opens, worst %.2f px off 1221x729", n, worst))
     check(#crestBad == 0 and centred == (#NS.themeOrder - 1) * #cases, "0.5.1.10 window: every theme: no title text; class crests and emblems centred (" .. centred .. "); status text left-aligned and clear of the bottom emblem (" .. table.concat(crestBad, ", ") .. ")")
     UIParent.GetEffectiveScale = saveU9 WorldMapFrame = saveWMF9 MW.art = nil MW.seenShown = nil
     NS.db.mapWindowSize = saveSV9
@@ -5547,7 +5588,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2a.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2a.2 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,

@@ -326,7 +326,10 @@ local function Run()
     local cut = l20:find("; on screen")
     if cut then
       lines[#lines + 1] = l20:sub(1, cut - 1)
-      lines[#lines + 1] = "map 20 size" .. l20:sub(cut + 1)
+      local rest = l20:sub(cut + 1)
+      local cut2 = rest:find("; target") -- 0.5.2a.2: the trimmed target on its own line
+      lines[#lines + 1] = "map 20 size" .. (cut2 and rest:sub(1, cut2 - 1) or rest)
+      if cut2 then lines[#lines + 1] = "map 20 target" .. rest:sub(cut2 + 8) end
     else
       lines[#lines + 1] = l20
     end
