@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.5.2b.3
+
+Map layers fixed across all of Azeroth.
+
+### Root causes
+- (a) The 0.5.1.9 SOLO fade ({0.55, 0.70} of the view) removed the neighbouring zones at zone zoom, so the continent picture became the visible surface. At x4–x6 it was blurry and pixelated, with a seam where the focus zone's feathered rim ended. This is the Thousand Needles/Feralas edge, Desolace and the Felwood bottom band.
+- (b) ZONE_DRAW ({0.40, 0.55}) was keyed to the largest zone's share of the view. Zones therefore faded in at continent view as rectangles of a different tint (Darkshore, Ashenvale, Azshara, Winterspring).
+- (c) A zone's picture includes the parchment and sea around the zone, so neighbouring rectangles covered each other (the grey boxes on the Kalimdor west coast).
+- (d) The magnified continent and world sea art looks stripy.
+
+### Changes
+- Layer stack, from the bottom up:
+  - a flat backdrop colour (SetColorTexture, no art);
+  - the world;
+  - the continent: its fade multiplied by the new BaseFade, which goes from 1 down to 0.35 between art x1.6 and x3.2 (M.BASE_FADE);
+  - the focus zone's own picture, unmasked and feathered (level 3, so its coast and sea stay under the middle of the view);
+  - every zone cut to its shape (level 5);
+  - cities (6);
+  - the close-up tiles (7);
+  - the markers (8).
+- Zone pictures fade in only by how far the continent is zoomed past its fitted view: M.ZoneIn rises from 0 to 1 between 1.15x and 1.6x (M.ZONE_IN; M.ContZoomK = the view's scale over the continent's fit scale). Once in, every zone is drawn at full strength. SOLO, ZONE_DRAW and ZoneSpan are removed; the city fade is kept.
+- Zone shapes: M.ZoneMask(z) asks the game for the zone's highlight:
+  - C_Map.GetMapInfoAtPosition finds a point inside the zone (centre, then 5×5 and 9×9 grids);
+  - C_Map.GetMapHighlightInfoAtPosition returns the highlight's file ID and its box on the continent;
+  - the result is checked (it must lie on the zone and be of a sane size) and cached per session.
+  The file becomes a mask texture (CLAMPTOBLACKADDITIVE) laid over the zone's own frame and added to every tile and explored overlay. Read at runtime, nothing bundled. An atlas-only or missing highlight falls back to the feathered rectangle.
+- M.LayerCheck() samples the current view on a 12×8 grid and finds the zone at each point with the game's own lookup. It reports:
+  - land drawn by zone art against land left to the base;
+  - open points;
+  - hard seams (an unfeathered, unmasked layer edge inside the view);
+  - zone layers at continent zoom;
+  - unmasked neighbours.
+  Flags: magnified-base, open-base, hard-seam, zone-rect, unmasked.
+- /dm mapsweep (M.Sweep) runs LayerCheck dry, with no frames built or drawn and the view restored afterwards, over:
+  - every continent: fitted, ×1.4 and ×2;
+  - every non-city zone: fitted, zone view, ×2, and its west, east, north and south edges.
+  It reports the flag counts, the zones without a shape and the first 25 flagged views. Saved in DarkMatterDB.probeLog.mapsweep.
+- /dm mapprobe line 23: the layer check of the current view, plus the mask coverage of the continent and the focus underlay.
+- /dm mapmask on|off (saved as DarkMatterDB.map.zoneMask) is a fallback switch: off draws zones as feathered rectangles.
+- Kept unchanged:
+  - zone art up to x2.0, then the close-up tiles;
+  - no drawn names;
+  - free, smooth drag;
+  - a base under every pixel (the backdrop, plus at least 35% map art);
+  - fog-of-war overlays (now masked with their zone).
+
+### Tests
+- Every zone drawn and masked at zone view, including the neighbour at the Dun Morogh / Loch Modan edge.
+- The mask file, wrap mode, size and position.
+- Every tile and overlay masked.
+- The focus underlay.
+- LayerCheck shows OK at the zone view and at the edge.
+- The continent view has no zone layers.
+- The sweep: 41 views, 0 flagged, 5/5 zones masked, view restored.
+- LayerCheck catches both old faults when the old fades are simulated (magnified-base and zone-rect).
+- mapmask off and on, by function and by slash command.
+- A client without the highlight API falls back to feathered zones, and the sweep names them.
+- The base coverage sweep now checks the backdrop plus at least 35% art.
+- The mock's Stormwind rect now lies inside Elwynn, as in the game.
+
+
 ## 0.5.2b.2
 
 - Ready to Turn In (option C): our own frame, DarkMatterReadyFrame on UIParent, placed just below the visible bottom of the whole objective tracker (below Quests, Professions and any other module). The tracker is only read: the lowest bottom of its visible header, its visible modules (ObjectiveTrackerFrame.modules, read with ipairs) and its visible quest blocks, minus the tracker's module spacing (10), and never above the bottom of its visible background (NineSlice). Pixel space via each frame's effective scale; our frame takes the tracker's scale and width. Never parented to, anchored to, inserted into or hooked on the tracker. Root cause of the 0.5.2b overlap: the old placement read only the quest blocks, so the Professions module below them was covered.

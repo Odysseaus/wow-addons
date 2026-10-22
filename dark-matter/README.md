@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.2b.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.2b.3** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -77,6 +77,22 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
 
+### 0.5.2b.3 changes
+- Map layers fixed across all of Azeroth (every continent and zone):
+  - At zone view the neighbouring zones are drawn at full strength, so they are crisp. Before, they faded out and the blown-up continent picture showed through as a blurry band with a seam.
+  - Each zone picture is cut to the zone's own shape, using the game's own zone highlight as a mask (read at runtime). A zone's parchment and sea no longer cover its neighbours.
+  - At continent view you see only the clean continent picture. Zones fade in only as you zoom in (from 1.15x to 1.6x the fitted continent), so no zone rectangles.
+  - As the continent picture is magnified past 1.6x, it fades to 35% over a flat parchment colour. The ocean no longer shows magnified stripes.
+- `/dm mapsweep` checks the map layers over every continent and zone at several zooms, and the edges of every zone. It is read-only and draws nothing. It flags:
+  - the magnified continent as the visible surface;
+  - open areas at high zoom;
+  - hard seams;
+  - zone rectangles at continent zoom;
+  - unmasked neighbours.
+  The result is saved with the probes in DarkMatterDB.probeLog.
+- `/dm mapprobe` line 23 runs the same check for the current view and lists how many zones have a shape mask.
+- `/dm mapmask off` draws zones as feathered rectangles if a shape ever looks wrong. `/dm mapmask on` (the default) turns the shapes back on.
+
 ### 0.5.2b.2 changes
 - Ready to Turn In is its own frame just below the visible bottom of the whole objective tracker (under Quests and Professions). It follows the tracker as it grows or shrinks (checked 10 times a second), slides up when Professions is collapsed or empty, and never overlaps it. With the tracker hidden it sits where the tracker would be.
 - Its header looks like the tracker's module headers (the game's own header art, font and collapse/expand button). It starts collapsed; the choice is saved.
@@ -117,7 +133,7 @@ The game's own map pictures, read at runtime for every zone of Kalimdor and East
 - Zoomed far into a zone, the picture gets soft: the game's zone art is 1002x668 (0.5.1.4: the minimap tiles take over there, on explored ground).
 - Level badges are public data (Warcraft Wiki Classic zone table; Wowhead WoW Forever for the new zones) and are captioned "Levels: public data" on the map. Cities and zones without a published range get no badge.
 
-`/dm mapprobe` (0.4.7, read-only) checks these APIs. Since 0.5.0 it prints each level's tile file IDs (line 5), and line 15 shows how the Map tab placed your continent. Since 0.5.1.4: art layers and their scale range (line 5), the zone's yard corners (16), your minimap tile and file ID (17), whether it loads by file ID / by path (18), OpenMap loaded (information only) and the map's source (19).
+`/dm mapprobe` (0.4.7, read-only) checks these APIs. Since 0.5.2b.3 line 23 checks the map layers of the current view (and `/dm mapsweep` checks every continent and zone). Since 0.5.0 it prints each level's tile file IDs (line 5), and line 15 shows how the Map tab placed your continent. Since 0.5.1.4: art layers and their scale range (line 5), the zone's yard corners (16), your minimap tile and file ID (17), whether it loads by file ID / by path (18), OpenMap loaded (information only) and the map's source (19).
 
 ## Theme layer (data, not code)
 

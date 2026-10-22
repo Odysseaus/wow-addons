@@ -345,7 +345,7 @@ local function Run()
     -- 22 (0.5.1.9): which zone pictures are drawn: the focus zone, how many other zones, the city (only when it is the focus)
     local others, cityOn = 0, "none"
     for lid, L in pairs(MT.layers or {}) do
-      if L.shown and (L.alpha or 0) > 0.01 and lid ~= MT.world and not NS.MapData.Is(lid, "continent") and lid ~= MT.focusZone then
+      if L.shown and not L.under and (L.alpha or 0) > 0.01 and lid ~= MT.world and not NS.MapData.Is(lid, "continent") and lid ~= MT.focusZone then
         if lid == MT.focusCity then cityOn = string.format("%s %.2f", tostring(NS.MapData.Name(lid) or lid), L.alpha) else others = others + 1 end
       end
     end
@@ -358,6 +358,19 @@ local function Run()
     local function On(L) return L and L.shown and (L.alpha or 0) > 0.01 and string.format("%.2f", L.alpha) or "off" end
     data.contMag = cm
     lines[#lines + 1] = string.format("map 22 base: continent %s (art x%.2f); world %s", On(cl), cm, On(wl))
+    -- 23 (0.5.2b.3): the layer check of this view (what draws each point: zone art or the base), and the zone shapes
+    if MT.LayerCheck then
+      local r = MT.LayerCheck()
+      data.layerCheck = { flags = table.concat(r.flags, ","), land = r.land, zone = r.zone, base = r.base, open = r.open, seams = r.seams, rects = r.rects, unmasked = r.unmasked }
+      lines[#lines + 1] = "map 23 layers: " .. r.text
+      if MT.focus and MT.MaskCount then
+        local mOk, mN, mMiss = MT.MaskCount(MT.focus)
+        local under = MT.layers and MT.focusZone and MT.layers["u" .. MT.focusZone]
+        lines[#lines + 1] = string.format("map 23 masks: %d/%d zones cut to their shape (%s)%s; focus underlay %s", mOk, mN,
+          MT.MaskOn() and "on" or "off", #mMiss > 0 and ("; missing: " .. table.concat(mMiss, ", ", 1, math.min(#mMiss, 12))) or "",
+          under and under.shown and string.format("%.2f", under.alpha or 0) or "off")
+      end
+    end
   end
   return lines, data
 end
