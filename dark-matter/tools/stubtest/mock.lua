@@ -3675,7 +3675,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.1.9 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.1.10 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3905,6 +3905,28 @@ do
     check(ref and M.ref and M.ref.level >= 3 and math.abs(ref - M.layers[M.ref.id].sc) < 1e-9,
       "0.5.1.8 map: the art magnification is read from the zone picture under the middle of the view (x" .. tostring(ref) .. ")")
   end
+  -- 0.5.1.10: at zone view the zone's art FILLS the view (cover) and the view is locked inside it; no continent art
+  local vwN, vhN = M.vp:GetWidth(), M.vp:GetHeight()
+  local bx = dm.box or {}
+  check(M.lock == 1426 and bx[1] and bx[1] <= 1e-6 and bx[2] <= 1e-6 and bx[3] >= vwN - 1e-6 and bx[4] >= vhN - 1e-6,
+    string.format("0.5.1.10 map: zone view locked on Dun Morogh; its art covers the whole view (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
+  check(not (M.layers[1415] and M.layers[1415].shown) and M.ContMag(1415) > M.BASE_MAG[2], string.format("0.5.1.10 map: no continent art behind the zone (continent art x%.2f)", M.ContMag(1415)))
+  -- dragging and zooming out stay inside the zone's art
+  M.Pan(5000, 3000)
+  bx = dm.box or {}
+  check(bx[1] and bx[1] <= 1e-6 and bx[3] >= vwN - 1e-6, "0.5.1.10 map: panning past the zone's edge is held at the edge")
+  M.Pan(-5000, -3000)
+  -- every zone-art tile and overlay piece: one texel per map pixel (texcoord range x file size = drawn size)
+  local worstR = 0
+  for _, t in ipairs(dm.tiles) do
+    local tc = t._tc
+    if tc then worstR = math.max(worstR, math.abs((tc[2] - tc[1]) * dm.art.tw - t._w), math.abs((tc[4] - tc[3]) * dm.art.th - t._h)) end
+  end
+  check(worstR < 1e-6, "0.5.1.10 map: every zone-art tile (and feathered cell) has a uniform texcoord-to-size ratio (worst " .. worstR .. ")")
+  local q = M.OverlayTiles({ textureWidth = 300, textureHeight = 400, offsetX = 10, offsetY = 20, numTexturesWide = 1, numTexturesTall = 1, fileDataIDs = { 1, 2, 3, 4 } })
+  check(#q == 4 and q[2][1] == 2 and q[2][2] == 266 and q[2][4] == 44 and q[2][6] == 64 and q[3][3] == 276 and q[3][5] == 144 and q[3][7] == 256
+    and q[4][4] / q[4][6] == 44 / 64, "0.5.1.10 map: explored overlays tiled from their size like the game's map (2x2 for 300x400 even when the entry says 1x1)")
+  -- 0.5.1.9: one zone art set at zone view
   -- 0.5.1.9: at zone view ONLY the focus zone's picture is drawn (no neighbour, no city over it), like the game's map
   local function zonesDrawn()
     local ids = {}
@@ -3917,16 +3939,28 @@ do
   local nz, zids = zonesDrawn()
   check(nz == 1 and zids[1] == 1426 and M.focusZone == 1426 and not (M.layers[1455] and M.layers[1455].shown),
     "0.5.1.9 map: at zone view one zone art set is drawn: Dun Morogh's own (no neighbour, no Ironforge over it): " .. table.concat(zids, ","))
-  -- zoomed out towards the continent the neighbours come back, all together; stitched exactly
-  local outSteps = 0
-  while (M.solo or 0) > 0.01 and outSteps < 6 do M.Wheel(-1) run(30) outSteps = outSteps + 1 end
+  -- zoomed out (past the zone's fit -> up to the continent, like the game's map), then one step in: the zone pictures
+  -- of the continent are drawn together (the continent art itself is off by then), stitched exactly
+  M.Wheel(-1) run(30)
+  check(M.lock == nil and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms" and M.ContMag(1415) <= M.ZONE_IN[1] + 1e-6,
+    string.format("0.5.1.10 map: zooming out at the zone's fit goes up to the continent (%s, continent art x%.2f)", table.concat(M.Trail(), ">"), M.ContMag(1415)))
+  local sawBlur = false
+  CX, CY = 300, 200
+  local inSteps = 0
+  while M.ContMag(1415) <= M.BASE_MAG[2] and inSteps < 6 do
+    M.Wheel(1) inSteps = inSteps + 1
+    for _ = 1, 30 do M.Tick(0.016) local cl = M.layers[1415] if cl and cl.shown and cl.alpha > 0.01 and M.ContMag(1415) > M.BASE_MAG[2] + 1e-6 then sawBlur = true end end
+  end
+  CX, CY = 406, 260
+  check(not sawBlur and M.ContMag(1415) > M.BASE_MAG[2], string.format("0.5.1.10 map: the continent art is never drawn above x%.2f (now x%.2f)", M.BASE_MAG[2], M.ContMag(1415)))
   check(M.layers[1432] and M.layers[1432].shown and M.layers[1432].alpha > 0.01, "0.5.0 map: at continent zoom the neighbour zone is drawn too (zones stitched)")
   local function edges(L) local p = L.frame._pts[#L.frame._pts] local sc = L.frame._scale return p[4] * sc, -p[5] * sc, L.art.w * sc, L.art.h * sc end
   local dl, dt_, dw = edges(dm)
   local ll = edges(M.layers[1432])
   check(math.abs((dl + dw) - ll) < 0.01, "0.5.0 map: neighbour zones meet exactly (no gap/overlap)")
   check(not (M.layers[1455] and M.layers[1455].shown), "0.5.1.9 map: the Ironforge city picture is not drawn over Dun Morogh at continent zoom either")
-  for _ = 1, outSteps do M.Wheel(1) run(30) end
+  M.FlyTo(1426) run(30)
+  check(M.lock == 1426, "0.5.1.10 map: flying to a zone locks the view on it again")
   check(M.layers[947] and not M.layers[947].shown, "0.5.0 map: the world picture is hidden when the continent covers the view")
   -- 5. player arrow, coordinates
   check(M.arrow:IsShown() and M.player and M.player.map == 1426, "0.5.0 map: player arrow shown")
@@ -3948,6 +3982,7 @@ do
   check(tip.title == "Dwarven Outfitters", "0.5.0 map: quest marker tooltip names the quest")
   -- 7. wheel zoom keeps the point under the cursor fixed
   CX, CY = 300, 180
+  M.Wheel(1) run(30) -- 0.5.1.10: from one step in (at the zone's fit, zooming out goes up to the continent)
   local u0, v0 = M.ToWorld(CX, CY)
   local z0 = M.Zoom()
   M.Wheel(-1) run(30)
@@ -4011,7 +4046,10 @@ do
     if M.layers[1426].shown and M.layers[1432] and M.layers[1432].shown then both = true end
   end
   M.vp._scripts.OnMouseUp(M.vp, "LeftButton") run(2)
-  check(both and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Loch Modan", "0.5.0 map: drag pans across the border into the next zone")
+  -- 0.5.1.10: like the game's map, a zone view is locked on its zone: the drag stops at its edge (zoom out to go on)
+  local dbx = M.layers[1426].box or {}
+  check(not both and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh" and dbx[1] <= 1e-6 and dbx[3] >= M.vp:GetWidth() - 1e-6,
+    "0.5.1.10 map: a drag at zone view stays inside the zone's art (no neighbour, no edge in sight)")
   -- 12. search and pick
   local r = M.Search("loch")
   check(#r == 1 and r[1].name == "Loch Modan" and r[1].sub == "Eastern Kingdoms" and M.results:IsShown(), "0.5.0 map: zone search finds Loch Modan")
@@ -4033,7 +4071,8 @@ do
   fm._scripts.OnClick(fm) run(20)
   check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh", "0.5.0 map: Find me flies to your zone")
   local cx, cy = M.Center()
-  check(math.abs(cx - M.player[1]) < 1e-6 and math.abs(cy - M.player[2]) < 1e-6, "0.5.0 map: Find me centres on you")
+  local psx, psy = M.ToScreen(M.player[1], M.player[2])
+  check(M.lock == 1426 and psx >= 0 and psx <= M.vp:GetWidth() and psy >= 0 and psy <= M.vp:GetHeight(), "0.5.0 map: Find me shows you (0.5.1.10: centred as far as the zone's art allows)")
   -- 14. the tool strip: three slots are disabled with the version they come in
   local keys, soon = {}, {}
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
@@ -4275,7 +4314,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.9 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.1%.10 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5135,8 +5174,7 @@ if MODE == "full" then
     UIParent.GetEffectiveScale = function() return 0.64 end
     local cases = { { "its real size", 1232, 705 }, { "0x0", 0, 0 }, { "the stale 1002x694", 1002, 694 } }
     local worst, n, crestBad = 0, 0, {}
-    local moved = 0
-    local bmoved = 0
+    local centred = 0
     for _, id in ipairs(NS.themeOrder) do
       for _, cs in ipairs(cases) do
         wmf(cs[2], cs[3], { scale = 0.64, real = true, rect = cs[2] > 0, shown = false })
@@ -5152,18 +5190,26 @@ if MODE == "full" then
         check(f:IsShown() and NS.windowRebuilds == before and not W.rebuildWanted and bad <= 1,
           string.format("0.5.1.9 window: fresh login, map never shown (%s), %s: opens at outer %.1fx%.1f (want 1247x729), no rebuild",
             cs[1], id, ow or -1, oh or -1))
-        local tr, cr = W.titleRect, W.classArt and W.classArt.crestRect
-        if NS.theme.classArt and tr and cr and cr[1] < tr[3] and cr[1] + cr[3] > tr[1] and cr[2] < tr[4] and cr[2] + cr[3] > tr[2] then crestBad[#crestBad + 1] = id end
-        if NS.theme.classArt and not tr then crestBad[#crestBad + 1] = id .. " (no title rect)" end
-        if W.crestMoved then moved = moved + 1 end
-        local sr, br = W.statusTextRect, W.classArt and W.classArt.baseRect
-        if NS.theme.classArt and sr and br and br[1] < sr[3] and br[1] + br[3] > sr[1] and br[2] < sr[4] and br[2] + br[3] > sr[2] then crestBad[#crestBad + 1] = id .. " (status text under the bottom emblem)" end
-        if W.baseMoved then bmoved = bmoved + 1 end
+        -- 0.5.1.10: no title text in any theme; class crests centred on the frame; status text left-aligned, clear of
+        -- the centred bottom emblem
+        local ttl = W.title
+        if ttl and ((ttl:GetText() or "") ~= "" or ttl:IsShown()) then crestBad[#crestBad + 1] = id .. " (title text shown)" end
+        if NS.theme.classArt then
+          local sx9, _, ax9, _, AW9 = NS.ClassArtMap()
+          local mid = ax9 + AW9 / 2 * sx9
+          local cr, br = W.classArt.crestRect, W.classArt.baseRect
+          if not (cr and math.abs(cr[1] + cr[3] / 2 - mid) < 0.5) then crestBad[#crestBad + 1] = id .. " (top crest not centred)" else centred = centred + 1 end
+          if not (br and math.abs(br[1] + br[3] / 2 - mid) < 0.5) then crestBad[#crestBad + 1] = id .. " (bottom emblem not centred)" end
+          local sr = W.statusTextRect
+          if not sr or (br and br[1] < sr[3] and br[1] + br[3] > sr[1] and br[2] < sr[4] and br[2] + br[3] > sr[2]) then crestBad[#crestBad + 1] = id .. " (status text under the bottom emblem)" end
+        end
+        local jt = W.statusText and rawget(W.statusText, "_just")
+        if jt ~= "LEFT" then crestBad[#crestBad + 1] = id .. " (status text not left-aligned)" end
         f:Hide()
       end
     end
     check(n == #NS.themeOrder * #cases, string.format("0.5.1.9 window: %d fresh-login opens, worst %.2f px off 1247x729", n, worst))
-    check(#crestBad == 0, "0.5.1.9 window: every theme: the title clear of the top crest, the status text clear of the bottom emblem (" .. table.concat(crestBad, ", ") .. "; crest moved beside the title in " .. moved .. ", bottom emblem moved off the status text in " .. bmoved .. " opens)")
+    check(#crestBad == 0 and centred == (#NS.themeOrder - 1) * #cases, "0.5.1.10 window: every theme: no title text; class crests and emblems centred (" .. centred .. "); status text left-aligned and clear of the bottom emblem (" .. table.concat(crestBad, ", ") .. ")")
     UIParent.GetEffectiveScale = saveU9 WorldMapFrame = saveWMF9 MW.art = nil MW.seenShown = nil
     NS.db.mapWindowSize = saveSV9
     NS.SetTheme(saveTheme9) win = NS.RebuildWindow() W = DarkMatter.windowParts
@@ -5213,7 +5259,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.1.9 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.1.10 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,

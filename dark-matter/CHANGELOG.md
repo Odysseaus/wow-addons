@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.1.10
+
+- Window size: unchanged (passed in 0.5.1.9).
+- **Map, zone view fills the box, like the stock map.**
+  - A zone (or city) opens and flies in at **cover** scale: its art fills the whole map area.
+  - The view is **locked** on that zone: dragging stops at the art's edge.
+  - Zooming out at the zone's fit goes up to the continent; right-click does the same.
+  - Zooming in at continent level locks on the zone under the middle as soon as that zone fills the view.
+  - Moving to a neighbouring zone: zoom out to the continent, then in.
+- **Map: no blurry continent or world art.**
+  - The continent picture fades out between x1.12 and x1.20 magnification, so it is never drawn above x1.20.
+  - The zone pictures (all of a continent's together) take over between x1.00 and x1.12 continent magnification.
+  - The world picture is gone by x1.50.
+  - Where no art covers the view: plain parchment, or the minimap tiles when they are on.
+- **Map: explored overlays** are tiled exactly like the stock map: tile count from the overlay's size
+  (ceil(size / 256)), not from the entry's numTextures fields, and the last row/column cut inside a power-of-two
+  file. This is the likely cause of the stretched strip left of the IRONFORGE banner.
+- mapprobe line 22 adds the zone the view is locked on and the continent art's magnification (drawn / off).
+- **No title text** in any theme. The WoW theme's title bar stays empty.
+- Class themes: the top crest and the bottom emblem are **centred** on the frame again.
+- The status text is **left-aligned** (10 px in) in every theme. In class themes it ends 8 px before the bottom
+  emblem, with '...' when it does not fit.
+- Tests:
+  - zone view covered and locked; panning held at the zone's edge;
+  - no continent art above x1.20;
+  - uniform texcoord-to-size ratio for every zone-art tile;
+  - overlay tiling from the overlay's size;
+  - every theme: no title, crests centred, status text clear of the emblem.
+
 ## 0.5.1.9
 
 - **Window size is right on the first open, with no need to open the stock map.** A map window that has never been

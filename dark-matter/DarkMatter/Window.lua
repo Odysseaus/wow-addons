@@ -92,7 +92,8 @@ local function ArtParts(ca, m)
   end
   if ca.crest then
     local cs = ca.crest[1] * k
-    local x, y = In(ax + (AW / 2 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy, cs, cs)
+    -- 0.5.1.10: centred on the frame in every class theme (no title any more; the art's side offset ca.crest[2] is not used)
+    local x, y = In(ax + AW / 2 * sx - cs / 2, ay + ca.crest[3] * sy, cs, cs)
     P.crest = { x, y, cs }
   end
   if ca.base then
@@ -234,12 +235,9 @@ local function BuildClassArt(f)
     local cx, cy, cs = parts.crest[1], parts.crest[2], parts.crest[3]
     P(A.crest, "crest", cx, cy, cs, cs)
     A.crestRect = { cx, cy, cs }
-    -- 0.5.1.9: the title must never sit under the crest: OnSkin moves the crest beside the title when they would overlap
-    function A.crestAt(x, y) P(A.crest, "crest", x, y, cs, cs) A.crestRect = { x, y, cs } end
     local bx, by, bs = parts.base[1], parts.base[2], parts.base[3]
     P(A.base, "base", bx, by, bs, bs)
     A.baseRect = { bx, by, bs }
-    function A.baseAt(x, y) P(A.base, "base", x, y, bs, bs) A.baseRect = { x, y, bs } end
     -- everything drawn (art rect + overhanging crest and base), window-relative, y down
     A.box = NS.ClassArtBox(ca, NS.theme.m) -- 0.5.1.6: incl. the edge sprites
     A.drawn = { math.min(ax, cx, bx), math.min(ay, cy), math.max(ax + aw, cx + cs, bx + bs), math.max(ay + ah, by + bs) }
@@ -571,7 +569,8 @@ local function Build()
   W.titlePlate:SetColorTexture(0.05, 0.035, 0.02, 0.78)
   W.titlePlate:Hide()
   title:SetPoint("CENTER", tb, "CENTER", 0, 0)
-  NS.OnSkin(function() title:SetText(NS.theme.title or "Dark Matter") end)
+  -- 0.5.1.10: no title text in any theme (the WoW theme's title bar stays empty; the class crests stand alone)
+  NS.OnSkin(function() title:SetText("") title:Hide() end)
   W.title = title
 
   -- rail with the vertical tabs
@@ -757,25 +756,11 @@ local function Build()
         if lum < 0.45 then W.titlePlate:SetColorTexture(0.95, 0.9, 0.78, 0.9) else W.titlePlate:SetColorTexture(0.05, 0.035, 0.02, 0.78) end
         W.titlePlate:SetPoint("CENTER", title, "CENTER", 0, 0)
         W.titlePlate:SetSize((title:GetStringWidth() or 80) + 28, math.floor(ca.titleSize * 0.8 + 0.5) + 8)
-        W.titlePlate:Show()
+        W.titlePlate:Hide() -- 0.5.1.10: no title, no plate
       else
         W.titlePlate:Hide()
       end
       local box = art.box -- everything drawn, incl. overhanging crest/base/ornaments: left, top, right, bottom (y down)
-      -- 0.5.1.9: no letter of the title under the crest: when they would overlap, the crest goes left of the title
-      -- (vertically centred on it, inside the frame art)
-      do
-        local sx2, sy2, ax2, ay2, AW2 = ArtMap()
-        local tx, ty = ax2 + AW2 / 2 * sx2, ay2 + (61 + ca.titleDy) * sy2
-        local hw = ((title:GetStringWidth() or 80) + 28) / 2
-        local hh = (math.floor(ca.titleSize * 0.8 + 0.5) + 8) / 2
-        W.titleRect = { tx - hw, ty - hh, tx + hw, ty + hh }
-        local cr = art.crestRect
-        if cr and art.crestAt and cr[1] < tx + hw and cr[1] + cr[3] > tx - hw and cr[2] < ty + hh and cr[2] + cr[3] > ty - hh then
-          art.crestAt(tx - hw - 6 - cr[3], math.max(ay2 + 2, ty - cr[3] / 2))
-          W.crestMoved = true
-        end
-      end
       if f.SetClampRectInsets then f:SetClampRectInsets(box[1], box[3] - m.w, -box[2], m.h - box[4]) end
       -- the whole frame art is a drag handle: the window's mouse area grows to it (content frames above stay clickable)
       if f.SetHitRectInsets then f:SetHitRectInsets(box[1], m.w - box[3], box[2], m.h - box[4]) end
@@ -866,20 +851,20 @@ local function Build()
     W.statusText:SetWidth(sw - 16)
     if W.statusText.SetWordWrap then W.statusText:SetWordWrap(false) end
     W.status = status
-    -- 0.5.1.9: the bottom emblem (class themes' base plate) never covers the status text: when it would overlap the
-    -- status box, it moves to the box's right end (same height, inside the frame art) and the text keeps clear of it on
-    -- both sides (still centred; an ellipsis only if it then does not fit)
-    W.baseMoved = nil
-    local tw = sw - 16
-    local bR = ca and W.classArt and W.classArt.baseRect
+    -- 0.5.1.10: the status text is left-aligned in its box (10 px in), every theme. The class themes' bottom emblem stays
+    -- centred on the frame; where it covers the box, the text ends 8 px before it ('...' when it does not fit)
+    local PAD = 10
     local sl, st = sRight + gapM, midY - sh / 2
-    if bR and W.classArt.baseAt and bR[1] < sl + sw and bR[1] + bR[3] > sl and bR[2] < st + sh and bR[2] + bR[3] > st then
-      W.classArt.baseAt(sl + sw - bR[3] - 4, bR[2])
-      tw = math.max(40, sw - 2 * (bR[3] + 12))
-      W.baseMoved = true
+    local tw = sw - 2 * PAD
+    local bR = ca and W.classArt and W.classArt.baseRect
+    if bR and bR[1] < sl + sw and bR[1] + bR[3] > sl and bR[2] < st + sh and bR[2] + bR[3] > st then
+      tw = math.max(40, math.min(tw, bR[1] - 8 - (sl + PAD)))
     end
+    W.statusText:ClearAllPoints()
+    W.statusText:SetPoint("LEFT", status, "LEFT", PAD, 0)
+    if W.statusText.SetJustifyH then W.statusText:SetJustifyH("LEFT") end
     W.statusText:SetWidth(tw)
-    W.statusTextRect = { sl + (sw - tw) / 2, st, sl + (sw + tw) / 2, st + sh }
+    W.statusTextRect = { sl + PAD, st, sl + PAD + tw, st + sh }
   end)
 
   -- ESC closes it, the stock way (plain table insert; Blizzard reads it through securecall).
