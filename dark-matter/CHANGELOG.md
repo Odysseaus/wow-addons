@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.5.2b.8
+
+Map: the name under the cursor at the top of the map, two-pass zone masks, and tools to measure their cost and review every zone border.
+
+### Changes
+- **Hover title.** The zone or capital under the cursor is named at the top centre of the map, above the pins, with the subarea under it. The subarea comes from `MapUtil.FindBestAreaNameAtMouse`, called with pcall, and shows only when it differs from the zone name.
+  - The title uses the game's `WorldMapTextFont` at scale 0.695 and `SubZoneTextFont` for the subarea. If those fonts are missing it uses Friz Quadrata 32 THICK, cream 1.0/0.93/0.76.
+  - It shows only where the game names the spot (no title over the sea) and gives no level range.
+  - The zone level boxes and the "Levels: public data" caption are unchanged.
+- **Two-pass zone masks (maskgen v2).**
+  - Every masked zone draws its picture twice:
+    - The **soft** pass (`z<id>.tga`) is a halo of its own land.
+    - The **core** pass (`z<id>c.tga`) sits one frame level higher and holds the land where its picture is the cleanest. That is the picture furthest from its torn rim and box edge.
+  - The cores of neighbours form a partition, so draw order no longer matters, and the halos fill the seams under them.
+  - Widths are in continent px. The torn-rim cut is in art px.
+  - The zone-name words painted into the art may be cut or covered. The hover title names the zone instead.
+  - Offline sweep, old to new:
+
+    | Metric | Kalimdor | Eastern Kingdoms |
+    |---|---|---|
+    | Land with only the continent picture | 4.14% to 3.66% | 5.10% to 3.38% |
+    | Wrong picture | 4.08% to 1.77% | 2.81% to 2.66% |
+    | Full-strength overlap | 4.74% to 0% | 3.90% to 0% |
+  - Redridge, Moonglade and 2652 still use neighbour-made rect masks until a new `/dm mapshapes` samples them.
+- **Border review** (box-side, `maskgen.py masks ... --review DIR`):
+  - It writes a report of every zone border, worst first, plus a contact sheet and continent overviews.
+  - It writes `Data_ZoneSeams.lua`, the worst borders, which ship for the in-game sweep.
+
+### New commands
+- `/dm mapcore on|off`: the core pass on or off for the session.
+- `/dm mapcost [both]`: with the map open, it steps through zoom levels 1, 2, 3, 4, 6, 8 and 10 at the current centre and records the frame rate and textures at each. With `both` it runs once with the core pass and once without, then restores the view.
+- `/dm shottest`: takes ONE screenshot and records whether the game reported `SCREENSHOT_SUCCEEDED` (saved in DarkMatterDB.map.shot).
+- `/dm seamsweep [N] | stop`: with the map open and out of combat, screenshots the N worst borders (default 8, max 40) at zoom 4, 8 and 12, then restores the view. It is refused until `/dm shottest` has passed.
+- `/dm mapprobe` map 25 shows the textures built and on screen, the core pass state, the frame rate, the hover title, and whether `Screenshot()` and its events exist. It takes no shot.
+
 ## 0.5.2b.7.3
 
 Map: quest areas stay locked to the zone picture on every frame of a zoom, capitals fade in from Zoom 8 (full at 10), and the Ready to Turn In rows look like the tracker's own.

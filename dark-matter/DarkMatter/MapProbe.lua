@@ -410,6 +410,25 @@ local function Run()
         data.zoomLevels[e.n] = { zk = e.zk, art = e.art }
       end
     end
+    -- 25 (0.5.2b.8): the cost of the two-pass masks (textures built and on screen, frame rate), the hover title, and
+    -- whether screenshots can be taken (no screenshot is taken here)
+    if MT.TexCount then
+      local t = MT.TexCount()
+      data.texCount = { total = t.total, tiles = t.tiles, ov = t.ov, core = t.core, layers = t.layers, shown = t.shown, shownTex = t.shownTex, fps = t.fps }
+      lines[#lines + 1] = string.format("map 25 textures: level %d, core pass %s: %d (%d tiles, %d overlays, %d core)",
+        MT.LevelIndex and MT.LevelIndex() or 0, MT.coreOff and "off" or "on", t.total, t.tiles, t.ov, t.core)
+      lines[#lines + 1] = string.format("map 25 on screen: %d of %d layers (%d with a core), %d textures, %s fps",
+        t.shown, t.layers, t.coreLayers, t.shownTex, t.fps and string.format("%.0f", t.fps) or "?")
+    end
+    if MT.hoverTitle then
+      lines[#lines + 1] = ("map 25 hover title: " .. tostring(MT.hoverTitle.font or "?") .. " font; now " .. tostring(MT.hoverName or "-")
+        .. (MT.hoverSub and (" / " .. MT.hoverSub) or "")):sub(1, 90)
+    end
+    if NS.MapReview then
+      local a, b = NS.MapReview.ShotParts()
+      lines[#lines + 1] = "map 25 screenshot: " .. a
+      lines[#lines + 1] = "map 25 last shottest: " .. b
+    end
   end
   return lines, data
 end

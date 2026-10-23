@@ -355,7 +355,7 @@ function MD.ZoneAt(cont, x, y)
   end
   if best then
     local r = best.r
-    return best, (x - r[1]) / (r[2] - r[1]), (y - r[3]) / (r[4] - r[3])
+    return best, (x - r[1]) / (r[2] - r[1]), (y - r[3]) / (r[4] - r[3]), id and best.id == (MD.ZoneOf(id) or id) or false -- 4th: the game named it (0.5.2b.8)
   end
 end
 

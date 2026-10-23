@@ -296,6 +296,19 @@ local function Piece(L, fid, layer, x, y, w, h, u2, v2, list)
     -- 0.5.2b.6.1: the mask goes on last, once the texture has its file, size and place (as /dm masktest does)
     if L.mask then M.AttachMask(t, L.mask) end
     list[#list + 1] = t
+    -- 0.5.2b.8: the second pass: the same piece again on the layer's core frame (one level up), cut by the core mask
+    local cf = L.coreFrame
+    if cf then
+      local c = cf:CreateTexture(nil, layer, nil, sub)
+      c:SetSize(pw * k, ph * k)
+      c:SetPoint("TOPLEFT", cf, "TOPLEFT", px * k, -py * k)
+      c:SetTexture(fid)
+      c:SetTexCoord(u1, uu2, v1, vv2)
+      c.dmG = t.dmG
+      M.AttachMask(c, L.coreMask)
+      local cl = list == L.tiles and L.coreTiles or L.coreOv
+      cl[#cl + 1] = c
+    end
     return t
   end
   if not L.feather or (x >= FEATHER and y >= FEATHER and x + w <= a.w - FEATHER and y + h <= a.h - FEATHER) then
@@ -357,6 +370,7 @@ end
 local function BuildOverlays(L)
   for _, t in ipairs(L.ov) do t:Hide() end
   L.ov = {}
+  if L.coreOv then for _, t in ipairs(L.coreOv) do t:Hide() end L.coreOv = {} end
   local list = MD.Explored(L.id)
   if not list then return end
   for _, e in ipairs(list) do
@@ -435,6 +449,31 @@ local function NewLayer(id, level, host, force)
             m:SetAllPoints(f)
           end
           L.mask, L.feather = m, false
+          -- 0.5.2b.8: the second pass. A zone with a core mask gets a child frame one level up holding the same
+          -- pieces cut by the core (where this picture paints its land most cleanly); the soft mask on the frame
+          -- below is the first pass (a halo under every zone's core). Alpha and show/hide come from the frame.
+          local cfile = not M.coreOff and M.CoreFile(id)
+          if cfile then
+            local cf = CreateFrame("Frame", nil, f)
+            cf:SetAllPoints(f)
+            cf:SetFrameLevel(f:GetFrameLevel() + 1)
+            local okC, cm = pcall(cf.CreateMaskTexture, cf)
+            local okT, rc = false, nil
+            if okC and cm then okT, rc = pcall(cm.SetTexture, cm, cfile, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE") end
+            if okT and rc ~= false then
+              if L.maskBox then
+                cm:ClearAllPoints()
+                cm:SetPoint("TOPLEFT", cf, "TOPLEFT", L.maskBox[1], -L.maskBox[2])
+                cm:SetSize(L.maskBox[3], L.maskBox[4])
+              else
+                cm:SetAllPoints(cf)
+              end
+              L.coreFrame, L.coreMask, L.coreTiles, L.coreOv = cf, cm, {}, {}
+            else
+              cf:Hide()
+              M.coreFail = (M.coreFail or 0) + 1
+            end
+          end
         else
           M.maskFail = (M.maskFail or 0) + 1
         end
@@ -463,21 +502,27 @@ local function Fit(L, host, l, t, sc)
       L.fitSc, L.fitDone = sc, true
       if f:GetScale() ~= 1 then f:SetScale(1) end
       f:SetSize(L.art.w * sc, L.art.h * sc)
-      for _, list in ipairs({ L.tiles, L.ov }) do
-        for _, p in ipairs(list) do
+      local cf = L.coreFrame
+      for _, set in ipairs({ { L.tiles, f }, { L.ov, f }, { L.coreTiles, cf }, { L.coreOv, cf } }) do
+        local list, on = set[1], set[2]
+        for _, p in ipairs(list or {}) do
           local g = p.dmG
           if g then
             p:ClearAllPoints()
-            p:SetPoint("TOPLEFT", f, "TOPLEFT", g[1] * sc, -g[2] * sc)
+            p:SetPoint("TOPLEFT", on, "TOPLEFT", g[1] * sc, -g[2] * sc)
             p:SetSize(g[3] * sc, g[4] * sc)
           end
         end
       end
       local b = L.maskBox
       if b then
-        L.mask:ClearAllPoints()
-        L.mask:SetPoint("TOPLEFT", f, "TOPLEFT", b[1] * sc, -b[2] * sc)
-        L.mask:SetSize(b[3] * sc, b[4] * sc)
+        for _, mm in ipairs({ { L.mask, f }, { L.coreMask, cf } }) do
+          if mm[1] then
+            mm[1]:ClearAllPoints()
+            mm[1]:SetPoint("TOPLEFT", mm[2], "TOPLEFT", b[1] * sc, -b[2] * sc)
+            mm[1]:SetSize(b[3] * sc, b[4] * sc)
+          end
+        end
       end
     end
     f:ClearAllPoints()
@@ -810,8 +855,33 @@ local function Trail()
 end
 function M.Trail() local t = Trail() local n = {} for i, s in ipairs(t) do n[i] = s.name end return n end
 
+-- 0.5.2b.8: the hover title (see the frame in the build): the zone or capital under the cursor, the game's subarea
+-- name there (MapUtil.FindBestAreaNameAtMouse on the zone's own map, as the stock map's area label does)
+function M.HoverText(z, zx, zy)
+  if not z then return nil, nil end
+  local sub
+  local mu = MapUtil and MapUtil.FindBestAreaNameAtMouse
+  if type(mu) == "function" and zx and zy then
+    local ok, s = pcall(mu, z.id, zx, zy)
+    if ok and type(s) == "string" and s ~= "" and s ~= z.name then sub = s end
+  end
+  return z.name, sub
+end
+local function SetHoverTitle(z, zx, zy)
+  local ht = M.hoverTitle
+  if not ht then return end
+  local key = z and string.format("%d:%.3f:%.3f", z.id, zx or 0, zy or 0) or nil
+  if key == M.hoverKey then return end
+  M.hoverKey = key
+  local name, sub = M.HoverText(z, zx, zy)
+  M.hoverName, M.hoverSub = name, sub
+  if not name then ht:Hide() return end
+  ht.name:SetText(name)
+  ht.sub:SetText(sub or "")
+  ht:Show()
+end
 local function UpdateCoords()
-  local cur = "--"
+  local cur, hz, hx, hy = "--", nil, nil, nil
   if MouseOver() then
     local px, py = Cursor()
     local wx, wy = M.ToWorld(px, py)
@@ -819,14 +889,15 @@ local function UpdateCoords()
     if f and (M.ContAlpha(f) > 0.5 or not M.hasWorld) then
       local p = Place(f)
       local cx, cy = (wx - p[1]) / (p[2] - p[1]), (wy - p[3]) / (p[4] - p[3])
-      local z, zx, zy = MD.ZoneAt(f, cx, cy)
-      if z then cur = z.name .. "  " .. Fmt(zx, zy)
+      local z, zx, zy, named = MD.ZoneAt(f, cx, cy)
+      if z then cur = z.name .. "  " .. Fmt(zx, zy) if named then hz, hx, hy = z, zx, zy end -- the title only where the game names the land
       elseif cx >= 0 and cx <= 1 and cy >= 0 and cy <= 1 then cur = (MD.Name(f) or "") .. "  " .. Fmt(cx, cy) end
     elseif wx >= 0 and wx <= 1 and wy >= 0 and wy <= 1 then
       cur = (MD.Name(M.world) or "World") .. "  " .. Fmt(wx, wy)
     end
   end
   M.coordText = cur
+  SetHoverTitle(hz, hx, hy)
   local me = "Player  --"
   local pm = MD.PlayerMap()
   local x, y = MD.PlayerPos(pm)
@@ -906,7 +977,7 @@ function M.MaskCheck()
     if L.mask then
       layers = layers + 1
       first = first or L
-      for _, list in ipairs({ L.tiles, L.ov }) do
+      for _, list in ipairs({ L.tiles, L.ov, L.coreTiles or {}, L.coreOv or {} }) do
         for _, t in ipairs(list or {}) do
           pieces = pieces + 1
           local ok, n = false, nil
@@ -973,7 +1044,7 @@ function M.MaskAudit(r)
       local f = L.frame
       local okS, s = pcall(f.GetScale, f)
       if m and okS and type(s) == "number" and math.abs(s - 1) > 0.001 then Bad(L, "way", "not-panel2: scaled x" .. string.format("%.2f", s)) ok = false end
-      for _, list in ipairs({ L.tiles, L.ov }) do
+      for _, list in ipairs({ L.tiles, L.ov, L.coreTiles or {}, L.coreOv or {} }) do
         for _, t in ipairs(list) do
           do
             r.pieces = r.pieces + 1
@@ -1027,6 +1098,40 @@ function M.MaskRect(id)
   local m = type(t) == "table" and t[id]
   local r = type(m) == "table" and m.rect
   if type(r) == "table" and type(r[1]) == "number" and type(r[4]) == "number" and r[2] > r[1] and r[4] > r[3] then return r end
+end
+-- 0.5.2b.8: a zone's core mask (the second pass), if Data_ZoneMasks.lua ships one
+function M.CoreFile(id)
+  local t = NS.ZoneMasks
+  local m = type(t) == "table" and t[id]
+  if type(m) == "table" and type(m.core) == "string" and m.core ~= "" then return m.core end
+end
+-- /dm mapcore on|off: the second (core) pass on or off for this session (off = the soft masks alone, the cost check)
+function M.MapCoreSlash(arg)
+  arg = (arg or ""):lower():match("^%s*(%S*)")
+  if arg == "off" then M.coreOff = true
+  elseif arg == "on" then M.coreOff = nil
+  elseif arg ~= "" then return "mapcore: /dm mapcore on|off (now: " .. (M.coreOff and "off" or "on") .. ")" end
+  if arg ~= "" then M.RebuildLayers() if M.root and M.root:IsVisible() then M.Layout() end end
+  local t = M.TexCount()
+  if t.layers == 0 then return "mapcore: " .. (M.coreOff and "off" or "on") .. " - the zone layers are rebuilt as the map draws (/dm mapprobe: map 25 counts them)" end
+  return string.format("mapcore: %s - %s", M.coreOff and "off" or "on", t.line)
+end
+-- 0.5.2b.8: what the map holds right now: textures built (tiles, explored overlays, core copies) in all layers and in
+-- the layers on screen, and the frame rate (mapprobe 25, /dm mapcost)
+function M.TexCount()
+  local r = { layers = 0, shown = 0, tiles = 0, ov = 0, core = 0, shownTex = 0, coreLayers = 0 }
+  for _, L in pairs(M.layers) do
+    r.layers = r.layers + 1
+    local nt, no, nc = #(L.tiles or {}), #(L.ov or {}), #(L.coreTiles or {}) + #(L.coreOv or {})
+    r.tiles, r.ov, r.core = r.tiles + nt, r.ov + no, r.core + nc
+    if L.coreFrame then r.coreLayers = r.coreLayers + 1 end
+    if L.shown and L.frame:IsShown() then r.shown = r.shown + 1 r.shownTex = r.shownTex + nt + no + nc end
+  end
+  r.total = r.tiles + r.ov + r.core
+  r.fps = type(GetFramerate) == "function" and GetFramerate() or nil
+  r.line = string.format("%d textures (%d tiles, %d overlays, %d core) in %d layers (%d with a core); on screen %d layers, %d textures; %s fps",
+    r.total, r.tiles, r.ov, r.core, r.layers, r.coreLayers, r.shown, r.shownTex, r.fps and string.format("%.0f", r.fps) or "?")
+  return r
 end
 function M.ContMasked(cont)
   M.masked = M.masked or {}
@@ -1166,7 +1271,11 @@ function M.Layout()
       if zl then
         zl.wantOv = true
         local lv = isCity and 6 or ((isFocus or masked) and 4 or 3)
-        if zl.level ~= lv then zl.level = lv zl.frame:SetFrameLevel(base + lv) end
+        if zl.level ~= lv then
+          zl.level = lv
+          zl.frame:SetFrameLevel(base + lv)
+          if zl.coreFrame then zl.coreFrame:SetFrameLevel(base + lv + 1) end -- 0.5.2b.8: the core pass, above every soft mask
+        end
         local x1, x2, y1, y2 = WorldRect(z.id)
         Show(zl, x1, x2, y1, y2, d)
       end
@@ -1998,6 +2107,8 @@ end
 M.Refit = Refit
 -- tests and probes: put the view at world point cx, cy and zoom (1 = fully zoomed out)
 function M.SetViewAt(cx, cy, zoom) SetView(cx, cy, zoom * SFit()) M.Layout() end
+-- 0.5.2b.8: the view centred on world point cx, cy at zoom level n (/dm seamsweep, /dm mapcost)
+function M.ViewLevelAt(cx, cy, n) SetView(cx, cy, M.LevelScale(nil, n)) M.Layout() end
 -- move the view by dx, dy screen px (free, like a drag)
 function M.Pan(dx, dy) V.ox, V.oy = V.ox + dx, V.oy + dy ClampView() M.Layout() end
 
@@ -2364,6 +2475,31 @@ local function Build(body)
   zr.text:SetPoint("CENTER", zr, "CENTER", 0, 0)
   zr.text:SetText("Zoom 1")
   M.zoomReadout = zr
+  -- 0.5.2b.8: the hover title, as the game's own map labels the area under the cursor (AreaLabelFrameTemplate: a
+  -- frame at scale 0.695, the name in WorldMapTextFont 20 below its top, the subarea under it): the zone or capital
+  -- under the cursor and, where the game names one, the subarea. Centred at the top of the map, above the pins,
+  -- never takes the mouse. No level range (the badges show those).
+  local ht = CreateFrame("Frame", nil, vpBox)
+  ht:SetFrameLevel(canvas:GetFrameLevel() + 21)
+  ht:SetScale(0.695)
+  ht:SetSize(400, 128)
+  ht:SetPoint("TOP", vp, "TOP", 0, -10)
+  if ht.EnableMouse then ht:EnableMouse(false) end
+  local function TitleFont(fs, obj, size)
+    if obj and fs.SetFontObject then fs:SetFontObject(obj) return "game" end
+    pcall(fs.SetFont, fs, "Fonts\\FRIZQT__.TTF", size, "THICK")
+    fs:SetTextColor(1.0, 0.9294, 0.7607, 1)
+    if fs.SetShadowColor then fs:SetShadowColor(0, 0, 0, 1) fs:SetShadowOffset(1, -1) end
+    return "FRIZQT " .. size
+  end
+  ht.name = ht:CreateFontString(nil, "OVERLAY")
+  ht.font = TitleFont(ht.name, WorldMapTextFont, 32)
+  ht.name:SetPoint("TOP", ht, "TOP", 0, -20)
+  ht.sub = ht:CreateFontString(nil, "OVERLAY")
+  TitleFont(ht.sub, SubZoneTextFont, 26)
+  ht.sub:SetPoint("TOP", ht.name, "BOTTOM", 0, -10)
+  ht:Hide()
+  M.hoverTitle = ht
 
   -- search results drop-down (above the map)
   results = UI.Panel(root, 260, 34)

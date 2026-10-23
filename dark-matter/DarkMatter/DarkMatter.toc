@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.7.3: map: quest areas locked to the zone picture while zooming, capitals fade in from zoom 8 (full at 10, /dm citylevel), numbered zoom levels, the stock tombstone; smooth zone masks (soft edges, inset from the torn rim and the box edge, feathered seams), quest objective areas shaded, quest POI buttons like the objective tracker, party / raid dots, your corpse, and the map opens on you.
+## Notes: Dark Matter 0.5.2b.8: map: the zone or capital name under the cursor at the top of the map, two-pass zone masks (soft halo under a core where each picture paints its land most cleanly), /dm mapcost, /dm shottest, /dm seamsweep; quest areas locked to the zone picture while zooming, capitals fade in from zoom 8 (full at 10, /dm citylevel), numbered zoom levels, the stock tombstone; smooth zone masks (soft edges, inset from the torn rim and the box edge, feathered seams), quest objective areas shaded, quest POI buttons like the objective tracker, party / raid dots, your corpse, and the map opens on you.
 ## Author: Odysseaus
-## Version: 0.5.2b.7.3
+## Version: 0.5.2b.8
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
@@ -37,9 +37,11 @@ Data_Minimap.lua
 MapCloseUp.lua
 Data_ZoneLevels.lua
 Data_ZoneMasks.lua
+Data_ZoneSeams.lua
 Tab_Map.lua
 MapExtras.lua
 MapShapes.lua
+MapReview.lua
 Tab_Stub.lua
 Tracker.lua
 Keys.lua

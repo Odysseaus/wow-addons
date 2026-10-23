@@ -3699,7 +3699,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.7.3 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.8 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4462,6 +4462,86 @@ do
     local out = M.Sweep()
     check(M.sweep.flagged == 0 and out[3] == "mapsweep masks: " .. M.MaskLine() and M.MaskLine():find("^5/5 zones masked; 2 continent"),
       "0.5.2b.6 map: sweep with the shipped masks: " .. table.concat(out, " | "))
+    -- 0.5.2b.8: the two-pass masks: each masked zone also has a core frame one level up, its own copies of the
+    -- tiles cut by the core mask; /dm mapcore off drops them, on brings them back; mapprobe 25 counts them
+    do
+      local L8 = M.layers[1426]
+      local cf = L8 and L8.coreFrame
+      check(cf and L8.coreMask and L8.coreMask._file == SHIPPED_MASKS[1426].core and #L8.coreTiles == #L8.tiles and #L8.tiles > 0
+        and cf:GetFrameLevel() == L8.frame:GetFrameLevel() + 1,
+        "0.5.2b.8 map: Dun Morogh has a core pass: its own tile copies cut by " .. tostring(SHIPPED_MASKS[1426].core) .. ", one frame level above the soft pass")
+      local t1 = M.TexCount()
+      local off = M.MapCoreSlash("off") run(5)
+      local t0 = M.TexCount()
+      local L0 = M.layers[1426]
+      local on = M.MapCoreSlash("on") run(5)
+      local t2 = M.TexCount()
+      check(t1.core > 0 and t0.core == 0 and L0 and not L0.coreFrame and off:find("^mapcore: off") and on:find("^mapcore: on")
+        and t2.core > 0 and t2.core < t2.total and M.layers[1426].coreFrame,
+        "0.5.2b.8 /dm mapcore off|on: " .. t1.core .. " core textures, " .. t0.core .. " when off, " .. t2.core .. " when on (totals " .. t1.total .. "/" .. t2.total .. "; " .. tostring(L0 and L0.coreFrame) .. "; " .. off .. ")")
+      local nwm8 = #wmAccess
+      DarkMatterDB.mapprobe = nil
+      SlashCmdList.DARKMATTER("mapprobe")
+      for i = #wmAccess, nwm8 + 1, -1 do wmAccess[i] = nil end -- the probe's own type checks are tested with the probe
+      local all8, long8 = table.concat(DarkMatterDB.mapprobe.last.lines, "\n"), 0
+      for _, l in ipairs(DarkMatterDB.mapprobe.last.lines) do if l:find("^map 25") then long8 = math.max(long8, #l) end end
+      check(all8:find("\nmap 25 textures: level %d+, core pass on: %d+ %(%d+ tiles, %d+ overlays, %d+ core%)")
+        and all8:find("\nmap 25 on screen: %d+ of %d+ layers") and all8:find("\nmap 25 screenshot: Screenshot%(%) MISSING")
+        and all8:find("\nmap 25 last shottest: never", 1, false) and all8:find("\nmap 25 hover title: ") and long8 <= 90,
+        "0.5.2b.8 mapprobe 25: textures, on screen, hover title, screenshot (no shot taken); longest " .. long8)
+      -- the hover title: the zone name, plus the game's subarea name when it differs; a failing lookup is ignored
+      local ht = M.hoverTitle
+      check(ht and ht.name and ht.sub and math.abs(ht:GetScale() - 0.695) < 1e-6 and ht:GetFrameLevel() > M.zoomReadout:GetFrameLevel(),
+        "0.5.2b.8 map: the hover title frame, at scale 0.695 above the zoom readout")
+      local oldMU = MapUtil
+      MapUtil = { FindBestAreaNameAtMouse = function(id, x, y) return id == 1426 and x > 0.5 and "Kharanos" or "Dun Morogh" end }
+      local n1, s1 = M.HoverText({ id = 1426, name = "Dun Morogh" }, 0.6, 0.5)
+      local n2, s2 = M.HoverText({ id = 1426, name = "Dun Morogh" }, 0.4, 0.5)
+      MapUtil = { FindBestAreaNameAtMouse = function() error("no") end }
+      local n3, s3 = M.HoverText({ id = 1426, name = "Dun Morogh" }, 0.6, 0.5)
+      MapUtil = oldMU
+      check(n1 == "Dun Morogh" and s1 == "Kharanos" and n2 == "Dun Morogh" and s2 == nil and n3 == "Dun Morogh" and s3 == nil and M.HoverText(nil) == nil,
+        "0.5.2b.8 map: hover text = zone name + subarea (only when it differs; errors ignored)")
+      -- /dm shottest and /dm seamsweep: no Screenshot() -> refused; a client that reports success -> passed, then the sweep runs
+      local said8 = {}
+      local oldPrint = NS.Print
+      NS.Print = function(m) said8[#said8 + 1] = m end
+      SlashCmdList.DARKMATTER("seamsweep")
+      local refused = said8[1]
+      SlashCmdList.DARKMATTER("shottest")
+      local noShot = said8[2]
+      local shots = 0
+      Screenshot = function() shots = shots + 1 NS.MapReview.ShotEvent("SCREENSHOT_SUCCEEDED") end
+      said8 = {}
+      SlashCmdList.DARKMATTER("shottest")
+      local passed = table.concat(said8, "\n")
+      said8 = {}
+      local saveVis8 = FrameMT.IsVisible
+      FrameMT.IsVisible = function(s) local x = s while x and x ~= UIParent do if x._hid then return false end x = x._parent end return true end
+      SlashCmdList.DARKMATTER("seamsweep 2")
+      local sweep = table.concat(said8, "\n")
+      local nSeams = #NS.MapReview.Seams(2)
+      FrameMT.IsVisible = saveVis8
+      Screenshot = function() shots = shots + 1 NS.MapReview.ShotEvent("SCREENSHOT_FAILED") end
+      said8 = {}
+      SlashCmdList.DARKMATTER("shottest")
+      local failed = table.concat(said8, "\n")
+      Screenshot = nil
+      NS.Print = oldPrint
+      check(refused and refused:find("^seamsweep: run /dm shottest first") and noShot and noShot:find("no Screenshot%(%)")
+        and passed:find("shottest: PASSED", 1, true) and failed:find("shottest: FAILED - failed", 1, true) and not NS.MapReview.ShotOK()
+        and nSeams == 2 and shots == 2 + 2 * #NS.MapReview.SEAM_LEVELS and not NS.MapReview.busy,
+        "0.5.2b.8 /dm shottest + seamsweep: refused before a passing shot; 2 borders x " .. #NS.MapReview.SEAM_LEVELS .. " levels shot (" .. shots .. " shots): " .. sweep:gsub("\n", " | "))
+      said8 = {}
+      NS.Print = function(m) said8[#said8 + 1] = m end
+      FrameMT.IsVisible = function(s) local x = s while x and x ~= UIParent do if x._hid then return false end x = x._parent end return true end
+      SlashCmdList.DARKMATTER("mapcost both")
+      FrameMT.IsVisible = saveVis8
+      NS.Print = oldPrint
+      local cost = table.concat(said8, "\n")
+      check(cost:find("mapcost", 1, true) and M.layers[1426].coreFrame and not M.coreOff and not NS.MapReview.busy,
+        "0.5.2b.8 /dm mapcost both: runs with and without the core pass and puts the core pass back: " .. cost:gsub("\n", " | "):sub(1, 300))
+    end
     -- a mask with its own rect is placed at that rect inside the zone picture
     local zm = {}
     for k, v in pairs(SHIPPED_MASKS) do zm[k] = v end
@@ -4670,7 +4750,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.7.3 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.8 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -5509,7 +5589,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.7%.3 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.8 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -6507,7 +6587,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.7.3 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.8 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -7068,7 +7148,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.7.3 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.8 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}
