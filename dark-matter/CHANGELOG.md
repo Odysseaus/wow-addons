@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.2b.6.1
+
+Map: a fix for the zone masks, which did not cut in game in 0.5.2b.6. This is the pre-release of 0.5.2b.7.
+
+### Fixes
+- **Zone masks**: in 0.5.2b.6, each zone picture piece got its mask while it was still an empty texture (before its file, size and place). In game, every zone was drawn as its full torn-edge rectangle, overlapping its neighbours. Now the mask goes on last, once the piece has its file, size and place. This is the same order as `/dm masktest`, whose star mask cuts in game.
+- **Self check**: after each attach, Dark Matter asks the game whether the piece kept its mask (`GetNumMaskTextures`). If the game kept none, or the call failed, the map turns masks off for the session. It then draws one feathered zone at a time, as in 0.5.2b.5, instead of hard rectangles.
+
+### Changes
+- **Layer `auto` is the default**: the painted, masked zone maps at zone zooms, crossfading to the minimap tiles at the deepest zoom. `/dm maplayer painted` brings back 0.5.2b.6's painted-only map.
+- `/dm masktest zone [name]`: your zone (or the named one) drawn four ways side by side:
+  1. the zone mask on parchment;
+  2. the zone picture with the mask added last;
+  3. the 0.5.2b.6 map way;
+  4. the 0.5.2b.6.1 map way.
+  Each panel says how many pieces carry the mask.
+- `/dm mapmask on|off`: the zone masks on or off for this session.
+- `/dm mapsweep` adds a `maskcheck` line: pieces, how many carry the mask, attach results, and the mask's file and size against the picture. `/dm mapprobe` adds `map 23 maskcheck`, and `map 10: quest areas` (is the game's QuestBlob provider there).
+
 ## 0.5.2b.6
 
 Map: the game's painted zone maps are the main layer, each cut to the zone's real borders.

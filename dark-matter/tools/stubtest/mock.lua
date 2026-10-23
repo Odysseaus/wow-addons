@@ -232,7 +232,13 @@ function FrameMT.SetCheckedTexture() end
 function FrameMT.SetChecked(s, v) s._checked = v and true or false end
 function FrameMT.GetChecked(s) return s._checked == true end
 function FrameMT.CreateMaskTexture(s, name, layer) local t = FrameMT.CreateTexture(s, name, layer) t._isMask = true return t end
-function FrameMT.AddMaskTexture(s, m) if type(m) ~= "table" or not rawget(m, "_isMask") then error("AddMaskTexture: not a mask texture", 2) end s._masks = s._masks or {} s._masks[#s._masks + 1] = m end
+function FrameMT.AddMaskTexture(s, m) if type(m) ~= "table" or not rawget(m, "_isMask") then error("AddMaskTexture: not a mask texture", 2) end if s._maskNoFile == nil then s._maskNoFile = s._file == nil end s._masks = s._masks or {} s._masks[#s._masks + 1] = m end
+-- 0.5.2b.6.1: the client's mask queries; MOCK_MASK_DROP = true plays a client that keeps no mask on a texture
+function FrameMT.GetNumMaskTextures(s) if MOCK_MASK_DROP then return 0 end return s._masks and #s._masks or 0 end
+function FrameMT.GetMaskTexture(s, i) needNum("GetMaskTexture", 1, i) return s._masks and s._masks[i] end
+function FrameMT.RemoveMaskTexture(s, m)
+  for i, x in ipairs(s._masks or {}) do if x == m then table.remove(s._masks, i) return end end
+end
 function FrameMT.GetStringWidth() return 60 end
 function FrameMT.GetStringHeight() return 40 end
 function FrameMT.GetFrameLevel() return 1 end
@@ -3690,7 +3696,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.6 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.6.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3706,7 +3712,7 @@ do
   check(has("map 5 layers here: 1 layer, scale ") and has("map 5 layers continent: ") and has("map 5 layers world: "), "0.5.1.4 mapprobe: art layer count and min/max scale for zone, continent and world")
   check(has("map 16: yards: top-left ") and has("map 17: you at ") and has("; minimap tile ") and has("map 18: tile loads by file ID ") and has("; by path "),
     "0.5.1.4 mapprobe: yard corners, the minimap tile you stand on, and whether it loads by file ID and by path")
-  check(has("map 19: OpenMap loaded no (not used); close-up on, 45%; layer painted") and has("map 19 source: Map: the game's own map pictures"),
+  check(has("map 19: OpenMap loaded no (not used); close-up on, 45%; layer auto") and has("map 19 source: Map: the game's painted maps (minimap tiles only at the deepest zoom)"),
     "0.5.1.4 mapprobe: OpenMap is only reported (informational) and the map source is named")
   check(#WRITES == 0, "0.4.7 mapprobe: read-only (never set/cleared a waypoint or touched the game map: " .. table.concat(WRITES, ", ") .. ")")
   local printed = 0
@@ -3866,8 +3872,8 @@ do
   check(#MD.Zones(1414) == 2, "0.5.0 map: Kalimdor zones read too (no per-zone probing)")
   -- 3. continent placement on the world picture
   NS.db.map = NS.db.map or {}
-  -- 0.5.2b.6: the painted maps are the default layer; the 0.5.2b.5 tests below run with the tiles' own rules
-  check(NS.MapCloseUp.Layer() == "painted" and NS.db.map.layer == nil, "0.5.2b.6 map: the default layer is 'painted'")
+  -- 0.5.2b.6.1: auto (the painted maps, the tiles at the deepest zoom) is the default layer; the 0.5.2b.5 tests below run with the tiles' own rules
+  check(NS.MapCloseUp.Layer() == "auto" and NS.MapCloseUp.DEFAULT_LAYER == "auto" and NS.db.map.layer == nil, "0.5.2b.6.1 map: the default layer is 'auto'")
   NS.db.map.layer = "terrain"
   NS.db.map.place = nil
   local pk, sk = MD.Placement(1414)
@@ -4106,8 +4112,12 @@ do
     local said, oldPrint = {}, NS.Print
     NS.Print = function(m) said[#said + 1] = m end
     SlashCmdList.DARKMATTER("mapmask off") run(2)
+    local offNow = M.maskOff
+    SlashCmdList.DARKMATTER("mapmask on") run(2)
     NS.Print = oldPrint
-    check(said[1] and said[1]:find("removed in 0.5.2b.4", 1, true) and dm.shown and dm.feather, "0.5.2b.4 /dm mapmask: says it was removed, the map is unchanged")
+    -- 0.5.2b.6.1: /dm mapmask is back (the zone masks on/off for the session)
+    check(said[1] and said[1]:find("^mapmask: off %- ") and said[2] and said[2]:find("^mapmask: on %- ") and offNow and not M.maskOff
+      and M.layers[1426] and M.layers[1426].shown, "0.5.2b.6.1 /dm mapmask: off then on (" .. tostring(said[1]) .. " | " .. tostring(said[2]) .. ")")
   end
   -- 0.5.2b.5: the strict check catches 0.5.2b.4's fault: with no masks and no tiles, the neighbours' land at zone view
   -- is the magnified continent picture (the zone's rectangle shows against it)
@@ -4239,6 +4249,48 @@ do
       "0.5.2b.5 map: masks for every zone -> each zone cut by its mask, the neighbours drawn too, no flags (" .. M.MaskLine() .. "; mask " .. tostring(L and L.mask) .. " feather " .. tostring(L and L.feather) .. " pieces " .. tostring(piecesMasked) .. " lc " .. tostring(lc.masked) .. "; " .. nz .. " zones; " .. lc.text .. ")")
     local out = M.Sweep()
     check(M.sweep.flagged == 0 and out[3] == "mapsweep masks: " .. M.MaskLine(), "0.5.2b.5 map: sweep with masks: " .. table.concat(out, " | "))
+    -- 0.5.2b.6.1: each piece gets its mask after its file, size and place (the /dm masktest order); the game is asked
+    -- whether it kept it; the sweep says so
+    local after = L and #L.tiles > 0
+    for _, t in ipairs(L and L.tiles or {}) do if t._maskNoFile ~= false then after = false end end
+    local st = M.maskStat
+    check(after and st.add > 0 and st.ok == st.add and st.none == 0 and st.err == 0 and not M.maskBroken
+      and out[4]:find("^mapsweep maskcheck: %d+ masked layers, %d+ pieces, %d+ carry the mask; adds %d+ %(ok %d+, kept none 0, errors 0, uncounted 0%); map %d+ mask ")
+      and M.MaskShort():find("^adds %d+: kept %d+, none 0, errors 0, uncounted 0$"),
+      "0.5.2b.6.1 map: the mask goes on each piece last and the game keeps it (" .. tostring(out[4]) .. "; " .. M.MaskShort() .. ")")
+    -- a client that keeps no mask: the map notices and draws one feathered zone at a time (no hard rectangles)
+    MOCK_MASK_DROP = true
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+    local Ld = M.layers[1426]
+    check(M.maskBroken and Ld and Ld.feather and not Ld.mask and M.MaskLine():find("did not attach") and M.MaskShort():find("; OFF$")
+      and not M.ContMasked(Ld and MD.ZoneEntry(1426).cont or 0),
+      "0.5.2b.6.1 map: masks that do not stick -> feathered zones (" .. M.MaskLine() .. "; " .. M.MaskShort() .. "; feather " .. tostring(Ld and Ld.feather) .. ")")
+    MOCK_MASK_DROP = nil
+    -- /dm mapmask off|on for the session
+    local s1 = M.MapMaskSlash("on")
+    run(10)
+    local Lo = M.layers[1426]
+    local s2 = M.MapMaskSlash("off")
+    run(10)
+    local Lf = M.layers[1426]
+    local s3 = M.MapMaskSlash("on")
+    run(10)
+    local Ln = M.layers[1426]
+    check(s1:find("^mapmask: on %- %d+/%d+ zones masked; 2 continent") and Lo and Lo.mask and s2:find("^mapmask: off %- .*%(off: /dm mapmask on%)$")
+      and Lf and Lf.feather and not Lf.mask and Ln and Ln.mask and not M.maskOff and M.MapMaskSlash("x"):find("^mapmask: /dm mapmask on|off %(now: on%)$"),
+      "0.5.2b.6.1 /dm mapmask: " .. s1 .. " | " .. s2 .. " | " .. s3)
+    -- /dm masktest zone [name]: four panels, each one saying how many pieces carry the mask
+    local MS = NS.MapShapes
+    local zl = MS.MaskTest("zone dun morogh")
+    local zt = table.concat(zl, " | ")
+    check(zl[1]:find("^masktest zone " .. NS.version:gsub("%.", "%%.") .. ": Dun Morogh %(map 1426, picture %d+x%d+, mask z1426%)") and zt:find("masktest zone 1: applied")
+      and zt:find("masktest zone 2: (%d+)/%1 pieces carry the mask") and zt:find("masktest zone 3: %d+/%d+ pieces") and zt:find("masktest zone 4: (%d+)/%1 pieces carry")
+      and zt:find("masktest zone map: maskcheck: ") and MS.zoneFrame and MS.zoneFrame:IsShown(),
+      "0.5.2b.6.1 /dm masktest zone: " .. zt)
+    local zc = MS.MaskTest("zone")
+    check(zc[1] == "masktest zone: closed" and not MS.zoneFrame:IsShown() and MS.MaskTest("zone nowhere-land")[1]:find("^masktest zone: no zone 'nowhere%-land'"),
+      "0.5.2b.6.1 /dm masktest zone: close / unknown zone: " .. table.concat(zc, " | "))
     NS.ZoneMasks = saveZM
     M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
     M.FlyTo(1426) run(30)
@@ -4308,8 +4360,10 @@ do
     local rr = M.TileReach(1415)
     check(rr and rr.start and M.fade[1415] == 0 and M.ReachLine(1415):find("^tiles from x"),
       "0.5.2b.6 map: the tile reach is read with the continent at full strength (faded out: " .. M.ReachLine(1415) .. ")")
-    NS.db.map.layer = nil
+    NS.db.map.layer = "painted"
     check(M.ReachLine(1415):find("^painted, no tiles %(terrain: x[%d%.]+%-x[%d%.]+, deepest x%d+%)$"), "0.5.2b.6 map: painted reach line: " .. M.ReachLine(1415))
+    NS.db.map.layer = nil
+    check(M.ReachLine(1415):find("^auto, tiles at art blur x2%.8%+ %(terrain: x[%d%.]+%-x[%d%.]+, deepest x%d+%)$"), "0.5.2b.6.1 map: the default (auto) reach line: " .. M.ReachLine(1415))
     NS.ZoneMasks = saveZM
     NS.db.map.layer = "terrain"
     M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
@@ -4495,7 +4549,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.6 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.6.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -5112,7 +5166,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.6 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.6%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5665,17 +5719,22 @@ if MODE == "full" then
   -- 0.5.2b.6: the map layer. painted (the default): never a tile; auto: only past x2.8 art blur (full by x3.4), no
   -- tile-count rule; terrain: 0.5.2b.5's rules (tested below)
   NS.db.map.layer = nil
-  check(CU.Layer() == "painted" and CU.Mix(6) == 0 and CU.Mix(1.0, nil, 50) == 0 and CU.Mix(3, nil, 10) == 0 and CU.Label() == CU.LABEL_OFF,
-    "0.5.2b.6 close-up: layer 'painted' (the default): no minimap tiles at any zoom or tile count")
+  -- 0.5.2b.6.1: auto is the default
+  check(CU.Layer() == "auto" and CU.Mix(2.79) == 0 and math.abs(CU.Mix(3.4) - 1) < 1e-9 and CU.Label() == CU.LABEL_AUTO,
+    "0.5.2b.6.1 close-up: no layer saved -> 'auto' (the minimap tiles at the deepest zoom)")
+  check(CU.SetLayer("painted") and CU.Layer() == "painted" and CU.Mix(6) == 0 and CU.Mix(1.0, nil, 50) == 0 and CU.Mix(3, nil, 10) == 0 and CU.Label() == CU.LABEL_OFF,
+    "0.5.2b.6 close-up: layer 'painted': no minimap tiles at any zoom or tile count")
   check(CU.SetLayer("auto") and CU.Layer() == "auto" and CU.Mix(2.6, nil, 50) == 0 and CU.Mix(2.79) == 0 and CU.Mix(3.1) > 0.2 and CU.Mix(3.1) < 0.8
     and math.abs(CU.Mix(3.4) - 1) < 1e-9 and CU.Label() == CU.LABEL_AUTO,
     "0.5.2b.6 close-up: layer 'auto': the tiles only at the deepest zoom (x2.8 to x3.4 art blur), never by tile count")
   check(CU.SetLayer("bogus") == false and CU.Layer() == "auto" and CU.SetLayer("terrain") and CU.Mix(2.6) > 0.99 and CU.Mix(1.0, nil, 150) > 0.99,
     "0.5.2b.6 close-up: layer 'terrain' keeps 0.5.2b.5's rules; an unknown layer is refused")
   local said1 = NS.MapTab.MapLayerSlash("")
-  local said2 = NS.MapTab.MapLayerSlash("painted")
+  local said2 = NS.MapTab.MapLayerSlash("auto")
   local said3 = NS.MapTab.MapLayerSlash("nope")
-  check(said1:find("^maplayer: terrain") and said2:find("^maplayer: painted .*%(default%)$") and said3:find("^maplayer: /dm maplayer painted|auto|terrain %(now: painted%)", 1),
+  local said4 = NS.MapTab.MapLayerSlash("painted")
+  check(said1:find("^maplayer: terrain") and said2:find("^maplayer: auto .*%(default%)$") and said3:find("^maplayer: /dm maplayer auto|painted|terrain %(now: auto%)", 1)
+    and said4:find("^maplayer: painted ") and not said4:find("(default)", 1, true),
     "0.5.2b.6 /dm maplayer: " .. said1 .. " | " .. said2 .. " | " .. said3)
   NS.db.map.layer = "terrain"
   -- 0.5.1.8: fades keyed to how magnified the map art is (screen px per art texel): the zone art alone up to x2.0,
@@ -6105,7 +6164,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.6 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.6.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -6621,7 +6680,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.6 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.6.1 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

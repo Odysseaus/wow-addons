@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.6: map: every zone's painted map cut to its real borders (zone masks from /dm mapshapes), all zones in view drawn at once from zone view to deepest zoom, /dm maplayer painted, auto or terrain (painted by default: no minimap tiles), newly explored areas un-fog at once; /dm mapsweep, /dm masktest, /dm mapshapes, /dm tileprobe, keep-tracked pins and quest clicks on the objective tracker, Ready to Turn In (its own collapsible section under the tracker), zone auto-track (on by default; pinned quests stay tracked in every zone), your own map pins, M / L open Dark Matter (ALT for the game's windows); the WoW theme looks like the game's Map & Quest Log window and the window matches its size; Map close-up detail (the game's own minimap tiles, blended across the zone; /dm mapprobe, /dm frameprobe); every theme uses the game's own buttons, tabs and scroll bars; Map (the game's own map, zoom world to zone, search, Find me, full screen); 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests (search, watch boxes, rewards, /dm questprobe); /dm probe.
+## Notes: Dark Matter 0.5.2b.6.1: map: the zone masks now go on each picture piece after its file (they did not cut in game in 0.5.2b.6), a self check that falls back to feathered zones when the game keeps no mask, /dm masktest zone, /dm mapmask on or off, and the minimap tiles at the deepest zoom by default (layer auto).
 ## Author: Odysseaus
-## Version: 0.5.2b.6
+## Version: 0.5.2b.6.1
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

@@ -223,6 +223,17 @@ local function Run()
   data.questsOnMap = type(qs) == "table" and #qs or nil
   lines[#lines + 1] = "map 10: quests on this map: " .. (type(qs) == "table" and (#qs .. " (GetQuestsOnMap)") or "no quest-POI list")
     .. "; QuestPOIGetIconInfo " .. YN(Fn("QuestPOIGetIconInfo"))
+  -- 0.5.2b.6.1: quest objective areas (the game's QuestBlob pin: a QuestPOIFrame with DrawBlob); read only
+  local blobPin
+  local wmf = _G.WorldMapFrame
+  if type(wmf) == "table" and type(wmf.dataProviders) == "table" then
+    for dp in pairs(wmf.dataProviders) do
+      if type(dp) == "table" and type(dp.pin) == "table" and type(dp.pin.DrawBlob) == "function" then blobPin = dp.pin end
+    end
+  end
+  data.questBlob = { mixin = type(_G.QuestBlobDataProviderMixin) == "table", drawBlob = blobPin ~= nil }
+  lines[#lines + 1] = "map 10: quest areas: QuestBlob provider " .. YN(data.questBlob.mixin) .. "; DrawBlob on the game map "
+    .. YN(data.questBlob.drawBlob)
 
   -- 11: drawing support (method checks on a frame that already exists; nothing is created)
   local P = UIParent
@@ -369,6 +380,7 @@ local function Run()
       data.layerCheck = { flags = table.concat(r.flags, ","), land = r.land, zone = r.zone, base = r.base, open = r.open, seams = r.seams, rects = r.rects, overlap = r.overlap, zones = r.zones }
       lines[#lines + 1] = "map 23 layers: " .. r.text
       lines[#lines + 1] = "map 23 masks: " .. (MT.MaskLine and MT.MaskLine() or "not used")
+      if MT.MaskShort then lines[#lines + 1] = "map 23 maskcheck: " .. MT.MaskShort() end
       if MT.focus and MT.ReachLine then lines[#lines + 1] = "map 23 reach: " .. MT.ReachLine(MT.focus) end
       if MT.focus and MT.HighlightCount then
         local hOk, hN = MT.HighlightCount(MT.focus)

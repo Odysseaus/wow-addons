@@ -216,11 +216,13 @@ local function Piece(L, fid, layer, x, y, w, h, u2, v2, list)
   local a, f = L.art, L.frame
   local function New(px, py, pw, ph, u1, uu2, v1, vv2)
     local t = f:CreateTexture(nil, layer)
-    if L.mask and t.AddMaskTexture then pcall(t.AddMaskTexture, t, L.mask) end -- 0.5.2b.5: cut to the zone's shape
     t:SetSize(pw, ph)
     t:SetPoint("TOPLEFT", f, "TOPLEFT", px, -py)
     t:SetTexture(fid, nil, nil, "TRILINEAR")
     t:SetTexCoord(u1, uu2, v1, vv2)
+    -- 0.5.2b.6.1: the mask goes on last, once the texture has its file, size and place (as /dm masktest does; 0.5.2b.6
+    -- added it to the empty texture first, and on 1.60.1 the zones were drawn uncut)
+    if L.mask then M.AttachMask(t, L.mask) end
     list[#list + 1] = t
     return t
   end
@@ -691,6 +693,87 @@ M.IsCity = IsCity
 -- continent picture shows only beyond the outermost zones. Without masks (0.5.2b.5 ships none): 0.5.2b.4's one
 -- feathered zone picture at a time.
 M.MASK_IN = { 1.3, 1.9 } -- masked zones come in together from x1.3 to x1.9 past the continent's fitted view
+-- 0.5.2b.6.1: attach a zone's mask to one of its textures and count what the game says happened. A texture the game
+-- reports with no mask after AddMaskTexture (or an error) means masks do not cut here: the map falls back to one
+-- feathered zone at a time (M.maskBroken) instead of drawing every zone as a hard rectangle.
+M.maskStat = { add = 0, ok = 0, none = 0, err = 0, noCount = 0 }
+function M.AttachMask(t, m)
+  local st = M.maskStat
+  st.add = st.add + 1
+  if not t.AddMaskTexture then st.err = st.err + 1 st.lastErr = "no AddMaskTexture" M.MaskBroken("no AddMaskTexture") return false end
+  local ok, err = pcall(t.AddMaskTexture, t, m)
+  if not ok then st.err = st.err + 1 st.lastErr = tostring(err) M.MaskBroken("AddMaskTexture: " .. tostring(err)) return false end
+  if not t.GetNumMaskTextures then st.noCount = st.noCount + 1 return true end
+  local ok2, n = pcall(t.GetNumMaskTextures, t)
+  if ok2 and type(n) == "number" then
+    if n >= 1 then st.ok = st.ok + 1 return true end
+    st.none = st.none + 1
+    M.MaskBroken("the game kept no mask on a zone texture")
+    return false
+  end
+  st.noCount = st.noCount + 1
+  return true
+end
+function M.MaskBroken(why)
+  if M.maskBroken then return end
+  M.maskBroken = why
+  M.masked = nil
+  M.rebuildLayers = true
+  M.dirty = true
+end
+-- what the masked layers hold right now (mapsweep / mapprobe): pieces, how many carry the mask, the mask's file and size
+function M.MaskCheck()
+  local st = M.maskStat
+  local layers, pieces, carry, first = 0, 0, 0, nil
+  for _, L in pairs(M.layers) do
+    if L.mask then
+      layers = layers + 1
+      first = first or L
+      for _, list in ipairs({ L.tiles, L.ov }) do
+        for _, t in ipairs(list or {}) do
+          pieces = pieces + 1
+          local ok, n = false, nil
+          if t.GetNumMaskTextures then ok, n = pcall(t.GetNumMaskTextures, t) end
+          if ok and type(n) == "number" and n >= 1 then carry = carry + 1 end
+        end
+      end
+    end
+  end
+  local mf = "none"
+  if first then
+    local m = first.mask
+    local okT, tex = pcall(m.GetTexture, m)
+    local okW, w = pcall(m.GetWidth, m)
+    local okH, h = pcall(m.GetHeight, m)
+    local okS, sh = pcall(m.IsShown, m)
+    mf = string.format("map %d mask %s, %sx%s, shown %s (picture %dx%d)", first.id, okT and tostring(tex) or "?", okW and string.format("%.0f", w) or "?",
+      okH and string.format("%.0f", h) or "?", okS and tostring(sh) or "?", first.art.w, first.art.h)
+  end
+  return string.format("maskcheck: %d masked layers, %d pieces, %d carry the mask; adds %d (ok %d, kept none %d, errors %d, uncounted %d)%s; %s",
+    layers, pieces, carry, st.add, st.ok, st.none, st.err, st.noCount, M.maskBroken and ("; MASKS OFF: " .. M.maskBroken) or "", mf)
+end
+-- 0.5.2b.6.1: throw the built pictures away (they are built again, masked or feathered, on the next layout)
+function M.RebuildLayers()
+  M.rebuildLayers = nil
+  for _, L in pairs(M.layers) do L.frame:Hide() end
+  M.layers, M.masked = {}, nil
+  M.dirty = true
+end
+-- /dm mapmask on|off: the zone masks on or off for this session (off = one feathered zone at a time, as 0.5.2b.5)
+function M.MapMaskSlash(arg)
+  arg = (arg or ""):lower():match("^%s*(%S*)")
+  if arg == "off" then M.maskOff = true
+  elseif arg == "on" then M.maskOff = nil M.maskBroken = nil M.maskStat = { add = 0, ok = 0, none = 0, err = 0, noCount = 0 }
+  elseif arg ~= "" then return "mapmask: /dm mapmask on|off (now: " .. (M.maskOff and "off" or "on") .. ")" end
+  if arg ~= "" then M.RebuildLayers() end
+  return "mapmask: " .. (M.maskOff and "off" or "on") .. " - " .. M.MaskLine()
+end
+-- the same in under 70 characters (mapprobe)
+function M.MaskShort()
+  local st = M.maskStat
+  return string.format("adds %d: kept %d, none %d, errors %d, uncounted %d%s", st.add, st.ok, st.none, st.err, st.noCount,
+    M.maskBroken and "; OFF" or M.maskOff and "; off" or "")
+end
 function M.MaskFile(id)
   local t = NS.ZoneMasks
   local m = type(t) == "table" and t[id]
@@ -711,7 +794,7 @@ function M.ContMasked(cont)
   for _, z in ipairs(MD.Zones(cont)) do
     if not IsCity(z) then n = n + 1 if M.MaskFile(z.id) then have = have + 1 end end
   end
-  c = n > 0 and have == n and M.canMask ~= false
+  c = n > 0 and have == n and M.canMask ~= false and not M.maskBroken and not M.maskOff
   M.masked[cont] = c
   return c
 end
@@ -730,7 +813,8 @@ function M.MaskLine()
   if have == 0 then return string.format("0/%d zones masked (fallback: one zone at a time)", n) end
   local on = 0
   for _, ct in ipairs(MD.Continents()) do if M.ContMasked(ct.id) then on = on + 1 end end
-  return string.format("%d/%d zones masked; %d continent(s) drawn masked%s", have, n, on, M.canMask == false and " (no mask API)" or "")
+  local why = M.canMask == false and " (no mask API)" or M.maskBroken and " (masks did not attach: one zone at a time)" or M.maskOff and " (off: /dm mapmask on)" or ""
+  return string.format("%d/%d zones masked; %d continent(s) drawn masked%s", have, n, on, why)
 end
 -- 0.5.1.11: the share of the view the zone actually covers (so dragging off it brings its neighbours back in)
 local function Frac(z)
@@ -1002,7 +1086,7 @@ function M.ReachLine(cont)
   end
   return string.format("tiles from x%.1f, full x%.1f, deepest x%.0f (tile %.0f px at fit)", r.start, r.full, r.deep or 0, r.tpx or 0)
 end
--- 0.5.2b.6: /dm maplayer painted|auto|terrain (no argument: say which one is on)
+-- 0.5.2b.6: /dm maplayer auto|painted|terrain (no argument: say which one is on)
 M.LAYER_SAY = {
   painted = "the game's painted zone maps everywhere, no minimap tiles",
   auto = "the painted zone maps; the minimap tiles only at the deepest zoom",
@@ -1012,7 +1096,7 @@ function M.MapLayerSlash(arg)
   if not (CU and CU.Layer) then return "maplayer: no close-up module" end
   arg = arg and arg:lower():match("^%s*(%S*)") or ""
   if arg ~= "" then
-    if not CU.SetLayer(arg) then return "maplayer: /dm maplayer painted|auto|terrain (now: " .. CU.Layer() .. ")" end
+    if not CU.SetLayer(arg) then return "maplayer: /dm maplayer auto|painted|terrain (now: " .. CU.Layer() .. ")" end
     if M.started then M.UpdateStatus() end
     M.SyncClosePanel()
   end
@@ -1024,7 +1108,7 @@ function M.TileProbe()
   local out = { "tileprobe " .. NS.version .. " (read-only): the minimap tiles behind the map close-up" }
   if not CU then out[#out + 1] = "tileprobe: no close-up module" return out end
   out[#out + 1] = "tileprobe: " .. (CU.Label and CU.Label() or "?")
-  out[#out + 1] = "tileprobe: map layer " .. (CU.Layer and CU.Layer() or "terrain") .. " (/dm maplayer painted|auto|terrain)"
+  out[#out + 1] = "tileprobe: map layer " .. (CU.Layer and CU.Layer() or "terrain") .. " (/dm maplayer auto|painted|terrain)"
   for inst = 0, 1 do
     local r = CU.Coverage(inst, 48)
     out[#out + 1] = string.format("tileprobe %s: %d tiles listed (x %s-%s, y %s-%s)", CU.NAMES[inst] or inst, r.n,
@@ -1111,6 +1195,7 @@ function M.Sweep()
   out[#out + 1] = string.format("mapsweep: %d views, %d flagged; base-land %d, magnified-base %d, open-base %d, hard-seam %d, zone-rect %d, overlap %d",
     res.views, res.flagged, C("base-land"), C("magnified-base"), C("open-base"), C("hard-seam"), C("zone-rect"), C("overlap"))
   out[#out + 1] = "mapsweep masks: " .. M.MaskLine()
+  out[#out + 1] = "mapsweep " .. M.MaskCheck()
   for _, c in ipairs(res.per) do
     out[#out + 1] = string.format("mapsweep %s: %d views, %d flagged -> %s; %s", c.name, c.views, c.flagged, c.flagged == 0 and "OK" or "FLAGGED", M.ReachLine(c.id))
   end
@@ -1415,6 +1500,7 @@ M.QuestClick = function(mk) return QuestClick(mk) end
 function M.Tick(dt)
   dt = math.min(dt or 0, 0.1)
   M.ExploreTick(dt)
+  if M.rebuildLayers then M.RebuildLayers() end
   if M.pendingQuest and M.ready and VW() >= 50 and VH() >= 50 then local p = M.pendingQuest M.pendingQuest = nil M.ShowQuest(p.q, p.wp) end
   if note and note:IsShown() then note.left = (note.left or 0) - dt if note.left <= 0 then note:Hide() end end
   -- the main window was closed (/dm, a keybind) while the map was full screen: come back with it
@@ -2035,6 +2121,8 @@ function M.Reset()
   M.layers, M.fade, M.zfade = {}, {}, {}
   M.hl = {}
   M.masked, M.canMask, M.maskFail = nil, nil, nil -- 0.5.2b.5: the masks are looked at again
+  M.maskBroken, M.rebuildLayers = nil, nil
+  M.maskStat = { add = 0, ok = 0, none = 0, err = 0, noCount = 0 }
   M.started, M.ready, M.only, M.hasWorld, M.player = false, false, nil, nil, nil
   M.pendingFit, M.lastView = nil, nil
   drag, zoomT, fly, crumbKey = nil, nil, nil, nil
@@ -2090,7 +2178,7 @@ function M.BuildClosePanel(host, anchor, level)
   end)
   if sl.EnableMouseWheel then sl:EnableMouseWheel(true) end
   sl:SetScript("OnMouseWheel", function(_, d) M.SetCloseStrength(CU.Strength() + (d > 0 and 0.05 or -0.05)) end)
-  -- 0.5.2b.6: the map layer (/dm maplayer): painted (default), auto, terrain
+  -- 0.5.2b.6: the map layer (/dm maplayer): painted, auto (default since 0.5.2b.6.1), terrain
   local ll = UI.Text(p, "OVERLAY", 12, "listInk", "LEFT")
   ll:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -92)
   ll:SetText("Layer")

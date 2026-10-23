@@ -77,7 +77,152 @@ local function Mask(p, file)
   return true, "applied"
 end
 
-function S.MaskTest()
+-- 0.5.2b.6.1: /dm masktest zone [name]: one zone's picture and its shape mask, drawn four ways side by side
+S.ZW, S.ZH = 300, 200
+local function MaskCount(t)
+  if not (t and t.GetNumMaskTextures) then return nil end
+  local ok, n = pcall(t.GetNumMaskTextures, t)
+  return ok and n or nil
+end
+local function FindZone(name)
+  local md = MD()
+  if not md then return nil end
+  name = (name or ""):lower():match("^%s*(.-)%s*$")
+  if name == "" then
+    local here = md.PlayerMap and md.PlayerMap()
+    local z = here and md.ZoneOf(here)
+    return z and md.ZoneEntry(z)
+  end
+  local starts
+  for _, ct in ipairs(md.Continents()) do
+    for _, z in ipairs(md.Zones(ct.id)) do
+      local n = (z.name or ""):lower()
+      if n == name then return z end
+      if not starts and n:find(name, 1, true) == 1 then starts = z end
+    end
+  end
+  return starts
+end
+-- the zone's tiles laid out in frame f at scale k (1 = the art's own px), order "last" (file, size, place, then the
+-- mask, as /dm masktest) or "first" (the mask on the empty texture, as the map did in 0.5.2b.6)
+local function ZoneTiles(f, art, k, m, order, filter)
+  local list, carry = {}, 0
+  for i, fid in ipairs(art.tex) do
+    local col, row = (i - 1) % art.cols, math.floor((i - 1) / art.cols)
+    local x, y = col * art.tw, row * art.th
+    local w, h = math.min(art.tw, art.w - x), math.min(art.th, art.h - y)
+    if w > 0 and h > 0 then
+      local t = f:CreateTexture(nil, "ARTWORK")
+      if m and order == "first" then pcall(t.AddMaskTexture, t, m) end
+      t:SetSize(w * k, h * k)
+      t:SetPoint("TOPLEFT", f, "TOPLEFT", x * k, -y * k)
+      t:SetTexture(fid, nil, nil, filter)
+      t:SetTexCoord(0, w / art.tw, 0, h / art.th)
+      if m and order == "last" then pcall(t.AddMaskTexture, t, m) end
+      list[#list + 1] = t
+      if (MaskCount(t) or 0) >= 1 then carry = carry + 1 end
+    end
+  end
+  return list, carry
+end
+local function ZoneMask(f, file)
+  local ok, m = pcall(f.CreateMaskTexture, f)
+  if not (ok and m) then return nil, "CreateMaskTexture failed" end
+  local ok2, r = pcall(m.SetTexture, m, file, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+  if not ok2 or r == false then return nil, "the mask file did not load (" .. tostring(r) .. ")" end
+  m:SetAllPoints(f)
+  return m, "SetTexture " .. tostring(r)
+end
+function S.MaskTestZone(name)
+  local md, M = MD(), NS.MapTab
+  local z = FindZone(name)
+  if not z then return { "masktest zone: no zone " .. (name ~= "" and ("'" .. name .. "'") or "for your position") .. " (try /dm masktest zone elwynn)" } end
+  local art = md.Art(z.id)
+  local file = M and M.MaskFile and M.MaskFile(z.id)
+  if not art then return { "masktest zone: " .. z.name .. " has no picture" } end
+  if not file then return { "masktest zone: " .. z.name .. " has no zone mask in Data_ZoneMasks.lua" } end
+  if S.zoneFrame then S.zoneFrame:Hide() end
+  local W, H = S.ZW, S.ZH
+  local f = CreateFrame("Frame", nil, UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+  S.zoneFrame = f
+  f:SetSize(16 + 4 * (W + 16), H + 90)
+  f:SetPoint("CENTER", UIParent, "CENTER", 0, -60)
+  f:SetFrameStrata("DIALOG")
+  if f.SetBackdrop then
+    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+    f:SetBackdropColor(0.05, 0.05, 0.08, 0.95)
+  end
+  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOP", f, "TOP", 0, -12)
+  title:SetText("Dark Matter zone mask test: " .. z.name .. " (/dm masktest zone again to close)")
+  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+  close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+  local function Box(i, label)
+    local p = CreateFrame("Frame", nil, f)
+    p:SetSize(W, H)
+    p:SetPoint("TOPLEFT", f, "TOPLEFT", 16 + (i - 1) * (W + 16), -36)
+    local fs = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    fs:SetPoint("TOP", p, "BOTTOM", 0, -6)
+    fs:SetWidth(W + 12)
+    fs:SetText(label)
+    return p
+  end
+  local k = W / art.w
+  local res = {}
+  -- 1: the mask file alone over parchment (does the zone's mask load and cut?)
+  local p1 = Box(1, "1 the zone mask on parchment")
+  p1.tex = p1:CreateTexture(nil, "ARTWORK")
+  p1.tex:SetAllPoints(p1)
+  p1.tex:SetTexture(S.PARCH)
+  p1.tex:SetVertexColor(1, 0.85, 0.55, 1)
+  local ok1, why1 = Mask(p1, file)
+  res[1] = (ok1 and "applied" or ("NOT applied: " .. tostring(why1))) .. ", carries " .. tostring(MaskCount(p1.tex))
+  -- 2: the zone picture, mask added last (the /dm masktest way)
+  local p2 = Box(2, "2 picture, mask last (masktest way)")
+  local m2, w2 = ZoneMask(p2, file)
+  local l2, c2 = ZoneTiles(p2, art, k, m2, "last")
+  res[2] = string.format("%d/%d pieces carry the mask (%s)", c2, #l2, w2)
+  -- 3: the map's 0.5.2b.6 way: a hidden frame at the art's size, mask first, trilinear, then scaled and shown
+  local p3 = Box(3, "3 the 0.5.2b.6 map way (mask first)")
+  local f3 = CreateFrame("Frame", nil, p3)
+  f3:SetSize(art.w, art.h)
+  f3:SetPoint("TOPLEFT", p3, "TOPLEFT", 0, 0)
+  f3:Hide()
+  local m3, w3 = ZoneMask(f3, file)
+  local l3, c3 = ZoneTiles(f3, art, 1, m3, "first", "TRILINEAR")
+  f3:SetScale(k)
+  f3:Show()
+  res[3] = string.format("%d/%d pieces carry the mask (%s)", c3, #l3, w3)
+  -- 4: the 0.5.2b.6.1 map way: the same hidden scaled frame, the mask added last
+  local p4 = Box(4, "4 the 0.5.2b.6.1 map way (mask last)")
+  local f4 = CreateFrame("Frame", nil, p4)
+  f4:SetSize(art.w, art.h)
+  f4:SetPoint("TOPLEFT", p4, "TOPLEFT", 0, 0)
+  f4:Hide()
+  local m4, w4 = ZoneMask(f4, file)
+  local l4, c4 = ZoneTiles(f4, art, 1, m4, "last", "TRILINEAR")
+  f4:SetScale(k)
+  f4:Show()
+  res[4] = string.format("%d/%d pieces carry the mask (%s)", c4, #l4, w4)
+  f:Show()
+  local out = {
+    string.format("masktest zone %s: %s (map %d, picture %dx%d, mask %s)", NS.version, z.name, z.id, art.w, art.h, file:match("[^\\]+$") or file),
+    "masktest zone 1: " .. res[1] .. " -> the zone's outline cut from parchment",
+    "masktest zone 2: " .. res[2] .. " -> the zone's own land only, no torn edge",
+    "masktest zone 3: " .. res[3] .. " -> the same as 2 if the 0.5.2b.6 way worked",
+    "masktest zone 4: " .. res[4] .. " -> the same as 2 (the map's way now)",
+  }
+  if M and M.MaskCheck then out[#out + 1] = "masktest zone map: " .. M.MaskCheck() end
+  out[#out + 1] = "masktest zone: if 2 and 4 show the full rectangle too, masks do not cut zone pictures here: /dm mapmask off"
+  return out
+end
+
+function S.MaskTest(arg)
+  local word, rest = (arg or ""):match("^%s*(%S*)%s*(.-)%s*$")
+  if word and word:lower() == "zone" then
+    if S.zoneFrame and S.zoneFrame:IsShown() and rest == "" then S.zoneFrame:Hide() return { "masktest zone: closed" } end
+    return S.MaskTestZone(rest)
+  end
   if S.testFrame and S.testFrame:IsShown() then
     S.testFrame:Hide()
     return { "masktest: closed" }

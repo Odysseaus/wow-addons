@@ -24,8 +24,10 @@ local function Help()
   print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
   print("  /dm mapsweep  Map: check the map layers over every continent and zone (read-only; saved with the probes): a masks line, then OK or FLAGGED per continent and how far the tiles reach")
   print("  /dm masktest  Map: show four test squares (no mask, the game's round mask, Dark Matter's star mask, your zone's highlight): do masks work here?")
+  print("  /dm masktest zone [name]  Map: your zone's (or the named zone's) picture cut by its zone mask, drawn four ways side by side")
+  print("  /dm mapmask on|off  Map: the zone masks on or off for this session (off: one feathered zone at a time)")
   print("  /dm mapshapes  Map: sample every zone's outline from the game (out of combat, about a minute) -> DarkMatterDB.mapshapes, then /reload   /dm mapshapes stop|status")
-  print("  /dm maplayer painted|auto|terrain  Map: what you zoom across: the game's painted zone maps (default), painted with the minimap tiles only at the deepest zoom, or the minimap tiles as soon as they fit (0.5.2b.5)")
+  print("  /dm maplayer auto|painted|terrain  Map: what you zoom across: the game's painted zone maps with the minimap tiles at the deepest zoom (default), the painted maps only, or the minimap tiles as soon as they fit (0.5.2b.5)")
   print("  /dm tileprobe  Map: the minimap tiles: how many, do they load, how far they reach, what they cost (read-only)")
   print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
   print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (on by default)")
@@ -173,18 +175,18 @@ SlashCmdList["DARKMATTER"] = function(msg)
     if NS.MapTab and NS.MapTab.Sweep then Say("mapsweep", NS.MapTab.Sweep()) end
   elseif cmd == "masktest" then
     -- 0.5.2b.5: a visual proof that mask textures work (nothing on the map changes)
-    if NS.MapShapes then Say("masktest", NS.MapShapes.MaskTest()) end
+    if NS.MapShapes then Say("masktest", NS.MapShapes.MaskTest(rest)) end
   elseif cmd == "mapshapes" then
     -- 0.5.2b.5: sample the zones' outlines for the masks of 0.5.2b.6 (read only; saved to DarkMatterDB.mapshapes)
     if NS.MapShapes then for _, l in ipairs(NS.MapShapes.Slash(rest)) do NS.Print(l) end end
   elseif cmd == "tileprobe" then
     if NS.MapTab and NS.MapTab.TileProbe then Say("tileprobe", NS.MapTab.TileProbe()) end
   elseif cmd == "maplayer" then
-    -- 0.5.2b.6: painted (default) | auto | terrain, saved in DarkMatterDB.map.layer
+    -- 0.5.2b.6: auto (default since 0.5.2b.6.1) | painted | terrain, saved in DarkMatterDB.map.layer
     if NS.MapTab and NS.MapTab.MapLayerSlash then NS.Print(NS.MapTab.MapLayerSlash(rest)) end
   elseif cmd == "mapmask" then
-    -- 0.5.2b.4: removed with the zone masks
-    NS.Print("/dm mapmask was removed in 0.5.2b.4: no zone is cut with a mask any more (one feathered zone picture at a time)")
+    -- 0.5.2b.6.1: the zone masks on/off for this session
+    if NS.MapTab and NS.MapTab.MapMaskSlash then NS.Print(NS.MapTab.MapMaskSlash(rest)) end
   elseif cmd == "artprobe" then
     Say("artprobe", NS.Stock.Report())
   elseif cmd == "frameprobe" then

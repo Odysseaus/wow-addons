@@ -74,12 +74,13 @@ function C.Strength() local v = N(DB().closeMix) return v and Clamp(v, 0, 1) or 
 function C.SetEnabled(on) DB().closeUp = on and true or false if NS.MapTab then NS.MapTab.dirty = true end end
 function C.SetStrength(v) DB().closeMix = Clamp(N(v) or C.DEFAULT_MIX, 0, 1) if NS.MapTab then NS.MapTab.dirty = true end end
 -- true when the data table is there and the tiles have not proven unloadable
--- 0.5.2b.6: which layer carries the map (DarkMatterDB.map.layer, /dm maplayer): "painted" (the default) = the game's
+-- 0.5.2b.6: which layer carries the map (DarkMatterDB.map.layer, /dm maplayer): "painted" = the game's
 -- painted zone maps everywhere, no minimap tiles at all; "auto" = the painted maps, and the tiles only at the very
--- deepest zoom (past AUTO_FADE px per art texel, where the art is badly blurred; no tile-count rule); "terrain" =
+-- deepest zoom (past AUTO_FADE px per art texel, where the art is badly blurred; no tile-count rule; the default since
+-- 0.5.2b.6.1); "terrain" =
 -- 0.5.2b.5's rules (the tiles as soon as they fit the view)
 C.LAYERS = { painted = true, auto = true, terrain = true }
-C.DEFAULT_LAYER = "painted"
+C.DEFAULT_LAYER = "auto" -- 0.5.2b.6.1: auto by default (0.5.2b.6: painted)
 C.AUTO_FADE = { 2.8, 3.4 }
 function C.Layer() local v = DB().layer return C.LAYERS[v] and v or C.DEFAULT_LAYER end
 function C.SetLayer(v)
