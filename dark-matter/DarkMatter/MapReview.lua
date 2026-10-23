@@ -1,10 +1,12 @@
--- MapReview.lua (0.5.2b.8): checks of the two-pass zone masks in the game. Nothing here changes saved settings
--- except DarkMatterDB.map.shot (the last /dm shottest result).
+-- MapReview.lua (0.5.2b.8, sweep 0.5.2b.8.1): checks of the two-pass zone masks in the game. Nothing here changes
+-- saved settings except DarkMatterDB.map.shot (the last /dm shottest result).
 --   /dm shottest         takes ONE screenshot (the game's Screenshot(), into the game's Screenshots folder) and
 --                        records whether the game reported SCREENSHOT_SUCCEEDED; /dm seamsweep needs it to have passed
 --   /dm seamsweep [N]    the map open: for the N worst zone borders (Data_ZoneSeams.lua, from the box border review)
---                        centres the map on the border at zoom levels 4, 8 and 12 and takes a screenshot of each
---                        (N defaults to 8; /dm seamsweep stop). Refused until /dm shottest has passed.
+--                        at zoom levels 4, 8 and 12: centres the map on the first view and shows a Shot button; each
+--                        click shoots the view shown and centres the next (N defaults to 8; /dm seamsweep next = one
+--                        click; /dm seamsweep stop). Refused until /dm shottest has passed. Screenshot() runs only in a
+--                        click or a typed command, never from a timer.
 --   /dm mapcost [both]   the map open: steps through zoom levels 1, 2, 3, 4, 6, 8, 10 at the current centre, waits for
 --                        the pictures to load, and records the frame rate and the textures built and on screen; both =
 --                        once with the core pass and once without (/dm mapcore), then puts it back
@@ -164,48 +166,122 @@ function R.Seams(n)
   return out
 end
 
+-- 0.5.2b.8.1: the sweep is driven by clicks. The game counts a click as the player's own action, and Screenshot() is
+-- only ever called inside one: the Shot button's OnClick, /dm seamsweep next, or /dm shottest (both typed). No timer,
+-- OnUpdate or event handler ever calls Screenshot(). /dm seamsweep centres the map on the first border; each click on
+-- the Shot button (bottom left of the map) shoots the view shown, then centres the next one. The button's text names
+-- the view, so it shows in the picture as its caption. Every step is saved to DarkMatterDB.probeLog.seamsweep as it
+-- happens (a refusal too), so a sweep left half done still leaves its log.
+local sweep, shotBtn
+local function Nm(id) local MD = NS.MapData return MD and MD.Name and MD.Name(id) or tostring(id) end
+local function SweepLog(line)
+  if line then
+    if sweep then sweep.lines[#sweep.lines + 1] = line end
+    Out(line)
+  end
+  if NS.LogProbe then NS.LogProbe("seamsweep", sweep and sweep.lines or { line }) end
+end
+local function Refuse(line) if NS.LogProbe then NS.LogProbe("seamsweep", { line }) end return { line } end -- the slash prints it
+local function ViewLabel(v) return string.format("#%d %s | %s (score %.0f) level %d", v.k, Nm(v.s.a), Nm(v.s.b), v.s.score, v.L) end
+local function ButtonText()
+  if not (shotBtn and sweep) then return end
+  local v = sweep.views[sweep.i]
+  shotBtn:SetText(v and string.format("Shot %d/%d: %s", sweep.i, #sweep.views, ViewLabel(v)) or "Shot")
+end
+local function Centre()
+  local mt = M()
+  local v = sweep.views[sweep.i]
+  local wx, wy = mt.ToW(v.s.cont, v.s.x, v.s.y)
+  mt.ViewLevelAt(wx, wy, v.L)
+  local lv = mt.lastView
+  sweep.at = lv and { cx = lv.cx, cy = lv.cy, z = lv.z }
+  ButtonText()
+end
+local function Finish(line)
+  local s = sweep
+  if not s then return end
+  if line then s.lines[#s.lines + 1] = line Out(line) end
+  if MapOpen() then Restore(s.back) end
+  local done = string.format("seamsweep: %d of %d shots taken; the screenshots are in the game's Screenshots folder, in this order",
+    s.taken, #s.views)
+  s.lines[#s.lines + 1] = done
+  Out(done)
+  if NS.LogProbe then NS.LogProbe("seamsweep", s.lines) end
+  sweep, R.busy = nil, nil
+  if shotBtn then shotBtn:Hide() end
+end
+local function Moved()
+  local lv, at = M().lastView, sweep.at
+  if not (lv and at) then return true end
+  return math.abs(lv.cx - at.cx) > 1e-4 or math.abs(lv.cy - at.cy) > 1e-4 or math.abs(lv.z - at.z) > 1e-3 * math.max(1, at.z)
+end
+-- one step, from a click (the Shot button) or from /dm seamsweep next (typed); never from a timer
+function R.SweepClick()
+  if not sweep then return { "seamsweep: nothing running (/dm seamsweep [N] starts one)" } end
+  if sweep.waiting then return { "seamsweep: waiting for the game's screenshot" } end
+  if not MapOpen() then Finish("seamsweep: the map was closed") return { "seamsweep: stopped" } end
+  if InCombatLockdown and InCombatLockdown() then return { "seamsweep: not in combat (click again after it)" } end
+  if Moved() then
+    Centre()
+    SweepLog("seamsweep: the map had moved; centred on " .. ViewLabel(sweep.views[sweep.i]) .. " again - click Shot")
+    return {}
+  end
+  local v, s = sweep.views[sweep.i], sweep
+  s.waiting = true
+  Shot(function(r)
+    if sweep ~= s then return end
+    s.waiting = nil
+    if r == "ok" then s.taken = s.taken + 1 end
+    SweepLog(string.format("%s at %.1f,%.1f: %s", ViewLabel(v), v.s.x * 100, v.s.y * 100, r))
+    s.i = s.i + 1
+    if s.i > #s.views then Finish() elseif MapOpen() then Centre() else Finish("seamsweep: the map was closed") end
+  end)
+  return {}
+end
+local function ShotButton()
+  local mt = M()
+  if not shotBtn then
+    shotBtn = CreateFrame("Button", nil, mt.root, "UIPanelButtonTemplate")
+    shotBtn:SetSize(360, 22)
+    shotBtn:SetScript("OnClick", function() R.SweepClick() end)
+    R.shotButton = shotBtn
+  end
+  shotBtn:SetParent(mt.root)
+  shotBtn:ClearAllPoints()
+  shotBtn:SetPoint("BOTTOMLEFT", mt.root, "BOTTOMLEFT", 8, 8)
+  shotBtn:SetFrameLevel((mt.root:GetFrameLevel() or 1) + 50)
+  shotBtn:Enable()
+  shotBtn:Show()
+  return shotBtn
+end
+
 function R.SeamSweep(arg)
   arg = (arg or ""):lower()
   if arg:match("^%s*stop") then
-    if R.busy then R.stop = true return { "seamsweep: stopping after this step" } end
+    if sweep then Finish("seamsweep: stopped") return { "seamsweep: stopped" } end
     return { "seamsweep: nothing running" }
   end
-  if R.busy then return { "seamsweep: busy (" .. R.busy .. "); /dm seamsweep stop" } end
-  if not R.ShotOK() then return { "seamsweep: run /dm shottest first (it must pass: " .. R.ShotLine() .. ")" } end
-  if InCombatLockdown and InCombatLockdown() then return { "seamsweep: not in combat" } end
-  if not MapOpen() then return { "seamsweep: open the Dark Matter map first" } end
+  if arg:match("^%s*next") then return R.SweepClick() end
+  if sweep then return { "seamsweep: already running - click Shot on the map (or /dm seamsweep next); /dm seamsweep stop" } end
+  if R.busy then return Refuse("seamsweep: busy (" .. R.busy .. ")") end
+  if not R.ShotOK() then return Refuse("seamsweep: run /dm shottest first (it must pass: " .. R.ShotLine() .. ")") end
+  if InCombatLockdown and InCombatLockdown() then return Refuse("seamsweep: not in combat") end
+  if not MapOpen() then return Refuse("seamsweep: open the Dark Matter map first (/dm, the Map tab)") end
   local n = math.max(1, math.min(40, tonumber(arg:match("(%d+)")) or 8))
   local seams = R.Seams(n)
-  if #seams == 0 then return { "seamsweep: no borders in Data_ZoneSeams.lua" } end
-  local mt, MD = M(), NS.MapData
-  local back = mt.lastView and { cx = mt.lastView.cx, cy = mt.lastView.cy, z = mt.lastView.z }
+  if #seams == 0 then return Refuse("seamsweep: no borders in Data_ZoneSeams.lua") end
+  local mt = M()
   local lv = Levels(R.SEAM_LEVELS)
-  local lines = { string.format("seamsweep: %d borders x levels %s (%s)", #seams, table.concat(lv, ","), NS.version or "?") }
-  local steps = {}
-  for k, s in ipairs(seams) do
-    for _, L in ipairs(lv) do
-      steps[#steps + 1] = function(Next)
-        local wx, wy = mt.ToW(s.cont, s.x, s.y)
-        mt.ViewLevelAt(wx, wy, L)
-        R.After(R.SETTLE, function()
-          Shot(function(r)
-            local nm = function(id) return MD and MD.Name and MD.Name(id) or tostring(id) end
-            local l = string.format("#%d %s | %s (score %.0f) level %d at %.1f,%.1f: %s", k, nm(s.a), nm(s.b), s.score, L, s.x * 100, s.y * 100, r)
-            lines[#lines + 1] = l
-            Out(l)
-            R.After(0.3, Next)
-          end)
-        end)
-      end
-    end
-  end
-  Run("seamsweep", steps, lines, function(ls)
-    Restore(back)
-    ls[#ls + 1] = "seamsweep: done; the screenshots are in the game's Screenshots folder, in this order"
-    Out(ls[#ls])
-    if NS.LogProbe then NS.LogProbe("seamsweep", ls) end
-  end)
-  return { lines[1] .. string.format(" - about %d s; /dm seamsweep stop", math.floor(#steps * (R.SETTLE + 1) + 0.5)) }
+  local views = {}
+  for k, s in ipairs(seams) do for _, L in ipairs(lv) do views[#views + 1] = { k = k, s = s, L = L } end end
+  sweep = { views = views, i = 1, taken = 0, back = { cx = mt.lastView.cx, cy = mt.lastView.cy, z = mt.lastView.z },
+    lines = { string.format("seamsweep: %d borders x levels %s = %d shots, one click each (%s)", #seams, table.concat(lv, ","), #views, NS.version or "?") } }
+  R.busy = "seamsweep"
+  ShotButton()
+  Centre()
+  SweepLog()
+  Out(sweep.lines[1])
+  return { "seamsweep: click Shot (bottom left of the map) once per view; wait for its text to change between clicks; /dm seamsweep stop" }
 end
 
 -- frame rate: the mean of a few samples over half a second

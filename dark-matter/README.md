@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.2b.8** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.2b.8.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -76,6 +76,11 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 - **Your map pins**: the Pin tool on the map, then a click on the map. The game's waypoint and minimap arrow point at the pin; right-click a pin to remove it.
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
+
+### 0.5.2b.8.1 changes
+- All 43 zone masks are now made from the game's own samples (the mapshapes run of 2026-10-23). Redridge Mountains, Moonglade and Shen'dralas used to be made from their neighbours' edges. The core masks and the border list for `/dm seamsweep` were rebuilt with them.
+- `/dm seamsweep [N]` is click-driven. Open the Dark Matter map and type the command; a **Shot** button appears at the bottom left of the map. Click it once per view and wait for its caption to change before the next click. `/dm seamsweep next` counts as a click; `/dm seamsweep stop` ends the sweep. Screenshots are taken only on a click or a typed command, and every step is written to the probe log.
+- The blocked-action log names the addon the game blamed and marks blocks blamed on other addons.
 
 ### 0.5.2b.8 changes
 - Hover title: the name of the zone or capital under the cursor, with the game's subarea name under it, centred at the top of the map in the game's own map font (WorldMapTextFont at 0.695; Friz Quadrata 32 in cream if the font is missing). It shows only over land the game names, and gives no level range. The zone level boxes and the "Levels: public data" caption stay.

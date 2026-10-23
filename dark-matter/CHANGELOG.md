@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.2b.8.1
+
+Masks rebuilt from your full mapshapes run, a click-driven seam sweep, and a clearer blocked-action log.
+
+### Changes
+- **All 43 zone masks are now sampled.** Rebuilt from the mapshapes run of 2026-10-23 10:33 (43 zones, 736,160 samples). Redridge Mountains (1433), Moonglade (1450) and Shen'dralas (2652) were made from their neighbours' edges before and now use their own samples (11,408, 8,890 and 7,413 cells). No zone uses a neighbour-made rectangle any more. The core masks and `Data_ZoneSeams.lua` were regenerated too (15 zones' pictures changed).
+  - Offline sweep (the sampled area grew, so the figures are not exactly like-for-like). Land showing only the continent picture: Kalimdor 3.66% → 3.67%, Eastern Kingdoms 3.38% → 3.27%. Land drawn by the wrong picture: 1.77% → 1.98% and 2.66% → 3.02%. Full-strength overlap stays at 0.
+  - Border review total: 583.6 → 789.1. The old scores for the neighbour-made zones were only the +5 bonus; their real measures can be seen now. Swamp of Sorrows | Riverglades is still the worst border (302.9 → 308.5). Duskwood | Redridge is the new #2 (5.0 → 217.1). It is a short corner at about 50.7, 74.2. Shen'dralas and Moonglade borders improved (Desolace 6.9 → 2.1, Feralas 6.1 → 1.3, Darkshore 6.2 → 4.5).
+- **`/dm seamsweep` is click-driven.** `/dm seamsweep [N]` centres the map on the first view and shows a **Shot** button at the bottom left of the map. Each click takes one screenshot of the view shown and moves to the next one. The caption shows "Shot i/N: border, score, level". `/dm seamsweep next` counts as one click; `/dm seamsweep stop` ends the sweep. `Screenshot()` now runs only in a click or a typed command, never from a timer. Every step and every refusal (map not open, shottest not passed, combat, busy) is written to the probe log.
+- **Blocked-action log.** Entries now name the addon the game blamed. When the game blamed another addon, the entry ends with "- another addon, not Dark Matter". The recorder's own stack frames are left out. 0.5.2b.8 recorded a SetAllowDangerousScripts block that the game blamed on WoWGrok: WoWGrok replaces the chat box's send functions, so `/run` and `/script` typed in chat run tainted by it.
+- `/dm mapcost both` showed 29 fps at every level, with the core pass on and off. That means a frame cap, not the masks. The core pass stays on.
+
 ## 0.5.2b.8
 
 Map: the name under the cursor at the top of the map, two-pass zone masks, and tools to measure their cost and review every zone border.

@@ -5,17 +5,15 @@ NS.ZoneSeams = {
   [1414] = { -- Kalimdor
     { 1441, 1445, 0.5831, 0.7277, 21.0 }, -- Thousand Needles | Dustwallow Marsh
     { 1412, 1442, 0.4599, 0.5324, 10.5 }, -- Mulgore | Stonetalon Mountains
-    { 1443, 2652, 0.4354, 0.6080, 6.9 }, -- Desolace | zone 2652
     { 1441, 1449, 0.5237, 0.7711, 6.6 }, -- Thousand Needles | Un'Goro Crater
-    { 1439, 1450, 0.5172, 0.2068, 6.2 }, -- Darkshore | Moonglade
-    { 1444, 2652, 0.4359, 0.6514, 6.1 }, -- Feralas | zone 2652
     { 1411, 1440, 0.5602, 0.4560, 5.7 }, -- Durotar | Ashenvale
-    { 1412, 1444, 0.4629, 0.6671, 5.0 }, -- Mulgore | Feralas
-    { 1412, 2652, 0.4569, 0.6297, 5.0 }, -- Mulgore | zone 2652
+    { 1412, 1444, 0.4629, 0.6671, 5.1 }, -- Mulgore | Feralas
     { 1440, 1447, 0.5721, 0.4044, 4.9 }, -- Ashenvale | Azshara
+    { 1439, 1450, 0.5172, 0.2060, 4.5 }, -- Darkshore | Moonglade
     { 1413, 1445, 0.5577, 0.6297, 2.5 }, -- The Barrens | Dustwallow Marsh
-    { 1448, 1452, 0.5282, 0.2614, 2.4 }, -- Felwood | Winterspring
+    { 1443, 2652, 0.4354, 0.6080, 2.0 }, -- Desolace | Shen'dralas
     { 1449, 1451, 0.4708, 0.8205, 1.5 }, -- Un'Goro Crater | Silithus
+    { 1444, 2652, 0.4354, 0.6521, 1.3 }, -- Feralas | Shen'dralas
     { 1441, 1446, 0.5577, 0.7809, 1.2 }, -- Thousand Needles | Tanaris
     { 1440, 1448, 0.4903, 0.3797, 1.1 }, -- Ashenvale | Felwood
     { 1413, 1440, 0.5432, 0.4665, 0.9 }, -- The Barrens | Ashenvale
@@ -31,30 +29,30 @@ NS.ZoneSeams = {
     { 1444, 1451, 0.4184, 0.7711, 0.3 }, -- Feralas | Silithus
     { 1446, 1449, 0.5357, 0.8220, 0.2 }, -- Tanaris | Un'Goro Crater
     { 1412, 1443, 0.4494, 0.5683, 0.0 }, -- Mulgore | Desolace
+    { 1412, 2652, 0.4564, 0.6297, 0.0 }, -- Mulgore | Shen'dralas
     { 1441, 1444, 0.4848, 0.7060, 0.0 }, -- Thousand Needles | Feralas
+    { 1448, 1452, 0.5282, 0.2614, 0.0 }, -- Felwood | Winterspring
     { 1448, 2482, 0.5068, 0.3041, 0.0 }, -- Felwood | Mount Hyjal
     { 1452, 2482, 0.5646, 0.2824, 0.0 }, -- Winterspring | Mount Hyjal
   },
   [1415] = { -- Eastern Kingdoms
-    { 1435, 2548, 0.5758, 0.7276, 302.8 }, -- Swamp of Sorrows | Riverglades
+    { 1435, 2548, 0.5758, 0.7276, 308.5 }, -- Swamp of Sorrows | Riverglades
+    { 1431, 1433, 0.5075, 0.7419, 217.1 }, -- Duskwood | Redridge Mountains
     { 1417, 1425, 0.5479, 0.3519, 18.7 }, -- Arathi Highlands | The Hinterlands
-    { 1428, 1429, 0.4850, 0.6812, 16.6 }, -- Burning Steppes | Elwynn Forest
+    { 1433, 1435, 0.5604, 0.7366, 17.0 }, -- Redridge Mountains | Swamp of Sorrows
+    { 1428, 1429, 0.4850, 0.6812, 16.8 }, -- Burning Steppes | Elwynn Forest
     { 1420, 1421, 0.4087, 0.2613, 14.5 }, -- Tirisfal Glades | Silverpine Forest
     { 1418, 1428, 0.5304, 0.6363, 13.0 }, -- Badlands | Burning Steppes
     { 1417, 1437, 0.5334, 0.4200, 11.9 }, -- Arathi Highlands | Wetlands
     { 1430, 1434, 0.5115, 0.8070, 11.3 }, -- Deadwind Pass | Stranglethorn Vale
     { 1431, 1434, 0.4775, 0.8062, 10.7 }, -- Duskwood | Stranglethorn Vale
+    { 1429, 1433, 0.5075, 0.7157, 10.1 }, -- Elwynn Forest | Redridge Mountains
     { 1426, 1427, 0.4925, 0.5787, 6.8 }, -- Dun Morogh | Searing Gorge
     { 1427, 1432, 0.5225, 0.5832, 6.2 }, -- Searing Gorge | Loch Modan
     { 1420, 1422, 0.4920, 0.2171, 6.2 }, -- Tirisfal Glades | Western Plaguelands
-    { 1433, 1435, 0.5604, 0.7344, 6.1 }, -- Redridge Mountains | Swamp of Sorrows
-    { 1428, 2548, 0.5449, 0.6715, 6.0 }, -- Burning Steppes | Riverglades
+    { 1428, 2548, 0.5449, 0.6707, 6.2 }, -- Burning Steppes | Riverglades
     { 1419, 1430, 0.5299, 0.8010, 5.9 }, -- Blasted Lands | Deadwind Pass
     { 1422, 1425, 0.5195, 0.2950, 5.3 }, -- Western Plaguelands | The Hinterlands
-    { 1429, 1433, 0.5075, 0.7157, 5.2 }, -- Elwynn Forest | Redridge Mountains
-    { 1431, 1433, 0.5075, 0.7419, 5.0 }, -- Duskwood | Redridge Mountains
-    { 1433, 2548, 0.5449, 0.7022, 5.0 }, -- Redridge Mountains | Riverglades
-    { 1428, 1433, 0.5185, 0.6932, 5.0 }, -- Burning Steppes | Redridge Mountains
     { 1426, 1437, 0.4960, 0.4993, 3.9 }, -- Dun Morogh | Wetlands
     { 1429, 1431, 0.4770, 0.7463, 3.8 }, -- Elwynn Forest | Duskwood
     { 1416, 1420, 0.4696, 0.2613, 3.3 }, -- Alterac Mountains | Tirisfal Glades
@@ -73,6 +71,7 @@ NS.ZoneSeams = {
     { 1431, 1436, 0.4391, 0.7860, 0.5 }, -- Duskwood | Westfall
     { 1423, 1425, 0.5833, 0.2710, 0.4 }, -- Eastern Plaguelands | The Hinterlands
     { 1434, 1436, 0.4291, 0.8070, 0.3 }, -- Stranglethorn Vale | Westfall
+    { 1433, 2548, 0.5454, 0.7022, 0.3 }, -- Redridge Mountains | Riverglades
     { 1419, 1435, 0.5474, 0.7725, 0.2 }, -- Blasted Lands | Swamp of Sorrows
     { 1416, 1421, 0.4466, 0.2950, 0.0 }, -- Alterac Mountains | Silverpine Forest
     { 1416, 1425, 0.5070, 0.3115, 0.0 }, -- Alterac Mountains | The Hinterlands
@@ -80,5 +79,6 @@ NS.ZoneSeams = {
     { 1419, 1434, 0.5150, 0.8294, 0.0 }, -- Blasted Lands | Stranglethorn Vale
     { 1426, 1432, 0.5299, 0.5502, 0.0 }, -- Dun Morogh | Loch Modan
     { 1430, 1435, 0.5225, 0.7710, 0.0 }, -- Deadwind Pass | Swamp of Sorrows
+    { 1428, 1433, 0.5190, 0.6932, 0.0 }, -- Burning Steppes | Redridge Mountains
   },
 }

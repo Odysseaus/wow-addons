@@ -890,7 +890,7 @@ if MODE ~= "minimal" then
     "/dm blocked leads with the last blocked function: " .. tostring(said[2]))
   check(said[3] and said[3]:find("combat no", 1, true) and said[3]:find("ctx none", 1, true), "/dm blocked: time, version, combat, context line")
   local earlier
-  for _, l in ipairs(said) do if l:find("earlier: .- nil %(ADDON_ACTION_BLOCKED, ctx ach:PLAYER_ENTERING_WORLD%)") then earlier = true end end
+  for _, l in ipairs(said) do if l:find("earlier: .- nil %(ADDON_ACTION_BLOCKED, addon %S+, ctx ach:PLAYER_ENTERING_WORLD%)") then earlier = true end end
   check(earlier, "/dm blocked lists earlier entries with their context")
   said = {}
   DarkMatter.Print = function(m) said[#said + 1] = m end
@@ -3699,7 +3699,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.8 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.8.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4439,8 +4439,8 @@ do
     end
     table.sort(rects)
     check(n == 43 and per[1414] == 20 and per[1415] == 23 and cityMask == 0 and #missing == 0 and #badTga == 0
-      and table.concat(rects, ",") == "1433,1450,2652",
-      "0.5.2b.6 masks: 43 ship (Kalimdor 20, Eastern Kingdoms 23), no capital, every file a 256x256 32-bit TGA; rects for Redridge, Moonglade, 2652 ("
+      and #rects == 0,
+      "0.5.2b.6 masks: 43 ship (Kalimdor 20, Eastern Kingdoms 23), no capital, every file a 256x256 32-bit TGA; 0.5.2b.8.1: all sampled, none made from neighbours (no rect) ("
       .. n .. "; missing " .. table.concat(missing, " ") .. "; bad " .. table.concat(badTga, " ") .. "; rects " .. table.concat(rects, ",") .. ")")
     local saveZM = NS.ZoneMasks
     NS.ZoneMasks = SHIPPED_MASKS
@@ -4518,10 +4518,37 @@ do
       said8 = {}
       local saveVis8 = FrameMT.IsVisible
       FrameMT.IsVisible = function(s) local x = s while x and x ~= UIParent do if x._hid then return false end x = x._parent end return true end
+      -- 0.5.2b.8.1: the sweep is driven by clicks: starting it takes no shot; each click on the Shot button (or
+      -- /dm seamsweep next) takes one and centres the next view; nothing is shot from a timer; every step is logged
+      local inClick, outside = false, 0
+      Screenshot = function() shots = shots + 1 if not inClick then outside = outside + 1 end NS.MapReview.ShotEvent("SCREENSHOT_SUCCEEDED") end
+      local shots0 = shots
       SlashCmdList.DARKMATTER("seamsweep 2")
+      local started = table.concat(said8, "\n")
+      local btn = NS.MapReview.shotButton
+      local startShots = shots - shots0
+      local log0 = DarkMatterDB.probeLog and DarkMatterDB.probeLog.seamsweep
+      local firstLog = log0 and #log0.lines or 0
+      local captions = {}
+      local nViews = 2 * #NS.MapReview.SEAM_LEVELS
+      for c = 1, nViews do
+        captions[#captions + 1] = btn and btn:GetText() or "?"
+        inClick = true
+        if c == nViews then SlashCmdList.DARKMATTER("seamsweep next") elseif btn then btn._scripts.OnClick(btn) end
+        inClick = false
+      end
       local sweep = table.concat(said8, "\n")
+      local slog = DarkMatterDB.probeLog and DarkMatterDB.probeLog.seamsweep
+      local slogAll = slog and table.concat(slog.lines, "\n") or ""
       local nSeams = #NS.MapReview.Seams(2)
       FrameMT.IsVisible = saveVis8
+      check(btn and startShots == 0 and firstLog == 1 and captions[1]:find("^Shot 1/" .. nViews .. ": #1 ") and captions[2]:find("^Shot 2/")
+        and outside == 0 and shots - shots0 == nViews and not btn:IsShown() and not NS.MapReview.busy
+        and slogAll:find(nViews .. " of " .. nViews .. " shots taken", 1, true) and select(2, slogAll:gsub(": ok", "")) == nViews,
+        "0.5.2b.8.1 /dm seamsweep: no shot on start, one per click (" .. (shots - shots0) .. ", " .. outside .. " outside a click), captions, logged as it goes: "
+        .. captions[1] .. " | " .. started:gsub("\n", " | "))
+      SlashCmdList.DARKMATTER("seamsweep stop")
+      Screenshot = function() shots = shots + 1 NS.MapReview.ShotEvent("SCREENSHOT_SUCCEEDED") end
       Screenshot = function() shots = shots + 1 NS.MapReview.ShotEvent("SCREENSHOT_FAILED") end
       said8 = {}
       SlashCmdList.DARKMATTER("shottest")
@@ -4750,7 +4777,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.8 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.8.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -5589,7 +5616,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.8 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.8%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -6587,7 +6614,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.8 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.8.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -7148,7 +7175,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.8 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.8.1 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}
