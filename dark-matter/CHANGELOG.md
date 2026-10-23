@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.2b.6.2
+
+Map: the live map now draws zones exactly the way `/dm masktest zone` panel 2 does, because panel 2 cut in game and the map did not. This is the pre-release of 0.5.2b.7.
+
+### Fixes
+- **Zone masks on the live map**: in 0.5.2b.6.1 the game kept every mask (449/449 pieces), but the zones were still drawn as full rectangles. Panel 2 differed from the map in five ways. The map now matches panel 2 in all of them:
+  - the viewport is a plain clipping frame (`SetClipsChildren`), not a ScrollFrame scroll child;
+  - pieces are drawn in ARTWORK, not BACKGROUND;
+  - there is no texture filter;
+  - zone pictures are unscaled and sized in screen pixels at every zoom (re-placed when the zoom changes), instead of `SetScale`;
+  - the layer frame is anchored before its mask is made, and the mask goes on last.
+- This applies at every zoom, including zoomed out to the continent.
+
+### Changes
+- `/dm mapsweep` adds `mapsweep cut`: it draws views for real (each masked continent fitted, x1.4 and x2, plus each zone zoomed out), audits every zone picture on screen and flags `unmasked-rect`, `mask-rect` (mask not the picture's size) and `not-panel2` (scaled, wrong draw layer, mask on another frame, inside a ScrollFrame). The game reports no pixels, so this checks how each picture is built. `/dm masktest zone` shows the pixels.
+- `/dm masktest zone`: panel 3 now runs the map's own drawing code. Panel 4 runs the same code inside a ScrollFrame (the old viewport). If 3 is cut and 4 is a full rectangle, the ScrollFrame was the cause.
+- `/dm mapprobe` adds `map 23 cut`.
+
 ## 0.5.2b.6.1
 
 Map: a fix for the zone masks, which did not cut in game in 0.5.2b.6. This is the pre-release of 0.5.2b.7.

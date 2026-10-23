@@ -182,38 +182,38 @@ function S.MaskTestZone(name)
   local m2, w2 = ZoneMask(p2, file)
   local l2, c2 = ZoneTiles(p2, art, k, m2, "last")
   res[2] = string.format("%d/%d pieces carry the mask (%s)", c2, #l2, w2)
-  -- 3: the map's 0.5.2b.6 way: a hidden frame at the art's size, mask first, trilinear, then scaled and shown
-  local p3 = Box(3, "3 the 0.5.2b.6 map way (mask first)")
-  local f3 = CreateFrame("Frame", nil, p3)
-  f3:SetSize(art.w, art.h)
-  f3:SetPoint("TOPLEFT", p3, "TOPLEFT", 0, 0)
-  f3:Hide()
-  local m3, w3 = ZoneMask(f3, file)
-  local l3, c3 = ZoneTiles(f3, art, 1, m3, "first", "TRILINEAR")
-  f3:SetScale(k)
-  f3:Show()
-  res[3] = string.format("%d/%d pieces carry the mask (%s)", c3, #l3, w3)
-  -- 4: the 0.5.2b.6.1 map way: the same hidden scaled frame, the mask added last
-  local p4 = Box(4, "4 the 0.5.2b.6.1 map way (mask last)")
-  local f4 = CreateFrame("Frame", nil, p4)
-  f4:SetSize(art.w, art.h)
-  f4:SetPoint("TOPLEFT", p4, "TOPLEFT", 0, 0)
-  f4:Hide()
-  local m4, w4 = ZoneMask(f4, file)
-  local l4, c4 = ZoneTiles(f4, art, 1, m4, "last", "TRILINEAR")
-  f4:SetScale(k)
-  f4:Show()
-  res[4] = string.format("%d/%d pieces carry the mask (%s)", c4, #l4, w4)
+  -- 3: the map's own code (M.TestLayer: the live layer, mask, pieces and Fit) on a plain clipping frame, as the
+  -- 0.5.2b.6.2 map's viewport
+  local function Carry(L)
+    local n, c = 0, 0
+    for _, t in ipairs(L and L.tiles or {}) do n = n + 1 if (MaskCount(t) or 0) >= 1 then c = c + 1 end end
+    return string.format("%d/%d pieces carry the mask (%s)", c, n, L and L.mask and "mask on" or "NO mask")
+  end
+  local p3 = Box(3, "3 the map's own code (the map now)")
+  local h3 = CreateFrame("Frame", nil, p3)
+  h3:SetAllPoints(p3)
+  if h3.SetClipsChildren then pcall(h3.SetClipsChildren, h3, true) end
+  local L3 = M and M.TestLayer and M.TestLayer(h3, z.id, k)
+  res[3] = L3 and Carry(L3) or "the map's code is not loaded"
+  -- 4: the same code inside a ScrollFrame's scroll child, as the map's viewport was up to 0.5.2b.6.1
+  local p4 = Box(4, "4 the same in a ScrollFrame (old map)")
+  local s4 = CreateFrame("ScrollFrame", nil, p4)
+  s4:SetAllPoints(p4)
+  local h4 = CreateFrame("Frame", nil, s4)
+  h4:SetSize(W, H)
+  s4:SetScrollChild(h4)
+  local L4 = M and M.TestLayer and M.TestLayer(h4, z.id, k)
+  res[4] = L4 and Carry(L4) or "the map's code is not loaded"
   f:Show()
   local out = {
     string.format("masktest zone %s: %s (map %d, picture %dx%d, mask %s)", NS.version, z.name, z.id, art.w, art.h, file:match("[^\\]+$") or file),
     "masktest zone 1: " .. res[1] .. " -> the zone's outline cut from parchment",
     "masktest zone 2: " .. res[2] .. " -> the zone's own land only, no torn edge",
-    "masktest zone 3: " .. res[3] .. " -> the same as 2 if the 0.5.2b.6 way worked",
-    "masktest zone 4: " .. res[4] .. " -> the same as 2 (the map's way now)",
+    "masktest zone 3: " .. res[3] .. " -> must look like 2 (the map draws zones this way now)",
+    "masktest zone 4: " .. res[4] .. " -> if 3 is cut and 4 is a full rectangle, the ScrollFrame was the cause",
   }
   if M and M.MaskCheck then out[#out + 1] = "masktest zone map: " .. M.MaskCheck() end
-  out[#out + 1] = "masktest zone: if 2 and 4 show the full rectangle too, masks do not cut zone pictures here: /dm mapmask off"
+  out[#out + 1] = "masktest zone: if 3 shows the full rectangle while 2 is cut, tell me; /dm mapmask off meanwhile"
   return out
 end
 

@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.2b.6.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.2b.6.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -76,6 +76,11 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 - **Your map pins**: the Pin tool on the map, then a click on the map. The game's waypoint and minimap arrow point at the pin; right-click a pin to remove it.
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
+
+### 0.5.2b.6.2 changes
+- The live map draws zones exactly like `/dm masktest zone` panel 2, which cut in game: a plain clipping viewport instead of a ScrollFrame, unscaled pictures sized in screen pixels, ARTWORK layer, no filter, mask last. This holds at every zoom, including zoomed out.
+- `/dm mapsweep` adds a `mapsweep cut` line that audits every zone picture it really draws (unmasked-rect, mask-rect, not-panel2). `/dm mapprobe` adds `map 23 cut`.
+- `/dm masktest zone`: panel 3 is the map's own code, and panel 4 is the same code in a ScrollFrame (the old viewport).
 
 ### 0.5.2b.6.1 changes
 - Zone masks fixed: each picture piece gets its mask after its file, size and place (the `/dm masktest` order). 0.5.2b.6 added the mask to the empty texture first, and in game the zones were drawn uncut. If the game keeps no mask on a piece, the map falls back to one feathered zone at a time.

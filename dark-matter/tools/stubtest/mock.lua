@@ -235,6 +235,9 @@ function FrameMT.CreateMaskTexture(s, name, layer) local t = FrameMT.CreateTextu
 function FrameMT.AddMaskTexture(s, m) if type(m) ~= "table" or not rawget(m, "_isMask") then error("AddMaskTexture: not a mask texture", 2) end if s._maskNoFile == nil then s._maskNoFile = s._file == nil end s._masks = s._masks or {} s._masks[#s._masks + 1] = m end
 -- 0.5.2b.6.1: the client's mask queries; MOCK_MASK_DROP = true plays a client that keeps no mask on a texture
 function FrameMT.GetNumMaskTextures(s) if MOCK_MASK_DROP then return 0 end return s._masks and #s._masks or 0 end
+function FrameMT.SetClipsChildren(s, v) s._clips = v and true or false end
+function FrameMT.DoesClipChildren(s) return s._clips or false end
+function FrameMT.GetDrawLayer(s) return s._layer, s._sub end
 function FrameMT.GetMaskTexture(s, i) needNum("GetMaskTexture", 1, i) return s._masks and s._masks[i] end
 function FrameMT.RemoveMaskTexture(s, m)
   for i, x in ipairs(s._masks or {}) do if x == m then table.remove(s._masks, i) return end end
@@ -402,12 +405,12 @@ function FrameMT.GetEffectiveScale(s) local e = s._scale or 1 local p = s._paren
 function FrameMT.SetFrameLevel(s, n) needNum("SetFrameLevel", 1, n) s._level = n end
 function FrameMT.GetFrameLevel(s) return s._level or 1 end
 function FrameMT.SetFrameStrata(s, v) if not STRATA[v] then error("SetFrameStrata: bad strata " .. tostring(v), 2) end s._strata = v end
-function FrameMT.SetTexture(s, file, wrapH, wrapV)
+function FrameMT.SetTexture(s, file, wrapH, wrapV, filter)
   local WRAP = { REPEAT = 1, CLAMP = 1, MIRROR = 1, CLAMPTOBLACK = 1, CLAMPTOBLACKADDITIVE = 1, CLAMPTOWHITE = 1 }
   if (wrapH ~= nil and not WRAP[wrapH]) or (wrapV ~= nil and not WRAP[wrapV]) then error("SetTexture: bad wrap mode", 2) end
   s._wrapH, s._wrapV = wrapH, wrapV
   if file ~= nil and type(file) ~= "string" and not isnum(file) then error("SetTexture: bad file " .. type(file), 2) end
-  s._file, s._color = file, nil
+  s._file, s._color, s._filter = file, nil, filter
 end
 function FrameMT.SetTexCoord(s, ...)
   local n = select("#", ...)
@@ -638,7 +641,7 @@ function DumpLayout(root, path)
       -- clip to the nearest ScrollFrame ancestor
       local x2 = r._parent
       while x2 and x2 ~= UIParent do
-        if x2._ftype == "ScrollFrame" then
+        if x2._ftype == "ScrollFrame" or x2._clips then
           local cl, ct, cr, cb = rect(x2)
           o[#o + 1] = '"clip":[' .. table.concat({ jnum(cl - rl), jnum(rt - ct), jnum(cr - cl), jnum(ct - cb) }, ",") .. "]"
           break
@@ -1046,7 +1049,7 @@ do
         local clipped = false
         do local x = e.r._parent
           while x and x ~= UIParent do
-            if x._ftype == "ScrollFrame" then clipped = true break end
+            if x._ftype == "ScrollFrame" or x._clips then clipped = true break end
             x = x._parent
           end
         end
@@ -3094,7 +3097,7 @@ if MODE ~= "minimal" then
         and math.abs(hi[4] - (EXP_H - box[4])) < 0.01 and hi[1] < 0 and hi[3] < 0, "themes: the window's mouse area covers all the frame art in " .. id)
       for _, e in ipairs(LayoutOf(win)) do
         local clipped, x = false, e.r._parent
-        while x and x ~= UIParent do if x._ftype == "ScrollFrame" then clipped = true break end x = x._parent end
+        while x and x ~= UIParent do if x._ftype == "ScrollFrame" or x._clips then clipped = true break end x = x._parent end
         if e.kind == "texture" and e.l and not clipped then
           check(e.l >= wl + box[1] - 0.5 and e.rr <= wl + box[3] + 0.5 and e.t <= wt - box[2] + 0.5 and e.b >= wt - box[4] - 0.5,
             "themes: nothing drawn outside the frame art (no backdrop) in " .. id)
@@ -3696,7 +3699,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.6.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.6.2 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4291,6 +4294,62 @@ do
     local zc = MS.MaskTest("zone")
     check(zc[1] == "masktest zone: closed" and not MS.zoneFrame:IsShown() and MS.MaskTest("zone nowhere-land")[1]:find("^masktest zone: no zone 'nowhere%-land'"),
       "0.5.2b.6.1 /dm masktest zone: close / unknown zone: " .. table.concat(zc, " | "))
+    -- 0.5.2b.6.2: the live map draws each masked zone exactly as masktest zone panel 2: an unscaled frame anchored
+    -- before its mask is made, pieces in ARTWORK with no filter sized in screen pixels, the mask last and the
+    -- picture's size; the viewport a plain clipping frame (no ScrollFrame); the sweep audits real drawn views
+    M.FlyTo(1426) run(30)
+    local Lp = M.layers[1426]
+    local way = Lp and Lp.mask and #Lp.tiles > 0 and (Lp.frame._scale or 1) == 1 and M.vpKind == "frame"
+    local why = ""
+    for _, t in ipairs(Lp and Lp.tiles or {}) do
+      local g = t.dmG
+      if t._layer ~= "ARTWORK" or t._filter ~= nil or not g or math.abs(t._w - g[3] * Lp.fitSc) > 0.01 or not (t._masks and t._masks[1] == Lp.mask) or t._maskNoFile ~= false then
+        way = false why = why .. " piece " .. tostring(t._layer) .. "/" .. tostring(t._filter)
+      end
+    end
+    local mw = Lp and Lp.mask and Lp.mask:GetWidth()
+    check(way and mw and math.abs(mw - Lp.art.w * Lp.fitSc) < 1 and Lp.fitSc ~= 1,
+      "0.5.2b.6.2 map: a masked zone is drawn the panel-2 way (scale " .. tostring(Lp and Lp.frame._scale) .. ", fit " .. tostring(Lp and Lp.fitSc) .. ", mask w " .. tostring(mw) .. why .. ")")
+    local au = M.MaskAudit()
+    check(au.shown > 0 and au.cut == au.shown and au.unmasked + au.rect + au.way == 0 and M.CutShort():find("^shown %d+, cut %d+; unmasked 0, mask%-rect 0, not%-panel2 0; view frame$") and #("map 23 cut: " .. M.CutShort()) <= 90,
+      "0.5.2b.6.2 map: the audit of the drawn view: " .. M.CutShort())
+    -- zoom in and out: the pieces follow (no SetScale), the mask stays the picture's size
+    M.Wheel(-1) run(10) M.Wheel(-1) run(10)
+    local Lz = M.layers[1426]
+    local mz = Lz and Lz.mask and Lz.mask:GetWidth()
+    local t1 = Lz and Lz.tiles[1]
+    check(Lz and Lz.shown and (Lz.frame._scale or 1) == 1 and mz and math.abs(mz - Lz.art.w * Lz.fitSc) < 1 and t1 and math.abs(t1._w - t1.dmG[3] * Lz.fitSc) < 0.01,
+      "0.5.2b.6.2 map: zoomed out, the masked picture is re-sized, not scaled (fit " .. tostring(Lz and Lz.fitSc) .. ", mask w " .. tostring(mz) .. ")")
+    -- the sweep's real-drawn views (zoomed out too) are audited and the line says so honestly
+    local so = M.Sweep()
+    local cutL
+    for _, l in ipairs(so) do if l:find("^mapsweep cut: %d+ views") then cutL = l end end
+    check(cutL and cutL:find("unmasked%-rect 0, mask%-rect 0, not%-panel2 0; viewport frame %-> OK$") and M.cut.views >= 6 and M.cut.shown > 0 and M.cut.cut == M.cut.shown,
+      "0.5.2b.6.2 mapsweep cut: " .. tostring(cutL))
+    -- the audit is honest: a piece without its mask, a scaled frame and a wrong-size mask are each flagged
+    local Lb = M.layers[1426]
+    M.FlyTo(1426) run(30)
+    Lb = M.layers[1426]
+    local saveM = Lb.tiles[1]._masks
+    Lb.tiles[1]._masks = nil
+    local a1 = M.MaskAudit()
+    Lb.tiles[1]._masks = saveM
+    Lb.frame:SetScale(2)
+    local a2 = M.MaskAudit()
+    Lb.frame:SetScale(1)
+    local sw = Lb.mask._w
+    local savePts = Lb.mask._pts
+    Lb.mask._pts = {}
+    Lb.mask._w = 3
+    local a3 = M.MaskAudit()
+    Lb.mask._pts, Lb.mask._w = savePts, sw
+    check(a1.unmasked >= 1 and a1.bad[1]:find("unmasked%-rect") and a2.way >= 1 and a3.rect >= 1 and M.MaskAudit().cut == M.MaskAudit().shown,
+      "0.5.2b.6.2 map: the audit flags an unmasked piece / a scaled frame / a wrong mask (" .. a1.unmasked .. "/" .. a2.way .. "/" .. a3.rect .. ")")
+    -- masktest zone panels 3 and 4 run the map's own code (a clipping frame; a ScrollFrame)
+    local zl2 = table.concat(MS.MaskTest("zone dun morogh"), " | ")
+    check(zl2:find("masktest zone 3: (%d+)/%1 pieces carry the mask %(mask on%) %-> must look like 2") and zl2:find("masktest zone 4: (%d+)/%1 pieces carry the mask %(mask on%) %-> if 3 is cut"),
+      "0.5.2b.6.2 /dm masktest zone 3 and 4 use the map's code: " .. zl2)
+    MS.MaskTest("zone")
     NS.ZoneMasks = saveZM
     M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
     M.FlyTo(1426) run(30)
@@ -4352,7 +4411,7 @@ do
     local b = LM and LM.maskBox
     local function near(a, e) return a and math.abs(a - e) < 0.01 end
     check(LM and LM.mask and b and near(b[1], 0.02 / 0.10 * 1002) and near(b[2], 0.02 / 0.12 * 668) and near(b[3], 0.06 / 0.10 * 1002) and near(b[4], 0.08 / 0.12 * 668)
-      and near(LM.mask:GetWidth(), b[3]) and near(LM.mask:GetHeight(), b[4]),
+      and near(LM.mask:GetWidth(), b[3] * LM.fitSc) and near(LM.mask:GetHeight(), b[4] * LM.fitSc),
       "0.5.2b.6 map: a mask with a rect is anchored at that rect inside its zone's picture (" .. (b and string.format("%.1f %.1f %.1f %.1f", b[1], b[2], b[3], b[4]) or "none") .. ")")
     -- 0.5.2b.6: the tile reach of a continent the view is not on (0.5.2b.5 read it as "no tiles")
     NS.db.map.layer = "terrain"
@@ -4549,7 +4608,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.6.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.6.2 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4844,12 +4903,12 @@ do
     check(#src > 0 and not code:find("WorldMapFrame", 1, true) and not code:find("hooksecurefunc", 1, true) and not code:find("SetUserWaypoint", 1, true) and not code:find("SetSuperTrack", 1, true),
       "0.5.0 map: " .. f .. " has no WorldMapFrame access, hooks, waypoints or super-track")
   end
-  -- 19. the map's pictures are clipped by a ScrollFrame
-  check(M.vp._ftype == "ScrollFrame", "0.5.0 map: viewport is a ScrollFrame (clips the map pictures)")
+  -- 19. the map.s pictures are clipped by the viewport (0.5.2b.6.2: a plain clipping frame, not a ScrollFrame)
+  check(M.vp._ftype == "Frame" and M.vp._clips and M.vpKind == "frame" and M.canvas._scrollOf == nil, "0.5.2b.6.2 map: viewport is a plain frame that clips the map pictures (no ScrollFrame)")
   for _, L in pairs(M.layers) do
     local x, inside = L.frame, false
     while x do if x == M.vp then inside = true end x = x._parent end
-    check(inside, "0.5.0 map: layer " .. L.id .. " lives inside the clipping ScrollFrame")
+    check(inside, "0.5.0 map: layer " .. L.id .. " lives inside the clipping viewport")
   end
   -- 20. view is remembered
   local sv = NS.db.map.view
@@ -5166,7 +5225,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.6%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.6%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5983,7 +6042,7 @@ if MODE == "full" then
       for _, e in ipairs(LayoutOf(f)) do
         if e.kind == "texture" and e.l and (e.r._alpha or 1) > 0.01 then
           local clipped, x = false, e.r._parent
-          while x and x ~= UIParent do if x._ftype == "ScrollFrame" then clipped = true break end x = x._parent end
+          while x and x ~= UIParent do if x._ftype == "ScrollFrame" or x._clips then clipped = true break end x = x._parent end
           if not clipped then
             l, t, r, b = math.min(l or e.l, e.l), math.max(t or e.t, e.t), math.max(r or e.rr, e.rr), math.min(b or e.b, e.b)
           end
@@ -6164,7 +6223,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.6.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.6.2 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -6680,7 +6739,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.6.1 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.6.2 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

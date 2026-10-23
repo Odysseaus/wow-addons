@@ -214,14 +214,19 @@ local function EdgeW(a, x, y) return S01(math.min(x, y, a.w - x, a.h - y) / FEAT
 M.EdgeW = EdgeW
 local function Piece(L, fid, layer, x, y, w, h, u2, v2, list)
   local a, f = L.art, L.frame
+  -- 0.5.2b.6.2: a masked picture is drawn exactly as /dm masktest zone panel 2: ARTWORK (tiles at sublevel 0, the
+  -- explored overlays above at 1), no texture filter, its place and size in screen pixels (Fit), the mask added last
+  local sub
+  if L.mask then sub = layer == "BACKGROUND" and 0 or 1 layer = "ARTWORK" end
   local function New(px, py, pw, ph, u1, uu2, v1, vv2)
-    local t = f:CreateTexture(nil, layer)
-    t:SetSize(pw, ph)
-    t:SetPoint("TOPLEFT", f, "TOPLEFT", px, -py)
-    t:SetTexture(fid, nil, nil, "TRILINEAR")
+    local t = f:CreateTexture(nil, layer, nil, sub)
+    local k = L.mask and L.fitSc or 1
+    t:SetSize(pw * k, ph * k)
+    t:SetPoint("TOPLEFT", f, "TOPLEFT", px * k, -py * k)
+    if L.mask then t:SetTexture(fid) else t:SetTexture(fid, nil, nil, "TRILINEAR") end
     t:SetTexCoord(u1, uu2, v1, vv2)
-    -- 0.5.2b.6.1: the mask goes on last, once the texture has its file, size and place (as /dm masktest does; 0.5.2b.6
-    -- added it to the empty texture first, and on 1.60.1 the zones were drawn uncut)
+    t.dmG = { px, py, pw, ph }
+    -- 0.5.2b.6.1: the mask goes on last, once the texture has its file, size and place (as /dm masktest does)
     if L.mask then M.AttachMask(t, L.mask) end
     list[#list + 1] = t
     return t
@@ -323,16 +328,19 @@ function M.HighlightInfo(z)
   M.hl[z.id] = c
   return c
 end
-local function Layer(id, level)
-  local L = M.layers[id]
-  if L then return L end
+-- 0.5.2b.6.2: a layer frame may be built on another host (the /dm masktest zone panels build the map's own layer
+-- there); force = the zone's mask even where the continent is not drawn masked
+local function NewLayer(id, level, host, force)
   local art = MD.Art(id)
   if not art then return nil end
-  local f = CreateFrame("Frame", nil, canvas)
+  local f = CreateFrame("Frame", nil, host)
   f:SetSize(art.w, art.h)
-  f:SetFrameLevel(canvas:GetFrameLevel() + level)
+  -- 0.5.2b.6.2: anchored before its mask is made (panel 2's frame has its place first; 0.5.2b.6.1 made the mask on a
+  -- frame with no anchor and anchored it only when shown)
+  f:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+  f:SetFrameLevel(host:GetFrameLevel() + level)
   f:Hide()
-  L = { id = id, key = id, art = art, frame = f, tiles = {}, ov = {}, built = false, level = level }
+  local L = { id = id, key = id, art = art, frame = f, tiles = {}, ov = {}, built = false, level = level, fitSc = 1 }
   -- 0.5.1.6: zone pictures are feathered at their rim; 0.5.1.7: continent pictures too when the world picture lies under
   -- them (the world picture is the base and is never feathered). 0.5.2b.4: always (no masked zones)
   L.feather = CU and CU.CornerGrad and id ~= M.world and (M.hasWorld or not MD.Is(id, "continent")) or false
@@ -340,7 +348,7 @@ local function Layer(id, level)
   -- outline by that mask (its own soft edge) instead of being feathered at its rectangle
   local mf = id ~= M.world and not MD.Is(id, "continent") and M.MaskFile(id)
   local ze = mf and MD.ZoneEntry(id)
-  if ze and M.ContMasked(ze.cont) then
+  if ze and (force or M.ContMasked(ze.cont)) then
     if f.CreateMaskTexture then
       local ok, m = pcall(f.CreateMaskTexture, f)
       if ok and m then
@@ -352,10 +360,10 @@ local function Layer(id, level)
           local zr = ze.r
           if mr and zr[2] > zr[1] and zr[4] > zr[3] then
             local sx, sy = art.w / (zr[2] - zr[1]), art.h / (zr[4] - zr[3])
-            m:ClearAllPoints()
-            m:SetPoint("TOPLEFT", f, "TOPLEFT", (mr[1] - zr[1]) * sx, -(mr[3] - zr[3]) * sy)
-            m:SetSize((mr[2] - mr[1]) * sx, (mr[4] - mr[3]) * sy)
             L.maskBox = { (mr[1] - zr[1]) * sx, (mr[3] - zr[3]) * sy, (mr[2] - mr[1]) * sx, (mr[4] - mr[3]) * sy }
+            m:ClearAllPoints()
+            m:SetPoint("TOPLEFT", f, "TOPLEFT", L.maskBox[1], -L.maskBox[2])
+            m:SetSize(L.maskBox[3], L.maskBox[4])
           else
             m:SetAllPoints(f)
           end
@@ -368,7 +376,61 @@ local function Layer(id, level)
       M.canMask, M.masked = false, nil
     end
   end
-  M.layers[id] = L
+  return L
+end
+local function Layer(id, level)
+  local L = M.layers[id]
+  if L then return L end
+  L = NewLayer(id, level, canvas)
+  if L then M.layers[id] = L end
+  return L
+end
+-- 0.5.2b.6.2: put a built layer on its host at screen px (l, t), sc screen px per art texel. A masked layer is drawn
+-- exactly as /dm masktest zone panel 2: never scaled (SetScale 1); its frame, every piece and the mask are sized and
+-- placed in screen pixels (re-placed only when sc changes). Others keep 0.5.1's one SetScale.
+local function Fit(L, host, l, t, sc)
+  local f = L.frame
+  sc = math.max(sc, 0.0001)
+  if L.mask then
+    if L.fitSc ~= sc or not L.fitDone then
+      L.fitSc, L.fitDone = sc, true
+      if f:GetScale() ~= 1 then f:SetScale(1) end
+      f:SetSize(L.art.w * sc, L.art.h * sc)
+      for _, list in ipairs({ L.tiles, L.ov }) do
+        for _, p in ipairs(list) do
+          local g = p.dmG
+          if g then
+            p:ClearAllPoints()
+            p:SetPoint("TOPLEFT", f, "TOPLEFT", g[1] * sc, -g[2] * sc)
+            p:SetSize(g[3] * sc, g[4] * sc)
+          end
+        end
+      end
+      local b = L.maskBox
+      if b then
+        L.mask:ClearAllPoints()
+        L.mask:SetPoint("TOPLEFT", f, "TOPLEFT", b[1] * sc, -b[2] * sc)
+        L.mask:SetSize(b[3] * sc, b[4] * sc)
+      end
+    end
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", host, "TOPLEFT", l, -t)
+    return
+  end
+  f:SetScale(sc)
+  f:ClearAllPoints()
+  f:SetPoint("TOPLEFT", host, "TOPLEFT", l / sc, -t / sc)
+end
+M.NewLayer, M.Fit = NewLayer, Fit
+-- 0.5.2b.6.2: the map's own layer code drawing a zone on another host at sc (/dm masktest zone panels 3 and 4)
+function M.TestLayer(host, id, sc)
+  local L = NewLayer(id, 1, host, true)
+  if not L then return nil end
+  BuildTiles(L)
+  L.built = true
+  Fit(L, host, 0, 0, sc)
+  L.frame:Show()
+  L.shown = true
   return L
 end
 -- place a layer whose art covers world rect (x1..x2, y1..y2) at alpha a (hidden when off screen or invisible)
@@ -391,9 +453,7 @@ local function Show(L, x1, x2, y1, y2, a)
   end
   if not L.built then BuildTiles(L) L.built = true end
   if not L.ovBuilt and L.wantOv then BuildOverlays(L) end
-  L.frame:SetScale(math.max(sc, 0.0001))
-  L.frame:ClearAllPoints()
-  L.frame:SetPoint("TOPLEFT", canvas, "TOPLEFT", l / sc, -t / sc)
+  Fit(L, canvas, l, t, sc)
   L.frame:SetAlpha(a)
   L.frame:Show()
   L.shown, L.alpha = true, a
@@ -773,6 +833,71 @@ function M.MaskShort()
   local st = M.maskStat
   return string.format("adds %d: kept %d, none %d, errors %d, uncounted %d%s", st.add, st.ok, st.none, st.err, st.noCount,
     M.maskBroken and "; OFF" or M.maskOff and "; off" or "")
+end
+-- 0.5.2b.6.2: an honest check of what the map has drawn right now (not of the dry sweep): every zone picture on
+-- screen on a masked continent must be built the panel-2 way: it has its mask, every piece carries it, the mask is
+-- the picture's (or its own rect's) size in screen pixels, the frame is unscaled, pieces in ARTWORK, the mask on the
+-- pieces' own frame, and no ScrollFrame above it. The game reports no pixels: this proves the build, and /dm
+-- masktest zone (panels 2 to 4) shows the picture.
+local function Near(a, b) return type(a) == "number" and math.abs(a - b) <= 1 + 0.01 * math.abs(b) end
+function M.MaskAudit(r)
+  r = r or { shown = 0, cut = 0, pieces = 0, unmasked = 0, rect = 0, way = 0, bad = {} }
+  local function Bad(L, kind, why)
+    r[kind] = r[kind] + 1
+    if #r.bad < 6 then r.bad[#r.bad + 1] = (MD.Name(L.id) or tostring(L.id)) .. " " .. why end
+  end
+  for _, L in pairs(M.layers) do
+    local ze = L.shown and L.frame:IsShown() and L.id ~= M.world and not MD.Is(L.id, "continent") and MD.ZoneEntry(L.id)
+    if ze and not IsCity(ze) and M.ContMasked(ze.cont) then
+      r.shown = r.shown + 1
+      local ok = true
+      local m = L.mask
+      if not m then Bad(L, "unmasked", "unmasked-rect: no mask") ok = false end
+      local f = L.frame
+      local okS, s = pcall(f.GetScale, f)
+      if m and okS and type(s) == "number" and math.abs(s - 1) > 0.001 then Bad(L, "way", "not-panel2: scaled x" .. string.format("%.2f", s)) ok = false end
+      for _, list in ipairs({ L.tiles, L.ov }) do
+        for _, t in ipairs(list) do
+          do
+            r.pieces = r.pieces + 1
+            local n = 0
+            if t.GetNumMaskTextures then local o, v = pcall(t.GetNumMaskTextures, t) if o and type(v) == "number" then n = v end end
+            if n < 1 then Bad(L, "unmasked", "unmasked-rect: a piece without its mask") ok = false break end
+            if t.GetDrawLayer then
+              local o, lay = pcall(t.GetDrawLayer, t)
+              if o and lay ~= "ARTWORK" then Bad(L, "way", "not-panel2: piece in " .. tostring(lay)) ok = false break end
+            end
+          end
+        end
+      end
+      if m then
+        local wantW = L.maskBox and L.maskBox[3] * L.fitSc or L.art.w * L.fitSc
+        local wantH = L.maskBox and L.maskBox[4] * L.fitSc or L.art.h * L.fitSc
+        local o1, w = pcall(m.GetWidth, m)
+        local o2, h = pcall(m.GetHeight, m)
+        if not (o1 and o2 and Near(w, wantW) and Near(h, wantH)) then
+          Bad(L, "rect", string.format("mask-rect: %sx%s, want %.0fx%.0f", tostring(o1 and w and math.floor(w + 0.5)), tostring(o2 and h and math.floor(h + 0.5)), wantW, wantH))
+          ok = false
+        end
+        if m.GetParent then
+          local o, p = pcall(m.GetParent, m)
+          if o and p and p ~= f then Bad(L, "way", "not-panel2: mask on another frame") ok = false end
+        end
+      end
+      local x = f.GetParent and f:GetParent() or nil
+      while x do
+        if x.GetObjectType and x:GetObjectType() == "ScrollFrame" then Bad(L, "way", "not-panel2: inside a ScrollFrame") ok = false break end
+        x = x.GetParent and x:GetParent() or nil
+      end
+      if ok then r.cut = r.cut + 1 end
+    end
+  end
+  return r
+end
+function M.CutShort()
+  local r = M.MaskAudit()
+  return string.format("shown %d, cut %d; unmasked %d, mask-rect %d, not-panel2 %d; view %s", r.shown, r.cut, r.unmasked,
+    r.rect, r.way, M.vpKind or "?")
 end
 function M.MaskFile(id)
   local t = NS.ZoneMasks
@@ -1187,6 +1312,33 @@ function M.Sweep()
     end
   end)
   M.dry = nil
+  -- 0.5.2b.6.2: then views drawn for real (zoomed out: each continent fitted, x1.4, x2; and each zone fitted), every
+  -- zone picture on screen audited (MaskAudit)
+  local cut = { views = 0, shown = 0, cut = 0, pieces = 0, unmasked = 0, rect = 0, way = 0, bad = {} }
+  local okC, errC = pcall(function()
+    for _, c in ipairs(ContList()) do
+      if M.ContMasked(c.id) then
+        local p = Place(c.id)
+        local fs = M.FitScale(c.id)
+        local mx, my = (p[1] + p[2]) / 2, (p[3] + p[4]) / 2
+        local views = { { mx, my, fs }, { mx, my, fs * 1.4 }, { mx, my, fs * 2 } }
+        for _, z in ipairs(MD.Zones(c.id)) do
+          if not IsCity(z) then
+            local x1, x2, y1, y2 = WorldRect(z.id)
+            views[#views + 1] = { (x1 + x2) / 2, (y1 + y2) / 2, M.CoverScale(z.id) * 0.6 }
+          end
+        end
+        for _, v in ipairs(views) do
+          SetView(v[1], v[2], v[3])
+          M.Layout()
+          cut.views = cut.views + 1
+          M.MaskAudit(cut)
+        end
+      end
+    end
+  end)
+  if not okC then cut.err = tostring(errC) end
+  M.cut = cut
   V.s, V.ox, V.oy = s0, ox0, oy0
   M.Layout()
   local out = { "Dark Matter " .. NS.version .. " mapsweep" }
@@ -1196,6 +1348,13 @@ function M.Sweep()
     res.views, res.flagged, C("base-land"), C("magnified-base"), C("open-base"), C("hard-seam"), C("zone-rect"), C("overlap"))
   out[#out + 1] = "mapsweep masks: " .. M.MaskLine()
   out[#out + 1] = "mapsweep " .. M.MaskCheck()
+  local cut = M.cut
+  local cutBad = cut.unmasked + cut.rect + cut.way
+  out[#out + 1] = string.format("mapsweep cut: %d views drawn for real (zoomed out and zone views), %d zone pictures on screen, %d cut the panel-2 way (%d pieces carry the mask); unmasked-rect %d, mask-rect %d, not-panel2 %d; viewport %s -> %s",
+    cut.views, cut.shown, cut.cut, cut.pieces, cut.unmasked, cut.rect, cut.way, M.vpKind or "?",
+    cut.err and ("ERROR " .. cut.err) or (cut.views == 0 and "no masked continent") or (cutBad == 0 and cut.shown > 0 and "OK") or "FLAGGED")
+  for _, b in ipairs(cut.bad) do out[#out + 1] = "mapsweep cut flag " .. b end
+  out[#out + 1] = "mapsweep cut: the game reports no pixels; this checks how each picture is built. /dm masktest zone shows it"
   for _, c in ipairs(res.per) do
     out[#out + 1] = string.format("mapsweep %s: %d views, %d flagged -> %s; %s", c.name, c.views, c.flagged, c.flagged == 0 and "OK" or "FLAGGED", M.ReachLine(c.id))
   end
@@ -1838,13 +1997,23 @@ local function Build(body)
   vpBox:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -6)
   vpBox:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", 0, 0)
   local b = m.listBorder
-  vp = CreateFrame("ScrollFrame", nil, vpBox)
+  -- 0.5.2b.6.2: the viewport is a plain frame that clips its children (SetClipsChildren), as /dm masktest zone panel 2
+  -- is a plain frame. 0.5.0 to 0.5.2b.6.1 drew the map inside a ScrollFrame's scroll child, and there every
+  -- zone mask failed to cut on 1.60.1 (0.5.2b.3, 0.5.2b.6, 0.5.2b.6.1) while the same masks cut in masktest; the
+  -- game kept them on every texture. masktest zone panels 3 and 4 show both. A ScrollFrame only where a frame cannot clip.
+  vp = CreateFrame("Frame", nil, vpBox)
+  M.vpKind = "frame"
+  if not (vp.SetClipsChildren and pcall(vp.SetClipsChildren, vp, true)) then
+    vp:Hide()
+    vp = CreateFrame("ScrollFrame", nil, vpBox)
+    M.vpKind = "scrollframe"
+  end
   vp:SetPoint("TOPLEFT", vpBox, "TOPLEFT", b, -b)
   vp:SetPoint("BOTTOMRIGHT", vpBox, "BOTTOMRIGHT", -b, b)
-  if vp.SetClipsChildren then pcall(vp.SetClipsChildren, vp, true) end
+  if M.vpKind == "scrollframe" and vp.SetClipsChildren then pcall(vp.SetClipsChildren, vp, true) end
   canvas = CreateFrame("Frame", nil, vp)
   canvas:SetSize(VW(), VH())
-  vp:SetScrollChild(canvas)
+  if M.vpKind == "scrollframe" then vp:SetScrollChild(canvas) else canvas:SetPoint("TOPLEFT", vp, "TOPLEFT", 0, 0) end
   over = CreateFrame("Frame", nil, canvas)
   over:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
   over:SetSize(VW(), VH())

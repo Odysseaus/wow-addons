@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.6.1: map: the zone masks now go on each picture piece after its file (they did not cut in game in 0.5.2b.6), a self check that falls back to feathered zones when the game keeps no mask, /dm masktest zone, /dm mapmask on or off, and the minimap tiles at the deepest zoom by default (layer auto).
+## Notes: Dark Matter 0.5.2b.6.2: map: the zones are now drawn exactly as the mask test draws them (a plain clipping viewport instead of a ScrollFrame, unscaled pictures sized in screen pixels, mask last) at every zoom, mapsweep audits every zone picture it really draws, and mask test panels 3 and 4 run the map code itself.
 ## Author: Odysseaus
-## Version: 0.5.2b.6.1
+## Version: 0.5.2b.6.2
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

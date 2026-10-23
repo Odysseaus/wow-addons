@@ -381,6 +381,7 @@ local function Run()
       lines[#lines + 1] = "map 23 layers: " .. r.text
       lines[#lines + 1] = "map 23 masks: " .. (MT.MaskLine and MT.MaskLine() or "not used")
       if MT.MaskShort then lines[#lines + 1] = "map 23 maskcheck: " .. MT.MaskShort() end
+      if MT.CutShort then lines[#lines + 1] = "map 23 cut: " .. MT.CutShort() end
       if MT.focus and MT.ReachLine then lines[#lines + 1] = "map 23 reach: " .. MT.ReachLine(MT.focus) end
       if MT.focus and MT.HighlightCount then
         local hOk, hN = MT.HighlightCount(MT.focus)
