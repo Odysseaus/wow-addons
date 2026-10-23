@@ -344,7 +344,19 @@ local function Layer(id, level)
       if ok and m then
         local ok2, r = pcall(m.SetTexture, m, mf, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
         if ok2 and r ~= false then
-          m:SetAllPoints(f)
+          -- 0.5.2b.6: a mask made for a zone the game gave no shape for (Redridge, Moonglade, ...) carries its own
+          -- rect on the continent; it is placed there inside the zone's picture (beyond it: nothing is drawn)
+          local mr = M.MaskRect(id)
+          local zr = ze.r
+          if mr and zr[2] > zr[1] and zr[4] > zr[3] then
+            local sx, sy = art.w / (zr[2] - zr[1]), art.h / (zr[4] - zr[3])
+            m:ClearAllPoints()
+            m:SetPoint("TOPLEFT", f, "TOPLEFT", (mr[1] - zr[1]) * sx, -(mr[3] - zr[3]) * sy)
+            m:SetSize((mr[2] - mr[1]) * sx, (mr[4] - mr[3]) * sy)
+            L.maskBox = { (mr[1] - zr[1]) * sx, (mr[3] - zr[3]) * sy, (mr[2] - mr[1]) * sx, (mr[4] - mr[3]) * sy }
+          else
+            m:SetAllPoints(f)
+          end
           L.mask, L.feather = m, false
         else
           M.maskFail = (M.maskFail or 0) + 1
@@ -668,7 +680,9 @@ end
 -- ever lies under them, and at zone view that picture fills the view like the game's own map.
 local CITY = { 0.45, 0.60 }
 M.CITY = CITY
-local function IsCity(z) return z.area < 0.004 end
+-- 0.5.2b.6: the six capitals by ID; another small zone (Redridge, Moonglade: under 0.004 of the continent) counts as a
+-- city only while it has no mask of its own
+local function IsCity(z) return MD.IsCityID(z.id) or (z.area < 0.004 and not M.MaskFile(z.id)) end
 M.IsCity = IsCity
 -- 0.5.2b.5: zone shape masks. Data_ZoneMasks.lua (NS.ZoneMasks[mapID] = { file = ... }) is generated on the box by
 -- tools/mapshapes from /dm mapshapes; an addon cannot list its own files, so that table says which masks ship. A
@@ -682,6 +696,12 @@ function M.MaskFile(id)
   local m = type(t) == "table" and t[id]
   if type(m) == "table" then return m.file end
   if type(m) == "string" then return m end
+end
+function M.MaskRect(id)
+  local t = NS.ZoneMasks
+  local m = type(t) == "table" and t[id]
+  local r = type(m) == "table" and m.rect
+  if type(r) == "table" and type(r[1]) == "number" and type(r[4]) == "number" and r[2] > r[1] and r[4] > r[3] then return r end
 end
 function M.ContMasked(cont)
   M.masked = M.masked or {}
@@ -707,7 +727,7 @@ end
 function M.MaskIn(cont) local m = M.MASK_IN return Smooth((M.ContZoomK(cont) - m[1]) / (m[2] - m[1])) end
 function M.MaskLine()
   local have, n = M.MaskCount()
-  if have == 0 then return string.format("0/%d zones masked (fallback: one zone at a time; masks come in 0.5.2b.6)", n) end
+  if have == 0 then return string.format("0/%d zones masked (fallback: one zone at a time)", n) end
   local on = 0
   for _, ct in ipairs(MD.Continents()) do if M.ContMasked(ct.id) then on = on + 1 end end
   return string.format("%d/%d zones masked; %d continent(s) drawn masked%s", have, n, on, M.canMask == false and " (no mask API)" or "")
@@ -950,10 +970,15 @@ function M.TileReach(cont)
   local p = Place(cont)
   local fs = M.FitScale(cont)
   local wasDry = M.dry
+  -- 0.5.2b.6: the continent at full strength for this dry layout (0.5.2b.5 read the faded-out continent the player is
+  -- not on as "no tiles": Kalimdor from Eastern Kingdoms)
+  local fade0 = M.fade[cont]
+  M.fade[cont] = 1
   M.dry = true
   SetView((p[1] + p[2]) / 2, (p[3] + p[4]) / 2, fs)
   local ok = pcall(M.Layout)
   M.dry = wasDry
+  M.fade[cont] = fade0
   V.s, V.ox, V.oy = s0, ox0, oy0
   if not wasDry then M.Layout() end
   local cd = M.closeDry
@@ -969,13 +994,37 @@ end
 function M.ReachLine(cont)
   local r = M.TileReach(cont)
   if not r then return "no tiles" end
+  local mode = CU.Layer and CU.Layer() or "terrain"
+  if mode ~= "terrain" then
+    -- 0.5.2b.6: painted / auto draw no tiles by count; where terrain would bring them, for comparison
+    return string.format("%s, %s (terrain: x%.1f-x%.1f, deepest x%.0f)", mode, mode == "auto" and "tiles at art blur x2.8+" or "no tiles",
+      r.start, r.full, r.deep or 0)
+  end
   return string.format("tiles from x%.1f, full x%.1f, deepest x%.0f (tile %.0f px at fit)", r.start, r.full, r.deep or 0, r.tpx or 0)
+end
+-- 0.5.2b.6: /dm maplayer painted|auto|terrain (no argument: say which one is on)
+M.LAYER_SAY = {
+  painted = "the game's painted zone maps everywhere, no minimap tiles",
+  auto = "the painted zone maps; the minimap tiles only at the deepest zoom",
+  terrain = "the minimap tiles as soon as they fit the view (0.5.2b.5)",
+}
+function M.MapLayerSlash(arg)
+  if not (CU and CU.Layer) then return "maplayer: no close-up module" end
+  arg = arg and arg:lower():match("^%s*(%S*)") or ""
+  if arg ~= "" then
+    if not CU.SetLayer(arg) then return "maplayer: /dm maplayer painted|auto|terrain (now: " .. CU.Layer() .. ")" end
+    if M.started then M.UpdateStatus() end
+    M.SyncClosePanel()
+  end
+  local v = CU.Layer()
+  return "maplayer: " .. v .. " - " .. M.LAYER_SAY[v] .. (v == CU.DEFAULT_LAYER and " (default)" or "")
 end
 -- 0.5.2b.5: /dm tileprobe: what the minimap tiles have on this client, how far they reach, what they cost
 function M.TileProbe()
   local out = { "tileprobe " .. NS.version .. " (read-only): the minimap tiles behind the map close-up" }
   if not CU then out[#out + 1] = "tileprobe: no close-up module" return out end
   out[#out + 1] = "tileprobe: " .. (CU.Label and CU.Label() or "?")
+  out[#out + 1] = "tileprobe: map layer " .. (CU.Layer and CU.Layer() or "terrain") .. " (/dm maplayer painted|auto|terrain)"
   for inst = 0, 1 do
     local r = CU.Coverage(inst, 48)
     out[#out + 1] = string.format("tileprobe %s: %d tiles listed (x %s-%s, y %s-%s)", CU.NAMES[inst] or inst, r.n,
@@ -1365,6 +1414,7 @@ M.QuestClick = function(mk) return QuestClick(mk) end
 
 function M.Tick(dt)
   dt = math.min(dt or 0, 0.1)
+  M.ExploreTick(dt)
   if M.pendingQuest and M.ready and VW() >= 50 and VH() >= 50 then local p = M.pendingQuest M.pendingQuest = nil M.ShowQuest(p.q, p.wp) end
   if note and note:IsShown() then note.left = (note.left or 0) - dt if note.left <= 0 then note:Hide() end end
   -- the main window was closed (/dm, a keybind) while the map was full screen: come back with it
@@ -1877,9 +1927,7 @@ local function Events(on)
     ev:SetScript("OnEvent", function(_, e)
       if e == "QUEST_LOG_UPDATE" or e == "QUEST_WATCH_LIST_CHANGED" or e == "QUEST_ACCEPTED" or e == "QUEST_REMOVED" or e == "QUEST_TURNED_IN" then MD.Forget("quests")
       elseif e == "MAP_EXPLORATION_UPDATED" then
-        MD.Forget("explored")
-        if CU then CU.Forget() end
-        for _, L in pairs(M.layers) do L.ovBuilt = false end
+        M.ForgetExplored()
       end
       M.dirty = true
     end)
@@ -1890,8 +1938,70 @@ local function Events(on)
   end
 end
 
+-- 0.5.2b.6: the fog. 0.5.2b.5 listened for MAP_EXPLORATION_UPDATED only while the tab was open, so an area found with
+-- the map closed stayed fogged until /reload. Now: a small frame listens all the time (discovery, zone and info
+-- events; each registered only if the client has it) and marks the explored areas to be read again; the tab checks
+-- every built zone when it opens, after such an event, and the player's zone every EXPLORE_POLL s while open, and
+-- redraws at once when the game's list differs from the one drawn.
+M.EXPLORE_POLL = 2
+M.EXPLORE_EVENTS = { "MAP_EXPLORATION_UPDATED", "UI_INFO_MESSAGE", "ZONE_CHANGED", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED_INDOORS",
+  "PLAYER_ENTERING_WORLD", "PLAYER_XP_UPDATE" }
+function M.ForgetExplored()
+  MD.Forget("explored")
+  if CU then CU.Forget() end
+  for _, L in pairs(M.layers) do L.ovBuilt = false end
+  M.exploreRefreshes = (M.exploreRefreshes or 0) + 1
+  M.dirty = true
+end
+-- ids: the maps to look at (nil: every zone already drawn); true when the fog was out of date and is redrawn
+function M.CheckExplored(ids)
+  local stale = false
+  if ids then
+    for _, id in ipairs(ids) do if MD.ExploredChanged(id) then stale = true break end end
+  else
+    for id, L in pairs(M.layers) do if L.ovBuilt and MD.ExploredChanged(id) then stale = true break end end
+  end
+  if stale then M.ForgetExplored() end
+  return stale
+end
+-- an event said the explored areas may have grown: check now (if the tab is open) and once more a little later (the
+-- server's update can trail the event)
+function M.ExploreEvent(e)
+  M.exploreEvents = (M.exploreEvents or 0) + 1
+  M.exploreLast = e
+  M.exploreDue, M.exploreLeft = 0.25, 2
+end
+local watch = CreateFrame("Frame")
+watch:SetScript("OnEvent", function(_, e) M.ExploreEvent(e) end)
+M.exploreWatched = {}
+for _, e in ipairs(M.EXPLORE_EVENTS) do
+  local ok = pcall(watch.RegisterEvent, watch, e)
+  if ok then M.exploreWatched[#M.exploreWatched + 1] = e end
+end
+M.exploreWatch = watch
+function M.ExploreTick(dt)
+  if M.exploreLeft then
+    M.exploreDue = (M.exploreDue or 0) - dt
+    if M.exploreDue <= 0 then
+      M.CheckExplored()
+      M.exploreLeft = M.exploreLeft - 1
+      M.exploreDue = 1.5
+      if M.exploreLeft <= 0 then M.exploreLeft, M.exploreDue = nil, nil end
+    end
+  end
+  M.explorePoll = (M.explorePoll or M.EXPLORE_POLL) - dt
+  if M.explorePoll <= 0 then
+    M.explorePoll = M.EXPLORE_POLL
+    local id = M.player and M.player.map
+    local z = id and (MD.ZoneOf(id) or id)
+    if z then M.CheckExplored({ z }) end
+  end
+end
+
 local function Start()
   NS.db.map = NS.db.map or {}
+  M.CheckExplored() -- 0.5.2b.6: anything found while the tab was closed
+  M.exploreLeft, M.exploreDue = nil, nil
   if not M.started then
     Setup()
     if not M.ready then empty:Show() M.started = true return end
@@ -1942,7 +2052,7 @@ end
 -- DarkMatterDB.map.closeUp / closeMix
 ---------------------------------------------------------------------------
 function M.BuildClosePanel(host, anchor, level)
-  local p = UI.Panel(host, 262, 92)
+  local p = UI.Panel(host, 262, 122)
   p:ClearAllPoints()
   p:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -6, 0)
   p:SetFrameLevel(level)
@@ -1980,6 +2090,18 @@ function M.BuildClosePanel(host, anchor, level)
   end)
   if sl.EnableMouseWheel then sl:EnableMouseWheel(true) end
   sl:SetScript("OnMouseWheel", function(_, d) M.SetCloseStrength(CU.Strength() + (d > 0 and 0.05 or -0.05)) end)
+  -- 0.5.2b.6: the map layer (/dm maplayer): painted (default), auto, terrain
+  local ll = UI.Text(p, "OVERLAY", 12, "listInk", "LEFT")
+  ll:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -92)
+  ll:SetText("Layer")
+  p.layerBtn = {}
+  for i, v in ipairs({ "painted", "auto", "terrain" }) do
+    local b = UI.Button(p, v:sub(1, 1):upper() .. v:sub(2), 58, 20, "grey", 11)
+    b:SetPoint("TOPLEFT", p, "TOPLEFT", 58 + (i - 1) * 64, -88)
+    b:SetScript("OnClick", function() NS.Print(M.MapLayerSlash(v)) end)
+    b.layer = v
+    p.layerBtn[i] = b
+  end
   p.box, p.slider, p.value = box, sl, val
   p:Hide()
   M.closePanel = p
@@ -1996,6 +2118,8 @@ function M.SyncClosePanel()
   p.value:SetText(string.format("%d%%", math.floor(CU.Strength() * 100 + 0.5)))
   if p.slider.SetEnabled then p.slider:SetEnabled(CU.Enabled()) end
   p.slider:SetAlpha(CU.Enabled() and 1 or 0.45)
+  local cur = CU.Layer and CU.Layer()
+  for _, b in ipairs(p.layerBtn or {}) do b.active = b.layer == cur if b.stockOn and b.StockPaint then b:StockPaint() end if b.SetAlpha then b:SetAlpha(b.active and 1 or 0.6) end end
 end
 function M.SetCloseStrength(v)
   CU.SetStrength(v)

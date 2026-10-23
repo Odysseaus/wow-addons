@@ -25,6 +25,7 @@ local function Help()
   print("  /dm mapsweep  Map: check the map layers over every continent and zone (read-only; saved with the probes): a masks line, then OK or FLAGGED per continent and how far the tiles reach")
   print("  /dm masktest  Map: show four test squares (no mask, the game's round mask, Dark Matter's star mask, your zone's highlight): do masks work here?")
   print("  /dm mapshapes  Map: sample every zone's outline from the game (out of combat, about a minute) -> DarkMatterDB.mapshapes, then /reload   /dm mapshapes stop|status")
+  print("  /dm maplayer painted|auto|terrain  Map: what you zoom across: the game's painted zone maps (default), painted with the minimap tiles only at the deepest zoom, or the minimap tiles as soon as they fit (0.5.2b.5)")
   print("  /dm tileprobe  Map: the minimap tiles: how many, do they load, how far they reach, what they cost (read-only)")
   print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
   print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (on by default)")
@@ -178,6 +179,9 @@ SlashCmdList["DARKMATTER"] = function(msg)
     if NS.MapShapes then for _, l in ipairs(NS.MapShapes.Slash(rest)) do NS.Print(l) end end
   elseif cmd == "tileprobe" then
     if NS.MapTab and NS.MapTab.TileProbe then Say("tileprobe", NS.MapTab.TileProbe()) end
+  elseif cmd == "maplayer" then
+    -- 0.5.2b.6: painted (default) | auto | terrain, saved in DarkMatterDB.map.layer
+    if NS.MapTab and NS.MapTab.MapLayerSlash then NS.Print(NS.MapTab.MapLayerSlash(rest)) end
   elseif cmd == "mapmask" then
     -- 0.5.2b.4: removed with the zone masks
     NS.Print("/dm mapmask was removed in 0.5.2b.4: no zone is cut with a mask any more (one feathered zone picture at a time)")

@@ -74,11 +74,26 @@ function C.Strength() local v = N(DB().closeMix) return v and Clamp(v, 0, 1) or 
 function C.SetEnabled(on) DB().closeUp = on and true or false if NS.MapTab then NS.MapTab.dirty = true end end
 function C.SetStrength(v) DB().closeMix = Clamp(N(v) or C.DEFAULT_MIX, 0, 1) if NS.MapTab then NS.MapTab.dirty = true end end
 -- true when the data table is there and the tiles have not proven unloadable
+-- 0.5.2b.6: which layer carries the map (DarkMatterDB.map.layer, /dm maplayer): "painted" (the default) = the game's
+-- painted zone maps everywhere, no minimap tiles at all; "auto" = the painted maps, and the tiles only at the very
+-- deepest zoom (past AUTO_FADE px per art texel, where the art is badly blurred; no tile-count rule); "terrain" =
+-- 0.5.2b.5's rules (the tiles as soon as they fit the view)
+C.LAYERS = { painted = true, auto = true, terrain = true }
+C.DEFAULT_LAYER = "painted"
+C.AUTO_FADE = { 2.8, 3.4 }
+function C.Layer() local v = DB().layer return C.LAYERS[v] and v or C.DEFAULT_LAYER end
+function C.SetLayer(v)
+  if not C.LAYERS[v] then return false end
+  DB().layer = v
+  if NS.MapTab then NS.MapTab.dirty = true end
+  return true
+end
 function C.Available()
   return type(NS.MinimapTiles) == "table" and not C.unavailable
 end
+C.LABEL_AUTO = "Map: the game's painted maps (minimap tiles only at the deepest zoom)"
 function C.Label()
-  if C.Enabled() and C.Available() then return C.LABEL_ON end
+  if C.Enabled() and C.Available() and C.Layer() ~= "painted" then return C.Layer() == "auto" and C.LABEL_AUTO or C.LABEL_ON end
   return C.LABEL_OFF
 end
 
@@ -132,9 +147,11 @@ function C.PixelsPerYard(F, px) return px / math.abs(F.Y1 - F.Y0) end
 -- the tiles' strength at a ppy (0 off)
 -- 0.5.2b.5: n = the tiles the view holds (optional): the larger of the art-blur rule and the tile-count rule
 function C.Density(n) return 1 - Smooth(n, { C.FULL_TILES, C.OUT_TILES }) end
-function C.Mix(mag, strength, n)
+function C.Mix(mag, strength, n, layer)
   strength = strength or C.Strength()
-  if strength <= 0 then return 0 end
+  layer = layer or C.Layer()
+  if strength <= 0 or layer == "painted" then return 0 end
+  if layer == "auto" then return math.min(1, strength * C.DEEP_K) * Smooth(mag or 0, C.AUTO_FADE) end
   local m = Smooth(mag or 0, C.MAG_FADE)
   if n then m = math.max(m, C.Density(n)) end
   return math.min(1, strength * C.DEEP_K) * m

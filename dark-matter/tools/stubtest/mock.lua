@@ -737,6 +737,10 @@ local toc=io.open(arg[1].."/DarkMatter.toc"):read("*a")
 for file in toc:gmatch("\n([%w_]+%.lua)") do
   local chunk=assert(loadfile(arg[1].."/"..file)); chunk("DarkMatter",ns)
 end
+-- 0.5.2b.6: the real zone masks ship; the older map tests run without them (their made-up maps), the 0.5.2b.6 block
+-- puts them back
+SHIPPED_MASKS = ns.ZoneMasks
+ns.ZoneMasks = {}
 
 local ev
 for _,f in ipairs(ALL) do if f._ev and f._ev.ADDON_LOADED then ev=f end end
@@ -3686,7 +3690,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.5 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.6 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3702,7 +3706,7 @@ do
   check(has("map 5 layers here: 1 layer, scale ") and has("map 5 layers continent: ") and has("map 5 layers world: "), "0.5.1.4 mapprobe: art layer count and min/max scale for zone, continent and world")
   check(has("map 16: yards: top-left ") and has("map 17: you at ") and has("; minimap tile ") and has("map 18: tile loads by file ID ") and has("; by path "),
     "0.5.1.4 mapprobe: yard corners, the minimap tile you stand on, and whether it loads by file ID and by path")
-  check(has("map 19: OpenMap loaded no (not used); close-up on, 45%") and has("map 19 source: Map: the game's map pictures + the game's minimap tiles up close"),
+  check(has("map 19: OpenMap loaded no (not used); close-up on, 45%; layer painted") and has("map 19 source: Map: the game's own map pictures"),
     "0.5.1.4 mapprobe: OpenMap is only reported (informational) and the map source is named")
   check(#WRITES == 0, "0.4.7 mapprobe: read-only (never set/cleared a waypoint or touched the game map: " .. table.concat(WRITES, ", ") .. ")")
   local printed = 0
@@ -3862,6 +3866,9 @@ do
   check(#MD.Zones(1414) == 2, "0.5.0 map: Kalimdor zones read too (no per-zone probing)")
   -- 3. continent placement on the world picture
   NS.db.map = NS.db.map or {}
+  -- 0.5.2b.6: the painted maps are the default layer; the 0.5.2b.5 tests below run with the tiles' own rules
+  check(NS.MapCloseUp.Layer() == "painted" and NS.db.map.layer == nil, "0.5.2b.6 map: the default layer is 'painted'")
+  NS.db.map.layer = "terrain"
   NS.db.map.place = nil
   local pk, sk = MD.Placement(1414)
   check(sk == "rect" and math.abs(pk[1] - 0.02) < 1e-9 and math.abs(pk[4] - 0.95) < 1e-9, "0.5.0 map: a sane continent rect is used as is")
@@ -4238,6 +4245,128 @@ do
     dm = M.layers[1426]
     check(dm and dm.feather and not dm.mask and M.MaskLine():find("^0/"), "0.5.2b.5 map: masks gone -> back to the one-zone fallback")
   end
+  -- 0.5.2b.6: the shipped masks (tools/maskgen from the player's /dm mapshapes): one per zone (not the six capitals),
+  -- every file there as an uncompressed 256x256 32-bit TGA; the three zones the game gave no own samples carry a rect
+  do
+    local per, n, rects, cityMask, missing, badTga = {}, 0, {}, 0, {}, {}
+    local have = {}
+    for _, f in ipairs(DM_FILES) do have[f:gsub("\\", "/"):lower()] = true end
+    for id, e in pairs(SHIPPED_MASKS) do
+      n = n + 1
+      per[e.cont] = (per[e.cont] or 0) + 1
+      if e.rect then rects[#rects + 1] = id end
+      if MD.IsCityID(id) then cityMask = cityMask + 1 end
+      local rel = e.file:gsub("^Interface\\AddOns\\DarkMatter\\", ""):gsub("\\", "/")
+      local path = arg[1] .. "/" .. rel .. ".tga"
+      if not have[path:lower()] then missing[#missing + 1] = rel end
+      local fh = io.open(path, "rb")
+      local hdr = fh and fh:read(18)
+      if fh then fh:close() end
+      if not (hdr and #hdr == 18 and hdr:byte(3) == 2 and hdr:byte(13) + 256 * hdr:byte(14) == 256 and hdr:byte(15) + 256 * hdr:byte(16) == 256 and hdr:byte(17) == 32) then badTga[#badTga + 1] = rel end
+    end
+    table.sort(rects)
+    check(n == 43 and per[1414] == 20 and per[1415] == 23 and cityMask == 0 and #missing == 0 and #badTga == 0
+      and table.concat(rects, ",") == "1433,1450,2652",
+      "0.5.2b.6 masks: 43 ship (Kalimdor 20, Eastern Kingdoms 23), no capital, every file a 256x256 32-bit TGA; rects for Redridge, Moonglade, 2652 ("
+      .. n .. "; missing " .. table.concat(missing, " ") .. "; bad " .. table.concat(badTga, " ") .. "; rects " .. table.concat(rects, ",") .. ")")
+    local saveZM = NS.ZoneMasks
+    NS.ZoneMasks = SHIPPED_MASKS
+    check(M.IsCity({ id = 1453, area = 0.5 }) and not M.IsCity({ id = 1433, area = 0.002 }) and M.IsCity({ id = 7777, area = 0.002 }),
+      "0.5.2b.6 map: the capitals are cities by ID; a small zone with a mask (Redridge) is a zone; a small one without is a city")
+    -- the shipped masks on the test maps (all their zones have one): the painted zones at full strength at zone view,
+    -- each cut by its own mask, no tiles (painted), no flags
+    NS.db.map.layer = nil
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+    M.Pan(-300, 0) run(10)
+    local nz, ids = zonesDrawn(0.99)
+    local L = M.layers[1426]
+    local lc = M.LayerCheck()
+    local cs = M.close
+    check(M.ContMasked(1415) and M.ContMasked(1414) and L and L.mask and L.mask._file == SHIPPED_MASKS[1426].file and nz >= 2 and #lc.flags == 0
+      and (cs == nil or (cs.byCont[1415] or 0) == 0),
+      "0.5.2b.6 map: shipped masks -> the painted zones in view at full strength (" .. table.concat(ids, ",") .. "), each cut by its mask, no tiles, no flags (" .. lc.text .. ")")
+    local out = M.Sweep()
+    check(M.sweep.flagged == 0 and out[3] == "mapsweep masks: " .. M.MaskLine() and M.MaskLine():find("^5/5 zones masked; 2 continent"),
+      "0.5.2b.6 map: sweep with the shipped masks: " .. table.concat(out, " | "))
+    -- a mask with its own rect is placed at that rect inside the zone picture
+    local zm = {}
+    for k, v in pairs(SHIPPED_MASKS) do zm[k] = v end
+    zm[1432] = { file = SHIPPED_MASKS[1433].file, cont = 1415, rect = { 0.56, 0.62, 0.49, 0.57 } }
+    NS.ZoneMasks = zm
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1432) run(30)
+    local LM = M.layers[1432]
+    local b = LM and LM.maskBox
+    local function near(a, e) return a and math.abs(a - e) < 0.01 end
+    check(LM and LM.mask and b and near(b[1], 0.02 / 0.10 * 1002) and near(b[2], 0.02 / 0.12 * 668) and near(b[3], 0.06 / 0.10 * 1002) and near(b[4], 0.08 / 0.12 * 668)
+      and near(LM.mask:GetWidth(), b[3]) and near(LM.mask:GetHeight(), b[4]),
+      "0.5.2b.6 map: a mask with a rect is anchored at that rect inside its zone's picture (" .. (b and string.format("%.1f %.1f %.1f %.1f", b[1], b[2], b[3], b[4]) or "none") .. ")")
+    -- 0.5.2b.6: the tile reach of a continent the view is not on (0.5.2b.5 read it as "no tiles")
+    NS.db.map.layer = "terrain"
+    M.fade[1415] = 0
+    local rr = M.TileReach(1415)
+    check(rr and rr.start and M.fade[1415] == 0 and M.ReachLine(1415):find("^tiles from x"),
+      "0.5.2b.6 map: the tile reach is read with the continent at full strength (faded out: " .. M.ReachLine(1415) .. ")")
+    NS.db.map.layer = nil
+    check(M.ReachLine(1415):find("^painted, no tiles %(terrain: x[%d%.]+%-x[%d%.]+, deepest x%d+%)$"), "0.5.2b.6 map: painted reach line: " .. M.ReachLine(1415))
+    NS.ZoneMasks = saveZM
+    NS.db.map.layer = "terrain"
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+  end
+  -- 0.5.2b.6: the fog. An area found with the map closed is drawn when it opens; one found with it open, at once
+  do
+    local saveX = C_MapExplorationInfo
+    local found = false
+    C_MapExplorationInfo = { GetExploredMapTextures = function(id)
+      local r = saveX.GetExploredMapTextures(id)
+      if id == 1426 and found then
+        r[#r + 1] = { textureWidth = 200, textureHeight = 100, offsetX = 400, offsetY = 300, numTexturesWide = 1, numTexturesTall = 1, fileDataIDs = { 777010 } }
+      end
+      return r
+    end }
+    local function ovHas(fid)
+      local L = M.layers[1426]
+      for _, t in ipairs(L and L.ov or {}) do if t._file == fid or rawget(t, "_tex") == fid then return true end end
+      return false
+    end
+    local function ovN() local L = M.layers[1426] return L and #L.ov or 0 end
+    local n0 = ovN()
+    check(n0 > 0 and not ovHas(777010), "0.5.2b.6 fog: Dun Morogh drawn with its explored areas (" .. n0 .. " pieces)")
+    local watched = table.concat(M.exploreWatched, ",")
+    check(watched:find("MAP_EXPLORATION_UPDATED", 1, true) and watched:find("UI_INFO_MESSAGE", 1, true) and watched:find("ZONE_CHANGED", 1, true)
+      and M.exploreWatch._ev and M.exploreWatch._ev.MAP_EXPLORATION_UPDATED,
+      "0.5.2b.6 fog: a frame listens for discoveries all the time: " .. watched)
+    -- closed: found, the event comes while the tab is hidden (0.5.2b.5 only listened while it was open)
+    NS.ShowTab("quests")
+    found = true
+    M.exploreWatch._scripts.OnEvent(M.exploreWatch, "UI_INFO_MESSAGE")
+    NS.ShowTab("map") run(3)
+    local n1 = ovN()
+    check(n1 > n0, "0.5.2b.6 fog: an area found with the map closed is drawn when it opens (" .. n0 .. " -> " .. n1 .. " pieces)")
+    -- open, no event at all (the client may not send MAP_EXPLORATION_UPDATED): the poll finds it within EXPLORE_POLL s
+    found = false
+    M.ForgetExplored() run(3)
+    local n2 = ovN()
+    found = true
+    local r0 = M.exploreRefreshes
+    run(math.ceil(M.EXPLORE_POLL / 0.05) + 2)
+    check(n2 == n0 and ovN() == n1 and M.exploreRefreshes > r0, "0.5.2b.6 fog: open map, no event: the poll redraws the fog (" .. n2 .. " -> " .. ovN() .. ")")
+    -- open, with the event: redrawn within a few frames
+    found = false
+    M.ForgetExplored() run(3)
+    found = true
+    M.explorePoll = 99
+    M.exploreWatch._scripts.OnEvent(M.exploreWatch, "MAP_EXPLORATION_UPDATED")
+    run(8)
+    check(ovN() == n1, "0.5.2b.6 fog: open map, discovery event: redrawn at once (" .. ovN() .. " pieces after 0.4 s)")
+    local r1 = M.exploreRefreshes
+    run(60)
+    check(M.exploreRefreshes == r1, "0.5.2b.6 fog: nothing new -> nothing rebuilt")
+    C_MapExplorationInfo = saveX
+    M.ForgetExplored() run(3)
+  end
   -- 0.5.2b.5: /dm tileprobe
   do
     local tp = M.TileProbe()
@@ -4366,7 +4495,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.5 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.6 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4983,7 +5112,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.5 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.6 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5533,6 +5662,22 @@ if MODE == "full" then
   NS.db.map = NS.db.map or {}
   NS.db.map.closeUp, NS.db.map.closeMix = true, nil
   CU.unavailable, CU.failed, CU.fails, CU.loaded = nil, {}, 0, 0
+  -- 0.5.2b.6: the map layer. painted (the default): never a tile; auto: only past x2.8 art blur (full by x3.4), no
+  -- tile-count rule; terrain: 0.5.2b.5's rules (tested below)
+  NS.db.map.layer = nil
+  check(CU.Layer() == "painted" and CU.Mix(6) == 0 and CU.Mix(1.0, nil, 50) == 0 and CU.Mix(3, nil, 10) == 0 and CU.Label() == CU.LABEL_OFF,
+    "0.5.2b.6 close-up: layer 'painted' (the default): no minimap tiles at any zoom or tile count")
+  check(CU.SetLayer("auto") and CU.Layer() == "auto" and CU.Mix(2.6, nil, 50) == 0 and CU.Mix(2.79) == 0 and CU.Mix(3.1) > 0.2 and CU.Mix(3.1) < 0.8
+    and math.abs(CU.Mix(3.4) - 1) < 1e-9 and CU.Label() == CU.LABEL_AUTO,
+    "0.5.2b.6 close-up: layer 'auto': the tiles only at the deepest zoom (x2.8 to x3.4 art blur), never by tile count")
+  check(CU.SetLayer("bogus") == false and CU.Layer() == "auto" and CU.SetLayer("terrain") and CU.Mix(2.6) > 0.99 and CU.Mix(1.0, nil, 150) > 0.99,
+    "0.5.2b.6 close-up: layer 'terrain' keeps 0.5.2b.5's rules; an unknown layer is refused")
+  local said1 = NS.MapTab.MapLayerSlash("")
+  local said2 = NS.MapTab.MapLayerSlash("painted")
+  local said3 = NS.MapTab.MapLayerSlash("nope")
+  check(said1:find("^maplayer: terrain") and said2:find("^maplayer: painted .*%(default%)$") and said3:find("^maplayer: /dm maplayer painted|auto|terrain %(now: painted%)", 1),
+    "0.5.2b.6 /dm maplayer: " .. said1 .. " | " .. said2 .. " | " .. said3)
+  NS.db.map.layer = "terrain"
   -- 0.5.1.8: fades keyed to how magnified the map art is (screen px per art texel): the zone art alone up to x2.0,
   -- a quick crossfade to the tiles by x2.6, then tiles at full strength (default 45%); grain only with the tiles
   check(CU.Mix(1.0) == 0 and CU.Mix(1.99) == 0 and CU.Mix(2.3) > 0.2 and CU.Mix(2.3) < 0.8 and math.abs(CU.Mix(2.6) - 1) < 1e-9
@@ -5960,7 +6105,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.5 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.6 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -6476,7 +6621,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.5 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.6 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

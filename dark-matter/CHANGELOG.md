@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.2b.6
+
+Map: the game's painted zone maps are the main layer, each cut to the zone's real borders.
+
+### Changes
+- **Zone masks**: 43 masks (Kalimdor 20, Eastern Kingdoms 23), made by `tools/maskgen` from your `/dm mapshapes` data. They come only from the game's own answers about which zone owns each point; no game or OpenMap art is bundled. The six capitals have none: they stay drawn as a city over their host zone.
+- **Painted map everywhere**: all zones in view are drawn at full strength, each cut to its own borders, from zone view down to the deepest zoom, and you can pan from zone to zone with no seam. The continent picture shows only outside the outermost zones (sea, unzoned land).
+- **`/dm maplayer painted|auto|terrain`**, also as Painted / Auto / Terrain buttons on the map's close-up panel:
+  - `painted` (the default): the painted zone maps only, no minimap tiles;
+  - `auto`: the minimap tiles only at the deepest zoom, where the painted map blurs (from x2.8 art magnification);
+  - `terrain`: the minimap tiles as in 0.5.2b.5.
+- **Fog fix**: an area you discover is un-fogged at once. Before, an area found with the map closed (for example in Elwynn) stayed fogged until /reload. Dark Matter now listens for discoveries all the time, re-checks the explored areas when the map opens, and re-checks your zone every 2 seconds while the map is open.
+- `/dm tileprobe` and `/dm mapprobe` show the map layer. `/dm tileprobe` now reads Kalimdor's tile reach too (0.5.2b.5 said "no tiles" for the continent you were not on).
+- Redridge, Moonglade and zone 2652 had no samples of their own (0.5.2b.5's `/dm mapshapes` skipped small zones; it now samples every zone except the capitals). Their masks are cut from the continent samples around them and placed at their own spot inside their picture.
+
 ## 0.5.2b.5
 
 Map: groundwork for zone shape masks made from the game's own area data, plus minimap tiles over more of the zoom range.

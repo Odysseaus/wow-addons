@@ -306,8 +306,10 @@ local function Run()
   if om == nil then om = Call("IsAddOnLoaded", "OpenMap") end
   data.openMap = om and true or false
   data.source = CU and CU.Label() or "Map: the game's own map pictures"
-  lines[#lines + 1] = string.format("map 19: OpenMap loaded %s (not used); close-up %s", YN(om),
-    CU and (CU.Enabled() and string.format("on, %d%%", math.floor(CU.Strength() * 100 + 0.5)) or "off") or "n/a")
+  lines[#lines + 1] = string.format("map 19: OpenMap loaded %s (not used); close-up %s%s", YN(om),
+    CU and (CU.Enabled() and string.format("on, %d%%", math.floor(CU.Strength() * 100 + 0.5)) or "off") or "n/a",
+    CU and CU.Layer and ("; layer " .. CU.Layer()) or "") -- 0.5.2b.6: /dm maplayer
+  data.layer = CU and CU.Layer and CU.Layer()
   lines[#lines + 1] = "map 19 source: " .. data.source
   local last = CU and CU.last
   if last then

@@ -42,6 +42,10 @@ function MD.Info(id)
   return c[id] or nil
 end
 function MD.Name(id) local i = MD.Info(id) return i and NS.Str(i.name) or nil end
+-- 0.5.2b.6: the six capitals (Stormwind, Ironforge, Undercity, Orgrimmar, Thunder Bluff, Darnassus). Their land is drawn by
+-- the zone around them (Elwynn, Dun Morogh, ...); their own picture only when the city itself is the focus.
+MD.CITY_IDS = { [1453] = true, [1454] = true, [1455] = true, [1456] = true, [1457] = true, [1458] = true }
+function MD.IsCityID(id) return MD.CITY_IDS[id] == true end
 function MD.Is(id, word) local i = MD.Info(id) return i ~= nil and i.mapType == MD.TypeNum(word) end
 
 -- Art for ONE mapID: layer 1 of C_Map.GetMapArtLayers(mapID) + C_Map.GetMapArtLayerTextures(mapID, 1).
@@ -82,6 +86,32 @@ function MD.Explored(id)
     c[id] = out
   end
   return c[id]
+end
+
+-- 0.5.2b.6: a short fingerprint of a map's explored areas, read fresh from the game (not the cache), and whether the
+-- cached list (what the map draws) is out of date: a new discovery adds an entry or grows one
+local function Sig(list)
+  local n, parts = 0, {}
+  for _, e in ipairs(type(list) == "table" and list or {}) do
+    if type(e) == "table" and not e.isShownByMouseOver and type(e.fileDataIDs) == "table" then
+      n = n + 1
+      parts[#parts + 1] = string.format("%s,%s,%s,%s", tostring(e.offsetX), tostring(e.offsetY), tostring(e.textureWidth), tostring(e.textureHeight))
+    end
+  end
+  table.sort(parts)
+  return n .. ":" .. table.concat(parts, ";")
+end
+function MD.ExploredSig(id)
+  id = N(id)
+  if not id or not Fn("C_MapExplorationInfo", "GetExploredMapTextures") then return nil end
+  return Sig(Call("C_MapExplorationInfo", "GetExploredMapTextures", id))
+end
+function MD.ExploredChanged(id)
+  id = N(id)
+  local c = id and C.explored
+  if not (c and c[id]) then return false end
+  local now = MD.ExploredSig(id)
+  return now ~= nil and now ~= Sig(c[id])
 end
 
 -- Where map `child` sits on map `parent` (0..1 of the parent's art): minX, maxX, minY, maxY or nil.

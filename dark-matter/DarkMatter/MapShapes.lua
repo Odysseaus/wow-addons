@@ -186,7 +186,7 @@ local function Jobs()
     local zones = {}
     for _, z in ipairs(md.Zones(ct.id)) do zones[z.id] = z end
     for _, z in ipairs(md.Zones(ct.id)) do
-      if z.area >= 0.004 then
+      if not md.IsCityID(z.id) then -- 0.5.2b.6: every zone but the six capitals (0.5.2b.5 skipped Redridge, Moonglade by size)
         local art = md.Art(z.id)
         local W = S.GRID
         local H = math.max(8, math.floor(W * ((art and art.w > 0) and art.h / art.w or 2 / 3) + 0.5))
