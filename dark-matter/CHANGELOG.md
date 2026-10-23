@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.2b.7.2
+
+Map: quest areas stay steady while you zoom, zoom levels are numbered, and the capitals show from a zoom level you choose.
+
+### Fixes
+- **Quest areas during a zoom**: the areas vanished or slipped for a moment while zooming. There were two causes. First, 0.5.2b.7.1 pushed the "draw again" mark forward on every frame the scale changed, so the areas were not redrawn until the zoom stopped. The game's `QuestPOIFrame` does not keep a good drawing across a scale change (the stock map redraws it every frame of a zoom). Second, the areas were shown only while the zone filled 60% of the view, so zooming out hid them while the zone picture was still drawn. Now a scale change marks the frame once, and the frame is drawn again at the start of the next frame, before anything moves (like the stock map's MarkDirty and OnUpdate). The frame stays shown and keeps its scale and anchor locked to the zone picture on every frame. The areas are also shown for as long as their zone picture is drawn, at the picture's strength.
+- **`/dm mapprobe` 10e** has a new line: "hidden during zoom: N frames; late N; zoom frames N; redraws N". It counts the frames of a zoom, fly or drag in which an area its zone needs was hidden or blank, or missed its next-frame redraw.
+
+### Changes
+- **Numbered zoom levels**: each mouse-wheel step lands on a numbered level. Level 1 is fully zoomed out. Each level is one wheel step (1.35x) past the one before. The last level is the deepest zoom, with the minimap tiles. If the last step would be less than a quarter of a step, it is folded into the step before, so no wheel click barely moves the map. The wheel steps are the same as before (1.35x from fully out), so the count does not change. A small "Zoom N" readout in the game's small font sits at the top left of the Map tab. `/dm mapprobe` map 24 prints the level table: each level's zoom against the continent fit, the art magnification, what is drawn there, and the number of wheel steps.
+- **City zoom level**: the capitals show from one zoom level on, anywhere in view, and fade in over the half level before it. `/dm citylevel N` changes the level live and saves it in DarkMatterDB.map.cityLevel. `/dm citylevel` with no number shows the current level, and `/dm citylevel default` goes back to level 3. Level 3 is about where they came in before, with the zone pictures.
+
 ## 0.5.2b.7.1
 
 Map: quest areas stay on the zone art at every zoom and pan, capitals are drawn over their zones, and the corpse is the stock tombstone.

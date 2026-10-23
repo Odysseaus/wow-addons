@@ -187,6 +187,59 @@ function M.FitScale(cont)
   return math.min(VW() / math.max(1e-9, (p[2] - p[1]) * BW), VH() / math.max(1e-9, (p[4] - p[3]) * BH))
 end
 function M.ContZoomK(cont) return math.min(M.ContMag(cont), V.s / math.max(1e-9, M.FitScale(cont))) end
+-- 0.5.2b.7.2: numbered zoom levels, one per wheel step: level 1 = fully zoomed out (the widest view the wheel reaches),
+-- each level 1.35x (one wheel step) the one before, the last = the deepest zoom (that step may be shorter: the wheel
+-- stops at the cap). The same numbers on every continent.
+M.LEVEL_STEP = 1.35
+local LOG_STEP = math.log(M.LEVEL_STEP)
+function M.LevelOf(_, s) return 1 + math.log(math.max(1e-9, (s or V.s) / SFit())) / LOG_STEP end
+-- a last step under a quarter of a step is folded into the one before (no wheel click that barely moves)
+M.LEVEL_SLIVER = 0.25
+function M.MaxLevel()
+  local k = math.max(0, M.LevelOf(nil, SFit() * ZMax()) - 1)
+  local full = math.floor(k + 1e-6)
+  return 1 + ((k - full > M.LEVEL_SLIVER or full == 0) and full + 1 or full)
+end
+-- the view scale at level n (the last level is the deepest zoom)
+function M.LevelScale(_, n)
+  local top = SFit() * ZMax()
+  if n >= M.MaxLevel() then return top end
+  return Clamp(SFit() * M.LEVEL_STEP ^ (n - 1), SFit(), top)
+end
+-- the level a view scale is at (the nearest level; the deepest zoom is the last level)
+function M.LevelIndex(s)
+  s = s or V.s
+  local top, mx = SFit() * ZMax(), M.MaxLevel()
+  if s >= top * 0.9999 then return mx end
+  return Clamp(math.floor(M.LevelOf(nil, s) + 0.5), 1, mx)
+end
+-- the level now (what the readout shows)
+function M.ZoomLevel() return M.LevelIndex(), M.focus end
+-- level table for /dm mapprobe: level -> zoom past the continent fit, continent art magnification
+function M.LevelTable(cont)
+  local out = {}
+  if not cont then return out end
+  local fit = M.FitScale(cont)
+  for n = 1, M.MaxLevel(cont) do
+    local s = M.LevelScale(cont, n)
+    local k = s / math.max(1e-9, fit)
+    out[n] = { n = n, s = s, zk = k, art = M.ContMag(cont) * s / math.max(1e-9, V.s) }
+  end
+  return out
+end
+-- 0.5.2b.7.2: the capitals show from one zoom level on (DarkMatterDB.map.cityLevel, /dm citylevel N), anywhere in view,
+-- fading in over the half level before it. Default 3: today's (0.5.2b.7.1) look, where they came in with the masked
+-- zones (x1.3 to x1.9 past the continent fit; on 1.60.1 the continent fit is about level 1, so about levels 1.9 to 3.1)
+M.CITY_LEVEL_DEFAULT = 3
+function M.CityLevel()
+  local db = NS.db and NS.db.map
+  local n = db and tonumber(db.cityLevel)
+  return n or M.CITY_LEVEL_DEFAULT
+end
+function M.CityFade(cont)
+  local n = M.CityLevel()
+  return Smooth((M.LevelOf(cont) - (n - 0.5)) / 0.5)
+end
 -- 0.5.2b.4: when the (one) zone picture comes in: as you zoom toward the zone, once it fills ZONE_SHARE of the view
 -- (the larger of its width and height share), or once the continent art is magnified past ZONE_MAG (a small zone,
 -- so the continent picture never blurs under the middle of the view). At continent view both are 0: no zone art.
@@ -1078,6 +1131,7 @@ function M.Layout()
     if cl then local p = Place(c.id) Show(cl, p[1], p[2], p[3], p[4], a * M.BaseFade(c.id)) end
     local masked = M.ContMasked(c.id)
     local maskIn = masked and M.MaskIn(c.id) or 0
+    local cityFade = M.CityFade(c.id)
     -- 0.5.2b.7.1: cities after the zones, so each one can follow its parent zone (see M.CityParent)
     local order, cities, dz = {}, {}, {}
     for _, z in ipairs(MD.Zones(c.id)) do if IsCity(z) then cities[#cities + 1] = z else order[#order + 1] = z end end
@@ -1089,12 +1143,9 @@ function M.Layout()
       local d = 0
       if a > 0 then
         if isCity then
-          d = (city and z.id == city.id) and a * cityA or 0
-          -- 0.5.2b.7.1: a capital is drawn whenever any of it is in view and its parent zone's picture is drawn (at the
-          -- parent's strength), above the parent and feathered at its rim, not only when the view centre is on it
-          local pz = M.CityParent(c.id, z)
-          local pd = pz and dz[pz.id] or 0
-          if pd > d and Frac(z) > 0 then d = pd end
+          -- 0.5.2b.7.2: a capital is drawn from the city zoom level on (/dm citylevel), whenever any of it is in view,
+          -- above its parent zone and feathered at its rim (0.5.2b.7.1 followed the parent zone's picture)
+          d = Frac(z) > 0 and a * cityFade or 0
         elseif masked then d = a * maskIn -- 0.5.2b.5: every zone, cut to its shape
         else d = a * M.ZoneIn(z) * (dry and (isFocus and 1 or 0) or (zf[z.id] or 0)) end
       end
@@ -1132,6 +1183,7 @@ function M.Layout()
   LayoutOverlay()
   UpdatePlayer()
   if Crumbs then Crumbs() end
+  M.UpdateZoomReadout()
   local cx, cy = M.Center()
   M.lastView = { cx = cx, cy = cy, z = M.Zoom(), w = VW(), h = VH() }
   if NS.db and NS.db.map then NS.db.map.view = { cx = cx, cy = cy, z = M.lastView.z } end
@@ -1308,6 +1360,27 @@ function M.MapLayerSlash(arg)
   local v = CU.Layer()
   return "maplayer: " .. v .. " - " .. M.LAYER_SAY[v] .. (v == CU.DEFAULT_LAYER and " (default)" or "")
 end
+-- 0.5.2b.7.2: /dm citylevel [N|default]: the zoom level the capitals show from (DarkMatterDB.map.cityLevel); live
+function M.CityLevelSlash(arg)
+  arg = arg and arg:lower():match("^%s*(%S*)") or ""
+  local say = "/dm citylevel N (1 = fully zoomed out)"
+  if arg ~= "" then
+    if not NS.db then return "citylevel: saved settings not loaded yet" end
+    NS.db.map = NS.db.map or {}
+    if arg == "default" or arg == "reset" then
+      NS.db.map.cityLevel = nil
+    else
+      local n = tonumber(arg)
+      if not n or n ~= math.floor(n) or n < 1 or n > 40 then return "citylevel: " .. say .. ", or default" end
+      NS.db.map.cityLevel = n
+    end
+    M.dirty = true
+  end
+  local n = M.CityLevel()
+  local top = M.ready and M.MaxLevel(M.focus or Focus()) or nil
+  return "citylevel: cities show from zoom level " .. n .. (n == M.CITY_LEVEL_DEFAULT and " (default)" or "")
+    .. (top and (" - this map goes to " .. top) or "") .. " - " .. say
+end
 -- 0.5.2b.5: /dm tileprobe: what the minimap tiles have on this client, how far they reach, what they cost
 function M.TileProbe()
   local out = { "tileprobe " .. NS.version .. " (read-only): the minimap tiles behind the map close-up" }
@@ -1447,15 +1520,42 @@ end
 ---------------------------------------------------------------------------
 -- motion: wheel zoom to the cursor, drag, fly-to
 ---------------------------------------------------------------------------
+-- 0.5.2b.7.2: where one wheel step from scale `base` lands: the next numbered zoom level (M.LevelOf)
+function M.WheelNext(base, delta)
+  local sf = SFit()
+  if delta == 0 then return Clamp(base, sf, sf * ZMax()) end
+  local n = M.LevelIndex(base) + (delta > 0 and math.ceil(delta) or math.floor(delta))
+  return M.LevelScale(nil, n)
+end
+-- the wheel steps from fully out to fully in (counted by stepping the wheel rule itself)
+function M.WheelSteps()
+  local s, top, n = SFit(), SFit() * ZMax(), 0
+  while s < top * 0.9999 and n < 200 do s = M.WheelNext(s, 1) n = n + 1 end
+  return n
+end
 function M.Wheel(delta)
   if not M.ready then return end
   M.pendingFit = nil
   local px, py = Cursor()
   local u, v = M.ToWorld(px, py)
   local base = zoomT and zoomT.s or V.s
-  local sf = SFit()
-  zoomT = { s = Clamp(base * (1.35 ^ delta), sf, sf * ZMax()), u = u, v = v, px = px, py = py }
+  zoomT = { s = M.WheelNext(base, delta), u = u, v = v, px = px, py = py }
   fly = nil
+end
+-- 0.5.2b.7.2: a zoom or fly is under way (the quest areas count their frames then; /dm mapprobe 10e)
+function M.Gliding() return zoomT ~= nil or fly ~= nil or (drag ~= nil and drag.moved and true or false) end
+-- 0.5.2b.7.2: the "Zoom N" readout follows the view (Layout)
+function M.UpdateZoomReadout()
+  local zr = M.zoomReadout
+  if not zr or not zr.text then return end
+  local n = M.ZoomLevel()
+  local txt = "Zoom " .. math.max(1, n)
+  if M.zoomText ~= txt then
+    M.zoomText = txt
+    zr.text:SetText(txt)
+    local w = zr.text.GetStringWidth and zr.text:GetStringWidth()
+    zr:SetWidth(math.max(52, (type(w) == "number" and w or 50) + 12))
+  end
 end
 function M.ZoomAt(px, py, factor)
   M.pendingFit = nil
@@ -1738,6 +1838,8 @@ M.QuestClick = function(mk) return QuestClick(mk) end
 
 function M.Tick(dt)
   dt = math.min(dt or 0, 0.1)
+  -- 0.5.2b.7.2: quest areas marked last frame are drawn again now, before this frame moves anything (MapExtras.lua)
+  if M.ExtrasPreTick then local ok, e = pcall(M.ExtrasPreTick) if not ok then M.extrasErr = e end end
   M.ExploreTick(dt)
   if M.rebuildLayers then M.RebuildLayers() end
   if M.pendingQuest and M.ready and VW() >= 50 and VH() >= 50 then local p = M.pendingQuest M.pendingQuest = nil M.ShowQuest(p.q, p.wp) end
@@ -2228,6 +2330,19 @@ local function Build(body)
   caption:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
   caption:Hide()
   M.caption = caption
+  -- 0.5.2b.7.2: "Zoom N" readout, top left of the map, in the game's small font (no art: a plain dark plate)
+  local zr = CreateFrame("Frame", nil, vpBox)
+  zr:SetFrameLevel(canvas:GetFrameLevel() + 20)
+  zr:SetSize(60, 16)
+  zr:SetPoint("TOPLEFT", vp, "TOPLEFT", 6, -6)
+  local zpl = zr:CreateTexture(nil, "BACKGROUND")
+  zpl:SetAllPoints(zr)
+  zpl:SetColorTexture(0.06, 0.05, 0.035, 0.75)
+  zr.text = zr:CreateFontString(nil, "OVERLAY")
+  if GameFontNormalSmall and zr.text.SetFontObject then zr.text:SetFontObject(GameFontNormalSmall) else NS.SetFont(zr.text, 10, "") end
+  zr.text:SetPoint("CENTER", zr, "CENTER", 0, 0)
+  zr.text:SetText("Zoom 1")
+  M.zoomReadout = zr
 
   -- search results drop-down (above the map)
   results = UI.Panel(root, 260, 34)

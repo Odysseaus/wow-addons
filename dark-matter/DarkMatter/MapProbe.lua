@@ -394,6 +394,21 @@ local function Run()
         lines[#lines + 1] = string.format("map 23 highlight info (diagnostic, not drawn): %d/%d zones of this continent", hOk, hN)
       end
     end
+    -- 24 (0.5.2b.7.2): the numbered zoom levels (one per wheel step) on this continent, and the city level
+    if MT.focus and MT.LevelTable then
+      local tbl = MT.LevelTable(MT.focus)
+      local cur, cl = MT.LevelOf(MT.focus), MT.CityLevel()
+      data.zoomLevels = { now = cur, max = #tbl, city = cl, cityDefault = MT.CITY_LEVEL_DEFAULT }
+      lines[#lines + 1] = string.format("map 24 zoom: level %d (%.2f) of %d, %d wheel steps; %s; cities from %d (default %d)",
+        MT.LevelIndex(), cur, #tbl, MT.WheelSteps(), tostring(NS.MapData.Name(MT.focus) or MT.focus):sub(1, 10), cl, MT.CITY_LEVEL_DEFAULT)
+      local mi = MT.MASK_IN or { 1.3, 1.9 }
+      for _, e in ipairs(tbl) do
+        local note = (e.zk >= mi[2] and "zones" or e.zk > mi[1] and "zones fading in" or e.zk >= 0.999 and "continent" or "wider")
+          .. (e.n >= cl and ", cities" or "") .. (e.n == #tbl and ", deepest (tiles)" or "")
+        lines[#lines + 1] = string.format("map 24 level %d: x%.2f of continent fit, art x%.2f: %s", e.n, e.zk, e.art, note)
+        data.zoomLevels[e.n] = { zk = e.zk, art = e.art }
+      end
+    end
   end
   return lines, data
 end

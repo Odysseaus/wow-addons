@@ -107,13 +107,20 @@ function X.LayoutBlobs()
   local used = {}
   local quests = M.layersOn.quests ~= false and X.BlobQuests() or {}
   X.blobQuests = quests
+  X.blobWant = {}
   if #quests > 0 and M.over then
     local key = table.concat(quests, ",")
     local vw, vh = M.over:GetWidth() or 0, M.over:GetHeight() or 0
     for _, c in ipairs(M.ContList and M.ContList() or {}) do
       if M.ContAlpha(c.id) > 0.5 then
         for _, z in ipairs(MD.Zones(c.id) or {}) do
-          if M.ZoneAlpha(z) > 0.6 then
+          -- 0.5.2b.7.2: the areas go with their zone picture: shown (at its strength) for as long as the picture is
+          -- drawn, so zooming out no longer drops them while the zone is still painted (0.5.2b.7.1 cut them at
+          -- ZoneAlpha 0.6, mid-zoom); a zone whose picture is not drawn keeps the old rule
+          local L = M.layers and M.layers[z.id]
+          local la = (L and L.shown and (L.alpha or 0) > 0.01) and L.alpha or 0
+          local ba = math.max(M.ZoneAlpha(z) > 0.6 and 1 or 0, math.min(1, la))
+          if ba > 0 then
             local x1, x2, y1, y2 = M.WorldRect(z.id)
             local l, t = M.ToScreen(x1, y1)
             local r, b = M.ToScreen(x2, y2)
@@ -121,15 +128,22 @@ function X.LayoutBlobs()
               local f = BlobFrame(z.id)
               if f then
                 used[z.id] = true
+                X.blobWant[z.id] = true
                 local st = X.BlobState(z.id, f)
+                local tk = X.tickN or 0
+                st.first = st.first or tk
                 local cw, ch = X.BlobCanvas(z.id)
                 local s = math.max((r - l) / cw, 0.0001)
-                if st.cw ~= cw or st.ch ~= ch then f:SetSize(cw, ch) st.cw, st.ch = cw, ch st.dirty = X.tickN or 0 end
-                if st.scale ~= s then f:SetScale(s) st.scale = s st.dirty = X.tickN or 0 end
+                -- a change marks the frame for a redraw at the start of the NEXT frame (stock MarkDirty -> OnUpdate).
+                -- 0.5.2b.7.2: the mark keeps its first frame (0.5.2b.7.1 moved it on every frame of a glide, so the
+                -- redraw waited until the zoom stopped and the areas were blank meanwhile)
+                if st.cw ~= cw or st.ch ~= ch then f:SetSize(cw, ch) st.cw, st.ch = cw, ch st.dirty = st.dirty or tk end
+                if st.scale ~= s then f:SetScale(s) st.scale = s st.dirty = st.dirty or tk end
                 f:ClearAllPoints()
                 f:SetPoint("TOPLEFT", M.over, "TOPLEFT", l / s, -t / s)
                 f:SetFrameLevel(M.over:GetFrameLevel())
-                if st.key ~= key then st.key = key f.key = key st.dirty = X.tickN or 0 end
+                if st.key ~= key then st.key = key f.key = key st.dirty = st.dirty or tk end
+                if st.alpha ~= ba then f:SetAlpha(ba) st.alpha = ba end
                 f.rect = { l, t, r, b }
                 f:Show()
               end
@@ -141,17 +155,38 @@ function X.LayoutBlobs()
   end
   for id, f in pairs(X.blobs) do if f and not used[id] then f:Hide() f.rect = nil end end
 end
--- every frame: areas marked in an earlier frame are drawn now (their new scale and place are in effect)
+-- 0.5.2b.7.2: at the START of every frame (before the layout): areas marked in an earlier frame are drawn again, at the
+-- scale and place that frame gave them (in effect now); the frame keeps showing what it drew until then
 function X.BlobFlush()
+  X.tickN = (X.tickN or 0) + 1
   for id, f in pairs(X.blobs) do
     local st = X.bst[id]
     if st and st.f ~= f then st = nil end
-    if f and st and st.dirty and f.rect and (X.tickN or 0) > st.dirty then
+    if f and st and st.dirty and f.rect and X.tickN > st.dirty then
       st.dirty = nil
       DrawBlobs(f, X.blobQuests or {}, f.key)
       st.drawn = st.scale
+      st.drawnKey = st.key
+      if M.Gliding and M.Gliding() then X.gl.redraws = X.gl.redraws + 1 end
     end
   end
+end
+-- 0.5.2b.7.2: /dm mapprobe 10e counters, at the END of every frame of a zoom or glide: an area frame its zone needs that
+-- is hidden or still blank (hidden), or that missed its next-frame redraw (late)
+X.gl = { frames = 0, hidden = 0, late = 0, redraws = 0 }
+function X.GlideCount()
+  if not (M.Gliding and M.Gliding()) then return end
+  local g = X.gl
+  g.frames = g.frames + 1
+  local hid, late = false, false
+  for id in pairs(X.blobWant or {}) do
+    local f, st = X.blobs[id], X.bst[id]
+    -- hidden: not shown, or still blank a frame after it came into view (a new area is drawn the frame after)
+    if not (f and f:IsShown() and st) or (not st.drawnKey and (st.first or 0) < (X.tickN or 0) - 1) then hid = true end
+    if st and st.dirty and st.dirty < (X.tickN or 0) then late = true end
+  end
+  if hid then g.hidden = g.hidden + 1 end
+  if late then g.late = g.late + 1 end
 end
 -- /dm mapprobe 10e: each area frame against its zone picture, in screen pixels (the game's own rects)
 local function SRect(fr)
@@ -398,10 +433,13 @@ function M.DrawExtras()
   X.LayoutGroup()
   X.LayoutCorpse()
 end
-function M.ExtrasTick(dt)
+function M.ExtrasPreTick()
   if not M.over then return end
   X.BlobFlush()
-  X.tickN = (X.tickN or 0) + 1
+end
+function M.ExtrasTick(dt)
+  if not M.over then return end
+  X.GlideCount()
   X.tg = (X.tg or 0) + dt
   if X.tg >= X.GROUP_EVERY then X.tg = 0 X.LayoutGroup() end
   X.tc = (X.tc or 0) + dt
@@ -433,6 +471,9 @@ function X.ProbeLines()
       or string.format("map 10e: areas vs zone picture: %d, worst %.1f px (%s) -> %s", n, worst, tostring(wname):sub(1, 18),
         (nopic > 0 and "no picture") or (worst <= 1.5 and "OK") or "OFF")
     if n > 0 then out[#out + 1] = string.format("map 10e: redraw pending %d, no picture %d, canvas %dx%d", pend, nopic, X.BLOB_W, X.BLOB_H) end
+    local g = X.gl
+    out[#out + 1] = string.format("map 10e: hidden during zoom: %d frames; late %d; zoom frames %d; redraws %d",
+      g.hidden, g.late, g.frames, g.redraws)
   end
   if QS then
     local function roles(list)

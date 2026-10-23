@@ -3699,7 +3699,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.7.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.7.2 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4000,10 +4000,11 @@ do
   do
     local lc = M.LayerCheck()
     check(#lc.flags == 0 and lc.land > 0 and lc.base == 0 and lc.zones == 1, "0.5.2b.4 map: layer check at Dun Morogh's zone view: " .. lc.text)
-    -- 0.5.2b.7.1: a capital in view is drawn over its parent zone (not only when the view centre is on it)
+    -- 0.5.2b.7.2: a capital in view is drawn over its parent zone from the city zoom level on (default 3)
     local ifl, dml = M.layers[1455], M.layers[1426]
-    check(ifl and ifl.shown and dml and math.abs(ifl.alpha - dml.alpha) < 1e-6 and ifl.level == 6 and dml.level < 6 and ifl.feather and M.focusCity == nil,
-      "0.5.2b.7.1 map: at Dun Morogh's zone view the Ironforge picture is drawn over it, at its strength, feathered (" .. tostring(ifl and ifl.alpha) .. ", focus city " .. tostring(M.focusCity) .. ")")
+    local lv0 = M.LevelOf(1415)
+    check(M.CityLevel() == 3 and lv0 >= 3 and ifl and ifl.shown and dml and math.abs(ifl.alpha - M.ContAlpha(1415) * M.CityFade(1415)) < 1e-6 and ifl.alpha > 0.99 and ifl.level == 6 and dml.level < 6 and ifl.feather and M.focusCity == nil,
+      "0.5.2b.7.2 map: at Dun Morogh's zone view (zoom level " .. string.format("%.2f", lv0) .. ") the Ironforge picture is drawn over it, feathered (" .. tostring(ifl and ifl.alpha) .. ", focus city " .. tostring(M.focusCity) .. ")")
     M.Pan(-500, 0) run(1)
     local fz1 = M.focusZone
     local nz1 = zonesDrawn()
@@ -4037,13 +4038,15 @@ do
   end
   local baseGone, most = false, 0
   do local zr0, pp0 = MAPS[1426][4], MD.Placement(1415) CX, CY = M.ToScreen(pp0[1] + (zr0[1] + zr0[2]) / 2 * (pp0[2] - pp0[1]), pp0[3] + (zr0[3] + zr0[4]) / 2 * (pp0[4] - pp0[3])) end -- the middle of Dun Morogh
-  local inSteps = 0
+  local inSteps, cityEarly = 0, false
   while not (M.focusZone and M.layers[M.focusZone] and M.layers[M.focusZone].shown and M.layers[M.focusZone].alpha > 0.5) and inSteps < 10 do
     M.Wheel(1) inSteps = inSteps + 1
     for _ = 1, 30 do
       M.Tick(0.016)
       local cl = M.layers[1415]
       if not (cl and cl.shown and cl.alpha >= M.BASE_FADE[3] - 1e-9 and math.abs(cl.alpha - M.ContAlpha(1415) * M.BaseFade(1415)) < 1e-9) then baseGone = true end
+      local ifw = M.layers[1455]
+      if ifw and ifw.shown and ifw.alpha > 0.01 and M.LevelOf(1415) < M.CityLevel() - 0.5 - 1e-6 then cityEarly = true end
       most = math.max(most, (zonesDrawn(0.05)))
     end
   end
@@ -4051,13 +4054,43 @@ do
   check(not baseGone, "0.5.1.11 map: while zooming in from the continent its art stays drawn underneath (0.5.2b.3: faded toward the backdrop only as it is magnified)")
   check(M.focusZone and M.layers[M.focusZone].shown and M.layers[M.focusZone].feather and most <= 2 and select(1, zonesDrawn()) == 1,
     "0.5.2b.4 map: zooming in brings in one feathered zone picture, never the whole continent's zones (" .. inSteps .. " steps, at most " .. most .. " at once; focus " .. tostring(M.focusZone) .. string.format(" share %.2f, zoom k %.2f, art x%.2f)", M.focusZone and M.ZoneShare(MD.ZoneEntry(M.focusZone)) or -1, M.ContZoomK(1415), M.ContMag(1415)))
-  do
-    local ifl, dml = M.layers[1455], M.layers[1426]
-    check(not (ifl and ifl.shown and ifl.alpha > 0.01) or (dml and dml.shown and ifl.alpha <= dml.alpha + 1e-6),
-      "0.5.2b.7.1 map: the Ironforge picture comes in with Dun Morogh's picture, never before it")
-  end
+  check(not cityEarly, "0.5.2b.7.2 map: zooming in, the Ironforge picture never shows before its city zoom level")
   M.FlyTo(1426) run(30)
   check(M.lock == nil and (dm.box or {})[1] <= 1e-6, "0.5.1.11 map: flying to a zone frames it (fills the view), no lock")
+  -- 0.5.2b.7.2: numbered zoom levels, the Zoom N readout, the city level
+  do
+    local tbl = M.LevelTable(1415)
+    local sw = M.WheelSteps()
+    check(#tbl == M.MaxLevel() and #tbl == sw + 1 and #tbl >= 4 and math.abs(tbl[2].s / tbl[1].s - 1.35) < 1e-6 and math.abs(tbl[3].s / tbl[2].s - 1.35) < 1e-6 and tbl[#tbl].s == M.LevelScale(nil, 999),
+      "0.5.2b.7.2 map: zoom levels: 1 = fully out, one per wheel step (1.35x), the last = the deepest (" .. #tbl .. " levels, " .. sw .. " wheel steps)")
+    local onGrid, steps = true, {}
+    for _, d in ipairs({ -1, -1, 1, 1, 1 }) do
+      M.Wheel(d) run(40)
+      local L = M.LevelOf(1415)
+      steps[#steps + 1] = string.format("%.2f", L)
+      if math.abs(L - math.floor(L + 0.5)) > 1e-3 and math.abs(M.view.s - M.LevelScale(1415, 99)) > 1e-9 then onGrid = false end
+    end
+    local n = M.ZoomLevel()
+    check(onGrid and M.zoomReadout and M.zoomReadout.text:GetText() == "Zoom " .. n,
+      "0.5.2b.7.2 map: each wheel step lands on a zoom level, shown as Zoom N (" .. table.concat(steps, ",") .. "; " .. tostring(M.zoomReadout and M.zoomReadout.text:GetText()) .. ")")
+    local function goLevel(k) local px, py = M.ToScreen(M.Center()) M.ZoomAt(px, py, M.LevelScale(1415, k) / M.view.s) run(40) end
+    local saveDB = NS.db.map.cityLevel
+    local say = M.CityLevelSlash("5")
+    check(NS.db.map.cityLevel == 5 and M.CityLevel() == 5 and say:find("cities show from zoom level 5"), "0.5.2b.7.2 /dm citylevel 5: saved in DarkMatterDB.map.cityLevel (" .. say .. ")")
+    goLevel(4)
+    local i4 = M.layers[1455]
+    local at4 = i4 and i4.shown and i4.alpha > 0.01
+    goLevel(5)
+    local i5 = M.layers[1455]
+    check(not at4 and i5 and i5.shown and i5.alpha > 0.99,
+      "0.5.2b.7.2 map: city level 5: no Ironforge at zoom 4, Ironforge at zoom 5")
+    M.CityLevelSlash("4.5")
+    check(NS.db.map.cityLevel == 5, "0.5.2b.7.2 /dm citylevel takes whole levels only")
+    say = M.CityLevelSlash("default")
+    check(NS.db.map.cityLevel == nil and M.CityLevel() == 3 and say:find("level 3 %(default%)"), "0.5.2b.7.2 /dm citylevel default: back to level 3 (" .. say .. ")")
+    NS.db.map.cityLevel = saveDB
+    M.FlyTo(1426) run(30)
+  end
   check(M.layers[947] and not M.layers[947].shown, "0.5.0 map: the world picture is hidden when the continent covers the view")
   -- 0.5.2b.3: the sweep: every continent and zone at several zooms (dry: nothing built), no flags, the view restored
   do
@@ -4080,6 +4113,14 @@ do
     for _, l in ipairs(lines) do if l:find("^map 23 layers:") then l23 = l end if l:find("^map 23 masks:") then m23 = l end end
     check(l23 and l23:find("%-> OK$") and m23 == "map 23 masks: " .. M.MaskLine(),
       "0.5.2b.4 mapprobe: the layer check line for this view: " .. tostring(l23) .. " / " .. tostring(m23))
+    local z24, lv24, long24 = nil, 0, 0
+    for _, l in ipairs(lines) do
+      if l:find("^map 24 zoom:") then z24 = l end
+      if l:find("^map 24 level %d+: x[%d.]+ of continent fit, art x[%d.]+: ") then lv24 = lv24 + 1 end
+      if l:find("^map 24") then long24 = math.max(long24, #l) end
+    end
+    check(z24 and z24:find("cities from " .. M.CITY_LEVEL_DEFAULT .. " %(default " .. M.CITY_LEVEL_DEFAULT .. "%)") and lv24 == M.MaxLevel() and long24 <= 90,
+      "0.5.2b.7.2 mapprobe: map 24 prints the zoom level table (" .. lv24 .. " levels, longest " .. long24 .. "): " .. tostring(z24))
     local fit19, reach23, long = nil, nil, 0
     for _, l in ipairs(lines) do
       if l:find("^map 19 fit:") then fit19 = l end
@@ -4615,7 +4656,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.7.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.7.2 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4709,6 +4750,32 @@ do
     run(40)
     check(bf._w == w0 and bf._h == h0 and bf._scale ~= s0 and offBy(bf) < 0.01 and X.stats.blobDraws > draws,
       "0.5.2b.7.1 B: zooming changes only the scale; the areas stay on the zone picture and are drawn again after (" .. string.format("%.3f", offBy(bf)) .. ")")
+    -- 0.5.2b.7.2: every frame of a zoom in or out, the drawn areas stay shown and on the zone picture, and are drawn
+    -- again one frame after each scale change (0.5.2b.7.1 waited for the zoom to stop)
+    do
+      local g0 = { frames = X.gl.frames, hidden = X.gl.hidden, late = X.gl.late, redraws = X.gl.redraws }
+      local blank, off, lag = 0, 0, 0
+      for _, d in ipairs({ -1, -1, 1, 1 }) do
+        M.Wheel(d)
+        for _ = 1, 25 do
+          M.Tick(0.016)
+          local L = M.layers[1426]
+          if L and L.shown and (L.alpha or 0) > 0.01 then
+            if not (bf:IsShown() and #bf._blobs > 0) then blank = blank + 1 end
+            if offBy(bf) > 0.01 then off = off + 1 end
+            local st = X.bst[1426]
+            if st and st.dirty and st.dirty < X.tickN then lag = lag + 1 end
+          end
+        end
+      end
+      local g = X.gl
+      check(blank == 0 and off == 0 and lag == 0 and g.frames > g0.frames and g.hidden == g0.hidden and g.late == g0.late and g.redraws > g0.redraws,
+        string.format("0.5.2b.7.2 B: zooming out and in, the areas never vanish or leave the zone picture (blank %d, off %d, lag %d, counted hidden %d late %d of %d)",
+          blank, off, lag, g.hidden - g0.hidden, g.late - g0.late, g.frames - g0.frames))
+      run(40)
+      local p = table.concat(X.ProbeLines(), "\n")
+      check(p:find("map 10e: hidden during zoom: 0 frames; late 0; zoom frames %d+; redraws %d+"), "0.5.2b.7.2 B: mapprobe 10e counts the frames the areas were hidden during a zoom")
+    end
     local nd = X.stats.blobDraws
     M.Pan(37, -21) run(1) run(1)
     check(offBy(bf) < 0.01 and X.stats.blobDraws == nd, "0.5.2b.7.1 B: panning moves the areas with the zone picture, no redraw (" .. string.format("%.3f", offBy(bf)) .. ")")
@@ -4791,6 +4858,7 @@ do
   check(math.abs(M.Zoom() - z0) < 1e-6 and math.abs(u2 - u0) < 1e-6 and math.abs(v2 - v0) < 1e-6, "0.5.0 map: wheel zoom in returns exactly")
   -- 8. zoom all the way out: zone > continent > world, with crossfades on the way
   CX, CY = 406, 260
+  M.FlyTo(1426) run(30) -- 0.5.2b.7.2: the wheel lands on numbered levels, so start from the zone's view itself
   local sawZoneFade, sawContFade, sawCont = false, false, false
   for _ = 1, 30 do
     M.Wheel(-1)
@@ -4802,7 +4870,7 @@ do
     end
     if table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms" then sawCont = true end
   end
-  check(sawZoneFade and sawContFade, "0.5.0 map: zone and continent pictures crossfade while zooming")
+  check(sawZoneFade and sawContFade, "0.5.0 map: zone and continent pictures crossfade while zooming (" .. tostring(sawZoneFade) .. "," .. tostring(sawContFade) .. ")")
   check(sawCont, "0.5.0 map: passes through the continent level")
   check(math.abs(M.Zoom() - 1) < 1e-6 and table.concat(M.Trail(), ">") == "Azeroth" and M.layers[947].shown, "0.5.0 map: zoomed out fully shows the world")
   local wcx, wcy = M.Center()
@@ -5386,7 +5454,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.7%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.7%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -6384,7 +6452,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.7.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.7.2 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -6900,7 +6968,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.7.1 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.7.2 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}
