@@ -30,7 +30,15 @@ function NS.RegisterTheme(def)
     def.glyphs = def.glyphs or base.glyphs
     def.colors = def.colors or {}
     for k, v in pairs(base.colors) do
-      if def.colors[k] == nil then def.colors[k] = v end
+      if def.colors[k] == nil then def.colors[k] = (base.baseColors and base.baseColors[k]) or v end
+    end
+    -- 0.5.1.3: a class theme's inner content blends into its frame instead of reading as a second boxed window: the
+    -- page behind the lists is see-through (the frame's own surface shows), the rail a light wash of its surface, the
+    -- lists a little see-through, and the page / rail edges are subtle inset dividers (dark top-left, faint light
+    -- bottom-right) instead of a box border. Alphas per surface; Theme_ClassStock.lua may tune them per theme.
+    if def.blend == nil then
+      def.blend = { page = 0, rail = 0.35, list = 0.8, edge = 0.5,
+        shadow = { 0, 0, 0, 0.5 }, light = { 1, 1, 1, 0.08 } }
     end
   end
   -- colours may be given as "#rrggbb"; convert once
@@ -43,9 +51,15 @@ function NS.RegisterTheme(def)
 end
 
 -- A widget registers a function that (re)applies theme data to itself; it runs now and on every theme change.
+local skinOwner = setmetatable({}, { __mode = "k" })
 function NS.OnSkin(fn)
   fn()
   skins[#skins + 1] = fn
+  if NS.skinOwner then skinOwner[fn] = NS.skinOwner end
+end
+-- 0.5.1.6: the main window is built again when its size must change; its old parts' skin functions are dropped
+function NS.DropSkins(owner)
+  for i = #skins, 1, -1 do if skinOwner[skins[i]] == owner then table.remove(skins, i) end end
 end
 
 function NS.SetTheme(id)
@@ -60,6 +74,8 @@ function NS.SetTheme(id)
   end
   -- rows paint their selection highlight on refresh, so repaint the open tab too
   if NS.RefreshWindow then pcall(NS.RefreshWindow) end
+  -- 0.5.1.6: another theme's border may need another window size (outer bounds = the map window's)
+  if NS.AfterThemeChange then pcall(NS.AfterThemeChange) end
   return true
 end
 
@@ -125,10 +141,14 @@ NS.Unflat = Unflat
 function NS.SetPiece(tex, key)
   local spec = NS.FlatSpec(key)
   if spec then NS.PaintFlat(tex, spec.a, spec.b, spec.dir) return end
+  -- 0.5.1: the WoW theme's stock (built-in game) texture for this piece, when the client has it
+  local sp = NS.Stock and NS.Stock.Spec(key)
+  if sp then NS.Stock.Apply(tex, sp) return end
   local a = NS.atlases[NS.theme.atlas]
   local r = a and a.rects[key]
   if not r then return end
   Unflat(tex)
+  if NS.Stock then NS.Stock.Reset(tex) end
   tex:SetTexture(a.file)
   local e = 0.5
   tex:SetTexCoord((r[1] + e) / a.width, (r[1] + r[3] - e) / a.width, (r[2] + e) / a.height, (r[2] + r[4] - e) / a.height)
@@ -137,8 +157,12 @@ end
 -- Class-theme surface for one area ("shell", "rail", "list", "page"): the class texture tinted ({ tint = rgb }) or a
 -- flat colour/gradient ({ flat = true, a, b, dir }) where the previewer uses a plain CSS background.
 -- Returns false (texture untouched) when the theme has no surfaces; the caller then applies the WoW media.
+-- 0.5.1.3: the surface's alpha follows theme.blend (1 for every surface of a theme without it, e.g. the WoW theme).
 function NS.ApplySurface(tex, kind)
   local sf = NS.theme.surface
+  local bl = NS.theme.blend
+  local a = bl and sf and NS.Num(bl[kind]) or 1
+  if tex.SetAlpha then tex:SetAlpha(a) end
   local c = sf and sf[kind]
   if not c then return false end
   if c.flat then NS.PaintFlat(tex, c.a, c.b, c.dir) return true end
@@ -151,6 +175,8 @@ function NS.ApplySurface(tex, kind)
 end
 
 function NS.PieceSize(key)
+  local sp = NS.Stock and NS.Stock.Spec(key)
+  if sp and sp.w then return sp.w, sp.h end
   local r = NS.Rect(key)
   if not r then return 1, 1 end
   return r[3], r[4]
@@ -182,16 +208,25 @@ function NS.Contrast(a, b)
   if la < lb then la, lb = lb, la end
   return (la + 0.05) / (lb + 0.05)
 end
-function NS.Legible(r, g, b, bgKey)
+function NS.Legible(r, g, b, bgKey, minC)
   local bg = NS.theme.colors[bgKey or "listBg"] or { 0.07, 0.07, 0.07 }
-  if NS.Contrast({ r, g, b }, bg) >= 6 then return r, g, b end
+  local need = minC or 6
+  if NS.Contrast({ r, g, b }, bg) >= need then return r, g, b end
   local t = NS.Lum(bg) < 0.25 and 1 or 0
   for i = 1, 20 do
     local k = i / 20
     local m = { r + (t - r) * k, g + (t - g) * k, b + (t - b) * k }
-    if NS.Contrast(m, bg) >= 6 then return m[1], m[2], m[3] end
+    if NS.Contrast(m, bg) >= need then return m[1], m[2], m[3] end
   end
   return t, t, t
+end
+-- 0.5.1.2: an item-quality colour for an item row drawn straight on the WoW theme's parchment (quest rewards, boss
+-- drops; no name plate): Common (white) becomes the dark quest ink, every other quality keeps its hue, darkened just
+-- enough for 4.5:1 against the parchment (theme.colors.parchBg).
+function NS.ParchQuality(r, g, b)
+  if r > 0.9 and g > 0.9 and b > 0.9 then return NS.Color("pInk") end
+  if not NS.theme.colors.parchBg then return NS.Color("pInk") end
+  return NS.Legible(r, g, b, "parchBg", 4.5)
 end
 -- "|cffrrggbb" escape for a theme colour key (for coloured lines inside one FontString).
 function NS.ColorCode(key)

@@ -108,6 +108,10 @@ def main():
             if it.get("file"):
                 im = load_tex(addon, it["file"])
                 tc = it.get("tc") or [0, 1, 0, 1]
+                if tc[0] > tc[1] or tc[2] > tc[3]:  # an 8-value (rotated) texcoord dumped as 4: draw it unrotated
+                    tc = [min(tc[0], tc[1]), max(tc[0], tc[1]), min(tc[2], tc[3]), max(tc[2], tc[3])]
+                if tc[0] == tc[1] or tc[2] == tc[3]:
+                    continue
                 piece = crop_tc(im, tc, w, h)
             elif it.get("color"):
                 c = it["color"]

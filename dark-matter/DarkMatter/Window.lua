@@ -15,6 +15,17 @@ end
 local frame
 local W = {} -- window parts
 NS.windowParts = W
+-- 0.5.2a.1: the window keeps the docked quest panel on screen too (its clamp rect reaches over the panel)
+local clampBase, clampExtra = { 0, 0, 0, 0 }, 0
+local function SetClamp(f, l, r, t, b)
+  clampBase = { l, r, t, b }
+  if f.SetClampRectInsets then f:SetClampRectInsets(l, r + clampExtra, t, b) end
+end
+function NS.WindowClampExtra(px)
+  clampExtra = NS.Num(px) or 0
+  local f = _G.DarkMatterFrame
+  if f and f.SetClampRectInsets then f:SetClampRectInsets(clampBase[1], clampBase[2] + clampExtra, clampBase[3], clampBase[4]) end
+end
 
 ---------------------------------------------------------------------------
 -- position
@@ -42,23 +53,95 @@ function NS.ResetWindowPosition()
   NS.Print("window position reset to screen centre.")
 end
 
--- Class-theme art space: the previewer's 880x680 css window (rim 38, header 46, footer 48). Its shell box
--- (38..842 x 84..594) is mapped onto ours (pad..w-pad x shellTop..footerTop), so the art frames our layout.
-local function ArtMap()
-  local m = NS.theme.m
-  local sx = (m.w - 2 * m.pad) / 804
-  local sy = (m.footerTop - m.shellTop) / 510
-  return sx, sy, m.pad - 38 * sx, m.shellTop - 84 * sy
+-- 0.5.1.7: with the game's map window readable, a class theme's frame art is fitted into the same outer rectangle the
+-- WoW theme fills (our frame + the map window's border reach): its rim + header band (84 css) spans the border's top
+-- reach + our shellTop, its side rim (38 css) the border's side reach + our pad, its footer band the rest. So a class
+-- theme gets the WoW theme's layout, and its Map tab the same map rectangle; the art is drawn finer (thinner rim, smaller
+-- crest), never larger. Crest, base plate and edge sprites stay inside that rectangle. Without the map window the 0.5.1.4
+-- mapping stands (the art at its 880x680 scale around our layout).
+local FIT_MIN = 0.45
+local function ArtMap(m)
+  m = m or NS.theme.m
+  local MW = NS.MapWindow
+  local A = MW and MW.Art and MW.Art()
+  if A and A.full and MW.MapBorder then
+    local l, t, r, b = MW.MapBorder()
+    local sx = math.max(FIT_MIN, (l + m.pad) / 38)
+    local sy = math.max(FIT_MIN, (t + m.shellTop) / 84)
+    local lo, to = 38 * sx - m.pad, 84 * sy - m.shellTop -- reach past our frame (the map border's, unless clamped)
+    local ro, bo = r + (lo - l), b + (to - t)
+    local ax, ay = -lo, -to
+    return sx, sy, ax, ay, (m.w + ro - ax) / sx, (m.h + bo - ay) / sy, true
+  end
+  local bb = MW and MW.bases and MW.bases[m] or m
+  local sx = (bb.w - 2 * m.pad) / 804
+  local sy = (bb.footerTop - m.shellTop) / 510
+  local aw = 880 + (m.w - bb.w) / sx
+  local ah = 680 + (m.h - bb.h) / sy
+  return sx, sy, m.pad - 38 * sx, m.shellTop - 84 * sy, aw, ah, false
 end
 NS.ClassArtMap = ArtMap
+
+-- where a class theme's crest, base plate and edge sprites go (window-relative, y down); fitted art keeps them inside
+local function ArtParts(ca, m)
+  local sx, sy, ax, ay, AW, AH, fit = ArtMap(m)
+  local k = (sx + sy) / 2
+  local aw, ah = AW * sx, AH * sy
+  local function In(x, y, w, h)
+    if not fit then return x, y end
+    return math.max(ax, math.min(x, ax + aw - w)), math.max(ay, math.min(y, ay + ah - h))
+  end
+  local P = { sx = sx, sy = sy, ax = ax, ay = ay, AW = AW, AH = AH, fit = fit, k = k, sprites = {} }
+  local ov = ca.edges and ca.edges.over
+  for i, sp in ipairs(ov and ov.list or {}) do
+    local a = sp[1]
+    local px = a[1] + ((a[1] + a[3] / 2 > 440) and (AW - 880) or 0)
+    local py = a[2] + ((a[2] + a[4] / 2 > 340) and (AH - 680) or 0)
+    local w, h = a[3] * sx, a[4] * sy
+    local x, y = In(ax + px * sx, ay + py * sy, w, h)
+    P.sprites[i] = { x, y, w, h }
+  end
+  if ca.crest then
+    local cs = ca.crest[1] * k
+    -- 0.5.1.10: centred on the frame in every class theme (no title any more; the art's side offset ca.crest[2] is not used)
+    local x, y = In(ax + AW / 2 * sx - cs / 2, ay + ca.crest[3] * sy, cs, cs)
+    P.crest = { x, y, cs }
+  end
+  if ca.base then
+    local bw, bh = ca.base[1] * k, ca.base[2] * k
+    local bs = math.min(bw, bh)
+    local x, y = In(ax + AW / 2 * sx - bs / 2, ay + (642 + AH - 680) * sy + (bh - bs) / 2, bs, bs)
+    P.base = { x, y, bs }
+  end
+  return P
+end
+NS.ClassArtParts = ArtParts
+
+-- 0.5.1.6: everything a class theme's frame art draws at metrics m, window-relative (y down): left, top, right, bottom.
+-- The art rect, its edge sprites (glows, vines, crystals), the crest and the base plate. Used to size the window so its
+-- OUTER bounds equal the game's map window's, and for the window's hit and clamp rects.
+function NS.ClassArtBox(ca, m)
+  if not ca then return nil end
+  local P = ArtParts(ca, m)
+  local l, t, r, b = P.ax, P.ay, P.ax + P.AW * P.sx, P.ay + P.AH * P.sy
+  local function U(x, y, w, h) l, t, r, b = math.min(l, x), math.min(t, y), math.max(r, x + w), math.max(b, y + h) end
+  for _, q in ipairs(P.sprites) do U(q[1], q[2], q[3], q[4]) end
+  if P.crest then U(P.crest[1], P.crest[2], P.crest[3], P.crest[3]) end
+  if P.base then U(P.base[1], P.base[2], P.base[3], P.base[3]) end
+  return { l, t, r, b }
+end
 
 -- Shrink (never enlarge) so the 880x680 window (or a class theme's larger frame art) fits small screens.
 local function FitScale(f)
   local m = NS.theme.m
+  -- 0.5.1.5: sized to the game's map window: our scale is the one that makes it the map window's on-screen size
+  local MW = NS.MapWindow
+  local live = MW and MW.last and not MW.last.fallback and (MW.live and not MW.live.fallback and MW.live.scale or MW.last.scale)
+  if live then f:SetScale(math.max(0.3, live)) return end
   local w, h = m.w, m.h
   if NS.theme.classArt then
-    local sx, sy = ArtMap()
-    w, h = 880 * sx, 680 * sy
+    local sx, sy, _, _, aw, ah = ArtMap()
+    w, h = aw * sx, ah * sy
   end
   local s = 1
   local uh, uw = NS.Num(UIParent:GetHeight()), NS.Num(UIParent:GetWidth())
@@ -113,7 +196,8 @@ local function BuildClassArt(f)
       return
     end
     top:Show()
-    local sx, sy, ax, ay = ArtMap()
+    local sx, sy, ax, ay, AW, AH = ArtMap()
+    local parts = ArtParts(ca, NS.theme.m)
     local k = (sx + sy) / 2
     local E = ca.edges
     local c, fd = E.corner, E.fade
@@ -121,7 +205,7 @@ local function BuildClassArt(f)
     -- art css rect -> window units
     local function X(v) return ax + v * sx end
     local function Y(v) return ay + v * sy end
-    local pos = { { 0, 0 }, { 880 - c, 0 }, { 0, 680 - c }, { 880 - c, 680 - c } }
+    local pos = { { 0, 0 }, { AW - c, 0 }, { 0, AH - c }, { AW - c, AH - c } }
     for i = 1, 4 do
       local cell = { CORNER[i][1], CORNER[i][2], 240, 240 }
       local l, r, t, b = TC(cell, 512, 512)
@@ -130,24 +214,26 @@ local function BuildClassArt(f)
     end
     -- edge strips start under the corner fade (c - fd) and repeat len[i] css per tile
     local s0 = c - fd
-    local hw, vh = 880 - 2 * s0, 680 - 2 * s0
+    local hw, vh = AW - 2 * s0, AH - 2 * s0
     local L = fr.len
     Put(A.fe[1], fr.tb, 0, hw / L[1], 0.5 / 512, 239.5 / 512, X(s0), Y(0), hw * sx, c * sy, "REPEAT", "CLAMP")
-    Put(A.fe[2], fr.tb, 0, hw / L[2], 256.5 / 512, 495.5 / 512, X(s0), Y(680 - c), hw * sx, c * sy, "REPEAT", "CLAMP")
+    Put(A.fe[2], fr.tb, 0, hw / L[2], 256.5 / 512, 495.5 / 512, X(s0), Y(AH - c), hw * sx, c * sy, "REPEAT", "CLAMP")
     Put(A.fe[3], fr.lr, 0.5 / 512, 239.5 / 512, 0, vh / L[3], X(0), Y(s0), c * sx, vh * sy, "CLAMP", "REPEAT")
-    Put(A.fe[4], fr.lr, 256.5 / 512, 495.5 / 512, 0, vh / L[4], X(880 - c), Y(s0), c * sx, vh * sy, "CLAMP", "REPEAT")
+    Put(A.fe[4], fr.lr, 256.5 / 512, 495.5 / 512, 0, vh / L[4], X(AW - c), Y(s0), c * sx, vh * sy, "CLAMP", "REPEAT")
     for i, sp in ipairs(ov.list) do
       local tex = A.os[i]
       if not tex then
         tex = top:CreateTexture(nil, "ARTWORK", nil, 0)
         A.os[i] = tex
       end
-      local a, t2 = sp[1], sp[2]
+      local t2 = sp[2]
       local l, r, t, b = TC(t2, 512, ov.sh)
-      Put(tex, ov.sprites, l, r, t, b, X(a[1]), Y(a[2]), a[3] * sx, a[4] * sy)
+      -- sprites on the right / bottom half stay at their edge when the art space is wider / taller (ArtParts)
+      local q = parts.sprites[i]
+      Put(tex, ov.sprites, l, r, t, b, q[1], q[2], q[3], q[4])
     end
     local R, file, pw, ph = ca.rects, ca.parts, ca.pw, ca.ph
-    local aw, ah = 880 * sx, 680 * sy
+    local aw, ah = AW * sx, AH * sy
     local o = ca.orn * k
     local function P(tex, key, x, y, w, h)
       local l, r, t, b = TC(R[key], pw, ph)
@@ -157,15 +243,15 @@ local function BuildClassArt(f)
     P(A.orn.tr, "orn_tr", ax + aw - o, ay, o, o)
     P(A.orn.bl, "orn_bl", ax, ay + ah - o, o, o)
     P(A.orn.br, "orn_br", ax + aw - o, ay + ah - o, o, o)
-    local cs = ca.crest[1] * k
-    local cx, cy = ax + (440 + ca.crest[2]) * sx - cs / 2, ay + ca.crest[3] * sy
+    local cx, cy, cs = parts.crest[1], parts.crest[2], parts.crest[3]
     P(A.crest, "crest", cx, cy, cs, cs)
-    local bw, bh = ca.base[1] * k, ca.base[2] * k
-    local bs = math.min(bw, bh)
-    local bx, by = ax + 440 * sx - bs / 2, ay + 642 * sy + (bh - bs) / 2
+    A.crestRect = { cx, cy, cs }
+    local bx, by, bs = parts.base[1], parts.base[2], parts.base[3]
     P(A.base, "base", bx, by, bs, bs)
+    A.baseRect = { bx, by, bs }
     -- everything drawn (art rect + overhanging crest and base), window-relative, y down
-    A.box = { math.min(ax, cx, bx), math.min(ay, cy), math.max(ax + aw, cx + cs, bx + bs), math.max(ay + ah, by + bs) }
+    A.box = NS.ClassArtBox(ca, NS.theme.m) -- 0.5.1.6: incl. the edge sprites
+    A.drawn = { math.min(ax, cx, bx), math.min(ay, cy), math.max(ax + aw, cx + cs, bx + bs), math.max(ay + ah, by + bs) }
   end
   return A
 end
@@ -188,7 +274,13 @@ function NS.ShowTab(id)
     if t.frame then t.frame:Hide() end
     if W.railTabs[tid] then W.railTabs[tid]:SetActive(tid == id) end
   end
-  if not def.frame then def.frame = def.Build(W.body) end
+  if not def.frame then
+    NS.skinOwner = "window"
+    local ok, fr = pcall(def.Build, W.body)
+    NS.skinOwner = nil
+    if not ok then error(fr, 0) end
+    def.frame = fr
+  end
   def.frame:Show()
   W.current = id
   if NS.db then NS.db.tab = id end
@@ -283,8 +375,9 @@ local function BuildSettings(f)
     value:SetText(NS.theme.name)
     for _, b in ipairs(pick) do
       local on = b.themeId == NS.theme.id
+      b.active = on -- 0.5.1.2 WoW theme: the current theme's button shows held down (stock button feel)
       b:SetLook(on and "red" or "grey")
-      if not on then b.text:SetTextColor(NS.Color("popInk")) end -- readable, not the disabled grey
+      if not on and not b.stockOn then b.text:SetTextColor(NS.Color("popInk")) end -- readable, not the disabled grey
     end
   end)
   local reset = UI.Button(pop, "Reset window position", m.popW - 28, m.fbtnH, "red", m.fbtnSize)
@@ -329,8 +422,113 @@ local function BuildSettings(f)
   return pop
 end
 
+
+-- 0.5.1.4 WoW theme: the frame of the game's own map window (WorldMapFrame), drawn on ours. When the map window's
+-- border pieces can be read (NS.MapWindow.Art), the same 8 game textures are placed around our window the way its
+-- NineSlice places them; otherwise Dark Matter draws its own thin bronze frame. A slim dark title strip with the gold
+-- title sits under either. Class themes never show any of it.
+local MAP_TITLE_H = 24
+local BRONZE = { 0.72, 0.57, 0.30, 1 }
+local function BuildMapChrome(f)
+  local MW = NS.MapWindow
+  local C = { nine = {}, own = {}, all = {} }
+  local function T(layer, sub) local t = f:CreateTexture(nil, layer, nil, sub) C.all[#C.all + 1] = t return t end
+  C.strip = T("BACKGROUND", 6)
+  C.strip:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -2)
+  C.strip:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
+  C.strip:SetHeight(MAP_TITLE_H)
+  C.stripLine = T("BACKGROUND", 7)
+  C.stripLine:SetPoint("TOPLEFT", C.strip, "BOTTOMLEFT", 0, 0)
+  C.stripLine:SetPoint("TOPRIGHT", C.strip, "BOTTOMRIGHT", 0, 0)
+  C.stripLine:SetHeight(1)
+  -- own thin frame: a dark outer line and a bronze inner line on each side
+  local sides = { { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true }, { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false } }
+  for i, sd in ipairs(sides) do
+    for j = 0, 1 do
+      local t = T("BORDER", 4)
+      local ix = (sd[1]:find("RIGHT") and -j or j)
+      local iy = (sd[1]:find("BOTTOM") and j or -j)
+      local ix2 = (sd[2]:find("RIGHT") and -j or j)
+      local iy2 = (sd[2]:find("BOTTOM") and j or -j)
+      t:SetPoint(sd[1], f, sd[1], ix, iy)
+      t:SetPoint(sd[2], f, sd[2], ix2, iy2)
+      if sd[3] then t:SetHeight(1) else t:SetWidth(1) end
+      t.inner = j == 1
+      C.own[#C.own + 1] = t
+    end
+    C.own[i * 2 - 1].side = i
+  end
+  for _, k in ipairs(MW.NINE) do C.nine[k] = T("BORDER", 5) end
+  local CORNER_PT = { TopLeftCorner = "TOPLEFT", TopRightCorner = "TOPRIGHT", BottomLeftCorner = "BOTTOMLEFT", BottomRightCorner = "BOTTOMRIGHT" }
+  -- edge: its two corners, the points it joins them at, and whether it runs across (its height is the art's)
+  local EDGE = { TopEdge = { "TopLeftCorner", "TOPLEFT", "TOPRIGHT", "TopRightCorner", "TOPRIGHT", "TOPLEFT", true },
+    BottomEdge = { "BottomLeftCorner", "BOTTOMLEFT", "BOTTOMRIGHT", "BottomRightCorner", "BOTTOMRIGHT", "BOTTOMLEFT", true },
+    LeftEdge = { "TopLeftCorner", "TOPLEFT", "BOTTOMLEFT", "BottomLeftCorner", "BOTTOMLEFT", "TOPLEFT", false },
+    RightEdge = { "TopRightCorner", "TOPRIGHT", "BOTTOMRIGHT", "BottomRightCorner", "BOTTOMRIGHT", "TOPRIGHT", false } }
+  local PLAIN_TL = "UI-Frame-Metal-CornerTopLeft"
+  function C.Mirror()
+    local A = MW.Art()
+    if not (A and A.full) then return false end
+    for _, k in ipairs(MW.NINE) do
+      if not MW.Paint(C.nine[k], A.nine[k]) then return false end
+    end
+    -- 0.5.1.6: a plain top-left corner (no portrait seat, no icon): the game's own plain metal corner by atlas when the
+    -- client has it, else its top-right corner drawn mirrored. It sits where the map's own top-left corner sits, so the
+    -- outer bounds stay the map's.
+    local tl, pr = C.nine.TopLeftCorner, A.nine.TopRightCorner
+    local plainW, plainH
+    local okI, info = false, nil
+    if C_Texture and type(C_Texture.GetAtlasInfo) == "function" then okI, info = pcall(C_Texture.GetAtlasInfo, PLAIN_TL) end
+    if okI and type(info) == "table" and tl.SetAtlas and pcall(tl.SetAtlas, tl, PLAIN_TL, false) then
+      plainW, plainH = NS.Num(info.width) or (pr and pr.w), NS.Num(info.height) or (pr and pr.h)
+      C.cornerFrom = "atlas " .. PLAIN_TL
+    elseif pr and MW.Paint(tl, pr) then
+      local tc = { tl:GetTexCoord() }
+      if #tc == 8 then tl:SetTexCoord(tc[5], tc[6], tc[7], tc[8], tc[1], tc[2], tc[3], tc[4]) end
+      plainW, plainH = pr.w, pr.h
+      C.cornerFrom = "the top-right corner, mirrored"
+    else
+      return false
+    end
+    for k, pt in pairs(CORNER_PT) do
+      local p, t = A.nine[k], C.nine[k]
+      t:ClearAllPoints()
+      local own = p.point == pt
+      t:SetPoint(pt, f, pt, own and p.x or 0, own and p.y or 0)
+      if k == "TopLeftCorner" then t:SetSize(plainW or 32, plainH or 32) else t:SetSize(p.w or 32, p.h or 32) end
+    end
+    for k, e in pairs(EDGE) do
+      local p, t = A.nine[k], C.nine[k]
+      t:ClearAllPoints()
+      t:SetPoint(e[2], C.nine[e[1]], e[3], 0, 0)
+      t:SetPoint(e[5], C.nine[e[4]], e[6], 0, 0)
+      if e[7] then t:SetHeight(p.h or 16) else t:SetWidth(p.w or 16) end
+    end
+    return true
+  end
+  function C.Apply(on)
+    C.mirrored = false
+    if not on then for _, t in ipairs(C.all) do t:Hide() end return end
+    C.strip:SetColorTexture(0.055, 0.05, 0.045, 0.97) C.strip:Show()
+    C.stripLine:SetColorTexture(BRONZE[1] * 0.6, BRONZE[2] * 0.6, BRONZE[3] * 0.6, 1) C.stripLine:Show()
+    C.mirrored = C.Mirror()
+    for _, k in ipairs(MW.NINE) do if C.mirrored then C.nine[k]:Show() else C.nine[k]:Hide() end end
+    for _, t in ipairs(C.own) do
+      if C.mirrored then t:Hide()
+      else
+        if t.inner then t:SetColorTexture(BRONZE[1], BRONZE[2], BRONZE[3], BRONZE[4]) else t:SetColorTexture(0, 0, 0, 0.9) end
+        t:Show()
+      end
+    end
+  end
+  return C
+end
+NS.MAP_TITLE_H = MAP_TITLE_H
+
 local function Build()
   local m = NS.theme.m
+  -- 0.5.1.4: as large as the game's own map window (read only; Dark Matter's own size when it cannot be read)
+  if NS.MapWindow then NS.MapWindow.Apply(m) end
   local f = CreateFrame("Frame", "DarkMatterFrame", UIParent)
   f:SetSize(m.w, m.h)
   f:SetFrameStrata("HIGH")
@@ -351,10 +549,7 @@ local function Build()
   slate:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -m.pad, m.pad)
   NS.OnSkin(function()
     if NS.ApplySurface(slate, "shell") then return end
-    slate:SetTexture(NS.theme.media.slate)
-    slate:SetTexCoord(0, 1, 0, 1)
-    local s = NS.Metric("slateShade")
-    slate:SetVertexColor(s, s, s, 1)
+    NS.Stock.Media(slate, "shell", "slate", NS.Metric("slateShade"))
   end)
   local tint = f:CreateTexture(nil, "BACKGROUND", nil, 1)
   tint:SetPoint("TOPLEFT", f, "TOPLEFT", m.pad, -m.footerTop)
@@ -381,8 +576,12 @@ local function Build()
   tb:SetScript("OnDragStop", function() f:StopMovingOrSizing() SavePosition() end)
   local tbSlice = UI.ThreeSlice(tb, "title", m.titleH, "ARTWORK")
   local title = UI.Text(tb, "OVERLAY", m.titleSize, "title", "CENTER")
+  W.titlePlate = tb:CreateTexture(nil, "ARTWORK")
+  W.titlePlate:SetColorTexture(0.05, 0.035, 0.02, 0.78)
+  W.titlePlate:Hide()
   title:SetPoint("CENTER", tb, "CENTER", 0, 0)
-  NS.OnSkin(function() title:SetText(NS.theme.title or "Dark Matter") end)
+  -- 0.5.1.10: no title text in any theme (the WoW theme's title bar stays empty; the class crests stand alone)
+  NS.OnSkin(function() title:SetText("") title:Hide() end)
   W.title = title
 
   -- rail with the vertical tabs
@@ -390,7 +589,7 @@ local function Build()
   rail:SetPoint("TOPLEFT", f, "TOPLEFT", m.railX, -m.railY)
   rail:SetSize(m.railW, m.railH)
   UI.Slate(rail, "railShade", "BACKGROUND", 3)
-  UI.NineSlice(rail, "pane", m.railBorder, "BORDER", 3)
+  UI.NineSlice(rail, "pane", m.railBorder, "BORDER", 3, "rail") -- 0.5.1.3: an inset divider in the class themes
   W.rail = rail
   W.railTabs = {}
   for i, tid in ipairs(NS.tabOrder) do
@@ -458,8 +657,64 @@ local function Build()
   closeGlow:SetAlpha(0.25)
   NS.OnSkin(function() NS.SetPiece(closeTex, "xbtn") NS.SetPiece(closeGlow, "xbtn") end)
   close:SetScript("OnClick", function() f:Hide() end)
+  -- 0.5.1 WoW theme: the game's own close button (UIPanelCloseButton template) when the client has it
+  local stockClose = NS.Stock.FromTemplate("Button", f, "UIPanelCloseButton")
+  if stockClose then
+    stockClose:SetScript("OnClick", function() f:Hide() end)
+    stockClose:SetFrameLevel(f:GetFrameLevel() + 21)
+    stockClose:Hide()
+  end
+  W.stockClose = stockClose
 
+  -- 0.5.1.5: follow the game's map window while we are shown (read every half second from our own frame; nothing on
+  -- WorldMapFrame is hooked). Only our scale changes; the saved position keeps its screen spot.
+  local fit = CreateFrame("Frame", nil, f)
+  fit:SetSize(1, 1)
+  fit:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+  local fitT = 0
+  -- 0.5.1.6: "scale" -> our scale follows; "layout" (another shape, or another theme's border) -> the window is built
+  -- again at the new size (asked twice in a row, so a map window still resizing is not chased)
+  local pendingLayout = 0
+  local function Refit(now)
+    local MW = NS.MapWindow
+    if not (MW and MW.last and not MW.last.fallback) then return end
+    local what, need = MW.Check(NS.theme.m)
+    if what == "layout" then
+      pendingLayout = pendingLayout + 1
+      if now or pendingLayout >= 2 then pendingLayout = 0 W.rebuildWanted = true end
+      return
+    end
+    pendingLayout = 0
+    if what ~= "scale" or not need.scale then return end
+    local s = math.max(0.3, need.scale)
+    local old = f:GetScale() or 1
+    if math.abs(s - old) >= 0.0005 then
+      local point, rel, relPoint, x, y = f:GetPoint(1)
+      f:SetScale(s)
+      if point then
+        f:ClearAllPoints()
+        f:SetPoint(point, rel or UIParent, relPoint or point, (x or 0) * old / s, (y or 0) * old / s)
+        SavePosition()
+      end
+    end
+    -- 0.5.1.9: verify after layout: our window's MEASURED outer size (frame + the theme's drawn border, on screen)
+    -- against the target; more than 1 px off -> built again (once per theme and target size, so it never loops)
+    local tw, th = MW.Target() -- 0.5.2a.2: the map window less the tab column's trim
+    local ow, oh = MW.OurOuter()
+    W.verify = { tw = tw, th = th, ow = ow, oh = oh }
+    if tw and ow and (math.abs(ow - tw) > 1 or math.abs(oh - th) > 1) then
+      local key = string.format("%s:%d:%d", tostring(NS.theme.id), math.floor(tw + 0.5), math.floor(th + 0.5))
+      if NS.verifiedRebuild ~= key then NS.verifiedRebuild = key W.rebuildWanted = true end
+    end
+  end
+  W.Refit = Refit
+  fit:SetScript("OnUpdate", function(_, el)
+    if W.rebuildWanted and NS.RebuildWindow then NS.RebuildWindow() return end
+    fitT = fitT + (el or 0)
+    if fitT >= 0.5 then fitT = 0 Refit() end
+  end)
   f:SetScript("OnShow", function()
+    Refit()
     local def = NS.tabs[W.current]
     if def and def.OnShow then pcall(def.OnShow) end
   end)
@@ -473,50 +728,125 @@ local function Build()
   local art = BuildClassArt(f)
   W.classArt = art
   local wowOnly = { frameNine, tbSlice, tint, line, medal }
+  local mapChrome = BuildMapChrome(f)
+  W.mapChrome = mapChrome
   NS.OnSkin(function()
     art.Apply()
     local ca = NS.theme.classArt
-    for _, o in ipairs(wowOnly) do if ca then o:Hide() else o:Show() end end
+    -- 0.5.1.4: the WoW theme wears the game's map-window frame (theme.mapWindow) instead of the dialog border + plate
+    local mapLook = (not ca) and NS.theme.mapWindow and true or false
+    W.mapLook = mapLook
+    for _, o in ipairs(wowOnly) do if ca or o == medal then o:Hide() else o:Show() end end
+    if mapLook then frameNine:Hide() tbSlice:Hide() end
+    mapChrome.Apply(mapLook)
+    tb:ClearAllPoints()
+    if mapLook then
+      tb:SetPoint("TOPLEFT", f, "TOPLEFT", 34, -2)
+      tb:SetPoint("TOPRIGHT", f, "TOPRIGHT", -34, -2)
+      tb:SetHeight(MAP_TITLE_H)
+    else
+      tb:SetPoint("TOPLEFT", f, "TOPLEFT", m.titleX, -m.titleY)
+      tb:SetSize(m.titleW, m.titleH)
+    end
+    -- 0.5.1.6: no portrait in any theme (the corner is a plain metal corner; see BuildMapChrome)
+    medal:Hide()
+    local A = mapLook and NS.MapWindow.Art()
+    W.medalFrom = nil
+    W.titlePlate:Hide()
     title:ClearAllPoints()
     if ca then
-      local sx, sy, ax, ay = ArtMap()
+      local sx, sy, ax, ay, AW = ArtMap()
       NS.SetFont(title, math.floor(ca.titleSize * 0.8 + 0.5), "")
-      title:SetPoint("CENTER", f, "TOPLEFT", ax + 440 * sx, -(ay + (61 + ca.titleDy) * sy))
+      title:SetPoint("CENTER", f, "TOPLEFT", ax + AW / 2 * sx, -(ay + (61 + ca.titleDy) * sy))
+      -- 0.5.1.7: fitted class art: the title sits on a slim dark plate (like the WoW theme's title strip), readable over
+      -- the frame's top band
+      if select(7, ArtMap()) then
+        W.titlePlate:ClearAllPoints()
+        local tr, tg, tb2 = NS.Color("title")
+        local lum = 0.2126 * (tr or 1) + 0.7152 * (tg or 1) + 0.0722 * (tb2 or 1)
+        if lum < 0.45 then W.titlePlate:SetColorTexture(0.95, 0.9, 0.78, 0.9) else W.titlePlate:SetColorTexture(0.05, 0.035, 0.02, 0.78) end
+        W.titlePlate:SetPoint("CENTER", title, "CENTER", 0, 0)
+        W.titlePlate:SetSize((title:GetStringWidth() or 80) + 28, math.floor(ca.titleSize * 0.8 + 0.5) + 8)
+        W.titlePlate:Hide() -- 0.5.1.10: no title, no plate
+      else
+        W.titlePlate:Hide()
+      end
       local box = art.box -- everything drawn, incl. overhanging crest/base/ornaments: left, top, right, bottom (y down)
-      if f.SetClampRectInsets then f:SetClampRectInsets(box[1], box[3] - m.w, -box[2], m.h - box[4]) end
+      SetClamp(f, box[1], box[3] - m.w, -box[2], m.h - box[4])
       -- the whole frame art is a drag handle: the window's mouse area grows to it (content frames above stay clickable)
       if f.SetHitRectInsets then f:SetHitRectInsets(box[1], m.w - box[3], box[2], m.h - box[4]) end
+    elseif mapLook then
+      local tp = A and A.title
+      NS.SetFont(title, math.floor(math.max(11, math.min(15, tp and tp.size or 13)) + 0.5), "")
+      title:SetPoint("CENTER", mapChrome.strip, "CENTER", 0, 0)
+      SetClamp(f, 0, 0, 0, 0)
+      if f.SetHitRectInsets then f:SetHitRectInsets(0, 0, 0, 0) end
     else
       NS.SetFont(title, m.titleSize, "")
       title:SetPoint("CENTER", tb, "CENTER", 0, 0)
-      if f.SetClampRectInsets then f:SetClampRectInsets(0, 0, 0, 0) end
+      SetClamp(f, 0, 0, 0, 0)
       if f.SetHitRectInsets then f:SetHitRectInsets(0, 0, 0, 0) end
     end
     FitScale(f)
     -- footer row + close button: the previewer's class layout (inset from the frame rim) or the WoW positions
     settings:ClearAllPoints() status:ClearAllPoints() share:ClearAllPoints() exit:ClearAllPoints() close:ClearAllPoints()
     local sRight, shLeft, midY
-    if ca then
-      local sx, sy, ax, ay = ArtMap()
+    -- 0.5.1.7: fitted class art takes the WoW footer row (its own footer band is too thin for the previewer's columns)
+    local fitArt = ca and select(7, ArtMap())
+    if ca and not fitArt then
+      local sx, sy, ax, ay, AW, AH = ArtMap()
       local ft = ca.footer
-      local x, cy = ax + ft.pad * sx, ay + 618 * sy
-      local widths = { 90, ft.cols[2], 90, 90 }
+      local x, cy = ax + ft.pad * sx, ay + (618 + AH - 680) * sy
+      local widths = { 90, ft.cols[2] + (AW - 880), 90, 90 }
+      local cols = { ft.cols[1], ft.cols[2] + (AW - 880), ft.cols[3], ft.cols[4] }
       for i, b in ipairs({ settings, status, share, exit }) do
         b:SetWidth(widths[i] * sx)
         b:SetPoint("LEFT", f, "TOPLEFT", x, -cy)
         if i == 1 then sRight = x + widths[1] * sx elseif i == 3 then shLeft = x end
-        x = x + (ft.cols[i] + ft.gap) * sx
+        x = x + (cols[i] + ft.gap) * sx
       end
       midY = cy
-      close:SetPoint("TOPRIGHT", f, "TOPLEFT", ax + (880 - ca.close[1]) * sx, -(ay + ca.close[2] * sy))
+      close:SetSize(m.closeSize, m.closeSize)
+      close:SetPoint("TOPRIGHT", f, "TOPLEFT", ax + (AW - ca.close[1]) * sx, -(ay + ca.close[2] * sy))
       close:SetFrameLevel(f:GetFrameLevel() + 27)
     else
       settings:SetWidth(m.fbtnW) settings:SetPoint("TOPLEFT", f, "TOPLEFT", m.fbtnLeft, -m.fbtnY)
       share:SetWidth(m.fbtnW) share:SetPoint("TOPLEFT", f, "TOPLEFT", m.shareX, -m.fbtnY)
       exit:SetWidth(m.fbtnW) exit:SetPoint("TOPLEFT", f, "TOPLEFT", m.exitX, -m.fbtnY)
       sRight, shLeft, midY = m.fbtnLeft + m.fbtnW, m.shareX, m.fbtnY + m.fbtnH / 2
-      close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -(m.pad + m.closeRight), -(m.pad + m.closeTop))
-      close:SetFrameLevel(f:GetFrameLevel() + 20)
+      close:SetFrameLevel(f:GetFrameLevel() + (fitArt and 27 or 20))
+      if fitArt then
+        local sx, sy, ax, ay, AW = ArtMap()
+        close:SetSize(m.closeSize, m.closeSize)
+        close:SetPoint("TOPRIGHT", f, "TOPLEFT", ax + (AW - ca.close[1]) * sx, -(ay + ca.close[2] * sy))
+      elseif mapLook then
+        close:SetSize(22, 22)
+        close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -3, -3)
+      else
+        close:SetSize(m.closeSize, m.closeSize)
+        close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -(m.pad + m.closeRight), -(m.pad + m.closeTop))
+      end
+    end
+    -- the close button: the map window's own close-button art (map look), else the stock UIPanelCloseButton template
+    local cA = mapLook and A and A.close
+    W.closeFrom = nil
+    if cA and NS.MapWindow.Paint(closeTex, cA.normal) then
+      if not NS.MapWindow.Paint(closeGlow, cA.highlight) then NS.MapWindow.Paint(closeGlow, cA.normal) end
+      if cA.w and cA.h and cA.w >= 12 and cA.h >= 12 and cA.w <= 40 then close:SetSize(cA.w, cA.h) end
+      W.closeFrom = "map window"
+    else
+      NS.SetPiece(closeTex, "xbtn") NS.SetPiece(closeGlow, "xbtn")
+    end
+    local useStock = (not W.closeFrom) and stockClose and NS.theme.stockTemplates and not ca and NS.Stock.TemplateOK("UIPanelCloseButton", "Button")
+    if useStock then
+      stockClose:ClearAllPoints()
+      stockClose:SetPoint("CENTER", close, "CENTER", 0, 0)
+      if mapLook then stockClose:SetSize(28, 28) else stockClose:SetSize(m.closeSize + 4, m.closeSize + 4) end
+      stockClose:Show() close:Hide()
+      W.closeFrom = W.closeFrom or "UIPanelCloseButton"
+    else
+      if stockClose then stockClose:Hide() end
+      close:Show()
     end
     -- 0.4.4 status box, every theme: fills the gap between Settings and Share stats (same margin on both sides, so it
     -- is centred between them), tall enough for its text plus padding; the text truncates with an ellipsis only when
@@ -532,22 +862,42 @@ local function Build()
     W.statusText:SetWidth(sw - 16)
     if W.statusText.SetWordWrap then W.statusText:SetWordWrap(false) end
     W.status = status
+    -- 0.5.1.10: the status text is left-aligned in its box (10 px in), every theme. The class themes' bottom emblem stays
+    -- centred on the frame; where it covers the box, the text ends 8 px before it ('...' when it does not fit)
+    local PAD = 10
+    local sl, st = sRight + gapM, midY - sh / 2
+    local tw = sw - 2 * PAD
+    local bR = ca and W.classArt and W.classArt.baseRect
+    if bR and bR[1] < sl + sw and bR[1] + bR[3] > sl and bR[2] < st + sh and bR[2] + bR[3] > st then
+      tw = math.max(40, math.min(tw, bR[1] - 8 - (sl + PAD)))
+    end
+    W.statusText:ClearAllPoints()
+    W.statusText:SetPoint("LEFT", status, "LEFT", PAD, 0)
+    if W.statusText.SetJustifyH then W.statusText:SetJustifyH("LEFT") end
+    W.statusText:SetWidth(tw)
+    W.statusTextRect = { sl + PAD, st, sl + PAD + tw, st + sh }
   end)
 
   -- ESC closes it, the stock way (plain table insert; Blizzard reads it through securecall).
-  if type(UISpecialFrames) == "table" then tinsert(UISpecialFrames, "DarkMatterFrame") end
+  if type(UISpecialFrames) == "table" then
+    local have = false
+    for _, n in ipairs(UISpecialFrames) do if n == "DarkMatterFrame" then have = true end end
+    if not have then tinsert(UISpecialFrames, "DarkMatterFrame") end
+  end
   return f
 end
 
 function NS.GetWindow()
   if not frame then
     -- Build under pcall: if anything in the build errors, never leave a half-built window behind.
+    NS.skinOwner = "window"
     local ok, err = pcall(function()
       Build()
       ApplyPosition()
       NS.SetStatus("Dark Matter " .. NS.version)
       NS.ShowTab(NS.db and NS.db.tab or "quests")
     end)
+    NS.skinOwner = nil
     if not ok then
       if frame then frame:Hide() end
       frame = nil
@@ -567,9 +917,59 @@ function NS.RefreshWindow()
   if def and def.Refresh then pcall(def.Refresh) end
 end
 
+-- 0.5.1.6: build the window again at a new size (the map window changed shape, or a theme with another border was
+-- chosen). The old frames are hidden and silenced, each tab drops what it built, and the saved position keeps its spot.
+function NS.RebuildWindow()
+  local old = frame
+  if not old then return NS.GetWindow() end
+  local shown = old:IsShown()
+  local point, _, relPoint, x, y = old:GetPoint(1)
+  local oldScale = old:GetScale() or 1
+  old:Hide()
+  local function Quiet(o, depth)
+    if depth > 40 or type(o) ~= "table" then return end
+    if o.UnregisterAllEvents then pcall(o.UnregisterAllEvents, o) end
+    if o.SetScript and o.HasScript and select(2, pcall(o.HasScript, o, "OnUpdate")) then pcall(o.SetScript, o, "OnUpdate", nil) end
+    if o.GetChildren then for _, c in ipairs({ o:GetChildren() }) do Quiet(c, depth + 1) end end
+  end
+  Quiet(old, 0)
+  for _, id in ipairs(NS.tabOrder) do
+    local d = NS.tabs[id]
+    if d then
+      if d.frame then d.frame:Hide() end
+      d.frame = nil
+      if d.Reset then pcall(d.Reset) end
+    end
+  end
+  if NS.DropSkins then NS.DropSkins("window") end
+  for k in pairs(W) do W[k] = nil end
+  frame = nil
+  local f = NS.GetWindow()
+  if f then
+    local s = f:GetScale() or 1
+    if point then
+      f:ClearAllPoints()
+      f:SetPoint(point, UIParent, relPoint or point, (x or 0) * oldScale / s, (y or 0) * oldScale / s)
+      SavePosition()
+    end
+    if shown then f:Show() end
+  end
+  NS.windowRebuilds = (NS.windowRebuilds or 0) + 1
+  return f
+end
+
+function NS.AfterThemeChange()
+  if not (frame and NS.MapWindow and NS.MapWindow.last and not NS.MapWindow.last.fallback) then return end
+  if NS.MapWindow.Check(NS.theme.m) == "layout" then W.rebuildWanted = true end
+end
+
 function NS.ToggleWindow(show)
   local f = NS.GetWindow()
   if not f then return end
   if show == nil then show = not f:IsShown() end
+  if show and not f:IsShown() and (W.rebuildWanted or (NS.MapWindow and NS.MapWindow.last and not NS.MapWindow.last.fallback
+      and NS.MapWindow.Check(NS.theme.m) == "layout")) then
+    f = NS.RebuildWindow() or f
+  end
   if show then f:Show() else f:Hide() end
 end

@@ -1,0 +1,51 @@
+## Interface: 11509
+## Title: Dark Matter
+## Notes: Dark Matter 0.5.2b.9: map: painted zone art at every zoom level, the close-up tiles only in the last wheel step (deepest level), the same in every zone and window size (/dm tileprobe, /dm zoomprobe); Classic Era loads DarkMatter_Vanilla.toc as a test bench for the shared map code. Earlier: the same zoom levels and layers in the window and in full screen (/dm zoomprobe), softer zone seams, two-pass zone masks.
+## Author: Odysseaus
+## Version: 0.5.2b.9
+## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
+## SavedVariables: DarkMatterDB
+## SavedVariablesPerCharacter: DarkMatterCharDB
+
+Core.lua
+Probe.lua
+Theme.lua
+Stock.lua
+Atlas_WoW.lua
+Theme_WoW.lua
+Theme_Classes.lua
+Theme_ClassStock.lua
+Widgets.lua
+ProbeWindow.lua
+MapWindow.lua
+Window.lua
+QuestLog.lua
+QuestState.lua
+MapProbe.lua
+Tab_Quests.lua
+QuestPanel.lua
+Data_Fishing.lua
+Data_FishingCatches.lua
+Fishing.lua
+Data_Dungeons.lua
+AdventureGuide.lua
+Achievements.lua
+Journal_Achievements.lua
+Tab_Journals.lua
+MapData.lua
+Data_Minimap.lua
+MapCloseUp.lua
+Data_ZoneLevels.lua
+Data_ZoneMasks.lua
+Data_ZoneSeams.lua
+Tab_Map.lua
+MapExtras.lua
+MapShapes.lua
+MapReview.lua
+Tab_Stub.lua
+Tracker.lua
+Keys.lua
+Minimap.lua
+Options.lua
+Slash.lua
+Compat_Era.lua

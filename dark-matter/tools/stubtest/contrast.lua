@@ -7,12 +7,32 @@ local C = {}
 local MEDIA = arg[1] .. "/Media/"
 local WORLD = { 0.12, 0.12, 0.14 } -- the game world behind the window (only shows where nothing is drawn)
 local cache = {}
+-- 0.5.1: the game's own (stock) textures are not on this machine, so each one the WoW theme draws under text is modelled
+-- as a solid colour. These are ESTIMATES, not measured texels: every one has a light and a dark bound (C.tone picks
+-- one) and the WoW theme is scanned at both bounds, so a label passes only if it reads on either.
+C.tone = "light"
+C.STOCK = {
+  ["interface\\framegeneral\\ui-background-rock"] = { light = { 0.36, 0.36, 0.36 }, dark = { 0.12, 0.12, 0.12 } },
+  ["interface\\dialogframe\\ui-dialogbox-background-dark"] = { light = { 0.16, 0.16, 0.16 }, dark = { 0, 0, 0 } },
+  ["interface\\questframe\\questbg"] = { light = { 0.96, 0.90, 0.76 }, dark = { 0.74, 0.64, 0.46 } },
+  ["interface\\dialogframe\\ui-dialogbox-header"] = { light = { 0.26, 0.22, 0.16 }, dark = { 0.04, 0.04, 0.04 } },
+  ["interface\\buttons\\ui-panel-button-up"] = { light = { 0.62, 0.10, 0.06 }, dark = { 0.26, 0.02, 0.02 } },
+  ["interface\\buttons\\ui-panel-button-down"] = { light = { 0.52, 0.08, 0.05 }, dark = { 0.20, 0.02, 0.02 } },
+  ["interface\\buttons\\ui-panel-button-disabled"] = { light = { 0.32, 0.32, 0.32 }, dark = { 0.10, 0.10, 0.10 } },
+  ["interface\\common\\common-input-border"] = { light = { 0.24, 0.24, 0.24 }, dark = { 0.04, 0.04, 0.04 } },
+  ["interface\\paperdollinfoframe\\ui-character-activetab"] = { light = { 0.30, 0.27, 0.22 }, dark = { 0.08, 0.07, 0.06 } },
+  ["interface\\paperdollinfoframe\\ui-character-inactivetab"] = { light = { 0.24, 0.22, 0.18 }, dark = { 0.05, 0.05, 0.04 } },
+  ["interface\\questframe\\ui-questtitlehighlight"] = { light = { 0.30, 0.26, 0.10 }, dark = { 0.10, 0.10, 0.10 } }, -- ADD glow
+}
 
 local function load(file)
-  if cache[file] ~= nil then return cache[file] end
+  if cache[file] ~= nil and not C.STOCK[tostring(file):lower()] then return cache[file] end
   local res = false
   local f = tostring(file)
-  if f:upper():find("WHITE8X8", 1, true) then
+  local st = C.STOCK[f:lower()]
+  if st then
+    res = { solid = st[C.tone] or st.light }
+  elseif f:upper():find("WHITE8X8", 1, true) then
     res = "white"
   else
     local name = f:match("[Mm]edia\\(.+)$")
@@ -68,6 +88,8 @@ local function sample(e, x, y)
     if not img then return nil end
     if img == "white" then
       cr, cg, cb, ca = 1, 1, 1, 1
+    elseif img.solid then
+      cr, cg, cb, ca = img.solid[1], img.solid[2], img.solid[3], 1
     else
       local tc = r._tc or { 0, 1, 0, 1 }
       local u, v
