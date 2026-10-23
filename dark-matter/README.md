@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.2b.6.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.2b.7** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -76,6 +76,15 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 - **Your map pins**: the Pin tool on the map, then a click on the map. The game's waypoint and minimap arrow point at the pin; right-click a pin to remove it.
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
+
+### 0.5.2b.7 changes
+- Softer zone edges: feathered masks, inset from the torn rim, with the coast fading into the art.
+- The selected and tracked quests show the game's blue objective areas (stock QuestPOIFrame); hovering one shows its objective progress.
+- Quest markers are the tracker's POI buttons ("..." in progress, yellow "?" when ready). A click opens the quest in the docked Quest Log panel.
+- Party dots (stock party icon) and class-coloured raid dots, dimmed in another zone or out of range, with a name/level/class/zone tooltip.
+- The map opens on you at zone zoom (Show on map and tracker clicks still go to the quest).
+- Your corpse is shown with the stock tombstone while you are dead or a ghost.
+- The player arrow is the stock map's WorldMapArrow. `/dm mapprobe` lines 10b–10d report all of this.
 
 ### 0.5.2b.6.2 changes
 - The live map draws zones exactly like `/dm masktest zone` panel 2, which cut in game: a plain clipping viewport instead of a ScrollFrame, unscaled pictures sized in screen pixels, ARTWORK layer, no filter, mask last. This holds at every zoom, including zoomed out.

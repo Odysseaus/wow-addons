@@ -3699,7 +3699,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.6.2 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.7 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4608,13 +4608,140 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.6.2 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.7 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
     check(not src:find("hooksecurefunc", 1, true) and not src:find("HookScript", 1, true) and not src:find("LoadAddOn", 1, true)
       and not src:find("CreateFrame", 1, true) and not src:find("RegisterEvent", 1, true), "0.5.2a QuestState.lua: no hooks, no LoadAddOn, no frames or events")
     QS.selected, QS.arrow = nil, nil
+    for _ = 1, 4 do M.Wheel(-1) run(30) end
+  end
+  -- ===== 0.5.2b.7: POI buttons, quest areas, party / raid dots, your corpse, the game's player arrow, opens on you =====
+  do
+    local QS, X = NS.QS, M.X
+    local qp = M.pools.quest
+    -- G: the stock map's own player arrow (GroupMembersPinMixin: Interface\WorldMap\WorldMapArrow), still turned to your facing
+    check(M.arrowGame and M.arrow._file == "Interface\\WorldMap\\WorldMapArrow", "0.5.2b.7 G: the player arrow is the stock map's WorldMapArrow (" .. tostring(M.arrow._file) .. ")")
+    -- C: without the POI atlases the 0.5.2a icons stay; with them, the tracker's POI button
+    M.dirty = true run(1)
+    M.CentreOnPlayer() run(40)
+    check(qp[1]:IsShown() and not qp[1].poi and not qp[1].ring:IsShown(), "0.5.2b.7 C: no POI atlases on this client -> the 0.5.2a game icon, no ring")
+    local saveAtlas = C_Texture.GetAtlasInfo
+    local POI = { ["UI-QuestPoi-QuestNumber"] = 1, ["UI-QuestPoi-QuestNumber-SuperTracked"] = 1, ["UI-QuestPoi-OuterGlow"] = 1,
+      ["Quest-In-Progress-Icon-yellow"] = 1, ["Quest-In-Progress-Icon-Brown"] = 1, ["UI-QuestIcon-TurnIn-Normal"] = 1 }
+    C_Texture.GetAtlasInfo = function(a) if POI[a] then return { width = 32, height = 32 } end return saveAtlas(a) end
+    QS.ForgetIcons() M.dirty = true run(1)
+    local m1 = qp[1].qid == 501 and qp[1] or qp[2]
+    check(m1.poi and m1.ring:IsShown() and m1.ring._atlas == "UI-QuestPoi-QuestNumber" and m1.icon._atlas == "Quest-In-Progress-Icon-yellow",
+      "0.5.2b.7 C: an in-progress quest is the POI button with '...' (" .. tostring(m1.ring._atlas) .. ", " .. tostring(m1.icon._atlas) .. ")")
+    local saveStatus = QS.Status
+    QS.Status = function(q) if q == 501 then return "ready" end return saveStatus(q) end
+    QS.selected = 501
+    M.dirty = true run(1)
+    m1 = qp[1].qid == 501 and qp[1] or qp[2]
+    check(m1.poi and m1.ring._atlas == "UI-QuestPoi-QuestNumber-SuperTracked" and m1.icon._atlas == "UI-QuestIcon-TurnIn-Normal" and m1.glow:IsShown(),
+      "0.5.2b.7 C: a complete, selected quest is the gold-ringed POI button with '?'")
+    QS.Status = saveStatus
+    -- B: the game's quest-area frame for the selected / tracked quests, one per zone on screen; hover names the quest
+    local saveCF = CreateFrame
+    local made = {}
+    CreateFrame = function(t, ...)
+      local f = saveCF(t, ...)
+      if t == "QuestPOIFrame" then
+        made[#made + 1] = f
+        f._blobs = {}
+        f.DrawNone = function(s) s._blobs = {} end
+        f.DrawBlob = function(s, q, on) s._blobs[#s._blobs + 1] = q end
+        f.SetFillTexture = function(s, p) s._fill = p end
+        f.SetMapID = function(s, m) s._map = m end
+        f.UpdateMouseOverTooltip = function(s, nx, ny) if nx > 0.2 and nx < 0.4 then return 501, 2 end end
+      end
+      return f
+    end
+    X.blobs = {}
+    M.dirty = true run(1)
+    local bf = X.blobs[1426]
+    check(bf and bf:IsShown() and bf._map == 1426 and bf._fill == "Interface\\WorldMap\\UI-QuestBlob-Inside" and bf._blobs[1] == 501,
+      "0.5.2b.7 B: the selected quest's objective area is drawn by the game's QuestPOIFrame on its zone")
+    local draws = X.stats.blobDraws
+    M.dirty = true run(1)
+    check(X.stats.blobDraws == draws, "0.5.2b.7 B: the areas are not drawn again while nothing changed")
+    local r = bf.rect
+    local saveCur = M.testCursor
+    M.testCursor = function() return r[1] + 0.3 * (r[3] - r[1]), r[2] + 0.5 * (r[4] - r[2]) end
+    GameTooltip.GetOwner = function() return tip.owner end
+    local oldSet = GameTooltip.SetOwner
+    GameTooltip.SetOwner = function(_, o) tip.owner = o end
+    run(3)
+    check(tip.title == "Dwarven Outfitters" and tip.shown, "0.5.2b.7 B: hovering the area shows the quest and its objectives (" .. tostring(tip.title) .. ")")
+    M.testCursor = function() return r[1] + 0.9 * (r[3] - r[1]), r[2] + 0.5 * (r[4] - r[2]) end
+    run(3)
+    check(not tip.shown and X.tipQuest == nil, "0.5.2b.7 B: leaving the area hides it")
+    M.testCursor = saveCur
+    GameTooltip.SetOwner, tip.owner = oldSet, nil
+    QS.selected = nil
+    M.dirty = true run(1)
+    check(not bf:IsShown(), "0.5.2b.7 B: nothing selected or tracked -> no areas")
+    CreateFrame = saveCF
+    -- D: party dots (the stock party icon), dimmed out of range; raid dots class-coloured
+    local saveBest, savePos = C_Map.GetBestMapForUnit, C_Map.GetPlayerMapPosition
+    local G0 = { UnitExists = UnitExists, UnitInRange = UnitInRange, UnitClass = UnitClass, UnitName = UnitName, UnitLevel = UnitLevel,
+      IsInRaid = IsInRaid, GetNumGroupMembers = GetNumGroupMembers, UnitIsUnit = UnitIsUnit, RAID_CLASS_COLORS = RAID_CLASS_COLORS }
+    UnitExists = function(u) return u == "party1" or u == "party2" or u == "raid1" or u == "raid2" end
+    UnitInRange = function(u) if u == "party2" then return false, true end return true, true end
+    UnitClass = function(u) if u == "player" then return "Warrior", "WARRIOR" end return "Mage", "MAGE" end
+    UnitName = function(u) if u == "player" then return "Odysseaus" end return "Friend" end
+    UnitLevel = function() return 12 end
+    UnitIsUnit = function(a, b) return a == b end
+    RAID_CLASS_COLORS = { MAGE = { r = 0.25, g = 0.78, b = 0.92 } }
+    IsInRaid = function() return false end
+    C_Map.GetBestMapForUnit = function(u) if u == "player" or u:find("^party") or u:find("^raid") then return 1426 end return saveBest(u) end
+    C_Map.GetPlayerMapPosition = function(id, u)
+      if u == "party1" or u == "raid1" then if id == 1426 then return vec(0.4, 0.5) end return nil end
+      if u == "party2" or u == "raid2" then if id == 1426 then return vec(0.45, 0.55) end return nil end
+      return savePos(id, u)
+    end
+    M.dirty = true run(5)
+    local mp = M.pools.member
+    check(mp and mp.n == 2 and mp[1]:IsShown() and mp[1].icon._file == "Interface\\WorldMap\\WorldMapPartyIcon" and (mp[1]._alpha or 1) == 1 and mp[2]._alpha == X.DIM,
+      "0.5.2b.7 D: two party dots (the stock party icon), the out-of-range one dimmed")
+    mp[1]._scripts.OnEnter(mp[1])
+    check(tip.title == "Friend" and tip.lines[1] == "Level 12 Mage" and tip.lines[2] == "Dun Morogh", "0.5.2b.7 D: dot tooltip: name, level, class, zone (" .. tostring(tip.lines[1]) .. "/" .. tostring(tip.lines[2]) .. ")")
+    IsInRaid = function() return true end
+    GetNumGroupMembers = function() return 2 end
+    run(5)
+    check(mp.n == 2 and mp[1].unit == "raid1" and mp[1].icon._desat ~= false, "0.5.2b.7 D: in a raid the raid members are drawn")
+    for _, k in ipairs({ "UnitExists", "UnitInRange", "UnitClass", "UnitName", "UnitLevel", "IsInRaid", "GetNumGroupMembers", "UnitIsUnit", "RAID_CLASS_COLORS" }) do _G[k] = G0[k] end
+    C_Map.GetBestMapForUnit, C_Map.GetPlayerMapPosition = saveBest, savePos
+    run(5)
+    check(not mp[1]:IsShown(), "0.5.2b.7 D: out of the group -> no dots")
+    -- F: your corpse while dead (the stock tombstone, Interface\Minimap\POIIcons), gone on resurrection
+    local saveDead = UnitIsDeadOrGhost
+    UnitIsDeadOrGhost = function() return true end
+    C_DeathInfo = { GetCorpseMapPosition = function(id) if id == 1426 then return vec(0.5, 0.6) end end }
+    run(12)
+    local cb = X.corpseBtn
+    check(cb and cb:IsShown() and cb.icon._file == "Interface\\Minimap\\POIIcons" and cb.icon._tc and cb.icon._tc[1] == 0.875 and cb.icon._tc[4] == 0.125,
+      "0.5.2b.7 F: your corpse is the stock map's tombstone")
+    cb._scripts.OnEnter(cb)
+    check(tip.title == "Your corpse", "0.5.2b.7 F: corpse tooltip")
+    UnitIsDeadOrGhost = function() return false end
+    run(12)
+    check(not cb:IsShown(), "0.5.2b.7 F: resurrected -> the corpse is gone")
+    UnitIsDeadOrGhost, C_DeathInfo = saveDead, nil
+    C_Texture.GetAtlasInfo = saveAtlas
+    QS.ForgetIcons()
+    check(M.extrasErr == nil, "0.5.2b.7: the extras ran without errors (" .. tostring(M.extrasErr) .. ")")
+    local plines = table.concat(X.ProbeLines(), "\n")
+    check(plines:find("map 10c: player arrow: game", 1, true) and plines:find("map 10d: GetCorpseMapPosition", 1, true), "0.5.2b.7: mapprobe lines for the extras")
+    -- E: every opening is centred on you at your zone's zoom
+    M.Wheel(-1) run(30) M.Wheel(-1) run(30)
+    local zOut = M.Zoom()
+    NS.ShowTab("quests") NS.ShowTab("map") run(2)
+    local pxs, pys = M.ToScreen(M.player[1], M.player[2])
+    check(M.Zoom() > zOut and M.pendingFit and M.pendingFit.id == 1426, "0.5.2b.7 E: reopening the map goes back to your zone's zoom")
+    check(pxs > 0 and pys > 0 and pxs < M.vp:GetWidth() and pys < M.vp:GetHeight(), "0.5.2b.7 E: and you are in view")
     for _ = 1, 4 do M.Wheel(-1) run(30) end
   end
   -- 7. wheel zoom keeps the point under the cursor fixed
@@ -4897,7 +5024,7 @@ do
   for _, k in ipairs(wmAccess) do if not READ_OK[k] then wmOther[#wmOther + 1] = k end end
   check(#wmOther == 0, "0.5.0 map: never touches WorldMapFrame (0.5.1.6: only its size, scale and outer rectangle are read) " .. table.concat(wmOther, ","))
   check(#hooked == 0, "0.5.0 map: installs no hooks")
-  for _, f in ipairs({ "DarkMatter/Tab_Map.lua", "DarkMatter/MapData.lua" }) do
+  for _, f in ipairs({ "DarkMatter/Tab_Map.lua", "DarkMatter/MapData.lua", "DarkMatter/MapExtras.lua" }) do
     local fh = io.open(arg[1] .. "/" .. f:gsub("^DarkMatter/", "")) local src = fh and fh:read("*a") or "" if fh then fh:close() end
     local code = src:gsub("%-%-[^\n]*", "")
     check(#src > 0 and not code:find("WorldMapFrame", 1, true) and not code:find("hooksecurefunc", 1, true) and not code:find("SetUserWaypoint", 1, true) and not code:find("SetSuperTrack", 1, true),
@@ -5225,7 +5352,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.6%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.7 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -6223,7 +6350,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.6.2 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.7 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -6739,7 +6866,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.6.2 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.7 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

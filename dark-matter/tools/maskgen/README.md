@@ -10,6 +10,7 @@ Turns `/dm mapshapes` data into Dark Matter's zone shape masks.
 The masks are made only from the game's area answers (which zone owns each point). No game or OpenMap art goes into them.
 
 What `masks` does:
+- Smooth (0.5.2b.7): the block samples are blurred and smoothstep-thresholded on a 512 px work raster per zone picture, inset from the picture's torn rim and box edge, with neighbours feathered over each other where one picture leaves land undrawn (no gaps), and one wide-blurred outline over the whole continent, so coasts fade softly into the continent picture. The game's area answers count near-shore sea as zone land in square blocks, so the coast follows those blocks (rounded), not the drawn shoreline.
 - One mask per zone, none for the six capitals (they are drawn as a city over their host zone).
 - A zone with no samples of its own (Redridge, Moonglade, 2652: too small for the 0.5.2b.5 `/dm mapshapes`) is cut from the continent samples around it and gets a `rect`: the mask covers that rectangle of the zone picture.
 - It prints an offline sweep per continent: `base-land` (land points no mask covers), `wrong-art` (a point covered only by another zone's mask) and `overlap` (points under two masks at full strength).

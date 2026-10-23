@@ -105,6 +105,20 @@ QS.ICONS = {
   { role = "keepLockOff", what = "keep tracked, not pinned (open lock)", c = { { file = "Interface\\Buttons\\LockButton-Unlocked-Up" } } },
   { role = "keepStar", what = "keep tracked (favourite star)", c = { { atlas = "PetJournal-FavoritesIcon" } } },
   { role = "userPin", what = "your own pin on the map", c = { { atlas = "Waypoint-MapPin-ChatIcon" }, { atlas = "Waypoint-MapPin-Untracked" } } },
+  -- 0.5.2b.7: the quest POI buttons of the game's objective tracker (Blizzard_POIButton: the round button with "..." while
+  -- in progress, the "?" when ready; the gold ring and brown dots when the quest is the selected one), the stock map's
+  -- corpse pin (CorpsePinTemplate: the tombstone in Interface\\Minimap\\POIIcons) and the stock map's party / raid dot
+  { role = "poiRing", what = "quest POI button", c = { { atlas = "UI-QuestPoi-QuestNumber" } } },
+  { role = "poiRingSel", what = "quest POI button, selected", c = { { atlas = "UI-QuestPoi-QuestNumber-SuperTracked" } } },
+  { role = "poiGlow", what = "quest POI glow", c = { { atlas = "UI-QuestPoi-OuterGlow" } } },
+  { role = "poiProgress", what = "quest POI in progress (...)", c = { { atlas = "Quest-In-Progress-Icon-yellow" } } },
+  { role = "poiProgressSel", what = "quest POI in progress, selected (...)", c = { { atlas = "Quest-In-Progress-Icon-Brown" } } },
+  { role = "poiComplete", what = "quest POI ready to turn in (?)", c = { { atlas = "UI-QuestIcon-TurnIn-Normal" } } },
+  { role = "corpse", what = "your corpse (the stock map's tombstone)", c = { { file = "Interface\\Minimap\\POIIcons", tc = { 0.875, 1, 0, 0.125 } } } },
+  { role = "groupDot", what = "party / raid member dot", c = { { file = "Interface\\WorldMap\\WorldMapPartyIcon" } } },
+  -- 0.5.2b.7 (G): the stock map's player arrow (GroupMembersPinMixin: SetPinTexture("player", "Interface\\WorldMap\\WorldMapArrow"); live
+  -- names the same arrow by the atlas UI-WorldMapArrow)
+  { role = "playerArrow", what = "your arrow (the stock map's)", c = { { file = "Interface\\WorldMap\\WorldMapArrow" }, { atlas = "UI-WorldMapArrow" } } },
 }
 QS.ICON_BY_ROLE = {}
 for _, e in ipairs(QS.ICONS) do QS.ICON_BY_ROLE[e.role] = e end
@@ -121,7 +135,7 @@ function QS.CheckRole(role)
   local e = QS.ICON_BY_ROLE[role]
   local out = {}
   for _, c in ipairs(e and e.c or {}) do
-    out[#out + 1] = { atlas = c.atlas, file = c.file, ok = c.atlas and AtlasOK(c.atlas) or (c.file and FileOK(c.file)) or false }
+    out[#out + 1] = { atlas = c.atlas, file = c.file, tc = c.tc, ok = c.atlas and AtlasOK(c.atlas) or (c.file and FileOK(c.file)) or false }
   end
   return out
 end
@@ -145,7 +159,12 @@ function QS.PaintIcon(tex, role)
     local ok = pcall(tex.SetAtlas, tex, c.atlas, false)
     if ok then return true end
   end
-  if c.file then tex:SetTexture(c.file) tex:SetTexCoord(0, 1, 0, 1) return true end
+  if c.file then
+    tex:SetTexture(c.file)
+    local t = c.tc or { 0, 1, 0, 1 }
+    tex:SetTexCoord(t[1], t[2], t[3], t[4])
+    return true
+  end
   return false
 end
 -- the marker role for a quest in the log

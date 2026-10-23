@@ -54,6 +54,7 @@ local function ContList()
   if #out == 0 and M.only then out[1] = { id = M.only, name = MD.Name(M.only) or "Continent" } end
   return out
 end
+M.ContList = function() return ContList() end
 -- map coords on a zone/continent -> world coords
 local function ToW(id, x, y)
   if M.hasWorld and id == M.world then return x, y end
@@ -74,6 +75,7 @@ local function WorldRect(id)
   local p = Place(id)
   return p[1], p[2], p[3], p[4]
 end
+M.ToW, M.WorldRect = function(...) return ToW(...) end, function(...) return WorldRect(...) end -- 0.5.2b.7: for MapExtras.lua
 
 ---------------------------------------------------------------------------
 -- view maths
@@ -128,6 +130,7 @@ local function Cursor()
   return x / sc - l, t - y / sc
 end
 local function MouseOver() if M.testCursor then return true end return vp and vp:IsMouseOver() end
+M.Cursor, M.MouseOver = Cursor, MouseOver -- 0.5.2b.7: for MapExtras.lua
 
 -- the continent the view is about: the one whose land holds the view centre (nearest land otherwise)
 local function Focus()
@@ -477,6 +480,7 @@ local function PoolHideRest(name)
   if not p then return end
   for i = p.n + 1, #p do p[i]:Hide() end
 end
+M.Pool, M.PoolReset, M.PoolHideRest = Pool, PoolReset, PoolHideRest -- 0.5.2b.7: for MapExtras.lua
 local function MakeBadge()
   local b = CreateFrame("Frame", nil, over)
   b:SetSize(44, 18)
@@ -499,6 +503,42 @@ end
 -- selects the quest there and flies to it; shift-click sets the game's waypoint + arrow. A press that turns into a drag
 -- still pans the map (the press is handed to the map).
 local QuestClick -- forward (assigned below)
+-- the objectives of a quest as tooltip lines (markers and the shaded objective areas share it)
+function M.AddObjectiveLines(qid)
+  if not (GameTooltip and NS.QL and NS.QL.Objectives) then return 0 end
+  local ok, objs = pcall(NS.QL.Objectives, { questID = qid })
+  local n = 0
+  if ok and type(objs) == "table" then
+    for _, o in ipairs(objs) do
+      if type(o.text) == "string" then
+        n = n + 1
+        GameTooltip:AddLine((o.done and "\226\156\147 " or "- ") .. o.text, o.done and 0.5 or 1, o.done and 0.9 or 1, o.done and 0.5 or 1, true)
+      end
+    end
+  end
+  return n
+end
+-- 0.5.2b.7: paint a marker as the objective tracker's quest POI button (Blizzard_POIButton): the round button, the
+-- "..." (in progress) or "?" (ready) on it, the gold ring and brown dots when the quest is the selected one. All game
+-- atlases (QuestState.lua roles poi*); false when this client lacks the button or the symbol (the caller falls back)
+function M.PaintPOI(mk, status, hot)
+  local QS = NS.QS
+  if not (QS and mk.ring) then return false end
+  local sym = status == "ready" and "poiComplete" or (hot and "poiProgressSel" or "poiProgress")
+  if status == "ready" and not QS.Icon(sym) then return false end
+  if not QS.Icon(sym) then sym = "poiProgress" end
+  local ring = hot and QS.Icon("poiRingSel") and "poiRingSel" or "poiRing"
+  if not (QS.Icon(ring) and QS.Icon(sym)) then return false end
+  QS.PaintIcon(mk.ring, ring)
+  mk.ring:Show()
+  QS.PaintIcon(mk.icon, sym)
+  mk.icon:ClearAllPoints()
+  mk.icon:SetPoint("CENTER", mk, "CENTER", 0, 0)
+  local s = status == "ready" and 0.85 or 0.62
+  mk.icon:SetSize(math.floor((hot and 26 or 22) * s + 0.5), math.floor((hot and 26 or 22) * s + 0.5))
+  if not QS.PaintIcon(mk.glow, "poiGlow") then QS.PaintIcon(mk.glow, ring) end
+  return true
+end
 local function MakeQuest()
   local q = CreateFrame("Button", nil, over)
   q:SetSize(18, 18)
@@ -508,6 +548,11 @@ local function MakeQuest()
   q.glow:SetBlendMode("ADD")
   q.glow:SetAlpha(0.55)
   q.glow:Hide()
+  -- 0.5.2b.7: the POI button's round face (the game draws a 32 px ring on a 20 px button)
+  q.ring = q:CreateTexture(nil, "BORDER")
+  q.ring:SetPoint("TOPLEFT", q, "TOPLEFT", -4, 4)
+  q.ring:SetPoint("BOTTOMRIGHT", q, "BOTTOMRIGHT", 4, -4)
+  q.ring:Hide()
   q.icon = q:CreateTexture(nil, "ARTWORK")
   q.icon:SetAllPoints(q)
   q:SetScript("OnEnter", function(self)
@@ -517,13 +562,8 @@ local function MakeQuest()
     GameTooltip:SetText(MD.QuestTitle(self.qid), 1, 0.82, 0)
     local st = self.status
     GameTooltip:AddLine(st == "ready" and "Ready to turn in" or (st == "failed" and "Failed" or "In progress"), 0.85, 0.85, 0.85, true)
-    if NS.QL and NS.QL.Objectives then
-      local ok, objs = pcall(NS.QL.Objectives, { questID = self.qid })
-      if ok and type(objs) == "table" then
-        for _, o in ipairs(objs) do if type(o.text) == "string" then GameTooltip:AddLine((o.done and "\226\156\147 " or "- ") .. o.text, o.done and 0.5 or 1, o.done and 0.9 or 1, o.done and 0.5 or 1, true) end end
-      end
-    end
-    GameTooltip:AddLine("Click: select it in the Quests tab", 0.5, 0.8, 1)
+    M.AddObjectiveLines(self.qid)
+    GameTooltip:AddLine("Click: open it in the quest log", 0.5, 0.8, 1)
     GameTooltip:AddLine("Shift-click: the game's waypoint and arrow", 0.5, 0.8, 1)
     GameTooltip:Show()
   end)
@@ -604,14 +644,24 @@ local function LayoutOverlay()
               local role, status = "progress", "progress"
               if QS then role, status = QS.MarkerRole(q.id) end
               local mk = Pool("quest", MakeQuest)
-              -- 0.5.2a: the game's own icon for the quest's status; a client without it draws no marker (/dm questmap)
-              if QS and QS.PaintIcon(mk.icon, role) then
-                QS.PaintIcon(mk.glow, role)
+              local hot = QS and QS.IsHot(q.id)
+              -- 0.5.2b.7: the objective tracker's own quest POI button (the round button with "..." in progress, "?" when
+              -- ready; gold ring and brown dots when selected), as OpenMap draws it; a client without those atlases gets
+              -- the 0.5.2a game icons; one with neither draws no marker (/dm questmap)
+              local poi = QS and M.PaintPOI(mk, status, hot)
+              if poi or (QS and QS.PaintIcon(mk.icon, role)) then
+                if not poi then
+                  mk.ring:Hide()
+                  QS.PaintIcon(mk.glow, role)
+                  mk.icon:ClearAllPoints()
+                  mk.icon:SetAllPoints(mk)
+                end
+                mk.poi = poi
                 mk.qid, mk.status, mk.map, mk.mx, mk.my = q.id, status, z.id, q.x, q.y
                 mk.wx, mk.wy = ToW(z.id, q.x, q.y)
                 mk.icon:SetVertexColor(1, 1, 1) -- 0.5.2a.1: the game icon as it is (no tint), like the game map
-                local hot = QS.IsHot(q.id)
-                mk:SetSize(hot and 24 or 18, hot and 24 or 18)
+                local sz = poi and (hot and 26 or 22) or (hot and 24 or 18)
+                mk:SetSize(sz, sz)
                 if hot then mk.glow:Show() else mk.glow:Hide() end
                 mk:SetFrameLevel(over:GetFrameLevel() + (hot and 3 or 1))
                 mk:ClearAllPoints()
@@ -628,6 +678,8 @@ local function LayoutOverlay()
     end
   end
   PoolHideRest("badge") PoolHideRest("quest")
+  -- 0.5.2b.7: quest objective areas, party / raid members and your corpse (MapExtras.lua)
+  if M.DrawExtras then local ok, e = pcall(M.DrawExtras) if not ok then M.extrasErr = e end end
   if M.DrawUserPins then M.DrawUserPins() end
   if caption then if anyBadge then caption:Show() else caption:Hide() end end
 end
@@ -1718,6 +1770,7 @@ function M.Tick(dt)
   if M.dirty then M.Layout() end
   M.acc = (M.acc or 0) + dt
   if M.acc >= 0.05 then M.acc = 0 UpdatePlayer() UpdateCoords() end
+  if M.ExtrasTick then local ok, e = pcall(M.ExtrasTick, dt) if not ok then M.extrasErr = e end end
 end
 
 ---------------------------------------------------------------------------
@@ -2033,7 +2086,9 @@ local function Build(body)
   M.vp, M.canvas, M.over, M.closeHost = vp, canvas, over, closeHost
   local arrow = over:CreateTexture(nil, "OVERLAY")
   arrow:SetSize(26, 26)
-  Icon(arrow, "arrow")
+  -- 0.5.2b.7 (G): the stock map's own player arrow (white with the blue dot); Dark Matter's arrow only on a client without it
+  M.arrowGame = NS.QS and NS.QS.PaintIcon(arrow, "playerArrow") or false
+  if M.arrowGame then arrow:SetSize(24, 24) else Icon(arrow, "arrow") end
   arrow:Hide()
   M.arrow = arrow
   empty = UI.Text(vpBox, "OVERLAY", 13, "listSoft", "CENTER")
@@ -2280,8 +2335,33 @@ local function Start()
   end
   if M.ready then empty:Hide() end
   Refit()
+  -- 0.5.2b.7: every opening starts centred on you at your zone's zoom (Show on map and a tracker title click call
+  -- ShowQuest right after this, and that flight to the quest wins)
+  M.CentreOnPlayer()
   UpdateCoords()
   M.UpdateStatus()
+end
+-- centre the view on the player at the zone's zoom (no animation); false when the game gives no position
+function M.CentreOnPlayer()
+  if not M.ready then return false end
+  UpdatePlayer()
+  local p = M.player
+  if not p then return false end
+  if not M.hasWorld and p.cont and p.cont ~= M.only and MD.Art(p.cont) then
+    M.only = p.cont
+    Setup()
+    for _, L in pairs(M.layers) do L.frame:Hide() end
+    UpdatePlayer()
+    p = M.player
+    if not p then return false end
+  end
+  if p.cont then M.fade[p.cont] = 1 end
+  local z = MD.ZoneOf(p.map) or p.map
+  fly, zoomT, drag = nil, nil, nil
+  M.pendingFit = { id = MD.ZoneEntry(z) and z or p.cont, wx = p[1], wy = p[2], centre = true }
+  ApplyFit()
+  M.dirty = true
+  return true
 end
 
 -- re-read everything from the game (drops the built layers; the next show starts fresh)

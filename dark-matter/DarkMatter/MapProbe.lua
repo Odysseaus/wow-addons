@@ -234,6 +234,12 @@ local function Run()
   data.questBlob = { mixin = type(_G.QuestBlobDataProviderMixin) == "table", drawBlob = blobPin ~= nil }
   lines[#lines + 1] = "map 10: quest areas: QuestBlob provider " .. YN(data.questBlob.mixin) .. "; DrawBlob on the game map "
     .. YN(data.questBlob.drawBlob)
+  -- 0.5.2b.7: what the Map tab draws for quest areas, group members and your corpse (game art only)
+  local X = NS.MapTab and NS.MapTab.X
+  if X and X.ProbeLines then
+    local ok, more = pcall(X.ProbeLines)
+    if ok and type(more) == "table" then for _, l in ipairs(more) do lines[#lines + 1] = l end end
+  end
 
   -- 11: drawing support (method checks on a frame that already exists; nothing is created)
   local P = UIParent

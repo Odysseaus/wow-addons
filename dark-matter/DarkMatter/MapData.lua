@@ -360,6 +360,16 @@ function MD.ZoneAt(cont, x, y)
 end
 
 -- Player position on a map (0..1) or nil (instances, no API).
+-- 0.5.2b.7: any unit (party / raid members); MD.PlayerPos is the player
+function MD.Vec(pos)
+  if type(pos) ~= "table" then return nil end
+  local x, y
+  if type(pos.GetXY) == "function" then local ok, a, b = pcall(pos.GetXY, pos) if ok then x, y = a, b end end
+  x, y = N(x or pos.x), N(y or pos.y)
+  if x and y and (x ~= 0 or y ~= 0) then return x, y end
+end
+function MD.UnitPos(id, unit) return MD.Vec(N(id) and Call("C_Map", "GetPlayerMapPosition", id, unit or "player")) end
+function MD.UnitMap(unit) return N(Call("C_Map", "GetBestMapForUnit", unit)) end
 function MD.PlayerPos(id)
   local pos = N(id) and Call("C_Map", "GetPlayerMapPosition", id, "player")
   if type(pos) ~= "table" then return nil end

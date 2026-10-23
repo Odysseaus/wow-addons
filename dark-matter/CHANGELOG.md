@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.2b.7
+
+Map: softer zone edges, plus quest areas, quest POI buttons, party and raid dots, your corpse, the game's player arrow, and the map opens on you.
+
+### Changes
+- **Smooth masks (A)**: the zone masks have soft, feathered edges. They are inset from the torn rim and the picture's box edge, the seams between zones are feathered, and the coast fades into the art. `tools/maskgen` regenerates them; no new in-game step is needed.
+- **Quest objective areas (B)**: the selected quest and your tracked quests get the game's blue objective areas, drawn with the stock `QuestPOIFrame` (`UI-QuestBlob-Inside/Outside`, `DrawBlob`), one frame per zone on screen. Hovering an area shows the quest and its objective progress.
+- **Quest POI buttons (C)**: the quest markers are the objective tracker's own POI buttons, as OpenMap draws them. In progress is a ring with "..." (`UI-QuestPoi-QuestNumber` + `Quest-In-Progress-Icon-yellow`, brown dots and a gold ring when selected). Ready is a yellow "?" (`UI-QuestIcon-TurnIn-Normal`). Clicking one opens the quest in the docked Quest Log panel; shift-click still sets the waypoint. A client without these atlases keeps the 0.5.2a game icons.
+- **Party and raid dots (D)**: party members use the stock party icon (`Interface\WorldMap\WorldMapPartyIcon`); raid members use the same dot tinted with their class colour. The dots update five times a second. A member in another zone, or out of range, is dimmed. The tooltip shows name, level, class and zone.
+- **Opening view (E)**: the map always opens on your zone at zone zoom, with you as close to the centre as the zone's edges allow. Show on map and tracker title clicks still go to the quest.
+- **Your corpse (F)**: while you are dead or a ghost, the stock map's tombstone (`Interface\Minimap\POIIcons`, the CorpsePinTemplate texcoords) marks `C_DeathInfo.GetCorpseMapPosition`. Its tooltip reads "Your corpse", and it goes away when you are resurrected.
+- **Player arrow (G)**: the flat yellow arrow is replaced by the stock map's own player arrow (`Interface\WorldMap\WorldMapArrow`, as GroupMembersPinMixin sets it), still turned to your facing. If the client lacks it, the old arrow is used.
+- `/dm mapprobe` adds lines `map 10b`, `map 10c` and `map 10d`: the QuestPOIFrame, the POI atlases, the party and corpse icons, the player arrow in use, and the corpse and group APIs.
+- New file `MapExtras.lua`.
+
 ## 0.5.2b.6.2
 
 Map: the live map now draws zones exactly the way `/dm masktest zone` panel 2 does, because panel 2 cut in game and the map did not. This is the pre-release of 0.5.2b.7.
