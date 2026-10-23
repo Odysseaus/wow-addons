@@ -1,5 +1,9 @@
 -- minimal WoW stub to execute DarkMatter in plain Lua 5.1
 MODE=os.getenv("MODE")
+-- 0.5.2b.9: MODE=era = Classic Era 1.15.x (DarkMatter_Vanilla.toc, Interface 11509, WOW_PROJECT_ID 2): the minimal
+-- client (no modern quest log, no Journal, no achievements, no tracker) plus the Era bits; runs the minimal tests
+ERA = MODE == "era"
+if ERA then MODE = "minimal" end
 local log = {}
 local function out(...) local t={} for i=1,select('#',...) do t[#t+1]=tostring((select(i,...))) end log[#log+1]=table.concat(t," ") end
 print = out
@@ -53,6 +57,10 @@ C_AddOns={GetAddOnMetadata=function() return "16001" end,
   LoadAddOn=function(n) if MODE~="minimal" then LOADED[n]=true; if n=="Blizzard_AchievementUI" then AchievementFrame=newframe("AchievementFrame") end return true end return false,"WRONG_GAME_TYPE" end}
 C_Map={GetBestMapForUnit=function() return 1429 end, GetPlayerMapPosition=function() return {x=0.33,y=0.44,GetXY=function(self) return self.x,self.y end} end}
 WOW_PROJECT_ID=1; WOW_PROJECT_MAINLINE=1
+if ERA then
+  WOW_PROJECT_ID, WOW_PROJECT_CLASSIC = 2, 2
+  function GetBuildInfo() return "1.15.9","70003","Oct 1 2026",11509 end
+end
 GetMinimapShape=nil
 Enum={UIMapType={Dungeon=4}, GameRule={EncounterJournalDisabled=1, EjJourneysDisabled=2, TransmogEnabled=3}}
 function issecretvalue(v) return type(v)=="string" and v:find("SECRETNAME")~=nil end
@@ -742,10 +750,20 @@ do
 end
 -- load addon
 local ns={}
-local toc=io.open(arg[1].."/DarkMatter.toc"):read("*a")
+local toc=io.open(arg[1]..(ERA and "/DarkMatter_Vanilla.toc" or "/DarkMatter.toc")):read("*a")
+-- 0.5.2b.9 era: while the files load, the game knows its maps (no Forever-only zones; Zephras Isle is not among them)
+local keepInfo, keepKids = C_Map.GetMapInfo, C_Map.GetMapChildrenInfo
+if ERA then
+  local FOREVER = { [2482] = true, [2548] = true, [2652] = true }
+  C_Map.GetMapInfo = function(id) if not FOREVER[id] then return { mapID = id, name = "Zone" .. tostring(id) } end end
+  C_Map.GetMapChildrenInfo = function(id) if id == 947 then return { { mapID = 1426, name = "Dun Morogh" }, { mapID = 1429, name = "Elwynn Forest" }, { mapID = 1438, name = "Teldrassil" } } end return {} end
+end
+ERA_FILES = {}
 for file in toc:gmatch("\n([%w_]+%.lua)") do
+  ERA_FILES[#ERA_FILES + 1] = file
   local chunk=assert(loadfile(arg[1].."/"..file)); chunk("DarkMatter",ns)
 end
+C_Map.GetMapInfo, C_Map.GetMapChildrenInfo = keepInfo, keepKids
 -- 0.5.2b.6: the real zone masks ship; the older map tests run without them (their made-up maps), the 0.5.2b.6 block
 -- puts them back
 SHIPPED_MASKS = ns.ZoneMasks
@@ -754,7 +772,9 @@ ns.ZoneMasks = {}
 local ev
 for _,f in ipairs(ALL) do if f._ev and f._ev.ADDON_LOADED then ev=f end end
 assert(ev,"no event frame")
-local function check(c,m) if not c then error("FAIL: "..m,2) end out("ok:",m) end
+SOFT_FAILS = {}
+local SOFT = os.getenv("DM_SOFT") ~= nil -- debugging: list every failed check instead of stopping at the first
+local function check(c,m) if not c then if SOFT then SOFT_FAILS[#SOFT_FAILS+1]=m io.stderr:write("SOFTFAIL: ", tostring(m):sub(1,400), "\n") return end error("FAIL: "..m,2) end out("ok:",m) end
 -- first run: no saved variables
 ev._scripts.OnEvent(ev,"ADDON_LOADED","DarkMatter")
 ev._scripts.OnEvent(ev,"PLAYER_LOGIN")
@@ -779,7 +799,15 @@ SlashCmdList.DARKMATTER("")
 check(f._shown,"/dm toggles")
 SlashCmdList.DARKMATTER("probe")
 local p=DarkMatterDB.probe
+if ERA then
+  -- 0.5.2b.9: Classic Era: the client block names the project and the interface; chat says so too
+  local said = false
+  for i = 1, #log do if tostring(log[i]):find("client: Classic Era 1.15.9, interface 11509, WOW_PROJECT_ID 2; Forever-only zones dropped: 2482, 2548, 2652, zephras isle", 1, true) then said = true end end
+  check(p and p.client.build=="70003" and p.client.interface==11509 and p.client.projectId==2 and p.era and p.era.interface==11509 and said,
+    "0.5.2b.9 era: probe client info: build 70003, interface 11509, WOW_PROJECT_ID 2, in DarkMatterDB.probe and in chat")
+else
 check(p and p.client.build=="70009" and p.client.interface==16001,"probe client info")
+end
 check(type(p.callOrder)=="table" and #p.callOrder>3,"calls recorded: "..#p.callOrder)
 check(DarkMatterProbeFrame and DarkMatterProbeFrame._shown,"probe opens its own report window")
 check(not p.areaErrors,"no area errors: "..tostring(p.areaErrors and p.areaErrors[1]))
@@ -2849,6 +2877,7 @@ do
     DarkMatter.tabs.journals.Refresh()
   end
 
+  if not ERA then -- 0.5.2b.9: the game's achievements (none on Classic Era: see the else branch)
   -- game API present but thin (Forever: Legacy Challenges) -> game + Dark Matter
   local GCATS = { [15076] = { "Classes", -1 }, [15585] = { "Warrior", 15076 }, [15590] = { "Raids", -1 }, [15999] = { "Do Not Display", -1 } }
   local GACH = {
@@ -2967,6 +2996,15 @@ do
     and S.legacy.pbar.label:GetText() == "50 / 3200", "game mode: no Dark Matter section; summary shows this character's achievement points (" .. S.legacy.pbar.label:GetText() .. ")")
   GACH[15590] = { { 62035, "Conqueror of the Deeps", 0, false, nil, nil, nil, "x", false } }
   ACH.InvalidateGame()
+  else
+    -- 0.5.2b.9 era: no achievement system in Classic Era: Dark Matter's own achievements only, even with game functions about
+    GetCategoryList = function() return { 15076 } end
+    ACH.InvalidateGame()
+    check(ACH.ApiPresent() == false and ACH.Mode() ~= "game+dm" and ACH.Mode() ~= "game" and ACH.ReadGame().present == false,
+      "0.5.2b.9 era: the game's achievements are off, Dark Matter's own stay (mode " .. tostring(ACH.Mode()) .. ")")
+    GetCategoryList = nil
+    ACH.InvalidateGame()
+  end
   DarkMatterFrame:Hide()
   check(not W.page:IsVisible() or not DarkMatterFrame._shown, "page hides with the window")
   DarkMatterFrame:Show()
@@ -3699,7 +3737,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.8.2 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe " .. ns.version .. " (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4119,7 +4157,7 @@ do
         local a, b = w and w.conts[i], f and f.conts[i]
         okL1 = okL1 and a and b and a.zoneIn < 0.01 and b.zoneIn < 0.01 and a.boxes == b.boxes and b.boxes == f.conts[1].boxes
       end
-      check(okL1 and zp[1]:find("^zoomprobe 0%.5%.2b%.8%.2: now window") and txt:find("window and full screen draw the same layers"),
+      check(okL1 and zp[1]:find("zoomprobe " .. NS.version .. ": now window", 1, true) == 1 and txt:find("window and full screen draw the same layers"),
         "0.5.2b.8.2 /dm zoomprobe: level 1 (fully out): no zone pictures on either continent, level boxes alike, window = full screen (" .. txt .. ")")
       for _, L in ipairs({ 2, 3, 5 }) do
         M.SetViewAt(0.5, 0.5, 1.35 ^ (L - 1))
@@ -4145,6 +4183,48 @@ do
       check(math.abs(Lf - L0) < 1e-6 and math.abs(M.LevelOf() - L0) < 1e-6 and zpf:find("now full screen"),
         "0.5.2b.8.2 map: switching to full screen and back keeps the zoom level (" .. string.format("%.3f / %.3f / %.3f", L0, Lf, M.LevelOf()) .. "; " .. zpf .. ")")
       M.boxSize.full = saveFull
+    end
+    -- 0.5.2b.9: the auto layer's tiles go by the numbered zoom level alone: none up to the second-to-last level, full at
+    -- the deepest, in the window and in full screen (0.5.2b.8.2: by the art blur under the view centre, so some zones
+    -- showed the tiles at level 12)
+    do
+      local CU = NS.MapCloseUp
+      local saveLayer = NS.db.map.layer
+      NS.db.map.layer = "auto"
+      local okLv, seen = true, {}
+      for _, fullNow in ipairs({ false, true }) do
+        if fullNow then M.SetFull(true) run(2) end
+        local mx = M.MaxLevel()
+        okLv = okLv and mx >= 3
+        for n = 1, mx do
+          M.ViewLevelAt(0.62, 0.45, n)
+          local mix = M.close and M.close.mix or -1
+          seen[#seen + 1] = (fullNow and "F" or "W") .. n .. "=" .. string.format("%.2f", mix)
+          if n < mx and mix > 0.001 then okLv = false end
+          if n == mx and mix < 0.99 then okLv = false end
+        end
+        if fullNow then M.SetFull(false) run(2) end
+      end
+      check(okLv, "0.5.2b.9 map (auto): no tiles at levels 1 to max-1, full tiles at the deepest, window and full screen (" .. table.concat(seen, " ") .. ")")
+      local mx = M.MaxLevel()
+      M.ViewLevelAt(0.62, 0.45, mx - 1)
+      local lv, fade = M.TileLevels()
+      check(math.abs(lv - (mx - 1)) < 1e-6 and math.abs(fade[1] - (mx - 1)) < 1e-9 and fade[2] > fade[1] and fade[2] <= mx + 1e-9
+        and CU.Mix(50, nil, nil, "auto", lv, fade) == 0 and math.abs(CU.Mix(0, nil, nil, "auto", fade[2], fade) - 1) < 1e-9
+        and CU.Mix(50, nil, nil, "auto", (fade[1] + fade[2]) / 2, fade) > 0.2 and CU.Mix(50, nil, nil, "auto", (fade[1] + fade[2]) / 2, fade) < 0.8,
+        "0.5.2b.9 close-up: the auto tiles by the level only (any art blur): 0 at level max-1, a fade within the last step, 1 at the deepest")
+      check(CU.Mix(2.79) == 0 and math.abs(CU.Mix(3.4) - 1) < 1e-9 and CU.Mix(0, nil, nil, "terrain", lv, fade) == CU.Mix(0, nil, nil, "terrain"),
+        "0.5.2b.9 close-up: no level given -> the art-blur rule as before; the terrain layer ignores the level")
+      local tp = table.concat(M.TileProbe(), "\n")
+      local zl = table.concat(M.ZoomProbe(), "\n")
+      check(tp:find("tileprobe auto tiles by level: none to L" .. (mx - 1) .. ", full at L" .. mx, 1, true) and tp:find("tiles 0%", 1, true)
+        and zl:find("zoomprobe auto tiles by level: ", 1, true) and tp:find("tiles in the last zoom step only", 1, true),
+        "0.5.2b.9 /dm tileprobe + /dm zoomprobe: the level rule readout (" .. (tp:match("tileprobe auto tiles[^\n]*") or "?") .. ")")
+      M.ViewLevelAt(0.62, 0.45, mx)
+      tp = table.concat(M.TileProbe(), "\n")
+      check(tp:find("now L" .. mx .. " (", 1, true) and tp:find("tiles 100%", 1, true), "0.5.2b.9 /dm tileprobe at the deepest: tiles 100% (" .. (tp:match("tileprobe auto tiles[^\n]*") or "?") .. ")")
+      NS.db.map.layer = saveLayer
+      M.SetViewAt(0.5, 0.5, 1)
     end
     M.FlyTo(1426) run(30)
   end
@@ -4481,7 +4561,7 @@ do
       if not (hdr and #hdr == 18 and hdr:byte(3) == 2 and hdr:byte(13) + 256 * hdr:byte(14) == 256 and hdr:byte(15) + 256 * hdr:byte(16) == 256 and hdr:byte(17) == 32) then badTga[#badTga + 1] = rel end
     end
     table.sort(rects)
-    check(n == 43 and per[1414] == 20 and per[1415] == 23 and cityMask == 0 and #missing == 0 and #badTga == 0
+    check((ERA and n == 40 and SHIPPED_MASKS[2482] == nil and SHIPPED_MASKS[2548] == nil and SHIPPED_MASKS[2652] == nil and per[1414] + per[1415] == 40 or not ERA and n == 43 and per[1414] == 20 and per[1415] == 23) and cityMask == 0 and #missing == 0 and #badTga == 0
       and #rects == 0,
       "0.5.2b.6 masks: 43 ship (Kalimdor 20, Eastern Kingdoms 23), no capital, every file a 256x256 32-bit TGA; 0.5.2b.8.1: all sampled, none made from neighbours (no rect) ("
       .. n .. "; missing " .. table.concat(missing, " ") .. "; bad " .. table.concat(badTga, " ") .. "; rects " .. table.concat(rects, ",") .. ")")
@@ -4634,7 +4714,7 @@ do
     NS.db.map.layer = "painted"
     check(M.ReachLine(1415):find("^painted, no tiles %(terrain: x[%d%.]+%-x[%d%.]+, deepest x%d+%)$"), "0.5.2b.6 map: painted reach line: " .. M.ReachLine(1415))
     NS.db.map.layer = nil
-    check(M.ReachLine(1415):find("^auto, tiles at art blur x2%.8%+ %(terrain: x[%d%.]+%-x[%d%.]+, deepest x%d+%)$"), "0.5.2b.6.1 map: the default (auto) reach line: " .. M.ReachLine(1415))
+    check(M.ReachLine(1415):find("^auto, tiles in the last zoom step only %(terrain: x[%d%.]+%-x[%d%.]+, deepest x%d+%)$"), "0.5.2b.6.1 map: the default (auto) reach line: " .. M.ReachLine(1415))
     NS.ZoneMasks = saveZM
     NS.db.map.layer = "terrain"
     M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
@@ -4778,8 +4858,8 @@ do
     check(#wp == 0, "0.5.2a pins: no waypoint without a click")
     m2._scripts.OnMouseDown(m2, "LeftButton")
     m2._scripts.OnMouseUp(m2, "LeftButton")
-    check(#wp == 1 and wp[1].m == 1426 and math.abs(wp[1].x - 0.60) < 1e-9 and st[1] == true and QS.arrow and QS.arrow.q == 502,
-      "0.5.2a pins: shift-click sets the game's waypoint and arrow")
+    check(ERA and #wp == 0 and st[1] == nil or not ERA and #wp == 1 and wp[1].m == 1426 and math.abs(wp[1].x - 0.60) < 1e-9 and st[1] == true and QS.arrow and QS.arrow.q == 502,
+      ERA and "0.5.2b.9 era pins: shift-click sets no waypoint and no arrow (no user waypoints or super tracking on Classic Era), no error" or "0.5.2a pins: shift-click sets the game's waypoint and arrow")
     _G.IsShiftKeyDown = saveShift
     -- a press then drag on a pin still pans the map
     local cx0 = M.ToWorld(300, 200)
@@ -4787,7 +4867,7 @@ do
     m2._scripts.OnMouseDown(m2, "LeftButton")
     CX, CY = 340, 220 run(2)
     m2._scripts.OnMouseUp(m2, "LeftButton")
-    check(math.abs(M.ToWorld(300, 200) - cx0) > 1e-6 and #wp == 1, "0.5.2a pins: dragging over a pin pans the map (no click)")
+    check(math.abs(M.ToWorld(300, 200) - cx0) > 1e-6 and #wp == (ERA and 0 or 1), "0.5.2a pins: dragging over a pin pans the map (no click)")
     -- 0.5.2a.1: Show on map glides: zooms out on the way, pans, zooms in
     do
       for _ = 1, 3 do M.Wheel(1) run(30) end
@@ -4820,7 +4900,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.8.2 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap " .. ns.version .. " (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -5256,7 +5336,7 @@ do
     local up = NS.db.userPins
     check(#up == 1 and up[1].map == 1426 and up[1].x > 0 and up[1].x < 1 and not M.pinMode and math.abs(M.Zoom() - z0) < 1e-9,
       "0.5.2b map pins: a click drops one pin on the zone under it, saved in DarkMatterDB (pin mode ends, no zoom)")
-    check(#wp == 1 and wp[1].m == 1426 and math.abs(wp[1].x - up[1].x) < 1e-9 and st[1] == true, "0.5.2b map pins: the game's waypoint and minimap arrow point at it")
+    check(ERA and #wp == 0 and st[1] == nil or not ERA and #wp == 1 and wp[1].m == 1426 and math.abs(wp[1].x - up[1].x) < 1e-9 and st[1] == true, ERA and "0.5.2b.9 era map pins: the pin is dropped, no waypoint or arrow" or "0.5.2b map pins: the game's waypoint and minimap arrow point at it")
     run(2)
     local pool = M.pools.upin
     check(not pool or (pool[1] == nil or not pool[1]._shown), "0.5.2b map pins: without the game's pin icon nothing is drawn (no substitute)")
@@ -5269,17 +5349,17 @@ do
     check(tip.title == "Your pin" and tip.lines[1] and tip.lines[1]:find("Dun Morogh", 1, true), "0.5.2b map pins: tooltip names the zone")
     wp = {}
     pin._scripts.OnMouseDown(pin, "LeftButton") pin._scripts.OnMouseUp(pin, "LeftButton")
-    check(#wp == 1 and wp[1].m == 1426, "0.5.2b map pins: clicking a pin points the arrow at it again")
+    check(ERA and #wp == 0 or not ERA and #wp == 1 and wp[1].m == 1426, "0.5.2b map pins: clicking a pin points the arrow at it again (era: no arrow)")
     -- 0.5.2b.1: removing the pin takes the game's waypoint and arrow away too, only when that waypoint is this pin's
     local saveGet, saveClr, nclr = C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint, 0
     C_Map.GetUserWaypoint = function() local p = wp[#wp] if p then return { uiMapID = p.m, position = { x = p.x, y = p.y } } end end
     C_Map.ClearUserWaypoint = function() nclr = nclr + 1 wp = {} end
     C_SuperTrack.IsSuperTrackingUserWaypoint = function() return st[#st] == true end
-    check(NS.QS.ClearWaypoint(1426, 0.5, 0.5) == false and nclr == 0 and #wp == 1, "0.5.2b.1 map pins: a waypoint that is not this pin's is left alone")
+    check(NS.QS.ClearWaypoint(1426, 0.5, 0.5) == false and nclr == 0 and #wp == (ERA and 0 or 1), "0.5.2b.1 map pins: a waypoint that is not this pin's is left alone")
     pin._scripts.OnMouseUp(pin, "RightButton")
     run(2)
     check(#NS.db.userPins == 0 and not pin._shown, "0.5.2b map pins: right-click removes it")
-    check(nclr == 1 and #wp == 0 and st[#st] == false and NS.QS.arrow == nil, "0.5.2b.1 map pins: removing it clears the game's waypoint and minimap arrow")
+    check((ERA and nclr == 0 or not ERA and nclr == 1 and st[#st] == false) and #wp == 0 and NS.QS.arrow == nil, "0.5.2b.1 map pins: removing it clears the game's waypoint and minimap arrow")
     C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint = saveGet, saveClr
     pb._scripts.OnClick(pb, "LeftButton") pb._scripts.OnClick(pb, "LeftButton")
     check(not M.pinMode, "0.5.2b map pins: a second click on the tool disarms it")
@@ -5661,7 +5741,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.8%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("artprobe " .. NS.version .. " (file-ID lookup):", 1, true) == 1 and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -6659,7 +6739,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.8.2 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe " .. ns.version .. " (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -7220,7 +7300,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.8.2 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe " .. ns.version .. " (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}
@@ -7233,7 +7313,7 @@ if MODE ~= "minimal" then
   QWATCH = { [2] = true }
   QL.Forget()
 end
-if MODE == "minimal" then
+if MODE == "minimal" and not ERA then
   local Tr = DarkMatter.Tracker
   Tr.Tick(TIME_NOW)
   check(Tr.frame and Tr.shown == 0 and (Tr.readyCount or 0) == 0, "0.5.2b tracker: a client without the quest log or the tracker: nothing drawn, no error")
@@ -7258,6 +7338,67 @@ for _, fn in ipairs({ "Achievements.lua", "AdventureGuide.lua", "Fishing.lua", "
   local code = src:gsub("%-%-[^\n]*", "")
   check(not code:find("CombatLogGetCurrentEventInfo", 1, true) and not code:find("SetPropagateKeyboardInput", 1, true),
     fn .. ": no combat-log reads, no SetPropagateKeyboardInput")
+end
+
+-- ===== 0.5.2b.9: the flavors. WoW Forever loads DarkMatter.toc (no Era file); Classic Era loads DarkMatter_Vanilla.toc
+-- (the same files, Interface 11509, plus Compat_Era.lua last) =====
+do
+  local NS = DarkMatter
+  local function tocFiles(name)
+    local t = io.open(arg[1] .. "/" .. name):read("*a")
+    local l = {}
+    for f in t:gmatch("\n([%w_]+%.lua)") do l[#l + 1] = f end
+    return t, l
+  end
+  local ft, fl = tocFiles("DarkMatter.toc")
+  local vt, vl = tocFiles("DarkMatter_Vanilla.toc")
+  local same = #vl == #fl + 1 and vl[#vl] == "Compat_Era.lua"
+  for i = 1, #fl do same = same and vl[i] == fl[i] end
+  local function head(t) return (t:gsub("\n[%w_]+%.lua", ""):gsub("## Interface: %d+", "")) end
+  check(same and ft:find("^## Interface: 16001\n") and vt:find("^## Interface: 11509\n")
+    and head(ft) == head(vt) and not ft:find("Compat_Era", 1, true),
+    "0.5.2b.9 TOCs: DarkMatter_Vanilla.toc = DarkMatter.toc's header and files (Interface 11509 for 16001) + Compat_Era.lua last; Forever's has no Era file")
+  if not ERA then
+    check(NS.IsEra == nil and NS.Era == nil, "0.5.2b.9 Forever: not Classic Era (no Era shim loaded)")
+  else
+    local E = NS.Era
+    check(NS.IsEra == true and E and E.project == 2 and E.interface == 11509 and ERA_FILES[#ERA_FILES] == "Compat_Era.lua",
+      "0.5.2b.9 era: NS.IsEra from WOW_PROJECT_ID 2 / interface 11509, Compat_Era.lua loaded last")
+    local seamRows, bad = 0, 0
+    for _, list in pairs(NS.ZoneSeams or {}) do
+      for _, s in ipairs(list) do
+        seamRows = seamRows + 1
+        if s[1] == 2482 or s[2] == 2482 or s[1] == 2548 or s[2] == 2548 or s[1] == 2652 or s[2] == 2652 then bad = bad + 1 end
+      end
+    end
+    local Z = NS.ZoneLevels.zones
+    check(seamRows > 0 and bad == 0 and Z["zephras isle"] == nil and Z["riverglades"] == nil and Z["mount hyjal"] == nil
+      and Z["elwynn forest"] ~= nil and table.concat(E.dropped, ",") == "2482,2548,2652,zephras isle",
+      "0.5.2b.9 era: the Forever-only zones (2482, 2548, 2652, Zephras Isle) gone from the masks, seams and level badges (" .. seamRows .. " seams kept)")
+    local Tr = NS.Tracker
+    Tr.Tick(TIME_NOW)
+    check(Tr.frame == nil and Tr.eraOff == true and Tr.Report()[2]:find("off on Classic Era", 1, true),
+      "0.5.2b.9 era: the objective tracker overlays are off (never started), /dm trackerprobe says so")
+    check(NS.QS.CanWaypoint() == false and NS.QS.SetWaypoint(1426, 0.5, 0.5) == false and NS.QS.TrackQuest(101) == false,
+      "0.5.2b.9 era: waypoints and super tracking off")
+    -- every map command: works or says what is missing, never a Lua error
+    if DarkMatterFrame then DarkMatterFrame:Show() end
+    NS.MapTab.Reset() NS.ShowTab("quests") NS.ShowTab("map")
+    for _ = 1, 5 do NS.MapTab.Tick(0.05) end
+    local oldPrint = NS.Print
+    for _, cmd in ipairs({ "probe", "mapprobe", "tileprobe", "mapshapes 4", "zoomprobe", "shottest", "seamsweep", "seamsweep stop", "trackerprobe", "achprobe" }) do
+      local said, n0 = {}, #log
+      NS.Print = function(m) said[#said + 1] = tostring(m) end
+      local ok, err = pcall(SlashCmdList.DARKMATTER, cmd)
+      NS.Print = oldPrint
+      for i = n0 + 1, #log do said[#said + 1] = tostring(log[i]) end
+      local errLine
+      for _, l in ipairs(said) do if l:find("attempt to ", 1, true) or l:find("stack traceback", 1, true) then errLine = l end end
+      check(ok and #said > 0 and not errLine and (cmd ~= "zoomprobe" or table.concat(said, " "):find("level %d+ %(") ~= nil or said[1]:find("open the Map tab first", 1, true) ~= nil), "0.5.2b.9 era: /dm " .. cmd .. " runs without a Lua error (" .. tostring(err or errLine or said[1]) .. ")")
+    end
+    local p = DarkMatterDB.probe
+    check(p and p.client.interface == 11509 and p.client.projectId == 2 and not p.areaErrors, "0.5.2b.9 era: /dm probe: interface 11509, project 2, no area errors")
+  end
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

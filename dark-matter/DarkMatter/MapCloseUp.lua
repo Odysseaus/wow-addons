@@ -148,11 +148,17 @@ function C.PixelsPerYard(F, px) return px / math.abs(F.Y1 - F.Y0) end
 -- the tiles' strength at a ppy (0 off)
 -- 0.5.2b.5: n = the tiles the view holds (optional): the larger of the art-blur rule and the tile-count rule
 function C.Density(n) return 1 - Smooth(n, { C.FULL_TILES, C.OUT_TILES }) end
-function C.Mix(mag, strength, n, layer)
+-- 0.5.2b.9: level, fade = the zoom level now (continuous) and { from, to }: the auto layer's tiles go by the numbered
+-- zoom level alone (0 up to the second-to-last level, full at the deepest, a fade only within that last wheel step), so
+-- every zone and every window size shows the painted art at all other levels. Without a level: the art-blur rule.
+function C.Mix(mag, strength, n, layer, level, fade)
   strength = strength or C.Strength()
   layer = layer or C.Layer()
   if strength <= 0 or layer == "painted" then return 0 end
-  if layer == "auto" then return math.min(1, strength * C.DEEP_K) * Smooth(mag or 0, C.AUTO_FADE) end
+  if layer == "auto" then
+    local m = (level and fade) and Smooth(level, fade) or Smooth(mag or 0, C.AUTO_FADE)
+    return math.min(1, strength * C.DEEP_K) * m
+  end
   local m = Smooth(mag or 0, C.MAG_FADE)
   if n then m = math.max(m, C.Density(n)) end
   return math.min(1, strength * C.DEEP_K) * m
@@ -442,7 +448,7 @@ function C.Layout(ctx)
       local bx1, _, by1 = C.TileRect(F, 1, 1)
       local sx, sy = (bx1 - ax1) * cw, (by1 - ay1) * ch
       local est = (sx > 0 and sy > 0) and (ctx.vw * ctx.vh) / (sx * sy) or math.huge
-      local mix = C.Mix(mag, nil, est) * calpha
+      local mix = C.Mix(mag, nil, est, nil, ctx.level, ctx.levelFade) * calpha
       sum.ppy, sum.mix, sum.mag = math.max(sum.ppy, ppy), math.max(sum.mix, mix), math.max(sum.mag or 0, mag)
       if est < math.huge then sum.est, sum.tpx = math.max(sum.est, est), math.max(sum.tpx, sx) end
       sum.estBy[cont], sum.tpxBy[cont] = est, sx

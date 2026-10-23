@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.2b.9
+
+Close-up tiles now follow the numbered zoom level only, so zoom 12 shows painted art again. This build also adds a small Classic Era loader (DarkMatter_Vanilla.toc), so the shared map code can be tested on Classic Era 1.15.9 while the Forever beta is down until the Nov 4 launch. Forever still loads DarkMatter.toc and the same files as before.
+
+### Changes
+- **Zoom 12 painted again (shared, Forever too).** In the auto layer, close-up tile strength was keyed to how much the zone art was magnified. In big zones, or in a small window, that crossed the fade-in point before the last level, so level 12 already drew minimap tiles. Tile strength is now keyed to the zoom level only:
+  - 0 at every level up to the second-to-last.
+  - A fade only within the last wheel step.
+  - Full at the deepest level.
+  - This holds for every zone, in the window and in full screen.
+  - The opt-in terrain layer is unchanged.
+- **New readout line** in `/dm tileprobe` and `/dm zoomprobe`: `auto tiles by level: none to L13, full at L14 (fade 13.0-13.9); now L12 (12.00), tiles 0%`.
+- **Classic Era test bench (`DarkMatter_Vanilla.toc`, Interface 11509).** It lists the same files as DarkMatter.toc plus one Era-only file, `Compat_Era.lua`, loaded last. Forever has no suffixed TOC, so it keeps loading DarkMatter.toc without that file. On Era, `Compat_Era.lua`:
+  - Sets `NS.IsEra` from `WOW_PROJECT_ID == 2`, or from an interface number in the 1.x range.
+  - Drops the Forever-only zones that the game does not know: Mount Hyjal 2482, Riverglades 2548 and Shen'dralas 2652 (masks, seams and level badges), plus the Zephras Isle level badge.
+  - Switches off what Classic Era does not have: user waypoints and super tracking, the objective tracker overlays, the game's achievements and the Encounter Journal-only bits. None of these raises a Lua error.
+  - `/dm probe` adds the line `client: Classic Era <version>, interface <n>, WOW_PROJECT_ID <n>; Forever-only zones dropped: ...; off: ...`.
+  - No Classic quest helper.
+- **Tests.** The stub tests gain an `era` mode (Vanilla TOC, `WOW_PROJECT_ID` 2, build 11509, the Forever-only maps missing). In that mode, every `/dm` map command (probe, mapprobe, tileprobe, mapshapes, zoomprobe, shottest, seamsweep) runs without a Lua error or says what is missing. Version strings in the tests no longer depend on the version.
+
 ## 0.5.2b.8.2
 
 Softer seams between zone pictures, from the 0.5.2b.8.1 seam sweep shots (24 of 24), and full screen now zooms exactly like the map window on both continents.

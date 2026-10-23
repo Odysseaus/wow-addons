@@ -257,6 +257,24 @@ function M.LevelIndex(s)
 end
 -- the level now (what the readout shows)
 function M.ZoomLevel() return M.LevelIndex(), M.focus end
+-- 0.5.2b.9: the auto layer's tiles by the numbered zoom level: the level now (continuous) and the fade { from, to }:
+-- from = the second-to-last level (no tiles up to it), to = the deepest zoom (full tiles); one level only: no tiles
+function M.TileLevels()
+  local mx = M.MaxLevel()
+  if mx < 2 then return 0, { 1, 2 } end
+  local from, to = mx - 1, M.LevelOf(nil, SFit() * ZMax())
+  if to < from + 1e-3 then to = from + 1e-3 end
+  return M.LevelOf(), { from, to }
+end
+-- the probe line (/dm tileprobe, /dm zoomprobe)
+function M.TileLevelLine()
+  local lv, fade = M.TileLevels()
+  local mx = M.MaxLevel()
+  local mode = CU and CU.Layer and CU.Layer() or "?"
+  local a = CU and CU.Mix and CU.Mix(nil, nil, nil, "auto", lv, fade) or 0
+  return string.format("auto tiles by level: none to L%d, full at L%d (fade %.1f-%.1f); now L%d (%.2f), tiles %d%%%s",
+    math.max(1, mx - 1), mx, fade[1], fade[2], M.LevelIndex(), lv, math.floor(a * 100 + 0.5), mode == "auto" and "" or " (unused)")
+end
 -- level table for /dm mapprobe: level -> zoom past the continent fit, continent art magnification
 function M.LevelTable(cont)
   local out = {}
@@ -1346,6 +1364,8 @@ function M.Layout()
     ctx.norm = RefFit() / SFit()
     local rm = M.RefMag()
     ctx.mag = rm and rm * ctx.norm
+    -- 0.5.2b.9: the auto layer's tiles by the numbered zoom level alone (the last wheel step only)
+    ctx.level, ctx.levelFade = M.TileLevels()
     if dry then M.closeDry = CU.Layout(ctx) return end
     local clock = debugprofilestop
     local t0 = type(clock) == "function" and clock()
@@ -1517,7 +1537,7 @@ function M.ReachLine(cont)
   local mode = CU.Layer and CU.Layer() or "terrain"
   if mode ~= "terrain" then
     -- 0.5.2b.6: painted / auto draw no tiles by count; where terrain would bring them, for comparison
-    return string.format("%s, %s (terrain: x%.1f-x%.1f, deepest x%.0f)", mode, mode == "auto" and "tiles at art blur x2.8+" or "no tiles",
+    return string.format("%s, %s (terrain: x%.1f-x%.1f, deepest x%.0f)", mode, mode == "auto" and "tiles in the last zoom step only" or "no tiles",
       r.start, r.full, r.deep or 0)
   end
   return string.format("tiles from x%.1f, full x%.1f, deepest x%.0f (tile %.0f px at fit)", r.start, r.full, r.deep or 0, r.tpx or 0)
@@ -1588,6 +1608,7 @@ function M.TileProbe()
     out[#out + 1] = "tileprobe: open the Map tab once for the reach and the timing"
     return out
   end
+  out[#out + 1] = "tileprobe " .. M.TileLevelLine() -- 0.5.2b.9
   for _, c in ipairs(ContList()) do out[#out + 1] = "tileprobe reach " .. (MD.Name(c.id) or c.id) .. ": " .. M.ReachLine(c.id) end
   local last = CU.last
   if last then
@@ -2243,6 +2264,7 @@ function M.ZoomProbe()
       end
     end
   end
+  out[#out + 1] = "zoomprobe " .. M.TileLevelLine() -- 0.5.2b.9
   M.boxOverride = nil
   M.Layout()
   -- the verdict: the same zone-in, boxes, cities and tiles per continent in view in both boxes
