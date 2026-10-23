@@ -318,6 +318,9 @@ local function Run()
     data.layer = last.layer
     lines[#lines + 1] = string.format("map 19 layer: %s; art x%s (%s); tiles x%s-%s", tostring(last.layer or "zone art"),
       R2(last.mag or 0), ref and tostring(NS.MapData.Name(ref.id) or ref.id) or "no map art", R2(CU.MAG_FADE[1]), R2(CU.MAG_FADE[2]))
+    -- 0.5.2b.5: the tiles also come in by how many fit the view (full at FULL_TILES, gone at OUT_TILES)
+    lines[#lines + 1] = string.format("map 19 fit: %d tiles fit the view (full at %d, gone at %d); tile %d px",
+      math.floor((last.est or 0) + 0.5), CU.FULL_TILES or 0, CU.OUT_TILES or 0, math.floor((last.tpx or 0) + 0.5))
   end
   -- 20 (0.5.1.5): both windows' effective scale and on-screen size
   if NS.MapWindow then
@@ -363,7 +366,8 @@ local function Run()
       local r = MT.LayerCheck()
       data.layerCheck = { flags = table.concat(r.flags, ","), land = r.land, zone = r.zone, base = r.base, open = r.open, seams = r.seams, rects = r.rects, overlap = r.overlap, zones = r.zones }
       lines[#lines + 1] = "map 23 layers: " .. r.text
-      lines[#lines + 1] = "map 23 masks: " .. (MT.MASK_LINE or "not used")
+      lines[#lines + 1] = "map 23 masks: " .. (MT.MaskLine and MT.MaskLine() or "not used")
+      if MT.focus and MT.ReachLine then lines[#lines + 1] = "map 23 reach: " .. MT.ReachLine(MT.focus) end
       if MT.focus and MT.HighlightCount then
         local hOk, hN = MT.HighlightCount(MT.focus)
         lines[#lines + 1] = string.format("map 23 highlight info (diagnostic, not drawn): %d/%d zones of this continent", hOk, hN)

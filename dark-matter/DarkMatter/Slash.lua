@@ -22,7 +22,10 @@ local function Help()
   print("  /dm agscan  Adventure Guide: LFG rows kept/rejected -> DarkMatterDB.agscan")
   print("  /dm questprobe  Quests: which quest log, reward and watch APIs this client has -> DarkMatterDB.questprobe")
   print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
-  print("  /dm mapsweep  Map: check the map layers over every continent and zone (read-only; saved with the probes): a masks line, then OK or FLAGGED per continent")
+  print("  /dm mapsweep  Map: check the map layers over every continent and zone (read-only; saved with the probes): a masks line, then OK or FLAGGED per continent and how far the tiles reach")
+  print("  /dm masktest  Map: show four test squares (no mask, the game's round mask, Dark Matter's star mask, your zone's highlight): do masks work here?")
+  print("  /dm mapshapes  Map: sample every zone's outline from the game (out of combat, about a minute) -> DarkMatterDB.mapshapes, then /reload   /dm mapshapes stop|status")
+  print("  /dm tileprobe  Map: the minimap tiles: how many, do they load, how far they reach, what they cost (read-only)")
   print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
   print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (on by default)")
   print("  /dm trackorder on|off  keep the objective tracker in quest-log order (on by default)")
@@ -167,6 +170,14 @@ SlashCmdList["DARKMATTER"] = function(msg)
   elseif cmd == "mapsweep" then
     -- 0.5.2b.3: the map layer check over every continent and zone at several zooms -> DarkMatterDB (read only)
     if NS.MapTab and NS.MapTab.Sweep then Say("mapsweep", NS.MapTab.Sweep()) end
+  elseif cmd == "masktest" then
+    -- 0.5.2b.5: a visual proof that mask textures work (nothing on the map changes)
+    if NS.MapShapes then Say("masktest", NS.MapShapes.MaskTest()) end
+  elseif cmd == "mapshapes" then
+    -- 0.5.2b.5: sample the zones' outlines for the masks of 0.5.2b.6 (read only; saved to DarkMatterDB.mapshapes)
+    if NS.MapShapes then for _, l in ipairs(NS.MapShapes.Slash(rest)) do NS.Print(l) end end
+  elseif cmd == "tileprobe" then
+    if NS.MapTab and NS.MapTab.TileProbe then Say("tileprobe", NS.MapTab.TileProbe()) end
   elseif cmd == "mapmask" then
     -- 0.5.2b.4: removed with the zone masks
     NS.Print("/dm mapmask was removed in 0.5.2b.4: no zone is cut with a mask any more (one feathered zone picture at a time)")

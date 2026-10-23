@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.4: map without masks (only the continent picture at continent view, one feathered zone picture when zoomed in, no zone rectangles or torn edges; /dm mapsweep), keep-tracked pins and quest clicks on the objective tracker, Ready to Turn In (its own collapsible section under the tracker), zone auto-track (on by default; pinned quests stay tracked in every zone), your own map pins, M / L open Dark Matter (ALT for the game's windows); the WoW theme looks like the game's Map & Quest Log window and the window matches its size; Map close-up detail (the game's own minimap tiles, blended across the zone; /dm mapprobe, /dm frameprobe); every theme uses the game's own buttons, tabs and scroll bars; Map (the game's own map, zoom world to zone, search, Find me, full screen); 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests (search, watch boxes, rewards, /dm questprobe); /dm probe.
+## Notes: Dark Matter 0.5.2b.5: map: the minimap tiles reach much farther out (smooth crossfade with the parchment maps), a stricter /dm mapsweep, /dm masktest, /dm mapshapes (zone outlines for the zone masks of 0.5.2b.6), /dm tileprobe, keep-tracked pins and quest clicks on the objective tracker, Ready to Turn In (its own collapsible section under the tracker), zone auto-track (on by default; pinned quests stay tracked in every zone), your own map pins, M / L open Dark Matter (ALT for the game's windows); the WoW theme looks like the game's Map & Quest Log window and the window matches its size; Map close-up detail (the game's own minimap tiles, blended across the zone; /dm mapprobe, /dm frameprobe); every theme uses the game's own buttons, tabs and scroll bars; Map (the game's own map, zoom world to zone, search, Find me, full screen); 10 themes (WoW + 9 class themes, Settings or /dm theme); Achievements (game Legacy Challenges + Dark Matter's own tracked set, /dm achprobe); Adventure Guide; Fishing; Quests (search, watch boxes, rewards, /dm questprobe); /dm probe.
 ## Author: Odysseaus
-## Version: 0.5.2b.4
+## Version: 0.5.2b.5
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
@@ -36,7 +36,9 @@ MapData.lua
 Data_Minimap.lua
 MapCloseUp.lua
 Data_ZoneLevels.lua
+Data_ZoneMasks.lua
 Tab_Map.lua
+MapShapes.lua
 Tab_Stub.lua
 Tracker.lua
 Keys.lua

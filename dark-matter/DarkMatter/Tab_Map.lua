@@ -216,6 +216,7 @@ local function Piece(L, fid, layer, x, y, w, h, u2, v2, list)
   local a, f = L.art, L.frame
   local function New(px, py, pw, ph, u1, uu2, v1, vv2)
     local t = f:CreateTexture(nil, layer)
+    if L.mask and t.AddMaskTexture then pcall(t.AddMaskTexture, t, L.mask) end -- 0.5.2b.5: cut to the zone's shape
     t:SetSize(pw, ph)
     t:SetPoint("TOPLEFT", f, "TOPLEFT", px, -py)
     t:SetTexture(fid, nil, nil, "TRILINEAR")
@@ -333,6 +334,26 @@ local function Layer(id, level)
   -- 0.5.1.6: zone pictures are feathered at their rim; 0.5.1.7: continent pictures too when the world picture lies under
   -- them (the world picture is the base and is never feathered). 0.5.2b.4: always (no masked zones)
   L.feather = CU and CU.CornerGrad and id ~= M.world and (M.hasWorld or not MD.Is(id, "continent")) or false
+  -- 0.5.2b.5: a zone with a shape mask (Data_ZoneMasks.lua) on a continent whose zones all have one is cut to its real
+  -- outline by that mask (its own soft edge) instead of being feathered at its rectangle
+  local mf = id ~= M.world and not MD.Is(id, "continent") and M.MaskFile(id)
+  local ze = mf and MD.ZoneEntry(id)
+  if ze and M.ContMasked(ze.cont) then
+    if f.CreateMaskTexture then
+      local ok, m = pcall(f.CreateMaskTexture, f)
+      if ok and m then
+        local ok2, r = pcall(m.SetTexture, m, mf, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        if ok2 and r ~= false then
+          m:SetAllPoints(f)
+          L.mask, L.feather = m, false
+        else
+          M.maskFail = (M.maskFail or 0) + 1
+        end
+      end
+    else
+      M.canMask, M.masked = false, nil
+    end
+  end
   M.layers[id] = L
   return L
 end
@@ -542,7 +563,7 @@ function M.SeamReport()
   for id, L in pairs(M.layers) do
     if L.shown then
       shown = shown + 1
-      if L.feather then fe = fe + 1
+      if L.feather or L.mask then fe = fe + 1 -- 0.5.2b.5: a masked picture's edge is its mask's soft edge
       elseif id == M.world or (not M.hasWorld and MD.Is(id, "continent")) then base = base + 1
       else hard = hard + 1 end
     end
@@ -649,6 +670,48 @@ local CITY = { 0.45, 0.60 }
 M.CITY = CITY
 local function IsCity(z) return z.area < 0.004 end
 M.IsCity = IsCity
+-- 0.5.2b.5: zone shape masks. Data_ZoneMasks.lua (NS.ZoneMasks[mapID] = { file = ... }) is generated on the box by
+-- tools/mapshapes from /dm mapshapes; an addon cannot list its own files, so that table says which masks ship. A
+-- continent is drawn masked only when ALL its zones (not the cities) have a mask: then every zone in view is drawn at
+-- full strength, each cut to its real outline, so neighbours meet at their real borders and a pan is seamless; the
+-- continent picture shows only beyond the outermost zones. Without masks (0.5.2b.5 ships none): 0.5.2b.4's one
+-- feathered zone picture at a time.
+M.MASK_IN = { 1.3, 1.9 } -- masked zones come in together from x1.3 to x1.9 past the continent's fitted view
+function M.MaskFile(id)
+  local t = NS.ZoneMasks
+  local m = type(t) == "table" and t[id]
+  if type(m) == "table" then return m.file end
+  if type(m) == "string" then return m end
+end
+function M.ContMasked(cont)
+  M.masked = M.masked or {}
+  local c = M.masked[cont]
+  if c ~= nil then return c end
+  local n, have = 0, 0
+  for _, z in ipairs(MD.Zones(cont)) do
+    if not IsCity(z) then n = n + 1 if M.MaskFile(z.id) then have = have + 1 end end
+  end
+  c = n > 0 and have == n and M.canMask ~= false
+  M.masked[cont] = c
+  return c
+end
+function M.MaskCount()
+  local n, have = 0, 0
+  for _, ct in ipairs(MD.Continents()) do
+    for _, z in ipairs(MD.Zones(ct.id)) do
+      if not IsCity(z) then n = n + 1 if M.MaskFile(z.id) then have = have + 1 end end
+    end
+  end
+  return have, n
+end
+function M.MaskIn(cont) local m = M.MASK_IN return Smooth((M.ContZoomK(cont) - m[1]) / (m[2] - m[1])) end
+function M.MaskLine()
+  local have, n = M.MaskCount()
+  if have == 0 then return string.format("0/%d zones masked (fallback: one zone at a time; masks come in 0.5.2b.6)", n) end
+  local on = 0
+  for _, ct in ipairs(MD.Continents()) do if M.ContMasked(ct.id) then on = on + 1 end end
+  return string.format("%d/%d zones masked; %d continent(s) drawn masked%s", have, n, on, M.canMask == false and " (no mask API)" or "")
+end
 -- 0.5.1.11: the share of the view the zone actually covers (so dragging off it brings its neighbours back in)
 local function Frac(z)
   local p = Place(z.cont)
@@ -715,6 +778,8 @@ function M.Layout()
     local a = M.ContAlpha(c.id)
     -- 0.5.1.11: the continent picture is always drawn (the base); 0.5.2b.3: faded toward the backdrop when magnified
     if cl then local p = Place(c.id) Show(cl, p[1], p[2], p[3], p[4], a * M.BaseFade(c.id)) end
+    local masked = M.ContMasked(c.id)
+    local maskIn = masked and M.MaskIn(c.id) or 0
     for _, z in ipairs(MD.Zones(c.id)) do
       local isCity, isFocus = IsCity(z), fz and z.id == fz.id
       -- 0.5.2b.4: one zone picture (the focus zone; the one just left while it fades out), never the neighbours.
@@ -722,25 +787,38 @@ function M.Layout()
       local d = 0
       if a > 0 then
         if isCity then d = (city and z.id == city.id) and a * cityA or 0
+        elseif masked then d = a * maskIn -- 0.5.2b.5: every zone, cut to its shape
         else d = a * M.ZoneIn(z) * (dry and (isFocus and 1 or 0) or (zf[z.id] or 0)) end
       end
       local zl = M.layers[z.id]
       if d >= 0.01 then zl = zl or Layer(z.id, 3) end
       if zl then
         zl.wantOv = true
-        local lv = isCity and 6 or (isFocus and 4 or 3)
+        local lv = isCity and 6 or ((isFocus or masked) and 4 or 3)
         if zl.level ~= lv then zl.level = lv zl.frame:SetFrameLevel(base + lv) end
         local x1, x2, y1, y2 = WorldRect(z.id)
         Show(zl, x1, x2, y1, y2, d)
       end
     end
   end
-  if dry then return end
   -- 0.5.1.4: the game's minimap tiles over the zones when zoomed in (0.5.1.5: blended across the whole view, feathered where the tiles end), then the paper grain
+  -- 0.5.2b.5: the sweep (dry) asks the tiles what they WOULD draw (nothing is built); a real layout is timed
   if CU and closeHost then
     local cl = {}
     for _, c in ipairs(ContList()) do cl[#cl + 1] = { id = c.id, alpha = M.ContAlpha(c.id) } end
-    M.close = CU.Layout({ host = closeHost, conts = cl, place = Place, toScreen = M.ToScreen, vw = VW(), vh = VH(), mag = M.RefMag() })
+    local ctx = { host = closeHost, conts = cl, place = Place, toScreen = M.ToScreen, vw = VW(), vh = VH(), mag = M.RefMag(), dry = dry }
+    if dry then M.closeDry = CU.Layout(ctx) return end
+    local clock = debugprofilestop
+    local t0 = type(clock) == "function" and clock()
+    M.close = CU.Layout(ctx)
+    if t0 then
+      local ms = clock() - t0
+      local st = M.closeMs or { n = 0, sum = 0, max = 0 }
+      M.closeMs = st
+      st.n, st.sum, st.max, st.last = st.n + 1, st.sum + ms, math.max(st.max, ms), ms
+    end
+  elseif dry then
+    return
   end
   LayoutOverlay()
   UpdatePlayer()
@@ -758,8 +836,14 @@ end
 --   hard-seam        a zone picture on screen with an edge in view that is not feathered
 --   zone-rect        zone art drawn at continent view (no zone fills ZONE_SHARE[1], art under ZONE_MAG[1])
 --   overlap          more than one zone picture drawn at once (a neighbour's parchment, sea or torn edge over a zone)
+-- 0.5.2b.5 (stricter):
+--   base-land        ANY land point left to the stretched continent picture once zoomed in (past MASK_IN[2]: x1.9 past
+--                    the fitted continent): it must be drawn by a zone picture at full strength or by the minimap tiles
+-- A point counts as drawn by the tiles where the tiles are at 0.9+ and a tile is there; by a masked zone picture only
+-- for its own land (its box holds its neighbours' too, but its mask does not). Masked pictures have soft edges by
+-- their mask (no hard-seam) and may be drawn side by side (no overlap).
 function M.LayerCheck()
-  local r = { mag = 0, land = 0, zone = 0, base = 0, open = 0, seams = 0, rects = 0, overlap = 0, zones = 0, focusBase = 0, flags = {} }
+  local r = { mag = 0, land = 0, zone = 0, base = 0, open = 0, seams = 0, rects = 0, overlap = 0, zones = 0, focusBase = 0, tiles = 0, flags = {} }
   local cont = M.focus
   if not (M.ready and cont) then r.text = "no map on screen" return r end
   local vw, vh = VW(), VH()
@@ -770,7 +854,14 @@ function M.LayerCheck()
   r.baseA = cl and cl.shown and cl.alpha or 0
   -- continent view judged by the view itself (not by ZoneIn, so a wrong ZoneIn is caught): the zone under the middle
   -- fills less than ZONE_SHARE[1] and the continent art is not magnified past ZONE_MAG[1]
-  local contView = not fz or (M.ZoneShare(fz) < M.ZONE_SHARE[1] and M.ContZoomK(cont) < M.ZONE_MAG[1])
+  local masked = M.ContMasked(cont)
+  local zk = M.ContZoomK(cont)
+  r.zoomK, r.masked = zk, masked
+  local contView = not fz or (M.ZoneShare(fz) < M.ZONE_SHARE[1] and zk < M.ZONE_MAG[1])
+  if masked then contView = zk < M.MASK_IN[1] end
+  local cs = M.dry and M.closeDry or M.close
+  r.tileA = cs and cs.byCont and cs.byCont[cont] or 0
+  local tilesOn = CU and CU.Covers and r.tileA >= 0.9
   local list, strong = {}, 0
   for _, L in pairs(M.layers) do
     if L.shown and (L.alpha or 0) > 0.01 and L.id ~= M.world and not MD.Is(L.id, "continent") then
@@ -779,10 +870,10 @@ function M.LayerCheck()
       if not (z and IsCity(z)) then
         r.zones = r.zones + 1
         if contView then r.rects = r.rects + 1 end
-        if L.alpha > 0.05 then strong = strong + 1 end
+        if L.alpha > 0.05 and not L.mask then strong = strong + 1 end
       end
       local b = L.box
-      if L.alpha > 0.05 and not L.feather and b then
+      if L.alpha > 0.05 and not L.feather and not L.mask and b then
         local function In(v, n) return v > 1 and v < n - 1 end
         if In(b[1], vw) or In(b[3], vw) or In(b[2], vh) or In(b[4], vh) then r.seams = r.seams + 1 end
       end
@@ -813,13 +904,15 @@ function M.LayerCheck()
       local covered, own = false, false
       for _, L in ipairs(list) do
         local b = L.box
-        if b and L.alpha >= 0.9 and px >= b[1] and px <= b[3] and py >= b[2] and py <= b[4] then
+        if b and L.alpha >= 0.9 and px >= b[1] and px <= b[3] and py >= b[2] and py <= b[4]
+          and (not L.mask or (zid and (L.id == zid or IsCity(zones[zid])))) then
           covered = true
           if fz and L.id == fz.id then own = true end
         end
       end
       if zid then
         r.land = r.land + 1
+        if not covered and tilesOn and CU.Covers(cont, x, y) then covered = true r.tiles = r.tiles + 1 end
         if covered then r.zone = r.zone + 1 else r.base = r.base + 1 end
         if fz and zid == fz.id and not own then r.focusBase = r.focusBase + 1 end
       elseif not covered then r.open = r.open + 1 end
@@ -831,8 +924,9 @@ function M.LayerCheck()
   if r.seams > 0 then F[#F + 1] = "hard-seam" end
   if r.rects > 0 then F[#F + 1] = "zone-rect" end
   if r.overlap > 0 then F[#F + 1] = "overlap" end
-  r.text = string.format("art x%.2f, zone in %.2f, base %.2f; zone pictures %d; points: land %d (zone art %d, base %d; focus zone on base %d), open %d; hard seams %d; zone art at continent view %d; overlapping zone pictures %d -> %s",
-    r.mag, r.zoneIn, r.baseA, r.zones, r.land, r.zone, r.base, r.focusBase, r.open, r.seams, r.rects, r.overlap, #F == 0 and "OK" or table.concat(F, ", "))
+  if not contView and zk >= M.MASK_IN[2] and r.base > 0 and r.baseA > 0.01 then F[#F + 1] = "base-land" end
+  r.text = string.format("art x%.2f, zoom x%.2f, zone in %.2f, base %.2f, tiles %.2f; zone pictures %d; points: land %d (zone art or tiles %d, of them tiles %d; base %d; focus zone on base %d), open %d; hard seams %d; zone art at continent view %d; overlapping zone pictures %d -> %s",
+    r.mag, zk, r.zoneIn, r.baseA, r.tileA, r.zones, r.land, r.zone, r.tiles, r.base, r.focusBase, r.open, r.seams, r.rects, r.overlap, #F == 0 and "OK" or table.concat(F, ", "))
   return r
 end
 -- 0.5.2b.4: diagnostic only (nothing is drawn with it): for how many of a continent's zones the game answers
@@ -847,7 +941,67 @@ function M.HighlightCount(cont)
   end
   return ok, n, miss
 end
-M.MASK_LINE = "not used (0.5.2b.4: one feathered zone picture at a time; no mask can fail)"
+-- 0.5.2b.5: how far the minimap tiles reach on a continent in this view size: the zoom past its fitted view (x1 =
+-- the whole continent fits) where they start (OUT_TILES in view), where they are full (FULL_TILES) and the deepest zoom
+-- (MAX_PPY). The tile count in view goes with 1 / zoom^2, so one dry layout at the fitted view gives all three.
+function M.TileReach(cont)
+  if not (CU and CU.Layout and closeHost and M.ready) then return nil end
+  local s0, ox0, oy0 = V.s, V.ox, V.oy
+  local p = Place(cont)
+  local fs = M.FitScale(cont)
+  local wasDry = M.dry
+  M.dry = true
+  SetView((p[1] + p[2]) / 2, (p[3] + p[4]) / 2, fs)
+  local ok = pcall(M.Layout)
+  M.dry = wasDry
+  V.s, V.ox, V.oy = s0, ox0, oy0
+  if not wasDry then M.Layout() end
+  local cd = M.closeDry
+  local est = ok and cd and cd.estBy and cd.estBy[cont]
+  if not est or est <= 0 or est == math.huge then return nil end
+  local r = { est = est, tpx = cd.tpxBy[cont] }
+  r.start = math.sqrt(est / CU.OUT_TILES)
+  r.full = math.sqrt(est / CU.FULL_TILES)
+  local ms = CU.MaxScale and CU.MaxScale(cont, (p[2] - p[1]) * BW)
+  r.deep = ms and ms / fs
+  return r
+end
+function M.ReachLine(cont)
+  local r = M.TileReach(cont)
+  if not r then return "no tiles" end
+  return string.format("tiles from x%.1f, full x%.1f, deepest x%.0f (tile %.0f px at fit)", r.start, r.full, r.deep or 0, r.tpx or 0)
+end
+-- 0.5.2b.5: /dm tileprobe: what the minimap tiles have on this client, how far they reach, what they cost
+function M.TileProbe()
+  local out = { "tileprobe " .. NS.version .. " (read-only): the minimap tiles behind the map close-up" }
+  if not CU then out[#out + 1] = "tileprobe: no close-up module" return out end
+  out[#out + 1] = "tileprobe: " .. (CU.Label and CU.Label() or "?")
+  for inst = 0, 1 do
+    local r = CU.Coverage(inst, 48)
+    out[#out + 1] = string.format("tileprobe %s: %d tiles listed (x %s-%s, y %s-%s)", CU.NAMES[inst] or inst, r.n,
+      tostring(r.x1 or "-"), tostring(r.x2 or "-"), tostring(r.y1 or "-"), tostring(r.y2 or "-"))
+    out[#out + 1] = string.format("tileprobe %s sample of %d: %d load, %d missing, %d unknown", CU.NAMES[inst] or inst, r.tried, r.ok, r.no, r.unknown)
+  end
+  out[#out + 1] = string.format("tileprobe rule: full at %d tiles in view, gone at %d; or art x%.1f-x%.1f; cap %d-%d real tiles",
+    CU.FULL_TILES, CU.OUT_TILES, CU.MAG_FADE[1], CU.MAG_FADE[2], CU.FADE_TILES, CU.MAX_TILES)
+  if not M.ready then
+    out[#out + 1] = "tileprobe: open the Map tab once for the reach and the timing"
+    return out
+  end
+  for _, c in ipairs(ContList()) do out[#out + 1] = "tileprobe reach " .. (MD.Name(c.id) or c.id) .. ": " .. M.ReachLine(c.id) end
+  local last = CU.last
+  if last then
+    out[#out + 1] = string.format("tileprobe now: %d tiles in view, %d fit, tile %d px, %d pieces, shown %.2f",
+      last.tiles or 0, math.floor((last.est or 0) + 0.5), math.floor((last.tpx or 0) + 0.5), last.pieces or 0, last.alpha or 0)
+  end
+  local st = M.closeMs
+  if st and st.n > 0 then
+    out[#out + 1] = string.format("tileprobe timing: layout %.2f ms average, %.2f ms worst, over %d frames", st.sum / st.n, st.max, st.n)
+  else
+    out[#out + 1] = "tileprobe timing: no frames timed yet (pan the map, then run it again)"
+  end
+  return out
+end
 -- 0.5.2b.3: /dm mapsweep: the layer check over every continent and zone of Azeroth at several zooms (a dry run: the
 -- layers are placed, nothing is built or drawn), then the view as it was. Returns the report lines.
 function M.Sweep()
@@ -874,7 +1028,7 @@ function M.Sweep()
     for _, c in ipairs(ContList()) do
       local p = Place(c.id)
       local cn = MD.Name(c.id) or tostring(c.id)
-      cur = { name = cn, views = 0, flagged = 0 }
+      cur = { name = cn, id = c.id, views = 0, flagged = 0 }
       res.per[#res.per + 1] = cur
       local fs = M.FitScale(c.id)
       local mx, my = (p[1] + p[2]) / 2, (p[3] + p[4]) / 2
@@ -905,11 +1059,11 @@ function M.Sweep()
   local out = { "Dark Matter " .. NS.version .. " mapsweep" }
   if not ok then out[#out + 1] = "mapsweep error: " .. tostring(err) end
   local function C(f) return res.count[f] or 0 end
-  out[#out + 1] = string.format("mapsweep: %d views, %d flagged; magnified-base %d, open-base %d, hard-seam %d, zone-rect %d, overlap %d",
-    res.views, res.flagged, C("magnified-base"), C("open-base"), C("hard-seam"), C("zone-rect"), C("overlap"))
-  out[#out + 1] = "mapsweep masks: " .. M.MASK_LINE
+  out[#out + 1] = string.format("mapsweep: %d views, %d flagged; base-land %d, magnified-base %d, open-base %d, hard-seam %d, zone-rect %d, overlap %d",
+    res.views, res.flagged, C("base-land"), C("magnified-base"), C("open-base"), C("hard-seam"), C("zone-rect"), C("overlap"))
+  out[#out + 1] = "mapsweep masks: " .. M.MaskLine()
   for _, c in ipairs(res.per) do
-    out[#out + 1] = string.format("mapsweep %s: %d views, %d flagged -> %s", c.name, c.views, c.flagged, c.flagged == 0 and "OK" or "FLAGGED")
+    out[#out + 1] = string.format("mapsweep %s: %d views, %d flagged -> %s; %s", c.name, c.views, c.flagged, c.flagged == 0 and "OK" or "FLAGGED", M.ReachLine(c.id))
   end
   out[#out + 1] = string.format("mapsweep highlight info (diagnostic, not drawn): the game answered for %d/%d zones", hlOk, zonesN)
   for _, b in ipairs(res.bad) do out[#out + 1] = "mapsweep flag " .. b end
@@ -1770,6 +1924,7 @@ function M.Reset()
   for _, L in pairs(M.layers) do L.frame:Hide() end
   M.layers, M.fade, M.zfade = {}, {}, {}
   M.hl = {}
+  M.masked, M.canMask, M.maskFail = nil, nil, nil -- 0.5.2b.5: the masks are looked at again
   M.started, M.ready, M.only, M.hasWorld, M.player = false, false, nil, nil, nil
   M.pendingFit, M.lastView = nil, nil
   drag, zoomT, fly, crumbKey = nil, nil, nil, nil

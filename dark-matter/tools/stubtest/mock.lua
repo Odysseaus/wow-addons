@@ -3686,7 +3686,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.4 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.5 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -3820,12 +3820,18 @@ do
       if not r then return nil end
       return 880000 + z, nil, 0.75, 0.5, r[2] - r[1], r[4] - r[3], r[1], r[3]
     end,
+    -- 0.5.2b.5: the continent's corners in yards (Eastern Kingdoms about as in the game), so the minimap tiles line up
+    GetWorldPosFromMapPos = function(id, v)
+      if id ~= 1415 then return nil end
+      return 0, { x = 7466.6 + v.y * (-16000 - 7466.6), y = 16000 + v.x * (-19200 - 16000) }
+    end,
     GetPlayerMapPosition = function(id)
       if PLAYER.map ~= 1426 then return nil end
       if id == 1426 then return vec(PLAYER.x, PLAYER.y) end
       if id == 1415 then local r = MAPS[1426][4] return vec(r[1] + PLAYER.x * (r[2] - r[1]), r[3] + PLAYER.y * (r[4] - r[3])) end
     end,
   }
+  if NS.MapCloseUp then NS.MapCloseUp.Reset() end
   C_MapExplorationInfo = { GetExploredMapTextures = function(id)
     if id ~= 1426 then return {} end
     return { { textureWidth = 300, textureHeight = 200, offsetX = 100, offsetY = 50, numTexturesWide = 2, numTexturesTall = 1, fileDataIDs = { 777001, 777002 } },
@@ -4039,7 +4045,7 @@ do
     local built1 = 0 for _, L in pairs(M.layers) do if L.built then built1 = built1 + 1 end end
     local all = table.concat(out, "\n")
     check(sw and sw.views == 2 * 3 + 5 * 7 and sw.flagged == 0, "0.5.2b.4 map: sweep of every continent and zone, no flags: " .. tostring(out[2]) .. " | " .. tostring(out[4]))
-    check(out[3] == "mapsweep masks: " .. M.MASK_LINE and all:find("\nmapsweep Eastern Kingdoms: %d+ views, 0 flagged %-> OK") and all:find("\nmapsweep Kalimdor: %d+ views, 0 flagged %-> OK")
+    check(out[3] == "mapsweep masks: " .. M.MaskLine() and all:find("\nmapsweep Eastern Kingdoms: %d+ views, 0 flagged %-> OK") and all:find("\nmapsweep Kalimdor: %d+ views, 0 flagged %-> OK")
       and all:find("\nmapsweep highlight info %(diagnostic, not drawn%): the game answered for 5/5 zones"),
       "0.5.2b.4 map: sweep says masks are not used, one OK line per continent: " .. all:gsub("\n", " | "))
     check(M.view.s == s0 and M.view.ox == ox0 and M.view.oy == oy0 and dm.shown and dm.frame:IsShown() and not M.dry and built1 >= built0,
@@ -4049,8 +4055,17 @@ do
     for i = #wmAccess, nwm + 1, -1 do wmAccess[i] = nil end -- the probe's own type checks are tested with the probe
     local l23, m23
     for _, l in ipairs(lines) do if l:find("^map 23 layers:") then l23 = l end if l:find("^map 23 masks:") then m23 = l end end
-    check(l23 and l23:find("%-> OK$") and m23 == "map 23 masks: " .. M.MASK_LINE,
+    check(l23 and l23:find("%-> OK$") and m23 == "map 23 masks: " .. M.MaskLine(),
       "0.5.2b.4 mapprobe: the layer check line for this view: " .. tostring(l23) .. " / " .. tostring(m23))
+    local fit19, reach23, long = nil, nil, 0
+    for _, l in ipairs(lines) do
+      if l:find("^map 19 fit:") then fit19 = l end
+      if l:find("^map 23 reach:") then reach23 = l end
+      if l:find("^map 19 fit:") or l:find("^map 23 reach:") then long = math.max(long, #l) end
+    end
+    check(fit19 and fit19:find("^map 19 fit: %d+ tiles fit the view %(full at 200, gone at 320%); tile %d+ px$") and reach23
+      and reach23:find("^map 23 reach: tiles from x") and long <= 90,
+      "0.5.2b.5 mapprobe: the tiles that fit the view and the tile reach (longest " .. long .. "): " .. tostring(fit19) .. " / " .. tostring(reach23))
     -- the check catches the old faults: the zone left to the magnified continent picture (the pixelated band) ...
     local zi, bf = M.ZoneIn, M.BaseFade
     M.ZoneIn = function() return 0 end
@@ -4079,13 +4094,165 @@ do
     -- the slash commands: /dm mapsweep is saved with the probes; /dm mapmask is gone
     SlashCmdList.DARKMATTER("mapsweep")
     local pe = NS.db.probeLog and NS.db.probeLog.mapsweep
-    check(pe and pe.lines[1] == "Dark Matter " .. NS.version .. " mapsweep" and pe.lines[2]:find("^mapsweep: 41 views, 0 flagged") and pe.lines[3] == "mapsweep masks: " .. M.MASK_LINE,
+    check(pe and pe.lines[1] == "Dark Matter " .. NS.version .. " mapsweep" and pe.lines[2]:find("^mapsweep: 41 views, 0 flagged") and pe.lines[3] == "mapsweep masks: " .. M.MaskLine(),
       "0.5.2b.4 /dm mapsweep: saved in DarkMatterDB.probeLog: " .. tostring(pe and pe.lines[2]))
     local said, oldPrint = {}, NS.Print
     NS.Print = function(m) said[#said + 1] = m end
     SlashCmdList.DARKMATTER("mapmask off") run(2)
     NS.Print = oldPrint
     check(said[1] and said[1]:find("removed in 0.5.2b.4", 1, true) and dm.shown and dm.feather, "0.5.2b.4 /dm mapmask: says it was removed, the map is unchanged")
+  end
+  -- 0.5.2b.5: the strict check catches 0.5.2b.4's fault: with no masks and no tiles, the neighbours' land at zone view
+  -- is the magnified continent picture (the zone's rectangle shows against it)
+  do
+    M.Pan(-500, 0) run(10) -- into Loch Modan: Dun Morogh's and Wetlands' land in view
+    NS.db.map.closeUp = false
+    M.Layout()
+    local lc = M.LayerCheck()
+    NS.db.map.closeUp = true
+    M.Layout()
+    local lc2 = M.LayerCheck()
+    check(table.concat(lc.flags, ","):find("base%-land") and #lc2.flags == 0 and lc2.tileA >= 0.9 and lc2.tiles > 0,
+      "0.5.2b.5 map: no masks and no tiles -> 'base-land' flagged; with the tiles over the neighbours' land: clean (" .. lc.text .. " / " .. lc2.text .. ")")
+    M.Pan(500, 0) run(12)
+  end
+  -- 0.5.2b.5: /dm masktest: four panels, 2 and 3 masked by mask textures, 4 by the zone's highlight file
+  do
+    local MS = NS.MapShapes
+    local out = MS.MaskTest()
+    local f = _G.DarkMatterMaskTest
+    local p = f and f.p or {}
+    local function masks(i) local t = p[i] and p[i].tex return t and t._masks or {} end
+    local m3 = masks(3)[1]
+    check(#out == 6 and out[1]:find("^masktest " .. NS.version:gsub("%.", "%%.")) and out[3]:find("round game mask applied", 1, true)
+      and out[4]:find("Dark Matter mask applied", 1, true) and out[5]:find("zone highlight applied (file 88", 1, true)
+      and f:IsShown() and #masks(1) == 0 and #masks(2) == 1 and #masks(4) == 1 and m3 and m3._file == MS.TEST,
+      "0.5.2b.5 /dm masktest: a window of four squares; 2-4 cut by mask textures: " .. table.concat(out, " | "))
+    local out2 = MS.MaskTest()
+    check(out2[1] == "masktest: closed" and not f:IsShown(), "0.5.2b.5 /dm masktest: run again, it closes")
+    SlashCmdList.DARKMATTER("masktest")
+    local pe = NS.db.probeLog and NS.db.probeLog.masktest
+    check(pe and pe.lines[2] and pe.lines[2]:find("^masktest ") and f:IsShown(), "0.5.2b.5 /dm masktest: saved with the probes")
+    SlashCmdList.DARKMATTER("masktest")
+    local file = io.open("../../DarkMatter/Media/masks/dm-masktest.tga", "rb")
+    local head = file and file:read(18)
+    if file then file:close() end
+    check(head and head:byte(3) == 2 and head:byte(13) + 256 * head:byte(14) == 128 and head:byte(17) == 32,
+      "0.5.2b.5 masktest: Dark Matter's own star mask ships as an uncompressed 128x128 32-bit TGA")
+  end
+  -- 0.5.2b.5: /dm mapshapes: the zones' outlines sampled from the game, saved run-length coded
+  do
+    local MS = NS.MapShapes
+    local legend, index = {}, {}
+    local row = { 5, 5, false, 7, 7, 7, 5 }
+    local enc = MS.Encode(row, legend, index)
+    local dec = MS.Decode(enc, legend)
+    local same = #dec == #row
+    for i = 1, #row do if dec[i] ~= row[i] then same = false end end
+    check(enc == "A2.B3A" and same and legend[1] == 5 and legend[2] == 7, "0.5.2b.5 mapshapes: rows coded as runs (" .. enc .. ") and decoded back")
+    check(MS.Slash("x")[1]:find("^mapshapes: /dm mapshapes"), "0.5.2b.5 /dm mapshapes: bad argument -> the usage")
+    local ic = InCombatLockdown
+    InCombatLockdown = function() return true end
+    local refused = MS.Slash("16")[1]
+    InCombatLockdown = ic
+    check(refused:find("not in combat", 1, true) and not MS.run, "0.5.2b.5 /dm mapshapes: refused in combat")
+    local said, oldPrint = {}, NS.Print
+    NS.Print = function(m) said[#said + 1] = m end
+    SlashCmdList.DARKMATTER("mapshapes 16")
+    local started = said[1]
+    MS.Step()
+    InCombatLockdown = function() return true end
+    MS.Step()
+    InCombatLockdown = ic
+    local paused = said[#said]
+    local steps = 0
+    while MS.run and steps < 1000 do MS.Step() steps = steps + 1 end
+    NS.Print = oldPrint
+    local d = DarkMatterDB.mapshapes
+    local ek = d and d.conts and d.conts[1415]
+    local dmz = ek and ek.zones[1426]
+    local okRows = dmz and #dmz.rows == dmz.h
+    local hasSelf = false
+    if dmz then
+      for _, id in ipairs(dmz.legend) do if id == 1426 then hasSelf = true end end
+      for _, r in ipairs(dmz.rows) do if #MS.Decode(r, dmz.legend) ~= dmz.w then okRows = false end end
+    end
+    local zoneN = 0
+    for _, c in pairs(d and d.conts or {}) do for _ in pairs(c.zones) do zoneN = zoneN + 1 end end
+    local doneLine
+    for _, l in ipairs(said) do if l:find("^mapshapes done:") then doneLine = l end end
+    check(started and started:find("^mapshapes: sampling %d+ zones") and paused and paused:find("paused (combat)", 1, true)
+      and d and d.done and d.version == 1 and d.grid == 16 and d.zonesDone == d.zones and zoneN == d.zones and zoneN > 0
+      and dmz and dmz.w == 16 and okRows and hasSelf and dmz.own > 0.3 and doneLine and doneLine:find("now /reload", 1, true),
+      "0.5.2b.5 /dm mapshapes: every zone sampled out of combat (pauses in combat) into DarkMatterDB.mapshapes: " .. tostring(doneLine)
+      .. string.format(" (Dun Morogh %s, own %.2f)", dmz and (dmz.w .. "x" .. dmz.h) or "-", dmz and dmz.own or -1))
+    check(MS.Status():find("^mapshapes: done: ") and NS.db.probeLog.mapshapes and MS.Stop() == "mapshapes: not running",
+      "0.5.2b.5 /dm mapshapes status: " .. MS.Status())
+    local out = os.getenv("DM_SHAPES_OUT")
+    if out and d then
+      local fh = io.open(out, "w")
+      local function ser(v, ind)
+        if type(v) == "table" then
+          local parts = {}
+          local keys = {}
+          for k in pairs(v) do keys[#keys + 1] = k end
+          table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+          for _, k in ipairs(keys) do
+            local ks = type(k) == "number" and ("[" .. k .. "]") or ("[" .. string.format("%q", k) .. "]")
+            parts[#parts + 1] = ind .. "  " .. ks .. " = " .. ser(v[k], ind .. "  ")
+          end
+          return "{\n" .. table.concat(parts, ",\n") .. "\n" .. ind .. "}"
+        elseif type(v) == "string" then return string.format("%q", v) end
+        return tostring(v)
+      end
+      fh:write("DarkMatterDB = {\n  [\"mapshapes\"] = " .. ser(d, "  ") .. "\n}\n")
+      fh:close()
+    end
+  end
+  -- 0.5.2b.5: the masked map (with made-up masks for every zone): every zone drawn at once, cut to its outline, no flags
+  do
+    local fake = {}
+    for _, ct in ipairs(MD.Continents()) do
+      for _, z in ipairs(MD.Zones(ct.id)) do fake[z.id] = { file = "Interface\\AddOns\\DarkMatter\\Media\\masks\\z" .. z.id } end
+    end
+    local saveZM = NS.ZoneMasks
+    check(M.MaskLine():find("^0/%d+ zones masked %(fallback"), "0.5.2b.5 map: no masks ship yet -> the fallback line: " .. M.MaskLine())
+    NS.ZoneMasks = fake
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+    local L = M.layers[1426]
+    local piecesMasked = L and L.mask and #L.tiles > 0
+    for _, t in ipairs(L and L.tiles or {}) do if not (t._masks and t._masks[1] == L.mask) then piecesMasked = false end end
+    M.Pan(-500, 0) run(10) -- toward Loch Modan: both zones in view, each cut to its own outline
+    local nz = zonesDrawn()
+    local lc = M.LayerCheck()
+    M.Pan(500, 0) run(12)
+    check(M.MaskLine():find("zones masked; 2 continent%(s%) drawn masked") and L and L.mask and not L.feather and piecesMasked
+      and L.mask._file == fake[1426].file and nz > 1 and #lc.flags == 0 and lc.masked,
+      "0.5.2b.5 map: masks for every zone -> each zone cut by its mask, the neighbours drawn too, no flags (" .. M.MaskLine() .. "; mask " .. tostring(L and L.mask) .. " feather " .. tostring(L and L.feather) .. " pieces " .. tostring(piecesMasked) .. " lc " .. tostring(lc.masked) .. "; " .. nz .. " zones; " .. lc.text .. ")")
+    local out = M.Sweep()
+    check(M.sweep.flagged == 0 and out[3] == "mapsweep masks: " .. M.MaskLine(), "0.5.2b.5 map: sweep with masks: " .. table.concat(out, " | "))
+    NS.ZoneMasks = saveZM
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+    dm = M.layers[1426]
+    check(dm and dm.feather and not dm.mask and M.MaskLine():find("^0/"), "0.5.2b.5 map: masks gone -> back to the one-zone fallback")
+  end
+  -- 0.5.2b.5: /dm tileprobe
+  do
+    local tp = M.TileProbe()
+    local all = table.concat(tp, "\n")
+    local reach = all:match("tileprobe reach Eastern Kingdoms: ([^\n]+)")
+    local longest = 0
+    for _, l in ipairs(tp) do longest = math.max(longest, #l) end
+    if os.getenv("DM_DUMP") then for _, l in ipairs(tp) do io.stderr:write("TILEPROBE ", l, "\n") end end
+    check(tp[1]:find("^tileprobe " .. NS.version:gsub("%.", "%%.")) and all:find("\ntileprobe Eastern Kingdoms: %d+ tiles listed")
+      and all:find("\ntileprobe Kalimdor sample of %d+: %d+ load") and reach and reach:find("^tiles from x[%d%.]+, full x[%d%.]+, deepest x%d+")
+      and all:find("\ntileprobe timing: ") and longest <= 110,
+      "0.5.2b.5 /dm tileprobe: tiles listed, a sample loaded, the reach per continent, the timing: " .. all:gsub("\n", " | "))
+    SlashCmdList.DARKMATTER("tileprobe")
+    local pe = NS.db.probeLog and NS.db.probeLog.tileprobe
+    check(pe and pe.lines[1] and pe.lines[1]:find("^tileprobe " .. NS.version:gsub("%.", "%%.")) and #pe.lines >= 8, "0.5.2b.5 /dm tileprobe: saved with the probes")
   end
   -- 5. player arrow, coordinates
   check(M.arrow:IsShown() and M.player and M.player.map == 1426, "0.5.0 map: player arrow shown")
@@ -4199,7 +4366,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.4 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.5 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4816,7 +4983,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.4 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.5 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -5374,9 +5541,24 @@ if MODE == "full" then
   check(CU.LayerName(0) == "zone art" and CU.LayerName(1) == "tiles" and CU.LayerName(0.5) == "crossfading",
     "0.5.1.8 close-up: the layer names (zone art / crossfading / tiles)")
   check(math.abs(CU.MaxScale(9001, 1000) - 0.96 * 16000 / 1000) < 1e-6, "0.5.1.4 close-up: the deepest zoom stops at twice the minimap's own sharpness")
+  -- 0.5.2b.5: the tiles also come in by how many fit the view (full up to 200, gone by 320), whichever rule is larger
+  check(CU.Density(150) == 1 and CU.Density(260) > 0.2 and CU.Density(260) < 0.8 and CU.Density(400) == 0
+    and math.abs(CU.Mix(1.0, nil, 150) - 1) < 1e-9 and CU.Mix(1.0, nil, 400) == 0 and math.abs(CU.Mix(3, nil, 400) - 1) < 1e-9 and CU.Mix(1.0, 0, 150) == 0,
+    "0.5.2b.5 close-up: tiles full while 200 or fewer fit the view, gone by 320; the art-blur rule still brings them in up close")
+  check(CU.CellsFor(200) == 4 and CU.CellsFor(60) == 2 and CU.CellsFor(92, 4) == 4 and CU.CellsFor(100, 2) == 2,
+    "0.5.2b.5 close-up: 4x4 edge cells on big tiles, 2x2 on small ones, with hysteresis")
+  CU.Drop()
+  local function shown()
+    local list = {}
+    for _, t in ipairs(CU.pool) do
+      local P = t.dmPlane
+      if t:IsShown() and P and P.host == host and P.f:IsShown() then list[#list + 1] = t end
+    end
+    return list
+  end
   local function rects(list)
     local out = {}
-    for _, t in ipairs(list) do local p = t._pts[1] out[#out + 1] = { p[4], -p[5], p[4] + t._w, -p[5] + t._h, t } end
+    for _, t in ipairs(list) do local a, b, c, d = CU.ScreenRect(t) if a then out[#out + 1] = { a, b, c, d, t } end end
     return out
   end
   local function overlaps(R)
@@ -5397,7 +5579,7 @@ if MODE == "full" then
     end
     return area / (vw * vh)
   end
-  local r1 = CU.Layout(ctxAt(13600, 600, 400)) -- 0.85 px/yd (0.5.1.6: deep from 0.80); explored or not: no longer matters
+  local r1 = CU.Layout(ctxAt(13600, 600, 400)) -- 0.85 px/yd; explored or not: no longer matters
   local list = shown()
   local R = rects(list)
   local left, right = 0, 0
@@ -5405,19 +5587,27 @@ if MODE == "full" then
   check(r1.pieces > 0 and left > 0 and right > 0 and math.abs(covered(R, 600, 400) - 1) < 1e-3,
     "0.5.1.5 close-up: blended across the whole view, explored or not (covers " .. string.format("%.3f", covered(R, 600, 400)) .. " of it)")
   check(overlaps(R) == 0 and r1.pieces == r1.tiles, "0.5.1.5 close-up: whole tiles, one texture each, never overlapping (" .. r1.pieces .. "/" .. r1.tiles .. ")")
-  check(r1.tiles <= 144 and math.abs(r1.mix - 1) < 1e-3 and r1.layer == "tiles" and r1.grain and r1.grain > 0, "0.5.1.8 close-up: full tiles, paper grain on, tiles in view " .. r1.tiles)
+  check(r1.tiles <= CU.FADE_TILES and math.abs(r1.mix - 1) < 1e-3 and r1.layer == "tiles" and r1.grain and r1.grain > 0 and r1.cells == 4,
+    "0.5.1.8 close-up: full tiles, paper grain on, tiles in view " .. r1.tiles)
   local alphaOK = true
-  for _, t in ipairs(list) do if math.abs((t._alpha or 1) - r1.mix) > 1e-6 then alphaOK = false end end
+  for _, t in ipairs(list) do if math.abs(CU.PieceAlpha(t) - r1.mix) > 1e-6 then alphaOK = false end end
   check(alphaOK and list[1] and list[1]._vc and list[1]._vc[3] < 0.9, "0.5.1.4 close-up: tiles at the mix strength, tinted toward parchment")
   local g1 = list[1] and rawget(list[1], "glow")
-  check(g1 and g1:IsShown() and g1._file == list[1]._file and math.abs((g1._alpha or 1) - r1.mix) < 1e-6 and g1._vc and g1._vc[1] > g1._vc[3],
+  check(g1 and g1:IsShown() and g1._file == list[1]._file and g1._vc and g1._vc[1] > g1._vc[3],
     "0.5.1.6 close-up: each tile is lifted by a warm ADD pass of itself (lighter, toward the parchment)")
   local poolN = #CU.pool
   CU.Layout(ctxAt(13600, 600, 400))
   check(#CU.pool == poolN, "0.5.1.4 close-up: textures are pooled (no new ones on redraw)")
+  -- 0.5.2b.5: a small pan or zoom moves the plane only; the tiles' own textures are not placed again
+  local p1 = list[1]
+  local pts1 = p1 and p1._pts and #p1._pts
+  local rPan = CU.Layout(ctxAt(13650, 600, 400))
+  local R2 = rects(shown())
+  check(p1 and p1._pts and #p1._pts == pts1 and #CU.pool == poolN and rPan.pieces > 0 and math.abs(covered(R2, 600, 400) - 1) < 1e-3,
+    "0.5.2b.5 close-up: a zoom step moves and scales the tile plane, no texture is placed again")
   -- a gap (column of tiles x = 32 missing: sea / void): no piece there, its neighbours fade to 0 toward it
   NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) if math.floor(k / 64) == 32 then return nil end return 1000000 + k end }) }
-  CU.Forget()
+  CU.Drop()
   local rG = CU.Layout(ctxAt(8000, 600, 400))
   local gapX1, gapX2 = 300, 300 + 8000 * CU.TILE / 16000 -- tile x 32 spans screen x 300 .. 566.7
   local inGap, edgeA, farA, grads = 0, 1, 0, 0
@@ -5432,14 +5622,20 @@ if MODE == "full" then
   check(rG.pieces > 0 and inGap == 0 and edgeA < 0.01 and farA > 0.99 and grads > 0,
     "0.5.1.5 close-up: where the tiles end the edge feathers to 0 (edge " .. string.format("%.2f", edgeA) .. ", " .. grads .. " gradient cells, none in the gap)")
   NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) return 1000000 + k end }) }
-  CU.Forget()
-  local rBig = CU.Layout(ctxAt(4000, 3000, 3000, 3)) -- 0.25 px/yd over ~22x22 tiles (art at x3: tiles on)
-  check(rBig.tiles > 144 and rBig.pieces == 0, "0.5.1.5 close-up: more than 144 tiles in view -> none drawn (" .. rBig.tiles .. ")")
-  local rMid = CU.Layout(ctxAt(4000, 1250, 1250, 3)) -- ~10x10 to 11x11 tiles: faded, not popped
-  check(rMid.tiles > 96 and rMid.tiles <= 144 and rMid.pieces > 0 and rMid.alpha < rMid.mix and rMid.alpha > 0,
-    "0.5.1.5 close-up: between 96 and 144 tiles the tiles fade out (" .. rMid.tiles .. " tiles, " .. string.format("%.2f of %.2f", rMid.alpha, rMid.mix) .. ")")
-  local rLow = CU.Layout(ctxAt(1600, 600, 400)) -- 0.1 px/yd: mid zoom keeps the parchment only
-  check(rLow.pieces == 0 and rLow.mix == 0, "0.5.1.4 close-up: mid zoom shows the map pictures only (no middle layer)")
+  CU.Drop()
+  local rBig = CU.Layout(ctxAt(4000, 3000, 3000, 3)) -- tiles 133 px: ~23x23 tiles in view (art at x3: tiles on)
+  check(rBig.tiles > CU.MAX_TILES and rBig.pieces == 0, "0.5.2b.5 close-up: more than 460 tiles in view -> none drawn (" .. rBig.tiles .. ")")
+  local rMid = CU.Layout(ctxAt(4000, 2600, 2600, 3)) -- ~20x20 tiles: faded, not popped
+  check(rMid.tiles > CU.FADE_TILES and rMid.tiles <= CU.MAX_TILES and rMid.pieces > 0 and rMid.alpha < rMid.mix and rMid.alpha > 0,
+    "0.5.2b.5 close-up: between 380 and 460 tiles the tiles fade out (" .. rMid.tiles .. " tiles, " .. string.format("%.2f of %.2f", rMid.alpha or -1, rMid.mix) .. ")")
+  local rFar = CU.Layout(ctxAt(1600, 1600, 1200)) -- tiles 53 px, ~680 fit the view, the art not magnified: the map pictures only
+  check(rFar.pieces == 0 and rFar.mix == 0, "0.5.1.4 close-up: far out (hundreds of tiles in view) shows the map pictures only (" .. string.format("%.0f", rFar.est) .. " fit)")
+  local rLow = CU.Layout(ctxAt(1600, 600, 400)) -- tiles 53 px, ~84 fit the view: full tiles in 2x2-cell mode
+  check(rLow.pieces > 0 and math.abs(rLow.mix - 1) < 1e-9 and rLow.est < CU.FULL_TILES and rLow.cells == 2,
+    "0.5.2b.5 close-up: mid zoom with under 200 tiles in view: tiles at full strength (" .. string.format("%.0f", rLow.est) .. " fit, " .. tostring(rLow.cells) .. "x cells)")
+  local rCross = CU.Layout(ctxAt(1600, 1000, 760)) -- ~260 fit: crossfading
+  check(rCross.mix > 0.05 and rCross.mix < 0.95 and math.abs((rCross.alpha or 0) - rCross.mix) < 1e-9,
+    "0.5.2b.5 close-up: between 200 and 320 tiles in view the tiles crossfade (" .. string.format("%.0f fit, mix %.2f", rCross.est, rCross.mix) .. ")")
   -- placement against the game's numbers (mapprobe in Wetlands): corners -2148,-390 / -4904,-4525, you -4254,-3108 = tile 37_39
   local Fw = { inst = 0, X0 = -2148, Y0 = -390, X1 = -4904, Y1 = -4525 }
   local wtx, wty = CU.TileAt(-4254, -3108)
@@ -5457,16 +5653,16 @@ if MODE == "full" then
   local saveST = FrameMT.SetTexture
   FrameMT.SetTexture = function(t, f, ...) if type(f) == "number" and f >= 1000000 then return false end return saveST(t, f, ...) end
   CU.failed, CU.fails, CU.loaded = {}, 0, 0
-  for _, t in ipairs(CU.pool) do t.dmFile = nil end
+  CU.Drop()
   CU.Layout(ctxAt(8000, 600, 400))
   local rF = CU.Layout(ctxAt(8000, 600, 400))
   FrameMT.SetTexture = saveST
-  check(CU.unavailable == true and rF.pieces == 0 and CU.Label() == CU.LABEL_OFF, "0.5.1.4 close-up: tiles that do not load -> plain map pictures, label '" .. CU.Label() .. "'")
+  check(CU.unavailable == true and rF.pieces == 0 and #shown() == 0 and CU.Label() == CU.LABEL_OFF, "0.5.1.4 close-up: tiles that do not load -> plain map pictures, label '" .. CU.Label() .. "'")
   CU.unavailable, CU.failed, CU.fails, CU.loaded = nil, {}, 0, 0
   NS.db.map.closeUp = false
-  check(CU.Layout(ctxAt(8000, 600, 400)).pieces == 0 and CU.Label() == CU.LABEL_OFF, "0.5.1.4 close-up: switched off -> none drawn, plain label")
+  check(CU.Layout(ctxAt(8000, 600, 400)).pieces == 0 and #shown() == 0 and CU.Label() == CU.LABEL_OFF, "0.5.1.4 close-up: switched off -> none drawn, plain label")
   NS.db.map.closeUp = true
-  for _, t in ipairs(CU.pool) do t:Hide() end
+  CU.Drop()
   if CU.grain then CU.grain:Hide() end
   MD.ZoneAt, MD.Art, MD.Explored, NS.MinimapTiles = saveZoneAt, saveArt, saveEx, saveTiles
   CU.frames, CU.cells = saveFrames, saveCells
@@ -5764,7 +5960,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.4 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.5 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -6280,7 +6476,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.4 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.5 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.5.2b.5
+
+Map: groundwork for zone shape masks made from the game's own area data, plus minimap tiles over more of the zoom range.
+
+### Changes
+- `/dm masktest` opens a small window with four parchment squares:
+  1. no mask (a plain square);
+  2. the game's round portrait mask (a circle);
+  3. Dark Matter's own mask file, `Media/masks/dm-masktest.tga`, generated for the addon (a soft five-point star);
+  4. the game's zone highlight file at your position (diagnostic only).
+  It shows whether mask textures cut on this client. Run it again to close it. The lines are saved with the probes.
+- `/dm mapshapes` asks the game which zone each point of every zone's rectangle belongs to (`C_Map.GetMapInfoAtPosition` on a grid 160 points wide). It samples a few ms per frame, out of combat only, and pauses during combat. The result is saved run-length coded to `DarkMatterDB.mapshapes` and reaches the disk at /reload. `/dm mapshapes status` and `/dm mapshapes stop` are also available. This changes nothing on the map.
+- `tools/maskgen` (on the box, not shipped in the addon) turns that data into `Media/masks/z<mapID>.tga` plus `Data_ZoneMasks.lua`. Each mask covers the zone's own land and its cities. Sea goes to the nearest land, the shape is grown by one cell and the edge is soft.
+- Masked renderer. When every zone of a continent has a mask, all its zones are drawn once you zoom in (x1.3-x1.9 of the continent view), each cut to its real outline. No zone's margin covers a neighbour. Until masks ship (0.5.2b.6), the map keeps 0.5.2b.4's behaviour: one zone picture at a time.
+- The minimap tiles now also come in by how many fit the view:
+  - full strength up to 200 tiles, gone by 320;
+  - capped by a fade between 380 and 460 real tiles in view;
+  - the art-blur rule still applies, whichever rule is larger.
+  On Eastern Kingdoms (a 1221x729 view), tiles start at about x3.4 of the continent view and are full by x4.2, so they cover the neighbours' land at zone view. The tiles of a continent sit on one frame ("plane"): a pan or zoom moves and scales that frame, and only tiles that enter or leave the view are built or released. Small tiles use 2x2 edge cells.
+- `/dm tileprobe` (read-only) shows:
+  - the tiles listed per continent and a sample of 48 that load or not;
+  - the rule;
+  - the reach per continent;
+  - the tiles in view now;
+  - the layout time per frame.
+- `/dm mapsweep` is stricter. A new `base-land` flag is raised when zoomed in past x1.9 and land is left to the magnified continent picture (no zone art and no tiles over it). This is 0.5.2b.4's zone squares while panning. Overlap no longer counts masked zones. The continent lines add the tile reach. The masks line says how many zones are masked.
+- `/dm mapprobe` adds `map 19 fit` (tiles that fit the view) and `map 23 reach`.
+
 ## 0.5.2b.4
 
 Map: no masks, one zone picture at a time, across all of Azeroth.
