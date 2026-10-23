@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.2b.7** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.2b.7.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -76,6 +76,11 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 - **Your map pins**: the Pin tool on the map, then a click on the map. The game's waypoint and minimap arrow point at the pin; right-click a pin to remove it.
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
+
+### 0.5.2b.7.1 changes
+- The quest areas stay on the zone art at every zoom and pan (fixed-size frame scaled like the stock map, redrawn the frame after a zoom). `/dm mapprobe` 10e checks them against the zone picture.
+- Your corpse is the stock 1.60.1 tombstone (CorpsePinTemplate texcoords), not a cluster of icons.
+- The six capitals are drawn over their parent zone whenever any part of the city is in view, feathered at the rim.
 
 ### 0.5.2b.7 changes
 - Softer zone edges: feathered masks, inset from the torn rim, with the coast fading into the art.

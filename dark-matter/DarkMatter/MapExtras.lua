@@ -84,6 +84,25 @@ local function DrawBlobs(f, quests, key)
   f.key = key
   X.stats.blobDraws = (X.stats.blobDraws or 0) + 1
 end
+-- 0.5.2b.7.1: laid out like the stock map's QuestBlob pin. The game draws the areas in the frame's own units at the
+-- size the frame has when DrawBlob runs, so the frame keeps one fixed size (the zone picture's art size, like the stock
+-- map canvas) and only its SetScale and anchor change with zoom and pan; it is drawn again on the frame AFTER a scale
+-- change (stock OnCanvasScaleChanged -> MarkDirty -> next OnUpdate), never in the same frame as the move.
+-- (0.5.2b.7 resized the frame in screen pixels and drew in the same frame, at the old size: the areas slid around.)
+X.BLOB_W, X.BLOB_H = 1002, 668
+-- per-zone layout state kept off the frame (a frame answers unknown keys with its methods)
+X.bst = {}
+function X.BlobState(id, f)
+  local st = X.bst[id]
+  if not st or st.f ~= f then st = { f = f } X.bst[id] = st end
+  return st
+end
+function X.BlobCanvas(id)
+  local L = M.layers and M.layers[id]
+  local a = L and L.art
+  if a and (a.w or 0) > 0 and (a.h or 0) > 0 then return a.w, a.h end
+  return X.BLOB_W, X.BLOB_H
+end
 function X.LayoutBlobs()
   local used = {}
   local quests = M.layersOn.quests ~= false and X.BlobQuests() or {}
@@ -98,21 +117,19 @@ function X.LayoutBlobs()
             local x1, x2, y1, y2 = M.WorldRect(z.id)
             local l, t = M.ToScreen(x1, y1)
             local r, b = M.ToScreen(x2, y2)
-            -- on screen, and a quest of the set is on this zone (or the selected one, which may have no marker)
             if r > 0 and b > 0 and l < vw and t < vh and r - l > 8 then
               local f = BlobFrame(z.id)
               if f then
                 used[z.id] = true
+                local st = X.BlobState(z.id, f)
+                local cw, ch = X.BlobCanvas(z.id)
+                local s = math.max((r - l) / cw, 0.0001)
+                if st.cw ~= cw or st.ch ~= ch then f:SetSize(cw, ch) st.cw, st.ch = cw, ch st.dirty = X.tickN or 0 end
+                if st.scale ~= s then f:SetScale(s) st.scale = s st.dirty = X.tickN or 0 end
                 f:ClearAllPoints()
-                f:SetPoint("TOPLEFT", M.over, "TOPLEFT", l, -t)
-                f:SetSize(r - l, b - t)
+                f:SetPoint("TOPLEFT", M.over, "TOPLEFT", l / s, -t / s)
                 f:SetFrameLevel(M.over:GetFrameLevel())
-                -- the game rasterises the areas at the frame's size: drawn again when the set changes or the size jumps
-                local w = r - l
-                if f.key ~= key or not f.drawnW or w > f.drawnW * 1.25 or w < f.drawnW / 1.25 then
-                  DrawBlobs(f, quests, key)
-                  f.drawnW = w
-                end
+                if st.key ~= key then st.key = key f.key = key st.dirty = X.tickN or 0 end
                 f.rect = { l, t, r, b }
                 f:Show()
               end
@@ -123,6 +140,46 @@ function X.LayoutBlobs()
     end
   end
   for id, f in pairs(X.blobs) do if f and not used[id] then f:Hide() f.rect = nil end end
+end
+-- every frame: areas marked in an earlier frame are drawn now (their new scale and place are in effect)
+function X.BlobFlush()
+  for id, f in pairs(X.blobs) do
+    local st = X.bst[id]
+    if st and st.f ~= f then st = nil end
+    if f and st and st.dirty and f.rect and (X.tickN or 0) > st.dirty then
+      st.dirty = nil
+      DrawBlobs(f, X.blobQuests or {}, f.key)
+      st.drawn = st.scale
+    end
+  end
+end
+-- /dm mapprobe 10e: each area frame against its zone picture, in screen pixels (the game's own rects)
+local function SRect(fr)
+  if not (fr and fr.GetLeft and fr.GetEffectiveScale) then return nil end
+  local ok, l, t, r, b, e = pcall(function() return fr:GetLeft(), fr:GetTop(), fr:GetRight(), fr:GetBottom(), fr:GetEffectiveScale() end)
+  if ok and type(l) == "number" and type(t) == "number" and type(r) == "number" and type(b) == "number" and type(e) == "number" then
+    return l * e, t * e, r * e, b * e
+  end
+end
+function X.BlobCheck()
+  local n, worst, wname, pend, nopic = 0, 0, nil, 0, 0
+  for id, f in pairs(X.blobs) do
+    if f and f.rect and f:IsShown() then
+      n = n + 1
+      local st = X.bst[id] or {}
+      if st.dirty or st.drawn ~= st.scale then pend = pend + 1 end
+      local L = M.layers and M.layers[id]
+      local a1, a2, a3, a4 = SRect(f)
+      local b1, b2, b3, b4 = SRect(L and L.shown and L.frame)
+      if a1 and b1 then
+        local d = math.max(math.abs(a1 - b1), math.abs(a2 - b2), math.abs(a3 - b3), math.abs(a4 - b4))
+        if d > worst or not wname then worst, wname = d, MD.Name(id) or tostring(id) end
+      else
+        nopic = nopic + 1
+      end
+    end
+  end
+  return n, worst, wname, pend, nopic
 end
 -- the quest under the cursor in a quest area: the game answers a quest ID (or a log index on old clients)
 function X.BlobAt(px, py)
@@ -343,6 +400,8 @@ function M.DrawExtras()
 end
 function M.ExtrasTick(dt)
   if not M.over then return end
+  X.BlobFlush()
+  X.tickN = (X.tickN or 0) + 1
   X.tg = (X.tg or 0) + dt
   if X.tg >= X.GROUP_EVERY then X.tg = 0 X.LayoutGroup() end
   X.tc = (X.tc or 0) + dt
@@ -368,6 +427,13 @@ function X.ProbeLines()
   out[#out + 1] = "map 10b: Map tab quest areas: QuestPOIFrame " .. qf .. "; fill " .. yn(TOK and TOK(X.BLOB_FILL))
     .. "; border " .. yn(TOK and TOK(X.BLOB_BORDER))
   if X.blobFail then out[#out + 1] = "map 10b why: " .. tostring(X.blobFail):sub(1, 70) end
+  do
+    local n, worst, wname, pend, nopic = X.BlobCheck()
+    out[#out + 1] = n == 0 and "map 10e: quest areas vs zone picture: none on screen (select a quest, look again)"
+      or string.format("map 10e: areas vs zone picture: %d, worst %.1f px (%s) -> %s", n, worst, tostring(wname):sub(1, 18),
+        (nopic > 0 and "no picture") or (worst <= 1.5 and "OK") or "OFF")
+    if n > 0 then out[#out + 1] = string.format("map 10e: redraw pending %d, no picture %d, canvas %dx%d", pend, nopic, X.BLOB_W, X.BLOB_H) end
+  end
   if QS then
     local function roles(list)
       local parts = {}

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2b.7.1
+
+Map: quest areas stay on the zone art at every zoom and pan, capitals are drawn over their zones, and the corpse is the stock tombstone.
+
+### Fixes
+- **Quest areas (B)**: the blue areas were in the wrong place and slid around while zooming. 0.5.2b.7 resized the `QuestPOIFrame` to the zone's on-screen pixels and called `DrawBlob` in the same frame, so the areas were drawn at the old size. The frame now works like the stock map's QuestBlob pin. It keeps one fixed size (the zone picture's art size), and zoom and pan change only its `SetScale` and anchor, so the areas move with the zone picture. After a zoom the areas are drawn again on the next frame, like the stock map. Panning does not redraw them.
+- **Corpse (F)**: a cluster of coloured icons showed instead of the tombstone. 0.5.2b.7 used the classic_era texcoords for `Interface\Minimap\POIIcons`. It now uses the 1.60.1 `CorpsePinTemplate` texcoords (0.56640625, 0.6328125, 0.001953125, 0.03515625).
+- **Player arrow (G)**: the arrow tries the 1.60.1 stock atlas `UI-WorldMapArrow` first, then falls back to `Interface\WorldMap\WorldMapArrow`.
+
+### Changes
+- **Capitals**: Ironforge, Stormwind, Darnassus, Orgrimmar, Thunder Bluff and Undercity are now drawn whenever any part of the city is in view and its parent zone's picture is drawn. Before, they were drawn only when the centre of the view was on the city. The city fades in at the same strength as its parent, sits above it, and is feathered at its rim so it blends in. Only cities in view are built.
+- **`/dm mapprobe` 10e**: compares each quest-area frame with its zone picture in screen pixels. It shows the worst gap (OK at 1.5 px or less) and how many areas are waiting to be drawn again.
+
 ## 0.5.2b.7
 
 Map: softer zone edges, plus quest areas, quest POI buttons, party and raid dots, your corpse, the game's player arrow, and the map opens on you.

@@ -789,7 +789,8 @@ end
 --             in only when you zoom toward it (M.ZoneIn: the zone fills ZONE_SHARE of the view, or the continent art
 --             is magnified past ZONE_MAG), so the continent seen whole is the clean continent picture
 --   3 old     the zone you just left, fading out over a fifth of a second as the middle crosses into the next one
---   6 city    a city's own picture, only when the city itself is the focus
+--   6 city    a city's own picture: when it is the focus, and (0.5.2b.7.1) whenever any of it is in view while its
+--             parent zone's picture is drawn, at the parent's strength, feathered at its rim
 -- A zone's picture includes the parchment, sea and torn edges around the zone; with one zone at a time no other zone
 -- ever lies under them, and at zone view that picture fills the view like the game's own map.
 local CITY = { 0.45, 0.60 }
@@ -1024,6 +1025,22 @@ function M.FocusZones(cont)
   return z, city
 end
 
+-- 0.5.2b.7.1: a city's parent zone: the smallest zone (not a city) holding the city's middle (Elwynn for Stormwind,
+-- Dun Morogh for Ironforge, Teldrassil, Durotar, Mulgore, Tirisfal); worked out once per city
+M.cityParent = {}
+function M.CityParent(cont, z)
+  local v = M.cityParent[z.id]
+  if v == nil then
+    local mx, my, best = (z.r[1] + z.r[2]) / 2, (z.r[3] + z.r[4]) / 2, nil
+    for _, e in ipairs(MD.Zones(cont) or {}) do
+      if not IsCity(e) and Inside(e.r, mx, my) and (not best or e.area < best.area) then best = e end
+    end
+    v = best or false
+    M.cityParent[z.id] = v
+  end
+  return v or nil
+end
+
 local function Hide(L) if not M.dry then L.frame:Hide() end L.shown = false end
 function M.Layout()
   M.dirty = false
@@ -1061,16 +1078,27 @@ function M.Layout()
     if cl then local p = Place(c.id) Show(cl, p[1], p[2], p[3], p[4], a * M.BaseFade(c.id)) end
     local masked = M.ContMasked(c.id)
     local maskIn = masked and M.MaskIn(c.id) or 0
-    for _, z in ipairs(MD.Zones(c.id)) do
+    -- 0.5.2b.7.1: cities after the zones, so each one can follow its parent zone (see M.CityParent)
+    local order, cities, dz = {}, {}, {}
+    for _, z in ipairs(MD.Zones(c.id)) do if IsCity(z) then cities[#cities + 1] = z else order[#order + 1] = z end end
+    for _, z in ipairs(cities) do order[#order + 1] = z end
+    for _, z in ipairs(order) do
       local isCity, isFocus = IsCity(z), fz and z.id == fz.id
       -- 0.5.2b.4: one zone picture (the focus zone; the one just left while it fades out), never the neighbours.
       -- The sweep (dry) checks the settled view: the focus zone at its full fade, no zone fading out.
       local d = 0
       if a > 0 then
-        if isCity then d = (city and z.id == city.id) and a * cityA or 0
+        if isCity then
+          d = (city and z.id == city.id) and a * cityA or 0
+          -- 0.5.2b.7.1: a capital is drawn whenever any of it is in view and its parent zone's picture is drawn (at the
+          -- parent's strength), above the parent and feathered at its rim, not only when the view centre is on it
+          local pz = M.CityParent(c.id, z)
+          local pd = pz and dz[pz.id] or 0
+          if pd > d and Frac(z) > 0 then d = pd end
         elseif masked then d = a * maskIn -- 0.5.2b.5: every zone, cut to its shape
         else d = a * M.ZoneIn(z) * (dry and (isFocus and 1 or 0) or (zf[z.id] or 0)) end
       end
+      dz[z.id] = d
       local zl = M.layers[z.id]
       if d >= 0.01 then zl = zl or Layer(z.id, 3) end
       if zl then

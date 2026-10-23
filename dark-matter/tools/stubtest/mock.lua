@@ -3699,7 +3699,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.7 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.7.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4000,7 +4000,10 @@ do
   do
     local lc = M.LayerCheck()
     check(#lc.flags == 0 and lc.land > 0 and lc.base == 0 and lc.zones == 1, "0.5.2b.4 map: layer check at Dun Morogh's zone view: " .. lc.text)
-    check(not (M.layers[1455] and M.layers[1455].shown), "0.5.1.9 map: no Ironforge city picture over Dun Morogh at zone view")
+    -- 0.5.2b.7.1: a capital in view is drawn over its parent zone (not only when the view centre is on it)
+    local ifl, dml = M.layers[1455], M.layers[1426]
+    check(ifl and ifl.shown and dml and math.abs(ifl.alpha - dml.alpha) < 1e-6 and ifl.level == 6 and dml.level < 6 and ifl.feather and M.focusCity == nil,
+      "0.5.2b.7.1 map: at Dun Morogh's zone view the Ironforge picture is drawn over it, at its strength, feathered (" .. tostring(ifl and ifl.alpha) .. ", focus city " .. tostring(M.focusCity) .. ")")
     M.Pan(-500, 0) run(1)
     local fz1 = M.focusZone
     local nz1 = zonesDrawn()
@@ -4048,7 +4051,11 @@ do
   check(not baseGone, "0.5.1.11 map: while zooming in from the continent its art stays drawn underneath (0.5.2b.3: faded toward the backdrop only as it is magnified)")
   check(M.focusZone and M.layers[M.focusZone].shown and M.layers[M.focusZone].feather and most <= 2 and select(1, zonesDrawn()) == 1,
     "0.5.2b.4 map: zooming in brings in one feathered zone picture, never the whole continent's zones (" .. inSteps .. " steps, at most " .. most .. " at once; focus " .. tostring(M.focusZone) .. string.format(" share %.2f, zoom k %.2f, art x%.2f)", M.focusZone and M.ZoneShare(MD.ZoneEntry(M.focusZone)) or -1, M.ContZoomK(1415), M.ContMag(1415)))
-  check(not (M.layers[1455] and M.layers[1455].shown), "0.5.1.9 map: the Ironforge city picture is not drawn over Dun Morogh at continent zoom either")
+  do
+    local ifl, dml = M.layers[1455], M.layers[1426]
+    check(not (ifl and ifl.shown and ifl.alpha > 0.01) or (dml and dml.shown and ifl.alpha <= dml.alpha + 1e-6),
+      "0.5.2b.7.1 map: the Ironforge picture comes in with Dun Morogh's picture, never before it")
+  end
   M.FlyTo(1426) run(30)
   check(M.lock == nil and (dm.box or {})[1] <= 1e-6, "0.5.1.11 map: flying to a zone frames it (fills the view), no lock")
   check(M.layers[947] and not M.layers[947].shown, "0.5.0 map: the world picture is hidden when the continent covers the view")
@@ -4608,7 +4615,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.7 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.7.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -4662,8 +4669,25 @@ do
     X.blobs = {}
     M.dirty = true run(1)
     local bf = X.blobs[1426]
-    check(bf and bf:IsShown() and bf._map == 1426 and bf._fill == "Interface\\WorldMap\\UI-QuestBlob-Inside" and bf._blobs[1] == 501,
-      "0.5.2b.7 B: the selected quest's objective area is drawn by the game's QuestPOIFrame on its zone")
+    check(bf and bf:IsShown() and bf._map == 1426 and bf._fill == "Interface\\WorldMap\\UI-QuestBlob-Inside" and #bf._blobs == 0,
+      "0.5.2b.7.1 B: the area frame is placed first and not drawn in the same frame (stock: redrawn at the end of the frame)")
+    run(2)
+    check(bf._blobs[1] == 501, "0.5.2b.7 B: the selected quest's objective area is drawn by the game's QuestPOIFrame on its zone")
+    -- 0.5.2b.7.1: the frame keeps the zone picture's art size; zoom and pan only change its scale and anchor, and its
+    -- placed rect is the zone picture's rect
+    local function placed(f)
+      local _, _, _, x, y = f:GetPoint(1)
+      local s = f._scale or 1
+      return x * s, -y * s, (x + f._w) * s, (-y + f._h) * s
+    end
+    local function offBy(f)
+      local L = M.layers[1426]
+      local b = L and L.box or f.rect
+      local a1, a2, a3, a4 = placed(f)
+      return math.max(math.abs(a1 - b[1]), math.abs(a2 - b[2]), math.abs(a3 - b[3]), math.abs(a4 - b[4]))
+    end
+    local w0, h0 = bf._w, bf._h
+    check(w0 == X.BlobCanvas(1426) and offBy(bf) < 0.01, "0.5.2b.7.1 B: the area frame is the zone picture's art size, on the zone picture (off by " .. string.format("%.3f", offBy(bf)) .. ")")
     local draws = X.stats.blobDraws
     M.dirty = true run(1)
     check(X.stats.blobDraws == draws, "0.5.2b.7 B: the areas are not drawn again while nothing changed")
@@ -4680,6 +4704,16 @@ do
     check(not tip.shown and X.tipQuest == nil, "0.5.2b.7 B: leaving the area hides it")
     M.testCursor = saveCur
     GameTooltip.SetOwner, tip.owner = oldSet, nil
+    local s0 = bf._scale
+    M.Wheel(1) run(1)
+    run(40)
+    check(bf._w == w0 and bf._h == h0 and bf._scale ~= s0 and offBy(bf) < 0.01 and X.stats.blobDraws > draws,
+      "0.5.2b.7.1 B: zooming changes only the scale; the areas stay on the zone picture and are drawn again after (" .. string.format("%.3f", offBy(bf)) .. ")")
+    local nd = X.stats.blobDraws
+    M.Pan(37, -21) run(1) run(1)
+    check(offBy(bf) < 0.01 and X.stats.blobDraws == nd, "0.5.2b.7.1 B: panning moves the areas with the zone picture, no redraw (" .. string.format("%.3f", offBy(bf)) .. ")")
+    local p10e = table.concat(X.ProbeLines(), "\n")
+    check(p10e:find("map 10e: areas vs zone picture: ", 1, true), "0.5.2b.7.1 B: mapprobe 10e compares the areas with the zone picture")
     QS.selected = nil
     M.dirty = true run(1)
     check(not bf:IsShown(), "0.5.2b.7 B: nothing selected or tracked -> no areas")
@@ -4722,8 +4756,8 @@ do
     C_DeathInfo = { GetCorpseMapPosition = function(id) if id == 1426 then return vec(0.5, 0.6) end end }
     run(12)
     local cb = X.corpseBtn
-    check(cb and cb:IsShown() and cb.icon._file == "Interface\\Minimap\\POIIcons" and cb.icon._tc and cb.icon._tc[1] == 0.875 and cb.icon._tc[4] == 0.125,
-      "0.5.2b.7 F: your corpse is the stock map's tombstone")
+    check(cb and cb:IsShown() and cb.icon._file == "Interface\\Minimap\\POIIcons" and cb.icon._tc and cb.icon._tc[1] == 0.56640625 and cb.icon._tc[4] == 0.03515625,
+      "0.5.2b.7.1 F: your corpse is the 1.60.1 stock tombstone (CorpsePinTemplate texcoords)")
     cb._scripts.OnEnter(cb)
     check(tip.title == "Your corpse", "0.5.2b.7 F: corpse tooltip")
     UnitIsDeadOrGhost = function() return false end
@@ -5352,7 +5386,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.7 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.7%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -6350,7 +6384,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.7 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.7.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -6866,7 +6900,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.7 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.7.1 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

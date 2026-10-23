@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.7: map: smooth zone masks (soft edges, inset from the torn rim and the box edge, feathered seams), quest objective areas shaded, quest POI buttons like the objective tracker, party / raid dots, your corpse, and the map opens on you.
+## Notes: Dark Matter 0.5.2b.7.1: map: quest areas locked to the zone art, capitals drawn over their zones, the stock tombstone; smooth zone masks (soft edges, inset from the torn rim and the box edge, feathered seams), quest objective areas shaded, quest POI buttons like the objective tracker, party / raid dots, your corpse, and the map opens on you.
 ## Author: Odysseaus
-## Version: 0.5.2b.7
+## Version: 0.5.2b.7.1
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

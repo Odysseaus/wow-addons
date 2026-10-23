@@ -114,11 +114,13 @@ QS.ICONS = {
   { role = "poiProgress", what = "quest POI in progress (...)", c = { { atlas = "Quest-In-Progress-Icon-yellow" } } },
   { role = "poiProgressSel", what = "quest POI in progress, selected (...)", c = { { atlas = "Quest-In-Progress-Icon-Brown" } } },
   { role = "poiComplete", what = "quest POI ready to turn in (?)", c = { { atlas = "UI-QuestIcon-TurnIn-Normal" } } },
-  { role = "corpse", what = "your corpse (the stock map's tombstone)", c = { { file = "Interface\\Minimap\\POIIcons", tc = { 0.875, 1, 0, 0.125 } } } },
+  -- 0.5.2b.7.1: the texcoords of the 1.60.1 (wow-ui-source "forever") CorpsePinTemplate; 0.5.2b.7 used the classic_era
+  -- ones (0.875..1, 0..0.125), which on this client's larger POIIcons sheet cover a block of several icons
+  { role = "corpse", what = "your corpse (the stock map's tombstone)", c = { { file = "Interface\\Minimap\\POIIcons", tc = { 0.56640625, 0.6328125, 0.001953125, 0.03515625 } } } },
   { role = "groupDot", what = "party / raid member dot", c = { { file = "Interface\\WorldMap\\WorldMapPartyIcon" } } },
-  -- 0.5.2b.7 (G): the stock map's player arrow (GroupMembersPinMixin: SetPinTexture("player", "Interface\\WorldMap\\WorldMapArrow"); live
-  -- names the same arrow by the atlas UI-WorldMapArrow)
-  { role = "playerArrow", what = "your arrow (the stock map's)", c = { { file = "Interface\\WorldMap\\WorldMapArrow" }, { atlas = "UI-WorldMapArrow" } } },
+  -- 0.5.2b.7 (G): the stock map's player arrow. 0.5.2b.7.1: the 1.60.1 ("forever") GroupMembersPinMixin uses the atlas
+  -- (SetPinTexture("player", "UI-WorldMapArrow")), so it comes first; the classic_era file is the fallback
+  { role = "playerArrow", what = "your arrow (the stock map's)", c = { { atlas = "UI-WorldMapArrow" }, { file = "Interface\\WorldMap\\WorldMapArrow" } } },
 }
 QS.ICON_BY_ROLE = {}
 for _, e in ipairs(QS.ICONS) do QS.ICON_BY_ROLE[e.role] = e end
