@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.2b.8.1** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.2b.8.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -76,6 +76,15 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 - **Your map pins**: the Pin tool on the map, then a click on the map. The game's waypoint and minimap arrow point at the pin; right-click a pin to remove it.
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
+
+### 0.5.2b.8.2 changes
+- Softer seams between zone pictures. The 0.5.2b.8.1 sweep shots showed the borders between two pictures as hard straight lines: the crossfade was only about half a continent pixel wide. It is now about 2 to 2.5 (the core masks were rebuilt with a wider blur and a gentler share curve), and the game's stair-step borders are rounded more. The halos, the coastlines and the picture edges at sea are unchanged.
+- Full screen now zooms the same way as the map window. Before, fully zoomed out in full screen, Kalimdor showed its zone pictures and level boxes while Eastern Kingdoms showed only the plain art. Every layer is now chosen by the numbered zoom level alone, measured as the normal map window would show it. That holds whatever the window size and on both continents:
+  - The continent pictures and level boxes show from level 1.
+  - Zone pictures fade in from level 1.75 and are full at level 3.
+  - Capitals fade in from level 8 and are full at 10.
+  - The close-up tiles come in at the deepest levels.
+- `/dm zoomprobe` reports, for each continent in view, the zoom level and which layers are drawn (zones, level boxes, capitals, tiles), in the window and in full screen side by side. Next to each value it gives what 0.5.2b.8.1 would have drawn, and it ends with a verdict line. The result is also saved to the probe log.
 
 ### 0.5.2b.8.1 changes
 - All 43 zone masks are now made from the game's own samples (the mapshapes run of 2026-10-23). Redridge Mountains, Moonglade and Shen'dralas used to be made from their neighbours' edges. The core masks and the border list for `/dm seamsweep` were rebuilt with them.

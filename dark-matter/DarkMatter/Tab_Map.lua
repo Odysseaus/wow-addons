@@ -80,10 +80,21 @@ M.ToW, M.WorldRect = function(...) return ToW(...) end, function(...) return Wor
 ---------------------------------------------------------------------------
 -- view maths
 ---------------------------------------------------------------------------
-local function VW() return math.max(1, vp and vp:GetWidth() or 1) end
-local function VH() return math.max(1, vp and vp:GetHeight() or 1) end
+-- 0.5.2b.8.2: M.boxOverride = { w, h } stands in for the box size while /dm zoomprobe works out the other box (nothing drawn)
+local function VW() local o = M.boxOverride if o then return o[1] end return math.max(1, vp and vp:GetWidth() or 1) end
+local function VH() local o = M.boxOverride if o then return o[2] end return math.max(1, vp and vp:GetHeight() or 1) end
 -- 0.5.1.11: fully zoomed out the world picture COVERS the box (no empty band around it, like the stock map)
 local function SFit() return math.max(VW() / BW, VH() / BH) end
+-- 0.5.2b.8.2: every layer rule (continent and zone pictures, level boxes, zone fade-in, tiles, the deepest zoom) is measured
+-- by the zoom LEVEL, as the reference map window (M.REF_VIEW, the Dark Matter window's map box) would show that level, so
+-- the full-screen map (a much wider box) zooms exactly like the window and every continent in view follows the same rule.
+-- (0.5.2b.8.1 measured them against the real box and the continent under the middle: full screen fully zoomed out put
+-- Kalimdor past the zone fade-in and left Eastern Kingdoms, not the focus, at plain continent art.)
+M.REF_VIEW = { 1221, 729 }
+local function RefFit() return math.max(M.REF_VIEW[1] / BW, M.REF_VIEW[2] / BH) end
+-- the view scale the reference window has at the zoom level now (the same level number, any box size)
+local function RS() return V.s * RefFit() / SFit() end
+M.RefScale = RS
 local function ZMax()
   local m = 40
   for _, c in ipairs(ContList()) do local p = Place(c.id) m = math.max(m, 40 / math.max(0.05, p[2] - p[1])) end
@@ -93,7 +104,7 @@ local function ZMax()
   for _, c in ipairs(ContList()) do
     local p = Place(c.id)
     local sMax = CU and CU.MaxScale(c.id, (p[2] - p[1]) * BW)
-    if sMax then cap = math.max(cap or 0, sMax / SFit()) end
+    if sMax then cap = math.max(cap or 0, sMax / RefFit()) end -- 0.5.2b.8.2: the reference window's levels (was / SFit())
   end
   if cap then m = math.min(m, math.max(8, cap)) end
   return m
@@ -158,10 +169,31 @@ local function ContBand(cont)
   return lo, lo + 0.35
 end
 local ZONE_LO, ZONE_HI = 0.40, 0.70
-function M.ContAlpha(cont)
+-- 0.5.2b.8.2: the share of the REFERENCE window a world-size w x h would fill at the zoom level now (the larger of its
+-- width and height share): the same at a given level in the window and in full screen
+local function RefShare(w, h)
+  local s = RS()
+  return math.max(w * BW * s / M.REF_VIEW[1], h * BH * s / M.REF_VIEW[2])
+end
+M.RefShare = RefShare
+-- 0.5.2b.8.2: every continent is drawn at full strength at every zoom level, over the world picture (the same painting,
+-- sharper), so both continents in view show the same layers: their picture and level boxes from level 1, their zone
+-- pictures from M.ZONE_LEVELS. (0.5.2b.8.1 faded each continent in by how much of the real box it filled, times the
+-- focus fade: only the continent under the middle of the view got its pictures and level boxes, the other kept the
+-- plain world picture, and a wide full-screen box put the focus continent past the zone fade-in at level 1.)
+function M.ContAlpha() return 1 end
+-- 0.5.2b.8.2: the breadcrumb and the cursor coordinates name the focus continent once it fills enough of the REFERENCE
+-- window at this level (before: the drawn alpha); fully zoomed out they read the world, in the window and in full screen alike
+function M.ContNamed(cont)
+  if not M.hasWorld then return true end
+  local p = Place(cont)
+  local lo, hi = ContBand(cont)
+  return Smooth((RefShare(p[2] - p[1], p[4] - p[3]) - lo) / (hi - lo)) > 0.5
+end
+-- 0.5.2b.8.1's rule (the real box, the focus fade), kept for /dm zoomprobe's before/after line only
+function M.ContAlphaOld(cont)
   if not M.hasWorld then return 1 end
   local p = Place(cont)
-  -- how much of the view the continent fills: the larger of its width and height share
   local frac = math.max((p[2] - p[1]) * BW * V.s / VW(), (p[4] - p[3]) * BH * V.s / VH())
   local lo, hi = ContBand(cont)
   return Smooth((frac - lo) / (hi - lo)) * (M.fade[cont] or 0)
@@ -171,14 +203,19 @@ end
 function M.ZoneAlpha(z)
   local p = Place(z.cont)
   -- width or height share, whichever is larger (a tall zone in a wide view still fades in when fitted)
-  local frac = math.max((z.r[2] - z.r[1]) * (p[2] - p[1]) * BW * V.s / VW(), (z.r[4] - z.r[3]) * (p[4] - p[3]) * BH * V.s / VH())
+  local frac = RefShare((z.r[2] - z.r[1]) * (p[2] - p[1]), (z.r[4] - z.r[3]) * (p[4] - p[3]))
   return Smooth((frac - ZONE_LO) / (ZONE_HI - ZONE_LO)) * M.ContAlpha(z.cont)
 end
 function M.ArtMag(id, worldW)
   local a = MD.Art(id)
   return a and a.w > 0 and worldW * BW * V.s / a.w or 0
 end
-function M.ContMag(cont) local p = Place(cont) return M.ArtMag(cont, p[2] - p[1]) end
+-- 0.5.2b.8.2: the continent art's magnification as the reference window has it at this level (screen px per art texel)
+function M.ContMag(cont)
+  local p = Place(cont)
+  local a = MD.Art(cont)
+  return a and a.w > 0 and (p[2] - p[1]) * BW * RS() / a.w or 0
+end
 -- 0.5.2b.3: how far the view is zoomed in past the continent's fitted view, capped by the continent art's magnification
 -- (a big window shows the whole continent at art x1.3: still the clean continent picture)
 M.BASE_FADE = { 1.6, 3.2, 0.35 } -- continent art from x1.6 to x3.2 fades to 35% over the backdrop colour
@@ -186,7 +223,12 @@ function M.FitScale(cont)
   local p = Place(cont)
   return math.min(VW() / math.max(1e-9, (p[2] - p[1]) * BW), VH() / math.max(1e-9, (p[4] - p[3]) * BH))
 end
-function M.ContZoomK(cont) return math.min(M.ContMag(cont), V.s / math.max(1e-9, M.FitScale(cont))) end
+-- 0.5.2b.8.2: the fitted view of the reference window (FitScale stays the real box's, for placing views)
+function M.RefFitScale(cont)
+  local p = Place(cont)
+  return math.min(M.REF_VIEW[1] / math.max(1e-9, (p[2] - p[1]) * BW), M.REF_VIEW[2] / math.max(1e-9, (p[4] - p[3]) * BH))
+end
+function M.ContZoomK(cont) return math.min(M.ContMag(cont), RS() / math.max(1e-9, M.RefFitScale(cont))) end
 -- 0.5.2b.7.2: numbered zoom levels, one per wheel step: level 1 = fully zoomed out (the widest view the wheel reaches),
 -- each level 1.35x (one wheel step) the one before, the last = the deepest zoom (that step may be shorter: the wheel
 -- stops at the cap). The same numbers on every continent.
@@ -219,10 +261,10 @@ function M.ZoomLevel() return M.LevelIndex(), M.focus end
 function M.LevelTable(cont)
   local out = {}
   if not cont then return out end
-  local fit = M.FitScale(cont)
+  local fit = M.RefFitScale(cont) -- 0.5.2b.8.2: the reference window's fit (the same table in full screen)
   for n = 1, M.MaxLevel(cont) do
     local s = M.LevelScale(cont, n)
-    local k = s / math.max(1e-9, fit)
+    local k = s * RefFit() / SFit() / math.max(1e-9, fit)
     out[n] = { n = n, s = s, zk = k, art = M.ContMag(cont) * s / math.max(1e-9, V.s) }
   end
   return out
@@ -258,7 +300,7 @@ M.ZONE_SHARE = { 0.6, 0.9 }
 M.ZONE_MAG = { 2.0, 2.8 }
 function M.ZoneShare(z)
   local p = Place(z.cont)
-  return math.max((z.r[2] - z.r[1]) * (p[2] - p[1]) * BW * V.s / VW(), (z.r[4] - z.r[3]) * (p[4] - p[3]) * BH * V.s / VH())
+  return RefShare((z.r[2] - z.r[1]) * (p[2] - p[1]), (z.r[4] - z.r[3]) * (p[4] - p[3])) -- 0.5.2b.8.2: of the reference window
 end
 function M.ZoneIn(z)
   local s, m = M.ZONE_SHARE, M.ZONE_MAG
@@ -835,7 +877,7 @@ local function Trail()
   local out = {}
   if M.hasWorld then out[#out + 1] = { id = M.world, name = MD.Name(M.world) or "World", world = true } end
   local f = M.focus
-  if f and (M.ContAlpha(f) > 0.5 or not M.hasWorld) then
+  if f and M.ContNamed(f) then
     out[#out + 1] = { id = f, name = MD.Name(f) or "Continent" }
     local cx, cy = M.Center()
     local p = Place(f)
@@ -886,7 +928,7 @@ local function UpdateCoords()
     local px, py = Cursor()
     local wx, wy = M.ToWorld(px, py)
     local f = M.focus
-    if f and (M.ContAlpha(f) > 0.5 or not M.hasWorld) then
+    if f and M.ContNamed(f) then
       local p = Place(f)
       local cx, cy = (wx - p[1]) / (p[2] - p[1]), (wy - p[3]) / (p[4] - p[3])
       local z, zx, zy, named = MD.ZoneAt(f, cx, cy)
@@ -941,6 +983,10 @@ M.IsCity = IsCity
 -- continent picture shows only beyond the outermost zones. Without masks (0.5.2b.5 ships none): 0.5.2b.4's one
 -- feathered zone picture at a time.
 M.MASK_IN = { 1.3, 1.9 } -- masked zones come in together from x1.3 to x1.9 past the continent's fitted view
+-- 0.5.2b.8.2: the masked zones (every continent in view together) fade in by the zoom LEVEL: from level 1.75 to full at
+-- level 3 (what the 0.5.2b.8.1 window did on Eastern Kingdoms: x1.3 to x1.9 past its fitted view), in the window and in
+-- full screen alike. MASK_IN stays for the probes (zoom past the continent fit, reference window).
+M.ZONE_LEVELS = { 1.75, 3.0 }
 -- 0.5.2b.6.1: attach a zone's mask to one of its textures and count what the game says happened. A texture the game
 -- reports with no mask after AddMaskTexture (or an error) means masks do not cut here: the map falls back to one
 -- feathered zone at a time (M.maskBroken) instead of drawing every zone as a hard rectangle.
@@ -1154,7 +1200,16 @@ function M.MaskCount()
   end
   return have, n
 end
-function M.MaskIn(cont) local m = M.MASK_IN return Smooth((M.ContZoomK(cont) - m[1]) / (m[2] - m[1])) end
+function M.MaskIn() local m = M.ZONE_LEVELS return Smooth((M.LevelOf() - m[1]) / (m[2] - m[1])) end
+-- 0.5.2b.8.1's rule (the real box's continent fit), for /dm zoomprobe's before/after line only
+function M.MaskInOld(cont)
+  local p = Place(cont)
+  local a = MD.Art(cont)
+  local mag = a and a.w > 0 and (p[2] - p[1]) * BW * V.s / a.w or 0
+  local zk = math.min(mag, V.s / math.max(1e-9, M.FitScale(cont)))
+  local m = M.MASK_IN
+  return Smooth((zk - m[1]) / (m[2] - m[1]))
+end
 function M.MaskLine()
   local have, n = M.MaskCount()
   if have == 0 then return string.format("0/%d zones masked (fallback: one zone at a time)", n) end
@@ -1286,7 +1341,11 @@ function M.Layout()
   if CU and closeHost then
     local cl = {}
     for _, c in ipairs(ContList()) do cl[#cl + 1] = { id = c.id, alpha = M.ContAlpha(c.id) } end
-    local ctx = { host = closeHost, conts = cl, place = Place, toScreen = M.ToScreen, vw = VW(), vh = VH(), mag = M.RefMag(), dry = dry }
+    local ctx = { host = closeHost, conts = cl, place = Place, toScreen = M.ToScreen, vw = VW(), vh = VH(), dry = dry }
+    -- 0.5.2b.8.2: the tiles fade in by the zoom level (the reference window's magnification), not by the box size
+    ctx.norm = RefFit() / SFit()
+    local rm = M.RefMag()
+    ctx.mag = rm and rm * ctx.norm
     if dry then M.closeDry = CU.Layout(ctx) return end
     local clock = debugprofilestop
     local t0 = type(clock) == "function" and clock()
@@ -1339,7 +1398,7 @@ function M.LayerCheck()
   local zk = M.ContZoomK(cont)
   r.zoomK, r.masked = zk, masked
   local contView = not fz or (M.ZoneShare(fz) < M.ZONE_SHARE[1] and zk < M.ZONE_MAG[1])
-  if masked then contView = zk < M.MASK_IN[1] end
+  if masked then contView = M.LevelOf() < M.ZONE_LEVELS[1] end -- 0.5.2b.8.2: by the level
   local cs = M.dry and M.closeDry or M.close
   r.tileA = cs and cs.byCont and cs.byCont[cont] or 0
   local tilesOn = CU and CU.Covers and r.tileA >= 0.9
@@ -1405,7 +1464,7 @@ function M.LayerCheck()
   if r.seams > 0 then F[#F + 1] = "hard-seam" end
   if r.rects > 0 then F[#F + 1] = "zone-rect" end
   if r.overlap > 0 then F[#F + 1] = "overlap" end
-  if not contView and zk >= M.MASK_IN[2] and r.base > 0 and r.baseA > 0.01 then F[#F + 1] = "base-land" end
+  if not contView and (masked and M.LevelOf() >= M.ZONE_LEVELS[2] or not masked and zk >= M.MASK_IN[2]) and r.base > 0 and r.baseA > 0.01 then F[#F + 1] = "base-land" end
   r.text = string.format("art x%.2f, zoom x%.2f, zone in %.2f, base %.2f, tiles %.2f; zone pictures %d; points: land %d (zone art or tiles %d, of them tiles %d; base %d; focus zone on base %d), open %d; hard seams %d; zone art at continent view %d; overlapping zone pictures %d -> %s",
     r.mag, zk, r.zoneIn, r.baseA, r.tileA, r.zones, r.land, r.zone, r.tiles, r.base, r.focusBase, r.open, r.seams, r.rects, r.overlap, #F == 0 and "OK" or table.concat(F, ", "))
   return r
@@ -2093,6 +2152,8 @@ local function ApplyFit()
 end
 local function Refit()
   if not vp then return end
+  -- 0.5.2b.8.2: the last box size seen in each mode (window, full screen), for /dm zoomprobe
+  if VW() > 50 and VH() > 50 then M.boxSize = M.boxSize or {} M.boxSize[M.full and "full" or "window"] = { VW(), VH() } end
   canvas:SetSize(VW(), VH())
   over:SetSize(VW(), VH())
   if closeHost then closeHost:SetSize(VW(), VH()) end
@@ -2105,6 +2166,103 @@ local function Refit()
   M.Layout()
 end
 M.Refit = Refit
+-- 0.5.2b.8.2: /dm zoomprobe: the zoom level now and, for the window and the full-screen box at that SAME level and
+-- centre, each continent in view: its picture, its zone pictures (zone-in, with 0.5.2b.8.1's rule beside it), the
+-- level boxes, the cities and the tiles. Read only: the other box is worked out dry (nothing drawn) and the view put back.
+local function BoxSizes()
+  local bs = M.boxSize or {}
+  local cur = M.full and "full" or "window"
+  local out = { window = bs.window, full = bs.full, est = {} }
+  out[cur] = { VW(), VH() }
+  if not out.full then
+    local uw, uh = UIParent and UIParent:GetWidth() or 0, UIParent and UIParent:GetHeight() or 0
+    local dw, dh = root and (root:GetWidth() or 0) - VW() or 0, root and (root:GetHeight() or 0) - VH() or 0
+    if uw > 100 and uh > 100 then out.full = { uw - 28 - math.max(0, dw), uh - 54 - math.max(0, dh) } out.est.full = true end
+  end
+  if not out.window then out.window = { M.REF_VIEW[1], M.REF_VIEW[2] } out.est.window = true end
+  return out, cur
+end
+local function ZoomRow(level, cx, cy)
+  local s0, ox0, oy0 = V.s, V.ox, V.oy
+  SetView(cx, cy, SFit() * M.LEVEL_STEP ^ (level - 1))
+  local f = Focus()
+  local wasDry = M.dry
+  M.dry = true
+  local okL = pcall(M.Layout)
+  M.dry = wasDry
+  local cd = okL and M.closeDry
+  local row = { level = M.LevelOf(), focus = f, conts = {} }
+  for _, c in ipairs(ContList()) do
+    local p = Place(c.id)
+    local l, t = M.ToScreen(p[1], p[3])
+    local r, b = M.ToScreen(p[2], p[4])
+    local vis = r > 0 and b > 0 and l < VW() and t < VH()
+    local fade0 = M.fade[c.id]
+    M.fade[c.id] = (c.id == f) and 1 or 0 -- 0.5.2b.8.1's settled focus fade
+    local oldCA, oldIn = M.ContAlphaOld(c.id), M.MaskInOld(c.id)
+    M.fade[c.id] = fade0
+    local masked = M.ContMasked(c.id)
+    local ca = M.ContAlpha(c.id)
+    -- masked: every zone together (M.MaskIn); the fallback (no masks) draws only the zone under the middle
+    local fz = not masked and c.id == f and M.FocusZones(f)
+    local zin = masked and M.MaskIn() or (fz and M.ZoneIn(fz) or 0)
+    row.conts[#row.conts + 1] = { id = c.id, vis = vis, cont = ca, zoneIn = ca * zin, masked = masked,
+      old = oldCA * oldIn, boxes = ca > 0.5, oldBoxes = oldCA > 0.5, city = M.CityFade(c.id),
+      tiles = cd and cd.byCont and cd.byCont[c.id] or 0 }
+  end
+  V.s, V.ox, V.oy = s0, ox0, oy0
+  return row
+end
+function M.ZoomProbe()
+  local out = {}
+  if not (M.ready and vp) then return { "zoomprobe: open the Map tab first" } end
+  local sizes, cur = BoxSizes()
+  local L, cx, cy = M.LevelOf(), M.Center()
+  out[1] = string.format("zoomprobe %s: now %s %dx%d, level %d (%.2f) of %d; zones fade in at level %.2f-%.2f, cities %d-%d; reference window %dx%d",
+    NS.version or "?", cur == "full" and "full screen" or "window", VW(), VH(), M.LevelIndex(), L, M.MaxLevel(),
+    M.ZONE_LEVELS[1], M.ZONE_LEVELS[2], M.CityFadeStart(), M.CityLevel(), M.REF_VIEW[1], M.REF_VIEW[2])
+  local rows = {}
+  for _, mode in ipairs({ "window", "full" }) do
+    local sz = sizes[mode]
+    if sz then
+      M.boxOverride = sz
+      local ok, row = pcall(ZoomRow, L, cx, cy)
+      M.boxOverride = nil
+      if ok and row then
+        rows[mode] = row
+        local parts = {}
+        for _, e in ipairs(row.conts) do
+          parts[#parts + 1] = string.format("%s%s: zones %.2f (0.5.2b.8.1 %.2f), boxes %s (8.1 %s), cities %.2f, tiles %.2f",
+            tostring(MD.Name(e.id) or e.id), (e.vis and "" or " (out of view)") .. (e.masked and "" or " (no masks: one zone)"), e.zoneIn, e.old, e.boxes and "on" or "off",
+            e.oldBoxes and "on" or "off", e.city, e.tiles)
+        end
+        out[#out + 1] = string.format("zoomprobe %s %dx%d%s: level %.2f of %d: %s", mode == "full" and "full screen" or "window",
+          sz[1], sz[2], sizes.est[mode] and " (est.)" or "", row.level, M.MaxLevel(), table.concat(parts, "; "))
+      else
+        out[#out + 1] = "zoomprobe " .. mode .. ": could not work it out (" .. tostring(row) .. ")"
+      end
+    end
+  end
+  M.boxOverride = nil
+  M.Layout()
+  -- the verdict: the same zone-in, boxes, cities and tiles per continent in view in both boxes
+  local w, f = rows.window, rows.full
+  if w and f then
+    local same, worst = true, 0
+    for i, e in ipairs(w.conts) do
+      local g = f.conts[i]
+      if g and e.vis and g.vis then
+        local d = math.max(math.abs(e.zoneIn - g.zoneIn), math.abs(e.city - g.city), math.abs(e.tiles - g.tiles))
+        worst = math.max(worst, d)
+        if d > 0.02 or e.boxes ~= g.boxes then same = false end
+      end
+    end
+    out[#out + 1] = string.format("zoomprobe verdict: %s (largest gap %.2f, continents in view in both boxes)",
+      same and "window and full screen draw the same layers" or "window and full screen DIFFER", worst)
+  end
+  M.zoomRows = rows
+  return out
+end
 -- tests and probes: put the view at world point cx, cy and zoom (1 = fully zoomed out)
 function M.SetViewAt(cx, cy, zoom) SetView(cx, cy, zoom * SFit()) M.Layout() end
 -- 0.5.2b.8: the view centred on world point cx, cy at zoom level n (/dm seamsweep, /dm mapcost)

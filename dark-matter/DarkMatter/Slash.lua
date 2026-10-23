@@ -28,6 +28,7 @@ local function Help()
   print("  /dm mapmask on|off  Map: the zone masks on or off for this session (off: one feathered zone at a time)")
   print("  /dm mapcore on|off  Map: the second (core) zone mask pass on or off for this session (off: the soft masks alone)")
   print("  /dm mapcost [both]  Map: frame rate and textures at zoom levels 1-10 here (both: with and without the core pass)")
+  print("  /dm zoomprobe  Map: zoom level now, and per continent in view the zones / level boxes / cities / tiles in the window vs full screen (0.5.2b.8.2)")
   print("  /dm shottest  Map: take ONE screenshot to check the game saves them (needed before /dm seamsweep)")
   print("  /dm seamsweep [N]  Map: screenshots of the N worst zone borders (default 8) at zoom levels 4, 8, 12, one click on Shot each   /dm seamsweep next|stop")
   print("  /dm mapshapes  Map: sample every zone's outline from the game (out of combat, about a minute) -> DarkMatterDB.mapshapes, then /reload   /dm mapshapes stop|status")
@@ -205,6 +206,9 @@ SlashCmdList["DARKMATTER"] = function(msg)
   elseif cmd == "seamsweep" then
     -- 0.5.2b.8: screenshots of the worst zone borders at three zoom levels (only after /dm shottest passed)
     if NS.MapReview then for _, l in ipairs(NS.MapReview.SeamSweep(rest)) do NS.Print(l) end end
+  elseif cmd == "zoomprobe" then
+    -- 0.5.2b.8.2: the zoom level and each continent's layers (zones, level boxes, cities, tiles) in the window and full screen
+    if NS.MapTab and NS.MapTab.ZoomProbe then Say("zoomprobe", NS.MapTab.ZoomProbe()) end
   elseif cmd == "mapcost" then
     -- 0.5.2b.8: frame rate and textures per zoom level (both: with and without the core pass)
     if NS.MapReview then for _, l in ipairs(NS.MapReview.MapCost(rest)) do NS.Print(l) end end

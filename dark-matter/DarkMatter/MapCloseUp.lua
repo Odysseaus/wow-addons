@@ -435,7 +435,8 @@ function C.Layout(ctx)
       local r, b = ctx.toScreen(p[2], p[4])
       local cw, ch = r - l, b - t
       local ppy = C.PixelsPerYard(F, cw)
-      local mag = ctx.mag or ppy * C.YD_PER_TEXEL
+      -- 0.5.2b.8.2: ctx.norm turns the box's magnification into the reference window's at the same zoom level
+      local mag = ctx.mag or ppy * C.YD_PER_TEXEL * (ctx.norm or 1)
       -- the plane: where tile 0,0 sits on screen and one tile's step across and down
       local ax1, _, ay1 = C.TileRect(F, 0, 0)
       local bx1, _, by1 = C.TileRect(F, 1, 1)

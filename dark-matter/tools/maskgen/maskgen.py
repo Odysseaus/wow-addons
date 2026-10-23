@@ -195,8 +195,9 @@ ART = (1002, 668)   # a zone picture in art px
 CPX = (1002, 668)   # the continent picture in cpx (continent map fractions x CPX)
 WORK = 512          # work raster per picture (x and y), averaged 2x2 down to the written size
 PAD = 72            # work texels of context around the picture
-SIG_C = 1.6         # cpx: the blur that rounds the game's stair-step area borders (cells are 0.4 to 1.7 cpx)
-SHARP = 3.0         # the core shares: w^SHARP (a crossfade about 2 cpx wide across a border)
+SIG_C = 2.4         # cpx: the blur that rounds the game's stair-step area borders (cells are 0.4 to 1.7 cpx); 0.5.2b.8.2: 1.6 -> 2.4
+SHARP = 1.0         # the core shares: w^SHARP. 0.5.2b.8.2: 3 -> 1 (with SIG_C 2.4): the crossfade across a border is about 2 to 2.5 cpx
+                    # (20% -> 80%) instead of about 0.5 cpx, which the 0.5.2b.8.1 sweep shots showed as hard straight lines
 FILL_C = (1.0, 5.0) # cpx: points of no zone (sea, unzoned land) count for the nearest zone, fading out over FILL_C
 RIM_ART = 22.0      # art px: the core never uses a picture's outer RIM_ART art px (the torn parchment) ...
 RIM_RAMP_C = 2.5    # ... and reaches full weight RIM_RAMP_C cpx further in

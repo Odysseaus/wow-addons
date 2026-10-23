@@ -3699,7 +3699,7 @@ do
   local longest = 0
   for _, l in ipairs(L) do longest = math.max(longest, #l) end
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
-  check(L[1] == "mapprobe 0.5.2b.8.1 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(L[1] == "mapprobe 0.5.2b.8.2 (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
@@ -4103,6 +4103,49 @@ do
     NS.db.map.cityLevel, NS.db.map.cityFade = 10, nil
     check(M.CityLevel() == 10 and M.CityFadeStart() == 8, "0.5.2b.7.3 map: a saved cityLevel 10 (0.5.2b.7.2) gives fade 8 -> full 10")
     NS.db.map.cityLevel, NS.db.map.cityFade = saveDB, saveFade
+    -- 0.5.2b.8.2: the full-screen map zooms like the window: the same levels, and every continent in view gets the same
+    -- layers (0.5.2b.8.1: full screen fully zoomed out drew Kalimdor's zones and level boxes, Eastern Kingdoms plain)
+    do
+      M.boxSize = M.boxSize or {}
+      local saveFull = M.boxSize.full
+      M.boxSize.full = { 2120, 866 } -- a 2.45:1 box, as on the 3437x1430 screen of the report
+      M.SetViewAt(0.5, 0.5, 1)
+      local zp = M.ZoomProbe()
+      local txt = table.concat(zp, " | ")
+      io.write("zoomprobe L1\t" .. txt .. "\n")
+      local w, f = M.zoomRows.window, M.zoomRows.full
+      local okL1 = w and f and #f.conts == 2 and math.abs(w.level - 1) < 1e-6 and math.abs(f.level - 1) < 1e-6
+      for i = 1, 2 do
+        local a, b = w and w.conts[i], f and f.conts[i]
+        okL1 = okL1 and a and b and a.zoneIn < 0.01 and b.zoneIn < 0.01 and a.boxes == b.boxes and b.boxes == f.conts[1].boxes
+      end
+      check(okL1 and zp[1]:find("^zoomprobe 0%.5%.2b%.8%.2: now window") and txt:find("window and full screen draw the same layers"),
+        "0.5.2b.8.2 /dm zoomprobe: level 1 (fully out): no zone pictures on either continent, level boxes alike, window = full screen (" .. txt .. ")")
+      for _, L in ipairs({ 2, 3, 5 }) do
+        M.SetViewAt(0.5, 0.5, 1.35 ^ (L - 1))
+        zp = M.ZoomProbe()
+        txt = table.concat(zp, " | ")
+        w, f = M.zoomRows.window, M.zoomRows.full
+        local same = w and f and true
+        for i = 1, #(w and w.conts or {}) do
+          local a, b = w.conts[i], f.conts[i]
+          if a.vis and b.vis then same = same and math.abs(a.zoneIn - b.zoneIn) < 0.02 and a.boxes == b.boxes end
+          if b.vis and f.conts[1].vis then same = same and math.abs(b.zoneIn - f.conts[1].zoneIn) < 0.02 end
+        end
+        local want = L >= 3 and 1 or (L == 2 and M.MaskIn() or 0)
+        check(same and txt:find("draw the same layers") and math.abs(M.LevelOf() - L) < 1e-6 and (L < 3 or not w.conts[1].masked or w.conts[1].zoneIn > 0.99 or not w.conts[1].vis) and want >= 0,
+          "0.5.2b.8.2 /dm zoomprobe: level " .. L .. ": window and full screen alike, both continents alike (" .. txt .. ")")
+      end
+      -- the real full-screen box: the same level after the switch, and back
+      M.SetViewAt(0.5, 0.5, 1.35)
+      local L0 = M.LevelOf()
+      M.SetFull(true) run(2)
+      local Lf, zpf = M.LevelOf(), table.concat(M.ZoomProbe(), " | ")
+      M.SetFull(false) run(2)
+      check(math.abs(Lf - L0) < 1e-6 and math.abs(M.LevelOf() - L0) < 1e-6 and zpf:find("now full screen"),
+        "0.5.2b.8.2 map: switching to full screen and back keeps the zoom level (" .. string.format("%.3f / %.3f / %.3f", L0, Lf, M.LevelOf()) .. "; " .. zpf .. ")")
+      M.boxSize.full = saveFull
+    end
     M.FlyTo(1426) run(30)
   end
   check(M.layers[947] and not M.layers[947].shown, "0.5.0 map: the world picture is hidden when the continent covers the view")
@@ -4777,7 +4820,7 @@ do
     local lines = QS.ProbeReport()
     local all = table.concat(lines, "\n")
     if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
-    check(lines[1] == "questmap 0.5.2b.8.1 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+    check(lines[1] == "questmap 0.5.2b.8.2 (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
       and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
       "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
     local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
@@ -5028,11 +5071,13 @@ do
       M.Tick(0.016)
       local za, ca = M.ZoneDrawAlpha(MD.ZoneEntry(1426)), M.ContAlpha(1415) -- 0.5.1.7+: as drawn
       if za > 0.02 and za < 0.98 and M.layers[1426].shown and math.abs(M.layers[1426].alpha - za) < 1e-9 then sawZoneFade = true end
-      if ca > 0.02 and ca < 0.98 and M.layers[1415].shown and math.abs(M.layers[1415].alpha - ca) < 1e-9 then sawContFade = true end
+      -- 0.5.2b.8.2: the continent picture no longer fades with the focus or the window size (it is under every level, on both
+      -- continents alike: the full-screen bug of 0.5.2b.8.1); only the zone pictures crossfade
+      if ca ~= 1 or M.ContAlpha(1414) ~= 1 then sawContFade = "not 1" end
     end
     if table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms" then sawCont = true end
   end
-  check(sawZoneFade and sawContFade, "0.5.0 map: zone and continent pictures crossfade while zooming (" .. tostring(sawZoneFade) .. "," .. tostring(sawContFade) .. ")")
+  check(sawZoneFade and not sawContFade, "0.5.0/0.5.2b.8.2 map: zone pictures crossfade while zooming, continent pictures stay at 1 on both continents (" .. tostring(sawZoneFade) .. "," .. tostring(sawContFade) .. ")")
   check(sawCont, "0.5.0 map: passes through the continent level")
   check(math.abs(M.Zoom() - 1) < 1e-6 and table.concat(M.Trail(), ">") == "Azeroth" and M.layers[947].shown, "0.5.0 map: zoomed out fully shows the world")
   local wcx, wcy = M.Center()
@@ -5616,7 +5661,7 @@ if MODE ~= "minimal" then
   SlashCmdList["DARKMATTER"]("artprobe")
   NS.Print = oldPrint
   local ap = NS.db.artprobe
-  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.8%.1 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  check(said[1] and said[1]:find("^artprobe 0%.5%.2b%.8%.2 %(file%-ID lookup%):") and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
   local longest = 0
   for _, l in ipairs(said) do longest = math.max(longest, #l) end
   check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
@@ -6614,7 +6659,7 @@ if MODE == "full" then
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
   if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
-  check(said[1] == "frameprobe 0.5.2b.8.1 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+  check(said[1] == "frameprobe 0.5.2b.8.2 (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
     and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
     and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
     and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
@@ -7175,7 +7220,7 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("trackerprobe")
   NS.Print = oldPrint
   local all = table.concat(said, "\n")
-  check(said[1] == "trackerprobe 0.5.2b.8.1 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+  check(said[1] == "trackerprobe 0.5.2b.8.2 (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
     and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
   -- the Settings page: two plain checkboxes
   local boxes = {}

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.2b.8.2
+
+Softer seams between zone pictures, from the 0.5.2b.8.1 seam sweep shots (24 of 24), and full screen now zooms exactly like the map window on both continents.
+
+### Changes
+- **Wider crossfade at zone borders.** In the shots, where two zone pictures meet on land (Elwynn | Duskwood, Badlands | Riverglades, Burning Steppes | Badlands and others) the switch from one picture to the other was a hard straight line. The offline check put the crossfade at 0.5 cpx (20% to 80%); at zoom 8 that is about 4 screen pixels. maskgen now blurs the game's areas wider (SIG_C 1.6 → 2.4 cpx) and shares the core less steeply (SHARP 3 → 1). The crossfade is now about 2.4 cpx at Elwynn | Duskwood and 1.9 at Badlands | Riverglades. Only the 43 core masks and `Data_ZoneSeams.lua` changed. The soft halos, the coast fade and the outline are the same.
+  - Offline sweep: land showing only the continent picture is flat (Kalimdor 3.67% → 3.64%, Eastern Kingdoms 3.27% → 3.26%). Land drawn by the wrong picture rose from 1.98% to 2.40% and from 3.02% to 3.69%. That is expected: within about a cpx of a border the neighbour's picture now has more than half. Full-strength overlap stays at 0. Border review total: 789.1 → 726.8.
+  - Tried and not taken: a wider fade at the picture edges and a wider outline blur. Both left the sea edges almost as straight (fade 1.0 → 1.75 cpx) and let the continent picture show on 1.2 to 2.2 points more land.
+- **Full screen zooms like the map window (bug from 2026-10-23).** In full screen, fully zoomed out, Kalimdor drew its zone pictures and level boxes while Eastern Kingdoms drew only the plain art. There were three causes:
+  1. Each continent's picture was faded by the *focus* fade, which is 1 only for the continent under the middle of the view. The other continent got no continent picture, no level boxes (both need the picture above 0.5) and no zones.
+  2. Zones faded in by "how far past the continent's fit" (ContZoomK, mask fade-in 1.3 → 1.9), measured in the real box. In the wide full-screen box (about 2.4:1) level 1 is set by the width, but the continent's fit is set by its height. So level 1 was already about x1.5 past the fit and the focus continent's zones were half in. At level 1, Eastern Kingdoms reads ZoomK 1.03 in the window and about 1.50 in full screen.
+  3. The close-up tile magnification and the deepest-level cap were also measured in real box pixels.
+- **Fix:** every layer rule is now worked out as the reference window (1221x729, the normal map window) would show the same numbered level. Layers depend only on the level, not on the box size or which continent is in focus:
+  - Continent pictures are always at full strength (ContAlpha = 1), so the level boxes show on both continents from level 1.
+  - Zone pictures (masked) fade in by level: `M.ZONE_LEVELS` 1.75 → 3.0, which matches the old window behaviour.
+  - Capitals keep levels 8-10.
+  - The tile magnification and the ZMax cap are scaled to the reference window.
+  - The breadcrumb and cursor coordinates name the focus continent by its reference-window share, so fully zoomed out they read the world.
+  - The fit used when opening a view still uses the real box. The levels are kept when switching between window and full screen.
+- Trade-offs:
+  - Both continents' zone pictures can now draw at once, which costs more textures when both are in view at level 3 and above.
+  - At the deepest level, full screen magnifies more on screen (about 1.7x at 3437 px wide), because the cap is now the same level number.
+- **New `/dm zoomprobe`:** one line each for the window and for full screen (the full-screen size is estimated from the screen until it has been opened once). For each continent in view it gives the level, zones, level boxes, capitals and tiles, with the 0.5.2b.8.1 value next to each. A verdict line follows. The result is saved to the probe log.
+- Not changed: the edges at sea where a zone picture ends and only the continent picture is left (no other picture paints there). Also unchanged: tone and resolution differences between pictures, and the painted mountain frames (Redridge). See the review notes.
+
 ## 0.5.2b.8.1
 
 Masks rebuilt from your full mapshapes run, a click-driven seam sweep, and a clearer blocked-action log.
