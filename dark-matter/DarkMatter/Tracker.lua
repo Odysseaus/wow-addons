@@ -409,31 +409,164 @@ function Tr.SetReadyCollapsed(on)
   Tr.FillReady()
   Tr.PlaceReady()
 end
+-- 0.5.2b.7.3: each row is drawn like one of the tracker's own quest blocks (Blizzard_ObjectiveTrackerBlock.xml):
+--  * the icon is the game's own POI button for a completed quest (ObjectiveTrackerPOIButtonTemplate with
+--    POIButtonUtil.Style.QuestComplete: "UI-QuestIcon-TurnIn-Normal" on the "UI-QuestPoi-QuestNumber" face,
+--    "-SuperTracked" face when the quest is super tracked), placed like the tracker places it
+--    (TOPRIGHT of the button on the title's TOPLEFT, -7, 5). Where the template is missing: the same two atlases.
+--  * title and second line use ObjectiveTrackerLineFont (the font of the block's HeaderText and of its lines);
+--    colours are OBJECTIVE_TRACKER_COLOR: title "Header", hover "HeaderHighlight" (or the quest difficulty colour
+--    when showQuestDifficultyColor is on, as ObjectiveTrackerBlockMixin:UpdateHighlight does); line "Normal",
+--    hover "NormalHighlight". No backdrop and no highlight plate, like the tracker.
+Tr.READY_ICON = { style = "QuestComplete", template = "ObjectiveTrackerPOIButtonTemplate",
+  atlas = "UI-QuestIcon-TurnIn-Normal", face = "UI-QuestPoi-QuestNumber", faceSel = "UI-QuestPoi-QuestNumber-SuperTracked" }
+Tr.READY_FALLBACK_COLOR = {
+  Header = { r = 0.75, g = 0.61, b = 0 }, HeaderHighlight = { r = 1, g = 0.82, b = 0 },
+  Normal = { r = 0.8, g = 0.8, b = 0.8 }, NormalHighlight = { r = 1, g = 1, b = 1 },
+}
+function Tr.TrackerColor(key)
+  local T = rawget(_G, "OBJECTIVE_TRACKER_COLOR")
+  local c = type(T) == "table" and T[key]
+  if type(c) == "table" and N(c.r) and N(c.g) and N(c.b) then return c.r, c.g, c.b, "OBJECTIVE_TRACKER_COLOR" end
+  local g
+  if key == "Header" then g = rawget(_G, "OBJECTIVE_TRACKER_BLOCK_HEADER_COLOR")
+  elseif key == "HeaderHighlight" then g = rawget(_G, "NORMAL_FONT_COLOR")
+  elseif key == "NormalHighlight" then g = rawget(_G, "HIGHLIGHT_FONT_COLOR") end
+  if type(g) == "table" and N(g.r) and N(g.g) and N(g.b) then return g.r, g.g, g.b, "global" end
+  c = Tr.READY_FALLBACK_COLOR[key]
+  return c.r, c.g, c.b, "fallback"
+end
+-- the title colour exactly as ObjectiveTrackerBlockMixin:UpdateHighlight picks it
+local function DifficultyOn()
+  local CV = rawget(_G, "C_CVar")
+  if type(CV) == "table" and type(CV.GetCVarBool) == "function" then
+    local ok, v = pcall(CV.GetCVarBool, "showQuestDifficultyColor")
+    if ok then return v == true end
+  end
+  if type(GetCVarBool) == "function" then
+    local ok, v = pcall(GetCVarBool, "showQuestDifficultyColor")
+    if ok then return v == true end
+  end
+  return false
+end
+function Tr.ReadyTitleColor(q, hot)
+  if q and DifficultyOn() and type(GetDifficultyColor) == "function" then
+    local PI = rawget(_G, "C_PlayerInfo")
+    if type(PI) == "table" and type(PI.GetContentDifficultyQuestForPlayer) == "function" then
+      local ok, d = pcall(PI.GetContentDifficultyQuestForPlayer, q)
+      if ok and d ~= nil then
+        local ok2, c, ch = pcall(GetDifficultyColor, d)
+        local x = hot and ch or c
+        if ok2 and type(x) == "table" and N(x.r) then return x.r, x.g, x.b, "difficulty" end
+      end
+    end
+  end
+  return Tr.TrackerColor(hot and "HeaderHighlight" or "Header")
+end
+local function PaintReadyText(r)
+  local hot = rawget(r, "hot") and true or false
+  local a, b, c = Tr.ReadyTitleColor(r.q, hot)
+  r.title:SetTextColor(a, b, c)
+  a, b, c = Tr.TrackerColor(hot and "NormalHighlight" or "Normal")
+  r.zone:SetTextColor(a, b, c)
+end
+Tr.PaintReadyText = PaintReadyText
+local function LineFont(fs)
+  local f = rawget(_G, "ObjectiveTrackerLineFont")
+  if type(f) == "table" and pcall(fs.SetFontObject, fs, f) then return "ObjectiveTrackerLineFont" end
+  pcall(fs.SetFont, fs, STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 12, "")
+  fs:SetShadowOffset(1, -1)
+  fs:SetShadowColor(0, 0, 0, 1)
+  return "FRIZQT 12 (ObjectiveTrackerLineFont missing)"
+end
+local function SuperTracked(q)
+  local ST = rawget(_G, "C_SuperTrack")
+  if q and type(ST) == "table" and type(ST.GetSuperTrackedQuestID) == "function" then
+    local ok, id = pcall(ST.GetSuperTrackedQuestID)
+    return ok and id == q
+  end
+  return false
+end
+-- the game's POI button: built from its template (no art of ours); nil when this client can't
+local function GamePOI(r)
+  local U = rawget(_G, "POIButtonUtil")
+  local style = type(U) == "table" and type(U.Style) == "table" and U.Style[Tr.READY_ICON.style]
+  if not style then return nil end
+  for _, tmpl in ipairs({ Tr.READY_ICON.template, "POIButtonTemplate" }) do
+    local ok, b = pcall(CreateFrame, "Button", nil, r, tmpl)
+    if ok and type(b) == "table" and M(b, "SetStyle") and M(b, "UpdateButtonStyle") and M(b, "SetQuestID") then
+      pcall(b.EnableMouse, b, false) -- the row takes the clicks and the hover, as the tracker's header button does
+      b.style, b.template = style, tmpl
+      return b
+    elseif ok and type(b) == "table" then
+      pcall(b.Hide, b)
+    end
+  end
+  return nil
+end
+function Tr.PaintReadyIcon(r)
+  local sel = SuperTracked(r.q)
+  local b = rawget(r, "poi")
+  if b then
+    local ok = pcall(function()
+      b:SetQuestID(r.q)
+      b:SetStyle(b.style)
+      if M(b, "SetSelected") then b:SetSelected(sel) end
+      b:UpdateButtonStyle()
+      b:Show()
+    end)
+    if ok then r.ficon:Hide() r.face:Hide() r.iconHow = b.template return true end
+    pcall(b.Hide, b)
+    r.poi = nil
+  end
+  local A = Tr.READY_ICON
+  local okFace = Atlas(r.face, sel and A.faceSel or A.face)
+  local okIcon = Atlas(r.ficon, A.atlas)
+  r.iconHow = (okFace and okIcon) and "atlas" or (okIcon and "atlas (no face)" or "none")
+  return okIcon
+end
 local function ReadyRow(i)
   local r = ready.rows[i]
   if r then return r end
   r = CreateFrame("Button", nil, ready)
   r:SetHeight(30)
-  r.icon = r:CreateTexture(nil, "ARTWORK")
-  r.icon:SetSize(14, 14)
-  r.icon:SetPoint("TOPLEFT", r, "TOPLEFT", 2, -2)
-  r.title = UI.Text(r, "OVERLAY", 12, "gold", "LEFT")
-  r.title:SetPoint("TOPLEFT", r, "TOPLEFT", 20, -2)
+  r.title = r:CreateFontString(nil, "ARTWORK")
+  r.font = LineFont(r.title)
+  r.title:SetJustifyH("LEFT")
+  r.title:SetPoint("TOPLEFT", r, "TOPLEFT", 28, -2)
   r.title:SetPoint("RIGHT", r, "RIGHT", -4, 0)
-  r.zone = UI.Text(r, "OVERLAY", 10, "listSoft", "LEFT")
-  r.zone:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -1)
+  r.zone = r:CreateFontString(nil, "ARTWORK")
+  LineFont(r.zone)
+  r.zone:SetJustifyH("LEFT")
+  r.zone:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -2)
   r.zone:SetPoint("RIGHT", r, "RIGHT", -4, 0)
-  r.hl = r:CreateTexture(nil, "HIGHLIGHT")
-  r.hl:SetAllPoints(r)
-  r.hl:SetColorTexture(1, 0.82, 0.25, 0.12)
+  -- the icon: the tracker's POI button, 20 x 20, TOPRIGHT on the title's TOPLEFT (-7, 5)
+  r.iconBox = CreateFrame("Frame", nil, r)
+  r.iconBox:SetSize(20, 20)
+  r.iconBox:SetPoint("TOPRIGHT", r.title, "TOPLEFT", -7, 5)
+  r.face = r.iconBox:CreateTexture(nil, "BORDER")
+  r.face:SetPoint("CENTER", r.iconBox, "CENTER", 0, 0)
+  r.ficon = r.iconBox:CreateTexture(nil, "ARTWORK")
+  r.ficon:SetPoint("CENTER", r.iconBox, "CENTER", 0, 0)
+  r.icon = r.ficon
+  r.poi = GamePOI(r)
+  if r.poi then
+    pcall(function() r.poi:ClearAllPoints() r.poi:SetPoint("TOPRIGHT", r.title, "TOPLEFT", -7, 5) end)
+  end
   r:RegisterForClicks("LeftButtonUp")
   r:SetScript("OnClick", function(self) Tr.ReadyClick(self.q) end)
   r:SetScript("OnEnter", function(self)
+    self.hot = true
+    PaintReadyText(self)
     self.tipTitle = self.titleText
     self.tipText = "Ready to turn in. Click: the game's arrow points to it, and Dark Matter shows it."
     Tip(self)
   end)
-  r:SetScript("OnLeave", Untip)
+  r:SetScript("OnLeave", function(self)
+    self.hot = nil
+    PaintReadyText(self)
+    Untip()
+  end)
   ready.rows[i] = r
   return r
 end
@@ -497,11 +630,7 @@ local function BuildReady()
   h.button = b
   ready.header, ready.toggle = h, b
   ready.head = h.text
-  -- the rows' backdrop (header excluded, like the tracker's blocks)
-  ready.bg = ready:CreateTexture(nil, "BACKGROUND")
-  ready.bg:SetPoint("TOPLEFT", ready, "TOPLEFT", 0, -Tr.HEADER_H)
-  ready.bg:SetPoint("BOTTOMRIGHT", ready, "BOTTOMRIGHT", 0, 0)
-  ready.bg:SetColorTexture(0, 0, 0, 0.35)
+  -- 0.5.2b.7.3: no backdrop behind the rows (transparent, like the tracker's own blocks)
   ready.rows = {}
   ready:Hide()
   PaintToggle()
@@ -533,7 +662,8 @@ function Tr.FillReady()
     r.q, r.titleText = e.id, e.title
     r.title:SetText(e.title)
     r.zone:SetText(e.zone or "")
-    if not (NS.QS and NS.QS.PaintIcon(r.icon, "ready")) then r.icon:Hide() else r.icon:Show() end
+    Tr.PaintReadyIcon(r)
+    PaintReadyText(r)
     r:ClearAllPoints()
     r:SetPoint("TOPLEFT", ready, "TOPLEFT", 6, -Tr.HEADER_H - Tr.HEADER_GAP - (i - 1) * 32)
     r:SetPoint("RIGHT", ready, "RIGHT", -6, 0)
@@ -541,10 +671,8 @@ function Tr.FillReady()
   end
   for i = n + 1, #ready.rows do ready.rows[i]:Hide() end
   if n > 0 then
-    ready.bg:Show()
     ready:SetHeight(Tr.HEADER_H + Tr.HEADER_GAP + n * 32)
   else
-    ready.bg:Hide()
     ready:SetHeight(Tr.HEADER_H)
   end
   ready.n = n
@@ -846,8 +974,10 @@ end
 -- events and the tick (our own private frame; the tracker itself is never touched)
 ---------------------------------------------------------------------------
 Tr.EVENTS = { "QUEST_WATCH_LIST_CHANGED", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN",
-  "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_CONTROL_GAINED", "ZONE_CHANGED" }
+  "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_CONTROL_GAINED", "ZONE_CHANGED",
+  "SUPER_TRACKING_CHANGED" }
 function Tr.OnEvent(event, a1)
+  if event == "SUPER_TRACKING_CHANGED" then Tr.readyDirty = true return end -- 0.5.2b.7.3: the ready icons' super-tracked face
   if event == "QUEST_WATCH_LIST_CHANGED" or event == "QUEST_ACCEPTED" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA"
     or event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_CONTROL_GAINED" then
     Tr.orderDirty = Now() -- 0.5.2b.1: keep the tracker in log order (after the game's own re-sort)
@@ -916,6 +1046,13 @@ function Tr.Report()
   if ready then
     lines[#lines + 1] = string.format("ready section: %s, %s, placed %s at %s, %s (own frame on UIParent; the tracker is only read)",
       ready:IsShown() and "shown" or "hidden", Tr.ReadyCollapsed() and "collapsed" or "expanded", tostring(rawget(ready, "how")), tostring(rawget(ready, "x")), tostring(rawget(ready, "y")))
+    local r1 = ready.rows and ready.rows[1]
+    local A = Tr.READY_ICON
+    local hr, hg, hb, hs = Tr.TrackerColor("Header")
+    local lr, lg, lb = Tr.TrackerColor("Normal")
+    lines[#lines + 1] = string.format("ready rows: icon %s (POIButtonUtil.Style.%s: %s on %s); font %s; title Header %.2f %.2f %.2f (%s), hover HeaderHighlight; line Normal %.2f %.2f %.2f, hover NormalHighlight; backdrop none",
+      r1 and tostring(rawget(r1, "iconHow")) or "not built yet", A.style, A.atlas, A.face,
+      r1 and tostring(rawget(r1, "font")) or "ObjectiveTrackerLineFont", hr, hg, hb, hs, lr, lg, lb)
   end
   lines[#lines + 1] = string.format("tracker in log order: %s; watch-order API %s; re-orders %d; %s", Tr.OrderWanted() and "on" or "off",
     Tr.WatchOrder() and "ok" or "missing", Tr.orderFixed or 0, Tr.orderNote or "not checked yet")

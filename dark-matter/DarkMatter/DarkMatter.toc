@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.7.2: map: numbered zoom levels, quest areas steady while zooming, capitals from a set zoom level (/dm citylevel), the stock tombstone; smooth zone masks (soft edges, inset from the torn rim and the box edge, feathered seams), quest objective areas shaded, quest POI buttons like the objective tracker, party / raid dots, your corpse, and the map opens on you.
+## Notes: Dark Matter 0.5.2b.7.3: map: quest areas locked to the zone picture while zooming, capitals fade in from zoom 8 (full at 10, /dm citylevel), numbered zoom levels, the stock tombstone; smooth zone masks (soft edges, inset from the torn rim and the box edge, feathered seams), quest objective areas shaded, quest POI buttons like the objective tracker, party / raid dots, your corpse, and the map opens on you.
 ## Author: Odysseaus
-## Version: 0.5.2b.7.2
+## Version: 0.5.2b.7.3
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

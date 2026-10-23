@@ -28,7 +28,8 @@ local function Help()
   print("  /dm mapmask on|off  Map: the zone masks on or off for this session (off: one feathered zone at a time)")
   print("  /dm mapshapes  Map: sample every zone's outline from the game (out of combat, about a minute) -> DarkMatterDB.mapshapes, then /reload   /dm mapshapes stop|status")
   print("  /dm maplayer auto|painted|terrain  Map: what you zoom across: the game's painted zone maps with the minimap tiles at the deepest zoom (default), the painted maps only, or the minimap tiles as soon as they fit (0.5.2b.5)")
-  print("  /dm citylevel N  Map: the zoom level (the Zoom N at the top left of the map) the capitals show from; /dm citylevel default (3) (0.5.2b.7.2)")
+  print("  /dm citylevel N  Map: capitals fully drawn from Zoom N (top left of the map), fading in from N-2; /dm citylevel A B = fade A to full B; default = 8 to 10 (0.5.2b.7.3)")
+  print("  /dm blobdraw [same|next|once]  Map: when quest areas are drawn again while zooming (default same; mapprobe 10e counts) (0.5.2b.7.3)")
   print("  /dm tileprobe  Map: the minimap tiles: how many, do they load, how far they reach, what they cost (read-only)")
   print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
   print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (on by default)")
@@ -186,8 +187,11 @@ SlashCmdList["DARKMATTER"] = function(msg)
     -- 0.5.2b.6: auto (default since 0.5.2b.6.1) | painted | terrain, saved in DarkMatterDB.map.layer
     if NS.MapTab and NS.MapTab.MapLayerSlash then NS.Print(NS.MapTab.MapLayerSlash(rest)) end
   elseif cmd == "citylevel" then
-    -- 0.5.2b.7.2: the zoom level the capitals show from, saved in DarkMatterDB.map.cityLevel
+    -- 0.5.2b.7.3: the capitals fade in from DarkMatterDB.map.cityFade (or cityLevel - 2), full from cityLevel
     if NS.MapTab and NS.MapTab.CityLevelSlash then NS.Print(NS.MapTab.CityLevelSlash(rest)) end
+  elseif cmd == "blobdraw" then
+    -- 0.5.2b.7.3: when the quest areas are drawn again after a scale change, saved in DarkMatterDB.map.blobDraw
+    if NS.MapTab and NS.MapTab.BlobDrawSlash then NS.Print(NS.MapTab.BlobDrawSlash(rest)) end
   elseif cmd == "mapmask" then
     -- 0.5.2b.6.1: the zone masks on/off for this session
     if NS.MapTab and NS.MapTab.MapMaskSlash then NS.Print(NS.MapTab.MapMaskSlash(rest)) end

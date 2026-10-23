@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.5.2b.7.3
+
+Map: quest areas stay locked to the zone picture on every frame of a zoom, capitals fade in from Zoom 8 (full at 10), and the Ready to Turn In rows look like the tracker's own.
+
+### Fixes
+- **Quest areas bounced while zooming** (they settled once the zoom stopped). The game's `QuestPOIFrame` bakes its drawing at the scale the frame has when `DrawBlob` runs. Panning needs no redraw, but every new scale does. 0.5.2b.7.2 redrew at the start of each frame, before that frame's layout rescaled the frame. So every rendered zoom frame showed areas drawn for the previous frame's scale, one wheel-glide step behind. That is the bounce. Now the areas are drawn in the same frame, right after the layout has set the area frame's final scale and anchor (the rect is resolved with `GetRect` first). This matches the stock QuestBlob pin, which redraws at the end of the frame after the canvas moves. The area frames hold nothing of their own (no child frames, no textures, no pixel snapping), and their effective scale is the map's times their own.
+- **`/dm mapprobe` 10e** has new lines:
+  - "zoom: redraws N (scale only N); stale N frames, drawn vs shown N px": the target is 0 stale frames and 0.0 px.
+  - "zoom offset: area vs zone picture max N px": the worst offset on any frame of a zoom, from the game's own rects.
+  - "area frames N: children, regions, pixel-snapped, scale": what could scale or snap on its own.
+- **`/dm blobdraw same|next|once`** compares the ways of redrawing:
+  - `same` is the default, described above.
+  - `next` is the 0.5.2b.7.2 way, which shows the bounce.
+  - `once` never redraws while zooming, so the areas are off scale until the zoom stops.
+  - The setting is saved in DarkMatterDB.map.blobDraw, and `/dm blobdraw default` resets it.
+
+### Changes
+- **Capitals** fade in from Zoom 8 and are fully drawn from Zoom 10 and deeper. This is the new default.
+  - `/dm citylevel N` gives full from N, fading in from N-2.
+  - `/dm citylevel A B` gives fade A to full B.
+  - `/dm citylevel default` gives 8 to 10.
+  - A saved cityLevel 10 from 0.5.2b.7.2 gives fade 8 to full 10.
+  - `/dm mapprobe` map 24 ends with "cities 8-10".
+- **Ready to Turn In rows** (the section title is unchanged):
+  - **Icon**: the objective tracker's own completed-quest icon. This is the tracker's `ObjectiveTrackerPOIButtonTemplate` button with `POIButtonUtil.Style.QuestComplete`, which draws `UI-QuestIcon-TurnIn-Normal` on `UI-QuestPoi-QuestNumber` (`-SuperTracked` when the quest is super tracked). It is 20x20 and placed like the tracker places it. If the template is missing, the same two game atlases are used.
+  - **No backdrop** behind the rows.
+  - **Font and colours**: the tracker's `ObjectiveTrackerLineFont`. The title uses `OBJECTIVE_TRACKER_COLOR.Header`, or the quest difficulty colour when showQuestDifficultyColor is on, as the tracker does. The zone line uses `Normal`. On hover they change to `HeaderHighlight` and `NormalHighlight`, like the tracker's blocks, with no highlight plate. `/dm trackerprobe` prints a "ready rows" line with the icon, font and colours.
+
 ## 0.5.2b.7.2
 
 Map: quest areas stay steady while you zoom, zoom levels are numbered, and the capitals show from a zoom level you choose.

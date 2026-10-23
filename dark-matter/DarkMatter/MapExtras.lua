@@ -86,10 +86,55 @@ local function DrawBlobs(f, quests, key)
 end
 -- 0.5.2b.7.1: laid out like the stock map's QuestBlob pin. The game draws the areas in the frame's own units at the
 -- size the frame has when DrawBlob runs, so the frame keeps one fixed size (the zone picture's art size, like the stock
--- map canvas) and only its SetScale and anchor change with zoom and pan; it is drawn again on the frame AFTER a scale
--- change (stock OnCanvasScaleChanged -> MarkDirty -> next OnUpdate), never in the same frame as the move.
+-- map canvas) and only its SetScale and anchor change with zoom and pan. The game makes the drawing for the scale the
+-- frame has when DrawBlob runs (panning moves it with the frame; a new scale needs a new drawing, which is why the stock
+-- pin redraws on every OnCanvasScaleChanged); 0.5.2b.7.3 draws it in the same frame, after the move (X.BlobDrawNow).
 -- (0.5.2b.7 resized the frame in screen pixels and drew in the same frame, at the old size: the areas slid around.)
 X.BLOB_W, X.BLOB_H = 1002, 668
+-- 0.5.2b.7.3: how the areas are drawn again after a scale change (/dm blobdraw, DarkMatterDB.map.blobDraw):
+--  same (default): in the SAME frame, right after this frame's layout has placed the area frame on its zone picture
+--    (scale and anchor final, the rect resolved with GetRect), before anything is rendered: the stock pin's "wait until
+--    the end of the frame" (QuestBlobPin OnCanvasScaleChanged -> MarkDirty -> its OnUpdate after the canvas moved).
+--  next: 0.5.2b.7.2, at the start of the next frame, BEFORE that frame's layout: the areas were drawn for the previous
+--    frame's scale, then the frame was rescaled, so every rendered zoom frame showed them one frame behind (the bounce).
+--  once: never while zooming or gliding; drawn when the quests or the zone change and once the zoom stops.
+X.BLOB_MODES = { same = true, next = true, once = true }
+function X.BlobMode()
+  local db = NS.db and NS.db.map
+  local m = db and db.blobDraw
+  return X.BLOB_MODES[m] and m or "same"
+end
+local function DrawState(f, st)
+  if f.GetRect then pcall(f.GetRect, f) end -- resolve this frame's new scale and anchor before the game draws in it
+  st.dirty = nil
+  DrawBlobs(f, X.blobQuests or {}, f.key)
+  st.drawn = st.scale
+  st.drawnKey = st.key
+  st.drawnTick = X.tickN or 0
+  if M.Gliding and M.Gliding() then
+    X.gl.redraws = X.gl.redraws + 1
+    if st.drawnScaleOnly then X.gl.zoomRedraws = X.gl.zoomRedraws + 1 end
+  end
+end
+-- draw the marked areas now: called at the end of every layout (after the zone pictures and the area frames are placed)
+function X.BlobDrawNow()
+  local mode = X.BlobMode()
+  if mode == "next" then return end
+  local gliding = M.Gliding and M.Gliding()
+  for id, f in pairs(X.blobs) do
+    local st = X.bst[id]
+    if f and st and st.f == f and st.dirty and f.rect then
+      -- once: a change of scale alone waits for the zoom to stop; a new quest set or a new frame is drawn at once
+      local scaleOnly = st.drawnKey == st.key and st.drawnCW == st.cw
+      if not (mode == "once" and gliding and scaleOnly) then
+        st.drawnScaleOnly = scaleOnly
+        DrawState(f, st)
+        st.drawnCW = st.cw
+      end
+    end
+  end
+end
+
 -- per-zone layout state kept off the frame (a frame answers unknown keys with its methods)
 X.bst = {}
 function X.BlobState(id, f)
@@ -154,39 +199,48 @@ function X.LayoutBlobs()
     end
   end
   for id, f in pairs(X.blobs) do if f and not used[id] then f:Hide() f.rect = nil end end
+  X.BlobDrawNow()
 end
--- 0.5.2b.7.2: at the START of every frame (before the layout): areas marked in an earlier frame are drawn again, at the
--- scale and place that frame gave them (in effect now); the frame keeps showing what it drew until then
+-- the start of every frame: the frame counter, and (blobdraw next, the 0.5.2b.7.2 way) the areas marked in an earlier
+-- frame are drawn before this frame's layout
 function X.BlobFlush()
   X.tickN = (X.tickN or 0) + 1
+  if X.BlobMode() ~= "next" then return end
   for id, f in pairs(X.blobs) do
     local st = X.bst[id]
     if st and st.f ~= f then st = nil end
     if f and st and st.dirty and f.rect and X.tickN > st.dirty then
-      st.dirty = nil
-      DrawBlobs(f, X.blobQuests or {}, f.key)
-      st.drawn = st.scale
-      st.drawnKey = st.key
-      if M.Gliding and M.Gliding() then X.gl.redraws = X.gl.redraws + 1 end
+      st.drawnScaleOnly = st.drawnKey == st.key
+      DrawState(f, st)
     end
   end
 end
--- 0.5.2b.7.2: /dm mapprobe 10e counters, at the END of every frame of a zoom or glide: an area frame its zone needs that
--- is hidden or still blank (hidden), or that missed its next-frame redraw (late)
-X.gl = { frames = 0, hidden = 0, late = 0, redraws = 0 }
+-- /dm mapprobe 10e counters, at the END of every frame of a zoom or glide (after the layout, what will be rendered):
+--  hidden: an area frame its zone needs is hidden or still blank (a new area gets one frame)
+--  late: an area still waits for its redraw; stale: an area shows a drawing made at another scale (it would be off its
+--  zone by "drawn vs shown" px); offset: the area frame against its zone picture, in screen pixels (the game's rects)
+X.gl = { frames = 0, hidden = 0, late = 0, redraws = 0, zoomRedraws = 0, stale = 0, staleMax = 0, offMax = 0 }
 function X.GlideCount()
   if not (M.Gliding and M.Gliding()) then return end
   local g = X.gl
   g.frames = g.frames + 1
-  local hid, late = false, false
+  local hid, late, stale = false, false, false
+  local es = M.over and M.over.GetEffectiveScale and Try(M.over.GetEffectiveScale, M.over) or 1
   for id in pairs(X.blobWant or {}) do
     local f, st = X.blobs[id], X.bst[id]
-    -- hidden: not shown, or still blank a frame after it came into view (a new area is drawn the frame after)
     if not (f and f:IsShown() and st) or (not st.drawnKey and (st.first or 0) < (X.tickN or 0) - 1) then hid = true end
     if st and st.dirty and st.dirty < (X.tickN or 0) then late = true end
+    if st and st.drawn and st.scale and st.drawn ~= st.scale then
+      stale = true
+      local d = math.max(st.cw or 0, st.ch or 0) * math.abs(st.scale - st.drawn) * es
+      if d > g.staleMax then g.staleMax = d end
+    end
+    local d = X.PicOffset(id)
+    if d and d > g.offMax then g.offMax = d end
   end
   if hid then g.hidden = g.hidden + 1 end
   if late then g.late = g.late + 1 end
+  if stale then g.stale = g.stale + 1 end
 end
 -- /dm mapprobe 10e: each area frame against its zone picture, in screen pixels (the game's own rects)
 local function SRect(fr)
@@ -195,6 +249,35 @@ local function SRect(fr)
   if ok and type(l) == "number" and type(t) == "number" and type(r) == "number" and type(b) == "number" and type(e) == "number" then
     return l * e, t * e, r * e, b * e
   end
+end
+-- 0.5.2b.7.3: one area frame against its zone picture, in screen pixels (nil when either is not on screen)
+function X.PicOffset(id)
+  local f = X.blobs[id]
+  local L = M.layers and M.layers[id]
+  if not (f and f.rect and f:IsShown() and L and L.shown) then return nil end
+  local a1, a2, a3, a4 = SRect(f)
+  local b1, b2, b3, b4 = SRect(L.frame)
+  if not (a1 and b1) then return nil end
+  return math.max(math.abs(a1 - b1), math.abs(a2 - b2), math.abs(a3 - b3), math.abs(a4 - b4))
+end
+-- 0.5.2b.7.3: what the area frames hold that could scale or snap on their own: child frames, regions (textures that
+-- snap to the pixel grid), and the effective scale against the map's times the frame's own scale (0 = only ours)
+function X.BlobFrameCheck()
+  local kids, regs, snap, ed, n = 0, 0, 0, 0, 0
+  local es = M.over and Try(M.over.GetEffectiveScale, M.over)
+  for id, f in pairs(X.blobs) do
+    local st = X.bst[id]
+    if f and f:IsShown() and st and st.scale then
+      n = n + 1
+      kids = kids + (tonumber((Try(f.GetNumChildren, f))) or 0)
+      local rs = { Try(f.GetRegions, f) }
+      regs = regs + #rs
+      for _, r in ipairs(rs) do if type(r) == "table" and Try(r.IsSnappingToPixelGrid, r) then snap = snap + 1 end end
+      local fe = Try(f.GetEffectiveScale, f)
+      if type(fe) == "number" and type(es) == "number" then ed = math.max(ed, math.abs(fe - es * st.scale) / math.max(fe, 1e-6)) end
+    end
+  end
+  return n, kids, regs, snap, ed
 end
 function X.BlobCheck()
   local n, worst, wname, pend, nopic = 0, 0, nil, 0, 0
@@ -439,6 +522,7 @@ function M.ExtrasPreTick()
 end
 function M.ExtrasTick(dt)
   if not M.over then return end
+  X.BlobDrawNow() -- blobdraw once: the redraw when the zoom has stopped
   X.GlideCount()
   X.tg = (X.tg or 0) + dt
   if X.tg >= X.GROUP_EVERY then X.tg = 0 X.LayoutGroup() end
@@ -446,6 +530,22 @@ function M.ExtrasTick(dt)
   if X.tc >= X.CORPSE_EVERY then X.tc = 0 X.LayoutCorpse() end
   X.th = (X.th or 0) + dt
   if X.th >= X.HOVER_EVERY then X.th = 0 BlobHover() end
+end
+-- 0.5.2b.7.3: /dm blobdraw [same|next|once]: when the quest areas are drawn again after a scale change (X.BlobMode);
+-- saved in DarkMatterDB.map.blobDraw; the 10e zoom counters start again
+function M.BlobDrawSlash(arg)
+  arg = arg and arg:lower():match("^%s*(%S*)") or ""
+  local say = "same (default: in the frame of the move), next (0.5.2b.7.2), once (only when the zoom stops)"
+  if arg ~= "" then
+    if not X.BLOB_MODES[arg] and arg ~= "default" then return "blobdraw: " .. say end
+    if not NS.db then return "blobdraw: saved settings not loaded yet" end
+    NS.db.map = NS.db.map or {}
+    NS.db.map.blobDraw = (arg ~= "same" and arg ~= "default") and arg or nil
+    for k in pairs(X.gl) do X.gl[k] = 0 end
+    for _, st in pairs(X.bst) do st.dirty = st.dirty or (X.tickN or 0) end
+    M.dirty = true
+  end
+  return "blobdraw: " .. X.BlobMode() .. " - " .. say .. "; /dm mapprobe 10e counts each zoom"
 end
 -- the events that change what is drawn here (each registered only if this client has it)
 local ev = CreateFrame("Frame")
@@ -474,6 +574,14 @@ function X.ProbeLines()
     local g = X.gl
     out[#out + 1] = string.format("map 10e: hidden during zoom: %d frames; late %d; zoom frames %d; redraws %d",
       g.hidden, g.late, g.frames, g.redraws)
+    out[#out + 1] = string.format("map 10e: zoom: redraws %d (scale only %d); stale %d frames, drawn vs shown %.1f px",
+      g.redraws, g.zoomRedraws, g.stale, g.staleMax)
+    out[#out + 1] = string.format("map 10e: zoom offset: area vs zone picture max %.1f px; draw %s (/dm blobdraw)", g.offMax, X.BlobMode())
+    local fn, kids, regs, snap, ed = X.BlobFrameCheck()
+    if fn > 0 then
+      out[#out + 1] = string.format("map 10e: area frames %d: children %d, regions %d, pixel-snapped %d, scale %s", fn, kids, regs, snap,
+        ed < 1e-4 and "ours only" or string.format("OFF by %.4f", ed))
+    end
   end
   if QS then
     local function roles(list)

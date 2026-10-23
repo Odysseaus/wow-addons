@@ -1,6 +1,6 @@
 # Dark Matter (P2.8 fishing catalog + item tooltips)
 
-**Version 0.5.2b.7.2** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
+**Version 0.5.2b.7.3** · Interface `16001` (World of Warcraft: Forever beta, `_classic_beta_`) · Author: Odysseaus
 
 Dark Matter is a one-window overview of your quests, fishing, dungeons and achievements. **P1 builds the real main window**: the WoW theme from the approved previewer mockup, a vertical tab rail on the left, and a working Quests tab. Journals, Map and Dungeons are placeholders for later phases. The P0 probe is still here, unchanged, in its own small window.
 
@@ -76,6 +76,11 @@ The default theme 'WoW' looks like a stock WoW window. It draws the game's own t
 - **Your map pins**: the Pin tool on the map, then a click on the map. The game's waypoint and minimap arrow point at the pin; right-click a pin to remove it.
 - **Keys**: M and L open Dark Matter on the Map tab with the Quest Log panel; ALT-M and ALT-L open the game's map and quest log. Session-only override bindings, never saved; `/dm keys off` turns them off.
 - `/dm trackerprobe` lists what the tracker overlays found (read-only).
+
+### 0.5.2b.7.3 changes
+- The quest areas no longer bounce while zooming. They are drawn again in the same frame as each scale change, after the area frame is placed, so they never show a drawing made for the previous frame's scale. `/dm mapprobe` 10e counts the redraws, the stale frames and the worst offset against the zone picture. `/dm blobdraw same|next|once` compares the redraw modes.
+- Capitals fade in from Zoom 8 and are full from Zoom 10 (the new default). `/dm citylevel N` gives full from N, fading from N-2; `/dm citylevel A B` gives fade A to full B.
+- Ready to Turn In rows use the tracker's own completed-quest POI icon (`UI-QuestIcon-TurnIn-Normal` on `UI-QuestPoi-QuestNumber`). They have no backdrop. They use the tracker's line font and colours (Header and Normal, with HeaderHighlight and NormalHighlight on hover).
 
 ### 0.5.2b.7.2 changes
 - The quest areas no longer vanish or slip while zooming: they are drawn again the frame after every scale change and stay shown while their zone picture is drawn. `/dm mapprobe` 10e counts any frame where they were hidden during a zoom.

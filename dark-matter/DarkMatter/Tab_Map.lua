@@ -227,18 +227,29 @@ function M.LevelTable(cont)
   end
   return out
 end
--- 0.5.2b.7.2: the capitals show from one zoom level on (DarkMatterDB.map.cityLevel, /dm citylevel N), anywhere in view,
--- fading in over the half level before it. Default 3: today's (0.5.2b.7.1) look, where they came in with the masked
--- zones (x1.3 to x1.9 past the continent fit; on 1.60.1 the continent fit is about level 1, so about levels 1.9 to 3.1)
-M.CITY_LEVEL_DEFAULT = 3
+-- 0.5.2b.7.3: the capitals fade in from one zoom level (DarkMatterDB.map.cityFade) and are fully drawn from another
+-- (DarkMatterDB.map.cityLevel) and deeper, anywhere in view. Default: fade in from Zoom 8, full at Zoom 10.
+-- /dm citylevel N sets the full level with the fade starting two levels earlier; /dm citylevel A B sets both.
+-- (0.5.2b.7.2 saved only cityLevel, the level they showed from: a saved 10 now reads as fade 8 -> full 10.)
+M.CITY_LEVEL_DEFAULT = 10
+M.CITY_FADE_LEVELS = 2
 function M.CityLevel()
   local db = NS.db and NS.db.map
   local n = db and tonumber(db.cityLevel)
   return n or M.CITY_LEVEL_DEFAULT
 end
+function M.CityFadeStart()
+  local db = NS.db and NS.db.map
+  local full = M.CityLevel()
+  local a = db and tonumber(db.cityFade)
+  if a and a <= full then return a end
+  return math.max(1, full - M.CITY_FADE_LEVELS)
+end
 function M.CityFade(cont)
-  local n = M.CityLevel()
-  return Smooth((M.LevelOf(cont) - (n - 0.5)) / 0.5)
+  local full, a = M.CityLevel(), M.CityFadeStart()
+  local L = M.LevelOf(cont)
+  if full - a < 0.5 then return Smooth((L - (full - 0.5)) / 0.5) end
+  return Smooth((L - a) / (full - a))
 end
 -- 0.5.2b.4: when the (one) zone picture comes in: as you zoom toward the zone, once it fills ZONE_SHARE of the view
 -- (the larger of its width and height share), or once the continent art is magnified past ZONE_MAG (a small zone,
@@ -1360,25 +1371,35 @@ function M.MapLayerSlash(arg)
   local v = CU.Layer()
   return "maplayer: " .. v .. " - " .. M.LAYER_SAY[v] .. (v == CU.DEFAULT_LAYER and " (default)" or "")
 end
--- 0.5.2b.7.2: /dm citylevel [N|default]: the zoom level the capitals show from (DarkMatterDB.map.cityLevel); live
+-- 0.5.2b.7.3: /dm citylevel [N | A B | default]: the capitals are fully drawn from zoom level N, fading in from N-2
+-- (or from A to B); saved in DarkMatterDB.map.cityLevel / cityFade; live
 function M.CityLevelSlash(arg)
-  arg = arg and arg:lower():match("^%s*(%S*)") or ""
-  local say = "/dm citylevel N (1 = fully zoomed out)"
-  if arg ~= "" then
+  arg = arg and arg:lower() or ""
+  local a1, a2 = arg:match("^%s*(%S*)%s*(%S*)")
+  a1, a2 = a1 or "", a2 or ""
+  local say = "/dm citylevel N (full from N, fading in from N-2) or A B (fade A to full B); 1 = fully zoomed out"
+  if a1 ~= "" then
     if not NS.db then return "citylevel: saved settings not loaded yet" end
     NS.db.map = NS.db.map or {}
-    if arg == "default" or arg == "reset" then
-      NS.db.map.cityLevel = nil
+    if a1 == "default" or a1 == "reset" then
+      NS.db.map.cityLevel, NS.db.map.cityFade = nil, nil
     else
-      local n = tonumber(arg)
-      if not n or n ~= math.floor(n) or n < 1 or n > 40 then return "citylevel: " .. say .. ", or default" end
-      NS.db.map.cityLevel = n
+      local x, y = tonumber(a1), a2 ~= "" and tonumber(a2) or nil
+      local function okn(v) return v and v == math.floor(v) and v >= 1 and v <= 40 end
+      if not okn(x) or (a2 ~= "" and not okn(y)) then return "citylevel: " .. say .. ", or default" end
+      if y then
+        if y < x then x, y = y, x end
+        NS.db.map.cityLevel, NS.db.map.cityFade = y, x
+      else
+        NS.db.map.cityLevel, NS.db.map.cityFade = x, nil
+      end
     end
     M.dirty = true
   end
-  local n = M.CityLevel()
+  local n, a = M.CityLevel(), M.CityFadeStart()
+  local def = n == M.CITY_LEVEL_DEFAULT and a == M.CITY_LEVEL_DEFAULT - M.CITY_FADE_LEVELS
   local top = M.ready and M.MaxLevel(M.focus or Focus()) or nil
-  return "citylevel: cities show from zoom level " .. n .. (n == M.CITY_LEVEL_DEFAULT and " (default)" or "")
+  return "citylevel: cities fade in from zoom level " .. a .. ", full from " .. n .. (def and " (default)" or "")
     .. (top and (" - this map goes to " .. top) or "") .. " - " .. say
 end
 -- 0.5.2b.5: /dm tileprobe: what the minimap tiles have on this client, how far they reach, what they cost
@@ -1838,7 +1859,7 @@ M.QuestClick = function(mk) return QuestClick(mk) end
 
 function M.Tick(dt)
   dt = math.min(dt or 0, 0.1)
-  -- 0.5.2b.7.2: quest areas marked last frame are drawn again now, before this frame moves anything (MapExtras.lua)
+  -- 0.5.2b.7.2: the frame counter (0.5.2b.7.3: quest areas are drawn in the frame they move, after LayoutBlobs; MapExtras.lua)
   if M.ExtrasPreTick then local ok, e = pcall(M.ExtrasPreTick) if not ok then M.extrasErr = e end end
   M.ExploreTick(dt)
   if M.rebuildLayers then M.RebuildLayers() end
