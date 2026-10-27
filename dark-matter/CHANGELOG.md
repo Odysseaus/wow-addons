@@ -1,5 +1,592 @@
 # Changelog
 
+## 0.5.2b.9
+
+Close-up tiles now follow the numbered zoom level only, so zoom 12 shows painted art again. This build also adds a small Classic Era loader (DarkMatter_Vanilla.toc), so the shared map code can be tested on Classic Era 1.15.9 while the Forever beta is down until the Nov 4 launch. Forever still loads DarkMatter.toc and the same files as before.
+
+### Changes
+- **Zoom 12 painted again (shared, Forever too).** In the auto layer, close-up tile strength was keyed to how much the zone art was magnified. In big zones, or in a small window, that crossed the fade-in point before the last level, so level 12 already drew minimap tiles. Tile strength is now keyed to the zoom level only:
+  - 0 at every level up to the second-to-last.
+  - A fade only within the last wheel step.
+  - Full at the deepest level.
+  - This holds for every zone, in the window and in full screen.
+  - The opt-in terrain layer is unchanged.
+- **New readout line** in `/dm tileprobe` and `/dm zoomprobe`: `auto tiles by level: none to L13, full at L14 (fade 13.0-13.9); now L12 (12.00), tiles 0%`.
+- **Classic Era test bench (`DarkMatter_Vanilla.toc`, Interface 11509).** It lists the same files as DarkMatter.toc plus one Era-only file, `Compat_Era.lua`, loaded last. Forever has no suffixed TOC, so it keeps loading DarkMatter.toc without that file. On Era, `Compat_Era.lua`:
+  - Sets `NS.IsEra` from `WOW_PROJECT_ID == 2`, or from an interface number in the 1.x range.
+  - Drops the Forever-only zones that the game does not know: Mount Hyjal 2482, Riverglades 2548 and Shen'dralas 2652 (masks, seams and level badges), plus the Zephras Isle level badge.
+  - Switches off what Classic Era does not have: user waypoints and super tracking, the objective tracker overlays, the game's achievements and the Encounter Journal-only bits. None of these raises a Lua error.
+  - `/dm probe` adds the line `client: Classic Era <version>, interface <n>, WOW_PROJECT_ID <n>; Forever-only zones dropped: ...; off: ...`.
+  - No Classic quest helper.
+- **Tests.** The stub tests gain an `era` mode (Vanilla TOC, `WOW_PROJECT_ID` 2, build 11509, the Forever-only maps missing). In that mode, every `/dm` map command (probe, mapprobe, tileprobe, mapshapes, zoomprobe, shottest, seamsweep) runs without a Lua error or says what is missing. Version strings in the tests no longer depend on the version.
+
+## 0.5.2b.8.2
+
+Softer seams between zone pictures, from the 0.5.2b.8.1 seam sweep shots (24 of 24), and full screen now zooms exactly like the map window on both continents.
+
+### Changes
+- **Wider crossfade at zone borders.** In the shots, where two zone pictures meet on land (Elwynn | Duskwood, Badlands | Riverglades, Burning Steppes | Badlands and others) the switch from one picture to the other was a hard straight line. The offline check put the crossfade at 0.5 cpx (20% to 80%); at zoom 8 that is about 4 screen pixels. maskgen now blurs the game's areas wider (SIG_C 1.6 → 2.4 cpx) and shares the core less steeply (SHARP 3 → 1). The crossfade is now about 2.4 cpx at Elwynn | Duskwood and 1.9 at Badlands | Riverglades. Only the 43 core masks and `Data_ZoneSeams.lua` changed. The soft halos, the coast fade and the outline are the same.
+  - Offline sweep: land showing only the continent picture is flat (Kalimdor 3.67% → 3.64%, Eastern Kingdoms 3.27% → 3.26%). Land drawn by the wrong picture rose from 1.98% to 2.40% and from 3.02% to 3.69%. That is expected: within about a cpx of a border the neighbour's picture now has more than half. Full-strength overlap stays at 0. Border review total: 789.1 → 726.8.
+  - Tried and not taken: a wider fade at the picture edges and a wider outline blur. Both left the sea edges almost as straight (fade 1.0 → 1.75 cpx) and let the continent picture show on 1.2 to 2.2 points more land.
+- **Full screen zooms like the map window (bug from 2026-10-23).** In full screen, fully zoomed out, Kalimdor drew its zone pictures and level boxes while Eastern Kingdoms drew only the plain art. There were three causes:
+  1. Each continent's picture was faded by the *focus* fade, which is 1 only for the continent under the middle of the view. The other continent got no continent picture, no level boxes (both need the picture above 0.5) and no zones.
+  2. Zones faded in by "how far past the continent's fit" (ContZoomK, mask fade-in 1.3 → 1.9), measured in the real box. In the wide full-screen box (about 2.4:1) level 1 is set by the width, but the continent's fit is set by its height. So level 1 was already about x1.5 past the fit and the focus continent's zones were half in. At level 1, Eastern Kingdoms reads ZoomK 1.03 in the window and about 1.50 in full screen.
+  3. The close-up tile magnification and the deepest-level cap were also measured in real box pixels.
+- **Fix:** every layer rule is now worked out as the reference window (1221x729, the normal map window) would show the same numbered level. Layers depend only on the level, not on the box size or which continent is in focus:
+  - Continent pictures are always at full strength (ContAlpha = 1), so the level boxes show on both continents from level 1.
+  - Zone pictures (masked) fade in by level: `M.ZONE_LEVELS` 1.75 → 3.0, which matches the old window behaviour.
+  - Capitals keep levels 8-10.
+  - The tile magnification and the ZMax cap are scaled to the reference window.
+  - The breadcrumb and cursor coordinates name the focus continent by its reference-window share, so fully zoomed out they read the world.
+  - The fit used when opening a view still uses the real box. The levels are kept when switching between window and full screen.
+- Trade-offs:
+  - Both continents' zone pictures can now draw at once, which costs more textures when both are in view at level 3 and above.
+  - At the deepest level, full screen magnifies more on screen (about 1.7x at 3437 px wide), because the cap is now the same level number.
+- **New `/dm zoomprobe`:** one line each for the window and for full screen (the full-screen size is estimated from the screen until it has been opened once). For each continent in view it gives the level, zones, level boxes, capitals and tiles, with the 0.5.2b.8.1 value next to each. A verdict line follows. The result is saved to the probe log.
+- Not changed: the edges at sea where a zone picture ends and only the continent picture is left (no other picture paints there). Also unchanged: tone and resolution differences between pictures, and the painted mountain frames (Redridge). See the review notes.
+
+## 0.5.2b.8.1
+
+Masks rebuilt from your full mapshapes run, a click-driven seam sweep, and a clearer blocked-action log.
+
+### Changes
+- **All 43 zone masks are now sampled.** Rebuilt from the mapshapes run of 2026-10-23 10:33 (43 zones, 736,160 samples). Redridge Mountains (1433), Moonglade (1450) and Shen'dralas (2652) were made from their neighbours' edges before and now use their own samples (11,408, 8,890 and 7,413 cells). No zone uses a neighbour-made rectangle any more. The core masks and `Data_ZoneSeams.lua` were regenerated too (15 zones' pictures changed).
+  - Offline sweep (the sampled area grew, so the figures are not exactly like-for-like). Land showing only the continent picture: Kalimdor 3.66% → 3.67%, Eastern Kingdoms 3.38% → 3.27%. Land drawn by the wrong picture: 1.77% → 1.98% and 2.66% → 3.02%. Full-strength overlap stays at 0.
+  - Border review total: 583.6 → 789.1. The old scores for the neighbour-made zones were only the +5 bonus; their real measures can be seen now. Swamp of Sorrows | Riverglades is still the worst border (302.9 → 308.5). Duskwood | Redridge is the new #2 (5.0 → 217.1). It is a short corner at about 50.7, 74.2. Shen'dralas and Moonglade borders improved (Desolace 6.9 → 2.1, Feralas 6.1 → 1.3, Darkshore 6.2 → 4.5).
+- **`/dm seamsweep` is click-driven.** `/dm seamsweep [N]` centres the map on the first view and shows a **Shot** button at the bottom left of the map. Each click takes one screenshot of the view shown and moves to the next one. The caption shows "Shot i/N: border, score, level". `/dm seamsweep next` counts as one click; `/dm seamsweep stop` ends the sweep. `Screenshot()` now runs only in a click or a typed command, never from a timer. Every step and every refusal (map not open, shottest not passed, combat, busy) is written to the probe log.
+- **Blocked-action log.** Entries now name the addon the game blamed. When the game blamed another addon, the entry ends with "- another addon, not Dark Matter". The recorder's own stack frames are left out. 0.5.2b.8 recorded a SetAllowDangerousScripts block that the game blamed on WoWGrok: WoWGrok replaces the chat box's send functions, so `/run` and `/script` typed in chat run tainted by it.
+- `/dm mapcost both` showed 29 fps at every level, with the core pass on and off. That means a frame cap, not the masks. The core pass stays on.
+
+## 0.5.2b.8
+
+Map: the name under the cursor at the top of the map, two-pass zone masks, and tools to measure their cost and review every zone border.
+
+### Changes
+- **Hover title.** The zone or capital under the cursor is named at the top centre of the map, above the pins, with the subarea under it. The subarea comes from `MapUtil.FindBestAreaNameAtMouse`, called with pcall, and shows only when it differs from the zone name.
+  - The title uses the game's `WorldMapTextFont` at scale 0.695 and `SubZoneTextFont` for the subarea. If those fonts are missing it uses Friz Quadrata 32 THICK, cream 1.0/0.93/0.76.
+  - It shows only where the game names the spot (no title over the sea) and gives no level range.
+  - The zone level boxes and the "Levels: public data" caption are unchanged.
+- **Two-pass zone masks (maskgen v2).**
+  - Every masked zone draws its picture twice:
+    - The **soft** pass (`z<id>.tga`) is a halo of its own land.
+    - The **core** pass (`z<id>c.tga`) sits one frame level higher and holds the land where its picture is the cleanest. That is the picture furthest from its torn rim and box edge.
+  - The cores of neighbours form a partition, so draw order no longer matters, and the halos fill the seams under them.
+  - Widths are in continent px. The torn-rim cut is in art px.
+  - The zone-name words painted into the art may be cut or covered. The hover title names the zone instead.
+  - Offline sweep, old to new:
+
+    | Metric | Kalimdor | Eastern Kingdoms |
+    |---|---|---|
+    | Land with only the continent picture | 4.14% to 3.66% | 5.10% to 3.38% |
+    | Wrong picture | 4.08% to 1.77% | 2.81% to 2.66% |
+    | Full-strength overlap | 4.74% to 0% | 3.90% to 0% |
+  - Redridge, Moonglade and 2652 still use neighbour-made rect masks until a new `/dm mapshapes` samples them.
+- **Border review** (box-side, `maskgen.py masks ... --review DIR`):
+  - It writes a report of every zone border, worst first, plus a contact sheet and continent overviews.
+  - It writes `Data_ZoneSeams.lua`, the worst borders, which ship for the in-game sweep.
+
+### New commands
+- `/dm mapcore on|off`: the core pass on or off for the session.
+- `/dm mapcost [both]`: with the map open, it steps through zoom levels 1, 2, 3, 4, 6, 8 and 10 at the current centre and records the frame rate and textures at each. With `both` it runs once with the core pass and once without, then restores the view.
+- `/dm shottest`: takes ONE screenshot and records whether the game reported `SCREENSHOT_SUCCEEDED` (saved in DarkMatterDB.map.shot).
+- `/dm seamsweep [N] | stop`: with the map open and out of combat, screenshots the N worst borders (default 8, max 40) at zoom 4, 8 and 12, then restores the view. It is refused until `/dm shottest` has passed.
+- `/dm mapprobe` map 25 shows the textures built and on screen, the core pass state, the frame rate, the hover title, and whether `Screenshot()` and its events exist. It takes no shot.
+
+## 0.5.2b.7.3
+
+Map: quest areas stay locked to the zone picture on every frame of a zoom, capitals fade in from Zoom 8 (full at 10), and the Ready to Turn In rows look like the tracker's own.
+
+### Fixes
+- **Quest areas bounced while zooming** (they settled once the zoom stopped). The game's `QuestPOIFrame` bakes its drawing at the scale the frame has when `DrawBlob` runs. Panning needs no redraw, but every new scale does. 0.5.2b.7.2 redrew at the start of each frame, before that frame's layout rescaled the frame. So every rendered zoom frame showed areas drawn for the previous frame's scale, one wheel-glide step behind. That is the bounce. Now the areas are drawn in the same frame, right after the layout has set the area frame's final scale and anchor (the rect is resolved with `GetRect` first). This matches the stock QuestBlob pin, which redraws at the end of the frame after the canvas moves. The area frames hold nothing of their own (no child frames, no textures, no pixel snapping), and their effective scale is the map's times their own.
+- **`/dm mapprobe` 10e** has new lines:
+  - "zoom: redraws N (scale only N); stale N frames, drawn vs shown N px": the target is 0 stale frames and 0.0 px.
+  - "zoom offset: area vs zone picture max N px": the worst offset on any frame of a zoom, from the game's own rects.
+  - "area frames N: children, regions, pixel-snapped, scale": what could scale or snap on its own.
+- **`/dm blobdraw same|next|once`** compares the ways of redrawing:
+  - `same` is the default, described above.
+  - `next` is the 0.5.2b.7.2 way, which shows the bounce.
+  - `once` never redraws while zooming, so the areas are off scale until the zoom stops.
+  - The setting is saved in DarkMatterDB.map.blobDraw, and `/dm blobdraw default` resets it.
+
+### Changes
+- **Capitals** fade in from Zoom 8 and are fully drawn from Zoom 10 and deeper. This is the new default.
+  - `/dm citylevel N` gives full from N, fading in from N-2.
+  - `/dm citylevel A B` gives fade A to full B.
+  - `/dm citylevel default` gives 8 to 10.
+  - A saved cityLevel 10 from 0.5.2b.7.2 gives fade 8 to full 10.
+  - `/dm mapprobe` map 24 ends with "cities 8-10".
+- **Ready to Turn In rows** (the section title is unchanged):
+  - **Icon**: the objective tracker's own completed-quest icon. This is the tracker's `ObjectiveTrackerPOIButtonTemplate` button with `POIButtonUtil.Style.QuestComplete`, which draws `UI-QuestIcon-TurnIn-Normal` on `UI-QuestPoi-QuestNumber` (`-SuperTracked` when the quest is super tracked). It is 20x20 and placed like the tracker places it. If the template is missing, the same two game atlases are used.
+  - **No backdrop** behind the rows.
+  - **Font and colours**: the tracker's `ObjectiveTrackerLineFont`. The title uses `OBJECTIVE_TRACKER_COLOR.Header`, or the quest difficulty colour when showQuestDifficultyColor is on, as the tracker does. The zone line uses `Normal`. On hover they change to `HeaderHighlight` and `NormalHighlight`, like the tracker's blocks, with no highlight plate. `/dm trackerprobe` prints a "ready rows" line with the icon, font and colours.
+
+## 0.5.2b.7.2
+
+Map: quest areas stay steady while you zoom, zoom levels are numbered, and the capitals show from a zoom level you choose.
+
+### Fixes
+- **Quest areas during a zoom**: the areas vanished or slipped for a moment while zooming. There were two causes. First, 0.5.2b.7.1 pushed the "draw again" mark forward on every frame the scale changed, so the areas were not redrawn until the zoom stopped. The game's `QuestPOIFrame` does not keep a good drawing across a scale change (the stock map redraws it every frame of a zoom). Second, the areas were shown only while the zone filled 60% of the view, so zooming out hid them while the zone picture was still drawn. Now a scale change marks the frame once, and the frame is drawn again at the start of the next frame, before anything moves (like the stock map's MarkDirty and OnUpdate). The frame stays shown and keeps its scale and anchor locked to the zone picture on every frame. The areas are also shown for as long as their zone picture is drawn, at the picture's strength.
+- **`/dm mapprobe` 10e** has a new line: "hidden during zoom: N frames; late N; zoom frames N; redraws N". It counts the frames of a zoom, fly or drag in which an area its zone needs was hidden or blank, or missed its next-frame redraw.
+
+### Changes
+- **Numbered zoom levels**: each mouse-wheel step lands on a numbered level. Level 1 is fully zoomed out. Each level is one wheel step (1.35x) past the one before. The last level is the deepest zoom, with the minimap tiles. If the last step would be less than a quarter of a step, it is folded into the step before, so no wheel click barely moves the map. The wheel steps are the same as before (1.35x from fully out), so the count does not change. A small "Zoom N" readout in the game's small font sits at the top left of the Map tab. `/dm mapprobe` map 24 prints the level table: each level's zoom against the continent fit, the art magnification, what is drawn there, and the number of wheel steps.
+- **City zoom level**: the capitals show from one zoom level on, anywhere in view, and fade in over the half level before it. `/dm citylevel N` changes the level live and saves it in DarkMatterDB.map.cityLevel. `/dm citylevel` with no number shows the current level, and `/dm citylevel default` goes back to level 3. Level 3 is about where they came in before, with the zone pictures.
+
+## 0.5.2b.7.1
+
+Map: quest areas stay on the zone art at every zoom and pan, capitals are drawn over their zones, and the corpse is the stock tombstone.
+
+### Fixes
+- **Quest areas (B)**: the blue areas were in the wrong place and slid around while zooming. 0.5.2b.7 resized the `QuestPOIFrame` to the zone's on-screen pixels and called `DrawBlob` in the same frame, so the areas were drawn at the old size. The frame now works like the stock map's QuestBlob pin. It keeps one fixed size (the zone picture's art size), and zoom and pan change only its `SetScale` and anchor, so the areas move with the zone picture. After a zoom the areas are drawn again on the next frame, like the stock map. Panning does not redraw them.
+- **Corpse (F)**: a cluster of coloured icons showed instead of the tombstone. 0.5.2b.7 used the classic_era texcoords for `Interface\Minimap\POIIcons`. It now uses the 1.60.1 `CorpsePinTemplate` texcoords (0.56640625, 0.6328125, 0.001953125, 0.03515625).
+- **Player arrow (G)**: the arrow tries the 1.60.1 stock atlas `UI-WorldMapArrow` first, then falls back to `Interface\WorldMap\WorldMapArrow`.
+
+### Changes
+- **Capitals**: Ironforge, Stormwind, Darnassus, Orgrimmar, Thunder Bluff and Undercity are now drawn whenever any part of the city is in view and its parent zone's picture is drawn. Before, they were drawn only when the centre of the view was on the city. The city fades in at the same strength as its parent, sits above it, and is feathered at its rim so it blends in. Only cities in view are built.
+- **`/dm mapprobe` 10e**: compares each quest-area frame with its zone picture in screen pixels. It shows the worst gap (OK at 1.5 px or less) and how many areas are waiting to be drawn again.
+
+## 0.5.2b.7
+
+Map: softer zone edges, plus quest areas, quest POI buttons, party and raid dots, your corpse, the game's player arrow, and the map opens on you.
+
+### Changes
+- **Smooth masks (A)**: the zone masks have soft, feathered edges. They are inset from the torn rim and the picture's box edge, the seams between zones are feathered, and the coast fades into the art. `tools/maskgen` regenerates them; no new in-game step is needed.
+- **Quest objective areas (B)**: the selected quest and your tracked quests get the game's blue objective areas, drawn with the stock `QuestPOIFrame` (`UI-QuestBlob-Inside/Outside`, `DrawBlob`), one frame per zone on screen. Hovering an area shows the quest and its objective progress.
+- **Quest POI buttons (C)**: the quest markers are the objective tracker's own POI buttons, as OpenMap draws them. In progress is a ring with "..." (`UI-QuestPoi-QuestNumber` + `Quest-In-Progress-Icon-yellow`, brown dots and a gold ring when selected). Ready is a yellow "?" (`UI-QuestIcon-TurnIn-Normal`). Clicking one opens the quest in the docked Quest Log panel; shift-click still sets the waypoint. A client without these atlases keeps the 0.5.2a game icons.
+- **Party and raid dots (D)**: party members use the stock party icon (`Interface\WorldMap\WorldMapPartyIcon`); raid members use the same dot tinted with their class colour. The dots update five times a second. A member in another zone, or out of range, is dimmed. The tooltip shows name, level, class and zone.
+- **Opening view (E)**: the map always opens on your zone at zone zoom, with you as close to the centre as the zone's edges allow. Show on map and tracker title clicks still go to the quest.
+- **Your corpse (F)**: while you are dead or a ghost, the stock map's tombstone (`Interface\Minimap\POIIcons`, the CorpsePinTemplate texcoords) marks `C_DeathInfo.GetCorpseMapPosition`. Its tooltip reads "Your corpse", and it goes away when you are resurrected.
+- **Player arrow (G)**: the flat yellow arrow is replaced by the stock map's own player arrow (`Interface\WorldMap\WorldMapArrow`, as GroupMembersPinMixin sets it), still turned to your facing. If the client lacks it, the old arrow is used.
+- `/dm mapprobe` adds lines `map 10b`, `map 10c` and `map 10d`: the QuestPOIFrame, the POI atlases, the party and corpse icons, the player arrow in use, and the corpse and group APIs.
+- New file `MapExtras.lua`.
+
+## 0.5.2b.6.2
+
+Map: the live map now draws zones exactly the way `/dm masktest zone` panel 2 does, because panel 2 cut in game and the map did not. This is the pre-release of 0.5.2b.7.
+
+### Fixes
+- **Zone masks on the live map**: in 0.5.2b.6.1 the game kept every mask (449/449 pieces), but the zones were still drawn as full rectangles. Panel 2 differed from the map in five ways. The map now matches panel 2 in all of them:
+  - the viewport is a plain clipping frame (`SetClipsChildren`), not a ScrollFrame scroll child;
+  - pieces are drawn in ARTWORK, not BACKGROUND;
+  - there is no texture filter;
+  - zone pictures are unscaled and sized in screen pixels at every zoom (re-placed when the zoom changes), instead of `SetScale`;
+  - the layer frame is anchored before its mask is made, and the mask goes on last.
+- This applies at every zoom, including zoomed out to the continent.
+
+### Changes
+- `/dm mapsweep` adds `mapsweep cut`: it draws views for real (each masked continent fitted, x1.4 and x2, plus each zone zoomed out), audits every zone picture on screen and flags `unmasked-rect`, `mask-rect` (mask not the picture's size) and `not-panel2` (scaled, wrong draw layer, mask on another frame, inside a ScrollFrame). The game reports no pixels, so this checks how each picture is built. `/dm masktest zone` shows the pixels.
+- `/dm masktest zone`: panel 3 now runs the map's own drawing code. Panel 4 runs the same code inside a ScrollFrame (the old viewport). If 3 is cut and 4 is a full rectangle, the ScrollFrame was the cause.
+- `/dm mapprobe` adds `map 23 cut`.
+
+## 0.5.2b.6.1
+
+Map: a fix for the zone masks, which did not cut in game in 0.5.2b.6. This is the pre-release of 0.5.2b.7.
+
+### Fixes
+- **Zone masks**: in 0.5.2b.6, each zone picture piece got its mask while it was still an empty texture (before its file, size and place). In game, every zone was drawn as its full torn-edge rectangle, overlapping its neighbours. Now the mask goes on last, once the piece has its file, size and place. This is the same order as `/dm masktest`, whose star mask cuts in game.
+- **Self check**: after each attach, Dark Matter asks the game whether the piece kept its mask (`GetNumMaskTextures`). If the game kept none, or the call failed, the map turns masks off for the session. It then draws one feathered zone at a time, as in 0.5.2b.5, instead of hard rectangles.
+
+### Changes
+- **Layer `auto` is the default**: the painted, masked zone maps at zone zooms, crossfading to the minimap tiles at the deepest zoom. `/dm maplayer painted` brings back 0.5.2b.6's painted-only map.
+- `/dm masktest zone [name]`: your zone (or the named one) drawn four ways side by side:
+  1. the zone mask on parchment;
+  2. the zone picture with the mask added last;
+  3. the 0.5.2b.6 map way;
+  4. the 0.5.2b.6.1 map way.
+  Each panel says how many pieces carry the mask.
+- `/dm mapmask on|off`: the zone masks on or off for this session.
+- `/dm mapsweep` adds a `maskcheck` line: pieces, how many carry the mask, attach results, and the mask's file and size against the picture. `/dm mapprobe` adds `map 23 maskcheck`, and `map 10: quest areas` (is the game's QuestBlob provider there).
+
+## 0.5.2b.6
+
+Map: the game's painted zone maps are the main layer, each cut to the zone's real borders.
+
+### Changes
+- **Zone masks**: 43 masks (Kalimdor 20, Eastern Kingdoms 23), made by `tools/maskgen` from your `/dm mapshapes` data. They come only from the game's own answers about which zone owns each point; no game or OpenMap art is bundled. The six capitals have none: they stay drawn as a city over their host zone.
+- **Painted map everywhere**: all zones in view are drawn at full strength, each cut to its own borders, from zone view down to the deepest zoom, and you can pan from zone to zone with no seam. The continent picture shows only outside the outermost zones (sea, unzoned land).
+- **`/dm maplayer painted|auto|terrain`**, also as Painted / Auto / Terrain buttons on the map's close-up panel:
+  - `painted` (the default): the painted zone maps only, no minimap tiles;
+  - `auto`: the minimap tiles only at the deepest zoom, where the painted map blurs (from x2.8 art magnification);
+  - `terrain`: the minimap tiles as in 0.5.2b.5.
+- **Fog fix**: an area you discover is un-fogged at once. Before, an area found with the map closed (for example in Elwynn) stayed fogged until /reload. Dark Matter now listens for discoveries all the time, re-checks the explored areas when the map opens, and re-checks your zone every 2 seconds while the map is open.
+- `/dm tileprobe` and `/dm mapprobe` show the map layer. `/dm tileprobe` now reads Kalimdor's tile reach too (0.5.2b.5 said "no tiles" for the continent you were not on).
+- Redridge, Moonglade and zone 2652 had no samples of their own (0.5.2b.5's `/dm mapshapes` skipped small zones; it now samples every zone except the capitals). Their masks are cut from the continent samples around them and placed at their own spot inside their picture.
+
+## 0.5.2b.5
+
+Map: groundwork for zone shape masks made from the game's own area data, plus minimap tiles over more of the zoom range.
+
+### Changes
+- `/dm masktest` opens a small window with four parchment squares:
+  1. no mask (a plain square);
+  2. the game's round portrait mask (a circle);
+  3. Dark Matter's own mask file, `Media/masks/dm-masktest.tga`, generated for the addon (a soft five-point star);
+  4. the game's zone highlight file at your position (diagnostic only).
+  It shows whether mask textures cut on this client. Run it again to close it. The lines are saved with the probes.
+- `/dm mapshapes` asks the game which zone each point of every zone's rectangle belongs to (`C_Map.GetMapInfoAtPosition` on a grid 160 points wide). It samples a few ms per frame, out of combat only, and pauses during combat. The result is saved run-length coded to `DarkMatterDB.mapshapes` and reaches the disk at /reload. `/dm mapshapes status` and `/dm mapshapes stop` are also available. This changes nothing on the map.
+- `tools/maskgen` (on the box, not shipped in the addon) turns that data into `Media/masks/z<mapID>.tga` plus `Data_ZoneMasks.lua`. Each mask covers the zone's own land and its cities. Sea goes to the nearest land, the shape is grown by one cell and the edge is soft.
+- Masked renderer. When every zone of a continent has a mask, all its zones are drawn once you zoom in (x1.3-x1.9 of the continent view), each cut to its real outline. No zone's margin covers a neighbour. Until masks ship (0.5.2b.6), the map keeps 0.5.2b.4's behaviour: one zone picture at a time.
+- The minimap tiles now also come in by how many fit the view:
+  - full strength up to 200 tiles, gone by 320;
+  - capped by a fade between 380 and 460 real tiles in view;
+  - the art-blur rule still applies, whichever rule is larger.
+  On Eastern Kingdoms (a 1221x729 view), tiles start at about x3.4 of the continent view and are full by x4.2, so they cover the neighbours' land at zone view. The tiles of a continent sit on one frame ("plane"): a pan or zoom moves and scales that frame, and only tiles that enter or leave the view are built or released. Small tiles use 2x2 edge cells.
+- `/dm tileprobe` (read-only) shows:
+  - the tiles listed per continent and a sample of 48 that load or not;
+  - the rule;
+  - the reach per continent;
+  - the tiles in view now;
+  - the layout time per frame.
+- `/dm mapsweep` is stricter. A new `base-land` flag is raised when zoomed in past x1.9 and land is left to the magnified continent picture (no zone art and no tiles over it). This is 0.5.2b.4's zone squares while panning. Overlap no longer counts masked zones. The continent lines add the tile reach. The masks line says how many zones are masked.
+- `/dm mapprobe` adds `map 19 fit` (tiles that fit the view) and `map 23 reach`.
+
+## 0.5.2b.4
+
+Map: no masks, one zone picture at a time, across all of Azeroth.
+
+### Root causes (0.5.2b.3 regression)
+- (a) 0.5.2b.3 cut every zone picture with a mask made from the game's zone highlight file. On 1.60.1 that mask does not cut: the highlight files are additive glow images with no usable alpha, so the whole picture stayed. Marking a zone "masked" also switched its rim feathering off. Every zone was drawn as a hard-edged full rectangle, with its parchment, torn border and sea.
+- (b) Zones came in at 1.15x–1.6x past the continent's fitted view. That point is reached while you are still looking at the whole continent, so every zone rectangle and its level label showed at once, stacked (Eastern Kingdoms, Kalimdor).
+- (c) Neighbouring zones were drawn at full strength around the focus zone, so their torn margins lay over each other and gave the hard seams and misaligned patches (Ashenvale).
+- (d) /dm mapsweep trusted the "masked" mark, so it could not see (a) to (c).
+
+### Changes
+- No zone masks. The continent picture is the base, and at most one zone picture (the zone under the middle of the view) is drawn over it, always feathered at its rim. A zone's margin is never drawn over another zone.
+- At continent view you see only the continent picture. The zone picture comes in as you zoom toward the zone (from 60% to 90% of the view), or once the continent picture is magnified past 2x–2.8x (small zones). That way the continent picture is never blurry under the middle of the view.
+- Panning into the next zone crossfades the two zone pictures (about 0.2 s). Cities still draw over their zone only when they are the focus.
+- `/dm mapmask` is removed. It now prints that it was removed.
+- `/dm mapsweep` flags magnified-base, open-base, hard-seam, zone-rect (zone art at continent view) and overlap (more than one zone picture at once). It prints a `mapsweep masks:` line saying that masks are not used, so none can fail. It then prints one `OK`/`FLAGGED` line per continent and a diagnostic count of the game's zone highlight answers (not drawn).
+- `/dm mapprobe` line 23 shows the same masks line and the highlight count, with no focus underlay.
+
+## 0.5.2b.3
+
+Map layers fixed across all of Azeroth.
+
+### Root causes
+- (a) The 0.5.1.9 SOLO fade ({0.55, 0.70} of the view) removed the neighbouring zones at zone zoom, so the continent picture became the visible surface. At x4–x6 it was blurry and pixelated, with a seam where the focus zone's feathered rim ended. This is the Thousand Needles/Feralas edge, Desolace and the Felwood bottom band.
+- (b) ZONE_DRAW ({0.40, 0.55}) was keyed to the largest zone's share of the view. Zones therefore faded in at continent view as rectangles of a different tint (Darkshore, Ashenvale, Azshara, Winterspring).
+- (c) A zone's picture includes the parchment and sea around the zone, so neighbouring rectangles covered each other (the grey boxes on the Kalimdor west coast).
+- (d) The magnified continent and world sea art looks stripy.
+
+### Changes
+- Layer stack, from the bottom up:
+  - a flat backdrop colour (SetColorTexture, no art);
+  - the world;
+  - the continent: its fade multiplied by the new BaseFade, which goes from 1 down to 0.35 between art x1.6 and x3.2 (M.BASE_FADE);
+  - the focus zone's own picture, unmasked and feathered (level 3, so its coast and sea stay under the middle of the view);
+  - every zone cut to its shape (level 5);
+  - cities (6);
+  - the close-up tiles (7);
+  - the markers (8).
+- Zone pictures fade in only by how far the continent is zoomed past its fitted view: M.ZoneIn rises from 0 to 1 between 1.15x and 1.6x (M.ZONE_IN; M.ContZoomK = the view's scale over the continent's fit scale). Once in, every zone is drawn at full strength. SOLO, ZONE_DRAW and ZoneSpan are removed; the city fade is kept.
+- Zone shapes: M.ZoneMask(z) asks the game for the zone's highlight:
+  - C_Map.GetMapInfoAtPosition finds a point inside the zone (centre, then 5×5 and 9×9 grids);
+  - C_Map.GetMapHighlightInfoAtPosition returns the highlight's file ID and its box on the continent;
+  - the result is checked (it must lie on the zone and be of a sane size) and cached per session.
+  The file becomes a mask texture (CLAMPTOBLACKADDITIVE) laid over the zone's own frame and added to every tile and explored overlay. Read at runtime, nothing bundled. An atlas-only or missing highlight falls back to the feathered rectangle.
+- M.LayerCheck() samples the current view on a 12×8 grid and finds the zone at each point with the game's own lookup. It reports:
+  - land drawn by zone art against land left to the base;
+  - open points;
+  - hard seams (an unfeathered, unmasked layer edge inside the view);
+  - zone layers at continent zoom;
+  - unmasked neighbours.
+  Flags: magnified-base, open-base, hard-seam, zone-rect, unmasked.
+- /dm mapsweep (M.Sweep) runs LayerCheck dry, with no frames built or drawn and the view restored afterwards, over:
+  - every continent: fitted, ×1.4 and ×2;
+  - every non-city zone: fitted, zone view, ×2, and its west, east, north and south edges.
+  It reports the flag counts, the zones without a shape and the first 25 flagged views. Saved in DarkMatterDB.probeLog.mapsweep.
+- /dm mapprobe line 23: the layer check of the current view, plus the mask coverage of the continent and the focus underlay.
+- /dm mapmask on|off (saved as DarkMatterDB.map.zoneMask) is a fallback switch: off draws zones as feathered rectangles.
+- Kept unchanged:
+  - zone art up to x2.0, then the close-up tiles;
+  - no drawn names;
+  - free, smooth drag;
+  - a base under every pixel (the backdrop, plus at least 35% map art);
+  - fog-of-war overlays (now masked with their zone).
+
+### Tests
+- Every zone drawn and masked at zone view, including the neighbour at the Dun Morogh / Loch Modan edge.
+- The mask file, wrap mode, size and position.
+- Every tile and overlay masked.
+- The focus underlay.
+- LayerCheck shows OK at the zone view and at the edge.
+- The continent view has no zone layers.
+- The sweep: 41 views, 0 flagged, 5/5 zones masked, view restored.
+- LayerCheck catches both old faults when the old fades are simulated (magnified-base and zone-rect).
+- mapmask off and on, by function and by slash command.
+- A client without the highlight API falls back to feathered zones, and the sweep names them.
+- The base coverage sweep now checks the backdrop plus at least 35% art.
+- The mock's Stormwind rect now lies inside Elwynn, as in the game.
+
+
+## 0.5.2b.2
+
+- Ready to Turn In (option C): our own frame, DarkMatterReadyFrame on UIParent, placed just below the visible bottom of the whole objective tracker (below Quests, Professions and any other module). The tracker is only read: the lowest bottom of its visible header, its visible modules (ObjectiveTrackerFrame.modules, read with ipairs) and its visible quest blocks, minus the tracker's module spacing (10), and never above the bottom of its visible background (NineSlice). Pixel space via each frame's effective scale; our frame takes the tracker's scale and width. Never parented to, anchored to, inserted into or hooked on the tracker. Root cause of the 0.5.2b overlap: the old placement read only the quest blocks, so the Professions module below them was covered.
+- It follows the tracker: re-placed 10 times a second (Tr.READY_POLL = 0.1, our own OnUpdate; only re-anchored when the position changes) and on every tracker layout pass. When Professions is collapsed (header only), hidden or has nothing tracked, the section slides up to sit right under the last visible tracker content: no gap, no overlap. With the tracker hidden (no modules to show) it sits where the tracker would be (its top left).
+- The header copies ObjectiveTrackerModuleHeaderTemplate: 260 x 26, the game's UI-QuestTracker-Secondary-Objective-Header atlas, "Ready to Turn In" in ObjectiveTrackerHeaderFont (LEFT 7, width 200; the live module header's text colour read when present) and the same 16 x 16 button at RIGHT 1 (ui-questtrackerbutton-secondary-expand / -collapse, -pressed while held, yellow ADD highlight). Game atlases only, checked at runtime; a missing one draws nothing.
+- Collapsed by default: header only. The button expands it to list the ready quests (rows as before: quest and zone; a click sets the game's arrow and opens Dark Matter on that quest). Saved in DarkMatterDB.readyCollapsed. The old pane border is gone; rows sit on a light backdrop below the header.
+- /dm trackerprobe shows the section's state and placement.
+- Tracker order fixed properly. Root cause of the reversed tracker on 0.5.2b.1: on 1.60.1 the objective tracker (QuestObjectiveTrackerMixin:BuildQuestWatchInfos / CompareQuestWatchInfos) lists quests in watch-index order (callings first, then overridesSortOrder), with no sort setting; the game re-sorts the watch list itself only on zone change (C_QuestLog.SortQuestWatches), and a NEW watch goes to the FRONT (index 1). 0.5.2b.1 re-tracked in log order assuming new watches go to the end, so the list came out exactly reversed. Now Dark Matter learns which end new watches go to from the result of its first re-order (saved in DarkMatterDB.watchInsert, learned at most once per zone change, so it can never flip back and forth) and, on the front end, re-tracks only the quests before the already-correct tail, in reverse log order, so the tracker ends up in log order (lowest level first, as the quest log). A result that shows up a moment later is checked again after the next settle; a client that keeps its own order still makes it stop (no loop, nothing untracked or unpinned).
+- /dm trackerprobe now also logs which end new watches go to (and whether learned or saved), the log order of the tracked quests, the watch order (index 1 first), the tracker's blocks top to bottom, and "tracker vs log: SAME order" or "DIFFERENT from position N (...)", so it can be checked from the saved file after /reload.
+- Tests: OrderFix on the front end, learning "front" from the reversed 0.5.2b.1 state and then reaching log order, only the needed quests re-tracked, the delayed-result path, a client with its own order, and the new trackerprobe lines.
+- Tests: collapsed by default, the header atlas, text and button, pressed atlas, expand / collapse saved, row click, the no-overlap test across 18 tracker heights (Quests growing and shrinking, Professions expanded, collapsed and empty, scale 1 and 0.8: always exactly one spacing below the last visible content), the tracker background, the hidden tracker, a missing atlas, and that the tracker's modules get no script, anchor or parent.
+
+## 0.5.2b.1
+
+- Keep-tracked pins on the objective tracker are bigger: 17 px (were 14).
+- Zone auto-track is now ON by default (a one-time switch for existing saves, DarkMatterDB.autoTrackV = 1; `/dm autotrack off` still turns it off). On ZONE_CHANGED_NEW_AREA, PLAYER_ENTERING_WORLD and after a flight lands (PLAYER_CONTROL_GAINED), it tracks this zone's quests plus the kept ones and untracks the rest. Batched, out of combat only. Root cause of "zone change did not update All Objectives" in 0.5.2b: auto-track was off by default, and the game itself does not re-track by zone.
+- Keep pins are a sticky flag that only your click on the pin changes. Highlighted (pinned): the quest stays in the All Objectives tracker in every zone. When pinned it is tracked straight away, and if the game drops it on a zone change it is tracked again; with auto-track off it is also tracked again after each zone change. Dim (not pinned): the quest is like any other: zone auto-track tracks it in its own zone and untracks it elsewhere (with auto-track off, the game's normal tracking). Unpinning does not untrack; the quest follows auto-track from the next zone change. Tracking or untracking (the Quests tab and Quest Log panel Track boxes, the game's quest log box, the game's auto-watch, auto-track) never pins or unpins, and the 0.5.2b pin-on-track / unpin-on-untrack link and first-run pinning are gone. Abandoning or turning in a quest still drops its pin. All pins start unpinned: on the first load of 0.5.2b.1, DarkMatterDB.keepTracked is cleared ONCE (flag keepV = 1), because 0.5.2b may have pinned quests on track. Your later clicks are saved per quest across reloads and logouts.
+- Track boxes (Quests tab, Quest Log panel) just track and untrack; new tooltip.
+- The Map tab glide (zoom out, pan, zoom in, used by Show on map and other fly-tos) is about a third slower: its total time is x1.32 (0.8-1.4 s became about 1.06-1.85 s), with the same easing.
+- Removing a map pin (right-click) also clears the game's user waypoint and minimap arrow, but only when that waypoint is this pin's (C_Map.ClearUserWaypoint, and the super-track is cleared). Dark Matter only sets the game's own user waypoint (C_Map.SetUserWaypoint + C_SuperTrack); other addons that show it (OpenMap) follow the game. No OpenMap API is called.
+- The objective tracker follows quest-log order (zone groups, lowest level first). The tracker lists quests in watch order, and the game re-sorts that order on zone changes (C_QuestLog.SortQuestWatches). About a second after a watch or zone change, out of combat and not in flight, Dark Matter re-tracks the quests from the first one out of place on, in log order (a new watch goes to the end). Only the public watch API is used, and pins do not change. If the client keeps its own order anyway, it stops until the next zone change (no loop). `/dm trackorder on|off`; /dm trackerprobe shows the status.
+- Not shipped: Ready to Turn In between Quests and Professions inside All Objectives. The only ways in are a module registered with the game's tracker container or a top-padding provider. Either one taints the tracker's update, and that update sets up the quest item buttons, which call protected code. The Ready section stays under the tracker as in 0.5.2b.
+- Tests: pins change only on a pin click (Track boxes, the game's log, auto-watch and auto-track never pin or unpin), the one-time pin reset, a pinned quest kept with auto-track on and off, an unpinned one following auto-track, auto-track after landing and on PLAYER_ENTERING_WORLD, the defaults and migration, waypoint clearing (only our own), pin size, log-order re-tracking (wait, combat, no pins changed, give-up with no loop, off), and a source scan that nothing is registered with the game's tracker.
+
+## 0.5.2b
+
+- Keep-tracked pins on the objective tracker. Beside each quest row there is a small Dark Matter button (our own button on UIParent, only positioned next to the row's map button; nothing is put into the tracker). A pinned quest stays tracked when the game untracks it on a zone change. Tracking a quest yourself pins it; untracking or abandoning it unpins it. On the first run the quests you track now become pins. Saved in DarkMatterDB.keepTracked.
+- The keep icon is a game icon, checked at runtime, never bundled: map pin (atlas Waypoint-MapPin-Tracked / -Untracked, the default when present), lock (Interface\Buttons\LockButton-Locked-Up / -Unlocked-Up) or star (atlas PetJournal-FavoritesIcon). `/dm keepicon pin|lock|star|auto` chooses. A chosen icon this client lacks draws nothing.
+- Tracker title click: a transparent area over each quest title opens Dark Matter on the Map tab, glides to the quest and shows its detail in the docked Quest Log panel. The item and map buttons stay uncovered (the area stops before them).
+- Ready to Turn In: our own themed section under the tracker (placed by reading the tracker's lowest visible row). Each row shows the quest and its zone; a click sets the game's arrow (super-track) and opens Dark Matter on that quest. The Quests tab and the Quest Log panel also get a "Ready to Turn In" group at the top. NPC names come with 0.6.0.
+- Zone auto-track (option, off by default; Settings page or `/dm autotrack on|off`): tracks this zone's quests plus pinned ones and untracks the rest. On a flight it waits for the landing, then switches once. Changes go out in batches of 5 about a second apart, only out of combat.
+- Your own map pins: the Pin tool on the map's tool strip now works. Click it, then click the map to drop a pin (saved in DarkMatterDB.userPins, up to 50). The game's own waypoint and minimap arrow point at it. Click a pin to point at it again; right-click removes it. Drawn with the game's Waypoint-MapPin-ChatIcon atlas only (nothing drawn without it).
+- M and L keys: M and L open Dark Matter on the Map tab with the Quest Log panel (pressed again they close it); ALT-M opens the game's world map and ALT-L its quest log. Session-only override bindings owned by a Dark Matter frame, set out of combat only (re-applied after combat), never saved to your key bindings. Off with `/dm keys off` or the Settings page.
+- New `/dm trackerprobe` (read-only): the tracker, the keep icon candidates (ok / missing) and the counts, saved in DarkMatterDB.probeLog.
+- No hooks on the tracker, its clicks or the quest log; no LoadAddOn.
+- Tests: keep pins (first run, your track, the game's auto-watch, zone-change re-track, untrack, abandon), the overlays (UIParent parents, anchors, the title area stopping before the item button, no script, anchor or parent on any tracker frame), title click, the Ready section and its click, auto-track (off, flight, combat, batches, pins kept), the keys (owner, combat queue, off, M/L press, SaveBindings never called), your map pins, and source scans for hooks, SaveBindings, LoadAddOn and SetParent.
+
+## 0.5.2a.2
+
+- Clicking a quest pin on the map opens THAT quest's detail in the docked Quest Log panel. If the panel is closed it opens; if it shows the list or another quest it switches to this one. Back still returns to the list. The map stays still (no glide). Shift-click still only sets the game's waypoint. A quest not in your log leaves the panel on its list.
+- The window is 26 px narrower in every theme: the width the narrower tab column freed in 0.5.2a.1 now comes off the window instead of going to the content. The content area and the Map tab's map area keep their 0.5.2a size (978x544 map area at the stock map's size). The height stays the stock map's height, and the saved position is kept. Target width = the stock map window's outer width less 26 (theme metric railTrim). Without a readable map window the fallback is 854x680.
+- The self-measure check after layout and the size probes use the new target: /dm frameprobe (frame 2, 2b and 2c: "outer ... vs target ... (map ... less 26)") and /dm mapprobe (new line "map 20 target").
+- Tests: pin click opens the detail (from closed, from another quest, from the list), Back, unknown quest, no map movement, shift-click leaves the panel alone. Window sizes are now expected at the map's width less 26 in every theme and map size, and the content keeps its 0.5.2a widths.
+
+## 0.5.2a.1
+
+- Map quest pins all use the game's own yellow icons, as the game map does: yellow ? (QuestTurnin / ActiveQuestIcon) for every quest in your log, in progress or ready; yellow ! (QuestNormal / AvailableQuestIcon) for available. No grey, no tints, no red failed tint, nothing bundled.
+- Clicking a pin now only selects its quest (the map stays put). Shift-click still sets the game's waypoint. The smooth fly (zoom out, pan, zoom in) is used only by "Show on map".
+- New docked quest panel: while the Map tab is open, a Quest Log panel sits beside the window, like the game's map and quest log. It is locked to the window (it moves and scales with it) and themed in every theme.
+  - The top is the stock quest log's search bar: the game's SearchBoxTemplate (magnifier, "Search Quest Log") and the yellow "Quests: n/max" count box. The count and maximum come from the game's API. Typing filters the list.
+  - Same list, groups and Track boxes as the Quests tab (shared code, no copy), with hover both ways between rows and map pins.
+  - A row click selects the quest (its pins glow) and opens its detail: title, objectives with progress, description and rewards (the Quests tab's detail). Back returns to the list with the scroll position and search text kept.
+  - Open or close it with the new "Quest log" button on the map's tool strip or the panel's close button. Dark Matter remembers the choice (DarkMatterDB.questPanel).
+  - The window plus the panel fit a 1920x1080 screen at UI scale 0.64.
+  - The Quests tab stays as it was.
+- Left tab column (Quests, Journals, Map, Dungeons): the inset now hugs the buttons with a small margin in every theme. The 26 px freed go to the content area; the window keeps its size.
+- Every /dm probe (probe, blocked, agscan, questprobe, questmap, mapprobe, artprobe, frameprobe, achprobe) also saves its output lines with a timestamp in DarkMatterDB.probeLog. Only the last run of each probe is kept, capped at 400 lines of 400 characters and 16 probes. It is written to disk on /reload or logout.
+- /dm artprobe re-checks templates asked for since the last check (no false MISSING after a theme change).
+- Tests: the panel (docking, count, search, detail and Back, hover both ways, toggle remembered, shown only with the Map tab, fits 1080p at 0.64, no hooks), pin clicks do not move the map, Show on map still flies, yellow untinted pins, the narrower tab column with the window size unchanged, the probe log and its caps.
+
+## 0.5.2a
+
+- Quests on the map, game data only (first part of the quest work; the database and Ready to Turn In come in 0.5.2b / 0.6.0).
+- Map quest pins use the game's own icon textures only (file path or atlas, checked at runtime; nothing bundled): grey ? for a quest in progress, yellow ? when it is ready to turn in, a red tint when failed. If this client lacks an icon, no pin is drawn for it (no substitute); `/dm questmap` lists any missing ones.
+- Pins are clickable: a click selects the quest in the Quests tab and flies the map there smoothly (zooms out, pans, zooms back in). Shift-click sets the game's own waypoint and arrow. Dragging over a pin still pans the map.
+- Hover sync both ways: hovering a pin lights its row in the Quests tab; hovering a row (or selecting it) makes its pins bigger with a glow.
+- Quests tab: new "Show on map" button. It opens the Map tab and flies to the quest (and sets the game's waypoint and arrow). If the game gives no location, it shows the quest's zone with a note.
+- New `/dm questmap` (read only, saved): which quest, waypoint and arrow APIs this client has; what GetQuestsOnMap returns; what Show on map would use; each candidate game icon (ok or MISSING); the objective tracker's structure, and whether its quest rows could take an extra click target in 0.5.2b.
+- New QuestState.lua: the shared selected, hovered and arrow quest. No hooks, no LoadAddOn, no stock frames touched. Waypoint and arrow calls happen only on a click.
+- Tests: pins, game icons with a missing icon drawing nothing, click, shift-click, drag over a pin, hover both ways, the hop flight, Show on map (point, zone with note, none), the probe, and taint checks for QuestState.lua.
+
+## 0.5.1.11
+
+- Map: no more empty gaps. The continent art is always drawn as the base under its zones (at any magnification), and the world art shows wherever the continents' full-strength interior doesn't cover the view. Zone edges feather into the continent (never to black, no vignette). Zones fade in over the continent as one fills the view, like the stock map.
+- Map: the world fills the whole view when fully zoomed out (cover fit, no empty band).
+- Map: drag is free again at every zoom. The hard pan lock is gone; cover framing is used only to open the map, for Find me (which centres on you again), search and fly-to. While dragging, at most one new layer is built per frame, so there are no stalls.
+- Map: neighbouring zones come back as you drag off a zone (the zone's share of the view is now the area it actually covers).
+- Tests: a coverage sweep (142 views from world to deepest zoom, fit and full-screen sizes, every theme) shows a full-strength map base under every pixel. No darkening vertex colours. Dragging at every zoom moves the view by exactly the drag.
+
+## 0.5.1.10
+
+- Window size: unchanged (passed in 0.5.1.9).
+- **Map, zone view fills the box, like the stock map.**
+  - A zone (or city) opens and flies in at **cover** scale: its art fills the whole map area.
+  - The view is **locked** on that zone: dragging stops at the art's edge.
+  - Zooming out at the zone's fit goes up to the continent; right-click does the same.
+  - Zooming in at continent level locks on the zone under the middle as soon as that zone fills the view.
+  - Moving to a neighbouring zone: zoom out to the continent, then in.
+- **Map: no blurry continent or world art.**
+  - The continent picture fades out between x1.12 and x1.20 magnification, so it is never drawn above x1.20.
+  - The zone pictures (all of a continent's together) take over between x1.00 and x1.12 continent magnification.
+  - The world picture is gone by x1.50.
+  - Where no art covers the view: plain parchment, or the minimap tiles when they are on.
+- **Map: explored overlays** are tiled exactly like the stock map: tile count from the overlay's size
+  (ceil(size / 256)), not from the entry's numTextures fields, and the last row/column cut inside a power-of-two
+  file. This is the likely cause of the stretched strip left of the IRONFORGE banner.
+- mapprobe line 22 adds the zone the view is locked on and the continent art's magnification (drawn / off).
+- **No title text** in any theme. The WoW theme's title bar stays empty.
+- Class themes: the top crest and the bottom emblem are **centred** on the frame again.
+- The status text is **left-aligned** (10 px in) in every theme. In class themes it ends 8 px before the bottom
+  emblem, with '...' when it does not fit.
+- Tests:
+  - zone view covered and locked; panning held at the zone's edge;
+  - no continent art above x1.20;
+  - uniform texcoord-to-size ratio for every zone-art tile;
+  - overlay tiling from the overlay's size;
+  - every theme: no title, crests centred, status text clear of the emblem.
+
+## 0.5.1.9
+
+- **Window size is right on the first open, with no need to open the stock map.** A map window that has never been
+  shown still reports the old 1002-wide size and a stale rect. That stale size is what built the 1019x713 Warrior
+  window: the frameprobe's computed rows used the live size, while the window had been built from the stale one.
+  Order now:
+  1. The stock map is open: measured on screen.
+  2. It was shown earlier this login: measured.
+  3. Never shown: `GetSize()` x its scale, if that is a real size (at least 1100x600), plus the client's border
+     (16,19,2,10 px).
+  4. Otherwise the saved size (same UI scale), then the built-in default for this client: 1232x705 at the map's
+     scale, outer 1247x729 UIParent units at UIParent 0.64.
+
+  The metrics are sized at PLAYER_LOGIN and again before every open. After the window is laid out, it is measured
+  (frame + the theme's drawn border). If it is more than 1 px off, it is built again (once per theme and size, so it
+  can never loop). Box tests: a fresh login with the map never shown (real size, 0x0, stale 1002x694), every theme:
+  outer 1247x729 within 0.33 px, no rebuild.
+- **Map, zone view: one zone picture.** At zone view only the focused zone's own art and explored overlays are drawn,
+  over the continent picture, as on the stock map.
+  - Neighbours fade out as the zone fills 55-70% of the view and only come back at continent zoom, together.
+  - A city's picture (Ironforge, Stormwind City) is never drawn over its zone. It fades in cleanly on top only when
+    the city itself is the focus (it fills 45-60% of the view).
+  - mapprobe line 22 lists what is drawn: the zone, the number of other zones, the city.
+- **Title and emblems.** In the class themes:
+  - The top crest moves beside the title when it would cover a letter.
+  - The bottom emblem moves to the right end of the status box when it would cover the status text, and the text
+    keeps clear of it on both sides.
+  - Tested for every theme.
+- Zoom thresholds unchanged: art alone to x2.0, tiles full by x2.6.
+
+## 0.5.1.8
+
+- Map: the drawn place-name labels are gone (code, probe line and tests). The game's own map art carries the names.
+- Map zoom layers work like OpenMap's now. The game's map art (continent, zone or city) shows on its own at full
+  strength, with no minimap tiles, tint or grain, until that art is magnified past **x2.0** (px per art texel, read
+  from the top-most map picture under the middle of the view, so a city uses its own art). The tiles then crossfade
+  in quickly and are at full strength by **x2.6**, about one wheel step. Default strength 45% = full tiles
+  (DEEP_K 2.25). Without map art under the view the fallback is 5 yd per texel.
+- Map: zone pictures fade in over the continent picture quicker: the largest zone at 45-55% of the view, before 40-70%.
+- mapprobe line 19 shows the layer ("zone art" / "crossfading" / "tiles"), the art magnification and the
+  thresholds. Line 21 shows only the seam counts.
+- Window size: the stock map window is measured only while it is open, and that size is saved in DarkMatterDB
+  (mapWindowSize). The saved size is used straight away at login and on open, before the stock map was ever opened.
+  Dark Matter rebuilds only when the size is more than 1 px off. Applies to every theme.
+  Blizzard_WorldMap is NOT force-loaded: the add-on's no-LoadAddOn safety rule stays. It is already loaded at login.
+
+## 0.5.1.7 (fix: place names stay readable up close; no patches at continent/world view; class themes get the WoW theme's map space)
+From the in-game 0.5.1.6 check. Frame size and portrait removal passed and are unchanged.
+- **Place names on top of the tiles.** The zone pictures carry their names in the art, and the minimap tiles covered them as they took over. Dark Matter now draws the names of the ground you have explored as text above the tiles: the game's explored-area IDs, sampled across the zone (`C_MapExplorationInfo.GetExploredAreaIDsAtPosition`), named by `C_Map.GetAreaInfo`. They fade in as the tiles do (none while the tiles are off, so the art's own names show), and are kept apart so they don't pile up. Read once per zone; read again when exploration changes. Game data only, no art.
+- **No patches at continent and world view.** The zone pictures of a continent now fade in together (keyed to the continent's largest zone), so a continent seen whole is no longer a patchwork of zone pictures at different strengths. The breadcrumb still uses each zone's own share. Continent pictures drawn over the world picture are now feathered at their rim too; only the world picture (the base) is not.
+- **`/dm mapprobe` line 21:** the place names drawn on top, how many map pictures are on screen, how many are feathered, the base, and the count of unfeathered picture edges (0 expected).
+- **Class themes have the WoW theme's map space.** With the game's map window readable, a class theme's frame art is fitted into the same outer rectangle the WoW theme fills: its rim and header band span the map border's reach plus our title area, so the class theme uses the WoW theme's layout. Its Map tab's map rectangle now equals the WoW theme's (1232x705 map: 978x544 in every theme in the tests, before: smaller by the class art's overhang). The art is drawn finer (thinner rim, smaller crest), with crest, base plate and edge sprites kept inside. The footer uses the WoW row, and the title sits on a slim plate (dark or light to suit the theme's title colour). The outer frame size is unchanged.
+- **`/dm frameprobe` line 2c** now also prints each theme's map rectangle ("map area").
+- **Tests:** every class theme's map rectangle equals the WoW theme's within 2 px (4 map sizes with the client's real border offsets); the outer-bounds test still passes in every theme; place names (from area IDs, off while tiles are off, shown on top when they take over); every picture on screen feathered or the base; a continent's zones drawn at one strength.
+
+## 0.5.1.6 (fix: outer bounds equal the stock map window's in every theme; no portrait; a middle layer up close)
+From the in-game 0.5.1.5 check (Wetlands, Dun Morogh, Loch Modan, client 1.60.1).
+- **No portrait icon, any theme.** The top-left portrait is gone. In the WoW theme the corner is a plain metal corner: the game's own `UI-Frame-Metal-CornerTopLeft` atlas when the client has it, else its top-right corner drawn mirrored, placed where the map window's own corner sits. The title strip is centred between equal insets.
+- **Same outer window, border to border.** The target is the stock Map & Quest Log window's whole visible outer rectangle on screen: `WorldMapFrame`'s rect joined with its border corner pieces (which reach past `GetSize()`) and the quest log panel when shown, read with GetLeft/GetRight/GetTop/GetBottom (read only; size + corner offsets when the rect cannot be read). Our outer rectangle is our frame plus each theme's border (the WoW corners; a class theme's frame art, edge sprites, crest and base), and the layout is sized so the two are equal in width and height, at the map's exact shape. The 0.5.1.5 "map changed shape: /reload" fallback is gone: when the map window changes size, or another theme (another border) is chosen, the window is built again at the right size (asked twice in a row, so a map still resizing is not chased); the saved position keeps its screen spot.
+- **`/dm frameprobe`** lines 2c (per theme: outer size vs the map's outer size, and the difference) and 2d (both outer rectangles in screen pixels, the map frame's own rect and how far its border sticks out, and the width/height difference). `/dm mapprobe` line 20 prints both outer sizes and the difference.
+- **Close-up: a middle layer.** The crossfade is much wider: from 0.10 to 0.30 px/yd the tiles come in at only 35% of their deep strength, so the zone picture and its explored overlays stay visible under them through mid zoom; they take over only from 0.35 to 0.80 px/yd. Tiles are lighter and warmer (desaturated half way, a warm tint, and a second ADD pass of the same tile in a parchment tone that lifts them toward the zone art's brightness instead of darkening it). No OpenMap texture of any kind is used.
+- **No rectangular seams.** Each zone picture and its explored overlays fade to 0 over their outer 64 px (feathered cells with vertex gradients), so zones drawn side by side, and over the continent picture, leave no rectangle edge or square overlay edge.
+- **Tests:** every theme x 7 map sizes (incl. 1232x705 at scale 0.64, with the client's real border offsets) asserts our drawn outer bounds equal the map window's outer bounds to 1 px (worst 0.49 px), with the window rebuilt each time; no portrait texture in any theme; the frameprobe per-theme and rectangle lines; the new crossfade and warm pass; zone rims fade to 0.
+
+## 0.5.1.5 (fix: the window matches the map window on screen; the close-up blends across the whole view)
+From the in-game 0.5.1.4 check (Wetlands, client 1.60.1).
+- **Window size, on screen.** 0.5.1.4 took the map window's size in UIParent units but then shrank our window to fit the screen (the old fit-to-screen scale), so it came out a different size from the game's map (frameprobe: map 1232x705 at effective scale 0.64; ours 1004x689, then scaled down). Now the window covers exactly what the map window covers on screen: its GetWidth / GetHeight times its effective scale over UIParent's. One rule, maximized or windowed. The layout keeps at least 880x500 and at most 1800x1300; beyond that our own scale makes up the difference, so the on-screen size still matches. While our window is shown it re-reads the map window every half second (from our own frame: no hook on WorldMapFrame, read only) and follows a resize with its scale; the saved position keeps its spot on screen. If the map window changes shape, ours fits inside it and frameprobe says "/reload" to re-fit the layout.
+- **Close-up detail blends across the whole view.** The explored-only cut into 4x4 cells made hard-edged square patches. Now every minimap tile in view is drawn whole (one texture each, edge to edge, no overlap), explored or not, desaturated and tinted toward the parchment. Where the tiles end (sea, void: no tile in the table, or a file that will not load), the neighbouring tiles fade out over half a tile with vertex alpha gradients, so no block edges. Fades: the tiles mix in from 0.12 px/yd, reach the chosen strength (default 45%) at 0.24 and run deep toward 85% by 0.48. Up to 144 tiles in view, faded out from 96 (no pop).
+- **Placement checked.** `/dm mapprobe` line 17 now prints your tile's rectangle on the zone map and whether you are inside it ("map 17 check"). The Wetlands numbers from 0.5.1.4 (corners -2148,-390 / -4904,-4525; you at -4254,-3108 on tile 37_39) are a test case.
+- **`/dm mapprobe` line 20 / `/dm frameprobe` line 2b:** the effective scale of the map window, Dark Matter and UIParent, and both windows' on-screen sizes. Line 19 "now" also shows the alpha actually drawn.
+- **Tests:** on-screen sizing (the Wetlands case, smaller / larger / maximized maps, the live rescale keeping the position); the close-up covers the whole view with whole tiles, feathers to 0 at a gap, fades between 96 and 144 tiles; the Wetlands tile placement.
+
+## 0.5.1.4 (the game's minimap tiles up close, a window the size of the game's map, the WoW theme as the map window)
+- **Close-up detail on the Map tab.** Zoomed in past the zone picture's own sharpness, the Map tab now draws the game's own minimap tiles, loaded from the client at runtime **by file ID** (no file is bundled; Dark Matter needs no other addon). The tile file IDs come from OpenMap's MIT-licensed `Data/Minimap.lua` table, copied as `Data_Minimap.lua` with its licence and credit (`LICENSES/THIRD_PARTY.md`); the drawing is Dark Matter's own code (`MapCloseUp.lua`), after OpenMap's ideas:
+  - tiles of 533.33 yards on each continent's 64 x 64 grid; fades keyed to screen pixels per yard: the tiles mix in from 0.20 to 0.34 px/yd at the chosen strength and take over (toward 1.9x the strength, 85% at the default 45%) from 0.30 to 0.48 px/yd;
+  - softened toward the parchment (desaturated 0.35, tinted 1 / 0.93 / 0.80) with Dark Matter's own faint paper grain (0.08 to 0.18 px/yd); no middle layer between the zone picture and the tiles;
+  - **explored ground only:** each tile is cut into 4 x 4 cells and a cell shows only where the zone's explored overlays (`C_MapExplorationInfo.GetExploredMapTextures`) cover it; the cells of a row are merged into strips (no overlap, no dark seams). Zones without overlays (cities) show the zone picture only;
+  - at most 64 tiles in view (further out: the zone picture alone); textures are pooled; a tile that fails to load is remembered and skipped;
+  - the deepest zoom is now twice the minimap's own sharpness (0.96 px/yd);
+  - new 6th tool on the right strip, **Close-up detail**: on / off and a strength slider (saved in `DarkMatterDB.map.closeUp` / `closeMix`). The status line reads "Map: the game's map pictures + the game's minimap tiles up close" (or "Map: the game's own map pictures" when it is off).
+  - Taint-safe: own frames and textures only, no hooks, nothing protected; works in combat. OpenMap is never read: no path into its addon folder anywhere in Dark Matter, and none of OpenMap's textures (its notice says they are not MIT) is copied, referenced or needed.
+- **The window is the size of the game's map window.** Dark Matter reads `WorldMapFrame`'s size at runtime (read only: no Show, no hooks, no writes, so nothing is tainted), scaled to UIParent; when the map is maximized it takes the windowed size (`minimizedWidth` + `questLogWidth`, `minimizedHeight`). Clamped to 880-1800 x 500-1300 (every tab still lays out); unreadable: Dark Matter's own 880x680. Every tab follows: lists, detail panes, the map, footer buttons and status line grow with the window; rail, title and tabs keep their places. Class-theme frame art keeps its scale; its edges run longer. The saved position is kept.
+- **WoW theme: the game's Map & Quest Log window.** The default theme now wears the map window's own frame, read from `WorldMapFrame` at runtime and drawn again on Dark Matter's frame with the same game textures (atlas, path or file ID; nothing bundled): its 8 border pieces, the slim dark title strip with the gold title, its red close button (Normal / Pushed / Highlight) and its portrait. When the pieces cannot be read, Dark Matter draws its own thin frame (dark outer line, bronze inner line) and the stock close button. The content sits on a dark inset (`FrameGeneral\UI-Background-Marble`). The map breadcrumb looks like the stock map's top-bar buttons: the first (world) on the red button face, the others on the dark field face with a small down arrow, no ">". Class themes are unchanged (their plain breadcrumb keeps ">"). The 0.5.1.3 buttons, scroll bars and tabs (no dots) and the parchment detail panels (no black row boxes) are unchanged.
+- **`/dm mapprobe`** (new lines 5 and 16-19): art layer count and min/max scale for the zone, continent and world; the current zone's corners in yards; your minimap tile and its file ID; whether that tile loads by file ID and by path; whether OpenMap is loaded (information only: not used); the close-up setting, the map's source line and what the close-up drew last (tiles, pieces, mix, px/yd).
+- **`/dm frameprobe`** (new): the game's map window, read only: its size, scale, maximized and windowed size; the size Dark Matter took and from where; each of the 8 border pieces, the title, close button (normal / pushed / highlight), portrait, background and the map top bar's home button, by atlas / file. Saved to `DarkMatterDB.frameprobe`.
+- **`/dm artprobe`:** re-checks a texture that was missing at first look (the crumb arrow loads late on some clients).
+- **Tests:** fades and the max zoom; explored-only cells, strips that never overlap; the 64-tile limit; texture pooling; a tile that fails to load; no path into OpenMap's addon folder anywhere in Dark Matter and identical drawing with or without OpenMap installed; `WorldMapFrame` only read (a spy fails on any write or Show); window sizes 1035x640 (also at map scale 1.25), 500x300 (clamped to 880x500), 2400x1600 (clamped to 1800x1300), a maximized map (its windowed size), no map window (880x680), in combat; every tab inside the window at each size (the whole suite runs at 1035x640, 760x500 and 2400x1600 too); WoW theme: the 8 mirrored border pieces, title, close, portrait, breadcrumb faces; the own thin frame when unreadable; class themes unchanged.
+
+## 0.5.1.3 (pressed faces that fill, scroll bars in a gutter, no dots, every theme on the stock kit, late reward items)
+- **Pressed buttons fill the button.** Every stock-feel button draws its Normal, Pushed and Disabled face and its Highlight with one geometry, the way `UIPanelButtonTemplate` lays them out: a left and a right cap of a fixed width (12 px for panel buttons, 20 px for the character-frame tabs) at the full height, the middle stretched between. A state change only swaps the file, the anchors never move. 0.5.1.2 scaled the caps with the button height, so on the 48 px nav tabs the Down art's inset edge showed as a dark gap at the right end of the pressed face; and the current nav tab was drawn 14 px wider than the others. All nav tabs are now one width, the held-down one too. The Highlight is the same 3-slice (it used to span the whole button in one piece). Checked at widths 40 / 80 / 132 / 146 / 300 and heights 22 / 48.
+- **Scroll bars in their own gutter.** Every scroll bar sits outside its pane, in a 30 px gutter on the pane's right (the stock quest log's placement): top arrow level with the pane's top, bottom arrow level with its bottom, the groove the pane's full height. The pane is 30 px narrower to make room, and its rows use the full content width. Quests list and detail, Adventure Guide boss list and boss detail, Fishing zones, catches and statistics, Achievements categories and list. (The dungeon dropdown keeps its bar inside.)
+- **No dots.** The marker dot / red target radial is gone from every tab and toggle in **all** themes (0.5.1.2 removed it in the WoW theme only); the held-down face or the raised tab marks the active one.
+- **Class themes on the stock kit.** The nine class themes now use the game's own button, tab and scroll-bar art too (`UI-Panel-Button-*`, `UI-Character-ActiveTab / InActiveTab / Tab-Highlight`, `UI-ScrollBar-*`, `UI-Character-ScrollBar`), desaturated and recoloured in each theme's palette with `SetDesaturated` + `SetVertexColor` (e.g. Hunter: green buttons, brown tabs and scroll bars; Druid: leaf green and bark; Mage: arcane blue). New `Theme_ClassStock.lua` holds the palettes. Labels keep each theme's own button ink (a dark ink on the recoloured faces gives way to a warm light one). Each theme keeps its frame art, crest, ornaments, colours, accents and animations.
+  - **The inner content blends into the frame:** no second boxed window. The page and the inner box lose their own fill and frame; the nav rail and the page get a subtle inset divider (dark top and left, faint light bottom and right), and the list borders are softened (`theme.blend`).
+- **`/dm artprobe` names the missing piece on one line.** On 1.60.1 the one missing item is the **`CharacterFrameTabButtonTemplate`** template (35 ok, 1 missing). It was never needed: the section tabs are built from the `UI-Character-ActiveTab / InActiveTab` textures, which the client has, so they draw the stock tab art either way. The summary line now says so: `artprobe: 35 ok, 1 missing: CharacterFrameTabButtonTemplate (template) -> tabs use UI-Character-ActiveTab/InActiveTab`; each MISSING line ends with what stands in, and `DarkMatterDB.artprobe.missingNames` keeps the list. (With more than three pieces missing, the summary says the missing pieces use Dark Matter's own art.)
+- **Reward items that load late.** A quest reward the client has not loaded yet shows "Loading…" instead of "Item not loaded yet" (name from `GetItemInfo` when the item cache already has it; otherwise `C_Item.RequestLoadItemDataByID` asks for it). The quest detail redraws when `GET_ITEM_INFO_RECEIVED` or `ITEM_DATA_LOAD_RESULT` arrives for an awaited item (other items' events are ignored). The Adventure Guide drop list refreshes on `ITEM_DATA_LOAD_RESULT` too.
+- **Tests:** face and highlight anchors identical at five widths and two heights, Up and Pushed, in the WoW, Hunter and Priest themes; one nav-tab width; section tabs and toggles; every scroll bar in its gutter (nine panes, WoW and Hunter) with the groove the pane's height and the stock pieces recoloured in class themes; no marker dot in any of the 10 themes; class themes draw only the recoloured stock kit (no stock window art); the 1.60.1 artprobe case (CharacterFrameTabButtonTemplate missing) on one line, tabs still on the stock art; "Loading…" and the redraw on `ITEM_DATA_LOAD_RESULT`.
+
+## 0.5.1.2 (WoW theme: stock button feel, character-frame tabs, item rows on the parchment, stock scroll groove)
+WoW theme only; the nine class themes are unchanged.
+- **Buttons feel like the game's own.** Every WoW-theme button (rail tabs Quests / Journals / Map / Dungeons, Settings, Share stats, Exit, Reset window position, the theme picker, the Achievements filter, the quest list's All, the filter toggles) now behaves like `UIPanelButtonTemplate`: Normal / Pushed / Disabled faces from `Buttons\UI-Panel-Button-Up / -Down / -Disabled` (texcoords 0..0.625 x 0..0.6875, as the template's left / middle / right slices), `UI-Panel-Button-Highlight` over the whole button with ADD blend on hover, the label 1px right and down while the mouse is held, the stock click sound (`SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON`, old sound name as fallback), gold normal / white highlight / grey disabled labels. Dark Matter's own hover tint and 1px edge are gone on these buttons. Rail tabs and filter toggles stay held down (Down face, white label) while on; the current theme's button in Settings likewise. A disabled button (Share stats) shows the Disabled face, does not press and has no highlight.
+  - Built by hand from the template's own files rather than created from the template: the window switches theme live and a template button cannot drop its art again for the class themes. `/dm artprobe` reports the templates (`UIPanelButtonTemplate`, `CharacterFrameTabButtonTemplate`, `UIPanelScrollFrameTemplate`, `UIPanelScrollBarTemplate`) so the client's set is on record.
+- **Section tabs (Adventure Guide / Fishing / Achievements)** behave like the character-frame tabs: the selected tab raised (`UI-Character-ActiveTab`, white label, no hover), the others darker (`UI-Character-InActiveTab`, gold label) with `UI-Character-Tab-Highlight` on hover; no press offset, the tab sound.
+- **No marker dots.** The little red target dot is gone from the section tabs, the filter toggles (All levels / Near my level, by zone / by fish, Catches / Statistics) and the quest list's All button (now a plain stock button labelled All). The quest zone headers keep their stock +/- collapse buttons.
+- **Item rows straight on the parchment.** Adventure Guide boss drops and quest rewards no longer sit on black name plates: icon plus the item name in its quality colour, darkened just enough to read on the parchment (4.5:1; Common items in the dark quest ink), the detail line ("Rare · 41.0% drop · not seen yet") in dark-brown ink, no text shadow. Hover keeps the tooltip and adds a faint warm highlight.
+- **Scroll bars:** the solid dark track is replaced by the stock groove `PaperDollInfoFrame\UI-Character-ScrollBar` (the quest log's: top piece, stretched middle, bottom piece), behind the stock 16x16 buttons and the 18x24 knob; the scroll buttons click with `SOUNDKIT.U_CHAT_SCROLL_BUTTON`. Missing file: the old track.
+- **Tests:** stock faces Up / Down / Up across a press, the 1px label offset, gold / white / grey labels, highlight file / layer / blend / texcoords, click sound, a disabled button that does not press; rail tabs held while active; section tabs ActiveTab / InActiveTab with the tab highlight and no press offset; filter toggles; no marker dot anywhere; drop rows and rewards without plates and readable on the parchment; the groove drawn; `/dm artprobe` lists the new files and templates (36 ok); class themes and the missing-art fallback unchanged.
+
+## 0.5.1.1 (fix: every panel fully filled; stock scroll buttons; achievement toast)
+- **Parchment no longer stops mid-panel.** The stock `QuestFrame\QuestBG` file is 512x512 but its parchment sheet only covers about the top-left 300x336 texels, with torn edges and transparency beyond. 0.5.1 drew the whole file (texcoords 0..1) over each panel, so the parchment covered only the top-left ~59% x 66% of the page and the quest detail, with a torn edge in the middle. Now:
+  - the page (the area behind the lists, on every tab) is the stock `FrameGeneral\UI-Background-Rock`, tiled, a little darker than the window; its text (dungeon header, Fishing skill strip, "Show all", stubs) is gold / white / grey;
+  - the **quest detail** and the **Adventure Guide boss detail** are parchment: only the clean inside of the sheet (texcoords 0.04-0.545 x 0.04-0.615) is drawn, anchored corner to corner, so it fills the panel with no torn edge. Dark quest ink there (new `pInk*` colour keys); drop rows sit on dark name plates like the quest rewards;
+  - lists stay on `UI-DialogBox-Background-Dark` with light text;
+  - `/dm parchment l r t b` adjusts the parchment crop in game if a client's file differs (saved; `/dm parchment reset`);
+  - without the stock art the page falls back to the dark slate (never a light parchment under light ink).
+- **Scroll bars:** the stock `UI-ScrollBar-ScrollUp/DownButton` at their stock 16x16 size (was stretched to 20x20) with all four states: Up, Down while pressed, Disabled at the top / bottom, Highlight on hover; the thumb is the stock 18x24 `UI-ScrollBar-Knob`. Any missing file: the old art. Class themes unchanged.
+- **Achievement toast:** showed only the icon. Its background panel is a child frame (one frame level up) and 0.5.1 put the title, name and points text on the toast itself, i.e. under that panel; with the stock opaque dialog background only the icon (a later child frame) showed. Icon and text now live on a content frame above the background, in every theme. **`/dm testtoast`** shows a sample (nothing is recorded).
+- **Tests:** every stock surface fills its panel (Quests, Adventure Guide, Fishing, Achievements, Map, Dungeons); parchment only on the two detail panels and only from inside its torn edge; readable ink on each surface; stock scroll buttons 16x16 with highlight; class themes without stock art; `/dm parchment`; the toast's background, text and icon in all 10 themes.
+
+## 0.5.1 (the WoW theme in the game's own art)
+- **The default theme 'WoW' now looks like a stock WoW window** (quest log / character panel). It uses the client's own textures, referenced by path at runtime; no Blizzard file is copied or bundled:
+  - frame: `DialogFrame\UI-DialogBox-Border` (edge file, cut like `Backdrop.lua`), title bar `DialogFrame\UI-DialogBox-Header`, portrait icon `QuestFrame\UI-QuestLog-BookIcon`;
+  - panes: `Tooltips\UI-Tooltip-Border` edges over `DialogFrame\UI-DialogBox-Background-Dark`; window background `FrameGeneral\UI-Background-Rock`; quest detail on `QuestFrame\QuestBG` parchment, written in dark quest ink, with rewards on dark name plates like the stock quest log;
+  - buttons `Buttons\UI-Panel-Button-Up/Down/Disabled`, search field `Common\Common-Input-Border`, section tabs `PaperDollInfoFrame\UI-Character-ActiveTab/InActiveTab`;
+  - scroll bars `Buttons\UI-ScrollBar-ScrollUp/DownButton-Up` and `UI-ScrollBar-Knob`, check boxes `Buttons\UI-CheckBox-Up/Check`, +/- `Buttons\UI-PlusButton-Up/UI-MinusButton-Up`, selected row `QuestFrame\UI-QuestTitleHighlight` (a subtle gold tint);
+  - the close button is the `UIPanelCloseButton` template.
+  - Colours follow the stock fonts: GameFontNormal gold `#ffd100` headers, GameFontHighlight white body. Hover stays a subtle tint.
+- **Feature-detected, per piece:** each texture is checked with `GetFileIDFromPath` (or a trial load) and each template with `C_XMLUtil.GetTemplateInfo` (or a protected `CreateFrame`). A missing piece falls back to Dark Matter's own 0.5.0 art, so nothing is ever blank.
+- **`/dm artprobe`:** short `ok` / `MISSING` lines for every stock texture and template the WoW theme asks for, plus a summary; saved to `DarkMatterDB.artprobe`.
+- The Map tab gets the stock framing in the WoW theme. The nine class themes are unchanged.
+- **Roadmap shift:** pins 0.5.2, Starpen + share 0.5.3, Town Pins 0.5.4 (tool-strip tooltips updated).
+- **Tests:** the contrast scan covers the WoW theme at light and dark estimates of the stock art and with all stock art missing; new checks for stock art drawn, the template close button, fallback, `/dm artprobe`, and the class themes staying unchanged.
+
+## 0.5.0 (Map tab: the game's own map, world > continent > zone)
+- **Map tab** (replaces the "Coming soon" stub):
+  - the game's own map pictures (`C_Map.GetMapArtLayerTextures`, per mapID), read at runtime for every Kalimdor and Eastern Kingdoms zone;
+  - continuous wheel zoom toward the cursor from the world to a zone, with crossfades between levels;
+  - drag to pan; zones are stitched with their `GetMapRectOnMap` rects;
+  - breadcrumb, zone search, Find me, player arrow;
+  - explored overlays (fog of war), quest markers (`GetQuestsOnMap`) and zone level badges (public data, captioned);
+  - zone and player coordinates at the bottom right;
+  - a full-screen toggle (its own frame; Esc or the button returns).
+- **Right tool strip:** Starpen (0.5.2), Drop a pin (0.5.1) and Town Pins (0.5.3) are present but disabled, with tooltips naming the version.
+- **Taint-safe:** no hooks, no `WorldMapFrame`, works in combat.
+- **Continent placement:** Forever's continent-on-world rect is unusable (EK x 0.37-1.16), so the land is sampled once with `GetMapInfoAtPosition`, fitted with one scale, and saved in `DarkMatterDB.map.place`.
+- **`/dm mapprobe`:**
+  - line 5 now shows each level's first and last tile file IDs, proving art is read per mapID (every Classic map shares the 1002x668, 4x3-tile layout, so the geometry looked identical in 0.4.7);
+  - map size in yards was swapped (world X runs north-south) and is fixed;
+  - new line 15 shows how the Map tab placed your continent.
+- **Tests:** a C_Map fixture (world, two continents, seven zones, overlays, quests, player) covers:
+  - art per mapID, placement, stitching, zoom-to-cursor, crossfades;
+  - breadcrumb, right-click and double-click, drag across a border;
+  - search, Find me, the tool strip;
+  - badges, full screen and Esc, combat;
+  - no WorldMapFrame access or hooks, instances, clients without world art, and clients with no art at all;
+  - a 10-theme contrast scan of the live map (1120 label checks).
+
+## 0.4.7 (read-only `/dm mapprobe`)
+- `/dm mapprobe`: numbered "map N" lines checking the map APIs the Map tab needs. It is read-only and saved to `DarkMatterDB.mapprobe` (last result + 6 runs).
+
 ## 0.4.6 (fix: quest description and rewards on WoW Forever)
 - **Bug (0.4.5, in game):** every quest showed "Not available from this client." for description and rewards.
   - Root cause: WoW Forever has no `SelectQuestLogEntry` / `GetQuestLogSelection`. The 0.4.5 reader gave up before calling any reader when `SelectQuestLogEntry` was missing, so even `GetQuestLogRewardXP(questID)` was never called.

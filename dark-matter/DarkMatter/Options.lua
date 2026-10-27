@@ -51,6 +51,29 @@ local function Register()
   local themeNote = panel:CreateFontString(nil, "ARTWORK", "GameFontDisable")
   themeNote:SetPoint("TOPLEFT", themeHead, "BOTTOMLEFT", 0, -76)
   themeNote:SetText("Also in the window's Settings popover, or type /dm theme <name> (or /dm theme next).")
+
+  -- 0.5.2b: quest tracking options (plain stock checkboxes; saved in DarkMatterDB)
+  local function Check(anchor, y, label, get, set)
+    local c = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    c:SetSize(24, 24)
+    c:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -2, y)
+    local t = c.Text
+    if type(t) ~= "table" then
+      t = c:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+      t:SetPoint("LEFT", c, "RIGHT", 2, 0)
+    end
+    t:SetText(label)
+    c:SetChecked(get() and true or false)
+    c:SetScript("OnClick", function(self) set(self:GetChecked() and true or false) end)
+    c:SetScript("OnShow", function(self) self:SetChecked(get() and true or false) end)
+    return c
+  end
+  local autoBox = Check(themeNote, -14, "Zone auto-track: track this zone's quests (plus kept ones), untrack the rest",
+    function() return NS.db and NS.db.autoTrack end,
+    function(on) if NS.Tracker then NS.Tracker.SetAuto(on) end end)
+  Check(autoBox, -4, "M and L open Dark Matter (ALT-M / ALT-L open the game's map and quest log)",
+    function() return not (NS.db and NS.db.mlKeys == false) end,
+    function(on) if NS.Keys then NS.Keys.Set(on) end end)
   NS.OnSkin(function()
     themeCur:SetText(NS.theme.name)
     for _, b in ipairs(themeBtns) do

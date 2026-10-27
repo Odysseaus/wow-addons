@@ -137,6 +137,10 @@ end
 
 local function ItemIdFrom(link) local id = NS.Str(link) and link:match("item:(%d+)") return id and tonumber(id) end
 
+-- 0.5.1.3: reward items the client has not loaded yet (no name): itemId -> quest key. GET_ITEM_INFO_RECEIVED /
+-- ITEM_DATA_LOAD_RESULT for one of these drop that quest's cached detail so the next refresh reads it again.
+QL.awaitItems = {}
+
 local function Items(kind, numFn, infoFn, questID)
   local list = {}
   local n = NS.Num(Call(G(numFn), questID))
@@ -149,6 +153,21 @@ local function Items(kind, numFn, infoFn, questID)
       usable = NS.Bool(usable), link = link, itemId = NS.Num(itemID) or ItemIdFrom(link),
     }
     if e.quality and e.quality < 0 then e.quality = nil end
+    if not e.name and e.itemId then
+      -- the quest API had no name yet: the item cache may have it already; else ask the client for it
+      local iname, _, iq, _, _, _, _, _, _, itex = Call(G("GetItemInfo"), e.itemId)
+      e.name = NS.Str(iname)
+      if not e.quality and NS.Num(iq) and iq >= 0 then e.quality = iq end
+      if not (NS.Str(e.icon) or NS.Num(e.icon)) and (NS.Str(itex) or NS.Num(itex)) then e.icon = itex end
+      if not e.name then
+        e.loading = true
+        local ci = rawget(_G, "C_Item")
+        if type(ci) == "table" and type(ci.RequestLoadItemDataByID) == "function" then
+          pcall(ci.RequestLoadItemDataByID, e.itemId)
+        end
+      end
+    end
+    if not e.name then e.loading = true end
     list[#list + 1] = e
   end
   return list, true
@@ -191,6 +210,16 @@ function QL.Forget(questID)
   if questID then cache[questID] = nil requested[questID] = nil else cache = {} end
 end
 
+-- an item we were waiting for arrived: forget the quest that shows it (true = a refresh is worth it)
+function QL.ItemArrived(itemId)
+  itemId = NS.Num(itemId)
+  local key = itemId and QL.awaitItems[itemId]
+  if not key then return false end
+  QL.awaitItems[itemId] = nil
+  cache[key] = nil
+  return true
+end
+
 -- static quest data (text + rewards), read once per quest; nil fields = the client did not provide them
 function QL.Details(q)
   local key = q.questID or q.title
@@ -219,7 +248,10 @@ function QL.Details(q)
   d.tried, d.index = table.concat(tried, ", "), idx
   d.partial = false
   for _, list in ipairs({ d.rewards or {}, d.choices or {} }) do
-    for _, e in ipairs(list) do if not e.name then d.partial = true end end
+    for _, e in ipairs(list) do
+      if not e.name then d.partial = true end
+      if e.loading and e.itemId then QL.awaitItems[e.itemId] = key end
+    end
   end
   -- no text yet: ask the client to load this quest once; QUEST_DATA_LOAD_RESULT then triggers a fresh read
   if not d.desc and q.questID then
@@ -465,7 +497,8 @@ function QL.SetWatched(q, want)
   return "ok"
 end
 
-QL.WATCH_EVENTS = { "QUEST_WATCH_LIST_CHANGED", "QUEST_WATCH_UPDATE", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "QUEST_DATA_LOAD_RESULT" }
+QL.WATCH_EVENTS = { "QUEST_WATCH_LIST_CHANGED", "QUEST_WATCH_UPDATE", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "QUEST_DATA_LOAD_RESULT",
+  "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT" } -- 0.5.1.3: reward items that load late
 
 function QL.WatchReport()
   local cap, n, src = QL.WatchCap()

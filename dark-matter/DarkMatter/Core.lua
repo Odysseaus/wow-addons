@@ -5,7 +5,7 @@ local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.4.6"
+NS.version = "0.5.2b.9"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -21,6 +21,13 @@ local DEFAULTS = {
   fishingZone = nil,
   fishingView = "waters",
   loadCount = 0,
+  -- 0.5.2b
+  keepTracked = {},   -- quests kept in the objective tracker across zone changes
+  autoTrack = true,   -- zone auto-track (0.5.2b.1: on by default)
+  trackOrder = true,  -- 0.5.2b.1: keep the objective tracker in quest-log order
+  mlKeys = true,      -- M and L open Dark Matter (ALT-M / ALT-L the game's own windows)
+  userPins = {},      -- your own pins on the map
+  readyCollapsed = true, -- 0.5.2b.2: the Ready to Turn In section starts collapsed (its header button saves the choice)
 }
 
 function NS.Print(msg)
@@ -54,6 +61,10 @@ local function InitDB()
   NS.sv.previousLoadCount = NS.db.loadCount
   NS.sv.previousProbeWhen = type(NS.db.probe) == "table" and NS.db.probe.when or nil
   CopyDefaults(NS.db, DEFAULTS)
+  -- 0.5.2b.1: zone auto-track is on by default; 0.5.2b saved it off for everyone, so turn it on once
+  if NS.db.autoTrackV ~= 1 then NS.db.autoTrack = true NS.db.autoTrackV = 1 end
+  -- 0.5.2b.1: pins start unpinned and change only by a click; 0.5.2b may have pinned on track, so clear them ONCE
+  if NS.db.keepV ~= 1 then NS.db.keepTracked = {} NS.db.keepV = 1 end
   if type(NS.db.blockedLog) ~= "table" then NS.db.blockedLog = {} end
   InitCharDB()
   if NS.StartFishingTracker then NS.StartFishingTracker() end
@@ -81,16 +92,20 @@ local function ArgStr(v)
   return SafeStr(v)
 end
 
--- Trimmed Lua stack at the moment of the block (the event is synchronous, so the offending addon caller is on it):
--- drops this recorder's own frames, keeps the first 6 lines.
+-- Trimmed Lua stack at the moment of the block (the event is synchronous, so the offending caller is on it):
+-- drops this recorder's own frames (0.5.2b.8.1: the top Core.lua frames and pcall, as this client prints them),
+-- keeps the first 6 lines.
 local function StackLines()
   if type(debugstack) ~= "function" then return nil end
   local ok, st = pcall(debugstack, 3, 12, 0)
   if not ok or type(st) ~= "string" then return nil end
-  local out = {}
+  local out, top = {}, true
   for line in st:gmatch("[^\n]+") do
-    if not line:find("RecordBlocked", 1, true) and not line:find("[C]: in function `pcall'", 1, true) then
-      out[#out + 1] = (line:gsub("^Interface[/\\]AddOns[/\\]", ""))
+    local own = line:find("RecordBlocked", 1, true) or line:find("[C]: in function `pcall'", 1, true)
+      or line:find("[C]: in function 'pcall'", 1, true) or (top and line:find("DarkMatter/Core.lua", 1, true))
+    if not own then
+      top = false
+      out[#out + 1] = (line:gsub("^%[?Interface[/\\]AddOns[/\\]", ""))
       if #out >= 6 then break end
     end
   end
@@ -121,6 +136,7 @@ local function RecordBlocked(event, addon, func)
 end
 
 -- Chat lines for /dm blocked: the latest entry first, in full (function, event, context, stack), then older ones.
+-- 0.5.2b.8.1: the log holds every addon's blocks (the game names the addon it blames); one that is not ours says so.
 function NS.BlockedLines(maxOlder)
   local log = NS.db and NS.db.blockedLog or {}
   local lines = {}
@@ -128,7 +144,7 @@ function NS.BlockedLines(maxOlder)
   local e = log[#log]
   if e then
     lines[#lines + 1] = "last blocked function: " .. tostring(e.func) .. "  (" .. tostring(e.event or "?") .. ", addon "
-      .. tostring(e.addon) .. ")"
+      .. tostring(e.addon) .. (e.addon ~= nil and e.addon ~= "DarkMatter" and " - another addon, not Dark Matter" or "") .. ")"
     lines[#lines + 1] = "  at " .. tostring(e.when) .. (e.version and (" · v" .. tostring(e.version)) or "")
       .. " · combat " .. (e.combat == nil and "?" or (e.combat and "yes" or "no"))
       .. " · ctx " .. tostring(e.ctx or "n/a") .. " · step " .. tostring(e.step)
@@ -141,7 +157,7 @@ function NS.BlockedLines(maxOlder)
   for i = #log - 1, math.max(1, #log - (maxOlder or 4)), -1 do
     local o = log[i]
     lines[#lines + 1] = "  earlier: " .. tostring(o.when) .. " " .. tostring(o.func) .. " (" .. tostring(o.event or "?")
-      .. ", ctx " .. tostring(o.ctx or "n/a") .. ")"
+      .. ", addon " .. tostring(o.addon) .. ", ctx " .. tostring(o.ctx or "n/a") .. ")"
   end
   return lines
 end
@@ -164,6 +180,12 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if not NS.initialized then InitDB() NS.initialized = true end
     if NS.CreateMinimapButton then NS.CreateMinimapButton() end
     if NS.RegisterOptions then NS.RegisterOptions() end
+    if NS.MapWindow and NS.MapWindow.Watch then NS.MapWindow.Watch() end
+    -- 0.5.2b: the tracker overlays (read only) and the M / L keys (override bindings, out of combat)
+    if NS.Tracker and NS.Tracker.Start then NS.Tracker.Start() end
+    if NS.Keys and NS.Keys.Start then NS.Keys.Start() end
+    -- 0.5.1.9: size the metrics to the map window at login, before Dark Matter is first shown
+    if NS.MapWindow and NS.MapWindow.Apply and NS.theme and NS.theme.m then pcall(NS.MapWindow.Apply, NS.theme.m) end
     NS.Print("v" .. NS.version .. " loaded. /dm toggles the window, /dm probe checks this client.")
   end
 end)

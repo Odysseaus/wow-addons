@@ -445,6 +445,11 @@ end
 ---------------------------------------------------------------------------
 -- toast (our own frame on UIParent; built on first use)
 ---------------------------------------------------------------------------
+-- 0.5.1.1 fix: the background panel is a CHILD frame of the toast, so it draws one frame level above the toast's own
+-- regions. 0.5.1 put the title / name / points text on the toast itself, i.e. UNDER that panel: once the WoW theme's
+-- stock (opaque) dialog background filled the panel, only the icon (a later child frame) was visible. The icon and all
+-- text now live on a content frame that is explicitly above the background, so the whole toast shows at once, in
+-- every theme. /dm testtoast shows a sample.
 local toast, toastQueue = nil, {}
 local TOAST_IN, TOAST_HOLD, TOAST_OUT = 0.25, 4.5, 0.8
 
@@ -452,9 +457,9 @@ local function ShowNextToast()
   local a = table.remove(toastQueue, 1)
   if not a then toast:Hide() return end
   toast.cur = a
-  toast.icon:SetItem(nil, 1, a.icon)
-  toast.name:SetText(a.name)
-  toast.sub:SetText(a.points .. " points · " .. a.cat)
+  toast.icon:SetItem(nil, 1, a.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+  toast.name:SetText(a.name or "")
+  toast.sub:SetText(tostring(a.points or 0) .. " points · " .. tostring(a.cat or ""))
   toast.t = 0
   toast:SetAlpha(0)
   toast:Show()
@@ -468,17 +473,24 @@ local function BuildToast()
   toast:SetPoint("TOP", UIParent, "TOP", 0, -150)
   pcall(toast.SetFrameStrata, toast, "HIGH")
   local bg = UI.Panel(toast, 320, 64)
-  bg:SetPoint("TOPLEFT", toast, "TOPLEFT", 0, 0)
-  toast.icon = UI.RoundIcon(toast, 40)
-  toast.icon:SetPoint("LEFT", toast, "LEFT", 12, 0)
-  toast.head = UI.Text(toast, "OVERLAY", 11, "gold", "LEFT")
+  bg:SetAllPoints(toast)
+  toast.bg = bg
+  -- content above the background panel (and above the panel's border)
+  local fg = CreateFrame("Frame", nil, toast)
+  fg:SetAllPoints(toast)
+  local lvl = NS.Num(bg:GetFrameLevel()) or 1
+  fg:SetFrameLevel(lvl + 2)
+  toast.fg = fg
+  toast.icon = UI.RoundIcon(fg, 40)
+  toast.icon:SetPoint("LEFT", fg, "LEFT", 12, 0)
+  toast.head = UI.Text(fg, "OVERLAY", 11, "gold", "LEFT")
   toast.head:SetPoint("TOPLEFT", toast, "TOPLEFT", 62, -10)
   toast.head:SetPoint("RIGHT", toast, "RIGHT", -12, 0)
   toast.head:SetText("Dark Matter achievement earned")
-  toast.name = UI.Text(toast, "OVERLAY", 15, "listInk", "LEFT")
+  toast.name = UI.Text(fg, "OVERLAY", 15, "listInk", "LEFT")
   toast.name:SetPoint("TOPLEFT", toast, "TOPLEFT", 62, -25)
   toast.name:SetPoint("RIGHT", toast, "RIGHT", -12, 0)
-  toast.sub = UI.Text(toast, "OVERLAY", 11, "listSoft", "LEFT")
+  toast.sub = UI.Text(fg, "OVERLAY", 11, "listSoft", "LEFT")
   toast.sub:SetPoint("TOPLEFT", toast, "TOPLEFT", 62, -44)
   toast.sub:SetPoint("RIGHT", toast, "RIGHT", -12, 0)
   for _, fs in ipairs({ toast.head, toast.name, toast.sub }) do if fs.SetWordWrap then fs:SetWordWrap(false) end end
@@ -502,6 +514,19 @@ function ACH.Toast(a)
   if not toast:IsShown() then ShowNextToast() end
 end
 function ACH._ToastFrame() return toast end
+
+-- /dm testtoast: a sample toast (the newest earned Dark Matter achievement, else the first one); nothing is recorded.
+function ACH.TestToast()
+  local db = ACH.DB()
+  local pick, first
+  for _, a in ipairs(BuildDefs()) do
+    first = first or a
+    if db and db.earned and db.earned[a.id] then pick = a end
+  end
+  local a = pick or first or { name = "Getting Started", points = 5, cat = "General" }
+  ACH.Toast({ name = a.name, points = a.points, cat = a.cat, icon = a.icon })
+  return a
+end
 
 ---------------------------------------------------------------------------
 -- award check

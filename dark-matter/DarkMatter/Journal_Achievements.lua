@@ -15,7 +15,7 @@ NS.AchPage = P
 
 local page, sumPanel, slots, search, filterBtn, treePanel, treeScroll, rightPanel, title, meta, cardScroll, empty
 local treeRows, cards = {}, {}
-local TREE_H, LEFT_W, SUM_H, CRIT_H = 22, 208, 46, 18
+local TREE_H, LEFT_W, SUM_H, CRIT_H = 22, 209, 46, 18 -- 0.5.1.3: LEFT_W includes the tree's scroll-bar gutter
 local hooks = {}
 local pending, onShowing = false, false
 local GOLD = 10000
@@ -359,7 +359,7 @@ end
 local function GetTreeRow(i)
   local r = treeRows[i]
   if r then return r end
-  local w = treeScroll.w - NS.theme.m.sbWidth
+  local w = treeScroll.cw
   r = CreateFrame("Button", nil, treeScroll.content)
   r:SetSize(w, TREE_H)
   r.bgN = ThreeArt(r, "row_n", 14, 8, "BACKGROUND") or false
@@ -372,8 +372,8 @@ local function GetTreeRow(i)
   r.toggle:SetPoint("LEFT", r, "LEFT", 4, 0)
   r.text = OneLine(UI.Text(r, "OVERLAY", 12, "listInk", "LEFT"), 15)
   r.small = OneLine(UI.Text(r, "OVERLAY", 11, "listSoft", "RIGHT"), 14)
-  r.small:SetPoint("RIGHT", r, "RIGHT", -6, 0)
-  r.small:SetWidth(32)
+  r.small:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+  r.small:SetWidth(30)
   r:SetScript("OnClick", function(self)
     local db = NS.db
     if not db or self.isHeader then return end
@@ -396,7 +396,7 @@ local function GetTreeRow(i)
 end
 
 local function RefreshTree(items, selKey, searching, per)
-  local rowW = treeScroll.w - NS.theme.m.sbWidth
+  local rowW = treeScroll.cw
   local shown = 0
   for i = 1, math.max(#items, #treeRows) do
     local it, r = items[i], treeRows[i]
@@ -431,9 +431,9 @@ local function RefreshTree(items, selKey, searching, per)
           on = it.key == selKey
         end
         r.text:SetPoint("LEFT", r, "LEFT", x, 0)
-        r.text:SetPoint("RIGHT", r, "RIGHT", -40, 0)
+        r.text:SetPoint("RIGHT", r, "RIGHT", -36, 0)
         r.text:SetText(it.name)
-        r.textW = rowW - x - 40
+        r.textW = rowW - x - 36
         r.text:SetTextColor(NS.Color(on and "liOn" or "listInk"))
         if searching then
           local n = per[it.key] or 0
@@ -463,7 +463,7 @@ end
 ---------------------------------------------------------------------------
 -- cards
 ---------------------------------------------------------------------------
-local function CardWidth() return cardScroll.w - NS.theme.m.sbWidth - 2 end
+local function CardWidth() return cardScroll.cw - 2 end
 
 local function GetCard(i)
   local c = cards[i]
@@ -829,22 +829,24 @@ function P.Build(parent, opts)
     db.achCard = nil
     P.Refresh()
   end)
-  treePanel = UI.Panel(page, LEFT_W, colH - 30)
+  -- 0.5.1.3: the category tree and the cards each give up a gutter (G) for their scroll bars (outside the pane)
+  local G = UI.Gutter()
+  treePanel = UI.Panel(page, LEFT_W - G, colH - 30)
   treePanel:SetPoint("TOPLEFT", page, "TOPLEFT", pad, -(colY + 30))
-  treeScroll = UI.Scroll(treePanel, LEFT_W - 8, colH - 30 - 12)
+  treeScroll = UI.Scroll(treePanel, LEFT_W - G - 8, colH - 30 - 12, treePanel)
   treeScroll.frame:SetPoint("TOPLEFT", treePanel, "TOPLEFT", 4, -6)
 
   -- right column: header + cards
-  local RW = innerW - LEFT_W - 8
+  local RW = innerW - LEFT_W - G -- the tree's gutter is the gap between the columns
   rightPanel = UI.Panel(page, RW, colH)
-  rightPanel:SetPoint("TOPLEFT", page, "TOPLEFT", pad + LEFT_W + 8, -colY)
+  rightPanel:SetPoint("TOPLEFT", page, "TOPLEFT", pad + LEFT_W, -colY)
   title = OneLine(UI.Text(rightPanel, "OVERLAY", 16, "gold", "LEFT"), 20)
-  title:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 12, -8)
-  title:SetPoint("RIGHT", rightPanel, "RIGHT", -12, 0)
+  title:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 10, -8)
+  title:SetPoint("RIGHT", rightPanel, "RIGHT", -10, 0)
   meta = OneLine(UI.Text(rightPanel, "OVERLAY", 11, "listSoft", "LEFT"), 14)
-  meta:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 12, -29)
-  meta:SetPoint("RIGHT", rightPanel, "RIGHT", -12, 0)
-  cardScroll = UI.Scroll(rightPanel, RW - 8, colH - 52)
+  meta:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 10, -29)
+  meta:SetPoint("RIGHT", rightPanel, "RIGHT", -10, 0)
+  cardScroll = UI.Scroll(rightPanel, RW - 8, colH - 52, rightPanel)
   cardScroll.frame:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 4, -48)
   empty = UI.Text(rightPanel, "OVERLAY", 12, "listSoft", "CENTER")
   empty:SetPoint("CENTER", rightPanel, "CENTER", 0, 0)

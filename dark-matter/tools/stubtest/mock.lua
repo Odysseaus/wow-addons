@@ -1,5 +1,9 @@
 -- minimal WoW stub to execute DarkMatter in plain Lua 5.1
 MODE=os.getenv("MODE")
+-- 0.5.2b.9: MODE=era = Classic Era 1.15.x (DarkMatter_Vanilla.toc, Interface 11509, WOW_PROJECT_ID 2): the minimal
+-- client (no modern quest log, no Journal, no achievements, no tracker) plus the Era bits; runs the minimal tests
+ERA = MODE == "era"
+if ERA then MODE = "minimal" end
 local log = {}
 local function out(...) local t={} for i=1,select('#',...) do t[#t+1]=tostring((select(i,...))) end log[#log+1]=table.concat(t," ") end
 print = out
@@ -53,6 +57,10 @@ C_AddOns={GetAddOnMetadata=function() return "16001" end,
   LoadAddOn=function(n) if MODE~="minimal" then LOADED[n]=true; if n=="Blizzard_AchievementUI" then AchievementFrame=newframe("AchievementFrame") end return true end return false,"WRONG_GAME_TYPE" end}
 C_Map={GetBestMapForUnit=function() return 1429 end, GetPlayerMapPosition=function() return {x=0.33,y=0.44,GetXY=function(self) return self.x,self.y end} end}
 WOW_PROJECT_ID=1; WOW_PROJECT_MAINLINE=1
+if ERA then
+  WOW_PROJECT_ID, WOW_PROJECT_CLASSIC = 2, 2
+  function GetBuildInfo() return "1.15.9","70003","Oct 1 2026",11509 end
+end
 GetMinimapShape=nil
 Enum={UIMapType={Dungeon=4}, GameRule={EncounterJournalDisabled=1, EjJourneysDisabled=2, TransmogEnabled=3}}
 function issecretvalue(v) return type(v)=="string" and v:find("SECRETNAME")~=nil end
@@ -231,8 +239,17 @@ function FrameMT.SetTextColor() end
 function FrameMT.SetCheckedTexture() end
 function FrameMT.SetChecked(s, v) s._checked = v and true or false end
 function FrameMT.GetChecked(s) return s._checked == true end
-function FrameMT.CreateMaskTexture(s) return {SetAllPoints=function()end,SetTexture=function()end} end
-function FrameMT.AddMaskTexture() end
+function FrameMT.CreateMaskTexture(s, name, layer) local t = FrameMT.CreateTexture(s, name, layer) t._isMask = true return t end
+function FrameMT.AddMaskTexture(s, m) if type(m) ~= "table" or not rawget(m, "_isMask") then error("AddMaskTexture: not a mask texture", 2) end if s._maskNoFile == nil then s._maskNoFile = s._file == nil end s._masks = s._masks or {} s._masks[#s._masks + 1] = m end
+-- 0.5.2b.6.1: the client's mask queries; MOCK_MASK_DROP = true plays a client that keeps no mask on a texture
+function FrameMT.GetNumMaskTextures(s) if MOCK_MASK_DROP then return 0 end return s._masks and #s._masks or 0 end
+function FrameMT.SetClipsChildren(s, v) s._clips = v and true or false end
+function FrameMT.DoesClipChildren(s) return s._clips or false end
+function FrameMT.GetDrawLayer(s) return s._layer, s._sub end
+function FrameMT.GetMaskTexture(s, i) needNum("GetMaskTexture", 1, i) return s._masks and s._masks[i] end
+function FrameMT.RemoveMaskTexture(s, m)
+  for i, x in ipairs(s._masks or {}) do if x == m then table.remove(s._masks, i) return end end
+end
 function FrameMT.GetStringWidth() return 60 end
 function FrameMT.GetStringHeight() return 40 end
 function FrameMT.GetFrameLevel() return 1 end
@@ -296,6 +313,28 @@ local function mk(kind, name, parent, tmpl)
   return f
 end
 
+-- 0.5.1 stock art: the client's file-ID lookup and template list (test data). STOCK_MISSING = true makes every stock
+-- texture and template missing, so the fallback to Dark Matter's own art can be checked.
+STOCK_MISSING = false
+STOCK_CALLS = 0
+function GetFileIDFromPath(p)
+  STOCK_CALLS = STOCK_CALLS + 1
+  if type(p) ~= "string" then error("GetFileIDFromPath: string expected", 2) end
+  if STOCK_MISSING or p:find("^Interface\\AddOns\\") then return nil end
+  return 130000 + #p
+end
+C_XMLUtil = { GetTemplateInfo = function(n)
+  if STOCK_MISSING then return nil end
+  -- 0.5.1.3: STOCK_MISSING_TMPL = { name = true } leaves just those templates out (1.60.1 has no CharacterFrameTabButtonTemplate)
+  if STOCK_MISSING_TMPL and STOCK_MISSING_TMPL[n] then return nil end
+  if n == "UIPanelCloseButton" then return { type = "Button", width = 32, height = 32 } end
+  -- 0.5.1.2: the templates the stock button / tab / scroll bar look is modelled on (reported by /dm artprobe)
+  if n == "UIPanelButtonTemplate" or n == "CharacterFrameTabButtonTemplate" then return { type = "Button" } end
+  if n == "UIPanelScrollFrameTemplate" then return { type = "ScrollFrame" } end
+  if n == "UIPanelScrollBarTemplate" then return { type = "Slider" } end
+  if n == "SearchBoxTemplate" then return { type = "EditBox" } end -- 0.5.2a.1: the quest panel's search bar
+  return nil
+end }
 function CreateFrame(ftype, name, parent, tmpl)
   if type(ftype) ~= "string" then error("CreateFrame: frame type expected", 2) end
   if parent ~= nil and type(parent) ~= "table" then error("CreateFrame: parent must be a frame", 2) end
@@ -370,15 +409,16 @@ function FrameMT.SetWidth(s, w) needNum("SetWidth", 1, w) s._sw, s._w = w, w end
 function FrameMT.SetHeight(s, h) needNum("SetHeight", 1, h) s._sh, s._h = h, h end
 function FrameMT.SetAlpha(s, a) needNum("SetAlpha", 1, a) s._alpha = a end
 function FrameMT.SetScale(s, v) needNum("SetScale", 1, v) s._scale = v end
+function FrameMT.GetEffectiveScale(s) local e = s._scale or 1 local p = s._parent if p and p.GetEffectiveScale then e = e * p:GetEffectiveScale() end return e end
 function FrameMT.SetFrameLevel(s, n) needNum("SetFrameLevel", 1, n) s._level = n end
 function FrameMT.GetFrameLevel(s) return s._level or 1 end
 function FrameMT.SetFrameStrata(s, v) if not STRATA[v] then error("SetFrameStrata: bad strata " .. tostring(v), 2) end s._strata = v end
-function FrameMT.SetTexture(s, file, wrapH, wrapV)
+function FrameMT.SetTexture(s, file, wrapH, wrapV, filter)
   local WRAP = { REPEAT = 1, CLAMP = 1, MIRROR = 1, CLAMPTOBLACK = 1, CLAMPTOBLACKADDITIVE = 1, CLAMPTOWHITE = 1 }
   if (wrapH ~= nil and not WRAP[wrapH]) or (wrapV ~= nil and not WRAP[wrapV]) then error("SetTexture: bad wrap mode", 2) end
   s._wrapH, s._wrapV = wrapH, wrapV
   if file ~= nil and type(file) ~= "string" and not isnum(file) then error("SetTexture: bad file " .. type(file), 2) end
-  s._file, s._color = file, nil
+  s._file, s._color, s._filter = file, nil, filter
 end
 function FrameMT.SetTexCoord(s, ...)
   local n = select("#", ...)
@@ -394,9 +434,20 @@ function FrameMT.SetTexCoord(s, ...)
     end
   end
 end
+function FrameMT.GetTexCoord(s)
+  local v = s._tc
+  if not v then return 0, 0, 0, 1, 1, 0, 1, 1 end
+  if #v == 8 then return unpack(v) end
+  return v[1], v[3], v[1], v[4], v[2], v[3], v[2], v[4]
+end
 function FrameMT.SetColorTexture(s, r, g, b, a)
   needNum("SetColorTexture", 1, r) needNum("SetColorTexture", 2, g) needNum("SetColorTexture", 3, b)
   s._color, s._file = { r, g, b, a or 1 }, nil
+end
+-- 0.5.1.4: an atlas by name (the game's map-window frame pieces); the layout dump shows it as "atlas:<name>"
+function FrameMT.SetAtlas(s, a)
+  if type(a) ~= "string" then error("SetAtlas: string expected", 2) end
+  s._file, s._color, s._atlas, s._tc = "atlas:" .. a, nil, a, nil
 end
 function FrameMT.SetVertexColor(s, r, g, b, a)
   needNum("SetVertexColor", 1, r) needNum("SetVertexColor", 2, g) needNum("SetVertexColor", 3, b)
@@ -598,7 +649,7 @@ function DumpLayout(root, path)
       -- clip to the nearest ScrollFrame ancestor
       local x2 = r._parent
       while x2 and x2 ~= UIParent do
-        if x2._ftype == "ScrollFrame" then
+        if x2._ftype == "ScrollFrame" or x2._clips then
           local cl, ct, cr, cb = rect(x2)
           o[#o + 1] = '"clip":[' .. table.concat({ jnum(cl - rl), jnum(rt - ct), jnum(cr - cl), jnum(ct - cb) }, ",") .. "]"
           break
@@ -614,17 +665,116 @@ function DumpLayout(root, path)
   fh:close()
 end
 DarkMatterCharDB=nil
+-- 0.5.1.4: the game's own map window (read only). DM_WMF=WxH runs the whole suite with a WorldMapFrame of that size
+-- whose frame art (NineSlice pieces by atlas, title, close button, portrait) can be read; without it there is none.
+WMF_CALLS, WMF_WRITES = {}, {}
+function MakeWMF(w, h, opts)
+  opts = opts or {}
+  local function spyObj(t)
+    return setmetatable({}, { __index = function(_, k)
+      local v = t[k]
+      if type(v) == "function" then return function(self, ...) WMF_CALLS[#WMF_CALLS + 1] = tostring(k) return v(t, ...) end end
+      return v
+    end, __newindex = function(_, k) WMF_WRITES[#WMF_WRITES + 1] = tostring(k) end })
+  end
+  local function Tex(atlas, tw, th, pt, x, y)
+    return spyObj({ GetObjectType = function() return "Texture" end, GetAtlas = function() return atlas end,
+      GetTextureFileID = function() return 5000000 + #atlas end, GetTexture = function() return 5000000 + #atlas end,
+      GetTexCoord = function() return 0, 0, 0, 1, 1, 0, 1, 1 end, GetWidth = function() return tw end, GetHeight = function() return th end,
+      GetPoint = function() return pt, nil, pt, x or 0, y or 0 end, GetVertexColor = function() return 1, 1, 1, 1 end,
+      GetHorizTile = function() return atlas:sub(1, 1) == "_" end, GetVertTile = function() return atlas:sub(1, 1) == "!" end,
+      IsShown = function() return true end })
+  end
+  local nine = {
+    TopLeftCorner = Tex("UI-Frame-Map-CornerTopLeft", 24, 24, "TOPLEFT", 0, 0),
+    TopRightCorner = Tex("UI-Frame-Map-CornerTopRight", 24, 24, "TOPRIGHT", 0, 0),
+    BottomLeftCorner = Tex("UI-Frame-Map-CornerBottomLeft", 12, 12, "BOTTOMLEFT", 0, 0),
+    BottomRightCorner = Tex("UI-Frame-Map-CornerBottomRight", 12, 12, "BOTTOMRIGHT", 0, 0),
+    TopEdge = Tex("_UI-Frame-Map-EdgeTop", 32, 24, "TOPLEFT", 0, 0), BottomEdge = Tex("_UI-Frame-Map-EdgeBottom", 32, 12, "BOTTOMLEFT", 0, 0),
+    LeftEdge = Tex("!UI-Frame-Map-EdgeLeft", 12, 32, "TOPLEFT", 0, 0), RightEdge = Tex("!UI-Frame-Map-EdgeRight", 12, 32, "TOPRIGHT", 0, 0) }
+  if opts.real then -- the client's own offsets: the portrait-metal corner reaches 13 left / 16 up, the others 4 right / 3 down
+    nine.TopLeftCorner = Tex("UI-Frame-PortraitMetal-CornerTopLeft", 95, 95, "TOPLEFT", -13, 16)
+    nine.TopRightCorner = Tex("UI-Frame-Metal-CornerTopRightDouble", 33, 73, "TOPRIGHT", 4, 16)
+    nine.BottomLeftCorner = Tex("UI-Frame-Metal-CornerBottomLeft", 32, 32, "BOTTOMLEFT", -13, -3)
+    nine.BottomRightCorner = Tex("UI-Frame-Metal-CornerBottomRight", 32, 32, "BOTTOMRIGHT", 4, -3)
+  end
+  if opts.rect then -- rectangles too (frame at 100,800 top-left); a corner's rect from its anchor + offset + size
+    local L0, T0 = 100, 800
+    local function R(t, pt, x, y, tw, th)
+      local l = pt:find("LEFT") and (L0 + x) or (L0 + w + x - tw)
+      local tp = pt:find("TOP") and (T0 + y) or (T0 - h + y + th)
+      t.GetLeft, t.GetRight, t.GetTop, t.GetBottom = function() return l end, function() return l + tw end, function() return tp end, function() return tp - th end
+    end
+    for k, p in pairs({ TopLeftCorner = { "TOPLEFT", -13, 16, 95, 95 }, TopRightCorner = { "TOPRIGHT", 4, 16, 33, 73 },
+        BottomLeftCorner = { "BOTTOMLEFT", -13, -3, 32, 32 }, BottomRightCorner = { "BOTTOMRIGHT", 4, -3, 32, 32 } }) do
+      local raw = {}
+      R(raw, p[1], p[2], p[3], p[4], p[5])
+      local old = nine[k]
+      nine[k] = setmetatable({}, { __index = function(_, kk) if raw[kk] then return function() return raw[kk]() end end return old[kk] end })
+    end
+    opts.rectFns = { function() return L0 end, function() return L0 + w end, function() return T0 end, function() return T0 - h end }
+  end
+  if opts.noBorder then nine = {} end
+  local title = spyObj({ GetObjectType = function() return "FontString" end, GetText = function() return "Map & Quest Log" end,
+    GetTextColor = function() return 1, 0.82, 0 end, GetFont = function() return "Fonts\\FRIZQT__.TTF", 12 end,
+    GetWidth = function() return 120 end, GetHeight = function() return 12 end, GetPoint = function() return "TOP", nil, "TOP", 0, -5 end, IsShown = function() return true end })
+  local closeN = Tex("RedButton-Exit", 24, 24, "TOPRIGHT", 0, 0)
+  local closeB = spyObj({ GetObjectType = function() return "Button" end, GetWidth = function() return 24 end, GetHeight = function() return 24 end,
+    GetNormalTexture = function() return closeN end, GetPushedTexture = function() return Tex("RedButton-exit-pressed", 24, 24, "TOPRIGHT") end,
+    GetHighlightTexture = function() return Tex("RedButton-Highlight", 24, 24, "TOPRIGHT") end, GetDisabledTexture = function() return nil end })
+  local border = spyObj({ NineSlice = spyObj(nine), TitleContainer = spyObj({ TitleText = title }), CloseButton = closeB,
+    portrait = Tex("UI-HUD-Map-Portrait", 58, 58, "TOPLEFT", -6, 7), Bg = Tex("UI-Frame-Map-Bg", w, h, "TOPLEFT", 0, 0) })
+  return spyObj({ BorderFrame = border, isMaximized = opts.maximized or false, minimizedWidth = opts.minW, minimizedHeight = opts.minH,
+    questLogWidth = opts.ql, GetWidth = function() return w end, GetHeight = function() return h end,
+    GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return opts.shown ~= false end, -- 0.5.1.9: shown unless opts.shown == false
+    GetLeft = opts.rectFns and opts.rectFns[1], GetRight = opts.rectFns and opts.rectFns[2], GetTop = opts.rectFns and opts.rectFns[3], GetBottom = opts.rectFns and opts.rectFns[4],
+    IsMaximized = function() return opts.maximized or false end, ScrollContainer = {},
+    Show = function() WMF_WRITES[#WMF_WRITES + 1] = "Show()" end, SetSize = function() WMF_WRITES[#WMF_WRITES + 1] = "SetSize()" end })
+end
+C_Texture = { GetAtlasInfo = function(a) if not STOCK_MISSING and type(a) == "string" and (a:find("UI%-Frame%-Map") or a:find("RedButton") or a:find("Portrait")) then return { width = 24, height = 24 } end end }
+do
+  local spec = os.getenv("DM_WMF")
+  local ww, hh
+  if spec then ww, hh = spec:match("^(%d+)x(%d+)$") end
+  if ww then WorldMapFrame = MakeWMF(tonumber(ww), tonumber(hh)) end
+  -- the size the window should take (clamped like NS.MapWindow: 880x500 .. 1800x1300)
+  -- 0.5.1.5: the layout takes the map's on-screen size; below 880x500 (or above 1800x1300) our scale makes up the rest
+  if ww then
+    local w0, h0 = tonumber(ww), tonumber(hh)
+    local sc = math.max(math.min(1, w0 / 880, h0 / 500), w0 / 1800, h0 / 1300, 0.3)
+    -- 0.5.2a.2: less the 26 the narrower tab column freed (the content keeps its 0.5.2a size)
+    EXP_W, EXP_H, EXP_S = math.floor(w0 / sc + 0.5) - 26, math.floor(h0 / sc + 0.5), sc
+  else
+    EXP_W, EXP_H, EXP_S = 880 - 26, 680, 1
+  end
+end
 -- load addon
 local ns={}
-local toc=io.open(arg[1].."/DarkMatter.toc"):read("*a")
+local toc=io.open(arg[1]..(ERA and "/DarkMatter_Vanilla.toc" or "/DarkMatter.toc")):read("*a")
+-- 0.5.2b.9 era: while the files load, the game knows its maps (no Forever-only zones; Zephras Isle is not among them)
+local keepInfo, keepKids = C_Map.GetMapInfo, C_Map.GetMapChildrenInfo
+if ERA then
+  local FOREVER = { [2482] = true, [2548] = true, [2652] = true }
+  C_Map.GetMapInfo = function(id) if not FOREVER[id] then return { mapID = id, name = "Zone" .. tostring(id) } end end
+  C_Map.GetMapChildrenInfo = function(id) if id == 947 then return { { mapID = 1426, name = "Dun Morogh" }, { mapID = 1429, name = "Elwynn Forest" }, { mapID = 1438, name = "Teldrassil" } } end return {} end
+end
+ERA_FILES = {}
 for file in toc:gmatch("\n([%w_]+%.lua)") do
+  ERA_FILES[#ERA_FILES + 1] = file
   local chunk=assert(loadfile(arg[1].."/"..file)); chunk("DarkMatter",ns)
 end
+C_Map.GetMapInfo, C_Map.GetMapChildrenInfo = keepInfo, keepKids
+-- 0.5.2b.6: the real zone masks ship; the older map tests run without them (their made-up maps), the 0.5.2b.6 block
+-- puts them back
+SHIPPED_MASKS = ns.ZoneMasks
+ns.ZoneMasks = {}
 
 local ev
 for _,f in ipairs(ALL) do if f._ev and f._ev.ADDON_LOADED then ev=f end end
 assert(ev,"no event frame")
-local function check(c,m) if not c then error("FAIL: "..m,2) end out("ok:",m) end
+SOFT_FAILS = {}
+local SOFT = os.getenv("DM_SOFT") ~= nil -- debugging: list every failed check instead of stopping at the first
+local function check(c,m) if not c then if SOFT then SOFT_FAILS[#SOFT_FAILS+1]=m io.stderr:write("SOFTFAIL: ", tostring(m):sub(1,400), "\n") return end error("FAIL: "..m,2) end out("ok:",m) end
 -- first run: no saved variables
 ev._scripts.OnEvent(ev,"ADDON_LOADED","DarkMatter")
 ev._scripts.OnEvent(ev,"PLAYER_LOGIN")
@@ -649,7 +799,15 @@ SlashCmdList.DARKMATTER("")
 check(f._shown,"/dm toggles")
 SlashCmdList.DARKMATTER("probe")
 local p=DarkMatterDB.probe
+if ERA then
+  -- 0.5.2b.9: Classic Era: the client block names the project and the interface; chat says so too
+  local said = false
+  for i = 1, #log do if tostring(log[i]):find("client: Classic Era 1.15.9, interface 11509, WOW_PROJECT_ID 2; Forever-only zones dropped: 2482, 2548, 2652, zephras isle", 1, true) then said = true end end
+  check(p and p.client.build=="70003" and p.client.interface==11509 and p.client.projectId==2 and p.era and p.era.interface==11509 and said,
+    "0.5.2b.9 era: probe client info: build 70003, interface 11509, WOW_PROJECT_ID 2, in DarkMatterDB.probe and in chat")
+else
 check(p and p.client.build=="70009" and p.client.interface==16001,"probe client info")
+end
 check(type(p.callOrder)=="table" and #p.callOrder>3,"calls recorded: "..#p.callOrder)
 check(DarkMatterProbeFrame and DarkMatterProbeFrame._shown,"probe opens its own report window")
 check(not p.areaErrors,"no area errors: "..tostring(p.areaErrors and p.areaErrors[1]))
@@ -699,10 +857,13 @@ if os.getenv("DUMP") then for _,l in ipairs(DarkMatterDB.probe.summary) do io.st
 -- ===== taint-safety assertions (0.0.4) =====
 if MODE ~= "minimal" then
   check(#MUTATED==0, "probe made no mutating/server-asking calls (found: "..table.concat(MUTATED,",")..")")
-  local bad={ITEM_DATA_LOAD_RESULT=1,COMBAT_LOG_EVENT_UNFILTERED=1}
+  -- 0.5.1.3: ITEM_DATA_LOAD_RESULT is allowed on the quest / Adventure Guide refresh frames (late reward items),
+  -- never on the probe frame; the combat log is never registered
   local okreg=true
-  for _,r in ipairs(REGLOG) do if bad[r.ev] then okreg=false end end
-  check(okreg,"never registered ITEM_DATA_LOAD_RESULT / COMBAT_LOG_EVENT_UNFILTERED")
+  for _,r in ipairs(REGLOG) do
+    if r.ev=="COMBAT_LOG_EVENT_UNFILTERED" or (r.ev=="ITEM_DATA_LOAD_RESULT" and r.frame==DarkMatter._probeFrame) then okreg=false end
+  end
+  check(okreg,"never registered COMBAT_LOG_EVENT_UNFILTERED; the probe frame never registers ITEM_DATA_LOAD_RESULT")
   -- probe frame must be private (no events left registered, not UIParent/Minimap/etc.)
   local pf=DarkMatter._probeFrame
   check(pf and pf~=UIParent and pf~=Minimap and next(pf._ev or {})==nil,"probe frame is private and has no events left registered")
@@ -757,7 +918,7 @@ if MODE ~= "minimal" then
     "/dm blocked leads with the last blocked function: " .. tostring(said[2]))
   check(said[3] and said[3]:find("combat no", 1, true) and said[3]:find("ctx none", 1, true), "/dm blocked: time, version, combat, context line")
   local earlier
-  for _, l in ipairs(said) do if l:find("earlier: .- nil %(ADDON_ACTION_BLOCKED, ctx ach:PLAYER_ENTERING_WORLD%)") then earlier = true end end
+  for _, l in ipairs(said) do if l:find("earlier: .- nil %(ADDON_ACTION_BLOCKED, addon %S+, ctx ach:PLAYER_ENTERING_WORLD%)") then earlier = true end end
   check(earlier, "/dm blocked lists earlier entries with their context")
   said = {}
   DarkMatter.Print = function(m) said[#said + 1] = m end
@@ -771,8 +932,8 @@ LASTN=#log
 -- ===== P1 window assertions (0.1.0) =====
 if MODE ~= "minimal" then
   local W=DarkMatterFrame
-  check(W._w==880 and W._h==680,"main window is 880x680 (mockup size)")
-  check(W._scale and W._scale<=1,"window scale never above 1: "..tostring(W._scale))
+  check(W._w==EXP_W and W._h==EXP_H,"main window is "..EXP_W.."x"..EXP_H.." (854x680 without a game map window; 0.5.1.4: the game map window's size; 0.5.2a.2: less the tab column's 26)")
+  check(W._scale and W._scale<=math.max(1, EXP_S or 1)+1e-6,"window scale never above 1 (0.5.1.5: unless the map window is larger on screen than 1800x1300): "..tostring(W._scale))
   check(DarkMatterDB.window.point=="CENTER","window default at centre")
   check(DarkMatter and true,"namespace global")
   -- tabs registered in order and built
@@ -797,10 +958,10 @@ if MODE ~= "minimal" then
   check(#MUTATED==0,"window build/tabs made no mutating calls")
   -- window events: quest events only on a private frame, only while shown
   local qev
-  for _,fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_LOG_UPDATE then qev=fr end end
+  for _,fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_LOG_UPDATE and fr ~= DarkMatter.Tracker.frame then qev=fr end end
   DarkMatter.ShowTab("quests")
   qev=nil
-  for _,fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_LOG_UPDATE then qev=fr end end
+  for _,fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_LOG_UPDATE and fr ~= DarkMatter.Tracker.frame then qev=fr end end
   check(qev~=nil and qev~=UIParent and qev~=DarkMatterFrame,"quest events registered on a private frame while shown")
   W:Hide()
   W._scripts.OnHide(W)
@@ -895,11 +1056,16 @@ do
     check(#TCBAD == 0, tag .. ": every SetTexCoord within 0..1 with left<right and top<bottom " .. tostring(TCBAD[1]))
     local win = { W:GetWidth(), W:GetHeight() }
     local wl, wt, wr, wb = FrameMT._rect(W)
-    check(wl and wr - wl == 880 and wt - wb == 680, tag .. ": window resolves to 880x680")
+    local MWW, MWH = DarkMatter.theme.m.w, DarkMatter.theme.m.h -- 0.5.1.4: the game's map window size (880x680 without one)
+    check(wl and wr - wl == MWW and wt - wb == MWH, tag .. ": window resolves to " .. MWW .. "x" .. MWH)
+    -- 0.5.2a.1: the docked quest panel sits beside the window (audited on its own below)
+    local QPF = DarkMatter.QuestPanel and DarkMatter.QuestPanel.frame
+    local function inPanel(x) while x do if x == QPF then return true end x = x._parent end return false end
     local list = LayoutOf(W)
     local nTex, nFrame, nPieces = 0, 0, 0
     for _, e in ipairs(list) do
       local r = e.r
+      repeat if QPF and inPanel(r) then break end
       local nm = (r._name or "") .. (r._file and (" " .. tostring(r._file):match("[^\\]+$")) or "")
       if e.kind == "texture" then
         nTex = nTex + 1
@@ -907,17 +1073,20 @@ do
         local w, h = e.rr - e.l, e.t - e.b
         check(w > 0 and h > 0, tag .. ": texture has non-zero size " .. nm .. " " .. w .. "x" .. h)
         -- nothing may be bigger than the window plus the medal overhang
-        check(w <= 880 + 1 and h <= 680 + 1, tag .. ": texture is not larger than the window " .. nm .. " " .. w .. "x" .. h)
+        check(w <= MWW + 1 and h <= MWH + 1, tag .. ": texture is not larger than the window " .. nm .. " " .. w .. "x" .. h)
         local clipped = false
         do local x = e.r._parent
           while x and x ~= UIParent do
-            if x._ftype == "ScrollFrame" then clipped = true break end
+            if x._ftype == "ScrollFrame" or x._clips then clipped = true break end
             x = x._parent
           end
         end
         if not clipped then
-          check(e.l >= wl - 30 and e.rr <= wr + 30 and e.t <= wt + 30 and e.b >= wb - 30, tag .. ": texture lies within the window " .. nm)
+          check(e.l >= wl - 30 and e.rr <= wr + 30 and e.t <= wt + 30 and e.b >= wb - 30, tag .. ": texture lies within the window " .. nm .. string.format(" (%.0f,%.0f,%.0f,%.0f in %.0f,%.0f,%.0f,%.0f)", e.l, e.t, e.rr, e.b, wl, wt, wr, wb))
         end
+        local stockPiece = r._file and type(r._file) == "string" and r._file:find("^Interface\\") and not r._file:find("^Interface\\AddOns\\")
+          and not r._file:upper():find("WHITE8X8", 1, true) -- 0.5.1: the game's own art counts as a piece too
+        if stockPiece then nPieces = nPieces + 1 end
         if r._file and tostring(r._file):find("wow%-atlas") then
           nPieces = nPieces + 1
           check(r._tc ~= nil, tag .. ": atlas texture has SetTexCoord (otherwise the whole atlas shows) " .. nm)
@@ -929,6 +1098,11 @@ do
         check(e.l ~= nil and w > 0 and h > 0, tag .. ": frame has non-zero size " .. tostring(r._name or r._ftype) .. " " .. w .. "x" .. h)
         check((r._level or 1) > (W._level or 1), tag .. ": content frame level " .. tostring(r._level) .. " is above the window art level " .. tostring(W._level))
       end
+      until true
+    end
+    if QPF and QPF:IsVisible() then
+      local pl, pt, pr, pb = FrameMT._rect(QPF)
+      check(pl and pl >= wr and pr > pl and pt - pb == MWH, tag .. ": docked quest panel lies beside the window, as tall as it")
     end
     check(nTex > 20 and nPieces > 10, tag .. ": many pieces drawn (" .. nTex .. " textures, " .. nPieces .. " atlas pieces)")
     -- the 9-slice window border: 8 pieces, corners 16x16, edges thin, spanning the whole window
@@ -940,7 +1114,7 @@ do
     local minl, maxr, maxt, minb = 1e9, -1e9, -1e9, 1e9
     for _, e in ipairs(pieces) do
       minl = math.min(minl, e.l) maxr = math.max(maxr, e.rr) maxt = math.max(maxt, e.t) minb = math.min(minb, e.b)
-      check(math.min(e.rr - e.l, e.t - e.b) <= 16.01, tag .. ": border piece is thin (<=16 units)")
+      check(math.min(e.rr - e.l, e.t - e.b) <= 24.01, tag .. ": border piece is thin (<=24 units; the stock dialog border is 24)")
     end
     check(minl == wl and maxr == wr and maxt == wt and minb == wb, tag .. ": border pieces span corner to corner")
     -- background art (window-owned BACKGROUND/BORDER textures) is drawn before every content frame
@@ -2703,6 +2877,7 @@ do
     DarkMatter.tabs.journals.Refresh()
   end
 
+  if not ERA then -- 0.5.2b.9: the game's achievements (none on Classic Era: see the else branch)
   -- game API present but thin (Forever: Legacy Challenges) -> game + Dark Matter
   local GCATS = { [15076] = { "Classes", -1 }, [15585] = { "Warrior", 15076 }, [15590] = { "Raids", -1 }, [15999] = { "Do Not Display", -1 } }
   local GACH = {
@@ -2821,6 +2996,15 @@ do
     and S.legacy.pbar.label:GetText() == "50 / 3200", "game mode: no Dark Matter section; summary shows this character's achievement points (" .. S.legacy.pbar.label:GetText() .. ")")
   GACH[15590] = { { 62035, "Conqueror of the Deeps", 0, false, nil, nil, nil, "x", false } }
   ACH.InvalidateGame()
+  else
+    -- 0.5.2b.9 era: no achievement system in Classic Era: Dark Matter's own achievements only, even with game functions about
+    GetCategoryList = function() return { 15076 } end
+    ACH.InvalidateGame()
+    check(ACH.ApiPresent() == false and ACH.Mode() ~= "game+dm" and ACH.Mode() ~= "game" and ACH.ReadGame().present == false,
+      "0.5.2b.9 era: the game's achievements are off, Dark Matter's own stay (mode " .. tostring(ACH.Mode()) .. ")")
+    GetCategoryList = nil
+    ACH.InvalidateGame()
+  end
   DarkMatterFrame:Hide()
   check(not W.page:IsVisible() or not DarkMatterFrame._shown, "page hides with the window")
   DarkMatterFrame:Show()
@@ -2883,7 +3067,7 @@ if MODE ~= "minimal" then
   -- WoW colours that replaced literals keep their 0.4.1 values
   local function near(c, r, g, b) return math.abs(c[1] - r) < 0.003 and math.abs(c[2] - g) < 0.003 and math.abs(c[3] - b) < 0.003 end
   local wc = NS.themes.wow.colors
-  check(near(wc.barBorder, 0.294, 0.290, 0.267) and near(wc.barTrack, 0.02, 0.02, 0.016) and near(wc.barInk, 1, 0.965, 0.847) and wc.barFill[1] == wc.gold[1],
+  check(near(wc.barBorder, 0.294, 0.290, 0.267) and near(wc.barTrack, 0.02, 0.02, 0.016) and near(wc.barInk, 1, 0.965, 0.847) and near(wc.barFill, 0.941, 0.812, 0.290), -- 0.5.1: gold text is now GameFontNormal; the bar fill keeps 0.4.1's gold
     "themes: WoW bar colours equal the 0.4.1 literals")
 
   -- snapshot of everything the WoW theme draws (to prove a round trip through all themes leaves it unchanged)
@@ -2947,11 +3131,11 @@ if MODE ~= "minimal" then
       -- 0.4.3: the whole frame art (incl. overhanging crest/base/ornaments) is the drag area; nothing outside it
       local box = A.box
       local hi = win._hitIns
-      check(hi and math.abs(hi[1] - box[1]) < 0.01 and math.abs(hi[2] - (880 - box[3])) < 0.01 and math.abs(hi[3] - box[2]) < 0.01
-        and math.abs(hi[4] - (680 - box[4])) < 0.01 and hi[1] < 0 and hi[3] < 0, "themes: the window's mouse area covers all the frame art in " .. id)
+      check(hi and math.abs(hi[1] - box[1]) < 0.01 and math.abs(hi[2] - (EXP_W - box[3])) < 0.01 and math.abs(hi[3] - box[2]) < 0.01
+        and math.abs(hi[4] - (EXP_H - box[4])) < 0.01 and hi[1] < 0 and hi[3] < 0, "themes: the window's mouse area covers all the frame art in " .. id)
       for _, e in ipairs(LayoutOf(win)) do
         local clipped, x = false, e.r._parent
-        while x and x ~= UIParent do if x._ftype == "ScrollFrame" then clipped = true break end x = x._parent end
+        while x and x ~= UIParent do if x._ftype == "ScrollFrame" or x._clips then clipped = true break end x = x._parent end
         if e.kind == "texture" and e.l and not clipped then
           check(e.l >= wl + box[1] - 0.5 and e.rr <= wl + box[3] + 0.5 and e.t <= wt - box[2] + 0.5 and e.b >= wt - box[4] - 0.5,
             "themes: nothing drawn outside the frame art (no backdrop) in " .. id)
@@ -3017,7 +3201,7 @@ if MODE ~= "minimal" then
     end
     check(#TCBAD == 0, "themes: texcoords valid after every tab in " .. id)
     local wl2, wt2, wr2, wb2 = FrameMT._rect(win)
-    check(wr2 - wl2 == 880 and wt2 - wb2 == 680, "themes: window stays 880x680 in " .. id)
+    check(wr2 - wl2 == EXP_W and wt2 - wb2 == EXP_H, "themes: window keeps its size in " .. id)
     if os.getenv("DM_RENDER_DIR") and MODE == "full" then
       NS.ShowTab("quests")
       DumpLayout(win, os.getenv("DM_RENDER_DIR") .. "/layout-theme-" .. id .. ".json")
@@ -3117,8 +3301,24 @@ if MODE ~= "minimal" then
     end
   end
   win:Show()
+  -- 0.5.1: the WoW theme draws the game's own art. It is scanned with the stock textures at their light and dark
+  -- estimate (contrast.lua C.STOCK), and once more with every stock texture missing (Dark Matter's own art).
+  local passes = {}
   for _, id in ipairs(NS.themeOrder) do
-    NS.SetTheme(id)
+    if id == "wow" then
+      passes[#passes + 1] = { id = id, tone = "light" }
+      passes[#passes + 1] = { id = id, tone = "dark", tag = "wow@stockdark" }
+      passes[#passes + 1] = { id = id, missing = true, tag = "wow@fallback" }
+    else
+      passes[#passes + 1] = { id = id }
+    end
+  end
+  for _, ps in ipairs(passes) do
+    local id = ps.tag or ps.id
+    CT.tone = ps.tone or "light"
+    STOCK_MISSING = ps.missing and true or false
+    NS.Stock.ClearCache()
+    NS.SetTheme(ps.id)
     for _, tid in ipairs(NS.tabOrder) do
       NS.ShowTab(tid)
       if tid == "journals" then
@@ -3141,7 +3341,10 @@ if MODE ~= "minimal" then
     io.write(string.format("contrast\t%s\t%.2f\t%d\t%s\t%s\n", k, w.ratio, w.n, w.view, w.text))
   end
   for _, f in ipairs(fails) do io.write("cfail\t" .. f .. "\n") end
-  check(nlab > 2000, "contrast: " .. nlab .. " label checks over 10 themes")
+  STOCK_MISSING = false
+  CT.tone = "light"
+  NS.Stock.ClearCache()
+  check(nlab > 2000, "contrast: " .. nlab .. " label checks over 10 themes (WoW: stock art at light + dark estimates, and its fallback)")
   check(#fails == 0, "contrast: every label >= 4.5:1 (3:1 large) in every theme and state (" .. #fails .. " below)\n  " .. table.concat(fails, "\n  ", 1, math.min(#fails, 12)))
   NS.SetTheme("wow")
   NS.ShowTab("journals")
@@ -3305,7 +3508,7 @@ if MODE ~= "minimal" then
   check(QWATCH[3] == nil and gd.watch._checked == false, "watch: unchecking removes it")
   -- reverse sync: a change made in the WoW quest log / tracker shows up on the next watch event
   local wf
-  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_WATCH_LIST_CHANGED then wf = fr end end
+  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_WATCH_LIST_CHANGED and fr ~= DarkMatter.Tracker.frame then wf = fr end end
   check(wf ~= nil and wf ~= UIParent, "watch: QUEST_WATCH_LIST_CHANGED registered on a private frame while shown")
   QWATCH[6] = true
   TIME_NOW = TIME_NOW + 5
@@ -3330,7 +3533,7 @@ if MODE ~= "minimal" then
   check(QWATCH[3] == nil, "watch: no change while in combat (queued)")
   InCombatLockdown = ic
   local rf
-  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED and fr ~= wf then rf = fr end end
+  for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED and fr ~= wf and fr ~= DarkMatter.Tracker.frame then rf = fr end end
   check(rf ~= nil, "watch: waits for PLAYER_REGEN_ENABLED")
   rf._scripts.OnEvent(rf, "PLAYER_REGEN_ENABLED")
   check(QWATCH[3] == true and rowFor("Gold Dust").watch._checked == true, "watch: queued change applied after combat")
@@ -3482,6 +3685,3652 @@ if MODE ~= "minimal" then
   NS.ShowTab("journals")
 end
 
+-- ===== 0.4.7 /dm mapprobe: read-only, short numbered lines, SavedVariables copy =====
+do
+  local saveMap, saveEnum, saveSuper, saveNav, saveWMF = C_Map, Enum, C_SuperTrack, C_Navigation, WorldMapFrame
+  local saveQOM = C_QuestLog and C_QuestLog.GetQuestsOnMap
+  local saveUMT = type(Enum) == "table" and Enum.UIMapType or nil
+  local WRITES = {}
+  local function spy(n) return function() WRITES[#WRITES + 1] = n end end
+  local MAPS = {
+    [1426] = { mapID = 1426, name = "Dun Morogh", mapType = 3, parentMapID = 1415 },
+    [1415] = { mapID = 1415, name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+    [1414] = { mapID = 1414, name = "Kalimdor", mapType = 2, parentMapID = 947 },
+    [947] = { mapID = 947, name = "Azeroth", mapType = 1, parentMapID = 0 },
+  }
+  Enum = Enum or {}
+  Enum.UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, Dungeon = 4, Micro = 5, Orphan = 6 }
+  local here = 1426
+  C_Map = {
+    GetBestMapForUnit = function() return here end,
+    GetPlayerMapPosition = function(id) if id == 1426 then return { x = 0.483, y = 0.524, GetXY = function(s) return s.x, s.y end } end end,
+    GetMapInfo = function(id) return MAPS[id] end,
+    GetMapChildrenInfo = function(id, t)
+      if id == 947 then return { MAPS[1414], MAPS[1415] } end
+      if id == 1415 then local r = {} for i = 1, 21 do r[i] = { mapID = 2000 + i, mapType = 3 } end return r end
+      if id == 1414 then local r = {} for i = 1, 20 do r[i] = { mapID = 3000 + i, mapType = 3 } end return r end
+      return {}
+    end,
+    GetMapArtLayers = function(id) return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256, minScale = 1, maxScale = 1 } } end,
+    GetMapArtLayerTextures = function(id, l) local r = {} for i = 1, 12 do r[i] = id * 100 + i end return r end, -- 0.5.0: per-map file IDs
+    GetMapRectOnMap = function(a, b) if a == 1426 then return 0.39, 0.51, 0.62, 0.70 end return 0.55, 0.95, 0.10, 0.90 end,
+    GetWorldPosFromMapPos = function(id, v) return 0, { x = v.y * 3283, y = v.x * 4925 } end, -- world X runs north-south
+    GetMapLevels = function(id) if id == 1426 then return 1, 10, 0, 0 end end,
+    CanSetUserWaypointOnMap = function() return true end,
+    HasUserWaypoint = function() return false end,
+    SetUserWaypoint = spy("SetUserWaypoint"), ClearUserWaypoint = spy("ClearUserWaypoint"),
+  }
+  C_SuperTrack = { SetSuperTrackedUserWaypoint = spy("SetSuperTrackedUserWaypoint") }
+  C_Navigation = nil
+  local saveCQ = C_QuestLog
+  C_QuestLog = C_QuestLog or {}
+  C_QuestLog.GetQuestsOnMap = function() return { {}, {}, {} } end
+  WorldMapFrame = { ScrollContainer = {}, Show = spy("WorldMapFrame:Show"), SetMapID = spy("WorldMapFrame:SetMapID") }
+  DarkMatterDB.mapprobe = nil
+  local nlog = #log
+  SlashCmdList.DARKMATTER("mapprobe")
+  local mp = DarkMatterDB.mapprobe
+  check(type(mp) == "table" and mp.last and #mp.runs == 1 and mp.last.version == ns.version, "0.4.7 mapprobe: results saved to DarkMatterDB.mapprobe (last + runs)")
+  local L = mp.last.lines
+  local all = table.concat(L, "\n")
+  local function has(s) return all:find(s, 1, true) ~= nil end
+  local longest = 0
+  for _, l in ipairs(L) do longest = math.max(longest, #l) end
+  check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
+  check(L[1] == "mapprobe " .. ns.version .. " (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
+  check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
+  check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
+  check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
+  check(has("map 5: art here: map 1426: 4x3 tiles, 12 textures; files 142601..142612") and has("map 5: art continent: map 1415: 4x3 tiles, 12 textures; files 141501..141512") and has("map 5: art world: map 947: 4x3 tiles, 12 textures; files 94701..94712") and has("map 5: explored overlays here: n/a"), "0.5.0 mapprobe: art read per mapID (each level shows its own file IDs)")
+  check(has("map 6: rect here on continent: x 0.39-0.51, y 0.62-0.70") and has("map 6: rect continent on world: x 0.55-0.95"), "0.4.7 mapprobe: map rects (stitching)")
+  check(has("map 7: world pos: yes (instance 0); this map is 4925 x 3283 yd"), "0.4.7 mapprobe: world position + map size in yards")
+  check(has("map 8: levels: 1-10"), "0.4.7 mapprobe: level range")
+  check(has("map 9: waypoint API yes; allowed here yes; one set now no") and has("map 9: super-track yes; navigation no"), "0.4.7 mapprobe: waypoint / minimap pointing support")
+  check(has("map 10: quests on this map: 3 (GetQuestsOnMap)"), "0.4.7 mapprobe: quest markers")
+  check(has("map 11: drawing: CreateLine ") and has("map 12: share: addon messages ") and has("map 13: map addons loaded: ") and has("map 14: WorldMapFrame yes; ScrollContainer yes"), "0.4.7 mapprobe: drawing, share, other map addons, game map window")
+  if os.getenv("DM_DUMP") then for _, l in ipairs(L) do io.stderr:write("PROBE ", l, "\n") end end
+  -- 0.5.1.4: art layers + zoom range per level; the close-up's yards, tile, loads; OpenMap informational only
+  check(has("map 5 layers here: 1 layer, scale ") and has("map 5 layers continent: ") and has("map 5 layers world: "), "0.5.1.4 mapprobe: art layer count and min/max scale for zone, continent and world")
+  check(has("map 16: yards: top-left ") and has("map 17: you at ") and has("; minimap tile ") and has("map 18: tile loads by file ID ") and has("; by path "),
+    "0.5.1.4 mapprobe: yard corners, the minimap tile you stand on, and whether it loads by file ID and by path")
+  check(has("map 19: OpenMap loaded no (not used); close-up on, 45%; layer auto") and has("map 19 source: Map: the game's painted maps (minimap tiles only at the deepest zoom)"),
+    "0.5.1.4 mapprobe: OpenMap is only reported (informational) and the map source is named")
+  check(#WRITES == 0, "0.4.7 mapprobe: read-only (never set/cleared a waypoint or touched the game map: " .. table.concat(WRITES, ", ") .. ")")
+  local printed = 0
+  for i = nlog + 1, #log do if tostring(log[i]):find("map %d") or tostring(log[i]):find("mapprobe") then printed = printed + 1 end end
+  check(printed >= #L, "0.4.7 mapprobe: every line printed to chat")
+  -- inside an instance: no position, no continent; still answers
+  here = 9999
+  MAPS[9999] = { mapID = 9999, name = "The Deadmines", mapType = 4, parentMapID = 0 }
+  SlashCmdList.DARKMATTER("mapprobe")
+  all = table.concat(DarkMatterDB.mapprobe.last.lines, "\n")
+  check(has('map 2: you: map 9999 "The Deadmines" (dungeon)') and has("map 2 pos: not available here") and has("map 6: rect: no continent above this map") and #DarkMatterDB.mapprobe.runs == 2,
+    "0.4.7 mapprobe: dungeon run is honest (no position, no rect) and both runs are kept")
+  -- bare client: only two C_Map functions, no Enum
+  C_Map = { GetBestMapForUnit = function() return nil end }
+  Enum.UIMapType = nil
+  for _ = 1, 6 do SlashCmdList.DARKMATTER("mapprobe") end
+  all = table.concat(DarkMatterDB.mapprobe.last.lines, "\n")
+  check(has("map 2: you: map nil") and has("map 3: tree: not available") and has("map 7: world pos: not available") and has("map 8: levels: not provided") and #DarkMatterDB.mapprobe.runs == 6,
+    "0.4.7 mapprobe: a client without map APIs gets honest 'not available' lines; at most 6 runs kept")
+  C_Map, Enum, C_SuperTrack, C_Navigation, WorldMapFrame = saveMap, saveEnum, saveSuper, saveNav, saveWMF
+  if saveCQ then saveCQ.GetQuestsOnMap = saveQOM else C_QuestLog = nil end
+  if type(Enum) == "table" then Enum.UIMapType = saveUMT end
+  local src = io.open(arg[1] .. "/MapProbe.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  check(not src:find("hooksecurefunc", 1, true) and not src:find("RegisterEvent", 1, true) and not src:find("SetUserWaypoint%(") and not src:find("CreateFrame", 1, true),
+    "0.4.7 MapProbe.lua: no hooks, no events, no waypoint writes, no frames")
+end
+
+-- ===== 0.5.0: Map tab (the game's own map pictures; world > continent > zone) =====
+do
+  local NS = DarkMatter
+  local M, MD = NS.MapTab, NS.MapData
+  check(type(M) == "table" and type(MD) == "table", "0.5.0 map: Map tab + map data loaded")
+  -- the mock keeps no parent links on SetParent; the map's full screen reparents its root
+  FrameMT.SetParent = function(s, p) s._parent = p end
+  FrameMT.GetParent = function(s) return s._parent end
+  local save = { C_Map = C_Map, C_MapExplorationInfo = C_MapExplorationInfo, C_QuestLog = C_QuestLog,
+    GetPlayerFacing = GetPlayerFacing, WorldMapFrame = WorldMapFrame, InCombatLockdown = InCombatLockdown,
+    GameTooltip = GameTooltip, UIMapType = Enum.UIMapType, hook = hooksecurefunc }
+  Enum.UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, Dungeon = 4, Micro = 5, Orphan = 6 }
+  local MAPS = {
+    [947] = { "Azeroth", 1, 0 },
+    [1414] = { "Kalimdor", 2, 947 }, [1415] = { "Eastern Kingdoms", 2, 947 },
+    [1426] = { "Dun Morogh", 3, 1415, { 0.40, 0.54, 0.48, 0.62 } },
+    [1455] = { "Ironforge", 3, 1415, { 0.47, 0.50, 0.51, 0.54 } },
+    [1432] = { "Loch Modan", 3, 1415, { 0.54, 0.64, 0.47, 0.59 } },
+    [1429] = { "Elwynn Forest", 3, 1415, { 0.40, 0.52, 0.70, 0.80 } },
+    [1453] = { "Stormwind City", 3, 1415, { 0.40, 0.44, 0.70, 0.75 } }, -- inside Elwynn, like the game
+    [1411] = { "Durotar", 3, 1414, { 0.56, 0.66, 0.40, 0.56 } },
+    [1412] = { "Mulgore", 3, 1414, { 0.40, 0.52, 0.55, 0.75 } },
+    [1581] = { "The Deadmines", 4, 1429 },
+  }
+  local KAL_ON_WORLD = { 0.02, 0.42, 0.12, 0.95 } -- a sane rect: placed by "rect"
+  local EK_P = { 0.40, 0.95, 0.03, 0.58 }         -- where EK's art truly sits on the world art (one scale, 0.55)
+  -- its land (the union of its zone rects, 0.40-0.64 x 0.47-0.80) as the world picture shows it (what sampling finds)
+  local EK_LAND = { 0.40 + 0.40 * 0.55, 0.40 + 0.64 * 0.55, 0.03 + 0.47 * 0.55, 0.03 + 0.80 * 0.55 }
+  local artCalls, texCalls = {}, {}
+  local PLAYER = { map = 1426, x = 0.523, y = 0.375 }
+  local wmAccess = {}
+  WorldMapFrame = setmetatable({}, { __index = function(_, k) wmAccess[#wmAccess + 1] = tostring(k) end,
+    __newindex = function(_, k) wmAccess[#wmAccess + 1] = "set " .. tostring(k) end })
+  local hooked = {}
+  hooksecurefunc = function(a, b) hooked[#hooked + 1] = tostring(b or a) if save.hook then return save.hook(a, b) end end
+  local function smallest(cont, x, y)
+    local best, ba
+    for id, m in pairs(MAPS) do
+      local r = m[4]
+      if m[3] == cont and r and x >= r[1] and x <= r[2] and y >= r[3] and y <= r[4] then
+        local a = (r[2] - r[1]) * (r[4] - r[3])
+        if not ba or a < ba then best, ba = id, a end
+      end
+    end
+    return best
+  end
+  local HL = { on = true, calls = 0 }
+  local function vec(x, y) return { x = x, y = y, GetXY = function(self) return self.x, self.y end } end
+  C_Map = {
+    GetMapInfo = function(id) local m = MAPS[id] if m then return { mapID = id, name = m[1], mapType = m[2], parentMapID = m[3] } end end,
+    GetBestMapForUnit = function() return PLAYER.map end,
+    GetFallbackWorldMapID = function() return 947 end,
+    GetMapArtLayers = function(id)
+      artCalls[#artCalls + 1] = id
+      if MAPS[id] and MAPS[id][2] <= 3 then return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256, minScale = 1, maxScale = 1 } } end
+    end,
+    GetMapArtLayerTextures = function(id, l)
+      texCalls[#texCalls + 1] = id
+      if not (MAPS[id] and MAPS[id][2] <= 3) then return nil end
+      local r = {} for i = 1, 12 do r[i] = id * 100 + i end return r
+    end,
+    GetMapChildrenInfo = function(id, t)
+      local out = {}
+      for cid, m in pairs(MAPS) do if m[3] == id and (t == nil or m[2] == t) then out[#out + 1] = { mapID = cid, name = m[1], mapType = m[2], parentMapID = id } end end
+      table.sort(out, function(a, b) return a.mapID < b.mapID end)
+      return out
+    end,
+    GetMapRectOnMap = function(c, p)
+      if p == 947 and c == 1414 then return KAL_ON_WORLD[1], KAL_ON_WORLD[2], KAL_ON_WORLD[3], KAL_ON_WORLD[4] end
+      if p == 947 and c == 1415 then return 0.37, 1.16, 0.08, 0.87 end -- the probe's unusable answer
+      local m = MAPS[c]
+      if m and m[3] == p and m[4] then return m[4][1], m[4][2], m[4][3], m[4][4] end
+    end,
+    GetMapInfoAtPosition = function(id, x, y)
+      if id == 947 then
+        if x >= EK_LAND[1] and x <= EK_LAND[2] and y >= EK_LAND[3] and y <= EK_LAND[4] then return { mapID = 1415 } end
+        return nil
+      end
+      local z = smallest(id, x, y)
+      if z then return { mapID = z } end
+    end,
+    -- 0.5.2b.3: the zone highlight (its shape), like the game: the content box on the continent, inside a bigger file
+    GetMapHighlightInfoAtPosition = function(id, x, y)
+      if not HL.on then return nil end
+      HL.calls = HL.calls + 1
+      local z = smallest(id, x, y)
+      local r = z and MAPS[z][4]
+      if not r then return nil end
+      return 880000 + z, nil, 0.75, 0.5, r[2] - r[1], r[4] - r[3], r[1], r[3]
+    end,
+    -- 0.5.2b.5: the continent's corners in yards (Eastern Kingdoms about as in the game), so the minimap tiles line up
+    GetWorldPosFromMapPos = function(id, v)
+      if id ~= 1415 then return nil end
+      return 0, { x = 7466.6 + v.y * (-16000 - 7466.6), y = 16000 + v.x * (-19200 - 16000) }
+    end,
+    GetPlayerMapPosition = function(id)
+      if PLAYER.map ~= 1426 then return nil end
+      if id == 1426 then return vec(PLAYER.x, PLAYER.y) end
+      if id == 1415 then local r = MAPS[1426][4] return vec(r[1] + PLAYER.x * (r[2] - r[1]), r[3] + PLAYER.y * (r[4] - r[3])) end
+    end,
+  }
+  if NS.MapCloseUp then NS.MapCloseUp.Reset() end
+  C_MapExplorationInfo = { GetExploredMapTextures = function(id)
+    if id ~= 1426 then return {} end
+    return { { textureWidth = 300, textureHeight = 200, offsetX = 100, offsetY = 50, numTexturesWide = 2, numTexturesTall = 1, fileDataIDs = { 777001, 777002 } },
+      { textureWidth = 128, textureHeight = 128, offsetX = 600, offsetY = 300, numTexturesWide = 1, numTexturesTall = 1, fileDataIDs = { 777003 }, isShownByMouseOver = true } }
+  end }
+  C_QuestLog = { GetQuestsOnMap = function(id) if id == 1426 then return { { questID = 501, x = 0.30, y = 0.40 }, { questID = 502, x = 0.60, y = 0.70 } } end return {} end,
+    GetTitleForQuestID = function(q) if q == 501 then return "Dwarven Outfitters" end end }
+  GetPlayerFacing = function() return 1.25 end
+  local tip = { lines = {} }
+  GameTooltip = setmetatable({ SetOwner = function() end, Show = function() tip.shown = true end, Hide = function() tip.shown = false end,
+    SetText = function(_, t) tip.title = t tip.lines = {} end, AddLine = function(_, t) tip.lines[#tip.lines + 1] = t end }, { __index = function() return function() end end })
+
+  -- 1. art is read per mapID: each level asks the game for its own map and gets its own file IDs
+  MD.Forget()
+  local a1, a2, a3 = MD.Art(1426), MD.Art(1415), MD.Art(947)
+  check(a1 and a2 and a3 and a1.tex[1] == 142601 and a1.tex[12] == 142612 and a2.tex[1] == 141501 and a3.tex[1] == 94701,
+    "0.5.0 map: art read per mapID (zone, continent and world each get their own file IDs)")
+  check(texCalls[1] == 1426 and texCalls[2] == 1415 and texCalls[3] == 947 and artCalls[1] == 1426 and artCalls[3] == 947,
+    "0.5.0 map: GetMapArtLayers/GetMapArtLayerTextures are called with each map's own mapID")
+  check(a1.w == 1002 and a1.h == 668 and a1.cols == 4 and a1.rows == 3, "0.5.0 map: Classic art geometry 1002x668 in 4x3 tiles of 256")
+  check(MD.Art(1581) == nil, "0.5.0 map: a map without art (dungeon) gives no art")
+  -- 2. the map tree comes from the game at runtime
+  check(MD.World() == 947, "0.5.0 map: world map found from the player's map chain")
+  local conts = MD.Continents()
+  check(#conts == 2 and conts[1].id == 1414 and conts[2].id == 1415, "0.5.0 map: both continents read from GetMapChildrenInfo")
+  local zs = MD.Zones(1415)
+  check(#zs == 5 and zs[1].name == "Dun Morogh" and zs[#zs].name == "Ironforge", "0.5.0 map: zones of a continent read with their rects, biggest first (cities on top)")
+  check(#MD.Zones(1414) == 2, "0.5.0 map: Kalimdor zones read too (no per-zone probing)")
+  -- 3. continent placement on the world picture
+  NS.db.map = NS.db.map or {}
+  -- 0.5.2b.6.1: auto (the painted maps, the tiles at the deepest zoom) is the default layer; the 0.5.2b.5 tests below run with the tiles' own rules
+  check(NS.MapCloseUp.Layer() == "auto" and NS.MapCloseUp.DEFAULT_LAYER == "auto" and NS.db.map.layer == nil, "0.5.2b.6.1 map: the default layer is 'auto'")
+  NS.db.map.layer = "terrain"
+  NS.db.map.place = nil
+  local pk, sk = MD.Placement(1414)
+  check(sk == "rect" and math.abs(pk[1] - 0.02) < 1e-9 and math.abs(pk[4] - 0.95) < 1e-9, "0.5.0 map: a sane continent rect is used as is")
+  local pe, se = MD.Placement(1415)
+  local err = 0
+  for i = 1, 4 do err = math.max(err, math.abs(pe[i] - EK_P[i])) end
+  check(math.abs((pe[2] - pe[1]) - (pe[4] - pe[3])) < 1e-9, "0.5.0 map: a sampled placement keeps the art's shape (one scale)")
+  check(se == "sampled" and err < 0.03,
+    "0.5.0 map: an unusable continent rect (x to 1.16) is replaced by the land sampled on the world picture")
+  check(type(NS.db.map.place) == "table" and type(NS.db.map.place[1415]) == "table" and NS.db.map.place[1415].v == 1, "0.5.0 map: the sampled placement is saved (sampled once)")
+  -- 4. open the tab on a real-sized viewport
+  NS.db.map.view = nil
+  if M.Reset then M.Reset() end
+  NS.ShowTab("map")
+  check(M.vp ~= nil and M.vp._kind ~= nil, "0.5.0 map: map view built")
+  M.vp:SetSize(812, 520)
+  M.Refit()
+  local function run(n, dt) for _ = 1, n do M.Tick(dt or 0.05) end end
+  local CX, CY = 406, 260
+  M.testCursor = function() return CX, CY end
+  run(20)
+  local trail = M.Trail()
+  check(M.ready and M.hasWorld and M.started, "0.5.0 map: started with the world picture")
+  check(table.concat(trail, " > ") == "Azeroth > Eastern Kingdoms > Dun Morogh", "0.5.0 map: opens on the player's zone (breadcrumb " .. table.concat(trail, " > ") .. ")")
+  check(M.crumbText == "Azeroth > Eastern Kingdoms > Dun Morogh", "0.5.0 map: breadcrumb bar shows the trail")
+  -- 0.5.1.6: a zone's pieces near its picture's edge are cut into feathered cells, so compare by file
+  local function files(list) local f = {} for _, t in ipairs(list) do f[t._file] = (f[t._file] or 0) + 1 end return f end
+  local function tcMax(list, fid, i) local v = 0 for _, t in ipairs(list) do if t._file == fid then v = math.max(v, t._tc[i]) end end return v end
+  for _, L in pairs(M.layers) do
+    local id = L.id
+    if L.built then
+      local f = files(L.tiles)
+      local own = true
+      for k in pairs(f) do if type(k) ~= "number" or k < id * 100 + 1 or k > id * 100 + 12 then own = false end end
+      check(L.art.tex[1] == id * 100 + 1 and own and f[id * 100 + 1] and f[id * 100 + 12], "0.5.0 map: layer " .. id .. " draws its own map's tiles")
+    end
+  end
+  local dm = M.layers[1426]
+  local dmf = files(dm.tiles)
+  local n12 = 0 for k = 1, 12 do if dmf[142600 + k] then n12 = n12 + 1 end end
+  check(dm and dm.shown and dm.alpha > 0.99 and n12 == 12, "0.5.0 map: the zone's 12 tiles are shown")
+  check(math.abs(tcMax(dm.tiles, 142612, 2) - (1002 - 768) / 256) < 1e-9 and math.abs(tcMax(dm.tiles, 142612, 4) - (668 - 512) / 256) < 1e-9, "0.5.0 map: edge tiles are cropped to the art (234x156)")
+  local of = files(dm.ov)
+  check(of[777001] and of[777002] and not of[777003], "0.5.0 map: explored overlays drawn (fog of war); mouse-over-only overlays skipped")
+  check(math.abs(tcMax(dm.ov, 777002, 2) - 44 / 64) < 1e-9 and math.abs(tcMax(dm.ov, 777001, 4) - 200 / 256) < 1e-9, "0.5.0 map: overlay tiles cropped like the game's map")
+  -- 0.5.1.6: the picture's rim fades to 0 (no rectangular edge); pieces well inside are whole
+  -- 0.5.2b.4: the focus zone's picture is feathered at its rim (no mask) and drawn over the continent picture
+  local du = M.layers[1426]
+  local noMask = true
+  for _, t in ipairs(du.tiles) do if rawget(t, "_masks") then noMask = false end end
+  check(du and du.feather and du.shown and du.level == 4 and du.alpha > 0.99 and noMask, "0.5.2b.4 map: the focus zone's own picture is feathered (no mask) at level 4 over the continent")
+  local rim, rimOK, whole = 0, true, 0
+  for _, t in ipairs(du.tiles) do
+    local p = t._pts[1]
+    local x, y = p[4], -p[5]
+    if rawget(t, "dmEdge") then
+      rim = rim + 1
+      if (x < 0.5 or y < 0.5) and not t._grad and (t._vc and t._vc[4] > 0.01) then rimOK = false end
+    elseif (t._sw or 0) >= 255 then whole = whole + 1 end
+  end
+  check(rim > 0 and rimOK and whole >= 1 and math.abs(M.EdgeW(dm.art, 0, 300)) < 1e-9 and M.EdgeW(dm.art, 64, 300) == 1,
+    "0.5.1.6 map: a zone picture's outer 64 px fade to 0 (" .. rim .. " rim cells, " .. whole .. " whole pieces inside; art " .. dm.art.w .. "x" .. dm.art.h .. " tiles " .. dm.art.tw .. "x" .. dm.art.th .. ")")
+  -- 0.5.1.7 seams (0.5.1.8: the drawn place names are gone; the game's own map art carries the names)
+  do
+    check(M.AreaLabels == nil and M.LayoutLabels == nil and M.labelsShown == nil, "0.5.1.8 map: no drawn place-name labels")
+    local shown, fe, base, hard = M.SeamReport()
+    check(shown > 0 and hard == 0 and fe >= 1, string.format("0.5.1.7 map: every map picture on screen is feathered or the base (%d shown, %d feathered, %d base, %d hard)", shown, fe, base, hard))
+    for _, L in pairs(M.layers) do
+      if L.id ~= M.world and NS.MapData.Is(L.id, "continent") then check(L.feather == (M.hasWorld and true or false), "0.5.1.7 map: a continent picture over the world picture is feathered") end
+    end
+    local others = 0
+    for _, L in pairs(M.layers) do
+      local z = NS.MapData.ZoneEntry(L.id)
+      if z and L.shown and (L.alpha or 0) > 0.01 and L.id ~= 1426 and z.r and (z.r[2] - z.r[1]) * (z.r[4] - z.r[3]) >= 0.004 then others = others + 1 end
+    end
+    check(others == 0, "0.5.2b.4 map: at zone view only the focus zone's picture is drawn (no neighbour margins over it; " .. others .. " others)")
+    local ref = M.RefMag()
+    check(ref and M.ref and M.ref.level >= 3 and math.abs(ref - M.layers[M.ref.id].sc) < 1e-9,
+      "0.5.1.8 map: the art magnification is read from the zone picture under the middle of the view (x" .. tostring(ref) .. ")")
+  end
+  -- 0.5.1.10: at zone view the zone's art FILLS the view (cover framing); 0.5.1.11: no lock, the continent art is the base
+  local vwN, vhN = M.vp:GetWidth(), M.vp:GetHeight()
+  local bx = dm.box or {}
+  check(M.lock == nil and bx[1] and bx[1] <= 1e-6 and bx[2] <= 1e-6 and bx[3] >= vwN - 1e-6 and bx[4] >= vhN - 1e-6,
+    string.format("0.5.1.10 map: opened on Dun Morogh, its art covers the whole view (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
+  -- 0.5.2b.3: the continent art stays drawn underneath as the base, faded toward the flat backdrop when magnified
+  do
+    local cl = M.layers[1415]
+    local bf = M.BaseFade(1415)
+    check(cl and cl.shown and math.abs(cl.alpha - bf) < 1e-9 and bf < 0.999 and bf >= M.BASE_FADE[3] - 1e-9 and M.backdrop and M.backdrop._color,
+      string.format("0.5.2b.3 map: at zone view the magnified continent art is the faded base (art x%.2f, alpha %.2f) over the flat backdrop colour", M.ContMag(1415), cl and cl.alpha or -1))
+  end
+  -- dragging is free: the view moves by exactly the drag
+  local ox0 = M.view.ox
+  M.Pan(120, -80)
+  check(math.abs(M.view.ox - ox0 - 120) < 1e-9, "0.5.1.11 map: panning past the zone's edge is free (moved by the full delta)")
+  M.Pan(-120, 80)
+  -- every zone-art tile and overlay piece: one texel per map pixel (texcoord range x file size = drawn size)
+  local worstR = 0
+  for _, t in ipairs(dm.tiles) do
+    local tc = t._tc
+    if tc then worstR = math.max(worstR, math.abs((tc[2] - tc[1]) * dm.art.tw - t._w), math.abs((tc[4] - tc[3]) * dm.art.th - t._h)) end
+  end
+  check(worstR < 1e-6, "0.5.1.10 map: every zone-art tile (and feathered cell) has a uniform texcoord-to-size ratio (worst " .. worstR .. ")")
+  local q = M.OverlayTiles({ textureWidth = 300, textureHeight = 400, offsetX = 10, offsetY = 20, numTexturesWide = 1, numTexturesTall = 1, fileDataIDs = { 1, 2, 3, 4 } })
+  check(#q == 4 and q[2][1] == 2 and q[2][2] == 266 and q[2][4] == 44 and q[2][6] == 64 and q[3][3] == 276 and q[3][5] == 144 and q[3][7] == 256
+    and q[4][4] / q[4][6] == 44 / 64, "0.5.1.10 map: explored overlays tiled from their size like the game's map (2x2 for 300x400 even when the entry says 1x1)")
+  -- 0.5.2b.4: at zone view ONE zone picture (the zone under the middle of the view), feathered, no masks; panning into
+  -- the neighbour crossfades the two pictures, then only the neighbour is drawn
+  local function zonesDrawn(minA)
+    local ids = {}
+    for _, L in pairs(M.layers) do
+      local id = L.id
+      local z = MD.ZoneEntry(id)
+      if L.shown and (L.alpha or 0) > (minA or 0.01) and id ~= M.world and not MD.Is(id, "continent") and not (z and z.r and (z.r[2] - z.r[1]) * (z.r[4] - z.r[3]) < 0.004) then ids[#ids + 1] = id end
+    end
+    table.sort(ids)
+    return #ids, ids
+  end
+  do
+    local lc = M.LayerCheck()
+    check(#lc.flags == 0 and lc.land > 0 and lc.base == 0 and lc.zones == 1, "0.5.2b.4 map: layer check at Dun Morogh's zone view: " .. lc.text)
+    -- 0.5.2b.7.3: a capital in view fades in from the city fade level and is fully drawn from the city level on
+    -- (default fade 8 -> full 10); the Dun Morogh zone view sits inside the fade
+    local ifl, dml = M.layers[1455], M.layers[1426]
+    local lv0 = M.LevelOf(1415)
+    local cf0 = M.CityFade(1415)
+    local inFade = (lv0 >= 10 and cf0 > 0.99) or (lv0 > 8 and lv0 < 10 and cf0 > 0.01 and cf0 < 0.99) or (lv0 <= 8 and cf0 == 0)
+    check(M.CityLevel() == 10 and M.CityFadeStart() == 8 and inFade and ifl and ifl.shown == (cf0 > 0) and math.abs(ifl.alpha - M.ContAlpha(1415) * cf0) < 1e-6 and ifl.level == 6 and dml.level < 6 and ifl.feather and M.focusCity == nil,
+      "0.5.2b.7.3 map: at Dun Morogh's zone view (zoom level " .. string.format("%.2f", lv0) .. ") the Ironforge picture is fading in over it (default 8 -> 10), feathered (" .. tostring(ifl and ifl.alpha) .. ", fade " .. string.format("%.3f", cf0) .. ", focus city " .. tostring(M.focusCity) .. ")")
+    M.Pan(-500, 0) run(1)
+    local fz1 = M.focusZone
+    local nz1 = zonesDrawn()
+    run(10)
+    local nz, zids = zonesDrawn()
+    local lm = M.layers[fz1]
+    check(fz1 == 1432 and nz1 == 2 and nz == 1 and zids[1] == 1432 and lm and lm.feather and lm.level == 4 and lm.alpha > 0.99 and not dm.shown,
+      "0.5.2b.4 map: panning into Loch Modan crossfades Dun Morogh out and Loch Modan in, then only Loch Modan is drawn (" .. tostring(fz1) .. "; " .. nz1 .. " then " .. table.concat(zids, ",") .. ")")
+    local lc2 = M.LayerCheck()
+    check(#lc2.flags == 0 and lc2.land > 0, "0.5.2b.4 map: layer check in Loch Modan: " .. lc2.text)
+    -- the check catches the faults: two zone pictures at once (a neighbour's margin over the zone) ...
+    M.zfade[1426] = 1 M.Layout()
+    local lc3 = M.LayerCheck()
+    check(table.concat(lc3.flags, ","):find("overlap"), "0.5.2b.4 map: the check flags two zone pictures at once: " .. lc3.text)
+    -- ... and a zone picture with a hard edge
+    lm.feather = false
+    lc3 = M.LayerCheck()
+    lm.feather = true
+    check(table.concat(lc3.flags, ","):find("hard%-seam"), "0.5.2b.4 map: the check flags a zone picture without a feathered rim: " .. lc3.text)
+    M.Pan(500, 0) run(12)
+    check(M.focusZone == 1426 and dm.shown and dm.alpha > 0.99 and select(1, zonesDrawn()) == 1, "0.5.2b.4 map: back in Dun Morogh, only its picture")
+  end
+  -- zoomed out to the continent: the continent picture only; zooming in: one zone picture comes in (the one under the
+  -- middle), over the continent picture (always drawn underneath as the base)
+  M.ZoomOutLevel() run(30)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms", "0.5.1.11 map: zoom out one level from the zone shows the continent (" .. table.concat(M.Trail(), ">") .. ")")
+  do
+    local nz, zids = zonesDrawn()
+    local lc = M.LayerCheck()
+    check(nz == 0 and #lc.flags == 0, "0.5.2b.4 map: the continent view is the clean continent picture, no zone rectangles (" .. table.concat(zids, ",") .. "; " .. lc.text .. ")")
+  end
+  local baseGone, most = false, 0
+  do local zr0, pp0 = MAPS[1426][4], MD.Placement(1415) CX, CY = M.ToScreen(pp0[1] + (zr0[1] + zr0[2]) / 2 * (pp0[2] - pp0[1]), pp0[3] + (zr0[3] + zr0[4]) / 2 * (pp0[4] - pp0[3])) end -- the middle of Dun Morogh
+  local inSteps, cityEarly = 0, false
+  while not (M.focusZone and M.layers[M.focusZone] and M.layers[M.focusZone].shown and M.layers[M.focusZone].alpha > 0.5) and inSteps < 10 do
+    M.Wheel(1) inSteps = inSteps + 1
+    for _ = 1, 30 do
+      M.Tick(0.016)
+      local cl = M.layers[1415]
+      if not (cl and cl.shown and cl.alpha >= M.BASE_FADE[3] - 1e-9 and math.abs(cl.alpha - M.ContAlpha(1415) * M.BaseFade(1415)) < 1e-9) then baseGone = true end
+      local ifw = M.layers[1455]
+      if ifw and ifw.shown and ifw.alpha > 0.01 and M.LevelOf(1415) < M.CityFadeStart() - 1e-6 then cityEarly = true end
+      most = math.max(most, (zonesDrawn(0.05)))
+    end
+  end
+  CX, CY = 406, 260
+  check(not baseGone, "0.5.1.11 map: while zooming in from the continent its art stays drawn underneath (0.5.2b.3: faded toward the backdrop only as it is magnified)")
+  check(M.focusZone and M.layers[M.focusZone].shown and M.layers[M.focusZone].feather and most <= 2 and select(1, zonesDrawn()) == 1,
+    "0.5.2b.4 map: zooming in brings in one feathered zone picture, never the whole continent's zones (" .. inSteps .. " steps, at most " .. most .. " at once; focus " .. tostring(M.focusZone) .. string.format(" share %.2f, zoom k %.2f, art x%.2f)", M.focusZone and M.ZoneShare(MD.ZoneEntry(M.focusZone)) or -1, M.ContZoomK(1415), M.ContMag(1415)))
+  check(not cityEarly, "0.5.2b.7.3 map: zooming in, the Ironforge picture never shows before its city fade level (8)")
+  M.FlyTo(1426) run(30)
+  check(M.lock == nil and (dm.box or {})[1] <= 1e-6, "0.5.1.11 map: flying to a zone frames it (fills the view), no lock")
+  -- 0.5.2b.7.2: numbered zoom levels, the Zoom N readout, the city level
+  do
+    local tbl = M.LevelTable(1415)
+    local sw = M.WheelSteps()
+    check(#tbl == M.MaxLevel() and #tbl == sw + 1 and #tbl >= 4 and math.abs(tbl[2].s / tbl[1].s - 1.35) < 1e-6 and math.abs(tbl[3].s / tbl[2].s - 1.35) < 1e-6 and tbl[#tbl].s == M.LevelScale(nil, 999),
+      "0.5.2b.7.2 map: zoom levels: 1 = fully out, one per wheel step (1.35x), the last = the deepest (" .. #tbl .. " levels, " .. sw .. " wheel steps)")
+    local onGrid, steps = true, {}
+    for _, d in ipairs({ -1, -1, 1, 1, 1 }) do
+      M.Wheel(d) run(40)
+      local L = M.LevelOf(1415)
+      steps[#steps + 1] = string.format("%.2f", L)
+      if math.abs(L - math.floor(L + 0.5)) > 1e-3 and math.abs(M.view.s - M.LevelScale(1415, 99)) > 1e-9 then onGrid = false end
+    end
+    local n = M.ZoomLevel()
+    check(onGrid and M.zoomReadout and M.zoomReadout.text:GetText() == "Zoom " .. n,
+      "0.5.2b.7.2 map: each wheel step lands on a zoom level, shown as Zoom N (" .. table.concat(steps, ",") .. "; " .. tostring(M.zoomReadout and M.zoomReadout.text:GetText()) .. ")")
+    local function goLevel(k) local px, py = M.ToScreen(M.Center()) M.ZoomAt(px, py, M.LevelScale(1415, k) / M.view.s) run(40) end
+    local saveDB, saveFade = NS.db.map.cityLevel, NS.db.map.cityFade
+    local say = M.CityLevelSlash("5")
+    check(NS.db.map.cityLevel == 5 and NS.db.map.cityFade == nil and M.CityLevel() == 5 and M.CityFadeStart() == 3 and say:find("fade in from zoom level 3, full from 5"),
+      "0.5.2b.7.3 /dm citylevel 5: full from 5, fading in from 3 (" .. say .. ")")
+    goLevel(3)
+    local i3 = M.layers[1455]
+    local at3 = i3 and i3.shown and i3.alpha > 0.01
+    goLevel(4)
+    local i4 = M.layers[1455]
+    local mid4 = i4 and i4.shown and i4.alpha > 0.01 and i4.alpha < 0.99
+    goLevel(5)
+    local i5 = M.layers[1455]
+    check(not at3 and mid4 and i5 and i5.shown and i5.alpha > 0.99,
+      "0.5.2b.7.3 map: city level 5: no Ironforge at zoom 3, fading in at zoom 4, full at zoom 5")
+    M.CityLevelSlash("4.5")
+    check(NS.db.map.cityLevel == 5, "0.5.2b.7.2 /dm citylevel takes whole levels only")
+    say = M.CityLevelSlash("6 4")
+    check(NS.db.map.cityLevel == 6 and NS.db.map.cityFade == 4 and M.CityFadeStart() == 4 and say:find("fade in from zoom level 4, full from 6"),
+      "0.5.2b.7.3 /dm citylevel A B: fade A -> full B, either order (" .. say .. ")")
+    say = M.CityLevelSlash("default")
+    check(NS.db.map.cityLevel == nil and NS.db.map.cityFade == nil and M.CityLevel() == 10 and M.CityFadeStart() == 8 and say:find("fade in from zoom level 8, full from 10 %(default%)"),
+      "0.5.2b.7.3 /dm citylevel default: fade 8 -> full 10 (" .. say .. ")")
+    -- the 0.5.2b.7.2 saved setting (cityLevel = 10, no cityFade) reads as the new default
+    NS.db.map.cityLevel, NS.db.map.cityFade = 10, nil
+    check(M.CityLevel() == 10 and M.CityFadeStart() == 8, "0.5.2b.7.3 map: a saved cityLevel 10 (0.5.2b.7.2) gives fade 8 -> full 10")
+    NS.db.map.cityLevel, NS.db.map.cityFade = saveDB, saveFade
+    -- 0.5.2b.8.2: the full-screen map zooms like the window: the same levels, and every continent in view gets the same
+    -- layers (0.5.2b.8.1: full screen fully zoomed out drew Kalimdor's zones and level boxes, Eastern Kingdoms plain)
+    do
+      M.boxSize = M.boxSize or {}
+      local saveFull = M.boxSize.full
+      M.boxSize.full = { 2120, 866 } -- a 2.45:1 box, as on the 3437x1430 screen of the report
+      M.SetViewAt(0.5, 0.5, 1)
+      local zp = M.ZoomProbe()
+      local txt = table.concat(zp, " | ")
+      io.write("zoomprobe L1\t" .. txt .. "\n")
+      local w, f = M.zoomRows.window, M.zoomRows.full
+      local okL1 = w and f and #f.conts == 2 and math.abs(w.level - 1) < 1e-6 and math.abs(f.level - 1) < 1e-6
+      for i = 1, 2 do
+        local a, b = w and w.conts[i], f and f.conts[i]
+        okL1 = okL1 and a and b and a.zoneIn < 0.01 and b.zoneIn < 0.01 and a.boxes == b.boxes and b.boxes == f.conts[1].boxes
+      end
+      check(okL1 and zp[1]:find("zoomprobe " .. NS.version .. ": now window", 1, true) == 1 and txt:find("window and full screen draw the same layers"),
+        "0.5.2b.8.2 /dm zoomprobe: level 1 (fully out): no zone pictures on either continent, level boxes alike, window = full screen (" .. txt .. ")")
+      for _, L in ipairs({ 2, 3, 5 }) do
+        M.SetViewAt(0.5, 0.5, 1.35 ^ (L - 1))
+        zp = M.ZoomProbe()
+        txt = table.concat(zp, " | ")
+        w, f = M.zoomRows.window, M.zoomRows.full
+        local same = w and f and true
+        for i = 1, #(w and w.conts or {}) do
+          local a, b = w.conts[i], f.conts[i]
+          if a.vis and b.vis then same = same and math.abs(a.zoneIn - b.zoneIn) < 0.02 and a.boxes == b.boxes end
+          if b.vis and f.conts[1].vis then same = same and math.abs(b.zoneIn - f.conts[1].zoneIn) < 0.02 end
+        end
+        local want = L >= 3 and 1 or (L == 2 and M.MaskIn() or 0)
+        check(same and txt:find("draw the same layers") and math.abs(M.LevelOf() - L) < 1e-6 and (L < 3 or not w.conts[1].masked or w.conts[1].zoneIn > 0.99 or not w.conts[1].vis) and want >= 0,
+          "0.5.2b.8.2 /dm zoomprobe: level " .. L .. ": window and full screen alike, both continents alike (" .. txt .. ")")
+      end
+      -- the real full-screen box: the same level after the switch, and back
+      M.SetViewAt(0.5, 0.5, 1.35)
+      local L0 = M.LevelOf()
+      M.SetFull(true) run(2)
+      local Lf, zpf = M.LevelOf(), table.concat(M.ZoomProbe(), " | ")
+      M.SetFull(false) run(2)
+      check(math.abs(Lf - L0) < 1e-6 and math.abs(M.LevelOf() - L0) < 1e-6 and zpf:find("now full screen"),
+        "0.5.2b.8.2 map: switching to full screen and back keeps the zoom level (" .. string.format("%.3f / %.3f / %.3f", L0, Lf, M.LevelOf()) .. "; " .. zpf .. ")")
+      M.boxSize.full = saveFull
+    end
+    -- 0.5.2b.9: the auto layer's tiles go by the numbered zoom level alone: none up to the second-to-last level, full at
+    -- the deepest, in the window and in full screen (0.5.2b.8.2: by the art blur under the view centre, so some zones
+    -- showed the tiles at level 12)
+    do
+      local CU = NS.MapCloseUp
+      local saveLayer = NS.db.map.layer
+      NS.db.map.layer = "auto"
+      local okLv, seen = true, {}
+      for _, fullNow in ipairs({ false, true }) do
+        if fullNow then M.SetFull(true) run(2) end
+        local mx = M.MaxLevel()
+        okLv = okLv and mx >= 3
+        for n = 1, mx do
+          M.ViewLevelAt(0.62, 0.45, n)
+          local mix = M.close and M.close.mix or -1
+          seen[#seen + 1] = (fullNow and "F" or "W") .. n .. "=" .. string.format("%.2f", mix)
+          if n < mx and mix > 0.001 then okLv = false end
+          if n == mx and mix < 0.99 then okLv = false end
+        end
+        if fullNow then M.SetFull(false) run(2) end
+      end
+      check(okLv, "0.5.2b.9 map (auto): no tiles at levels 1 to max-1, full tiles at the deepest, window and full screen (" .. table.concat(seen, " ") .. ")")
+      local mx = M.MaxLevel()
+      M.ViewLevelAt(0.62, 0.45, mx - 1)
+      local lv, fade = M.TileLevels()
+      check(math.abs(lv - (mx - 1)) < 1e-6 and math.abs(fade[1] - (mx - 1)) < 1e-9 and fade[2] > fade[1] and fade[2] <= mx + 1e-9
+        and CU.Mix(50, nil, nil, "auto", lv, fade) == 0 and math.abs(CU.Mix(0, nil, nil, "auto", fade[2], fade) - 1) < 1e-9
+        and CU.Mix(50, nil, nil, "auto", (fade[1] + fade[2]) / 2, fade) > 0.2 and CU.Mix(50, nil, nil, "auto", (fade[1] + fade[2]) / 2, fade) < 0.8,
+        "0.5.2b.9 close-up: the auto tiles by the level only (any art blur): 0 at level max-1, a fade within the last step, 1 at the deepest")
+      check(CU.Mix(2.79) == 0 and math.abs(CU.Mix(3.4) - 1) < 1e-9 and CU.Mix(0, nil, nil, "terrain", lv, fade) == CU.Mix(0, nil, nil, "terrain"),
+        "0.5.2b.9 close-up: no level given -> the art-blur rule as before; the terrain layer ignores the level")
+      local tp = table.concat(M.TileProbe(), "\n")
+      local zl = table.concat(M.ZoomProbe(), "\n")
+      check(tp:find("tileprobe auto tiles by level: none to L" .. (mx - 1) .. ", full at L" .. mx, 1, true) and tp:find("tiles 0%", 1, true)
+        and zl:find("zoomprobe auto tiles by level: ", 1, true) and tp:find("tiles in the last zoom step only", 1, true),
+        "0.5.2b.9 /dm tileprobe + /dm zoomprobe: the level rule readout (" .. (tp:match("tileprobe auto tiles[^\n]*") or "?") .. ")")
+      M.ViewLevelAt(0.62, 0.45, mx)
+      tp = table.concat(M.TileProbe(), "\n")
+      check(tp:find("now L" .. mx .. " (", 1, true) and tp:find("tiles 100%", 1, true), "0.5.2b.9 /dm tileprobe at the deepest: tiles 100% (" .. (tp:match("tileprobe auto tiles[^\n]*") or "?") .. ")")
+      NS.db.map.layer = saveLayer
+      M.SetViewAt(0.5, 0.5, 1)
+    end
+    M.FlyTo(1426) run(30)
+  end
+  check(M.layers[947] and not M.layers[947].shown, "0.5.0 map: the world picture is hidden when the continent covers the view")
+  -- 0.5.2b.3: the sweep: every continent and zone at several zooms (dry: nothing built), no flags, the view restored
+  do
+    local s0, ox0, oy0 = M.view.s, M.view.ox, M.view.oy
+    local built0 = 0 for _, L in pairs(M.layers) do if L.built then built0 = built0 + 1 end end
+    local out = M.Sweep()
+    local sw = M.sweep
+    local built1 = 0 for _, L in pairs(M.layers) do if L.built then built1 = built1 + 1 end end
+    local all = table.concat(out, "\n")
+    check(sw and sw.views == 2 * 3 + 5 * 7 and sw.flagged == 0, "0.5.2b.4 map: sweep of every continent and zone, no flags: " .. tostring(out[2]) .. " | " .. tostring(out[4]))
+    check(out[3] == "mapsweep masks: " .. M.MaskLine() and all:find("\nmapsweep Eastern Kingdoms: %d+ views, 0 flagged %-> OK") and all:find("\nmapsweep Kalimdor: %d+ views, 0 flagged %-> OK")
+      and all:find("\nmapsweep highlight info %(diagnostic, not drawn%): the game answered for 5/5 zones"),
+      "0.5.2b.4 map: sweep says masks are not used, one OK line per continent: " .. all:gsub("\n", " | "))
+    check(M.view.s == s0 and M.view.ox == ox0 and M.view.oy == oy0 and dm.shown and dm.frame:IsShown() and not M.dry and built1 >= built0,
+      "0.5.2b.3 map: the sweep puts the view back as it was")
+    local nwm = #wmAccess
+    local lines = NS.MapProbe.Report()
+    for i = #wmAccess, nwm + 1, -1 do wmAccess[i] = nil end -- the probe's own type checks are tested with the probe
+    local l23, m23
+    for _, l in ipairs(lines) do if l:find("^map 23 layers:") then l23 = l end if l:find("^map 23 masks:") then m23 = l end end
+    check(l23 and l23:find("%-> OK$") and m23 == "map 23 masks: " .. M.MaskLine(),
+      "0.5.2b.4 mapprobe: the layer check line for this view: " .. tostring(l23) .. " / " .. tostring(m23))
+    local z24, lv24, long24 = nil, 0, 0
+    for _, l in ipairs(lines) do
+      if l:find("^map 24 zoom:") then z24 = l end
+      if l:find("^map 24 level %d+: x[%d.]+ of continent fit, art x[%d.]+: ") then lv24 = lv24 + 1 end
+      if l:find("^map 24") then long24 = math.max(long24, #l) end
+    end
+    check(z24 and z24:find("cities 8%-10$") and lv24 == M.MaxLevel() and long24 <= 90,
+      "0.5.2b.7.3 mapprobe: map 24 prints the zoom level table (" .. lv24 .. " levels, longest " .. long24 .. "): " .. tostring(z24))
+    local fit19, reach23, long = nil, nil, 0
+    for _, l in ipairs(lines) do
+      if l:find("^map 19 fit:") then fit19 = l end
+      if l:find("^map 23 reach:") then reach23 = l end
+      if l:find("^map 19 fit:") or l:find("^map 23 reach:") then long = math.max(long, #l) end
+    end
+    check(fit19 and fit19:find("^map 19 fit: %d+ tiles fit the view %(full at 200, gone at 320%); tile %d+ px$") and reach23
+      and reach23:find("^map 23 reach: tiles from x") and long <= 90,
+      "0.5.2b.5 mapprobe: the tiles that fit the view and the tile reach (longest " .. long .. "): " .. tostring(fit19) .. " / " .. tostring(reach23))
+    -- the check catches the old faults: the zone left to the magnified continent picture (the pixelated band) ...
+    local zi, bf = M.ZoneIn, M.BaseFade
+    M.ZoneIn = function() return 0 end
+    M.BaseFade = function() return 1 end
+    M.Layout()
+    local lc = M.LayerCheck()
+    check(table.concat(lc.flags, ","):find("magnified%-base"), "0.5.2b.4 map: the check flags a magnified continent picture as the surface: " .. lc.text)
+    -- ... and zone pictures drawn at continent zoom (0.5.2b.3's rectangles)
+    M.ZoneIn = function() return 1 end
+    M.BaseFade = bf
+    M.ZoomOutLevel() run(30)
+    lc = M.LayerCheck()
+    check(table.concat(lc.flags, ","):find("zone%-rect"), "0.5.2b.4 map: the check flags zone pictures at continent zoom: " .. lc.text)
+    M.ZoneIn = zi
+    M.FlyTo(1426) run(30)
+    dm = M.layers[1426]
+    -- a client without the highlight API: nothing changes in the drawing; the diagnostic line says so
+    HL.on = false
+    M.hl = {}
+    local out2 = M.Sweep()
+    local all2 = table.concat(out2, "\n")
+    check(M.sweep.flagged == 0 and all2:find("the game answered for 0/5 zones", 1, true) and dm.shown and dm.feather,
+      "0.5.2b.4 map: no highlight from the game: the same map, the diagnostic line says 0/5: " .. all2:gsub("\n", " | "))
+    HL.on = true
+    M.hl = {}
+    -- the slash commands: /dm mapsweep is saved with the probes; /dm mapmask is gone
+    SlashCmdList.DARKMATTER("mapsweep")
+    local pe = NS.db.probeLog and NS.db.probeLog.mapsweep
+    check(pe and pe.lines[1] == "Dark Matter " .. NS.version .. " mapsweep" and pe.lines[2]:find("^mapsweep: 41 views, 0 flagged") and pe.lines[3] == "mapsweep masks: " .. M.MaskLine(),
+      "0.5.2b.4 /dm mapsweep: saved in DarkMatterDB.probeLog: " .. tostring(pe and pe.lines[2]))
+    local said, oldPrint = {}, NS.Print
+    NS.Print = function(m) said[#said + 1] = m end
+    SlashCmdList.DARKMATTER("mapmask off") run(2)
+    local offNow = M.maskOff
+    SlashCmdList.DARKMATTER("mapmask on") run(2)
+    NS.Print = oldPrint
+    -- 0.5.2b.6.1: /dm mapmask is back (the zone masks on/off for the session)
+    check(said[1] and said[1]:find("^mapmask: off %- ") and said[2] and said[2]:find("^mapmask: on %- ") and offNow and not M.maskOff
+      and M.layers[1426] and M.layers[1426].shown, "0.5.2b.6.1 /dm mapmask: off then on (" .. tostring(said[1]) .. " | " .. tostring(said[2]) .. ")")
+  end
+  -- 0.5.2b.5: the strict check catches 0.5.2b.4's fault: with no masks and no tiles, the neighbours' land at zone view
+  -- is the magnified continent picture (the zone's rectangle shows against it)
+  do
+    M.Pan(-500, 0) run(10) -- into Loch Modan: Dun Morogh's and Wetlands' land in view
+    NS.db.map.closeUp = false
+    M.Layout()
+    local lc = M.LayerCheck()
+    NS.db.map.closeUp = true
+    M.Layout()
+    local lc2 = M.LayerCheck()
+    check(table.concat(lc.flags, ","):find("base%-land") and #lc2.flags == 0 and lc2.tileA >= 0.9 and lc2.tiles > 0,
+      "0.5.2b.5 map: no masks and no tiles -> 'base-land' flagged; with the tiles over the neighbours' land: clean (" .. lc.text .. " / " .. lc2.text .. ")")
+    M.Pan(500, 0) run(12)
+  end
+  -- 0.5.2b.5: /dm masktest: four panels, 2 and 3 masked by mask textures, 4 by the zone's highlight file
+  do
+    local MS = NS.MapShapes
+    local out = MS.MaskTest()
+    local f = _G.DarkMatterMaskTest
+    local p = f and f.p or {}
+    local function masks(i) local t = p[i] and p[i].tex return t and t._masks or {} end
+    local m3 = masks(3)[1]
+    check(#out == 6 and out[1]:find("^masktest " .. NS.version:gsub("%.", "%%.")) and out[3]:find("round game mask applied", 1, true)
+      and out[4]:find("Dark Matter mask applied", 1, true) and out[5]:find("zone highlight applied (file 88", 1, true)
+      and f:IsShown() and #masks(1) == 0 and #masks(2) == 1 and #masks(4) == 1 and m3 and m3._file == MS.TEST,
+      "0.5.2b.5 /dm masktest: a window of four squares; 2-4 cut by mask textures: " .. table.concat(out, " | "))
+    local out2 = MS.MaskTest()
+    check(out2[1] == "masktest: closed" and not f:IsShown(), "0.5.2b.5 /dm masktest: run again, it closes")
+    SlashCmdList.DARKMATTER("masktest")
+    local pe = NS.db.probeLog and NS.db.probeLog.masktest
+    check(pe and pe.lines[2] and pe.lines[2]:find("^masktest ") and f:IsShown(), "0.5.2b.5 /dm masktest: saved with the probes")
+    SlashCmdList.DARKMATTER("masktest")
+    local file = io.open("../../DarkMatter/Media/masks/dm-masktest.tga", "rb")
+    local head = file and file:read(18)
+    if file then file:close() end
+    check(head and head:byte(3) == 2 and head:byte(13) + 256 * head:byte(14) == 128 and head:byte(17) == 32,
+      "0.5.2b.5 masktest: Dark Matter's own star mask ships as an uncompressed 128x128 32-bit TGA")
+  end
+  -- 0.5.2b.5: /dm mapshapes: the zones' outlines sampled from the game, saved run-length coded
+  do
+    local MS = NS.MapShapes
+    local legend, index = {}, {}
+    local row = { 5, 5, false, 7, 7, 7, 5 }
+    local enc = MS.Encode(row, legend, index)
+    local dec = MS.Decode(enc, legend)
+    local same = #dec == #row
+    for i = 1, #row do if dec[i] ~= row[i] then same = false end end
+    check(enc == "A2.B3A" and same and legend[1] == 5 and legend[2] == 7, "0.5.2b.5 mapshapes: rows coded as runs (" .. enc .. ") and decoded back")
+    check(MS.Slash("x")[1]:find("^mapshapes: /dm mapshapes"), "0.5.2b.5 /dm mapshapes: bad argument -> the usage")
+    local ic = InCombatLockdown
+    InCombatLockdown = function() return true end
+    local refused = MS.Slash("16")[1]
+    InCombatLockdown = ic
+    check(refused:find("not in combat", 1, true) and not MS.run, "0.5.2b.5 /dm mapshapes: refused in combat")
+    local said, oldPrint = {}, NS.Print
+    NS.Print = function(m) said[#said + 1] = m end
+    SlashCmdList.DARKMATTER("mapshapes 16")
+    local started = said[1]
+    MS.Step()
+    InCombatLockdown = function() return true end
+    MS.Step()
+    InCombatLockdown = ic
+    local paused = said[#said]
+    local steps = 0
+    while MS.run and steps < 1000 do MS.Step() steps = steps + 1 end
+    NS.Print = oldPrint
+    local d = DarkMatterDB.mapshapes
+    local ek = d and d.conts and d.conts[1415]
+    local dmz = ek and ek.zones[1426]
+    local okRows = dmz and #dmz.rows == dmz.h
+    local hasSelf = false
+    if dmz then
+      for _, id in ipairs(dmz.legend) do if id == 1426 then hasSelf = true end end
+      for _, r in ipairs(dmz.rows) do if #MS.Decode(r, dmz.legend) ~= dmz.w then okRows = false end end
+    end
+    local zoneN = 0
+    for _, c in pairs(d and d.conts or {}) do for _ in pairs(c.zones) do zoneN = zoneN + 1 end end
+    local doneLine
+    for _, l in ipairs(said) do if l:find("^mapshapes done:") then doneLine = l end end
+    check(started and started:find("^mapshapes: sampling %d+ zones") and paused and paused:find("paused (combat)", 1, true)
+      and d and d.done and d.version == 1 and d.grid == 16 and d.zonesDone == d.zones and zoneN == d.zones and zoneN > 0
+      and dmz and dmz.w == 16 and okRows and hasSelf and dmz.own > 0.3 and doneLine and doneLine:find("now /reload", 1, true),
+      "0.5.2b.5 /dm mapshapes: every zone sampled out of combat (pauses in combat) into DarkMatterDB.mapshapes: " .. tostring(doneLine)
+      .. string.format(" (Dun Morogh %s, own %.2f)", dmz and (dmz.w .. "x" .. dmz.h) or "-", dmz and dmz.own or -1))
+    check(MS.Status():find("^mapshapes: done: ") and NS.db.probeLog.mapshapes and MS.Stop() == "mapshapes: not running",
+      "0.5.2b.5 /dm mapshapes status: " .. MS.Status())
+    local out = os.getenv("DM_SHAPES_OUT")
+    if out and d then
+      local fh = io.open(out, "w")
+      local function ser(v, ind)
+        if type(v) == "table" then
+          local parts = {}
+          local keys = {}
+          for k in pairs(v) do keys[#keys + 1] = k end
+          table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+          for _, k in ipairs(keys) do
+            local ks = type(k) == "number" and ("[" .. k .. "]") or ("[" .. string.format("%q", k) .. "]")
+            parts[#parts + 1] = ind .. "  " .. ks .. " = " .. ser(v[k], ind .. "  ")
+          end
+          return "{\n" .. table.concat(parts, ",\n") .. "\n" .. ind .. "}"
+        elseif type(v) == "string" then return string.format("%q", v) end
+        return tostring(v)
+      end
+      fh:write("DarkMatterDB = {\n  [\"mapshapes\"] = " .. ser(d, "  ") .. "\n}\n")
+      fh:close()
+    end
+  end
+  -- 0.5.2b.5: the masked map (with made-up masks for every zone): every zone drawn at once, cut to its outline, no flags
+  do
+    local fake = {}
+    for _, ct in ipairs(MD.Continents()) do
+      for _, z in ipairs(MD.Zones(ct.id)) do fake[z.id] = { file = "Interface\\AddOns\\DarkMatter\\Media\\masks\\z" .. z.id } end
+    end
+    local saveZM = NS.ZoneMasks
+    check(M.MaskLine():find("^0/%d+ zones masked %(fallback"), "0.5.2b.5 map: no masks ship yet -> the fallback line: " .. M.MaskLine())
+    NS.ZoneMasks = fake
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+    local L = M.layers[1426]
+    local piecesMasked = L and L.mask and #L.tiles > 0
+    for _, t in ipairs(L and L.tiles or {}) do if not (t._masks and t._masks[1] == L.mask) then piecesMasked = false end end
+    M.Pan(-500, 0) run(10) -- toward Loch Modan: both zones in view, each cut to its own outline
+    local nz = zonesDrawn()
+    local lc = M.LayerCheck()
+    M.Pan(500, 0) run(12)
+    check(M.MaskLine():find("zones masked; 2 continent%(s%) drawn masked") and L and L.mask and not L.feather and piecesMasked
+      and L.mask._file == fake[1426].file and nz > 1 and #lc.flags == 0 and lc.masked,
+      "0.5.2b.5 map: masks for every zone -> each zone cut by its mask, the neighbours drawn too, no flags (" .. M.MaskLine() .. "; mask " .. tostring(L and L.mask) .. " feather " .. tostring(L and L.feather) .. " pieces " .. tostring(piecesMasked) .. " lc " .. tostring(lc.masked) .. "; " .. nz .. " zones; " .. lc.text .. ")")
+    local out = M.Sweep()
+    check(M.sweep.flagged == 0 and out[3] == "mapsweep masks: " .. M.MaskLine(), "0.5.2b.5 map: sweep with masks: " .. table.concat(out, " | "))
+    -- 0.5.2b.6.1: each piece gets its mask after its file, size and place (the /dm masktest order); the game is asked
+    -- whether it kept it; the sweep says so
+    local after = L and #L.tiles > 0
+    for _, t in ipairs(L and L.tiles or {}) do if t._maskNoFile ~= false then after = false end end
+    local st = M.maskStat
+    check(after and st.add > 0 and st.ok == st.add and st.none == 0 and st.err == 0 and not M.maskBroken
+      and out[4]:find("^mapsweep maskcheck: %d+ masked layers, %d+ pieces, %d+ carry the mask; adds %d+ %(ok %d+, kept none 0, errors 0, uncounted 0%); map %d+ mask ")
+      and M.MaskShort():find("^adds %d+: kept %d+, none 0, errors 0, uncounted 0$"),
+      "0.5.2b.6.1 map: the mask goes on each piece last and the game keeps it (" .. tostring(out[4]) .. "; " .. M.MaskShort() .. ")")
+    -- a client that keeps no mask: the map notices and draws one feathered zone at a time (no hard rectangles)
+    MOCK_MASK_DROP = true
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+    local Ld = M.layers[1426]
+    check(M.maskBroken and Ld and Ld.feather and not Ld.mask and M.MaskLine():find("did not attach") and M.MaskShort():find("; OFF$")
+      and not M.ContMasked(Ld and MD.ZoneEntry(1426).cont or 0),
+      "0.5.2b.6.1 map: masks that do not stick -> feathered zones (" .. M.MaskLine() .. "; " .. M.MaskShort() .. "; feather " .. tostring(Ld and Ld.feather) .. ")")
+    MOCK_MASK_DROP = nil
+    -- /dm mapmask off|on for the session
+    local s1 = M.MapMaskSlash("on")
+    run(10)
+    local Lo = M.layers[1426]
+    local s2 = M.MapMaskSlash("off")
+    run(10)
+    local Lf = M.layers[1426]
+    local s3 = M.MapMaskSlash("on")
+    run(10)
+    local Ln = M.layers[1426]
+    check(s1:find("^mapmask: on %- %d+/%d+ zones masked; 2 continent") and Lo and Lo.mask and s2:find("^mapmask: off %- .*%(off: /dm mapmask on%)$")
+      and Lf and Lf.feather and not Lf.mask and Ln and Ln.mask and not M.maskOff and M.MapMaskSlash("x"):find("^mapmask: /dm mapmask on|off %(now: on%)$"),
+      "0.5.2b.6.1 /dm mapmask: " .. s1 .. " | " .. s2 .. " | " .. s3)
+    -- /dm masktest zone [name]: four panels, each one saying how many pieces carry the mask
+    local MS = NS.MapShapes
+    local zl = MS.MaskTest("zone dun morogh")
+    local zt = table.concat(zl, " | ")
+    check(zl[1]:find("^masktest zone " .. NS.version:gsub("%.", "%%.") .. ": Dun Morogh %(map 1426, picture %d+x%d+, mask z1426%)") and zt:find("masktest zone 1: applied")
+      and zt:find("masktest zone 2: (%d+)/%1 pieces carry the mask") and zt:find("masktest zone 3: %d+/%d+ pieces") and zt:find("masktest zone 4: (%d+)/%1 pieces carry")
+      and zt:find("masktest zone map: maskcheck: ") and MS.zoneFrame and MS.zoneFrame:IsShown(),
+      "0.5.2b.6.1 /dm masktest zone: " .. zt)
+    local zc = MS.MaskTest("zone")
+    check(zc[1] == "masktest zone: closed" and not MS.zoneFrame:IsShown() and MS.MaskTest("zone nowhere-land")[1]:find("^masktest zone: no zone 'nowhere%-land'"),
+      "0.5.2b.6.1 /dm masktest zone: close / unknown zone: " .. table.concat(zc, " | "))
+    -- 0.5.2b.6.2: the live map draws each masked zone exactly as masktest zone panel 2: an unscaled frame anchored
+    -- before its mask is made, pieces in ARTWORK with no filter sized in screen pixels, the mask last and the
+    -- picture's size; the viewport a plain clipping frame (no ScrollFrame); the sweep audits real drawn views
+    M.FlyTo(1426) run(30)
+    local Lp = M.layers[1426]
+    local way = Lp and Lp.mask and #Lp.tiles > 0 and (Lp.frame._scale or 1) == 1 and M.vpKind == "frame"
+    local why = ""
+    for _, t in ipairs(Lp and Lp.tiles or {}) do
+      local g = t.dmG
+      if t._layer ~= "ARTWORK" or t._filter ~= nil or not g or math.abs(t._w - g[3] * Lp.fitSc) > 0.01 or not (t._masks and t._masks[1] == Lp.mask) or t._maskNoFile ~= false then
+        way = false why = why .. " piece " .. tostring(t._layer) .. "/" .. tostring(t._filter)
+      end
+    end
+    local mw = Lp and Lp.mask and Lp.mask:GetWidth()
+    check(way and mw and math.abs(mw - Lp.art.w * Lp.fitSc) < 1 and Lp.fitSc ~= 1,
+      "0.5.2b.6.2 map: a masked zone is drawn the panel-2 way (scale " .. tostring(Lp and Lp.frame._scale) .. ", fit " .. tostring(Lp and Lp.fitSc) .. ", mask w " .. tostring(mw) .. why .. ")")
+    local au = M.MaskAudit()
+    check(au.shown > 0 and au.cut == au.shown and au.unmasked + au.rect + au.way == 0 and M.CutShort():find("^shown %d+, cut %d+; unmasked 0, mask%-rect 0, not%-panel2 0; view frame$") and #("map 23 cut: " .. M.CutShort()) <= 90,
+      "0.5.2b.6.2 map: the audit of the drawn view: " .. M.CutShort())
+    -- zoom in and out: the pieces follow (no SetScale), the mask stays the picture's size
+    M.Wheel(-1) run(10) M.Wheel(-1) run(10)
+    local Lz = M.layers[1426]
+    local mz = Lz and Lz.mask and Lz.mask:GetWidth()
+    local t1 = Lz and Lz.tiles[1]
+    check(Lz and Lz.shown and (Lz.frame._scale or 1) == 1 and mz and math.abs(mz - Lz.art.w * Lz.fitSc) < 1 and t1 and math.abs(t1._w - t1.dmG[3] * Lz.fitSc) < 0.01,
+      "0.5.2b.6.2 map: zoomed out, the masked picture is re-sized, not scaled (fit " .. tostring(Lz and Lz.fitSc) .. ", mask w " .. tostring(mz) .. ")")
+    -- the sweep's real-drawn views (zoomed out too) are audited and the line says so honestly
+    local so = M.Sweep()
+    local cutL
+    for _, l in ipairs(so) do if l:find("^mapsweep cut: %d+ views") then cutL = l end end
+    check(cutL and cutL:find("unmasked%-rect 0, mask%-rect 0, not%-panel2 0; viewport frame %-> OK$") and M.cut.views >= 6 and M.cut.shown > 0 and M.cut.cut == M.cut.shown,
+      "0.5.2b.6.2 mapsweep cut: " .. tostring(cutL))
+    -- the audit is honest: a piece without its mask, a scaled frame and a wrong-size mask are each flagged
+    local Lb = M.layers[1426]
+    M.FlyTo(1426) run(30)
+    Lb = M.layers[1426]
+    local saveM = Lb.tiles[1]._masks
+    Lb.tiles[1]._masks = nil
+    local a1 = M.MaskAudit()
+    Lb.tiles[1]._masks = saveM
+    Lb.frame:SetScale(2)
+    local a2 = M.MaskAudit()
+    Lb.frame:SetScale(1)
+    local sw = Lb.mask._w
+    local savePts = Lb.mask._pts
+    Lb.mask._pts = {}
+    Lb.mask._w = 3
+    local a3 = M.MaskAudit()
+    Lb.mask._pts, Lb.mask._w = savePts, sw
+    check(a1.unmasked >= 1 and a1.bad[1]:find("unmasked%-rect") and a2.way >= 1 and a3.rect >= 1 and M.MaskAudit().cut == M.MaskAudit().shown,
+      "0.5.2b.6.2 map: the audit flags an unmasked piece / a scaled frame / a wrong mask (" .. a1.unmasked .. "/" .. a2.way .. "/" .. a3.rect .. ")")
+    -- masktest zone panels 3 and 4 run the map's own code (a clipping frame; a ScrollFrame)
+    local zl2 = table.concat(MS.MaskTest("zone dun morogh"), " | ")
+    check(zl2:find("masktest zone 3: (%d+)/%1 pieces carry the mask %(mask on%) %-> must look like 2") and zl2:find("masktest zone 4: (%d+)/%1 pieces carry the mask %(mask on%) %-> if 3 is cut"),
+      "0.5.2b.6.2 /dm masktest zone 3 and 4 use the map's code: " .. zl2)
+    MS.MaskTest("zone")
+    NS.ZoneMasks = saveZM
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+    dm = M.layers[1426]
+    check(dm and dm.feather and not dm.mask and M.MaskLine():find("^0/"), "0.5.2b.5 map: masks gone -> back to the one-zone fallback")
+  end
+  -- 0.5.2b.6: the shipped masks (tools/maskgen from the player's /dm mapshapes): one per zone (not the six capitals),
+  -- every file there as an uncompressed 256x256 32-bit TGA; the three zones the game gave no own samples carry a rect
+  do
+    local per, n, rects, cityMask, missing, badTga = {}, 0, {}, 0, {}, {}
+    local have = {}
+    for _, f in ipairs(DM_FILES) do have[f:gsub("\\", "/"):lower()] = true end
+    for id, e in pairs(SHIPPED_MASKS) do
+      n = n + 1
+      per[e.cont] = (per[e.cont] or 0) + 1
+      if e.rect then rects[#rects + 1] = id end
+      if MD.IsCityID(id) then cityMask = cityMask + 1 end
+      local rel = e.file:gsub("^Interface\\AddOns\\DarkMatter\\", ""):gsub("\\", "/")
+      local path = arg[1] .. "/" .. rel .. ".tga"
+      if not have[path:lower()] then missing[#missing + 1] = rel end
+      local fh = io.open(path, "rb")
+      local hdr = fh and fh:read(18)
+      if fh then fh:close() end
+      if not (hdr and #hdr == 18 and hdr:byte(3) == 2 and hdr:byte(13) + 256 * hdr:byte(14) == 256 and hdr:byte(15) + 256 * hdr:byte(16) == 256 and hdr:byte(17) == 32) then badTga[#badTga + 1] = rel end
+    end
+    table.sort(rects)
+    check((ERA and n == 40 and SHIPPED_MASKS[2482] == nil and SHIPPED_MASKS[2548] == nil and SHIPPED_MASKS[2652] == nil and per[1414] + per[1415] == 40 or not ERA and n == 43 and per[1414] == 20 and per[1415] == 23) and cityMask == 0 and #missing == 0 and #badTga == 0
+      and #rects == 0,
+      "0.5.2b.6 masks: 43 ship (Kalimdor 20, Eastern Kingdoms 23), no capital, every file a 256x256 32-bit TGA; 0.5.2b.8.1: all sampled, none made from neighbours (no rect) ("
+      .. n .. "; missing " .. table.concat(missing, " ") .. "; bad " .. table.concat(badTga, " ") .. "; rects " .. table.concat(rects, ",") .. ")")
+    local saveZM = NS.ZoneMasks
+    NS.ZoneMasks = SHIPPED_MASKS
+    check(M.IsCity({ id = 1453, area = 0.5 }) and not M.IsCity({ id = 1433, area = 0.002 }) and M.IsCity({ id = 7777, area = 0.002 }),
+      "0.5.2b.6 map: the capitals are cities by ID; a small zone with a mask (Redridge) is a zone; a small one without is a city")
+    -- the shipped masks on the test maps (all their zones have one): the painted zones at full strength at zone view,
+    -- each cut by its own mask, no tiles (painted), no flags
+    NS.db.map.layer = nil
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+    M.Pan(-300, 0) run(10)
+    local nz, ids = zonesDrawn(0.99)
+    local L = M.layers[1426]
+    local lc = M.LayerCheck()
+    local cs = M.close
+    check(M.ContMasked(1415) and M.ContMasked(1414) and L and L.mask and L.mask._file == SHIPPED_MASKS[1426].file and nz >= 2 and #lc.flags == 0
+      and (cs == nil or (cs.byCont[1415] or 0) == 0),
+      "0.5.2b.6 map: shipped masks -> the painted zones in view at full strength (" .. table.concat(ids, ",") .. "), each cut by its mask, no tiles, no flags (" .. lc.text .. ")")
+    local out = M.Sweep()
+    check(M.sweep.flagged == 0 and out[3] == "mapsweep masks: " .. M.MaskLine() and M.MaskLine():find("^5/5 zones masked; 2 continent"),
+      "0.5.2b.6 map: sweep with the shipped masks: " .. table.concat(out, " | "))
+    -- 0.5.2b.8: the two-pass masks: each masked zone also has a core frame one level up, its own copies of the
+    -- tiles cut by the core mask; /dm mapcore off drops them, on brings them back; mapprobe 25 counts them
+    do
+      local L8 = M.layers[1426]
+      local cf = L8 and L8.coreFrame
+      check(cf and L8.coreMask and L8.coreMask._file == SHIPPED_MASKS[1426].core and #L8.coreTiles == #L8.tiles and #L8.tiles > 0
+        and cf:GetFrameLevel() == L8.frame:GetFrameLevel() + 1,
+        "0.5.2b.8 map: Dun Morogh has a core pass: its own tile copies cut by " .. tostring(SHIPPED_MASKS[1426].core) .. ", one frame level above the soft pass")
+      local t1 = M.TexCount()
+      local off = M.MapCoreSlash("off") run(5)
+      local t0 = M.TexCount()
+      local L0 = M.layers[1426]
+      local on = M.MapCoreSlash("on") run(5)
+      local t2 = M.TexCount()
+      check(t1.core > 0 and t0.core == 0 and L0 and not L0.coreFrame and off:find("^mapcore: off") and on:find("^mapcore: on")
+        and t2.core > 0 and t2.core < t2.total and M.layers[1426].coreFrame,
+        "0.5.2b.8 /dm mapcore off|on: " .. t1.core .. " core textures, " .. t0.core .. " when off, " .. t2.core .. " when on (totals " .. t1.total .. "/" .. t2.total .. "; " .. tostring(L0 and L0.coreFrame) .. "; " .. off .. ")")
+      local nwm8 = #wmAccess
+      DarkMatterDB.mapprobe = nil
+      SlashCmdList.DARKMATTER("mapprobe")
+      for i = #wmAccess, nwm8 + 1, -1 do wmAccess[i] = nil end -- the probe's own type checks are tested with the probe
+      local all8, long8 = table.concat(DarkMatterDB.mapprobe.last.lines, "\n"), 0
+      for _, l in ipairs(DarkMatterDB.mapprobe.last.lines) do if l:find("^map 25") then long8 = math.max(long8, #l) end end
+      check(all8:find("\nmap 25 textures: level %d+, core pass on: %d+ %(%d+ tiles, %d+ overlays, %d+ core%)")
+        and all8:find("\nmap 25 on screen: %d+ of %d+ layers") and all8:find("\nmap 25 screenshot: Screenshot%(%) MISSING")
+        and all8:find("\nmap 25 last shottest: never", 1, false) and all8:find("\nmap 25 hover title: ") and long8 <= 90,
+        "0.5.2b.8 mapprobe 25: textures, on screen, hover title, screenshot (no shot taken); longest " .. long8)
+      -- the hover title: the zone name, plus the game's subarea name when it differs; a failing lookup is ignored
+      local ht = M.hoverTitle
+      check(ht and ht.name and ht.sub and math.abs(ht:GetScale() - 0.695) < 1e-6 and ht:GetFrameLevel() > M.zoomReadout:GetFrameLevel(),
+        "0.5.2b.8 map: the hover title frame, at scale 0.695 above the zoom readout")
+      local oldMU = MapUtil
+      MapUtil = { FindBestAreaNameAtMouse = function(id, x, y) return id == 1426 and x > 0.5 and "Kharanos" or "Dun Morogh" end }
+      local n1, s1 = M.HoverText({ id = 1426, name = "Dun Morogh" }, 0.6, 0.5)
+      local n2, s2 = M.HoverText({ id = 1426, name = "Dun Morogh" }, 0.4, 0.5)
+      MapUtil = { FindBestAreaNameAtMouse = function() error("no") end }
+      local n3, s3 = M.HoverText({ id = 1426, name = "Dun Morogh" }, 0.6, 0.5)
+      MapUtil = oldMU
+      check(n1 == "Dun Morogh" and s1 == "Kharanos" and n2 == "Dun Morogh" and s2 == nil and n3 == "Dun Morogh" and s3 == nil and M.HoverText(nil) == nil,
+        "0.5.2b.8 map: hover text = zone name + subarea (only when it differs; errors ignored)")
+      -- /dm shottest and /dm seamsweep: no Screenshot() -> refused; a client that reports success -> passed, then the sweep runs
+      local said8 = {}
+      local oldPrint = NS.Print
+      NS.Print = function(m) said8[#said8 + 1] = m end
+      SlashCmdList.DARKMATTER("seamsweep")
+      local refused = said8[1]
+      SlashCmdList.DARKMATTER("shottest")
+      local noShot = said8[2]
+      local shots = 0
+      Screenshot = function() shots = shots + 1 NS.MapReview.ShotEvent("SCREENSHOT_SUCCEEDED") end
+      said8 = {}
+      SlashCmdList.DARKMATTER("shottest")
+      local passed = table.concat(said8, "\n")
+      said8 = {}
+      local saveVis8 = FrameMT.IsVisible
+      FrameMT.IsVisible = function(s) local x = s while x and x ~= UIParent do if x._hid then return false end x = x._parent end return true end
+      -- 0.5.2b.8.1: the sweep is driven by clicks: starting it takes no shot; each click on the Shot button (or
+      -- /dm seamsweep next) takes one and centres the next view; nothing is shot from a timer; every step is logged
+      local inClick, outside = false, 0
+      Screenshot = function() shots = shots + 1 if not inClick then outside = outside + 1 end NS.MapReview.ShotEvent("SCREENSHOT_SUCCEEDED") end
+      local shots0 = shots
+      SlashCmdList.DARKMATTER("seamsweep 2")
+      local started = table.concat(said8, "\n")
+      local btn = NS.MapReview.shotButton
+      local startShots = shots - shots0
+      local log0 = DarkMatterDB.probeLog and DarkMatterDB.probeLog.seamsweep
+      local firstLog = log0 and #log0.lines or 0
+      local captions = {}
+      local nViews = 2 * #NS.MapReview.SEAM_LEVELS
+      for c = 1, nViews do
+        captions[#captions + 1] = btn and btn:GetText() or "?"
+        inClick = true
+        if c == nViews then SlashCmdList.DARKMATTER("seamsweep next") elseif btn then btn._scripts.OnClick(btn) end
+        inClick = false
+      end
+      local sweep = table.concat(said8, "\n")
+      local slog = DarkMatterDB.probeLog and DarkMatterDB.probeLog.seamsweep
+      local slogAll = slog and table.concat(slog.lines, "\n") or ""
+      local nSeams = #NS.MapReview.Seams(2)
+      FrameMT.IsVisible = saveVis8
+      check(btn and startShots == 0 and firstLog == 1 and captions[1]:find("^Shot 1/" .. nViews .. ": #1 ") and captions[2]:find("^Shot 2/")
+        and outside == 0 and shots - shots0 == nViews and not btn:IsShown() and not NS.MapReview.busy
+        and slogAll:find(nViews .. " of " .. nViews .. " shots taken", 1, true) and select(2, slogAll:gsub(": ok", "")) == nViews,
+        "0.5.2b.8.1 /dm seamsweep: no shot on start, one per click (" .. (shots - shots0) .. ", " .. outside .. " outside a click), captions, logged as it goes: "
+        .. captions[1] .. " | " .. started:gsub("\n", " | "))
+      SlashCmdList.DARKMATTER("seamsweep stop")
+      Screenshot = function() shots = shots + 1 NS.MapReview.ShotEvent("SCREENSHOT_SUCCEEDED") end
+      Screenshot = function() shots = shots + 1 NS.MapReview.ShotEvent("SCREENSHOT_FAILED") end
+      said8 = {}
+      SlashCmdList.DARKMATTER("shottest")
+      local failed = table.concat(said8, "\n")
+      Screenshot = nil
+      NS.Print = oldPrint
+      check(refused and refused:find("^seamsweep: run /dm shottest first") and noShot and noShot:find("no Screenshot%(%)")
+        and passed:find("shottest: PASSED", 1, true) and failed:find("shottest: FAILED - failed", 1, true) and not NS.MapReview.ShotOK()
+        and nSeams == 2 and shots == 2 + 2 * #NS.MapReview.SEAM_LEVELS and not NS.MapReview.busy,
+        "0.5.2b.8 /dm shottest + seamsweep: refused before a passing shot; 2 borders x " .. #NS.MapReview.SEAM_LEVELS .. " levels shot (" .. shots .. " shots): " .. sweep:gsub("\n", " | "))
+      said8 = {}
+      NS.Print = function(m) said8[#said8 + 1] = m end
+      FrameMT.IsVisible = function(s) local x = s while x and x ~= UIParent do if x._hid then return false end x = x._parent end return true end
+      SlashCmdList.DARKMATTER("mapcost both")
+      FrameMT.IsVisible = saveVis8
+      NS.Print = oldPrint
+      local cost = table.concat(said8, "\n")
+      check(cost:find("mapcost", 1, true) and M.layers[1426].coreFrame and not M.coreOff and not NS.MapReview.busy,
+        "0.5.2b.8 /dm mapcost both: runs with and without the core pass and puts the core pass back: " .. cost:gsub("\n", " | "):sub(1, 300))
+    end
+    -- a mask with its own rect is placed at that rect inside the zone picture
+    local zm = {}
+    for k, v in pairs(SHIPPED_MASKS) do zm[k] = v end
+    zm[1432] = { file = SHIPPED_MASKS[1433].file, cont = 1415, rect = { 0.56, 0.62, 0.49, 0.57 } }
+    NS.ZoneMasks = zm
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1432) run(30)
+    local LM = M.layers[1432]
+    local b = LM and LM.maskBox
+    local function near(a, e) return a and math.abs(a - e) < 0.01 end
+    check(LM and LM.mask and b and near(b[1], 0.02 / 0.10 * 1002) and near(b[2], 0.02 / 0.12 * 668) and near(b[3], 0.06 / 0.10 * 1002) and near(b[4], 0.08 / 0.12 * 668)
+      and near(LM.mask:GetWidth(), b[3] * LM.fitSc) and near(LM.mask:GetHeight(), b[4] * LM.fitSc),
+      "0.5.2b.6 map: a mask with a rect is anchored at that rect inside its zone's picture (" .. (b and string.format("%.1f %.1f %.1f %.1f", b[1], b[2], b[3], b[4]) or "none") .. ")")
+    -- 0.5.2b.6: the tile reach of a continent the view is not on (0.5.2b.5 read it as "no tiles")
+    NS.db.map.layer = "terrain"
+    M.fade[1415] = 0
+    local rr = M.TileReach(1415)
+    check(rr and rr.start and M.fade[1415] == 0 and M.ReachLine(1415):find("^tiles from x"),
+      "0.5.2b.6 map: the tile reach is read with the continent at full strength (faded out: " .. M.ReachLine(1415) .. ")")
+    NS.db.map.layer = "painted"
+    check(M.ReachLine(1415):find("^painted, no tiles %(terrain: x[%d%.]+%-x[%d%.]+, deepest x%d+%)$"), "0.5.2b.6 map: painted reach line: " .. M.ReachLine(1415))
+    NS.db.map.layer = nil
+    check(M.ReachLine(1415):find("^auto, tiles in the last zoom step only %(terrain: x[%d%.]+%-x[%d%.]+, deepest x%d+%)$"), "0.5.2b.6.1 map: the default (auto) reach line: " .. M.ReachLine(1415))
+    NS.ZoneMasks = saveZM
+    NS.db.map.layer = "terrain"
+    M.Reset() NS.ShowTab("quests") NS.ShowTab("map") run(5)
+    M.FlyTo(1426) run(30)
+  end
+  -- 0.5.2b.6: the fog. An area found with the map closed is drawn when it opens; one found with it open, at once
+  do
+    local saveX = C_MapExplorationInfo
+    local found = false
+    C_MapExplorationInfo = { GetExploredMapTextures = function(id)
+      local r = saveX.GetExploredMapTextures(id)
+      if id == 1426 and found then
+        r[#r + 1] = { textureWidth = 200, textureHeight = 100, offsetX = 400, offsetY = 300, numTexturesWide = 1, numTexturesTall = 1, fileDataIDs = { 777010 } }
+      end
+      return r
+    end }
+    local function ovHas(fid)
+      local L = M.layers[1426]
+      for _, t in ipairs(L and L.ov or {}) do if t._file == fid or rawget(t, "_tex") == fid then return true end end
+      return false
+    end
+    local function ovN() local L = M.layers[1426] return L and #L.ov or 0 end
+    local n0 = ovN()
+    check(n0 > 0 and not ovHas(777010), "0.5.2b.6 fog: Dun Morogh drawn with its explored areas (" .. n0 .. " pieces)")
+    local watched = table.concat(M.exploreWatched, ",")
+    check(watched:find("MAP_EXPLORATION_UPDATED", 1, true) and watched:find("UI_INFO_MESSAGE", 1, true) and watched:find("ZONE_CHANGED", 1, true)
+      and M.exploreWatch._ev and M.exploreWatch._ev.MAP_EXPLORATION_UPDATED,
+      "0.5.2b.6 fog: a frame listens for discoveries all the time: " .. watched)
+    -- closed: found, the event comes while the tab is hidden (0.5.2b.5 only listened while it was open)
+    NS.ShowTab("quests")
+    found = true
+    M.exploreWatch._scripts.OnEvent(M.exploreWatch, "UI_INFO_MESSAGE")
+    NS.ShowTab("map") run(3)
+    local n1 = ovN()
+    check(n1 > n0, "0.5.2b.6 fog: an area found with the map closed is drawn when it opens (" .. n0 .. " -> " .. n1 .. " pieces)")
+    -- open, no event at all (the client may not send MAP_EXPLORATION_UPDATED): the poll finds it within EXPLORE_POLL s
+    found = false
+    M.ForgetExplored() run(3)
+    local n2 = ovN()
+    found = true
+    local r0 = M.exploreRefreshes
+    run(math.ceil(M.EXPLORE_POLL / 0.05) + 2)
+    check(n2 == n0 and ovN() == n1 and M.exploreRefreshes > r0, "0.5.2b.6 fog: open map, no event: the poll redraws the fog (" .. n2 .. " -> " .. ovN() .. ")")
+    -- open, with the event: redrawn within a few frames
+    found = false
+    M.ForgetExplored() run(3)
+    found = true
+    M.explorePoll = 99
+    M.exploreWatch._scripts.OnEvent(M.exploreWatch, "MAP_EXPLORATION_UPDATED")
+    run(8)
+    check(ovN() == n1, "0.5.2b.6 fog: open map, discovery event: redrawn at once (" .. ovN() .. " pieces after 0.4 s)")
+    local r1 = M.exploreRefreshes
+    run(60)
+    check(M.exploreRefreshes == r1, "0.5.2b.6 fog: nothing new -> nothing rebuilt")
+    C_MapExplorationInfo = saveX
+    M.ForgetExplored() run(3)
+  end
+  -- 0.5.2b.5: /dm tileprobe
+  do
+    local tp = M.TileProbe()
+    local all = table.concat(tp, "\n")
+    local reach = all:match("tileprobe reach Eastern Kingdoms: ([^\n]+)")
+    local longest = 0
+    for _, l in ipairs(tp) do longest = math.max(longest, #l) end
+    if os.getenv("DM_DUMP") then for _, l in ipairs(tp) do io.stderr:write("TILEPROBE ", l, "\n") end end
+    check(tp[1]:find("^tileprobe " .. NS.version:gsub("%.", "%%.")) and all:find("\ntileprobe Eastern Kingdoms: %d+ tiles listed")
+      and all:find("\ntileprobe Kalimdor sample of %d+: %d+ load") and reach and reach:find("^tiles from x[%d%.]+, full x[%d%.]+, deepest x%d+")
+      and all:find("\ntileprobe timing: ") and longest <= 110,
+      "0.5.2b.5 /dm tileprobe: tiles listed, a sample loaded, the reach per continent, the timing: " .. all:gsub("\n", " | "))
+    SlashCmdList.DARKMATTER("tileprobe")
+    local pe = NS.db.probeLog and NS.db.probeLog.tileprobe
+    check(pe and pe.lines[1] and pe.lines[1]:find("^tileprobe " .. NS.version:gsub("%.", "%%.")) and #pe.lines >= 8, "0.5.2b.5 /dm tileprobe: saved with the probes")
+  end
+  -- 5. player arrow, coordinates
+  check(M.arrow:IsShown() and M.player and M.player.map == 1426, "0.5.0 map: player arrow shown")
+  local wx, wy = M.ToScreen(M.player[1], M.player[2])
+  local ap = M.arrow._pts[#M.arrow._pts]
+  check(math.abs(ap[4] - wx) < 0.01 and math.abs(-ap[5] - wy) < 0.01, "0.5.0 map: arrow sits at the player's position")
+  check(M.playerText == "Player  52.3, 37.5", "0.5.0 map: player coordinates " .. tostring(M.playerText))
+  local zr = MAPS[1426][4]
+  local pp = MD.Placement(1415)
+  local tx, ty = M.ToScreen(pp[1] + (zr[1] + 0.25 * (zr[2] - zr[1])) * (pp[2] - pp[1]), pp[3] + (zr[3] + 0.75 * (zr[4] - zr[3])) * (pp[4] - pp[3]))
+  CX, CY = tx, ty
+  run(2)
+  check(M.coordText == "Dun Morogh  25.0, 75.0", "0.5.0 map: cursor coordinates " .. tostring(M.coordText))
+  check(M.coordCur.text._text == M.coordText and M.coordMe.text._text == M.playerText, "0.5.0 map: coordinates shown bottom right")
+  -- 6. quest markers
+  local qp = M.pools.quest
+  check(qp and qp.n == 2 and qp[1]:IsShown() and qp[1].qid == 501, "0.5.0 map: quest markers from GetQuestsOnMap")
+  qp[1]._scripts.OnEnter(qp[1])
+  check(tip.title == "Dwarven Outfitters", "0.5.0 map: quest marker tooltip names the quest")
+  -- ===== 0.5.2a: quest pins with the game's own icons, click / shift-click, hover both ways, Show on map =====
+  do
+    local QS = NS.QS
+    check(QS and QS.hovered == 501 and QS.hoverSrc == "map", "0.5.2a pins: hovering a pin sets the shared hovered quest")
+    qp[1]._scripts.OnLeave(qp[1])
+    check(QS.hovered == nil, "0.5.2a pins: leaving the pin clears it")
+    -- every pin is painted with a game icon (path or atlas), never our own art
+    local r = QS.Icon("progress")
+    check(r and (r.atlas or (r.file and not r.file:find("AddOns", 1, true))), "0.5.2a pins: the in-progress pin uses a game icon")
+    -- a missing game icon draws nothing (no substitute)
+    local saveTex, saveOK = C_Texture, NS.Stock.TextureOK
+    C_Texture = { GetAtlasInfo = function() return nil end }
+    NS.Stock.TextureOK = function() return false end
+    QS.ForgetIcons()
+    local t = qp[1]:CreateTexture()
+    check(QS.Icon("progress") == nil and QS.PaintIcon(t, "progress") == false, "0.5.2a pins: a missing game icon is not substituted")
+    M.dirty = true run(1)
+    check(not qp[1]:IsShown(), "0.5.2a pins: no game icon -> no pin drawn")
+    C_Texture, NS.Stock.TextureOK = saveTex, saveOK
+    QS.ForgetIcons()
+    M.dirty = true run(1)
+    check(qp[1]:IsShown() and qp[1].qid == 501, "0.5.2a pins: icons back -> pin drawn again")
+    -- hover from the Quests tab lights the pin (glow, bigger)
+    local nMut = #MUTATED
+    QS.Hover(502, "list") run(1)
+    local m2 = qp[1].qid == 502 and qp[1] or qp[2]
+    check(m2.qid == 502 and m2.glow:IsShown(), "0.5.2a pins: a Quests-tab row hover lights its pin")
+    QS.Hover(nil, "list") run(1)
+    check(not m2.glow:IsShown(), "0.5.2a pins: leaving the row unlights it")
+    check(#MUTATED == nMut, "0.5.2a pins: hover made no mutating calls")
+    -- 0.5.2a.1: a plain click only selects the quest (no glide; Show on map glides)
+    for _ = 1, 4 do M.Wheel(1) run(30) end
+    local zs = M.Zoom()
+    local cx0, cy0 = M.Center()
+    QS.selected = nil
+    m2._scripts.OnMouseDown(m2, "LeftButton")
+    m2._scripts.OnMouseUp(m2, "LeftButton")
+    check(QS.selected == 502, "0.5.2a pins: clicking a pin selects its quest")
+    run(60)
+    local cx1, cy1 = M.Center()
+    check(math.abs(M.Zoom() - zs) < 1e-9 and math.abs(cx1 - cx0) < 1e-9 and math.abs(cy1 - cy0) < 1e-9, "0.5.2a.1 pins: a click does not move the map (no glide)")
+    -- shift-click: the game's own waypoint + arrow
+    local wp, st = {}, {}
+    local saveShift, saveUMP, saveST, saveSet, saveCan = _G.IsShiftKeyDown, UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap
+    _G.IsShiftKeyDown = function() return true end
+    UiMapPoint = { CreateFromCoordinates = function(m, x, y) return { m = m, x = x, y = y } end }
+    C_Map.SetUserWaypoint = function(p) wp[#wp + 1] = p end
+    C_Map.CanSetUserWaypointOnMap = function() return true end
+    C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) st[#st + 1] = v end }
+    check(#wp == 0, "0.5.2a pins: no waypoint without a click")
+    m2._scripts.OnMouseDown(m2, "LeftButton")
+    m2._scripts.OnMouseUp(m2, "LeftButton")
+    check(ERA and #wp == 0 and st[1] == nil or not ERA and #wp == 1 and wp[1].m == 1426 and math.abs(wp[1].x - 0.60) < 1e-9 and st[1] == true and QS.arrow and QS.arrow.q == 502,
+      ERA and "0.5.2b.9 era pins: shift-click sets no waypoint and no arrow (no user waypoints or super tracking on Classic Era), no error" or "0.5.2a pins: shift-click sets the game's waypoint and arrow")
+    _G.IsShiftKeyDown = saveShift
+    -- a press then drag on a pin still pans the map
+    local cx0 = M.ToWorld(300, 200)
+    CX, CY = 300, 200
+    m2._scripts.OnMouseDown(m2, "LeftButton")
+    CX, CY = 340, 220 run(2)
+    m2._scripts.OnMouseUp(m2, "LeftButton")
+    check(math.abs(M.ToWorld(300, 200) - cx0) > 1e-6 and #wp == (ERA and 0 or 1), "0.5.2a pins: dragging over a pin pans the map (no click)")
+    -- 0.5.2a.1: Show on map glides: zooms out on the way, pans, zooms in
+    do
+      for _ = 1, 3 do M.Wheel(1) run(30) end
+      M.ShowQuest(502)
+      local zmin, zprev = M.Zoom(), M.Zoom()
+      for _ = 1, 60 do run(1) if M.Zoom() < zmin then zmin = M.Zoom() end end
+      check(zmin < M.Zoom() * 0.99, "0.5.2a.1 Show on map: the glide zooms out below its end zoom, then in (" .. zmin .. " < " .. M.Zoom() .. ", from " .. zprev .. ")")
+    end
+    -- 0.5.2b.1: the glide is about a third slower (0.8-1.4 s became about 1.06-1.85 s), same easing
+    do
+      for _ = 1, 3 do M.Wheel(1) run(30) end
+      M.ShowQuest(502) run(20)
+      local zmid, cmid = M.Zoom(), M.ToWorld(300, 200)
+      run(40)
+      check(M.HOP_SLOW >= 1.30 and M.HOP_SLOW <= 1.35 and (math.abs(zmid - M.Zoom()) > 1e-9 or math.abs(cmid - M.ToWorld(300, 200)) > 1e-9),
+        "0.5.2b.1 Show on map: the glide is about a third slower (still moving after 1 s)")
+    end
+    -- Show on map: a point flies there; no point -> the zone and the themed note
+    check(M.ShowQuest(501) == "point" and QS.selected == 501, "0.5.2a Show on map: quest with a location flies to it")
+    run(60)
+    local saveUi = C_QuestLog.GetQuestUiMapID
+    C_QuestLog.GetQuestUiMapID = function(q) if q == 777 then return 1426 end end
+    check(M.ShowQuest(777) == "zone" and M.note and M.note:IsShown(), "0.5.2a Show on map: no location -> its zone, with the note")
+    C_QuestLog.GetQuestUiMapID = saveUi
+    check(M.ShowQuest(778) == "none", "0.5.2a Show on map: no location and no zone -> note only")
+    run(200)
+    check(not M.note:IsShown(), "0.5.2a Show on map: the note goes away by itself")
+    UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap = saveUMP, saveST, saveSet, saveCan
+    -- /dm questmap
+    local lines = QS.ProbeReport()
+    local all = table.concat(lines, "\n")
+    if os.getenv("DM_DUMP") then io.stderr:write(all, "\n") end
+    check(lines[1] == "questmap " .. ns.version .. " (read-only)" and all:find("qmap 2: GetQuestsOnMap(1426", 1, true) and all:find("\nicon progress ", 1, true)
+      and all:find("tracker 9: extra click target per quest row in 0.5.2b: ", 1, true) and NS.db.questmap,
+      "0.5.2a /dm questmap: APIs, GetQuestsOnMap, icons and the tracker (saved)")
+    local src = io.open(arg[1] .. "/QuestState.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+    check(not src:find("hooksecurefunc", 1, true) and not src:find("HookScript", 1, true) and not src:find("LoadAddOn", 1, true)
+      and not src:find("CreateFrame", 1, true) and not src:find("RegisterEvent", 1, true), "0.5.2a QuestState.lua: no hooks, no LoadAddOn, no frames or events")
+    QS.selected, QS.arrow = nil, nil
+    for _ = 1, 4 do M.Wheel(-1) run(30) end
+  end
+  -- ===== 0.5.2b.7: POI buttons, quest areas, party / raid dots, your corpse, the game's player arrow, opens on you =====
+  do
+    local QS, X = NS.QS, M.X
+    local qp = M.pools.quest
+    -- G: the stock map's own player arrow (GroupMembersPinMixin: Interface\WorldMap\WorldMapArrow), still turned to your facing
+    check(M.arrowGame and M.arrow._file == "Interface\\WorldMap\\WorldMapArrow", "0.5.2b.7 G: the player arrow is the stock map's WorldMapArrow (" .. tostring(M.arrow._file) .. ")")
+    -- C: without the POI atlases the 0.5.2a icons stay; with them, the tracker's POI button
+    M.dirty = true run(1)
+    M.CentreOnPlayer() run(40)
+    check(qp[1]:IsShown() and not qp[1].poi and not qp[1].ring:IsShown(), "0.5.2b.7 C: no POI atlases on this client -> the 0.5.2a game icon, no ring")
+    local saveAtlas = C_Texture.GetAtlasInfo
+    local POI = { ["UI-QuestPoi-QuestNumber"] = 1, ["UI-QuestPoi-QuestNumber-SuperTracked"] = 1, ["UI-QuestPoi-OuterGlow"] = 1,
+      ["Quest-In-Progress-Icon-yellow"] = 1, ["Quest-In-Progress-Icon-Brown"] = 1, ["UI-QuestIcon-TurnIn-Normal"] = 1 }
+    C_Texture.GetAtlasInfo = function(a) if POI[a] then return { width = 32, height = 32 } end return saveAtlas(a) end
+    QS.ForgetIcons() M.dirty = true run(1)
+    local m1 = qp[1].qid == 501 and qp[1] or qp[2]
+    check(m1.poi and m1.ring:IsShown() and m1.ring._atlas == "UI-QuestPoi-QuestNumber" and m1.icon._atlas == "Quest-In-Progress-Icon-yellow",
+      "0.5.2b.7 C: an in-progress quest is the POI button with '...' (" .. tostring(m1.ring._atlas) .. ", " .. tostring(m1.icon._atlas) .. ")")
+    local saveStatus = QS.Status
+    QS.Status = function(q) if q == 501 then return "ready" end return saveStatus(q) end
+    QS.selected = 501
+    M.dirty = true run(1)
+    m1 = qp[1].qid == 501 and qp[1] or qp[2]
+    check(m1.poi and m1.ring._atlas == "UI-QuestPoi-QuestNumber-SuperTracked" and m1.icon._atlas == "UI-QuestIcon-TurnIn-Normal" and m1.glow:IsShown(),
+      "0.5.2b.7 C: a complete, selected quest is the gold-ringed POI button with '?'")
+    QS.Status = saveStatus
+    -- B: the game's quest-area frame for the selected / tracked quests, one per zone on screen; hover names the quest
+    local saveCF = CreateFrame
+    local made = {}
+    CreateFrame = function(t, ...)
+      local f = saveCF(t, ...)
+      if t == "QuestPOIFrame" then
+        made[#made + 1] = f
+        f._blobs = {}
+        f.DrawNone = function(s) s._blobs = {} s._drawnScale = nil end
+        f.DrawBlob = function(s, q, on) s._blobs[#s._blobs + 1] = q s._drawnScale = s._scale or 1 end -- 0.5.2b.7.3: baked at this scale
+        f.SetFillTexture = function(s, p) s._fill = p end
+        f.SetMapID = function(s, m) s._map = m end
+        f.UpdateMouseOverTooltip = function(s, nx, ny) if nx > 0.2 and nx < 0.4 then return 501, 2 end end
+      end
+      return f
+    end
+    X.blobs = {}
+    M.dirty = true run(1)
+    local bf = X.blobs[1426]
+    -- 0.5.2b.7.3: the game bakes the drawing for the scale the frame has at DrawBlob time; the area frame is placed
+    -- (scale, anchor) by this frame's layout and drawn right after, in the same frame
+    check(bf and bf:IsShown() and bf._map == 1426 and bf._fill == "Interface\\WorldMap\\UI-QuestBlob-Inside" and #bf._blobs == 1 and bf._blobs[1] == 501 and bf._drawnScale == (bf._scale or 1),
+      "0.5.2b.7.3 B: the area frame is placed, then drawn in the same frame, at its final scale (stock: redrawn at the end of the frame)")
+    run(2)
+    check(bf._blobs[1] == 501, "0.5.2b.7 B: the selected quest's objective area is drawn by the game's QuestPOIFrame on its zone")
+    -- 0.5.2b.7.1: the frame keeps the zone picture's art size; zoom and pan only change its scale and anchor, and its
+    -- placed rect is the zone picture's rect
+    local function placed(f)
+      local _, _, _, x, y = f:GetPoint(1)
+      local s = f._scale or 1
+      return x * s, -y * s, (x + f._w) * s, (-y + f._h) * s
+    end
+    local function offBy(f)
+      local L = M.layers[1426]
+      local b = L and L.box or f.rect
+      local a1, a2, a3, a4 = placed(f)
+      return math.max(math.abs(a1 - b[1]), math.abs(a2 - b[2]), math.abs(a3 - b[3]), math.abs(a4 - b[4]))
+    end
+    local w0, h0 = bf._w, bf._h
+    check(w0 == X.BlobCanvas(1426) and offBy(bf) < 0.01, "0.5.2b.7.1 B: the area frame is the zone picture's art size, on the zone picture (off by " .. string.format("%.3f", offBy(bf)) .. ")")
+    local draws = X.stats.blobDraws
+    M.dirty = true run(1)
+    check(X.stats.blobDraws == draws, "0.5.2b.7 B: the areas are not drawn again while nothing changed")
+    local r = bf.rect
+    local saveCur = M.testCursor
+    M.testCursor = function() return r[1] + 0.3 * (r[3] - r[1]), r[2] + 0.5 * (r[4] - r[2]) end
+    GameTooltip.GetOwner = function() return tip.owner end
+    local oldSet = GameTooltip.SetOwner
+    GameTooltip.SetOwner = function(_, o) tip.owner = o end
+    run(3)
+    check(tip.title == "Dwarven Outfitters" and tip.shown, "0.5.2b.7 B: hovering the area shows the quest and its objectives (" .. tostring(tip.title) .. ")")
+    M.testCursor = function() return r[1] + 0.9 * (r[3] - r[1]), r[2] + 0.5 * (r[4] - r[2]) end
+    run(3)
+    check(not tip.shown and X.tipQuest == nil, "0.5.2b.7 B: leaving the area hides it")
+    M.testCursor = saveCur
+    GameTooltip.SetOwner, tip.owner = oldSet, nil
+    local s0 = bf._scale
+    M.Wheel(1) run(1)
+    run(40)
+    check(bf._w == w0 and bf._h == h0 and bf._scale ~= s0 and offBy(bf) < 0.01 and X.stats.blobDraws > draws,
+      "0.5.2b.7.1 B: zooming changes only the scale; the areas stay on the zone picture and are drawn again after (" .. string.format("%.3f", offBy(bf)) .. ")")
+    -- 0.5.2b.7.2 / 0.5.2b.7.3: every frame of a zoom in or out, the drawn areas stay shown and on the zone picture.
+    -- 0.5.2b.7.3: the drawing in every rendered frame was made at the frame's current scale (0.5.2b.7.2 drew at the
+    -- start of the next frame, before the rescale: one frame behind = the bounce). `shown px` is what the eye sees:
+    -- the frame against the zone picture plus the baked drawing against the frame's scale, in screen pixels.
+    local function zoomRun(dirs)
+      local g0 = {} for k, v in pairs(X.gl) do g0[k] = v end
+      local r = { blank = 0, off = 0, offMax = 0, stale = 0, staleMax = 0, lag = 0, frames = 0 }
+      for _, d in ipairs(dirs) do
+        M.Wheel(d)
+        for _ = 1, 25 do
+          M.Tick(0.016)
+          local L = M.layers[1426]
+          if L and L.shown and (L.alpha or 0) > 0.01 then
+            r.frames = r.frames + 1
+            if not (bf:IsShown() and #bf._blobs > 0) then r.blank = r.blank + 1 end
+            local o = offBy(bf)
+            if o > 0.01 then r.off = r.off + 1 end
+            r.offMax = math.max(r.offMax, o)
+            local sp = math.max(bf._w, bf._h) * math.abs((bf._scale or 1) - (bf._drawnScale or 0))
+            if sp > 0.01 then r.stale = r.stale + 1 end
+            r.staleMax = math.max(r.staleMax, sp)
+            local st = X.bst[1426]
+            if st and st.dirty and st.dirty < X.tickN then r.lag = r.lag + 1 end
+          end
+        end
+      end
+      local g = {} for k, v in pairs(X.gl) do g[k] = v - (g0[k] or 0) end
+      g.offMax, g.staleMax = X.gl.offMax, X.gl.staleMax
+      return r, g
+    end
+    do
+      local r, g = zoomRun({ -1, -1, 1, 1 })
+      check(r.frames > 20 and r.blank == 0 and r.off == 0 and r.lag == 0 and r.stale == 0 and r.offMax < 0.01 and r.staleMax < 0.01 and g.frames > 0 and g.hidden == 0 and g.late == 0 and g.stale == 0 and g.redraws > 0,
+        string.format("0.5.2b.7.3 B: zooming out, out, in, in (%d frames), every frame the areas are on the zone picture (max %.3f px) and drawn at the shown scale (max %.3f px off; stale %d, blank %d, lag %d; counted hidden %d late %d stale %d of %d, redraws %d)",
+          r.frames, r.offMax, r.staleMax, r.stale, r.blank, r.lag, g.hidden, g.late, g.stale, g.frames, g.redraws))
+      run(40)
+      local p = table.concat(X.ProbeLines(), "\n")
+      check(p:find("map 10e: hidden during zoom: 0 frames; late 0; zoom frames %d+; redraws %d+"), "0.5.2b.7.2 B: mapprobe 10e counts the frames the areas were hidden during a zoom")
+      check(p:find("map 10e: zoom: redraws %d+ %(scale only %d+%); stale 0 frames, drawn vs shown 0%.0 px") and p:find("map 10e: zoom offset: area vs zone picture max 0.0 px; draw same (/dm blobdraw)", 1, true)
+        and p:find("map 10e: area frames %d+: children 0, regions 0, pixel%-snapped 0, scale "),
+        "0.5.2b.7.3 B: mapprobe 10e: redraws during the zoom, stale frames 0, offset 0.0 px, the area frames hold nothing of their own")
+      -- the 0.5.2b.7.2 way (drawn at the start of the next frame) shows the bounce: each zoom frame's drawing is one scale behind
+      local say = M.BlobDrawSlash("next")
+      check(NS.db.map.blobDraw == "next" and X.BlobMode() == "next" and say:find("^blobdraw: next"), "0.5.2b.7.3 /dm blobdraw next: saved (" .. say .. ")")
+      run(5)
+      local rn, gn = zoomRun({ -1, 1 })
+      check(rn.stale > 0 and rn.staleMax > 0.5 and gn.stale > 0 and rn.off == 0,
+        string.format("0.5.2b.7.3 B: blobdraw next reproduces the bounce: %d of %d zoom frames show a drawing one scale behind (up to %.1f px; counted %d), the frame itself on the picture",
+          rn.stale, rn.frames, rn.staleMax, gn.stale))
+      run(40)
+      -- once: never redrawn while zooming (stale during the zoom), drawn once it stops
+      say = M.BlobDrawSlash("once")
+      run(5)
+      local ro, go = zoomRun({ 1, -1 })
+      local d1 = X.bst[1426]
+      check(go.zoomRedraws == 0 and ro.stale > 0, string.format("0.5.2b.7.3 B: blobdraw once: no redraw during the zoom (%d), so the drawing is off scale while zooming (%d frames)", go.zoomRedraws, ro.stale))
+      run(40)
+      check(math.abs((bf._drawnScale or 0) - (bf._scale or 1)) < 1e-9 and d1 and not d1.dirty, "0.5.2b.7.3 B: blobdraw once: drawn again once the zoom stops")
+      say = M.BlobDrawSlash("default")
+      check(NS.db.map.blobDraw == nil and X.BlobMode() == "same" and say:find("^blobdraw: same"), "0.5.2b.7.3 /dm blobdraw default: back to same (" .. say .. ")")
+      run(5)
+      local rs = zoomRun({ -1, 1 })
+      check(rs.stale == 0 and rs.off == 0, "0.5.2b.7.3 B: back to same: no stale frame during the zoom")
+      run(40)
+    end
+    local nd = X.stats.blobDraws
+    M.Pan(37, -21) run(1) run(1)
+    check(offBy(bf) < 0.01 and X.stats.blobDraws == nd, "0.5.2b.7.1 B: panning moves the areas with the zone picture, no redraw (" .. string.format("%.3f", offBy(bf)) .. ")")
+    local p10e = table.concat(X.ProbeLines(), "\n")
+    check(p10e:find("map 10e: areas vs zone picture: ", 1, true), "0.5.2b.7.1 B: mapprobe 10e compares the areas with the zone picture")
+    QS.selected = nil
+    M.dirty = true run(1)
+    check(not bf:IsShown(), "0.5.2b.7 B: nothing selected or tracked -> no areas")
+    CreateFrame = saveCF
+    -- D: party dots (the stock party icon), dimmed out of range; raid dots class-coloured
+    local saveBest, savePos = C_Map.GetBestMapForUnit, C_Map.GetPlayerMapPosition
+    local G0 = { UnitExists = UnitExists, UnitInRange = UnitInRange, UnitClass = UnitClass, UnitName = UnitName, UnitLevel = UnitLevel,
+      IsInRaid = IsInRaid, GetNumGroupMembers = GetNumGroupMembers, UnitIsUnit = UnitIsUnit, RAID_CLASS_COLORS = RAID_CLASS_COLORS }
+    UnitExists = function(u) return u == "party1" or u == "party2" or u == "raid1" or u == "raid2" end
+    UnitInRange = function(u) if u == "party2" then return false, true end return true, true end
+    UnitClass = function(u) if u == "player" then return "Warrior", "WARRIOR" end return "Mage", "MAGE" end
+    UnitName = function(u) if u == "player" then return "Odysseaus" end return "Friend" end
+    UnitLevel = function() return 12 end
+    UnitIsUnit = function(a, b) return a == b end
+    RAID_CLASS_COLORS = { MAGE = { r = 0.25, g = 0.78, b = 0.92 } }
+    IsInRaid = function() return false end
+    C_Map.GetBestMapForUnit = function(u) if u == "player" or u:find("^party") or u:find("^raid") then return 1426 end return saveBest(u) end
+    C_Map.GetPlayerMapPosition = function(id, u)
+      if u == "party1" or u == "raid1" then if id == 1426 then return vec(0.4, 0.5) end return nil end
+      if u == "party2" or u == "raid2" then if id == 1426 then return vec(0.45, 0.55) end return nil end
+      return savePos(id, u)
+    end
+    M.dirty = true run(5)
+    local mp = M.pools.member
+    check(mp and mp.n == 2 and mp[1]:IsShown() and mp[1].icon._file == "Interface\\WorldMap\\WorldMapPartyIcon" and (mp[1]._alpha or 1) == 1 and mp[2]._alpha == X.DIM,
+      "0.5.2b.7 D: two party dots (the stock party icon), the out-of-range one dimmed")
+    mp[1]._scripts.OnEnter(mp[1])
+    check(tip.title == "Friend" and tip.lines[1] == "Level 12 Mage" and tip.lines[2] == "Dun Morogh", "0.5.2b.7 D: dot tooltip: name, level, class, zone (" .. tostring(tip.lines[1]) .. "/" .. tostring(tip.lines[2]) .. ")")
+    IsInRaid = function() return true end
+    GetNumGroupMembers = function() return 2 end
+    run(5)
+    check(mp.n == 2 and mp[1].unit == "raid1" and mp[1].icon._desat ~= false, "0.5.2b.7 D: in a raid the raid members are drawn")
+    for _, k in ipairs({ "UnitExists", "UnitInRange", "UnitClass", "UnitName", "UnitLevel", "IsInRaid", "GetNumGroupMembers", "UnitIsUnit", "RAID_CLASS_COLORS" }) do _G[k] = G0[k] end
+    C_Map.GetBestMapForUnit, C_Map.GetPlayerMapPosition = saveBest, savePos
+    run(5)
+    check(not mp[1]:IsShown(), "0.5.2b.7 D: out of the group -> no dots")
+    -- F: your corpse while dead (the stock tombstone, Interface\Minimap\POIIcons), gone on resurrection
+    local saveDead = UnitIsDeadOrGhost
+    UnitIsDeadOrGhost = function() return true end
+    C_DeathInfo = { GetCorpseMapPosition = function(id) if id == 1426 then return vec(0.5, 0.6) end end }
+    run(12)
+    local cb = X.corpseBtn
+    check(cb and cb:IsShown() and cb.icon._file == "Interface\\Minimap\\POIIcons" and cb.icon._tc and cb.icon._tc[1] == 0.56640625 and cb.icon._tc[4] == 0.03515625,
+      "0.5.2b.7.1 F: your corpse is the 1.60.1 stock tombstone (CorpsePinTemplate texcoords)")
+    cb._scripts.OnEnter(cb)
+    check(tip.title == "Your corpse", "0.5.2b.7 F: corpse tooltip")
+    UnitIsDeadOrGhost = function() return false end
+    run(12)
+    check(not cb:IsShown(), "0.5.2b.7 F: resurrected -> the corpse is gone")
+    UnitIsDeadOrGhost, C_DeathInfo = saveDead, nil
+    C_Texture.GetAtlasInfo = saveAtlas
+    QS.ForgetIcons()
+    check(M.extrasErr == nil, "0.5.2b.7: the extras ran without errors (" .. tostring(M.extrasErr) .. ")")
+    local plines = table.concat(X.ProbeLines(), "\n")
+    check(plines:find("map 10c: player arrow: game", 1, true) and plines:find("map 10d: GetCorpseMapPosition", 1, true), "0.5.2b.7: mapprobe lines for the extras")
+    -- E: every opening is centred on you at your zone's zoom
+    M.Wheel(-1) run(30) M.Wheel(-1) run(30)
+    local zOut = M.Zoom()
+    NS.ShowTab("quests") NS.ShowTab("map") run(2)
+    local pxs, pys = M.ToScreen(M.player[1], M.player[2])
+    check(M.Zoom() > zOut and M.pendingFit and M.pendingFit.id == 1426, "0.5.2b.7 E: reopening the map goes back to your zone's zoom")
+    check(pxs > 0 and pys > 0 and pxs < M.vp:GetWidth() and pys < M.vp:GetHeight(), "0.5.2b.7 E: and you are in view")
+    for _ = 1, 4 do M.Wheel(-1) run(30) end
+  end
+  -- 7. wheel zoom keeps the point under the cursor fixed
+  CX, CY = 300, 180
+  M.Wheel(1) run(30) -- 0.5.1.10: from one step in (at the zone's fit, zooming out goes up to the continent)
+  local u0, v0 = M.ToWorld(CX, CY)
+  local z0 = M.Zoom()
+  M.Wheel(-1) run(30)
+  local u1, v1 = M.ToWorld(CX, CY)
+  check(M.Zoom() < z0 and math.abs(u1 - u0) < 1e-6 and math.abs(v1 - v0) < 1e-6, "0.5.0 map: wheel zoom out keeps the point under the cursor")
+  M.Wheel(1) run(30)
+  local u2, v2 = M.ToWorld(CX, CY)
+  check(math.abs(M.Zoom() - z0) < 1e-6 and math.abs(u2 - u0) < 1e-6 and math.abs(v2 - v0) < 1e-6, "0.5.0 map: wheel zoom in returns exactly")
+  -- 8. zoom all the way out: zone > continent > world, with crossfades on the way
+  CX, CY = 406, 260
+  M.FlyTo(1426) run(30) -- 0.5.2b.7.2: the wheel lands on numbered levels, so start from the zone's view itself
+  local sawZoneFade, sawContFade, sawCont = false, false, false
+  for _ = 1, 30 do
+    M.Wheel(-1)
+    for _ = 1, 30 do
+      M.Tick(0.016)
+      local za, ca = M.ZoneDrawAlpha(MD.ZoneEntry(1426)), M.ContAlpha(1415) -- 0.5.1.7+: as drawn
+      if za > 0.02 and za < 0.98 and M.layers[1426].shown and math.abs(M.layers[1426].alpha - za) < 1e-9 then sawZoneFade = true end
+      -- 0.5.2b.8.2: the continent picture no longer fades with the focus or the window size (it is under every level, on both
+      -- continents alike: the full-screen bug of 0.5.2b.8.1); only the zone pictures crossfade
+      if ca ~= 1 or M.ContAlpha(1414) ~= 1 then sawContFade = "not 1" end
+    end
+    if table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms" then sawCont = true end
+  end
+  check(sawZoneFade and not sawContFade, "0.5.0/0.5.2b.8.2 map: zone pictures crossfade while zooming, continent pictures stay at 1 on both continents (" .. tostring(sawZoneFade) .. "," .. tostring(sawContFade) .. ")")
+  check(sawCont, "0.5.0 map: passes through the continent level")
+  check(math.abs(M.Zoom() - 1) < 1e-6 and table.concat(M.Trail(), ">") == "Azeroth" and M.layers[947].shown, "0.5.0 map: zoomed out fully shows the world")
+  local wcx, wcy = M.Center()
+  local sl, st = M.ToScreen(0, 0)
+  local sr, sb = M.ToScreen(1, 1)
+  check(wcx > 0 and wcy > 0 and sl <= 1e-6 and st <= 1e-6 and sr >= M.vp:GetWidth() - 1e-6 and sb >= M.vp:GetHeight() - 1e-6, "0.5.1.11 map: fully zoomed out the world art fills the whole view (no empty band)")
+  -- 9. zoom in toward Kalimdor (cursor on its land): focus moves there
+  local kx, ky = M.ToScreen(0.20, 0.55)
+  CX, CY = kx, ky
+  for _ = 1, 8 do M.Wheel(1) run(30) end
+  local kt = M.Trail()
+  check(kt[2] == "Kalimdor", "0.5.0 map: wheel toward Kalimdor zooms into Kalimdor (" .. table.concat(kt, " > ") .. ")")
+  -- 10. breadcrumb click / right-click / double-click
+  M.FlyTo(1426) run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh", "0.5.0 map: fly to a zone")
+  M.vp._scripts.OnMouseUp(M.vp, "RightButton") run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms", "0.5.0 map: right-click zooms out one level")
+  M.vp._scripts.OnMouseUp(M.vp, "RightButton") run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth", "0.5.0 map: right-click again shows the world")
+  local zb = M.Zoom()
+  CX, CY = 406, 260
+  M.vp._scripts.OnMouseDown(M.vp, "LeftButton") M.vp._scripts.OnMouseUp(M.vp, "LeftButton")
+  M.vp._scripts.OnMouseDown(M.vp, "LeftButton") M.vp._scripts.OnMouseUp(M.vp, "LeftButton")
+  run(30)
+  check(math.abs(M.Zoom() - zb * 2) < 1e-6, "0.5.0 map: double-click zooms in x2")
+  -- 11. drag to pan across a zone border
+  M.FlyTo(1426) run(20)
+  local lm = MD.ZoneEntry(1432)
+  local dmz = MD.ZoneEntry(1426)
+  local ax, ay = M.ToScreen(MD.ToWorld(1426, 0.5, 0.5))
+  local bx, by = M.ToScreen(MD.ToWorld(1432, 0.5, 0.5))
+  CX, CY = 406, 260
+  M.vp._scripts.OnMouseDown(M.vp, "LeftButton")
+  local both = false
+  for i = 1, 10 do
+    CX, CY = 406 - (bx - ax) * i / 10, 260 - (by - ay) * i / 10
+    run(1)
+    if M.layers[1426].shown and M.layers[1432] and M.layers[1432].shown then both = true end
+  end
+  M.vp._scripts.OnMouseUp(M.vp, "LeftButton") run(2)
+  check(both and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Loch Modan", "0.5.0 map: drag pans across the border into the next zone (0.5.1.11: free again) " .. tostring(both) .. " " .. table.concat(M.Trail(), ">") .. " " .. M.Zoom())
+  -- 12. search and pick
+  local r = M.Search("loch")
+  check(#r == 1 and r[1].name == "Loch Modan" and r[1].sub == "Eastern Kingdoms" and M.results:IsShown(), "0.5.0 map: zone search finds Loch Modan")
+  r = M.Search("kal")
+  check(r[1] and r[1].name == "Kalimdor" and r[1].sub == "Continent", "0.5.0 map: search lists continents first")
+  r = M.Search("or")
+  local nm = {} for i, e in ipairs(r) do nm[i] = e.name end
+  check(table.concat(nm, ",") == "Kalimdor,Dun Morogh,Elwynn Forest,Ironforge,Mulgore,Stormwind City", "0.5.0 map: search matches inside names (" .. table.concat(nm, ",") .. ")")
+  r = M.Search("st") nm = {} for i, e in ipairs(r) do nm[i] = e.name end
+  check(table.concat(nm, ",") == "Eastern Kingdoms,Stormwind City,Elwynn Forest", "0.5.0 map: search order continents, starts-with, contains (" .. table.concat(nm, ",") .. ")")
+  r = M.Search("zzz")
+  check(#r == 0 and M.results:IsShown() and M.results.rows[1].name._text == "No matching zones", "0.5.0 map: no match says so")
+  M.Search("elwynn")
+  M.results.rows[1]._scripts.OnClick(M.results.rows[1]) run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Elwynn Forest" and not M.results:IsShown(), "0.5.0 map: picking a result flies there")
+  -- 13. Find me
+  local fm
+  for _, b in ipairs(M.tools) do if b.key == "findme" then fm = b end end
+  fm._scripts.OnClick(fm) run(20)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh", "0.5.0 map: Find me flies to your zone")
+  local cx, cy = M.Center()
+  local psx, psy = M.ToScreen(M.player[1], M.player[2])
+  check(math.abs(psx - M.vp:GetWidth() / 2) < 1e-6 and math.abs(psy - M.vp:GetHeight() / 2) < 1e-6, "0.5.0 map: Find me centres on you (0.5.1.11 again)")
+  -- 0.5.1.11: a map base under EVERY pixel at every zoom, in the fit and full-screen sizes and every theme: the drawn
+  -- layers (alpha x feathered rim) add up to full strength everywhere; no darkening vignette; dragging at each zoom moves
+  -- the view by exactly the drag, no clamping or snapping
+  do
+    local function coverage(nx, ny)
+      local vw, vh = M.vp:GetWidth(), M.vp:GetHeight()
+      local worst, at = 1, nil
+      for i = 0, nx do for j = 0, ny do
+        local px, py = (i + 0.5) / (nx + 1) * vw, (j + 0.5) / (ny + 1) * vh
+        local clear = 1
+        for _, L in pairs(M.layers) do
+          local b = L.box
+          if L.shown and b and px >= b[1] and px <= b[3] and py >= b[2] and py <= b[4] then
+            local a = L.alpha or 0
+            if L.feather then a = a * M.EdgeW(L.art, (px - b[1]) / L.sc, (py - b[2]) / L.sc) end
+            clear = clear * (1 - a)
+          end
+        end
+        if 1 - clear < worst then worst, at = 1 - clear, string.format("%d,%d", px, py) end
+      end end
+      return worst, at
+    end
+    local saveTheme = NS.theme.id
+    local w0, h0 = M.vp:GetWidth(), M.vp:GetHeight()
+    local spots = { { MD.ToWorld(1426, 0.5, 0.5) }, { MD.ToWorld(1429, 0.05, 0.5) }, { 0.5, 0.5 }, { 0.38, 0.30 } }
+    local zooms = { 1, 1.35, 2, 3, 5, 8, 13, 21, 34, 55, 1e9 }
+    local worst, where, n, vign, dragBad = 1, "", 0, 0, {}
+    for ti, id in ipairs(NS.themeOrder) do
+      NS.SetTheme(id)
+      for _, sz in ipairs({ { 978, 544 }, { 1880, 1020 } }) do
+        M.vp:SetSize(sz[1], sz[2]) M.Refit()
+        for si, sp in ipairs(spots) do
+          for _, z in ipairs(zooms) do
+            if ti == 1 or (si == 1 and (z == 1 or z == 5 or z == 1e9)) then
+              M.SetViewAt(sp[1], sp[2], math.min(z, M.ZMax()))
+              run(12)
+              local c, at = coverage(16, 10)
+              n = n + 1
+              if c < worst then worst, where = c, string.format("%s %dx%d at %.3f,%.3f zoom %.2f: %s", id, sz[1], sz[2], sp[1], sp[2], M.Zoom(), tostring(at)) end
+              if ti == 1 and z > 1 then
+                -- a real drag (mouse down, move, up): the view moves by the delta
+                local ox, oy = M.view.ox, M.view.oy
+                local x0, y0 = M.ToWorld(0, 0)
+                local x1, y1 = M.ToWorld(sz[1], sz[2])
+                if x0 > 0.02 and x1 < 0.98 and y0 > 0.02 and y1 < 0.98 then
+                  CX, CY = 400, 260
+                  M.vp._scripts.OnMouseDown(M.vp, "LeftButton")
+                  CX, CY = 400 - 37, 260 + 23 run(1)
+                  M.vp._scripts.OnMouseUp(M.vp, "LeftButton") run(1)
+                  if math.abs(M.view.ox - ox + 37) > 1e-6 or math.abs(M.view.oy - oy - 23) > 1e-6 then
+                    dragBad[#dragBad + 1] = string.format("%dx%d zoom %.2f moved %.2f,%.2f", sz[1], sz[2], M.Zoom(), M.view.ox - ox, M.view.oy - oy)
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+    for _, L in pairs(M.layers) do
+      for _, list in ipairs({ L.tiles or {}, L.ov or {} }) do
+        for _, t in ipairs(list) do
+          local g = rawget(t, "_grad")
+          if g and (g[2][1] < 0.999 or g[2][2] < 0.999 or g[2][3] < 0.999 or g[3][1] < 0.999 or g[3][2] < 0.999 or g[3][3] < 0.999) then vign = vign + 1 end
+        end
+      end
+    end
+    local bd = M.backdrop
+    local bc = bd and rawget(bd, "_color")
+    check(worst >= M.BASE_FADE[3] - 1e-6 and bd and not rawget(bd, "_hid") and bc and bc[4] == 1, string.format("0.5.1.11 map: %d views (world to deepest, fit and full-screen, every theme): map art under every pixel (0.5.2b.3: at least %.2f, over the flat backdrop; worst %.4f: %s)", n, M.BASE_FADE[3], worst, where))
+    check(vign == 0, "0.5.1.11 map: the feathered rims only fade (white vertex colours), no darkening vignette (" .. vign .. ")")
+    check(#dragBad == 0, "0.5.1.11 map: dragging at every zoom moves the view by exactly the drag (" .. table.concat(dragBad, "; ") .. ")")
+    NS.SetTheme(saveTheme)
+    M.vp:SetSize(w0, h0) M.Refit()
+    M.FlyTo(1426) run(30)
+  end
+  -- 14. the tool strip: three slots are disabled with the version they come in
+  local keys, soon = {}, {}
+  for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
+  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup,quest", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2a.1: + Quest log)")
+  check(soon.starpen and not soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen and Town Pins are disabled (0.5.2b: Pin works)")
+  local wantV = { starpen = "0.5.3", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
+  local origSS = NS.SetStatus
+  NS.SetStatus = function(t) STATUS_SEEN = t return origSS(t) end
+  for k, b in pairs(soon) do
+    b._scripts.OnEnter(b)
+    check(tip.title == b.tipTitle and tip.lines[1] and tip.lines[1]:find(wantV[k], 1, true), "0.5.0 map: " .. k .. " tooltip says coming in " .. wantV[k])
+    local before = table.concat(M.Trail(), ">")
+    b._scripts.OnClick(b)
+    check(table.concat(M.Trail(), ">") == before and not M.full and tostring(STATUS_SEEN or ""):find(wantV[k], 1, true) ~= nil,
+      "0.5.0 map: " .. k .. " click only explains (status line names " .. wantV[k] .. ")")
+    check(b.icon._alpha and b.icon._alpha < 0.5, "0.5.0 map: " .. k .. " icon is dimmed")
+  end
+  NS.SetStatus = origSS
+  -- 14b. 0.5.2b: your own pins (Pin tool): drop, saved in DarkMatterDB, the game's waypoint + arrow, right-click removes
+  do
+    local pb = M.pinBtn
+    check(pb and pb.key == "pin" and not pb.soon and M.tools[2] == pb, "0.5.2b map pins: the Pin tool is enabled")
+    local wp, st = {}, {}
+    local saveUMP, saveST, saveSet, saveCan, saveAtlas = UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap, C_Texture.GetAtlasInfo
+    UiMapPoint = { CreateFromCoordinates = function(m, x, y) return { m = m, x = x, y = y } end }
+    C_Map.SetUserWaypoint = function(p) wp[#wp + 1] = p end
+    C_Map.CanSetUserWaypointOnMap = function() return true end
+    C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) st[#st + 1] = v end }
+    NS.db.userPins = {}
+    M.FlyTo(1426) run(30)
+    local z0 = M.Zoom()
+    pb._scripts.OnClick(pb, "LeftButton")
+    check(M.pinMode, "0.5.2b map pins: the Pin tool arms pin mode")
+    CX, CY = 406, 260
+    M.vp._scripts.OnMouseDown(M.vp, "LeftButton") M.vp._scripts.OnMouseUp(M.vp, "LeftButton")
+    local up = NS.db.userPins
+    check(#up == 1 and up[1].map == 1426 and up[1].x > 0 and up[1].x < 1 and not M.pinMode and math.abs(M.Zoom() - z0) < 1e-9,
+      "0.5.2b map pins: a click drops one pin on the zone under it, saved in DarkMatterDB (pin mode ends, no zoom)")
+    check(ERA and #wp == 0 and st[1] == nil or not ERA and #wp == 1 and wp[1].m == 1426 and math.abs(wp[1].x - up[1].x) < 1e-9 and st[1] == true, ERA and "0.5.2b.9 era map pins: the pin is dropped, no waypoint or arrow" or "0.5.2b map pins: the game's waypoint and minimap arrow point at it")
+    run(2)
+    local pool = M.pools.upin
+    check(not pool or (pool[1] == nil or not pool[1]._shown), "0.5.2b map pins: without the game's pin icon nothing is drawn (no substitute)")
+    C_Texture.GetAtlasInfo = function(a) if a == "Waypoint-MapPin-ChatIcon" then return { width = 24, height = 24 } end return saveAtlas(a) end
+    NS.QS.ForgetIcons() M.dirty = true run(2)
+    pool = M.pools.upin
+    local pin = pool and pool[1]
+    check(pin and pin._shown and pin.icon._file == "atlas:Waypoint-MapPin-ChatIcon" and pin.pin == up[1], "0.5.2b map pins: drawn with the game's own pin icon")
+    pin._scripts.OnEnter(pin)
+    check(tip.title == "Your pin" and tip.lines[1] and tip.lines[1]:find("Dun Morogh", 1, true), "0.5.2b map pins: tooltip names the zone")
+    wp = {}
+    pin._scripts.OnMouseDown(pin, "LeftButton") pin._scripts.OnMouseUp(pin, "LeftButton")
+    check(ERA and #wp == 0 or not ERA and #wp == 1 and wp[1].m == 1426, "0.5.2b map pins: clicking a pin points the arrow at it again (era: no arrow)")
+    -- 0.5.2b.1: removing the pin takes the game's waypoint and arrow away too, only when that waypoint is this pin's
+    local saveGet, saveClr, nclr = C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint, 0
+    C_Map.GetUserWaypoint = function() local p = wp[#wp] if p then return { uiMapID = p.m, position = { x = p.x, y = p.y } } end end
+    C_Map.ClearUserWaypoint = function() nclr = nclr + 1 wp = {} end
+    C_SuperTrack.IsSuperTrackingUserWaypoint = function() return st[#st] == true end
+    check(NS.QS.ClearWaypoint(1426, 0.5, 0.5) == false and nclr == 0 and #wp == (ERA and 0 or 1), "0.5.2b.1 map pins: a waypoint that is not this pin's is left alone")
+    pin._scripts.OnMouseUp(pin, "RightButton")
+    run(2)
+    check(#NS.db.userPins == 0 and not pin._shown, "0.5.2b map pins: right-click removes it")
+    check((ERA and nclr == 0 or not ERA and nclr == 1 and st[#st] == false) and #wp == 0 and NS.QS.arrow == nil, "0.5.2b.1 map pins: removing it clears the game's waypoint and minimap arrow")
+    C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint = saveGet, saveClr
+    pb._scripts.OnClick(pb, "LeftButton") pb._scripts.OnClick(pb, "LeftButton")
+    check(not M.pinMode, "0.5.2b map pins: a second click on the tool disarms it")
+    UiMapPoint, C_SuperTrack, C_Map.SetUserWaypoint, C_Map.CanSetUserWaypointOnMap, C_Texture.GetAtlasInfo = saveUMP, saveST, saveSet, saveCan, saveAtlas
+    NS.QS.ForgetIcons()
+  end
+  -- 15. level badges (public data) at the continent view; the caption names the source
+  M.FlyTo(1415) run(20)
+  local bp, names = M.pools.badge, {}
+  for i = 1, (bp and bp.n or 0) do names[bp[i].zone] = bp[i].text._text end
+  check(names["Dun Morogh"] == "1-10" and names["Loch Modan"] == "10-20" and names["Elwynn Forest"] == "1-10", "0.5.0 map: zone level badges at the continent view")
+  check(names["Ironforge"] == nil, "0.5.0 map: no badge for a city without a level range")
+  check(M.caption:IsShown() and M.caption.text._text == "Levels: public data", "0.5.0 map: badges are captioned as public data")
+  M.caption._scripts.OnEnter(M.caption)
+  check(tip.lines[1] and tip.lines[1]:find("Wowhead", 1, true), "0.5.0 map: caption tooltip names the source")
+  -- 16. full screen and back (button, Esc, closing the window)
+  local fb = M.fullBtn
+  local W, H = M.vp._w, M.vp._h
+  fb._scripts.OnClick(fb)
+  local full = _G.DarkMatterMapFull
+  local function inEsc(n) for _, v in ipairs(UISpecialFrames) do if v == n then return true end end return false end
+  check(M.full and full and full:IsShown() and M.root._parent == full, "0.5.0 map: full screen moves the map into its own frame")
+  check(inEsc("DarkMatterMapFull") and not inEsc("DarkMatterFrame"), "0.5.0 map: in full screen Esc closes the full-screen map only")
+  check(fb.tipTitle == "Back to window", "0.5.0 map: the button switches back")
+  M.vp:SetSize(1880, 1020) M.Refit() run(2)
+  check(table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms", "0.5.0 map: full screen keeps the place")
+  fb._scripts.OnClick(fb)
+  check(not M.full and not full:IsShown() and M.root._parent ~= full, "0.5.0 map: button returns to the window")
+  check(inEsc("DarkMatterFrame") and not inEsc("DarkMatterMapFull"), "0.5.0 map: Esc closes the main window again")
+  fb._scripts.OnClick(fb)
+  full:Hide() -- what Esc does through UISpecialFrames
+  check(not M.full and M.root._parent ~= full and inEsc("DarkMatterFrame"), "0.5.0 map: Esc in full screen returns to the window")
+  fb._scripts.OnClick(fb)
+  DarkMatterFrame:Hide()
+  M.Tick(0.05)
+  check(not M.full and not full:IsShown(), "0.5.0 map: closing the main window leaves full screen too")
+  DarkMatterFrame:Show() NS.ShowTab("map")
+  M.vp:SetSize(812, 520) M.Refit()
+  -- 17. combat: everything works with InCombatLockdown() true (nothing protected is touched)
+  InCombatLockdown = function() return true end
+  local ok, err = pcall(function()
+    M.Wheel(1) run(10) M.FlyTo(1429) run(20) M.FindMe() run(20) M.SetFull(true) M.SetFull(false) M.Search("dun") M.Pick(M.results.list[1]) run(20)
+  end)
+  InCombatLockdown = save.InCombatLockdown
+  check(ok and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh", "0.5.0 map: works in combat " .. tostring(err))
+  -- 18. taint safety
+  -- 0.5.1.5: the main window reads the map window's size and scale (read only, from its own frame); nothing else
+  local wmOther = {}
+  local READ_OK = { GetEffectiveScale = 1, GetWidth = 1, GetHeight = 1, minimizedWidth = 1, minimizedHeight = 1, questLogWidth = 1, isMaximized = 1, IsMaximized = 1,
+    GetLeft = 1, GetRight = 1, GetTop = 1, GetBottom = 1, BorderFrame = 1, IsShown = 1 } -- 0.5.1.6: its outer rectangle, read only
+  for _, k in ipairs(wmAccess) do if not READ_OK[k] then wmOther[#wmOther + 1] = k end end
+  check(#wmOther == 0, "0.5.0 map: never touches WorldMapFrame (0.5.1.6: only its size, scale and outer rectangle are read) " .. table.concat(wmOther, ","))
+  check(#hooked == 0, "0.5.0 map: installs no hooks")
+  for _, f in ipairs({ "DarkMatter/Tab_Map.lua", "DarkMatter/MapData.lua", "DarkMatter/MapExtras.lua" }) do
+    local fh = io.open(arg[1] .. "/" .. f:gsub("^DarkMatter/", "")) local src = fh and fh:read("*a") or "" if fh then fh:close() end
+    local code = src:gsub("%-%-[^\n]*", "")
+    check(#src > 0 and not code:find("WorldMapFrame", 1, true) and not code:find("hooksecurefunc", 1, true) and not code:find("SetUserWaypoint", 1, true) and not code:find("SetSuperTrack", 1, true),
+      "0.5.0 map: " .. f .. " has no WorldMapFrame access, hooks, waypoints or super-track")
+  end
+  -- 19. the map.s pictures are clipped by the viewport (0.5.2b.6.2: a plain clipping frame, not a ScrollFrame)
+  check(M.vp._ftype == "Frame" and M.vp._clips and M.vpKind == "frame" and M.canvas._scrollOf == nil, "0.5.2b.6.2 map: viewport is a plain frame that clips the map pictures (no ScrollFrame)")
+  for _, L in pairs(M.layers) do
+    local x, inside = L.frame, false
+    while x do if x == M.vp then inside = true end x = x._parent end
+    check(inside, "0.5.0 map: layer " .. L.id .. " lives inside the clipping viewport")
+  end
+  -- 20. view is remembered
+  local sv = NS.db.map.view
+  check(type(sv) == "table" and type(sv.cx) == "number" and type(sv.z) == "number", "0.5.0 map: view saved")
+  -- 21. instance: no position -> Find me explains, arrow hides
+  PLAYER.map = 1581
+  MD.Forget()
+  run(2)
+  check(not M.arrow:IsShown() and M.playerText == "Player  --", "0.5.0 map: no arrow and no coordinates where the game gives no position")
+  check(M.FindMe() == false, "0.5.0 map: Find me reports no position (instance)")
+  PLAYER.map = 1426
+  MD.Forget()
+  -- 22. a client without a world picture shows one continent at a time
+  local gl = C_Map.GetMapArtLayers
+  C_Map.GetMapArtLayers = function(id) if id == 947 then return nil end return gl(id) end
+  M.Reset() NS.db.map.view = nil
+  NS.ShowTab("quests") NS.ShowTab("map")
+  M.vp:SetSize(812, 520) M.Refit() run(20)
+  check(M.ready and not M.hasWorld and M.only == 1415 and M.Trail()[1] == "Eastern Kingdoms", "0.5.0 map: without world art the player's continent is the base")
+  M.Search("durotar") M.Pick(M.results.list[1]) run(20)
+  check(M.only == 1414 and table.concat(M.Trail(), ">") == "Kalimdor>Durotar", "0.5.0 map: search switches continent without world art")
+  C_Map.GetMapArtLayers = gl
+  -- 23. a client with no map art at all says so
+  C_Map.GetMapArtLayers = function() return nil end
+  M.Reset() NS.ShowTab("quests") NS.ShowTab("map")
+  check(not M.ready and M.empty:IsShown(), "0.5.0 map: no map art -> a clear message instead of a blank box")
+  C_Map.GetMapArtLayers = gl
+  M.Reset() NS.db.map.view = nil
+  NS.ShowTab("quests") NS.ShowTab("map")
+  M.vp:SetSize(812, 520) M.Refit() run(20)
+  -- 24. contrast: the live map view in all 10 themes (continent view with badges, crumbs, coordinates, caption;
+  -- search results; every map button hovered; full screen). The game's map pictures (file IDs) are not
+  -- judged, so every map label sits on its own solid plate.
+  if MODE ~= "minimal" then
+    local CT = dofile(arg[1] .. "/../tools/stubtest/contrast.lua")
+    CT.rect = FrameMT._rect
+    local win = DarkMatterFrame
+    local fails, n = {}, 0
+    local function scan(root, id, view, hovered)
+      for _, x in ipairs(CT.Scan(root, NS.theme.colors, hovered)) do
+        n = n + 1
+        if x.ratio < x.need then fails[#fails + 1] = string.format("%s %s %q %.2f<%.1f [%s]", id, view, x.text, x.ratio, x.need, x.roles) end
+      end
+    end
+    local function hoverAll(root, id, view)
+      for _, f in ipairs(ALL) do
+        if f._ftype == "Button" and under(f, root) and visible(f) and f._scripts.OnEnter and under(f, M.root) then
+          f._hover = true f._scripts.OnEnter(f)
+          scan(root, id, view .. "+hover", f)
+          if f._scripts.OnLeave then f._scripts.OnLeave(f) end
+          f._hover = nil
+        end
+      end
+    end
+    M.testCursor = function() return 300, 200 end
+    for _, id in ipairs(NS.themeOrder) do
+      NS.SetTheme(id)
+      NS.ShowTab("map")
+      M.FlyTo(1415) run(20)
+      check(M.pools.badge and M.pools.badge.n >= 3 and M.caption:IsShown(), "0.5.0 map: badges + caption shown for the contrast scan (" .. id .. ")")
+      scan(win, id, "map/continent")
+      hoverAll(win, id, "map/continent")
+      M.Search("o")
+      scan(win, id, "map/search")
+      hoverAll(win, id, "map/search")
+      M.Search("zzz")
+      scan(win, id, "map/no-match")
+      M.Search("")
+      M.FlyTo(1426) run(20)
+      scan(win, id, "map/zone")
+      M.SetFull(true) run(2)
+      scan(_G.DarkMatterMapFull, id, "map/fullscreen")
+      hoverAll(_G.DarkMatterMapFull, id, "map/fullscreen")
+      M.SetFull(false)
+    end
+    NS.SetTheme("wow")
+    for _, f in ipairs(fails) do io.write("cfail\t" .. f .. "\n") end
+    check(n > 300, "0.5.0 map contrast: " .. n .. " label checks over 10 themes")
+    check(#fails == 0, "0.5.0 map contrast: every map label >= 4.5:1 (3:1 large) in every theme (" .. #fails .. " below)\n  " .. table.concat(fails, "\n  ", 1, math.min(#fails, 12)))
+    M.testCursor = nil
+  end
+  -- restore the game fixture
+  C_Map, C_MapExplorationInfo, C_QuestLog = save.C_Map, save.C_MapExplorationInfo, save.C_QuestLog
+  GetPlayerFacing, WorldMapFrame, GameTooltip, Enum.UIMapType, hooksecurefunc = save.GetPlayerFacing, save.WorldMapFrame, save.GameTooltip, save.UIMapType, save.hook
+  M.Reset() MD.Forget()
+  NS.ShowTab("quests")
+end
+
+-- ===== 0.5.2a.1: the docked quest panel beside the window (Map tab), the trimmed tab column, the probe log =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local P = NS.QuestPanel
+  local W = NS.windowParts
+  local m = NS.theme.m
+  -- the tab column hugs its buttons; the content area got the width; the window keeps its size
+  check(m.railW == 150 and m.tabX - m.railX == 14 and m.railX + m.railW - (m.tabX + m.tabWOn) == 10 and m.bodyX == m.railX + m.railW + 12,
+    "0.5.2a.1 tab column: hugs the buttons (14 left, 10 right of the active tab), body follows")
+  check(DarkMatterFrame:GetWidth() == m.w and DarkMatterFrame:GetHeight() == m.h and m.w == EXP_W and m.h == EXP_H, "0.5.2a.1 tab column: window size as expected (" .. m.w .. "x" .. m.h .. ")")
+  -- 0.5.2a.2: the freed 26 came off the window, not into the content: body and page keep their 0.5.2a widths
+  -- (0.5.2a: bodyW 668, pageW 656 in an 880 window; now the window is 26 narrower and the body ends 9 from its edge)
+  check(m.railTrim == 26 and m.bodyW == (m.w + 26) - 880 + 668 and m.pageW == (m.w + 26) - 880 + 656 and m.bodyX + m.bodyW == m.w - 9,
+    "0.5.2a.2 window: 26 narrower, content keeps its 0.5.2a size (body " .. m.bodyW .. ", page " .. m.pageW .. " in " .. m.w .. ")")
+  local fpl = table.concat(NS.MapWindow.ThemeLines("t"), "\n") .. "\n" .. NS.MapWindow.ScaleLine("s")
+  check(NS.MapWindow.last and (NS.MapWindow.last.fallback or (fpl:find("vs target", 1, true) and fpl:find("less the tab column", 1, true))), "0.5.2a.2 frameprobe: sizes reported against the trimmed target")
+  local saveVis, saveGP = FrameMT.IsVisible, FrameMT.GetParent
+  FrameMT.GetParent = function(s) return s._parent end
+  FrameMT.IsVisible = function(s) local x = s while x and x ~= UIParent do if x._hid then return false end x = x._parent end return true end
+  if not DarkMatterFrame._shown then DarkMatterFrame:Show() end
+  NS.db.questPanel = nil
+  C_QuestLog.GetMaxNumQuestsCanAccept = function() return 25 end
+  NS.ShowTab("map")
+  print("DBG", P.frame, P.frame and P.frame:IsShown(), DarkMatterFrame:IsShown(), P.mapShown, NS.MapTab.panelBtn) check(P.frame and P.frame:IsShown(), "0.5.2a.1 panel: shown with the Map tab (open by default)")
+  check(P.frame:GetParent() == DarkMatterFrame, "0.5.2a.1 panel: a child of the window (moves and scales with it, locked)")
+  local pl, pt, pr = FrameMT._rect(P.frame)
+  local wl, wt, wr = FrameMT._rect(DarkMatterFrame)
+  check(pl >= wr and pt == wt and pr - pl == P.w, "0.5.2a.1 panel: docked to the right of the window, top aligned")
+  check(P.frame.search and P.frame.search.edit, "0.5.2a.1 panel: search bar at the top")
+  local ct = P.CountText()
+  check(ct:find("Quests:", 1, true) and ct:find("4", 1, true) and ct:find("/25", 1, true), "0.5.2a.1 panel: quest count from the API " .. ct)
+  -- the list: same rows as the Quests tab
+  local V = P.view
+  local function shownTitles()
+    local t = {}
+    for _, r in ipairs(V.rows) do if r:IsShown() and r.kind == "q" then t[#t + 1] = r.quest.title end end
+    return table.concat(t, ",")
+  end
+  check(shownTitles():find("Wolves", 1, true) and shownTitles():find("Gold Dust", 1, true), "0.5.2a.1 panel: lists the quest log (" .. shownTitles() .. ")")
+  -- search filters as you type
+  P.frame.search:SetText("defias")
+  V.SetQuery("defias")
+  check(shownTitles() == "The Defias", "0.5.2a.1 panel: search filters the list (" .. shownTitles() .. ")")
+  -- hover both ways
+  local row
+  for _, r in ipairs(V.rows) do if r:IsShown() and r.kind == "q" then row = r end end
+  row._scripts.OnEnter(row)
+  check(NS.QS.hovered == 103 and NS.QS.hoverSrc == "list", "0.5.2a.1 panel: hovering a row lights its pins (shared hover)")
+  row._scripts.OnLeave(row)
+  NS.QS.Hover(103, "map")
+  check(row.link:IsShown(), "0.5.2a.1 panel: hovering a pin lights its row")
+  NS.QS.Hover(nil, "map")
+  check(not row.link:IsShown(), "0.5.2a.1 panel: leaving the pin unlights it")
+  -- click a row: the detail view with Back; the selection is shared
+  row._scripts.OnClick(row)
+  check(NS.QS.selected == 103 and P.detailPanel:IsShown() and not P.list:IsShown(), "0.5.2a.1 panel: a row click opens its detail and selects the quest")
+  check(P.detail.title._text == "The Defias" and not P.back._hid, "0.5.2a.1 panel: detail shows the quest with a Back button")
+  local texts = {}
+  for _, fs in ipairs(P.detail.texts) do if not fs._hid then texts[#texts + 1] = fs._text end end
+  local all = table.concat(texts, "\n")
+  check(all:find("Quest Objectives", 1, true) and all:find("Description", 1, true) and all:find("Rewards", 1, true), "0.5.2a.1 panel: detail has objectives, description and rewards (the Quests tab's detail)")
+  P.back._scripts.OnClick(P.back)
+  check(P.list:IsShown() and not P.detailPanel:IsShown() and V.query == "defias" and shownTitles() == "The Defias", "0.5.2a.1 panel: Back returns to the list, search kept")
+  V.SetQuery("") P.frame.search:SetText("")
+  -- 0.5.2a.2: a pin click opens THAT quest's detail in the panel (opening the panel if closed), the map stays still
+  do
+    local MT = NS.MapTab
+    local saveShift = _G.IsShiftKeyDown
+    _G.IsShiftKeyDown = function() return false end
+    local z0 = MT.Zoom() local cx0, cy0 = MT.Center()
+    P.SetOpen(false)
+    check(not P.frame:IsShown(), "0.5.2a.2 pin click: panel closed first")
+    MT.QuestClick({ qid = 103, map = 1426, mx = 0.5, my = 0.5 })
+    check(P.frame:IsShown() and NS.db.questPanel == true and P.detailPanel:IsShown() and not P.list:IsShown() and P.detail.quest and P.detail.quest.questID == 103
+      and P.detail.title._text == "The Defias" and NS.QS.selected == 103, "0.5.2a.2 pin click: a closed panel opens on that quest's detail")
+    MT.QuestClick({ qid = 101, map = 1426, mx = 0.5, my = 0.5 })
+    check(P.detailPanel:IsShown() and P.detail.quest.questID == 101 and P.detail.title._text == "Wolves" and NS.QS.selected == 101, "0.5.2a.2 pin click: another quest's detail switches to the clicked quest")
+    P.back._scripts.OnClick(P.back)
+    check(P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 pin click: Back returns to the list")
+    MT.QuestClick({ qid = 102, map = 1426, mx = 0.5, my = 0.5 })
+    check(P.detailPanel:IsShown() and P.detail.quest.questID == 102, "0.5.2a.2 pin click: from the list it opens the clicked quest's detail")
+    MT.QuestClick({ qid = 99999, map = 1426, mx = 0.5, my = 0.5 })
+    check(P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 pin click: a quest not in the log shows the list (nothing invented)")
+    local cx1, cy1 = MT.Center()
+    check(math.abs(MT.Zoom() - z0) < 1e-9 and math.abs(cx1 - cx0) < 1e-9 and math.abs(cy1 - cy0) < 1e-9, "0.5.2a.2 pin click: the map stays still")
+    -- shift-click: the waypoint only; the panel is not switched
+    P.ShowList()
+    local wpN = 0
+    local saveSW = NS.QS.SetWaypoint
+    NS.QS.SetWaypoint = function() wpN = wpN + 1 return true, "waypoint set" end
+    _G.IsShiftKeyDown = function() return true end
+    MT.QuestClick({ qid = 103, map = 1426, mx = 0.5, my = 0.5 })
+    check(wpN == 1 and P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 shift-click: sets the waypoint, panel unchanged")
+    NS.QS.SetWaypoint, _G.IsShiftKeyDown = saveSW, saveShift
+  end
+  -- toggle (tool strip), remembered
+  local tb = NS.MapTab.panelBtn
+  tb._scripts.OnClick(tb)
+  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: the Quest log button closes it (saved)")
+  tb._scripts.OnClick(tb)
+  check(P.frame:IsShown() and NS.db.questPanel == true, "0.5.2a.1 panel: and opens it again")
+  P.frame.close._scripts.OnClick(P.frame.close)
+  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: its close button closes it (saved)")
+  P.SetOpen(true)
+  -- only with the Map tab
+  NS.ShowTab("quests")
+  check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")
+  NS.ShowTab("map")
+  check(P.frame:IsShown(), "0.5.2a.1 panel: back with the Map tab")
+  -- 1080p-class screen at UI scale 0.64: the window and the panel fit side by side
+  local s = DarkMatterFrame:GetScale() or 1
+  local needW = (m.w + P.Extent()) * s * 0.64
+  check(needW <= 1920, "0.5.2a.1 panel: window + panel fit 1920 px at UI scale 0.64 (" .. math.floor(needW) .. " px)")
+  local src = io.open(arg[1] .. "/QuestPanel.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  check(not src:find("hooksecurefunc", 1, true) and not src:find("HookScript", 1, true) and not src:find("LoadAddOn", 1, true) and not src:find("WorldMapFrame", 1, true),
+    "0.5.2a.1 QuestPanel.lua: no hooks, no LoadAddOn, no stock map frames")
+  -- pins: every quest in the log draws the game's yellow ? (QuestTurnin / ActiveQuestIcon), untinted
+  local QSx = NS.QS
+  check(QSx.ICONS[1].role == "progress" and QSx.ICONS[1].c[1].atlas == "QuestTurnin" and QSx.ICONS[1].c[2].file == "Interface\\GossipFrame\\ActiveQuestIcon"
+    and QSx.ICONS[2].c[1].atlas == "QuestTurnin" and QSx.ICONS[3].c[1].atlas == "QuestNormal", "0.5.2a.1 pins: yellow ? for in progress and ready, yellow ! for available")
+  local tm = io.open(arg[1] .. "/Tab_Map.lua"):read("*a")
+  local tinted = false
+  for args in tm:gmatch("mk%.icon:SetVertexColor%(([^)]*)%)") do if args:gsub("%s", "") ~= "1,1,1" then tinted = true end end
+  check(not tinted and not tm:find("mk.icon:SetDesaturated(true", 1, true), "0.5.2a.1 pins: no tint, no grey, no failed red")
+  -- probe log: each /dm probe keeps its last run with a timestamp, capped
+  NS.db.probeLog = nil
+  SlashCmdList["DARKMATTER"]("artprobe")
+  local pe = NS.db.probeLog and NS.db.probeLog.artprobe
+  check(type(pe) == "table" and type(pe.time) == "string" and pe.time:find("^%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d$") and pe.version == NS.version
+    and type(pe.lines) == "table" and #pe.lines > 1 and pe.lines[1]:find("^artprobe "), "0.5.2a.1 probeLog: /dm artprobe saved with a timestamp")
+  SlashCmdList["DARKMATTER"]("frameprobe")
+  SlashCmdList["DARKMATTER"]("artprobe")
+  local np = 0 for _ in pairs(NS.db.probeLog) do np = np + 1 end
+  check(np == 2 and NS.db.probeLog.frameprobe and NS.db.probeLog.frameprobe.lines[1]:find("^frameprobe "), "0.5.2a.1 probeLog: one entry per probe, the last run kept")
+  local big = {} for i = 1, 1000 do big[i] = string.rep("x", 900) end
+  NS.LogProbe("big", big)
+  local bl = NS.db.probeLog.big.lines
+  check(#bl == NS.PROBE_LOG_LINES + 1 and #bl[1] <= NS.PROBE_LOG_CHARS + 3 and bl[#bl]:find("more lines not kept", 1, true), "0.5.2a.1 probeLog: lines and line length capped")
+  for i = 1, 30 do NS.db.probeLog["p" .. i] = { at = -i, lines = {} } end
+  NS.LogProbe("questmap", { "questmap test" })
+  np = 0 for _ in pairs(NS.db.probeLog) do np = np + 1 end
+  check(np == NS.PROBE_LOG_MAX and NS.db.probeLog.questmap and NS.db.probeLog.p1 and not NS.db.probeLog.p30 and NS.db.probeLog.artprobe, "0.5.2a.1 probeLog: at most " .. NS.PROBE_LOG_MAX .. " probes, oldest dropped")
+  local ss = io.open(arg[1] .. "/Slash.lua"):read("*a")
+  for _, k in ipairs({ "probe", "blocked", "agscan", "questprobe", "questmap", "mapprobe", "artprobe", "frameprobe", "achprobe" }) do
+    check(ss:find('"' .. k .. '", ', 1, true) or ss:find('LogProbe("' .. k .. '"', 1, true), "0.5.2a.1 probeLog: /dm " .. k .. " is logged")
+  end
+  NS.db.probeLog = nil
+  C_QuestLog.GetMaxNumQuestsCanAccept = nil
+  FrameMT.IsVisible, FrameMT.GetParent = saveVis, saveGP
+  NS.ShowTab("quests")
+end
+
+-- ===== 0.5.1: the WoW theme in the game's own art (stock textures + UIPanelCloseButton), fallback, /dm artprobe =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local W = NS.windowParts
+  local win = DarkMatterFrame
+  local function drawn()
+    local set, blank = {}, {}
+    for _, r in ipairs(REGIONS) do
+      if r._kind == "texture" and under(r, win) and visible(r) then
+        if r._file ~= nil then set[tostring(r._file)] = (set[tostring(r._file)] or 0) + 1 end
+      end
+    end
+    return set
+  end
+  local function stockFiles(set)
+    local n = 0
+    for f in pairs(set) do if not f:find("^Interface\\AddOns\\") and not f:find("^Interface\\Icons\\") and not f:upper():find("WHITE8X8", 1, true) and type(tonumber(f)) ~= "number" then n = n + 1 end end
+    return n
+  end
+  STOCK_MISSING = false
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  win:Show()
+  NS.ShowTab("quests")
+  local d = drawn()
+  -- 0.5.1.4: the dialog border + header plate gave way to the map-window frame (its own thin frame here: no WorldMapFrame);
+  -- the shell is the inset marble
+  local want = { "Interface\\Tooltips\\UI-Tooltip-Border", "Interface\\FrameGeneral\\UI-Background-Marble",
+    "Interface\\Buttons\\UI-Panel-Button-Up", "Interface\\Buttons\\UI-Panel-Button-Down",
+    "Interface\\Buttons\\UI-Panel-Button-Disabled", "Interface\\Common\\Common-Input-Border", "Interface\\FrameGeneral\\UI-Background-Rock",
+    "Interface\\DialogFrame\\UI-DialogBox-Background-Dark", "Interface\\QuestFrame\\QuestBG" }
+  local miss = {}
+  for _, f in ipairs(want) do if not d[f] then miss[#miss + 1] = f end end
+  check(#miss == 0, "0.5.1 WoW theme: the window draws the game's own art (frame, header, portrait, buttons, tabs, panels, parchment)" .. (#miss > 0 and (" missing: " .. table.concat(miss, ", ")) or ""))
+  check(not d["Interface\\AddOns\\DarkMatter\\Media\\wow-slate"] and not d["Interface\\AddOns\\DarkMatter\\Media\\wow-parchment"],
+    "0.5.1 WoW theme: Dark Matter's own slate/parchment are not used while the stock art loads")
+  if os.getenv("DM_WMF") then
+    -- 0.5.1.4: the map window's own close-button art is drawn on Dark Matter's close button
+    check(W.closeFrom == "map window" and not W.stockClose:IsShown(), "0.5.1.4 WoW theme: the close button wears the map window's close art")
+    local cb
+    for _, f in ipairs(ALL) do if f._ftype == "Button" and f._parent == win and f:IsShown() and f._w == 24 and f._scripts.OnClick then cb = f end end
+    check(cb ~= nil, "0.5.1.4 WoW theme: the close button is shown at the map window's size (24)")
+    cb._scripts.OnClick(cb, "LeftButton")
+  else
+    check(W.stockClose and W.stockClose:IsShown() and W.closeFrom == "UIPanelCloseButton", "0.5.1 WoW theme: the stock UIPanelCloseButton is shown")
+    W.stockClose._scripts.OnClick(W.stockClose, "LeftButton")
+  end
+  check(not win:IsShown(), "0.5.1 WoW theme: the stock close button closes the window")
+  win:Show()
+  -- Journals: section tabs are the character-panel tabs; the Map tab gets the stock framing too
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("fishing")
+  d = drawn()
+  check(d["Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab"] and d["Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab"], "0.5.1 WoW theme: section tabs use the character-panel tabs")
+  local knobSet = false
+  for _, r in ipairs(REGIONS) do if r._kind == "texture" and under(r, win) and r._file == "Interface\\Buttons\\UI-ScrollBar-Knob" then knobSet = true end end -- the knob shows only when a list overflows
+  -- 0.5.1.1: at the top of a list the stock up button is disabled (its Disabled file), like the game's scroll bars
+  check((d["Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up"] or d["Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Disabled"])
+    and (d["Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up"] or d["Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled"]) and knobSet,
+    "0.5.1 WoW theme: scroll bars use the stock scroll buttons and knob")
+  NS.ShowTab("map")
+  d = drawn()
+  check(d["Interface\\Tooltips\\UI-Tooltip-Border"] and d["Interface\\DialogFrame\\UI-DialogBox-Background-Dark"], "0.5.1 WoW theme: the Map tab's panels get the stock framing")
+  NS.ShowTab("quests")
+  -- the quest-detail panel is the stock QuestBG parchment with dark quest ink
+  local qb, qd = NS.tabs.quests.Parts()
+  local function lumOf(fs) local c = fs._tcol or { 0, 0, 0 } local r, g, b = c[1], c[2], c[3] return 0.2126 * r + 0.7152 * g + 0.0722 * b end
+  check(qd.panel.parch == true and lumOf(qd.title) < 0.2 and qd.texts[1] and lumOf(qd.texts[1]) < 0.2,
+    "0.5.1 WoW theme: the quest detail panel is parchment with dark ink (title " .. string.format("%.2f", lumOf(qd.title)) .. ")")
+  -- /dm artprobe: short lines, ok for everything here, saved
+  local said = {}
+  local oldPrint = NS.Print
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("artprobe")
+  NS.Print = oldPrint
+  local ap = NS.db.artprobe
+  check(said[1] and said[1]:find("artprobe " .. NS.version .. " (file-ID lookup):", 1, true) == 1 and said[#said]:find("^artprobe: %d+ ok, 0 missing$"), "0.5.1 /dm artprobe: header + summary (" .. tostring(said[#said]) .. ")")
+  local longest = 0
+  for _, l in ipairs(said) do longest = math.max(longest, #l) end
+  check(longest <= 72, "0.5.1 /dm artprobe: short lines (longest " .. longest .. ")")
+  check(type(ap) == "table" and ap.missing == 0 and ap.ok >= 20 and #ap.items == ap.ok and ap.method == "file-ID lookup", "0.5.1 /dm artprobe: saved to DarkMatterDB.artprobe (" .. tostring(ap and ap.ok) .. " ok)")
+  local hasTmpl = false
+  for _, it in ipairs(ap.items) do if it.kind == "template" and it.name == "UIPanelCloseButton" then hasTmpl = it.ok end end
+  check(hasTmpl, "0.5.1 /dm artprobe: lists the UIPanelCloseButton template")
+  -- 0.5.1.3: the 1.60.1 case: CharacterFrameTabButtonTemplate is missing. The summary names it on ONE line with what
+  -- stands in, and the tabs still draw the stock UI-Character-ActiveTab / InActiveTab art (the template is never needed)
+  STOCK_MISSING_TMPL = { CharacterFrameTabButtonTemplate = true }
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("artprobe")
+  NS.Print = oldPrint
+  local last = said[#said] or ""
+  local missLines = 0
+  for _, l in ipairs(said) do if l:find("^MISSING ") then missLines = missLines + 1 end end
+  check(last:find("^artprobe: %d+ ok, 1 missing: CharacterFrameTabButtonTemplate %(template%) %-> tabs use UI%-Character%-ActiveTab/InActiveTab$")
+    and not last:find("\n") and missLines == 1 and NS.db.artprobe.missing == 1
+    and NS.db.artprobe.missingNames[1]:find("^CharacterFrameTabButtonTemplate"),
+    "0.5.1.3 /dm artprobe on 1.60.1: one summary line names the missing CharacterFrameTabButtonTemplate and its stand-in (" .. last .. ")")
+  NS.ShowTab("journals")
+  local tabArt = 0
+  for f, n in pairs(drawn()) do
+    if f:find("UI%-Character%-ActiveTab") or f:find("UI%-Character%-InActiveTab") then tabArt = tabArt + n end
+  end
+  check(NS.Stock.TabButton() and tabArt > 0, "0.5.1.3 the tab template missing: tabs still use the stock UI-Character-ActiveTab / InActiveTab art (" .. tabArt .. " pieces)")
+  NS.ShowTab("quests")
+  STOCK_MISSING_TMPL = nil
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  -- fallback: every stock texture missing -> Dark Matter's own art, nothing blank
+  STOCK_MISSING = true
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  d = drawn()
+  check(stockFiles(d) == 0, "0.5.1 fallback: with the stock art missing no stock file is drawn")
+  -- 0.5.1.1: the WoW page is dark (light page ink), so its fallback is the slate, never the light parchment
+  check(d["Interface\\AddOns\\DarkMatter\\Media\\wow-slate"] and not d["Interface\\AddOns\\DarkMatter\\Media\\wow-parchment"] and d["Interface\\AddOns\\DarkMatter\\Media\\wow-atlas"],
+    "0.5.1 fallback: Dark Matter's own slate and atlas are drawn instead (0.5.1.1: dark page, no light parchment)")
+  local blank = 0
+  for _, r in ipairs(REGIONS) do
+    if r._kind == "texture" and under(r, win) and visible(r) and r._file == nil and r._color == nil then blank = blank + 1 end
+  end
+  check(blank == 0, "0.5.1 fallback: no visible texture is left blank (" .. blank .. ")")
+  check(W.stockClose and not W.stockClose:IsShown(), "0.5.1 fallback: the template close button is hidden; Dark Matter's own close shows")
+  check(qd.panel.parch == false and lumOf(qd.title) > 0.5 and lumOf(qd.texts[1]) > 0.5,
+    "0.5.1 fallback: the quest detail panel goes back to the dark panel with light text")
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("artprobe")
+  NS.Print = oldPrint
+  check(said[#said]:find("^artprobe: 0 ok, %d+ missing %(missing pieces use Dark Matter's own art%)$") and said[2]:find("^MISSING "), "0.5.1 /dm artprobe: reports missing pieces (" .. tostring(said[#said]) .. ")")
+  -- 0.5.1.3: a class theme draws the stock button / tab / scroll-bar kit (desaturated, recoloured in its palette) and
+  -- none of the stock window art (its own frame, surfaces and colours)
+  STOCK_MISSING = false
+  NS.Stock.ClearCache()
+  NS.SetTheme("warrior")
+  local KIT = { "UI%-Panel%-Button%-", "UI%-Character%-ActiveTab", "UI%-Character%-InActiveTab", "UI%-Character%-Tab%-Highlight",
+    "UI%-ScrollBar%-", "UI%-Character%-ScrollBar" }
+  local function isKit(f) for _, p in ipairs(KIT) do if f:find(p) then return true end end return false end
+  local nonKit, kitN, undesat, kitNames = {}, 0, 0, {}
+  for f in pairs(drawn()) do
+    if not f:find("^Interface\\AddOns\\") and not f:find("^Interface\\Icons\\") and not f:upper():find("WHITE8X8", 1, true) and type(tonumber(f)) ~= "number" then
+      if isKit(f) then kitN = kitN + 1 kitNames[#kitNames + 1] = f:match("[^\\]+$") else nonKit[#nonKit + 1] = f end
+    end
+  end
+  for _, r in ipairs(REGIONS) do
+    if r._kind == "texture" and under(r, win) and visible(r) and type(r._file) == "string" and isKit(r._file) and not r._desat then undesat = undesat + 1 end
+  end
+  check(kitN > 0 and #nonKit == 0 and undesat == 0,
+    "0.5.1.3 class themes: only the stock button/tab/scroll kit, desaturated + recoloured (kit " .. kitN .. ": " .. table.concat(kitNames, ",") .. ", other: " .. table.concat(nonKit, ",") .. ", not desaturated " .. undesat .. ")")
+  check(qd.panel.parch == false and lumOf(qd.texts[1]) > 0.5, "0.5.1 class themes: the quest detail panel stays dark with light text")
+  NS.SetTheme("wow")
+  check(NS.Stock.Spec("btn_red_m") and drawn()["Interface\\Buttons\\UI-Panel-Button-Up"], "0.5.1 WoW theme: switching back draws the stock art again")
+  -- hover is a subtle tint
+  local e = NS.themes.wow.colors.hoverEdge
+  check(e[4] and e[4] <= 0.3, "0.5.1 WoW theme: the hover edge is subtle (alpha " .. tostring(e[4]) .. ")")
+
+  -- ===== 0.5.1.1: every stock surface fills its panel; parchment only in the detail panels; stock scroll buttons; toast =====
+  STOCK_MISSING = false
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  win:Show()
+  local SURF = { ["Interface\\QuestFrame\\QuestBG"] = true, ["Interface\\FrameGeneral\\UI-Background-Rock"] = true,
+    ["Interface\\DialogFrame\\UI-DialogBox-Background-Dark"] = true }
+  local function fillCheck(where)
+    local n, bad, parchN, parchBad, tcBad = 0, {}, 0, {}, {}
+    for _, r in ipairs(REGIONS) do
+      if r._kind == "texture" and under(r, win) and visible(r) and SURF[tostring(r._file)] then
+        n = n + 1
+        local l, t, rr, b = FrameMT._rect(r)
+        local o = r._parent
+        local ol, ot, orr, ob = FrameMT._rect(o)
+        local slate = (o == win) -- the window's own slate sits inside the window padding
+        if not (l and ol) then bad[#bad + 1] = "unresolved"
+        elseif not slate and (math.abs(l - ol) > 0.5 or math.abs(t - ot) > 0.5 or math.abs(rr - orr) > 0.5 or math.abs(b - ob) > 0.5) then
+          bad[#bad + 1] = string.format("%s %.0fx%.0f in %.0fx%.0f", tostring(r._file):match("[^\\]+$"), rr - l, t - b, orr - ol, ot - ob)
+        end
+        if r._file == "Interface\\QuestFrame\\QuestBG" then
+          parchN = parchN + 1
+          if not o.parch then parchBad[#parchBad + 1] = tostring(o._name or "panel") end
+          local tc = r._tc or {}
+          if not (#tc == 4 and tc[1] > 0.01 and tc[2] < 0.58 and tc[3] > 0.01 and tc[4] < 0.65) then tcBad[#tcBad + 1] = table.concat(tc, ",") end
+        elseif r._wrapH == "REPEAT" then
+          local tc = r._tc or {}
+          local w = rr and (rr - l) or 0
+          if w > 1 and not (#tc == 4 and tc[2] > 0) then tcBad[#tcBad + 1] = "tile " .. table.concat(tc, ",") end
+        end
+      end
+    end
+    check(n > 0 and #bad == 0, "0.5.1.1 " .. where .. ": every stock surface fills its panel corner to corner (" .. n .. " surfaces" .. (#bad > 0 and (": " .. table.concat(bad, "; ")) or "") .. ")")
+    check(#parchBad == 0, "0.5.1.1 " .. where .. ": parchment only on detail panels (" .. parchN .. ")" .. (#parchBad > 0 and (" not detail: " .. table.concat(parchBad, ", ")) or ""))
+    check(#tcBad == 0, "0.5.1.1 " .. where .. ": parchment drawn from inside its torn edge, tiles repeat (" .. table.concat(tcBad, " | ") .. ")")
+    return parchN
+  end
+  NS.ShowTab("quests")
+  check(fillCheck("Quests") == 1, "0.5.1.1 Quests: exactly one parchment (the quest detail)")
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("adventure")
+  check(fillCheck("Adventure Guide") == 1, "0.5.1.1 Adventure Guide: exactly one parchment (the boss detail)")
+  local ag = NS.AGWidgets()
+  local function lum(fs) local c = fs._tcol or { 0, 0, 0 } return 0.2126 * c[1] + 0.7152 * c[2] + 0.0722 * c[3] end
+  check(lum(ag.title) > 0.5 and lum(ag.meta) > 0.5, string.format("0.5.1.1 Adventure Guide: the dungeon header on the dark page is light (%.2f, %.2f)", lum(ag.title), lum(ag.meta)))
+  check(lum(ag.dropHead) < 0.2 and lum(ag.emptyDrops) < 0.3, string.format("0.5.1.1 Adventure Guide: boss detail on parchment uses dark ink (%.2f, %.2f)", lum(ag.dropHead), lum(ag.emptyDrops)))
+  check(lum(ag.bossHead) > 0.5, "0.5.1.1 Adventure Guide: the boss list (dark panel) keeps light text")
+  NS.tabs.journals.SetSection("fishing")
+  fillCheck("Fishing")
+  NS.tabs.journals.SetSection("achievements")
+  fillCheck("Achievements")
+  NS.ShowTab("map")
+  fillCheck("Map")
+  NS.ShowTab("dungeons")
+  fillCheck("Dungeons")
+  -- scroll buttons: the stock files at the stock 16x16 size, with a stock highlight; never the whole button stretched
+  local sbN, sbBad, hl = 0, {}, 0
+  for _, r in ipairs(REGIONS) do
+    local f = tostring(r._file)
+    if r._kind == "texture" and f:find("^Interface\\Buttons\\UI%-ScrollBar%-Scroll") then
+      sbN = sbN + 1
+      if r._sw ~= 16 or r._sh ~= 16 then sbBad[#sbBad + 1] = f:match("[^\\]+$") .. " " .. tostring(r._sw) .. "x" .. tostring(r._sh) end
+      if f:find("Highlight$") and r._layer == "HIGHLIGHT" then hl = hl + 1 end
+    end
+  end
+  check(sbN > 0 and #sbBad == 0 and hl > 0, "0.5.1.1 WoW theme: stock scroll buttons at 16x16 with the stock highlight (" .. sbN .. (#sbBad > 0 and (" bad: " .. table.concat(sbBad, ", ")) or "") .. ")")
+  -- 0.5.1.3: class themes draw the same stock scroll art, desaturated and recoloured
+  NS.SetTheme("warrior")
+  local classStock = 0
+  local classUndesat = 0
+  for _, r in ipairs(REGIONS) do if r._kind == "texture" and tostring(r._file):find("^Interface\\Buttons\\UI%-ScrollBar") then classStock = classStock + 1 if not r._desat then classUndesat = classUndesat + 1 end end end
+  check(classStock > 0 and classUndesat == 0, "0.5.1.3 class themes: the stock scroll art, desaturated and recoloured (" .. classStock .. ")")
+  NS.SetTheme("wow")
+  -- /dm parchment: crop override, validated, reset
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("parchment 0.05 0.5 0.05 0.6")
+  local ok1 = NS.db.parchTC and NS.db.parchTC[2] == 0.5
+  SlashCmdList["DARKMATTER"]("parchment 0.9 0.1 0 1")
+  local ok2 = NS.db.parchTC and NS.db.parchTC[2] == 0.5
+  SlashCmdList["DARKMATTER"]("parchment reset")
+  NS.Print = oldPrint
+  check(ok1 and ok2 and NS.db.parchTC == nil and said[#said]:find("%(default%)"), "0.5.1.1 /dm parchment: sets, rejects a bad crop, resets (" .. tostring(said[#said]) .. ")")
+  -- the achievement toast: icon AND background AND every text line, at once, in every theme
+  for _, id in ipairs(NS.themeOrder) do
+    NS.SetTheme(id)
+    said = {}
+    NS.Print = function(m) said[#said + 1] = m end
+    SlashCmdList["DARKMATTER"]("testtoast")
+    NS.Print = oldPrint
+    local T = NS.Ach._ToastFrame()
+    check(T and T._shown and T.bg and T.fg, "0.5.1.1 /dm testtoast shows the toast (" .. id .. ")")
+    T._scripts.OnUpdate(T, 0.3)
+    local fgL, bgL = T.fg._level or 0, T.bg._level or 0
+    local textsOK = true
+    for _, fs in ipairs({ T.head, T.name, T.sub }) do
+      if fs._parent ~= T.fg or not visible(fs) or (fs:GetText() or "") == "" then textsOK = false end
+    end
+    local bgTex = 0
+    for _, r in ipairs(REGIONS) do if r._kind == "texture" and r._parent == T.bg and visible(r) and (r._file or r._color) then bgTex = bgTex + 1 end end
+    check(fgL > bgL and T.icon._parent == T.fg and textsOK and bgTex > 0 and T._alpha == 1,
+      string.format("0.5.1.1 toast (%s): background drawn (%d), text and icon above it (levels %d > %d), full alpha after the fade-in", id, bgTex, fgL, bgL))
+    check(said[1] and said[1]:find("^test toast: ") , "0.5.1.1 /dm testtoast: says it is a preview (" .. id .. ")")
+    for _ = 1, 50 do if not T._shown then break end T._scripts.OnUpdate(T, 1) end
+    check(not T._shown, "0.5.1.1 toast (" .. id .. "): fades out and hides")
+  end
+  -- ===== 0.5.1.2: stock button feel, character-frame tabs, no marker dots, item rows on the parchment, stock groove =====
+  local played = {}
+  local savePS, saveSK = PlaySound, SOUNDKIT
+  SOUNDKIT = { IG_MAINMENU_OPTION_CHECKBOX_ON = 856, IG_CHARACTER_INFO_TAB = 841, U_CHAT_SCROLL_BUTTON = 1115 }
+  PlaySound = function(id) played[#played + 1] = id end
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  local function mid(b) local F = rawget(b, "face") return tostring(F and F.m._file or b.slice.m._file) end -- 0.5.1.3: the stock faces
+  local function tcIs(t, want) if not t then return false end for i = 1, #want do if math.abs((t[i] or -1) - want[i]) > 1e-6 then return false end end return true end
+  local sb = W.settingsBtn
+  local hlOK = sb.stockOn and sb.stockHL._file == "Interface\\Buttons\\UI-Panel-Button-Highlight" and sb.stockHL._layer == "HIGHLIGHT"
+    and sb.stockHL._blend == "ADD" and tcIs(sb.face.hl.l._tc, { 0, 0.09375, 0, 0.6875 }) and tcIs(sb.stockHL._tc, { 0.09375, 0.53125, 0, 0.6875 }) and tcIs(sb.face.hl.r._tc, { 0.53125, 0.625, 0, 0.6875 })
+  check(hlOK, "0.5.1.2 WoW buttons: stock UI-Panel-Button-Highlight on the HIGHLIGHT layer, ADD blend (0.5.1.3: 3-slice like the faces, 0..0.625 x 0..0.6875)")
+  local upFace = mid(sb)
+  local c0 = sb.text._tcol
+  sb._scripts.OnMouseDown(sb, "LeftButton")
+  local downFace, pt = mid(sb), sb.text._pts[#sb.text._pts]
+  sb._scripts.OnMouseUp(sb, "LeftButton")
+  sb._scripts.PostClick(sb, "LeftButton")
+  check(upFace:find("UI%-Panel%-Button%-Up$") and downFace:find("UI%-Panel%-Button%-Down$") and mid(sb):find("UI%-Panel%-Button%-Up$"),
+    "0.5.1.2 WoW buttons: Up face, Down face while held, Up again on release (" .. upFace .. " / " .. downFace .. ")")
+  check(pt and pt[4] == 1 and pt[5] == 0, "0.5.1.2 WoW buttons: the label moves 1px right and down while held (" .. tostring(pt and pt[4]) .. "," .. tostring(pt and pt[5]) .. ")")
+  check(c0 and math.abs(c0[1] - 1) < 0.01 and math.abs(c0[2] - 0.82) < 0.01 and c0[3] < 0.01, "0.5.1.2 WoW buttons: gold normal label")
+  sb._scripts.OnEnter(sb)
+  local ch = sb.text._tcol
+  sb._scripts.OnLeave(sb)
+  check(ch[1] == 1 and ch[2] == 1 and ch[3] == 1 and not sb.hoverTex[1]._shown, "0.5.1.2 WoW buttons: white label on hover, no Dark Matter tint/edge (the stock highlight does the hover)")
+  check(played[#played] == 856, "0.5.1.2 WoW buttons: the stock click sound (SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)")
+  local sh = W.shareBtn
+  check(mid(sh):find("UI%-Panel%-Button%-Disabled$") and sh.text._tcol[1] < 0.9 and sh.text._tcol[1] == sh.text._tcol[3] and sh.stockHL._alpha == 0,
+    "0.5.1.2 WoW buttons: a disabled button (Share stats) shows the Disabled face, a grey label, no highlight")
+  local nPlayed = #played
+  sh._scripts.OnMouseDown(sh, "LeftButton")
+  check(mid(sh):find("Disabled$"), "0.5.1.2 WoW buttons: a disabled button does not press")
+  sh._scripts.OnMouseUp(sh, "LeftButton")
+  -- rail tabs: stock panel buttons, the active one held down
+  local railOK, railN = true, 0
+  for _, t in pairs(W.railTabs) do
+    railN = railN + 1
+    local f = mid(t)
+    if not t.stockOn or (t.active and not f:find("Down$")) or (not t.active and not f:find("Up$")) or t.stockHL._file ~= "Interface\\Buttons\\UI-Panel-Button-Highlight" then railOK = false end
+  end
+  check(railN == 4 and railOK, "0.5.1.2 WoW rail tabs: stock panel buttons (active held down), stock highlight")
+  -- section tabs: character-frame tabs; toggles: panel buttons; never a marker dot
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("adventure")
+  local ag = NS.AGWidgets()
+  local tabOK, dotN = true, 0
+  for _, p in ipairs(ag.pills) do
+    local f = mid(p)
+    if p.stockStyle ~= "tab" or (p.active and not f:find("ActiveTab$")) or (not p.active and not f:find("InActiveTab$")) then tabOK = false end
+    if p.stockHL._file ~= "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight" or (p.active and p.stockHL._alpha ~= 0) then tabOK = false end
+    if rawget(p, "mark") and visible(p.mark) then dotN = dotN + 1 end
+  end
+  local pa = ag.pills[1]
+  pa._scripts.OnMouseDown(pa, "LeftButton")
+  local tabPt = pa.text._pts[#pa.text._pts]
+  pa._scripts.OnMouseUp(pa, "LeftButton")
+  check(tabOK and tabPt[4] == 0 and tabPt[5] == 1, "0.5.1.2 WoW section tabs: ActiveTab raised / InActiveTab, tab highlight on the unselected ones, no press offset")
+  local tg = ag.lvlAll
+  check(tg.stockStyle == "button" and (tg.active and mid(tg):find("Down$") or mid(tg):find("Up$")), "0.5.1.2 WoW filter toggles (All levels): stock panel buttons, held down while on")
+  for _, p in ipairs({ ag.lvlAll, ag.lvlMine }) do if rawget(p, "mark") and visible(p.mark) then dotN = dotN + 1 end end
+  NS.ShowTab("quests")
+  if visible(W.allBtn) then end
+  local qbar = NS.tabs.quests.Parts()
+  if visible(qbar.allIcon) then dotN = dotN + 1 end
+  check(dotN == 0 and W.allBtn.stockOn and mid(W.allBtn):find("UI%-Panel%-Button%-Up$"), "0.5.1.2 WoW: no marker dot / icon on any tab, sub-tab or the All toggles (" .. dotN .. ")")
+  -- boss drops and quest rewards straight on the parchment
+  NS.ShowTab("journals")
+  NS.tabs.journals.SetSection("adventure")
+  ag = NS.AGWidgets()
+  local parchBg = NS.theme.colors.parchBg
+  local dropOK, dropN = true, 0
+  for _, r in ipairs(ag.dropRows) do
+    if r._shown then
+      dropN = dropN + 1
+      if rawget(r, "plate") then dropOK = false end
+      local c = r.text._tcol
+      if not c or NS.Contrast({ c[1], c[2], c[3] }, parchBg) < 4.5 then dropOK = false end
+      if lum(r.sub) > 0.3 or r.hl._layer ~= "HIGHLIGHT" then dropOK = false end
+    end
+  end
+  check(ag.dropPanel.parch and dropOK, "0.5.1.2 Adventure Guide drops: no name plate, quality colour readable on the parchment, dark detail ink, a highlight (" .. dropN .. " rows)")
+  local r1 = ag.dropRows[1]
+  check(not r1 or (r1.text._tcol[3] > r1.text._tcol[1]), "0.5.1.2 Adventure Guide drops: a Rare item stays blue (darkened), not brown")
+  NS.ShowTab("quests")
+  local _, qd2 = NS.tabs.quests.Parts()
+  local rewOK = true
+  for _, b in ipairs(qd2.items or {}) do if rawget(b, "plate") then rewOK = false end if b._shown and NS.Contrast(b.name._tcol, parchBg) < 4.5 then rewOK = false end end
+  check(rewOK, "0.5.1.2 quest rewards: no name plate, names readable on the parchment")
+  -- scroll bars: the stock groove, no solid dark track
+  local grooveN = 0
+  for _, r in ipairs(REGIONS) do
+    if r._kind == "texture" and r._file == "Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar" and under(r, win) and visible(r) then grooveN = grooveN + 1 end
+  end
+  check(grooveN >= 4, "0.5.1.2 WoW scroll bars: the stock UI-Character-ScrollBar groove is drawn (" .. grooveN .. " pieces)")
+  -- artprobe reports the new files and templates
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("artprobe")
+  NS.Print = oldPrint
+  local all = table.concat(said, "\n")
+  local need = { "UIPanelButtonTemplate %(template%)", "CharacterFrameTabButtonTemplate %(template%)", "UIPanelScrollFrameTemplate %(template%)",
+    "UIPanelScrollBarTemplate %(template%)", "UI%-Panel%-Button%-Highlight", "UI%-Panel%-Button%-Down", "UI%-Character%-Tab%-Highlight", "UI%-Character%-ScrollBar" }
+  local miss = {}
+  for _, n in ipairs(need) do if not all:find("ok [^\n]*" .. n) then miss[#miss + 1] = n end end
+  check(#miss == 0 and said[#said]:find(", 0 missing$"), "0.5.1.2 /dm artprobe: reports the button / tab / scroll templates and files (" .. tostring(said[#said]) .. (#miss > 0 and (" missing: " .. table.concat(miss, ", ")) or "") .. ")")
+  -- 0.5.1.3 class themes: the stock button feel recoloured in the theme's palette, and no marker dot
+  NS.SetTheme("warrior")
+  NS.ShowTab("journals")
+  local cl = NS.AGWidgets()
+  local clDot = 0
+  for _, p in ipairs(cl.pills) do if rawget(p, "mark") and visible(p.mark) then clDot = clDot + 1 end end
+  check(W.settingsBtn.stockOn and W.settingsBtn.face.m._desat and W.settingsBtn.stockHL._file == "Interface\\Buttons\\UI-Panel-Button-Highlight" and clDot == 0,
+    "0.5.1.3 class themes: the stock button feel, desaturated and recoloured, no marker dot")
+  -- fallback: the stock button files missing -> Dark Matter's own feel
+  STOCK_MISSING = true
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  check(not W.settingsBtn.stockOn, "0.5.1.2 fallback: without the stock button files the WoW buttons keep Dark Matter's own art")
+  STOCK_MISSING = false
+  NS.Stock.ClearCache()
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+  -- ===== 0.5.1.3: every face anchored alike at any width; scroll bars in their own gutter; no dots; late reward items =====
+  local UI = NS.UI
+  local function near(a, b) return a ~= nil and b ~= nil and math.abs(a - b) < 0.01 end
+  local function sameRect(a, b)
+    local al, at, ar, ab = rect(a)
+    local bl, bt, br, bb = rect(b)
+    return near(al, bl) and near(at, bt) and near(ar, br) and near(ab, bb)
+  end
+  -- the face's left cap at the button's left edge, the right cap at its right edge, both the full height and the same
+  -- width, the middle exactly between them; the highlight (buttons) on the very same rectangles
+  local function facesFill(b)
+    local F = b.face
+    local l, t, r, bo = rect(b)
+    local ll, lt, lr, lb = rect(F.l)
+    local ml, mt, mr, mb = rect(F.m)
+    local rl, rt, rr, rb = rect(F.r)
+    if not (l and ll and ml and rl) then return false, "unresolved" end
+    local ok = near(ll, l) and near(rr, r) and near(lt, t) and near(lb, bo) and near(rt, t) and near(rb, bo) and near(mt, t) and near(mb, bo)
+      and near(lr, ml) and near(mr, rl) and near(lr - ll, rr - rl) and (mr - ml) >= -0.01 and F.shown
+    if b.stockStyle ~= "tab" then
+      for _, k in ipairs({ "l", "m", "r" }) do if not sameRect(F.hl[k], F[k]) then ok = false end end
+    end
+    return ok, string.format("%.0fx%.0f cap %.0f", r - l, t - bo, lr - ll)
+  end
+  local host = CreateFrame("Frame", nil, win)
+  host:SetPoint("TOPLEFT", win, "TOPLEFT", 0, 0)
+  host:SetSize(400, 100)
+  for _, id in ipairs({ "wow", "hunter", "priest" }) do
+    NS.SetTheme(id)
+    NS.ShowTab("quests")
+    local bad, n = {}, 0
+    for _, w in ipairs({ 40, 80, 132, 146, 300 }) do
+      for _, h in ipairs({ 22, 48 }) do
+        local b = UI.Button(host, "Test", w, h, "red", 11)
+        b:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        for _, st in ipairs({ "Up", "Down" }) do
+          if st == "Down" then b._scripts.OnMouseDown(b, "LeftButton") end
+          local ok, why = facesFill(b)
+          n = n + 1
+          if not ok or not tostring(b.face.m._file):find("UI%-Panel%-Button%-" .. st .. "$") then bad[#bad + 1] = w .. "x" .. h .. " " .. st .. " (" .. tostring(why) .. ")" end
+        end
+        b._scripts.OnMouseUp(b, "LeftButton")
+        b:Hide()
+      end
+    end
+    -- the nav rail: every tab (the held-down one too) one width, its faces filling it
+    local railW
+    for _, t in pairs(W.railTabs) do
+      local ok, why = facesFill(t)
+      n = n + 1
+      if not ok then bad[#bad + 1] = "rail " .. tostring(t.text:GetText()) .. " (" .. why .. ")" end
+      local l, _, r = rect(t)
+      if railW and not near(railW, r - l) then bad[#bad + 1] = "rail widths differ" end
+      railW = r - l
+    end
+    -- section tabs and filter toggles
+    NS.ShowTab("journals")
+    NS.tabs.journals.SetSection("adventure")
+    local ag = NS.AGWidgets()
+    for _, p in ipairs(ag.pills) do local ok, why = facesFill(p) n = n + 1 if not ok then bad[#bad + 1] = "tab " .. why end end
+    for _, p in ipairs({ ag.lvlAll, ag.lvlMine }) do local ok, why = facesFill(p) n = n + 1 if not ok then bad[#bad + 1] = "toggle " .. why end end
+    check(#bad == 0 and n >= 26, "0.5.1.3 " .. id .. ": Normal / Pushed faces and the Highlight anchored alike at widths 40-300 and heights 22 / 48, rail tabs one width (" .. n .. " checked" .. (#bad > 0 and ("; " .. table.concat(bad, ", ")) or "") .. ")")
+  end
+  host:Hide()
+
+  -- scroll bars: outside the pane, in its own gutter; top arrow level with the pane's top, bottom arrow with its bottom
+  local function gutterOK(S, name, bad)
+    if not S or not S.pane then bad[#bad + 1] = name .. ": no pane" return end
+    local pl, pt, pr, pb = rect(S.pane)
+    local ul, ut, ur = rect(S.up)
+    local dl, _, dr, db = rect(S.down)
+    local _, _, fr = rect(S.scroll)
+    local G = UI.Gutter()
+    if not (pl and ul and dl and fr) then bad[#bad + 1] = name .. ": unresolved" return end
+    local ok = ul >= pr - 0.01 and ur <= pr + G + 0.01 and dl >= pr - 0.01 and dr <= pr + G + 0.01 and near(ut, pt) and near(db, pb) and fr <= pr + 0.01
+    if not ok then
+      bad[#bad + 1] = string.format("%s: pane %.0f..%.0f x %.0f..%.0f, up x %.0f..%.0f top %.0f, down bottom %.0f, content right %.0f", name, pl, pr, pb, pt, ul, ur, ut, db, fr)
+    end
+  end
+  for _, id in ipairs({ "wow", "hunter" }) do
+    NS.SetTheme(id)
+    local bad = {}
+    NS.ShowTab("quests")
+    local _, qdt, qlist = NS.tabs.quests.Parts()
+    gutterOK(qlist, "quest list", bad)
+    gutterOK(qdt.scroll, "quest detail", bad)
+    NS.ShowTab("journals")
+    NS.tabs.journals.SetSection("adventure")
+    local ag = NS.AGWidgets()
+    gutterOK(ag.bossScroll, "boss list", bad)
+    gutterOK(ag.dropScroll, "boss detail", bad)
+    NS.tabs.journals.SetSection("fishing")
+    local fw = NS.FishWidgets()
+    gutterOK(fw.zoneScroll, "fishing zones", bad)
+    gutterOK(fw.fishScroll, "fishing list", bad)
+    gutterOK(fw.statsScroll, "fishing statistics", bad)
+    NS.tabs.journals.SetSection("achievements")
+    local aw = NS.AchPage.Widgets()
+    gutterOK(aw.treeScroll, "achievement categories", bad)
+    gutterOK(aw.cardScroll, "achievement list", bad)
+    -- the groove spans the pane exactly (WoW theme: the stock groove; class themes: the same, recoloured)
+    local S = ag.dropScroll
+    if S.groove and S.groove[1]._shown ~= false and visible(S.groove[1]) then
+      local _, gt = rect(S.groove[1])
+      local _, _, _, gb = rect(S.groove[3])
+      local _, pt, _, pb = rect(S.pane)
+      if not (near(gt, pt) and near(gb, pb)) then bad[#bad + 1] = "boss detail groove not the pane's height" end
+    end
+    -- the stock scroll bar pieces in every theme (class themes: desaturated and recoloured)
+    local ut = S.upTex
+    if not (type(ut._file) == "string" and ut._file:find("UI%-ScrollBar%-ScrollUpButton") and S.groove[1]._file and tostring(S.groove[1]._file):find("UI%-Character%-ScrollBar")) then
+      bad[#bad + 1] = "not the stock scroll pieces (" .. tostring(ut._file) .. ")"
+    end
+    if (id ~= "wow") ~= (ut._desat == true) or (id ~= "wow") ~= (S.thumb._desat == true) then bad[#bad + 1] = "recolour wrong (" .. tostring(ut._desat) .. ")" end
+    check(#bad == 0, "0.5.1.3 " .. id .. ": every scroll bar in its own gutter right of its pane, arrows level with the pane's top and bottom (" .. (#bad > 0 and table.concat(bad, "; ") or "9 panes") .. ")")
+  end
+
+  -- no marker dot / radial on any tab or toggle in any theme
+  local origSP = NS.SetPiece
+  NS.SetPiece = function(tex, key) tex._dmKey = key return origSP(tex, key) end
+  local dotThemes = {}
+  for _, id in ipairs(NS.themeOrder) do
+    NS.SetTheme(id)
+    local dots = 0
+    for _, view in ipairs({ { "quests" }, { "journals", "adventure" }, { "journals", "fishing" }, { "journals", "achievements" } }) do
+      NS.ShowTab(view[1])
+      if view[2] then NS.tabs.journals.SetSection(view[2]) end
+      for _, r in ipairs(REGIONS) do
+        if r._kind == "texture" and under(r, win) and visible(r) and type(r._dmKey) == "string" and (r._dmKey:find("target") or r._dmKey:find("dot") or r._dmKey:find("radial")) then dots = dots + 1 end
+      end
+      for _, f in ipairs(ALL) do
+        if rawget(f, "stockStyle") and rawget(f, "mark") and visible(f.mark) and under(f, win) then dots = dots + 1 end
+      end
+      local qb = NS.tabs.quests.Parts()
+      if qb.allIcon and visible(qb.allIcon) and under(qb.allIcon, win) then dots = dots + 1 end
+    end
+    if dots > 0 then dotThemes[#dotThemes + 1] = id .. "=" .. dots end
+  end
+  NS.SetPiece = origSP
+  check(#dotThemes == 0 and #NS.themeOrder == 10, "0.5.1.3 no marker dot / radial on any tab or toggle in any of the " .. #NS.themeOrder .. " themes (" .. table.concat(dotThemes, ", ") .. ")")
+
+  -- a reward item the client has not loaded: 'Loading...', then the real name when its item event arrives
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+  local QL = NS.QL
+  local oRI, oCI, oGII = GetQuestLogRewardInfo, GetQuestLogChoiceInfo, GetItemInfo
+  local LATE_ID, loaded = 990001, false
+  local function lateWrap(orig)
+    return function(i, ...)
+      local r = { orig(i, ...) }
+      if r[1] ~= nil and i == 1 then r[1] = nil r[6] = LATE_ID end
+      return unpack(r, 1, 6)
+    end
+  end
+  GetQuestLogRewardInfo, GetQuestLogChoiceInfo = lateWrap(oRI), lateWrap(oCI)
+  GetItemInfo = function(id, ...) if id == LATE_ID then if loaded then return "Late Loaded Blade", "item:990001", 3 end return nil end if oGII then return oGII(id, ...) end end
+  local reqBefore = #MUTATED
+  QL.Forget()
+  NS.tabs.quests.Refresh()
+  local _, qdl = NS.tabs.quests.Parts()
+  local function itemNames()
+    local t = {}
+    for _, b in ipairs(qdl.items or {}) do if b._shown and visible(b) then t[#t + 1] = b.name:GetText() end end
+    return t
+  end
+  local before = table.concat(itemNames(), "|")
+  local asked = false
+  for i = reqBefore + 1, #MUTATED do if MUTATED[i] == "C_Item.RequestLoadItemDataByID" then asked = true end end
+  local waiting = QL.awaitItems[LATE_ID] ~= nil
+  check(before:find("Loading\226\128\166", 1, true) and asked and waiting and QL.ItemArrived(424242) == false,
+    "0.5.1.3 quest rewards: an unloaded item says 'Loading...' and its data is requested (" .. before .. ")")
+  loaded = true
+  local fired = 0
+  for _, f in ipairs(ALL) do
+    if f._ev and f._ev.ITEM_DATA_LOAD_RESULT and f._scripts and f._scripts.OnEvent then
+      f._scripts.OnEvent(f, "ITEM_DATA_LOAD_RESULT", LATE_ID, true)
+      fired = fired + 1
+    end
+  end
+  local after = table.concat(itemNames(), "|")
+  check(fired > 0 and after:find("Late Loaded Blade", 1, true) and not after:find("Loading", 1, true),
+    "0.5.1.3 quest rewards: ITEM_DATA_LOAD_RESULT for the awaited item redraws the detail with its name (" .. after .. ")")
+  GetQuestLogRewardInfo, GetQuestLogChoiceInfo, GetItemInfo = oRI, oCI, oGII
+  QL.Forget()
+  NS.tabs.quests.Refresh()
+  PlaySound, SOUNDKIT = savePS, saveSK
+  NS.SetTheme("wow")
+end
+
+-- ===== 0.5.1.4: close-up detail (the game's minimap tiles), the map-window size and the WoW theme's map-window frame =====
+if MODE == "full" then
+  local NS = DarkMatter
+  local CU, MW, W = NS.MapCloseUp, NS.MapWindow, NS.windowParts
+  -- 1. no OpenMap file path anywhere in Dark Matter (code, data, docs, art)
+  local hits = {}
+  for _, path in ipairs(DM_FILES or {}) do
+    local fh = io.open(path, "rb") local src = fh and fh:read("*a") or "" if fh then fh:close() end
+    if src:find("Interface\\AddOns\\OpenMap", 1, true) or src:find("Interface\\\\AddOns\\\\OpenMap", 1, true) or src:lower():find("interface[\\/]+addons[\\/]+openmap") then hits[#hits + 1] = path end
+  end
+  check(#(DM_FILES or {}) > 30 and #hits == 0, "0.5.1.4: the string Interface\\AddOns\\OpenMap appears nowhere in Dark Matter " .. table.concat(hits, ", "))
+  check(io.open(arg[1] .. "/LICENSES/THIRD_PARTY.md") ~= nil and io.open(arg[1] .. "/Data_Minimap.lua"):read("*a"):find("Permission is hereby granted", 1, true),
+    "0.5.1.4: the minimap tile table carries OpenMap's MIT notice; LICENSES/THIRD_PARTY.md is shipped")
+  -- excluded art never referenced: no OpenMap texture folders, no Blizzard file bundled (Media holds only our own art)
+  local media = {}
+  for _, path in ipairs(DM_FILES or {}) do local f = path:match("[/\\]Media[/\\]([^/\\]+)$") if f then media[#media + 1] = f end end
+  local odd = {}
+  for _, f in ipairs(media) do if not f:find("^wow%-") and not f:find("^cls%-") and not f:find("^dm%-") then odd[#odd + 1] = f end end
+  local srcAll = ""
+  for _, f in ipairs({ "MapCloseUp.lua", "Tab_Map.lua", "MapProbe.lua", "MapWindow.lua", "Window.lua" }) do srcAll = srcAll .. io.open(arg[1] .. "/" .. f):read("*a") end
+  local excluded = {}
+  for _, k in ipairs({ "MapMiniLOD", "MapDungeonDrawn", "MapChart", "MapGapFill" }) do if srcAll:find(k, 1, true) then excluded[#excluded + 1] = k end end
+  check(#excluded == 0, "0.5.1.4: OpenMap's art folders (MapMiniLOD, MapDungeonDrawn, MapChart, MapGapFill) are never referenced " .. table.concat(excluded, ","))
+  check(#media > 10 and #odd == 0, "0.5.1.4: Media holds only Dark Matter's own art (no game or OpenMap file bundled) " .. table.concat(odd, ","))
+
+  -- 2. the close-up on a made-up continent (16000 yd square, every tile has a file, the zone covers it)
+  local MD = NS.MapData
+  local saveZoneAt, saveArt, saveEx, saveTiles = MD.ZoneAt, MD.Art, MD.Explored, NS.MinimapTiles
+  local saveFrames, saveCells = CU.frames, CU.cells
+  CU.frames, CU.cells = { [9001] = { inst = 0, X0 = 8000, Y0 = 8000, X1 = -8000, Y1 = -8000 } }, {}
+  NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) return 1000000 + k end }) }
+  MD.ZoneAt = function(_, x, y) return { id = 77 }, x, y end
+  MD.Art = function() return { w = 1000, h = 1000 } end
+  local exploredHalf = { { offsetX = 0, offsetY = 0, textureWidth = 500, textureHeight = 1000 } }
+  MD.Explored = function() return exploredHalf end
+  local host = CreateFrame("Frame", nil, UIParent)
+  local function ctxAt(S, vw, vh, mag) -- 0.5.1.8: mag = the art magnification (else 5 yd per texel)
+    local ox, oy = 0.5 * S - vw / 2, 0.5 * S - vh / 2
+    return { host = host, conts = { { id = 9001, alpha = 1 } }, place = function() return { 0, 1, 0, 1 } end,
+      toScreen = function(wx, wy) return wx * S - ox, wy * S - oy end, vw = vw, vh = vh, mag = mag }
+  end
+  local function shown()
+    local list = {}
+    for _, t in ipairs(CU.pool) do if t:IsShown() then list[#list + 1] = t end end
+    return list
+  end
+  NS.db.map = NS.db.map or {}
+  NS.db.map.closeUp, NS.db.map.closeMix = true, nil
+  CU.unavailable, CU.failed, CU.fails, CU.loaded = nil, {}, 0, 0
+  -- 0.5.2b.6: the map layer. painted (the default): never a tile; auto: only past x2.8 art blur (full by x3.4), no
+  -- tile-count rule; terrain: 0.5.2b.5's rules (tested below)
+  NS.db.map.layer = nil
+  -- 0.5.2b.6.1: auto is the default
+  check(CU.Layer() == "auto" and CU.Mix(2.79) == 0 and math.abs(CU.Mix(3.4) - 1) < 1e-9 and CU.Label() == CU.LABEL_AUTO,
+    "0.5.2b.6.1 close-up: no layer saved -> 'auto' (the minimap tiles at the deepest zoom)")
+  check(CU.SetLayer("painted") and CU.Layer() == "painted" and CU.Mix(6) == 0 and CU.Mix(1.0, nil, 50) == 0 and CU.Mix(3, nil, 10) == 0 and CU.Label() == CU.LABEL_OFF,
+    "0.5.2b.6 close-up: layer 'painted': no minimap tiles at any zoom or tile count")
+  check(CU.SetLayer("auto") and CU.Layer() == "auto" and CU.Mix(2.6, nil, 50) == 0 and CU.Mix(2.79) == 0 and CU.Mix(3.1) > 0.2 and CU.Mix(3.1) < 0.8
+    and math.abs(CU.Mix(3.4) - 1) < 1e-9 and CU.Label() == CU.LABEL_AUTO,
+    "0.5.2b.6 close-up: layer 'auto': the tiles only at the deepest zoom (x2.8 to x3.4 art blur), never by tile count")
+  check(CU.SetLayer("bogus") == false and CU.Layer() == "auto" and CU.SetLayer("terrain") and CU.Mix(2.6) > 0.99 and CU.Mix(1.0, nil, 150) > 0.99,
+    "0.5.2b.6 close-up: layer 'terrain' keeps 0.5.2b.5's rules; an unknown layer is refused")
+  local said1 = NS.MapTab.MapLayerSlash("")
+  local said2 = NS.MapTab.MapLayerSlash("auto")
+  local said3 = NS.MapTab.MapLayerSlash("nope")
+  local said4 = NS.MapTab.MapLayerSlash("painted")
+  check(said1:find("^maplayer: terrain") and said2:find("^maplayer: auto .*%(default%)$") and said3:find("^maplayer: /dm maplayer auto|painted|terrain %(now: auto%)", 1)
+    and said4:find("^maplayer: painted ") and not said4:find("(default)", 1, true),
+    "0.5.2b.6 /dm maplayer: " .. said1 .. " | " .. said2 .. " | " .. said3)
+  NS.db.map.layer = "terrain"
+  -- 0.5.1.8: fades keyed to how magnified the map art is (screen px per art texel): the zone art alone up to x2.0,
+  -- a quick crossfade to the tiles by x2.6, then tiles at full strength (default 45%); grain only with the tiles
+  check(CU.Mix(1.0) == 0 and CU.Mix(1.99) == 0 and CU.Mix(2.3) > 0.2 and CU.Mix(2.3) < 0.8 and math.abs(CU.Mix(2.6) - 1) < 1e-9
+    and math.abs(CU.Mix(6) - 1) < 1e-9 and CU.Mix(3, 0) == 0 and CU.Mix(3, 0.2) < 0.5,
+    "0.5.1.8 close-up: zone art alone to x2.0, quick crossfade to full tiles by x2.6 (strength 0 = off)")
+  check(CU.LayerName(0) == "zone art" and CU.LayerName(1) == "tiles" and CU.LayerName(0.5) == "crossfading",
+    "0.5.1.8 close-up: the layer names (zone art / crossfading / tiles)")
+  check(math.abs(CU.MaxScale(9001, 1000) - 0.96 * 16000 / 1000) < 1e-6, "0.5.1.4 close-up: the deepest zoom stops at twice the minimap's own sharpness")
+  -- 0.5.2b.5: the tiles also come in by how many fit the view (full up to 200, gone by 320), whichever rule is larger
+  check(CU.Density(150) == 1 and CU.Density(260) > 0.2 and CU.Density(260) < 0.8 and CU.Density(400) == 0
+    and math.abs(CU.Mix(1.0, nil, 150) - 1) < 1e-9 and CU.Mix(1.0, nil, 400) == 0 and math.abs(CU.Mix(3, nil, 400) - 1) < 1e-9 and CU.Mix(1.0, 0, 150) == 0,
+    "0.5.2b.5 close-up: tiles full while 200 or fewer fit the view, gone by 320; the art-blur rule still brings them in up close")
+  check(CU.CellsFor(200) == 4 and CU.CellsFor(60) == 2 and CU.CellsFor(92, 4) == 4 and CU.CellsFor(100, 2) == 2,
+    "0.5.2b.5 close-up: 4x4 edge cells on big tiles, 2x2 on small ones, with hysteresis")
+  CU.Drop()
+  local function shown()
+    local list = {}
+    for _, t in ipairs(CU.pool) do
+      local P = t.dmPlane
+      if t:IsShown() and P and P.host == host and P.f:IsShown() then list[#list + 1] = t end
+    end
+    return list
+  end
+  local function rects(list)
+    local out = {}
+    for _, t in ipairs(list) do local a, b, c, d = CU.ScreenRect(t) if a then out[#out + 1] = { a, b, c, d, t } end end
+    return out
+  end
+  local function overlaps(R)
+    local over = 0
+    for i = 1, #R do for j = i + 1, #R do
+      local ix = math.min(R[i][3], R[j][3]) - math.max(R[i][1], R[j][1])
+      local iy = math.min(R[i][4], R[j][4]) - math.max(R[i][2], R[j][2])
+      if ix > 0.01 and iy > 0.01 then over = over + 1 end
+    end end
+    return over
+  end
+  local function covered(R, vw, vh)
+    local area = 0
+    for _, r in ipairs(R) do
+      local w = math.min(r[3], vw) - math.max(r[1], 0)
+      local h = math.min(r[4], vh) - math.max(r[2], 0)
+      if w > 0 and h > 0 then area = area + w * h end
+    end
+    return area / (vw * vh)
+  end
+  local r1 = CU.Layout(ctxAt(13600, 600, 400)) -- 0.85 px/yd; explored or not: no longer matters
+  local list = shown()
+  local R = rects(list)
+  local left, right = 0, 0
+  for _, r in ipairs(R) do if r[1] < 300 then left = left + 1 end if r[3] > 300 then right = right + 1 end end
+  check(r1.pieces > 0 and left > 0 and right > 0 and math.abs(covered(R, 600, 400) - 1) < 1e-3,
+    "0.5.1.5 close-up: blended across the whole view, explored or not (covers " .. string.format("%.3f", covered(R, 600, 400)) .. " of it)")
+  check(overlaps(R) == 0 and r1.pieces == r1.tiles, "0.5.1.5 close-up: whole tiles, one texture each, never overlapping (" .. r1.pieces .. "/" .. r1.tiles .. ")")
+  check(r1.tiles <= CU.FADE_TILES and math.abs(r1.mix - 1) < 1e-3 and r1.layer == "tiles" and r1.grain and r1.grain > 0 and r1.cells == 4,
+    "0.5.1.8 close-up: full tiles, paper grain on, tiles in view " .. r1.tiles)
+  local alphaOK = true
+  for _, t in ipairs(list) do if math.abs(CU.PieceAlpha(t) - r1.mix) > 1e-6 then alphaOK = false end end
+  check(alphaOK and list[1] and list[1]._vc and list[1]._vc[3] < 0.9, "0.5.1.4 close-up: tiles at the mix strength, tinted toward parchment")
+  local g1 = list[1] and rawget(list[1], "glow")
+  check(g1 and g1:IsShown() and g1._file == list[1]._file and g1._vc and g1._vc[1] > g1._vc[3],
+    "0.5.1.6 close-up: each tile is lifted by a warm ADD pass of itself (lighter, toward the parchment)")
+  local poolN = #CU.pool
+  CU.Layout(ctxAt(13600, 600, 400))
+  check(#CU.pool == poolN, "0.5.1.4 close-up: textures are pooled (no new ones on redraw)")
+  -- 0.5.2b.5: a small pan or zoom moves the plane only; the tiles' own textures are not placed again
+  local p1 = list[1]
+  local pts1 = p1 and p1._pts and #p1._pts
+  local rPan = CU.Layout(ctxAt(13650, 600, 400))
+  local R2 = rects(shown())
+  check(p1 and p1._pts and #p1._pts == pts1 and #CU.pool == poolN and rPan.pieces > 0 and math.abs(covered(R2, 600, 400) - 1) < 1e-3,
+    "0.5.2b.5 close-up: a zoom step moves and scales the tile plane, no texture is placed again")
+  -- a gap (column of tiles x = 32 missing: sea / void): no piece there, its neighbours fade to 0 toward it
+  NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) if math.floor(k / 64) == 32 then return nil end return 1000000 + k end }) }
+  CU.Drop()
+  local rG = CU.Layout(ctxAt(8000, 600, 400))
+  local gapX1, gapX2 = 300, 300 + 8000 * CU.TILE / 16000 -- tile x 32 spans screen x 300 .. 566.7
+  local inGap, edgeA, farA, grads = 0, 1, 0, 0
+  for _, r in ipairs(rects(shown())) do
+    local t = r[5]
+    if r[1] > gapX1 + 0.5 and r[3] < gapX2 - 0.5 then inGap = inGap + 1 end
+    if t._grad then grads = grads + 1 end
+    local a1, a2 = t.dmA1 or 1, t.dmA2 or 1
+    if math.abs(r[3] - gapX1) < 0.5 then edgeA = math.min(edgeA, a2) end       -- cells touching the gap from the west
+    if r[3] < gapX1 - 140 then farA = math.max(farA, math.min(a1, a2)) end      -- over half a tile away
+  end
+  check(rG.pieces > 0 and inGap == 0 and edgeA < 0.01 and farA > 0.99 and grads > 0,
+    "0.5.1.5 close-up: where the tiles end the edge feathers to 0 (edge " .. string.format("%.2f", edgeA) .. ", " .. grads .. " gradient cells, none in the gap)")
+  NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) return 1000000 + k end }) }
+  CU.Drop()
+  local rBig = CU.Layout(ctxAt(4000, 3000, 3000, 3)) -- tiles 133 px: ~23x23 tiles in view (art at x3: tiles on)
+  check(rBig.tiles > CU.MAX_TILES and rBig.pieces == 0, "0.5.2b.5 close-up: more than 460 tiles in view -> none drawn (" .. rBig.tiles .. ")")
+  local rMid = CU.Layout(ctxAt(4000, 2600, 2600, 3)) -- ~20x20 tiles: faded, not popped
+  check(rMid.tiles > CU.FADE_TILES and rMid.tiles <= CU.MAX_TILES and rMid.pieces > 0 and rMid.alpha < rMid.mix and rMid.alpha > 0,
+    "0.5.2b.5 close-up: between 380 and 460 tiles the tiles fade out (" .. rMid.tiles .. " tiles, " .. string.format("%.2f of %.2f", rMid.alpha or -1, rMid.mix) .. ")")
+  local rFar = CU.Layout(ctxAt(1600, 1600, 1200)) -- tiles 53 px, ~680 fit the view, the art not magnified: the map pictures only
+  check(rFar.pieces == 0 and rFar.mix == 0, "0.5.1.4 close-up: far out (hundreds of tiles in view) shows the map pictures only (" .. string.format("%.0f", rFar.est) .. " fit)")
+  local rLow = CU.Layout(ctxAt(1600, 600, 400)) -- tiles 53 px, ~84 fit the view: full tiles in 2x2-cell mode
+  check(rLow.pieces > 0 and math.abs(rLow.mix - 1) < 1e-9 and rLow.est < CU.FULL_TILES and rLow.cells == 2,
+    "0.5.2b.5 close-up: mid zoom with under 200 tiles in view: tiles at full strength (" .. string.format("%.0f", rLow.est) .. " fit, " .. tostring(rLow.cells) .. "x cells)")
+  local rCross = CU.Layout(ctxAt(1600, 1000, 760)) -- ~260 fit: crossfading
+  check(rCross.mix > 0.05 and rCross.mix < 0.95 and math.abs((rCross.alpha or 0) - rCross.mix) < 1e-9,
+    "0.5.2b.5 close-up: between 200 and 320 tiles in view the tiles crossfade (" .. string.format("%.0f fit, mix %.2f", rCross.est, rCross.mix) .. ")")
+  -- placement against the game's numbers (mapprobe in Wetlands): corners -2148,-390 / -4904,-4525, you -4254,-3108 = tile 37_39
+  local Fw = { inst = 0, X0 = -2148, Y0 = -390, X1 = -4904, Y1 = -4525 }
+  local wtx, wty = CU.TileAt(-4254, -3108)
+  local px, py = CU.FromYards(Fw, -4254, -3108)
+  local x1, x2, y1, y2 = CU.TileRect(Fw, wtx, wty)
+  check(wtx == 37 and wty == 39 and px >= x1 and px <= x2 and py >= y1 and py <= y2 and math.abs((x2 - x1) * 4135 - CU.TILE) < 0.01,
+    "0.5.1.5 close-up: Wetlands: you at -4254,-3108 yd sit inside tile 37_39 on the zone map (" .. string.format("%.3f in %.3f-%.3f", px, x1, x2) .. ")")
+  -- OpenMap installed or not: the same drawing
+  LOADED.OpenMap = true
+  local a1 = CU.Layout(ctxAt(8000, 600, 400))
+  LOADED.OpenMap = nil
+  local a2 = CU.Layout(ctxAt(8000, 600, 400))
+  check(a1.pieces == a2.pieces and a1.tiles == a2.tiles and a1.mix == a2.mix and CU.Label() == CU.LABEL_ON, "0.5.1.4 close-up: OpenMap present or absent draws the same (" .. a1.pieces .. "/" .. a2.pieces .. ")")
+  -- the client refuses the tiles -> plain map art and the plain label
+  local saveST = FrameMT.SetTexture
+  FrameMT.SetTexture = function(t, f, ...) if type(f) == "number" and f >= 1000000 then return false end return saveST(t, f, ...) end
+  CU.failed, CU.fails, CU.loaded = {}, 0, 0
+  CU.Drop()
+  CU.Layout(ctxAt(8000, 600, 400))
+  local rF = CU.Layout(ctxAt(8000, 600, 400))
+  FrameMT.SetTexture = saveST
+  check(CU.unavailable == true and rF.pieces == 0 and #shown() == 0 and CU.Label() == CU.LABEL_OFF, "0.5.1.4 close-up: tiles that do not load -> plain map pictures, label '" .. CU.Label() .. "'")
+  CU.unavailable, CU.failed, CU.fails, CU.loaded = nil, {}, 0, 0
+  NS.db.map.closeUp = false
+  check(CU.Layout(ctxAt(8000, 600, 400)).pieces == 0 and #shown() == 0 and CU.Label() == CU.LABEL_OFF, "0.5.1.4 close-up: switched off -> none drawn, plain label")
+  NS.db.map.closeUp = true
+  CU.Drop()
+  if CU.grain then CU.grain:Hide() end
+  MD.ZoneAt, MD.Art, MD.Explored, NS.MinimapTiles = saveZoneAt, saveArt, saveEx, saveTiles
+  CU.frames, CU.cells = saveFrames, saveCells
+  check(CU.TileAt(0, 0) == 32 and select(2, CU.TileAt(533.4, 0)) == 30 and CU.TileAt(0, -1) == 32, "0.5.1.4 close-up: tile grid 533.33 yd, x east / y south from the centre")
+
+  -- 3. the window size from the game's map window (read only), with its fallbacks
+  local saveWMF = WorldMapFrame
+  if os.getenv("DM_DUMP") then local l = MW.last or {} io.stderr:write("MWLAST ", tostring(l.w), "x", tostring(l.h), " ", tostring(l.source), " ", tostring(NS.theme.m.w), " win ", tostring(DarkMatterFrame._w), "\n") end
+  local function copyM() local c = {} for k, v in pairs(NS.theme.m) do c[k] = v end return c end
+  local base = NS.theme.m
+  WMF_CALLS, WMF_WRITES = {}, {}
+  local function wmf(...) WorldMapFrame = MakeWMF(...) MW.art = nil end
+  local function outer(r) local bd = r.border or { 0, 0, 0, 0 } return (r.w + bd[1] + bd[3]) * r.scale, (r.h + bd[2] + bd[4]) * r.scale end
+  wmf(1035, 640)
+  local c = copyM()
+  local res = MW.Apply(c)
+  check(res.w == 1009 and res.h == 640 and c.w == 1009 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
+    "0.5.1.4 window: as large as the game's map window (1035x640; 0.5.2a.2: less the tab column's 26 = 1009x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
+  check(c.bodyW - c.w == base.bodyW - base.w and c.pageW - c.w == base.pageW - base.w and c.footerTop - c.h == base.footerTop - base.h and c.exitX - c.w == base.exitX - base.w
+    and c.railW == base.railW and c.tabY == base.tabY and c.bodyX == base.bodyX, "0.5.1.4 window: the body and footer follow the size, the rail and tabs keep their place")
+  wmf(1035, 640, { scale = 1.25 })
+  res = MW.Apply(copyM())
+  check(res.w == 1268 and res.h == 800, "0.5.1.4 window: the map window's own scale is taken into account (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  -- 0.5.1.5: the in-game case (1.60.1, Wetlands): map 1232x705 at effective scale 0.64; UIParent at 0.80
+  local saveUES = UIParent.GetEffectiveScale
+  UIParent.GetEffectiveScale = function() return 0.8 end
+  wmf(1232, 705, { scale = 0.64, minW = 702, minH = 534, ql = 333 })
+  res = MW.Apply(copyM())
+  check(res.w == 960 and res.h == 564 and res.scale == 1,
+    "0.5.1.5 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> ours 986x564 less 26 = 960x564 at scale 1 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  -- 0.5.1.8: the size is measured while the map window is open and saved in DarkMatterDB; while it is closed (e.g.
+  -- never opened since login, where its own size is not real yet) the saved size is used; rebuild only past 1 px
+  do
+    local saveSV = NS.db.mapWindowSize
+    NS.db.mapWindowSize = nil
+    wmf(1232, 705, { scale = 0.64, shown = true })
+    local open = MW.Apply(copyM())
+    local sv = NS.db.mapWindowSize
+    check(sv and math.abs(sv.fw - 986) < 1 and sv.ues == 0.8, "0.5.1.8 window: measured while the map window is open and saved (" .. tostring(sv and sv.fw) .. ")")
+    wmf(702, 534, { scale = 0.64, shown = false }) -- closed, never laid out: a wrong size of its own
+    local closed = MW.Apply(copyM())
+    check(closed.w == open.w and closed.h == open.h and closed.source:find("^saved"),
+      "0.5.1.8 window: while the map window is closed the saved size is used at once (" .. tostring(closed.w) .. "x" .. tostring(closed.h) .. ", " .. tostring(closed.source) .. ")")
+    local c2 = copyM()
+    MW.Apply(c2)
+    c2.w = c2.w + 0.8
+    check(MW.Check(c2) == "scale", "0.5.1.8 window: under 1 px off is no rebuild")
+    c2.w = c2.w + 1
+    check(MW.Check(c2) == "layout", "0.5.1.8 window: over 1 px off rebuilds")
+    NS.db.mapWindowSize = saveSV
+  end
+  wmf(1035, 640, { scale = 0.64 })
+  res = MW.Apply(copyM())
+  local ow, oh = outer(res)
+  check(res.w >= 854 and res.h >= 500 and res.scale < 1 and math.abs(ow - (1035 * 0.8 - 26 * res.scale)) < 1 and math.abs(oh - 640 * 0.8) < 1,
+    "0.5.1.5 window: a map smaller on screen than 880x500 is matched by our scale (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  UIParent.GetEffectiveScale = saveUES
+  wmf(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
+  res = MW.Apply(copyM())
+  ow, oh = outer(res)
+  check(res.w <= 1800 and res.h <= 1300 and math.abs(ow - (1920 - 26 * res.scale)) < 1 and math.abs(oh - 1080) < 1,
+    "0.5.1.5 window: maximized follows the same rule: its size on screen (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  wmf(500, 300)
+  res = MW.Apply(copyM())
+  ow, oh = outer(res)
+  check(res.w >= 854 and res.h >= 500 and math.abs(ow - (500 - 26 * res.scale)) < 1 and math.abs(oh - 300) < 1, "0.5.1.5 window: a tiny map window: our layout stays 880x500 or more, our scale matches it")
+  -- 0.5.1.6: the map's border corners reach past its frame (the real offsets): the target is the OUTER rectangle
+  wmf(1232, 705, { real = true })
+  local ml, mt, mr, mb = MW.MapBorder()
+  local mw0, mh0 = MW.Size()
+  check(ml == 13 and mt == 16 and mr == 4 and mb == 3 and math.abs(mw0 - 1249) < 1e-6 and math.abs(mh0 - 724) < 1e-6,
+    "0.5.1.6 window: the map's outer bounds include its border (13,16,4,3 past the frame -> 1249x724): " .. tostring(mw0) .. "x" .. tostring(mh0))
+  wmf(1232, 705, { real = true, rect = true })
+  local rl, rt, rr, rb, fr = MW.MapRect()
+  mw0, mh0 = MW.Size()
+  check(rl and math.abs(mw0 - 1249) < 1e-6 and math.abs(mh0 - 724) < 1e-6 and fr[3] - fr[1] == 1232,
+    "0.5.1.6 window: read from the rectangles (frame + border corners): outer " .. tostring(mw0) .. "x" .. tostring(mh0))
+  local rl2 = MW.RectLines("t")
+  check(#rl2 >= 2 and rl2[1]:find("map: outer", 1, true) and rl2[2]:find("border sticks out 13,16,4,3", 1, true),
+    "0.5.1.6 frameprobe: both outer rectangles (and how far the map's border sticks out) " .. tostring(rl2[1]) .. " | " .. tostring(rl2[2]))
+  -- live: the map window changes size -> the layout must follow ("layout"); same size -> only our scale ("scale")
+  wmf(1100, 700)
+  local m1 = copyM()
+  MW.Apply(m1)
+  check(MW.Check(m1) == "scale", "0.5.1.6 window: same map window -> nothing to rebuild")
+  wmf(1100, 500)
+  check(MW.Check(m1) == "layout" and not MW.ScaleLine("x"):find("changed shape", 1, true), "0.5.1.6 window: a map window of another shape -> the layout follows (no 'changed shape' fallback)")
+  MW.live = nil
+  local n0 = copyM()
+  MW.bases[n0] = MW.bases[base] -- 0.5.2a.2: the theme's own base (a plain copy would take its applied size as its base)
+  WorldMapFrame = nil MW.art = nil
+  res = MW.Apply(n0)
+  check(res.fallback and n0.w == MW.BASE_W - 26 and n0.h == MW.BASE_H, "0.5.1.4 window: no map window -> Dark Matter's own size (0.5.2a.2: less the tab column's 26 = 854x680)")
+  wmf(1035, 640)
+  local saveICL = InCombatLockdown
+  InCombatLockdown = function() return true end
+  res = MW.Apply(copyM())
+  InCombatLockdown = saveICL
+  check(res.w == 1009, "0.5.1.4 window: reading the size works in combat")
+  local badCall = {}
+  for _, k in ipairs(WMF_CALLS) do if not (k:find("^Get") or k:find("^Is")) then badCall[#badCall + 1] = k end end
+  check(#WMF_WRITES == 0 and #badCall == 0, "0.5.1.4 window: WorldMapFrame is only read (no Show, no writes, no hooks): " .. table.concat(WMF_WRITES, ",") .. table.concat(badCall, ","))
+  WorldMapFrame = saveWMF MW.art = nil
+  local win = NS.GetWindow()
+  check(win._w == NS.theme.m.w and win._h == NS.theme.m.h, "0.5.1.4 window: the built window has the metrics' size " .. win._w .. "x" .. win._h)
+
+  -- 0.5.1.6: EVERY theme, several map windows: our OUTER visible bounds (everything drawn, border included) equal the
+  -- map window's outer bounds on screen, width and height, to 1 px. The window is built again for each.
+  do
+    local saveTheme = NS.theme.id
+    local saveU = UIParent.GetEffectiveScale
+    local function drawnBox(f)
+      local l, t, r, b
+      for _, e in ipairs(LayoutOf(f)) do
+        if e.kind == "texture" and e.l and (e.r._alpha or 1) > 0.01 then
+          local clipped, x = false, e.r._parent
+          while x and x ~= UIParent do if x._ftype == "ScrollFrame" or x._clips then clipped = true break end x = x._parent end
+          if not clipped then
+            l, t, r, b = math.min(l or e.l, e.l), math.max(t or e.t, e.t), math.max(r or e.rr, e.rr), math.min(b or e.b, e.b)
+          end
+        end
+      end
+      return l, t, r, b
+    end
+    local sizes = { { 1232, 705, { scale = 0.64, real = true }, 0.64 }, { 1232, 705, { real = true } }, { 1232, 705 }, { 1035, 640 },
+      { 1920, 1080, { real = true } }, { 600, 420, { real = true } }, { 1600, 760, { scale = 0.8 } } }
+    local worst, n, portraits, rebuilt = 0, 0, {}, 0
+    local areas, nAreas = {}, 0
+    for _, id in ipairs(NS.themeOrder) do
+      for si, sz in ipairs(sizes) do
+        UIParent.GetEffectiveScale = function() return sz[4] or 1 end
+        wmf(sz[1], sz[2], sz[3])
+        NS.SetTheme(id)
+        local f = NS.RebuildWindow()
+        rebuilt = rebuilt + 1
+        f:Show()
+        NS.ShowTab("map")
+        -- 0.5.1.7: the Map tab's map rectangle in this theme (compared with the WoW theme's below)
+        local vp = NS.MapTab and NS.MapTab.vp
+        if vp then
+          areas[id .. "|" .. si] = { vp:GetWidth(), vp:GetHeight() }
+          if id ~= "wow" and sz[3] and sz[3].real and areas["wow|" .. si] then
+            local a0, a1 = areas["wow|" .. si], areas[id .. "|" .. si]
+            check(math.abs(a1[1] - a0[1]) <= 2 and math.abs(a1[2] - a0[2]) <= 2, string.format(
+              "0.5.1.7 window: %s at map %dx%d: its map rectangle %.1fx%.1f equals the WoW theme's %.1fx%.1f (within 2 px)", id, sz[1], sz[2], a1[1], a1[2], a0[1], a0[2]))
+            nAreas = nAreas + 1
+          end
+        end
+        NS.ShowTab("quests")
+        local tw, th = MW.Target() -- 0.5.2a.2: the map window less the tab column's trim
+        local mw0 = MW.Size()
+        check(tw and mw0 and math.abs(tw - (mw0 - 26 * f:GetScale() / (sz[4] or 1) * (sz[4] or 1))) < 0.6, string.format("0.5.2a.2 window: %s target width %.1f = map %.1f less the tab column's 26 (scaled)", id, tw or -1, mw0 or -1))
+        local l, t, r, b = drawnBox(f)
+        local k = f:GetScale() / (sz[4] or 1) * (sz[4] or 1)
+        local ow2, oh2 = (r - l) * k, (t - b) * k
+        local dw, dh = ow2 - tw, oh2 - th
+        n = n + 1
+        local bad = math.max(math.abs(dw), math.abs(dh))
+        if bad > worst then worst = bad end
+        check(bad <= 1, string.format("0.5.1.6 window: %s at map %dx%d%s: outer %.1fx%.1f vs target %.1fx%.1f (diff %+.1f,%+.1f)",
+          id, sz[1], sz[2], sz[3] and sz[3].real and " (real border)" or "", ow2, oh2, tw, th, dw, dh))
+        local pl = MW.ThemeLines("t")
+        for _, line in ipairs(pl) do
+          if line:find(" " .. id .. ":", 1, true) then
+            check(line:find("diff %+0,%+0") or line:find("diff %-0,%+0") or line:find("diff [%+%-][01],[%+%-][01]"), "0.5.1.6 frameprobe per theme: " .. line)
+          end
+        end
+        for _, e in ipairs(LayoutOf(f)) do
+          local fl = e.r._file and tostring(e.r._file) or ""
+          if e.kind == "texture" and (fl:find("Portrait", 1, true) or fl:find("BookIcon", 1, true)) then portraits[#portraits + 1] = id .. " " .. fl end
+        end
+      end
+    end
+    check(#portraits == 0, "0.5.1.6: no portrait icon in any theme " .. table.concat(portraits, ", "))
+    check(nAreas == (#NS.themeOrder - 1) * 4, "0.5.1.7 window: every class theme's map rectangle was compared with the WoW theme's at 4 map sizes (" .. nAreas .. ")")
+    check(n == #NS.themeOrder * #sizes and rebuilt == n, string.format("0.5.1.6 window: %d themes x %d map sizes, worst outer difference %.2f px", #NS.themeOrder, #sizes, worst))
+    UIParent.GetEffectiveScale = saveU
+    WorldMapFrame = saveWMF MW.art = nil
+    NS.SetTheme(saveTheme)
+    win = NS.RebuildWindow()
+    W = DarkMatter.windowParts
+  end
+  -- 0.5.1.6: while shown, a map window of another size -> the window is built again at that size (asked twice in a row);
+  -- the saved position keeps its screen spot
+  if W.Refit and MW.last and not MW.last.fallback then
+    local m0 = NS.theme.m
+    local saveW2 = WorldMapFrame
+    wmf(m0.w * 1.1, m0.h * 1.1)
+    win:Show()
+    win:ClearAllPoints() win:SetPoint("CENTER", UIParent, "CENTER", 110, -55)
+    WMF_CALLS, WMF_WRITES = {}, {}
+    local before = NS.windowRebuilds or 0
+    W.Refit() W.Refit()
+    check(W.rebuildWanted, "0.5.1.6 window: the map window grew -> a rebuild is asked for")
+    local nw = NS.RebuildWindow()
+    local _, _, _, x, y = nw:GetPoint(1)
+    check(NS.windowRebuilds == before + 1 and math.abs(nw._w - m0.w) < 1e-6 and math.abs(NS.theme.m.w - math.floor(saveW2:GetWidth() * 1.1 + 0.5)) <= 1
+      and math.abs(x - 110) < 1e-3 and math.abs(y + 55) < 1e-3 and #WMF_WRITES == 0 and nw:IsShown(),
+      "0.5.1.6 window: built again at the new size, shown, position kept (" .. string.format("%.1f; %.1f,%.1f", nw._w, x, y) .. ")")
+    WorldMapFrame = saveW2 MW.art = nil
+    win = NS.RebuildWindow()
+    W = DarkMatter.windowParts
+  end
+
+  -- 0.5.1.9: a fresh login, the stock map NEVER shown and nothing saved: every theme opens at the map window's real
+  -- outer size (1247x729 UIParent units at UIParent 0.64) at once, whether the closed map window reports its real size,
+  -- 0x0, or the stale 1002-wide size; and no letter of the title sits under the crest
+  do
+    local saveWMF9, saveU9, saveTheme9, saveSV9 = WorldMapFrame, UIParent.GetEffectiveScale, NS.theme.id, NS.db.mapWindowSize
+    UIParent.GetEffectiveScale = function() return 0.64 end
+    local cases = { { "its real size", 1232, 705 }, { "0x0", 0, 0 }, { "the stale 1002x694", 1002, 694 } }
+    local worst, n, crestBad = 0, 0, {}
+    local centred = 0
+    for _, id in ipairs(NS.themeOrder) do
+      for _, cs in ipairs(cases) do
+        wmf(cs[2], cs[3], { scale = 0.64, real = true, rect = cs[2] > 0, shown = false })
+        NS.db.mapWindowSize = nil MW.last = nil MW.live = nil MW.seenShown = nil NS.verifiedRebuild = nil
+        NS.SetTheme(id)
+        local f = NS.RebuildWindow()
+        W = DarkMatter.windowParts
+        local before = NS.windowRebuilds
+        NS.ToggleWindow(true)
+        local ow, oh = MW.OurOuter()
+        local bad = math.max(math.abs((ow or 0) - (1247.33 - 26)), math.abs((oh or 0) - 729))
+        worst, n = math.max(worst, bad), n + 1
+        check(f:IsShown() and NS.windowRebuilds == before and not W.rebuildWanted and bad <= 1,
+          string.format("0.5.1.9 window: fresh login, map never shown (%s), %s: opens at outer %.1fx%.1f (want 1221x729: the map's 1247 less the tab column's 26), no rebuild",
+            cs[1], id, ow or -1, oh or -1))
+        -- 0.5.1.10: no title text in any theme; class crests centred on the frame; status text left-aligned, clear of
+        -- the centred bottom emblem
+        local ttl = W.title
+        if ttl and ((ttl:GetText() or "") ~= "" or ttl:IsShown()) then crestBad[#crestBad + 1] = id .. " (title text shown)" end
+        if NS.theme.classArt then
+          local sx9, _, ax9, _, AW9 = NS.ClassArtMap()
+          local mid = ax9 + AW9 / 2 * sx9
+          local cr, br = W.classArt.crestRect, W.classArt.baseRect
+          if not (cr and math.abs(cr[1] + cr[3] / 2 - mid) < 0.5) then crestBad[#crestBad + 1] = id .. " (top crest not centred)" else centred = centred + 1 end
+          if not (br and math.abs(br[1] + br[3] / 2 - mid) < 0.5) then crestBad[#crestBad + 1] = id .. " (bottom emblem not centred)" end
+          local sr = W.statusTextRect
+          if not sr or (br and br[1] < sr[3] and br[1] + br[3] > sr[1] and br[2] < sr[4] and br[2] + br[3] > sr[2]) then crestBad[#crestBad + 1] = id .. " (status text under the bottom emblem)" end
+        end
+        local jt = W.statusText and rawget(W.statusText, "_just")
+        if jt ~= "LEFT" then crestBad[#crestBad + 1] = id .. " (status text not left-aligned)" end
+        f:Hide()
+      end
+    end
+    check(n == #NS.themeOrder * #cases, string.format("0.5.1.9 window: %d fresh-login opens, worst %.2f px off 1221x729", n, worst))
+    check(#crestBad == 0 and centred == (#NS.themeOrder - 1) * #cases, "0.5.1.10 window: every theme: no title text; class crests and emblems centred (" .. centred .. "); status text left-aligned and clear of the bottom emblem (" .. table.concat(crestBad, ", ") .. ")")
+    UIParent.GetEffectiveScale = saveU9 WorldMapFrame = saveWMF9 MW.art = nil MW.seenShown = nil
+    NS.db.mapWindowSize = saveSV9
+    NS.SetTheme(saveTheme9) win = NS.RebuildWindow() W = DarkMatter.windowParts
+  end
+
+  -- 4. the WoW theme's map-window frame; class themes untouched
+  NS.SetTheme("wow")
+  win:Show()
+  local Ch = W.mapChrome
+  local ownOn, nineOn = 0, 0
+  for _, t in ipairs(Ch.own) do if t:IsShown() then ownOn = ownOn + 1 end end
+  for _, k in ipairs(MW.NINE) do if Ch.nine[k]:IsShown() then nineOn = nineOn + 1 end end
+  if os.getenv("DM_WMF") then
+    check(Ch.mirrored and nineOn == 8 and ownOn == 0 and Ch.nine.TopLeftCorner._file == "atlas:UI-Frame-Map-CornerTopRight" and Ch.cornerFrom == "the top-right corner, mirrored" and Ch.nine.TopEdge._file == "atlas:_UI-Frame-Map-EdgeTop",
+      "0.5.1.4 WoW theme: the map window's 8 border pieces are drawn around ours (by atlas)")
+    check(W.medalFrom == nil and W.closeFrom == "map window", "0.5.1.6 WoW theme: no portrait; the map window's close-button art")
+    local tc = { Ch.nine.TopLeftCorner:GetTexCoord() }
+    check(#tc == 8 and tc[1] > tc[5], "0.5.1.6 WoW theme: the plain top-left corner is the top-right corner mirrored (" .. table.concat(tc, ",") .. ")")
+  else
+    check(not Ch.mirrored and nineOn == 0 and ownOn == 8, "0.5.1.4 WoW theme: no map window to read -> Dark Matter's own thin bronze frame (8 lines)")
+    check(W.medalFrom == nil and W.closeFrom == "UIPanelCloseButton", "0.5.1.6 WoW theme: no portrait, the stock close button")
+  end
+  check(W.mapLook and Ch.strip:IsShown() and Ch.strip._h == NS.MAP_TITLE_H and W.title._pts[#W.title._pts][2] == Ch.strip, "0.5.1.4 WoW theme: a slim dark title strip with the title centred on it")
+  local tC = W.title._tcol or {}
+  check(tC[1] and tC[1] > 0.9 and tC[2] > 0.7 and tC[3] < 0.3, "0.5.1.4 WoW theme: the title is gold")
+  NS.ShowTab("map")
+  local M = NS.MapTab
+  local cr = M.crumbs
+  M.FlyTo(1426) for _ = 1, 30 do if M.Tick then M.Tick(0.05) end end
+  if M.Crumbs then M.Crumbs() end
+  check(M.crumbFaces and cr[1] and cr[1].face.shown and cr[1].face.prefix == "btn_red" and (not (cr[2] and cr[2]:IsShown()) or (cr[2].face.prefix == "btn_field" and cr[2].arrow:IsShown())) and not cr[1].sep:IsShown(),
+    "0.5.1.4 WoW theme: the breadcrumb is drawn like the stock map's top-bar buttons (red World, dark buttons with arrows)")
+  NS.SetTheme("warrior")
+  local anyOn = 0
+  for _, t in ipairs(Ch.all) do if t:IsShown() then anyOn = anyOn + 1 end end
+  check(anyOn == 0 and not W.mapLook and W.medalFrom == nil, "0.5.1.4 class themes: none of the map-window frame is drawn")
+  check(not M.crumbFaces and not cr[1].face.shown and (not (cr[2] and cr[2]:IsShown()) or cr[1].sep:IsShown()), "0.5.1.4 class themes: the plain text breadcrumb with '>' is unchanged")
+  NS.SetTheme("wow")
+  NS.ShowTab("quests")
+
+  -- 5. /dm frameprobe
+  WorldMapFrame = MakeWMF(1035, 640)
+  local said = {}
+  local oldPrint = NS.Print
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("frameprobe")
+  NS.Print = oldPrint
+  local all = table.concat(said, "\n")
+  if os.getenv("DM_DUMP") then for _, l in ipairs(said) do io.stderr:write("FRAME ", l, "\n") end end
+  check(said[1] == "frameprobe " .. ns.version .. " (the game's map window, read only):" and all:find("frame 1: WorldMapFrame yes; size 1035x640", 1, true)
+    and all:find("frame 3: border: 8 of 8 pieces readable", 1, true) and all:find("frame 3.1: TopLeftCorner: atlas UI-Frame-Map-CornerTopLeft (file ", 1, true)
+    and all:find("frame 4: title: text \"Map & Quest Log\" size 12", 1, true) and all:find("frame 5: close button 24x24: atlas RedButton-Exit", 1, true)
+    and all:find("frame 6: portrait: atlas UI-HUD-Map-Portrait", 1, true) and NS.db.frameprobe and #NS.db.frameprobe.lines == #said,
+    "0.5.1.4 /dm frameprobe: the map window's size, border pieces, title, close button and portrait (saved)")
+  WorldMapFrame = nil
+  MW.art = nil
+  said = {}
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList["DARKMATTER"]("frameprobe")
+  NS.Print = oldPrint
+  check(table.concat(said, "\n"):find("frame 1: WorldMapFrame no", 1, true) and table.concat(said, "\n"):find("frame 3: border: not readable", 1, true), "0.5.1.4 /dm frameprobe: no map window -> says so")
+  WorldMapFrame = saveWMF
+  MW.art = nil
+  MW.Art()
+  NS.SetTheme("wow")
+end
+
+-- ===== 0.5.2b: the objective tracker overlays, Ready to Turn In, zone auto-track, the M / L keys =====
+if MODE ~= "minimal" then
+  local NS = DarkMatter
+  local Tr, K, QL = NS.Tracker, NS.Keys, NS.QL
+  local mut0 = #MUTATED
+  check(Tr and K and Tr.frame and Tr.frame ~= UIParent and not Tr.frame._scripts.OnClick, "0.5.2b tracker: started at login on a private frame")
+  for _, r in ipairs(REGLOG) do
+    if r.frame == Tr.frame then check(r.frame ~= UIParent and r.frame ~= Minimap and r.frame ~= GameTooltip, "0.5.2b tracker: events only on its own frame (" .. r.ev .. ")") end
+  end
+  check(DarkMatterDB.autoTrack == true and DarkMatterDB.autoTrackV == 1 and DarkMatterDB.mlKeys == true and type(DarkMatterDB.userPins) == "table" and type(DarkMatterDB.keepTracked) == "table",
+    "0.5.2b.1 defaults: auto-track on, M/L keys on, pins saved in DarkMatterDB")
+  Tr.SetAuto(false) Tr.zonePending = nil -- the overlay tests below run with it off; section 4 turns it on
+  -- 1. keep-tracked pins: a sticky flag that only a click on the pin changes (0.5.2b.1)
+  check(DarkMatterDB.keepV == 1 and next(DarkMatterDB.keepTracked) == nil, "0.5.2b.1 keep: every pin starts unpinned (the one-time 0.5.2b reset ran)")
+  QWATCH = { [2] = true }
+  DarkMatterDB.keepTracked = {}
+  Tr.watch, Tr.log, Tr.own = nil, {}, {}
+  QL.Forget()
+  Tr.Diff()
+  local P = DarkMatterDB.keepTracked
+  check(next(P) == nil, "0.5.2b.1 keep: quests already tracked are not pinned")
+  QWATCH[3] = true Tr.Diff()
+  check(P[102] == nil, "0.5.2b.1 keep: tracking a quest yourself does not pin it")
+  Tr.SetPinned(102, true)
+  check(P[102] == true and QWATCH[3] == true, "0.5.2b.1 keep: a click on the pin pins it")
+  QWATCH[6] = true Tr.Diff() QWATCH[6] = nil Tr.Diff()
+  check(P[103] == nil, "0.5.2b keep: the game's auto-watch does not pin")
+  TIME_NOW = TIME_NOW + 100
+  Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+  QWATCH[3] = nil Tr.Diff()
+  check(QWATCH[3] == true and P[102] == true, "0.5.2b keep: a pinned quest the game untracks on a zone change is tracked again")
+  Tr.Diff()
+  check(Tr.own[102] == nil and P[102] == true, "0.5.2b keep: our own re-track is not taken as yours")
+  TIME_NOW = TIME_NOW + 10
+  QWATCH[3] = nil Tr.Diff()
+  check(QWATCH[3] == nil and P[102] == true, "0.5.2b.1 keep: untracking it yourself does not unpin it")
+  Tr.SetPinned(101, true)
+  Tr.OnEvent("QUEST_REMOVED", 101)
+  check(P[101] == nil, "0.5.2b keep: abandoning a quest unpins it")
+  Tr.SetPinned(103, true)
+  check(P[103] == true and QWATCH[6] == true, "0.5.2b keep: pinning an untracked quest tracks it")
+  Tr.Diff()
+  check(P[103] == true and Tr.own[103] == nil, "0.5.2b keep: and that track is ours (still pinned)")
+  Tr.SetPinned(103, false)
+  check(P[103] == nil and QWATCH[6] == true, "0.5.2b.1 keep: unpinning does not untrack (auto-track decides at the next zone change)")
+  Tr.SetPinned(103, true) P[102] = nil Tr.zonePending = nil
+  -- 2. the tracker rows: our own pin button and title click area, positioned by the blocks (read only)
+  local function vis(f) return f._shown == true end
+  local function block(q, top, withItem)
+    local b = CreateFrame("Frame", nil, UIParent)
+    b._shown = true b.id = q
+    b.IsVisible = function(s) return vis(s) end
+    b.GetTop = function() return top end
+    b.GetBottom = function() return top - 30 end
+    b.GetFrameStrata = function() return "LOW" end
+    b.GetFrameLevel = function() return 7 end
+    b.HeaderText = CreateFrame("Frame", nil, b)
+    b.HeaderText.GetLeft = function() return 1000 end
+    b.HeaderText.GetRight = function() return 1200 end
+    b.poiButton = CreateFrame("Button", nil, b)
+    b.poiButton._shown = true
+    b.poiButton.IsVisible = function(s) return vis(s) end
+    b.poiButton.GetLeft = function() return 975 end
+    b.poiButton.GetRight = function() return 995 end
+    if withItem then
+      b.ItemButton = CreateFrame("Button", nil, b)
+      b.ItemButton._shown = true
+      b.ItemButton.IsVisible = function(s) return vis(s) end
+      b.ItemButton.GetLeft = function() return 1150 end
+      b.ItemButton.GetRight = function() return 1180 end
+    end
+    return b
+  end
+  local T = CreateFrame("Frame", "ObjectiveTrackerFrame", UIParent)
+  T._shown = true
+  T.IsVisible = function(s) return vis(s) end
+  T.GetLeft = function() return 990 end
+  T.GetTop = function() return 760 end
+  T.GetWidth = function() return 240 end
+  local b1, b2 = block(101, 700, false), block(102, 640, true)
+  QuestObjectiveTracker = { usedBlocks = { Template = { [101] = b1, [102] = b2 } } }
+  P[101] = true
+  Tr.Layout()
+  local r1, r2 = Tr.rows[1], Tr.rows[2]
+  check(Tr.shown == 2 and r1.pin.q == 101 and r2.pin.q == 102, "0.5.2b tracker: one row per visible quest block, top to bottom")
+  check(r1.pin._parent == UIParent and r1.click._parent == UIParent and r1.pin._pts[1][2] == b1.poiButton and r1.pin._pts[1][1] == "RIGHT",
+    "0.5.2b tracker: our pin is a UIParent button beside the quest's map button (nothing put into the tracker)")
+  local style = Tr.KeepStyle()
+  check(style and style.key == "lock" and r1.pin._shown and r1.pin.icon._file == "Interface\\Buttons\\LockButton-Locked-Up" and r2.pin.icon._file == "Interface\\Buttons\\LockButton-Unlocked-Up",
+    "0.5.2b tracker: keep icon is a game icon (the map pin atlases are missing here, so the lock); pinned / not pinned differ")
+  check(r1.pin._strata == "LOW" and r1.pin._level == 12, "0.5.2b tracker: our buttons sit just above the block")
+  check(r1.click._pts[1][2] == b1.HeaderText and r1.click._pts[2][1] == "BOTTOMRIGHT" and rawget(r1.click, "cut") == nil, "0.5.2b tracker: the title click area covers the title")
+  check(r2.click.cut == 1150 and r2.click._w == 148 and r2.click._pts[2][1] == "BOTTOMLEFT", "0.5.2b tracker: the title area stops before the item button (uncovered)")
+  for _, f in ipairs({ T, b1, b2, b1.HeaderText, b1.poiButton, b2.ItemButton }) do
+    check(next(f._scripts) == nil and #f._pts == 0 and (f == T or f == b1 or f == b2 or f._parent ~= UIParent),
+      "0.5.2b taint: the tracker's frames get no script, no anchor and no new parent")
+  end
+  r2.pin._scripts.OnClick(r2.pin, "LeftButton")
+  check(P[102] == true, "0.5.2b tracker: our pin click pins the quest")
+  Tr.Layout()
+  check(r2.pin.icon._file == "Interface\\Buttons\\LockButton-Locked-Up", "0.5.2b tracker: and its icon follows")
+  r2.pin._scripts.OnClick(r2.pin, "LeftButton")
+  check(P[102] == nil, "0.5.2b tracker: a second click unpins it")
+  -- a chosen style the client lacks: nothing drawn (no substitute)
+  local ok1, msg1 = Tr.SetKeepIcon("pin")
+  Tr.Layout()
+  check(ok1 and msg1:find("MISSING", 1, true) and not r1.pin._shown, "0.5.2b tracker: a chosen keep icon this client lacks draws nothing")
+  Tr.SetKeepIcon("auto") Tr.Layout()
+  check(r1.pin._shown and DarkMatterDB.keepIcon == nil, "0.5.2b tracker: /dm keepicon auto goes back to the first available")
+  -- the title click opens Dark Matter on the Map tab with the quest's detail in the Quest Log panel
+  local saveST, saveOQ, saveShow = NS.MapTab.ShowQuest, NS.QuestPanel.OpenQuest, nil
+  local shownQ, openedQ
+  NS.MapTab.ShowQuest = function(q) shownQ = q end
+  NS.QuestPanel.OpenQuest = function(q) openedQ = q end
+  NS.ToggleWindow(false)
+  NS.db.questPanel = false
+  r1.click._scripts.OnClick(r1.click, "LeftButton")
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map" and NS.db.questPanel ~= false and shownQ == 101 and openedQ == 101,
+    "0.5.2b tracker: a title click opens Dark Matter on the Map tab, glides to the quest and opens its detail in the panel")
+  -- 3. Ready to Turn In (Gold Dust is complete). 0.5.2b.2: our own section below the tracker's real visible bottom
+  local saveAtlasR = C_Texture.GetAtlasInfo
+  local RA = {}
+  for _, a in pairs(Tr.READY_ATLAS) do RA[a] = true end
+  for _, a in pairs({ Tr.READY_ICON.atlas, Tr.READY_ICON.face, Tr.READY_ICON.faceSel }) do RA[a] = true end
+  C_Texture.GetAtlasInfo = function(a) if RA[a] then return { width = 16, height = 16 } end return saveAtlasR(a) end
+  Tr.FillReady() Tr.Layout()
+  local R = DarkMatterReadyFrame
+  check(R and R._parent == UIParent and R._shown and R.collapsed and R.n == 0 and R._h == 26 and NS.db.readyCollapsed == true and not (R.rows[1] and R.rows[1]._shown),
+    "0.5.2b.2 ready: our own UIParent section, collapsed by default (header only)")
+  local H = R.header
+  check(H._h == 26 and H.bg._atlas == "UI-QuestTracker-Secondary-Objective-Header" and H.bg._shown and H.text._text == "Ready to Turn In" and H.text._w == 200
+    and H.text._pts[1][1] == "LEFT" and H.text._pts[1][4] == 7,
+    "0.5.2b.2 ready: the header is the tracker's module header (same atlas, text at LEFT 7, width 200) ")
+  local B = R.toggle
+  check(B._w == 16 and B._h == 16 and B._pts[1][1] == "RIGHT" and B._pts[1][4] == 1 and B.icon._atlas == "ui-questtrackerbutton-secondary-expand"
+    and B.hl._atlas == "ui-questtrackerbutton-yellow-highlight" and B.hl._blend == "ADD",
+    "0.5.2b.2 ready: the same collapse/expand button (16x16 at RIGHT 1, expand atlas while collapsed, yellow ADD highlight)")
+  check(R._pts[1][1] == "TOPLEFT" and R._pts[1][2] == UIParent and R._pts[1][4] == 990 and R._pts[1][5] == 610 - 10,
+    "0.5.2b.2 ready: placed one module spacing below the tracker's lowest visible content")
+  B._scripts.OnMouseDown(B, "LeftButton")
+  check(B.icon._atlas == "ui-questtrackerbutton-secondary-expand-pressed", "0.5.2b.2 ready: the pressed atlas while held")
+  B._scripts.OnMouseUp(B, "LeftButton")
+  B._scripts.OnClick(B, "LeftButton")
+  check(NS.db.readyCollapsed == false and not R.collapsed and R.n == 1 and R.rows[1]._shown and R._h == 26 + 10 + 32 and B.icon._atlas == "ui-questtrackerbutton-secondary-collapse"
+    and R.rows[1].q == 102 and R.rows[1].title._text == "Gold Dust" and R.rows[1].zone._text == "Elwynn Forest",
+    "0.5.2b.2 ready: expanding lists the quest and its zone and is saved in DarkMatterDB")
+  -- 0.5.2b.7.3: the rows look like the tracker's own blocks: the tracker's completed-quest POI icon (game atlases),
+  -- no backdrop, the tracker's line font and OBJECTIVE_TRACKER_COLOR (Header / Normal, hover HeaderHighlight / NormalHighlight)
+  do
+    local r = R.rows[1]
+    local IA = Tr.READY_ICON
+    check(IA.atlas == "UI-QuestIcon-TurnIn-Normal" and IA.face == "UI-QuestPoi-QuestNumber" and IA.style == "QuestComplete" and IA.template == "ObjectiveTrackerPOIButtonTemplate",
+      "0.5.2b.7.3 ready: the icon is the tracker's completed-quest POI button (QuestComplete: UI-QuestIcon-TurnIn-Normal on UI-QuestPoi-QuestNumber)")
+    check(rawget(R, "bg") == nil and rawget(r, "hl") == nil, "0.5.2b.7.3 ready: no backdrop behind the rows and no highlight plate")
+    check(r.ficon._atlas == "UI-QuestIcon-TurnIn-Normal" and r.ficon._shown ~= false and r.face._atlas == "UI-QuestPoi-QuestNumber" and r.iconHow == "atlas"
+      and r.iconBox._w == 20 and r.iconBox._h == 20 and r.iconBox._pts[1][1] == "TOPRIGHT" and r.iconBox._pts[1][2] == r.title and r.iconBox._pts[1][3] == "TOPLEFT"
+      and r.iconBox._pts[1][4] == -7 and r.iconBox._pts[1][5] == 5,
+      "0.5.2b.7.3 ready: without the template the same two game atlases, 20x20 at the title's TOPLEFT (-7, 5) as the tracker places it (" .. tostring(r.iconHow) .. ")")
+    -- colours: the tracker's table when the client has it
+    local saveOTC = rawget(_G, "OBJECTIVE_TRACKER_COLOR")
+    OBJECTIVE_TRACKER_COLOR = { Header = { r = 0.75, g = 0.61, b = 0 }, HeaderHighlight = { r = 1, g = 0.82, b = 0 }, Normal = { r = 0.8, g = 0.8, b = 0.8 }, NormalHighlight = { r = 1, g = 1, b = 1 } }
+    local function near(c, a, b, d) return c and math.abs(c[1] - a) < 1e-6 and math.abs(c[2] - b) < 1e-6 and math.abs(c[3] - d) < 1e-6 and c[4] == 1 end
+    Tr.PaintReadyText(r)
+    check(near(r.title._tcol, 0.75, 0.61, 0) and near(r.zone._tcol, 0.8, 0.8, 0.8), "0.5.2b.7.3 ready: title in the tracker's Header colour, zone in Normal")
+    r._scripts.OnEnter(r)
+    check(near(r.title._tcol, 1, 0.82, 0) and near(r.zone._tcol, 1, 1, 1), "0.5.2b.7.3 ready: hover: HeaderHighlight and NormalHighlight, as the tracker's blocks")
+    r._scripts.OnLeave(r)
+    check(near(r.title._tcol, 0.75, 0.61, 0) and near(r.zone._tcol, 0.8, 0.8, 0.8), "0.5.2b.7.3 ready: leaving: back to Header and Normal")
+    OBJECTIVE_TRACKER_COLOR = { Header = { r = 0.1, g = 0.2, b = 0.3 }, Normal = { r = 0.4, g = 0.5, b = 0.6 } }
+    Tr.PaintReadyText(r)
+    check(near(r.title._tcol, 0.1, 0.2, 0.3) and near(r.zone._tcol, 0.4, 0.5, 0.6), "0.5.2b.7.3 ready: the colours are read from the client's OBJECTIVE_TRACKER_COLOR")
+    OBJECTIVE_TRACKER_COLOR = saveOTC
+    Tr.PaintReadyText(r)
+    check(r.font == "ObjectiveTrackerLineFont" or (r.font:find("^FRIZQT 12") and r.title._fsize == 12 and r.zone._fsize == 12),
+      "0.5.2b.7.3 ready: the tracker's line font (" .. tostring(r.font) .. ")")
+    -- the game's POI button when the client has the template: it draws the icon, ours stay hidden
+    local calls = {}
+    local fb = { Show = function() calls[#calls + 1] = "show" end, Hide = function() end,
+      SetQuestID = function(_, q) calls[#calls + 1] = "q" .. q end, SetStyle = function(_, s) calls[#calls + 1] = "style " .. tostring(s) end,
+      SetSelected = function(_, v) calls[#calls + 1] = "sel " .. tostring(v) end, UpdateButtonStyle = function() calls[#calls + 1] = "update" end,
+      style = "QC", template = "ObjectiveTrackerPOIButtonTemplate" }
+    local fr = { q = 102, poi = fb, face = r.face, ficon = r.ficon }
+    check(Tr.PaintReadyIcon(fr) and fr.iconHow == "ObjectiveTrackerPOIButtonTemplate" and table.concat(calls, ",") == "q102,style QC,sel false,update,show" and not r.ficon._shown,
+      "0.5.2b.7.3 ready: with the game's template the tracker's own POI button draws it (" .. table.concat(calls, ",") .. ")")
+    Tr.PaintReadyIcon(r)
+    local rep = table.concat(Tr.Report(), "\n")
+    check(rep:find("ready rows: icon atlas (POIButtonUtil.Style.QuestComplete: UI-QuestIcon-TurnIn-Normal on UI-QuestPoi-QuestNumber); font ", 1, true)
+      and rep:find("hover HeaderHighlight; line Normal 0.80 0.80 0.80, hover NormalHighlight; backdrop none", 1, true),
+      "0.5.2b.7.3 trackerprobe: the ready rows line names the icon, font and colours")
+  end
+  local wp, st, sq = {}, {}, {}
+  local saveSuper = C_SuperTrack
+  C_SuperTrack = { SetSuperTrackedQuestID = function(q) sq[#sq + 1] = q end, SetSuperTrackedUserWaypoint = function(v) st[#st + 1] = v end }
+  shownQ, openedQ = nil, nil
+  NS.ToggleWindow(false)
+  R.rows[1]._scripts.OnClick(R.rows[1], "LeftButton")
+  check(sq[1] == 102 and shownQ == 102 and openedQ == 102 and DarkMatterFrame:IsShown(), "0.5.2b ready: a row click sets the arrow and opens Dark Matter on that quest")
+  C_SuperTrack = saveSuper
+  NS.MapTab.ShowQuest, NS.QuestPanel.OpenQuest = saveST, saveOQ
+  -- the tracker's height changes (Quests grows and shrinks; Professions expanded, collapsed, empty): never an overlap, never a gap
+  local qBot, pBot, pVis, hdrVis = 590, 470, true, true
+  local THdr = CreateFrame("Frame", nil, T)
+  THdr.IsVisible = function() return hdrVis and T._shown end
+  THdr.GetBottom = function() return 728 end
+  local MQ = CreateFrame("Frame", nil, T)
+  MQ.IsVisible = function() return T._shown end
+  MQ.GetBottom = function() return qBot end
+  local MP = CreateFrame("Frame", nil, T)
+  MP.IsVisible = function() return pVis and T._shown end
+  MP.GetBottom = function() return pBot end
+  T.Header, T.modules, T.moduleSpacing = THdr, { MQ, MP }, 10
+  local bad, cases = {}, 0
+  local function Poll()
+    if Tr.frame and Tr.frame._scripts.OnUpdate then Tr.frame._scripts.OnUpdate(Tr.frame, Tr.READY_POLL) else Tr.PlaceReady() end
+  end
+  for _, sc in ipairs({ 1, 0.8 }) do
+    T:SetScale(sc)
+    for _, q in ipairs({ 600, 450, 300 }) do
+      for _, pst in ipairs({ "expanded", "collapsed", "empty" }) do
+        qBot = q
+        pVis = pst ~= "empty"
+        pBot = pst == "expanded" and q - 10 - 120 or q - 10 - 26
+        Poll()
+        cases = cases + 1
+        local top = R._pts[1][5] * (R._scale or 1)  -- in UIParent units, like the tracker's (T-space * scale)
+        local want = ((pVis and pBot or math.min(qBot, 610)) - 10) * sc
+        local ok = R._shown and #R._pts == 1 and math.abs(top - want) < 1e-6 and math.abs((R._scale or 1) - sc) < 1e-6
+        for _, f in ipairs({ THdr, MQ, MP, b1, b2 }) do
+          if f:IsVisible() and top > (f:GetBottom() - 10) * sc + 1e-6 then ok = false end
+        end
+        if not ok then bad[#bad + 1] = sc .. "/" .. q .. "/" .. pst .. "=" .. tostring(top) .. "~" .. tostring(want) end
+      end
+    end
+  end
+  T:SetScale(1)
+  check(cases == 18 and #bad == 0, "0.5.2b.2 ready: the frame never overlaps when the tracker height changes, and slides up with no gap (" .. table.concat(bad, " ") .. ")")
+  -- the tracker's background reaching lower than its content: we stay below it too
+  local NSl = CreateFrame("Frame", nil, T)
+  NSl.IsVisible = function() return T._shown end
+  NSl.GetBottom = function() return qBot - 40 end
+  T.NineSlice = NSl
+  pVis = false Poll()
+  check(R._pts[1][5] == qBot - 40, "0.5.2b.2 ready: never over the tracker's background either")
+  T.NineSlice = nil
+  for _, f in ipairs({ T, THdr, MQ, MP, NSl }) do
+    check(next(f._scripts) == nil and (f == T or #f._pts == 0) and f._parent == (f == T and UIParent or T),
+      "0.5.2b.2 taint: the tracker's modules get no script, no anchor and no new parent (only read)")
+  end
+  check(R._pts[1][2] == UIParent and R._parent == UIParent, "0.5.2b.2 ready: never anchored to or parented by the tracker")
+  -- a hidden tracker: we sit where it would be
+  T._shown = false Tr.Layout()
+  check(R._shown and R._pts[1][4] == 990 and R._pts[1][5] == 760 and not r1.pin._shown and not r1.click._shown,
+    "0.5.2b.2 ready: with the tracker hidden the section sits where the tracker would be (pins and clicks hide)")
+  T._shown = true
+  T.Header, T.modules, T.moduleSpacing = nil, nil, nil
+  B._scripts.OnClick(B, "LeftButton")
+  check(NS.db.readyCollapsed == true and R.collapsed and R._h == 26 and not R.rows[1]._shown, "0.5.2b.2 ready: collapsing again is saved too")
+  C_Texture.GetAtlasInfo = function(a) if RA[a] then return nil end return saveAtlasR(a) end
+  B._scripts.OnClick(B, "LeftButton")
+  check(not B.icon._shown, "0.5.2b.2 ready: a missing game atlas draws nothing (no substitute)")
+  C_Texture.GetAtlasInfo = saveAtlasR
+  B._scripts.OnClick(B, "LeftButton")
+  NS.db.readySection = false Tr.FillReady() Tr.Layout()
+  check(not R._shown, "0.5.2b ready: the section can be turned off")
+  NS.db.readySection = nil Tr.FillReady() Tr.Layout()
+  check(R._shown, "0.5.2b ready: and back on")
+  -- the Quests tab and the Quest Log panel: a Ready to Turn In group on top
+  local QT = NS.tabs.quests
+  local rq = QT.Ready()
+  check(#rq == 1 and rq[1].questID == 102 and QT.READY_TITLE == "Ready to Turn In", "0.5.2b ready: the Quests tab and the panel get a Ready to Turn In group")
+  -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat
+  QWATCH = { [6] = true }
+  for k in pairs(P) do P[k] = nil end
+  Tr.watch, Tr.own = nil, {}
+  Tr.Diff()
+  for k in pairs(P) do P[k] = nil end
+  check(Tr.AutoWanted() == false, "0.5.2b auto: off (turned off for these tests)")
+  Tr.Tick(TIME_NOW)
+  check(QWATCH[6] == true and not QWATCH[2], "0.5.2b auto: nothing changes while it is off")
+  local taxi = false
+  UnitOnTaxi = function() return taxi end
+  SlashCmdList.DARKMATTER("autotrack on")
+  check(NS.db.autoTrack == true, "0.5.2b auto: /dm autotrack on")
+  taxi = true
+  Tr.Tick(TIME_NOW)
+  check(QWATCH[6] == true and not QWATCH[2] and Tr.waitingTaxi, "0.5.2b auto: on a flight it waits for the landing")
+  taxi = false
+  local ic = InCombatLockdown
+  InCombatLockdown = function() return true end
+  Tr.Tick(TIME_NOW)
+  check(QWATCH[6] == true and not QWATCH[2], "0.5.2b auto: no watch change in combat")
+  InCombatLockdown = ic
+  Tr.BATCH = 2
+  Tr.Tick(TIME_NOW)
+  check(QWATCH[6] == nil and QWATCH[2] == true and not QWATCH[3] and Tr.batches and #Tr.queue == 1, "0.5.2b auto: the first batch (removals first, then adds)")
+  Tr.Tick(TIME_NOW + 0.5)
+  check(not QWATCH[3], "0.5.2b auto: the next batch waits about a second")
+  Tr.Tick(TIME_NOW + 1.1)
+  check(QWATCH[3] == true and QWATCH[2] == true and not QWATCH[6] and #Tr.queue == 0, "0.5.2b auto: this zone's quests tracked, the other zone's untracked")
+  Tr.Diff()
+  check(next(P) == nil, "0.5.2b auto: its own changes pin nothing")
+  -- a pinned quest from another zone stays tracked
+  P[103] = true
+  Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+  Tr.Tick(TIME_NOW + 3) Tr.Tick(TIME_NOW + 5)
+  check(QWATCH[6] == true and QWATCH[2] == true and QWATCH[3] == true, "0.5.2b auto: kept (pinned) quests stay tracked in any zone")
+  Tr.BATCH = 5
+  SlashCmdList.DARKMATTER("autotrack off")
+  UnitOnTaxi = nil
+  check(NS.db.autoTrack == false, "0.5.2b auto: /dm autotrack off")
+  P[103] = nil
+  -- ===== 0.5.2b.1: Track boxes and the game's log only track/untrack; pins change only on a pin click; auto-track =====
+  do
+    local log = Tr.ReadLog()
+    QWATCH = {}
+    for k in pairs(P) do P[k] = nil end
+    Tr.watch, Tr.own, Tr.ownAt = nil, {}, {}
+    QL.Forget() Tr.Diff()
+    Tr.UserToggle(log[101])
+    local c, partly = Tr.CheckState(log[101])
+    check(P[101] == nil and QWATCH[2] == true and c == true and partly == false, "0.5.2b.1 box: checking a Track box tracks the quest, no pin")
+    QL.Forget() Tr.Diff()
+    check(P[101] == nil and Tr.own[101] == nil, "0.5.2b.1 box: still not pinned after the diff")
+    Tr.SetPinned(101, true)
+    Tr.UserToggle(log[101])
+    QL.Forget() Tr.Diff()
+    check(P[101] == true and QWATCH[2] == nil and Tr.CheckState(log[101]) == false, "0.5.2b.1 box: unchecking untracks it, the pin stays")
+    P[101] = nil
+    -- the game's quest log checkbox (QUEST_WATCH_LIST_CHANGED): never pins or unpins
+    TIME_NOW = TIME_NOW + 10
+    QWATCH[3] = true QL.Forget() Tr.Diff()
+    check(P[102] == nil and Tr.CheckState(log[102]) == true, "0.5.2b.1 game log: tracking there does not pin it")
+    P[102] = true
+    QWATCH[3] = nil QL.Forget() Tr.Diff()
+    check(P[102] == true and QWATCH[3] == nil, "0.5.2b.1 game log: untracking there does not unpin it")
+    P[102] = nil
+    -- the Quests tab box: plain tracking
+    local box
+    for _, f in ipairs(ALL) do
+      if rawget(f, "isWatchBox") and type(rawget(f, "row")) == "table" and type(f.row.quest) == "table" and f.row.quest.questID == 101 and f._scripts.OnClick then box = f break end
+    end
+    if box then
+      box._scripts.OnClick(box)
+      check(P[101] == nil and QWATCH[2] == true and Tr.CheckState(box.row.quest) == true, "0.5.2b.1 box: the Quests tab box tracks (no pin)")
+      box._scripts.OnClick(box)
+      check(P[101] == nil and QWATCH[2] == nil and Tr.CheckState(box.row.quest) == false, "0.5.2b.1 box: the Quests tab box untracks")
+    else
+      check(MODE ~= "full", "0.5.2b.1 box: a Quests tab Track box exists")
+    end
+    -- auto-track: fires after landing, its changes pin nothing
+    QL.Forget() Tr.Diff()
+    for k in pairs(P) do P[k] = nil end
+    Tr.SetAuto(true)
+    Tr.queue, Tr.zonePending = {}, nil
+    QWATCH = { [6] = true }
+    QL.Forget() Tr.Diff()
+    local taxi = true
+    UnitOnTaxi = function() return taxi end
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW)
+    check(Tr.waitingTaxi and QWATCH[6] == true and not QWATCH[2], "0.5.2b.1 auto: a zone change in flight waits")
+    taxi = false
+    Tr.OnEvent("PLAYER_CONTROL_GAINED")
+    Tr.Tick(TIME_NOW + 0.2) Tr.Tick(TIME_NOW + 1.5) Tr.Tick(TIME_NOW + 3)
+    check(QWATCH[2] == true and QWATCH[3] == true and not QWATCH[6] and not Tr.waitingTaxi, "0.5.2b.1 auto: after landing, this zone's quests tracked and the rest untracked")
+    QL.Forget() Tr.Diff()
+    check(next(P) == nil, "0.5.2b.1 auto: its changes are not taken as yours (nothing pinned)")
+    Tr.OnEvent("PLAYER_ENTERING_WORLD")
+    check(Tr.zonePending ~= nil, "0.5.2b.1 auto: PLAYER_ENTERING_WORLD also re-plans")
+    -- a pinned quest stays in every zone; an unpinned one follows auto-track
+    P[103] = true
+    QWATCH = { [6] = true }
+    QL.Forget() Tr.Diff()
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW + 0.2) Tr.Tick(TIME_NOW + 1.5) Tr.Tick(TIME_NOW + 3)
+    check(QWATCH[6] == true and QWATCH[2] == true and P[103] == true, "0.5.2b.1 auto: a pinned quest from another zone stays tracked")
+    -- auto-track off: an untracked pinned quest is tracked again after a zone change; the rest is the game's
+    Tr.SetAuto(false)
+    QWATCH = { [3] = true }
+    QL.Forget() Tr.Diff()
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW + 4)
+    check(QWATCH[6] == true and QWATCH[3] == true and not QWATCH[2] and P[103] == true, "0.5.2b.1 auto off: a pinned quest is tracked again after a zone change, the rest left as the game has it")
+    P[103] = nil
+    UnitOnTaxi = nil
+    Tr.SetAuto(false) Tr.zonePending = nil
+    QWATCH = {}
+    QL.Forget() Tr.Diff()
+    for k in pairs(P) do P[k] = nil end
+  end
+  -- 0.5.2b.1 item 6: the tracker follows the watch order; we re-track out of place quests in log order (public API only)
+  do
+    local log = Tr.ReadLog()
+    local fx = Tr.OrderFix({ 103, 101, 102 }, log)
+    local fy = Tr.OrderFix({ 101, 103, 102 }, log)
+    check(#fx == 3 and fx[1] == 101 and fx[2] == 102 and fx[3] == 103 and #fy == 2 and fy[1] == 102 and fy[2] == 103
+      and #Tr.OrderFix({ 101, 102, 103 }, log) == 0, "0.5.2b.1 order: from the first quest out of place on, re-tracked in log order")
+    local ID = { [2] = 101, [3] = 102, [6] = 103 }
+    local IX = { [101] = 2, [102] = 3, [103] = 6 }
+    local WL = {}
+    local prepend, keep = false, false
+    local oA, oR, oN, oI = AddQuestWatch, RemoveQuestWatch, C_QuestLog.GetNumQuestWatches, C_QuestLog.GetQuestIDForQuestWatchIndex
+    AddQuestWatch = function(i) QWATCH[i] = true if prepend then table.insert(WL, 1, ID[i]) else WL[#WL + 1] = ID[i] end if keep then table.sort(WL, function(a, b) return a > b end) end end
+    RemoveQuestWatch = function(i) QWATCH[i] = nil for k = #WL, 1, -1 do if WL[k] == ID[i] then table.remove(WL, k) end end end
+    C_QuestLog.GetNumQuestWatches = function() return #WL end
+    C_QuestLog.GetQuestIDForQuestWatchIndex = function(i) return WL[i] end
+    local function setWL(ids) WL = {} QWATCH = {} for _, id in ipairs(ids) do WL[#WL + 1] = id QWATCH[IX[id]] = true end end
+    for k in pairs(P) do P[k] = nil end
+    Tr.own, Tr.ownAt, Tr.queue, Tr.zonePending, Tr.orderRuns, Tr.orderFixed = {}, {}, {}, nil, {}, 0
+    setWL({ 103, 101 })
+    QL.Forget() Tr.Diff()
+    for k in pairs(P) do P[k] = nil end
+    P[103] = true
+    Tr.SetOrder(true)
+    local t0 = GetTime()
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(t0 + 0.2)
+    check(WL[1] == 103, "0.5.2b.1 order: waits a moment after the game's own zone re-sort")
+    Tr.Tick(t0 + 1.5)
+    check(WL[1] == 101 and WL[2] == 103 and #WL == 2 and Tr.orderFixed == 1, "0.5.2b.1 order: the tracker's watch list is put in quest-log order")
+    QL.Forget() Tr.Tick(t0 + 3)
+    check(P[103] == true and P[101] == nil and Tr.own[101] == nil and Tr.own[103] == nil, "0.5.2b.1 order: re-tracking changes no pins (not taken as yours)")
+    -- in combat: nothing until it ends
+    setWL({ 103, 101 })
+    local oc = InCombatLockdown
+    InCombatLockdown = function() return true end
+    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED")
+    Tr.Tick(t0 + 5)
+    check(WL[1] == 103, "0.5.2b.1 order: never in combat")
+    InCombatLockdown = oc
+    Tr.Tick(t0 + 6)
+    check(WL[1] == 101, "0.5.2b.1 order: done after combat")
+    -- a client that keeps its own order (here: always by quest ID, highest first): stop, no loop; a new zone tries again
+    setWL({ 103, 101 }) keep = true
+    for i = 1, 4 do Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 7 + i * 0.5) end
+    local n1 = Tr.orderFixed
+    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 10)
+    check(Tr.orderGaveUp == true and Tr.orderFixed == n1 and n1 <= 5 and #WL == 2 and P[103] == true, "0.5.2b.1 order: if the game keeps its own order it stops (no loop, nothing lost)")
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    check(Tr.orderGaveUp == nil, "0.5.2b.1 order: a new zone tries again")
+    keep = false
+    -- 0.5.2b.2: on 1.60.1 a new watch goes to the FRONT. 0.5.2b.1 then came out exactly reversed; now the end is learned
+    local fz = Tr.OrderFix({ 103, 101, 102 }, log, "front")
+    local fw = Tr.OrderFix({ 102, 101, 103 }, log, "front")
+    check(#fz == 3 and fz[1] == 103 and fz[2] == 102 and fz[3] == 101 and #fw == 2 and fw[1] == 102 and fw[2] == 101
+      and #Tr.OrderFix({ 101, 102, 103 }, log, "front") == 0, "0.5.2b.2 order: front end: the quests before the right tail, re-tracked in reverse log order")
+    NS.db.watchInsert, Tr.orderLearned = nil, nil
+    prepend = true
+    setWL({ 103, 102, 101 })  -- what 0.5.2b.1 left: the exact reverse of the log
+    Tr.orderLearnTried = nil Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 20)
+    check(NS.db.watchInsert == "front" and Tr.WatchSide() == "front", "0.5.2b.2 order: learns that new watches go to the front (saved)")
+    Tr.Tick(t0 + 20.5)
+    check(WL[1] == 101 and WL[2] == 102 and WL[3] == 103 and #WL == 3 and P[103] == true and not Tr.orderGaveUp, "0.5.2b.2 order: then the watch list (the tracker) is in log order, not reversed")
+    local adds = 0
+    local oA2 = AddQuestWatch
+    AddQuestWatch = function(i) adds = adds + 1 return oA2(i) end
+    setWL({ 102, 101, 103 })
+    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 22)
+    check(WL[1] == 101 and WL[2] == 102 and WL[3] == 103 and adds == 2, "0.5.2b.2 order: with the front known, only the quests before the right tail are re-tracked")
+    AddQuestWatch = oA2
+    -- a client that shows the change a moment later: checked again after the next settle, then learned
+    NS.db.watchInsert, Tr.orderLearned = nil, nil
+    local oN2 = C_QuestLog.GetQuestIDForQuestWatchIndex
+    local frozen
+    C_QuestLog.GetQuestIDForQuestWatchIndex = function(i) return (frozen or WL)[i] end
+    setWL({ 102, 101, 103 })
+    frozen = { 102, 101, 103 }
+    Tr.orderLearnTried = nil Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 30)
+    check(Tr.orderVerify ~= nil and NS.db.watchInsert == nil, "0.5.2b.2 order: a result not visible yet is checked again")
+    frozen = nil
+    Tr.Tick(t0 + 31.5)
+    check(NS.db.watchInsert == "front" and WL[1] == 101 and WL[2] == 102 and WL[3] == 103, "0.5.2b.2 order: then learned and put right")
+    C_QuestLog.GetQuestIDForQuestWatchIndex = oN2
+    prepend = false
+    NS.db.watchInsert, Tr.orderLearned = nil, nil
+    Tr.orderLearnTried, Tr.orderVerify = nil, nil
+    -- /dm trackorder off: the game's order stays
+    local oldP = NS.Print NS.Print = function() end
+    SlashCmdList.DARKMATTER("trackorder off")
+    NS.Print = oldP
+    setWL({ 103, 101 })
+    Tr.OnEvent("QUEST_WATCH_LIST_CHANGED") Tr.Tick(t0 + 12)
+    check(NS.db.trackOrder == false and WL[1] == 103, "0.5.2b.1 order: /dm trackorder off leaves the game's order")
+    Tr.SetOrder(true)
+    AddQuestWatch, RemoveQuestWatch, C_QuestLog.GetNumQuestWatches, C_QuestLog.GetQuestIDForQuestWatchIndex = oA, oR, oN, oI
+    Tr.orderDirty, Tr.orderGaveUp = nil, nil
+    QWATCH = {}
+    QL.Forget() Tr.Diff()
+    for k in pairs(P) do P[k] = nil end
+  end
+  check(Tr.PIN_SIZE >= 17 and Tr.PIN_SIZE <= 18, "0.5.2b.1 tracker: keep pins 17-18 px (were 14)")
+  -- item 5 stays out: nothing is ever registered with the game's tracker (its quest item buttons call protected code)
+  do
+    local fh = io.open(arg[1] .. "/Tracker.lua") local src = fh:read("*a") fh:close()
+    local code = src:gsub("%-%-[^\n]*", "")
+    check(not code:find("ObjectiveTrackerManager", 1, true) and not code:find("SetModuleContainer", 1, true) and not code:find("AddModule", 1, true)
+      and not code:find("AddTopPaddingProvider", 1, true) and not code:find("EventRegistry", 1, true) and not code:find("uiOrder", 1, true),
+      "0.5.2b.1 taint: no module, padding provider or callback is added to the game's objective tracker")
+  end
+  -- 5. the M / L keys: override bindings owned by our frame, out of combat only, never saved
+  local binds, cleared, saved = {}, 0, 0
+  ClearOverrideBindings = function(o) check(o == K.owner, "0.5.2b keys: cleared on our own frame") binds = {} cleared = cleared + 1 end
+  SetOverrideBinding = function(o, prio, key, action) check(o == K.owner and prio == false, "0.5.2b keys: owned by our frame") binds[key] = action end
+  SetOverrideBindingClick = function(o, prio, key, btn, mb) check(o == K.owner and prio == false and mb == "LeftButton", "0.5.2b keys: click binding on our frame") binds[key] = "CLICK " .. btn end
+  SaveBindings = function() saved = saved + 1 end
+  check(K.Apply() == "on" and binds.M == "CLICK DarkMatterKeyMap" and binds.L == "CLICK DarkMatterKeyLog" and binds["ALT-M"] == "TOGGLEWORLDMAP" and binds["ALT-L"] == "TOGGLEQUESTLOG",
+    "0.5.2b keys: M and L open Dark Matter; ALT-M / ALT-L the game's map and quest log")
+  check(K.owner._name == "DarkMatterKeyOwner" and K.owner ~= UIParent, "0.5.2b keys: owned by a Dark Matter frame")
+  NS.ToggleWindow(false)
+  local kb = DarkMatterKeyMap
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  kb._scripts.OnClick(kb, "LeftButton", false)
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map" and NS.QuestPanel.IsShown(), "0.5.2b keys: M opens Dark Matter on the Map tab with the Quest Log panel (once per press)")
+  TIME_NOW = TIME_NOW + 5
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b keys: M again closes it")
+  local kl = DarkMatterKeyLog
+  TIME_NOW = TIME_NOW + 5
+  kl._scripts.OnClick(kl, "LeftButton", false)
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map" and NS.QuestPanel.IsShown(), "0.5.2b keys: L opens it too")
+  NS.ToggleWindow(false)
+  InCombatLockdown = function() return true end
+  local c0 = cleared
+  binds = {}
+  check(K.Set(false) == "queued" and cleared == c0 and K.pending, "0.5.2b keys: in combat nothing changes (queued)")
+  local rf = REGLOG[#REGLOG].ev == "PLAYER_REGEN_ENABLED" and REGLOG[#REGLOG].frame or nil
+  InCombatLockdown = ic
+  check(rf and rf ~= UIParent, "0.5.2b keys: waits for the end of combat on a private frame")
+  local found = rf and rf._scripts.OnEvent and true
+  if found then rf._scripts.OnEvent(rf, "PLAYER_REGEN_ENABLED") end
+  check(not (rf and rf._ev and rf._ev.PLAYER_REGEN_ENABLED), "0.5.2b keys: the combat-end frame lets go of the event")
+  check(found and cleared == c0 + 1 and next(binds) == nil and not K.pending, "0.5.2b keys: after combat the option (off) is applied: no overrides")
+  SlashCmdList.DARKMATTER("keys on")
+  check(NS.db.mlKeys == true and binds.M == "CLICK DarkMatterKeyMap", "0.5.2b keys: /dm keys on")
+  check(saved == 0, "0.5.2b keys: SaveBindings is never called")
+  ClearOverrideBindings, SetOverrideBinding, SetOverrideBindingClick, SaveBindings = nil, nil, nil, nil
+  -- 6. /dm trackerprobe
+  local said = {}
+  local oldPrint = NS.Print
+  NS.Print = function(m) said[#said + 1] = m end
+  SlashCmdList.DARKMATTER("trackerprobe")
+  NS.Print = oldPrint
+  local all = table.concat(said, "\n")
+  check(said[1] == "trackerprobe " .. ns.version .. " (read-only)" and all:find("\nlog order (tracked quests): ", 1, true) and all:find("\nwatch order (index 1 first): ", 1, true) and all:find("\ntracker blocks (top to bottom): ", 1, true) and all:find("\ntracker vs log: ", 1, true) and all:find("\nnew watches go to the: ", 1, true) and all:find("style pin: map pin", 1, true) and all:find("style lock: lock", 1, true) and all:find("-> MISSING", 1, true)
+    and all:find("keep icon: lock", 1, true) and NS.db.probeLog.trackerprobe, "0.5.2b /dm trackerprobe: the tracker, the keep icon candidates (ok/missing), saved")
+  -- the Settings page: two plain checkboxes
+  local boxes = {}
+  for _, f in ipairs(ALL) do if f._parent == DarkMatterOptionsPanel and rawget(f, "_scripts").OnClick and f._checked ~= nil then boxes[#boxes + 1] = f end end
+  check(#boxes == 2, "0.5.2b options: two checkboxes (zone auto-track, M/L keys)")
+  -- taint: no mutating calls, no hooks, nothing saved, no shared frames
+  check(#MUTATED == mut0, "0.5.2b taint: the tracker, ready and key code made no mutating calls (" .. table.concat(MUTATED, ",", mut0 + 1) .. ")")
+  ObjectiveTrackerFrame, QuestObjectiveTracker = nil, nil
+  Tr.Layout()
+  QWATCH = { [2] = true }
+  QL.Forget()
+end
+if MODE == "minimal" and not ERA then
+  local Tr = DarkMatter.Tracker
+  Tr.Tick(TIME_NOW)
+  check(Tr.frame and Tr.shown == 0 and (Tr.readyCount or 0) == 0, "0.5.2b tracker: a client without the quest log or the tracker: nothing drawn, no error")
+  check(DarkMatter.Tracker.Report()[2]:find("not present", 1, true), "0.5.2b tracker: the probe says the tracker is not present")
+end
+for _, fn in ipairs({ "Tracker.lua", "Keys.lua" }) do
+  local src = io.open(arg[1] .. "/" .. fn):read("*a")
+  local code = src:gsub("%-%-[^\n]*", "")
+  for _, bad in ipairs({ "hooksecurefunc", "HookScript", "SaveBindings", "LoadAddOn", "SetParent", "UIParent:RegisterEvent", "SecureHandler", "WorldMapFrame" }) do
+    check(not code:find(bad, 1, true), "0.5.2b taint: " .. fn .. " has no " .. bad)
+  end
+end
+do
+  local code = io.open(arg[1] .. "/Tab_Map.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  check(not code:find("SetUserWaypoint", 1, true) and not code:find("SetSuperTrack", 1, true), "0.5.2b taint: your map pins set the waypoint only through QuestState")
+end
+
 -- ===== 0.4.1: no restricted event was ever registered or unregistered, in any mode =====
 check(#RESTRICTED_TOUCH == 0, "no addon code touched a restricted event (" .. table.concat(RESTRICTED_TOUCH, ", ") .. ")")
 for _, fn in ipairs({ "Achievements.lua", "AdventureGuide.lua", "Fishing.lua", "Core.lua", "Window.lua", "Tab_Journals.lua", "Journal_Achievements.lua" }) do
@@ -3489,6 +7338,67 @@ for _, fn in ipairs({ "Achievements.lua", "AdventureGuide.lua", "Fishing.lua", "
   local code = src:gsub("%-%-[^\n]*", "")
   check(not code:find("CombatLogGetCurrentEventInfo", 1, true) and not code:find("SetPropagateKeyboardInput", 1, true),
     fn .. ": no combat-log reads, no SetPropagateKeyboardInput")
+end
+
+-- ===== 0.5.2b.9: the flavors. WoW Forever loads DarkMatter.toc (no Era file); Classic Era loads DarkMatter_Vanilla.toc
+-- (the same files, Interface 11509, plus Compat_Era.lua last) =====
+do
+  local NS = DarkMatter
+  local function tocFiles(name)
+    local t = io.open(arg[1] .. "/" .. name):read("*a")
+    local l = {}
+    for f in t:gmatch("\n([%w_]+%.lua)") do l[#l + 1] = f end
+    return t, l
+  end
+  local ft, fl = tocFiles("DarkMatter.toc")
+  local vt, vl = tocFiles("DarkMatter_Vanilla.toc")
+  local same = #vl == #fl + 1 and vl[#vl] == "Compat_Era.lua"
+  for i = 1, #fl do same = same and vl[i] == fl[i] end
+  local function head(t) return (t:gsub("\n[%w_]+%.lua", ""):gsub("## Interface: %d+", "")) end
+  check(same and ft:find("^## Interface: 16001\n") and vt:find("^## Interface: 11509\n")
+    and head(ft) == head(vt) and not ft:find("Compat_Era", 1, true),
+    "0.5.2b.9 TOCs: DarkMatter_Vanilla.toc = DarkMatter.toc's header and files (Interface 11509 for 16001) + Compat_Era.lua last; Forever's has no Era file")
+  if not ERA then
+    check(NS.IsEra == nil and NS.Era == nil, "0.5.2b.9 Forever: not Classic Era (no Era shim loaded)")
+  else
+    local E = NS.Era
+    check(NS.IsEra == true and E and E.project == 2 and E.interface == 11509 and ERA_FILES[#ERA_FILES] == "Compat_Era.lua",
+      "0.5.2b.9 era: NS.IsEra from WOW_PROJECT_ID 2 / interface 11509, Compat_Era.lua loaded last")
+    local seamRows, bad = 0, 0
+    for _, list in pairs(NS.ZoneSeams or {}) do
+      for _, s in ipairs(list) do
+        seamRows = seamRows + 1
+        if s[1] == 2482 or s[2] == 2482 or s[1] == 2548 or s[2] == 2548 or s[1] == 2652 or s[2] == 2652 then bad = bad + 1 end
+      end
+    end
+    local Z = NS.ZoneLevels.zones
+    check(seamRows > 0 and bad == 0 and Z["zephras isle"] == nil and Z["riverglades"] == nil and Z["mount hyjal"] == nil
+      and Z["elwynn forest"] ~= nil and table.concat(E.dropped, ",") == "2482,2548,2652,zephras isle",
+      "0.5.2b.9 era: the Forever-only zones (2482, 2548, 2652, Zephras Isle) gone from the masks, seams and level badges (" .. seamRows .. " seams kept)")
+    local Tr = NS.Tracker
+    Tr.Tick(TIME_NOW)
+    check(Tr.frame == nil and Tr.eraOff == true and Tr.Report()[2]:find("off on Classic Era", 1, true),
+      "0.5.2b.9 era: the objective tracker overlays are off (never started), /dm trackerprobe says so")
+    check(NS.QS.CanWaypoint() == false and NS.QS.SetWaypoint(1426, 0.5, 0.5) == false and NS.QS.TrackQuest(101) == false,
+      "0.5.2b.9 era: waypoints and super tracking off")
+    -- every map command: works or says what is missing, never a Lua error
+    if DarkMatterFrame then DarkMatterFrame:Show() end
+    NS.MapTab.Reset() NS.ShowTab("quests") NS.ShowTab("map")
+    for _ = 1, 5 do NS.MapTab.Tick(0.05) end
+    local oldPrint = NS.Print
+    for _, cmd in ipairs({ "probe", "mapprobe", "tileprobe", "mapshapes 4", "zoomprobe", "shottest", "seamsweep", "seamsweep stop", "trackerprobe", "achprobe" }) do
+      local said, n0 = {}, #log
+      NS.Print = function(m) said[#said + 1] = tostring(m) end
+      local ok, err = pcall(SlashCmdList.DARKMATTER, cmd)
+      NS.Print = oldPrint
+      for i = n0 + 1, #log do said[#said + 1] = tostring(log[i]) end
+      local errLine
+      for _, l in ipairs(said) do if l:find("attempt to ", 1, true) or l:find("stack traceback", 1, true) then errLine = l end end
+      check(ok and #said > 0 and not errLine and (cmd ~= "zoomprobe" or table.concat(said, " "):find("level %d+ %(") ~= nil or said[1]:find("open the Map tab first", 1, true) ~= nil), "0.5.2b.9 era: /dm " .. cmd .. " runs without a Lua error (" .. tostring(err or errLine or said[1]) .. ")")
+    end
+    local p = DarkMatterDB.probe
+    check(p and p.client.interface == 11509 and p.client.projectId == 2 and not p.areaErrors, "0.5.2b.9 era: /dm probe: interface 11509, project 2, no area errors")
+  end
 end
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

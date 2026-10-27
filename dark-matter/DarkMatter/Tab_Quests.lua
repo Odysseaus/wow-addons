@@ -5,10 +5,17 @@
 local _, NS = ...
 local UI = NS.UI
 local QL = NS.QL
+local QS = NS.QS -- 0.5.2a shared quest state (selection, hover) with the Map tab
 
 local ROW_H
-local tab, list, detail, empty, rowPool = nil, nil, nil, nil, {}
+-- 0.5.2a.1: the quest list is a view that can be built more than once (the Quests tab and the Map tab's docked quest
+-- panel). Every view shows the same log and the same selection (QuestState); each keeps its own rows, scroll and search.
+local tab, detail = nil, nil
+local views = {}   -- every list view built
+local main         -- the Quests tab's own view (its rows, list and empty text)
+local list, empty
 local groups, total = {}, 0
+local T_READY = "Ready to Turn In"
 local selectedId, selQuest
 local pending = false
 local quietUntil = 0
@@ -71,6 +78,15 @@ local function ReadLog()
       end
     end
   end
+  -- 0.5.2b: a "Ready to Turn In" group on top (the same quests also stay under their zone)
+  local ready = {}
+  for _, g in ipairs(groups) do
+    for _, q in ipairs(g.quests) do
+      local st = q.questID and NS.QS and NS.QS.Status(q.questID)
+      if st == "ready" or (st == nil and q.complete) then ready[#ready + 1] = q end
+    end
+  end
+  if #ready > 0 then table.insert(groups, 1, { title = T_READY, quests = ready, ready = true }) end
   return true
 end
 
@@ -95,23 +111,39 @@ end
 ---------------------------------------------------------------------------
 -- list rows
 ---------------------------------------------------------------------------
+local RefreshAll -- forward
+-- 0.5.2b.1: what a Track box shows: checked = kept tracked (pinned); checked and faded = tracked now, not pinned
+local function BoxState(q, canWatch)
+  if not (canWatch and type(q) == "table") then return nil end
+  if NS.Tracker and NS.Tracker.CheckState then return NS.Tracker.CheckState(q) end
+  return QL.IsWatched(q), false
+end
 local function OnWatchClick(self)
   local r = self.row
   local q = r and r.quest
-  if not q then return end
-  QL.SetWatched(q, not QL.IsWatched(q))
-  NS.tabs.quests.Refresh()
+  if type(q) ~= "table" then return end
+  -- 0.5.2b.1: the box is the keep-tracked pin (checked = pinned and tracked; unchecked = unpinned and untracked)
+  if NS.Tracker and NS.Tracker.UserToggle then NS.Tracker.UserToggle(q) else QL.SetWatched(q, not QL.IsWatched(q)) end
+  RefreshAll()
 end
 
-local function GetRow(i)
-  local r = rowPool[i]
+local function GetRow(V, i)
+  local r = V.rows[i]
   if r then return r end
   local m = NS.theme.m
-  r = CreateFrame("Button", nil, list.content)
-  r:SetSize(list.w - m.sbWidth, ROW_H)
+  r = CreateFrame("Button", nil, V.list.content)
+  r:SetSize(V.list.cw, ROW_H)
+  r.view = V
   r.sel = r:CreateTexture(nil, "BACKGROUND", nil, 1)
   r.sel:SetAllPoints(r)
-  r.hover = UI.Hover(r)
+  -- 0.5.2a: hovering a quest row lights its markers on the Map tab (shared state)
+  r.hover = UI.Hover(r, function(self) if QS and type(self.quest) == "table" and self.quest.questID then QS.Hover(self.quest.questID, "list") end end,
+    function() if QS then QS.Hover(nil, "list") end end)
+  -- 0.5.2a: lit when this quest's marker is hovered on the map (drawn in code: a soft gold wash)
+  r.link = r:CreateTexture(nil, "BACKGROUND", nil, 2)
+  r.link:SetAllPoints(r)
+  r.link:SetColorTexture(1, 0.82, 0.25, 0.22)
+  r.link:Hide()
   r.hoverInk = "listInk"
   r.line = r:CreateTexture(nil, "BORDER")
   r.line:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 0)
@@ -127,6 +159,15 @@ local function GetRow(i)
   r.watch:SetPoint("RIGHT", r, "RIGHT", -m.rowPad + 2, 0)
   r.watch:SetScript("OnClick", OnWatchClick)
   r.watch.isWatchBox = true
+  r.watch:SetScript("OnEnter", function(self)
+    if not GameTooltip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Track", 1, 0.82, 0)
+    GameTooltip:AddLine("Checked: shown in the objective tracker.", 1, 1, 1, true)
+    GameTooltip:AddLine("Zone auto-track may change it on your next zone change. To keep a quest in every zone, click its pin in the tracker.", 0.7, 0.7, 0.7, true)
+    GameTooltip:Show()
+  end)
+  r.watch:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
   r.watch.row = r
   r.small = r:CreateFontString(nil, "OVERLAY")
   NS.SetFont(r.small, 12, "")
@@ -142,13 +183,15 @@ local function GetRow(i)
     if self.kind == "h" then
       local c = Collapsed()
       c[self.group.title] = not c[self.group.title] or nil
-      NS.tabs.quests.Refresh()
-    elseif self.quest then
+      RefreshAll()
+    elseif type(self.quest) == "table" then
       selectedId = self.quest.questID or self.quest.title
-      NS.tabs.quests.Refresh()
+      if QS and self.quest.questID then QS.Select(self.quest.questID, "list") end
+      if V.onPick then V.onPick(self.quest) end
+      RefreshAll()
     end
   end)
-  rowPool[i] = r
+  V.rows[i] = r
   return r
 end
 
@@ -165,8 +208,17 @@ local function QualityRGB(q)
   return c[1], c[2], c[3]
 end
 
-local function DText(i, size, colorKey)
-  local d = detail
+-- 0.5.1: on the parchment detail panel (WoW theme, stock QuestBG found) the text uses the dark quest ink
+-- (0.5.1.1: the pInk keys; the WoW theme's ink keys are now the light page ink).
+local PARCH_KEY = { listInk = "pInk", listSoft = "pInkSoft", listHead = "pInkHead", gold = "pInkHead", ink = "pInk", inkSoft = "pInkSoft", inkHead = "pInkHead", good = "pGood", mid = "pMid", low = "pLow" }
+local function DK(key, d)
+  d = d or detail
+  if d and d.panel and d.panel.parch then return PARCH_KEY[key] or key end
+  return key
+end
+
+local function DText(d, i, size, colorKey)
+  colorKey = DK(colorKey, d)
   local fs = d.texts[i]
   if not fs then
     fs = UI.Text(d.scroll.content, "OVERLAY", 13, "listInk", "LEFT")
@@ -176,11 +228,11 @@ local function DText(i, size, colorKey)
   end
   NS.SetFont(fs, size, "")
   fs:SetTextColor(NS.Color(colorKey))
+  fs:SetShadowColor(0, 0, 0, (d.panel and d.panel.parch) and 0 or 0.9) -- no shadow under dark ink on parchment
   return fs
 end
 
-local function DItem(i)
-  local d = detail
+local function DItem(d, i)
   local b = d.items[i]
   if b then return b end
   b = CreateFrame("Button", nil, d.scroll.content)
@@ -196,22 +248,33 @@ local function DItem(i)
   b.name:SetWidth(d.iw - 48)
   UI.Hover(b, function(self)
     quietUntil = Now() + 0.6
-    if self.entry and selQuest then QL.ShowRewardTooltip(self, selQuest, self.entry) end
+    if self.entry and d.quest then QL.ShowRewardTooltip(self, d.quest, self.entry) end
   end, function(self) QL.HideRewardTooltip(self) end)
   b.hoverInk = "listInk"
+  -- 0.5.1.2: no name plate on the parchment; hover there is a faint warm tint only (UI.Hover hoverSoft)
+  b.hoverSoft = function() return d.panel and d.panel.parch end
   d.items[i] = b
   return b
 end
 
 local debugged = {} -- quests whose empty detail panel was already explained in chat (0.4.6)
 
-local function Detail(q)
-  local d = detail
-  selQuest = q
+local function Detail(q, d)
+  d = d or detail
+  d.quest = q
+  if d == detail then selQuest = q end
+  local qtext = d.query or ""
+  d.title:SetTextColor(NS.Color(DK("gold", d)))
+  d.meta:SetTextColor(NS.Color(DK("listSoft", d)))
+  d.status:SetTextColor(NS.Color(DK("mid", d)))
+  local sh = (d.panel and d.panel.parch) and 0 or 0.9
+  d.title:SetShadowColor(0, 0, 0, sh)
+  d.meta:SetShadowColor(0, 0, 0, sh)
+  d.status:SetShadowColor(0, 0, 0, sh)
   local nt, ni, y = 0, 0, -4
   local function line(text, size, key, gapAbove)
     nt = nt + 1
-    local fs = DText(nt, size, key)
+    local fs = DText(d, nt, size, key)
     y = y - (gapAbove or 0)
     fs:ClearAllPoints()
     fs:SetPoint("TOPLEFT", d.scroll.content, "TOPLEFT", 10, y)
@@ -223,7 +286,7 @@ local function Detail(q)
     local col = 0
     for _, e in ipairs(entries) do
       ni = ni + 1
-      local b = DItem(ni)
+      local b = DItem(d, ni)
       b.entry = e
       b:ClearAllPoints()
       b:SetPoint("TOPLEFT", d.scroll.content, "TOPLEFT", 10 + col * (d.iw + 8), y)
@@ -232,8 +295,18 @@ local function Detail(q)
       b.icon:SetTexture(ic)
       b.count:SetText((e.count or 1) > 1 and tostring(e.count) or "")
       b.count:SetTextColor(NS.Color("barText"))
-      b.name:SetText(e.name or "Item not loaded yet")
-      b.name:SetTextColor(NS.Legible(QualityRGB(e.quality)))
+      -- 0.5.1.3: an item the client has not loaded yet says so; its GET_ITEM_INFO_RECEIVED / ITEM_DATA_LOAD_RESULT redraws
+      b.name:SetText(e.name or "Loading\226\128\166")
+      -- 0.5.1.2: straight on the parchment, the quality colour darkened to read on it (no name plate)
+      if not e.name then
+        b.name:SetTextColor(NS.Color(DK("listSoft", d)))
+      elseif d.panel.parch then
+        b.name:SetTextColor(NS.ParchQuality(QualityRGB(e.quality)))
+        b.name:SetShadowColor(0, 0, 0, 0)
+      else
+        b.name:SetTextColor(NS.Legible(QualityRGB(e.quality)))
+        b.name:SetShadowColor(0, 0, 0, 0.9)
+      end
       b:Show()
       col = col + 1
       if col == 2 then col = 0 y = y - 44 end
@@ -242,11 +315,11 @@ local function Detail(q)
   end
 
   if not q then
-    d.title:SetText(query ~= "" and "No matching quests" or (total == 0 and "No quests" or ""))
+    d.title:SetText(qtext ~= "" and "No matching quests" or (total == 0 and "No quests" or ""))
     d.meta:SetText("")
     d.status:SetText("")
     if total == 0 then line("Your quest log is empty. Accept a quest and it shows up here.", 13, "listSoft") end
-    if query ~= "" and total > 0 then line("Nothing in your log matches \"" .. query .. "\".", 13, "listSoft") end
+    if qtext ~= "" and total > 0 then line("Nothing in your log matches \"" .. qtext .. "\".", 13, "listSoft") end
   else
     d.title:SetText(q.title)
     local meta = {}
@@ -256,11 +329,11 @@ local function Detail(q)
     if q.questID then meta[#meta + 1] = "Quest " .. q.questID end
     d.meta:SetText(table.concat(meta, "  \194\183  "))
     if q.failed then
-      d.status:SetText(NS.ColorCode("low") .. "Failed|r")
+      d.status:SetText(NS.ColorCode(DK("low", d)) .. "Failed|r")
     elseif q.complete then
-      d.status:SetText(NS.ColorCode("good") .. "Ready to turn in|r")
+      d.status:SetText(NS.ColorCode(DK("good", d)) .. "Ready to turn in|r")
     else
-      d.status:SetText(NS.ColorCode("mid") .. "In progress|r")
+      d.status:SetText(NS.ColorCode(DK("mid", d)) .. "In progress|r")
     end
     local det = QL.Details(q)
     local objs = QL.Objectives(q)
@@ -317,13 +390,19 @@ local function Detail(q)
 end
 
 ---------------------------------------------------------------------------
-local function Refresh()
-  if not list then return end
+local function FindQuest(id)
+  if id == nil then return nil end
+  for _, g in ipairs(groups) do
+    for _, q in ipairs(g.quests) do if (q.questID or q.title) == id then return q end end
+  end
+end
+
+-- draw one view's rows (groups already read). Returns the quest it shows as selected, the matches, and searching.
+local function FillRows(V)
   local m = NS.theme.m
-  ReadLog()
   local collapsed = Collapsed()
   local words = {}
-  for w in QL.Norm(query):gmatch("%S+") do words[#words + 1] = w end
+  for w in QL.Norm(V.query):gmatch("%S+") do words[#words + 1] = w end
   local searching = #words > 0
   local rows = {}
   local sel, firstVisible, matched = nil, nil, 0
@@ -332,31 +411,33 @@ local function Refresh()
     for _, q in ipairs(g.quests) do
       if not searching or Matches(q, words) then hits[#hits + 1] = q end
     end
-    matched = matched + #hits
+    if not g.ready then matched = matched + #hits end
     if #hits > 0 or not searching then
       rows[#rows + 1] = { kind = "h", group = g, n = #hits }
       if searching or not collapsed[g.title] then
         for _, q in ipairs(hits) do rows[#rows + 1] = { kind = "q", quest = q } end
       end
       for _, q in ipairs(hits) do
-        firstVisible = firstVisible or q
+        if not g.ready then firstVisible = firstVisible or q end
         if (q.questID or q.title) == selectedId then sel = q end
       end
     end
   end
-  if not sel then
+  -- only the Quests tab picks a quest by itself (the first one shown); other views just show the selection
+  if not sel and V.auto then
     sel = firstVisible
     selectedId = sel and (sel.questID or sel.title) or (searching and selectedId or nil)
   end
+  if QS and sel and sel.questID and V.auto then QS.selected = sel.questID end -- the Map tab lights the selected quest's markers
   local canWatch = QL.CanWatch()
   local nrows = #rows
-  for i = 1, math.max(nrows, #rowPool) do
-    local r = rowPool[i]
+  for i = 1, math.max(nrows, #V.rows) do
+    local r = V.rows[i]
     local data = rows[i]
     if data then
-      r = GetRow(i)
+      r = GetRow(V, i)
       r:ClearAllPoints()
-      r:SetPoint("TOPLEFT", list.content, "TOPLEFT", 0, -(i - 1) * ROW_H)
+      r:SetPoint("TOPLEFT", V.list.content, "TOPLEFT", 0, -(i - 1) * ROW_H)
       r.kind = data.kind
       r.group, r.quest = data.group, data.quest
       local isSel = false
@@ -377,10 +458,11 @@ local function Refresh()
         local q = data.quest
         isSel = ((q.questID or q.title) == selectedId)
         r.icon:Hide()
-        local watched = canWatch and QL.IsWatched(q)
+        local watched, partly = BoxState(q, canWatch)
         if canWatch and watched ~= nil then
           r.watch:Show()
           r.watch:SetChecked(watched and true or false)
+          r.watch:SetAlpha(partly and 0.5 or 1)
           r.small:SetPoint("RIGHT", r.watch, "LEFT", -2, 0)
         else
           r.watch:Hide()
@@ -395,37 +477,71 @@ local function Refresh()
         r.small:SetTextColor(NS.Color("listSoft"))
       end
       if isSel then NS.SetPiece(r.sel, "hilite") r.sel:Show() else r.sel:Hide() end
+      local lit = data.kind == "q" and QS and data.quest.questID ~= nil and QS.hovered == data.quest.questID and QS.hoverSrc == "map"
+      if lit then r.link:Show() else r.link:Hide() end
       r:Show()
     elseif r then
       r:Hide()
     end
   end
-  list:SetContentHeight(math.max(1, nrows * ROW_H))
-  if empty then
+  V.list:SetContentHeight(math.max(1, nrows * ROW_H))
+  if V.empty then
     if searching and matched == 0 and total > 0 then
-      empty:SetText("No matching quests")
-      empty:Show()
+      V.empty:SetText("No matching quests")
+      V.empty:Show()
     elseif total == 0 then
-      empty:SetText("No quests in your log.")
-      empty:Show()
+      V.empty:SetText("No quests in your log.")
+      V.empty:Show()
     else
-      empty:Hide()
+      V.empty:Hide()
     end
   end
-  if searching and matched == 0 then sel = nil end
+  if searching and matched == 0 and V.auto then sel = nil end
+  V.matched, V.searching = matched, searching
+  if V.after then V.after(V, sel) end
+  return sel, matched, searching
+end
+
+local function Live(V) return V == main or (V.host and V.host:IsVisible()) end
+
+-- read the log once and redraw every view that is showing (the Quests tab's always, it keeps the selection)
+local function Refresh()
+  if not main and #views == 0 then return end
+  ReadLog()
+  for _, V in ipairs(views) do
+    if V ~= main and Live(V) then FillRows(V) end
+  end
+  if not main then return end
+  local sel, matched, searching = FillRows(main)
+  detail.query = query
   Detail(sel)
   -- toolbar: All icon, Track Quest box follows the selected quest
+  local collapsed = Collapsed()
+  local canWatch = QL.CanWatch()
   local expanded = false
   for _, g in ipairs(groups) do if not collapsed[g.title] then expanded = true end end
   if bar.allIcon then NS.SetPiece(bar.allIcon, expanded and "coin_minus" or "coin_plus") end
   if bar.trk then
-    local w = sel and canWatch and QL.IsWatched(sel)
+    local w, partly = BoxState(sel, canWatch)
     bar.trk:SetChecked(w and true or false)
+    bar.trk:SetAlpha(partly and 0.5 or 1)
     if sel and canWatch then bar.trk:Enable() else bar.trk:Disable() end
   end
-  local s = string.format("Dark Matter %s  \194\183  %d %s in your log", NS.version, total, total == 1 and "quest" or "quests")
-  if searching then s = s .. string.format("  \194\183  %d matching", matched) end
-  NS.SetStatus(s)
+  if detail and detail.showMap then
+    if sel and sel.questID then detail.showMap:Enable() detail.showMap:SetAlpha(1) else detail.showMap:Disable() detail.showMap:SetAlpha(0.5) end
+  end
+  if not (tab and tab:IsShown() == false) then
+    local s = string.format("Dark Matter %s  \194\183  %d %s in your log", NS.version, total, total == 1 and "quest" or "quests")
+    if searching then s = s .. string.format("  \194\183  %d matching", matched) end
+    NS.SetStatus(s)
+  end
+end
+RefreshAll = Refresh
+
+local function AnyLive()
+  if tab and tab:IsShown() then return true end
+  for _, V in ipairs(views) do if V ~= main and Live(V) then return true end end
+  return false
 end
 
 local function Schedule()
@@ -433,14 +549,24 @@ local function Schedule()
   pending = true
   C_Timer.After(0.25, function()
     pending = false
-    if tab and tab:IsShown() then Refresh() end
+    if AnyLive() then Refresh() end
   end)
 end
 
-local function Events(on)
+-- the log's events, registered while any user (the Quests tab, the docked panel) is showing
+local users = {}
+local function Events(on, who)
+  who = who or "tab"
+  users[who] = on and true or nil
+  local want = next(users) ~= nil
   if not ev then
     ev = CreateFrame("Frame") -- private frame, read-only handler
     ev:SetScript("OnEvent", function(_, e, a1)
+      -- 0.5.1.3: a reward item we are waiting for loaded: read its quest again (other items' events are ignored)
+      if e == "GET_ITEM_INFO_RECEIVED" or e == "ITEM_DATA_LOAD_RESULT" then
+        if QL.ItemArrived(a1) then Schedule() end
+        return
+      end
       -- 0.4.6: quest data we asked for (C_QuestLog.RequestLoadQuestByID) arrived: read that quest again
       if e == "QUEST_DATA_LOAD_RESULT" then local id = NS.Num(a1) if id then QL.Forget(id) end end
       if QL.reading then return end
@@ -449,8 +575,10 @@ local function Events(on)
       Schedule()
     end)
   end
+  if want == ev.dmOn then return end
+  ev.dmOn = want
   for _, e in ipairs(QL.WATCH_EVENTS) do
-    if on then pcall(ev.RegisterEvent, ev, e) else pcall(ev.UnregisterEvent, ev, e) end
+    if want then pcall(ev.RegisterEvent, ev, e) else pcall(ev.UnregisterEvent, ev, e) end
   end
 end
 
@@ -464,8 +592,66 @@ end
 
 local function SetQuery(t)
   query = t or ""
+  if main then main.query = query end
   if bar.clear then if query ~= "" then bar.clear:Show() else bar.clear:Hide() end end
   Refresh()
+end
+
+-- a list view in host: a scroll list of w x h at (x, y) from host's top left, plus its empty text.
+-- opts.auto: picks the first quest when none is selected (the Quests tab); opts.onPick(q): a quest row was clicked.
+local function NewView(host, w, h, x, y, opts)
+  opts = opts or {}
+  ROW_H = ROW_H or NS.theme.m.rowH
+  local V = { rows = {}, query = "", host = host, auto = opts.auto, onPick = opts.onPick, after = opts.after }
+  V.list = UI.Scroll(host, w, h, host)
+  V.list.frame:SetPoint("TOPLEFT", host, "TOPLEFT", x, y)
+  V.list.step = ROW_H * 3
+  V.empty = UI.Text(host, "OVERLAY", 13, "listSoft", "CENTER")
+  V.empty:SetPoint("CENTER", V.list.frame, "CENTER", 0, 0)
+  V.empty:SetWidth(w - 20)
+  V.empty:SetText("No quests in your log.")
+  V.empty:Hide()
+  function V.SetQuery(t) V.query = t or "" if Live(V) then ReadLog() FillRows(V) end end
+  function V.Refresh() if Live(V) then ReadLog() FillRows(V) end end
+  views[#views + 1] = V
+  return V
+end
+
+-- the quest detail (title, level/zone line, state, then objectives, description and rewards in a scroll) in panel dp
+-- of w x h, the stock quest log's layout. top: room kept above the title (a Back button). Returns the detail table.
+local function NewDetail(dp, w, h, top)
+  local m = NS.theme.m
+  local b = m.listBorder
+  top = top or 0
+  local d = { texts = {}, items = {}, panel = dp }
+  d.title = UI.Text(dp, "OVERLAY", 17, "gold", "LEFT")
+  d.title:SetPoint("TOPLEFT", dp, "TOPLEFT", 14, -14 - top)
+  d.title:SetWidth(w - 28)
+  d.title:SetWordWrap(false)
+  d.meta = UI.Text(dp, "OVERLAY", 12, "listSoft", "LEFT")
+  d.meta:SetPoint("TOPLEFT", d.title, "BOTTOMLEFT", 0, -6)
+  d.meta:SetWidth(w - 28)
+  d.status = UI.Text(dp, "OVERLAY", 13, "mid", "LEFT")
+  d.status:SetPoint("TOPLEFT", d.meta, "BOTTOMLEFT", 0, -8)
+  d.status:SetWidth(w - 28 - 124)
+  -- 0.5.2a: Show on map: the Map tab flies to the quest (zoom out, pan, zoom in) and sets the game's waypoint + arrow
+  local sm = UI.Button(dp, "Show on map", 116, 22, "red", 11)
+  sm:SetPoint("TOPRIGHT", dp, "TOPRIGHT", -14, -50 - top)
+  sm:SetScript("OnClick", function()
+    local q = d.quest and d.quest.questID
+    if not q or not NS.MapTab then return end
+    if QS then QS.Select(q, "list") end
+    if NS.ShowTab and not (NS.windowParts and NS.windowParts.current == "map") then NS.ShowTab("map") end
+    NS.MapTab.ShowQuest(q, true)
+  end)
+  d.showMap = sm
+  local headH = 82 + top
+  d.scroll = UI.Scroll(dp, w - 2 * b, h - 2 * b - headH, dp)
+  d.scroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", b, -(b + headH))
+  d.scroll.step = 60
+  d.cw = w - 2 * b - 20
+  d.iw = math.floor((d.cw - 8) / 2)
+  return d
 end
 
 NS.RegisterTab({
@@ -477,24 +663,26 @@ NS.RegisterTab({
     tab:SetAllPoints(body)
     local page = UI.Page(tab, m.pageW, m.pageH)
     page:SetPoint("TOPLEFT", tab, "TOPLEFT", m.pageX, 0)
-    local pad, gap, lw = m.pagePad, 12, 270
+    -- 0.5.1.3: each pane gives up a gutter (G) on its right for its scroll bar, like the stock quest log
+    local pad, gap, lw = m.pagePad, 10, 276
+    local G = UI.Gutter()
     local ph = m.pageH - 2 * pad
     local dw = m.pageW - 2 * pad - lw - gap
     local b = m.listBorder
     local tbH = 24
 
-    local lp = UI.Panel(page, lw, ph)
+    local lp = UI.Panel(page, lw - G, ph)
     lp:SetPoint("TOPLEFT", page, "TOPLEFT", pad, -pad)
 
     -- 0.4.5 toolbar row at the top of the quest column: All, Track Quest (selected quest), search at the far right
     local tb = CreateFrame("Frame", nil, lp)
     tb:SetPoint("TOPLEFT", lp, "TOPLEFT", b + 4, -(b + 4))
-    tb:SetSize(lw - 2 * b - 8, tbH)
+    tb:SetSize(lw - G - 2 * b - 8, tbH)
     bar.frame = tb
     local allBtn = CreateFrame("Button", nil, tb)
     allBtn:SetPoint("LEFT", tb, "LEFT", 0, 0)
     allBtn:SetSize(48, 22)
-    UI.ThreeSlice(allBtn, "ptab_a", 22, "ARTWORK")
+    local allSlice = UI.ThreeSlice(allBtn, "ptab_a", 22, "ARTWORK")
     UI.Hover(allBtn)
     allBtn.hoverInk = "lheadAll"
     bar.allIcon = allBtn:CreateTexture(nil, "OVERLAY")
@@ -504,13 +692,35 @@ NS.RegisterTab({
     local allText = UI.Text(allBtn, "OVERLAY", 12, "lheadAll", "LEFT")
     allText:SetPoint("LEFT", bar.allIcon, "RIGHT", 4, 0)
     allText:SetText("All")
+    allBtn.text = allText
+    allBtn.slice = allSlice
+    -- 0.5.1.2 WoW theme: a stock panel button labelled "All" (no expand/collapse icon); class themes keep the icon
+    UI.StockFeel(allBtn, {
+      slice = allSlice,
+      place = function(self, dx, dy)
+        allText:ClearAllPoints()
+        if self.stockOn then
+          bar.allIcon:Hide()
+          allText:SetPoint("CENTER", self, "CENTER", dx, 1 + dy)
+        else
+          bar.allIcon:Show()
+          allText:SetPoint("LEFT", bar.allIcon, "RIGHT", 4, 0)
+        end
+      end,
+      classic = function()
+        allSlice:Apply("ptab_a")
+        allText:SetTextColor(NS.Color("lheadAll"))
+      end,
+    })
     allBtn:SetScript("OnClick", ToggleAll)
     bar.all = allBtn
     local trk = CreateFrame("CheckButton", nil, tb, "UICheckButtonTemplate")
     trk:SetSize(18, 18)
     trk:SetPoint("LEFT", allBtn, "RIGHT", 6, 0)
     trk:SetScript("OnClick", function()
-      if selQuest then QL.SetWatched(selQuest, not QL.IsWatched(selQuest)) end
+      if selQuest then
+        if NS.Tracker and NS.Tracker.UserToggle then NS.Tracker.UserToggle(selQuest) else QL.SetWatched(selQuest, not QL.IsWatched(selQuest)) end
+      end
       Refresh()
     end)
     bar.trk = trk
@@ -518,7 +728,7 @@ NS.RegisterTab({
     trkText:SetPoint("LEFT", trk, "RIGHT", 3, 0)
     trkText:SetText("Track Quest")
     bar.trkText = trkText
-    local sw = lw - 2 * b - 8 - 48 - 6 - 18 - 3 - 66 - 6
+    local sw = lw - G - 2 * b - 8 - 48 - 6 - 18 - 3 - 66 - 6
     local search = UI.SearchBox(tb, sw, 22)
     search:SetPoint("RIGHT", tb, "RIGHT", 0, 0)
     search.onChange = SetQuery
@@ -536,45 +746,64 @@ NS.RegisterTab({
     local W = NS.windowParts
     if W then W.allBtn, W.trk, W.questSearch, W.questBar = allBtn, trk, search, tb end
 
-    list = UI.Scroll(lp, lw - 2 * b, ph - 2 * b - tbH - 8)
-    list.frame:SetPoint("TOPLEFT", lp, "TOPLEFT", b, -(b + tbH + 8))
-    list.step = ROW_H * 3
-    empty = UI.Text(lp, "OVERLAY", 13, "listSoft", "CENTER")
+    main = NewView(lp, lw - G - 2 * b, ph - 2 * b - tbH - 8, b, -(b + tbH + 8), { auto = true })
+    main.query = query
+    list, empty = main.list, main.empty
+    empty:ClearAllPoints()
     empty:SetPoint("CENTER", lp, "CENTER", 0, -tbH / 2)
-    empty:SetWidth(lw - 40)
-    empty:SetText("No quests in your log.")
-    empty:Hide()
+    empty:SetWidth(lw - G - 40)
 
-    local dp = UI.Panel(page, dw, ph)
+    local dp = UI.Panel(page, dw - G, ph, "detailShade")
     dp:SetPoint("TOPLEFT", page, "TOPLEFT", pad + lw + gap, -pad)
-    detail = { texts = {}, items = {} }
-    detail.title = UI.Text(dp, "OVERLAY", 17, "gold", "LEFT")
-    detail.title:SetPoint("TOPLEFT", dp, "TOPLEFT", 14, -14)
-    detail.title:SetWidth(dw - 28)
-    detail.title:SetWordWrap(false)
-    detail.meta = UI.Text(dp, "OVERLAY", 12, "listSoft", "LEFT")
-    detail.meta:SetPoint("TOPLEFT", detail.title, "BOTTOMLEFT", 0, -6)
-    detail.meta:SetWidth(dw - 28)
-    detail.status = UI.Text(dp, "OVERLAY", 13, "mid", "LEFT")
-    detail.status:SetPoint("TOPLEFT", detail.meta, "BOTTOMLEFT", 0, -8)
-    detail.status:SetWidth(dw - 28)
-    local headH = 82
-    detail.scroll = UI.Scroll(dp, dw - 2 * b, ph - 2 * b - headH)
-    detail.scroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", b, -(b + headH))
-    detail.scroll.step = 60
-    detail.cw = dw - 2 * b - m.sbWidth - 20
-    detail.iw = math.floor((detail.cw - 8) / 2)
+    detail = NewDetail(dp, dw - G, ph)
+    if W then W.showOnMap = detail.showMap end
+    -- 0.5.1: redraw after a theme change so the detail ink follows the panel (parchment or dark)
+    NS.OnSkin(function() if detail then Refresh() end end)
     Refresh()
     return tab
   end,
   OnShow = function()
-    Events(true)
+    Events(true, "tab")
     Refresh()
   end,
-  OnHide = function() Events(false) end,
+  OnHide = function() Events(false, "tab") end,
   Refresh = Refresh,
   ToggleAll = ToggleAll,
   SetSearch = function(t) if bar.search then bar.search:SetText(t or "") end SetQuery(t or "") end,
   Selected = function() return selQuest end,
-  Parts = function() return bar, detail end,
+  Parts = function() return bar, detail, list end,
+  -- 0.5.2a.1: the same list and detail for the Map tab's docked quest panel (QuestPanel.lua)
+  NewView = NewView,
+  NewDetail = NewDetail,
+  ShowDetail = function(q, d) ReadLog() Detail(FindQuest(q) or q, d) end,
+  FindQuest = function(id) ReadLog() return FindQuest(id) end,
+  Events = Events,
+  Count = function() ReadLog() return total end,
+  -- 0.5.2b: the quests ready to turn in (each with its zone in q.group)
+  Ready = function() ReadLog() return (groups[1] and groups[1].ready) and groups[1].quests or {} end,
+  READY_TITLE = T_READY,
+  -- the window is being built again: forget the views that hung off the old one
+  Reset = function()
+    views, main, tab, detail, list, empty = {}, nil, nil, nil, nil, nil
+    bar = {}
+    Events(false, "tab") Events(false, "panel")
+  end,
 })
+
+-- 0.5.2a: the shared quest state. A marker clicked on the map selects its quest here; a marker hovered there lights
+-- its row here (rows are only redrawn while a list is showing; the selection is kept for the next show).
+if QS then
+  QS.On(function(what, q, src)
+    if what == "select" and src ~= "list" and q then
+      selectedId = q
+      if AnyLive() then Refresh() end
+    elseif what == "hover" then
+      for _, V in ipairs(views) do
+        for _, r in ipairs(V.rows) do
+          local lit = r.kind == "q" and type(r.quest) == "table" and q ~= nil and r.quest.questID == q and src == "map"
+          if r.link then if lit then r.link:Show() else r.link:Hide() end end
+        end
+      end
+    end
+  end)
+end

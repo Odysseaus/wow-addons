@@ -21,7 +21,65 @@ local function Help()
   print("  /dm tipdebug  log fishing tooltip placement (points/rects) to DarkMatterDB.tipdebug")
   print("  /dm agscan  Adventure Guide: LFG rows kept/rejected -> DarkMatterDB.agscan")
   print("  /dm questprobe  Quests: which quest log, reward and watch APIs this client has -> DarkMatterDB.questprobe")
+  print("  /dm mapprobe  Map: which map, waypoint and drawing APIs this client has (read-only) -> DarkMatterDB.mapprobe")
+  print("  /dm mapsweep  Map: check the map layers over every continent and zone (read-only; saved with the probes): a masks line, then OK or FLAGGED per continent and how far the tiles reach")
+  print("  /dm masktest  Map: show four test squares (no mask, the game's round mask, Dark Matter's star mask, your zone's highlight): do masks work here?")
+  print("  /dm masktest zone [name]  Map: your zone's (or the named zone's) picture cut by its zone mask, drawn four ways side by side")
+  print("  /dm mapmask on|off  Map: the zone masks on or off for this session (off: one feathered zone at a time)")
+  print("  /dm mapcore on|off  Map: the second (core) zone mask pass on or off for this session (off: the soft masks alone)")
+  print("  /dm mapcost [both]  Map: frame rate and textures at zoom levels 1-10 here (both: with and without the core pass)")
+  print("  /dm zoomprobe  Map: zoom level now, and per continent in view the zones / level boxes / cities / tiles in the window vs full screen (0.5.2b.8.2)")
+  print("  /dm shottest  Map: take ONE screenshot to check the game saves them (needed before /dm seamsweep)")
+  print("  /dm seamsweep [N]  Map: screenshots of the N worst zone borders (default 8) at zoom levels 4, 8, 12, one click on Shot each   /dm seamsweep next|stop")
+  print("  /dm mapshapes  Map: sample every zone's outline from the game (out of combat, about a minute) -> DarkMatterDB.mapshapes, then /reload   /dm mapshapes stop|status")
+  print("  /dm maplayer auto|painted|terrain  Map: what you zoom across: the game's painted zone maps with the minimap tiles at the deepest zoom (default), the painted maps only, or the minimap tiles as soon as they fit (0.5.2b.5)")
+  print("  /dm citylevel N  Map: capitals fully drawn from Zoom N (top left of the map), fading in from N-2; /dm citylevel A B = fade A to full B; default = 8 to 10 (0.5.2b.7.3)")
+  print("  /dm blobdraw [same|next|once]  Map: when quest areas are drawn again while zooming (default same; mapprobe 10e counts) (0.5.2b.7.3)")
+  print("  /dm tileprobe  Map: the minimap tiles: how many, do they load, how far they reach, what they cost (read-only)")
+  print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
+  print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (on by default)")
+  print("  /dm trackorder on|off  keep the objective tracker in quest-log order (on by default)")
+  print("  /dm keys on|off  M and L open Dark Matter (ALT-M / ALT-L the game's own map and quest log)")
+  print("  /dm keepicon [pin|lock|star|auto]  the keep-tracked icon on the objective tracker")
+  print("  /dm trackerprobe  the objective tracker, keep icons, pin counts and log vs tracker order (read-only) -> DarkMatterDB.trackerprobe")
+  print("  /dm artprobe  WoW theme: which of the game's own textures/templates this client has (ok/missing) -> DarkMatterDB.artprobe")
+  print("  /dm frameprobe  the game's map window: its size and the border, title and close textures it is drawn with -> DarkMatterDB.frameprobe")
   print("  /dm achprobe  Achievements: mode, game API counts + 3 samples, Dark Matter counts -> DarkMatterDB.achprobe")
+  print("  every probe also keeps its last run, with the time, in DarkMatterDB.probeLog (read it after /reload)")
+  print("  /dm testtoast  show a sample achievement toast (nothing is recorded)")
+  print("  /dm parchment l r t b  WoW theme: crop of the parchment (QuestBG) inside its torn edge, 0..1   /dm parchment reset")
+end
+
+-- 0.5.2a.1: every /dm probe also keeps its last run, with a timestamp, in DarkMatterDB.probeLog[name] =
+-- { time = "YYYY-MM-DD HH:MM:SS", version, lines = { ... } }. One run per probe (a new run replaces it); capped in size.
+NS.PROBE_LOG_LINES, NS.PROBE_LOG_CHARS, NS.PROBE_LOG_MAX = 400, 400, 16
+function NS.LogProbe(name, lines)
+  if not (NS.db and type(name) == "string" and type(lines) == "table") then return end
+  local log = type(NS.db.probeLog) == "table" and NS.db.probeLog or {}
+  NS.db.probeLog = log
+  local copy, n = {}, #lines
+  for i = 1, math.min(n, NS.PROBE_LOG_LINES) do
+    local s = tostring(lines[i])
+    if #s > NS.PROBE_LOG_CHARS then s = s:sub(1, NS.PROBE_LOG_CHARS) .. "..." end
+    copy[i] = s
+  end
+  if n > NS.PROBE_LOG_LINES then copy[#copy + 1] = "... " .. (n - NS.PROBE_LOG_LINES) .. " more lines not kept" end
+  local at = 0 -- run order (kept across sessions): one past the newest entry
+  for _, v in pairs(log) do if type(v) == "table" and type(v.at) == "number" and v.at > at then at = v.at end end
+  at = at + 1
+  log[name] = { time = date("%Y-%m-%d %H:%M:%S"), at = at, version = NS.version, lines = copy }
+  -- at most PROBE_LOG_MAX probes: the oldest runs go first
+  local names = {}
+  for k, v in pairs(log) do if type(v) == "table" then names[#names + 1] = k else log[k] = nil end end
+  if #names > NS.PROBE_LOG_MAX then
+    table.sort(names, function(a, b) return (log[a].at or 0) < (log[b].at or 0) end)
+    for i = 1, #names - NS.PROBE_LOG_MAX do log[names[i]] = nil end
+  end
+end
+-- print a probe's lines and keep them in the probe log
+local function Say(name, lines)
+  for _, l in ipairs(lines or {}) do NS.Print(l) end
+  NS.LogProbe(name, lines or {})
 end
 
 SlashCmdList["DARKMATTER"] = function(msg)
@@ -34,7 +92,8 @@ SlashCmdList["DARKMATTER"] = function(msg)
   elseif cmd == "hide" then
     NS.ToggleWindow(false)
   elseif cmd == "probe" then
-    NS.RunProbe(false)
+    local out = NS.RunProbe(false)
+    if type(out) == "table" and type(out.summary) == "table" then NS.LogProbe("probe", out.summary) end
   elseif cmd == "blocked" then
     if rest == "clear" then
       NS.db.blockedLog = {}
@@ -44,6 +103,7 @@ SlashCmdList["DARKMATTER"] = function(msg)
       local lines = NS.BlockedLines(4)
       NS.Print(lines[1])
       for i = 2, #lines do print(lines[i]) end
+      NS.LogProbe("blocked", lines)
     end
   elseif cmd == "raw" then
     NS.showRaw = not NS.showRaw
@@ -72,19 +132,122 @@ SlashCmdList["DARKMATTER"] = function(msg)
   elseif cmd == "agscan" then
     if NS.AG and NS.AG.ScanReport then
       local _, lines = NS.AG.ScanReport()
-      for _, l in ipairs(lines or {}) do NS.Print(l) end
+      Say("agscan", lines)
     end
   elseif cmd == "questprobe" then
     if NS.QL and NS.QL.ProbeReport then
       local _, lines = NS.QL.ProbeReport()
-      for _, x in ipairs(lines or {}) do NS.Print(x) end
-      NS.Print(NS.QL.WatchReport())
+      local all = {}
+      for _, x in ipairs(lines or {}) do all[#all + 1] = x end
+      all[#all + 1] = NS.QL.WatchReport()
+      Say("questprobe", all)
     end
+  elseif cmd == "questmap" then
+    if NS.QS and NS.QS.ProbeReport then
+      Say("questmap", NS.QS.ProbeReport())
+    end
+  elseif cmd == "autotrack" then
+    -- 0.5.2b: zone auto-track (on by default since 0.5.2b.1)
+    if NS.Tracker then
+      local on = rest == "on" or (rest ~= "off" and not (NS.db and NS.db.autoTrack))
+      NS.Tracker.SetAuto(on)
+      NS.Print("zone auto-track " .. (on and "on: this zone's quests and kept ones are tracked (after a flight lands)" or "off"))
+    end
+  elseif cmd == "trackorder" then
+    -- 0.5.2b.1: the objective tracker in quest-log order (on by default)
+    if NS.Tracker then
+      local on = rest == "on" or (rest ~= "off" and NS.db and NS.db.trackOrder == false)
+      NS.Tracker.SetOrder(on)
+      NS.Print("tracker in quest-log order " .. (on and "on" or "off: the game's own order"))
+    end
+  elseif cmd == "keys" then
+    if NS.Keys then
+      local on = rest == "on" or (rest ~= "off" and NS.db and NS.db.mlKeys == false)
+      local r = NS.Keys.Set(on)
+      NS.Print("M / L keys " .. (on and "on" or "off") .. (r == "queued" and " (after combat)" or ""))
+    end
+  elseif cmd == "keepicon" then
+    if NS.Tracker then
+      local _, said = NS.Tracker.SetKeepIcon(rest)
+      NS.Print(said)
+    end
+  elseif cmd == "trackerprobe" then
+    if NS.Tracker then Say("trackerprobe", NS.Tracker.Report()) end
+  elseif cmd == "mapprobe" then
+    if NS.MapProbe and NS.MapProbe.Report then
+      Say("mapprobe", NS.MapProbe.Report())
+    end
+  elseif cmd == "mapsweep" then
+    -- 0.5.2b.3: the map layer check over every continent and zone at several zooms -> DarkMatterDB (read only)
+    if NS.MapTab and NS.MapTab.Sweep then Say("mapsweep", NS.MapTab.Sweep()) end
+  elseif cmd == "masktest" then
+    -- 0.5.2b.5: a visual proof that mask textures work (nothing on the map changes)
+    if NS.MapShapes then Say("masktest", NS.MapShapes.MaskTest(rest)) end
+  elseif cmd == "mapshapes" then
+    -- 0.5.2b.5: sample the zones' outlines for the masks of 0.5.2b.6 (read only; saved to DarkMatterDB.mapshapes)
+    if NS.MapShapes then for _, l in ipairs(NS.MapShapes.Slash(rest)) do NS.Print(l) end end
+  elseif cmd == "tileprobe" then
+    if NS.MapTab and NS.MapTab.TileProbe then Say("tileprobe", NS.MapTab.TileProbe()) end
+  elseif cmd == "maplayer" then
+    -- 0.5.2b.6: auto (default since 0.5.2b.6.1) | painted | terrain, saved in DarkMatterDB.map.layer
+    if NS.MapTab and NS.MapTab.MapLayerSlash then NS.Print(NS.MapTab.MapLayerSlash(rest)) end
+  elseif cmd == "citylevel" then
+    -- 0.5.2b.7.3: the capitals fade in from DarkMatterDB.map.cityFade (or cityLevel - 2), full from cityLevel
+    if NS.MapTab and NS.MapTab.CityLevelSlash then NS.Print(NS.MapTab.CityLevelSlash(rest)) end
+  elseif cmd == "blobdraw" then
+    -- 0.5.2b.7.3: when the quest areas are drawn again after a scale change, saved in DarkMatterDB.map.blobDraw
+    if NS.MapTab and NS.MapTab.BlobDrawSlash then NS.Print(NS.MapTab.BlobDrawSlash(rest)) end
+  elseif cmd == "mapcore" then
+    -- 0.5.2b.8: the second (core) mask pass on/off for this session
+    if NS.MapTab and NS.MapTab.MapCoreSlash then NS.Print(NS.MapTab.MapCoreSlash(rest)) end
+  elseif cmd == "shottest" then
+    -- 0.5.2b.8: one screenshot, to learn whether the game takes them (needed by /dm seamsweep)
+    if NS.MapReview then for _, l in ipairs(NS.MapReview.ShotTest()) do NS.Print(l) end end
+  elseif cmd == "seamsweep" then
+    -- 0.5.2b.8: screenshots of the worst zone borders at three zoom levels (only after /dm shottest passed)
+    if NS.MapReview then for _, l in ipairs(NS.MapReview.SeamSweep(rest)) do NS.Print(l) end end
+  elseif cmd == "zoomprobe" then
+    -- 0.5.2b.8.2: the zoom level and each continent's layers (zones, level boxes, cities, tiles) in the window and full screen
+    if NS.MapTab and NS.MapTab.ZoomProbe then Say("zoomprobe", NS.MapTab.ZoomProbe()) end
+  elseif cmd == "mapcost" then
+    -- 0.5.2b.8: frame rate and textures per zoom level (both: with and without the core pass)
+    if NS.MapReview then for _, l in ipairs(NS.MapReview.MapCost(rest)) do NS.Print(l) end end
+  elseif cmd == "mapmask" then
+    -- 0.5.2b.6.1: the zone masks on/off for this session
+    if NS.MapTab and NS.MapTab.MapMaskSlash then NS.Print(NS.MapTab.MapMaskSlash(rest)) end
+  elseif cmd == "artprobe" then
+    Say("artprobe", NS.Stock.Report())
+  elseif cmd == "frameprobe" then
+    -- 0.5.1.4: what the game's map window is drawn with (read only) and the size Dark Matter took from it
+    Say("frameprobe", NS.MapWindow.Report())
   elseif cmd == "achprobe" then
     if NS.Ach and NS.Ach.ProbeReport then
       local _, lines = NS.Ach.ProbeReport()
-      for _, l in ipairs(lines or {}) do NS.Print(l) end
+      Say("achprobe", lines)
     end
+  elseif cmd == "testtoast" then
+    if NS.Ach and NS.Ach.TestToast then
+      local a = NS.Ach.TestToast()
+      NS.Print("test toast: " .. tostring(a and a.name or "?") .. " (a preview; nothing was recorded).")
+    end
+  elseif cmd == "parchment" then
+    local wow = NS.themes and NS.themes.wow
+    local def = wow and wow.stockMedia and wow.stockMedia.detail and wow.stockMedia.detail.tc or { 0, 1, 0, 1 }
+    if rest == "reset" then
+      NS.db.parchTC = nil
+    elseif rest ~= "" then
+      local l, r, t, b = strmatch(rest, "^([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)$")
+      l, r, t, b = tonumber(l), tonumber(r), tonumber(t), tonumber(b)
+      if l and r and t and b and l >= 0 and r <= 1 and t >= 0 and b <= 1 and l < r and t < b then
+        NS.db.parchTC = { l, r, t, b }
+      else
+        NS.Print("parchment: four numbers 0..1, left < right and top < bottom (e.g. /dm parchment 0.04 0.545 0.04 0.615).")
+        return
+      end
+    end
+    local c = NS.db.parchTC or def
+    NS.Print(string.format("parchment crop: %.3f %.3f %.3f %.3f%s", c[1], c[2], c[3], c[4], NS.db.parchTC and " (yours)" or " (default)"))
+    if NS.SetTheme and NS.theme then NS.SetTheme(NS.theme.id) end
   elseif cmd == "tipdebug" then
     local on = NS.FishingToggleTipDebug()
     local td = NS.db.tipdebug or {}
