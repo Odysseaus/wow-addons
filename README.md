@@ -8,7 +8,7 @@ World of Warcraft: Forever addons by Odysseaus, built for the classic beta clien
 |-------|--------|--------|--------|
 | [WoW Grok](#wow-grok) | [`wow-grok/`](wow-grok/) | Released (Mac app, Windows app, addon zip) | [Releases](https://github.com/Odysseaus/wow-addons/releases) (`wow-grok-mac-v…`, `wow-grok-win-v…`) |
 | [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v1.4.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.4.0) |
-| [Dark Matter](dark-matter/) | [`dark-matter/`](dark-matter/) | Released | [`dark-matter-v0.5.2b.9`](https://github.com/Odysseaus/wow-addons/releases/tag/dark-matter-v0.5.2b.9) |
+| [Dark Matter](#dark-matter) | [`dark-matter/`](dark-matter/) | Released | [`dark-matter-v0.5.2b.9`](https://github.com/Odysseaus/wow-addons/releases/tag/dark-matter-v0.5.2b.9) |
 
 ## Where AddOns go
 
@@ -106,3 +106,43 @@ A single, clean threat meter for Forever. It lists your group against your hosti
    - Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`
    - Windows: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\` (your drive or install folder may differ)
 4. Type `/reload` in game, then `/wtm test` to see it, or open Edit Mode to place it.
+
+---
+
+## Dark Matter
+
+Folder: [`dark-matter/`](dark-matter/) · Addon: [`dark-matter/DarkMatter/`](dark-matter/DarkMatter/) · Full README: [`dark-matter/README.md`](dark-matter/README.md) · [Changelog](dark-matter/CHANGELOG.md)
+
+One window for your quests, map, journals and dungeons in WoW Forever, drawn in the game's own window art by default.
+
+- **Map tab:** the game's world map from Azeroth down to each zone, with numbered zoom levels, painted zone maps blended across borders, zone level ranges, close-up minimap tiles at the deepest zoom, place names, quest areas and POI buttons. Full screen zooms the same way as the window.
+- **Quests:** your quest log with zone headers, search and quest detail; quest pins with game icons on the map; a docked quest log beside the map; and a Ready to Turn In list below the tracker.
+- **Journals:** Fishing (waters, catches, a full catch catalog with item tooltips, and statistics), Adventure Guide and Achievements.
+- **Themes:** the default WoW theme uses the stock window art; class themes are options. Open it with `/dm` or the minimap button.
+- **Classic Era test bench:** `DarkMatter_Vanilla.toc` loads the same code on Classic Era for testing; Forever loads `DarkMatter.toc`.
+
+### Screenshots
+
+> In-game captures from test builds on Oct 23, 2026 (0.5.2b.8 and 0.5.2b.8.1), cropped to the window. Test captions and seams between zone pictures were reduced in later builds.
+
+<p align="center">
+  <img src="dark-matter/docs/dm-map-continent.jpg" alt="Dark Matter Map tab showing Eastern Kingdoms at zoom 4 with zone level ranges, beside the docked quest log" width="820">
+</p>
+<p align="center"><em>Eastern Kingdoms with zone level ranges, and the docked quest log on the right.</em></p>
+
+<p align="center">
+  <img src="dark-matter/docs/dm-map-zone-levels.jpg" alt="Dark Matter Map tab zoomed into Deadwind Pass and its neighbours, with level ranges per zone" width="820">
+</p>
+<p align="center"><em>Zoomed in around Deadwind Pass: painted zone maps with their level ranges.</em></p>
+
+<p align="center">
+  <img src="dark-matter/docs/dm-map-closeup.jpg" alt="Dark Matter Map tab at a deep zoom over Swamp of Sorrows showing detailed terrain" width="820">
+</p>
+<p align="center"><em>A close-up of Swamp of Sorrows.</em></p>
+
+### Download & install
+
+1. Download `DarkMatter-0.5.2b.9.zip` from [`dark-matter-v0.5.2b.9`](https://github.com/Odysseaus/wow-addons/releases/tag/dark-matter-v0.5.2b.9).
+2. Unzip it. You'll get a `DarkMatter` folder.
+3. Copy the `DarkMatter` folder into your AddOns directory (see [Where AddOns go](#where-addons-go)), replacing any older copy.
+4. Type `/reload` in game (or relaunch WoW if it's a first install), then `/dm` to open it.
