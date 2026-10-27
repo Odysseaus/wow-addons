@@ -1,13 +1,14 @@
 ## Interface: 16001
 ## Title: WoW Threat
-## Notes: Forever threat meter: one sorted bar per group member, the fire is the bar, five themed frames.
+## Notes: Forever threat meter: one sorted bar per group member, the fire is the bar. Default WoW theme in the game's own art, plus five themed frames.
 ## Author: Odysseaus
-## Version: 1.3.0
+## Version: 1.4.0
 ## IconTexture: Interface\Icons\Spell_Fire_Fireball
 ## SavedVariables: WoWThreatDB
 
 Core.lua
 Collector.lua
+Stock.lua
 Theme.lua
 Fire.lua
 Meter.lua
