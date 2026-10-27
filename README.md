@@ -7,9 +7,8 @@ World of Warcraft: Forever addons by Odysseaus, built for the classic beta clien
 | Addon | Folder | Status | Get it |
 |-------|--------|--------|--------|
 | [WoW Grok](#wow-grok) | [`wow-grok/`](wow-grok/) | Released (Mac app, Windows app, addon zip) | [Releases](https://github.com/Odysseaus/wow-addons/releases) (`wow-grok-mac-v…`, `wow-grok-win-v…`) |
-| [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v1.3.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.3.0) |
-| [QuestGrind](#questgrind) | [`quest-grind/`](quest-grind/) | 🚧 Under construction, not released | No release yet |
-| [Dark Matter](dark-matter/) | [`dark-matter/`](dark-matter/) | 🚧 P2.4 Catches pill + catalog Show all (0.2.6), not released | No release yet |
+| [WoW Threat](#wow-threat) | [`wow-threat/`](wow-threat/) | Released | [`wow-threat-v1.4.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.4.0) |
+| [Dark Matter](dark-matter/) | [`dark-matter/`](dark-matter/) | Released | [`dark-matter-v0.5.2b.9`](https://github.com/Odysseaus/wow-addons/releases/tag/dark-matter-v0.5.2b.9) |
 
 ## Where AddOns go
 
@@ -84,7 +83,7 @@ A single, clean threat meter for Forever. It lists your group against your hosti
 - **Options panel:** Esc > Options > AddOns > WoW Threat (or `/wtm options`): Max rows, Columns, Bar width, Row height, Scale, Theme, Animate frame, Show fire, Fire style, Fire intensity, Fire speed, Flame overflow, Fire sound (off by default; SFX channel, in combat only), Reduced effects, Show pop, Number format, Show only in group, Hide out of combat, Class colors, Test mode and Reset position. It stays in sync with the Edit Mode dialog.
 - **Slash commands** (`/wtm` or `/wowthreat`): `options`, `test [raid20|raid40|swap|swapfast]`, `theme <wow|auto|emberhall|ironforged|ursinegrove|dawnward|voidbound>`, `style <fireplace|classic|castbar|gem|off>`, `fire <0-1|off|on>`, `reset`, `debug` (prints one threat-scale line per unit), `probe` (API check), `artprobe` (stock textures for the WoW theme). Anything else prints the help.
 - Settings are saved in `WoWThreatDB` (schema v3). Upgrades from 0.1.x and 1.0.0 migrate automatically.
-- Version `1.4.0` on branch `feat/wowthreat-wow-theme` (unreleased; latest release [`wow-threat-v1.3.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.3.0)), Interface `16001`.
+- Version `1.4.0`, released as [`wow-threat-v1.4.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.4.0), Interface `16001`.
 
 ### Screenshots
 
@@ -101,25 +100,9 @@ A single, clean threat meter for Forever. It lists your group against your hosti
 
 ### Download & install
 
-1. Download the `WoWThreat` zip from the latest `wow-threat-v…` release on the [releases page](https://github.com/Odysseaus/wow-addons/releases). The latest is [`wow-threat-v1.3.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.3.0) (`WoWThreat-1.3.0.zip`).
+1. Download the `WoWThreat` zip from the latest `wow-threat-v…` release on the [releases page](https://github.com/Odysseaus/wow-addons/releases). The latest is [`wow-threat-v1.4.0`](https://github.com/Odysseaus/wow-addons/releases/tag/wow-threat-v1.4.0) (`WoWThreat-1.4.0.zip`).
 2. Unzip it. You'll get a `WoWThreat` folder, which includes `Textures/`.
 3. Copy the `WoWThreat` folder into your AddOns directory, replacing any older copy:
    - Mac: `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns/`
    - Windows: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\` (your drive or install folder may differ)
 4. Type `/reload` in game, then `/wtm test` to see it, or open Edit Mode to place it.
-
----
-
-## QuestGrind
-
-> 🚧 **UNDER CONSTRUCTION, NOT RELEASED YET.** QuestGrind has no GitHub release. What's here is work in progress and may change or break.
-
-Folder: [`quest-grind/`](quest-grind/) · Addon: [`quest-grind/QuestGrind/`](quest-grind/QuestGrind/) · Full README: [`quest-grind/README.md`](quest-grind/README.md) · [Changelog](quest-grind/CHANGELOG.md)
-
-An in-game quest HUD for WoW Forever, meant to be prettier than alt-tabbing to a guide. It has three modes, **Full**, **Less**, and **Compass**, plus class color themes picked in Edit Mode. `main` has version `0.2.2`: it reads your live quest log, prioritizes incomplete quests, and shows distance and a compass when the game provides coordinates. It falls back to a mock route when your log is empty. Slash: `/questgrind` or `/qg`. Later phases are planned: **Ask SI** through a desktop companion (P2), hiding Blizzard objectives (P3), and art polish (P4). Newer work, currently `0.2.13`, is still in an open pull request and isn't merged.
-
-> 📷 **Screenshot needed:** the QuestGrind HUD in **Full** mode with a live quest (plus **Less** and **Compass** if possible).
-
-### Download & install
-
-There's nothing to download yet. QuestGrind will get its own `quest-grind-v*` release when it's ready. Until then it is for testing only: the folder to copy is `quest-grind/QuestGrind/`, taken from a [ZIP of this repo](https://github.com/Odysseaus/wow-addons/archive/refs/heads/main.zip). It goes into the AddOns directory as `QuestGrind` (see [Where AddOns go](#where-addons-go)), followed by `/reload`.
