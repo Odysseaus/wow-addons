@@ -4146,6 +4146,80 @@ do
     NS.db.map.cityLevel, NS.db.map.cityFade = 10, nil
     check(M.CityLevel() == 10 and M.CityFadeStart() == 8, "0.5.2b.7.3 map: a saved cityLevel 10 (0.5.2b.7.2) gives fade 8 -> full 10")
     NS.db.map.cityLevel, NS.db.map.cityFade = saveDB, saveFade
+    -- 0.5.2b.19: capitals nested under a host zone still open on the city floor map (not host exterior)
+    do
+      MapUtil = MapUtil or {}
+      MapUtil.GetDisplayableMapForPlayer = function() return 1455 end
+      C_Map.MapHasArt = function(id) return true end
+      PLAYER.map = 1455
+      local oldRect = C_Map.GetMapRectOnMap
+      local saveParent = MAPS[1455]
+      -- Classic-like: Ironforge under Dun Morogh; continent rect only via composition
+      MAPS[1455] = { "Ironforge", 3, 1426 }
+      C_Map.GetMapRectOnMap = function(child, parent)
+        if child == 1455 and parent == 1426 then return 0.45, 0.55, 0.48, 0.58 end
+        if child == 1455 and parent == 1415 then return nil end
+        return oldRect(child, parent)
+      end
+      local oldPos = C_Map.GetPlayerMapPosition
+      C_Map.GetPlayerMapPosition = function(id)
+        if id == 1455 then return { x = 0.5, y = 0.5, GetXY = function(s) return s.x, s.y end } end
+        if id == 1426 then
+          local r = { 0.45, 0.55, 0.48, 0.58 }
+          return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end }
+        end
+        if id == 1415 then
+          local ze = MD.ZoneEntry(1455)
+          if ze then local r = ze.r return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end } end
+        end
+        return oldPos and oldPos(id)
+      end
+      MD.Forget(); M.Reset(); NS.ShowTab("map"); M.vp:SetSize(812, 520); M.Refit(); for _ = 1, 15 do M.Tick(0.05) end
+      local ze = MD.ZoneEntry(1455)
+      local om = M.OpeningMap({})
+      check(ze ~= nil and om == 1455,
+        "0.5.2b.19 map: nested Ironforge (parent Dun Morogh) is in Zones and OpeningMap keeps the city (" .. tostring(om) .. ", entry " .. tostring(ze ~= nil) .. ")")
+      check(M.CentreOnPlayer() == true, "0.5.2b.19 map: CentreOnPlayer succeeds inside nested Ironforge")
+      for _ = 1, 25 do M.Tick(0.05) end
+      C_Map.GetPlayerMapPosition = oldPos
+      local ifl = M.layers[1455]
+      local zIF = MD.ZoneEntry(1455)
+      local fr = zIF and M.Frac(zIF) or -1
+      check(ifl and ifl.shown and (ifl.alpha or 0) > 0.99 and select(1, M.ZoomLevel()) >= 10,
+        string.format("0.5.2b.19 map: open on nested Ironforge shows the city floor map (Zoom %s, IF alpha %s, Frac %.3f, focusCity %s, trail %s)",
+          tostring(select(1, M.ZoomLevel())), ifl and tostring(ifl.alpha) or "nil", fr, tostring(M.focusCity), table.concat(M.Trail(), ">")))
+      check(M.focusCity == 1455 and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Ironforge",
+        string.format("0.5.2b.19 map: city open crumbs name Ironforge (focusCity %s Frac %.3f trail %s)",
+          tostring(M.focusCity), fr, table.concat(M.Trail(), ">")))
+      MAPS[1455] = saveParent
+      C_Map.GetMapRectOnMap = oldRect
+      PLAYER.map = 1426
+      MapUtil.GetDisplayableMapForPlayer = nil
+      MD.Forget(); M.Reset(); NS.ShowTab("map"); M.vp:SetSize(812, 520); M.Refit(); for _ = 1, 20 do M.Tick(0.05) end
+      M.CentreOnPlayer(); for _ = 1, 25 do M.Tick(0.05) end
+      M.pendingFit = nil -- so later SetFull/Refit does not re-cover the zone
+      dm = M.layers[1426] -- Reset rebuilt layers; later sweep checks use this binding
+    end
+    -- 0.5.2b.19: Westfall solo coastline + hunter/paladin crest overrides
+    do
+      check(M.SOLO_COAST and M.SOLO_COAST[1436] == true and type(M.SoloCoastMask) == "function",
+        "0.5.2b.19 map: Westfall (1436) is the solo-coastline pilot")
+      -- without a shipped mask file in the stub, SoloCoastMask is false; with a fake file it forces the layer mask
+      NS.ZoneMasks = NS.ZoneMasks or {}
+      local saveMask = NS.ZoneMasks[1436]
+      NS.ZoneMasks[1436] = { file = "Interface/AddOns/DarkMatter/Media/masks/z1436" }
+      check(M.SoloCoastMask(1436) == true and M.SoloCoastMask(1426) == false,
+        "0.5.2b.19 map: SoloCoastMask is true only for Westfall when its mask ships")
+      NS.ZoneMasks[1436] = saveMask
+      local co = NS.CrestOverrides
+      check(type(co) == "table" and co.hunter and co.hunter[1] == 96 and co.hunter[3] == -30
+        and co.paladin and co.paladin[1] == 90 and co.paladin[3] == -28,
+        "0.5.2b.19 themes: CrestOverrides tune hunter 96/-30 and paladin 90/-28")
+      local th = NS.themes
+      check(th and th.hunter and th.hunter.classArt and th.hunter.classArt.crest[1] == 96 and th.hunter.classArt.crest[3] == -30
+        and th.paladin.classArt.crest[1] == 90 and th.paladin.classArt.crest[3] == -28,
+        "0.5.2b.19 themes: CrestOverrides applied onto hunter/paladin classArt.crest")
+    end
     -- 0.5.2b.8.2: the full-screen map zooms like the window: the same levels, and every continent in view gets the same
     -- layers (0.5.2b.8.1: full screen fully zoomed out drew Kalimdor's zones and level boxes, Eastern Kingdoms plain)
     do
@@ -4344,7 +4418,7 @@ do
     local pe = NS.db.probeLog and NS.db.probeLog.masktest
     check(pe and pe.lines[2] and pe.lines[2]:find("^masktest ") and f:IsShown(), "0.5.2b.5 /dm masktest: saved with the probes")
     SlashCmdList.DARKMATTER("masktest")
-    local file = io.open("../../DarkMatter/Media/masks/dm-masktest.tga", "rb")
+    local file = io.open(arg[1] .. "/Media/masks/dm-masktest.tga", "rb")
     local head = file and file:read(18)
     if file then file:close() end
     check(head and head:byte(3) == 2 and head:byte(13) + 256 * head:byte(14) == 128 and head:byte(17) == 32,

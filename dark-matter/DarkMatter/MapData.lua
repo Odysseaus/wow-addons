@@ -225,15 +225,43 @@ function MD.Continents()
   return c.list
 end
 
+-- Where a map sits on a continent (0..1): direct GetMapRectOnMap, else composed through its parent zone
+-- (Classic capitals are often children of their host zone — Ironforge under Dun Morogh — so they are missing
+-- from GetMapChildrenInfo(continent) and have no direct continent rect).
+function MD.RectOnContinent(id, cont)
+  id, cont = N(id), N(cont)
+  if not id or not cont then return nil end
+  local x1, x2, y1, y2 = MD.Rect(id, cont)
+  if x1 then return x1, x2, y1, y2 end
+  local info = MD.Info(id)
+  local parent = info and N(info.parentMapID)
+  if not parent or parent == 0 or parent == cont then return nil end
+  local a1, a2, a3, a4 = MD.Rect(id, parent)
+  local b1, b2, b3, b4 = MD.RectOnContinent(parent, cont)
+  if not (a1 and b1) then return nil end
+  return b1 + a1 * (b2 - b1), b1 + a2 * (b2 - b1), b3 + a3 * (b4 - b3), b3 + a4 * (b4 - b3)
+end
+
 -- Zones of a continent that have art and a rect on it; big ones first (cities draw last, on top).
+-- 0.5.2b.19: also pull in capitals whose parent is a host zone (not the continent), so OpeningMap keeps
+-- Ironforge when MapHasArt and the city floor map is drawn over Dun Morogh instead of only the exterior.
 function MD.Zones(cont)
   local c = Cache("zones")
   if not c[cont] then
-    local out = {}
+    local out, have = {}, {}
+    local function add(zid, name, x1, x2, y1, y2)
+      if have[zid] or not (x1 and MD.Art(zid)) then return end
+      have[zid] = true
+      out[#out + 1] = { id = zid, name = name or MD.Name(zid) or tostring(zid), cont = cont, r = { x1, x2, y1, y2 }, area = (x2 - x1) * (y2 - y1) }
+    end
     for _, z in ipairs(Children(cont, "zone")) do
       local x1, x2, y1, y2 = MD.Rect(z.id, cont)
-      if x1 and MD.Art(z.id) then
-        out[#out + 1] = { id = z.id, name = z.name, cont = cont, r = { x1, x2, y1, y2 }, area = (x2 - x1) * (y2 - y1) }
+      add(z.id, z.name, x1, x2, y1, y2)
+    end
+    for cid in pairs(MD.CITY_IDS) do
+      if MD.ContinentOf(cid) == cont and not have[cid] then
+        local x1, x2, y1, y2 = MD.RectOnContinent(cid, cont)
+        add(cid, MD.Name(cid), x1, x2, y1, y2)
       end
     end
     table.sort(out, function(a, b) if a.area ~= b.area then return a.area > b.area end return a.id < b.id end)
