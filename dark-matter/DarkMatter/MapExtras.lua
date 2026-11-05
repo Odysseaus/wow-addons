@@ -442,6 +442,7 @@ function X.MemberTooltip(tip, self)
     tip:AddLine(((type(lv) == "number" and lv > 0) and ("Level " .. lv) or "Level ??") .. (cname and (" " .. cname) or ""), 0.9, 0.9, 0.9)
     local zone = b.map and (MD.Name(MD.ZoneOf(b.map) or b.map) or MD.Name(b.map))
     if zone then tip:AddLine(zone, 0.85, 0.85, 0.85) end
+    if b.edge then tip:AddLine("Off the map", 0.6, 0.8, 1) end
     if b.far then tip:AddLine("Out of range", 0.6, 0.6, 0.6) end
   end
   tip:Show()
@@ -486,15 +487,33 @@ function X.PaintDot(tex)
   local tier = X.DotTier()
   if tier == "atlas" then
     local ok, r = pcall(tex.SetAtlas, tex, X.DOT_ATLAS, false)
-    if ok and r ~= false then tex:SetTexCoord(0, 1, 0, 1) return "atlas" end
+    if ok and r ~= false then tex:SetTexCoord(0, 1, 0, 1) if tex.SetRotation then pcall(tex.SetRotation, tex, 0) end return "atlas" end
     tier = (NS.Stock and NS.Stock.TextureOK and NS.Stock.TextureOK(X.DOT_FILE)) and "file" or "solid"
   end
   if tier == "file" then
     tex:SetTexture(X.DOT_FILE) tex:SetTexCoord(0, 1, 0, 1)
+    if tex.SetRotation then pcall(tex.SetRotation, tex, 0) end
     return "file"
   end
   tex:SetColorTexture(1, 1, 1, 1)
+  if tex.SetRotation then pcall(tex.SetRotation, tex, 0) end
   return "solid"
+end
+-- 0.5.2b.17: off-map members — clamp to the overlay edge and draw a class-coloured arrow pointing at them.
+X.EDGE_MARGIN = 10
+X.EDGE_ICONS = "Interface\\AddOns\\DarkMatter\\Media\\dm-map-icons"  -- strip index 6 = arrow (Tab_Map)
+function X.ClampEdge(sx, sy, vw, vh)
+  local m = X.EDGE_MARGIN or 10
+  local esx = math.max(m, math.min(vw - m, sx))
+  local esy = math.max(m, math.min(vh - m, sy))
+  -- atan2(dx, -dy): 0 points up the screen (toward smaller sy), matching a typical up-pointing arrow texture
+  local ang = math.atan2(sx - esx, esy - sy)
+  return esx, esy, ang
+end
+function X.PaintEdge(tex)
+  tex:SetTexture(X.EDGE_ICONS)
+  tex:SetTexCoord(6 / 8, 7 / 8, 0, 1)
+  return "edge"
 end
 -- /dm mapprobe "members" line: the dot image in use, any drawing error, then per member: position, dimmed, why / why skipped
 -- 0.5.2b.15: /dm groupdot — one line per member (skip reason, or drawn screen place / size / art)
@@ -520,7 +539,13 @@ function X.GroupDotReport()
       lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": skipped " .. tostring(wy or "no position")
     else
       local sx, sy = M.ToScreen(wx, wy)
-      if not (sx >= 0 and sy >= 0 and sx <= vw and sy <= vh) then
+      if b and b.edge then
+        lines[#lines + 1] = string.format(
+          "  %s %s: edge screen %.0f,%.0f (raw %.0f,%.0f) size %.0f alpha %.2f tier edge shown %s visible %s%s",
+          tostring(u), tostring(name), b.sx or 0, b.sy or 0, sx, sy, b:GetWidth() or 0, b:GetEffectiveAlpha() or 0,
+          tostring(b:IsShown() and true or false), tostring(b:IsVisible() and true or false),
+          far and " (dimmed)" or "")
+      elseif not (sx >= 0 and sy >= 0 and sx <= vw and sy <= vh) then
         lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": skipped outside the visible area (screen "
           .. string.format("%.0f,%.0f", sx, sy) .. ")"
       elseif b then
@@ -554,7 +579,7 @@ function X.MembersReport()
     if not wx then why = "skipped: " .. tostring(wy or "no position")
     else
       local sx, sy = M.ToScreen(wx, wy)
-      if not (sx >= 0 and sy >= 0 and sx <= vw and sy <= vh) then why = "skipped: outside the visible area"
+      if not (sx >= 0 and sy >= 0 and sx <= vw and sy <= vh) then why = "edge"
       elseif far then
         local zone = MD.ZoneOf(m) or m
         why = (myZone ~= nil and zone ~= myZone) and "other zone" or "out of range"
@@ -574,22 +599,33 @@ function X.LayoutGroup()
     local wx, wy, m, far = X.MemberPos(u)
     if wx then
       local sx, sy = M.ToScreen(wx, wy)
-      if sx >= 0 and sy >= 0 and sx <= vw and sy <= vh then
-        local b = M.Pool("member", MakeMember)
-        local tier = X.PaintDot(b.icon)
+      local on = sx >= 0 and sy >= 0 and sx <= vw and sy <= vh
+      local b = M.Pool("member", MakeMember)
+      local _, cls = Try(G("UnitClass"), u)
+      local r, g, bl = ClassColor(cls)
+      local placeX, placeY, ang = sx, sy, nil
+      local tier
+      if on then
+        tier = X.PaintDot(b.icon)
         b:SetSize(tier == "solid" and 8 or 16, tier == "solid" and 8 or 16)
-        local _, cls = Try(G("UnitClass"), u)
-        b.unit, b.map, b.far, b.cls, b.tier, b.sx, b.sy = u, m, far, cls, tier, sx, sy
-        local r, g, bl = ClassColor(cls)
-        b.icon:SetDesaturated(tier == "file" and r ~= nil)
-        b.icon:SetVertexColor(r or 1, g or 1, bl or 1)
-        b:SetAlpha(far and X.DIM or 1)
-        b:SetFrameLevel(M.over:GetFrameLevel() + 4)
-        b:ClearAllPoints()
-        b:SetPoint("CENTER", M.over, "TOPLEFT", sx, -sy)
-        b:Show()
-        X.stats.members = X.stats.members + 1
+        b.edge = false
+      else
+        placeX, placeY, ang = X.ClampEdge(sx, sy, vw, vh)
+        tier = X.PaintEdge(b.icon)
+        b:SetSize(14, 14)
+        b.edge = true
+        b.rawSx, b.rawSy = sx, sy
+        if b.icon.SetRotation and ang then pcall(b.icon.SetRotation, b.icon, ang) end
       end
+      b.unit, b.map, b.far, b.cls, b.tier, b.sx, b.sy = u, m, far, cls, tier, placeX, placeY
+      b.icon:SetDesaturated((not b.edge) and tier == "file" and r ~= nil)
+      b.icon:SetVertexColor(r or 1, g or 1, bl or 1)
+      b:SetAlpha(far and X.DIM or 1)
+      b:SetFrameLevel(M.over:GetFrameLevel() + 4)
+      b:ClearAllPoints()
+      b:SetPoint("CENTER", M.over, "TOPLEFT", placeX, -placeY)
+      b:Show()
+      X.stats.members = X.stats.members + 1
     end
   end
   M.PoolHideRest("member")

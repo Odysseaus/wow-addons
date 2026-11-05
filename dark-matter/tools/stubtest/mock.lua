@@ -469,6 +469,7 @@ function FrameMT.SetGradient(s, orient, minC, maxC)
   s._vc = nil
 end
 function FrameMT.SetDesaturated(s, on) s._desat = on and true or false end
+function FrameMT.SetRotation(s, a) s._rot = a end
 function FrameMT.LockHighlight(s) s._locked = true end
 function FrameMT.UnlockHighlight(s) s._locked = false end
 function FrameMT.SetHitRectInsets(s, l, r, t, b)
@@ -5226,7 +5227,7 @@ do
       M.hasWorld, M.only = false, -1
       local ln3 = X.MembersReport()
       M.hasWorld, M.only = saveHW, saveOnly
-      check(ln:find("dot image solid; error boom", 1, true) and ln:find("skipped: outside the visible area", 1, true)
+      check(ln:find("dot image solid; error boom", 1, true) and ln:find(", edge", 1, true)
         and ln2:find("skipped: no position", 1, true) and ln3:find("skipped: other continent", 1, true),
         "0.5.2b.14 mapprobe: tier, error and skip reasons (" .. ln .. " | " .. ln2 .. " | " .. ln3 .. ")")
       M.extrasErr = nil
@@ -5289,6 +5290,57 @@ do
         all = table.concat(T, "|")
         check(all:find("Dave", 1, true) and not all:find("Nuhelix", 1, true), "0.5.2b.16 stack: a lone member shows one name")
         mp.n = saveN
+        -- ===== 0.5.2b.17: edge arrows for off-map members =====
+        do
+          local saveTS = M.ToScreen
+          -- party1 off the top; party2 on-map
+          M.ToScreen = function(wx, wy)
+            -- MemberPos returns world; LayoutGroup calls ToScreen once per unit in order party1, party2
+            -- Use unit from a side channel: alternate by call count keyed off pool
+            return saveTS(wx, wy)
+          end
+          -- Force positions via wrapping MemberPos
+          local saveMP = X.MemberPos
+          local places = {
+            party1 = { 0.5, 0.5, 1426, false },  -- has pos
+            party2 = { 0.4, 0.5, 1426, false },
+          }
+          X.MemberPos = function(u)
+            local p = places[u]
+            if not p then return nil, "no position" end
+            return p[1], p[2], p[3], p[4]
+          end
+          local calls = 0
+          M.ToScreen = function(wx, wy)
+            calls = calls + 1
+            if wx == 0.5 then return 517, -67 end  -- Dave off-top
+            if wx == 0.4 then return 384, 130 end -- Nuhelix on-map
+            return 100, 100
+          end
+          X.LayoutGroup()
+          local edgeB, onB
+          for i = 1, mp.n or 0 do
+            local b = mp[i]
+            if b.unit == "party1" then edgeB = b end
+            if b.unit == "party2" then onB = b end
+          end
+          check(edgeB and edgeB.edge and edgeB.sy <= (X.EDGE_MARGIN or 10) + 0.01 and edgeB.tier == "edge"
+            and edgeB:IsShown(), "0.5.2b.17 edge: off-top member clamped to the top edge as an arrow")
+          check(onB and not onB.edge and onB:IsShown() and onB.sx == 384, "0.5.2b.17 edge: on-map member stays a normal dot")
+          places.party1 = nil
+          X.LayoutGroup()
+          local found = false
+          for i = 1, mp.n or 0 do if mp[i].unit == "party1" and mp[i]:IsShown() then found = true end end
+          check(not found, "0.5.2b.17 edge: no position -> neither dot nor edge arrow")
+          -- put party1 back off-map for the report
+          places.party1 = { 0.5, 0.5, 1426, false }
+          X.LayoutGroup()
+          local lines = table.concat(X.GroupDotReport(), "\n")
+          check(lines:find("edge screen", 1, true) and lines:find("raw 517,-67", 1, true),
+            "0.5.2b.17 groupdot: edge instead of skipped outside (" .. lines .. ")")
+          X.MemberPos, M.ToScreen = saveMP, saveTS
+          M.dirty = true run(5)
+        end
         M.dirty = true run(5)
       end
       X.dotTier = nil

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.17
+
+- Group members who are on your map but off the visible part of the Map tab show as a small class-coloured arrow on the edge of the map, pointing toward them. Hover still lists stacked names. Members with no position (for example in an instance) stay hidden. `/dm groupdot` says `edge` for these.
+
 ## 0.5.2b.16
 
 - Hovering a group member's dot on the map lists every nearby member in one tooltip (name, level, class, zone), like the game's own map when dots overlap. Members off the visible map are still skipped (no edge arrows yet).
