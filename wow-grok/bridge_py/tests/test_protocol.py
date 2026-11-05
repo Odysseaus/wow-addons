@@ -191,6 +191,18 @@ class TestSearchFlag(unittest.TestCase):
         self.assertTrue(P.parse_flags("").get("search", True))
         self.assertTrue(P.parse_flags("n;allow=Bash").get("search", True))
 
+    def test_fresh_addon_default_off_sends_s0(self):
+        # A fresh 0.1.33 addon (Web search unticked) sends s=0 in pixel mode
+        # and search=false in reload mode; both must turn the tools off.
+        rec = "\x1f".join(["sess", "c1", "7", "", "s=0", "Chat 1", "hi"])
+        (job,) = P.jobs_from_strip(7, rec)
+        self.assertFalse(job["search"])
+        ob = P.parse_outbox('["outbox"] = {["id"] = 7, ["search"] = false, ["text"] = "6869"}')
+        self.assertFalse(ob["search"])
+        from bridge_py import bridge
+        self.assertEqual(bridge.xai_tools_for_job({}, job), [])
+        self.assertEqual(bridge.xai_tools_for_job({}, ob), [])
+
     def test_s0_turns_search_off(self):
         f = P.parse_flags("n;s=0")
         self.assertFalse(f["search"])
