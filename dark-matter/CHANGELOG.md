@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.19
+
+- Westfall on the Map tab is cut to its coastline when you are looking at that zone alone (uses the existing Westfall mask). Other zones unchanged for now.
+- Hunter and Paladin top emblems: size and height tuned so they sit more evenly on the frame. Tweaks live in Theme_CrestOverrides.lua so regenerating Theme_Classes.lua will not wipe them.
+- **Ironforge (and other capitals) city map on open**: Classic often nests a capital under its host zone (Ironforge → Dun Morogh), so the city was missing from the continent zone list. Opening then framed Dun Morogh and only the snowy exterior showed even at deep zoom / “Ironforge” breadcrumbs. Capitals are pulled into Zones via a composed continent rect; OpeningMap keeps a city with art instead of raising it to the host; when the city fills the view (cover open) its floor map draws at full strength.
+
 ## 0.5.2b.18
 
 - Group member dots and edge arrows stay at full brightness (no fading when far away). The tooltip still says when someone is out of range or in another zone.

@@ -469,6 +469,10 @@ function M.HighlightInfo(z)
   M.hl[z.id] = c
   return c
 end
+-- 0.5.2b.19: solo coastline pilot — these map IDs always get their zone mask when drawn as a layer, even if the
+-- continent is not ContMasked. Cuts ocean outside the coast on the focused zone picture. Westfall only for now.
+M.SOLO_COAST = { [1436] = true }  -- Westfall
+function M.SoloCoastMask(id) return M.SOLO_COAST and M.SOLO_COAST[id] == true and M.MaskFile(id) ~= nil and not M.maskOff and not M.maskBroken end
 -- 0.5.2b.6.2: a layer frame may be built on another host (the /dm masktest zone panels build the map's own layer
 -- there); force = the zone's mask even where the continent is not drawn masked
 local function NewLayer(id, level, host, force)
@@ -546,8 +550,15 @@ local function NewLayer(id, level, host, force)
 end
 local function Layer(id, level)
   local L = M.layers[id]
+  local force = M.SoloCoastMask(id)
+  -- if a solo-coast zone was built earlier without a mask, rebuild that layer once
+  if L and force and not L.mask then
+    if L.frame then L.frame:Hide() end
+    M.layers[id] = nil
+    L = nil
+  end
   if L then return L end
-  L = NewLayer(id, level, canvas)
+  L = NewLayer(id, level, canvas, force or nil)
   if L then M.layers[id] = L end
   return L
 end
@@ -937,8 +948,17 @@ local function Trail()
     local p = Place(f)
     local x, y = (cx - p[1]) / (p[2] - p[1]), (cy - p[3]) / (p[4] - p[3])
     local z = MD.ZoneAt(f, x, y)
-    -- a city's rect sits inside its zone: while the city is still faded out, the trail names the zone you see
-    if not (z and M.ZoneAlpha(z) > 0.5) then
+    -- 0.5.2b.19: when the capital's own picture is up under the middle, the trail names the city (Forever's city
+    -- map). While it is still faded out, name the host zone you actually see.
+    local cityE = M.focusCity and MD.ZoneEntry(M.focusCity)
+    local cityL = cityE and M.layers[cityE.id]
+    -- only rename to the capital when its picture fills enough of the view (city open / deep zoom onto it);
+    -- a Dun Morogh open that merely sits over the IF footprint keeps naming Dun Morogh
+    if cityE and cityL and cityL.shown and (cityL.alpha or 0) > 0.5
+      and (M.Frac(cityE) >= 0.15 or M.LevelOf() >= M.CityLevel() - 1e-6
+        or (M.pendingFit and M.pendingFit.id == cityE.id)) then
+      z = cityE
+    elseif not (z and M.ZoneAlpha(z) > 0.5) then
       z = nil
       for _, e in ipairs(MD.Zones(f)) do
         local r = e.r
@@ -1298,6 +1318,11 @@ function M.FocusZones(cont)
       if not IsCity(e) and Inside(e.r, mx, my) and (not best or e.area < best.area) then best = e end
     end
     z = best
+  else
+    -- 0.5.2b.19: ZoneAt often names the host (Dun Morogh) for a capital's footprint; still pick the city under the middle
+    for _, e in ipairs(MD.Zones(cont)) do
+      if IsCity(e) and Inside(e.r, x, y) and (not city or e.area < city.area) then city = e end
+    end
   end
   if z and IsCity(z) then z = nil end
   return z, city
@@ -1369,8 +1394,16 @@ function M.Layout()
       if a > 0 then
         if isCity then
           -- 0.5.2b.7.2: a capital is drawn from the city zoom level on (/dm citylevel), whenever any of it is in view,
-          -- above its parent zone and feathered at its rim (0.5.2b.7.1 followed the parent zone's picture)
-          d = Frac(z) > 0 and a * cityFade or 0
+          -- above its parent zone and feathered at its rim (0.5.2b.7.1 followed the parent zone's picture).
+          -- 0.5.2b.19: when the city itself fills the view (blizz/cover open on the capital, or zoomed onto it),
+          -- always show the city floor map at full strength — Forever's city uiMapID open.
+          local fr = Frac(z)
+          if fr > 0 then
+            d = a * cityFade
+            if (M.focusCity == z.id and fr >= (M.CITY and M.CITY[1] or 0.45)) or (M.pendingFit and M.pendingFit.blizz and M.pendingFit.id == z.id) then
+              d = a
+            end
+          end
         elseif masked then d = a * maskIn -- 0.5.2b.5: every zone, cut to its shape
         else d = a * M.ZoneIn(z) * (dry and (isFocus and 1 or 0) or (zf[z.id] or 0)) end
       end
@@ -2905,11 +2938,15 @@ local function Start()
   UpdateCoords()
   M.UpdateStatus()
 end
--- 0.5.2b.10: the map the game's map would open on, raised to the first one Dark Matter can frame (zone, continent, world)
+-- 0.5.2b.10: the map the game's map would open on, raised to the first one Dark Matter can frame (zone, continent, world).
+-- 0.5.2b.19: keep a capital (Ironforge, …) when it has art — do not raise it to the host zone. Capitals nested under
+-- their host (Classic: Ironforge → Dun Morogh) are in Zones via RectOnContinent; framing CoverScale of the city then
+-- shows the city floor map over the exterior, like Forever's city uiMapID.
 function M.OpeningMap(p)
   local d = MD.DisplayableForPlayer and MD.DisplayableForPlayer()
   for _, m in ipairs(d and MD.Chain(d) or {}) do
-    if (M.hasWorld and m == M.world) or MD.Is(m, "continent") or (not MD.Is(m, "continent") and MD.ZoneEntry(m)) then
+    local keepCity = MD.IsCityID(m) and MD.Art(m) ~= nil
+    if keepCity or (M.hasWorld and m == M.world) or MD.Is(m, "continent") or (not MD.Is(m, "continent") and MD.ZoneEntry(m)) then
       local c = (M.hasWorld and m == M.world) and nil or (MD.Is(m, "continent") and m or MD.ContinentOf(m))
       if M.hasWorld or not c or c == (p and p.cont) then return m end
     end
