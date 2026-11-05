@@ -416,6 +416,27 @@ local function MakeMember()
   b:SetScript("OnMouseUp", function(_, btn) if M.VpUp then M.VpUp(btn) end end)
   return b
 end
+-- 0.5.2b.13: /dm mapprobe "members" line: count, then per member: position, dimmed, why, and whether the dot art exists
+function X.MembersReport()
+  local units = X.GroupUnits()
+  local QS = NS.QS
+  local art = (QS and QS.Icon("groupDot")) and "yes" or "NO"
+  local parts = {}
+  local mine = M.player and M.player.map
+  local myZone = mine and (MD.ZoneOf(mine) or mine)
+  for _, u in ipairs(units) do
+    local name = Try(G("UnitName"), u) or u
+    local wx, _, m, far = X.MemberPos(u)
+    local why
+    if not wx then why = "no position (instance or hidden)"
+    elseif far then
+      local zone = MD.ZoneOf(m) or m
+      why = (myZone ~= nil and zone ~= myZone) and "other zone" or "out of range"
+    else why = "near" end
+    parts[#parts + 1] = tostring(name) .. ": position " .. (wx and "yes" or "no") .. ", dimmed " .. ((wx and far) and "yes" or "no") .. ", " .. why
+  end
+  return "map 10e: members " .. #units .. "; party dot art " .. art .. (#parts > 0 and ("; " .. table.concat(parts, "; ")) or "")
+end
 function X.LayoutGroup()
   M.PoolReset("member")
   local QS = NS.QS
@@ -433,7 +454,7 @@ function X.LayoutGroup()
           local _, cls = Try(G("UnitClass"), u)
           b.unit, b.map, b.far, b.cls = u, m, far, cls
           local r, g, bl = ClassColor(cls)
-          if raid and r then
+          if r then  -- 0.5.2b.13: party dots are class-coloured too (were raid only)
             b.icon:SetDesaturated(true)
             b.icon:SetVertexColor(r, g, bl)
           else
@@ -594,6 +615,7 @@ function X.ProbeLines()
     out[#out + 1] = "map 10c: group dot " .. (QS.Icon("groupDot") and "yes" or "NO") .. "; corpse tombstone " .. (QS.Icon("corpse") and "yes" or "NO")
     out[#out + 1] = "map 10c: player arrow: " .. (QS.Icon("playerArrow") and ("game (" .. tostring(QS.Icon("playerArrow").file or QS.Icon("playerArrow").atlas) .. ")") or "NOT in this client (Dark Matter's)")
   end
+  do local ok, line = pcall(X.MembersReport) out[#out + 1] = ok and line or ("map 10e: members error " .. tostring(line)) end
   local DI = G("C_DeathInfo")
   out[#out + 1] = "map 10d: GetCorpseMapPosition " .. yn(DI and type(DI.GetCorpseMapPosition) == "function")
     .. "; dead " .. yn(Try(G("UnitIsDeadOrGhost"), "player")) .. "; group " .. #X.GroupUnits()

@@ -5167,6 +5167,10 @@ do
       "0.5.2b.7 D: two party dots (the stock party icon), the out-of-range one dimmed")
     mp[1]._scripts.OnEnter(mp[1])
     check(tip.title == "Friend" and tip.lines[1] == "Level 12 Mage" and tip.lines[2] == "Dun Morogh", "0.5.2b.7 D: dot tooltip: name, level, class, zone (" .. tostring(tip.lines[1]) .. "/" .. tostring(tip.lines[2]) .. ")")
+    check(mp[1].icon._desat == true and mp[1].icon._vc and math.abs(mp[1].icon._vc[1] - 0.25) < 0.01, "0.5.2b.13 D: party dots are class-coloured too")
+    local mline = X.MembersReport()
+    check(mline:find("map 10e: members 2; party dot art yes", 1, true) and mline:find("position yes, dimmed no, near", 1, true) and mline:find("dimmed yes, out of range", 1, true)
+      and table.concat(X.ProbeLines(), "\n"):find("map 10e: members 2", 1, true), "0.5.2b.13: mapprobe members line (" .. mline .. ")")
     IsInRaid = function() return true end
     GetNumGroupMembers = function() return 2 end
     run(5)
@@ -7142,6 +7146,48 @@ if MODE ~= "minimal" then
     Tr.queue, NS.db.autoTrack, Tr.readyDropDue, NS.db.keepTracked = saveQ, saveAuto, saveDue, savePins
     Tr.nextBatch, Tr.batches, Tr.zonePending, Tr.own, Tr.ownAt, Tr.watch = saveNB, saveB, saveZP, saveOwn, saveOwnAt, saveWatch
     check(type(plan1) == "table", "0.5.2b.12 tracker: Plan runs with the section off")
+  end
+  -- ===== 0.5.2b.13: party quest progress on hover (game tracker title button and Ready to Turn In rows) =====
+  do
+    local L, T = {}, {}
+    local saveGT = {}
+    for _, f in ipairs({ "SetOwner", "SetText", "AddLine", "AddDoubleLine", "Show", "SetQuestPartyProgress" }) do saveGT[f] = rawget(GameTooltip, f) end
+    rawset(GameTooltip, "SetOwner", function() L, T = {}, {} end)
+    rawset(GameTooltip, "SetText", function(_, t) T[#T + 1] = tostring(t) end)
+    rawset(GameTooltip, "AddLine", function(_, t) L[#L + 1] = tostring(t) end)
+    rawset(GameTooltip, "AddDoubleLine", function(_, a, b) L[#L + 1] = tostring(a) .. "=" .. tostring(b) end)
+    rawset(GameTooltip, "Show", function() end)
+    local saveIG, saveTI = IsInGroup, C_TooltipInfo
+    local grouped = false
+    IsInGroup = function() return grouped end
+    local function has(t, pat) for _, l in ipairs(t) do if l:find(pat, 1, true) then return true end end return false end
+    local btn = { q = 102, tipTitle = "Gold Dust", tipText = "Click: show it in Dark Matter (map and quest log)" }
+    local function hover(f) if f._scripts and f._scripts.OnEnter then f._scripts.OnEnter(f) end end
+    -- path 1: GameTooltip:SetQuestPartyProgress
+    rawset(GameTooltip, "SetQuestPartyProgress", function(_, q) T[#T + 1] = "PARTY:" .. q end)
+    local c = Tr.rows[1] and Tr.rows[1].click
+    local rr = Tr.ready and Tr.ready.rows and Tr.ready.rows[1]
+    check(c and rr, "0.5.2b.13 hover: a title button and a Ready row exist")
+    c.q = 102 hover(c)
+    check(T[1] ~= nil and not has(T, "PARTY:") and has(L, "Click: show it"), "0.5.2b.13 hover: solo, the title button keeps today's tooltip [" .. table.concat(T, "|") .. "] [" .. table.concat(L, "|") .. "]")
+    rr.q = 102 hover(rr)
+    check(not has(T, "PARTY:") and has(L, "Ready to turn in"), "0.5.2b.13 hover: solo, the Ready row keeps today's tooltip")
+    grouped = true
+    hover(c)
+    check(T[1] == "PARTY:102" and has(L, "Click: show it"), "0.5.2b.13 hover: grouped, the game's party progress then the click hint (title button)")
+    hover(rr)
+    check(T[1] == "PARTY:102" and has(L, "Ready to turn in"), "0.5.2b.13 hover: grouped, Ready rows get it too")
+    -- path 2: no tooltip method; lines from C_TooltipInfo.GetQuestPartyProgress
+    rawset(GameTooltip, "SetQuestPartyProgress", false)
+    C_TooltipInfo = { GetQuestPartyProgress = function(q) return { lines = { { leftText = "Gold Dust" }, { leftText = "Friend" }, { leftText = "Gold Dust: 3/5" } } } end }
+    hover(c)
+    check(T[1] == "Gold Dust" and L[1] == "Friend" and L[2] == "Gold Dust: 3/5" and has(L, "Click: show it"), "0.5.2b.13 hover: C_TooltipInfo fallback builds the party lines, then the hint")
+    C_TooltipInfo = nil
+    hover(c)
+    check(T[1] ~= nil and not has(T, "PARTY:") and #L == 1, "0.5.2b.13 hover: neither API -> today's tooltip")
+    IsInGroup, C_TooltipInfo = saveIG, saveTI
+    for f, v in pairs(saveGT) do rawset(GameTooltip, f, v) end
+    for _, f in ipairs({ "SetOwner", "SetText", "AddLine", "AddDoubleLine", "Show", "SetQuestPartyProgress" }) do if saveGT[f] == nil then rawset(GameTooltip, f, nil) end end
   end
   -- the Quests tab and the Quest Log panel: a Ready to Turn In group on top
   local QT = NS.tabs.quests

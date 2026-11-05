@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.13
+
+- Party members' dots on the map are class-coloured, like raid members'.
+- `/dm mapprobe` has a members line: how many, and for each whether they have a position, are dimmed and why (other zone, out of range, no position such as in an instance), and whether the party-dot art was found.
+- In a group, hovering a quest title in the game's Quests list or a Ready to Turn In row shows the game's party progress for that quest, then the usual click hint. Solo, the tooltip is unchanged.
+
 ## 0.5.2b.12
 
 - While Ready to Turn In is on (open or collapsed), a quest that is ready to hand in leaves the game's Quests list, so it is not shown twice. Quests you pinned stay. Changes wait until you are out of combat. Turn Ready to Turn In off and nothing changes from before.

@@ -219,9 +219,39 @@ function Tr.Blocks()
   return out
 end
 
+-- 0.5.2b.13: in a group, the game's own party progress for the quest (like the stock tracker header), then our hint.
+-- Tooltip only: GameTooltip:SetQuestPartyProgress if this client has it, else lines from C_TooltipInfo.GetQuestPartyProgress.
+function Tr.InGroup()
+  if type(IsInGroup) == "function" then local ok, v = pcall(IsInGroup) if ok then return v and true or false end end
+  if type(GetNumGroupMembers) == "function" then local ok, n = pcall(GetNumGroupMembers) return ok and (tonumber(n) or 0) > 0 end
+  return false
+end
+function Tr.PartyProgress(tip, q)
+  if type(q) ~= "number" or not Tr.InGroup() then return false end
+  if type(tip.SetQuestPartyProgress) == "function" then
+    if pcall(tip.SetQuestPartyProgress, tip, q) then return true end
+  end
+  local TI = C_TooltipInfo
+  if not (TI and type(TI.GetQuestPartyProgress) == "function") then return false end
+  local ok, data = pcall(TI.GetQuestPartyProgress, q)
+  if not (ok and type(data) == "table" and type(data.lines) == "table" and #data.lines > 0) then return false end
+  for i, l in ipairs(data.lines) do
+    local c = type(l.leftColor) == "table" and l.leftColor or nil
+    local r, g, b = c and c.r or 1, c and c.g or 1, c and c.b or 1
+    if i == 1 then tip:SetText(l.leftText or "", r, g, b)
+    elseif l.rightText then tip:AddDoubleLine(l.leftText or "", l.rightText, r, g, b, 1, 1, 1)
+    else tip:AddLine(l.leftText or "", r, g, b, true) end
+  end
+  return true
+end
 local function Tip(self)
   if not GameTooltip then return end
   GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+  if Tr.PartyProgress(GameTooltip, self.q) then
+    if self.tipText then GameTooltip:AddLine(self.tipText, 1, 1, 1, true) end
+    GameTooltip:Show()
+    return
+  end
   GameTooltip:SetText(self.tipTitle or "", 1, 0.82, 0)
   if self.tipText then GameTooltip:AddLine(self.tipText, 1, 1, 1, true) end
   GameTooltip:Show()
