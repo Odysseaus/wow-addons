@@ -469,6 +469,7 @@ function FrameMT.SetGradient(s, orient, minC, maxC)
   s._vc = nil
 end
 function FrameMT.SetDesaturated(s, on) s._desat = on and true or false end
+function FrameMT.SetRotation(s, a) s._rot = a end
 function FrameMT.LockHighlight(s) s._locked = true end
 function FrameMT.UnlockHighlight(s) s._locked = false end
 function FrameMT.SetHitRectInsets(s, l, r, t, b)
@@ -3999,12 +4000,12 @@ do
   -- 0.5.1.10: at zone view the zone's art FILLS the view (cover framing); 0.5.1.11: no lock, the continent art is the base
   local vwN, vhN = M.vp:GetWidth(), M.vp:GetHeight()
   local bx = dm.box or {}
-  -- 0.5.2b.10: opened like the game's map (ResetZoom): the whole zone fits inside the view, touching one pair of edges, centred
-  local fitsIn = bx[1] and bx[1] >= -1e-3 and bx[2] >= -1e-3 and bx[3] <= vwN + 1e-3 and bx[4] <= vhN + 1e-3
-  local touches = bx[1] and ((math.abs(bx[1]) < 0.5 and math.abs(bx[3] - vwN) < 0.5) or (math.abs(bx[2]) < 0.5 and math.abs(bx[4] - vhN) < 0.5))
+  -- 0.5.2b.18: blizz open uses COVER (fill the box, crop overflow) so a wide pane matches Forever's tighter look
+  local covers = bx[1] and bx[1] <= 1e-3 and bx[2] <= 1e-3 and bx[3] >= vwN - 1e-3 and bx[4] >= vhN - 1e-3
+  local overflows = bx[1] and (bx[1] < -0.5 or bx[2] < -0.5 or bx[3] > vwN + 0.5 or bx[4] > vhN + 0.5)
   local centred = bx[1] and math.abs((bx[1] + bx[3]) / 2 - vwN / 2) < 0.5 and math.abs((bx[2] + bx[4]) / 2 - vhN / 2) < 0.5
-  check(M.lock == nil and fitsIn and touches and centred,
-    string.format("0.5.2b.10 map: opened on Dun Morogh, the whole zone fits the view, centred, no margin (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
+  check(M.lock == nil and covers and overflows and centred,
+    string.format("0.5.2b.18 map: opened on Dun Morogh, cover fill (crop overflow), centred (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
   -- 0.5.2b.3: the continent art stays drawn underneath as the base, faded toward the flat backdrop when magnified
   do
     local cl = M.layers[1415]
@@ -4810,6 +4811,75 @@ do
   check(qp and qp.n == 2 and qp[1]:IsShown() and qp[1].qid == 501, "0.5.0 map: quest markers from GetQuestsOnMap")
   qp[1]._scripts.OnEnter(qp[1])
   check(tip.title == "Dwarven Outfitters", "0.5.0 map: quest marker tooltip names the quest")
+  -- ===== 0.5.2b.11: sub-map quest spots, the super-tracked quest's waypoint, refresh while closed, /dm questsync =====
+  do
+    local Tr = NS.Tracker
+    local log = { [501] = { zone = "Elsewhere" }, [502] = { zone = "Elsewhere" }, [601] = { zone = "Elsewhere" },
+      [602] = { zone = "Elsewhere" }, [603] = { zone = "Elsewhere" } }
+    local function keys(t) local o = {} for k in pairs(t) do o[#o + 1] = k end table.sort(o) return table.concat(o, ",") end
+    MD.Forget()
+    local before = keys(Tr.ZoneSet(log))
+    local saveQOM, saveST = C_QuestLog.GetQuestsOnMap, C_SuperTrack
+    MAPS[90001] = { "Coldridge Cave", 5, 1426, { 0.10, 0.30, 0.20, 0.40 } } -- a cave in Dun Morogh
+    MAPS[90002] = { "Fargodeep Mine", 5, 1429, { 0.30, 0.40, 0.60, 0.70 } } -- a mine in Elwynn (the neighbour)
+    C_QuestLog.GetQuestsOnMap = function(id)
+      if id == 90001 then return { { questID = 601, x = 0.5, y = 0.5 }, { questID = 501, x = 0.1, y = 0.1 } } end
+      if id == 90002 then return { { questID = 602, x = 0.5, y = 0.5 } } end
+      return saveQOM(id)
+    end
+    local ST = { q = 603 }
+    C_SuperTrack = { GetSuperTrackedQuestID = function() return ST.q end }
+    C_QuestLog.GetNextWaypointForMap = function(q, z) if z == 1426 and (q == 603 or q == 501) then return 0.70, 0.20 end end
+    MD.Forget()
+    local sub = MD.SubQuests(1426)
+    check(#sub == 1 and sub[1].id == 601 and math.abs(sub[1].x - 0.20) < 1e-9 and math.abs(sub[1].y - 0.30) < 1e-9 and sub[1].from == 90001,
+      "0.5.2b.11 map: a cave's quest spot is placed on its zone (Dun Morogh), the zone's own quest left out")
+    check(#MD.Quests(1426) == 2, "0.5.2b.11 map: sub-map and waypoint spots are not put into MD.Quests")
+    local all = {}
+    for _, z in ipairs(MD.Zones(1415)) do for _, q in ipairs(MD.SubQuests(z.id)) do all[#all + 1] = z.id .. ":" .. q.id end end
+    check(table.concat(all, " "):find("1429:602", 1, true) and not table.concat(all, " "):find("1426:602", 1, true),
+      "0.5.2b.11 map: the neighbouring zone's mine quest is not drawn on Dun Morogh")
+    check(keys(Tr.ZoneSet(log)) == before, "0.5.2b.11 tracker: Tr.ZoneSet is the same with sub-map and waypoint quests present (" .. before .. ")")
+    local planned = 0
+    local savePlan = Tr.Plan
+    Tr.Plan = function(...) planned = planned + 1 return savePlan(...) end
+    M.dirty = true run(2)
+    local qp2 = M.pools.quest
+    local ids, wps = {}, 0
+    for i = 1, qp2.n do if qp2[i]:IsShown() and qp2[i].qid then ids[#ids + 1] = qp2[i].qid if qp2[i].waypoint == true then wps = wps + 1 end end end
+    table.sort(ids)
+    check(table.concat(ids, ",") == "501,502,601,603" and wps == 1, "0.5.2b.11 map: zone + cave + super-tracked waypoint markers (" .. table.concat(ids, ",") .. ", wp " .. wps .. ")")
+    ST.q = 501
+    M.dirty = true run(2)
+    ids, wps = {}, 0
+    for i = 1, qp2.n do if qp2[i]:IsShown() and qp2[i].qid then ids[#ids + 1] = qp2[i].qid if qp2[i].waypoint == true then wps = wps + 1 end end end
+    table.sort(ids)
+    check(table.concat(ids, ",") == "501,502,601" and wps == 0, "0.5.2b.11 map: no second marker for a waypoint quest already on the map")
+    -- refresh while the tab is closed: the private frame only forgets the list
+    check(MD.forgetFrame and MD.forgetFrame._scripts and MD.forgetFrame._scripts.OnEvent, "0.5.2b.11 map: an always-on frame forgets the quest spots")
+    C_QuestLog.GetQuestsOnMap = function(id) if id == 1426 then return { { questID = 777, x = 0.5, y = 0.5 } } end return {} end
+    MD.forgetFrame._scripts.OnEvent(MD.forgetFrame, "QUEST_POI_UPDATE")
+    check(#MD.Quests(1426) == 1 and MD.Quests(1426)[1].id == 777, "0.5.2b.11 map: QUEST_POI_UPDATE reads the quest spots again")
+    -- /dm questsync
+    local LOG = { 777, 603, 604, 605 }
+    C_QuestLog.GetNumQuestLogEntries = function() return #LOG + 1 end
+    C_QuestLog.GetInfo = function(i) if i == 1 then return { isHeader = true, title = "Dun Morogh" } end return { questID = LOG[i - 1], title = "Q" .. LOG[i - 1] } end
+    C_QuestLog.GetNextWaypoint = function(q) if q == 603 then return 1426, 0.7, 0.2 end end
+    local saveUi = GetQuestUiMapID
+    GetQuestUiMapID = function(q) if q == 604 then return 1581 end return 0 end
+    local out = table.concat(M.QuestSync(), "\n")
+    check(out:find("4 log quests, 3 with no main-map marker", 1, true) and out:find("603 Q603: waypoint only 1426", 1, true)
+      and out:find("604 Q604: other map 1581", 1, true) and out:find("605 Q605: no point", 1, true) and not out:find("777 ", 1, true),
+      "0.5.2b.11 /dm questsync: lists unmarked log quests with the reason")
+    check(planned == 0, "0.5.2b.11: drawing and /dm questsync never re-plan the tracker (" .. planned .. ")")
+    Tr.Plan = savePlan
+    GetQuestUiMapID = saveUi
+    C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo, C_QuestLog.GetNextWaypoint, C_QuestLog.GetNextWaypointForMap = nil, nil, nil, nil
+    C_QuestLog.GetQuestsOnMap, C_SuperTrack = saveQOM, saveST
+    MAPS[90001], MAPS[90002] = nil, nil
+    MD.Forget()
+    M.dirty = true run(2)
+  end
   -- ===== 0.5.2a: quest pins with the game's own icons, click / shift-click, hover both ways, Show on map =====
   do
     local QS = NS.QS
@@ -5070,6 +5140,30 @@ do
     check(offBy(bf) < 0.01 and X.stats.blobDraws == nd, "0.5.2b.7.1 B: panning moves the areas with the zone picture, no redraw (" .. string.format("%.3f", offBy(bf)) .. ")")
     local p10e = table.concat(X.ProbeLines(), "\n")
     check(p10e:find("map 10e: areas vs zone picture: ", 1, true), "0.5.2b.7.1 B: mapprobe 10e compares the areas with the zone picture")
+    -- ===== 0.5.2b.15: Forever-style blobs — selected / hover / super-tracked only, not every watched quest =====
+    do
+      local saveSel, saveHov = QS.selected, QS.hovered
+      local saveST = C_SuperTrack
+      local saveIW = QS.IsWatched
+      QS.selected, QS.hovered = 501, nil
+      QS.IsWatched = function() return true end  -- every quest "watched" (auto-track); must NOT all get areas
+      C_SuperTrack = { GetSuperTrackedQuestID = function() return nil end }
+      local bq = X.BlobQuests()
+      check(#bq == 1 and bq[1] == 501, "0.5.2b.15 blobs: only the selected quest, not every watched one (" .. table.concat(bq, ",") .. ")")
+      QS.hovered = 502
+      bq = X.BlobQuests()
+      check(#bq == 2 and bq[1] == 501 and bq[2] == 502, "0.5.2b.15 blobs: selected + hovered (map pin / quest-log row)")
+      QS.hovered = nil
+      C_SuperTrack = { GetSuperTrackedQuestID = function() return 503 end }
+      bq = X.BlobQuests()
+      check(#bq == 2 and bq[1] == 501 and bq[2] == 503, "0.5.2b.15 blobs: selected + super-tracked")
+      QS.selected = nil
+      C_SuperTrack = { GetSuperTrackedQuestID = function() return nil end }
+      check(#X.BlobQuests() == 0, "0.5.2b.15 blobs: nothing selected, hovered or super-tracked -> no areas")
+      QS.selected, QS.hovered = saveSel, saveHov
+      QS.IsWatched = saveIW
+      C_SuperTrack = saveST
+    end
     QS.selected = nil
     M.dirty = true run(1)
     check(not bf:IsShown(), "0.5.2b.7 B: nothing selected or tracked -> no areas")
@@ -5094,10 +5188,186 @@ do
     end
     M.dirty = true run(5)
     local mp = M.pools.member
-    check(mp and mp.n == 2 and mp[1]:IsShown() and mp[1].icon._file == "Interface\\WorldMap\\WorldMapPartyIcon" and (mp[1]._alpha or 1) == 1 and mp[2]._alpha == X.DIM,
-      "0.5.2b.7 D: two party dots (the stock party icon), the out-of-range one dimmed")
+    check(mp and mp.n == 2 and mp[1]:IsShown() and mp[1].icon._file == "Interface\\WorldMap\\WorldMapPartyIcon" and (mp[1]._alpha or 1) == 1 and (mp[2]._alpha or 1) == 1,
+      "0.5.2b.18 D: two party dots at full alpha (never dim)")
     mp[1]._scripts.OnEnter(mp[1])
     check(tip.title == "Friend" and tip.lines[1] == "Level 12 Mage" and tip.lines[2] == "Dun Morogh", "0.5.2b.7 D: dot tooltip: name, level, class, zone (" .. tostring(tip.lines[1]) .. "/" .. tostring(tip.lines[2]) .. ")")
+    check(mp[1].icon._desat == true and mp[1].icon._vc and math.abs(mp[1].icon._vc[1] - 0.25) < 0.01, "0.5.2b.13 D: party dots are class-coloured too")
+    local mline = X.MembersReport()
+    check(mline:find("map 10e: members 2; dot image file; error none", 1, true) and mline:find("position yes, dimmed no, near", 1, true) and mline:find("out of range", 1, true)
+      and table.concat(X.ProbeLines(), "\n"):find("map 10e: members 2", 1, true), "0.5.2b.13: mapprobe members line (" .. mline .. ")")
+    -- 0.5.2b.14: dot image tiers; a dot is always drawn; class colour; mapprobe tier / error / skip reasons
+    do
+      local saveTOK, saveGAI = NS.Stock.TextureOK, C_Texture.GetAtlasInfo
+      C_Texture.GetAtlasInfo = function(a) if a == "WhiteCircle-RaidBlips" then return { width = 16, height = 16 } end return saveGAI(a) end
+      X.dotTier = nil
+      check(X.DotTier() == "atlas", "0.5.2b.14 dot: the Forever atlas first when it exists")
+      M.dirty = true run(5)
+      check(mp.n == 2 and mp[1].tier == "atlas" and mp[1].icon._atlas == "WhiteCircle-RaidBlips" and mp[1].icon._vc and math.abs(mp[1].icon._vc[1] - 0.25) < 0.01,
+        "0.5.2b.14 dot: atlas dots, class-coloured")
+      C_Texture.GetAtlasInfo = saveGAI
+      X.dotTier = nil
+      check(X.DotTier() == "file", "0.5.2b.14 dot: else the party icon file when the Stock check finds it")
+      NS.Stock.TextureOK = function() return false end
+      X.dotTier = nil
+      check(X.DotTier() == "solid", "0.5.2b.14 dot: else a plain solid dot")
+      M.dirty = true run(5)
+      check(mp.n == 2 and mp[1]:IsShown() and mp[1].tier == "solid" and mp[1].icon._vc and math.abs(mp[1].icon._vc[1] - 0.25) < 0.01,
+        "0.5.2b.14 dot: with only the fallback the dots are still drawn, class-coloured")
+      M.extrasErr = "boom"
+      local saveTS = M.ToScreen
+      M.ToScreen = function(x, y) return -50, -50 end
+      local ln = X.MembersReport()
+      M.ToScreen = saveTS
+      local saveBest2 = C_Map.GetBestMapForUnit
+      C_Map.GetBestMapForUnit = function(u) if u == "party1" then return nil end return saveBest2(u) end
+      local ln2 = X.MembersReport()
+      C_Map.GetBestMapForUnit = saveBest2
+      local saveHW, saveOnly = M.hasWorld, M.only
+      M.hasWorld, M.only = false, -1
+      local ln3 = X.MembersReport()
+      M.hasWorld, M.only = saveHW, saveOnly
+      check(ln:find("dot image solid; error boom", 1, true) and ln:find(", edge", 1, true)
+        and ln2:find("skipped: no position", 1, true) and ln3:find("skipped: other continent", 1, true),
+        "0.5.2b.14 mapprobe: tier, error and skip reasons (" .. ln .. " | " .. ln2 .. " | " .. ln3 .. ")")
+      M.extrasErr = nil
+      NS.Stock.TextureOK = saveTOK
+      X.dotTier = nil
+      M.dirty = true run(5)
+    end
+    -- ===== 0.5.2b.15: UnitInRange secret-safe; /dm groupdot; force solid =====
+    do
+      local saveUIR = UnitInRange
+      local secret = { __secret = true }
+      issecretvalue = function(v) return type(v) == "table" and v.__secret == true end
+      UnitInRange = function() error("secret UnitInRange exploded") end
+      local okPos = { pcall(X.MemberPos, "party1") }
+      check(okPos[1] == true and type(okPos[2]) == "number", "0.5.2b.15 group: UnitInRange error does not kill MemberPos")
+      UnitInRange = function() return secret, secret end
+      local wx2 = select(1, X.MemberPos("party1"))
+      check(type(wx2) == "number", "0.5.2b.15 group: secret UnitInRange is treated as in range (still positioned)")
+      M.extrasErr = "stale"
+      M.DrawExtras()
+      check(M.extrasErr == nil, "0.5.2b.15 group: a clean DrawExtras clears extrasErr")
+      UnitInRange = saveUIR
+      issecretvalue = nil
+      X.forceSolid, X.dotTier = true, nil
+      M.dirty = true run(5)
+      check(mp.n == 2 and mp[1].tier == "solid" and mp[1]:IsShown(), "0.5.2b.15 group: /dm groupdot solid forces the bright square")
+      local lines = X.GroupDotReport()
+      local joined = table.concat(lines, "\n")
+      check(joined:find("groupdot: members 2", 1, true) and joined:find("force solid on", 1, true)
+        and joined:find("party1", 1, true) and joined:find("drawn screen", 1, true),
+        "0.5.2b.15 /dm groupdot report (" .. joined .. ")")
+      SlashCmdList.DARKMATTER("groupdot auto")
+      check(X.forceSolid == false, "0.5.2b.15 /dm groupdot auto restores normal dots")
+      -- ===== 0.5.2b.18: never dim + cover open =====
+      do
+        M.dirty = true run(5)
+        check((mp[1]._alpha or 1) == 1 and (mp[2]._alpha or 1) == 1 and mp[2].far == true,
+          "0.5.2b.18 never-dim: full alpha even when far")
+        local L, T = {}, {}
+        local tip = { SetOwner = function() L, T = {}, {} end, SetText = function(_, t) T[#T + 1] = tostring(t) end,
+          AddLine = function(_, t) L[#L + 1] = tostring(t) end, Show = function() end }
+        mp[2].sx = mp[2].sx or 100
+        mp[2].sy = mp[2].sy or 100
+        X.MemberTooltip(tip, mp[2])
+        local all = table.concat(T, "|") .. "|" .. table.concat(L, "|")
+        check(all:find("Out of range", 1, true), "0.5.2b.18 never-dim: tooltip still says Out of range (" .. all .. ")")
+        local cover = M.CoverScale(1426)
+        local x1, x2, y1, y2 = M.WorldRect(1426)
+        local vw, vh = M.over:GetWidth() or 400, M.over:GetHeight() or 300
+        -- CoverScale uses BW/BH from the map; it must be the max (fill), so >= each contain candidate using the same WorldRect span in world units is awkward — just require cover > 0 and CentreOnPlayer succeeds
+        check(type(cover) == "number" and cover > 0, "0.5.2b.18 cover: CoverScale positive (" .. tostring(cover) .. ")")
+        check(M.CentreOnPlayer() == true, "0.5.2b.18 cover: CentreOnPlayer (blizz cover open) succeeds")
+        local zl = M.ZoomLevel()
+        check(type(zl) == "number" and zl >= 1, "0.5.2b.18 cover: zoom level after open (" .. tostring(zl) .. ")")
+      end
+      -- ===== 0.5.2b.16: stacked member tooltip (Forever-style multi-hover) =====
+      do
+        UnitName = function(u) if u == "party1" then return "Dave" end if u == "party2" then return "Nuhelix" end if u == "player" then return "Odysseaus" end return u end
+        UnitClass = function(u) return "Mage", "MAGE" end
+        UnitLevel = function() return 14 end
+        X.forceSolid, X.dotTier = false, nil
+        M.dirty = true run(5)
+        local a, b = mp[1], mp[2]
+        check(a and b and a.sx and b.sx, "0.5.2b.16 stack: two drawn members with screen places")
+        -- same place: both names
+        a.sx, a.sy, b.sx, b.sy = 100, 100, 100, 100
+        local L, T = {}, {}
+        local tip = { SetOwner = function() L, T = {}, {} end, SetText = function(_, t) T[#T + 1] = tostring(t) end,
+          AddLine = function(_, t) L[#L + 1] = tostring(t) end, Show = function() end }
+        X.MemberTooltip(tip, a)
+        local all = table.concat(T, "|") .. "|" .. table.concat(L, "|")
+        check(all:find("Dave", 1, true) and all:find("Nuhelix", 1, true), "0.5.2b.16 stack: same place lists both names (" .. all .. ")")
+        -- far apart: only the hovered member
+        a.sx, a.sy, b.sx, b.sy = 100, 100, 400, 400
+        X.MemberTooltip(tip, a)
+        all = table.concat(T, "|") .. "|" .. table.concat(L, "|")
+        check(all:find("Dave", 1, true) and not all:find("Nuhelix", 1, true), "0.5.2b.16 stack: far apart only the hovered name (" .. all .. ")")
+        -- single: one name
+        local saveN = mp.n
+        mp.n = 1
+        X.MemberTooltip(tip, a)
+        all = table.concat(T, "|")
+        check(all:find("Dave", 1, true) and not all:find("Nuhelix", 1, true), "0.5.2b.16 stack: a lone member shows one name")
+        mp.n = saveN
+        -- ===== 0.5.2b.17: edge arrows for off-map members =====
+        do
+          local saveTS = M.ToScreen
+          -- party1 off the top; party2 on-map
+          M.ToScreen = function(wx, wy)
+            -- MemberPos returns world; LayoutGroup calls ToScreen once per unit in order party1, party2
+            -- Use unit from a side channel: alternate by call count keyed off pool
+            return saveTS(wx, wy)
+          end
+          -- Force positions via wrapping MemberPos
+          local saveMP = X.MemberPos
+          local places = {
+            party1 = { 0.5, 0.5, 1426, false },  -- has pos
+            party2 = { 0.4, 0.5, 1426, false },
+          }
+          X.MemberPos = function(u)
+            local p = places[u]
+            if not p then return nil, "no position" end
+            return p[1], p[2], p[3], p[4]
+          end
+          local calls = 0
+          M.ToScreen = function(wx, wy)
+            calls = calls + 1
+            if wx == 0.5 then return 517, -67 end  -- Dave off-top
+            if wx == 0.4 then return 384, 130 end -- Nuhelix on-map
+            return 100, 100
+          end
+          X.LayoutGroup()
+          local edgeB, onB
+          for i = 1, mp.n or 0 do
+            local b = mp[i]
+            if b.unit == "party1" then edgeB = b end
+            if b.unit == "party2" then onB = b end
+          end
+          check(edgeB and edgeB.edge and edgeB.sy <= (X.EDGE_MARGIN or 10) + 0.01 and edgeB.tier == "edge"
+            and edgeB:IsShown(), "0.5.2b.17 edge: off-top member clamped to the top edge as an arrow")
+          check(onB and not onB.edge and onB:IsShown() and onB.sx == 384, "0.5.2b.17 edge: on-map member stays a normal dot")
+          places.party1 = nil
+          X.LayoutGroup()
+          local found = false
+          for i = 1, mp.n or 0 do if mp[i].unit == "party1" and mp[i]:IsShown() then found = true end end
+          check(not found, "0.5.2b.17 edge: no position -> neither dot nor edge arrow")
+          -- put party1 back off-map for the report
+          places.party1 = { 0.5, 0.5, 1426, false }
+          X.LayoutGroup()
+          local lines = table.concat(X.GroupDotReport(), "\n")
+          check(lines:find("edge screen", 1, true) and lines:find("raw 517,-67", 1, true),
+            "0.5.2b.17 groupdot: edge instead of skipped outside (" .. lines .. ")")
+          X.MemberPos, M.ToScreen = saveMP, saveTS
+          M.dirty = true run(5)
+        end
+        M.dirty = true run(5)
+      end
+      X.dotTier = nil
+      M.dirty = true run(5)
+    end
     IsInRaid = function() return true end
     GetNumGroupMembers = function() return 2 end
     run(5)
@@ -7027,12 +7297,102 @@ if MODE ~= "minimal" then
   check(not R._shown, "0.5.2b ready: the section can be turned off")
   NS.db.readySection = nil Tr.FillReady() Tr.Layout()
   check(R._shown, "0.5.2b ready: and back on")
+  -- ===== 0.5.2b.12: a ready quest leaves the game's Quests list while Ready to Turn In is on (pins stay) =====
+  do
+    local saveQL, saveSt, saveCQ, saveIC = NS.QL, NS.QS.Status, C_QuestLog, InCombatLockdown
+    local saveQ, saveAuto, saveDue, savePins = Tr.queue, NS.db.autoTrack, Tr.readyDropDue, NS.db.keepTracked
+    local saveNB, saveB, saveZP, saveOwn, saveOwnAt, saveWatch = Tr.nextBatch, Tr.batches, Tr.zonePending, Tr.own, Tr.ownAt, Tr.watch
+    local W = { [701] = true, [702] = true, [703] = true }
+    local READY = { [701] = true, [703] = true }
+    NS.QL = { CanWatch = function() return true end, IsWatched = function(e) return W[e.id] == true end,
+      SetWatched = function(e, on) W[e.id] = on and true or nil return "ok" end }
+    NS.QS.Status = function(q) if READY[q] then return "ready" end return "progress" end
+    local LOG = { 701, 702, 703 }
+    C_QuestLog = setmetatable({ GetNumQuestLogEntries = function() return #LOG + 1 end,
+      GetInfo = function(i) if i == 1 then return { isHeader = true, title = "Darnassus" } end return { questID = LOG[i - 1], title = "Q" .. LOG[i - 1] } end },
+      { __index = saveCQ })
+    NS.db.keepTracked = { [703] = true }
+    local function flush(t) Tr.queue = {} for k = 1, 6 do Tr.Tick(t + k * 2) end end
+    for _, auto in ipairs({ false, true }) do
+      NS.db.autoTrack = auto
+      local tag = auto and " (auto-track on)" or " (auto-track off)"
+      W[701], W[702], W[703] = true, true, true
+      local fight = true
+      InCombatLockdown = function() return fight end
+      Tr.OnEvent("QUEST_LOG_UPDATE") Tr.Tick(TIME_NOW + 100) Tr.Tick(TIME_NOW + 103)
+      check(W[701] and W[702] and W[703], "0.5.2b.12 tracker: nothing is unwatched in combat" .. tag)
+      fight = false
+      Tr.OnEvent("PLAYER_REGEN_ENABLED")
+      for k = 1, 6 do Tr.Tick(TIME_NOW + 110 + k * 2) end
+      check(not W[701] and W[702] and W[703], "0.5.2b.12 tracker: after combat the ready quest is unwatched, the pinned ready one kept" .. tag)
+      NS.db.readySection = false
+      W[701] = true
+      Tr.OnEvent("QUEST_LOG_UPDATE") for k = 1, 6 do Tr.Tick(TIME_NOW + 130 + k * 2) end
+      check(W[701] and W[702] and W[703], "0.5.2b.12 tracker: with Ready to Turn In off the ready quest stays watched" .. tag)
+      NS.db.readySection = nil
+    end
+    -- Plan: ZoneSet still wants the ready quest; Plan alone leaves it out (unless pinned)
+    local log = Tr.ReadLog()
+    local zs = Tr.ZoneSet(log)
+    check(zs[703] == true, "0.5.2b.12 tracker: Tr.ZoneSet itself is unchanged (pins still in it)")
+    NS.db.readySection = false
+    local plan1 = Tr.Plan()
+    NS.db.readySection = nil
+    InCombatLockdown = saveIC
+    NS.QL, NS.QS.Status, C_QuestLog = saveQL, saveSt, saveCQ
+    Tr.queue, NS.db.autoTrack, Tr.readyDropDue, NS.db.keepTracked = saveQ, saveAuto, saveDue, savePins
+    Tr.nextBatch, Tr.batches, Tr.zonePending, Tr.own, Tr.ownAt, Tr.watch = saveNB, saveB, saveZP, saveOwn, saveOwnAt, saveWatch
+    check(type(plan1) == "table", "0.5.2b.12 tracker: Plan runs with the section off")
+  end
+  -- ===== 0.5.2b.13: party quest progress on hover (game tracker title button and Ready to Turn In rows) =====
+  do
+    local L, T = {}, {}
+    local saveGT = {}
+    for _, f in ipairs({ "SetOwner", "SetText", "AddLine", "AddDoubleLine", "Show", "SetQuestPartyProgress" }) do saveGT[f] = rawget(GameTooltip, f) end
+    rawset(GameTooltip, "SetOwner", function() L, T = {}, {} end)
+    rawset(GameTooltip, "SetText", function(_, t) T[#T + 1] = tostring(t) end)
+    rawset(GameTooltip, "AddLine", function(_, t) L[#L + 1] = tostring(t) end)
+    rawset(GameTooltip, "AddDoubleLine", function(_, a, b) L[#L + 1] = tostring(a) .. "=" .. tostring(b) end)
+    rawset(GameTooltip, "Show", function() end)
+    local saveIG, saveTI = IsInGroup, C_TooltipInfo
+    local grouped = false
+    IsInGroup = function() return grouped end
+    local function has(t, pat) for _, l in ipairs(t) do if l:find(pat, 1, true) then return true end end return false end
+    local btn = { q = 102, tipTitle = "Gold Dust", tipText = "Click: show it in Dark Matter (map and quest log)" }
+    local function hover(f) if f._scripts and f._scripts.OnEnter then f._scripts.OnEnter(f) end end
+    -- path 1: GameTooltip:SetQuestPartyProgress
+    rawset(GameTooltip, "SetQuestPartyProgress", function(_, q) T[#T + 1] = "PARTY:" .. q end)
+    local c = Tr.rows[1] and Tr.rows[1].click
+    local rr = Tr.ready and Tr.ready.rows and Tr.ready.rows[1]
+    check(c and rr, "0.5.2b.13 hover: a title button and a Ready row exist")
+    c.q = 102 hover(c)
+    check(T[1] ~= nil and not has(T, "PARTY:") and has(L, "Click: show it"), "0.5.2b.13 hover: solo, the title button keeps today's tooltip [" .. table.concat(T, "|") .. "] [" .. table.concat(L, "|") .. "]")
+    rr.q = 102 hover(rr)
+    check(not has(T, "PARTY:") and has(L, "Ready to turn in"), "0.5.2b.13 hover: solo, the Ready row keeps today's tooltip")
+    grouped = true
+    hover(c)
+    check(T[1] == "PARTY:102" and has(L, "Click: show it"), "0.5.2b.13 hover: grouped, the game's party progress then the click hint (title button)")
+    hover(rr)
+    check(T[1] == "PARTY:102" and has(L, "Ready to turn in"), "0.5.2b.13 hover: grouped, Ready rows get it too")
+    -- path 2: no tooltip method; lines from C_TooltipInfo.GetQuestPartyProgress
+    rawset(GameTooltip, "SetQuestPartyProgress", false)
+    C_TooltipInfo = { GetQuestPartyProgress = function(q) return { lines = { { leftText = "Gold Dust" }, { leftText = "Friend" }, { leftText = "Gold Dust: 3/5" } } } end }
+    hover(c)
+    check(T[1] == "Gold Dust" and L[1] == "Friend" and L[2] == "Gold Dust: 3/5" and has(L, "Click: show it"), "0.5.2b.13 hover: C_TooltipInfo fallback builds the party lines, then the hint")
+    C_TooltipInfo = nil
+    hover(c)
+    check(T[1] ~= nil and not has(T, "PARTY:") and #L == 1, "0.5.2b.13 hover: neither API -> today's tooltip")
+    IsInGroup, C_TooltipInfo = saveIG, saveTI
+    for f, v in pairs(saveGT) do rawset(GameTooltip, f, v) end
+    for _, f in ipairs({ "SetOwner", "SetText", "AddLine", "AddDoubleLine", "Show", "SetQuestPartyProgress" }) do if saveGT[f] == nil then rawset(GameTooltip, f, nil) end end
+  end
   -- the Quests tab and the Quest Log panel: a Ready to Turn In group on top
   local QT = NS.tabs.quests
   local rq = QT.Ready()
   check(#rq == 1 and rq[1].questID == 102 and QT.READY_TITLE == "Ready to Turn In", "0.5.2b ready: the Quests tab and the panel get a Ready to Turn In group")
   -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat
   QWATCH = { [6] = true }
+  NS.db.readySection = false  -- 0.5.2b.12: quest 102 (index 3) is ready; with the section off these zone tests keep their old meaning
   for k in pairs(P) do P[k] = nil end
   Tr.watch, Tr.own = nil, {}
   Tr.Diff()
@@ -7251,6 +7611,7 @@ if MODE ~= "minimal" then
     QL.Forget() Tr.Diff()
     for k in pairs(P) do P[k] = nil end
   end
+  NS.db.readySection = nil
   check(Tr.PIN_SIZE >= 17 and Tr.PIN_SIZE <= 18, "0.5.2b.1 tracker: keep pins 17-18 px (were 14)")
   -- item 5 stays out: nothing is ever registered with the game's tracker (its quest item buttons call protected code)
   do

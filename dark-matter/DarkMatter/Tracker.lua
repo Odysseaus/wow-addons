@@ -219,9 +219,39 @@ function Tr.Blocks()
   return out
 end
 
+-- 0.5.2b.13: in a group, the game's own party progress for the quest (like the stock tracker header), then our hint.
+-- Tooltip only: GameTooltip:SetQuestPartyProgress if this client has it, else lines from C_TooltipInfo.GetQuestPartyProgress.
+function Tr.InGroup()
+  if type(IsInGroup) == "function" then local ok, v = pcall(IsInGroup) if ok then return v and true or false end end
+  if type(GetNumGroupMembers) == "function" then local ok, n = pcall(GetNumGroupMembers) return ok and (tonumber(n) or 0) > 0 end
+  return false
+end
+function Tr.PartyProgress(tip, q)
+  if type(q) ~= "number" or not Tr.InGroup() then return false end
+  if type(tip.SetQuestPartyProgress) == "function" then
+    if pcall(tip.SetQuestPartyProgress, tip, q) then return true end
+  end
+  local TI = C_TooltipInfo
+  if not (TI and type(TI.GetQuestPartyProgress) == "function") then return false end
+  local ok, data = pcall(TI.GetQuestPartyProgress, q)
+  if not (ok and type(data) == "table" and type(data.lines) == "table" and #data.lines > 0) then return false end
+  for i, l in ipairs(data.lines) do
+    local c = type(l.leftColor) == "table" and l.leftColor or nil
+    local r, g, b = c and c.r or 1, c and c.g or 1, c and c.b or 1
+    if i == 1 then tip:SetText(l.leftText or "", r, g, b)
+    elseif l.rightText then tip:AddDoubleLine(l.leftText or "", l.rightText, r, g, b, 1, 1, 1)
+    else tip:AddLine(l.leftText or "", r, g, b, true) end
+  end
+  return true
+end
 local function Tip(self)
   if not GameTooltip then return end
   GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+  if Tr.PartyProgress(GameTooltip, self.q) then
+    if self.tipText then GameTooltip:AddLine(self.tipText, 1, 1, 1, true) end
+    GameTooltip:Show()
+    return
+  end
   GameTooltip:SetText(self.tipTitle or "", 1, 0.82, 0)
   if self.tipText then GameTooltip:AddLine(self.tipText, 1, 1, 1, true) end
   GameTooltip:Show()
@@ -768,10 +798,38 @@ function Tr.ZoneSet(log)
   for id in pairs(Pins()) do if log[id] then want[id] = true end end
   return want
 end
+-- 0.5.2b.12: a quest that is ready to turn in is listed in our Ready to Turn In section, so it is not also kept in the
+-- game's Quests list, unless the section is turned off (DarkMatterDB.readySection == false; collapsed still counts as on)
+-- or the quest is pinned. Unwatching goes through the queue, out of combat only.
+function Tr.ReadyDropOn() return not (DB() and DB().readySection == false) end
+local function DropReady(id)
+  return Tr.ReadyDropOn() and not Tr.IsPinned(id) and NS.QS ~= nil and NS.QS.Status(id) == "ready"
+end
+Tr.DropReady = DropReady
+function Tr.ReadyDrops(log, w)
+  local out = {}
+  for id in pairs(w) do if log[id] and DropReady(id) then out[#out + 1] = { e = log[id], want = false, ready = true } end end
+  table.sort(out, function(a, b) return a.e.idx < b.e.idx end)
+  return out
+end
+function Tr.ReadyStep()
+  if not Tr.readyDropDue or InCombat() then return end
+  Tr.readyDropDue = nil
+  local log = ReadLog()
+  local queued = {}
+  for _, it in ipairs(Tr.queue) do queued[N(it.e and it.e.id) or 0] = it end
+  for _, it in ipairs(Tr.ReadyDrops(log, Watched(log))) do
+    local had = queued[it.e.id]
+    if had then had.want, had.ready = false, true else Tr.queue[#Tr.queue + 1] = it end
+  end
+end
+Tr.readyDropDue = true
+
 function Tr.Plan()
   local log = ReadLog()
   local w = Watched(log)
   local want = Tr.ZoneSet(log)
+  for id in pairs(want) do if DropReady(id) then want[id] = nil end end
   local q = {}
   for id in pairs(w) do if not want[id] then q[#q + 1] = { e = log[id], want = false } end end
   local adds = {}
@@ -791,7 +849,10 @@ local function OnTaxi() return type(_G.UnitOnTaxi) == "function" and _G.UnitOnTa
 function Tr.AutoStep(now)
   if not Tr.AutoWanted() then
     -- auto-track off: the game's own tracking, except that pinned quests are tracked again after a zone change
-    Tr.queue = {}
+    -- (0.5.2b.12: and ready quests leave the Quests list while Ready to Turn In is on)
+    local keep = {}
+    for _, it in ipairs(Tr.queue) do if it.ready then keep[#keep + 1] = it end end
+    Tr.queue = keep
     if Tr.zonePending then
       if OnTaxi() then Tr.waitingTaxi = true return end
       if InCombat() then return end
@@ -803,9 +864,8 @@ function Tr.AutoStep(now)
       table.sort(ids, function(a, b) return log[a].idx < log[b].idx end)
       for _, id in ipairs(ids) do if SetWatch(log[id], true) == "cap" then break end end
     end
-    return
-  end
-  if Tr.zonePending then
+    Tr.ReadyStep()
+  elseif Tr.zonePending then
     if OnTaxi() then Tr.waitingTaxi = true return end -- a flight: wait for the landing
     if InCombat() then return end
     Tr.waitingTaxi = nil
@@ -813,11 +873,13 @@ function Tr.AutoStep(now)
     Tr.queue = Tr.Plan()
     Tr.nextBatch = now
   end
+  if Tr.AutoWanted() then Tr.ReadyStep() end
   if #Tr.queue == 0 or InCombat() or OnTaxi() or now < (Tr.nextBatch or 0) then return end
   local done = 0
   while done < Tr.BATCH and #Tr.queue > 0 do
     local it = table.remove(Tr.queue, 1)
-    local r = SetWatch(it.e, it.want)
+    if it.ready and not DropReady(it.e.id) then it = nil end -- 0.5.2b.12: pinned, section off or no longer ready
+    local r = it and SetWatch(it.e, it.want)
     done = done + 1
     if r == "cap" then -- the game's limit: the rest of the adds cannot go in
       local keep = {}
@@ -994,6 +1056,8 @@ function Tr.OnEvent(event, a1)
     local q = N(a1)
     if q then Pins()[q] = nil end
   end
+  if event == "QUEST_LOG_UPDATE" or event == "QUEST_WATCH_LIST_CHANGED" or event == "PLAYER_REGEN_ENABLED"
+    or event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then Tr.readyDropDue = true end
   Tr.diffDirty = true
 end
 function Tr.Tick(now)

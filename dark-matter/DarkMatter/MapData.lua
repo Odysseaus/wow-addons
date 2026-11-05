@@ -434,6 +434,60 @@ function MD.Quests(id)
   end
   return c[id]
 end
+-- 0.5.2b.11: quest spots on the known sub-maps (caves, micro maps, dungeon maps) of a zone, placed on that zone's own map
+-- coords. MAP ONLY: kept apart from MD.Quests (the tracker's zone auto-track reads MD.Quests and must see what it saw before).
+-- Only sub-maps whose zone (MD.ZoneOf) is this zone count; quests the zone already lists are left out.
+-- Stored with the quest spots (key "sub:<zone>"), so MD.Forget("quests") clears both.
+function MD.SubQuests(zone)
+  zone = N(zone)
+  if not zone or not Fn("C_QuestLog", "GetQuestsOnMap") then return {} end
+  local c = Cache("quests")
+  local key = "sub:" .. zone
+  if c[key] == nil then
+    local out, have = {}, {}
+    for _, q in ipairs(MD.Quests(zone) or {}) do have[q.id] = true end
+    local seen = { [zone] = true }
+    local function walk(id, depth)
+      if depth > 2 then return end
+      for _, word in ipairs({ "dungeon", "micro" }) do
+        for _, k in ipairs(Children(id, word)) do
+          if not seen[k.id] then
+            seen[k.id] = true
+            if MD.ZoneOf(k.id) == zone then
+              local x1, x2, y1, y2 = MD.Rect(k.id, zone)
+              if x1 then
+                local list = Call("C_QuestLog", "GetQuestsOnMap", k.id)
+                for _, q in ipairs(type(list) == "table" and list or {}) do
+                  local qid = type(q) == "table" and N(q.questID)
+                  if qid and N(q.x) and N(q.y) and not have[qid] then
+                    have[qid] = true
+                    out[#out + 1] = { id = qid, x = x1 + q.x * (x2 - x1), y = y1 + q.y * (y2 - y1), from = k.id }
+                  end
+                end
+              end
+              walk(k.id, depth + 1)
+            end
+          end
+        end
+      end
+    end
+    walk(zone, 1)
+    c[key] = out
+  end
+  return c[key]
+end
+-- 0.5.2b.11: the quest spots are read again after any quest change, also while the Map tab is closed (a private frame that
+-- only forgets the list: it never redraws, plans or tracks anything)
+MD.QUEST_FORGET_EVENTS = { "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED", "QUEST_ACCEPTED",
+  "QUEST_REMOVED", "QUEST_TURNED_IN" }
+if type(CreateFrame) == "function" then
+  local ok, f = pcall(CreateFrame, "Frame")
+  if ok and f then
+    MD.forgetFrame = f
+    f:SetScript("OnEvent", function() MD.Forget("quests") end)
+    for _, e in ipairs(MD.QUEST_FORGET_EVENTS) do pcall(f.RegisterEvent, f, e) end
+  end
+end
 function MD.QuestTitle(qid)
   local t = Call("C_QuestLog", "GetTitleForQuestID", qid)
   if NS.Str(t) then return t end

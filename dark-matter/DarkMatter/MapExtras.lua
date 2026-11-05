@@ -16,7 +16,7 @@ M.X = X
 X.GROUP_EVERY = 0.2   -- group dots move 5 times a second
 X.CORPSE_EVERY = 0.5
 X.HOVER_EVERY = 0.1
-X.DIM = 0.4
+X.DIM = 0.4  -- unused for drawing since 0.5.2b.18 (Forever never dims); kept for any old probe)
 X.BLOB_FILL = "Interface\\WorldMap\\UI-QuestBlob-Inside"
 X.BLOB_BORDER = "Interface\\WorldMap\\UI-QuestBlob-Outside"
 
@@ -26,16 +26,20 @@ local function Try(f, ...) if type(f) ~= "function" then return nil end local r 
 ---------------------------------------------------------------------------
 -- quest objective areas
 ---------------------------------------------------------------------------
--- the quests whose areas are shaded: the selected one and the tracked (watched) ones
+-- 0.5.2b.15: like Forever's QuestBlobPinMixin:Refresh — shade at most the selected, hovered (map pin / quest-log
+-- row), and super-tracked quest. Watched / auto-tracked quests alone are not shaded.
 function X.BlobQuests()
   local QS = NS.QS
   local out, seen = {}, {}
   local function add(q) if type(q) == "number" and q > 0 and not seen[q] then seen[q] = true out[#out + 1] = q end end
   if QS then
     add(QS.selected)
-    if QS.IsWatched then
-      for _, q in ipairs(X.LogQuestIDs()) do if QS.IsWatched(q) then add(q) end end
-    end
+    add(QS.hovered)
+  end
+  local ST = G("C_SuperTrack")
+  if ST and type(ST.GetSuperTrackedQuestID) == "function" then
+    local ok, q = pcall(ST.GetSuperTrackedQuestID)
+    if ok then add(q) end
   end
   table.sort(out)
   return out
@@ -372,10 +376,11 @@ end
 -- a member's place: world coords, the map they are on, and whether to dim them (another zone, or out of range)
 function X.MemberPos(u)
   local m = MD.UnitMap(u)
-  if not m then return nil end
+  if not m then return nil, "no position" end
   local cont = MD.ContinentOf(m)
   local wx, wy
-  if cont and (M.hasWorld or cont == M.only) then
+  if cont and not (M.hasWorld or cont == M.only) then return nil, "other continent" end
+  if cont then
     local x, y = MD.UnitPos(cont, u)
     if x then wx, wy = M.ToW(cont, x, y)
     else
@@ -384,70 +389,243 @@ function X.MemberPos(u)
       if zx then wx, wy = M.ToW(z, zx, zy) end
     end
   end
-  if not wx then return nil end
+  if not wx then return nil, "no position" end
   local mine = M.player and M.player.map
   local zone, myZone = MD.ZoneOf(m) or m, mine and (MD.ZoneOf(mine) or mine)
-  local inRange, checked = Try(G("UnitInRange"), u)
-  local far = (myZone ~= nil and zone ~= myZone) or (checked and not inRange) or false
+  -- 0.5.2b.15: UnitInRange is SecretReturns on Forever; reading a secret as a bool can error. If unreadable, treat as in range.
+  local far = (myZone ~= nil and zone ~= myZone) or false
+  if not far then
+    local f = G("UnitInRange")
+    if type(f) == "function" then
+      local ok, inRange, checked = pcall(f, u)
+      if ok then
+        local secret = G("issecretvalue")
+        local bad = type(secret) == "function" and (secret(inRange) or secret(checked))
+        if not bad and checked and not inRange then far = true end
+      end
+    end
+  end
   return wx, wy, m, far
+end
+-- 0.5.2b.16: like Forever's UnitPositionFrame multi-hover — every drawn member within STACK_PX of this button.
+X.STACK_PX = 14
+function X.DrawnMembersNear(sx, sy)
+  local out, pool = {}, M.pools and M.pools.member
+  local lim = (X.STACK_PX or 14) ^ 2
+  if not pool then return out end
+  for i = 1, pool.n or 0 do
+    local b = pool[i]
+    if b and b.unit and b.sx and b:IsShown() then
+      local dx, dy = b.sx - sx, b.sy - sy
+      if dx * dx + dy * dy <= lim then out[#out + 1] = b end
+    end
+  end
+  table.sort(out, function(a, c)
+    local na = Try(G("UnitName"), a.unit) or a.unit
+    local nc = Try(G("UnitName"), c.unit) or c.unit
+    return tostring(na) < tostring(nc)
+  end)
+  return out
+end
+function X.MemberTooltip(tip, self)
+  if not (tip and self and self.unit and self.sx) then return end
+  tip:SetOwner(self, "ANCHOR_RIGHT")
+  local list = X.DrawnMembersNear(self.sx, self.sy)
+  if #list == 0 then list = { self } end
+  for i, b in ipairs(list) do
+    local name = Try(G("UnitName"), b.unit) or b.unit
+    local r, g, bl = ClassColor(b.cls)
+    if i == 1 then tip:SetText(name, r or 1, g or 1, bl or 1)
+    else tip:AddLine(name, r or 1, g or 1, bl or 1) end
+    local lv = Try(G("UnitLevel"), b.unit)
+    local cname = Try(G("UnitClass"), b.unit)
+    tip:AddLine(((type(lv) == "number" and lv > 0) and ("Level " .. lv) or "Level ??") .. (cname and (" " .. cname) or ""), 0.9, 0.9, 0.9)
+    local zone = b.map and (MD.Name(MD.ZoneOf(b.map) or b.map) or MD.Name(b.map))
+    if zone then tip:AddLine(zone, 0.85, 0.85, 0.85) end
+    if b.edge then tip:AddLine("Off the map", 0.6, 0.8, 1) end
+    if b.far then tip:AddLine("Out of range", 0.6, 0.6, 0.6) end
+  end
+  tip:Show()
 end
 local function MakeMember()
   local b = CreateFrame("Button", nil, M.over)
   b:SetSize(16, 16)
   b.icon = b:CreateTexture(nil, "ARTWORK")
   b.icon:SetAllPoints(b)
-  b:SetScript("OnEnter", function(self)
-    local tip = G("GameTooltip")
-    if not (tip and self.unit) then return end
-    tip:SetOwner(self, "ANCHOR_RIGHT")
-    local name = Try(G("UnitName"), self.unit) or self.unit
-    local r, g, bl = ClassColor(self.cls)
-    tip:SetText(name, r or 1, g or 1, bl or 1)
-    local lv = Try(G("UnitLevel"), self.unit)
-    local cname = Try(G("UnitClass"), self.unit)
-    tip:AddLine(((type(lv) == "number" and lv > 0) and ("Level " .. lv) or "Level ??") .. (cname and (" " .. cname) or ""), 0.9, 0.9, 0.9)
-    local zone = self.map and (MD.Name(MD.ZoneOf(self.map) or self.map) or MD.Name(self.map))
-    if zone then tip:AddLine(zone, 0.85, 0.85, 0.85) end
-    if self.far then tip:AddLine("Out of range", 0.6, 0.6, 0.6) end
-    tip:Show()
-  end)
+  b:SetScript("OnEnter", function(self) X.MemberTooltip(G("GameTooltip"), self) end)
   b:SetScript("OnLeave", function() local tip = G("GameTooltip") if tip then tip:Hide() end end)
   b:SetScript("OnMouseDown", function(_, btn) if M.VpDown then M.VpDown(btn) end end)
   b:SetScript("OnMouseUp", function(_, btn) if M.VpUp then M.VpUp(btn) end end)
   return b
 end
+-- 0.5.2b.14: the dot image, best first: Forever's own map dot (atlas WhiteCircle-RaidBlips, as UnitPositionFrame uses),
+-- the classic party icon file, then a plain solid square (SetColorTexture; always there). A dot is always drawn.
+X.DOT_ATLAS = "WhiteCircle-RaidBlips"
+X.DOT_FILE = "Interface\\WorldMap\\WorldMapPartyIcon"
+X.forceSolid = false  -- /dm groupdot solid: always the bright square
+local probeTex
+function X.DotTier()
+  if X.forceSolid then return "solid" end
+  if X.dotTier then return X.dotTier end
+  local tier = "solid"
+  local TX = G("C_Texture")
+  if TX and type(TX.GetAtlasInfo) == "function" then
+    local ok, info = pcall(TX.GetAtlasInfo, X.DOT_ATLAS)
+    if ok and type(info) == "table" then tier = "atlas" end
+  elseif M.over and M.over.CreateTexture then
+    probeTex = probeTex or M.over:CreateTexture(nil, "BACKGROUND")
+    if probeTex.Hide then probeTex:Hide() end
+    local ok, r = pcall(probeTex.SetAtlas, probeTex, X.DOT_ATLAS, false)
+    if ok and r ~= false and r ~= nil then tier = "atlas" end
+  end
+  if tier == "solid" and NS.Stock and NS.Stock.TextureOK and NS.Stock.TextureOK(X.DOT_FILE) then tier = "file" end
+  X.dotTier = tier
+  return tier
+end
+-- paint one dot; a failing tier falls to the next. Returns the tier used.
+function X.PaintDot(tex)
+  local tier = X.DotTier()
+  if tier == "atlas" then
+    local ok, r = pcall(tex.SetAtlas, tex, X.DOT_ATLAS, false)
+    if ok and r ~= false then tex:SetTexCoord(0, 1, 0, 1) if tex.SetRotation then pcall(tex.SetRotation, tex, 0) end return "atlas" end
+    tier = (NS.Stock and NS.Stock.TextureOK and NS.Stock.TextureOK(X.DOT_FILE)) and "file" or "solid"
+  end
+  if tier == "file" then
+    tex:SetTexture(X.DOT_FILE) tex:SetTexCoord(0, 1, 0, 1)
+    if tex.SetRotation then pcall(tex.SetRotation, tex, 0) end
+    return "file"
+  end
+  tex:SetColorTexture(1, 1, 1, 1)
+  if tex.SetRotation then pcall(tex.SetRotation, tex, 0) end
+  return "solid"
+end
+-- 0.5.2b.17: off-map members — clamp to the overlay edge and draw a class-coloured arrow pointing at them.
+X.EDGE_MARGIN = 10
+X.EDGE_ICONS = "Interface\\AddOns\\DarkMatter\\Media\\dm-map-icons"  -- strip index 6 = arrow (Tab_Map)
+function X.ClampEdge(sx, sy, vw, vh)
+  local m = X.EDGE_MARGIN or 10
+  local esx = math.max(m, math.min(vw - m, sx))
+  local esy = math.max(m, math.min(vh - m, sy))
+  -- atan2(dx, -dy): 0 points up the screen (toward smaller sy), matching a typical up-pointing arrow texture
+  local ang = math.atan2(sx - esx, esy - sy)
+  return esx, esy, ang
+end
+function X.PaintEdge(tex)
+  tex:SetTexture(X.EDGE_ICONS)
+  tex:SetTexCoord(6 / 8, 7 / 8, 0, 1)
+  return "edge"
+end
+-- /dm mapprobe "members" line: the dot image in use, any drawing error, then per member: position, dimmed, why / why skipped
+-- 0.5.2b.15: /dm groupdot — one line per member (skip reason, or drawn screen place / size / art)
+function X.GroupDotReport()
+  local lines = {}
+  local units = X.GroupUnits()
+  local vw, vh = M.over and M.over:GetWidth() or 0, M.over and M.over:GetHeight() or 0
+  lines[#lines + 1] = "groupdot: members " .. #units .. "; force solid " .. (X.forceSolid and "on" or "off")
+    .. "; tier " .. tostring(X.DotTier()) .. "; error " .. (M.extrasErr and tostring(M.extrasErr) or "none")
+  local byUnit = {}
+  local pool = M.pools and M.pools.member
+  if pool then
+    for i = 1, pool.n or 0 do
+      local b = pool[i]
+      if b and b.unit then byUnit[b.unit] = b end
+    end
+  end
+  for _, u in ipairs(units) do
+    local name = Try(G("UnitName"), u) or u
+    local wx, wy, m, far = X.MemberPos(u)
+    local b = byUnit[u]
+    if not wx then
+      lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": skipped " .. tostring(wy or "no position")
+    else
+      local sx, sy = M.ToScreen(wx, wy)
+      if b and b.edge then
+        lines[#lines + 1] = string.format(
+          "  %s %s: edge screen %.0f,%.0f (raw %.0f,%.0f) size %.0f alpha %.2f tier edge shown %s visible %s%s",
+          tostring(u), tostring(name), b.sx or 0, b.sy or 0, sx, sy, b:GetWidth() or 0, b:GetEffectiveAlpha() or 0,
+          tostring(b:IsShown() and true or false), tostring(b:IsVisible() and true or false),
+          far and " (out of range / other zone)" or "")
+      elseif not (sx >= 0 and sy >= 0 and sx <= vw and sy <= vh) then
+        lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": skipped outside the visible area (screen "
+          .. string.format("%.0f,%.0f", sx, sy) .. ")"
+      elseif b then
+        local tex = b.icon
+        local atlas = tex and tex.GetAtlas and select(1, Try(tex.GetAtlas, tex))
+        local file = tex and tex.GetTexture and select(1, Try(tex.GetTexture, tex))
+        lines[#lines + 1] = string.format(
+          "  %s %s: drawn screen %.0f,%.0f size %.0f alpha %.2f tier %s atlas %s texture %s shown %s visible %s%s",
+          tostring(u), tostring(name), sx, sy, b:GetWidth() or 0, b:GetEffectiveAlpha() or 0,
+          tostring(b.tier or X.DotTier()), tostring(atlas or "-"), tostring(file or "-"),
+          tostring(b:IsShown() and true or false), tostring(b:IsVisible() and true or false),
+          far and " (out of range / other zone)" or "")
+      else
+        lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": position yes but no button (layout not run?)"
+      end
+    end
+  end
+  if #units == 0 then lines[#lines + 1] = "  (not in a group, or no other members)" end
+  return lines
+end
+function X.MembersReport()
+  local units = X.GroupUnits()
+  local parts = {}
+  local mine = M.player and M.player.map
+  local myZone = mine and (MD.ZoneOf(mine) or mine)
+  local vw, vh = M.over and M.over:GetWidth() or 0, M.over and M.over:GetHeight() or 0
+  for _, u in ipairs(units) do
+    local name = Try(G("UnitName"), u) or u
+    local wx, wy, m, far = X.MemberPos(u)
+    local why
+    if not wx then why = "skipped: " .. tostring(wy or "no position")
+    else
+      local sx, sy = M.ToScreen(wx, wy)
+      if not (sx >= 0 and sy >= 0 and sx <= vw and sy <= vh) then why = "edge"
+      elseif far then
+        local zone = MD.ZoneOf(m) or m
+        why = (myZone ~= nil and zone ~= myZone) and "other zone" or "out of range"
+      else why = "near" end
+    end
+    parts[#parts + 1] = tostring(name) .. ": position " .. (wx and "yes" or "no") .. ", dimmed no, " .. why
+  end
+  return "map 10e: members " .. #units .. "; dot image " .. X.DotTier() .. "; error " .. (M.extrasErr and tostring(M.extrasErr) or "none")
+    .. (#parts > 0 and ("; " .. table.concat(parts, "; ")) or "")
+end
 function X.LayoutGroup()
   M.PoolReset("member")
-  local QS = NS.QS
-  local units, raid = X.GroupUnits()
+  local units = X.GroupUnits()
   local vw, vh = M.over:GetWidth() or 0, M.over:GetHeight() or 0
   X.stats.members = 0
-  if #units > 0 and QS and QS.Icon("groupDot") then
-    for _, u in ipairs(units) do
-      local wx, wy, m, far = X.MemberPos(u)
-      if wx then
-        local sx, sy = M.ToScreen(wx, wy)
-        if sx >= 0 and sy >= 0 and sx <= vw and sy <= vh then
-          local b = M.Pool("member", MakeMember)
-          QS.PaintIcon(b.icon, "groupDot")
-          local _, cls = Try(G("UnitClass"), u)
-          b.unit, b.map, b.far, b.cls = u, m, far, cls
-          local r, g, bl = ClassColor(cls)
-          if raid and r then
-            b.icon:SetDesaturated(true)
-            b.icon:SetVertexColor(r, g, bl)
-          else
-            b.icon:SetDesaturated(false)
-            b.icon:SetVertexColor(1, 1, 1)
-          end
-          b:SetAlpha(far and X.DIM or 1)
-          b:SetFrameLevel(M.over:GetFrameLevel() + 4)
-          b:ClearAllPoints()
-          b:SetPoint("CENTER", M.over, "TOPLEFT", sx, -sy)
-          b:Show()
-          X.stats.members = X.stats.members + 1
-        end
+  for _, u in ipairs(units) do
+    local wx, wy, m, far = X.MemberPos(u)
+    if wx then
+      local sx, sy = M.ToScreen(wx, wy)
+      local on = sx >= 0 and sy >= 0 and sx <= vw and sy <= vh
+      local b = M.Pool("member", MakeMember)
+      local _, cls = Try(G("UnitClass"), u)
+      local r, g, bl = ClassColor(cls)
+      local placeX, placeY, ang = sx, sy, nil
+      local tier
+      if on then
+        tier = X.PaintDot(b.icon)
+        b:SetSize(tier == "solid" and 8 or 16, tier == "solid" and 8 or 16)
+        b.edge = false
+      else
+        placeX, placeY, ang = X.ClampEdge(sx, sy, vw, vh)
+        tier = X.PaintEdge(b.icon)
+        b:SetSize(14, 14)
+        b.edge = true
+        b.rawSx, b.rawSy = sx, sy
+        if b.icon.SetRotation and ang then pcall(b.icon.SetRotation, b.icon, ang) end
       end
+      b.unit, b.map, b.far, b.cls, b.tier, b.sx, b.sy = u, m, far, cls, tier, placeX, placeY
+      b.icon:SetDesaturated((not b.edge) and tier == "file" and r ~= nil)
+      b.icon:SetVertexColor(r or 1, g or 1, bl or 1)
+      b:SetAlpha(1)  -- 0.5.2b.18: never dim (Forever SetAlphaLimits 1,1,1); far still drives the tooltip
+      b:SetFrameLevel(M.over:GetFrameLevel() + 4)
+      b:ClearAllPoints()
+      b:SetPoint("CENTER", M.over, "TOPLEFT", placeX, -placeY)
+      b:Show()
+      X.stats.members = X.stats.members + 1
     end
   end
   M.PoolHideRest("member")
@@ -515,6 +693,7 @@ function M.DrawExtras()
   X.LayoutBlobs()
   X.LayoutGroup()
   X.LayoutCorpse()
+  M.extrasErr = nil  -- 0.5.2b.15: a clean draw clears a prior error
 end
 function M.ExtrasPreTick()
   if not M.over then return end
@@ -530,6 +709,7 @@ function M.ExtrasTick(dt)
   if X.tc >= X.CORPSE_EVERY then X.tc = 0 X.LayoutCorpse() end
   X.th = (X.th or 0) + dt
   if X.th >= X.HOVER_EVERY then X.th = 0 BlobHover() end
+  M.extrasErr = nil
 end
 -- 0.5.2b.7.3: /dm blobdraw [same|next|once]: when the quest areas are drawn again after a scale change (X.BlobMode);
 -- saved in DarkMatterDB.map.blobDraw; the 10e zoom counters start again
@@ -594,6 +774,7 @@ function X.ProbeLines()
     out[#out + 1] = "map 10c: group dot " .. (QS.Icon("groupDot") and "yes" or "NO") .. "; corpse tombstone " .. (QS.Icon("corpse") and "yes" or "NO")
     out[#out + 1] = "map 10c: player arrow: " .. (QS.Icon("playerArrow") and ("game (" .. tostring(QS.Icon("playerArrow").file or QS.Icon("playerArrow").atlas) .. ")") or "NOT in this client (Dark Matter's)")
   end
+  do local ok, line = pcall(X.MembersReport) out[#out + 1] = ok and line or ("map 10e: members error " .. tostring(line)) end
   local DI = G("C_DeathInfo")
   out[#out + 1] = "map 10d: GetCorpseMapPosition " .. yn(DI and type(DI.GetCorpseMapPosition) == "function")
     .. "; dead " .. yn(Try(G("UnitIsDeadOrGhost"), "player")) .. "; group " .. #X.GroupUnits()

@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.5.2b.18
+
+- Group member dots and edge arrows stay at full brightness (no fading when far away). The tooltip still says when someone is out of range or in another zone.
+- Opening the Map tab fills the map box with your zone (cover), so a wide window crops more like the game's narrower map and shows less empty sea around Westfall.
+
+## 0.5.2b.17
+
+- Group members who are on your map but off the visible part of the Map tab show as a small class-coloured arrow on the edge of the map, pointing toward them. Hover still lists stacked names. Members with no position (for example in an instance) stay hidden. `/dm groupdot` says `edge` for these.
+
+## 0.5.2b.16
+
+- Hovering a group member's dot on the map lists every nearby member in one tooltip (name, level, class, zone), like the game's own map when dots overlap. Members off the visible map are still skipped (no edge arrows yet).
+
+## 0.5.2b.15
+
+- Quest objective areas on the map now follow the game: only the quest you have selected, the one under the mouse (map pin or quest-log row), and the one the game's arrow is following. Auto-tracked quests no longer paint the whole zone blue.
+- Group member dots: a bad or secret UnitInRange answer can no longer stop them drawing. `/dm groupdot` prints each member's place (or why they were skipped); `/dm groupdot solid` forces a bright square so you can see whether the place is right.
+
+## 0.5.2b.14
+
+- Group dots on the map use Forever's own map dot (the same image as the game's map), then the classic party icon, then a plain dot, so a member with a position always gets a dot. Dots are always in the member's class colour.
+- `/dm mapprobe` members line shows which dot image is in use, any map drawing error, and for each member why a dot was skipped (no position, outside the visible area, other continent).
+
+## 0.5.2b.13
+
+- Party members' dots on the map are class-coloured, like raid members'.
+- `/dm mapprobe` has a members line: how many, and for each whether they have a position, are dimmed and why (other zone, out of range, no position such as in an instance), and whether the party-dot art was found.
+- In a group, hovering a quest title in the game's Quests list or a Ready to Turn In row shows the game's party progress for that quest, then the usual click hint. Solo, the tooltip is unchanged.
+
+## 0.5.2b.12
+
+- While Ready to Turn In is on (open or collapsed), a quest that is ready to hand in leaves the game's Quests list, so it is not shown twice. Quests you pinned stay. Changes wait until you are out of combat. Turn Ready to Turn In off and nothing changes from before.
+
+## 0.5.2b.11
+
+Quest markers on the map now match the game more closely.
+
+- The map reads the quest spots again whenever your quests change, even while the Map tab is closed, and each time you open it.
+- The quest you have selected or are tracking with the game's arrow shows its next waypoint on the map (a smaller marker with a pale blue ring), like the game's own map. It is only drawn, never stored.
+- Quests whose spot is inside a cave or other small map now show on the zone that cave belongs to. Caves in neighbouring zones are not mixed in.
+- New `/dm questsync`: reads the quest spots again and lists each quest in your log that has no marker on the map, with the reason (no point, other map, or waypoint only).
+- The Objectives side panel works exactly as before.
+
 ## 0.5.2b.10
 
 M and L now open their own tabs, and the map opens the way the game's own map does.
