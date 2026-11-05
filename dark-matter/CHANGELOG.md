@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2b.18
+
+- Group member dots and edge arrows stay at full brightness (no fading when far away). The tooltip still says when someone is out of range or in another zone.
+- Opening the Map tab fills the map box with your zone (cover), so a wide window crops more like the game's narrower map and shows less empty sea around Westfall.
+
 ## 0.5.2b.17
 
 - Group members who are on your map but off the visible part of the Map tab show as a small class-coloured arrow on the edge of the map, pointing toward them. Hover still lists stacked names. Members with no position (for example in an instance) stay hidden. `/dm groupdot` says `edge` for these.

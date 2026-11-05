@@ -4000,12 +4000,12 @@ do
   -- 0.5.1.10: at zone view the zone's art FILLS the view (cover framing); 0.5.1.11: no lock, the continent art is the base
   local vwN, vhN = M.vp:GetWidth(), M.vp:GetHeight()
   local bx = dm.box or {}
-  -- 0.5.2b.10: opened like the game's map (ResetZoom): the whole zone fits inside the view, touching one pair of edges, centred
-  local fitsIn = bx[1] and bx[1] >= -1e-3 and bx[2] >= -1e-3 and bx[3] <= vwN + 1e-3 and bx[4] <= vhN + 1e-3
-  local touches = bx[1] and ((math.abs(bx[1]) < 0.5 and math.abs(bx[3] - vwN) < 0.5) or (math.abs(bx[2]) < 0.5 and math.abs(bx[4] - vhN) < 0.5))
+  -- 0.5.2b.18: blizz open uses COVER (fill the box, crop overflow) so a wide pane matches Forever's tighter look
+  local covers = bx[1] and bx[1] <= 1e-3 and bx[2] <= 1e-3 and bx[3] >= vwN - 1e-3 and bx[4] >= vhN - 1e-3
+  local overflows = bx[1] and (bx[1] < -0.5 or bx[2] < -0.5 or bx[3] > vwN + 0.5 or bx[4] > vhN + 0.5)
   local centred = bx[1] and math.abs((bx[1] + bx[3]) / 2 - vwN / 2) < 0.5 and math.abs((bx[2] + bx[4]) / 2 - vhN / 2) < 0.5
-  check(M.lock == nil and fitsIn and touches and centred,
-    string.format("0.5.2b.10 map: opened on Dun Morogh, the whole zone fits the view, centred, no margin (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
+  check(M.lock == nil and covers and overflows and centred,
+    string.format("0.5.2b.18 map: opened on Dun Morogh, cover fill (crop overflow), centred (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
   -- 0.5.2b.3: the continent art stays drawn underneath as the base, faded toward the flat backdrop when magnified
   do
     local cl = M.layers[1415]
@@ -5188,13 +5188,13 @@ do
     end
     M.dirty = true run(5)
     local mp = M.pools.member
-    check(mp and mp.n == 2 and mp[1]:IsShown() and mp[1].icon._file == "Interface\\WorldMap\\WorldMapPartyIcon" and (mp[1]._alpha or 1) == 1 and mp[2]._alpha == X.DIM,
-      "0.5.2b.7 D: two party dots (the stock party icon), the out-of-range one dimmed")
+    check(mp and mp.n == 2 and mp[1]:IsShown() and mp[1].icon._file == "Interface\\WorldMap\\WorldMapPartyIcon" and (mp[1]._alpha or 1) == 1 and (mp[2]._alpha or 1) == 1,
+      "0.5.2b.18 D: two party dots at full alpha (never dim)")
     mp[1]._scripts.OnEnter(mp[1])
     check(tip.title == "Friend" and tip.lines[1] == "Level 12 Mage" and tip.lines[2] == "Dun Morogh", "0.5.2b.7 D: dot tooltip: name, level, class, zone (" .. tostring(tip.lines[1]) .. "/" .. tostring(tip.lines[2]) .. ")")
     check(mp[1].icon._desat == true and mp[1].icon._vc and math.abs(mp[1].icon._vc[1] - 0.25) < 0.01, "0.5.2b.13 D: party dots are class-coloured too")
     local mline = X.MembersReport()
-    check(mline:find("map 10e: members 2; dot image file; error none", 1, true) and mline:find("position yes, dimmed no, near", 1, true) and mline:find("dimmed yes, out of range", 1, true)
+    check(mline:find("map 10e: members 2; dot image file; error none", 1, true) and mline:find("position yes, dimmed no, near", 1, true) and mline:find("out of range", 1, true)
       and table.concat(X.ProbeLines(), "\n"):find("map 10e: members 2", 1, true), "0.5.2b.13: mapprobe members line (" .. mline .. ")")
     -- 0.5.2b.14: dot image tiers; a dot is always drawn; class colour; mapprobe tier / error / skip reasons
     do
@@ -5261,6 +5261,28 @@ do
         "0.5.2b.15 /dm groupdot report (" .. joined .. ")")
       SlashCmdList.DARKMATTER("groupdot auto")
       check(X.forceSolid == false, "0.5.2b.15 /dm groupdot auto restores normal dots")
+      -- ===== 0.5.2b.18: never dim + cover open =====
+      do
+        M.dirty = true run(5)
+        check((mp[1]._alpha or 1) == 1 and (mp[2]._alpha or 1) == 1 and mp[2].far == true,
+          "0.5.2b.18 never-dim: full alpha even when far")
+        local L, T = {}, {}
+        local tip = { SetOwner = function() L, T = {}, {} end, SetText = function(_, t) T[#T + 1] = tostring(t) end,
+          AddLine = function(_, t) L[#L + 1] = tostring(t) end, Show = function() end }
+        mp[2].sx = mp[2].sx or 100
+        mp[2].sy = mp[2].sy or 100
+        X.MemberTooltip(tip, mp[2])
+        local all = table.concat(T, "|") .. "|" .. table.concat(L, "|")
+        check(all:find("Out of range", 1, true), "0.5.2b.18 never-dim: tooltip still says Out of range (" .. all .. ")")
+        local cover = M.CoverScale(1426)
+        local x1, x2, y1, y2 = M.WorldRect(1426)
+        local vw, vh = M.over:GetWidth() or 400, M.over:GetHeight() or 300
+        -- CoverScale uses BW/BH from the map; it must be the max (fill), so >= each contain candidate using the same WorldRect span in world units is awkward — just require cover > 0 and CentreOnPlayer succeeds
+        check(type(cover) == "number" and cover > 0, "0.5.2b.18 cover: CoverScale positive (" .. tostring(cover) .. ")")
+        check(M.CentreOnPlayer() == true, "0.5.2b.18 cover: CentreOnPlayer (blizz cover open) succeeds")
+        local zl = M.ZoomLevel()
+        check(type(zl) == "number" and zl >= 1, "0.5.2b.18 cover: zoom level after open (" .. tostring(zl) .. ")")
+      end
       -- ===== 0.5.2b.16: stacked member tooltip (Forever-style multi-hover) =====
       do
         UnitName = function(u) if u == "party1" then return "Dave" end if u == "party2" then return "Nuhelix" end if u == "player" then return "Odysseaus" end return u end

@@ -2194,12 +2194,12 @@ local function ApplyFit()
   if not f or VW() < 50 or VH() < 50 then return false end
   local x1, x2, y1, y2 = WorldRect(f.id)
   if not x1 then M.pendingFit = nil return false end
-  -- 0.5.2b.10: an opening is framed like the game's map (WorldMapMixin:OnShow -> ResetZoom): the whole map fits the
-  -- box (contain, no margin) at its layer's minScale, centred on the map (not on you)
+  -- 0.5.2b.10: like the game's map ResetZoom (whole map, centred). 0.5.2b.18: COVER the box (fill, crop overflow)
+  -- instead of contain — a wide Map pane then crops like Forever's narrower map column (less empty sea).
   if f.blizz then
     local art = MD.Art(f.id)
     local ms = (art and art.minScale and art.minScale > 0) and art.minScale or 1
-    SetView((x1 + x2) / 2, (y1 + y2) / 2, ms * math.min(VW() / math.max(1e-9, (x2 - x1) * BW), VH() / math.max(1e-9, (y2 - y1) * BH)))
+    SetView((x1 + x2) / 2, (y1 + y2) / 2, ms * M.CoverScale(f.id))
     return true
   end
   -- 0.5.1.10: a zone (or city) is opened like the game's map: its art fills the box (0.5.1.11: a framing only, no lock)

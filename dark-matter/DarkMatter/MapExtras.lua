@@ -16,7 +16,7 @@ M.X = X
 X.GROUP_EVERY = 0.2   -- group dots move 5 times a second
 X.CORPSE_EVERY = 0.5
 X.HOVER_EVERY = 0.1
-X.DIM = 0.4
+X.DIM = 0.4  -- unused for drawing since 0.5.2b.18 (Forever never dims); kept for any old probe)
 X.BLOB_FILL = "Interface\\WorldMap\\UI-QuestBlob-Inside"
 X.BLOB_BORDER = "Interface\\WorldMap\\UI-QuestBlob-Outside"
 
@@ -544,7 +544,7 @@ function X.GroupDotReport()
           "  %s %s: edge screen %.0f,%.0f (raw %.0f,%.0f) size %.0f alpha %.2f tier edge shown %s visible %s%s",
           tostring(u), tostring(name), b.sx or 0, b.sy or 0, sx, sy, b:GetWidth() or 0, b:GetEffectiveAlpha() or 0,
           tostring(b:IsShown() and true or false), tostring(b:IsVisible() and true or false),
-          far and " (dimmed)" or "")
+          far and " (out of range / other zone)" or "")
       elseif not (sx >= 0 and sy >= 0 and sx <= vw and sy <= vh) then
         lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": skipped outside the visible area (screen "
           .. string.format("%.0f,%.0f", sx, sy) .. ")"
@@ -557,7 +557,7 @@ function X.GroupDotReport()
           tostring(u), tostring(name), sx, sy, b:GetWidth() or 0, b:GetEffectiveAlpha() or 0,
           tostring(b.tier or X.DotTier()), tostring(atlas or "-"), tostring(file or "-"),
           tostring(b:IsShown() and true or false), tostring(b:IsVisible() and true or false),
-          far and " (dimmed)" or "")
+          far and " (out of range / other zone)" or "")
       else
         lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": position yes but no button (layout not run?)"
       end
@@ -585,7 +585,7 @@ function X.MembersReport()
         why = (myZone ~= nil and zone ~= myZone) and "other zone" or "out of range"
       else why = "near" end
     end
-    parts[#parts + 1] = tostring(name) .. ": position " .. (wx and "yes" or "no") .. ", dimmed " .. ((wx and far) and "yes" or "no") .. ", " .. why
+    parts[#parts + 1] = tostring(name) .. ": position " .. (wx and "yes" or "no") .. ", dimmed no, " .. why
   end
   return "map 10e: members " .. #units .. "; dot image " .. X.DotTier() .. "; error " .. (M.extrasErr and tostring(M.extrasErr) or "none")
     .. (#parts > 0 and ("; " .. table.concat(parts, "; ")) or "")
@@ -620,7 +620,7 @@ function X.LayoutGroup()
       b.unit, b.map, b.far, b.cls, b.tier, b.sx, b.sy = u, m, far, cls, tier, placeX, placeY
       b.icon:SetDesaturated((not b.edge) and tier == "file" and r ~= nil)
       b.icon:SetVertexColor(r or 1, g or 1, bl or 1)
-      b:SetAlpha(far and X.DIM or 1)
+      b:SetAlpha(1)  -- 0.5.2b.18: never dim (Forever SetAlphaLimits 1,1,1); far still drives the tooltip
       b:SetFrameLevel(M.over:GetFrameLevel() + 4)
       b:ClearAllPoints()
       b:SetPoint("CENTER", M.over, "TOPLEFT", placeX, -placeY)
