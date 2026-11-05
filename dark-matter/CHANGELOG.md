@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.16
+
+- Hovering a group member's dot on the map lists every nearby member in one tooltip (name, level, class, zone), like the game's own map when dots overlap. Members off the visible map are still skipped (no edge arrows yet).
+
 ## 0.5.2b.15
 
 - Quest objective areas on the map now follow the game: only the quest you have selected, the one under the mouse (map pin or quest-log row), and the one the game's arrow is following. Auto-tracked quests no longer paint the whole zone blue.

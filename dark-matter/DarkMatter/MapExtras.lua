@@ -407,26 +407,51 @@ function X.MemberPos(u)
   end
   return wx, wy, m, far
 end
+-- 0.5.2b.16: like Forever's UnitPositionFrame multi-hover — every drawn member within STACK_PX of this button.
+X.STACK_PX = 14
+function X.DrawnMembersNear(sx, sy)
+  local out, pool = {}, M.pools and M.pools.member
+  local lim = (X.STACK_PX or 14) ^ 2
+  if not pool then return out end
+  for i = 1, pool.n or 0 do
+    local b = pool[i]
+    if b and b.unit and b.sx and b:IsShown() then
+      local dx, dy = b.sx - sx, b.sy - sy
+      if dx * dx + dy * dy <= lim then out[#out + 1] = b end
+    end
+  end
+  table.sort(out, function(a, c)
+    local na = Try(G("UnitName"), a.unit) or a.unit
+    local nc = Try(G("UnitName"), c.unit) or c.unit
+    return tostring(na) < tostring(nc)
+  end)
+  return out
+end
+function X.MemberTooltip(tip, self)
+  if not (tip and self and self.unit and self.sx) then return end
+  tip:SetOwner(self, "ANCHOR_RIGHT")
+  local list = X.DrawnMembersNear(self.sx, self.sy)
+  if #list == 0 then list = { self } end
+  for i, b in ipairs(list) do
+    local name = Try(G("UnitName"), b.unit) or b.unit
+    local r, g, bl = ClassColor(b.cls)
+    if i == 1 then tip:SetText(name, r or 1, g or 1, bl or 1)
+    else tip:AddLine(name, r or 1, g or 1, bl or 1) end
+    local lv = Try(G("UnitLevel"), b.unit)
+    local cname = Try(G("UnitClass"), b.unit)
+    tip:AddLine(((type(lv) == "number" and lv > 0) and ("Level " .. lv) or "Level ??") .. (cname and (" " .. cname) or ""), 0.9, 0.9, 0.9)
+    local zone = b.map and (MD.Name(MD.ZoneOf(b.map) or b.map) or MD.Name(b.map))
+    if zone then tip:AddLine(zone, 0.85, 0.85, 0.85) end
+    if b.far then tip:AddLine("Out of range", 0.6, 0.6, 0.6) end
+  end
+  tip:Show()
+end
 local function MakeMember()
   local b = CreateFrame("Button", nil, M.over)
   b:SetSize(16, 16)
   b.icon = b:CreateTexture(nil, "ARTWORK")
   b.icon:SetAllPoints(b)
-  b:SetScript("OnEnter", function(self)
-    local tip = G("GameTooltip")
-    if not (tip and self.unit) then return end
-    tip:SetOwner(self, "ANCHOR_RIGHT")
-    local name = Try(G("UnitName"), self.unit) or self.unit
-    local r, g, bl = ClassColor(self.cls)
-    tip:SetText(name, r or 1, g or 1, bl or 1)
-    local lv = Try(G("UnitLevel"), self.unit)
-    local cname = Try(G("UnitClass"), self.unit)
-    tip:AddLine(((type(lv) == "number" and lv > 0) and ("Level " .. lv) or "Level ??") .. (cname and (" " .. cname) or ""), 0.9, 0.9, 0.9)
-    local zone = self.map and (MD.Name(MD.ZoneOf(self.map) or self.map) or MD.Name(self.map))
-    if zone then tip:AddLine(zone, 0.85, 0.85, 0.85) end
-    if self.far then tip:AddLine("Out of range", 0.6, 0.6, 0.6) end
-    tip:Show()
-  end)
+  b:SetScript("OnEnter", function(self) X.MemberTooltip(G("GameTooltip"), self) end)
   b:SetScript("OnLeave", function() local tip = G("GameTooltip") if tip then tip:Hide() end end)
   b:SetScript("OnMouseDown", function(_, btn) if M.VpDown then M.VpDown(btn) end end)
   b:SetScript("OnMouseUp", function(_, btn) if M.VpUp then M.VpUp(btn) end end)
@@ -554,7 +579,7 @@ function X.LayoutGroup()
         local tier = X.PaintDot(b.icon)
         b:SetSize(tier == "solid" and 8 or 16, tier == "solid" and 8 or 16)
         local _, cls = Try(G("UnitClass"), u)
-        b.unit, b.map, b.far, b.cls, b.tier = u, m, far, cls, tier
+        b.unit, b.map, b.far, b.cls, b.tier, b.sx, b.sy = u, m, far, cls, tier, sx, sy
         local r, g, bl = ClassColor(cls)
         b.icon:SetDesaturated(tier == "file" and r ~= nil)
         b.icon:SetVertexColor(r or 1, g or 1, bl or 1)

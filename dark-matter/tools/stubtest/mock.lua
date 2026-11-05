@@ -5260,6 +5260,37 @@ do
         "0.5.2b.15 /dm groupdot report (" .. joined .. ")")
       SlashCmdList.DARKMATTER("groupdot auto")
       check(X.forceSolid == false, "0.5.2b.15 /dm groupdot auto restores normal dots")
+      -- ===== 0.5.2b.16: stacked member tooltip (Forever-style multi-hover) =====
+      do
+        UnitName = function(u) if u == "party1" then return "Dave" end if u == "party2" then return "Nuhelix" end if u == "player" then return "Odysseaus" end return u end
+        UnitClass = function(u) return "Mage", "MAGE" end
+        UnitLevel = function() return 14 end
+        X.forceSolid, X.dotTier = false, nil
+        M.dirty = true run(5)
+        local a, b = mp[1], mp[2]
+        check(a and b and a.sx and b.sx, "0.5.2b.16 stack: two drawn members with screen places")
+        -- same place: both names
+        a.sx, a.sy, b.sx, b.sy = 100, 100, 100, 100
+        local L, T = {}, {}
+        local tip = { SetOwner = function() L, T = {}, {} end, SetText = function(_, t) T[#T + 1] = tostring(t) end,
+          AddLine = function(_, t) L[#L + 1] = tostring(t) end, Show = function() end }
+        X.MemberTooltip(tip, a)
+        local all = table.concat(T, "|") .. "|" .. table.concat(L, "|")
+        check(all:find("Dave", 1, true) and all:find("Nuhelix", 1, true), "0.5.2b.16 stack: same place lists both names (" .. all .. ")")
+        -- far apart: only the hovered member
+        a.sx, a.sy, b.sx, b.sy = 100, 100, 400, 400
+        X.MemberTooltip(tip, a)
+        all = table.concat(T, "|") .. "|" .. table.concat(L, "|")
+        check(all:find("Dave", 1, true) and not all:find("Nuhelix", 1, true), "0.5.2b.16 stack: far apart only the hovered name (" .. all .. ")")
+        -- single: one name
+        local saveN = mp.n
+        mp.n = 1
+        X.MemberTooltip(tip, a)
+        all = table.concat(T, "|")
+        check(all:find("Dave", 1, true) and not all:find("Nuhelix", 1, true), "0.5.2b.16 stack: a lone member shows one name")
+        mp.n = saveN
+        M.dirty = true run(5)
+      end
       X.dotTier = nil
       M.dirty = true run(5)
     end
