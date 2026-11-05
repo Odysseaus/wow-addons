@@ -141,6 +141,24 @@ class XAIError(Exception):
         self.message = message
 
 
+SEARCH_INSTRUCTIONS = (
+    "You are chatting with a player of World of Warcraft: Forever. When you look up "
+    "WoW game facts (quests, items, NPCs, spells, zones, drops), check Wowhead's WoW "
+    "Forever section first: https://www.wowhead.com/forever . Use other sources only "
+    "as a fallback when Wowhead Forever does not cover it."
+)
+
+
+def response_tools(*, web_search: bool = True, x_search: bool = True) -> list[dict]:
+    """Build xAI server-side tools list for POST /v1/responses (omit disabled)."""
+    tools: list[dict] = []
+    if web_search:
+        tools.append({"type": "web_search"})
+    if x_search:
+        tools.append({"type": "x_search"})
+    return tools
+
+
 def post_response(
     *,
     api_key: str,
@@ -149,6 +167,7 @@ def post_response(
     input: Any = None,
     previous_response_id: str | None = None,
     system: str | None = None,
+    tools: list[dict] | None = None,
     timeout: float = 600.0,
 ) -> dict:
     base = str(api_base or DEFAULT_BASE).rstrip("/")
@@ -158,10 +177,13 @@ def post_response(
         "input": input,
         "store": True,
     }
+    # Send instructions every turn (also when resuming) so they stay in force.
+    if system:
+        body["instructions"] = system
     if previous_response_id:
         body["previous_response_id"] = previous_response_id
-    elif system:
-        body["instructions"] = system
+    if tools:
+        body["tools"] = tools
 
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
@@ -212,6 +234,7 @@ def chat(
     previous_response_id: str | None = None,
     system: str | None = None,
     history: list | None = None,
+    tools: list[dict] | None = None,
     on_progress: Callable[[], None] | None = None,
     timeout: float = 600.0,
 ) -> dict:
@@ -256,6 +279,7 @@ def chat(
                 input=user_input,
                 previous_response_id=previous_response_id or None,
                 system=system,
+                tools=tools,
                 timeout=timeout,
             )
         except XAIError as err:
@@ -269,6 +293,7 @@ def chat(
                 input=fallback if fallback else user_input,
                 previous_response_id=None,
                 system=system,
+                tools=tools,
                 timeout=timeout,
             )
     finally:

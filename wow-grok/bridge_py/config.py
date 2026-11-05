@@ -96,6 +96,8 @@ def default_config() -> dict[str, Any]:
         "apiKey": "",
         "model": "grok-4-latest",
         "apiBase": "https://api.x.ai/v1",
+        "webSearch": True,
+        "xSearch": True,
         "provider": "xai",
         "claudeApiKey": "",
         "claudeModel": "claude-sonnet-4-5",

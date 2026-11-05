@@ -184,3 +184,60 @@ class TestSilentWav(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSearchFlag(unittest.TestCase):
+    def test_missing_flag_means_search_on(self):
+        self.assertTrue(P.parse_flags("").get("search", True))
+        self.assertTrue(P.parse_flags("n;allow=Bash").get("search", True))
+
+    def test_fresh_addon_default_off_sends_s0(self):
+        # A fresh 0.1.33 addon (Web search unticked) sends s=0 in pixel mode
+        # and search=false in reload mode; both must turn the tools off.
+        rec = "\x1f".join(["sess", "c1", "7", "", "s=0", "Chat 1", "hi"])
+        (job,) = P.jobs_from_strip(7, rec)
+        self.assertFalse(job["search"])
+        ob = P.parse_outbox('["outbox"] = {["id"] = 7, ["search"] = false, ["text"] = "6869"}')
+        self.assertFalse(ob["search"])
+        from bridge_py import bridge
+        self.assertEqual(bridge.xai_tools_for_job({}, job), [])
+        self.assertEqual(bridge.xai_tools_for_job({}, ob), [])
+
+    def test_s0_turns_search_off(self):
+        f = P.parse_flags("n;s=0")
+        self.assertFalse(f["search"])
+        self.assertTrue(f["newSession"])
+
+    def test_old_addon_strip_record_defaults_on(self):
+        rec = "\x1f".join(["sess", "c1", "5", "", "", "Chat 1", "hello"])
+        (job,) = P.jobs_from_strip(5, rec)
+        self.assertTrue(job.get("search", True))
+        rec = "\x1f".join(["sess", "c1", "6", "", "s=0", "Chat 1", "hello"])
+        (job,) = P.jobs_from_strip(6, rec)
+        self.assertFalse(job["search"])
+        self.assertEqual(job["text"], "hello")
+
+    def test_outbox_search_field(self):
+        base = '["outbox"] = {["id"] = 3, ["text"] = "6869", %s}'
+        self.assertTrue(P.parse_outbox(base % "").get("search", True))
+        self.assertFalse(P.parse_outbox(base % '["search"] = false,')["search"])
+
+
+class TestXaiToolsForJob(unittest.TestCase):
+    def setUp(self):
+        from bridge_py import bridge
+        self.f = bridge.xai_tools_for_job
+
+    def test_default_on(self):
+        self.assertEqual(
+            [t["type"] for t in self.f({}, {})], ["web_search", "x_search"]
+        )
+
+    def test_old_addon_job_without_flag_keeps_search(self):
+        self.assertTrue(self.f({"webSearch": True, "xSearch": True}, {"text": "hi"}))
+
+    def test_toggle_off_omits_tools(self):
+        self.assertEqual(self.f({"webSearch": True, "xSearch": True}, {"search": False}), [])
+
+    def test_config_off(self):
+        self.assertEqual(self.f({"webSearch": False, "xSearch": False}, {"search": True}), [])

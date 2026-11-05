@@ -21,6 +21,8 @@
   "apiKey": "",
   "model": "grok-4-latest",
   "apiBase": "https://api.x.ai/v1",
+  "webSearch": true,
+  "xSearch": true,
   "provider": "xai",
   "claudeApiKey": "",
   "claudeModel": "claude-sonnet-4-5",
