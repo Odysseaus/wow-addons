@@ -3999,8 +3999,12 @@ do
   -- 0.5.1.10: at zone view the zone's art FILLS the view (cover framing); 0.5.1.11: no lock, the continent art is the base
   local vwN, vhN = M.vp:GetWidth(), M.vp:GetHeight()
   local bx = dm.box or {}
-  check(M.lock == nil and bx[1] and bx[1] <= 1e-6 and bx[2] <= 1e-6 and bx[3] >= vwN - 1e-6 and bx[4] >= vhN - 1e-6,
-    string.format("0.5.1.10 map: opened on Dun Morogh, its art covers the whole view (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
+  -- 0.5.2b.10: opened like the game's map (ResetZoom): the whole zone fits inside the view, touching one pair of edges, centred
+  local fitsIn = bx[1] and bx[1] >= -1e-3 and bx[2] >= -1e-3 and bx[3] <= vwN + 1e-3 and bx[4] <= vhN + 1e-3
+  local touches = bx[1] and ((math.abs(bx[1]) < 0.5 and math.abs(bx[3] - vwN) < 0.5) or (math.abs(bx[2]) < 0.5 and math.abs(bx[4] - vhN) < 0.5))
+  local centred = bx[1] and math.abs((bx[1] + bx[3]) / 2 - vwN / 2) < 0.5 and math.abs((bx[2] + bx[4]) / 2 - vhN / 2) < 0.5
+  check(M.lock == nil and fitsIn and touches and centred,
+    string.format("0.5.2b.10 map: opened on Dun Morogh, the whole zone fits the view, centred, no margin (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
   -- 0.5.2b.3: the continent art stays drawn underneath as the base, faded toward the flat backdrop when magnified
   do
     local cl = M.layers[1415]
@@ -7276,7 +7280,29 @@ if MODE ~= "minimal" then
   local kl = DarkMatterKeyLog
   TIME_NOW = TIME_NOW + 5
   kl._scripts.OnClick(kl, "LeftButton", false)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "map" and NS.QuestPanel.IsShown(), "0.5.2b keys: L opens it too")
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "quests", "0.5.2b.10 keys: L opens Dark Matter on the Quests tab")
+  TIME_NOW = TIME_NOW + 5
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.10 keys: M on the Quests tab switches to the Map tab")
+  TIME_NOW = TIME_NOW + 5
+  kl._scripts.OnClick(kl, "LeftButton", true)
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "quests", "0.5.2b.10 keys: L on the Map tab switches to the Quests tab")
+  TIME_NOW = TIME_NOW + 5
+  kl._scripts.OnClick(kl, "LeftButton", true)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.10 keys: L again on the Quests tab closes it")
+  -- 0.5.2b.10: keys the player bound to the game's map / quest log are taken over too (ALT-M / ALT-L stay the game's)
+  local oldGBK = GetBindingKey
+  GetBindingKey = function(a) if a == "TOGGLEWORLDMAP" then return "M", "F5", "ALT-M" elseif a == "TOGGLEQUESTLOG" then return "SHIFT-Q" end end
+  check(K.Apply() == "on" and binds.F5 == "CLICK DarkMatterKeyMap" and binds["SHIFT-Q"] == "CLICK DarkMatterKeyLog" and binds["ALT-M"] == "TOGGLEWORLDMAP" and binds.M == "CLICK DarkMatterKeyMap",
+    "0.5.2b.10 keys: other keys bound to the game's map / quest log open Dark Matter; ALT-M stays the game's")
+  GetBindingKey = function(a) if a == "TOGGLEWORLDMAP" then return "F6" end end
+  local ub
+  for i = #REGLOG, 1, -1 do if REGLOG[i].ev == "UPDATE_BINDINGS" then ub = REGLOG[i].frame break end end
+  check(ub and ub ~= UIParent and ub._scripts.OnEvent, "0.5.2b.10 keys: UPDATE_BINDINGS is watched on a private frame")
+  if ub then ub._scripts.OnEvent(ub, "UPDATE_BINDINGS") end
+  check(binds.F6 == "CLICK DarkMatterKeyMap" and binds.F5 == nil, "0.5.2b.10 keys: a rebind is picked up (re-applied on UPDATE_BINDINGS)")
+  GetBindingKey = oldGBK
+  K.Apply()
   NS.ToggleWindow(false)
   InCombatLockdown = function() return true end
   local c0 = cleared

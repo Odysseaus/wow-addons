@@ -2158,6 +2158,14 @@ local function ApplyFit()
   if not f or VW() < 50 or VH() < 50 then return false end
   local x1, x2, y1, y2 = WorldRect(f.id)
   if not x1 then M.pendingFit = nil return false end
+  -- 0.5.2b.10: an opening is framed like the game's map (WorldMapMixin:OnShow -> ResetZoom): the whole map fits the
+  -- box (contain, no margin) at its layer's minScale, centred on the map (not on you)
+  if f.blizz then
+    local art = MD.Art(f.id)
+    local ms = (art and art.minScale and art.minScale > 0) and art.minScale or 1
+    SetView((x1 + x2) / 2, (y1 + y2) / 2, ms * math.min(VW() / math.max(1e-9, (x2 - x1) * BW), VH() / math.max(1e-9, (y2 - y1) * BH)))
+    return true
+  end
   -- 0.5.1.10: a zone (or city) is opened like the game's map: its art fills the box (0.5.1.11: a framing only, no lock)
   if MD.Is(f.id, "continent") or (M.hasWorld and f.id == M.world) then
     SetView(f.wx or (x1 + x2) / 2, f.wy or (y1 + y2) / 2, 0.94 * math.min(VW() / ((x2 - x1) * BW), VH() / ((y2 - y1) * BH)))
@@ -2821,6 +2829,16 @@ local function Start()
   UpdateCoords()
   M.UpdateStatus()
 end
+-- 0.5.2b.10: the map the game's map would open on, raised to the first one Dark Matter can frame (zone, continent, world)
+function M.OpeningMap(p)
+  local d = MD.DisplayableForPlayer and MD.DisplayableForPlayer()
+  for _, m in ipairs(d and MD.Chain(d) or {}) do
+    if (M.hasWorld and m == M.world) or MD.Is(m, "continent") or (not MD.Is(m, "continent") and MD.ZoneEntry(m)) then
+      local c = (M.hasWorld and m == M.world) and nil or (MD.Is(m, "continent") and m or MD.ContinentOf(m))
+      if M.hasWorld or not c or c == (p and p.cont) then return m end
+    end
+  end
+end
 -- centre the view on the player at the zone's zoom (no animation); false when the game gives no position
 function M.CentreOnPlayer()
   if not M.ready then return false end
@@ -2836,9 +2854,14 @@ function M.CentreOnPlayer()
     if not p then return false end
   end
   if p.cont then M.fade[p.cont] = 1 end
-  local z = MD.ZoneOf(p.map) or p.map
-  fly, zoomT, drag = nil, nil, nil
-  M.pendingFit = { id = MD.ZoneEntry(z) and z or p.cont, wx = p[1], wy = p[2], centre = true }
+  fly, zoomT, drag = nil, nil, nil -- the opening is instant; later Show on map / marker flights still glide (FlyTo)
+  local id = M.OpeningMap(p)
+  if id then
+    M.pendingFit = { id = id, blizz = true }
+  else
+    local z = MD.ZoneOf(p.map) or p.map
+    M.pendingFit = { id = MD.ZoneEntry(z) and z or p.cont, wx = p[1], wy = p[2], centre = true }
+  end
   ApplyFit()
   M.dirty = true
   return true
