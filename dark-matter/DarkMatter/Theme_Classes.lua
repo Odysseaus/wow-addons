@@ -324,7 +324,7 @@ NS.RegisterTheme({
         corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-fc",
         tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-ftb",
         lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-flr",
-        len = { 256, 176, 154, 176 },
+        len = { 256, 256, 154, 176 },
       },
       over = {
         corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-paladin-oc",
@@ -672,7 +672,7 @@ NS.RegisterTheme({
         corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-fc",
         tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-ftb",
         lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-flr",
-        len = { 215, 129, 215, 129 },
+        len = { 215, 256, 215, 129 },
       },
       over = {
         corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-rogue-oc",
@@ -1206,7 +1206,7 @@ NS.RegisterTheme({
         corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-fc",
         tb = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-ftb",
         lr = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-flr",
-        len = { 172, 256, 172, 255 },
+        len = { 172, 256, 172, 252 },
       },
       over = {
         corners = "Interface\\AddOns\\DarkMatter\\Media\\cls-mage-oc",
