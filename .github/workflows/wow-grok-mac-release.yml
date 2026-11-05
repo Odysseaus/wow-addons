@@ -139,7 +139,7 @@ jobs:
           codesign --force --deep --timestamp=none --keychain "$KEYCHAIN" \
             --sign "$IDENTITY" --identifier com.wowgrok.bridge dist/WoWGrok.app
           codesign --verify --deep --strict --verbose=2 dist/WoWGrok.app
-          codesign -dv dist/WoWGrok.app 2>&1 | grep -E '^(Identifier|Authority|Signature|TeamIdentifier)=' || true
+          codesign -dvv dist/WoWGrok.app 2>&1 | grep -E '^(Identifier|Authority|Signature|TeamIdentifier)=' || true
           echo "Designated requirement:"
           codesign -d -r- dist/WoWGrok.app 2>&1
           if codesign -dv dist/WoWGrok.app 2>&1 | grep -q '^Signature=adhoc'; then

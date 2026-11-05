@@ -28,6 +28,7 @@ from . import menubar as _freeze_menubar  # noqa: F401
 from . import tray_win as _freeze_tray_win  # noqa: F401
 from . import capture_win as _freeze_capture_win  # noqa: F401
 from . import secret_store as _freeze_secret_store  # noqa: F401
+from . import move_to_apps as _freeze_move_to_apps  # noqa: F401
 
 
 def _load(name: str):
@@ -119,6 +120,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if known.no_supervisor:
         return _load("bridge").main(bridge_argv)
+
+    # Mac app opened from the installer DMG: offer Move to Applications before
+    # the supervisor / bridge / capture / onboarding start (once per launch).
+    if "--headless" not in argv:
+        try:
+            if _load("move_to_apps").offer_if_needed():
+                return 0
+        except Exception as e:  # noqa: BLE001
+            print(f"move-to-apps: skipped: {e}", flush=True)
 
     return _load("supervisor").run_supervised(bridge_argv)
 
