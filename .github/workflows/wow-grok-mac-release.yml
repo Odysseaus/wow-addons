@@ -116,6 +116,36 @@ jobs:
           print("OK: menubar/rumps present in bundle")
           PY
 
+      # Stable signature (0.1.34): sign with the self-signed "WoWGrok Local Signing"
+      # identity kept on the runner Mac (created once by scripts/mac-setup-signing.sh)
+      # so the designated requirement stays the same across versions and macOS keeps
+      # the Screen Recording permission. No hardened runtime / entitlements, same as
+      # the previous ad-hoc PyInstaller signature. Never falls back to ad-hoc.
+      - name: Sign .app (WoWGrok Local Signing)
+        run: |
+          set -euo pipefail
+          IDENTITY="WoWGrok Local Signing"
+          KEYCHAIN="$HOME/Library/Keychains/wowgrok-signing.keychain-db"
+          PW_FILE="$HOME/.config/wowgrok/signing-keychain-password"
+          if [[ ! -f "$KEYCHAIN" || ! -s "$PW_FILE" ]]; then
+            echo "::error::Signing keychain or password file missing. Run once on this Mac: bash wow-grok/scripts/mac-setup-signing.sh"
+            exit 1
+          fi
+          security unlock-keychain -p "$(cat "$PW_FILE")" "$KEYCHAIN"
+          if ! security find-certificate -c "$IDENTITY" "$KEYCHAIN" >/dev/null 2>&1; then
+            echo "::error::Identity '$IDENTITY' not found in $KEYCHAIN. Run once on this Mac: bash wow-grok/scripts/mac-setup-signing.sh"
+            exit 1
+          fi
+          codesign --force --deep --timestamp=none --keychain "$KEYCHAIN" \
+            --sign "$IDENTITY" --identifier com.wowgrok.bridge dist/WoWGrok.app
+          codesign --verify --deep --strict --verbose=2 dist/WoWGrok.app
+          codesign -dv dist/WoWGrok.app 2>&1 | grep -E '^(Identifier|Authority|Signature|TeamIdentifier)=' || true
+          echo "Designated requirement:"
+          codesign -d -r- dist/WoWGrok.app 2>&1
+          if codesign -dv dist/WoWGrok.app 2>&1 | grep -q '^Signature=adhoc'; then
+            echo "::error::App is still ad-hoc signed"; exit 1
+          fi
+
       - name: Zip .app
         run: |
           cd dist
