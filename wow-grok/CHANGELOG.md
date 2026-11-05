@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.1.35] - 2026-11-05 (Mac)
+
+### Added
+
+- If you open WoWGrok straight from the installer disk, it now asks "Move WoWGrok to Applications?". Choosing **Move to Applications** closes any older WoWGrok, moves the old app to `~/Documents/WoWGrok-Mac/WoWGrok-<old version>.app` (nothing is deleted), copies the new app into Applications, checks its signature and version, opens it, and ejects the installer disk. If `/Applications` can't be written, it uses `~/Applications` and tells you. If something goes wrong, you see the error and WoWGrok keeps running from the disk. **Not now** carries on as before.
+
+### Changed
+
+- The Mac release build log now shows the signing Authority (`codesign -dvv`).
+
 ### Added
 
 - **Screen Recording permission sticks across updates** (**0.1.34**, Mac): the Mac app used to be signed "ad-hoc", so every new build looked like a different app to macOS and it asked for Screen Recording again after each update. Release builds are now signed with one stable self-signed certificate, "WoWGrok Local Signing", kept in its own keychain on the build Mac. Run `wow-grok/scripts/mac-setup-signing.sh` once on that Mac to create it. The build stops with a clear message if it is missing instead of quietly going back to ad-hoc. macOS will still ask once more for the first signed version (0.1.34), then not again for later updates.

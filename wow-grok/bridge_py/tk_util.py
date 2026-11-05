@@ -329,6 +329,30 @@ def ask_yes_no(title: str, body: str) -> bool:
     return bool(_run_modal_dialog(title=title, build=build, default=False, min_w=440, min_h=160))
 
 
+def ask_choice_dialog(title: str, body: str, *, yes: str, no: str) -> bool:
+    """Two-button dialog; ``yes`` is the default (Return). Returns True for ``yes``."""
+    import tkinter as tk
+
+    def build(frm: Any, finish: Callable[[Any], None]) -> None:
+        tk.Label(frm, text=body, justify="left", wraplength=420, anchor="w").pack(
+            fill="both", expand=True
+        )
+        btns = tk.Frame(frm)
+        btns.pack(fill="x", pady=(14, 0))
+        b_yes = tk.Button(btns, text=yes, width=20, default="active", command=lambda: finish(True))
+        b_yes.pack(side="right")
+        tk.Button(btns, text=no, width=12, command=lambda: finish(False)).pack(side="right", padx=(0, 8))
+        top = frm.winfo_toplevel()
+        top.bind("<Return>", lambda _e: finish(True))
+        top.bind("<Escape>", lambda _e: finish(False))
+        try:
+            b_yes.focus_set()
+        except Exception:
+            pass
+
+    return bool(_run_modal_dialog(title=title, build=build, default=False, min_w=460, min_h=170))
+
+
 def ask_string_dialog(title: str, prompt: str, *, show: str | None = None) -> str | None:
     """Custom string prompt with OK/Cancel; OK stays fully on-screen.
 
