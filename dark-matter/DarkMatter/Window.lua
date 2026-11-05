@@ -212,7 +212,9 @@ local function BuildClassArt(f)
       Put(A.fc[i], fr.corners, l, r, t, b, X(pos[i][1]), Y(pos[i][2]), c * sx, c * sy)
       Put(A.oc[i], ov.corners, l, r, t, b, X(pos[i][1]), Y(pos[i][2]), c * sx, c * sy)
     end
-    -- edge strips start under the corner fade (c - fd) and repeat len[i] css per tile
+    -- edge strips start under the corner fade (c - fd) and repeat len[i] css per tile.
+    -- All four use the same thickness (the corner size): top/bottom height c, left/right width c.
+    -- A side that looks thinner is the picture inside the TGA, not a smaller slot.
     local s0 = c - fd
     local hw, vh = AW - 2 * s0, AH - 2 * s0
     local L = fr.len

@@ -4323,12 +4323,23 @@ do
       local fh = io.open(coastFile, "wb")
       if fh then fh:write("stub") fh:close() end
       M.bakedCache = nil
+      check(M.BakedCoastFile(1436) == nil, "0.5.2b.20 map: a coast file that is not the 1002x668 bake is ignored")
+      -- the bake Illusionist ships: type 2, 32-bit, descriptor 8, 1002 x 668 (pixel bytes left empty)
+      fh = io.open(coastFile, "wb")
+      if fh then
+        local w, h = 1002, 668
+        fh:write(string.char(0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, w % 256, math.floor(w / 256), h % 256, math.floor(h / 256), 32, 8))
+        fh:seek("set", 18 + w * h * 4 - 1)
+        fh:write("\0")
+        fh:close()
+      end
+      M.bakedCache = nil
       M.dirty = true
       M.Layout()
       for _ = 1, 5 do M.Tick(0.05) end
       local Lb = M.layers[1436]
       local bakedFile = Lb and Lb.tiles and Lb.tiles[1] and Lb.tiles[1]._file
-      check(fh and Lb and Lb.baked == M.BakedCoastPath(1436) and not Lb.mask and not Lb.feather and #Lb.tiles == 1
+      check(fh and Lb and Lb.baked == "Interface\\AddOns\\DarkMatter\\Media\\coast\\z1436" and not Lb.mask and not Lb.feather and #Lb.tiles == 1
         and bakedFile == Lb.baked and Lb.shown and (Lb.alpha or 0) > 0.9,
         "0.5.2b.20 map: baked z1436.tga replaces stock tiles (" .. tostring(Lb and Lb.baked) .. ", pieces " .. tostring(Lb and #Lb.tiles) .. ", file " .. tostring(bakedFile) .. ")")
       rmCoast()

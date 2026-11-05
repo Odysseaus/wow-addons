@@ -488,18 +488,25 @@ M.SOLO_COAST = { [1436] = true }  -- Westfall
 function M.SoloCoastMask(id)
   return M.SOLO_COAST and M.SOLO_COAST[id] == true and M.MaskFile(id) ~= nil and not M.maskOff and M.canMask ~= false
 end
--- 0.5.2b.20: baked coast art (Illusionist). This is NOT OpenMap. Expected file, one picture the size of the
--- zone art with the sea already transparent:
---   Interface\AddOns\DarkMatter\Media\coast\z<mapID>.tga
---   e.g. Media/coast/z1436.tga for Westfall.
--- When that file is present it replaces the stock tiles. When it is absent the masked stock art is used.
+-- 0.5.2b.20: baked coast art (Illusionist). This is NOT OpenMap. Westfall only.
+-- Disk file (not in git; Blizzard-derived RGB, copy it in for a Mac install):
+--   DarkMatter/Media/coast/z1436.tga
+--   Interface\AddOns\DarkMatter\Media\coast\z1436
+-- Same packing as Media/masks: uncompressed TGA (type 2), 32-bit BGRA, bottom-left origin
+-- (descriptor 8). Size is the zone art, 1002 x 668. Land RGB, ocean outside the coast transparent.
+-- A missing file, or one that is not that picture, is ignored and the masked stock art is used.
+M.BAKED_COAST = {
+  [1436] = { w = 1002, h = 668 },
+}
 function M.BakedCoastPath(id)
-  if not (M.SOLO_COAST and M.SOLO_COAST[id]) then return nil end
+  if not (M.BAKED_COAST and M.BAKED_COAST[id]) then return nil end
   return "Interface\\AddOns\\DarkMatter\\Media\\coast\\z" .. tostring(id)
 end
+-- true = this bake, false = missing or not the bake, nil = this host cannot see the disk (the game)
 local function CoastOnDisk(id)
-  -- The game cannot list its files (io is absent there). The stub can: look beside this addon.
   if type(io) ~= "table" or type(io.open) ~= "function" then return nil end
+  local spec = M.BAKED_COAST and M.BAKED_COAST[id]
+  if not spec then return false end
   local name = "z" .. tostring(id) .. ".tga"
   local roots = {}
   local function add(r)
@@ -515,10 +522,24 @@ local function CoastOnDisk(id)
     end
   end
   if #roots == 0 then return nil end
+  local function headerOk(f)
+    local h = f:read(18)
+    if type(h) ~= "string" or #h < 18 then return false end
+    local w = h:byte(13) + h:byte(14) * 256
+    local ht = h:byte(15) + h:byte(16) * 256
+    if h:byte(3) ~= 2 or h:byte(17) ~= 32 or h:byte(18) ~= 8 then return false end
+    if w ~= spec.w or ht ~= spec.h then return false end
+    local size = f:seek("end")
+    return size == 18 + w * ht * 4
+  end
   for _, root in ipairs(roots) do
     local sep = (root:find("\\", 1, true) and not root:find("/", 1, true)) and "\\" or "/"
     local f = io.open(root .. sep .. "Media" .. sep .. "coast" .. sep .. name, "rb")
-    if f then f:close() return true end
+    if f then
+      local ok = headerOk(f)
+      f:close()
+      if ok then return true end
+    end
   end
   return false
 end
