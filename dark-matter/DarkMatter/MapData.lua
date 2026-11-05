@@ -243,8 +243,9 @@ function MD.RectOnContinent(id, cont)
 end
 
 -- Zones of a continent that have art and a rect on it; big ones first (cities draw last, on top).
--- 0.5.2b.19: also pull in capitals whose parent is a host zone (not the continent), so OpeningMap keeps
--- Ironforge when MapHasArt and the city floor map is drawn over Dun Morogh instead of only the exterior.
+-- 0.5.2b.19 / 0.5.2b.20: also pull in capitals whose parent is a host zone (not the continent).
+-- OpeningMap keeps Ironforge (PlayerMap, even when Displayable names Dun Morogh) and the city floor
+-- map is framed from this composed rect instead of only the exterior.
 function MD.Zones(cont)
   local c = Cache("zones")
   if not c[cont] then

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.20
+
+- **Ironforge (and the other capitals) on open.** The map you are standing on is used when that map is a capital and it has its own picture. Forever's "which map should open" helper often names the land around the city (Dun Morogh for Ironforge), so 0.5.2b.19 still framed the snowy exterior. Opening inside a capital now frames that city's floor map. `/dm mapprobe` adds one line: the map Dark Matter will open, your map, the helper's map, and the city in focus.
+- **Westfall's coast when you are looking at Westfall.** The Westfall picture is cut with its mask even if masks for the whole continent are off (one zone whose mask did not stick no longer turns Westfall's mask off too). This is not the same as OpenMap's painted coast. If the file `Interface\AddOns\DarkMatter\Media\coast\z1436.tga` is in the addon (one picture the size of the Westfall map, with the sea already transparent), that picture is used. Until that file is added, you still see the game's Westfall art cut by the mask.
+- **Hunter and Paladin emblems.** Smaller and seated higher (hunter 88 / -22, paladin 84 / -22), and the new seat is applied before a theme change repaints the frame. The numbers stay in Theme_CrestOverrides.lua.
+
 ## 0.5.2b.19
 
 - Westfall on the Map tab is cut to its coastline when you are looking at that zone alone (uses the existing Westfall mask). Other zones unchanged for now.

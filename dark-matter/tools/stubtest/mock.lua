@@ -3740,6 +3740,11 @@ do
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
   check(L[1] == "mapprobe " .. ns.version .. " (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
+  local openLine
+  for _, l in ipairs(L) do if l:find("^map 2 open: ") then openLine = l end end
+  check(openLine and #openLine <= 90 and openLine:find("opening ", 1, true) and openLine:find("player ", 1, true)
+    and openLine:find("displayable ", 1, true) and openLine:find("focusCity ", 1, true),
+    "0.5.2b.20 mapprobe: opening id, player map, displayable and focusCity (" .. tostring(openLine) .. ")")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
   check(has("map 5: art here: map 1426: 4x3 tiles, 12 textures; files 142601..142612") and has("map 5: art continent: map 1415: 4x3 tiles, 12 textures; files 141501..141512") and has("map 5: art world: map 947: 4x3 tiles, 12 textures; files 94701..94712") and has("map 5: explored overlays here: n/a"), "0.5.0 mapprobe: art read per mapID (each level shows its own file IDs)")
@@ -4191,6 +4196,35 @@ do
       check(M.focusCity == 1455 and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Ironforge",
         string.format("0.5.2b.19 map: city open crumbs name Ironforge (focusCity %s Frac %.3f trail %s)",
           tostring(M.focusCity), fr, table.concat(M.Trail(), ">")))
+      -- 0.5.2b.20: Forever's displayable helper returns the host (Dun Morogh); the player map is still the city
+      MapUtil.GetDisplayableMapForPlayer = function() return 1426 end
+      C_Map.GetPlayerMapPosition = function(id)
+        if id == 1455 then return { x = 0.5, y = 0.5, GetXY = function(s) return s.x, s.y end } end
+        if id == 1426 then
+          local r = { 0.45, 0.55, 0.48, 0.58 }
+          return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end }
+        end
+        if id == 1415 then
+          local ze2 = MD.ZoneEntry(1455)
+          if ze2 then local r = ze2.r return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end } end
+        end
+      end
+      local om2 = M.OpeningMap(M.player or {})
+      check(MD.ZoneEntry(1455) ~= nil and om2 == 1455 and MD.PlayerMap() == 1455 and MD.DisplayableForPlayer() == 1426,
+        "0.5.2b.20 map: OpeningMap prefers the player city over Displayable host (" .. tostring(om2) .. ", player " .. tostring(MD.PlayerMap()) .. ", displayable " .. tostring(MD.DisplayableForPlayer()) .. ")")
+      check(M.CentreOnPlayer() == true, "0.5.2b.20 map: CentreOnPlayer on the player city while Displayable is Dun Morogh")
+      for _ = 1, 25 do M.Tick(0.05) end
+      local if2 = M.layers[1455]
+      local z2 = MD.ZoneEntry(1455)
+      local fr2 = z2 and M.Frac(z2) or -1
+      check(if2 and if2.shown and (if2.alpha or 0) > 0.99 and fr2 >= 0.85 and M.focusCity == 1455,
+        string.format("0.5.2b.20 map: city floor at full strength (alpha %s, Frac %.3f, focusCity %s, zoom %s)",
+          tostring(if2 and if2.alpha), fr2, tostring(M.focusCity), tostring(select(1, M.ZoomLevel()))))
+      local openLine = M.OpenProbeLine()
+      check(type(openLine) == "string" and #openLine <= 90 and openLine:find("opening 1455", 1, true) and openLine:find("player 1455", 1, true)
+        and openLine:find("displayable 1426", 1, true) and openLine:find("focusCity 1455", 1, true),
+        "0.5.2b.20 mapprobe: opening / player / displayable / focusCity (" .. tostring(openLine) .. ")")
+      C_Map.GetPlayerMapPosition = oldPos
       MAPS[1455] = saveParent
       C_Map.GetMapRectOnMap = oldRect
       PLAYER.map = 1426
@@ -4208,17 +4242,111 @@ do
       NS.ZoneMasks = NS.ZoneMasks or {}
       local saveMask = NS.ZoneMasks[1436]
       NS.ZoneMasks[1436] = { file = "Interface/AddOns/DarkMatter/Media/masks/z1436" }
-      check(M.SoloCoastMask(1436) == true and M.SoloCoastMask(1426) == false,
-        "0.5.2b.19 map: SoloCoastMask is true only for Westfall when its mask ships")
+      local broke = M.maskBroken
+      M.maskBroken = "kept none on another zone"
+      M.masked = nil
+      check(M.SoloCoastMask(1436) == true and M.SoloCoastMask(1426) == false and not M.ContMasked(1415),
+        "0.5.2b.20 map: SoloCoastMask stays on for Westfall when continent masks are off")
+      M.maskBroken = broke
+      M.masked = nil
       NS.ZoneMasks[1436] = saveMask
       local co = NS.CrestOverrides
-      check(type(co) == "table" and co.hunter and co.hunter[1] == 96 and co.hunter[3] == -30
-        and co.paladin and co.paladin[1] == 90 and co.paladin[3] == -28,
-        "0.5.2b.19 themes: CrestOverrides tune hunter 96/-30 and paladin 90/-28")
+      check(type(co) == "table" and co.hunter and co.hunter[1] == 88 and co.hunter[3] == -22
+        and co.paladin and co.paladin[1] == 84 and co.paladin[3] == -22,
+        "0.5.2b.20 themes: CrestOverrides tune hunter 88/-22 and paladin 84/-22")
       local th = NS.themes
-      check(th and th.hunter and th.hunter.classArt and th.hunter.classArt.crest[1] == 96 and th.hunter.classArt.crest[3] == -30
-        and th.paladin.classArt.crest[1] == 90 and th.paladin.classArt.crest[3] == -28,
-        "0.5.2b.19 themes: CrestOverrides applied onto hunter/paladin classArt.crest")
+      check(th and th.hunter and th.hunter.classArt and th.hunter.classArt.crest[1] == 88 and th.hunter.classArt.crest[3] == -22
+        and th.paladin.classArt.crest[1] == 84 and th.paladin.classArt.crest[3] == -22,
+        "0.5.2b.20 themes: CrestOverrides applied onto hunter/paladin classArt.crest")
+      -- skins must see the override, not a value written back after they paint
+      th.hunter.classArt.crest = { 10, 0, -5 }
+      local saw
+      NS.OnSkin(function()
+        local c = th.hunter.classArt and th.hunter.classArt.crest
+        saw = c and c[1]
+      end)
+      local curTheme = NS.theme and NS.theme.id
+      NS.SetTheme("hunter")
+      check(saw == 88 and th.hunter.classArt.crest[1] == 88 and th.hunter.classArt.crest[3] == -22
+        and th.paladin.classArt.crest[1] == 84,
+        "0.5.2b.20 themes: SetTheme applies crest overrides before skins (skin saw " .. tostring(saw) .. ")")
+      if curTheme then NS.SetTheme(curTheme) end
+    end
+    -- 0.5.2b.20: Westfall solo is actually cut by its mask when the continent is not ContMasked,
+    -- and a baked Media/coast/z1436.tga replaces the stock tiles when the file is present.
+    do
+      local saveMap = MAPS[1436]
+      MAPS[1436] = { "Westfall", 3, 1415, { 0.20, 0.32, 0.70, 0.84 } }
+      local saveZM = NS.ZoneMasks
+      NS.ZoneMasks = { [1436] = { file = "Interface\\AddOns\\DarkMatter\\Media\\masks\\z1436", core = "Interface\\AddOns\\DarkMatter\\Media\\masks\\z1436c" } }
+      local savePlayer = PLAYER.map
+      PLAYER.map = 1436
+      local savePos = C_Map.GetPlayerMapPosition
+      C_Map.GetPlayerMapPosition = function(id)
+        if id == 1436 then return { x = 0.5, y = 0.5, GetXY = function(s) return s.x, s.y end } end
+        if id == 1415 then
+          local r = MAPS[1436][4]
+          return { x = (r[1] + r[2]) / 2, y = (r[3] + r[4]) / 2, GetXY = function(s) return s.x, s.y end }
+        end
+        return nil
+      end
+      local coastDir = arg[1] .. "/Media/coast"
+      local coastFile = coastDir .. "/z1436.tga"
+      local function rmCoast()
+        os.remove(coastFile)
+        if os.execute then os.execute("rmdir " .. string.format("%q", coastDir) .. " 2>/dev/null") end
+      end
+      rmCoast()
+      M.bakedCache = nil
+      MD.Forget()
+      M.Reset()
+      M.maskBroken = "kept none on another zone"
+      M.masked = nil
+      NS.ShowTab("map")
+      M.vp:SetSize(812, 520)
+      M.Refit()
+      check(M.BakedCoastPath(1436) == "Interface\\AddOns\\DarkMatter\\Media\\coast\\z1436" and M.BakedCoastFile(1436) == nil,
+        "0.5.2b.20 map: baked coast path is Media/coast/z1436.tga and is unused while the file is absent")
+      check(M.CentreOnPlayer() == true, "0.5.2b.20 map: CentreOnPlayer on Westfall")
+      for _ = 1, 25 do M.Tick(0.05) end
+      local Lw = M.layers[1436]
+      local carried = Lw and Lw.mask and #(Lw.tiles or {}) > 0
+      for _, t in ipairs(Lw and Lw.tiles or {}) do
+        if not (t._masks and t._masks[1] == Lw.mask) then carried = false end
+      end
+      local el = M.layers[1429]
+      check(not M.ContMasked(1415) and Lw and Lw.mask and not Lw.feather and not Lw.baked and Lw.shown and (Lw.alpha or 0) > 0.9 and carried
+        and not (el and el.mask),
+        string.format("0.5.2b.20 map: Westfall solo uses its mask (alpha %s, feather %s, tiles %s, elwynn mask %s)",
+          tostring(Lw and Lw.alpha), tostring(Lw and Lw.feather), tostring(Lw and Lw.tiles and #Lw.tiles), tostring(el and el.mask ~= nil)))
+      if os.execute then os.execute("mkdir -p " .. string.format("%q", coastDir)) end
+      local fh = io.open(coastFile, "wb")
+      if fh then fh:write("stub") fh:close() end
+      M.bakedCache = nil
+      M.dirty = true
+      M.Layout()
+      for _ = 1, 5 do M.Tick(0.05) end
+      local Lb = M.layers[1436]
+      local bakedFile = Lb and Lb.tiles and Lb.tiles[1] and Lb.tiles[1]._file
+      check(fh and Lb and Lb.baked == M.BakedCoastPath(1436) and not Lb.mask and not Lb.feather and #Lb.tiles == 1
+        and bakedFile == Lb.baked and Lb.shown and (Lb.alpha or 0) > 0.9,
+        "0.5.2b.20 map: baked z1436.tga replaces stock tiles (" .. tostring(Lb and Lb.baked) .. ", pieces " .. tostring(Lb and #Lb.tiles) .. ", file " .. tostring(bakedFile) .. ")")
+      rmCoast()
+      M.bakedCache = nil
+      MAPS[1436] = saveMap
+      NS.ZoneMasks = saveZM
+      PLAYER.map = savePlayer
+      C_Map.GetPlayerMapPosition = savePos
+      MD.Forget()
+      M.Reset()
+      NS.ShowTab("map")
+      M.vp:SetSize(812, 520)
+      M.Refit()
+      for _ = 1, 20 do M.Tick(0.05) end
+      M.CentreOnPlayer()
+      for _ = 1, 25 do M.Tick(0.05) end
+      M.pendingFit = nil
+      dm = M.layers[1426]
     end
     -- 0.5.2b.8.2: the full-screen map zooms like the window: the same levels, and every continent in view gets the same
     -- layers (0.5.2b.8.1: full screen fully zoomed out drew Kalimdor's zones and level boxes, Eastern Kingdoms plain)

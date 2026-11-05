@@ -107,6 +107,9 @@ local function ZMax()
     if sMax then cap = math.max(cap or 0, sMax / RefFit()) end -- 0.5.2b.8.2: the reference window's levels (was / SFit())
   end
   if cap then m = math.min(m, math.max(8, cap)) end
+  -- 0.5.2b.20: a capital is a small rect. The minimap sharpness cap can stop the open before the city
+  -- art fills the box, so the host exterior stays in frame. A city open may go as deep as its cover.
+  if M.fitCap and M.fitCap > m then m = M.fitCap end
   return m
 end
 M.ZMax = function() return ZMax() end
@@ -350,7 +353,8 @@ local function Piece(L, fid, layer, x, y, w, h, u2, v2, list)
     local k = L.mask and L.fitSc or 1
     t:SetSize(pw * k, ph * k)
     t:SetPoint("TOPLEFT", f, "TOPLEFT", px * k, -py * k)
-    if L.mask then t:SetTexture(fid) else t:SetTexture(fid, nil, nil, "TRILINEAR") end
+    -- a baked coast picture already has its alpha; a trilinear filter fringes that edge
+    if L.mask or L.baked then t:SetTexture(fid) else t:SetTexture(fid, nil, nil, "TRILINEAR") end
     t:SetTexCoord(u1, uu2, v1, vv2)
     t.dmG = { px, py, pw, ph }
     -- 0.5.2b.6.1: the mask goes on last, once the texture has its file, size and place (as /dm masktest does)
@@ -391,6 +395,11 @@ local function Piece(L, fid, layer, x, y, w, h, u2, v2, list)
 end
 local function BuildTiles(L)
   local a = L.art
+  -- 0.5.2b.20: one baked coast picture instead of the stock tiles (ocean already transparent in the file)
+  if L.baked then
+    Piece(L, L.baked, "BACKGROUND", 0, 0, a.w, a.h, 1, 1, L.tiles)
+    return
+  end
   for i, fid in ipairs(a.tex) do
     local col, row = (i - 1) % a.cols, math.floor((i - 1) / a.cols)
     local x, y = col * a.tw, row * a.th
@@ -471,8 +480,81 @@ function M.HighlightInfo(z)
 end
 -- 0.5.2b.19: solo coastline pilot — these map IDs always get their zone mask when drawn as a layer, even if the
 -- continent is not ContMasked. Cuts ocean outside the coast on the focused zone picture. Westfall only for now.
+-- 0.5.2b.20: not gated on M.maskBroken. That flag means some other zone's mask did not stick, and the whole
+-- continent then falls back to one feathered rectangle. Westfall's own file is still valid; a global fallback
+-- was leaving the solo picture uncut (the cookie-cutter west edge). maskOff (/dm mapmask off) and a client
+-- with no mask API still skip it.
 M.SOLO_COAST = { [1436] = true }  -- Westfall
-function M.SoloCoastMask(id) return M.SOLO_COAST and M.SOLO_COAST[id] == true and M.MaskFile(id) ~= nil and not M.maskOff and not M.maskBroken end
+function M.SoloCoastMask(id)
+  return M.SOLO_COAST and M.SOLO_COAST[id] == true and M.MaskFile(id) ~= nil and not M.maskOff and M.canMask ~= false
+end
+-- 0.5.2b.20: baked coast art (Illusionist). This is NOT OpenMap. Expected file, one picture the size of the
+-- zone art with the sea already transparent:
+--   Interface\AddOns\DarkMatter\Media\coast\z<mapID>.tga
+--   e.g. Media/coast/z1436.tga for Westfall.
+-- When that file is present it replaces the stock tiles. When it is absent the masked stock art is used.
+function M.BakedCoastPath(id)
+  if not (M.SOLO_COAST and M.SOLO_COAST[id]) then return nil end
+  return "Interface\\AddOns\\DarkMatter\\Media\\coast\\z" .. tostring(id)
+end
+local function CoastOnDisk(id)
+  -- The game cannot list its files (io is absent there). The stub can: look beside this addon.
+  if type(io) ~= "table" or type(io.open) ~= "function" then return nil end
+  local name = "z" .. tostring(id) .. ".tga"
+  local roots = {}
+  local function add(r)
+    if type(r) == "string" and r ~= "" then roots[#roots + 1] = r end
+  end
+  if type(arg) == "table" and type(arg[1]) == "string" then add(arg[1]) end
+  if debug and debug.getinfo then
+    local info = debug.getinfo(1, "S")
+    local src = info and info.source
+    if type(src) == "string" then
+      local dir = src:gsub("^@", ""):match("^(.*)[/\\][^/\\]+$")
+      add(dir)
+    end
+  end
+  if #roots == 0 then return nil end
+  for _, root in ipairs(roots) do
+    local sep = (root:find("\\", 1, true) and not root:find("/", 1, true)) and "\\" or "/"
+    local f = io.open(root .. sep .. "Media" .. sep .. "coast" .. sep .. name, "rb")
+    if f then f:close() return true end
+  end
+  return false
+end
+-- In the game, SetTexture returns true only when the file loads. nil/false (and the stub, which stores
+-- the path without a file) are not a hit. Requires a real success so a missing TGA cannot blank the zone.
+function M.BakedCoastLoads(path)
+  if not (canvas and canvas.CreateTexture) then return nil end
+  local ok, probe = pcall(canvas.CreateTexture, canvas, nil, "BACKGROUND")
+  if not ok or not probe or not probe.SetTexture then return false end
+  local okS, res = pcall(probe.SetTexture, probe, path)
+  local got
+  if probe.GetTexture then
+    local okG, g = pcall(probe.GetTexture, probe)
+    if okG then got = g end
+  end
+  if probe.Hide then probe:Hide() end
+  pcall(probe.SetTexture, probe, nil)
+  if not okS or res == false or res == nil then return false end
+  if res ~= true and res ~= 1 then return false end
+  if got == nil or got == "" or got == false then return false end
+  return true
+end
+function M.BakedCoastFile(id)
+  local path = M.BakedCoastPath(id)
+  if not path then return nil end
+  local cache = M.bakedCache or {}
+  M.bakedCache = cache
+  if cache[id] ~= nil then return cache[id] or nil end
+  local on = CoastOnDisk(id)
+  if on == nil then
+    on = M.BakedCoastLoads(path)
+    if on == nil then return nil end -- no canvas yet; ask again once the map exists
+  end
+  cache[id] = on and path or false
+  return on and path or nil
+end
 -- 0.5.2b.6.2: a layer frame may be built on another host (the /dm masktest zone panels build the map's own layer
 -- there); force = the zone's mask even where the continent is not drawn masked
 local function NewLayer(id, level, host, force)
@@ -489,6 +571,13 @@ local function NewLayer(id, level, host, force)
   -- 0.5.1.6: zone pictures are feathered at their rim; 0.5.1.7: continent pictures too when the world picture lies under
   -- them (the world picture is the base and is never feathered). 0.5.2b.4: always (no masked zones)
   L.feather = CU and CU.CornerGrad and id ~= M.world and (M.hasWorld or not MD.Is(id, "continent")) or false
+  -- 0.5.2b.20: a shipped baked coast replaces the stock tiles. Its own alpha is the coastline, so it is not
+  -- feathered and it does not take a mask texture. Absent file: the masked stock art below.
+  local baked = M.BakedCoastFile(id)
+  if baked then
+    L.baked, L.feather = baked, false
+    return L
+  end
   -- 0.5.2b.5: a zone with a shape mask (Data_ZoneMasks.lua) on a continent whose zones all have one is cut to its real
   -- outline by that mask (its own soft edge) instead of being feathered at its rectangle
   local mf = id ~= M.world and not MD.Is(id, "continent") and M.MaskFile(id)
@@ -546,13 +635,17 @@ local function NewLayer(id, level, host, force)
       M.canMask, M.masked = false, nil
     end
   end
+  -- tried the solo mask and the client did not take it: do not rebuild this layer every frame
+  if force and not L.mask then L.coastTried = true end
   return L
 end
 local function Layer(id, level)
   local L = M.layers[id]
   local force = M.SoloCoastMask(id)
-  -- if a solo-coast zone was built earlier without a mask, rebuild that layer once
-  if L and force and not L.mask then
+  local baked = M.BakedCoastFile(id)
+  -- rebuilt when a solo-coast zone was drawn as a plain rectangle, or the baked file arrived / went away
+  local stale = L and ((baked and L.baked ~= baked) or (not baked and L.baked) or (force and not baked and not L.mask and not L.coastTried))
+  if stale then
     if L.frame then L.frame:Hide() end
     M.layers[id] = nil
     L = nil
@@ -1380,7 +1473,9 @@ function M.Layout()
     -- 0.5.1.11: the continent picture is always drawn (the base); 0.5.2b.3: faded toward the backdrop when magnified
     if cl then local p = Place(c.id) Show(cl, p[1], p[2], p[3], p[4], a * M.BaseFade(c.id)) end
     local masked = M.ContMasked(c.id)
-    local maskIn = masked and M.MaskIn(c.id) or 0
+    -- 0.5.2b.20: solo-coast zones use this fade even when the continent is not ContMasked (maskIn is 0 at
+    -- continent view and 1 once you are zoomed into a zone, same as the other masked pictures)
+    local maskIn = M.MaskIn()
     local cityFade = M.CityFade(c.id)
     -- 0.5.2b.7.1: cities after the zones, so each one can follow its parent zone (see M.CityParent)
     local order, cities, dz = {}, {}, {}
@@ -1388,6 +1483,7 @@ function M.Layout()
     for _, z in ipairs(cities) do order[#order + 1] = z end
     for _, z in ipairs(order) do
       local isCity, isFocus = IsCity(z), fz and z.id == fz.id
+      local coast = (not isCity) and M.SoloCoastMask(z.id)
       -- 0.5.2b.4: one zone picture (the focus zone; the one just left while it fades out), never the neighbours.
       -- The sweep (dry) checks the settled view: the focus zone at its full fade, no zone fading out.
       local d = 0
@@ -1395,24 +1491,28 @@ function M.Layout()
         if isCity then
           -- 0.5.2b.7.2: a capital is drawn from the city zoom level on (/dm citylevel), whenever any of it is in view,
           -- above its parent zone and feathered at its rim (0.5.2b.7.1 followed the parent zone's picture).
-          -- 0.5.2b.19: when the city itself fills the view (blizz/cover open on the capital, or zoomed onto it),
-          -- always show the city floor map at full strength — Forever's city uiMapID open.
+          -- 0.5.2b.20: full strength when this open is the city, or the city fills the view (floor map, not the
+          -- host's exterior). A pending open counts even before the focus pass names the city.
           local fr = Frac(z)
           if fr > 0 then
             d = a * cityFade
-            if (M.focusCity == z.id and fr >= (M.CITY and M.CITY[1] or 0.45)) or (M.pendingFit and M.pendingFit.blizz and M.pendingFit.id == z.id) then
+            local pendingCity = M.pendingFit and M.pendingFit.id == z.id
+            local fills = fr >= (M.CITY and M.CITY[1] or 0.45)
+            if pendingCity or (M.focusCity == z.id and fills) or fr >= 0.85 then
               d = a
             end
           end
-        elseif masked then d = a * maskIn -- 0.5.2b.5: every zone, cut to its shape
+        elseif masked or coast then d = a * maskIn -- masked continent, or a solo-coast zone on its own
         else d = a * M.ZoneIn(z) * (dry and (isFocus and 1 or 0) or (zf[z.id] or 0)) end
       end
       dz[z.id] = d
-      local zl = M.layers[z.id]
-      if d >= 0.01 then zl = zl or Layer(z.id, 3) end
+      -- always go through Layer when the zone is drawn: a solo-coast picture built earlier as a plain
+      -- rectangle (or before its baked file was present) has to be rebuilt, not reused as-is
+      local zl
+      if d >= 0.01 then zl = Layer(z.id, 3) else zl = M.layers[z.id] end
       if zl then
         zl.wantOv = true
-        local lv = isCity and 6 or ((isFocus or masked) and 4 or 3)
+        local lv = isCity and 6 or ((isFocus or masked or coast) and 4 or 3)
         if zl.level ~= lv then
           zl.level = lv
           zl.frame:SetFrameLevel(base + lv)
@@ -2232,7 +2332,16 @@ local function ApplyFit()
   if f.blizz then
     local art = MD.Art(f.id)
     local ms = (art and art.minScale and art.minScale > 0) and art.minScale or 1
-    SetView((x1 + x2) / 2, (y1 + y2) / 2, ms * M.CoverScale(f.id))
+    local cover = M.CoverScale(f.id)
+    local s = ms * cover
+    -- 0.5.2b.20: a capital open fills the box with the city art. A minScale below 1 would leave the host exterior
+    -- in frame, and the usual zoom cap can be too shallow for a small capital, so this open may go deeper.
+    if MD.IsCityID(f.id) then
+      s = math.max(s, cover)
+      local sf = SFit()
+      if sf > 0 then M.fitCap = math.max(M.fitCap or 0, s / sf) end
+    end
+    SetView((x1 + x2) / 2, (y1 + y2) / 2, s)
     return true
   end
   -- 0.5.1.10: a zone (or city) is opened like the game's map: its art fills the box (0.5.1.11: a framing only, no lock)
@@ -2942,15 +3051,40 @@ end
 -- 0.5.2b.19: keep a capital (Ironforge, …) when it has art — do not raise it to the host zone. Capitals nested under
 -- their host (Classic: Ironforge → Dun Morogh) are in Zones via RectOnContinent; framing CoverScale of the city then
 -- shows the city floor map over the exterior, like Forever's city uiMapID.
+-- 0.5.2b.20: Forever's GetDisplayableMapForPlayer often returns that host zone, so a walk which starts there never
+-- sees 1455. Prefer the player's own map (or a parent of it) when that map is a capital with art, then Displayable.
 function M.OpeningMap(p)
-  local d = MD.DisplayableForPlayer and MD.DisplayableForPlayer()
-  for _, m in ipairs(d and MD.Chain(d) or {}) do
+  local function accept(m)
+    if not m then return nil end
     local keepCity = MD.IsCityID(m) and MD.Art(m) ~= nil
-    if keepCity or (M.hasWorld and m == M.world) or MD.Is(m, "continent") or (not MD.Is(m, "continent") and MD.ZoneEntry(m)) then
-      local c = (M.hasWorld and m == M.world) and nil or (MD.Is(m, "continent") and m or MD.ContinentOf(m))
-      if M.hasWorld or not c or c == (p and p.cont) then return m end
+    if not (keepCity or (M.hasWorld and m == M.world) or MD.Is(m, "continent") or (not MD.Is(m, "continent") and MD.ZoneEntry(m))) then
+      return nil
+    end
+    local c = (M.hasWorld and m == M.world) and nil or (MD.Is(m, "continent") and m or MD.ContinentOf(m))
+    if M.hasWorld or not c or c == (p and p.cont) then return m end
+  end
+  local pm = MD.PlayerMap and MD.PlayerMap()
+  if pm then
+    for _, m in ipairs(MD.Chain(pm)) do
+      if MD.IsCityID(m) and MD.Art(m) then
+        local hit = accept(m)
+        if hit then return hit end
+      end
     end
   end
+  local d = MD.DisplayableForPlayer and MD.DisplayableForPlayer()
+  for _, m in ipairs(d and MD.Chain(d) or {}) do
+    local hit = accept(m)
+    if hit then return hit end
+  end
+end
+-- 0.5.2b.20: one short /dm mapprobe line — opening id, the player's map, Displayable, the city in focus
+function M.OpenProbeLine()
+  local pm = MD.PlayerMap()
+  local disp = MD.DisplayableForPlayer and MD.DisplayableForPlayer()
+  local openId = M.OpeningMap(M.player)
+  return string.format("map 2 open: opening %s; player %s; displayable %s; focusCity %s",
+    tostring(openId), tostring(pm), tostring(disp), tostring(M.focusCity))
 end
 -- centre the view on the player at the zone's zoom (no animation); false when the game gives no position
 function M.CentreOnPlayer()
@@ -2989,7 +3123,7 @@ function M.Reset()
   M.maskBroken, M.rebuildLayers = nil, nil
   M.maskStat = { add = 0, ok = 0, none = 0, err = 0, noCount = 0 }
   M.started, M.ready, M.only, M.hasWorld, M.player = false, false, nil, nil, nil
-  M.pendingFit, M.lastView = nil, nil
+  M.pendingFit, M.lastView, M.fitCap = nil, nil, nil
   drag, zoomT, fly, crumbKey = nil, nil, nil, nil
   MD.Forget()
   if CU then CU.Reset() end
