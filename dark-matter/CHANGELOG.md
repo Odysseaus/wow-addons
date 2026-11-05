@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2b.10
+
+M and L now open their own tabs, and the map opens the way the game's own map does.
+
+### Changes
+- **M opens the Map tab, L opens the Quests tab.** Pressing the same key again while that tab is showing closes the window. Pressing the other key switches tabs. ALT-M and ALT-L still open the game's own world map and quest log.
+- **Your own map/quest-log keys work too.** Any key you have bound to the game's world map or quest log now opens Dark Matter the same way. This is re-checked whenever you change your key bindings. Changes made during combat wait until combat ends, as before.
+- **The map opens where you are, framed like the game's map.** It picks the same map the game would open on (your map, or the nearest parent map with art), then shows that whole map fitted to the box and centred, with no extra margin. If Dark Matter can't frame that map, it uses the old opening.
+- **Glide unchanged.** Show on map, tracker title clicks, quest markers and the mouse wheel still glide (zoom out, pan, zoom in). Opening the map is still instant.
+
 ## 0.5.2b.9
 
 Close-up tiles now follow the numbered zoom level only, so zoom 12 shows painted art again. This build also adds a small Classic Era loader (DarkMatter_Vanilla.toc), so the shared map code can be tested on Classic Era 1.15.9 while the Forever beta is down until the Nov 4 launch. Forever still loads DarkMatter.toc and the same files as before.

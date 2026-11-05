@@ -63,7 +63,8 @@ function MD.Art(id)
       local w, h = N(L.layerWidth) or 1002, N(L.layerHeight) or 668
       local tw, th = N(L.tileWidth) or 256, N(L.tileHeight) or 256
       local cols = math.ceil(w / tw)
-      c[id] = { mapID = id, w = w, h = h, tw = tw, th = th, cols = cols, rows = math.ceil(h / th), tex = tex }
+      c[id] = { mapID = id, w = w, h = h, tw = tw, th = th, cols = cols, rows = math.ceil(h / th), tex = tex,
+        minScale = N(L.minScale) } -- 0.5.2b.10: the game's zoomed-out scale for this map (its ResetZoom)
     end
   end
   return c[id] or nil
@@ -172,6 +173,24 @@ function MD.ZoneOf(id)
 end
 
 function MD.PlayerMap() return N(Call("C_Map", "GetBestMapForUnit", "player")) end
+-- 0.5.2b.10: the map the game's own world map opens on: MapUtil.GetDisplayableMapForPlayer (Blizzard_FrameXMLUtil
+-- MapUtil.lua), else the same walk: your map, then its parents until one has art, else the fallback world map.
+function MD.DisplayableForPlayer()
+  local mu = _G.MapUtil
+  if type(mu) == "table" and type(mu.GetDisplayableMapForPlayer) == "function" then
+    local ok, id = pcall(mu.GetDisplayableMapForPlayer)
+    if ok and N(id) then return N(id) end
+  end
+  local id = MD.PlayerMap()
+  while id and id ~= 0 do
+    local has = (type(_G.C_Map) == "table" and type(_G.C_Map.MapHasArt) == "function") and Call("C_Map", "MapHasArt", id)
+      or (not (type(_G.C_Map) == "table" and type(_G.C_Map.MapHasArt) == "function") and MD.Art(id) ~= nil)
+    if has then return id end
+    local i = MD.Info(id)
+    id = i and N(i.parentMapID)
+  end
+  return N(Call("C_Map", "GetFallbackWorldMapID"))
+end
 
 -- The world map above the continents: from the player's map chain, else the game's fallback world map.
 function MD.World()
