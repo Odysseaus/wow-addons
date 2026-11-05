@@ -4810,6 +4810,75 @@ do
   check(qp and qp.n == 2 and qp[1]:IsShown() and qp[1].qid == 501, "0.5.0 map: quest markers from GetQuestsOnMap")
   qp[1]._scripts.OnEnter(qp[1])
   check(tip.title == "Dwarven Outfitters", "0.5.0 map: quest marker tooltip names the quest")
+  -- ===== 0.5.2b.11: sub-map quest spots, the super-tracked quest's waypoint, refresh while closed, /dm questsync =====
+  do
+    local Tr = NS.Tracker
+    local log = { [501] = { zone = "Elsewhere" }, [502] = { zone = "Elsewhere" }, [601] = { zone = "Elsewhere" },
+      [602] = { zone = "Elsewhere" }, [603] = { zone = "Elsewhere" } }
+    local function keys(t) local o = {} for k in pairs(t) do o[#o + 1] = k end table.sort(o) return table.concat(o, ",") end
+    MD.Forget()
+    local before = keys(Tr.ZoneSet(log))
+    local saveQOM, saveST = C_QuestLog.GetQuestsOnMap, C_SuperTrack
+    MAPS[90001] = { "Coldridge Cave", 5, 1426, { 0.10, 0.30, 0.20, 0.40 } } -- a cave in Dun Morogh
+    MAPS[90002] = { "Fargodeep Mine", 5, 1429, { 0.30, 0.40, 0.60, 0.70 } } -- a mine in Elwynn (the neighbour)
+    C_QuestLog.GetQuestsOnMap = function(id)
+      if id == 90001 then return { { questID = 601, x = 0.5, y = 0.5 }, { questID = 501, x = 0.1, y = 0.1 } } end
+      if id == 90002 then return { { questID = 602, x = 0.5, y = 0.5 } } end
+      return saveQOM(id)
+    end
+    local ST = { q = 603 }
+    C_SuperTrack = { GetSuperTrackedQuestID = function() return ST.q end }
+    C_QuestLog.GetNextWaypointForMap = function(q, z) if z == 1426 and (q == 603 or q == 501) then return 0.70, 0.20 end end
+    MD.Forget()
+    local sub = MD.SubQuests(1426)
+    check(#sub == 1 and sub[1].id == 601 and math.abs(sub[1].x - 0.20) < 1e-9 and math.abs(sub[1].y - 0.30) < 1e-9 and sub[1].from == 90001,
+      "0.5.2b.11 map: a cave's quest spot is placed on its zone (Dun Morogh), the zone's own quest left out")
+    check(#MD.Quests(1426) == 2, "0.5.2b.11 map: sub-map and waypoint spots are not put into MD.Quests")
+    local all = {}
+    for _, z in ipairs(MD.Zones(1415)) do for _, q in ipairs(MD.SubQuests(z.id)) do all[#all + 1] = z.id .. ":" .. q.id end end
+    check(table.concat(all, " "):find("1429:602", 1, true) and not table.concat(all, " "):find("1426:602", 1, true),
+      "0.5.2b.11 map: the neighbouring zone's mine quest is not drawn on Dun Morogh")
+    check(keys(Tr.ZoneSet(log)) == before, "0.5.2b.11 tracker: Tr.ZoneSet is the same with sub-map and waypoint quests present (" .. before .. ")")
+    local planned = 0
+    local savePlan = Tr.Plan
+    Tr.Plan = function(...) planned = planned + 1 return savePlan(...) end
+    M.dirty = true run(2)
+    local qp2 = M.pools.quest
+    local ids, wps = {}, 0
+    for i = 1, qp2.n do if qp2[i]:IsShown() and qp2[i].qid then ids[#ids + 1] = qp2[i].qid if qp2[i].waypoint == true then wps = wps + 1 end end end
+    table.sort(ids)
+    check(table.concat(ids, ",") == "501,502,601,603" and wps == 1, "0.5.2b.11 map: zone + cave + super-tracked waypoint markers (" .. table.concat(ids, ",") .. ", wp " .. wps .. ")")
+    ST.q = 501
+    M.dirty = true run(2)
+    ids, wps = {}, 0
+    for i = 1, qp2.n do if qp2[i]:IsShown() and qp2[i].qid then ids[#ids + 1] = qp2[i].qid if qp2[i].waypoint == true then wps = wps + 1 end end end
+    table.sort(ids)
+    check(table.concat(ids, ",") == "501,502,601" and wps == 0, "0.5.2b.11 map: no second marker for a waypoint quest already on the map")
+    -- refresh while the tab is closed: the private frame only forgets the list
+    check(MD.forgetFrame and MD.forgetFrame._scripts and MD.forgetFrame._scripts.OnEvent, "0.5.2b.11 map: an always-on frame forgets the quest spots")
+    C_QuestLog.GetQuestsOnMap = function(id) if id == 1426 then return { { questID = 777, x = 0.5, y = 0.5 } } end return {} end
+    MD.forgetFrame._scripts.OnEvent(MD.forgetFrame, "QUEST_POI_UPDATE")
+    check(#MD.Quests(1426) == 1 and MD.Quests(1426)[1].id == 777, "0.5.2b.11 map: QUEST_POI_UPDATE reads the quest spots again")
+    -- /dm questsync
+    local LOG = { 777, 603, 604, 605 }
+    C_QuestLog.GetNumQuestLogEntries = function() return #LOG + 1 end
+    C_QuestLog.GetInfo = function(i) if i == 1 then return { isHeader = true, title = "Dun Morogh" } end return { questID = LOG[i - 1], title = "Q" .. LOG[i - 1] } end
+    C_QuestLog.GetNextWaypoint = function(q) if q == 603 then return 1426, 0.7, 0.2 end end
+    local saveUi = GetQuestUiMapID
+    GetQuestUiMapID = function(q) if q == 604 then return 1581 end return 0 end
+    local out = table.concat(M.QuestSync(), "\n")
+    check(out:find("4 log quests, 3 with no main-map marker", 1, true) and out:find("603 Q603: waypoint only 1426", 1, true)
+      and out:find("604 Q604: other map 1581", 1, true) and out:find("605 Q605: no point", 1, true) and not out:find("777 ", 1, true),
+      "0.5.2b.11 /dm questsync: lists unmarked log quests with the reason")
+    check(planned == 0, "0.5.2b.11: drawing and /dm questsync never re-plan the tracker (" .. planned .. ")")
+    Tr.Plan = savePlan
+    GetQuestUiMapID = saveUi
+    C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo, C_QuestLog.GetNextWaypoint, C_QuestLog.GetNextWaypointForMap = nil, nil, nil, nil
+    C_QuestLog.GetQuestsOnMap, C_SuperTrack = saveQOM, saveST
+    MAPS[90001], MAPS[90002] = nil, nil
+    MD.Forget()
+    M.dirty = true run(2)
+  end
   -- ===== 0.5.2a: quest pins with the game's own icons, click / shift-click, hover both ways, Show on map =====
   do
     local QS = NS.QS

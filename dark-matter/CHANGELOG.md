@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2b.11
+
+Quest markers on the map now match the game more closely.
+
+- The map reads the quest spots again whenever your quests change, even while the Map tab is closed, and each time you open it.
+- The quest you have selected or are tracking with the game's arrow shows its next waypoint on the map (a smaller marker with a pale blue ring), like the game's own map. It is only drawn, never stored.
+- Quests whose spot is inside a cave or other small map now show on the zone that cave belongs to. Caves in neighbouring zones are not mixed in.
+- New `/dm questsync`: reads the quest spots again and lists each quest in your log that has no marker on the map, with the reason (no point, other map, or waypoint only).
+- The Objectives side panel works exactly as before.
+
 ## 0.5.2b.10
 
 M and L now open their own tabs, and the map opens the way the game's own map does.

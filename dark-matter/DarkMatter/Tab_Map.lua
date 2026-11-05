@@ -780,6 +780,65 @@ local function UpdatePlayer()
   a:Show()
 end
 
+-- 0.5.2b.11: one quest marker at map coords q.x, q.y on zone z (q.waypoint: the quest's next waypoint, drawn with a pale
+-- blue ring and a little smaller, like the stock map's waypoint pin)
+local function QuestMarker(z, q, vw, vh)
+    local qx, qy = M.ToScreen(ToW(z.id, q.x, q.y))
+    if qx > 0 and qy > 0 and qx < vw and qy < vh then
+      local QS = NS.QS
+      local role, status = "progress", "progress"
+      if QS then role, status = QS.MarkerRole(q.id) end
+      local mk = Pool("quest", MakeQuest)
+      local hot = QS and QS.IsHot(q.id)
+      -- 0.5.2b.7: the objective tracker's own quest POI button (the round button with "..." in progress, "?" when
+      -- ready; gold ring and brown dots when selected), as OpenMap draws it; a client without those atlases gets
+      -- the 0.5.2a game icons; one with neither draws no marker (/dm questmap)
+      local poi = QS and M.PaintPOI(mk, status, hot)
+      if poi or (QS and QS.PaintIcon(mk.icon, role)) then
+        if not poi then
+          mk.ring:Hide()
+          QS.PaintIcon(mk.glow, role)
+          mk.icon:ClearAllPoints()
+          mk.icon:SetAllPoints(mk)
+        end
+        mk.poi = poi
+        mk.qid, mk.status, mk.map, mk.mx, mk.my = q.id, status, z.id, q.x, q.y
+        mk.wx, mk.wy = ToW(z.id, q.x, q.y)
+        mk.icon:SetVertexColor(1, 1, 1) -- 0.5.2a.1: the game icon as it is (no tint), like the game map
+        mk.waypoint = q.waypoint and true or false
+        if mk.ring then if q.waypoint then mk.ring:SetVertexColor(0.55, 0.8, 1) else mk.ring:SetVertexColor(1, 1, 1) end end
+        local sz = poi and (hot and 26 or 22) or (hot and 24 or 18)
+        if q.waypoint then sz = math.floor(sz * 0.85 + 0.5) end
+        mk:SetSize(sz, sz)
+        if hot then mk.glow:Show() else mk.glow:Hide() end
+        mk:SetFrameLevel(over:GetFrameLevel() + (hot and 3 or 1))
+        mk:ClearAllPoints()
+        mk:SetPoint("CENTER", over, "TOPLEFT", qx, -qy)
+        mk:Show()
+      else
+        mk.qid = nil
+        mk:Hide()
+      end
+    end
+end
+-- 0.5.2b.11: the quests whose next waypoint is drawn (the selected one and the game's super-tracked one), as the stock
+-- map's QuestDataProvider does (focused or super-tracked quest + C_QuestLog.GetNextWaypointForMap)
+function M.WaypointQuests()
+  local out = {}
+  local QS = NS.QS
+  local sel = QS and tonumber(QS.selected)
+  if sel and sel > 0 then out[#out + 1] = sel end
+  local st = _G.C_SuperTrack and type(_G.C_SuperTrack.GetSuperTrackedQuestID) == "function"
+    and select(2, pcall(_G.C_SuperTrack.GetSuperTrackedQuestID))
+  if type(st) == "number" and st > 0 and st ~= sel then out[#out + 1] = st end
+  return out
+end
+function M.WaypointOn(q, zone)
+  local f = _G.C_QuestLog and _G.C_QuestLog.GetNextWaypointForMap
+  if type(f) ~= "function" then return nil end
+  local ok, x, y = pcall(f, q, zone)
+  if ok and type(x) == "number" and type(y) == "number" and x >= 0 and x <= 1 and y >= 0 and y <= 1 then return x, y end
+end
 local function LayoutOverlay()
   PoolReset("badge") PoolReset("quest")
   local vw, vh = VW(), VH()
@@ -806,40 +865,17 @@ local function LayoutOverlay()
           anyBadge = true
         end
         if M.layersOn.quests and M.ZoneAlpha(z) > 0.6 then
-          for _, q in ipairs(MD.Quests(z.id) or {}) do
-            local qx, qy = M.ToScreen(ToW(z.id, q.x, q.y))
-            if qx > 0 and qy > 0 and qx < vw and qy < vh then
-              local QS = NS.QS
-              local role, status = "progress", "progress"
-              if QS then role, status = QS.MarkerRole(q.id) end
-              local mk = Pool("quest", MakeQuest)
-              local hot = QS and QS.IsHot(q.id)
-              -- 0.5.2b.7: the objective tracker's own quest POI button (the round button with "..." in progress, "?" when
-              -- ready; gold ring and brown dots when selected), as OpenMap draws it; a client without those atlases gets
-              -- the 0.5.2a game icons; one with neither draws no marker (/dm questmap)
-              local poi = QS and M.PaintPOI(mk, status, hot)
-              if poi or (QS and QS.PaintIcon(mk.icon, role)) then
-                if not poi then
-                  mk.ring:Hide()
-                  QS.PaintIcon(mk.glow, role)
-                  mk.icon:ClearAllPoints()
-                  mk.icon:SetAllPoints(mk)
-                end
-                mk.poi = poi
-                mk.qid, mk.status, mk.map, mk.mx, mk.my = q.id, status, z.id, q.x, q.y
-                mk.wx, mk.wy = ToW(z.id, q.x, q.y)
-                mk.icon:SetVertexColor(1, 1, 1) -- 0.5.2a.1: the game icon as it is (no tint), like the game map
-                local sz = poi and (hot and 26 or 22) or (hot and 24 or 18)
-                mk:SetSize(sz, sz)
-                if hot then mk.glow:Show() else mk.glow:Hide() end
-                mk:SetFrameLevel(over:GetFrameLevel() + (hot and 3 or 1))
-                mk:ClearAllPoints()
-                mk:SetPoint("CENTER", over, "TOPLEFT", qx, -qy)
-                mk:Show()
-              else
-                mk.qid = nil
-                mk:Hide()
-              end
+          -- 0.5.2b.11: the zone's own spots, then its sub-maps' spots (map only), then the selected / super-tracked
+          -- quest's next waypoint on this zone (drawn only, never stored), each quest once per zone
+          local drawn = {}
+          for _, q in ipairs(MD.Quests(z.id) or {}) do drawn[q.id] = true QuestMarker(z, q, vw, vh) end
+          for _, q in ipairs(MD.SubQuests and MD.SubQuests(z.id) or {}) do
+            if not drawn[q.id] then drawn[q.id] = true QuestMarker(z, q, vw, vh) end
+          end
+          for _, wq in ipairs(M.WaypointQuests()) do
+            if not drawn[wq] then
+              local wx, wy = M.WaypointOn(wq, z.id)
+              if wx then drawn[wq] = true QuestMarker(z, { id = wq, x = wx, y = wy, waypoint = true }, vw, vh) end
             end
           end
         end
@@ -2723,7 +2759,7 @@ local function Events(on)
   if not ev then
     ev = CreateFrame("Frame")
     ev:SetScript("OnEvent", function(_, e)
-      if e == "QUEST_LOG_UPDATE" or e == "QUEST_WATCH_LIST_CHANGED" or e == "QUEST_ACCEPTED" or e == "QUEST_REMOVED" or e == "QUEST_TURNED_IN" then MD.Forget("quests")
+      if e == "QUEST_LOG_UPDATE" or e == "QUEST_WATCH_LIST_CHANGED" or e == "QUEST_ACCEPTED" or e == "QUEST_REMOVED" or e == "QUEST_TURNED_IN" or e == "QUEST_POI_UPDATE" then MD.Forget("quests")
       elseif e == "MAP_EXPLORATION_UPDATED" then
         M.ForgetExplored()
       end
@@ -2731,7 +2767,7 @@ local function Events(on)
     end)
   end
   for _, e in ipairs({ "ZONE_CHANGED", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED_INDOORS", "QUEST_LOG_UPDATE", "MAP_EXPLORATION_UPDATED",
-    "QUEST_WATCH_LIST_CHANGED", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "SUPER_TRACKING_CHANGED" }) do
+    "QUEST_WATCH_LIST_CHANGED", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "SUPER_TRACKING_CHANGED", "QUEST_POI_UPDATE" }) do
     if on then pcall(ev.RegisterEvent, ev, e) else pcall(ev.UnregisterEvent, ev, e) end
   end
 end
@@ -2796,8 +2832,48 @@ function M.ExploreTick(dt)
   end
 end
 
+-- 0.5.2b.11: /dm questsync. Reads the quest spots again (and redraws if the tab is open), then lists each log quest with
+-- no marker on any zone's map and why. Read-only: no tracking, no planning, nothing set.
+function M.QuestSync()
+  MD.Forget("quests")
+  M.dirty = true
+  local QL = _G.C_QuestLog
+  local lines = {}
+  if not (QL and type(QL.GetNumQuestLogEntries) == "function" and type(QL.GetInfo) == "function") then
+    return { "questsync: this client has no C_QuestLog.GetInfo" }
+  end
+  local on = {}
+  for _, c in ipairs(MD.Continents and MD.Continents() or {}) do
+    for _, z in ipairs(MD.Zones(c.id) or {}) do
+      for _, q in ipairs(MD.Quests(z.id) or {}) do on[q.id] = true end
+      for _, q in ipairs(MD.SubQuests(z.id) or {}) do on[q.id] = true end
+    end
+  end
+  local n, miss = 0, 0
+  for i = 1, (select(2, pcall(QL.GetNumQuestLogEntries)) or 0) do
+    local ok, info = pcall(QL.GetInfo, i)
+    local q = ok and type(info) == "table" and not info.isHeader and tonumber(info.questID)
+    if q and q > 0 then
+      n = n + 1
+      if not on[q] then
+        miss = miss + 1
+        local why = "no point"
+        local wm, wx = nil, nil
+        if type(QL.GetNextWaypoint) == "function" then local o, a, b = pcall(QL.GetNextWaypoint, q) if o then wm, wx = a, b end end
+        local um = type(_G.GetQuestUiMapID) == "function" and select(2, pcall(_G.GetQuestUiMapID, q)) or nil
+        if type(wm) == "number" and wm > 0 and type(wx) == "number" then why = "waypoint only " .. wm
+        elseif type(um) == "number" and um > 0 then why = "other map " .. um end
+        lines[#lines + 1] = string.format("  %d %s: %s", q, tostring(info.title or (NS.QS and NS.QS.Title(q)) or "?"), why)
+      end
+    end
+  end
+  table.insert(lines, 1, string.format("questsync: quest spots read again; %d log quests, %d with no main-map marker", n, miss))
+  return lines
+end
+
 local function Start()
   NS.db.map = NS.db.map or {}
+  MD.Forget("quests") -- 0.5.2b.11: fresh quest spots each time the tab opens
   M.CheckExplored() -- 0.5.2b.6: anything found while the tab was closed
   M.exploreLeft, M.exploreDue = nil, nil
   if not M.started then

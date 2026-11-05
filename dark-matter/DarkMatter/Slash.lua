@@ -36,6 +36,7 @@ local function Help()
   print("  /dm citylevel N  Map: capitals fully drawn from Zoom N (top left of the map), fading in from N-2; /dm citylevel A B = fade A to full B; default = 8 to 10 (0.5.2b.7.3)")
   print("  /dm blobdraw [same|next|once]  Map: when quest areas are drawn again while zooming (default same; mapprobe 10e counts) (0.5.2b.7.3)")
   print("  /dm tileprobe  Map: the minimap tiles: how many, do they load, how far they reach, what they cost (read-only)")
+  print("  /dm questsync  Read the quest spots on the map again and list log quests with no map marker (and why)")
   print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
   print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (on by default)")
   print("  /dm trackorder on|off  keep the objective tracker in quest-log order (on by default)")
@@ -141,6 +142,11 @@ SlashCmdList["DARKMATTER"] = function(msg)
       for _, x in ipairs(lines or {}) do all[#all + 1] = x end
       all[#all + 1] = NS.QL.WatchReport()
       Say("questprobe", all)
+    end
+  elseif cmd == "questsync" then
+    -- 0.5.2b.11: read the quest spots again; list log quests with no main-map marker (no tracking, no planning)
+    if NS.MapTab and NS.MapTab.QuestSync then
+      for _, l in ipairs(NS.MapTab.QuestSync()) do print("|cff9b7bffDark Matter|r " .. l) end
     end
   elseif cmd == "questmap" then
     if NS.QS and NS.QS.ProbeReport then
