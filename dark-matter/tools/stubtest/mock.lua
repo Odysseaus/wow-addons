@@ -5169,8 +5169,47 @@ do
     check(tip.title == "Friend" and tip.lines[1] == "Level 12 Mage" and tip.lines[2] == "Dun Morogh", "0.5.2b.7 D: dot tooltip: name, level, class, zone (" .. tostring(tip.lines[1]) .. "/" .. tostring(tip.lines[2]) .. ")")
     check(mp[1].icon._desat == true and mp[1].icon._vc and math.abs(mp[1].icon._vc[1] - 0.25) < 0.01, "0.5.2b.13 D: party dots are class-coloured too")
     local mline = X.MembersReport()
-    check(mline:find("map 10e: members 2; party dot art yes", 1, true) and mline:find("position yes, dimmed no, near", 1, true) and mline:find("dimmed yes, out of range", 1, true)
+    check(mline:find("map 10e: members 2; dot image file; error none", 1, true) and mline:find("position yes, dimmed no, near", 1, true) and mline:find("dimmed yes, out of range", 1, true)
       and table.concat(X.ProbeLines(), "\n"):find("map 10e: members 2", 1, true), "0.5.2b.13: mapprobe members line (" .. mline .. ")")
+    -- 0.5.2b.14: dot image tiers; a dot is always drawn; class colour; mapprobe tier / error / skip reasons
+    do
+      local saveTOK, saveGAI = NS.Stock.TextureOK, C_Texture.GetAtlasInfo
+      C_Texture.GetAtlasInfo = function(a) if a == "WhiteCircle-RaidBlips" then return { width = 16, height = 16 } end return saveGAI(a) end
+      X.dotTier = nil
+      check(X.DotTier() == "atlas", "0.5.2b.14 dot: the Forever atlas first when it exists")
+      M.dirty = true run(5)
+      check(mp.n == 2 and mp[1].tier == "atlas" and mp[1].icon._atlas == "WhiteCircle-RaidBlips" and mp[1].icon._vc and math.abs(mp[1].icon._vc[1] - 0.25) < 0.01,
+        "0.5.2b.14 dot: atlas dots, class-coloured")
+      C_Texture.GetAtlasInfo = saveGAI
+      X.dotTier = nil
+      check(X.DotTier() == "file", "0.5.2b.14 dot: else the party icon file when the Stock check finds it")
+      NS.Stock.TextureOK = function() return false end
+      X.dotTier = nil
+      check(X.DotTier() == "solid", "0.5.2b.14 dot: else a plain solid dot")
+      M.dirty = true run(5)
+      check(mp.n == 2 and mp[1]:IsShown() and mp[1].tier == "solid" and mp[1].icon._vc and math.abs(mp[1].icon._vc[1] - 0.25) < 0.01,
+        "0.5.2b.14 dot: with only the fallback the dots are still drawn, class-coloured")
+      M.extrasErr = "boom"
+      local saveTS = M.ToScreen
+      M.ToScreen = function(x, y) return -50, -50 end
+      local ln = X.MembersReport()
+      M.ToScreen = saveTS
+      local saveBest2 = C_Map.GetBestMapForUnit
+      C_Map.GetBestMapForUnit = function(u) if u == "party1" then return nil end return saveBest2(u) end
+      local ln2 = X.MembersReport()
+      C_Map.GetBestMapForUnit = saveBest2
+      local saveHW, saveOnly = M.hasWorld, M.only
+      M.hasWorld, M.only = false, -1
+      local ln3 = X.MembersReport()
+      M.hasWorld, M.only = saveHW, saveOnly
+      check(ln:find("dot image solid; error boom", 1, true) and ln:find("skipped: outside the visible area", 1, true)
+        and ln2:find("skipped: no position", 1, true) and ln3:find("skipped: other continent", 1, true),
+        "0.5.2b.14 mapprobe: tier, error and skip reasons (" .. ln .. " | " .. ln2 .. " | " .. ln3 .. ")")
+      M.extrasErr = nil
+      NS.Stock.TextureOK = saveTOK
+      X.dotTier = nil
+      M.dirty = true run(5)
+    end
     IsInRaid = function() return true end
     GetNumGroupMembers = function() return 2 end
     run(5)

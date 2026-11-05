@@ -372,10 +372,11 @@ end
 -- a member's place: world coords, the map they are on, and whether to dim them (another zone, or out of range)
 function X.MemberPos(u)
   local m = MD.UnitMap(u)
-  if not m then return nil end
+  if not m then return nil, "no position" end
   local cont = MD.ContinentOf(m)
   local wx, wy
-  if cont and (M.hasWorld or cont == M.only) then
+  if cont and not (M.hasWorld or cont == M.only) then return nil, "other continent" end
+  if cont then
     local x, y = MD.UnitPos(cont, u)
     if x then wx, wy = M.ToW(cont, x, y)
     else
@@ -384,7 +385,7 @@ function X.MemberPos(u)
       if zx then wx, wy = M.ToW(z, zx, zy) end
     end
   end
-  if not wx then return nil end
+  if not wx then return nil, "no position" end
   local mine = M.player and M.player.map
   local zone, myZone = MD.ZoneOf(m) or m, mine and (MD.ZoneOf(mine) or mine)
   local inRange, checked = Try(G("UnitInRange"), u)
@@ -416,58 +417,92 @@ local function MakeMember()
   b:SetScript("OnMouseUp", function(_, btn) if M.VpUp then M.VpUp(btn) end end)
   return b
 end
--- 0.5.2b.13: /dm mapprobe "members" line: count, then per member: position, dimmed, why, and whether the dot art exists
+-- 0.5.2b.14: the dot image, best first: Forever's own map dot (atlas WhiteCircle-RaidBlips, as UnitPositionFrame uses),
+-- the classic party icon file, then a plain solid square (SetColorTexture; always there). A dot is always drawn.
+X.DOT_ATLAS = "WhiteCircle-RaidBlips"
+X.DOT_FILE = "Interface\\WorldMap\\WorldMapPartyIcon"
+local probeTex
+function X.DotTier()
+  if X.dotTier then return X.dotTier end
+  local tier = "solid"
+  local TX = G("C_Texture")
+  if TX and type(TX.GetAtlasInfo) == "function" then
+    local ok, info = pcall(TX.GetAtlasInfo, X.DOT_ATLAS)
+    if ok and type(info) == "table" then tier = "atlas" end
+  elseif M.over and M.over.CreateTexture then
+    probeTex = probeTex or M.over:CreateTexture(nil, "BACKGROUND")
+    if probeTex.Hide then probeTex:Hide() end
+    local ok, r = pcall(probeTex.SetAtlas, probeTex, X.DOT_ATLAS, false)
+    if ok and r ~= false and r ~= nil then tier = "atlas" end
+  end
+  if tier == "solid" and NS.Stock and NS.Stock.TextureOK and NS.Stock.TextureOK(X.DOT_FILE) then tier = "file" end
+  X.dotTier = tier
+  return tier
+end
+-- paint one dot; a failing tier falls to the next. Returns the tier used.
+function X.PaintDot(tex)
+  local tier = X.DotTier()
+  if tier == "atlas" then
+    local ok, r = pcall(tex.SetAtlas, tex, X.DOT_ATLAS, false)
+    if ok and r ~= false then tex:SetTexCoord(0, 1, 0, 1) return "atlas" end
+    tier = (NS.Stock and NS.Stock.TextureOK and NS.Stock.TextureOK(X.DOT_FILE)) and "file" or "solid"
+  end
+  if tier == "file" then
+    tex:SetTexture(X.DOT_FILE) tex:SetTexCoord(0, 1, 0, 1)
+    return "file"
+  end
+  tex:SetColorTexture(1, 1, 1, 1)
+  return "solid"
+end
+-- /dm mapprobe "members" line: the dot image in use, any drawing error, then per member: position, dimmed, why / why skipped
 function X.MembersReport()
   local units = X.GroupUnits()
-  local QS = NS.QS
-  local art = (QS and QS.Icon("groupDot")) and "yes" or "NO"
   local parts = {}
   local mine = M.player and M.player.map
   local myZone = mine and (MD.ZoneOf(mine) or mine)
+  local vw, vh = M.over and M.over:GetWidth() or 0, M.over and M.over:GetHeight() or 0
   for _, u in ipairs(units) do
     local name = Try(G("UnitName"), u) or u
-    local wx, _, m, far = X.MemberPos(u)
+    local wx, wy, m, far = X.MemberPos(u)
     local why
-    if not wx then why = "no position (instance or hidden)"
-    elseif far then
-      local zone = MD.ZoneOf(m) or m
-      why = (myZone ~= nil and zone ~= myZone) and "other zone" or "out of range"
-    else why = "near" end
+    if not wx then why = "skipped: " .. tostring(wy or "no position")
+    else
+      local sx, sy = M.ToScreen(wx, wy)
+      if not (sx >= 0 and sy >= 0 and sx <= vw and sy <= vh) then why = "skipped: outside the visible area"
+      elseif far then
+        local zone = MD.ZoneOf(m) or m
+        why = (myZone ~= nil and zone ~= myZone) and "other zone" or "out of range"
+      else why = "near" end
+    end
     parts[#parts + 1] = tostring(name) .. ": position " .. (wx and "yes" or "no") .. ", dimmed " .. ((wx and far) and "yes" or "no") .. ", " .. why
   end
-  return "map 10e: members " .. #units .. "; party dot art " .. art .. (#parts > 0 and ("; " .. table.concat(parts, "; ")) or "")
+  return "map 10e: members " .. #units .. "; dot image " .. X.DotTier() .. "; error " .. (M.extrasErr and tostring(M.extrasErr) or "none")
+    .. (#parts > 0 and ("; " .. table.concat(parts, "; ")) or "")
 end
 function X.LayoutGroup()
   M.PoolReset("member")
-  local QS = NS.QS
-  local units, raid = X.GroupUnits()
+  local units = X.GroupUnits()
   local vw, vh = M.over:GetWidth() or 0, M.over:GetHeight() or 0
   X.stats.members = 0
-  if #units > 0 and QS and QS.Icon("groupDot") then
-    for _, u in ipairs(units) do
-      local wx, wy, m, far = X.MemberPos(u)
-      if wx then
-        local sx, sy = M.ToScreen(wx, wy)
-        if sx >= 0 and sy >= 0 and sx <= vw and sy <= vh then
-          local b = M.Pool("member", MakeMember)
-          QS.PaintIcon(b.icon, "groupDot")
-          local _, cls = Try(G("UnitClass"), u)
-          b.unit, b.map, b.far, b.cls = u, m, far, cls
-          local r, g, bl = ClassColor(cls)
-          if r then  -- 0.5.2b.13: party dots are class-coloured too (were raid only)
-            b.icon:SetDesaturated(true)
-            b.icon:SetVertexColor(r, g, bl)
-          else
-            b.icon:SetDesaturated(false)
-            b.icon:SetVertexColor(1, 1, 1)
-          end
-          b:SetAlpha(far and X.DIM or 1)
-          b:SetFrameLevel(M.over:GetFrameLevel() + 4)
-          b:ClearAllPoints()
-          b:SetPoint("CENTER", M.over, "TOPLEFT", sx, -sy)
-          b:Show()
-          X.stats.members = X.stats.members + 1
-        end
+  for _, u in ipairs(units) do
+    local wx, wy, m, far = X.MemberPos(u)
+    if wx then
+      local sx, sy = M.ToScreen(wx, wy)
+      if sx >= 0 and sy >= 0 and sx <= vw and sy <= vh then
+        local b = M.Pool("member", MakeMember)
+        local tier = X.PaintDot(b.icon)
+        b:SetSize(tier == "solid" and 8 or 16, tier == "solid" and 8 or 16)
+        local _, cls = Try(G("UnitClass"), u)
+        b.unit, b.map, b.far, b.cls, b.tier = u, m, far, cls, tier
+        local r, g, bl = ClassColor(cls)
+        b.icon:SetDesaturated(tier == "file" and r ~= nil)
+        b.icon:SetVertexColor(r or 1, g or 1, bl or 1)
+        b:SetAlpha(far and X.DIM or 1)
+        b:SetFrameLevel(M.over:GetFrameLevel() + 4)
+        b:ClearAllPoints()
+        b:SetPoint("CENTER", M.over, "TOPLEFT", sx, -sy)
+        b:Show()
+        X.stats.members = X.stats.members + 1
       end
     end
   end

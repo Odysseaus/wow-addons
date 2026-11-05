@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2b.14
+
+- Group dots on the map use Forever's own map dot (the same image as the game's map), then the classic party icon, then a plain dot, so a member with a position always gets a dot. Dots are always in the member's class colour.
+- `/dm mapprobe` members line shows which dot image is in use, any map drawing error, and for each member why a dot was skipped (no position, outside the visible area, other continent).
+
 ## 0.5.2b.13
 
 - Party members' dots on the map are class-coloured, like raid members'.
