@@ -48,3 +48,4 @@ build/
 *.spec.bak
 __pycache__/
 *.pyc
+bridge_py/addon-backup-*/

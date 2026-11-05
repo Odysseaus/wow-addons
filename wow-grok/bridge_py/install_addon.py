@@ -67,6 +67,84 @@ def install_main_addon(addons: Path) -> int:
     return written
 
 
+# Files the startup sync may replace. Never Inbox.lua (the bridge writes it at
+# runtime) and never the runtime folders (ack/act/ctl/presence/sig) or WTF.
+SYNC_COPY_NAMES = ("Codec.lua", "WoWGrok.lua", "WoWGrok.toc")
+
+
+def toc_version(toc: Path) -> tuple[int, ...] | None:
+    """``## Version: 0.1.34`` -> (0, 1, 34); None when missing/unreadable."""
+    try:
+        text = Path(toc).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.lower().startswith("## version:"):
+            raw = line.split(":", 1)[1].strip()
+            parts = []
+            for piece in raw.split("."):
+                digits = "".join(ch for ch in piece if ch.isdigit())
+                if not digits:
+                    break
+                parts.append(int(digits))
+            return tuple(parts) or None
+    return None
+
+
+def sync_addon_if_older(
+    addons_dir: str | Path | None,
+    backup_root: str | Path,
+    *,
+    src: Path | None = None,
+    log=print,
+) -> str | None:
+    """Update ``addons/WoWGrok`` from the bundled addon when it is older.
+
+    Copies only Codec.lua, WoWGrok.lua and WoWGrok.toc after backing up the
+    installed .lua/.toc files to ``backup_root/<timestamp>``. Same or newer
+    installed versions are left alone. Returns the new version string when it
+    updated, else None. Never raises.
+    """
+    import time
+
+    try:
+        if not addons_dir or not Path(addons_dir).is_dir():
+            log(f"addon sync: addonDir missing ({addons_dir!r}); skipped")
+            return None
+        src = Path(src) if src else addon_bundle_dir()
+        new_v = toc_version(src / "WoWGrok.toc")
+        if not new_v:
+            log("addon sync: bundled WoWGrok.toc has no version; skipped")
+            return None
+        dest = Path(addons_dir) / "WoWGrok"
+        old_v = toc_version(dest / "WoWGrok.toc")
+        if old_v is not None and old_v >= new_v:
+            return None
+        if dest.is_dir():
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            bdir = Path(backup_root) / f"addon-backup-{stamp}"
+            n = 1
+            while bdir.exists():
+                n += 1
+                bdir = Path(backup_root) / f"addon-backup-{stamp}-{n}"
+            bdir.mkdir(parents=True)
+            for f in dest.iterdir():
+                if f.is_file() and f.suffix.lower() in (".lua", ".toc"):
+                    shutil.copy2(f, bdir / f.name)
+        dest.mkdir(parents=True, exist_ok=True)
+        for name in SYNC_COPY_NAMES:
+            if (src / name).is_file():
+                shutil.copy2(src / name, dest / name)
+        ver = ".".join(str(x) for x in new_v)
+        old = ".".join(str(x) for x in old_v) if old_v else "none"
+        log(f"Add-on updated to {ver} (was {old}), /reload in game")
+        return ver
+    except Exception as e:  # never block bridge startup
+        log(f"addon sync: failed: {e}")
+        return None
+
+
 def _install_progress_ui():
     """Non-modal progress window with an always-clickable OK when done.
 

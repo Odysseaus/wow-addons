@@ -889,6 +889,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  addonDir : {cfg.get('addonDir')}")
     print(f"  project  : {default_cwd}  ({default_src})")
     print(f"  provider : {provider}")
+    # Mac + Windows: bring Interface/AddOns/WoWGrok up to the bundled version.
+    from .install_addon import sync_addon_if_older
+
+    sync_addon_if_older(cfg.get("addonDir"), cfgmod.runtime_dir(), log=log)
     if provider != "claude":
         _tools = xai_tools_for_job(cfg, {})
         print(f"  tools    : {','.join(t['type'] for t in _tools) if _tools else '(none)'}")
