@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2b.15
+
+- Quest objective areas on the map now follow the game: only the quest you have selected, the one under the mouse (map pin or quest-log row), and the one the game's arrow is following. Auto-tracked quests no longer paint the whole zone blue.
+- Group member dots: a bad or secret UnitInRange answer can no longer stop them drawing. `/dm groupdot` prints each member's place (or why they were skipped); `/dm groupdot solid` forces a bright square so you can see whether the place is right.
+
 ## 0.5.2b.14
 
 - Group dots on the map use Forever's own map dot (the same image as the game's map), then the classic party icon, then a plain dot, so a member with a position always gets a dot. Dots are always in the member's class colour.

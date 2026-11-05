@@ -26,16 +26,20 @@ local function Try(f, ...) if type(f) ~= "function" then return nil end local r 
 ---------------------------------------------------------------------------
 -- quest objective areas
 ---------------------------------------------------------------------------
--- the quests whose areas are shaded: the selected one and the tracked (watched) ones
+-- 0.5.2b.15: like Forever's QuestBlobPinMixin:Refresh — shade at most the selected, hovered (map pin / quest-log
+-- row), and super-tracked quest. Watched / auto-tracked quests alone are not shaded.
 function X.BlobQuests()
   local QS = NS.QS
   local out, seen = {}, {}
   local function add(q) if type(q) == "number" and q > 0 and not seen[q] then seen[q] = true out[#out + 1] = q end end
   if QS then
     add(QS.selected)
-    if QS.IsWatched then
-      for _, q in ipairs(X.LogQuestIDs()) do if QS.IsWatched(q) then add(q) end end
-    end
+    add(QS.hovered)
+  end
+  local ST = G("C_SuperTrack")
+  if ST and type(ST.GetSuperTrackedQuestID) == "function" then
+    local ok, q = pcall(ST.GetSuperTrackedQuestID)
+    if ok then add(q) end
   end
   table.sort(out)
   return out
@@ -388,8 +392,19 @@ function X.MemberPos(u)
   if not wx then return nil, "no position" end
   local mine = M.player and M.player.map
   local zone, myZone = MD.ZoneOf(m) or m, mine and (MD.ZoneOf(mine) or mine)
-  local inRange, checked = Try(G("UnitInRange"), u)
-  local far = (myZone ~= nil and zone ~= myZone) or (checked and not inRange) or false
+  -- 0.5.2b.15: UnitInRange is SecretReturns on Forever; reading a secret as a bool can error. If unreadable, treat as in range.
+  local far = (myZone ~= nil and zone ~= myZone) or false
+  if not far then
+    local f = G("UnitInRange")
+    if type(f) == "function" then
+      local ok, inRange, checked = pcall(f, u)
+      if ok then
+        local secret = G("issecretvalue")
+        local bad = type(secret) == "function" and (secret(inRange) or secret(checked))
+        if not bad and checked and not inRange then far = true end
+      end
+    end
+  end
   return wx, wy, m, far
 end
 local function MakeMember()
@@ -421,8 +436,10 @@ end
 -- the classic party icon file, then a plain solid square (SetColorTexture; always there). A dot is always drawn.
 X.DOT_ATLAS = "WhiteCircle-RaidBlips"
 X.DOT_FILE = "Interface\\WorldMap\\WorldMapPartyIcon"
+X.forceSolid = false  -- /dm groupdot solid: always the bright square
 local probeTex
 function X.DotTier()
+  if X.forceSolid then return "solid" end
   if X.dotTier then return X.dotTier end
   local tier = "solid"
   local TX = G("C_Texture")
@@ -455,6 +472,50 @@ function X.PaintDot(tex)
   return "solid"
 end
 -- /dm mapprobe "members" line: the dot image in use, any drawing error, then per member: position, dimmed, why / why skipped
+-- 0.5.2b.15: /dm groupdot — one line per member (skip reason, or drawn screen place / size / art)
+function X.GroupDotReport()
+  local lines = {}
+  local units = X.GroupUnits()
+  local vw, vh = M.over and M.over:GetWidth() or 0, M.over and M.over:GetHeight() or 0
+  lines[#lines + 1] = "groupdot: members " .. #units .. "; force solid " .. (X.forceSolid and "on" or "off")
+    .. "; tier " .. tostring(X.DotTier()) .. "; error " .. (M.extrasErr and tostring(M.extrasErr) or "none")
+  local byUnit = {}
+  local pool = M.pools and M.pools.member
+  if pool then
+    for i = 1, pool.n or 0 do
+      local b = pool[i]
+      if b and b.unit then byUnit[b.unit] = b end
+    end
+  end
+  for _, u in ipairs(units) do
+    local name = Try(G("UnitName"), u) or u
+    local wx, wy, m, far = X.MemberPos(u)
+    local b = byUnit[u]
+    if not wx then
+      lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": skipped " .. tostring(wy or "no position")
+    else
+      local sx, sy = M.ToScreen(wx, wy)
+      if not (sx >= 0 and sy >= 0 and sx <= vw and sy <= vh) then
+        lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": skipped outside the visible area (screen "
+          .. string.format("%.0f,%.0f", sx, sy) .. ")"
+      elseif b then
+        local tex = b.icon
+        local atlas = tex and tex.GetAtlas and select(1, Try(tex.GetAtlas, tex))
+        local file = tex and tex.GetTexture and select(1, Try(tex.GetTexture, tex))
+        lines[#lines + 1] = string.format(
+          "  %s %s: drawn screen %.0f,%.0f size %.0f alpha %.2f tier %s atlas %s texture %s shown %s visible %s%s",
+          tostring(u), tostring(name), sx, sy, b:GetWidth() or 0, b:GetEffectiveAlpha() or 0,
+          tostring(b.tier or X.DotTier()), tostring(atlas or "-"), tostring(file or "-"),
+          tostring(b:IsShown() and true or false), tostring(b:IsVisible() and true or false),
+          far and " (dimmed)" or "")
+      else
+        lines[#lines + 1] = "  " .. tostring(u) .. " " .. tostring(name) .. ": position yes but no button (layout not run?)"
+      end
+    end
+  end
+  if #units == 0 then lines[#lines + 1] = "  (not in a group, or no other members)" end
+  return lines
+end
 function X.MembersReport()
   local units = X.GroupUnits()
   local parts = {}
@@ -571,6 +632,7 @@ function M.DrawExtras()
   X.LayoutBlobs()
   X.LayoutGroup()
   X.LayoutCorpse()
+  M.extrasErr = nil  -- 0.5.2b.15: a clean draw clears a prior error
 end
 function M.ExtrasPreTick()
   if not M.over then return end
@@ -586,6 +648,7 @@ function M.ExtrasTick(dt)
   if X.tc >= X.CORPSE_EVERY then X.tc = 0 X.LayoutCorpse() end
   X.th = (X.th or 0) + dt
   if X.th >= X.HOVER_EVERY then X.th = 0 BlobHover() end
+  M.extrasErr = nil
 end
 -- 0.5.2b.7.3: /dm blobdraw [same|next|once]: when the quest areas are drawn again after a scale change (X.BlobMode);
 -- saved in DarkMatterDB.map.blobDraw; the 10e zoom counters start again

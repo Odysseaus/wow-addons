@@ -5139,6 +5139,30 @@ do
     check(offBy(bf) < 0.01 and X.stats.blobDraws == nd, "0.5.2b.7.1 B: panning moves the areas with the zone picture, no redraw (" .. string.format("%.3f", offBy(bf)) .. ")")
     local p10e = table.concat(X.ProbeLines(), "\n")
     check(p10e:find("map 10e: areas vs zone picture: ", 1, true), "0.5.2b.7.1 B: mapprobe 10e compares the areas with the zone picture")
+    -- ===== 0.5.2b.15: Forever-style blobs — selected / hover / super-tracked only, not every watched quest =====
+    do
+      local saveSel, saveHov = QS.selected, QS.hovered
+      local saveST = C_SuperTrack
+      local saveIW = QS.IsWatched
+      QS.selected, QS.hovered = 501, nil
+      QS.IsWatched = function() return true end  -- every quest "watched" (auto-track); must NOT all get areas
+      C_SuperTrack = { GetSuperTrackedQuestID = function() return nil end }
+      local bq = X.BlobQuests()
+      check(#bq == 1 and bq[1] == 501, "0.5.2b.15 blobs: only the selected quest, not every watched one (" .. table.concat(bq, ",") .. ")")
+      QS.hovered = 502
+      bq = X.BlobQuests()
+      check(#bq == 2 and bq[1] == 501 and bq[2] == 502, "0.5.2b.15 blobs: selected + hovered (map pin / quest-log row)")
+      QS.hovered = nil
+      C_SuperTrack = { GetSuperTrackedQuestID = function() return 503 end }
+      bq = X.BlobQuests()
+      check(#bq == 2 and bq[1] == 501 and bq[2] == 503, "0.5.2b.15 blobs: selected + super-tracked")
+      QS.selected = nil
+      C_SuperTrack = { GetSuperTrackedQuestID = function() return nil end }
+      check(#X.BlobQuests() == 0, "0.5.2b.15 blobs: nothing selected, hovered or super-tracked -> no areas")
+      QS.selected, QS.hovered = saveSel, saveHov
+      QS.IsWatched = saveIW
+      C_SuperTrack = saveST
+    end
     QS.selected = nil
     M.dirty = true run(1)
     check(not bf:IsShown(), "0.5.2b.7 B: nothing selected or tracked -> no areas")
@@ -5207,6 +5231,35 @@ do
         "0.5.2b.14 mapprobe: tier, error and skip reasons (" .. ln .. " | " .. ln2 .. " | " .. ln3 .. ")")
       M.extrasErr = nil
       NS.Stock.TextureOK = saveTOK
+      X.dotTier = nil
+      M.dirty = true run(5)
+    end
+    -- ===== 0.5.2b.15: UnitInRange secret-safe; /dm groupdot; force solid =====
+    do
+      local saveUIR = UnitInRange
+      local secret = { __secret = true }
+      issecretvalue = function(v) return type(v) == "table" and v.__secret == true end
+      UnitInRange = function() error("secret UnitInRange exploded") end
+      local okPos = { pcall(X.MemberPos, "party1") }
+      check(okPos[1] == true and type(okPos[2]) == "number", "0.5.2b.15 group: UnitInRange error does not kill MemberPos")
+      UnitInRange = function() return secret, secret end
+      local wx2 = select(1, X.MemberPos("party1"))
+      check(type(wx2) == "number", "0.5.2b.15 group: secret UnitInRange is treated as in range (still positioned)")
+      M.extrasErr = "stale"
+      M.DrawExtras()
+      check(M.extrasErr == nil, "0.5.2b.15 group: a clean DrawExtras clears extrasErr")
+      UnitInRange = saveUIR
+      issecretvalue = nil
+      X.forceSolid, X.dotTier = true, nil
+      M.dirty = true run(5)
+      check(mp.n == 2 and mp[1].tier == "solid" and mp[1]:IsShown(), "0.5.2b.15 group: /dm groupdot solid forces the bright square")
+      local lines = X.GroupDotReport()
+      local joined = table.concat(lines, "\n")
+      check(joined:find("groupdot: members 2", 1, true) and joined:find("force solid on", 1, true)
+        and joined:find("party1", 1, true) and joined:find("drawn screen", 1, true),
+        "0.5.2b.15 /dm groupdot report (" .. joined .. ")")
+      SlashCmdList.DARKMATTER("groupdot auto")
+      check(X.forceSolid == false, "0.5.2b.15 /dm groupdot auto restores normal dots")
       X.dotTier = nil
       M.dirty = true run(5)
     end
