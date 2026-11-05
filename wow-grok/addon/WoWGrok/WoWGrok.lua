@@ -156,6 +156,8 @@ local function InitDB()
 	local s = db.settings
 	if s.autoRefresh == nil then s.autoRefresh = true end
 	if s.signal == nil then s.signal = true end
+	-- Let Grok search the web / X for answers (sent with each message; default on).
+	if s.webSearch == nil then s.webSearch = true end
 	s.echo = s.echo or "full" -- how much of each reply to print in the game chat
 	s.mode = s.mode or "pixel"
 	s.interval = s.interval or 20
@@ -981,6 +983,8 @@ function WoWGrok.Send(text, allow)
 	local tokens = {}
 	if c.resetNext then table.insert(tokens, "n") end
 	if allow and #allow > 0 then table.insert(tokens, "allow=" .. table.concat(allow, ",")) end
+	-- Only sent when search is off; older bridges ignore unknown flags.
+	if db.settings.webSearch == false then table.insert(tokens, "s=0") end
 	local flags = table.concat(tokens, ";")
 	local newSession = c.resetNext and true or nil
 	c.resetNext = nil
@@ -991,6 +995,7 @@ function WoWGrok.Send(text, allow)
 		text = ToHex(text),
 		cwd = ToHex(c.cwd),
 		newSession = newSession,
+		search = (db.settings.webSearch == false) and false or nil,
 		t = time(),
 	}
 	c.pendingId = id
@@ -1080,7 +1085,7 @@ function WoWGrok.Resend()
 		end
 	end
 	if not text then return end
-	run.outbound[c.pendingId] = { chat = c.id, cwd = c.cwd, flags = "", name = c.name, text = text, sentAt = GetTime() }
+	run.outbound[c.pendingId] = { chat = c.id, cwd = c.cwd, flags = (db.settings.webSearch == false) and "s=0" or "", name = c.name, text = text, sentAt = GetTime() }
 	run.sentAt = GetTime()
 	run.polls = 0
 	ScheduleNextPoll()
@@ -2083,6 +2088,26 @@ local function BuildUI()
 	send:SetHeight(30)
 	send:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
 	ui.send = send
+
+	-- "Web search" checkbox under Send: lets Grok look things up online (on by default).
+	local search = CreateFrame("CheckButton", "WoWGrokWebSearch", f, "UICheckButtonTemplate")
+	search:SetSize(22, 22)
+	search:SetPoint("TOPRIGHT", send, "BOTTOMRIGHT", 0, 0)
+	search:SetChecked(s.webSearch ~= false)
+	search:SetScript("OnClick", function(self)
+		db.settings.webSearch = self:GetChecked() and true or false
+	end)
+	search:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText("Web search")
+		GameTooltip:AddLine("On: Grok may search the web (Wowhead WoW Forever first) and X. Off: Grok answers from what it already knows.", 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	search:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	local searchLabel = search:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	searchLabel:SetPoint("RIGHT", search, "LEFT", 0, 1)
+	searchLabel:SetText("Web search")
+	ui.webSearch = search
 
 	-- Connect stands in for Send until the bridge has been seen (see UpdateConnect).
 	local connect = MakeButton(f, "Connect", SEND_W, WoWGrok.Connect)

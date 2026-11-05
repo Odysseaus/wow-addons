@@ -35,6 +35,21 @@ REPO = HERE.parent
 CAPTURE_PERMISSION_EXIT = 42
 
 
+def xai_tools_for_job(cfg: dict, job: dict) -> list[dict]:
+    """xAI search tools for one message.
+
+    Config ``webSearch`` / ``xSearch`` (default on) pick the tools; the addon's
+    in-game "Web search" checkbox (job ``search``; missing = on, so older addons
+    keep search) turns both off for that message.
+    """
+    if job.get("search", True) is False:
+        return []
+    return xai.response_tools(
+        web_search=bool(cfg.get("webSearch", True)),
+        x_search=bool(cfg.get("xSearch", True)),
+    )
+
+
 def capture_spawn_blocked(cap: dict) -> str | None:
     """Return a short reason if capture must not spawn, else None."""
     if not cap.get("enabled"):
@@ -578,13 +593,16 @@ def main(argv: list[str] | None = None) -> int:
                         timeout=timeout_ms / 1000.0,
                     )
                 else:
+                    tools = xai_tools_for_job(cfg, job)
                     result = xai.chat(
                         api_key=api_key,
                         model=cfg.get("model"),
                         api_base=cfg.get("apiBase"),
                         input=job.get("text") or "",
                         previous_response_id=prev_id,
+                        system=xai.SEARCH_INSTRUCTIONS if tools else None,
                         history=hist,
+                        tools=tools or None,
                         on_progress=on_progress,
                         timeout=timeout_ms / 1000.0,
                     )
@@ -871,6 +889,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  addonDir : {cfg.get('addonDir')}")
     print(f"  project  : {default_cwd}  ({default_src})")
     print(f"  provider : {provider}")
+    if provider != "claude":
+        _tools = xai_tools_for_job(cfg, {})
+        print(f"  tools    : {','.join(t['type'] for t in _tools) if _tools else '(none)'}")
     print(f"  model    : {active_model}")
     print(f"  api key  : {key_src}")
     if not cap.get("enabled"):

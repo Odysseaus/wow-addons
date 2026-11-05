@@ -132,6 +132,9 @@ def parse_flags(flags: str | None) -> dict:
             out["hello"] = True
         elif tok == "d":
             out["forget"] = True
+        elif tok == "s=0":
+            # In-game "Web search" off. Absent means on (older addons never send it).
+            out["search"] = False
         elif tok.startswith("allow="):
             out["allow"].extend(
                 s for s in (x.strip() for x in tok[6:].split(",")) if s
@@ -202,7 +205,7 @@ def parse_outbox(src: str | None) -> dict | None:
     cwd_m = re.search(r'\["cwd"\]\s*=\s*"([0-9a-fA-F]*)"', b)
     sess_m = re.search(r'\["session"\]\s*=\s*"([0-9a-zA-Z]*)"', b)
     chat_m = re.search(r'\["chat"\]\s*=\s*"([0-9a-zA-Z]*)"', b)
-    return {
+    out = {
         "id": id_,
         "session": (sess_m.group(1) if sess_m else "") or "",
         "chat": (chat_m.group(1) if chat_m else "") or "",
@@ -211,6 +214,9 @@ def parse_outbox(src: str | None) -> dict | None:
         "newSession": bool(re.search(r'\["newSession"\]\s*=\s*true', b)),
         "via": "reload",
     }
+    if re.search(r'\["search"\]\s*=\s*false', b):
+        out["search"] = False
+    return out
 
 
 def rule_for(d: dict) -> str:
