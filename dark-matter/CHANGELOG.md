@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.12
+
+- While Ready to Turn In is on (open or collapsed), a quest that is ready to hand in leaves the game's Quests list, so it is not shown twice. Quests you pinned stay. Changes wait until you are out of combat. Turn Ready to Turn In off and nothing changes from before.
+
 ## 0.5.2b.11
 
 Quest markers on the map now match the game more closely.

@@ -7096,12 +7096,60 @@ if MODE ~= "minimal" then
   check(not R._shown, "0.5.2b ready: the section can be turned off")
   NS.db.readySection = nil Tr.FillReady() Tr.Layout()
   check(R._shown, "0.5.2b ready: and back on")
+  -- ===== 0.5.2b.12: a ready quest leaves the game's Quests list while Ready to Turn In is on (pins stay) =====
+  do
+    local saveQL, saveSt, saveCQ, saveIC = NS.QL, NS.QS.Status, C_QuestLog, InCombatLockdown
+    local saveQ, saveAuto, saveDue, savePins = Tr.queue, NS.db.autoTrack, Tr.readyDropDue, NS.db.keepTracked
+    local saveNB, saveB, saveZP, saveOwn, saveOwnAt, saveWatch = Tr.nextBatch, Tr.batches, Tr.zonePending, Tr.own, Tr.ownAt, Tr.watch
+    local W = { [701] = true, [702] = true, [703] = true }
+    local READY = { [701] = true, [703] = true }
+    NS.QL = { CanWatch = function() return true end, IsWatched = function(e) return W[e.id] == true end,
+      SetWatched = function(e, on) W[e.id] = on and true or nil return "ok" end }
+    NS.QS.Status = function(q) if READY[q] then return "ready" end return "progress" end
+    local LOG = { 701, 702, 703 }
+    C_QuestLog = setmetatable({ GetNumQuestLogEntries = function() return #LOG + 1 end,
+      GetInfo = function(i) if i == 1 then return { isHeader = true, title = "Darnassus" } end return { questID = LOG[i - 1], title = "Q" .. LOG[i - 1] } end },
+      { __index = saveCQ })
+    NS.db.keepTracked = { [703] = true }
+    local function flush(t) Tr.queue = {} for k = 1, 6 do Tr.Tick(t + k * 2) end end
+    for _, auto in ipairs({ false, true }) do
+      NS.db.autoTrack = auto
+      local tag = auto and " (auto-track on)" or " (auto-track off)"
+      W[701], W[702], W[703] = true, true, true
+      local fight = true
+      InCombatLockdown = function() return fight end
+      Tr.OnEvent("QUEST_LOG_UPDATE") Tr.Tick(TIME_NOW + 100) Tr.Tick(TIME_NOW + 103)
+      check(W[701] and W[702] and W[703], "0.5.2b.12 tracker: nothing is unwatched in combat" .. tag)
+      fight = false
+      Tr.OnEvent("PLAYER_REGEN_ENABLED")
+      for k = 1, 6 do Tr.Tick(TIME_NOW + 110 + k * 2) end
+      check(not W[701] and W[702] and W[703], "0.5.2b.12 tracker: after combat the ready quest is unwatched, the pinned ready one kept" .. tag)
+      NS.db.readySection = false
+      W[701] = true
+      Tr.OnEvent("QUEST_LOG_UPDATE") for k = 1, 6 do Tr.Tick(TIME_NOW + 130 + k * 2) end
+      check(W[701] and W[702] and W[703], "0.5.2b.12 tracker: with Ready to Turn In off the ready quest stays watched" .. tag)
+      NS.db.readySection = nil
+    end
+    -- Plan: ZoneSet still wants the ready quest; Plan alone leaves it out (unless pinned)
+    local log = Tr.ReadLog()
+    local zs = Tr.ZoneSet(log)
+    check(zs[703] == true, "0.5.2b.12 tracker: Tr.ZoneSet itself is unchanged (pins still in it)")
+    NS.db.readySection = false
+    local plan1 = Tr.Plan()
+    NS.db.readySection = nil
+    InCombatLockdown = saveIC
+    NS.QL, NS.QS.Status, C_QuestLog = saveQL, saveSt, saveCQ
+    Tr.queue, NS.db.autoTrack, Tr.readyDropDue, NS.db.keepTracked = saveQ, saveAuto, saveDue, savePins
+    Tr.nextBatch, Tr.batches, Tr.zonePending, Tr.own, Tr.ownAt, Tr.watch = saveNB, saveB, saveZP, saveOwn, saveOwnAt, saveWatch
+    check(type(plan1) == "table", "0.5.2b.12 tracker: Plan runs with the section off")
+  end
   -- the Quests tab and the Quest Log panel: a Ready to Turn In group on top
   local QT = NS.tabs.quests
   local rq = QT.Ready()
   check(#rq == 1 and rq[1].questID == 102 and QT.READY_TITLE == "Ready to Turn In", "0.5.2b ready: the Quests tab and the panel get a Ready to Turn In group")
   -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat
   QWATCH = { [6] = true }
+  NS.db.readySection = false  -- 0.5.2b.12: quest 102 (index 3) is ready; with the section off these zone tests keep their old meaning
   for k in pairs(P) do P[k] = nil end
   Tr.watch, Tr.own = nil, {}
   Tr.Diff()
@@ -7320,6 +7368,7 @@ if MODE ~= "minimal" then
     QL.Forget() Tr.Diff()
     for k in pairs(P) do P[k] = nil end
   end
+  NS.db.readySection = nil
   check(Tr.PIN_SIZE >= 17 and Tr.PIN_SIZE <= 18, "0.5.2b.1 tracker: keep pins 17-18 px (were 14)")
   -- item 5 stays out: nothing is ever registered with the game's tracker (its quest item buttons call protected code)
   do
