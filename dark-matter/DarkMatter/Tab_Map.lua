@@ -669,8 +669,10 @@ local function Layer(id, level)
   local L = M.layers[id]
   local force = M.SoloCoastMask(id)
   local baked = M.BakedCoastFile(id)
+  -- 0.5.2b.22: the city floor (the open you are looking at) is one solid picture, not a feathered inset
+  local solid = M.cityFloor and M.cityFloor[id]
   -- rebuilt when a solo-coast zone was drawn as a plain rectangle, or the baked file arrived / went away
-  local stale = L and ((baked and L.baked ~= baked) or (not baked and L.baked) or (force and not baked and not L.mask and not L.coastTried))
+  local stale = L and ((baked and L.baked ~= baked) or (not baked and L.baked) or (force and not baked and not L.mask and not L.coastTried) or (solid and L.feather) or (L.cityFloor and not solid))
   if stale then
     if L.frame then L.frame:Hide() end
     M.layers[id] = nil
@@ -678,7 +680,10 @@ local function Layer(id, level)
   end
   if L then return L end
   L = NewLayer(id, level, canvas, force or nil)
-  if L then M.layers[id] = L end
+  if L then
+    if solid then L.feather, L.cityFloor = false, true end
+    M.layers[id] = L
+  end
   return L
 end
 -- 0.5.2b.6.2: put a built layer on its host at screen px (l, t), sc screen px per art texel. A masked layer is drawn
@@ -1479,6 +1484,30 @@ function M.CityParent(cont, z)
 end
 
 local function Hide(L) if not M.dry then L.frame:Hide() end L.shown = false end
+-- 0.5.2b.22: after the close-up planes exist, put every focused capital one level above the highest
+-- of them (they sit on closeHost + 1). Pins (M.over) stay above the floor. A fixed canvas+9 lost
+-- in Forever when a plane's real level was higher than the stub's.
+function M.RaiseCities()
+  if not closeHost then return end
+  local top = (closeHost:GetFrameLevel() or 0) + 1
+  if CU and CU.planes then
+    for _, P in pairs(CU.planes) do
+      local f = P.f
+      local lv = f and f.GetFrameLevel and f:GetFrameLevel()
+      if type(lv) == "number" and lv > top then top = lv end
+    end
+  end
+  local cityLv = top + 1
+  local any = false
+  for _, L in pairs(M.layers) do
+    if L.aboveTiles and L.frame then
+      any = true
+      if L.frame:GetFrameLevel() ~= cityLv then L.frame:SetFrameLevel(cityLv) end
+      if L.coreFrame and L.coreFrame:GetFrameLevel() ~= cityLv + 1 then L.coreFrame:SetFrameLevel(cityLv + 1) end
+    end
+  end
+  if any and over and over:GetFrameLevel() <= cityLv + 1 then over:SetFrameLevel(cityLv + 2) end
+end
 function M.Layout()
   M.dirty = false
   local dry = M.dry
@@ -1521,6 +1550,7 @@ function M.Layout()
   local base = canvas:GetFrameLevel()
   local zf = M.zfade or {}
   M.zfade = zf
+  M.cityFloor = {}
   for _, c in ipairs(ContList()) do
     local cl = Layer(c.id, 2)
     local a = M.ContAlpha(c.id)
@@ -1555,9 +1585,14 @@ function M.Layout()
             if pendingCity or (M.focusCity == z.id and fills) or fr >= 0.85 then
               d = a
             end
-            -- 0.5.2b.21: the city floor is the picture you are looking at (this open, or it fills the view).
-            -- It has to sit above the close-up tiles or Dun Morogh's snow covers Ironforge.
-            above = pendingCity or (M.focusCity == z.id and (fills or fr >= 0.85)) or (M.fitCapCity == z.id and (fills or fr >= 0.45))
+            -- 0.5.2b.22: any time this capital is the focus (the open, the view centre, or the deep cap),
+            -- its floor is raised above the close-up tiles after those planes exist. A solid picture
+            -- (no feather) when it actually fills the view, so snow cannot show through the rim.
+            above = pendingCity or M.focusCity == z.id or M.fitCapCity == z.id
+            if pendingCity or fr >= 0.85 or (fills and (M.focusCity == z.id or M.fitCapCity == z.id)) then
+              M.cityFloor = M.cityFloor or {}
+              M.cityFloor[z.id] = true
+            end
           end
         elseif masked or coast then d = a * maskIn -- masked continent, or a solo-coast zone on its own
         else d = a * M.ZoneIn(z) * (dry and (isFocus and 1 or 0) or (zf[z.id] or 0)) end
@@ -1569,17 +1604,13 @@ function M.Layout()
       if d >= 0.01 then zl = Layer(z.id, 3) else zl = M.layers[z.id] end
       if zl then
         zl.wantOv = true
-        -- 0.5.2b.21: closeHost is canvas+7 and each tile plane is one level higher, so a focused capital
-        -- uses 9 (above those planes). A city that is only fading in over its zone stays at 6, under the tiles.
+        zl.aboveTiles = above or false
+        -- under the tiles until RaiseCities(), which runs after the close-up planes exist
         local lv = isCity and 6 or ((isFocus or masked or coast) and 4 or 3)
-        if above then lv = 9 end
         if zl.level ~= lv then
           zl.level = lv
           zl.frame:SetFrameLevel(base + lv)
           if zl.coreFrame then zl.coreFrame:SetFrameLevel(base + lv + 1) end -- 0.5.2b.8: the core pass, above every soft mask
-        end
-        if lv >= 9 and over and over:GetFrameLevel() < base + lv + 2 then
-          over:SetFrameLevel(base + lv + 2) -- markers and the player arrow stay above the city floor
         end
         local x1, x2, y1, y2 = WorldRect(z.id)
         Show(zl, x1, x2, y1, y2, d)
@@ -1602,6 +1633,7 @@ function M.Layout()
     local clock = debugprofilestop
     local t0 = type(clock) == "function" and clock()
     M.close = CU.Layout(ctx)
+    M.RaiseCities()
     if t0 then
       local ms = clock() - t0
       local st = M.closeMs or { n = 0, sum = 0, max = 0 }
@@ -2824,9 +2856,9 @@ local function Build(body)
   over = CreateFrame("Frame", nil, canvas)
   over:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
   over:SetSize(VW(), VH())
-  over:SetFrameLevel(canvas:GetFrameLevel() + 12) -- above a focused capital (level 9) and its core pass
+  over:SetFrameLevel(canvas:GetFrameLevel() + 12) -- pins; RaiseCities lifts this further if a tile plane is higher
   -- 0.5.1.4: the close-up minimap tiles sit above the zone layers (levels 1-6) and under the markers.
-  -- 0.5.2b.21: a capital you are looking at is raised to level 9, above this host's tile planes.
+  -- 0.5.2b.22: a focused capital is raised above those tile planes after they are drawn (M.RaiseCities).
   closeHost = CreateFrame("Frame", nil, canvas)
   closeHost:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
   closeHost:SetSize(VW(), VH())
@@ -3181,6 +3213,40 @@ end
 -- shows the city floor map over the exterior, like Forever's city uiMapID.
 -- 0.5.2b.20: Forever's GetDisplayableMapForPlayer often returns that host zone, so a walk which starts there never
 -- sees 1455. Prefer the player's own map (or a parent of it) when that map is a capital with art, then Displayable.
+-- 0.5.2b.22: the capital whose rect contains the player, even when Forever's player map and
+-- Displayable helper both name the host zone (Dun Morogh while you are standing in Ironforge).
+function M.CityAtPlayer(p)
+  local pm = (p and p.map) or (MD.PlayerMap and MD.PlayerMap())
+  local cont = (p and p.cont) or (pm and MD.ContinentOf(pm))
+  if not cont then return nil end
+  local x, y
+  local wx, wy = p and p[1], p and p[2]
+  local place = Place(cont)
+  if wx and wy and place and place[2] > place[1] and place[4] > place[3] then
+    x = (wx - place[1]) / (place[2] - place[1])
+    y = (wy - place[3]) / (place[4] - place[3])
+  else
+    x, y = MD.PlayerPos(cont)
+    if not x then
+      local zid = pm and (MD.ZoneOf(pm) or pm)
+      local ze = zid and MD.ZoneEntry(zid)
+      local zx, zy = ze and MD.PlayerPos(zid)
+      if zx and ze.r and ze.r[2] > ze.r[1] and ze.r[4] > ze.r[3] then
+        x = ze.r[1] + zx * (ze.r[2] - ze.r[1])
+        y = ze.r[3] + zy * (ze.r[4] - ze.r[3])
+      end
+    end
+  end
+  if not x then return nil end
+  local best
+  for _, z in ipairs(MD.Zones(cont) or {}) do
+    if MD.IsCityID(z.id) and MD.Art(z.id) and z.r and x >= z.r[1] and x <= z.r[2] and y >= z.r[3] and y <= z.r[4]
+      and (not best or z.area < best.area) then
+      best = z
+    end
+  end
+  return best and best.id
+end
 function M.OpeningMap(p)
   local function accept(m)
     if not m then return nil end
@@ -3190,6 +3256,11 @@ function M.OpeningMap(p)
     end
     local c = (M.hasWorld and m == M.world) and nil or (MD.Is(m, "continent") and m or MD.ContinentOf(m))
     if M.hasWorld or not c or c == (p and p.cont) then return m end
+  end
+  local standing = M.CityAtPlayer(p)
+  if standing then
+    local hit = accept(standing)
+    if hit then return hit end
   end
   local pm = MD.PlayerMap and MD.PlayerMap()
   if pm then

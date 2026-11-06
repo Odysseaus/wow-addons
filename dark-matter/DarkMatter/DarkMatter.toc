@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.21: capitals draw above the close-up tiles, M opens centred on you, and the Map picture matches the game's scroll interior. Earlier: 0.5.2b.9 map painted zone art at every zoom level, close-up tiles only in the last wheel step.
+## Notes: Dark Matter 0.5.2b.22: a capital you are standing in opens its own floor, drawn above the close-up tiles. Earlier: 0.5.2b.21 map hole, M centres on you, Batch 1 coast bakes.
 ## Author: Odysseaus
-## Version: 0.5.2b.21
+## Version: 0.5.2b.22
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

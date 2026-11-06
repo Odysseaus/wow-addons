@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2b.22
+
+- **Ironforge's floor stays above the snow.** In 0.5.2b.21 the city picture was raised to a fixed frame level. On Forever the close-up tile planes still painted Dun Morogh over it at the deepest zoom. After those planes are drawn, a capital you are looking at is placed one level above the highest of them. The pins stay above the floor. The floor picture is solid (not feathered) when it fills the view, so snow does not show through the rim.
+- **Standing in a capital opens that city.** If your position is inside a capital's rectangle, the map opens on that city even when Forever's "which map" helper and your player map both name the land around it (Dun Morogh instead of Ironforge). The extra zoom cap still clears when you leave the city, close the window, or open another tab.
+
 ## 0.5.2b.21
 
 - **Ironforge (and the other capitals) stay above the close-up tiles.** When a capital is the map you are looking at, its floor picture is drawn above the deepest minimap tiles, so Dun Morogh's snow does not cover Ironforge. A city that is only fading in over its zone stays under the tiles. The extra zoom that open needs is cleared when you leave that city, close the window, or open another tab.

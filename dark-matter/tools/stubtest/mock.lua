@@ -3804,7 +3804,9 @@ do
     [947] = { "Azeroth", 1, 0 },
     [1414] = { "Kalimdor", 2, 947 }, [1415] = { "Eastern Kingdoms", 2, 947 },
     [1426] = { "Dun Morogh", 3, 1415, { 0.40, 0.54, 0.48, 0.62 } },
-    [1455] = { "Ironforge", 3, 1415, { 0.47, 0.50, 0.51, 0.54 } },
+    -- north edge of Dun Morogh, so the default player (continent y ~0.53) is in the zone but not in the city.
+    -- 0.5.2b.22 opens a capital when the player stands inside its rect; the nested-Ironforge test places them there.
+    [1455] = { "Ironforge", 3, 1415, { 0.47, 0.50, 0.48, 0.51 } },
     [1432] = { "Loch Modan", 3, 1415, { 0.54, 0.64, 0.47, 0.59 } },
     [1429] = { "Elwynn Forest", 3, 1415, { 0.40, 0.52, 0.70, 0.80 } },
     [1453] = { "Stormwind City", 3, 1415, { 0.40, 0.44, 0.70, 0.75 } }, -- inside Elwynn, like the game
@@ -4224,6 +4226,29 @@ do
       check(type(openLine) == "string" and #openLine <= 90 and openLine:find("opening 1455", 1, true) and openLine:find("player 1455", 1, true)
         and openLine:find("displayable 1426", 1, true) and openLine:find("focusCity 1455", 1, true),
         "0.5.2b.20 mapprobe: opening / player / displayable / focusCity (" .. tostring(openLine) .. ")")
+      -- 0.5.2b.22: Forever names Dun Morogh (player map and Displayable) while you stand inside Ironforge
+      do
+        MapUtil.GetDisplayableMapForPlayer = function() return 1426 end
+        PLAYER.map = 1426
+        C_Map.GetPlayerMapPosition = function(id)
+          local spot = { x = 0.50, y = 0.53, GetXY = function(s) return s.x, s.y end }
+          if id == 1426 or id == 1455 then return spot end
+          if id == 1415 then
+            local r = MAPS[1426][4]
+            return { x = r[1] + 0.50 * (r[2] - r[1]), y = r[3] + 0.53 * (r[4] - r[3]), GetXY = function(s) return s.x, s.y end }
+          end
+        end
+        MD.Forget()
+        local om = M.OpeningMap({ cont = 1415, map = 1426 })
+        check(MD.PlayerMap() == 1426 and MD.DisplayableForPlayer() == 1426 and om == 1455,
+          string.format("0.5.2b.22 map: standing in Ironforge opens 1455 even when Displayable names the exterior (open %s, player %s, displayable %s)",
+            tostring(om), tostring(MD.PlayerMap()), tostring(MD.DisplayableForPlayer())))
+        check(M.CentreOnPlayer() == true, "0.5.2b.22 map: CentreOnPlayer from inside the city rect")
+        for _ = 1, 12 do M.Tick(0.05) end
+        check(M.focusCity == 1455 and M.fitCapCity == 1455,
+          string.format("0.5.2b.22 map: that open is the city floor (focus %s, fitCapCity %s)", tostring(M.focusCity), tostring(M.fitCapCity)))
+        PLAYER.map = 1455
+      end
       -- 0.5.2b.21: terrain tiles are loaded and the deepest zoom actually draws them; the city floor wins
       do
         local saveTiles, saveLayer = NS.MinimapTiles, NS.db.map.layer
@@ -4239,13 +4264,20 @@ do
         M.ViewLevelAt(cx, cy, M.MaxLevel())
         for _ = 1, 5 do M.Tick(0.05) end
         local cityL = M.layers[1455]
-        local plane = NS.MapCloseUp.planes and NS.MapCloseUp.planes[1415]
-        local planeLv = plane and plane.f and plane.f:GetFrameLevel() or (M.closeHost and M.closeHost:GetFrameLevel() or 0)
+        local topPlane, nPlanes, hostLv = -1, 0, M.closeHost and M.closeHost:GetFrameLevel() or 0
+        for _, P in pairs(NS.MapCloseUp.planes or {}) do
+          if P.f and P.f:IsShown() then
+            nPlanes = nPlanes + 1
+            topPlane = math.max(topPlane, P.f:GetFrameLevel() or 0)
+          end
+        end
         local pieces = M.close and M.close.pieces or 0
         local cityLv = cityL and cityL.frame and cityL.frame:GetFrameLevel() or -1
-        check(cityL and cityL.shown and (cityL.alpha or 0) > 0.5 and pieces > 0 and cityLv > planeLv and M.focusCity == 1455,
-          string.format("0.5.2b.21 map: Ironforge floor (level %s) is above the close-up tiles (plane %s, %d pieces) at zoom %s",
-            tostring(cityLv), tostring(planeLv), pieces, tostring(select(1, M.ZoomLevel()))))
+        local overLv = M.over and M.over:GetFrameLevel() or 0
+        check(cityL and cityL.shown and (cityL.alpha or 0) > 0.5 and not cityL.feather and pieces > 0 and nPlanes > 0
+          and cityLv > topPlane and cityLv > hostLv and overLv > cityLv and M.focusCity == 1455,
+          string.format("0.5.2b.22 map: Ironforge floor (level %s, host %s, top plane %s, pins %s, %d planes, %d pieces) is above every close-up tile and under the pins at zoom %s",
+            tostring(cityLv), tostring(hostLv), tostring(topPlane), tostring(overLv), nPlanes, pieces, tostring(select(1, M.ZoomLevel()))))
         check(M.fitCap ~= nil and M.fitCapCity == 1455, "0.5.2b.21 map: a city open may zoom past the usual cap (fitCap set)")
         M.FlyTo(1432) -- Loch Modan: not the city, so the deep cap must go
         for _ = 1, 40 do M.Tick(0.05) end
