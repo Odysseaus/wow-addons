@@ -142,6 +142,9 @@ end
 P.ShowList, P.ShowDetail = ShowList, ShowDetail
 
 function P.Build(win)
+  -- 0.5.2b.27: a rebuilt window leaves the old panel on a hidden parent. Show() there never appears until /reload.
+  local parent = frame and frame.GetParent and frame:GetParent()
+  if parent and win and parent ~= win then P.Drop() end
   if frame then return frame end
   local t = T()
   if not (win and t and t.NewView) then return nil end
@@ -240,6 +243,19 @@ function P.SetOpen(on)
 end
 function P.Toggle() P.SetOpen(not P.Wanted()) end
 function P.IsShown() return frame ~= nil and frame:IsShown() end
+-- 0.5.2b.27: while the Map tab is on screen and the panel is wanted, make sure it is actually showing.
+-- A missed OnShow, or a panel left on the previous window, used to stay blank until /reload.
+function P.Ensure()
+  local win = _G.DarkMatterFrame
+  local cur = NS.windowParts and NS.windowParts.current
+  local mapOn = win and win.IsShown and win:IsShown() and (cur == "map" or (cur == nil and NS.db and NS.db.tab == "map"))
+  if not (mapOn and P.Wanted()) then return false end
+  local parent = frame and frame.GetParent and frame:GetParent()
+  if parent and parent ~= win then P.Drop() end
+  P.mapShown = true
+  if not (frame and frame:IsShown()) then P.Sync(true) end
+  return frame ~= nil and frame:IsShown()
+end
 -- the window is being built again: the panel hung off the old one
 function P.Drop()
   if frame then frame:Hide() end

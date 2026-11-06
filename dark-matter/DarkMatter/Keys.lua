@@ -18,11 +18,15 @@ local owner, regen
 local function InCombat() return type(InCombatLockdown) == "function" and InCombatLockdown() == true end
 function K.Wanted() return not (NS.db and NS.db.mlKeys == false) end
 
--- 0.5.2b.10: M toggles the Map tab, L the Quests tab: the same key on its own tab closes the window, else that tab opens
+-- 0.5.2b.10: M toggles the Map tab, L the Quests tab: the same key on its own tab closes the window, else that tab opens.
+-- 0.5.2b.27: the tab on screen decides (windowParts.current). A stale saved tab used to make M and L open again
+-- instead of closing, and they stayed that way until a reload.
 function K.Press(which)
   local f = _G.DarkMatterFrame
   local tab = which == "log" and "quests" or "map"
-  if f and f:IsShown() and NS.db and NS.db.tab == tab then
+  local shown = f and f.IsShown and f:IsShown()
+  local cur = (NS.windowParts and NS.windowParts.current) or (NS.db and NS.db.tab)
+  if shown and cur == tab then
     NS.ToggleWindow(false)
     return "closed"
   end
@@ -57,6 +61,13 @@ local function Build()
   K.owner = owner
 end
 
+-- true when this key still runs our button. GetBindingAction's second argument asks for the override.
+function K.Bound(key, click)
+  if type(_G.GetBindingAction) ~= "function" then return true end
+  local ok, act = pcall(_G.GetBindingAction, key, true)
+  if not ok or type(act) ~= "string" or act == "" then return false end
+  return act:find(click, 1, true) ~= nil
+end
 -- set (or clear) our override bindings; out of combat only, else queued until PLAYER_REGEN_ENABLED
 function K.Apply()
   Build()
@@ -109,22 +120,44 @@ function K.Set(on)
 end
 -- 0.5.2b.10: re-apply when the player rebinds (UPDATE_BINDINGS); our own override changes can fire it too, so ignore
 -- the ones that come while we are applying
-local busy
+local busy, again
 local Apply0 = K.Apply
 function K.Apply(...)
-  if busy then return "busy" end
+  if busy then again = true return "busy" end
   busy = true
   local ok, r = pcall(Apply0, ...)
   busy = false
   if not ok then error(r, 0) end
   return r
 end
+-- 0.5.2b.27: bindings are session overrides. A loading screen, a rebind, or a combat boundary can clear them,
+-- and an UPDATE_BINDINGS that arrives while we are applying used to be ignored. Put them back out of combat.
+function K.Ensure()
+  if not K.Wanted() then return K.Apply() end
+  if K.applied and K.Bound("M", "DarkMatterKeyMap") and K.Bound("L", "DarkMatterKeyLog") then return "on" end
+  return K.Apply()
+end
 local watch
 function K.Start()
   if not watch then
     watch = CreateFrame("Frame") -- private
-    watch:SetScript("OnEvent", function() K.Apply() end)
+    local acc = 0
+    watch:SetScript("OnEvent", function(_, ev)
+      if busy then again = true return end
+      if ev == "PLAYER_REGEN_ENABLED" and K.pending then K.pending = nil end
+      K.Apply()
+    end)
+    watch:SetScript("OnUpdate", function(_, dt)
+      acc = acc + (dt or 0)
+      if again and not busy then again = nil K.Apply() end
+      if acc < 2 then return end
+      acc = 0
+      if K.Wanted() and not InCombat() then K.Ensure() end
+    end)
     pcall(watch.RegisterEvent, watch, "UPDATE_BINDINGS")
+    pcall(watch.RegisterEvent, watch, "PLAYER_ENTERING_WORLD")
+    pcall(watch.RegisterEvent, watch, "PLAYER_REGEN_ENABLED")
+    pcall(watch.RegisterEvent, watch, "ZONE_CHANGED_NEW_AREA")
   end
   return K.Apply()
 end

@@ -675,7 +675,7 @@ function Tr.ReadyList()
   table.sort(list, function(a, b) return a.idx < b.idx end)
   for _, e in ipairs(list) do
     -- 0.5.2b.25: this area only. A turn-in we cannot place stays; one we know is somewhere else does not.
-    if QS and QS.Status(e.id) == "ready" and (not QS.AtPlayer or QS.AtPlayer(e.id)) then out[#out + 1] = e end
+    if QS and QS.Status(e.id) == "ready" and (not QS.ReadyHere or QS.ReadyHere(e.id)) then out[#out + 1] = e end
   end
   return out
 end
@@ -814,7 +814,7 @@ function Tr.ReadyDropOn() return not (DB() and DB().readySection == false) end
 local function DropReady(id)
   -- only a turn-in that is on the Ready list (this area). One in another zone stays on the game's list.
   return Tr.ReadyDropOn() and not Tr.IsPinned(id) and NS.QS ~= nil and NS.QS.Status(id) == "ready"
-    and (not NS.QS.AtPlayer or NS.QS.AtPlayer(id))
+    and (not NS.QS.ReadyHere or NS.QS.ReadyHere(id))
 end
 Tr.DropReady = DropReady
 function Tr.ReadyDrops(log, w)
@@ -842,7 +842,14 @@ function Tr.Plan()
   local want = Tr.ZoneSet(log)
   for id in pairs(want) do if DropReady(id) then want[id] = nil end end
   local q = {}
-  for id in pairs(w) do if not want[id] then q[#q + 1] = { e = log[id], want = false } end end
+  for id in pairs(w) do
+    if not want[id] then
+      -- 0.5.2b.27: a ready quest whose turn-in is somewhere else stays on the objective tracker.
+      -- Auto-track must not drop it just because the log header is another zone. A pinned quest is already kept.
+      local elsewhere = log[id] and NS.QS and NS.QS.Status(id) == "ready" and NS.QS.ReadyHere and not NS.QS.ReadyHere(id)
+      if not elsewhere then q[#q + 1] = { e = log[id], want = false } end
+    end
+  end
   local adds = {}
   for id in pairs(want) do if not w[id] then adds[#adds + 1] = { e = log[id], want = true } end end
   table.sort(q, function(a, b) return a.e.idx < b.e.idx end)

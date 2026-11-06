@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.26: original thin class frames restored. Sidebar and map still meet the wood, and Ready to Turn In is still the zone or city you are in.
+## Notes: Dark Matter 0.5.2b.27: Ready lists the turn-in zone, and M, L, and the quest panel keep working without a reload.
 ## Author: Odysseaus
-## Version: 0.5.2b.26
+## Version: 0.5.2b.27
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

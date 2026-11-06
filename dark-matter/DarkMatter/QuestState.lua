@@ -200,6 +200,57 @@ local function MapNamed(name)
     if type(r.name) == "string" and r.name:lower() == low then return r.id end
   end
 end
+-- A point on a zone map that sits inside a capital belongs to that city (Ironforge, not Dun Morogh).
+function QS.PlaceOnMap(map, x, y)
+  map = N(map)
+  if not map then return nil end
+  local MD = NS.MapData
+  if not (MD and MD.IsCityID and MD.ZoneEntry and MD.Zones and N(x) and N(y)) then return map end
+  if MD.IsCityID(map) then return map end
+  local ze = MD.ZoneEntry(map)
+  if not (ze and ze.r and ze.cont and ze.r[2] > ze.r[1] and ze.r[4] > ze.r[3]) then return map end
+  local cx = ze.r[1] + x * (ze.r[2] - ze.r[1])
+  local cy = ze.r[3] + y * (ze.r[4] - ze.r[3])
+  local best
+  for _, z in ipairs(MD.Zones(ze.cont) or {}) do
+    if MD.IsCityID(z.id) and z.r and cx >= z.r[1] and cx <= z.r[2] and cy >= z.r[3] and cy <= z.r[4]
+      and (not best or z.area < best.area) then best = z end
+  end
+  return best and best.id or map
+end
+-- 0.5.2b.27: where a finished quest is turned in. The log header is the category (often where you picked it up).
+-- The waypoint, then a POI on a map, is the place you actually go. Nil when the game gives neither.
+function QS.TurnInMap(q)
+  q = N(q)
+  if not q then return nil end
+  local MD = NS.MapData
+  local wm, wx, wy = Call("C_QuestLog.GetNextWaypoint", q)
+  if N(wm) and wm > 0 and N(wx) and N(wy) then return QS.PlaceOnMap(wm, wx, wy) end
+  local here = MD and MD.PlayerArea and MD.PlayerArea()
+  if here and OnMap(here, q) then return here end
+  if here and Fn("C_QuestLog.GetNextWaypointForMap") then
+    local x, y = Call("C_QuestLog.GetNextWaypointForMap", q, here)
+    if N(x) and N(y) then return QS.PlaceOnMap(here, x, y) end
+  end
+  if Call("C_QuestLog.IsOnMap", q) == true and MD and MD.PlayerMap() then
+    local pm = MD.PlayerMap()
+    if not (here and MD.IsCityID(here) and not MD.IsCityID(pm)) then return MD.ZoneOf(pm) or pm end
+  end
+  if not MD then return nil end
+  local hits = {}
+  local function scan(cont)
+    for _, z in ipairs(MD.Zones(cont) or {}) do
+      if OnMap(z.id, q) then hits[#hits + 1] = z.id end
+    end
+  end
+  local cont = here and MD.ContinentOf(here)
+  if cont then scan(cont) end
+  for _, c in ipairs(MD.Continents() or {}) do if c.id ~= cont then scan(c.id) end end
+  if here then
+    for _, id in ipairs(hits) do if id == here or QS.SameArea(id, here) then return id end end
+  end
+  return hits[1]
+end
 -- 0.5.2b.25: the map a quest belongs to, when the game or the quest log says so. Nil when it cannot be told
 -- (a turn-in with no zone is kept on the Ready list rather than hidden).
 function QS.AreaOf(q)
@@ -247,9 +298,21 @@ function QS.SameArea(questArea, here)
   local hz = MD.ZoneOf(here) or here
   return z == hz
 end
--- Show this quest on Ready to Turn In / at-my-location? A header that names your area shows. A header or a map
--- point we can place somewhere else does not. A turn-in we cannot place at all still shows.
+-- Show this quest on Ready to Turn In? The turn-in place decides. The log header is used only when the game
+-- has no waypoint and no map point (a handoff with a real destination is not kept in its old category).
+-- A quest we cannot place at all still shows. A placed quest from another zone does not.
+function QS.ReadyHere(q)
+  local MD = NS.MapData
+  local here = MD and MD.PlayerArea and MD.PlayerArea()
+  if not here then return true end
+  local turn = QS.TurnInMap(q)
+  if turn then return QS.SameArea(turn, here) == true end
+  local qa = QS.AreaOf(q)
+  if not qa then return true end
+  return QS.SameArea(qa, here) == true
+end
 function QS.AtPlayer(q)
+  if QS.Status(q) == "ready" then return QS.ReadyHere(q) end
   local MD = NS.MapData
   local here = MD and MD.PlayerArea and MD.PlayerArea()
   if not here then return true end

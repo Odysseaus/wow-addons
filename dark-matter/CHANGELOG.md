@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.27
+
+- **Ready to Turn In follows the turn-in, not the log category.** A finished quest is listed for the zone or city where you hand it in. The log header is where it was filed (The Defias Brotherhood stays under Westfall while Wiley is in Lakeshire). The game's next waypoint, then a point on a map, decides. A turn-in in another zone stays on the objective tracker; it is not removed and it is not listed here. A pinned quest is unchanged. A capital is still its own area.
+- **M and L keep closing the window.** Closing follows the tab on screen, so a stale saved tab cannot leave the window stuck open. If the override is cleared (a loading screen, combat, or a rebind), it is put back out of combat, including when the rebind arrives while the keys are being applied.
+- **The docked quest log comes back without a reload.** If it was left on a previous window, or the map's startup failed before showing it, the map puts it back while that tab is open.
+
 ## 0.5.2b.26
 
 - **Original thin class frames.** The nine class corner and edge pictures (`cls-<class>-fc.tga`, `-ftb.tga`, `-flr.tga`) are the 0.5.2b.19 art again (commit a238294), byte for byte. The thick side bars from 0.5.2b.24 and the corner-arm pass from 0.5.2b.25 are not used. Repeat lengths, top / bottom / left / right: warrior 146, 142, 146, 142; paladin 256, 176, 154, 176; hunter 238, 129, 204, 132; rogue 215, 129, 215, 129; priest 230, 240, 186, 240; shaman 225, 207, 150, 138; mage 172, 256, 172, 255; warlock 212, 188, 210, 156; druid 174, 144, 174, 144. The sidebar and map still meet the wood, and Ready to Turn In is still the zone or city you are in. Overlay art and coast pictures are unchanged.

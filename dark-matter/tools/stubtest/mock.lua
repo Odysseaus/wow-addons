@@ -7904,6 +7904,58 @@ if MODE ~= "minimal" then
     NS.MapData.Forget()
     if NS.tabs.quests and NS.tabs.quests.Refresh then NS.tabs.quests.Refresh() end
   end
+  -- 0.5.2b.27: a finished quest is Ready where you turn it in, not where the log filed it.
+  -- The Defias Brotherhood is under Westfall; Wiley in Lakeshire is the turn-in, on Redridge.
+  do
+    local saveInfo, saveBest, saveZone, saveReal, saveCQ, saveSt = C_Map.GetMapInfo, C_Map.GetBestMapForUnit, GetZoneText, GetRealZoneText, C_QuestLog, NS.QS.Status
+    local MAPS = {
+      [1415] = { name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+      [1433] = { name = "Redridge Mountains", mapType = 3, parentMapID = 1415 },
+      [1436] = { name = "Westfall", mapType = 3, parentMapID = 1415 },
+    }
+    C_Map.GetMapInfo = function(id) return MAPS[id] end
+    C_Map.GetBestMapForUnit = function() return 1433 end
+    GetZoneText = function() return "Redridge Mountains" end
+    GetRealZoneText = function() return "Redridge Mountains" end
+    local LOG = {
+      { isHeader = true, title = "Westfall" },
+      { questID = 901, title = "The Defias Brotherhood" },
+      { questID = 902, title = "The People's Militia" },
+    }
+    local WP = { [901] = { 1433, 0.273, 0.565 }, [902] = { 1436, 0.56, 0.52 } }
+    C_QuestLog = setmetatable({
+      GetNumQuestLogEntries = function() return #LOG end,
+      GetInfo = function(i) return LOG[i] end,
+      GetLogIndexForQuestID = function(q) for i, e in ipairs(LOG) do if e.questID == q then return i end end end,
+      IsComplete = function(q) return q == 901 or q == 902 end,
+      GetNextWaypoint = function(q) local w = WP[q] if w then return w[1], w[2], w[3] end end,
+      IsQuestWatched = function(q) return q == 902 end,
+    }, { __index = saveCQ })
+    NS.QS.Status = function(q) if q == 901 or q == 902 then return "ready" end return saveSt(q) end
+    NS.MapData.Forget()
+    local function ids(list)
+      local t = {}
+      for _, e in ipairs(list) do t[#t + 1] = e.questID or e.id end
+      table.sort(t)
+      return table.concat(t, ",")
+    end
+    check(NS.QS.TurnInMap(901) == 1433 and NS.QS.TurnInMap(902) == 1436,
+      "0.5.2b.27 ready: the waypoint is the turn-in (Defias 1433, Militia 1436), not the Westfall header")
+    check(NS.MapData.PlayerArea() == 1433, "0.5.2b.27 ready: the player area is Redridge (" .. tostring(NS.MapData.PlayerArea()) .. ")")
+    local rq = NS.tabs.quests.Ready()
+    check(ids(rq) == "901", "0.5.2b.27 ready: in Redridge the Lakeshire handoff is listed and the Westfall turn-in is not (" .. ids(rq) .. ")")
+    check(NS.Tracker.DropReady(901) == true and NS.Tracker.DropReady(902) == false,
+      "0.5.2b.27 ready: the local turn-in leaves the objective list; the other zone's turn-in stays")
+    local plan = NS.Tracker.Plan()
+    local dropped = false
+    for _, it in ipairs(plan) do if it.e and it.e.id == 902 and it.want == false then dropped = true end end
+    check(not dropped, "0.5.2b.27 ready: auto-track does not unwatch a ready quest whose turn-in is another zone")
+    C_Map.GetMapInfo, C_Map.GetBestMapForUnit = saveInfo, saveBest
+    GetZoneText, GetRealZoneText = saveZone, saveReal
+    C_QuestLog, NS.QS.Status = saveCQ, saveSt
+    NS.MapData.Forget()
+    if NS.tabs.quests and NS.tabs.quests.Refresh then NS.tabs.quests.Refresh() end
+  end
   -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat
   QWATCH = { [6] = true }
   NS.db.readySection = false  -- 0.5.2b.12: quest 102 (index 3) is ready; with the section off these zone tests keep their old meaning
@@ -8193,6 +8245,43 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("keys on")
   check(NS.db.mlKeys == true and binds.M == "CLICK DarkMatterKeyMap", "0.5.2b keys: /dm keys on")
   check(saved == 0, "0.5.2b keys: SaveBindings is never called")
+  -- 0.5.2b.27: M keeps opening and closing, a stale saved tab still closes, a lost override is put back,
+  -- and the quest panel comes back after it was left off the window
+  NS.ToggleWindow(false)
+  for i = 1, 4 do
+    TIME_NOW = TIME_NOW + 2
+    kb._scripts.OnClick(kb, "LeftButton", true)
+    check(DarkMatterFrame:IsShown() and NS.windowParts.current == "map", "0.5.2b.27 keys: M opens (" .. i .. ")")
+    TIME_NOW = TIME_NOW + 2
+    kb._scripts.OnClick(kb, "LeftButton", true)
+    check(not DarkMatterFrame:IsShown(), "0.5.2b.27 keys: M closes (" .. i .. ")")
+  end
+  TIME_NOW = TIME_NOW + 2
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  NS.db.tab = "quests"
+  check(NS.windowParts.current == "map", "0.5.2b.27 keys: the map stays on screen when the saved tab is stale")
+  TIME_NOW = TIME_NOW + 2
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.27 keys: M closes from the tab on screen")
+  TIME_NOW = TIME_NOW + 2
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(NS.QuestPanel.Ensure() and NS.QuestPanel.IsShown(), "0.5.2b.27 panel: the map shows the quest log")
+  NS.QuestPanel.Drop()
+  check(not NS.QuestPanel.IsShown(), "0.5.2b.27 panel: dropped off the window")
+  local okTick, tickErr = true, nil
+  for _ = 1, 12 do
+    local ok, err = pcall(NS.MapTab.Tick, 0.1)
+    if not ok then okTick, tickErr = false, err break end
+  end
+  check(okTick and NS.QuestPanel.IsShown(), "0.5.2b.27 panel: the map tick shows it again without a reload (" .. tostring(tickErr) .. ")")
+  GetBindingAction = function(key) if key == "M" or key == "L" then return "MOVEANDSTEER" end return "" end
+  K.applied = true
+  K.Ensure()
+  check(binds.M == "CLICK DarkMatterKeyMap" and binds.L == "CLICK DarkMatterKeyLog",
+    "0.5.2b.27 keys: a lost M/L override is put back (" .. tostring(binds.M) .. ", " .. tostring(binds.L) .. ")")
+  GetBindingAction = nil
+  NS.db.tab = NS.windowParts.current
+  NS.ToggleWindow(false)
   ClearOverrideBindings, SetOverrideBinding, SetOverrideBindingClick, SaveBindings = nil, nil, nil, nil
   -- 6. /dm trackerprobe
   local said = {}

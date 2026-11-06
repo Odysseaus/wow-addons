@@ -2374,6 +2374,12 @@ M.QuestClick = function(mk) return QuestClick(mk) end
 
 function M.Tick(dt)
   dt = math.min(dt or 0, 0.1)
+  -- 0.5.2b.27: if the docked quest log was missed, bring it back without a reload
+  M._panelAcc = (M._panelAcc or 0) + dt
+  if M._panelAcc >= 1 and NS.QuestPanel and NS.QuestPanel.Ensure then
+    M._panelAcc = 0
+    pcall(NS.QuestPanel.Ensure)
+  end
   -- 0.5.2b.7.2: the frame counter (0.5.2b.7.3: quest areas are drawn in the frame they move, after LayoutBlobs; MapExtras.lua)
   if M.ExtrasPreTick then local ok, e = pcall(M.ExtrasPreTick) if not ok then M.extrasErr = e end end
   M.ExploreTick(dt)
@@ -3565,7 +3571,12 @@ end
 NS.RegisterTab({
   id = "map", name = "Map", glyph = "map",
   Build = Build,
-  OnShow = function() Events(true) Start() if NS.QuestPanel then NS.QuestPanel.Sync(true) end end,
+  OnShow = function()
+    -- 0.5.2b.27: a failure while starting the map must not skip the quest panel
+    pcall(Events, true)
+    pcall(Start)
+    if NS.QuestPanel and NS.QuestPanel.Ensure then pcall(NS.QuestPanel.Ensure) end
+  end,
   OnHide = function()
     Events(false)
     if NS.QuestPanel then NS.QuestPanel.Sync(false) end
