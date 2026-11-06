@@ -4304,6 +4304,60 @@ do
       M.CentreOnPlayer(); for _ = 1, 25 do M.Tick(0.05) end
       M.pendingFit = nil -- so later SetFull/Refit does not re-cover the zone
       dm = M.layers[1426] -- Reset rebuilt layers; later sweep checks use this binding
+      -- 0.5.2b.23: zooming deep into the Ironforge rect fills the hole, same as the breadcrumb.
+      -- Zooming back out of that fill returns to Dun Morogh and drops the deep cap.
+      do
+        M.FlyTo(1426)
+        for _ = 1, 30 do M.Tick(0.05) end
+        local x1, x2, y1, y2 = M.WorldRect(1455)
+        local midX, midY = (x1 + x2) / 2, (y1 + y2) / 2
+        M.SetViewAt(midX, midY, M.Zoom())
+        local sx, sy = M.ToScreen(midX, midY)
+        CX, CY = sx, sy
+        local entered = false
+        for _ = 1, 18 do
+          M.Wheel(1)
+          for __ = 1, 12 do M.Tick(0.05) end
+          if M.fitCapCity == 1455 then entered = true end
+          if entered and not M.Gliding() then break end
+        end
+        local ze = MD.ZoneEntry(1455)
+        local fr = ze and M.Frac(ze) or 0
+        local cover = M.CoverScale(1455)
+        check(entered and fr >= 0.85 and cover > 0 and M.view.s >= cover * 0.98 and M.focusCity == 1455,
+          string.format("0.5.2b.23 map: zooming into Ironforge fills the hole (frac %.2f, scale %.3f, cover %.3f, focus %s)",
+            fr, M.view.s or -1, cover or -1, tostring(M.focusCity)))
+        for _ = 1, 10 do
+          M.Wheel(-1)
+          for __ = 1, 12 do M.Tick(0.05) end
+          if not M.fitCapCity then break end
+        end
+        check(M.fitCap == nil and M.fitCapCity == nil and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh",
+          "0.5.2b.23 map: zooming out of the filled city returns to Dun Morogh and clears fitCap (" .. table.concat(M.Trail(), ">") .. ")")
+        -- breadcrumb dropdown: Eastern Kingdoms lists its zones; picking one flies there
+        M.FlyTo(1426)
+        for _ = 1, 20 do M.Tick(0.05) end
+        local ek
+        for _, c in ipairs(M.crumbs) do if c:IsShown() and c.mapID == 1415 then ek = c end end
+        check(ek and ek.entry and ek.entry.id == 1415, "0.5.2b.23 map: the continent breadcrumb is a button")
+        ek._scripts.OnClick(ek)
+        check(M.crumbMenu and M.crumbMenu:IsShown() and M.crumbMenu.forId == 1415, "0.5.2b.23 map: clicking a breadcrumb opens its dropdown")
+        local peers = M.CrumbPeers(ek.entry)
+        local sawIF, sawDM, sawLM = false, false, false
+        for _, p in ipairs(peers) do
+          if p.id == 1455 then sawIF = true elseif p.id == 1426 then sawDM = true elseif p.id == 1432 then sawLM = true end
+        end
+        check(sawIF and sawDM and sawLM, "0.5.2b.23 map: continent dropdown lists zones at that level (Ironforge, Dun Morogh, Loch Modan)")
+        local picked = false
+        for _, row in ipairs(M.crumbMenu.rows) do
+          if row:IsShown() and row.mapID == 1432 then row._scripts.OnClick(row) picked = true break end
+        end
+        for _ = 1, 30 do M.Tick(0.05) end
+        check(picked and not M.crumbMenu:IsShown() and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Loch Modan",
+          "0.5.2b.23 map: choosing a dropdown row flies there (" .. table.concat(M.Trail(), ">") .. ")")
+        M.FlyTo(1426)
+        for _ = 1, 20 do M.Tick(0.05) end
+      end
     end
     -- 0.5.2b.19: Westfall solo coastline + hunter/paladin crest overrides
     do

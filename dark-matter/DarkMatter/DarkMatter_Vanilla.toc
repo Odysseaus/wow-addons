@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.22: a capital you are standing in opens its own floor, drawn above the close-up tiles. Earlier: 0.5.2b.21 map hole, M centres on you, Batch 1 coast bakes.
+## Notes: Dark Matter 0.5.2b.23: a capital fills the map hole when you zoom into it, and each breadcrumb opens a list of places at that level. Earlier: 0.5.2b.22 city floor above the close-up tiles.
 ## Author: Odysseaus
-## Version: 0.5.2b.22
+## Version: 0.5.2b.23
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

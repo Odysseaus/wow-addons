@@ -2010,8 +2010,32 @@ end
 function M.Wheel(delta)
   if not M.ready then return end
   M.pendingFit = nil
+  -- 0.5.2b.23: zooming out of a filled capital returns to its host zone (stock city map → zone map).
+  if delta < 0 and M.fitCapCity and MD.IsCityID(M.fitCapCity) then
+    local cover = M.CoverScale(M.fitCapCity)
+    if cover > 0 and (zoomT and zoomT.s or V.s) <= cover * 1.08 then
+      local ze = MD.ZoneEntry(M.fitCapCity)
+      local host = ze and M.CityParent(ze.cont, ze)
+      M.fitCap, M.fitCapCity = nil, nil
+      if host then FlyTo(host.id) return end
+    end
+  end
   local px, py = Cursor()
   local u, v = M.ToWorld(px, py)
+  -- 0.5.2b.23: the last wheel steps into a capital fill the hole with that city, same as the breadcrumb.
+  if delta > 0 then
+    local city = M.CityAtWorld(u, v) or (M.focusCity and MD.IsCityID(M.focusCity) and M.focusCity)
+    if city and MD.IsCityID(city) and MD.Art(city) then
+      local cover = M.CoverScale(city)
+      local nextS = M.WheelNext(zoomT and zoomT.s or V.s, delta)
+      local idx, mx = M.LevelIndex(nextS), M.MaxLevel()
+      local deep = idx >= mx or (M.close and (M.close.alpha or 0) > 0.2 and idx >= math.max(1, mx - 1))
+      if cover > 0 and V.s < cover * 0.98 and deep then
+        FlyTo(city)
+        return
+      end
+    end
+  end
   local base = zoomT and zoomT.s or V.s
   zoomT = { s = M.WheelNext(base, delta), u = u, v = v, px = px, py = py }
   fly = nil
@@ -2074,6 +2098,7 @@ FlyTo = function(id, wx, wy, hop, sMin)
     end
   elseif M.fitCapCity then
     M.fitCap, M.fitCapCity = nil, nil
+    M._filledCity = nil
   end
   local cx, cy = M.Center()
   fly = { t = 0, dur = 0.45, c0 = { cx, cy }, s0 = V.s, c1 = { wx or (x1 + x2) / 2, wy or (y1 + y2) / 2 }, s1 = s }
@@ -2091,6 +2116,33 @@ FlyTo = function(id, wx, wy, hop, sMin)
   M.flyTarget = id
 end
 M.FlyTo = function(...) return FlyTo(...) end
+-- continent fraction under a world point → the capital there (smallest wins)
+function M.CityAtWorld(wx, wy, cont)
+  cont = cont or M.focus
+  if not (cont and wx and wy) then return nil end
+  local p = Place(cont)
+  if not (p and p[2] > p[1] and p[4] > p[3]) then return nil end
+  local x, y = (wx - p[1]) / (p[2] - p[1]), (wy - p[3]) / (p[4] - p[3])
+  local best
+  for _, z in ipairs(MD.Zones(cont) or {}) do
+    if MD.IsCityID(z.id) and MD.Art(z.id) and z.r and x >= z.r[1] and x <= z.r[2] and y >= z.r[3] and y <= z.r[4]
+      and (not best or z.area < best.area) then best = z end
+  end
+  return best and best.id
+end
+-- 0.5.2b.23: already at the deepest exterior zoom and the view sits in a capital → fill the hole with that city
+function M.MaybeFillCity()
+  if not M.ready or fly or zoomT or drag then return end
+  local id = M.focusCity
+  if not (id and MD.IsCityID(id) and MD.Art(id)) then return end
+  local cover = M.CoverScale(id)
+  if cover <= 0 or V.s >= cover * 0.98 then return end
+  local idx, mx = M.LevelIndex(), M.MaxLevel()
+  local deep = idx >= mx or (M.close and (M.close.alpha or 0) > 0.2 and idx >= math.max(1, mx - 1))
+  if not deep or M._filledCity == id then return end
+  M._filledCity = id
+  FlyTo(id)
+end
 
 function M.FindMe()
   UpdatePlayer()
@@ -2382,6 +2434,7 @@ function M.Tick(dt)
   end
   if fz and (zf[fz.id] or 0) < 1 then zf[fz.id] = math.min(1, (zf[fz.id] or 0) + dt * 5) M.dirty = true end
   if M.dirty then M.Layout() end
+  if M.MaybeFillCity then M.MaybeFillCity() end
   M.acc = (M.acc or 0) + dt
   if M.acc >= 0.05 then M.acc = 0 UpdatePlayer() UpdateCoords() end
   if M.ExtrasTick then local ok, e = pcall(M.ExtrasTick, dt) if not ok then M.extrasErr = e end end
@@ -2730,6 +2783,80 @@ local function Pick(r)
 end
 M.Pick = Pick
 
+-- 0.5.2b.23: peers at one breadcrumb level (OpenMap-style). World → continents. Continent → its zones.
+-- A zone or capital → the other zones on that continent.
+function M.CrumbPeers(entry)
+  local list = {}
+  local function add(id, name)
+    if id and name and name ~= "" then list[#list + 1] = { id = id, name = name } end
+  end
+  if not entry then return list end
+  if entry.world or (M.hasWorld and entry.id == M.world) then
+    for _, c in ipairs(MD.Continents() or {}) do add(c.id, c.name or MD.Name(c.id)) end
+    return list
+  end
+  if MD.Is(entry.id, "continent") then
+    for _, z in ipairs(MD.Zones(entry.id) or {}) do add(z.id, z.name) end
+  else
+    local z = MD.ZoneEntry(entry.id)
+    local cont = (z and z.cont) or MD.ContinentOf(entry.id)
+    for _, e in ipairs(cont and MD.Zones(cont) or {}) do add(e.id, e.name) end
+  end
+  table.sort(list, function(a, b) return a.name < b.name end)
+  return list
+end
+local crumbMenu
+function M.HideCrumbMenu()
+  if crumbMenu then crumbMenu:Hide() end
+end
+function M.ToggleCrumb(entry, anchor)
+  if not entry then return end
+  if crumbMenu and crumbMenu:IsShown() and crumbMenu.forId == entry.id then crumbMenu:Hide() return end
+  local peers = M.CrumbPeers(entry)
+  if #peers == 0 then FlyTo(entry.id) return end
+  if not crumbMenu then
+    crumbMenu = CreateFrame("Frame", nil, bar)
+    crumbMenu:SetFrameLevel((bar:GetFrameLevel() or 1) + 40)
+    local bg = crumbMenu:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(crumbMenu)
+    bg:SetColorTexture(0.05, 0.05, 0.05, 0.94)
+    crumbMenu.border = UI.NineSlice(crumbMenu, "pane", 4, "BORDER", 1)
+    crumbMenu.rows = {}
+    crumbMenu:Hide()
+  end
+  local rows, width = crumbMenu.rows, 120
+  for i, peer in ipairs(peers) do
+    local row = rows[i]
+    if not row then
+      row = CreateFrame("Button", nil, crumbMenu)
+      row:SetHeight(22)
+      row.text = UI.Text(row, "OVERLAY", 12, "listInk", "LEFT")
+      row.text:SetPoint("LEFT", row, "LEFT", 8, 0)
+      row.text:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+      row:SetScript("OnClick", function(self)
+        crumbMenu:Hide()
+        FlyTo(self.mapID)
+      end)
+      rows[i] = row
+    end
+    row.mapID = peer.id
+    row.text:SetText(peer.name)
+    row.text:SetTextColor(NS.Color(peer.id == entry.id and "gold" or "listInk"))
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", crumbMenu, "TOPLEFT", 4, -4 - (i - 1) * 22)
+    row:SetPoint("TOPRIGHT", crumbMenu, "TOPRIGHT", -4, -4 - (i - 1) * 22)
+    row:Show()
+    width = math.max(width, (row.text:GetStringWidth() or 80) + 24)
+  end
+  for i = #peers + 1, #rows do rows[i]:Hide() end
+  crumbMenu.forId = entry.id
+  crumbMenu:SetSize(math.min(width, 260), #peers * 22 + 8)
+  crumbMenu:ClearAllPoints()
+  crumbMenu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+  crumbMenu:Show()
+  M.crumbMenu = crumbMenu
+end
+
 -- 0.5.1.4 WoW theme (theme.crumbFaces): each crumb is drawn like the stock map's top-bar buttons: the first (the
 -- world) on the red panel-button face, the rest on the dark field face with a small down arrow, and no ">" between
 -- them. Class themes keep the plain text crumbs with ">".
@@ -2741,6 +2868,7 @@ Crumbs = function()
   for _, s in ipairs(t) do key = key .. s.id .. ">" end
   if key == crumbKey then return end
   crumbKey = key
+  if M.HideCrumbMenu then M.HideCrumbMenu() end
   for _, c in ipairs(crumbs) do
     c:Hide() if c.sep then c.sep:Hide() end
   end
@@ -2759,17 +2887,17 @@ Crumbs = function()
       UI.Hover(c)
       c.sep = UI.Text(bar, "OVERLAY", 13, "listSoft", "CENTER")
       c.sep:SetText(">")
-      c:SetScript("OnClick", function(self) FlyTo(self.mapID) end)
+      c:SetScript("OnClick", function(self) M.ToggleCrumb(self.entry, self) end)
       crumbs[i] = c
     end
     local last = (i == #t)
-    c.mapID = s.id
+    c.mapID, c.entry = s.id, s
     c.text:SetText(s.name)
     local tw = c.text:GetStringWidth() or 60
     c.text:ClearAllPoints()
     if faces then
       c.face:Show()
-      local arrow = i > 1 and NS.Stock.TextureOK(ARROW)
+      local arrow = NS.Stock.TextureOK(ARROW)
       if arrow then c.arrow:SetTexture(ARROW) c.arrow:Show() else c.arrow:Hide() end
       c.text:SetPoint("LEFT", c, "LEFT", 10, 0)
       c.text:SetTextColor(1, 0.82, 0)
@@ -2890,7 +3018,13 @@ local function Build(body)
   vp:SetScript("OnMouseWheel", function(_, delta) M.Wheel(delta) end)
   -- 0.5.2a: the same press and release handlers serve the quest markers (a press on a marker can still drag the map)
   M.VpDown = function(btn)
-    if btn == "LeftButton" then M.pendingFit = nil local x, y = Cursor() drag = { x = x, y = y, ox = V.ox, oy = V.oy } fly, zoomT = nil, nil end
+    if btn == "LeftButton" then
+      M.pendingFit = nil
+      if M.HideCrumbMenu then M.HideCrumbMenu() end
+      local x, y = Cursor()
+      drag = { x = x, y = y, ox = V.ox, oy = V.oy }
+      fly, zoomT = nil, nil
+    end
   end
   M.VpUp = function(btn)
     if btn == "RightButton" then M.ZoomOutLevel() return end

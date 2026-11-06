@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2b.23
+
+- **A capital fills the map.** Zooming or panning deep into a capital (Ironforge, Stormwind, and the others) frames that city's picture so it fills the map hole, the same as choosing the city on the breadcrumb. It is no longer a small feathered rectangle sitting on Dun Morogh's close-up snow. Zooming out from that filled city returns to the zone around it. The extra zoom cap still clears when you leave the city, close the window, or open another tab.
+- **Breadcrumb dropdowns.** Each step on the trail (world, continent, zone or city) opens a list of the other places at that level. Choosing one goes there. The world step lists continents. A continent lists its zones. A zone or city lists the zones on that continent.
+
 ## 0.5.2b.22
 
 - **Ironforge's floor stays above the snow.** In 0.5.2b.21 the city picture was raised to a fixed frame level. On Forever the close-up tile planes still painted Dun Morogh over it at the deepest zoom. After those planes are drawn, a capital you are looking at is placed one level above the highest of them. The pins stay above the floor. The floor picture is solid (not feathered) when it fills the view, so snow does not show through the rim.
