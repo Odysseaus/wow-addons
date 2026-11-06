@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.23: a capital fills the map hole when you zoom into it, and each breadcrumb opens a list of places at that level. Earlier: 0.5.2b.22 city floor above the close-up tiles.
+## Notes: Dark Matter 0.5.2b.24: class frame edges rebuilt for the 1020x500 map hole. Earlier: 0.5.2b.23 capitals fill the hole and breadcrumbs list peers.
 ## Author: Odysseaus
-## Version: 0.5.2b.23
+## Version: 0.5.2b.24
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

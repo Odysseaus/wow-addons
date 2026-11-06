@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.24
+
+- **Class frame edges for the signed-off map hole.** The nine class frames (`cls-<class>-fc.tga`, `-ftb.tga`, `-flr.tga`) are rebuilt so the side bars sit outside the 1020×500 map picture, the corner arms meet the top and bottom strips, and those strips repeat without a dark break. Repeat lengths, top / bottom / left / right: warrior 146, 142, 146, 141; paladin 256, 176, 153, 176; hunter 238, 129, 204, 132; rogue 215, 129, 215, 129; priest 230, 240, 186, 240; shaman 225, 207, 150, 138; mage 172, 256, 172, 252; warlock 212, 188, 210, 156; druid 174, 144, 174, 144. Overlay corners, sprites, and the parts sheet are unchanged. Coast pictures are unchanged.
+
 ## 0.5.2b.23
 
 - **A capital fills the map.** Zooming or panning deep into a capital (Ironforge, Stormwind, and the others) frames that city's picture so it fills the map hole, the same as choosing the city on the breadcrumb. It is no longer a small feathered rectangle sitting on Dun Morogh's close-up snow. Zooming out from that filled city returns to the zone around it. The extra zoom cap still clears when you leave the city, close the window, or open another tab.
