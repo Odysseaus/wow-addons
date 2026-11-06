@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.21
+
+- **Ironforge (and the other capitals) stay above the close-up tiles.** When a capital is the map you are looking at, its floor picture is drawn above the deepest minimap tiles, so Dun Morogh's snow does not cover Ironforge. A city that is only fading in over its zone stays under the tiles. The extra zoom that open needs is cleared when you leave that city, close the window, or open another tab.
+- **M opens centred on you.** The Map tab puts your character in the middle of the picture, the way the game's own map and OpenMap do. Show on map and a tracker click still glide to that quest.
+- **The map picture matches the game's scroll area.** The Map tab's viewport follows `WorldMapFrame.ScrollContainer` when that size can be read. Otherwise it uses the frame interior: about 1020×500 inside a 1035×534 frame (15px across and 34px down). In that frame the old picture was about 781×373. The window grows by a few pixels when the larger picture does not fit.
+
 ## 0.5.2b.20
 
 - **Ironforge (and the other capitals) on open.** The map you are standing on is used when that map is a capital and it has its own picture. Forever's "which map should open" helper often names the land around the city (Dun Morogh for Ironforge), so 0.5.2b.19 still framed the snowy exterior. Opening inside a capital now frames that city's floor map. `/dm mapprobe` adds one line: the map Dark Matter will open, your map, the helper's map, and the city in focus.

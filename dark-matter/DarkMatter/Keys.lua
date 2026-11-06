@@ -27,7 +27,7 @@ function K.Press(which)
     return "closed"
   end
   if tab == "map" then
-    NS.OpenOnMap(nil, true) -- shows the window on the Map tab (opens at your map, like the game's)
+    NS.OpenOnMap(nil, true) -- Map tab, centred on you (stock map / OpenMap). A quest open still glides to the quest.
   else
     NS.ToggleWindow(true)
     NS.ShowTab("quests")

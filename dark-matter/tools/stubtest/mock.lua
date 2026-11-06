@@ -729,7 +729,8 @@ function MakeWMF(w, h, opts)
     questLogWidth = opts.ql, GetWidth = function() return w end, GetHeight = function() return h end,
     GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return opts.shown ~= false end, -- 0.5.1.9: shown unless opts.shown == false
     GetLeft = opts.rectFns and opts.rectFns[1], GetRight = opts.rectFns and opts.rectFns[2], GetTop = opts.rectFns and opts.rectFns[3], GetBottom = opts.rectFns and opts.rectFns[4],
-    IsMaximized = function() return opts.maximized or false end, ScrollContainer = {},
+    IsMaximized = function() return opts.maximized or false end,
+    ScrollContainer = (opts.scrollW and opts.scrollH) and { GetWidth = function() return opts.scrollW end, GetHeight = function() return opts.scrollH end } or {},
     Show = function() WMF_WRITES[#WMF_WRITES + 1] = "Show()" end, SetSize = function() WMF_WRITES[#WMF_WRITES + 1] = "SetSize()" end })
 end
 C_Texture = { GetAtlasInfo = function(a) if not STOCK_MISSING and type(a) == "string" and (a:find("UI%-Frame%-Map") or a:find("RedButton") or a:find("Portrait")) then return { width = 24, height = 24 } end end }
@@ -4005,12 +4006,11 @@ do
   -- 0.5.1.10: at zone view the zone's art FILLS the view (cover framing); 0.5.1.11: no lock, the continent art is the base
   local vwN, vhN = M.vp:GetWidth(), M.vp:GetHeight()
   local bx = dm.box or {}
-  -- 0.5.2b.18: blizz open uses COVER (fill the box, crop overflow) so a wide pane matches Forever's tighter look
-  local covers = bx[1] and bx[1] <= 1e-3 and bx[2] <= 1e-3 and bx[3] >= vwN - 1e-3 and bx[4] >= vhN - 1e-3
-  local overflows = bx[1] and (bx[1] < -0.5 or bx[2] < -0.5 or bx[3] > vwN + 0.5 or bx[4] > vhN + 0.5)
-  local centred = bx[1] and math.abs((bx[1] + bx[3]) / 2 - vwN / 2) < 0.5 and math.abs((bx[2] + bx[4]) / 2 - vhN / 2) < 0.5
-  check(M.lock == nil and covers and overflows and centred,
-    string.format("0.5.2b.18 map: opened on Dun Morogh, cover fill (crop overflow), centred (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
+  local ppx, ppy
+  if M.player then ppx, ppy = M.ToScreen(M.player[1], M.player[2]) end
+  check(M.lock == nil and ppx and math.abs(ppx - vwN / 2) < 1 and math.abs(ppy - vhN / 2) < 1,
+    string.format("0.5.2b.21 map: M / CentreOnPlayer centres on you (player %.1f,%.1f in %dx%d; zone box %.1f,%.1f to %.1f,%.1f)",
+      ppx or -1, ppy or -1, vwN, vhN, bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1))
   -- 0.5.2b.3: the continent art stays drawn underneath as the base, faded toward the flat backdrop when magnified
   do
     local cl = M.layers[1415]
@@ -4054,8 +4054,8 @@ do
     local lv0 = M.LevelOf(1415)
     local cf0 = M.CityFade(1415)
     local inFade = (lv0 >= 10 and cf0 > 0.99) or (lv0 > 8 and lv0 < 10 and cf0 > 0.01 and cf0 < 0.99) or (lv0 <= 8 and cf0 == 0)
-    check(M.CityLevel() == 10 and M.CityFadeStart() == 8 and inFade and ifl and ifl.shown == (cf0 > 0) and math.abs(ifl.alpha - M.ContAlpha(1415) * cf0) < 1e-6 and ifl.level == 6 and dml.level < 6 and ifl.feather and M.focusCity == nil,
-      "0.5.2b.7.3 map: at Dun Morogh's zone view (zoom level " .. string.format("%.2f", lv0) .. ") the Ironforge picture is fading in over it (default 8 -> 10), feathered (" .. tostring(ifl and ifl.alpha) .. ", fade " .. string.format("%.3f", cf0) .. ", focus city " .. tostring(M.focusCity) .. ")")
+    check(M.CityLevel() == 10 and M.CityFadeStart() == 8 and inFade and ifl and ifl.shown == (cf0 > 0) and math.abs(ifl.alpha - M.ContAlpha(1415) * cf0) < 1e-6 and ifl.level == 6 and dml.level < 6 and ifl.feather and (M.focusCity == nil or M.focusCity == 1455),
+      "0.5.2b.7.3 map: at Dun Morogh's zone view (zoom level " .. string.format("%.2f", lv0) .. ") the Ironforge picture is fading in over it (default 8 -> 10), feathered, still under the tiles (" .. tostring(ifl and ifl.alpha) .. ", fade " .. string.format("%.3f", cf0) .. ", focus city " .. tostring(M.focusCity) .. ", level " .. tostring(ifl and ifl.level) .. ")")
     M.Pan(-500, 0) run(1)
     local fz1 = M.focusZone
     local nz1 = zonesDrawn()
@@ -4224,6 +4224,45 @@ do
       check(type(openLine) == "string" and #openLine <= 90 and openLine:find("opening 1455", 1, true) and openLine:find("player 1455", 1, true)
         and openLine:find("displayable 1426", 1, true) and openLine:find("focusCity 1455", 1, true),
         "0.5.2b.20 mapprobe: opening / player / displayable / focusCity (" .. tostring(openLine) .. ")")
+      -- 0.5.2b.21: terrain tiles are loaded and the deepest zoom actually draws them; the city floor wins
+      do
+        local saveTiles, saveLayer = NS.MinimapTiles, NS.db.map.layer
+        local saveUp = NS.db.map.closeUp
+        NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) return 900000 + (k or 0) end }) }
+        NS.db.map.layer, NS.db.map.closeUp = "terrain", true
+        NS.MapCloseUp.Reset()
+        NS.MapCloseUp.unavailable, NS.MapCloseUp.failed, NS.MapCloseUp.fails, NS.MapCloseUp.loaded = nil, {}, 0, 0
+        if NS.MapCloseUp.Drop then NS.MapCloseUp.Drop() end
+        check(M.CentreOnPlayer() == true, "0.5.2b.21 map: CentreOnPlayer on Ironforge before the tile check")
+        for _ = 1, 10 do M.Tick(0.05) end
+        local cx, cy = M.Center()
+        M.ViewLevelAt(cx, cy, M.MaxLevel())
+        for _ = 1, 5 do M.Tick(0.05) end
+        local cityL = M.layers[1455]
+        local plane = NS.MapCloseUp.planes and NS.MapCloseUp.planes[1415]
+        local planeLv = plane and plane.f and plane.f:GetFrameLevel() or (M.closeHost and M.closeHost:GetFrameLevel() or 0)
+        local pieces = M.close and M.close.pieces or 0
+        local cityLv = cityL and cityL.frame and cityL.frame:GetFrameLevel() or -1
+        check(cityL and cityL.shown and (cityL.alpha or 0) > 0.5 and pieces > 0 and cityLv > planeLv and M.focusCity == 1455,
+          string.format("0.5.2b.21 map: Ironforge floor (level %s) is above the close-up tiles (plane %s, %d pieces) at zoom %s",
+            tostring(cityLv), tostring(planeLv), pieces, tostring(select(1, M.ZoomLevel()))))
+        check(M.fitCap ~= nil and M.fitCapCity == 1455, "0.5.2b.21 map: a city open may zoom past the usual cap (fitCap set)")
+        M.FlyTo(1432) -- Loch Modan: not the city, so the deep cap must go
+        for _ = 1, 40 do M.Tick(0.05) end
+        check(M.fitCap == nil and M.fitCapCity == nil and M.focusCity ~= 1455,
+          string.format("0.5.2b.21 map: leaving Ironforge clears fitCap (cap %s, city %s, focus %s)",
+            tostring(M.fitCap), tostring(M.fitCapCity), tostring(M.focusCity)))
+        M.CentreOnPlayer()
+        for _ = 1, 8 do M.Tick(0.05) end
+        check(M.fitCapCity == 1455, "0.5.2b.21 map: back on the city, the deep cap returns")
+        NS.ShowTab("quests")
+        check(M.fitCap == nil and M.fitCapCity == nil, "0.5.2b.21 map: opening another tab clears fitCap")
+        NS.ShowTab("map")
+        for _ = 1, 8 do M.Tick(0.05) end
+        NS.MinimapTiles, NS.db.map.layer, NS.db.map.closeUp = saveTiles, saveLayer, saveUp
+        NS.MapCloseUp.Reset()
+        if NS.MapCloseUp.Drop then NS.MapCloseUp.Drop() end
+      end
       C_Map.GetPlayerMapPosition = oldPos
       MAPS[1455] = saveParent
       C_Map.GetMapRectOnMap = oldRect
@@ -5896,7 +5935,8 @@ do
   -- 0.5.1.5: the main window reads the map window's size and scale (read only, from its own frame); nothing else
   local wmOther = {}
   local READ_OK = { GetEffectiveScale = 1, GetWidth = 1, GetHeight = 1, minimizedWidth = 1, minimizedHeight = 1, questLogWidth = 1, isMaximized = 1, IsMaximized = 1,
-    GetLeft = 1, GetRight = 1, GetTop = 1, GetBottom = 1, BorderFrame = 1, IsShown = 1 } -- 0.5.1.6: its outer rectangle, read only
+    GetLeft = 1, GetRight = 1, GetTop = 1, GetBottom = 1, BorderFrame = 1, IsShown = 1, -- 0.5.1.6: its outer rectangle, read only
+    ScrollContainer = 1 } -- 0.5.2b.21: the map picture reads the scroll interior, nothing is written
   for _, k in ipairs(wmAccess) do if not READ_OK[k] then wmOther[#wmOther + 1] = k end end
   check(#wmOther == 0, "0.5.0 map: never touches WorldMapFrame (0.5.1.6: only its size, scale and outer rectangle are read) " .. table.concat(wmOther, ","))
   check(#hooked == 0, "0.5.0 map: installs no hooks")
@@ -6945,20 +6985,20 @@ if MODE == "full" then
   wmf(1035, 640)
   local c = copyM()
   local res = MW.Apply(c)
-  check(res.w == 1009 and res.h == 640 and c.w == 1009 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
-    "0.5.1.4 window: as large as the game's map window (1035x640; 0.5.2a.2: less the tab column's 26 = 1009x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
+  check(res.w == 1034 and res.h == 640 and c.w == 1034 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
+    "0.5.2b.21 window: map 1035x640, trimmed 1009, grown to hold the scroll interior (1020+14 = 1034x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
   check(c.bodyW - c.w == base.bodyW - base.w and c.pageW - c.w == base.pageW - base.w and c.footerTop - c.h == base.footerTop - base.h and c.exitX - c.w == base.exitX - base.w
     and c.railW == base.railW and c.tabY == base.tabY and c.bodyX == base.bodyX, "0.5.1.4 window: the body and footer follow the size, the rail and tabs keep their place")
   wmf(1035, 640, { scale = 1.25 })
   res = MW.Apply(copyM())
-  check(res.w == 1268 and res.h == 800, "0.5.1.4 window: the map window's own scale is taken into account (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  check(res.w == 1293 and res.h == 800, "0.5.2b.21 window: the map window's own scale is taken into account, then the scroll hole (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.5: the in-game case (1.60.1, Wetlands): map 1232x705 at effective scale 0.64; UIParent at 0.80
   local saveUES = UIParent.GetEffectiveScale
   UIParent.GetEffectiveScale = function() return 0.8 end
   wmf(1232, 705, { scale = 0.64, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
-  check(res.w == 960 and res.h == 564 and res.scale == 1,
-    "0.5.1.5 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> ours 986x564 less 26 = 960x564 at scale 1 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  check(res.w == 985 and res.h == 564 and res.scale == 1,
+    "0.5.2b.21 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> hole grows the trimmed 960 to 985x564 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.8: the size is measured while the map window is open and saved in DarkMatterDB; while it is closed (e.g.
   -- never opened since login, where its own size is not real yet) the saved size is used; rebuild only past 1 px
   do
@@ -6983,18 +7023,18 @@ if MODE == "full" then
   wmf(1035, 640, { scale = 0.64 })
   res = MW.Apply(copyM())
   local ow, oh = outer(res)
-  check(res.w >= 854 and res.h >= 500 and res.scale < 1 and math.abs(ow - (1035 * 0.8 - 26 * res.scale)) < 1 and math.abs(oh - 640 * 0.8) < 1,
-    "0.5.1.5 window: a map smaller on screen than 880x500 is matched by our scale (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  check(res.w >= 854 and res.h >= 500 and res.scale < 1 and ow + 0.6 >= (1035 * 0.8 - 26 * res.scale) and ow <= 1035 * 0.8 + 1 and math.abs(oh - 640 * 0.8) < 1,
+    "0.5.2b.21 window: a map smaller on screen than 880x500 is matched by our scale, and may grow a little for the scroll hole (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ", outer " .. string.format("%.1f", ow) .. ")")
   UIParent.GetEffectiveScale = saveUES
   wmf(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
   ow, oh = outer(res)
-  check(res.w <= 1800 and res.h <= 1300 and math.abs(ow - (1920 - 26 * res.scale)) < 1 and math.abs(oh - 1080) < 1,
-    "0.5.1.5 window: maximized follows the same rule: its size on screen (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  check(res.w <= 1800 and res.h <= 1300 and ow + 0.6 >= (1920 - 26 * res.scale) and ow <= 1920 + 1 and math.abs(oh - 1080) < 1,
+    "0.5.2b.21 window: maximized follows the same rule, wider only for the scroll hole (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
   wmf(500, 300)
   res = MW.Apply(copyM())
   ow, oh = outer(res)
-  check(res.w >= 854 and res.h >= 500 and math.abs(ow - (500 - 26 * res.scale)) < 1 and math.abs(oh - 300) < 1, "0.5.1.5 window: a tiny map window: our layout stays 880x500 or more, our scale matches it")
+  check(res.w >= 854 and res.h >= 500 and ow + 0.6 >= (500 - 26 * res.scale) and ow <= 500 + 1 and math.abs(oh - 300) < 1, "0.5.2b.21 window: a tiny map window: layout stays 880x500 or more, outer stays within the map (" .. string.format("%.1f", ow) .. ")")
   -- 0.5.1.6: the map's border corners reach past its frame (the real offsets): the target is the OUTER rectangle
   wmf(1232, 705, { real = true })
   local ml, mt, mr, mb = MW.MapBorder()
@@ -7027,11 +7067,31 @@ if MODE == "full" then
   InCombatLockdown = function() return true end
   res = MW.Apply(copyM())
   InCombatLockdown = saveICL
-  check(res.w == 1009, "0.5.1.4 window: reading the size works in combat")
+  check(res.w == 1034, "0.5.1.4 window: reading the size works in combat")
   local badCall = {}
   for _, k in ipairs(WMF_CALLS) do if not (k:find("^Get") or k:find("^Is")) then badCall[#badCall + 1] = k end end
   check(#WMF_WRITES == 0 and #badCall == 0, "0.5.1.4 window: WorldMapFrame is only read (no Show, no writes, no hooks): " .. table.concat(WMF_WRITES, ",") .. table.concat(badCall, ","))
+  -- 0.5.2b.21: the Map picture follows ScrollContainer, else the frame interior (1035×534 -> 1020×500)
+  do
+    wmf(1035, 534)
+    local sw, sh, src = MW.ScrollSize()
+    check(src == "frame interior" and math.abs(sw - 1020) < 1 and math.abs(sh - 500) < 1,
+      string.format("0.5.2b.21 map: frame 1035x534 with no ScrollContainer size -> hole %.0fx%.0f (%s)", sw or -1, sh or -1, tostring(src)))
+    wmf(1035, 534, { scrollW = 1016, scrollH = 498 })
+    sw, sh, src = MW.ScrollSize()
+    check(src == "WorldMapFrame.ScrollContainer" and math.abs(sw - 1016) < 1 and math.abs(sh - 498) < 1,
+      string.format("0.5.2b.21 map: a live ScrollContainer is the hole (%.0fx%.0f, %s)", sw or -1, sh or -1, tostring(src)))
+    wmf(1035, 534)
+    NS.RebuildWindow()
+    NS.ShowTab("map")
+    local M = NS.MapTab
+    if M and M.Refit then M.Refit() end
+    local vw, vh = M and M.vp and M.vp:GetWidth(), M and M.vp and M.vp:GetHeight()
+    check(vw and math.abs(vw - 1020) < 2 and math.abs(vh - 500) < 2,
+      string.format("0.5.2b.21 map: viewport %.1fx%.1f (was about 781x373 in this frame; target 1020x500)", vw or -1, vh or -1))
+  end
   WorldMapFrame = saveWMF MW.art = nil
+  NS.RebuildWindow()
   local win = NS.GetWindow()
   check(win._w == NS.theme.m.w and win._h == NS.theme.m.h, "0.5.1.4 window: the built window has the metrics' size " .. win._w .. "x" .. win._h)
 
@@ -7080,7 +7140,7 @@ if MODE == "full" then
         NS.ShowTab("quests")
         local tw, th = MW.Target() -- 0.5.2a.2: the map window less the tab column's trim
         local mw0 = MW.Size()
-        check(tw and mw0 and math.abs(tw - (mw0 - 26 * f:GetScale() / (sz[4] or 1) * (sz[4] or 1))) < 0.6, string.format("0.5.2a.2 window: %s target width %.1f = map %.1f less the tab column's 26 (scaled)", id, tw or -1, mw0 or -1))
+        check(tw and mw0 and tw + 0.6 >= mw0 - 26 * f:GetScale(), string.format("0.5.2b.21 window: %s target width %.1f >= map %.1f less the tab column's 26 (wider when the scroll hole needs it)", id, tw or -1, mw0 or -1))
         local l, t, r, b = drawnBox(f)
         local k = f:GetScale() / (sz[4] or 1) * (sz[4] or 1)
         local ow2, oh2 = (r - l) * k, (t - b) * k

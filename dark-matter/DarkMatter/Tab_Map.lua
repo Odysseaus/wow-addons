@@ -1483,6 +1483,19 @@ function M.Layout()
   end
   local fz, city = M.FocusZones(M.focus)
   M.focusZone, M.focusCity = fz and fz.id, city and city.id
+  -- 0.5.2b.21: the deep cap exists only while that capital is the focus. Leaving it, or a pending open of
+  -- something else, drops the cap and pulls a too-deep view back to the normal limit.
+  if not dry and M.fitCapCity and M.focusCity ~= M.fitCapCity and not (M.pendingFit and M.pendingFit.id == M.fitCapCity) then
+    M.fitCap, M.fitCapCity = nil, nil
+    local top = SFit() * ZMax()
+    if V.s > top * 1.0001 then
+      local cx, cy = M.Center()
+      SetView(cx, cy, top)
+      M.focus = Focus()
+      fz, city = M.FocusZones(M.focus)
+      M.focusZone, M.focusCity = fz and fz.id, city and city.id
+    end
+  end
   local cityA = city and Smooth((Frac(city) - CITY[1]) / (CITY[2] - CITY[1])) or 0
   M.cityA = cityA
   local base = canvas:GetFrameLevel()
@@ -1507,7 +1520,7 @@ function M.Layout()
       local coast = (not isCity) and M.SoloCoastMask(z.id)
       -- 0.5.2b.4: one zone picture (the focus zone; the one just left while it fades out), never the neighbours.
       -- The sweep (dry) checks the settled view: the focus zone at its full fade, no zone fading out.
-      local d = 0
+      local d, above = 0, false
       if a > 0 then
         if isCity then
           -- 0.5.2b.7.2: a capital is drawn from the city zoom level on (/dm citylevel), whenever any of it is in view,
@@ -1522,6 +1535,9 @@ function M.Layout()
             if pendingCity or (M.focusCity == z.id and fills) or fr >= 0.85 then
               d = a
             end
+            -- 0.5.2b.21: the city floor is the picture you are looking at (this open, or it fills the view).
+            -- It has to sit above the close-up tiles or Dun Morogh's snow covers Ironforge.
+            above = pendingCity or (M.focusCity == z.id and (fills or fr >= 0.85)) or (M.fitCapCity == z.id and (fills or fr >= 0.45))
           end
         elseif masked or coast then d = a * maskIn -- masked continent, or a solo-coast zone on its own
         else d = a * M.ZoneIn(z) * (dry and (isFocus and 1 or 0) or (zf[z.id] or 0)) end
@@ -1533,11 +1549,17 @@ function M.Layout()
       if d >= 0.01 then zl = Layer(z.id, 3) else zl = M.layers[z.id] end
       if zl then
         zl.wantOv = true
+        -- 0.5.2b.21: closeHost is canvas+7 and each tile plane is one level higher, so a focused capital
+        -- uses 9 (above those planes). A city that is only fading in over its zone stays at 6, under the tiles.
         local lv = isCity and 6 or ((isFocus or masked or coast) and 4 or 3)
+        if above then lv = 9 end
         if zl.level ~= lv then
           zl.level = lv
           zl.frame:SetFrameLevel(base + lv)
           if zl.coreFrame then zl.coreFrame:SetFrameLevel(base + lv + 1) end -- 0.5.2b.8: the core pass, above every soft mask
+        end
+        if lv >= 9 and over and over:GetFrameLevel() < base + lv + 2 then
+          over:SetFrameLevel(base + lv + 2) -- markers and the player arrow stay above the city floor
         end
         local x1, x2, y1, y2 = WorldRect(z.id)
         Show(zl, x1, x2, y1, y2, d)
@@ -1991,6 +2013,16 @@ FlyTo = function(id, wx, wy, hop, sMin)
     end
   end
   if sMin and s < sMin then s = sMin end
+  -- 0.5.2b.21: flying to a capital may pass the usual zoom cap; flying anywhere else drops that cap
+  if MD.IsCityID(id) then
+    local sf = SFit()
+    if sf > 0 then
+      M.fitCap = math.max(M.fitCap or 0, s / sf)
+      M.fitCapCity = id
+    end
+  elseif M.fitCapCity then
+    M.fitCap, M.fitCapCity = nil, nil
+  end
   local cx, cy = M.Center()
   fly = { t = 0, dur = 0.45, c0 = { cx, cy }, s0 = V.s, c1 = { wx or (x1 + x2) / 2, wy or (y1 + y2) / 2 }, s1 = s }
   if hop then
@@ -2360,9 +2392,17 @@ local function ApplyFit()
     if MD.IsCityID(f.id) then
       s = math.max(s, cover)
       local sf = SFit()
-      if sf > 0 then M.fitCap = math.max(M.fitCap or 0, s / sf) end
+      if sf > 0 then
+        M.fitCap = math.max(M.fitCap or 0, s / sf)
+        M.fitCapCity = f.id
+      end
+    else
+      M.fitCap, M.fitCapCity = nil, nil
     end
-    SetView((x1 + x2) / 2, (y1 + y2) / 2, s)
+    -- 0.5.2b.21: M opens centred on you (stock map / OpenMap). A quest flight still goes to the quest.
+    local cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+    if f.onPlayer and f.wx and f.wy then cx, cy = f.wx, f.wy end
+    SetView(cx, cy, s)
     return true
   end
   -- 0.5.1.10: a zone (or city) is opened like the game's map: its art fills the box (0.5.1.11: a framing only, no lock)
@@ -2378,20 +2418,65 @@ local function ApplyFit()
   end
   return true
 end
-local function Refit()
-  if not vp then return end
-  -- 0.5.2b.8.2: the last box size seen in each mode (window, full screen), for /dm zoomprobe
-  if VW() > 50 and VH() > 50 then M.boxSize = M.boxSize or {} M.boxSize[M.full and "full" or "window"] = { VW(), VH() } end
-  canvas:SetSize(VW(), VH())
-  over:SetSize(VW(), VH())
-  if closeHost then closeHost:SetSize(VW(), VH()) end
-  if not ApplyFit() then
-    -- the view as last laid out (centre + zoom relative to the fit), so a new box size keeps the place
-    local lv = M.lastView
-    if lv then SetView(lv.cx, lv.cy, lv.z * SFit())
-    else local cx, cy = M.Center() SetView(cx, cy, M.Zoom() * SFit()) end
+-- 0.5.2b.21: size the map picture to WorldMapFrame.ScrollContainer (or the frame interior). The window is grown
+-- a little in MapWindow.Need when that hole does not fit. No live size: the old body-column layout stays.
+local fittingVp
+function M.FitViewport()
+  if fittingVp or not (vp and vpBox) then return end
+  local MW = NS.MapWindow
+  if not (MW and MW.HolePad) then return end
+  local last = MW.last
+  -- the size the window was just built for; a later read can miss the map frame (it is often closed)
+  local holeW, holeH = last and last.holeW, last and last.holeH
+  if not (holeW and holeH) and MW.HoleLayout then holeW, holeH = MW.HoleLayout(last and last.scale) end
+  if not (holeW and holeH) then return end
+  local host = _G.DarkMatterFrame
+  if not host then return end
+  local b = (NS.theme and NS.theme.m and NS.theme.m.listBorder) or 0
+  local hw, hh = host:GetWidth() or 0, host:GetHeight() or 0
+  local pad = MW.HolePad()
+  local maxW, maxH = hw - pad, hh - pad
+  if maxW < 40 or maxH < 40 then return end
+  fittingVp = true
+  holeW, holeH = math.min(holeW, maxW), math.min(holeH, maxH)
+  vpBox:ClearAllPoints()
+  vpBox:SetSize(holeW + 2 * b, holeH + 2 * b)
+  vpBox:SetPoint("CENTER", host, "CENTER", 0, 0)
+  vp:ClearAllPoints()
+  vp:SetPoint("TOPLEFT", vpBox, "TOPLEFT", b, -b)
+  vp:SetPoint("BOTTOMRIGHT", vpBox, "BOTTOMRIGHT", -b, b)
+  -- tabs stay clickable over the larger hole, and under the class-frame overlay (window + 25)
+  if NS.windowParts and NS.windowParts.rail and host.GetFrameLevel then
+    local lvl = host:GetFrameLevel() + 24
+    if NS.windowParts.rail:GetFrameLevel() < lvl then NS.windowParts.rail:SetFrameLevel(lvl) end
   end
-  M.Layout()
+  if bar and canvas and canvas.GetFrameLevel then
+    local lvl = canvas:GetFrameLevel() + 14
+    if bar:GetFrameLevel() < lvl then bar:SetFrameLevel(lvl) end
+  end
+  fittingVp = false
+end
+local refitting
+local function Refit()
+  if refitting or not vp then return end
+  refitting = true
+  local ok, err = pcall(function()
+    M.FitViewport()
+    -- 0.5.2b.8.2: the last box size seen in each mode (window, full screen), for /dm zoomprobe
+    if VW() > 50 and VH() > 50 then M.boxSize = M.boxSize or {} M.boxSize[M.full and "full" or "window"] = { VW(), VH() } end
+    canvas:SetSize(VW(), VH())
+    over:SetSize(VW(), VH())
+    if closeHost then closeHost:SetSize(VW(), VH()) end
+    if not ApplyFit() then
+      -- the view as last laid out (centre + zoom relative to the fit), so a new box size keeps the place
+      local lv = M.lastView
+      if lv then SetView(lv.cx, lv.cy, lv.z * SFit())
+      else local cx, cy = M.Center() SetView(cx, cy, M.Zoom() * SFit()) end
+    end
+    M.Layout()
+  end)
+  refitting = false
+  if not ok then error(err, 0) end
 end
 M.Refit = Refit
 -- 0.5.2b.8.2: /dm zoomprobe: the zoom level now and, for the window and the full-screen box at that SAME level and
@@ -2719,8 +2804,9 @@ local function Build(body)
   over = CreateFrame("Frame", nil, canvas)
   over:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
   over:SetSize(VW(), VH())
-  over:SetFrameLevel(canvas:GetFrameLevel() + 8)
-  -- 0.5.1.4: the close-up minimap tiles sit above the zone layers (levels 1-6) and under the markers
+  over:SetFrameLevel(canvas:GetFrameLevel() + 12) -- above a focused capital (level 9) and its core pass
+  -- 0.5.1.4: the close-up minimap tiles sit above the zone layers (levels 1-6) and under the markers.
+  -- 0.5.2b.21: a capital you are looking at is raised to level 9, above this host's tile planes.
   closeHost = CreateFrame("Frame", nil, canvas)
   closeHost:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
   closeHost:SetSize(VW(), VH())
@@ -2910,6 +2996,7 @@ local function Build(body)
   end
   results:Hide()
   M.results = results
+  M.FitViewport()
   return tab
 end
 
@@ -3124,11 +3211,13 @@ function M.CentreOnPlayer()
   if p.cont then M.fade[p.cont] = 1 end
   fly, zoomT, drag = nil, nil, nil -- the opening is instant; later Show on map / marker flights still glide (FlyTo)
   local id = M.OpeningMap(p)
+  -- 0.5.2b.21: the open (M, or switching onto the Map tab) is centred on you, like the stock map and OpenMap.
+  -- Show on map / a tracker click calls ShowQuest after this and that glide still wins.
   if id then
-    M.pendingFit = { id = id, blizz = true }
+    M.pendingFit = { id = id, blizz = true, wx = p[1], wy = p[2], onPlayer = true }
   else
     local z = MD.ZoneOf(p.map) or p.map
-    M.pendingFit = { id = MD.ZoneEntry(z) and z or p.cont, wx = p[1], wy = p[2], centre = true }
+    M.pendingFit = { id = MD.ZoneEntry(z) and z or p.cont, wx = p[1], wy = p[2], centre = true, onPlayer = true }
   end
   ApplyFit()
   M.dirty = true
@@ -3248,6 +3337,8 @@ NS.RegisterTab({
     Events(false)
     if NS.QuestPanel then NS.QuestPanel.Sync(false) end
     drag, zoomT, fly = nil, nil, nil
+    -- 0.5.2b.21: closing the window, or opening another tab, drops the capital's deep zoom cap
+    M.fitCap, M.fitCapCity = nil, nil
     if M.full then M.SetFull(false) end
   end,
   Refresh = function() if M.started then M.dirty = true end end,

@@ -189,6 +189,43 @@ end
 -- 0.5.2a.2: the window is the map window's width minus what the narrower tab column freed (m.railTrim, layout units),
 -- so the content and the Map tab's map area keep their 0.5.2a size and the docked Quest Log panel has room.
 function MW.Trim(m) return (type(m) == "table" and NS.Num and NS.Num(m.railTrim)) or 0 end
+-- 0.5.2b.21: the Map tab's picture is the OpenMap / stock ScrollContainer, not the smaller hole left of the
+-- tab column. Odysseaus measured outer ~1050×558, frame ~1035×534, scroll interior ~1020×500. Those margins
+-- (15 across, 34 down) stand in when ScrollContainer cannot be read. The old vp in that frame was ~781×373.
+MW.HOLE_MARGIN_X, MW.HOLE_MARGIN_Y = 15, 34
+function MW.HolePad(m)
+  m = m or (NS.theme and NS.theme.m)
+  local b = (type(m) == "table" and tonumber(m.listBorder)) or 5
+  return 2 * b + 4
+end
+-- ScrollContainer in UIParent units, or the frame interior (frame minus the margins above). nil when the only
+-- size on hand is a guess (map never shown, nothing saved): the window stays on its old layout then.
+function MW.ScrollSize()
+  local W = Frame()
+  local sc = type(W) == "table" and Field(W, "ScrollContainer")
+  if type(sc) == "table" then
+    local w, h = N(Call(sc, "GetWidth")), N(Call(sc, "GetHeight"))
+    if w and h and w >= 200 and h >= 120 then
+      local es, ues = MW.Scales()
+      local k = (es and ues and es > 0 and ues > 0) and es / ues or 1
+      return w * k, h * k, "WorldMapFrame.ScrollContainer"
+    end
+  end
+  local _, _, src, fw, fh = MW.Size()
+  if not (fw and fh and fw >= 200 and fh >= 150 and type(src) == "string") then return nil end
+  if src:find("not shown yet", 1, true) or src:find("built-in default", 1, true)
+    or src:find("no WorldMapFrame", 1, true) or src:find("not readable", 1, true) then
+    return nil
+  end
+  return math.max(200, fw - MW.HOLE_MARGIN_X), math.max(120, fh - MW.HOLE_MARGIN_Y), "frame interior"
+end
+-- the hole in layout units at scale s (the window's own units)
+function MW.HoleLayout(scale)
+  local w, h, src = MW.ScrollSize()
+  if not w then return nil end
+  scale = (scale and scale > 0) and scale or 1
+  return w / scale, h / scale, src
+end
 -- What our window needs in a theme (nothing is changed): layout w x h, our scale, our border, and the outer size it
 -- gives on screen. Below MIN_W x MIN_H (or above MAX_W x MAX_H) inside the border, our own scale makes up the rest.
 function MW.Need(theme, m)
@@ -208,17 +245,28 @@ function MW.Need(theme, m)
   for k, v in pairs(m) do tm[k] = v end
   bases[tm] = b
   local l, t, r, bo = MW.ThemeBorder(theme, m)
-  local s, cw, ch
+  local s, cw, ch, holeW, holeH, holeSrc
   for _ = 1, 4 do
     local ox, oy = l + r, t + bo
     s = math.min(1, tw / (MW.MIN_W + ox), th / (MW.MIN_H + oy))
     s = math.max(s, tw / (MW.MAX_W + ox), th / (MW.MAX_H + oy), 0.3)
     cw, ch = math.floor(tw / s - ox + 0.5) - trim, math.floor(th / s - oy + 0.5) -- 0.5.2a.2: narrower by the tab column's trim
+    -- 0.5.2b.21: a little wider / taller when the OpenMap scroll interior does not fit that trimmed window
+    holeW, holeH, holeSrc = MW.HoleLayout(s)
+    if holeW and holeH then
+      local pad = MW.HolePad(m)
+      local needW, needH = math.ceil(holeW + pad - 1e-6), math.ceil(holeH + pad - 1e-6)
+      if cw < needW then cw = needW end
+      if ch < needH then ch = needH end
+      if cw > MW.MAX_W then cw = MW.MAX_W end
+      if ch > MW.MAX_H then ch = MW.MAX_H end
+    end
     Fill(tm, b, cw, ch)
     l, t, r, bo = MW.ThemeBorder(theme, tm)
   end
   bases[tm] = nil
   res.w, res.h, res.scale, res.border = cw, ch, s, { l, t, r, bo }
+  res.holeW, res.holeH, res.holeSrc = holeW, holeH, holeSrc
   res.outerW, res.outerH = (cw + l + r) * s, (ch + t + bo) * s
   return res
 end
