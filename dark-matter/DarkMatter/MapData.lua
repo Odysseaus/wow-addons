@@ -173,6 +173,58 @@ function MD.ZoneOf(id)
 end
 
 function MD.PlayerMap() return N(Call("C_Map", "GetBestMapForUnit", "player")) end
+
+-- 0.5.2b.25: the capital whose continent rect contains the player. Forever's GetBestMapForUnit often names the
+-- land around a city (Dun Morogh) while you are standing in the city (Ironforge). The rect is the same one the
+-- map uses to frame a capital. Nil when the position or the rects cannot be read.
+function MD.CityAtPlayer()
+  local pm = MD.PlayerMap()
+  local cont = pm and MD.ContinentOf(pm)
+  if not cont then return nil end
+  local x, y = MD.PlayerPos(cont)
+  if not x then
+    local zid = MD.ZoneOf(pm) or pm
+    local zx, zy
+    if zid then zx, zy = MD.PlayerPos(zid) end
+    local x1, x2, y1, y2
+    if zx and zy then x1, x2, y1, y2 = MD.RectOnContinent(zid, cont) end
+    if x1 and x2 and y1 and y2 and x2 > x1 and y2 > y1 then
+      x = x1 + zx * (x2 - x1)
+      y = y1 + zy * (y2 - y1)
+    end
+  end
+  if not x then return nil end
+  local best
+  for _, z in ipairs(MD.Zones(cont) or {}) do
+    if MD.IsCityID(z.id) and z.r and x >= z.r[1] and x <= z.r[2] and y >= z.r[3] and y <= z.r[4]
+      and (not best or z.area < best.area) then best = z end
+  end
+  return best and best.id
+end
+
+local function CityNamed(text)
+  if type(text) ~= "string" or text == "" then return nil end
+  local low = text:lower()
+  for id in pairs(MD.CITY_IDS) do
+    local n = MD.Name(id)
+    if type(n) == "string" and n:lower() == low then return id end
+  end
+end
+
+-- The area you are in: a capital when you stand inside its rect (or the zone text names one), else your zone.
+-- Nil when nothing can be read. City rect wins over a host-zone map id.
+function MD.PlayerArea()
+  local city = MD.CityAtPlayer()
+  if city then return city end
+  local pm = MD.PlayerMap()
+  if pm and MD.IsCityID(pm) then return pm end
+  local named = CityNamed(type(GetSubZoneText) == "function" and GetSubZoneText() or nil)
+    or CityNamed(type(GetZoneText) == "function" and GetZoneText() or nil)
+    or CityNamed(type(GetMinimapZoneText) == "function" and GetMinimapZoneText() or nil)
+  if named then return named end
+  if not pm then return nil end
+  return MD.ZoneOf(pm) or pm
+end
 -- 0.5.2b.10: the map the game's own world map opens on: MapUtil.GetDisplayableMapForPlayer (Blizzard_FrameXMLUtil
 -- MapUtil.lua), else the same walk: your map, then its parents until one has art, else the fallback world map.
 function MD.DisplayableForPlayer()

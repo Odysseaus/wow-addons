@@ -7276,9 +7276,26 @@ if MODE == "full" then
         if vp then
           areas[id .. "|" .. si] = { vp:GetWidth(), vp:GetHeight() }
           if id ~= "wow" and sz[3] and sz[3].real and areas["wow|" .. si] then
-            local a0, a1 = areas["wow|" .. si], areas[id .. "|" .. si]
-            check(math.abs(a1[1] - a0[1]) <= 2 and math.abs(a1[2] - a0[2]) <= 2, string.format(
-              "0.5.1.7 window: %s at map %dx%d: its map rectangle %.1fx%.1f equals the WoW theme's %.1fx%.1f (within 2 px)", id, sz[1], sz[2], a1[1], a1[2], a0[1], a0[2]))
+            -- 0.5.2b.25: a class theme's map fills the opening inside the wood, so it is not the WoW theme's
+            -- scroll hole. The sidebar and the map sit on that opening (a couple of pixels for the crumb gap).
+            local inner = NS.ClassInner and { NS.ClassInner() }
+            local rail = NS.windowParts and NS.windowParts.rail
+            local rl, rt, rr, rb
+            if rail then rl, rt, rr, rb = FrameMT._rect(rail) end
+            local vl, vt, vr, vb = FrameMT._rect(vp)
+            local fl, ft = FrameMT._rect(f)
+            local function gap(a, b) if not (a and b and fl) then return 999 end return math.abs((a - fl) - b) end
+            local railTop = (ft and rt) and (ft - rt) or nil
+            local mapTop = (ft and vt) and (ft - vt) or nil
+            local mapRight = (fl and vr) and (vr - fl) or nil
+            local okIn = inner and inner[1] and rl and vl and railTop and mapTop and mapRight
+              and gap(rl, inner[1]) <= 2 and math.abs(railTop - inner[2]) <= 2
+              and math.abs(mapRight - inner[3]) <= 8
+              and mapTop >= inner[2] - 2 and mapTop <= inner[2] + 48
+            check(okIn, string.format(
+              "0.5.2b.25 window: %s map sits in the wood (rail %.1f,%.1f map right %.1f top %.1f; opening %.1f,%.1f .. %.1f,%.1f)",
+              id, rl and fl and (rl - fl) or -1, railTop or -1, mapRight or -1, mapTop or -1,
+              inner and inner[1] or -1, inner and inner[2] or -1, inner and inner[3] or -1, inner and inner[4] or -1))
             nAreas = nAreas + 1
           end
         end
@@ -7808,6 +7825,85 @@ if MODE ~= "minimal" then
   local QT = NS.tabs.quests
   local rq = QT.Ready()
   check(#rq == 1 and rq[1].questID == 102 and QT.READY_TITLE == "Ready to Turn In", "0.5.2b ready: the Quests tab and the panel get a Ready to Turn In group")
+  -- 0.5.2b.25: Ready to Turn In is this area only, and a capital is its own area (not the zone around it)
+  do
+    local saveInfo, savePos, saveRect, saveBest, saveKids, saveZone, saveReal = C_Map.GetMapInfo, C_Map.GetPlayerMapPosition, C_Map.GetMapRectOnMap, C_Map.GetBestMapForUnit, C_Map.GetMapChildrenInfo, GetZoneText, GetRealZoneText
+    local MAPS = {
+      [1415] = { name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+      [1426] = { name = "Dun Morogh", mapType = 3, parentMapID = 1415 },
+      [1455] = { name = "Ironforge", mapType = 3, parentMapID = 1426 },
+      [1429] = { name = "Elwynn Forest", mapType = 3, parentMapID = 1415 },
+    }
+    C_Map.GetMapInfo = function(id) return MAPS[id] end
+    C_Map.GetMapRectOnMap = function(child, parent)
+      if child == 1426 and parent == 1415 then return 0.40, 0.60, 0.40, 0.70 end
+      if child == 1455 and parent == 1426 then return 0.40, 0.60, 0.40, 0.60 end
+      if child == 1429 and parent == 1415 then return 0.40, 0.55, 0.70, 0.90 end
+    end
+    C_Map.GetMapChildrenInfo = function(id)
+      if id == 1415 then
+        return { { mapID = 1426, name = "Dun Morogh", mapType = 3 }, { mapID = 1429, name = "Elwynn Forest", mapType = 3 } }
+      end
+    end
+    local function pos(x, y) return { x = x, y = y, GetXY = function(s) return s.x, s.y end } end
+    local px, py, pmap = 0.5, 0.5, 1426
+    C_Map.GetBestMapForUnit = function() return pmap end
+    -- position on the zone only, so a city is detected by composing the zone rect (not a raw continent point)
+    C_Map.GetPlayerMapPosition = function(id) if id == pmap and px then return pos(px, py) end end
+    local function art(id) return id == 1415 or id == 1426 or id == 1455 or id == 1429 end
+    local saveArt = NS.MapData.Art
+    NS.MapData.Art = function(id) if art(id) then return saveArt(id) or { id = id } end return saveArt(id) end
+    NS.MapData.Forget()
+    local saveCQ, saveSt = C_QuestLog, NS.QS.Status
+    local LOG = {
+      { isHeader = true, title = "Dun Morogh" },
+      { questID = 801, title = "Snow Quest" },
+      { isHeader = true, title = "Ironforge" },
+      { questID = 802, title = "Forge Quest" },
+      { isHeader = true, title = "Elwynn Forest" },
+      { questID = 803, title = "Wolf Quest" },
+    }
+    C_QuestLog = setmetatable({
+      GetNumQuestLogEntries = function() return #LOG end,
+      GetInfo = function(i) return LOG[i] end,
+      GetLogIndexForQuestID = function(q) for i, e in ipairs(LOG) do if e.questID == q then return i end end end,
+      IsComplete = function(q) return q == 801 or q == 802 or q == 803 end,
+    }, { __index = saveCQ })
+    NS.QS.Status = function(q) if q == 801 or q == 802 or q == 803 then return "ready" end return saveSt(q) end
+    GetZoneText = function() return "Dun Morogh" end
+    GetRealZoneText = function() return "Dun Morogh" end
+    px, py, pmap = 0.50, 0.50, 1426 -- continent fraction via zone pos: city rect is 0.40-0.60 of Dun Morogh, so 0.50 is INSIDE Ironforge
+    -- zone pos 0.5,0.5 on Dun Morogh maps through its continent rect into the city (city is 0.40-0.60 of the zone)
+    NS.MapData.Forget()
+    local areaIn = NS.MapData.PlayerArea()
+    local readyIn = NS.tabs.quests.Ready()
+    local function ids(list) local t = {} for _, e in ipairs(list) do t[#t + 1] = e.id or e.questID end table.sort(t) return table.concat(t, ",") end
+    check(areaIn == 1455, "0.5.2b.25 area: standing inside Ironforge's rect is Ironforge, even when the player map is Dun Morogh (" .. tostring(areaIn) .. ")")
+    check(ids(readyIn) == "802", "0.5.2b.25 ready: in Ironforge only the Ironforge turn-in is listed (" .. ids(readyIn) .. ")")
+    local log = NS.Tracker.ReadLog()
+    local zs = NS.Tracker.ZoneSet(log)
+    check(zs[802] == true and zs[801] ~= true, "0.5.2b.25 auto-track: in Ironforge the city quest counts and the Dun Morogh one does not")
+    px, py = 0.10, 0.10 -- outside the city rect on Dun Morogh
+    NS.MapData.Forget()
+    local areaOut = NS.MapData.PlayerArea()
+    local readyOut = NS.tabs.quests.Ready()
+    check(areaOut == 1426, "0.5.2b.25 area: outside the city rect, still on the Dun Morogh map, the area is Dun Morogh (" .. tostring(areaOut) .. ")")
+    check(ids(readyOut) == "801", "0.5.2b.25 ready: in Dun Morogh only the Dun Morogh turn-in is listed (" .. ids(readyOut) .. ")")
+    GetZoneText = function() return "Ironforge" end
+    GetRealZoneText = function() return "Dun Morogh" end
+    pmap = 1426
+    px, py = nil, nil
+    C_Map.GetPlayerMapPosition = function() return nil end
+    NS.MapData.Forget()
+    local areaNamed = NS.MapData.PlayerArea()
+    check(areaNamed == 1455, "0.5.2b.25 area: zone text Ironforge is the city even when the map id and the real zone are Dun Morogh (" .. tostring(areaNamed) .. ")")
+    NS.MapData.Art = saveArt
+    C_Map.GetMapInfo, C_Map.GetPlayerMapPosition, C_Map.GetMapRectOnMap, C_Map.GetBestMapForUnit, C_Map.GetMapChildrenInfo = saveInfo, savePos, saveRect, saveBest, saveKids
+    GetZoneText, GetRealZoneText = saveZone, saveReal
+    C_QuestLog, NS.QS.Status = saveCQ, saveSt
+    NS.MapData.Forget()
+    if NS.tabs.quests and NS.tabs.quests.Refresh then NS.tabs.quests.Refresh() end
+  end
   -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat
   QWATCH = { [6] = true }
   NS.db.readySection = false  -- 0.5.2b.12: quest 102 (index 3) is ready; with the section off these zone tests keep their old meaning

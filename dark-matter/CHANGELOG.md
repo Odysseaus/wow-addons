@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2b.25
+
+- **The sidebar and the map meet the wood.** On a class theme the painted bar is the outer 85 css of the 120 css corner. The sidebar and the page used to start on the old thin-frame line (9 px in from the window, 37 px down), so the shell's parchment showed between the wood and the sidebar and around the map. They now start on that 85 css edge. Measured on a 1035×534 map frame (window 1034×532, Hunter): the opening inside the wood was about x 30–1004, y 37–495. The sidebar was at x 15, y 77 (40 px of parchment under the top wood) and the page sat in the old body column. The sidebar now spans that opening down to the footer row, and the map fills the page beside it. The WoW theme's scroll hole is unchanged.
+- **Ready to Turn In is the area you are in.** The list (the tracker section and the Quests tab group) shows turn-ins for your current zone, or for the capital when you are standing in one. Ironforge is not Dun Morogh: a turn-in in the city is not listed out in the snow, and a Dun Morogh turn-in is not listed inside Ironforge. The same rule is what zone auto-track uses. A turn-in whose area cannot be read still shows. Standing in a capital is the city rectangle on the continent, then a zone name that is the city, then the player map. Forever often reports Dun Morogh while you are inside Ironforge; the rectangle still counts as the city.
+
 ## 0.5.2b.24
 
 - **Class frame edges for the signed-off map hole.** The nine class frames (`cls-<class>-fc.tga`, `-ftb.tga`, `-flr.tga`) are rebuilt so the side bars sit outside the 1020×500 map picture, the corner arms meet the top and bottom strips, and those strips repeat without a dark break. Repeat lengths, top / bottom / left / right: warrior 146, 142, 146, 141; paladin 256, 176, 153, 176; hunter 238, 129, 204, 132; rogue 215, 129, 215, 129; priest 230, 240, 186, 240; shaman 225, 207, 150, 138; mage 172, 256, 172, 252; warlock 212, 188, 210, 156; druid 174, 144, 174, 144. Overlay corners, sprites, and the parts sheet are unchanged. Coast pictures are unchanged.

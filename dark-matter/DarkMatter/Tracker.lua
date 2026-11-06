@@ -674,7 +674,8 @@ function Tr.ReadyList()
   for _, e in pairs(Tr.log) do list[#list + 1] = e end
   table.sort(list, function(a, b) return a.idx < b.idx end)
   for _, e in ipairs(list) do
-    if QS and QS.Status(e.id) == "ready" then out[#out + 1] = e end
+    -- 0.5.2b.25: this area only. A turn-in we cannot place stays; one we know is somewhere else does not.
+    if QS and QS.Status(e.id) == "ready" and (not QS.AtPlayer or QS.AtPlayer(e.id)) then out[#out + 1] = e end
   end
   return out
 end
@@ -784,16 +785,24 @@ end
 ---------------------------------------------------------------------------
 function Tr.ZoneSet(log)
   local want = {}
+  local MD = NS.MapData
+  -- 0.5.2b.25: inside a capital this is the city, not the zone around it (Ironforge, not Dun Morogh)
+  local area = MD and MD.PlayerArea and MD.PlayerArea()
+  local city = area and MD.IsCityID(area)
+  local areaName = area and MD.Name(area)
   local zone = (type(GetZoneText) == "function" and GetZoneText()) or nil
   local real = (type(GetRealZoneText) == "function" and GetRealZoneText()) or nil
   for id, e in pairs(log) do
-    if e.zone and (e.zone == zone or e.zone == real) then want[id] = true end
+    if e.zone then
+      if city then
+        if e.zone == areaName then want[id] = true end
+      elseif e.zone == zone or e.zone == real or (areaName and e.zone == areaName) then
+        want[id] = true
+      end
+    end
   end
-  local MD = NS.MapData
-  local here = MD and MD.PlayerMap()
-  local z = here and (MD.ZoneOf(here) or here)
-  if z and MD.Quests then
-    for _, q in ipairs(MD.Quests(z) or {}) do if log[q.id] then want[q.id] = true end end
+  if area and MD and MD.Quests then
+    for _, q in ipairs(MD.Quests(area) or {}) do if log[q.id] then want[q.id] = true end end
   end
   for id in pairs(Pins()) do if log[id] then want[id] = true end end
   return want
@@ -803,7 +812,9 @@ end
 -- or the quest is pinned. Unwatching goes through the queue, out of combat only.
 function Tr.ReadyDropOn() return not (DB() and DB().readySection == false) end
 local function DropReady(id)
+  -- only a turn-in that is on the Ready list (this area). One in another zone stays on the game's list.
   return Tr.ReadyDropOn() and not Tr.IsPinned(id) and NS.QS ~= nil and NS.QS.Status(id) == "ready"
+    and (not NS.QS.AtPlayer or NS.QS.AtPlayer(id))
 end
 Tr.DropReady = DropReady
 function Tr.ReadyDrops(log, w)

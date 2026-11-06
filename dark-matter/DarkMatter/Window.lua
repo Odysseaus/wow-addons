@@ -82,6 +82,29 @@ local function ArtMap(m)
 end
 NS.ClassArtMap = ArtMap
 
+-- 0.5.2b.25: where the sidebar and the page meet the wood. The corner slot is 120 css. The painted bar is the
+-- outer 85 css of that slot (about 170 texels, the same depth the frame art was built to). The old content line was
+-- the thin 38 css rim (pad / shellTop). After the map hole grew, that left the shell's parchment showing between the
+-- wood and the sidebar, and above the map. Returns left, top, right, bottom in window units, y down. nil when the
+-- frame is not the fitted map-window art (the WoW theme, or no map window to fit to).
+NS.FRAME_BAR = 85
+function NS.ClassInner(m)
+  m = m or (NS.theme and NS.theme.m)
+  if not (NS.theme and NS.theme.classArt and m) then return nil end
+  local sx, sy, ax, ay, AW, AH, fit = ArtMap(m)
+  if not fit then return nil end
+  local E = NS.theme.classArt.edges
+  local c = (E and E.corner) or 120
+  local bar = math.min(NS.FRAME_BAR, c - ((E and E.fade) or 8))
+  if bar < 40 then return nil end
+  local l = ax + bar * sx
+  local t = ay + bar * sy
+  local r = ax + (AW - bar) * sx
+  local b = ay + (AH - bar) * sy
+  if r - l < 200 or b - t < 120 then return nil end
+  return l, t, r, b
+end
+
 -- where a class theme's crest, base plate and edge sprites go (window-relative, y down); fitted art keeps them inside
 local function ArtParts(ca, m)
   local sx, sy, ax, ay, AW, AH, fit = ArtMap(m)

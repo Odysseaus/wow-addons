@@ -2473,6 +2473,11 @@ local function ToolButton(key, title, text, soon, onClick)
   return b
 end
 
+-- 0.5.2b.25: a class theme's page already ends at the wood. A 10 px inset there was another parchment band.
+local function PageInset()
+  if NS.theme and NS.theme.classArt and NS.ClassInner and NS.ClassInner() then return 0 end
+  return 10
+end
 local function PlaceRoot(host, inset, top)
   root:SetParent(host)
   root:ClearAllPoints()
@@ -2528,6 +2533,9 @@ end
 local fittingVp
 function M.FitViewport()
   if fittingVp or not (vp and vpBox) then return end
+  -- 0.5.2b.25: the page fills the opening inside the wood. Centering the scroll hole on the window left that
+  -- parchment band and let the picture slide under the frame. The WoW theme still uses the scroll hole.
+  if NS.theme and NS.theme.classArt and NS.ClassInner and NS.ClassInner() then return end
   local MW = NS.MapWindow
   if not (MW and MW.HolePad) then return end
   local last = MW.last
@@ -2739,7 +2747,7 @@ function M.SetFull(on)
     if NS.SpecialFrame then NS.SpecialFrame("DarkMatterFrame", false) NS.SpecialFrame("DarkMatterMapFull", true) end
   else
     M.full = false
-    PlaceRoot(page, 10)
+    PlaceRoot(page, PageInset())
     if full and full:IsShown() then full:Hide() end
     if NS.SpecialFrame then NS.SpecialFrame("DarkMatterMapFull", false) end
     -- next frame: Esc is still walking UISpecialFrames, and re-adding the main window now would close it too
@@ -2937,7 +2945,7 @@ local function Build(body)
   page = UI.Page(tab, m.pageW, m.pageH)
   page:SetPoint("TOPLEFT", tab, "TOPLEFT", m.pageX, 0)
   root = CreateFrame("Frame", nil, page)
-  PlaceRoot(page, 10)
+  PlaceRoot(page, PageInset())
   M.root = root
 
   -- top bar: breadcrumb (left) + zone search (right)
@@ -2961,7 +2969,7 @@ local function Build(body)
   -- the map: a ScrollFrame clips the canvas (the game's tiles never draw outside the box)
   vpBox = UI.Panel(root, 100, 100)
   vpBox:ClearAllPoints()
-  vpBox:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -6)
+  vpBox:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, PageInset() == 0 and -2 or -6)
   vpBox:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", 0, 0)
   local b = m.listBorder
   -- 0.5.2b.6.2: the viewport is a plain frame that clips its children (SetClipsChildren), as /dm masktest zone panel 2

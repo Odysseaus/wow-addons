@@ -271,6 +271,42 @@ function MW.Need(theme, m)
   return res
 end
 
+-- 0.5.2b.25: a class theme's sidebar and page fill the opening inside the wood (NS.ClassInner). The shared metrics
+-- table is the WoW theme's, so the old insets are put back first on every apply (a class pass must not stick).
+-- The footer row keeps its place: the page stops at its top, and the wood covers the rest.
+function MW.FitClassInner(m, theme)
+  local b = Base(m)
+  if not b.inset0 then
+    b.inset0 = { railX = m.railX, railY = m.railY, bodyX = m.bodyX, bodyY = m.bodyY, pageX = m.pageX,
+      tabX = m.tabX, tabY = m.tabY, railW = m.railW }
+  end
+  local z = b.inset0
+  m.railX, m.railY, m.bodyX, m.bodyY, m.pageX = z.railX, z.railY, z.bodyX, z.bodyY, z.pageX
+  m.tabX, m.tabY = z.tabX, z.tabY
+  if not (theme and theme.classArt and NS.ClassInner) then return nil end
+  local l, t, r, bot = NS.ClassInner(m)
+  if not l then return nil end
+  local foot = tonumber(m.fbtnY)
+  if foot and foot > t + 80 then bot = math.min(bot, foot) end
+  if bot - t < 120 or r - l < 200 then return nil end
+  local gap = 2 -- the sidebar and the page meet; the old 12 px gap was parchment
+  m.railX, m.railY = l, t
+  m.tabX = z.tabX + (l - z.railX)
+  m.tabY = z.tabY + (t - z.railY)
+  m.railH = bot - t
+  m.bodyX = l + (m.railW or z.railW) + gap
+  m.bodyY = t
+  m.bodyW = math.max(200, r - m.bodyX)
+  m.bodyH = bot - t
+  m.pageX = 0
+  m.pageW = m.bodyW
+  m.pageH = m.bodyH
+  if m.sectionPageY and m.sectionPageH then
+    m.sectionPageH = math.max(80, m.bodyH - m.sectionPageY)
+  end
+  return l, t, r, bot
+end
+
 -- 0.5.2a.2: the outer size our window must measure on screen (the map window's, less the tab column's trim): the
 -- self-measure check and the size probes use this. nil when the map window cannot be read.
 function MW.Target(theme, m)
@@ -285,6 +321,7 @@ function MW.Apply(m, theme)
   theme = theme or NS.theme
   local res = MW.Need(theme, m)
   Fill(m, Base(m), res.w, res.h)
+  if MW.FitClassInner then MW.FitClassInner(m, theme) end
   res.clamped = (not res.fallback) and res.scale ~= 1 or false
   res.theme = theme and theme.id
   if m == (NS.theme and NS.theme.m) then MW.last = res MW.live = nil end

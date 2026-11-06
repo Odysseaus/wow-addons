@@ -200,6 +200,66 @@ local function MapNamed(name)
     if type(r.name) == "string" and r.name:lower() == low then return r.id end
   end
 end
+-- 0.5.2b.25: the map a quest belongs to, when the game or the quest log says so. Nil when it cannot be told
+-- (a turn-in with no zone is kept on the Ready list rather than hidden).
+function QS.AreaOf(q)
+  q = N(q)
+  if not q then return nil end
+  local MD = NS.MapData
+  local header = QS.HeaderOf(q)
+  if header and MD then
+    local low = header:lower()
+    local function hit(id)
+      local n = id and MD.Name(id)
+      if type(n) == "string" and n:lower() == low then return N(id) end
+    end
+    for id in pairs(MD.CITY_IDS) do
+      local m = hit(id)
+      if m then return m end
+    end
+    local id = MD.PlayerMap()
+    for _ = 1, 8 do
+      if not id or id == 0 then break end
+      local m = hit(id)
+      if m then return m end
+      local info = MD.Info(id)
+      id = info and N(info.parentMapID)
+    end
+    if MD.Search then
+      for _, r in ipairs(MD.Search(header, 20) or {}) do
+        if type(r.name) == "string" and r.name:lower() == low then return N(r.id) end
+      end
+    end
+  end
+  local loc = QS.Locate(q)
+  return loc and N(loc.map) or nil
+end
+-- true when questArea is the area you are standing in. A capital is its own area: Ironforge is not Dun Morogh,
+-- and a Dun Morogh turn-in is not an Ironforge one.
+function QS.SameArea(questArea, here)
+  questArea, here = N(questArea), N(here)
+  if not (questArea and here) then return nil end
+  if questArea == here then return true end
+  local MD = NS.MapData
+  if not MD then return false end
+  if MD.IsCityID(here) or MD.IsCityID(questArea) then return false end
+  local z = MD.ZoneOf(questArea) or questArea
+  local hz = MD.ZoneOf(here) or here
+  return z == hz
+end
+-- Show this quest on Ready to Turn In / at-my-location? A header that names your area shows. A header or a map
+-- point we can place somewhere else does not. A turn-in we cannot place at all still shows.
+function QS.AtPlayer(q)
+  local MD = NS.MapData
+  local here = MD and MD.PlayerArea and MD.PlayerArea()
+  if not here then return true end
+  local header = QS.HeaderOf(q)
+  local hereName = MD.Name and MD.Name(here)
+  if header and hereName and header:lower() == hereName:lower() then return true end
+  local qa = QS.AreaOf(q)
+  if not qa then return true end
+  return QS.SameArea(qa, here) == true
+end
 function QS.Locate(q)
   q = N(q)
   if not q then return nil end
