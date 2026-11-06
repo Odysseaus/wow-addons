@@ -4398,6 +4398,65 @@ do
       M.pendingFit = nil
       dm = M.layers[1426]
     end
+    -- 0.5.2b.21: Forever coast Batch 1 prefers Media/coast/zNNNN.tga when that bake is installed.
+    -- SOLO_COAST stays Westfall. A bake fills a continent-puzzle slot the way a mask does.
+    do
+      local batch = { 1411, 1413, 1417, 1419, 1420, 1421, 1424, 1425, 1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441, 1443, 1444, 1445, 1446, 1447, 1451 }
+      local listed = {}
+      for _, id in ipairs(M.BAKED_COAST_IDS or {}) do listed[id] = true end
+      local paths, soloOnly = true, true
+      for _, id in ipairs(batch) do
+        if M.BakedCoastPath(id) ~= "Interface\\AddOns\\DarkMatter\\Media\\coast\\z" .. id or not (M.BAKED_COAST and M.BAKED_COAST[id] and M.BAKED_COAST[id].w == 1002 and M.BAKED_COAST[id].h == 668) or not listed[id] then paths = false end
+        if id ~= 1436 and M.SOLO_COAST[id] then soloOnly = false end
+      end
+      check(#batch == 22 and #M.BAKED_COAST_IDS == 22 and paths and soloOnly and M.SOLO_COAST[1436] == true and M.BakedCoastPath(1426) == nil,
+        "0.5.2b.21 map: Batch 1 coasts prefer Media/coast/zNNNN.tga; solo mask stays Westfall; Dun Morogh has no bake")
+      local coastDir = arg[1] .. "/Media/coast"
+      local function writeBake(id, okHeader)
+        if os.execute then os.execute("mkdir -p " .. string.format("%q", coastDir)) end
+        local fh = io.open(coastDir .. "/z" .. id .. ".tga", "wb")
+        if not fh then return false end
+        if okHeader then
+          local w, h = 1002, 668
+          fh:write(string.char(0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, w % 256, math.floor(w / 256), h % 256, math.floor(h / 256), 32, 8))
+          fh:seek("set", 18 + w * h * 4 - 1)
+          fh:write("\0")
+        else
+          fh:write("stub")
+        end
+        fh:close()
+        return true
+      end
+      local function rmBake(id)
+        os.remove(coastDir .. "/z" .. id .. ".tga")
+      end
+      writeBake(1437, false)
+      M.bakedCache = nil
+      check(M.BakedCoastFile(1437) == nil, "0.5.2b.21 map: Wetlands ignores a coast file that is not the 1002x668 bake")
+      check(writeBake(1437, true), "0.5.2b.21 map: test bake for Wetlands was written")
+      M.bakedCache = nil
+      local wet = M.BakedCoastFile(1437)
+      check(wet == "Interface\\AddOns\\DarkMatter\\Media\\coast\\z1437",
+        "0.5.2b.21 map: Wetlands prefers its bake when the file is the right picture (" .. tostring(wet) .. ")")
+      -- puzzle: one neighbour has a mask, Wetlands has only the bake -> the continent still fits
+      local saveZones = MD.Zones
+      MD.Zones = function()
+        return { { id = 9001, area = 1 }, { id = 1437, area = 1 } }
+      end
+      local saveMask = M.MaskFile
+      M.MaskFile = function(id) if id == 9001 then return "mask" end return nil end
+      M.masked = nil
+      check(M.ContMasked(1415) == true, "0.5.2b.21 map: a present bake fills that zone's slot in the continent puzzle")
+      rmBake(1437)
+      M.bakedCache = nil
+      M.masked = nil
+      check(M.ContMasked(1415) == false, "0.5.2b.21 map: a missing bake does not fill the puzzle slot")
+      MD.Zones = saveZones
+      M.MaskFile = saveMask
+      M.bakedCache = nil
+      M.masked = nil
+      if os.execute then os.execute("rmdir " .. string.format("%q", coastDir) .. " 2>/dev/null") end
+    end
     -- 0.5.2b.8.2: the full-screen map zooms like the window: the same levels, and every continent in view gets the same
     -- layers (0.5.2b.8.1: full screen fully zoomed out drew Kalimdor's zones and level boxes, Eastern Kingdoms plain)
     do

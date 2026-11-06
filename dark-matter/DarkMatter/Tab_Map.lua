@@ -488,16 +488,21 @@ M.SOLO_COAST = { [1436] = true }  -- Westfall
 function M.SoloCoastMask(id)
   return M.SOLO_COAST and M.SOLO_COAST[id] == true and M.MaskFile(id) ~= nil and not M.maskOff and M.canMask ~= false
 end
--- 0.5.2b.20: baked coast art (Illusionist). This is NOT OpenMap. Westfall only.
--- Disk file (not in git; Blizzard-derived RGB, copy it in for a Mac install):
---   DarkMatter/Media/coast/z1436.tga
---   Interface\AddOns\DarkMatter\Media\coast\z1436
--- Same packing as Media/masks: uncompressed TGA (type 2), 32-bit BGRA, bottom-left origin
--- (descriptor 8). Size is the zone art, 1002 x 668. Land RGB, ocean outside the coast transparent.
+-- 0.5.2b.20 / 0.5.2b.21: baked coast art (Illusionist). This is NOT OpenMap.
+-- Forever coast Batch 1, install-only (not in git). Same packing as Media/masks: uncompressed TGA
+-- (type 2), 32-bit BGRA, bottom-left origin (descriptor 8), the zone art size 1002 x 668.
+-- Land keeps its colour; the sea outside the coast is transparent.
+--   Interface\AddOns\DarkMatter\Media\coast\z<uiMapID>.tga
 -- A missing file, or one that is not that picture, is ignored and the masked stock art is used.
-M.BAKED_COAST = {
-  [1436] = { w = 1002, h = 668 },
+-- SOLO_COAST stays Westfall-only (the pilot that draws its mask when the continent is not ContMasked).
+-- Every id here prefers its bake over the stock tiles whenever the file is present.
+M.BAKED_COAST_IDS = {
+  1411, 1413, 1417, 1419, 1420, 1421, 1424, 1425,
+  1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441,
+  1443, 1444, 1445, 1446, 1447, 1451,
 }
+M.BAKED_COAST = {}
+for _, id in ipairs(M.BAKED_COAST_IDS) do M.BAKED_COAST[id] = { w = 1002, h = 668 } end
 function M.BakedCoastPath(id)
   if not (M.BAKED_COAST and M.BAKED_COAST[id]) then return nil end
   return "Interface\\AddOns\\DarkMatter\\Media\\coast\\z" .. tostring(id)
@@ -1367,14 +1372,29 @@ function M.TexCount()
     r.total, r.tiles, r.ov, r.core, r.layers, r.coreLayers, r.shown, r.shownTex, r.fps and string.format("%.0f", r.fps) or "?")
   return r
 end
+-- 0.5.2b.21: a zone fills its slot in the continent puzzle with a mask, or with a baked coast that is
+-- actually on disk. A bake that has not been looked at yet (no canvas, disk not readable) is unknown:
+-- the continent is not cached, so a later look can still fit the puzzle.
+local function ZoneFitted(id)
+  if M.MaskFile(id) then return true end
+  if M.BakedCoastFile(id) then return true end
+  local cache = M.bakedCache
+  if M.BAKED_COAST and M.BAKED_COAST[id] and (not cache or cache[id] == nil) then return nil end
+  return false
+end
 function M.ContMasked(cont)
   M.masked = M.masked or {}
   local c = M.masked[cont]
   if c ~= nil then return c end
-  local n, have = 0, 0
+  local n, have, unknown = 0, 0, false
   for _, z in ipairs(MD.Zones(cont)) do
-    if not IsCity(z) then n = n + 1 if M.MaskFile(z.id) then have = have + 1 end end
+    if not IsCity(z) then
+      n = n + 1
+      local fit = ZoneFitted(z.id)
+      if fit == nil then unknown = true elseif fit then have = have + 1 end
+    end
   end
+  if unknown then return false end
   c = n > 0 and have == n and M.canMask ~= false and not M.maskBroken and not M.maskOff
   M.masked[cont] = c
   return c
