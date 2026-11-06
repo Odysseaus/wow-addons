@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.26
+
+- **Original thin class frames.** The nine class corner and edge pictures (`cls-<class>-fc.tga`, `-ftb.tga`, `-flr.tga`) are the 0.5.2b.19 art again (commit a238294), byte for byte. The thick side bars from 0.5.2b.24 and the corner-arm pass from 0.5.2b.25 are not used. Repeat lengths, top / bottom / left / right: warrior 146, 142, 146, 142; paladin 256, 176, 154, 176; hunter 238, 129, 204, 132; rogue 215, 129, 215, 129; priest 230, 240, 186, 240; shaman 225, 207, 150, 138; mage 172, 256, 172, 255; warlock 212, 188, 210, 156; druid 174, 144, 174, 144. The sidebar and map still meet the wood, and Ready to Turn In is still the zone or city you are in. Overlay art and coast pictures are unchanged.
+
 ## 0.5.2b.25
 
 - **The sidebar and the map meet the wood.** On a class theme the painted bar is the outer 85 css of the 120 css corner. The sidebar and the page used to start on the old thin-frame line (9 px in from the window, 37 px down), so the shell's parchment showed between the wood and the sidebar and around the map. They now start on that 85 css edge. Measured on a 1035×534 map frame (window 1034×532, Hunter): the opening inside the wood was about x 30–1004, y 37–495. The sidebar was at x 15, y 77 (40 px of parchment under the top wood) and the page sat in the old body column. The sidebar now spans that opening down to the footer row, and the map fills the page beside it. The WoW theme's scroll hole is unchanged.

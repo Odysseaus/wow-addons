@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.25: the sidebar and map sit flush inside the wood, and Ready to Turn In is the zone or city you are in. Earlier: 0.5.2b.24 class frame edges.
+## Notes: Dark Matter 0.5.2b.26: original thin class frames restored. Sidebar and map still meet the wood, and Ready to Turn In is still the zone or city you are in.
 ## Author: Odysseaus
-## Version: 0.5.2b.25
+## Version: 0.5.2b.26
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
