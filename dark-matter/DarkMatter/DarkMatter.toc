@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.29: the map keeps its size and the window grows for the quest column. /dm keyprobe reads M and L.
+## Notes: Dark Matter 0.5.2b.30: the quest list scrolls inside its panel. Reward names load for the open quest.
 ## Author: Odysseaus
-## Version: 0.5.2b.29
+## Version: 0.5.2b.30
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

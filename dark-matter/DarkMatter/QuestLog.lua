@@ -205,14 +205,7 @@ local function Score(d)
     + #(d.rewards or {}) + #(d.choices or {}) + #(d.rep or {})
 end
 
-local cache, requested, warmed = {}, {}, {}
--- 0.5.2b.29: ask for reward item names when the row is first shown, so the detail is not the first request.
-function QL.WarmRewards(q)
-  local id = type(q) == "table" and q.questID
-  if not id or warmed[id] then return end
-  warmed[id] = true
-  QL.Details(q)
-end
+local cache, requested = {}, {}
 function QL.Forget(questID)
   if questID then cache[questID] = nil requested[questID] = nil else cache = {} end
 end

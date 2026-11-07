@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2b.30
+
+- **Quest list.** The list scroll is sized to the inside of its panel, and the panel clips. A row no longer draws through the bottom border. The map and the column stay where they are.
+- **Rewards.** Opening a quest still loads its rewards, and a missing item name still says Loading…. The list no longer selects every quest to preload those names.
+
 ## 0.5.2b.29
 
 - **The map keeps its size.** The quest column is no longer carved out of the map. The window grows by the measured column width (`QuestMapFrame`, or `questLogWidth`, or the last saved width). The picture stays the scroll hole, on class frames too. The column is the page's height and clips, so the list stops at the footer. It has no close button. The window's own close button stays. The rail still says Map & Quest Logs, on two lines.

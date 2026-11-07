@@ -6309,6 +6309,70 @@ if MODE ~= "minimal" then
   -- 0.5.2b.29: the column has no X. The window's own close button is a different widget.
   check(NS.MapTab.panelBtn == nil and rawget(P.frame, "close") == nil and DarkMatter.windowParts.close, "0.5.2b.29 panel: no quest-column close; the window close remains")
   check(P.frame._clips == true, "0.5.2b.29 panel: the column clips to itself")
+  -- 0.5.2b.30: the list scroll fits the panel. The host is the page, shorter than the window.
+  do
+    local b = NS.theme.m.listBorder or 5
+    local lp = P.list
+    local sc = P.view.list
+    local pl, pt, _, pb = FrameMT._rect(lp)
+    local sl, st, _, sb = FrameMT._rect(sc.scroll)
+    check(lp._clips and sc.h and lp:GetHeight() > 120 and sc.h <= lp:GetHeight() - 2 * b + 0.5
+      and st and pt and st <= pt - b + 1 and sb >= pb + b - 1,
+      string.format("0.5.2b.30 list: scroll bottom inside the panel (scroll %.1f..%.1f, panel %.1f..%.1f, border %d, h %s)",
+        st or -1, sb or -1, pt or -1, pb or -1, b, tostring(sc.h)))
+    local tall = sc.h + 250
+    sc:SetContentHeight(tall)
+    sc:ScrollTo(100000)
+    check(math.abs(sc.GetScroll() - (tall - sc.h)) < 2, "0.5.2b.30 list: the last line can scroll into the short viewport (" .. tostring(sc.GetScroll()) .. ")")
+    P.view.Refresh()
+    local dscroll = P.detail and P.detail.scroll
+    check(dscroll and dscroll.h and dscroll.h > 40 and dscroll.h < lp:GetHeight(),
+      "0.5.2b.30 detail: its scroll is still the panel interior below the header (" .. tostring(dscroll and dscroll.h) .. ")")
+    local vpW, vpH = NS.MapTab.vp:GetWidth(), NS.MapTab.vp:GetHeight()
+    local pins = {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    local watched = {}
+    for _, id in ipairs({ 101, 102, 103 }) do watched[id] = NS.QL.IsWatched({ questID = id }) end
+    local selN = 0
+    local oldWS = NS.QL.WithSelected
+    NS.QL.WithSelected = function(...) selN = selN + 1 return oldWS(...) end
+    local req0 = #MUTATED
+    P.view.Refresh()
+    P.view.SetQuery("def")
+    P.view.SetQuery("")
+    NS.QuestPanel.Drop()
+    NS.ShowTab("map")
+    local samePins = true
+    for k, v in pairs(pins) do if not NS.db.keepTracked or NS.db.keepTracked[k] ~= v then samePins = false end end
+    for k, v in pairs(NS.db.keepTracked or {}) do if pins[k] ~= v then samePins = false end end
+    local sameWatch = true
+    for id, w in pairs(watched) do if NS.QL.IsWatched({ questID = id }) ~= w then sameWatch = false end end
+    local bulkReq = false
+    for i = req0 + 1, #MUTATED do if MUTATED[i] == "C_Item.RequestLoadItemDataByID" then bulkReq = true end end
+    check(selN == 0 and not bulkReq and samePins and sameWatch
+      and NS.MapTab.vp:GetWidth() == vpW and NS.MapTab.vp:GetHeight() == vpH,
+      "0.5.2b.30 list: fill, search and rebuild do not select quests, request rewards, or change watches, pins, or the map")
+    local oRI, oGII = GetQuestLogRewardInfo, GetItemInfo
+    GetQuestLogRewardInfo = function(i, ...)
+      local name, tex, count, quality, usable, itemID = oRI(i, ...)
+      if i == 1 then name, itemID = nil, 990001 end
+      return name, tex, count, quality, usable, itemID
+    end
+    GetItemInfo = function(id, ...) if id == 990001 then return nil end if oGII then return oGII(id, ...) end end
+    NS.QL.Forget(103)
+    local req1 = #MUTATED
+    P.OpenQuest(103)
+    local asked = false
+    for i = req1 + 1, #MUTATED do if MUTATED[i] == "C_Item.RequestLoadItemDataByID" then asked = true end end
+    local names = {}
+    for _, it in ipairs(P.detail.items or {}) do if it._shown and it.name then names[#names + 1] = it.name:GetText() end end
+    check(selN >= 1 and asked and table.concat(names, "|"):find("Loading", 1, true),
+      "0.5.2b.30 detail: the open quest still selects and requests its reward (" .. table.concat(names, "|") .. ")")
+    GetQuestLogRewardInfo, GetItemInfo = oRI, oGII
+    NS.QL.Forget(103)
+    NS.QL.WithSelected = oldWS
+    P.ShowList()
+  end
   P.OpenQuest(103)
   check(P.detail and P.detail.pin and P.detail.pin:GetText() == "Pin", "0.5.2b.29 pin: the detail starts unpinned")
   P.detail.pin._scripts.OnClick(P.detail.pin)

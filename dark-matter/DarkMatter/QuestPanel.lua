@@ -27,17 +27,29 @@ end
 function P.Extent() return RightReach() + P.gap + P.w end
 
 local TOP, PAD = 76, 14
+local function FitScroll(S, sh)
+  if not (S and S.frame) then return end
+  S.h = sh
+  S.frame:SetHeight(sh)
+  if S.scroll then S.scroll:SetHeight(sh) end
+  if S.Update then S:Update() end
+end
 local function LayoutColumn()
   if not frame then return end
   local h = NS.Num(frame:GetHeight())
   if not h or h < 120 then return end
+  local b = (NS.theme and NS.theme.m and NS.theme.m.listBorder) or 5
   local inner = math.max(40, h - TOP - PAD)
-  if lp then lp:SetHeight(inner) end
+  if lp then
+    lp:SetHeight(inner)
+    if lp.SetClipsChildren then lp:SetClipsChildren(true) end
+  end
   if dp then dp:SetHeight(inner) end
-  if det and det.scroll and det.scroll.frame then
-    local b = (NS.theme and NS.theme.m and NS.theme.m.listBorder) or 5
+  -- the list was built at the full window height; keep it inside this panel's border
+  if view and view.list then FitScroll(view.list, math.max(40, inner - 2 * b)) end
+  if det and det.scroll then
     local headH = 82 + 28
-    det.scroll.frame:SetHeight(math.max(40, inner - 2 * b - headH))
+    FitScroll(det.scroll, math.max(40, inner - 2 * b - headH))
   end
 end
 local function Place()
@@ -210,6 +222,7 @@ function P.Build(win)
   local h = m.h - top - pad
   -- the list (same rows, watch boxes and selection as the Quests tab)
   lp = UI.Panel(f, cw - G, h)
+  if lp.SetClipsChildren then lp:SetClipsChildren(true) end
   lp:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -top)
   view = t.NewView(lp, cw - G - 2 * b, h - 2 * b, b, -b, {
     onPick = function(q) ShowDetail(q) end,

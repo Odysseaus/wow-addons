@@ -473,7 +473,6 @@ local function FillRows(V)
         local q = data.quest
         isSel = ((q.questID or q.title) == selectedId)
         r.icon:Hide()
-        if QL.WarmRewards then QL.WarmRewards(q) end
         local watched, partly = BoxState(q, canWatch)
         if r.pin then
           r.pin:Show()
