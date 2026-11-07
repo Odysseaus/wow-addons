@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.28
+
+- **Map & Quest Logs.** The separate Quests tab and the map button that showed or hid the side log are gone. The quest list is a column inside the map section. M and L both open and close that section. ALT-M and ALT-L still open the stock map and the stock quest log. A saved Quests tab opens this section. Pins are not cleared.
+- **Click a quest, then Back.** The column shows the quest list. Choosing a quest replaces that list with the quest's title, objectives, description, and rewards. Item names use the game's tooltip. Back returns to the list and keeps its scroll and search. Show on map still glides.
+- **Size.** The stock quest frame is no longer measured as part of the map chrome and then drawn again beside the window. A quest frame that sits inside the map is a column only. A quest frame that sticks out adds just the part that sticks out, and hiding it does not shrink the window. `questLogWidth` sizes that column and is not added on top of a map frame we can already measure. `/dm sizeprobe` prints the live outer size, the scroll size, and the column width. It does not claim they already match. Share and Abandon are not in this quest view; this build does not add them.
+
 ## 0.5.2b.27
 
 - **Ready to Turn In follows the turn-in, not the log category.** A finished quest is listed for the zone or city where you hand it in. The log header is where it was filed (The Defias Brotherhood stays under Westfall while Wiley is in Lakeshire). The game's next waypoint, then a point on a map, decides. A turn-in in another zone stays on the objective tracker; it is not removed and it is not listed here. A pinned quest is unchanged. A capital is still its own area.

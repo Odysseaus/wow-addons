@@ -1,6 +1,5 @@
--- Dark Matter 0.5.2a.1: the docked quest panel. While the Map tab is showing, the quest log sits as its own panel
--- docked to the right of the Dark Matter window, like the game's map + quest log: locked in place (it is a child of the
--- window, so it moves and scales with it), themed in every theme, open or closed as saved in DarkMatterDB.questPanel.
+-- Dark Matter 0.5.2b.28: the quest column inside Map & Quest Logs. It is a child of that section, so it moves
+-- and scales with the window. It is not a separate tab and not a panel you hide.
 -- Top: the stock quest log's search bar (the game's SearchBoxTemplate and its "Quests: n/max" box, built from the game's
 -- own template and atlases where this client has them). Below: the same quest list as the Quests tab (Tab_Quests views,
 -- shared QuestState). A row click opens that quest's detail (the Quests tab's detail code) with a Back button.
@@ -29,6 +28,12 @@ function P.Extent() return RightReach() + P.gap + P.w end
 
 local function Place()
   if not frame then return end
+  if P.embedded and P.host then
+    frame:SetParent(P.host)
+    frame:ClearAllPoints()
+    frame:SetAllPoints(P.host)
+    return
+  end
   local win = frame:GetParent()
   frame:ClearAllPoints()
   frame:SetPoint("TOPLEFT", win, "TOPRIGHT", RightReach() + P.gap, 0)
@@ -137,10 +142,23 @@ local function ShowDetail(q)
   lp:Hide()
   dp:Show()
   T().ShowDetail(q, det)
-  if det.scroll and det.scroll.SetScroll then pcall(det.scroll.SetScroll, det.scroll, 0) end
+  if det.scroll and det.scroll.ScrollTo then pcall(det.scroll.ScrollTo, det.scroll, 0) end
 end
 P.ShowList, P.ShowDetail = ShowList, ShowDetail
 
+function P.Embed(host)
+  if not host then return nil end
+  P.embedded = true
+  P.host = host
+  P.mapShown = true
+  local f = P.Build(host)
+  if not f then return nil end
+  Place()
+  f:Show()
+  if view then view.Refresh() end
+  UpdateCount()
+  return f
+end
 function P.Build(win)
   -- 0.5.2b.27: a rebuilt window leaves the old panel on a hidden parent. Show() there never appears until /reload.
   local parent = frame and frame.GetParent and frame:GetParent()
@@ -174,7 +192,9 @@ function P.Build(win)
   end
   if (NS.Num(close:GetWidth()) or 0) <= 0 then close:SetSize(28, 28) end
   close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
-  close:SetScript("OnClick", function() P.SetOpen(false) end)
+  close:SetScript("OnClick", function()
+    if P.embedded then ShowList() else P.SetOpen(false) end
+  end)
   f.close = close
   local pad = 14
   local cw = P.w - 2 * pad
@@ -222,7 +242,7 @@ end
 function P.Sync(mapShown)
   if mapShown ~= nil then P.mapShown = mapShown end
   local want = P.mapShown and P.Wanted()
-  if want and not frame then P.Build(_G.DarkMatterFrame) end
+  if want and not frame then P.Build((P.embedded and P.host) or _G.DarkMatterFrame) end
   if not frame then return end
   if want then
     Place()
@@ -234,10 +254,17 @@ function P.Sync(mapShown)
     frame:Hide()
     if T() and T().Events then T().Events(false, "panel") end
   end
-  if NS.WindowClampExtra then NS.WindowClampExtra(want and P.Extent() or 0) end
+  if NS.WindowClampExtra then NS.WindowClampExtra((want and not P.embedded) and P.Extent() or 0) end
   if NS.MapTab and NS.MapTab.SetPanelIcon then NS.MapTab.SetPanelIcon() end
 end
 function P.SetOpen(on)
+  -- 0.5.2b.28: the column is part of Map & Quest Logs. It is not a panel you close.
+  if P.embedded then
+    if NS.db then NS.db.questPanel = true end
+    if on == false then ShowList() end
+    P.Sync()
+    return
+  end
   if NS.db then NS.db.questPanel = on and true or false end
   P.Sync()
 end
@@ -251,7 +278,8 @@ function P.Ensure()
   local mapOn = win and win.IsShown and win:IsShown() and (cur == "map" or (cur == nil and NS.db and NS.db.tab == "map"))
   if not (mapOn and P.Wanted()) then return false end
   local parent = frame and frame.GetParent and frame:GetParent()
-  if parent and parent ~= win then P.Drop() end
+  local home = (P.embedded and P.host) or win
+  if parent and home and parent ~= home then P.Drop() end
   P.mapShown = true
   if not (frame and frame:IsShown()) then P.Sync(true) end
   return frame ~= nil and frame:IsShown()

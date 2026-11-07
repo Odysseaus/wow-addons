@@ -377,7 +377,8 @@ function NS.OpenOnMap(q, keepPanel)
   if not (f and f:IsShown()) then return false end
   if NS.ShowTab and not (NS.db and NS.db.tab == "map" and NS.tabs.map and NS.tabs.map.frame and NS.tabs.map.frame:IsShown()) then NS.ShowTab("map") end
   local P = NS.QuestPanel
-  if P and not P.Wanted() then P.SetOpen(true) end
+  if P and not P.Wanted() and P.SetOpen then P.SetOpen(true) end
+  if P and P.Ensure then P.Ensure() end
   if q then
     if NS.MapTab and NS.MapTab.ShowQuest then NS.MapTab.ShowQuest(q) end
     if P then P.OpenQuest(q) end

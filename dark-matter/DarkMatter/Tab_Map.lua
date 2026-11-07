@@ -2374,11 +2374,19 @@ M.QuestClick = function(mk) return QuestClick(mk) end
 
 function M.Tick(dt)
   dt = math.min(dt or 0, 0.1)
-  -- 0.5.2b.27: if the docked quest log was missed, bring it back without a reload
+  -- 0.5.2b.28: the column stays inside. If the client publishes a quest width later, the column takes it.
   M._panelAcc = (M._panelAcc or 0) + dt
-  if M._panelAcc >= 1 and NS.QuestPanel and NS.QuestPanel.Ensure then
+  if M._panelAcc >= 1 then
     M._panelAcc = 0
-    pcall(NS.QuestPanel.Ensure)
+    local lay = 0
+    if NS.MapWindow and NS.MapWindow.QuestLay then
+      lay = NS.MapWindow.QuestLay(NS.MapWindow.last and NS.MapWindow.last.scale) or 0
+    end
+    if qhost and lay ~= M._qlay and page and root and root:GetParent() == page then
+      M._qlay = lay
+      PlaceRoot(page, PageInset())
+    end
+    if NS.QuestPanel and NS.QuestPanel.Ensure then pcall(NS.QuestPanel.Ensure) end
   end
   -- 0.5.2b.7.2: the frame counter (0.5.2b.7.3: quest areas are drawn in the frame they move, after LayoutBlobs; MapExtras.lua)
   if M.ExtrasPreTick then local ok, e = pcall(M.ExtrasPreTick) if not ok then M.extrasErr = e end end
@@ -2484,11 +2492,27 @@ local function PageInset()
   if NS.theme and NS.theme.classArt and NS.ClassInner and NS.ClassInner() then return 0 end
   return 10
 end
+local qhost
+local function QuestLay()
+  local MW = NS.MapWindow
+  if not (MW and MW.QuestLay) then return 0 end
+  local lay, inside = MW.QuestLay(MW.last and MW.last.scale)
+  if inside then return lay end
+  return lay
+end
 local function PlaceRoot(host, inset, top)
+  local q = (host == page) and QuestLay() or 0
   root:SetParent(host)
   root:ClearAllPoints()
   root:SetPoint("TOPLEFT", host, "TOPLEFT", inset, -(top or inset))
-  root:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -inset, inset)
+  root:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -(inset + q), inset)
+  if qhost and host == page then
+    qhost:ClearAllPoints()
+    qhost:SetPoint("TOPRIGHT", host, "TOPRIGHT", -inset, -(top or inset))
+    qhost:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -inset, inset)
+    qhost:SetWidth(math.max(q, 1))
+    if q > 1 then qhost:Show() else qhost:Hide() end
+  end
 end
 -- the first view (your zone) is fitted to the box's real size: until you move the map, it is fitted again on resize
 local function ApplyFit()
@@ -2951,8 +2975,12 @@ local function Build(body)
   page = UI.Page(tab, m.pageW, m.pageH)
   page:SetPoint("TOPLEFT", tab, "TOPLEFT", m.pageX, 0)
   root = CreateFrame("Frame", nil, page)
+  qhost = CreateFrame("Frame", nil, page)
+  qhost:SetFrameLevel(page:GetFrameLevel() + 2)
+  M.questHost = qhost
   PlaceRoot(page, PageInset())
   M.root = root
+  if NS.QuestPanel and NS.QuestPanel.Embed then NS.QuestPanel.Embed(qhost) end
 
   -- top bar: breadcrumb (left) + zone search (right)
   bar = UI.Panel(root, 100, 32)
@@ -3059,7 +3087,7 @@ local function Build(body)
   -- right tool strip
   strip = CreateFrame("Frame", nil, vpBox)
   strip:SetFrameLevel(canvas:GetFrameLevel() + 20)
-  strip:SetSize(40, 7 * 34 + 8)
+  strip:SetSize(40, 6 * 34 + 8)
   strip:SetPoint("TOPRIGHT", vp, "TOPRIGHT", -6, -6)
   local sbg = strip:CreateTexture(nil, "BACKGROUND")
   sbg:SetAllPoints(strip)
@@ -3074,8 +3102,6 @@ local function Build(body)
     ToolButton("full", "Full screen", "", false, function() M.SetFull(not M.full) end),
     ToolButton("closeup", "Close-up detail", "The game's minimap tiles when you zoom in close (blended across the whole zone). On/off and strength.", false,
       function() M.ToggleClosePanel() end),
-    -- 0.5.2a.1: the docked quest panel beside the window (open or closed, remembered)
-    ToolButton("quest", "Quest log", "Show or hide the quest list docked beside the window.", false, function() if NS.QuestPanel then NS.QuestPanel.Toggle() end end),
   }
   -- the close-up button shows the game's spyglass icon (stock art by path); the strip's own find-me icon if missing
   do
@@ -3087,7 +3113,7 @@ local function Build(body)
   for i, tb in ipairs(tools) do tb:SetPoint("TOP", strip, "TOP", 0, -5 - (i - 1) * 34) end
   M.tools = tools
   M.fullBtn = tools[5]
-  M.panelBtn = tools[7]
+  M.panelBtn = nil
   M.pinBtn = tools[2]
   M.SetPanelIcon()
   SetFullIcon()
@@ -3569,7 +3595,7 @@ function M.ToggleClosePanel(show)
 end
 
 NS.RegisterTab({
-  id = "map", name = "Map", glyph = "map",
+  id = "map", name = "Map & Quest Logs", glyph = "map",
   Build = Build,
   OnShow = function()
     -- 0.5.2b.27: a failure while starting the map must not skip the quest panel

@@ -504,7 +504,12 @@ local function FillRows(V)
   return sel, matched, searching
 end
 
-local function Live(V) return V == main or (V.host and V.host:IsVisible()) end
+local function Live(V)
+  if V == main or (V.host and V.host:IsVisible()) then return true end
+  -- 0.5.2b.28: the map column stays filled while the map is up, even before a column width is known
+  local P = NS.QuestPanel
+  return P and P.view == V and P.embedded and P.mapShown and P.frame and P.frame:IsShown()
+end
 
 -- read the log once and redraw every view that is showing (the Quests tab's always, it keeps the selection)
 local function Refresh()
@@ -657,7 +662,7 @@ local function NewDetail(dp, w, h, top)
 end
 
 NS.RegisterTab({
-  id = "quests", name = "Quests", glyph = "quests",
+  id = "quests", name = "Quests", glyph = "quests", hidden = true,
   Build = function(body)
     local m = NS.theme.m
     ROW_H = m.rowH

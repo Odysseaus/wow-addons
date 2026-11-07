@@ -84,9 +84,64 @@ function MW.MapRect()
     if a1 then l, t, r, b = math.min(l, a1), math.max(t, a2), math.max(r, a3), math.min(b, a4) end
   end
   for kk in pairs(CORNERS) do U(Field(nine, kk)) end
-  local q = _G.QuestMapFrame
-  if type(q) == "table" and Call(q, "IsShown") == true then U(q) end
+  -- 0.5.2b.28: the stock quest log is not part of the map chrome. Counting it here made Dark Matter
+  -- grow whenever that frame was shown, then a second log was hung outside. The column lives inside.
   return l, t, r, b, { fl, ft, fr, fb }
+end
+-- Width of the stock quest column, in the map frame's own pixels. Nil when this client has not
+-- published one. A shown QuestMapFrame that sits inside the map frame is already part of that
+-- frame's width (inside = true): do not add it again.
+function MW.QuestColumnPx()
+  local W = Frame()
+  local q = _G.QuestMapFrame
+  local qw = type(q) == "table" and N(Call(q, "GetWidth"))
+  local inside = false
+  if type(q) == "table" and W and qw and qw >= 80 then
+    local ql, qr = N(Call(q, "GetLeft")), N(Call(q, "GetRight"))
+    local wl, wr = N(Call(W, "GetLeft")), N(Call(W, "GetRight"))
+    if ql and qr and wl and wr and ql >= wl - 2 and qr <= wr + 2 then inside = true end
+  end
+  local px, src
+  if qw and qw >= 80 then px, src = qw, "QuestMapFrame"
+  else
+    local field = W and N(Field(W, "questLogWidth"))
+    if field and field >= 80 then px, src = field, "questLogWidth" end
+  end
+  if px and type(NS.db) == "table" then NS.db.questColumnPx, NS.db.questColumnSrc = px, src end
+  if px and px >= 80 then return px, inside, src or "none" end
+  -- a map frame we can measure, with no column of its own, does not inherit an older width
+  local shown = W and Call(W, "IsShown") == true and N(Call(W, "GetWidth"))
+  if shown and shown >= 200 then return nil, inside, "none" end
+  if type(NS.db) == "table" and N(NS.db.questColumnPx) and NS.db.questColumnPx >= 80 then
+    return NS.db.questColumnPx, false, NS.db.questColumnSrc or "saved"
+  end
+  return nil, inside, "none"
+end
+function MW.QuestLay(scale)
+  local px, inside, src = MW.QuestColumnPx()
+  if not px then return 0, false, "none" end
+  scale = (scale and scale > 0) and scale or 1
+  return px / scale, inside, src
+end
+-- Layout units to add so a quest frame that sticks out past the map frame is counted once.
+-- A frame that sits inside is already in the map frame's width. Hiding the frame keeps the last overhang.
+function MW.QuestExtra(scale)
+  scale = (scale and scale > 0) and scale or 1
+  local W = Frame()
+  local q = _G.QuestMapFrame
+  local extra = 0
+  local seen = type(q) == "table" and Call(q, "IsShown") == true
+  if seen and W then
+    local qr, wr = N(Call(q, "GetRight")), N(Call(W, "GetRight"))
+    local qw = N(Call(q, "GetWidth"))
+    if qr and wr and qw and qw >= 80 and qr > wr + 2 then extra = (qr - wr) / scale end
+  end
+  if extra > 0 and type(NS.db) == "table" then NS.db.questExtraPx = extra * scale end
+  if extra == 0 and not seen and type(NS.db) == "table" then
+    local saved = N(NS.db.questExtraPx)
+    if saved and saved >= 1 then extra = saved / scale end
+  end
+  return extra
 end
 -- the map window's OUTER size on screen (UIParent units), where it came from, and its frame's own size on screen. From
 -- its rectangles when they can be read; else its size plus the border corners' offsets.
@@ -261,6 +316,13 @@ function MW.Need(theme, m)
       if cw > MW.MAX_W then cw = MW.MAX_W end
       if ch > MW.MAX_H then ch = MW.MAX_H end
     end
+    -- 0.5.2b.28: a readable map frame is already the outer size. Add only the part of the stock quest
+    -- frame that sticks out past it, and keep that extra once it has been seen (hiding the frame must
+    -- not shrink the window and rebuild). A questLogWidth number on a frame we can already measure is
+    -- not added again.
+    local extra = MW.QuestExtra(s)
+    if extra > 0 then cw = cw + math.floor(extra + 0.5) end
+    if cw > MW.MAX_W then cw = MW.MAX_W end
     Fill(tm, b, cw, ch)
     l, t, r, bo = MW.ThemeBorder(theme, tm)
   end
@@ -525,6 +587,24 @@ function MW.ThemeLines(tag)
     end
   end
   return out
+end
+
+-- /dm sizeprobe: the numbers a Forever check needs. Read only. It does not decide that they match.
+function MW.SizeLines()
+  local px, inside, src = MW.QuestColumnPx()
+  local sw, sh, ssrc = MW.ScrollSize()
+  local r = MW.last or {}
+  local q = _G.QuestMapFrame
+  local W = Frame()
+  return {
+    "sizeprobe " .. tostring(NS.version) .. " (read only; not a claim that Dark Matter matches the stock map):",
+    string.format("world map outer %sx%s", tostring(W and N(Call(W, "GetWidth"))), tostring(W and N(Call(W, "GetHeight")))),
+    string.format("scroll %sx%s (%s)", tostring(sw), tostring(sh), tostring(ssrc)),
+    string.format("quest column %s px from %s; already inside the map frame: %s; stock quest frame shown: %s",
+      tostring(px), tostring(src), tostring(inside), tostring(type(q) == "table" and Call(q, "IsShown") == true)),
+    string.format("Dark Matter window %sx%s from %s", tostring(r.w), tostring(r.h), tostring(r.source or "not built yet")),
+    "signoff still needs these live numbers with the stock quest log open: world map outer, scroll, quest column width.",
+  }
 end
 
 -- /dm frameprobe

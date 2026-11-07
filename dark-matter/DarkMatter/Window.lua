@@ -617,7 +617,16 @@ local function Build()
   UI.NineSlice(rail, "pane", m.railBorder, "BORDER", 3, "rail") -- 0.5.1.3: an inset divider in the class themes
   W.rail = rail
   W.railTabs = {}
-  for i, tid in ipairs(NS.tabOrder) do
+  local function VisibleTabs()
+    local out = {}
+    for _, tid in ipairs(NS.tabOrder) do
+      local def = NS.tabs[tid]
+      if def and not def.hidden then out[#out + 1] = tid end
+    end
+    return out
+  end
+  NS.VisibleTabs = VisibleTabs
+  for i, tid in ipairs(VisibleTabs()) do
     local def = NS.tabs[tid]
     local t = UI.RailTab(rail, def.name, NS.theme.glyphs[def.glyph])
     t:SetPoint("TOPLEFT", rail, "TOPLEFT", m.tabX - m.railX, -(m.tabY - m.railY) - (i - 1) * (m.tabH + m.tabGap))

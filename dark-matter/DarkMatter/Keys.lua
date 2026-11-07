@@ -18,24 +18,16 @@ local owner, regen
 local function InCombat() return type(InCombatLockdown) == "function" and InCombatLockdown() == true end
 function K.Wanted() return not (NS.db and NS.db.mlKeys == false) end
 
--- 0.5.2b.10: M toggles the Map tab, L the Quests tab: the same key on its own tab closes the window, else that tab opens.
--- 0.5.2b.27: the tab on screen decides (windowParts.current). A stale saved tab used to make M and L open again
--- instead of closing, and they stayed that way until a reload.
+-- 0.5.2b.28: M and L both toggle Map & Quest Logs. Either key closes it when it is open.
+-- Opening centres on you. ALT-M and ALT-L are unchanged (the stock map and stock quest log).
 function K.Press(which)
   local f = _G.DarkMatterFrame
-  local tab = which == "log" and "quests" or "map"
   local shown = f and f.IsShown and f:IsShown()
-  local cur = (NS.windowParts and NS.windowParts.current) or (NS.db and NS.db.tab)
-  if shown and cur == tab then
+  if shown then
     NS.ToggleWindow(false)
     return "closed"
   end
-  if tab == "map" then
-    NS.OpenOnMap(nil, true) -- Map tab, centred on you (stock map / OpenMap). A quest open still glides to the quest.
-  else
-    NS.ToggleWindow(true)
-    NS.ShowTab("quests")
-  end
+  NS.OpenOnMap(nil, true)
   return "opened"
 end
 
@@ -48,11 +40,14 @@ local function Build()
       btn:Hide()
       btn:RegisterForClicks("AnyUp", "AnyDown")
       local which = b.key == "L" and "log" or "map"
-      -- a key click can come as a press and a release: act once (on whichever comes first)
+      -- a key click can come as a press and a release: act once. M and L keep separate timers,
+      -- so alternating the two keys is not swallowed.
       btn:SetScript("OnClick", function(_, _, down)
         local now = (type(GetTime) == "function" and GetTime()) or 0
-        if down == false and K.downAt and now - K.downAt < 1 then K.downAt = nil return end
-        K.downAt = down and now or nil
+        K.downAtBy = K.downAtBy or {}
+        local prev = K.downAtBy[which]
+        if down == false and prev and now - prev < 1 then K.downAtBy[which] = nil return end
+        K.downAtBy[which] = (down ~= false) and now or nil
         K.Press(which)
       end)
       K[which .. "Button"] = btn

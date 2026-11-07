@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.27: Ready lists the turn-in zone, and M, L, and the quest panel keep working without a reload.
+## Notes: Dark Matter 0.5.2b.28: Map & Quest Logs is one section. M and L both open and close it. The quest list is a column inside the window.
 ## Author: Odysseaus
-## Version: 0.5.2b.27
+## Version: 0.5.2b.28
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

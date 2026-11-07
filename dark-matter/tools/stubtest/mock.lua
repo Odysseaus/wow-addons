@@ -1104,7 +1104,7 @@ do
     end
     if QPF and QPF:IsVisible() then
       local pl, pt, pr, pb = FrameMT._rect(QPF)
-      check(pl and pl >= wr and pr > pl and pt - pb == MWH, tag .. ": docked quest panel lies beside the window, as tall as it")
+      check(pl and pl >= wl and pr <= wr + 1 and pr > pl, tag .. ": quest column lies inside the window")
     end
     check(nTex > 20 and nPieces > 10, tag .. ": many pieces drawn (" .. nTex .. " textures, " .. nPieces .. " atlas pieces)")
     -- the 9-slice window border: 8 pieces, corners 16x16, edges thin, spanning the whole window
@@ -1130,7 +1130,11 @@ do
     -- the rail tabs, body host and active tab page are all visible with room to draw
     for _, id in ipairs(DarkMatter.tabOrder) do
       local t = DarkMatter.windowParts.railTabs and DarkMatter.windowParts.railTabs[id]
-      check(t and t._level > W._level and visible(t), tag .. ": rail tab visible: " .. id)
+      if DarkMatter.tabs[id].hidden then
+        check(t == nil, tag .. ": " .. id .. " is not a rail tab")
+      else
+        check(t and t._level > W._level and visible(t), tag .. ": rail tab visible: " .. id)
+      end
     end
     return list
   end
@@ -5972,7 +5976,7 @@ do
   -- 14. the tool strip: three slots are disabled with the version they come in
   local keys, soon = {}, {}
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
-  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup,quest", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2a.1: + Quest log)")
+  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2b.28: the quest log is a column, not a button)")
   check(soon.starpen and not soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen and Town Pins are disabled (0.5.2b: Pin works)")
   local wantV = { starpen = "0.5.3", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
   local origSS = NS.SetStatus
@@ -6208,11 +6212,23 @@ if MODE ~= "minimal" then
   NS.db.questPanel = nil
   C_QuestLog.GetMaxNumQuestsCanAccept = function() return 25 end
   NS.ShowTab("map")
-  print("DBG", P.frame, P.frame and P.frame:IsShown(), DarkMatterFrame:IsShown(), P.mapShown, NS.MapTab.panelBtn) check(P.frame and P.frame:IsShown(), "0.5.2a.1 panel: shown with the Map tab (open by default)")
-  check(P.frame:GetParent() == DarkMatterFrame, "0.5.2a.1 panel: a child of the window (moves and scales with it, locked)")
-  local pl, pt, pr = FrameMT._rect(P.frame)
-  local wl, wt, wr = FrameMT._rect(DarkMatterFrame)
-  check(pl >= wr and pt == wt and pr - pl == P.w, "0.5.2a.1 panel: docked to the right of the window, top aligned")
+  check(P.frame and P.frame:IsShown() and NS.MapTab.panelBtn == nil, "0.5.2b.28 panel: shown with the Map tab, no sidebar toggle")
+  local function underWin(f)
+    local x = f
+    for _ = 1, 8 do
+      if not x then return false end
+      if x == DarkMatterFrame then return true end
+      x = x.GetParent and x:GetParent()
+    end
+    return false
+  end
+  local host = P.frame:GetParent()
+  check(host and host ~= DarkMatterFrame and underWin(P.frame), "0.5.2b.28 panel: inside the window, not floating beside it")
+  local pl, _, pr = FrameMT._rect(P.frame)
+  local wl, _, wr = FrameMT._rect(DarkMatterFrame)
+  if pl and pr and pr - pl > 20 then
+    check(pl >= wl - 1 and pr <= wr + 1, "0.5.2b.28 panel: the quest column's edges are inside the window")
+  end
   check(P.frame.search and P.frame.search.edit, "0.5.2a.1 panel: search bar at the top")
   local ct = P.CountText()
   check(ct:find("Quests:", 1, true) and ct:find("4", 1, true) and ct:find("/25", 1, true), "0.5.2a.1 panel: quest count from the API " .. ct)
@@ -6246,8 +6262,18 @@ if MODE ~= "minimal" then
   for _, fs in ipairs(P.detail.texts) do if not fs._hid then texts[#texts + 1] = fs._text end end
   local all = table.concat(texts, "\n")
   check(all:find("Quest Objectives", 1, true) and all:find("Description", 1, true) and all:find("Rewards", 1, true), "0.5.2a.1 panel: detail has objectives, description and rewards (the Quests tab's detail)")
+  local listObj, rowObj = V.list, V.rows
   P.back._scripts.OnClick(P.back)
-  check(P.list:IsShown() and not P.detailPanel:IsShown() and V.query == "defias" and shownTitles() == "The Defias", "0.5.2a.1 panel: Back returns to the list, search kept")
+  check(P.list:IsShown() and not P.detailPanel:IsShown() and V.query == "defias" and shownTitles() == "The Defias"
+    and V.list == listObj and V.rows == rowObj, "0.5.2b.28 panel: Back returns to the same list and keeps the search")
+  if P.detail and P.detail.scroll and P.detail.scroll.SetContentHeight then
+    P.OpenQuest(103)
+    P.detail.scroll:SetContentHeight(4000)
+    P.detail.scroll:ScrollTo(100)
+    P.OpenQuest(101)
+    check(P.detail.scroll.GetScroll() == 0, "0.5.2b.28 panel: opening a quest starts its detail at the top")
+    P.ShowList()
+  end
   V.SetQuery("") P.frame.search:SetText("")
   -- 0.5.2a.2: a pin click opens THAT quest's detail in the panel (opening the panel if closed), the map stays still
   do
@@ -6256,7 +6282,7 @@ if MODE ~= "minimal" then
     _G.IsShiftKeyDown = function() return false end
     local z0 = MT.Zoom() local cx0, cy0 = MT.Center()
     P.SetOpen(false)
-    check(not P.frame:IsShown(), "0.5.2a.2 pin click: panel closed first")
+    check(P.frame:IsShown() and P.list:IsShown(), "0.5.2b.28 pin click: the column stays; closing it only returns to the list")
     MT.QuestClick({ qid = 103, map = 1426, mx = 0.5, my = 0.5 })
     check(P.frame:IsShown() and NS.db.questPanel == true and P.detailPanel:IsShown() and not P.list:IsShown() and P.detail.quest and P.detail.quest.questID == 103
       and P.detail.title._text == "The Defias" and NS.QS.selected == 103, "0.5.2a.2 pin click: a closed panel opens on that quest's detail")
@@ -6280,15 +6306,12 @@ if MODE ~= "minimal" then
     check(wpN == 1 and P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 shift-click: sets the waypoint, panel unchanged")
     NS.QS.SetWaypoint, _G.IsShiftKeyDown = saveSW, saveShift
   end
-  -- toggle (tool strip), remembered
-  local tb = NS.MapTab.panelBtn
-  tb._scripts.OnClick(tb)
-  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: the Quest log button closes it (saved)")
-  tb._scripts.OnClick(tb)
-  check(P.frame:IsShown() and NS.db.questPanel == true, "0.5.2a.1 panel: and opens it again")
+  -- 0.5.2b.28: the column is not a toggle. Its close returns to the list.
+  check(NS.MapTab.panelBtn == nil, "0.5.2b.28 panel: no quest-log button on the map")
+  P.OpenQuest(103)
+  check(P.detailPanel:IsShown(), "0.5.2b.28 panel: a quest is open before close")
   P.frame.close._scripts.OnClick(P.frame.close)
-  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: its close button closes it (saved)")
-  P.SetOpen(true)
+  check(P.frame:IsShown() and P.list:IsShown() and not P.detailPanel:IsShown() and NS.db.questPanel ~= false, "0.5.2b.28 panel: close returns to the list and leaves the column up")
   -- only with the Map tab
   NS.ShowTab("quests")
   check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")
@@ -6361,6 +6384,7 @@ if MODE ~= "minimal" then
   NS.SetTheme("wow")
   win:Show()
   NS.ShowTab("quests")
+  if W.railTabs.journals and W.railTabs.journals.SetActive then W.railTabs.journals:SetActive(true) end
   local d = drawn()
   -- 0.5.1.4: the dialog border + header plate gave way to the map-window frame (its own thin frame here: no WorldMapFrame);
   -- the shell is the inset marble
@@ -6643,7 +6667,8 @@ if MODE ~= "minimal" then
     local f = mid(t)
     if not t.stockOn or (t.active and not f:find("Down$")) or (not t.active and not f:find("Up$")) or t.stockHL._file ~= "Interface\\Buttons\\UI-Panel-Button-Highlight" then railOK = false end
   end
-  check(railN == 4 and railOK, "0.5.1.2 WoW rail tabs: stock panel buttons (active held down), stock highlight")
+  check(railN == 3 and railOK and W.railTabs.quests == nil and W.railTabs.map and W.railTabs.map.text:GetText() == "Map & Quest Logs",
+    "0.5.1.2 WoW rail tabs: stock panel buttons (active held down), stock highlight; 0.5.2b.28: three tabs, Map & Quest Logs")
   -- section tabs: character-frame tabs; toggles: panel buttons; never a marker dot
   NS.ShowTab("journals")
   NS.tabs.journals.SetSection("adventure")
@@ -7234,6 +7259,36 @@ if MODE == "full" then
     local vw, vh = M and M.vp and M.vp:GetWidth(), M and M.vp and M.vp:GetHeight()
     check(vw and math.abs(vw - 1020) < 2 and math.abs(vh - 500) < 2,
       string.format("0.5.2b.21 map: viewport %.1fx%.1f (was about 781x373 in this frame; target 1020x500)", vw or -1, vh or -1))
+    -- 0.5.2b.28: the stock quest frame is not counted twice. An overhang is counted once and kept when it hides.
+    NS.db.questExtraPx, NS.db.questColumnPx = nil, nil
+    wmf(1035, 534, { rect = true })
+    local baseW = MW.Apply(copyM())
+    QuestMapFrame = { GetWidth = function() return 280 end, GetLeft = function() return 100 + 1035 - 280 end,
+      GetRight = function() return 100 + 1035 end, IsShown = function() return true end }
+    local inW = MW.Apply(copyM())
+    local px, inn, src = MW.QuestColumnPx()
+    check(inn and src == "QuestMapFrame" and px == 280 and inW.w == baseW.w,
+      "0.5.2b.28 window: a quest frame inside the map is a column, not a second width (" .. tostring(inW.w) .. " vs " .. tostring(baseW.w) .. ")")
+    QuestMapFrame = { GetWidth = function() return 280 end, GetLeft = function() return 100 + 1035 - 10 end,
+      GetRight = function() return 100 + 1035 + 270 end, IsShown = function() return true end }
+    local outW = MW.Apply(copyM())
+    check(outW.w == baseW.w + 270, "0.5.2b.28 window: a quest frame past the map adds only its overhang (" .. tostring(outW.w) .. ")")
+    QuestMapFrame.IsShown = function() return false end
+    local hidW = MW.Apply(copyM())
+    check(hidW.w == outW.w and hidW.h == outW.h, "0.5.2b.28 window: hiding that frame does not shrink the window or ask for a rebuild")
+    QuestMapFrame = nil
+    wmf(1035, 534, { ql = 280, rect = true })
+    NS.db.questExtraPx = nil
+    local fieldW = MW.Apply(copyM())
+    local lay, _, lsrc = MW.QuestLay(1)
+    check(fieldW.w == baseW.w and lay == 280 and lsrc == "questLogWidth",
+      "0.5.2b.28 window: questLogWidth sizes the column and is not added on top of a frame we can already measure")
+    local lines = table.concat(MW.SizeLines(), "\n")
+    check(lines:find("sizeprobe " .. NS.version, 1, true) and lines:find("not a claim", 1, true) and lines:find("signoff still needs", 1, true) and lines:find("quest column 280", 1, true),
+      "0.5.2b.28 sizeprobe: prints the live numbers and does not claim they match")
+    QuestMapFrame = nil
+    NS.db.questExtraPx, NS.db.questColumnPx, NS.db.questColumnSrc = nil, nil, nil
+    wmf(1035, 534)
   end
   WorldMapFrame = saveWMF MW.art = nil
   NS.RebuildWindow()
@@ -8207,16 +8262,16 @@ if MODE ~= "minimal" then
   local kl = DarkMatterKeyLog
   TIME_NOW = TIME_NOW + 5
   kl._scripts.OnClick(kl, "LeftButton", false)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "quests", "0.5.2b.10 keys: L opens Dark Matter on the Quests tab")
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.28 keys: L opens the same Map & Quest Logs section")
   TIME_NOW = TIME_NOW + 5
   kb._scripts.OnClick(kb, "LeftButton", true)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.10 keys: M on the Quests tab switches to the Map tab")
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.28 keys: M closes it after L opened it")
   TIME_NOW = TIME_NOW + 5
   kl._scripts.OnClick(kl, "LeftButton", true)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "quests", "0.5.2b.10 keys: L on the Map tab switches to the Quests tab")
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.28 keys: L opens it again")
   TIME_NOW = TIME_NOW + 5
-  kl._scripts.OnClick(kl, "LeftButton", true)
-  check(not DarkMatterFrame:IsShown(), "0.5.2b.10 keys: L again on the Quests tab closes it")
+  kl._scripts.OnClick(kl, "LeftButton", false)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.28 keys: L closes it")
   -- 0.5.2b.10: keys the player bound to the game's map / quest log are taken over too (ALT-M / ALT-L stay the game's)
   local oldGBK = GetBindingKey
   GetBindingKey = function(a) if a == "TOGGLEWORLDMAP" then return "M", "F5", "ALT-M" elseif a == "TOGGLEQUESTLOG" then return "SHIFT-Q" end end
@@ -8281,6 +8336,38 @@ if MODE ~= "minimal" then
     "0.5.2b.27 keys: a lost M/L override is put back (" .. tostring(binds.M) .. ", " .. tostring(binds.L) .. ")")
   GetBindingAction = nil
   NS.db.tab = NS.windowParts.current
+  -- 0.5.2b.28: M and L are one toggle. A saved Quests tab and a hidden side log become this section. Pins stay.
+  NS.ToggleWindow(false)
+  TIME_NOW = TIME_NOW + 3
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(DarkMatterFrame:IsShown(), "0.5.2b.28 keys: M down opens")
+  TIME_NOW = TIME_NOW + 0.05
+  kl._scripts.OnClick(kl, "LeftButton", false)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.28 keys: L up just after M down still closes (separate key timers)")
+  local pins = { [103] = true }
+  NS.db.keepV = 1
+  NS.db.keepTracked = pins
+  NS.db.userPins = NS.db.userPins or { keep = true }
+  local userPins = NS.db.userPins
+  NS.db.tab = "quests"
+  NS.db.questPanel = false
+  NS.MigrateSaved()
+  check(NS.db.tab == "map" and NS.db.questPanel == true and NS.db.keepTracked == pins and NS.db.keepTracked[103] and NS.db.userPins == userPins,
+    "0.5.2b.28 saved: a Quests tab and a hidden side log become Map & Quest Logs; pins stay")
+  NS.ToggleWindow(true)
+  NS.ShowTab("map")
+  local P = NS.QuestPanel
+  check(P.IsShown() and P.embedded, "0.5.2b.28 panel: the map column is showing")
+  NS.tabs.map.OnHide()
+  check(not P.IsShown(), "0.5.2b.28 panel: leaving the map hides the column")
+  NS.tabs.map.OnShow()
+  check(P.IsShown() and P.frame:GetParent() == NS.MapTab.questHost, "0.5.2b.28 panel: coming back puts the column in the same window")
+  P.Drop()
+  check(P.Ensure() and P.IsShown() and P.frame:GetParent() == NS.MapTab.questHost, "0.5.2b.28 panel: after a rebuild it is inside the column, not beside the window")
+  local ic2 = InCombatLockdown
+  InCombatLockdown = function() return true end
+  check(P.Ensure() and P.IsShown(), "0.5.2b.28 panel: combat does not drop the column")
+  InCombatLockdown = ic2
   NS.ToggleWindow(false)
   ClearOverrideBindings, SetOverrideBinding, SetOverrideBindingClick, SaveBindings = nil, nil, nil, nil
   -- 6. /dm trackerprobe
