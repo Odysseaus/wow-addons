@@ -41,11 +41,12 @@ local function Help()
   print("  /dm questmap  Quests on the map: status, waypoint and arrow APIs, GetQuestsOnMap, the game icons, the objective tracker (read-only) -> DarkMatterDB.questmap")
   print("  /dm autotrack on|off  zone auto-track: this zone's quests and kept ones tracked, the rest untracked (on by default)")
   print("  /dm trackorder on|off  keep the objective tracker in quest-log order (on by default)")
-  print("  /dm keys on|off  M and L open Dark Matter (ALT-M / ALT-L the game's own map and quest log)")
+  print("  /dm keys on|off  M and L open and close Map & Quest Logs (ALT-M / ALT-L the game's own map and quest log)")
   print("  /dm keepicon [pin|lock|star|auto]  the keep-tracked icon on the objective tracker")
   print("  /dm trackerprobe  the objective tracker, keep icons, pin counts and log vs tracker order (read-only) -> DarkMatterDB.trackerprobe")
   print("  /dm artprobe  WoW theme: which of the game's own textures/templates this client has (ok/missing) -> DarkMatterDB.artprobe")
   print("  /dm frameprobe  the game's map window: its size and the border, title and close textures it is drawn with -> DarkMatterDB.frameprobe")
+  print("  /dm sizeprobe  world map outer, scroll, and quest column width (read only) -> DarkMatterDB.sizeprobe")
   print("  /dm achprobe  Achievements: mode, game API counts + 3 samples, Dark Matter counts -> DarkMatterDB.achprobe")
   print("  every probe also keeps its last run, with the time, in DarkMatterDB.probeLog (read it after /reload)")
   print("  /dm testtoast  show a sample achievement toast (nothing is recorded)")
@@ -243,6 +244,8 @@ SlashCmdList["DARKMATTER"] = function(msg)
   elseif cmd == "frameprobe" then
     -- 0.5.1.4: what the game's map window is drawn with (read only) and the size Dark Matter took from it
     Say("frameprobe", NS.MapWindow.Report())
+  elseif cmd == "sizeprobe" then
+    Say("sizeprobe", NS.MapWindow.SizeLines())
   elseif cmd == "achprobe" then
     if NS.Ach and NS.Ach.ProbeReport then
       local _, lines = NS.Ach.ProbeReport()

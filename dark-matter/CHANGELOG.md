@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.5.2b.28
+
+- **Map & Quest Logs.** The separate Quests tab and the map button that showed or hid the side log are gone. The quest list is a column inside the map section. M and L both open and close that section. ALT-M and ALT-L still open the stock map and the stock quest log. A saved Quests tab opens this section. Pins are not cleared.
+- **Click a quest, then Back.** The column shows the quest list. Choosing a quest replaces that list with the quest's title, objectives, description, and rewards. Item names use the game's tooltip. Back returns to the list and keeps its scroll and search. Show on map still glides.
+- **Size.** The stock quest frame is no longer measured as part of the map chrome and then drawn again beside the window. A quest frame that sits inside the map is a column only. A quest frame that sticks out adds just the part that sticks out, and hiding it does not shrink the window. `questLogWidth` sizes that column and is not added on top of a map frame we can already measure. `/dm sizeprobe` prints the live outer size, the scroll size, and the column width. It does not claim they already match. Share and Abandon are not in this quest view; this build does not add them.
+
+## 0.5.2b.27
+
+- **Ready to Turn In follows the turn-in, not the log category.** A finished quest is listed for the zone or city where you hand it in. The log header is where it was filed (The Defias Brotherhood stays under Westfall while Wiley is in Lakeshire). The game's next waypoint, then a point on a map, decides. A turn-in in another zone stays on the objective tracker; it is not removed and it is not listed here. A pinned quest is unchanged. A capital is still its own area.
+- **M and L keep closing the window.** Closing follows the tab on screen, so a stale saved tab cannot leave the window stuck open. If the override is cleared (a loading screen, combat, or a rebind), it is put back out of combat, including when the rebind arrives while the keys are being applied.
+- **The docked quest log comes back without a reload.** If it was left on a previous window, or the map's startup failed before showing it, the map puts it back while that tab is open.
+
+## 0.5.2b.26
+
+- **Original thin class frames.** The nine class corner and edge pictures (`cls-<class>-fc.tga`, `-ftb.tga`, `-flr.tga`) are the 0.5.2b.19 art again (commit a238294), byte for byte. The thick side bars from 0.5.2b.24 and the corner-arm pass from 0.5.2b.25 are not used. Repeat lengths, top / bottom / left / right: warrior 146, 142, 146, 142; paladin 256, 176, 154, 176; hunter 238, 129, 204, 132; rogue 215, 129, 215, 129; priest 230, 240, 186, 240; shaman 225, 207, 150, 138; mage 172, 256, 172, 255; warlock 212, 188, 210, 156; druid 174, 144, 174, 144. The sidebar and map still meet the wood, and Ready to Turn In is still the zone or city you are in. Overlay art and coast pictures are unchanged.
+
+## 0.5.2b.25
+
+- **The sidebar and the map meet the wood.** On a class theme the painted bar is the outer 85 css of the 120 css corner. The sidebar and the page used to start on the old thin-frame line (9 px in from the window, 37 px down), so the shell's parchment showed between the wood and the sidebar and around the map. They now start on that 85 css edge. Measured on a 1035×534 map frame (window 1034×532, Hunter): the opening inside the wood was about x 30–1004, y 37–495. The sidebar was at x 15, y 77 (40 px of parchment under the top wood) and the page sat in the old body column. The sidebar now spans that opening down to the footer row, and the map fills the page beside it. The WoW theme's scroll hole is unchanged.
+- **Corner arms meet the top and bottom strips.** The nine corner pictures (`cls-<class>-fc.tga`) are replaced so the wood continues through the fade into the top and bottom strips. The edge strips (`-ftb.tga`, `-flr.tga`) and their repeat lengths are the 0.5.2b.24 pictures. Overlay corners, sprites, the parts sheet, and coast pictures are unchanged.
+- **Ready to Turn In is the area you are in.** The list (the tracker section and the Quests tab group) shows turn-ins for your current zone, or for the capital when you are standing in one. Ironforge is not Dun Morogh: a turn-in in the city is not listed out in the snow, and a Dun Morogh turn-in is not listed inside Ironforge. The same rule is what zone auto-track uses. A turn-in whose area cannot be read still shows. Standing in a capital is the city rectangle on the continent, then a zone name that is the city, then the player map. Forever often reports Dun Morogh while you are inside Ironforge; the rectangle still counts as the city.
+
+## 0.5.2b.24
+
+- **Class frame edges for the signed-off map hole.** The nine class frames (`cls-<class>-fc.tga`, `-ftb.tga`, `-flr.tga`) are rebuilt so the side bars sit outside the 1020×500 map picture, the corner arms meet the top and bottom strips, and those strips repeat without a dark break. Repeat lengths, top / bottom / left / right: warrior 146, 142, 146, 141; paladin 256, 176, 153, 176; hunter 238, 129, 204, 132; rogue 215, 129, 215, 129; priest 230, 240, 186, 240; shaman 225, 207, 150, 138; mage 172, 256, 172, 252; warlock 212, 188, 210, 156; druid 174, 144, 174, 144. Overlay corners, sprites, and the parts sheet are unchanged. Coast pictures are unchanged.
+
+## 0.5.2b.23
+
+- **A capital fills the map.** Zooming or panning deep into a capital (Ironforge, Stormwind, and the others) frames that city's picture so it fills the map hole, the same as choosing the city on the breadcrumb. It is no longer a small feathered rectangle sitting on Dun Morogh's close-up snow. Zooming out from that filled city returns to the zone around it. The extra zoom cap still clears when you leave the city, close the window, or open another tab.
+- **Breadcrumb dropdowns.** Each step on the trail (world, continent, zone or city) opens a list of the other places at that level. Choosing one goes there. The world step lists continents. A continent lists its zones. A zone or city lists the zones on that continent.
+
+## 0.5.2b.22
+
+- **Ironforge's floor stays above the snow.** In 0.5.2b.21 the city picture was raised to a fixed frame level. On Forever the close-up tile planes still painted Dun Morogh over it at the deepest zoom. After those planes are drawn, a capital you are looking at is placed one level above the highest of them. The pins stay above the floor. The floor picture is solid (not feathered) when it fills the view, so snow does not show through the rim.
+- **Standing in a capital opens that city.** If your position is inside a capital's rectangle, the map opens on that city even when Forever's "which map" helper and your player map both name the land around it (Dun Morogh instead of Ironforge). The extra zoom cap still clears when you leave the city, close the window, or open another tab.
+
+## 0.5.2b.21
+
+- **Ironforge (and the other capitals) stay above the close-up tiles.** When a capital is the map you are looking at, its floor picture is drawn above the deepest minimap tiles, so Dun Morogh's snow does not cover Ironforge. A city that is only fading in over its zone stays under the tiles. The extra zoom that open needs is cleared when you leave that city, close the window, or open another tab.
+- **M opens centred on you.** The Map tab puts your character in the middle of the picture, the way the game's own map and OpenMap do. Show on map and a tracker click still glide to that quest.
+- **The map picture matches the game's scroll area.** The Map tab's viewport follows `WorldMapFrame.ScrollContainer` when that size can be read. Otherwise it uses the frame interior: about 1020×500 inside a 1035×534 frame (15px across and 34px down). In that frame the old picture was about 781×373. The window grows by a few pixels when the larger picture does not fit.
+- **Coast bakes, Batch 1.** When `Interface/AddOns/DarkMatter/Media/coast/z<id>.tga` is installed, that picture replaces the stock tiles for Durotar, The Barrens, Arathi Highlands, Blasted Lands, Tirisfal Glades, Silverpine Forest, Hillsbrad Foothills, The Hinterlands, Stranglethorn Vale, Swamp of Sorrows, Westfall, Wetlands, Teldrassil, Darkshore, Ashenvale, Thousand Needles, Desolace, Feralas, Dustwallow Marsh, Tanaris, Azshara, and Silithus (uiMapIDs 1411, 1413, 1417, 1419, 1420, 1421, 1424, 1425, 1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441, 1443, 1444, 1445, 1446, 1447, 1451). Same file as Westfall: 1002×668, uncompressed 32-bit TGA, BGRA, bottom-left origin (descriptor 8). A missing file, or a file that is not that picture, keeps the masked game art. These pictures are not in git. The solo-coast mask (drawn even when the whole continent is not masked) stays Westfall only. A bake that is present fills that zone's slot in the continent puzzle, the same way a mask does.
+
+## 0.5.2b.20
+
+- **Ironforge (and the other capitals) on open.** The map you are standing on is used when that map is a capital and it has its own picture. Forever's "which map should open" helper often names the land around the city (Dun Morogh for Ironforge), so 0.5.2b.19 still framed the snowy exterior. Opening inside a capital now frames that city's floor map. `/dm mapprobe` adds one line: the map Dark Matter will open, your map, the helper's map, and the city in focus.
+- **Westfall's coast when you are looking at Westfall.** The Westfall picture is cut with its mask even if masks for the whole continent are off (one zone whose mask did not stick no longer turns Westfall's mask off too). This is not the same as OpenMap's painted coast. If `Interface/AddOns/DarkMatter/Media/coast/z1436.tga` is installed, that picture is used instead: 1002×668, uncompressed 32-bit TGA, BGRA, bottom-left origin (descriptor 8), same packing as the zone masks. Land keeps its colour; the sea outside the coast is transparent. A missing file, or a file that is not that picture, is ignored and the masked game art is used. The picture is the game's own map art, so it is not in git. For a Mac install, copy the bake to `Interface/AddOns/DarkMatter/Media/coast/z1436.tga` (the file Illusionist verified as sha256 `f1c243661e033c52a67aced9d07c2d65e5585c99d160fca217d5ffe2ce438186`, from `/workspace/dm-coast-bake/final/z1436.tga` when that bake is on the machine).
+- **Hunter and Paladin emblems.** Smaller and seated higher (hunter 88 / -22, paladin 84 / -22), and the new seat is applied before a theme change repaints the frame. The numbers stay in Theme_CrestOverrides.lua.
+- **Class frame edges.** Top, bottom, left and right stay in the same slot (corner size 120, matching insets). The left and right pictures were the thin part: their ornaments spanned about 44–78 pixels while the top and bottom spanned about 132–172. Those side pictures are rebuilt so the ornament is about as thick as the top and bottom, for warrior, paladin, hunter, rogue, priest, shaman, mage, warlock and druid (`cls-<class>-fc.tga`, `cls-<class>-ftb.tga`, `cls-<class>-flr.tga`). Tile repeat lengths that changed with the new art: paladin bottom 176 → 256, rogue bottom 129 → 256, mage right 255 → 252.
+
+## 0.5.2b.19
+
+- Westfall on the Map tab is cut to its coastline when you are looking at that zone alone (uses the existing Westfall mask). Other zones unchanged for now.
+- Hunter and Paladin top emblems: size and height tuned so they sit more evenly on the frame. Tweaks live in Theme_CrestOverrides.lua so regenerating Theme_Classes.lua will not wipe them.
+- **Ironforge (and other capitals) city map on open**: Classic often nests a capital under its host zone (Ironforge → Dun Morogh), so the city was missing from the continent zone list. Opening then framed Dun Morogh and only the snowy exterior showed even at deep zoom / “Ironforge” breadcrumbs. Capitals are pulled into Zones via a composed continent rect; OpeningMap keeps a city with art instead of raising it to the host; when the city fills the view (cover open) its floor map draws at full strength.
+
 ## 0.5.2b.18
 
 - Group member dots and edge arrows stay at full brightness (no fading when far away). The tooltip still says when someone is out of range or in another zone.

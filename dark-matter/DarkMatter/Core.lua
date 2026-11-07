@@ -5,7 +5,7 @@ local ADDON, NS = ...
 DarkMatter = NS
 
 NS.name = ADDON
-NS.version = "0.5.2b.18"
+NS.version = "0.5.2b.28"
 NS.db = nil
 NS.sv = { existedAtLoad = false, previousSession = nil }
 NS.step = nil -- name of the probe call in progress (set by Probe.lua)
@@ -15,7 +15,7 @@ local DEFAULTS = {
   minimap = { angle = 215, hide = false },
   stockIcon = false,
   theme = "wow",
-  tab = "quests",
+  tab = "map",
   section = "adventure", -- 0.4.4: Journals opens on the Adventure Guide unless a last-used subtab is saved
   questCollapsed = {},
   fishingZone = nil,
@@ -51,6 +51,14 @@ local function InitCharDB()
   if NS.GetFishingDB then NS.GetFishingDB() end
 end
 
+-- 0.5.2b.28: a saved Quests tab opens Map & Quest Logs. The old "hide the side log" flag is retired.
+-- Pins and other saved tables are not cleared.
+function NS.MigrateSaved()
+  if type(NS.db) ~= "table" then return end
+  if NS.db.tab == "quests" then NS.db.tab = "map" end
+  if NS.db.questPanel == false then NS.db.questPanel = true end
+end
+
 local function InitDB()
   -- Blizzard's beta has been seen not to load SavedVariables at all. Remember
   -- what we found so /dm probe can say whether they came back from disk.
@@ -61,6 +69,7 @@ local function InitDB()
   NS.sv.previousLoadCount = NS.db.loadCount
   NS.sv.previousProbeWhen = type(NS.db.probe) == "table" and NS.db.probe.when or nil
   CopyDefaults(NS.db, DEFAULTS)
+  NS.MigrateSaved()
   -- 0.5.2b.1: zone auto-track is on by default; 0.5.2b saved it off for everyone, so turn it on once
   if NS.db.autoTrackV ~= 1 then NS.db.autoTrack = true NS.db.autoTrackV = 1 end
   -- 0.5.2b.1: pins start unpinned and change only by a click; 0.5.2b may have pinned on track, so clear them ONCE

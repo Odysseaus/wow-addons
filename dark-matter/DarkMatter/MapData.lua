@@ -173,6 +173,58 @@ function MD.ZoneOf(id)
 end
 
 function MD.PlayerMap() return N(Call("C_Map", "GetBestMapForUnit", "player")) end
+
+-- 0.5.2b.25: the capital whose continent rect contains the player. Forever's GetBestMapForUnit often names the
+-- land around a city (Dun Morogh) while you are standing in the city (Ironforge). The rect is the same one the
+-- map uses to frame a capital. Nil when the position or the rects cannot be read.
+function MD.CityAtPlayer()
+  local pm = MD.PlayerMap()
+  local cont = pm and MD.ContinentOf(pm)
+  if not cont then return nil end
+  local x, y = MD.PlayerPos(cont)
+  if not x then
+    local zid = MD.ZoneOf(pm) or pm
+    local zx, zy
+    if zid then zx, zy = MD.PlayerPos(zid) end
+    local x1, x2, y1, y2
+    if zx and zy then x1, x2, y1, y2 = MD.RectOnContinent(zid, cont) end
+    if x1 and x2 and y1 and y2 and x2 > x1 and y2 > y1 then
+      x = x1 + zx * (x2 - x1)
+      y = y1 + zy * (y2 - y1)
+    end
+  end
+  if not x then return nil end
+  local best
+  for _, z in ipairs(MD.Zones(cont) or {}) do
+    if MD.IsCityID(z.id) and z.r and x >= z.r[1] and x <= z.r[2] and y >= z.r[3] and y <= z.r[4]
+      and (not best or z.area < best.area) then best = z end
+  end
+  return best and best.id
+end
+
+local function CityNamed(text)
+  if type(text) ~= "string" or text == "" then return nil end
+  local low = text:lower()
+  for id in pairs(MD.CITY_IDS) do
+    local n = MD.Name(id)
+    if type(n) == "string" and n:lower() == low then return id end
+  end
+end
+
+-- The area you are in: a capital when you stand inside its rect (or the zone text names one), else your zone.
+-- Nil when nothing can be read. City rect wins over a host-zone map id.
+function MD.PlayerArea()
+  local city = MD.CityAtPlayer()
+  if city then return city end
+  local pm = MD.PlayerMap()
+  if pm and MD.IsCityID(pm) then return pm end
+  local named = CityNamed(type(GetSubZoneText) == "function" and GetSubZoneText() or nil)
+    or CityNamed(type(GetZoneText) == "function" and GetZoneText() or nil)
+    or CityNamed(type(GetMinimapZoneText) == "function" and GetMinimapZoneText() or nil)
+  if named then return named end
+  if not pm then return nil end
+  return MD.ZoneOf(pm) or pm
+end
 -- 0.5.2b.10: the map the game's own world map opens on: MapUtil.GetDisplayableMapForPlayer (Blizzard_FrameXMLUtil
 -- MapUtil.lua), else the same walk: your map, then its parents until one has art, else the fallback world map.
 function MD.DisplayableForPlayer()
@@ -225,15 +277,44 @@ function MD.Continents()
   return c.list
 end
 
+-- Where a map sits on a continent (0..1): direct GetMapRectOnMap, else composed through its parent zone
+-- (Classic capitals are often children of their host zone — Ironforge under Dun Morogh — so they are missing
+-- from GetMapChildrenInfo(continent) and have no direct continent rect).
+function MD.RectOnContinent(id, cont)
+  id, cont = N(id), N(cont)
+  if not id or not cont then return nil end
+  local x1, x2, y1, y2 = MD.Rect(id, cont)
+  if x1 then return x1, x2, y1, y2 end
+  local info = MD.Info(id)
+  local parent = info and N(info.parentMapID)
+  if not parent or parent == 0 or parent == cont then return nil end
+  local a1, a2, a3, a4 = MD.Rect(id, parent)
+  local b1, b2, b3, b4 = MD.RectOnContinent(parent, cont)
+  if not (a1 and b1) then return nil end
+  return b1 + a1 * (b2 - b1), b1 + a2 * (b2 - b1), b3 + a3 * (b4 - b3), b3 + a4 * (b4 - b3)
+end
+
 -- Zones of a continent that have art and a rect on it; big ones first (cities draw last, on top).
+-- 0.5.2b.19 / 0.5.2b.20: also pull in capitals whose parent is a host zone (not the continent).
+-- OpeningMap keeps Ironforge (PlayerMap, even when Displayable names Dun Morogh) and the city floor
+-- map is framed from this composed rect instead of only the exterior.
 function MD.Zones(cont)
   local c = Cache("zones")
   if not c[cont] then
-    local out = {}
+    local out, have = {}, {}
+    local function add(zid, name, x1, x2, y1, y2)
+      if have[zid] or not (x1 and MD.Art(zid)) then return end
+      have[zid] = true
+      out[#out + 1] = { id = zid, name = name or MD.Name(zid) or tostring(zid), cont = cont, r = { x1, x2, y1, y2 }, area = (x2 - x1) * (y2 - y1) }
+    end
     for _, z in ipairs(Children(cont, "zone")) do
       local x1, x2, y1, y2 = MD.Rect(z.id, cont)
-      if x1 and MD.Art(z.id) then
-        out[#out + 1] = { id = z.id, name = z.name, cont = cont, r = { x1, x2, y1, y2 }, area = (x2 - x1) * (y2 - y1) }
+      add(z.id, z.name, x1, x2, y1, y2)
+    end
+    for cid in pairs(MD.CITY_IDS) do
+      if MD.ContinentOf(cid) == cont and not have[cid] then
+        local x1, x2, y1, y2 = MD.RectOnContinent(cid, cont)
+        add(cid, MD.Name(cid), x1, x2, y1, y2)
       end
     end
     table.sort(out, function(a, b) if a.area ~= b.area then return a.area > b.area end return a.id < b.id end)

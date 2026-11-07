@@ -377,7 +377,8 @@ function NS.OpenOnMap(q, keepPanel)
   if not (f and f:IsShown()) then return false end
   if NS.ShowTab and not (NS.db and NS.db.tab == "map" and NS.tabs.map and NS.tabs.map.frame and NS.tabs.map.frame:IsShown()) then NS.ShowTab("map") end
   local P = NS.QuestPanel
-  if P and not P.Wanted() then P.SetOpen(true) end
+  if P and not P.Wanted() and P.SetOpen then P.SetOpen(true) end
+  if P and P.Ensure then P.Ensure() end
   if q then
     if NS.MapTab and NS.MapTab.ShowQuest then NS.MapTab.ShowQuest(q) end
     if P then P.OpenQuest(q) end
@@ -674,7 +675,8 @@ function Tr.ReadyList()
   for _, e in pairs(Tr.log) do list[#list + 1] = e end
   table.sort(list, function(a, b) return a.idx < b.idx end)
   for _, e in ipairs(list) do
-    if QS and QS.Status(e.id) == "ready" then out[#out + 1] = e end
+    -- 0.5.2b.25: this area only. A turn-in we cannot place stays; one we know is somewhere else does not.
+    if QS and QS.Status(e.id) == "ready" and (not QS.ReadyHere or QS.ReadyHere(e.id)) then out[#out + 1] = e end
   end
   return out
 end
@@ -784,16 +786,24 @@ end
 ---------------------------------------------------------------------------
 function Tr.ZoneSet(log)
   local want = {}
+  local MD = NS.MapData
+  -- 0.5.2b.25: inside a capital this is the city, not the zone around it (Ironforge, not Dun Morogh)
+  local area = MD and MD.PlayerArea and MD.PlayerArea()
+  local city = area and MD.IsCityID(area)
+  local areaName = area and MD.Name(area)
   local zone = (type(GetZoneText) == "function" and GetZoneText()) or nil
   local real = (type(GetRealZoneText) == "function" and GetRealZoneText()) or nil
   for id, e in pairs(log) do
-    if e.zone and (e.zone == zone or e.zone == real) then want[id] = true end
+    if e.zone then
+      if city then
+        if e.zone == areaName then want[id] = true end
+      elseif e.zone == zone or e.zone == real or (areaName and e.zone == areaName) then
+        want[id] = true
+      end
+    end
   end
-  local MD = NS.MapData
-  local here = MD and MD.PlayerMap()
-  local z = here and (MD.ZoneOf(here) or here)
-  if z and MD.Quests then
-    for _, q in ipairs(MD.Quests(z) or {}) do if log[q.id] then want[q.id] = true end end
+  if area and MD and MD.Quests then
+    for _, q in ipairs(MD.Quests(area) or {}) do if log[q.id] then want[q.id] = true end end
   end
   for id in pairs(Pins()) do if log[id] then want[id] = true end end
   return want
@@ -803,7 +813,9 @@ end
 -- or the quest is pinned. Unwatching goes through the queue, out of combat only.
 function Tr.ReadyDropOn() return not (DB() and DB().readySection == false) end
 local function DropReady(id)
+  -- only a turn-in that is on the Ready list (this area). One in another zone stays on the game's list.
   return Tr.ReadyDropOn() and not Tr.IsPinned(id) and NS.QS ~= nil and NS.QS.Status(id) == "ready"
+    and (not NS.QS.ReadyHere or NS.QS.ReadyHere(id))
 end
 Tr.DropReady = DropReady
 function Tr.ReadyDrops(log, w)
@@ -831,7 +843,14 @@ function Tr.Plan()
   local want = Tr.ZoneSet(log)
   for id in pairs(want) do if DropReady(id) then want[id] = nil end end
   local q = {}
-  for id in pairs(w) do if not want[id] then q[#q + 1] = { e = log[id], want = false } end end
+  for id in pairs(w) do
+    if not want[id] then
+      -- 0.5.2b.27: a ready quest whose turn-in is somewhere else stays on the objective tracker.
+      -- Auto-track must not drop it just because the log header is another zone. A pinned quest is already kept.
+      local elsewhere = log[id] and NS.QS and NS.QS.Status(id) == "ready" and NS.QS.ReadyHere and not NS.QS.ReadyHere(id)
+      if not elsewhere then q[#q + 1] = { e = log[id], want = false } end
+    end
+  end
   local adds = {}
   for id in pairs(want) do if not w[id] then adds[#adds + 1] = { e = log[id], want = true } end end
   table.sort(q, function(a, b) return a.e.idx < b.e.idx end)

@@ -729,7 +729,8 @@ function MakeWMF(w, h, opts)
     questLogWidth = opts.ql, GetWidth = function() return w end, GetHeight = function() return h end,
     GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return opts.shown ~= false end, -- 0.5.1.9: shown unless opts.shown == false
     GetLeft = opts.rectFns and opts.rectFns[1], GetRight = opts.rectFns and opts.rectFns[2], GetTop = opts.rectFns and opts.rectFns[3], GetBottom = opts.rectFns and opts.rectFns[4],
-    IsMaximized = function() return opts.maximized or false end, ScrollContainer = {},
+    IsMaximized = function() return opts.maximized or false end,
+    ScrollContainer = (opts.scrollW and opts.scrollH) and { GetWidth = function() return opts.scrollW end, GetHeight = function() return opts.scrollH end } or {},
     Show = function() WMF_WRITES[#WMF_WRITES + 1] = "Show()" end, SetSize = function() WMF_WRITES[#WMF_WRITES + 1] = "SetSize()" end })
 end
 C_Texture = { GetAtlasInfo = function(a) if not STOCK_MISSING and type(a) == "string" and (a:find("UI%-Frame%-Map") or a:find("RedButton") or a:find("Portrait")) then return { width = 24, height = 24 } end end }
@@ -1103,7 +1104,7 @@ do
     end
     if QPF and QPF:IsVisible() then
       local pl, pt, pr, pb = FrameMT._rect(QPF)
-      check(pl and pl >= wr and pr > pl and pt - pb == MWH, tag .. ": docked quest panel lies beside the window, as tall as it")
+      check(pl and pl >= wl and pr <= wr + 1 and pr > pl, tag .. ": quest column lies inside the window")
     end
     check(nTex > 20 and nPieces > 10, tag .. ": many pieces drawn (" .. nTex .. " textures, " .. nPieces .. " atlas pieces)")
     -- the 9-slice window border: 8 pieces, corners 16x16, edges thin, spanning the whole window
@@ -1129,7 +1130,11 @@ do
     -- the rail tabs, body host and active tab page are all visible with room to draw
     for _, id in ipairs(DarkMatter.tabOrder) do
       local t = DarkMatter.windowParts.railTabs and DarkMatter.windowParts.railTabs[id]
-      check(t and t._level > W._level and visible(t), tag .. ": rail tab visible: " .. id)
+      if DarkMatter.tabs[id].hidden then
+        check(t == nil, tag .. ": " .. id .. " is not a rail tab")
+      else
+        check(t and t._level > W._level and visible(t), tag .. ": rail tab visible: " .. id)
+      end
     end
     return list
   end
@@ -3740,6 +3745,11 @@ do
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
   check(L[1] == "mapprobe " .. ns.version .. " (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
+  local openLine
+  for _, l in ipairs(L) do if l:find("^map 2 open: ") then openLine = l end end
+  check(openLine and #openLine <= 90 and openLine:find("opening ", 1, true) and openLine:find("player ", 1, true)
+    and openLine:find("displayable ", 1, true) and openLine:find("focusCity ", 1, true),
+    "0.5.2b.20 mapprobe: opening id, player map, displayable and focusCity (" .. tostring(openLine) .. ")")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
   check(has("map 5: art here: map 1426: 4x3 tiles, 12 textures; files 142601..142612") and has("map 5: art continent: map 1415: 4x3 tiles, 12 textures; files 141501..141512") and has("map 5: art world: map 947: 4x3 tiles, 12 textures; files 94701..94712") and has("map 5: explored overlays here: n/a"), "0.5.0 mapprobe: art read per mapID (each level shows its own file IDs)")
@@ -3798,7 +3808,9 @@ do
     [947] = { "Azeroth", 1, 0 },
     [1414] = { "Kalimdor", 2, 947 }, [1415] = { "Eastern Kingdoms", 2, 947 },
     [1426] = { "Dun Morogh", 3, 1415, { 0.40, 0.54, 0.48, 0.62 } },
-    [1455] = { "Ironforge", 3, 1415, { 0.47, 0.50, 0.51, 0.54 } },
+    -- north edge of Dun Morogh, so the default player (continent y ~0.53) is in the zone but not in the city.
+    -- 0.5.2b.22 opens a capital when the player stands inside its rect; the nested-Ironforge test places them there.
+    [1455] = { "Ironforge", 3, 1415, { 0.47, 0.50, 0.48, 0.51 } },
     [1432] = { "Loch Modan", 3, 1415, { 0.54, 0.64, 0.47, 0.59 } },
     [1429] = { "Elwynn Forest", 3, 1415, { 0.40, 0.52, 0.70, 0.80 } },
     [1453] = { "Stormwind City", 3, 1415, { 0.40, 0.44, 0.70, 0.75 } }, -- inside Elwynn, like the game
@@ -4000,12 +4012,11 @@ do
   -- 0.5.1.10: at zone view the zone's art FILLS the view (cover framing); 0.5.1.11: no lock, the continent art is the base
   local vwN, vhN = M.vp:GetWidth(), M.vp:GetHeight()
   local bx = dm.box or {}
-  -- 0.5.2b.18: blizz open uses COVER (fill the box, crop overflow) so a wide pane matches Forever's tighter look
-  local covers = bx[1] and bx[1] <= 1e-3 and bx[2] <= 1e-3 and bx[3] >= vwN - 1e-3 and bx[4] >= vhN - 1e-3
-  local overflows = bx[1] and (bx[1] < -0.5 or bx[2] < -0.5 or bx[3] > vwN + 0.5 or bx[4] > vhN + 0.5)
-  local centred = bx[1] and math.abs((bx[1] + bx[3]) / 2 - vwN / 2) < 0.5 and math.abs((bx[2] + bx[4]) / 2 - vhN / 2) < 0.5
-  check(M.lock == nil and covers and overflows and centred,
-    string.format("0.5.2b.18 map: opened on Dun Morogh, cover fill (crop overflow), centred (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
+  local ppx, ppy
+  if M.player then ppx, ppy = M.ToScreen(M.player[1], M.player[2]) end
+  check(M.lock == nil and ppx and math.abs(ppx - vwN / 2) < 1 and math.abs(ppy - vhN / 2) < 1,
+    string.format("0.5.2b.21 map: M / CentreOnPlayer centres on you (player %.1f,%.1f in %dx%d; zone box %.1f,%.1f to %.1f,%.1f)",
+      ppx or -1, ppy or -1, vwN, vhN, bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1))
   -- 0.5.2b.3: the continent art stays drawn underneath as the base, faded toward the flat backdrop when magnified
   do
     local cl = M.layers[1415]
@@ -4049,8 +4060,8 @@ do
     local lv0 = M.LevelOf(1415)
     local cf0 = M.CityFade(1415)
     local inFade = (lv0 >= 10 and cf0 > 0.99) or (lv0 > 8 and lv0 < 10 and cf0 > 0.01 and cf0 < 0.99) or (lv0 <= 8 and cf0 == 0)
-    check(M.CityLevel() == 10 and M.CityFadeStart() == 8 and inFade and ifl and ifl.shown == (cf0 > 0) and math.abs(ifl.alpha - M.ContAlpha(1415) * cf0) < 1e-6 and ifl.level == 6 and dml.level < 6 and ifl.feather and M.focusCity == nil,
-      "0.5.2b.7.3 map: at Dun Morogh's zone view (zoom level " .. string.format("%.2f", lv0) .. ") the Ironforge picture is fading in over it (default 8 -> 10), feathered (" .. tostring(ifl and ifl.alpha) .. ", fade " .. string.format("%.3f", cf0) .. ", focus city " .. tostring(M.focusCity) .. ")")
+    check(M.CityLevel() == 10 and M.CityFadeStart() == 8 and inFade and ifl and ifl.shown == (cf0 > 0) and math.abs(ifl.alpha - M.ContAlpha(1415) * cf0) < 1e-6 and ifl.level == 6 and dml.level < 6 and ifl.feather and (M.focusCity == nil or M.focusCity == 1455),
+      "0.5.2b.7.3 map: at Dun Morogh's zone view (zoom level " .. string.format("%.2f", lv0) .. ") the Ironforge picture is fading in over it (default 8 -> 10), feathered, still under the tiles (" .. tostring(ifl and ifl.alpha) .. ", fade " .. string.format("%.3f", cf0) .. ", focus city " .. tostring(M.focusCity) .. ", level " .. tostring(ifl and ifl.level) .. ")")
     M.Pan(-500, 0) run(1)
     local fz1 = M.focusZone
     local nz1 = zonesDrawn()
@@ -4146,6 +4157,396 @@ do
     NS.db.map.cityLevel, NS.db.map.cityFade = 10, nil
     check(M.CityLevel() == 10 and M.CityFadeStart() == 8, "0.5.2b.7.3 map: a saved cityLevel 10 (0.5.2b.7.2) gives fade 8 -> full 10")
     NS.db.map.cityLevel, NS.db.map.cityFade = saveDB, saveFade
+    -- 0.5.2b.19: capitals nested under a host zone still open on the city floor map (not host exterior)
+    do
+      MapUtil = MapUtil or {}
+      MapUtil.GetDisplayableMapForPlayer = function() return 1455 end
+      C_Map.MapHasArt = function(id) return true end
+      PLAYER.map = 1455
+      local oldRect = C_Map.GetMapRectOnMap
+      local saveParent = MAPS[1455]
+      -- Classic-like: Ironforge under Dun Morogh; continent rect only via composition
+      MAPS[1455] = { "Ironforge", 3, 1426 }
+      C_Map.GetMapRectOnMap = function(child, parent)
+        if child == 1455 and parent == 1426 then return 0.45, 0.55, 0.48, 0.58 end
+        if child == 1455 and parent == 1415 then return nil end
+        return oldRect(child, parent)
+      end
+      local oldPos = C_Map.GetPlayerMapPosition
+      C_Map.GetPlayerMapPosition = function(id)
+        if id == 1455 then return { x = 0.5, y = 0.5, GetXY = function(s) return s.x, s.y end } end
+        if id == 1426 then
+          local r = { 0.45, 0.55, 0.48, 0.58 }
+          return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end }
+        end
+        if id == 1415 then
+          local ze = MD.ZoneEntry(1455)
+          if ze then local r = ze.r return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end } end
+        end
+        return oldPos and oldPos(id)
+      end
+      MD.Forget(); M.Reset(); NS.ShowTab("map"); M.vp:SetSize(812, 520); M.Refit(); for _ = 1, 15 do M.Tick(0.05) end
+      local ze = MD.ZoneEntry(1455)
+      local om = M.OpeningMap({})
+      check(ze ~= nil and om == 1455,
+        "0.5.2b.19 map: nested Ironforge (parent Dun Morogh) is in Zones and OpeningMap keeps the city (" .. tostring(om) .. ", entry " .. tostring(ze ~= nil) .. ")")
+      check(M.CentreOnPlayer() == true, "0.5.2b.19 map: CentreOnPlayer succeeds inside nested Ironforge")
+      for _ = 1, 25 do M.Tick(0.05) end
+      C_Map.GetPlayerMapPosition = oldPos
+      local ifl = M.layers[1455]
+      local zIF = MD.ZoneEntry(1455)
+      local fr = zIF and M.Frac(zIF) or -1
+      check(ifl and ifl.shown and (ifl.alpha or 0) > 0.99 and select(1, M.ZoomLevel()) >= 10,
+        string.format("0.5.2b.19 map: open on nested Ironforge shows the city floor map (Zoom %s, IF alpha %s, Frac %.3f, focusCity %s, trail %s)",
+          tostring(select(1, M.ZoomLevel())), ifl and tostring(ifl.alpha) or "nil", fr, tostring(M.focusCity), table.concat(M.Trail(), ">")))
+      check(M.focusCity == 1455 and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Ironforge",
+        string.format("0.5.2b.19 map: city open crumbs name Ironforge (focusCity %s Frac %.3f trail %s)",
+          tostring(M.focusCity), fr, table.concat(M.Trail(), ">")))
+      -- 0.5.2b.20: Forever's displayable helper returns the host (Dun Morogh); the player map is still the city
+      MapUtil.GetDisplayableMapForPlayer = function() return 1426 end
+      C_Map.GetPlayerMapPosition = function(id)
+        if id == 1455 then return { x = 0.5, y = 0.5, GetXY = function(s) return s.x, s.y end } end
+        if id == 1426 then
+          local r = { 0.45, 0.55, 0.48, 0.58 }
+          return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end }
+        end
+        if id == 1415 then
+          local ze2 = MD.ZoneEntry(1455)
+          if ze2 then local r = ze2.r return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end } end
+        end
+      end
+      local om2 = M.OpeningMap(M.player or {})
+      check(MD.ZoneEntry(1455) ~= nil and om2 == 1455 and MD.PlayerMap() == 1455 and MD.DisplayableForPlayer() == 1426,
+        "0.5.2b.20 map: OpeningMap prefers the player city over Displayable host (" .. tostring(om2) .. ", player " .. tostring(MD.PlayerMap()) .. ", displayable " .. tostring(MD.DisplayableForPlayer()) .. ")")
+      check(M.CentreOnPlayer() == true, "0.5.2b.20 map: CentreOnPlayer on the player city while Displayable is Dun Morogh")
+      for _ = 1, 25 do M.Tick(0.05) end
+      local if2 = M.layers[1455]
+      local z2 = MD.ZoneEntry(1455)
+      local fr2 = z2 and M.Frac(z2) or -1
+      check(if2 and if2.shown and (if2.alpha or 0) > 0.99 and fr2 >= 0.85 and M.focusCity == 1455,
+        string.format("0.5.2b.20 map: city floor at full strength (alpha %s, Frac %.3f, focusCity %s, zoom %s)",
+          tostring(if2 and if2.alpha), fr2, tostring(M.focusCity), tostring(select(1, M.ZoomLevel()))))
+      local openLine = M.OpenProbeLine()
+      check(type(openLine) == "string" and #openLine <= 90 and openLine:find("opening 1455", 1, true) and openLine:find("player 1455", 1, true)
+        and openLine:find("displayable 1426", 1, true) and openLine:find("focusCity 1455", 1, true),
+        "0.5.2b.20 mapprobe: opening / player / displayable / focusCity (" .. tostring(openLine) .. ")")
+      -- 0.5.2b.22: Forever names Dun Morogh (player map and Displayable) while you stand inside Ironforge
+      do
+        MapUtil.GetDisplayableMapForPlayer = function() return 1426 end
+        PLAYER.map = 1426
+        C_Map.GetPlayerMapPosition = function(id)
+          local spot = { x = 0.50, y = 0.53, GetXY = function(s) return s.x, s.y end }
+          if id == 1426 or id == 1455 then return spot end
+          if id == 1415 then
+            local r = MAPS[1426][4]
+            return { x = r[1] + 0.50 * (r[2] - r[1]), y = r[3] + 0.53 * (r[4] - r[3]), GetXY = function(s) return s.x, s.y end }
+          end
+        end
+        MD.Forget()
+        local om = M.OpeningMap({ cont = 1415, map = 1426 })
+        check(MD.PlayerMap() == 1426 and MD.DisplayableForPlayer() == 1426 and om == 1455,
+          string.format("0.5.2b.22 map: standing in Ironforge opens 1455 even when Displayable names the exterior (open %s, player %s, displayable %s)",
+            tostring(om), tostring(MD.PlayerMap()), tostring(MD.DisplayableForPlayer())))
+        check(M.CentreOnPlayer() == true, "0.5.2b.22 map: CentreOnPlayer from inside the city rect")
+        for _ = 1, 12 do M.Tick(0.05) end
+        check(M.focusCity == 1455 and M.fitCapCity == 1455,
+          string.format("0.5.2b.22 map: that open is the city floor (focus %s, fitCapCity %s)", tostring(M.focusCity), tostring(M.fitCapCity)))
+        PLAYER.map = 1455
+      end
+      -- 0.5.2b.21: terrain tiles are loaded and the deepest zoom actually draws them; the city floor wins
+      do
+        local saveTiles, saveLayer = NS.MinimapTiles, NS.db.map.layer
+        local saveUp = NS.db.map.closeUp
+        NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) return 900000 + (k or 0) end }) }
+        NS.db.map.layer, NS.db.map.closeUp = "terrain", true
+        NS.MapCloseUp.Reset()
+        NS.MapCloseUp.unavailable, NS.MapCloseUp.failed, NS.MapCloseUp.fails, NS.MapCloseUp.loaded = nil, {}, 0, 0
+        if NS.MapCloseUp.Drop then NS.MapCloseUp.Drop() end
+        check(M.CentreOnPlayer() == true, "0.5.2b.21 map: CentreOnPlayer on Ironforge before the tile check")
+        for _ = 1, 10 do M.Tick(0.05) end
+        local cx, cy = M.Center()
+        M.ViewLevelAt(cx, cy, M.MaxLevel())
+        for _ = 1, 5 do M.Tick(0.05) end
+        local cityL = M.layers[1455]
+        local topPlane, nPlanes, hostLv = -1, 0, M.closeHost and M.closeHost:GetFrameLevel() or 0
+        for _, P in pairs(NS.MapCloseUp.planes or {}) do
+          if P.f and P.f:IsShown() then
+            nPlanes = nPlanes + 1
+            topPlane = math.max(topPlane, P.f:GetFrameLevel() or 0)
+          end
+        end
+        local pieces = M.close and M.close.pieces or 0
+        local cityLv = cityL and cityL.frame and cityL.frame:GetFrameLevel() or -1
+        local overLv = M.over and M.over:GetFrameLevel() or 0
+        check(cityL and cityL.shown and (cityL.alpha or 0) > 0.5 and not cityL.feather and pieces > 0 and nPlanes > 0
+          and cityLv > topPlane and cityLv > hostLv and overLv > cityLv and M.focusCity == 1455,
+          string.format("0.5.2b.22 map: Ironforge floor (level %s, host %s, top plane %s, pins %s, %d planes, %d pieces) is above every close-up tile and under the pins at zoom %s",
+            tostring(cityLv), tostring(hostLv), tostring(topPlane), tostring(overLv), nPlanes, pieces, tostring(select(1, M.ZoomLevel()))))
+        check(M.fitCap ~= nil and M.fitCapCity == 1455, "0.5.2b.21 map: a city open may zoom past the usual cap (fitCap set)")
+        M.FlyTo(1432) -- Loch Modan: not the city, so the deep cap must go
+        for _ = 1, 40 do M.Tick(0.05) end
+        check(M.fitCap == nil and M.fitCapCity == nil and M.focusCity ~= 1455,
+          string.format("0.5.2b.21 map: leaving Ironforge clears fitCap (cap %s, city %s, focus %s)",
+            tostring(M.fitCap), tostring(M.fitCapCity), tostring(M.focusCity)))
+        M.CentreOnPlayer()
+        for _ = 1, 8 do M.Tick(0.05) end
+        check(M.fitCapCity == 1455, "0.5.2b.21 map: back on the city, the deep cap returns")
+        NS.ShowTab("quests")
+        check(M.fitCap == nil and M.fitCapCity == nil, "0.5.2b.21 map: opening another tab clears fitCap")
+        NS.ShowTab("map")
+        for _ = 1, 8 do M.Tick(0.05) end
+        NS.MinimapTiles, NS.db.map.layer, NS.db.map.closeUp = saveTiles, saveLayer, saveUp
+        NS.MapCloseUp.Reset()
+        if NS.MapCloseUp.Drop then NS.MapCloseUp.Drop() end
+      end
+      C_Map.GetPlayerMapPosition = oldPos
+      MAPS[1455] = saveParent
+      C_Map.GetMapRectOnMap = oldRect
+      PLAYER.map = 1426
+      MapUtil.GetDisplayableMapForPlayer = nil
+      MD.Forget(); M.Reset(); NS.ShowTab("map"); M.vp:SetSize(812, 520); M.Refit(); for _ = 1, 20 do M.Tick(0.05) end
+      M.CentreOnPlayer(); for _ = 1, 25 do M.Tick(0.05) end
+      M.pendingFit = nil -- so later SetFull/Refit does not re-cover the zone
+      dm = M.layers[1426] -- Reset rebuilt layers; later sweep checks use this binding
+      -- 0.5.2b.23: zooming deep into the Ironforge rect fills the hole, same as the breadcrumb.
+      -- Zooming back out of that fill returns to Dun Morogh and drops the deep cap.
+      do
+        M.FlyTo(1426)
+        for _ = 1, 30 do M.Tick(0.05) end
+        local x1, x2, y1, y2 = M.WorldRect(1455)
+        local midX, midY = (x1 + x2) / 2, (y1 + y2) / 2
+        M.SetViewAt(midX, midY, M.Zoom())
+        local sx, sy = M.ToScreen(midX, midY)
+        CX, CY = sx, sy
+        local entered = false
+        for _ = 1, 18 do
+          M.Wheel(1)
+          for __ = 1, 12 do M.Tick(0.05) end
+          if M.fitCapCity == 1455 then entered = true end
+          if entered and not M.Gliding() then break end
+        end
+        local ze = MD.ZoneEntry(1455)
+        local fr = ze and M.Frac(ze) or 0
+        local cover = M.CoverScale(1455)
+        check(entered and fr >= 0.85 and cover > 0 and M.view.s >= cover * 0.98 and M.focusCity == 1455,
+          string.format("0.5.2b.23 map: zooming into Ironforge fills the hole (frac %.2f, scale %.3f, cover %.3f, focus %s)",
+            fr, M.view.s or -1, cover or -1, tostring(M.focusCity)))
+        for _ = 1, 10 do
+          M.Wheel(-1)
+          for __ = 1, 12 do M.Tick(0.05) end
+          if not M.fitCapCity then break end
+        end
+        check(M.fitCap == nil and M.fitCapCity == nil and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh",
+          "0.5.2b.23 map: zooming out of the filled city returns to Dun Morogh and clears fitCap (" .. table.concat(M.Trail(), ">") .. ")")
+        -- breadcrumb dropdown: Eastern Kingdoms lists its zones; picking one flies there
+        M.FlyTo(1426)
+        for _ = 1, 20 do M.Tick(0.05) end
+        local ek
+        for _, c in ipairs(M.crumbs) do if c:IsShown() and c.mapID == 1415 then ek = c end end
+        check(ek and ek.entry and ek.entry.id == 1415, "0.5.2b.23 map: the continent breadcrumb is a button")
+        ek._scripts.OnClick(ek)
+        check(M.crumbMenu and M.crumbMenu:IsShown() and M.crumbMenu.forId == 1415, "0.5.2b.23 map: clicking a breadcrumb opens its dropdown")
+        local peers = M.CrumbPeers(ek.entry)
+        local sawIF, sawDM, sawLM = false, false, false
+        for _, p in ipairs(peers) do
+          if p.id == 1455 then sawIF = true elseif p.id == 1426 then sawDM = true elseif p.id == 1432 then sawLM = true end
+        end
+        check(sawIF and sawDM and sawLM, "0.5.2b.23 map: continent dropdown lists zones at that level (Ironforge, Dun Morogh, Loch Modan)")
+        local picked = false
+        for _, row in ipairs(M.crumbMenu.rows) do
+          if row:IsShown() and row.mapID == 1432 then row._scripts.OnClick(row) picked = true break end
+        end
+        for _ = 1, 30 do M.Tick(0.05) end
+        check(picked and not M.crumbMenu:IsShown() and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Loch Modan",
+          "0.5.2b.23 map: choosing a dropdown row flies there (" .. table.concat(M.Trail(), ">") .. ")")
+        M.FlyTo(1426)
+        for _ = 1, 20 do M.Tick(0.05) end
+      end
+    end
+    -- 0.5.2b.19: Westfall solo coastline + hunter/paladin crest overrides
+    do
+      check(M.SOLO_COAST and M.SOLO_COAST[1436] == true and type(M.SoloCoastMask) == "function",
+        "0.5.2b.19 map: Westfall (1436) is the solo-coastline pilot")
+      -- without a shipped mask file in the stub, SoloCoastMask is false; with a fake file it forces the layer mask
+      NS.ZoneMasks = NS.ZoneMasks or {}
+      local saveMask = NS.ZoneMasks[1436]
+      NS.ZoneMasks[1436] = { file = "Interface/AddOns/DarkMatter/Media/masks/z1436" }
+      local broke = M.maskBroken
+      M.maskBroken = "kept none on another zone"
+      M.masked = nil
+      check(M.SoloCoastMask(1436) == true and M.SoloCoastMask(1426) == false and not M.ContMasked(1415),
+        "0.5.2b.20 map: SoloCoastMask stays on for Westfall when continent masks are off")
+      M.maskBroken = broke
+      M.masked = nil
+      NS.ZoneMasks[1436] = saveMask
+      local co = NS.CrestOverrides
+      check(type(co) == "table" and co.hunter and co.hunter[1] == 88 and co.hunter[3] == -22
+        and co.paladin and co.paladin[1] == 84 and co.paladin[3] == -22,
+        "0.5.2b.20 themes: CrestOverrides tune hunter 88/-22 and paladin 84/-22")
+      local th = NS.themes
+      check(th and th.hunter and th.hunter.classArt and th.hunter.classArt.crest[1] == 88 and th.hunter.classArt.crest[3] == -22
+        and th.paladin.classArt.crest[1] == 84 and th.paladin.classArt.crest[3] == -22,
+        "0.5.2b.20 themes: CrestOverrides applied onto hunter/paladin classArt.crest")
+      -- skins must see the override, not a value written back after they paint
+      th.hunter.classArt.crest = { 10, 0, -5 }
+      local saw
+      NS.OnSkin(function()
+        local c = th.hunter.classArt and th.hunter.classArt.crest
+        saw = c and c[1]
+      end)
+      local curTheme = NS.theme and NS.theme.id
+      NS.SetTheme("hunter")
+      check(saw == 88 and th.hunter.classArt.crest[1] == 88 and th.hunter.classArt.crest[3] == -22
+        and th.paladin.classArt.crest[1] == 84,
+        "0.5.2b.20 themes: SetTheme applies crest overrides before skins (skin saw " .. tostring(saw) .. ")")
+      if curTheme then NS.SetTheme(curTheme) end
+    end
+    -- 0.5.2b.20: Westfall solo is actually cut by its mask when the continent is not ContMasked,
+    -- and a baked Media/coast/z1436.tga replaces the stock tiles when the file is present.
+    do
+      local saveMap = MAPS[1436]
+      MAPS[1436] = { "Westfall", 3, 1415, { 0.20, 0.32, 0.70, 0.84 } }
+      local saveZM = NS.ZoneMasks
+      NS.ZoneMasks = { [1436] = { file = "Interface\\AddOns\\DarkMatter\\Media\\masks\\z1436", core = "Interface\\AddOns\\DarkMatter\\Media\\masks\\z1436c" } }
+      local savePlayer = PLAYER.map
+      PLAYER.map = 1436
+      local savePos = C_Map.GetPlayerMapPosition
+      C_Map.GetPlayerMapPosition = function(id)
+        if id == 1436 then return { x = 0.5, y = 0.5, GetXY = function(s) return s.x, s.y end } end
+        if id == 1415 then
+          local r = MAPS[1436][4]
+          return { x = (r[1] + r[2]) / 2, y = (r[3] + r[4]) / 2, GetXY = function(s) return s.x, s.y end }
+        end
+        return nil
+      end
+      local coastDir = arg[1] .. "/Media/coast"
+      local coastFile = coastDir .. "/z1436.tga"
+      local function rmCoast()
+        os.remove(coastFile)
+        if os.execute then os.execute("rmdir " .. string.format("%q", coastDir) .. " 2>/dev/null") end
+      end
+      rmCoast()
+      M.bakedCache = nil
+      MD.Forget()
+      M.Reset()
+      M.maskBroken = "kept none on another zone"
+      M.masked = nil
+      NS.ShowTab("map")
+      M.vp:SetSize(812, 520)
+      M.Refit()
+      check(M.BakedCoastPath(1436) == "Interface\\AddOns\\DarkMatter\\Media\\coast\\z1436" and M.BakedCoastFile(1436) == nil,
+        "0.5.2b.20 map: baked coast path is Media/coast/z1436.tga and is unused while the file is absent")
+      check(M.CentreOnPlayer() == true, "0.5.2b.20 map: CentreOnPlayer on Westfall")
+      for _ = 1, 25 do M.Tick(0.05) end
+      local Lw = M.layers[1436]
+      local carried = Lw and Lw.mask and #(Lw.tiles or {}) > 0
+      for _, t in ipairs(Lw and Lw.tiles or {}) do
+        if not (t._masks and t._masks[1] == Lw.mask) then carried = false end
+      end
+      local el = M.layers[1429]
+      check(not M.ContMasked(1415) and Lw and Lw.mask and not Lw.feather and not Lw.baked and Lw.shown and (Lw.alpha or 0) > 0.9 and carried
+        and not (el and el.mask),
+        string.format("0.5.2b.20 map: Westfall solo uses its mask (alpha %s, feather %s, tiles %s, elwynn mask %s)",
+          tostring(Lw and Lw.alpha), tostring(Lw and Lw.feather), tostring(Lw and Lw.tiles and #Lw.tiles), tostring(el and el.mask ~= nil)))
+      if os.execute then os.execute("mkdir -p " .. string.format("%q", coastDir)) end
+      local fh = io.open(coastFile, "wb")
+      if fh then fh:write("stub") fh:close() end
+      M.bakedCache = nil
+      check(M.BakedCoastFile(1436) == nil, "0.5.2b.20 map: a coast file that is not the 1002x668 bake is ignored")
+      -- the bake Illusionist ships: type 2, 32-bit, descriptor 8, 1002 x 668 (pixel bytes left empty)
+      fh = io.open(coastFile, "wb")
+      if fh then
+        local w, h = 1002, 668
+        fh:write(string.char(0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, w % 256, math.floor(w / 256), h % 256, math.floor(h / 256), 32, 8))
+        fh:seek("set", 18 + w * h * 4 - 1)
+        fh:write("\0")
+        fh:close()
+      end
+      M.bakedCache = nil
+      M.dirty = true
+      M.Layout()
+      for _ = 1, 5 do M.Tick(0.05) end
+      local Lb = M.layers[1436]
+      local bakedFile = Lb and Lb.tiles and Lb.tiles[1] and Lb.tiles[1]._file
+      check(fh and Lb and Lb.baked == "Interface\\AddOns\\DarkMatter\\Media\\coast\\z1436" and not Lb.mask and not Lb.feather and #Lb.tiles == 1
+        and bakedFile == Lb.baked and Lb.shown and (Lb.alpha or 0) > 0.9,
+        "0.5.2b.20 map: baked z1436.tga replaces stock tiles (" .. tostring(Lb and Lb.baked) .. ", pieces " .. tostring(Lb and #Lb.tiles) .. ", file " .. tostring(bakedFile) .. ")")
+      rmCoast()
+      M.bakedCache = nil
+      MAPS[1436] = saveMap
+      NS.ZoneMasks = saveZM
+      PLAYER.map = savePlayer
+      C_Map.GetPlayerMapPosition = savePos
+      MD.Forget()
+      M.Reset()
+      NS.ShowTab("map")
+      M.vp:SetSize(812, 520)
+      M.Refit()
+      for _ = 1, 20 do M.Tick(0.05) end
+      M.CentreOnPlayer()
+      for _ = 1, 25 do M.Tick(0.05) end
+      M.pendingFit = nil
+      dm = M.layers[1426]
+    end
+    -- 0.5.2b.21: Forever coast Batch 1 prefers Media/coast/zNNNN.tga when that bake is installed.
+    -- SOLO_COAST stays Westfall. A bake fills a continent-puzzle slot the way a mask does.
+    do
+      local batch = { 1411, 1413, 1417, 1419, 1420, 1421, 1424, 1425, 1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441, 1443, 1444, 1445, 1446, 1447, 1451 }
+      local listed = {}
+      for _, id in ipairs(M.BAKED_COAST_IDS or {}) do listed[id] = true end
+      local paths, soloOnly = true, true
+      for _, id in ipairs(batch) do
+        if M.BakedCoastPath(id) ~= "Interface\\AddOns\\DarkMatter\\Media\\coast\\z" .. id or not (M.BAKED_COAST and M.BAKED_COAST[id] and M.BAKED_COAST[id].w == 1002 and M.BAKED_COAST[id].h == 668) or not listed[id] then paths = false end
+        if id ~= 1436 and M.SOLO_COAST[id] then soloOnly = false end
+      end
+      check(#batch == 22 and #M.BAKED_COAST_IDS == 22 and paths and soloOnly and M.SOLO_COAST[1436] == true and M.BakedCoastPath(1426) == nil,
+        "0.5.2b.21 map: Batch 1 coasts prefer Media/coast/zNNNN.tga; solo mask stays Westfall; Dun Morogh has no bake")
+      local coastDir = arg[1] .. "/Media/coast"
+      local function writeBake(id, okHeader)
+        if os.execute then os.execute("mkdir -p " .. string.format("%q", coastDir)) end
+        local fh = io.open(coastDir .. "/z" .. id .. ".tga", "wb")
+        if not fh then return false end
+        if okHeader then
+          local w, h = 1002, 668
+          fh:write(string.char(0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, w % 256, math.floor(w / 256), h % 256, math.floor(h / 256), 32, 8))
+          fh:seek("set", 18 + w * h * 4 - 1)
+          fh:write("\0")
+        else
+          fh:write("stub")
+        end
+        fh:close()
+        return true
+      end
+      local function rmBake(id)
+        os.remove(coastDir .. "/z" .. id .. ".tga")
+      end
+      writeBake(1437, false)
+      M.bakedCache = nil
+      check(M.BakedCoastFile(1437) == nil, "0.5.2b.21 map: Wetlands ignores a coast file that is not the 1002x668 bake")
+      check(writeBake(1437, true), "0.5.2b.21 map: test bake for Wetlands was written")
+      M.bakedCache = nil
+      local wet = M.BakedCoastFile(1437)
+      check(wet == "Interface\\AddOns\\DarkMatter\\Media\\coast\\z1437",
+        "0.5.2b.21 map: Wetlands prefers its bake when the file is the right picture (" .. tostring(wet) .. ")")
+      -- puzzle: one neighbour has a mask, Wetlands has only the bake -> the continent still fits
+      local saveZones = MD.Zones
+      MD.Zones = function()
+        return { { id = 9001, area = 1 }, { id = 1437, area = 1 } }
+      end
+      local saveMask = M.MaskFile
+      M.MaskFile = function(id) if id == 9001 then return "mask" end return nil end
+      M.masked = nil
+      check(M.ContMasked(1415) == true, "0.5.2b.21 map: a present bake fills that zone's slot in the continent puzzle")
+      rmBake(1437)
+      M.bakedCache = nil
+      M.masked = nil
+      check(M.ContMasked(1415) == false, "0.5.2b.21 map: a missing bake does not fill the puzzle slot")
+      MD.Zones = saveZones
+      M.MaskFile = saveMask
+      M.bakedCache = nil
+      M.masked = nil
+      if os.execute then os.execute("rmdir " .. string.format("%q", coastDir) .. " 2>/dev/null") end
+    end
     -- 0.5.2b.8.2: the full-screen map zooms like the window: the same levels, and every continent in view gets the same
     -- layers (0.5.2b.8.1: full screen fully zoomed out drew Kalimdor's zones and level boxes, Eastern Kingdoms plain)
     do
@@ -4344,7 +4745,7 @@ do
     local pe = NS.db.probeLog and NS.db.probeLog.masktest
     check(pe and pe.lines[2] and pe.lines[2]:find("^masktest ") and f:IsShown(), "0.5.2b.5 /dm masktest: saved with the probes")
     SlashCmdList.DARKMATTER("masktest")
-    local file = io.open("../../DarkMatter/Media/masks/dm-masktest.tga", "rb")
+    local file = io.open(arg[1] .. "/Media/masks/dm-masktest.tga", "rb")
     local head = file and file:read(18)
     if file then file:close() end
     check(head and head:byte(3) == 2 and head:byte(13) + 256 * head:byte(14) == 128 and head:byte(17) == 32,
@@ -5575,7 +5976,7 @@ do
   -- 14. the tool strip: three slots are disabled with the version they come in
   local keys, soon = {}, {}
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
-  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup,quest", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2a.1: + Quest log)")
+  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2b.28: the quest log is a column, not a button)")
   check(soon.starpen and not soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen and Town Pins are disabled (0.5.2b: Pin works)")
   local wantV = { starpen = "0.5.3", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
   local origSS = NS.SetStatus
@@ -5683,7 +6084,8 @@ do
   -- 0.5.1.5: the main window reads the map window's size and scale (read only, from its own frame); nothing else
   local wmOther = {}
   local READ_OK = { GetEffectiveScale = 1, GetWidth = 1, GetHeight = 1, minimizedWidth = 1, minimizedHeight = 1, questLogWidth = 1, isMaximized = 1, IsMaximized = 1,
-    GetLeft = 1, GetRight = 1, GetTop = 1, GetBottom = 1, BorderFrame = 1, IsShown = 1 } -- 0.5.1.6: its outer rectangle, read only
+    GetLeft = 1, GetRight = 1, GetTop = 1, GetBottom = 1, BorderFrame = 1, IsShown = 1, -- 0.5.1.6: its outer rectangle, read only
+    ScrollContainer = 1 } -- 0.5.2b.21: the map picture reads the scroll interior, nothing is written
   for _, k in ipairs(wmAccess) do if not READ_OK[k] then wmOther[#wmOther + 1] = k end end
   check(#wmOther == 0, "0.5.0 map: never touches WorldMapFrame (0.5.1.6: only its size, scale and outer rectangle are read) " .. table.concat(wmOther, ","))
   check(#hooked == 0, "0.5.0 map: installs no hooks")
@@ -5810,11 +6212,23 @@ if MODE ~= "minimal" then
   NS.db.questPanel = nil
   C_QuestLog.GetMaxNumQuestsCanAccept = function() return 25 end
   NS.ShowTab("map")
-  print("DBG", P.frame, P.frame and P.frame:IsShown(), DarkMatterFrame:IsShown(), P.mapShown, NS.MapTab.panelBtn) check(P.frame and P.frame:IsShown(), "0.5.2a.1 panel: shown with the Map tab (open by default)")
-  check(P.frame:GetParent() == DarkMatterFrame, "0.5.2a.1 panel: a child of the window (moves and scales with it, locked)")
-  local pl, pt, pr = FrameMT._rect(P.frame)
-  local wl, wt, wr = FrameMT._rect(DarkMatterFrame)
-  check(pl >= wr and pt == wt and pr - pl == P.w, "0.5.2a.1 panel: docked to the right of the window, top aligned")
+  check(P.frame and P.frame:IsShown() and NS.MapTab.panelBtn == nil, "0.5.2b.28 panel: shown with the Map tab, no sidebar toggle")
+  local function underWin(f)
+    local x = f
+    for _ = 1, 8 do
+      if not x then return false end
+      if x == DarkMatterFrame then return true end
+      x = x.GetParent and x:GetParent()
+    end
+    return false
+  end
+  local host = P.frame:GetParent()
+  check(host and host ~= DarkMatterFrame and underWin(P.frame), "0.5.2b.28 panel: inside the window, not floating beside it")
+  local pl, _, pr = FrameMT._rect(P.frame)
+  local wl, _, wr = FrameMT._rect(DarkMatterFrame)
+  if pl and pr and pr - pl > 20 then
+    check(pl >= wl - 1 and pr <= wr + 1, "0.5.2b.28 panel: the quest column's edges are inside the window")
+  end
   check(P.frame.search and P.frame.search.edit, "0.5.2a.1 panel: search bar at the top")
   local ct = P.CountText()
   check(ct:find("Quests:", 1, true) and ct:find("4", 1, true) and ct:find("/25", 1, true), "0.5.2a.1 panel: quest count from the API " .. ct)
@@ -5848,8 +6262,18 @@ if MODE ~= "minimal" then
   for _, fs in ipairs(P.detail.texts) do if not fs._hid then texts[#texts + 1] = fs._text end end
   local all = table.concat(texts, "\n")
   check(all:find("Quest Objectives", 1, true) and all:find("Description", 1, true) and all:find("Rewards", 1, true), "0.5.2a.1 panel: detail has objectives, description and rewards (the Quests tab's detail)")
+  local listObj, rowObj = V.list, V.rows
   P.back._scripts.OnClick(P.back)
-  check(P.list:IsShown() and not P.detailPanel:IsShown() and V.query == "defias" and shownTitles() == "The Defias", "0.5.2a.1 panel: Back returns to the list, search kept")
+  check(P.list:IsShown() and not P.detailPanel:IsShown() and V.query == "defias" and shownTitles() == "The Defias"
+    and V.list == listObj and V.rows == rowObj, "0.5.2b.28 panel: Back returns to the same list and keeps the search")
+  if P.detail and P.detail.scroll and P.detail.scroll.SetContentHeight then
+    P.OpenQuest(103)
+    P.detail.scroll:SetContentHeight(4000)
+    P.detail.scroll:ScrollTo(100)
+    P.OpenQuest(101)
+    check(P.detail.scroll.GetScroll() == 0, "0.5.2b.28 panel: opening a quest starts its detail at the top")
+    P.ShowList()
+  end
   V.SetQuery("") P.frame.search:SetText("")
   -- 0.5.2a.2: a pin click opens THAT quest's detail in the panel (opening the panel if closed), the map stays still
   do
@@ -5858,7 +6282,7 @@ if MODE ~= "minimal" then
     _G.IsShiftKeyDown = function() return false end
     local z0 = MT.Zoom() local cx0, cy0 = MT.Center()
     P.SetOpen(false)
-    check(not P.frame:IsShown(), "0.5.2a.2 pin click: panel closed first")
+    check(P.frame:IsShown() and P.list:IsShown(), "0.5.2b.28 pin click: the column stays; closing it only returns to the list")
     MT.QuestClick({ qid = 103, map = 1426, mx = 0.5, my = 0.5 })
     check(P.frame:IsShown() and NS.db.questPanel == true and P.detailPanel:IsShown() and not P.list:IsShown() and P.detail.quest and P.detail.quest.questID == 103
       and P.detail.title._text == "The Defias" and NS.QS.selected == 103, "0.5.2a.2 pin click: a closed panel opens on that quest's detail")
@@ -5882,15 +6306,12 @@ if MODE ~= "minimal" then
     check(wpN == 1 and P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 shift-click: sets the waypoint, panel unchanged")
     NS.QS.SetWaypoint, _G.IsShiftKeyDown = saveSW, saveShift
   end
-  -- toggle (tool strip), remembered
-  local tb = NS.MapTab.panelBtn
-  tb._scripts.OnClick(tb)
-  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: the Quest log button closes it (saved)")
-  tb._scripts.OnClick(tb)
-  check(P.frame:IsShown() and NS.db.questPanel == true, "0.5.2a.1 panel: and opens it again")
+  -- 0.5.2b.28: the column is not a toggle. Its close returns to the list.
+  check(NS.MapTab.panelBtn == nil, "0.5.2b.28 panel: no quest-log button on the map")
+  P.OpenQuest(103)
+  check(P.detailPanel:IsShown(), "0.5.2b.28 panel: a quest is open before close")
   P.frame.close._scripts.OnClick(P.frame.close)
-  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: its close button closes it (saved)")
-  P.SetOpen(true)
+  check(P.frame:IsShown() and P.list:IsShown() and not P.detailPanel:IsShown() and NS.db.questPanel ~= false, "0.5.2b.28 panel: close returns to the list and leaves the column up")
   -- only with the Map tab
   NS.ShowTab("quests")
   check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")
@@ -5963,6 +6384,7 @@ if MODE ~= "minimal" then
   NS.SetTheme("wow")
   win:Show()
   NS.ShowTab("quests")
+  if W.railTabs.journals and W.railTabs.journals.SetActive then W.railTabs.journals:SetActive(true) end
   local d = drawn()
   -- 0.5.1.4: the dialog border + header plate gave way to the map-window frame (its own thin frame here: no WorldMapFrame);
   -- the shell is the inset marble
@@ -6245,7 +6667,8 @@ if MODE ~= "minimal" then
     local f = mid(t)
     if not t.stockOn or (t.active and not f:find("Down$")) or (not t.active and not f:find("Up$")) or t.stockHL._file ~= "Interface\\Buttons\\UI-Panel-Button-Highlight" then railOK = false end
   end
-  check(railN == 4 and railOK, "0.5.1.2 WoW rail tabs: stock panel buttons (active held down), stock highlight")
+  check(railN == 3 and railOK and W.railTabs.quests == nil and W.railTabs.map and W.railTabs.map.text:GetText() == "Map & Quest Logs",
+    "0.5.1.2 WoW rail tabs: stock panel buttons (active held down), stock highlight; 0.5.2b.28: three tabs, Map & Quest Logs")
   -- section tabs: character-frame tabs; toggles: panel buttons; never a marker dot
   NS.ShowTab("journals")
   NS.tabs.journals.SetSection("adventure")
@@ -6732,20 +7155,20 @@ if MODE == "full" then
   wmf(1035, 640)
   local c = copyM()
   local res = MW.Apply(c)
-  check(res.w == 1009 and res.h == 640 and c.w == 1009 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
-    "0.5.1.4 window: as large as the game's map window (1035x640; 0.5.2a.2: less the tab column's 26 = 1009x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
+  check(res.w == 1034 and res.h == 640 and c.w == 1034 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
+    "0.5.2b.21 window: map 1035x640, trimmed 1009, grown to hold the scroll interior (1020+14 = 1034x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
   check(c.bodyW - c.w == base.bodyW - base.w and c.pageW - c.w == base.pageW - base.w and c.footerTop - c.h == base.footerTop - base.h and c.exitX - c.w == base.exitX - base.w
     and c.railW == base.railW and c.tabY == base.tabY and c.bodyX == base.bodyX, "0.5.1.4 window: the body and footer follow the size, the rail and tabs keep their place")
   wmf(1035, 640, { scale = 1.25 })
   res = MW.Apply(copyM())
-  check(res.w == 1268 and res.h == 800, "0.5.1.4 window: the map window's own scale is taken into account (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  check(res.w == 1293 and res.h == 800, "0.5.2b.21 window: the map window's own scale is taken into account, then the scroll hole (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.5: the in-game case (1.60.1, Wetlands): map 1232x705 at effective scale 0.64; UIParent at 0.80
   local saveUES = UIParent.GetEffectiveScale
   UIParent.GetEffectiveScale = function() return 0.8 end
   wmf(1232, 705, { scale = 0.64, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
-  check(res.w == 960 and res.h == 564 and res.scale == 1,
-    "0.5.1.5 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> ours 986x564 less 26 = 960x564 at scale 1 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  check(res.w == 985 and res.h == 564 and res.scale == 1,
+    "0.5.2b.21 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> hole grows the trimmed 960 to 985x564 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.8: the size is measured while the map window is open and saved in DarkMatterDB; while it is closed (e.g.
   -- never opened since login, where its own size is not real yet) the saved size is used; rebuild only past 1 px
   do
@@ -6770,18 +7193,18 @@ if MODE == "full" then
   wmf(1035, 640, { scale = 0.64 })
   res = MW.Apply(copyM())
   local ow, oh = outer(res)
-  check(res.w >= 854 and res.h >= 500 and res.scale < 1 and math.abs(ow - (1035 * 0.8 - 26 * res.scale)) < 1 and math.abs(oh - 640 * 0.8) < 1,
-    "0.5.1.5 window: a map smaller on screen than 880x500 is matched by our scale (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  check(res.w >= 854 and res.h >= 500 and res.scale < 1 and ow + 0.6 >= (1035 * 0.8 - 26 * res.scale) and ow <= 1035 * 0.8 + 1 and math.abs(oh - 640 * 0.8) < 1,
+    "0.5.2b.21 window: a map smaller on screen than 880x500 is matched by our scale, and may grow a little for the scroll hole (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ", outer " .. string.format("%.1f", ow) .. ")")
   UIParent.GetEffectiveScale = saveUES
   wmf(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
   ow, oh = outer(res)
-  check(res.w <= 1800 and res.h <= 1300 and math.abs(ow - (1920 - 26 * res.scale)) < 1 and math.abs(oh - 1080) < 1,
-    "0.5.1.5 window: maximized follows the same rule: its size on screen (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  check(res.w <= 1800 and res.h <= 1300 and ow + 0.6 >= (1920 - 26 * res.scale) and ow <= 1920 + 1 and math.abs(oh - 1080) < 1,
+    "0.5.2b.21 window: maximized follows the same rule, wider only for the scroll hole (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
   wmf(500, 300)
   res = MW.Apply(copyM())
   ow, oh = outer(res)
-  check(res.w >= 854 and res.h >= 500 and math.abs(ow - (500 - 26 * res.scale)) < 1 and math.abs(oh - 300) < 1, "0.5.1.5 window: a tiny map window: our layout stays 880x500 or more, our scale matches it")
+  check(res.w >= 854 and res.h >= 500 and ow + 0.6 >= (500 - 26 * res.scale) and ow <= 500 + 1 and math.abs(oh - 300) < 1, "0.5.2b.21 window: a tiny map window: layout stays 880x500 or more, outer stays within the map (" .. string.format("%.1f", ow) .. ")")
   -- 0.5.1.6: the map's border corners reach past its frame (the real offsets): the target is the OUTER rectangle
   wmf(1232, 705, { real = true })
   local ml, mt, mr, mb = MW.MapBorder()
@@ -6814,11 +7237,61 @@ if MODE == "full" then
   InCombatLockdown = function() return true end
   res = MW.Apply(copyM())
   InCombatLockdown = saveICL
-  check(res.w == 1009, "0.5.1.4 window: reading the size works in combat")
+  check(res.w == 1034, "0.5.1.4 window: reading the size works in combat")
   local badCall = {}
   for _, k in ipairs(WMF_CALLS) do if not (k:find("^Get") or k:find("^Is")) then badCall[#badCall + 1] = k end end
   check(#WMF_WRITES == 0 and #badCall == 0, "0.5.1.4 window: WorldMapFrame is only read (no Show, no writes, no hooks): " .. table.concat(WMF_WRITES, ",") .. table.concat(badCall, ","))
+  -- 0.5.2b.21: the Map picture follows ScrollContainer, else the frame interior (1035×534 -> 1020×500)
+  do
+    wmf(1035, 534)
+    local sw, sh, src = MW.ScrollSize()
+    check(src == "frame interior" and math.abs(sw - 1020) < 1 and math.abs(sh - 500) < 1,
+      string.format("0.5.2b.21 map: frame 1035x534 with no ScrollContainer size -> hole %.0fx%.0f (%s)", sw or -1, sh or -1, tostring(src)))
+    wmf(1035, 534, { scrollW = 1016, scrollH = 498 })
+    sw, sh, src = MW.ScrollSize()
+    check(src == "WorldMapFrame.ScrollContainer" and math.abs(sw - 1016) < 1 and math.abs(sh - 498) < 1,
+      string.format("0.5.2b.21 map: a live ScrollContainer is the hole (%.0fx%.0f, %s)", sw or -1, sh or -1, tostring(src)))
+    wmf(1035, 534)
+    NS.RebuildWindow()
+    NS.ShowTab("map")
+    local M = NS.MapTab
+    if M and M.Refit then M.Refit() end
+    local vw, vh = M and M.vp and M.vp:GetWidth(), M and M.vp and M.vp:GetHeight()
+    check(vw and math.abs(vw - 1020) < 2 and math.abs(vh - 500) < 2,
+      string.format("0.5.2b.21 map: viewport %.1fx%.1f (was about 781x373 in this frame; target 1020x500)", vw or -1, vh or -1))
+    -- 0.5.2b.28: the stock quest frame is not counted twice. An overhang is counted once and kept when it hides.
+    NS.db.questExtraPx, NS.db.questColumnPx = nil, nil
+    wmf(1035, 534, { rect = true })
+    local baseW = MW.Apply(copyM())
+    QuestMapFrame = { GetWidth = function() return 280 end, GetLeft = function() return 100 + 1035 - 280 end,
+      GetRight = function() return 100 + 1035 end, IsShown = function() return true end }
+    local inW = MW.Apply(copyM())
+    local px, inn, src = MW.QuestColumnPx()
+    check(inn and src == "QuestMapFrame" and px == 280 and inW.w == baseW.w,
+      "0.5.2b.28 window: a quest frame inside the map is a column, not a second width (" .. tostring(inW.w) .. " vs " .. tostring(baseW.w) .. ")")
+    QuestMapFrame = { GetWidth = function() return 280 end, GetLeft = function() return 100 + 1035 - 10 end,
+      GetRight = function() return 100 + 1035 + 270 end, IsShown = function() return true end }
+    local outW = MW.Apply(copyM())
+    check(outW.w == baseW.w + 270, "0.5.2b.28 window: a quest frame past the map adds only its overhang (" .. tostring(outW.w) .. ")")
+    QuestMapFrame.IsShown = function() return false end
+    local hidW = MW.Apply(copyM())
+    check(hidW.w == outW.w and hidW.h == outW.h, "0.5.2b.28 window: hiding that frame does not shrink the window or ask for a rebuild")
+    QuestMapFrame = nil
+    wmf(1035, 534, { ql = 280, rect = true })
+    NS.db.questExtraPx = nil
+    local fieldW = MW.Apply(copyM())
+    local lay, _, lsrc = MW.QuestLay(1)
+    check(fieldW.w == baseW.w and lay == 280 and lsrc == "questLogWidth",
+      "0.5.2b.28 window: questLogWidth sizes the column and is not added on top of a frame we can already measure")
+    local lines = table.concat(MW.SizeLines(), "\n")
+    check(lines:find("sizeprobe " .. NS.version, 1, true) and lines:find("not a claim", 1, true) and lines:find("signoff still needs", 1, true) and lines:find("quest column 280", 1, true),
+      "0.5.2b.28 sizeprobe: prints the live numbers and does not claim they match")
+    QuestMapFrame = nil
+    NS.db.questExtraPx, NS.db.questColumnPx, NS.db.questColumnSrc = nil, nil, nil
+    wmf(1035, 534)
+  end
   WorldMapFrame = saveWMF MW.art = nil
+  NS.RebuildWindow()
   local win = NS.GetWindow()
   check(win._w == NS.theme.m.w and win._h == NS.theme.m.h, "0.5.1.4 window: the built window has the metrics' size " .. win._w .. "x" .. win._h)
 
@@ -6858,16 +7331,33 @@ if MODE == "full" then
         if vp then
           areas[id .. "|" .. si] = { vp:GetWidth(), vp:GetHeight() }
           if id ~= "wow" and sz[3] and sz[3].real and areas["wow|" .. si] then
-            local a0, a1 = areas["wow|" .. si], areas[id .. "|" .. si]
-            check(math.abs(a1[1] - a0[1]) <= 2 and math.abs(a1[2] - a0[2]) <= 2, string.format(
-              "0.5.1.7 window: %s at map %dx%d: its map rectangle %.1fx%.1f equals the WoW theme's %.1fx%.1f (within 2 px)", id, sz[1], sz[2], a1[1], a1[2], a0[1], a0[2]))
+            -- 0.5.2b.25: a class theme's map fills the opening inside the wood, so it is not the WoW theme's
+            -- scroll hole. The sidebar and the map sit on that opening (a couple of pixels for the crumb gap).
+            local inner = NS.ClassInner and { NS.ClassInner() }
+            local rail = NS.windowParts and NS.windowParts.rail
+            local rl, rt, rr, rb
+            if rail then rl, rt, rr, rb = FrameMT._rect(rail) end
+            local vl, vt, vr, vb = FrameMT._rect(vp)
+            local fl, ft = FrameMT._rect(f)
+            local function gap(a, b) if not (a and b and fl) then return 999 end return math.abs((a - fl) - b) end
+            local railTop = (ft and rt) and (ft - rt) or nil
+            local mapTop = (ft and vt) and (ft - vt) or nil
+            local mapRight = (fl and vr) and (vr - fl) or nil
+            local okIn = inner and inner[1] and rl and vl and railTop and mapTop and mapRight
+              and gap(rl, inner[1]) <= 2 and math.abs(railTop - inner[2]) <= 2
+              and math.abs(mapRight - inner[3]) <= 8
+              and mapTop >= inner[2] - 2 and mapTop <= inner[2] + 48
+            check(okIn, string.format(
+              "0.5.2b.25 window: %s map sits in the wood (rail %.1f,%.1f map right %.1f top %.1f; opening %.1f,%.1f .. %.1f,%.1f)",
+              id, rl and fl and (rl - fl) or -1, railTop or -1, mapRight or -1, mapTop or -1,
+              inner and inner[1] or -1, inner and inner[2] or -1, inner and inner[3] or -1, inner and inner[4] or -1))
             nAreas = nAreas + 1
           end
         end
         NS.ShowTab("quests")
         local tw, th = MW.Target() -- 0.5.2a.2: the map window less the tab column's trim
         local mw0 = MW.Size()
-        check(tw and mw0 and math.abs(tw - (mw0 - 26 * f:GetScale() / (sz[4] or 1) * (sz[4] or 1))) < 0.6, string.format("0.5.2a.2 window: %s target width %.1f = map %.1f less the tab column's 26 (scaled)", id, tw or -1, mw0 or -1))
+        check(tw and mw0 and tw + 0.6 >= mw0 - 26 * f:GetScale(), string.format("0.5.2b.21 window: %s target width %.1f >= map %.1f less the tab column's 26 (wider when the scroll hole needs it)", id, tw or -1, mw0 or -1))
         local l, t, r, b = drawnBox(f)
         local k = f:GetScale() / (sz[4] or 1) * (sz[4] or 1)
         local ow2, oh2 = (r - l) * k, (t - b) * k
@@ -7390,6 +7880,137 @@ if MODE ~= "minimal" then
   local QT = NS.tabs.quests
   local rq = QT.Ready()
   check(#rq == 1 and rq[1].questID == 102 and QT.READY_TITLE == "Ready to Turn In", "0.5.2b ready: the Quests tab and the panel get a Ready to Turn In group")
+  -- 0.5.2b.25: Ready to Turn In is this area only, and a capital is its own area (not the zone around it)
+  do
+    local saveInfo, savePos, saveRect, saveBest, saveKids, saveZone, saveReal = C_Map.GetMapInfo, C_Map.GetPlayerMapPosition, C_Map.GetMapRectOnMap, C_Map.GetBestMapForUnit, C_Map.GetMapChildrenInfo, GetZoneText, GetRealZoneText
+    local MAPS = {
+      [1415] = { name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+      [1426] = { name = "Dun Morogh", mapType = 3, parentMapID = 1415 },
+      [1455] = { name = "Ironforge", mapType = 3, parentMapID = 1426 },
+      [1429] = { name = "Elwynn Forest", mapType = 3, parentMapID = 1415 },
+    }
+    C_Map.GetMapInfo = function(id) return MAPS[id] end
+    C_Map.GetMapRectOnMap = function(child, parent)
+      if child == 1426 and parent == 1415 then return 0.40, 0.60, 0.40, 0.70 end
+      if child == 1455 and parent == 1426 then return 0.40, 0.60, 0.40, 0.60 end
+      if child == 1429 and parent == 1415 then return 0.40, 0.55, 0.70, 0.90 end
+    end
+    C_Map.GetMapChildrenInfo = function(id)
+      if id == 1415 then
+        return { { mapID = 1426, name = "Dun Morogh", mapType = 3 }, { mapID = 1429, name = "Elwynn Forest", mapType = 3 } }
+      end
+    end
+    local function pos(x, y) return { x = x, y = y, GetXY = function(s) return s.x, s.y end } end
+    local px, py, pmap = 0.5, 0.5, 1426
+    C_Map.GetBestMapForUnit = function() return pmap end
+    -- position on the zone only, so a city is detected by composing the zone rect (not a raw continent point)
+    C_Map.GetPlayerMapPosition = function(id) if id == pmap and px then return pos(px, py) end end
+    local function art(id) return id == 1415 or id == 1426 or id == 1455 or id == 1429 end
+    local saveArt = NS.MapData.Art
+    NS.MapData.Art = function(id) if art(id) then return saveArt(id) or { id = id } end return saveArt(id) end
+    NS.MapData.Forget()
+    local saveCQ, saveSt = C_QuestLog, NS.QS.Status
+    local LOG = {
+      { isHeader = true, title = "Dun Morogh" },
+      { questID = 801, title = "Snow Quest" },
+      { isHeader = true, title = "Ironforge" },
+      { questID = 802, title = "Forge Quest" },
+      { isHeader = true, title = "Elwynn Forest" },
+      { questID = 803, title = "Wolf Quest" },
+    }
+    C_QuestLog = setmetatable({
+      GetNumQuestLogEntries = function() return #LOG end,
+      GetInfo = function(i) return LOG[i] end,
+      GetLogIndexForQuestID = function(q) for i, e in ipairs(LOG) do if e.questID == q then return i end end end,
+      IsComplete = function(q) return q == 801 or q == 802 or q == 803 end,
+    }, { __index = saveCQ })
+    NS.QS.Status = function(q) if q == 801 or q == 802 or q == 803 then return "ready" end return saveSt(q) end
+    GetZoneText = function() return "Dun Morogh" end
+    GetRealZoneText = function() return "Dun Morogh" end
+    px, py, pmap = 0.50, 0.50, 1426 -- continent fraction via zone pos: city rect is 0.40-0.60 of Dun Morogh, so 0.50 is INSIDE Ironforge
+    -- zone pos 0.5,0.5 on Dun Morogh maps through its continent rect into the city (city is 0.40-0.60 of the zone)
+    NS.MapData.Forget()
+    local areaIn = NS.MapData.PlayerArea()
+    local readyIn = NS.tabs.quests.Ready()
+    local function ids(list) local t = {} for _, e in ipairs(list) do t[#t + 1] = e.id or e.questID end table.sort(t) return table.concat(t, ",") end
+    check(areaIn == 1455, "0.5.2b.25 area: standing inside Ironforge's rect is Ironforge, even when the player map is Dun Morogh (" .. tostring(areaIn) .. ")")
+    check(ids(readyIn) == "802", "0.5.2b.25 ready: in Ironforge only the Ironforge turn-in is listed (" .. ids(readyIn) .. ")")
+    local log = NS.Tracker.ReadLog()
+    local zs = NS.Tracker.ZoneSet(log)
+    check(zs[802] == true and zs[801] ~= true, "0.5.2b.25 auto-track: in Ironforge the city quest counts and the Dun Morogh one does not")
+    px, py = 0.10, 0.10 -- outside the city rect on Dun Morogh
+    NS.MapData.Forget()
+    local areaOut = NS.MapData.PlayerArea()
+    local readyOut = NS.tabs.quests.Ready()
+    check(areaOut == 1426, "0.5.2b.25 area: outside the city rect, still on the Dun Morogh map, the area is Dun Morogh (" .. tostring(areaOut) .. ")")
+    check(ids(readyOut) == "801", "0.5.2b.25 ready: in Dun Morogh only the Dun Morogh turn-in is listed (" .. ids(readyOut) .. ")")
+    GetZoneText = function() return "Ironforge" end
+    GetRealZoneText = function() return "Dun Morogh" end
+    pmap = 1426
+    px, py = nil, nil
+    C_Map.GetPlayerMapPosition = function() return nil end
+    NS.MapData.Forget()
+    local areaNamed = NS.MapData.PlayerArea()
+    check(areaNamed == 1455, "0.5.2b.25 area: zone text Ironforge is the city even when the map id and the real zone are Dun Morogh (" .. tostring(areaNamed) .. ")")
+    NS.MapData.Art = saveArt
+    C_Map.GetMapInfo, C_Map.GetPlayerMapPosition, C_Map.GetMapRectOnMap, C_Map.GetBestMapForUnit, C_Map.GetMapChildrenInfo = saveInfo, savePos, saveRect, saveBest, saveKids
+    GetZoneText, GetRealZoneText = saveZone, saveReal
+    C_QuestLog, NS.QS.Status = saveCQ, saveSt
+    NS.MapData.Forget()
+    if NS.tabs.quests and NS.tabs.quests.Refresh then NS.tabs.quests.Refresh() end
+  end
+  -- 0.5.2b.27: a finished quest is Ready where you turn it in, not where the log filed it.
+  -- The Defias Brotherhood is under Westfall; Wiley in Lakeshire is the turn-in, on Redridge.
+  do
+    local saveInfo, saveBest, saveZone, saveReal, saveCQ, saveSt = C_Map.GetMapInfo, C_Map.GetBestMapForUnit, GetZoneText, GetRealZoneText, C_QuestLog, NS.QS.Status
+    local MAPS = {
+      [1415] = { name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+      [1433] = { name = "Redridge Mountains", mapType = 3, parentMapID = 1415 },
+      [1436] = { name = "Westfall", mapType = 3, parentMapID = 1415 },
+    }
+    C_Map.GetMapInfo = function(id) return MAPS[id] end
+    C_Map.GetBestMapForUnit = function() return 1433 end
+    GetZoneText = function() return "Redridge Mountains" end
+    GetRealZoneText = function() return "Redridge Mountains" end
+    local LOG = {
+      { isHeader = true, title = "Westfall" },
+      { questID = 901, title = "The Defias Brotherhood" },
+      { questID = 902, title = "The People's Militia" },
+    }
+    local WP = { [901] = { 1433, 0.273, 0.565 }, [902] = { 1436, 0.56, 0.52 } }
+    C_QuestLog = setmetatable({
+      GetNumQuestLogEntries = function() return #LOG end,
+      GetInfo = function(i) return LOG[i] end,
+      GetLogIndexForQuestID = function(q) for i, e in ipairs(LOG) do if e.questID == q then return i end end end,
+      IsComplete = function(q) return q == 901 or q == 902 end,
+      GetNextWaypoint = function(q) local w = WP[q] if w then return w[1], w[2], w[3] end end,
+      IsQuestWatched = function(q) return q == 902 end,
+    }, { __index = saveCQ })
+    NS.QS.Status = function(q) if q == 901 or q == 902 then return "ready" end return saveSt(q) end
+    NS.MapData.Forget()
+    local function ids(list)
+      local t = {}
+      for _, e in ipairs(list) do t[#t + 1] = e.questID or e.id end
+      table.sort(t)
+      return table.concat(t, ",")
+    end
+    check(NS.QS.TurnInMap(901) == 1433 and NS.QS.TurnInMap(902) == 1436,
+      "0.5.2b.27 ready: the waypoint is the turn-in (Defias 1433, Militia 1436), not the Westfall header")
+    check(NS.MapData.PlayerArea() == 1433, "0.5.2b.27 ready: the player area is Redridge (" .. tostring(NS.MapData.PlayerArea()) .. ")")
+    local rq = NS.tabs.quests.Ready()
+    check(ids(rq) == "901", "0.5.2b.27 ready: in Redridge the Lakeshire handoff is listed and the Westfall turn-in is not (" .. ids(rq) .. ")")
+    check(NS.Tracker.DropReady(901) == true and NS.Tracker.DropReady(902) == false,
+      "0.5.2b.27 ready: the local turn-in leaves the objective list; the other zone's turn-in stays")
+    local plan = NS.Tracker.Plan()
+    local dropped = false
+    for _, it in ipairs(plan) do if it.e and it.e.id == 902 and it.want == false then dropped = true end end
+    check(not dropped, "0.5.2b.27 ready: auto-track does not unwatch a ready quest whose turn-in is another zone")
+    C_Map.GetMapInfo, C_Map.GetBestMapForUnit = saveInfo, saveBest
+    GetZoneText, GetRealZoneText = saveZone, saveReal
+    C_QuestLog, NS.QS.Status = saveCQ, saveSt
+    NS.MapData.Forget()
+    if NS.tabs.quests and NS.tabs.quests.Refresh then NS.tabs.quests.Refresh() end
+  end
   -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat
   QWATCH = { [6] = true }
   NS.db.readySection = false  -- 0.5.2b.12: quest 102 (index 3) is ready; with the section off these zone tests keep their old meaning
@@ -7641,16 +8262,16 @@ if MODE ~= "minimal" then
   local kl = DarkMatterKeyLog
   TIME_NOW = TIME_NOW + 5
   kl._scripts.OnClick(kl, "LeftButton", false)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "quests", "0.5.2b.10 keys: L opens Dark Matter on the Quests tab")
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.28 keys: L opens the same Map & Quest Logs section")
   TIME_NOW = TIME_NOW + 5
   kb._scripts.OnClick(kb, "LeftButton", true)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.10 keys: M on the Quests tab switches to the Map tab")
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.28 keys: M closes it after L opened it")
   TIME_NOW = TIME_NOW + 5
   kl._scripts.OnClick(kl, "LeftButton", true)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "quests", "0.5.2b.10 keys: L on the Map tab switches to the Quests tab")
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.28 keys: L opens it again")
   TIME_NOW = TIME_NOW + 5
-  kl._scripts.OnClick(kl, "LeftButton", true)
-  check(not DarkMatterFrame:IsShown(), "0.5.2b.10 keys: L again on the Quests tab closes it")
+  kl._scripts.OnClick(kl, "LeftButton", false)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.28 keys: L closes it")
   -- 0.5.2b.10: keys the player bound to the game's map / quest log are taken over too (ALT-M / ALT-L stay the game's)
   local oldGBK = GetBindingKey
   GetBindingKey = function(a) if a == "TOGGLEWORLDMAP" then return "M", "F5", "ALT-M" elseif a == "TOGGLEQUESTLOG" then return "SHIFT-Q" end end
@@ -7679,6 +8300,75 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("keys on")
   check(NS.db.mlKeys == true and binds.M == "CLICK DarkMatterKeyMap", "0.5.2b keys: /dm keys on")
   check(saved == 0, "0.5.2b keys: SaveBindings is never called")
+  -- 0.5.2b.27: M keeps opening and closing, a stale saved tab still closes, a lost override is put back,
+  -- and the quest panel comes back after it was left off the window
+  NS.ToggleWindow(false)
+  for i = 1, 4 do
+    TIME_NOW = TIME_NOW + 2
+    kb._scripts.OnClick(kb, "LeftButton", true)
+    check(DarkMatterFrame:IsShown() and NS.windowParts.current == "map", "0.5.2b.27 keys: M opens (" .. i .. ")")
+    TIME_NOW = TIME_NOW + 2
+    kb._scripts.OnClick(kb, "LeftButton", true)
+    check(not DarkMatterFrame:IsShown(), "0.5.2b.27 keys: M closes (" .. i .. ")")
+  end
+  TIME_NOW = TIME_NOW + 2
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  NS.db.tab = "quests"
+  check(NS.windowParts.current == "map", "0.5.2b.27 keys: the map stays on screen when the saved tab is stale")
+  TIME_NOW = TIME_NOW + 2
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.27 keys: M closes from the tab on screen")
+  TIME_NOW = TIME_NOW + 2
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(NS.QuestPanel.Ensure() and NS.QuestPanel.IsShown(), "0.5.2b.27 panel: the map shows the quest log")
+  NS.QuestPanel.Drop()
+  check(not NS.QuestPanel.IsShown(), "0.5.2b.27 panel: dropped off the window")
+  local okTick, tickErr = true, nil
+  for _ = 1, 12 do
+    local ok, err = pcall(NS.MapTab.Tick, 0.1)
+    if not ok then okTick, tickErr = false, err break end
+  end
+  check(okTick and NS.QuestPanel.IsShown(), "0.5.2b.27 panel: the map tick shows it again without a reload (" .. tostring(tickErr) .. ")")
+  GetBindingAction = function(key) if key == "M" or key == "L" then return "MOVEANDSTEER" end return "" end
+  K.applied = true
+  K.Ensure()
+  check(binds.M == "CLICK DarkMatterKeyMap" and binds.L == "CLICK DarkMatterKeyLog",
+    "0.5.2b.27 keys: a lost M/L override is put back (" .. tostring(binds.M) .. ", " .. tostring(binds.L) .. ")")
+  GetBindingAction = nil
+  NS.db.tab = NS.windowParts.current
+  -- 0.5.2b.28: M and L are one toggle. A saved Quests tab and a hidden side log become this section. Pins stay.
+  NS.ToggleWindow(false)
+  TIME_NOW = TIME_NOW + 3
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(DarkMatterFrame:IsShown(), "0.5.2b.28 keys: M down opens")
+  TIME_NOW = TIME_NOW + 0.05
+  kl._scripts.OnClick(kl, "LeftButton", false)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.28 keys: L up just after M down still closes (separate key timers)")
+  local pins = { [103] = true }
+  NS.db.keepV = 1
+  NS.db.keepTracked = pins
+  NS.db.userPins = NS.db.userPins or { keep = true }
+  local userPins = NS.db.userPins
+  NS.db.tab = "quests"
+  NS.db.questPanel = false
+  NS.MigrateSaved()
+  check(NS.db.tab == "map" and NS.db.questPanel == true and NS.db.keepTracked == pins and NS.db.keepTracked[103] and NS.db.userPins == userPins,
+    "0.5.2b.28 saved: a Quests tab and a hidden side log become Map & Quest Logs; pins stay")
+  NS.ToggleWindow(true)
+  NS.ShowTab("map")
+  local P = NS.QuestPanel
+  check(P.IsShown() and P.embedded, "0.5.2b.28 panel: the map column is showing")
+  NS.tabs.map.OnHide()
+  check(not P.IsShown(), "0.5.2b.28 panel: leaving the map hides the column")
+  NS.tabs.map.OnShow()
+  check(P.IsShown() and P.frame:GetParent() == NS.MapTab.questHost, "0.5.2b.28 panel: coming back puts the column in the same window")
+  P.Drop()
+  check(P.Ensure() and P.IsShown() and P.frame:GetParent() == NS.MapTab.questHost, "0.5.2b.28 panel: after a rebuild it is inside the column, not beside the window")
+  local ic2 = InCombatLockdown
+  InCombatLockdown = function() return true end
+  check(P.Ensure() and P.IsShown(), "0.5.2b.28 panel: combat does not drop the column")
+  InCombatLockdown = ic2
+  NS.ToggleWindow(false)
   ClearOverrideBindings, SetOverrideBinding, SetOverrideBindingClick, SaveBindings = nil, nil, nil, nil
   -- 6. /dm trackerprobe
   local said = {}

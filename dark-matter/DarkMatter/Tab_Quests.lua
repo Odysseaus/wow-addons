@@ -83,7 +83,9 @@ local function ReadLog()
   for _, g in ipairs(groups) do
     for _, q in ipairs(g.quests) do
       local st = q.questID and NS.QS and NS.QS.Status(q.questID)
-      if st == "ready" or (st == nil and q.complete) then ready[#ready + 1] = q end
+      -- 0.5.2b.25: only turn-ins for the area you are in (a city counts as its own area, not the zone around it)
+      local here = not (q.questID and NS.QS and NS.QS.ReadyHere) or NS.QS.ReadyHere(q.questID)
+      if here and (st == "ready" or (st == nil and q.complete)) then ready[#ready + 1] = q end
     end
   end
   if #ready > 0 then table.insert(groups, 1, { title = T_READY, quests = ready, ready = true }) end
@@ -502,7 +504,12 @@ local function FillRows(V)
   return sel, matched, searching
 end
 
-local function Live(V) return V == main or (V.host and V.host:IsVisible()) end
+local function Live(V)
+  if V == main or (V.host and V.host:IsVisible()) then return true end
+  -- 0.5.2b.28: the map column stays filled while the map is up, even before a column width is known
+  local P = NS.QuestPanel
+  return P and P.view == V and P.embedded and P.mapShown and P.frame and P.frame:IsShown()
+end
 
 -- read the log once and redraw every view that is showing (the Quests tab's always, it keeps the selection)
 local function Refresh()
@@ -655,7 +662,7 @@ local function NewDetail(dp, w, h, top)
 end
 
 NS.RegisterTab({
-  id = "quests", name = "Quests", glyph = "quests",
+  id = "quests", name = "Quests", glyph = "quests", hidden = true,
   Build = function(body)
     local m = NS.theme.m
     ROW_H = m.rowH
