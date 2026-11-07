@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.31
+
+- **Pins.** The quest list shows a pin icon beside the name. It uses the same keep-tracked pin as the objective tracker, filled when pinned and dim when not, with a tooltip. The detail pin is that same icon at the top right, clear of the title, the level line, the status, Back, and Show on map. The track checkboxes in the list are hidden. Tracking rules, saved watches, and saved pins are unchanged.
+
 ## 0.5.2b.30
 
 - **Quest list.** The list scroll is sized to the inside of its panel, and the panel clips. A row no longer draws through the bottom border. The map and the column stay where they are.

@@ -3503,15 +3503,15 @@ if MODE ~= "minimal" then
   QWATCH = { [2] = true }
   Q.Refresh()
   local wv, gd = rowFor("Wolves"), rowFor("Gold Dust")
-  check(visible(wv.watch) and wv.watch._checked == true and gd.watch._checked == false, "watch: boxes mirror the game's watch list")
+  check(not visible(wv.watch) and not visible(gd.watch), "0.5.2b.31 watch: the list checkboxes stay hidden")
   local hdr
   for _, f in ipairs(ALL) do if rawget(f, "kind") == "h" and visible(f) then hdr = f end end
   check(hdr and not visible(hdr.watch), "watch: no box on zone headers")
   local u0 = QW_UPD
   gd.watch._scripts.OnClick(gd.watch)
-  check(QWATCH[3] == true and gd.watch._checked == true and QW_UPD == u0 + 1, "watch: checking adds the quest to the watch list and refreshes the stock tracker")
+  check(QWATCH[3] == true and QW_UPD == u0 + 1, "watch: checking adds the quest to the watch list and refreshes the stock tracker")
   gd.watch._scripts.OnClick(gd.watch)
-  check(QWATCH[3] == nil and gd.watch._checked == false, "watch: unchecking removes it")
+  check(QWATCH[3] == nil, "watch: unchecking removes it")
   -- reverse sync: a change made in the WoW quest log / tracker shows up on the next watch event
   local wf
   for _, fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_WATCH_LIST_CHANGED and fr ~= DarkMatter.Tracker.frame then wf = fr end end
@@ -3519,10 +3519,10 @@ if MODE ~= "minimal" then
   QWATCH[6] = true
   TIME_NOW = TIME_NOW + 5
   wf._scripts.OnEvent(wf, "QUEST_WATCH_LIST_CHANGED")
-  check(rowFor("The Defias").watch._checked == true, "watch: external watch change is reflected immediately")
+  check(NS.QL.IsWatched(rowFor("The Defias").quest) == true, "watch: external watch change is reflected immediately")
   QWATCH[6] = nil
   wf._scripts.OnEvent(wf, "QUEST_WATCH_UPDATE")
-  check(rowFor("The Defias").watch._checked == false, "watch: external unwatch is reflected")
+  check(NS.QL.IsWatched(rowFor("The Defias").quest) == false, "watch: external unwatch is reflected")
   -- the cap: box stays unchecked and the game's message is shown
   MAX_WATCHABLE_QUESTS = 1
   local nlog = #log
@@ -3530,7 +3530,7 @@ if MODE ~= "minimal" then
   gd.watch._scripts.OnClick(gd.watch)
   local said = false
   for i = nlog + 1, #log do if tostring(log[i]):find("only track 1") then said = true end end
-  check(QWATCH[3] == nil and gd.watch._checked == false and said, "watch: at the cap the box stays unchecked and the message is shown")
+  check(QWATCH[3] == nil and said, "watch: at the cap the box stays unchecked and the message is shown")
   MAX_WATCHABLE_QUESTS = 5
   -- combat: queued until PLAYER_REGEN_ENABLED
   local ic = InCombatLockdown
@@ -3542,13 +3542,13 @@ if MODE ~= "minimal" then
   for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED and fr ~= wf and fr ~= DarkMatter.Tracker.frame then rf = fr end end
   check(rf ~= nil, "watch: waits for PLAYER_REGEN_ENABLED")
   rf._scripts.OnEvent(rf, "PLAYER_REGEN_ENABLED")
-  check(QWATCH[3] == true and rowFor("Gold Dust").watch._checked == true, "watch: queued change applied after combat")
+  check(QWATCH[3] == true, "watch: queued change applied after combat")
   -- toolbar Track Quest follows the selected quest
   local gq = rowFor("Gold Dust")
   gq._scripts.OnClick(gq)
   check(bar.trk._checked == true, "watch: Track Quest box shows the selected quest's watch state")
   bar.trk._scripts.OnClick(bar.trk)
-  check(QWATCH[3] == nil and bar.trk._checked == false and rowFor("Gold Dust").watch._checked == false, "watch: Track Quest toggles the selected quest, row box follows")
+  check(QWATCH[3] == nil and bar.trk._checked == false, "watch: Track Quest toggles the selected quest")
   -- modern API path (questID) when the client has it
   local CQW = {}
   C_QuestLog.GetQuestWatchType = function(id) return CQW[id] end
@@ -3558,7 +3558,7 @@ if MODE ~= "minimal" then
   Q.Refresh()
   dq = rowFor("The Defias")
   dq.watch._scripts.OnClick(dq.watch)
-  check(CQW[103] == 0 and rowFor("The Defias").watch._checked == true, "watch: C_QuestLog.AddQuestWatch(questID) used when present")
+  check(CQW[103] == 0, "watch: C_QuestLog.AddQuestWatch(questID) used when present")
   rowFor("The Defias").watch._scripts.OnClick(rowFor("The Defias").watch)
   check(CQW[103] == nil, "watch: C_QuestLog.RemoveQuestWatch(questID) used when present")
   C_QuestLog.GetQuestWatchType, C_QuestLog.AddQuestWatch, C_QuestLog.RemoveQuestWatch = nil, nil, nil
@@ -6374,22 +6374,44 @@ if MODE ~= "minimal" then
     P.ShowList()
   end
   P.OpenQuest(103)
-  check(P.detail and P.detail.pin and P.detail.pin:GetText() == "Pin", "0.5.2b.29 pin: the detail starts unpinned")
+  check(P.detail and P.detail.pin and P.detail.pin.pinned == false and P.detail.pin.icon, "0.5.2b.31 pin: the detail icon starts unpinned")
   P.detail.pin._scripts.OnClick(P.detail.pin)
-  check(NS.Tracker.IsPinned(103) and P.detail.pin:GetText() == "Unpin", "0.5.2b.29 pin: detail Pin keeps the quest tracked")
+  check(NS.Tracker.IsPinned(103) and P.detail.pin.pinned == true, "0.5.2b.31 pin: the detail icon pins the quest")
   P.detail.pin._scripts.OnClick(P.detail.pin)
-  check(not NS.Tracker.IsPinned(103) and P.detail.pin:GetText() == "Pin", "0.5.2b.29 pin: detail Unpin clears only the pin")
-  local rowPin
+  check(not NS.Tracker.IsPinned(103) and P.detail.pin.pinned == false, "0.5.2b.31 pin: the detail icon unpins it")
+  local function hit(a, b)
+    local al, at, ar, ab = FrameMT._rect(a)
+    local bl, bt, br, bb = FrameMT._rect(b)
+    if not (al and bl) then return false end
+    return al < br - 1 and ar > bl + 1 and ab < bt - 1 and at > bb + 1
+  end
+  local pin, det = P.detail.pin, P.detail
+  check(not hit(pin, det.title) and not hit(pin, det.meta) and not hit(pin, det.status) and not hit(pin, det.showMap) and not hit(pin, P.back),
+    "0.5.2b.31 pin: the detail icon is clear of the title, level line, status, Show on map, and Back")
+  local rowPin, watchShown = nil, false
   P.ShowList()
-  for _, r in ipairs(P.view.rows) do if r:IsShown() and r.kind == "q" and r.quest and r.quest.questID == 101 and r.pin then rowPin = r.pin end end
-  check(rowPin and rowPin:GetText() == "Pin" and rowPin ~= rowPin.row.watch, "0.5.2b.29 pin: the row has its own pin, separate from the track box")
-  local watched = NS.QL.IsWatched(rowPin.row.quest)
+  for _, r in ipairs(P.view.rows) do
+    if r.kind == "q" and r:IsShown() and r.watch and r.watch:IsShown() then watchShown = true end
+    if r:IsShown() and r.kind == "q" and r.quest and r.quest.questID == 101 and r.pin then rowPin = r.pin end
+  end
+  check(rowPin and rowPin.icon and rowPin.pinned == false and not watchShown and rowPin:GetWidth() <= 18,
+    "0.5.2b.31 pin: the list uses an icon beside the name, and the watch boxes are hidden")
+  local function box(a, b) local al, at, ar, ab = FrameMT._rect(a) local bl, bt, br, bb = FrameMT._rect(b) return al, at, ar, ab, bl, bt, br, bb end
+  local tl, _, _, _, _, _, pr = box(rowPin.row.text, rowPin)
+  check(tl and pr and pr <= tl + 1, string.format("0.5.2b.31 pin: the icon sits beside the name (%.1f <= %.1f)", pr or -1, tl or -1))
+  local adds, rems = 0, 0
+  local oldA, oldR = AddQuestWatch, RemoveQuestWatch
+  AddQuestWatch = function(...) adds = adds + 1 return oldA(...) end
+  RemoveQuestWatch = function(...) rems = rems + 1 return oldR(...) end
+  P.view.Refresh()
+  AddQuestWatch, RemoveQuestWatch = oldA, oldR
+  check(adds == 0 and rems == 0, "0.5.2b.31 pin: drawing the list does not watch or unwatch")
   rowPin._scripts.OnClick(rowPin)
-  check(NS.Tracker.IsPinned(101) and (NS.QL.IsWatched(rowPin.row.quest) == true), "0.5.2b.29 pin: the row pin uses SetPinned")
+  check(NS.Tracker.IsPinned(101) and rowPin.pinned == true and rowPin.tipTitle == "Unpin", "0.5.2b.31 pin: the list icon pins, and the tooltip says Unpin")
   rowPin.row.watch._scripts.OnClick(rowPin.row.watch)
-  check(NS.Tracker.IsPinned(101), "0.5.2b.29 pin: the track box does not unpin")
+  check(NS.Tracker.IsPinned(101), "0.5.2b.31 pin: the hidden track box does not unpin")
   rowPin._scripts.OnClick(rowPin)
-  check(not NS.Tracker.IsPinned(101), "0.5.2b.29 pin: the row pin clears it again")
+  check(not NS.Tracker.IsPinned(101) and rowPin.pinned == false and rowPin.tipTitle == "Pin", "0.5.2b.31 pin: the list icon unpins")
   if watched == false then NS.QL.SetWatched(rowPin.row.quest, false) end
   -- only with the Map tab
   NS.ShowTab("quests")
@@ -6583,7 +6605,9 @@ if MODE ~= "minimal" then
   local nonKit, kitN, undesat, kitNames = {}, 0, 0, {}
   for f in pairs(drawn()) do
     if not f:find("^Interface\\AddOns\\") and not f:find("^Interface\\Icons\\") and not f:upper():find("WHITE8X8", 1, true) and type(tonumber(f)) ~= "number" then
-      if isKit(f) then kitN = kitN + 1 kitNames[#kitNames + 1] = f:match("[^\\]+$") else nonKit[#nonKit + 1] = f end
+      local keepIcon = f:find("LockButton%-") or f:find("Waypoint%-MapPin%-") or f:find("PetJournal%-FavoritesIcon")
+      if isKit(f) then kitN = kitN + 1 kitNames[#kitNames + 1] = f:match("[^\\]+$")
+      elseif not keepIcon then nonKit[#nonKit + 1] = f end
     end
   end
   for _, r in ipairs(REGIONS) do
