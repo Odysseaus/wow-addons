@@ -2511,6 +2511,7 @@ local function PlaceRoot(host, inset, top)
     qhost:SetPoint("TOPRIGHT", host, "TOPRIGHT", -inset, -(top or inset))
     qhost:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -inset, inset)
     qhost:SetWidth(math.max(q, 1))
+    if qhost.SetClipsChildren then qhost:SetClipsChildren(true) end
     if q > 1 then qhost:Show() else qhost:Hide() end
   end
 end
@@ -2581,10 +2582,12 @@ function M.FitViewport()
   local maxW, maxH = hw - pad, hh - pad
   if maxW < 40 or maxH < 40 then return end
   fittingVp = true
+  -- the hole is not reduced to make room for the column; the window already grew by it
   holeW, holeH = math.min(holeW, maxW), math.min(holeH, maxH)
+  local q = QuestLay() or 0
   vpBox:ClearAllPoints()
   vpBox:SetSize(holeW + 2 * b, holeH + 2 * b)
-  vpBox:SetPoint("CENTER", host, "CENTER", 0, 0)
+  vpBox:SetPoint("CENTER", host, "CENTER", -q / 2, 0)
   vp:ClearAllPoints()
   vp:SetPoint("TOPLEFT", vpBox, "TOPLEFT", b, -b)
   vp:SetPoint("BOTTOMRIGHT", vpBox, "BOTTOMRIGHT", -b, b)

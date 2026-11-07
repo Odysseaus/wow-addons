@@ -47,6 +47,7 @@ local function Help()
   print("  /dm artprobe  WoW theme: which of the game's own textures/templates this client has (ok/missing) -> DarkMatterDB.artprobe")
   print("  /dm frameprobe  the game's map window: its size and the border, title and close textures it is drawn with -> DarkMatterDB.frameprobe")
   print("  /dm sizeprobe  world map outer, scroll, and quest column width (read only) -> DarkMatterDB.sizeprobe")
+  print("  /dm keyprobe  M and L bindings and the next real click (read only; does not change the keys)")
   print("  /dm achprobe  Achievements: mode, game API counts + 3 samples, Dark Matter counts -> DarkMatterDB.achprobe")
   print("  every probe also keeps its last run, with the time, in DarkMatterDB.probeLog (read it after /reload)")
   print("  /dm testtoast  show a sample achievement toast (nothing is recorded)")
@@ -246,6 +247,14 @@ SlashCmdList["DARKMATTER"] = function(msg)
     Say("frameprobe", NS.MapWindow.Report())
   elseif cmd == "sizeprobe" then
     Say("sizeprobe", NS.MapWindow.SizeLines())
+  elseif cmd == "keyprobe" then
+    if NS.Keys and NS.Keys.ProbeArm then
+      local lines = NS.Keys.ProbeArm()
+      local wmf = _G.WorldMapFrame
+      local up = type(wmf) == "table" and wmf.IsShown and wmf:IsShown() and true or false
+      lines[1] = lines[1] .. " wmfShown=" .. tostring(up)
+      Say("keyprobe", lines)
+    end
   elseif cmd == "achprobe" then
     if NS.Ach and NS.Ach.ProbeReport then
       local _, lines = NS.Ach.ProbeReport()

@@ -48,7 +48,19 @@ local function Build()
         local prev = K.downAtBy[which]
         if down == false and prev and now - prev < 1 then K.downAtBy[which] = nil return end
         K.downAtBy[which] = (down ~= false) and now or nil
-        K.Press(which)
+        local f = _G.DarkMatterFrame
+        local before = f and f.IsShown and f:IsShown()
+        local result = K.Press(which)
+        if K.probeArmed then
+          K.probeArmed = nil
+          local after = f and f.IsShown and f:IsShown()
+          local line = string.format("keyprobe hit key=%s down=%s press=%s shownBefore=%s shownAfter=%s ownerShown=%s",
+            which == "log" and "L" or "M", tostring(down), tostring(result), tostring(before and true or false), tostring(after and true or false),
+            tostring(K.owner and K.owner.IsShown and K.owner:IsShown() and true or false))
+          K.lastHit = line
+          if NS.Print then NS.Print(line) end
+          if NS.LogProbe then NS.LogProbe("keyprobe", { line }) end
+        end
       end)
       K[which .. "Button"] = btn
     end
@@ -127,6 +139,22 @@ function K.Apply(...)
 end
 -- 0.5.2b.27: bindings are session overrides. A loading screen, a rebind, or a combat boundary can clear them,
 -- and an UPDATE_BINDINGS that arrives while we are applying used to be ignored. Put them back out of combat.
+-- 0.5.2b.29: one read of the bindings. Does not change M or L. The next real click, if it arrives, prints what it did.
+function K.ProbeArm()
+  K.probeArmed = true
+  K.lastHit = nil
+  local function act(key)
+    if type(_G.GetBindingAction) ~= "function" then return "noapi" end
+    local ok, a = pcall(_G.GetBindingAction, key, true)
+    if not ok or type(a) ~= "string" then return "" end
+    return a
+  end
+  local function shown(f) return type(f) == "table" and f.IsShown and f:IsShown() and true or false end
+  return {
+    string.format("keyprobe armed bindM=%s bindL=%s ownerShown=%s btnMShown=%s btnLShown=%s",
+      act("M"), act("L"), tostring(shown(K.owner)), tostring(shown(K.mapButton)), tostring(shown(K.logButton))),
+  }
+end
 function K.Ensure()
   if not K.Wanted() then return K.Apply() end
   if K.applied and K.Bound("M", "DarkMatterKeyMap") and K.Bound("L", "DarkMatterKeyLog") then return "on" end

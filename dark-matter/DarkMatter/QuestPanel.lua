@@ -26,12 +26,28 @@ local function RightReach()
 end
 function P.Extent() return RightReach() + P.gap + P.w end
 
+local TOP, PAD = 76, 14
+local function LayoutColumn()
+  if not frame then return end
+  local h = NS.Num(frame:GetHeight())
+  if not h or h < 120 then return end
+  local inner = math.max(40, h - TOP - PAD)
+  if lp then lp:SetHeight(inner) end
+  if dp then dp:SetHeight(inner) end
+  if det and det.scroll and det.scroll.frame then
+    local b = (NS.theme and NS.theme.m and NS.theme.m.listBorder) or 5
+    local headH = 82 + 28
+    det.scroll.frame:SetHeight(math.max(40, inner - 2 * b - headH))
+  end
+end
 local function Place()
   if not frame then return end
   if P.embedded and P.host then
     frame:SetParent(P.host)
     frame:ClearAllPoints()
     frame:SetAllPoints(P.host)
+    if frame.SetClipsChildren then frame:SetClipsChildren(true) end
+    LayoutColumn()
     return
   end
   local win = frame:GetParent()
@@ -171,31 +187,18 @@ function P.Build(win)
   f:SetSize(P.w, m.h)
   f:SetFrameLevel(win:GetFrameLevel() + 2)
   f:EnableMouse(true) -- locked: it does not move by itself, it follows the window
+  if f.SetClipsChildren then f:SetClipsChildren(true) end
   f:Hide()
   frame = f
   P.frame = f
   Place()
   UI.Slate(f, "slateShade", "BACKGROUND", 0)
   f.border = UI.NineSlice(f, "frame", m.frameCorner, "BORDER", 2)
-  -- head: title + close (the game's close button in the WoW theme, our own elsewhere)
+  -- head: title. The window's own close button is the only X. This column has none.
   local title = UI.Text(f, "OVERLAY", 14, "gold", "CENTER")
   title:SetPoint("TOP", f, "TOP", 0, -14)
   title:SetText("Quest Log")
   f.title = title
-  local close = NS.Stock.FromTemplate("Button", f, "UIPanelCloseButton")
-  if not close then
-    close = CreateFrame("Button", nil, f)
-    close:SetSize(24, 24)
-    local ct = close:CreateTexture(nil, "ARTWORK")
-    ct:SetAllPoints(close)
-    NS.OnSkin(function() NS.SetPiece(ct, "xbtn") end)
-  end
-  if (NS.Num(close:GetWidth()) or 0) <= 0 then close:SetSize(28, 28) end
-  close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
-  close:SetScript("OnClick", function()
-    if P.embedded then ShowList() else P.SetOpen(false) end
-  end)
-  f.close = close
   local pad = 14
   local cw = P.w - 2 * pad
   sbar = BuildSearchBar(f, cw)

@@ -691,6 +691,7 @@ local function Build()
   closeGlow:SetAlpha(0.25)
   NS.OnSkin(function() NS.SetPiece(closeTex, "xbtn") NS.SetPiece(closeGlow, "xbtn") end)
   close:SetScript("OnClick", function() f:Hide() end)
+  W.close = close
   -- 0.5.1 WoW theme: the game's own close button (UIPanelCloseButton template) when the client has it
   local stockClose = NS.Stock.FromTemplate("Button", f, "UIPanelCloseButton")
   if stockClose then

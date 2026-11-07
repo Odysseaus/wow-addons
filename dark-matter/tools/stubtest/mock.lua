@@ -6306,12 +6306,27 @@ if MODE ~= "minimal" then
     check(wpN == 1 and P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 shift-click: sets the waypoint, panel unchanged")
     NS.QS.SetWaypoint, _G.IsShiftKeyDown = saveSW, saveShift
   end
-  -- 0.5.2b.28: the column is not a toggle. Its close returns to the list.
-  check(NS.MapTab.panelBtn == nil, "0.5.2b.28 panel: no quest-log button on the map")
+  -- 0.5.2b.29: the column has no X. The window's own close button is a different widget.
+  check(NS.MapTab.panelBtn == nil and rawget(P.frame, "close") == nil and DarkMatter.windowParts.close, "0.5.2b.29 panel: no quest-column close; the window close remains")
+  check(P.frame._clips == true, "0.5.2b.29 panel: the column clips to itself")
   P.OpenQuest(103)
-  check(P.detailPanel:IsShown(), "0.5.2b.28 panel: a quest is open before close")
-  P.frame.close._scripts.OnClick(P.frame.close)
-  check(P.frame:IsShown() and P.list:IsShown() and not P.detailPanel:IsShown() and NS.db.questPanel ~= false, "0.5.2b.28 panel: close returns to the list and leaves the column up")
+  check(P.detail and P.detail.pin and P.detail.pin:GetText() == "Pin", "0.5.2b.29 pin: the detail starts unpinned")
+  P.detail.pin._scripts.OnClick(P.detail.pin)
+  check(NS.Tracker.IsPinned(103) and P.detail.pin:GetText() == "Unpin", "0.5.2b.29 pin: detail Pin keeps the quest tracked")
+  P.detail.pin._scripts.OnClick(P.detail.pin)
+  check(not NS.Tracker.IsPinned(103) and P.detail.pin:GetText() == "Pin", "0.5.2b.29 pin: detail Unpin clears only the pin")
+  local rowPin
+  P.ShowList()
+  for _, r in ipairs(P.view.rows) do if r:IsShown() and r.kind == "q" and r.quest and r.quest.questID == 101 and r.pin then rowPin = r.pin end end
+  check(rowPin and rowPin:GetText() == "Pin" and rowPin ~= rowPin.row.watch, "0.5.2b.29 pin: the row has its own pin, separate from the track box")
+  local watched = NS.QL.IsWatched(rowPin.row.quest)
+  rowPin._scripts.OnClick(rowPin)
+  check(NS.Tracker.IsPinned(101) and (NS.QL.IsWatched(rowPin.row.quest) == true), "0.5.2b.29 pin: the row pin uses SetPinned")
+  rowPin.row.watch._scripts.OnClick(rowPin.row.watch)
+  check(NS.Tracker.IsPinned(101), "0.5.2b.29 pin: the track box does not unpin")
+  rowPin._scripts.OnClick(rowPin)
+  check(not NS.Tracker.IsPinned(101), "0.5.2b.29 pin: the row pin clears it again")
+  if watched == false then NS.QL.SetWatched(rowPin.row.quest, false) end
   -- only with the Map tab
   NS.ShowTab("quests")
   check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")
@@ -7150,7 +7165,11 @@ if MODE == "full" then
   local function copyM() local c = {} for k, v in pairs(NS.theme.m) do c[k] = v end return c end
   local base = NS.theme.m
   WMF_CALLS, WMF_WRITES = {}, {}
-  local function wmf(...) WorldMapFrame = MakeWMF(...) MW.art = nil end
+  local function wmf(w, h, opts)
+    WorldMapFrame = MakeWMF(w, h, opts)
+    MW.art = nil
+    if NS.db and not (opts and opts.keepQ) then NS.db.questColumnPx, NS.db.questColumnSrc = nil, nil end
+  end
   local function outer(r) local bd = r.border or { 0, 0, 0, 0 } return (r.w + bd[1] + bd[3]) * r.scale, (r.h + bd[2] + bd[4]) * r.scale end
   wmf(1035, 640)
   local c = copyM()
@@ -7167,8 +7186,8 @@ if MODE == "full" then
   UIParent.GetEffectiveScale = function() return 0.8 end
   wmf(1232, 705, { scale = 0.64, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
-  check(res.w == 985 and res.h == 564 and res.scale == 1,
-    "0.5.2b.21 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> hole grows the trimmed 960 to 985x564 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  check(res.mapLayoutW == 985 and res.w == 985 + 333 and res.h == 564 and res.scale == 1 and res.columnLay == 333,
+    "0.5.2b.29 window: map 1232x705 keeps the 985x564 hole and adds questLogWidth 333 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.8: the size is measured while the map window is open and saved in DarkMatterDB; while it is closed (e.g.
   -- never opened since login, where its own size is not real yet) the saved size is used; rebuild only past 1 px
   do
@@ -7199,8 +7218,8 @@ if MODE == "full" then
   wmf(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
   ow, oh = outer(res)
-  check(res.w <= 1800 and res.h <= 1300 and ow + 0.6 >= (1920 - 26 * res.scale) and ow <= 1920 + 1 and math.abs(oh - 1080) < 1,
-    "0.5.2b.21 window: maximized follows the same rule, wider only for the scroll hole (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  check(res.mapLayoutW <= 1800 and res.columnLay and res.columnLay > 0 and res.w == res.mapLayoutW + res.columnLay and res.h <= 1300,
+    "0.5.2b.29 window: maximized map stays capped; the column is added and the picture is not narrowed (" .. res.w .. " = " .. tostring(res.mapLayoutW) .. "+" .. tostring(res.columnLay) .. ")")
   wmf(500, 300)
   res = MW.Apply(copyM())
   ow, oh = outer(res)
@@ -7259,7 +7278,7 @@ if MODE == "full" then
     local vw, vh = M and M.vp and M.vp:GetWidth(), M and M.vp and M.vp:GetHeight()
     check(vw and math.abs(vw - 1020) < 2 and math.abs(vh - 500) < 2,
       string.format("0.5.2b.21 map: viewport %.1fx%.1f (was about 781x373 in this frame; target 1020x500)", vw or -1, vh or -1))
-    -- 0.5.2b.28: the stock quest frame is not counted twice. An overhang is counted once and kept when it hides.
+    -- 0.5.2b.29: the column is added beside the scroll hole. Hiding the stock quest frame does not drop it.
     NS.db.questExtraPx, NS.db.questColumnPx = nil, nil
     wmf(1035, 534, { rect = true })
     local baseW = MW.Apply(copyM())
@@ -7267,25 +7286,55 @@ if MODE == "full" then
       GetRight = function() return 100 + 1035 end, IsShown = function() return true end }
     local inW = MW.Apply(copyM())
     local px, inn, src = MW.QuestColumnPx()
-    check(inn and src == "QuestMapFrame" and px == 280 and inW.w == baseW.w,
-      "0.5.2b.28 window: a quest frame inside the map is a column, not a second width (" .. tostring(inW.w) .. " vs " .. tostring(baseW.w) .. ")")
+    check(inn and src == "QuestMapFrame" and px == 280 and inW.w == baseW.w + 280 and inW.holeW == baseW.holeW and inW.holeH == baseW.holeH,
+      "0.5.2b.29 window: a quest frame inside the map widens the window and leaves the scroll hole (" .. tostring(inW.w) .. " vs " .. tostring(baseW.w) .. ")")
     QuestMapFrame = { GetWidth = function() return 280 end, GetLeft = function() return 100 + 1035 - 10 end,
       GetRight = function() return 100 + 1035 + 270 end, IsShown = function() return true end }
     local outW = MW.Apply(copyM())
-    check(outW.w == baseW.w + 270, "0.5.2b.28 window: a quest frame past the map adds only its overhang (" .. tostring(outW.w) .. ")")
+    check(outW.w == baseW.w + 280 and outW.holeW == baseW.holeW, "0.5.2b.29 window: a quest frame past the map still adds its width once, not a second overhang (" .. tostring(outW.w) .. ")")
+    QuestMapFrame.GetWidth = function() return 0 end
     QuestMapFrame.IsShown = function() return false end
     local hidW = MW.Apply(copyM())
-    check(hidW.w == outW.w and hidW.h == outW.h, "0.5.2b.28 window: hiding that frame does not shrink the window or ask for a rebuild")
+    check(hidW.w == outW.w and hidW.h == outW.h, "0.5.2b.29 window: hiding that frame keeps the saved width")
     QuestMapFrame = nil
     wmf(1035, 534, { ql = 280, rect = true })
-    NS.db.questExtraPx = nil
     local fieldW = MW.Apply(copyM())
     local lay, _, lsrc = MW.QuestLay(1)
-    check(fieldW.w == baseW.w and lay == 280 and lsrc == "questLogWidth",
-      "0.5.2b.28 window: questLogWidth sizes the column and is not added on top of a frame we can already measure")
+    check(fieldW.w == baseW.w + 280 and fieldW.holeW == baseW.holeW and lay == 280 and lsrc == "questLogWidth",
+      "0.5.2b.29 window: questLogWidth widens the window and does not shrink the hole")
     local lines = table.concat(MW.SizeLines(), "\n")
-    check(lines:find("sizeprobe " .. NS.version, 1, true) and lines:find("not a claim", 1, true) and lines:find("signoff still needs", 1, true) and lines:find("quest column 280", 1, true),
-      "0.5.2b.28 sizeprobe: prints the live numbers and does not claim they match")
+    check(lines:find("sizeprobe " .. NS.version, 1, true) and lines:find("not a claim", 1, true) and lines:find("signoff still needs", 1, true) and lines:find("quest column 280", 1, true) and lines:find("map picture is the scroll hole", 1, true),
+      "0.5.2b.29 sizeprobe: prints the live numbers and does not claim they match")
+    -- class frame: the picture stays the pre-column size; the window is wider; the column is inside and clipped
+    local saveTheme = NS.theme.id
+    wmf(1035, 534)
+    NS.SetTheme("hunter")
+    NS.RebuildWindow()
+    NS.ShowTab("map")
+    local vp0 = NS.MapTab.vp:GetWidth()
+    local vh0 = NS.MapTab.vp:GetHeight()
+    local win0 = DarkMatterFrame:GetWidth()
+    wmf(1035, 534, { ql = 180 })
+    NS.RebuildWindow()
+    NS.ShowTab("map")
+    local vp1 = NS.MapTab.vp:GetWidth()
+    local vh1 = NS.MapTab.vp:GetHeight()
+    local win1 = DarkMatterFrame:GetWidth()
+    local host = NS.MapTab.questHost
+    local col = NS.QuestPanel.frame
+    local wl, wt, wr, wb = FrameMT._rect(DarkMatterFrame)
+    local cl, ct, cr, cb
+    if col then cl, ct, cr, cb = FrameMT._rect(col) end
+    check(vp0 and math.abs(vp1 - vp0) < 2 and math.abs(vh1 - vh0) < 2, string.format("0.5.2b.29 class map: hunter picture stays %.1fx%.1f with a column (was %.1fx%.1f)", vp1 or -1, vh1 or -1, vp0 or -1, vh0 or -1))
+    check(win1 >= win0 + 180 - 2, string.format("0.5.2b.29 class map: the window grew by the column (%.1f -> %.1f)", win0 or -1, win1 or -1))
+    check(host and host._clips and col and col._clips and rawget(col, "close") == nil,
+      "0.5.2b.29 class map: the column clips and has no X")
+    check(cl and wl and cl >= wl - 1 and cr <= wr + 1 and ct <= wt + 1 and cb >= wb - 1,
+      string.format("0.5.2b.29 class map: column inside the window (%.1f,%.1f,%.1f,%.1f in %.1f,%.1f,%.1f,%.1f)", cl or -1, ct or -1, cr or -1, cb or -1, wl or -1, wt or -1, wr or -1, wb or -1))
+    local rail = NS.windowParts.railTabs and NS.windowParts.railTabs.map
+    check(rail and rail.text:GetText() == "Map & Quest Logs" and rail.text._w and rail.text._w < NS.theme.m.tabW,
+      "0.5.2b.29 rail: the full label is wrapped inside the tab button")
+    NS.SetTheme(saveTheme)
     QuestMapFrame = nil
     NS.db.questExtraPx, NS.db.questColumnPx, NS.db.questColumnSrc = nil, nil, nil
     wmf(1035, 534)
@@ -8251,6 +8300,25 @@ if MODE ~= "minimal" then
   check(K.Apply() == "on" and binds.M == "CLICK DarkMatterKeyMap" and binds.L == "CLICK DarkMatterKeyLog" and binds["ALT-M"] == "TOGGLEWORLDMAP" and binds["ALT-L"] == "TOGGLEQUESTLOG",
     "0.5.2b keys: M and L open Dark Matter; ALT-M / ALT-L the game's map and quest log")
   check(K.owner._name == "DarkMatterKeyOwner" and K.owner ~= UIParent, "0.5.2b keys: owned by a Dark Matter frame")
+  -- 0.5.2b.29: the probe reports the binding without a click. A hit line exists only after OnClick runs.
+  GetBindingAction = function(key, override) if override then return binds[key] or "" end return "" end
+  local armed = K.ProbeArm()
+  local beforeProbe = DarkMatterFrame:IsShown()
+  check(K.Ensure() == "on" and K.probeArmed and K.lastHit == nil and DarkMatterFrame:IsShown() == beforeProbe
+    and armed[1]:find("keyprobe armed", 1, true) and armed[1]:find("bindM=CLICK DarkMatterKeyMap", 1, true) and armed[1]:find("bindL=CLICK DarkMatterKeyLog", 1, true) and armed[1]:find("ownerShown=", 1, true) and not armed[1]:find("wmfShown", 1, true),
+    "0.5.2b.29 keyprobe: armed line only; Ensure does not deliver a click (" .. tostring(armed[1]) .. ")")
+  NS.ToggleWindow(false)
+  DarkMatterKeyMap._scripts.OnClick(DarkMatterKeyMap, "LeftButton", true)
+  check(K.lastHit and K.lastHit:find("keyprobe hit key=M", 1, true) and K.lastHit:find("press=opened", 1, true) and K.lastHit:find("shownAfter=true", 1, true) and not K.probeArmed,
+    "0.5.2b.29 keyprobe: the hit line comes from OnClick (" .. tostring(K.lastHit) .. ")")
+  local saidK, oldPK = {}, NS.Print
+  NS.Print = function(m) saidK[#saidK + 1] = m end
+  SlashCmdList.DARKMATTER("keyprobe")
+  NS.Print = oldPK
+  check(saidK[1] and saidK[1]:find("wmfShown=", 1, true) and saidK[1]:find("bindM=", 1, true),
+    "0.5.2b.29 keyprobe: /dm keyprobe also says whether the world map is shown (" .. tostring(saidK[1]) .. ")")
+  K.probeArmed = nil
+  GetBindingAction = nil
   NS.ToggleWindow(false)
   local kb = DarkMatterKeyMap
   kb._scripts.OnClick(kb, "LeftButton", true)

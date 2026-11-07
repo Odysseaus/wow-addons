@@ -171,6 +171,15 @@ local function GetRow(V, i)
   end)
   r.watch:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
   r.watch.row = r
+  -- 0.5.2b.29: pin is the keep-tracked flag. The checkbox beside it only tracks.
+  r.pin = UI.Button(r, "Pin", 44, 18, "grey", 10)
+  r.pin.row = r
+  r.pin:SetScript("OnClick", function(self)
+    local q = self.row and self.row.quest
+    local id = type(q) == "table" and q.questID
+    if not id or not (NS.Tracker and NS.Tracker.SetPinned) then return end
+    NS.Tracker.SetPinned(id, not NS.Tracker.IsPinned(id))
+  end)
   r.small = r:CreateFontString(nil, "OVERLAY")
   NS.SetFont(r.small, 12, "")
   r.small:SetShadowOffset(1, -1)
@@ -273,6 +282,9 @@ local function Detail(q, d)
   d.title:SetShadowColor(0, 0, 0, sh)
   d.meta:SetShadowColor(0, 0, 0, sh)
   d.status:SetShadowColor(0, 0, 0, sh)
+  if d.pin and NS.Tracker and type(q) == "table" and q.questID then
+    d.pin:SetText(NS.Tracker.IsPinned(q.questID) and "Unpin" or "Pin")
+  end
   local nt, ni, y = 0, 0, -4
   local function line(text, size, key, gapAbove)
     nt = nt + 1
@@ -447,6 +459,7 @@ local function FillRows(V)
       if data.kind == "h" then
         r.icon:Show()
         r.watch:Hide()
+        if r.pin then r.pin:Hide() end
         NS.SetPiece(r.icon, (collapsed[data.group.title] and not searching) and "coin_plus" or "coin_minus")
         r.small:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
         r.text:ClearAllPoints()
@@ -460,16 +473,23 @@ local function FillRows(V)
         local q = data.quest
         isSel = ((q.questID or q.title) == selectedId)
         r.icon:Hide()
+        if QL.WarmRewards then QL.WarmRewards(q) end
         local watched, partly = BoxState(q, canWatch)
+        if r.pin then
+          r.pin:Show()
+          r.pin:SetText((NS.Tracker and q.questID and NS.Tracker.IsPinned(q.questID)) and "Unpin" or "Pin")
+        end
         if canWatch and watched ~= nil then
           r.watch:Show()
           r.watch:SetChecked(watched and true or false)
           r.watch:SetAlpha(partly and 0.5 or 1)
-          r.small:SetPoint("RIGHT", r.watch, "LEFT", -2, 0)
+          if r.pin then r.pin:ClearAllPoints() r.pin:SetPoint("RIGHT", r.watch, "LEFT", -2, 0) end
         else
           r.watch:Hide()
-          r.small:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
+          if r.pin then r.pin:ClearAllPoints() r.pin:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0) end
         end
+        if r.pin and r.pin:IsShown() then r.small:SetPoint("RIGHT", r.pin, "LEFT", -2, 0)
+        else r.small:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0) end
         r.text:ClearAllPoints()
         r.text:SetPoint("LEFT", r, "LEFT", m.rowPad + 14, 0)
         r.text:SetPoint("RIGHT", r.small, "LEFT", -6, 0)
@@ -652,6 +672,15 @@ local function NewDetail(dp, w, h, top)
     NS.MapTab.ShowQuest(q, true)
   end)
   d.showMap = sm
+  local pin = UI.Button(dp, "Pin", 64, 22, "red", 11)
+  pin:SetPoint("RIGHT", sm, "LEFT", -6, 0)
+  pin:SetScript("OnClick", function()
+    local q = d.quest and d.quest.questID
+    if not q or not (NS.Tracker and NS.Tracker.SetPinned) then return end
+    NS.Tracker.SetPinned(q, not NS.Tracker.IsPinned(q))
+    pin:SetText(NS.Tracker.IsPinned(q) and "Unpin" or "Pin")
+  end)
+  d.pin = pin
   local headH = 82 + top
   d.scroll = UI.Scroll(dp, w - 2 * b, h - 2 * b - headH, dp)
   d.scroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", b, -(b + headH))

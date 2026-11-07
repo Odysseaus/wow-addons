@@ -109,9 +109,8 @@ function MW.QuestColumnPx()
   end
   if px and type(NS.db) == "table" then NS.db.questColumnPx, NS.db.questColumnSrc = px, src end
   if px and px >= 80 then return px, inside, src or "none" end
-  -- a map frame we can measure, with no column of its own, does not inherit an older width
-  local shown = W and Call(W, "IsShown") == true and N(Call(W, "GetWidth"))
-  if shown and shown >= 200 then return nil, inside, "none" end
+  -- 0.5.2b.29: a hidden stock quest frame must not drop the width and rebuild. The last measured
+  -- width is kept until this client publishes a new one.
   if type(NS.db) == "table" and N(NS.db.questColumnPx) and NS.db.questColumnPx >= 80 then
     return NS.db.questColumnPx, false, NS.db.questColumnSrc or "saved"
   end
@@ -316,13 +315,14 @@ function MW.Need(theme, m)
       if cw > MW.MAX_W then cw = MW.MAX_W end
       if ch > MW.MAX_H then ch = MW.MAX_H end
     end
-    -- 0.5.2b.28: a readable map frame is already the outer size. Add only the part of the stock quest
-    -- frame that sticks out past it, and keep that extra once it has been seen (hiding the frame must
-    -- not shrink the window and rebuild). A questLogWidth number on a frame we can already measure is
-    -- not added again.
-    local extra = MW.QuestExtra(s)
-    if extra > 0 then cw = cw + math.floor(extra + 0.5) end
-    if cw > MW.MAX_W then cw = MW.MAX_W end
+    -- 0.5.2b.29: the map portion stays the scroll hole. The measured column is added beside it.
+    -- Do not clamp that extra away: shrinking the map to stay under MAX_W is the bug this replaces.
+    local mapCw = cw
+    local qLay, _, qSrc = MW.QuestLay(s)
+    qLay = math.floor((qLay or 0) + 0.5)
+    if qLay > 0 then cw = mapCw + qLay end
+    res.columnLay, res.columnSrc, res.mapLayoutW = qLay, qSrc, mapCw
+    if cw > MW.MAX_W then res.columnPastMax = true end
     Fill(tm, b, cw, ch)
     l, t, r, bo = MW.ThemeBorder(theme, tm)
   end
@@ -602,8 +602,10 @@ function MW.SizeLines()
     string.format("scroll %sx%s (%s)", tostring(sw), tostring(sh), tostring(ssrc)),
     string.format("quest column %s px from %s; already inside the map frame: %s; stock quest frame shown: %s",
       tostring(px), tostring(src), tostring(inside), tostring(type(q) == "table" and Call(q, "IsShown") == true)),
-    string.format("Dark Matter window %sx%s from %s", tostring(r.w), tostring(r.h), tostring(r.source or "not built yet")),
-    "signoff still needs these live numbers with the stock quest log open: world map outer, scroll, quest column width.",
+    string.format("Dark Matter window %sx%s from %s; column added %s (%s); map layout before the column %s",
+      tostring(r.w), tostring(r.h), tostring(r.source or "not built yet"), tostring(r.columnLay or 0), tostring(r.columnSrc or "none"), tostring(r.mapLayoutW)),
+    r.columnPastMax and "the column plus the map is past the layout cap; the map was not narrowed" or "the map picture is the scroll hole; the column is extra window width",
+    "signoff still needs these live numbers with the stock map open: world map outer, scroll, quest column width. This line does not claim they match.",
   }
 end
 

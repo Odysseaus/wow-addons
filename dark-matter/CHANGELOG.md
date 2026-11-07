@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.2b.29
+
+- **The map keeps its size.** The quest column is no longer carved out of the map. The window grows by the measured column width (`QuestMapFrame`, or `questLogWidth`, or the last saved width). The picture stays the scroll hole, on class frames too. The column is the page's height and clips, so the list stops at the footer. It has no close button. The window's own close button stays. The rail still says Map & Quest Logs, on two lines.
+- **Pin.** A quest row and its detail have a Pin button. It uses the same keep-tracked pin as the objective tracker. The track checkbox still only tracks.
+- **Rewards.** Item names are requested when the quest row is first shown. Until the name arrives, the reward says Loading…
+- **`/dm keyprobe`.** One read of the M and L bindings, whether the owner and buttons are shown, and whether the world map is shown. The next real click, if one arrives, prints what Press did and whether the window stayed that way. M and L themselves are unchanged.
+
 ## 0.5.2b.28
 
 - **Map & Quest Logs.** The separate Quests tab and the map button that showed or hid the side log are gone. The quest list is a column inside the map section. M and L both open and close that section. ALT-M and ALT-L still open the stock map and the stock quest log. A saved Quests tab opens this section. Pins are not cleared.
