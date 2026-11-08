@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.37: a new current-zone quest shows up when the log has it, without a reload.
+## Notes: Dark Matter 0.5.2b.38: one selected quest is lit on the map and on the Objectives icon.
 ## Author: Odysseaus
-## Version: 0.5.2b.37
+## Version: 0.5.2b.38
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

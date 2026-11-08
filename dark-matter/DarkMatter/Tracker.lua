@@ -444,13 +444,9 @@ end
 -- 0.5.2b.36: the round icon and the Ready icon. Arrow and highlight only. Does not open the window or glide.
 function Tr.Aim(q)
   q = N(q)
-  local QS = NS.QS
-  if not (q and QS) then return end
-  if not QS.TrackQuest(q) then
-    local loc = QS.Locate(q)
-    if loc and not loc.zoneOnly then QS.SetWaypoint(loc.map, loc.x, loc.y, q) end
-  end
-  if NS.MapTab then NS.MapTab.dirty = true end
+  if not (q and NS.QS and NS.QS.Choose) then return end
+  NS.QS.Choose(q, "icon")
+  if Tr.FillReady then Tr.FillReady() end
 end
 
 ---------------------------------------------------------------------------
@@ -596,7 +592,7 @@ local function GamePOI(r)
   return nil
 end
 function Tr.PaintReadyIcon(r)
-  local sel = SuperTracked(r.q)
+  local sel = NS.QS and NS.QS.selected == r.q
   local b = rawget(r, "poi")
   if b then
     local ok = pcall(function()

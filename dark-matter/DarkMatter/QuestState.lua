@@ -38,6 +38,19 @@ function QS.Select(q, src)
   QS.selected, QS.selectSrc = q, src
   Fire("select", q, src)
 end
+-- 0.5.2b.38: one persistent highlight. The arrow follows this quest so the Objectives icon matches the map.
+-- Hover is separate and clears when the pointer leaves.
+function QS.Choose(q, src)
+  q = N(q)
+  if not q then return end
+  QS.Select(q, src or "choose")
+  if not QS.TrackQuest(q) then
+    local loc = QS.Locate(q)
+    if loc and not loc.zoneOnly then QS.SetWaypoint(loc.map, loc.x, loc.y, q) end
+  end
+  if NS.Tracker then NS.Tracker.readyDirty = true end
+  if NS.MapTab then NS.MapTab.dirty = true end
+end
 function QS.Hover(q, src)
   q = N(q)
   if q == QS.hovered and src == QS.hoverSrc then return end

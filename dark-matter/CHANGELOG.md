@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.38
+
+- **One highlight.** The selected quest is the only persistent light on the map and on its Objectives icon, in Quests or Ready. Choosing another quest on the map, on an icon, or on a name clears the previous one and points the arrow at the new one. Hover still lights only while the pointer is there. Icons do not open the window. Names still open and glide.
+
 ## 0.5.2b.37
 
 - **New quest.** Accepting a quest refreshes the map quest list, including just after a selection or a reward tooltip. The zone plan waits until that quest is in the log, so a watch the game added is not removed early. A log update that arrives without the accept event is picked up the same way, for about two seconds. The list read does not select the quest or load every reward. In the air and in combat the plan still waits.

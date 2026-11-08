@@ -958,14 +958,10 @@ local function QuestMarker(z, q, vw, vh)
 end
 -- 0.5.2b.11: the quests whose next waypoint is drawn (the selected one and the game's super-tracked one), as the stock
 -- map's QuestDataProvider does (focused or super-tracked quest + C_QuestLog.GetNextWaypointForMap)
--- 0.5.2b.35: the bright ring is the selected quest, the hovered one, or the quest the game's arrow is on.
--- Lighting the arrow's quest does not move the map.
+-- 0.5.2b.38: one persistent highlight, the selected quest. Hover lights only while the pointer is on a marker.
 function M.MarkerHot(id)
   local QS = NS.QS
-  if not (QS and id) then return false end
-  if QS.IsHot(id) then return true end
-  local arrow = QS.ArrowQuest and QS.ArrowQuest()
-  return arrow ~= nil and arrow == id
+  return (QS and id and QS.IsHot(id)) and true or false
 end
 function M.WaypointQuests()
   local out = {}
@@ -2332,7 +2328,7 @@ function M.ShowQuest(q, wp)
   if not M.ready or VW() < 50 or VH() < 50 then M.pendingQuest = { q = q, wp = wp } return "pending" end
   MD.Forget("quests")
   local title = QS.Title(q)
-  QS.Select(q, "map")
+  if QS.Choose then QS.Choose(q, "map") else QS.Select(q, "map") end
   local loc = QS.Locate(q)
   if loc and not loc.zoneOnly then
     local wx, wy = WorldOf(loc.map, loc.x, loc.y)
@@ -2374,7 +2370,7 @@ QuestClick = function(mk)
     NS.SetStatus("\"" .. QS.Title(mk.qid) .. "\": " .. (ok and why or ("no waypoint: " .. tostring(why))))
     return
   end
-  QS.Select(mk.qid, "map")
+  if QS.Choose then QS.Choose(mk.qid, "map") else QS.Select(mk.qid, "map") end
   if NS.QuestPanel and NS.QuestPanel.OpenQuest then NS.QuestPanel.OpenQuest(mk.qid) end
   NS.SetStatus("Selected \"" .. QS.Title(mk.qid) .. "\" (Quest Log panel). Shift-click a marker for the game's waypoint and arrow.")
   M.dirty = true

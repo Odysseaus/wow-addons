@@ -8432,12 +8432,19 @@ if MODE ~= "minimal" then
     QS.Select(nil, "list")
     local cx, cy = M.Center()
     C_SuperTrack = { GetSuperTrackedQuestID = function() return 103 end }
-    check(M.MarkerHot(103) and not M.MarkerHot(101) and not M.MarkerHot(102), "0.5.2b.35 map: the arrow's quest is hot")
+    check(not M.MarkerHot(103), "0.5.2b.38 map: the arrow alone does not keep a second highlight")
     QS.Select(101, "list")
     QS.Hover(102, "map")
-    check(M.MarkerHot(101) and M.MarkerHot(102) and M.MarkerHot(103), "0.5.2b.35 map: selection and hover stay hot along with the arrow")
+    check(M.MarkerHot(101) and M.MarkerHot(102) and not M.MarkerHot(103), "0.5.2b.38 map: selection and hover light, and the old arrow does not")
+    QS.Hover(nil, "map")
+    check(M.MarkerHot(101) and not M.MarkerHot(102), "0.5.2b.38 map: leaving a hover clears it and the selection stays")
+    glides = 0
+    Tr.Aim(103)
+    check(QS.selected == 103 and M.MarkerHot(103) and not M.MarkerHot(101) and glides == 0, "0.5.2b.38 icon: chooses that quest and does not open the map")
+    Tr.Aim(101)
+    check(QS.selected == 101 and M.MarkerHot(101) and not M.MarkerHot(103), "0.5.2b.38 icon: the previous quest's highlight is cleared")
     local cx2, cy2 = M.Center()
-    check(cx == cx2 and cy == cy2 and glides == 1, "0.5.2b.35 map: lighting the arrow's quest does not move the map")
+    check(cx == cx2 and cy == cy2 and glides == 0, "0.5.2b.38 map: choosing a quest by its icon does not move the map")
     if NS.ShowTab then NS.ShowTab("map") end
     M.dirty = false
     local fired = false
