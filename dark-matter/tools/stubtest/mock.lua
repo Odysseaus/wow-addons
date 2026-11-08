@@ -7954,9 +7954,8 @@ if MODE ~= "minimal" then
       "0.5.2b.7.3 ready: the icon is the tracker's completed-quest POI button (QuestComplete: UI-QuestIcon-TurnIn-Normal on UI-QuestPoi-QuestNumber)")
     check(rawget(R, "bg") == nil and rawget(r, "hl") == nil, "0.5.2b.7.3 ready: no backdrop behind the rows and no highlight plate")
     check(r.ficon._atlas == "UI-QuestIcon-TurnIn-Normal" and r.ficon._shown ~= false and r.face._atlas == "UI-QuestPoi-QuestNumber" and r.iconHow == "atlas"
-      and r.iconBox._w == 20 and r.iconBox._h == 20 and r.iconBox._pts[1][1] == "TOPRIGHT" and r.iconBox._pts[1][2] == r.title and r.iconBox._pts[1][3] == "TOPLEFT"
-      and r.iconBox._pts[1][4] == -7 and r.iconBox._pts[1][5] == 5,
-      "0.5.2b.7.3 ready: without the template the same two game atlases, 20x20 at the title's TOPLEFT (-7, 5) as the tracker places it (" .. tostring(r.iconHow) .. ")")
+      and r.iconBox._w == 20 and r.iconBox._h == 20 and r.pin and r.pin._pts[1][1] == "LEFT" and r.iconBox._pts[1][1] == "LEFT" and r.iconBox._pts[1][2] == r.pin,
+      "0.5.2b.36 ready: the same two game atlases, 20x20, with the pin to the left of the icon (" .. tostring(r.iconHow) .. ")")
     -- colours: the tracker's table when the client has it
     local saveOTC = rawget(_G, "OBJECTIVE_TRACKER_COLOR")
     OBJECTIVE_TRACKER_COLOR = { Header = { r = 0.75, g = 0.61, b = 0 }, HeaderHighlight = { r = 1, g = 0.82, b = 0 }, Normal = { r = 0.8, g = 0.8, b = 0.8 }, NormalHighlight = { r = 1, g = 1, b = 1 } }
@@ -8462,6 +8461,106 @@ if MODE ~= "minimal" then
     Tr.hold, Tr.ground, Tr.queue, Tr.zonePending, Tr.watch, Tr.nextBatch = nil, nil, {}, nil, nil, 0
     Tr.SetReadyCollapsed(saveCol ~= false)
     Tr.Tick(TIME_NOW + 10)
+  end
+  -- 0.5.2b.36: a false taxi flag during startup is not a landing. Icons do not open the map.
+  do
+    local Tr, QS, MD, M = NS.Tracker, NS.QS, NS.MapData, NS.MapTab
+    local saveTaxi, saveZone, saveReal = UnitOnTaxi, GetZoneText, GetRealZoneText
+    local saveArea, saveTurn, saveST, saveShow = MD.PlayerArea, QS.TurnInMap, C_SuperTrack, M.ShowQuest
+    local saveAuto, saveCol, t0 = NS.db.autoTrack, NS.db.readyCollapsed, TIME_NOW
+    local here, zoneName, flying = 100, "Elwynn Forest", false
+    local aims = 0
+    MD.PlayerArea = function() return here end
+    GetZoneText = function() return zoneName end
+    GetRealZoneText = GetZoneText
+    QS.TurnInMap = function(id) if id == 102 then return 100 end return 200 end
+    UnitOnTaxi = function() return flying end
+    C_SuperTrack = { GetSuperTrackedQuestID = function() return nil end, SetSuperTrackedQuestID = function(q) aims = aims + 1 C_SuperTrack.q = q return true end }
+    NS.db.autoTrack = true
+    local glides = 0
+    M.ShowQuest = function() glides = glides + 1 end
+    local function listed(id)
+      for _, e in ipairs(Tr.ReadyList()) do if e.id == id then return true end end
+    end
+    TIME_NOW = t0 + 100
+    Tr.taxiRide, Tr.hold, Tr.ground, Tr.settleHold = nil, nil, nil, nil
+    Tr.BeginTaxiSettle()
+    Tr.zonePending = TIME_NOW
+    local early = { marker = "early" }
+    Tr.queue = early
+    here = 100
+    Tr.Tick(TIME_NOW)
+    here, zoneName = 200, "Westfall"
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW + 0.2)
+    check(Tr.queue == early and Tr.taxiGate == "settle" and Tr.HoldArea() and Tr.HoldArea().area == 100 and not Tr.taxiRide,
+      "0.5.2b.36 taxi: a false flag during startup does not plan and does not follow the new zone")
+    flying = true
+    here, zoneName = 250, "Duskwood"
+    Tr.Tick(TIME_NOW + 0.4)
+    check(Tr.taxiRide and Tr.hold and Tr.hold.area == 250 and Tr.queue == early, "0.5.2b.36 taxi: the first true latches that area and still does not apply the old queue")
+    here, zoneName = 400, "Stranglethorn"
+    Tr.OnEvent("PLAYER_CONTROL_GAINED")
+    Tr.Tick(TIME_NOW + 0.6)
+    check(Tr.hold.area == 250 and Tr.queue == early and QS.HereArea() == 250, "0.5.2b.36 taxi: a control-gained event while still flying is not the landing")
+    flying = false
+    here, zoneName = 500, "Redridge Mountains"
+    Tr.Tick(TIME_NOW + 0.8)
+    check(not Tr.taxiRide and not Tr.hold and Tr.queue ~= early and QS.HereArea() == 500, "0.5.2b.36 taxi: true then false plans the landing once")
+    TIME_NOW = TIME_NOW + 1
+    Tr.taxiRide, Tr.hold, Tr.ground, Tr.settleHold = nil, nil, nil, nil
+    flying = false
+    here, zoneName = 100, "Elwynn Forest"
+    Tr.BeginTaxiSettle()
+    Tr.zonePending = TIME_NOW
+    Tr.queue = early
+    Tr.Tick(TIME_NOW)
+    TIME_NOW = TIME_NOW + Tr.TAXI_SETTLE + 0.1
+    here = 100
+    Tr.Tick(TIME_NOW)
+    check(Tr.taxiGate == "ground" and not Tr.hold and Tr.queue ~= early, "0.5.2b.36 taxi: a reload that stays on the ground plans once after the wait")
+    flying = false
+    Tr.Tick(TIME_NOW + 0.2)
+    local dep = Tr.ground and Tr.ground.area
+    flying = true
+    here = 777
+    Tr.Tick(TIME_NOW + 0.4)
+    check(dep == 100 and Tr.hold and Tr.hold.area == 100 and QS.HereArea() == 100, "0.5.2b.36 taxi: a normal takeoff holds the ground area")
+    NS.db.readyCollapsed = false
+    flying = false
+    here = 100
+    Tr.taxiRide, Tr.hold, Tr.settleHold, Tr.taxiSettleUntil = nil, nil, nil, nil
+    Tr.Tick(TIME_NOW + 1)
+    Tr.SetReadyCollapsed(false)
+    local row
+    for _, r in ipairs(Tr.ready.rows or {}) do if r:IsShown() and r.q == 102 then row = r end end
+    local pl, pt, pr, pb = FrameMT._rect(row.pin)
+    local il, it, ir, ib = FrameMT._rect(row.iconBox)
+    local tl = select(1, FrameMT._rect(row.title))
+    check(row and pr <= il + 1 and ir <= tl + 1, "0.5.2b.36 ready: pin, then icon, then name")
+    glides, aims = 0, 0
+    row.iconBox._scripts.OnClick(row.iconBox)
+    check(glides == 0 and (aims == 1 or C_SuperTrack.q == 102), "0.5.2b.36 ready: the turn-in icon sets the arrow and does not open the map")
+    row._scripts.OnClick(row)
+    check(glides == 1, "0.5.2b.36 ready: the name still opens the map")
+    glides = 0
+    row.pin._scripts.OnClick(row.pin)
+    check(glides == 0 and Tr.IsPinned(102), "0.5.2b.36 ready: the pin still does not open the map")
+    Tr.SetPinned(102, false)
+    Tr.Layout()
+    local tr
+    for _, r in ipairs(Tr.rows or {}) do if r.aim and r.aim:IsShown() and r.click and r.click:IsShown() then tr = r break end end
+    glides, aims = 0, 0
+    if tr then tr.aim._scripts.OnClick(tr.aim) end
+    check(tr and glides == 0 and aims == 1, "0.5.2b.36 quests: the round icon sets the arrow and does not open the map")
+    if tr then tr.click._scripts.OnClick(tr.click) end
+    check(glides == 1, "0.5.2b.36 quests: the name still opens the map")
+    check(tr.pin._pts[1][1] == "RIGHT" and tr.pin._pts[1][2] == tr.aim._pts[1][2] and tr.aim._pts[1][2] ~= tr.click._pts[1][2],
+      "0.5.2b.36 quests: the pin sits on the icon's left, and the name is a separate target")
+    UnitOnTaxi, GetZoneText, GetRealZoneText = saveTaxi, saveZone, saveReal
+    MD.PlayerArea, QS.TurnInMap, C_SuperTrack, M.ShowQuest = saveArea, saveTurn, saveST, saveShow
+    NS.db.autoTrack, NS.db.readyCollapsed = saveAuto, saveCol
+    Tr.taxiRide, Tr.hold, Tr.ground, Tr.settleHold, Tr.taxiSettleUntil, Tr.queue, Tr.zonePending, Tr.nextBatch = nil, nil, nil, nil, nil, {}, nil, 0
   end
   -- 0.5.2b.33: a pinned completed quest is Ready, not on the Quests list, including a turn-in elsewhere.
   do

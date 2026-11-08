@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.36
+
+- **Icons and names.** The round icon on a Quests row and the turn-in icon on a Ready row set the game's arrow and light a marker that is already on screen. They do not open the window and do not glide. The quest name still opens the map and glides.
+- **Ready pin.** The pin sits to the left of the turn-in icon, then the name, as on the Quests rows. The pin only pins or unpins.
+- **Reload on a flight.** For two seconds after entering the world, a taxi flag that reads false is not treated as landed. Zone plans wait. The first true latches the area at that moment and keeps it until the flag has been true and then turns false. That change plans the landing once. A reload that stays false plans once when the two seconds end. If the client has no `UnitOnTaxi`, plans are not delayed.
+
 ## 0.5.2b.35
 
 - **Taxi.** While you are on a flight path, zone-based Quests and Ready to Turn In stay on the area you left. Landing switches them once, to the zone you are actually in, and replaces a watch batch that was still queued. A reload that starts in the air holds the area reported then, until you land. A pinned completed quest stays in Ready the whole time. Pin, unpin, and completion still apply. If this client has no `UnitOnTaxi`, nothing is held. `/dm trackerprobe` says whether that function exists.

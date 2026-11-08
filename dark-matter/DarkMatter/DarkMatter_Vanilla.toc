@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.35: a taxi keeps the zone you left until you land. Ready rows have their own pin. The map lights the quest the arrow is on.
+## Notes: Dark Matter 0.5.2b.36: quest icons set the arrow only. The name opens the map. A reload in the air waits for the taxi flag.
 ## Author: Odysseaus
-## Version: 0.5.2b.35
+## Version: 0.5.2b.36
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

@@ -313,7 +313,17 @@ local function MakeRow()
   end)
   click:SetScript("OnLeave", Untip)
   click:Hide()
-  r.pin, r.click = pin, click
+  local aim = CreateFrame("Button", nil, UIParent)
+  aim:RegisterForClicks("LeftButtonUp")
+  aim:SetScript("OnClick", function(self) Tr.Aim(self.q) end)
+  aim:SetScript("OnEnter", function(self)
+    self.tipTitle = NS.QS and NS.QS.Title(self.q) or "Quest"
+    self.tipText = "Click: the game's arrow. The quest name opens the map."
+    Tip(self)
+  end)
+  aim:SetScript("OnLeave", Untip)
+  aim:Hide()
+  r.pin, r.click, r.aim = pin, click, aim
   return r
 end
 
@@ -326,7 +336,7 @@ local function PlaceRow(r, b, q, style)
   local head = type(b.HeaderText) == "table" and b.HeaderText or nil
   local poi = Visible(b.poiButton) and b.poiButton or nil
   local key = tostring(b) .. ":" .. q .. ":" .. tostring(poi ~= nil)
-  local pin, click = r.pin, r.click
+  local pin, click, aim = r.pin, r.click, r.aim
   if r.key ~= key then
     r.key = key
     pin:ClearAllPoints()
@@ -339,8 +349,18 @@ local function PlaceRow(r, b, q, style)
     end
   end
   pin.q, click.q = q, q
+  if aim then aim.q = q end
   pin:SetFrameStrata(strata) pin:SetFrameLevel(level)
   click:SetFrameStrata(strata) click:SetFrameLevel(level)
+  if aim and poi then
+    aim:ClearAllPoints()
+    aim:SetAllPoints(poi)
+    aim:SetFrameStrata(strata)
+    aim:SetFrameLevel(level + 2)
+    aim:Show()
+  elseif aim then
+    aim:Hide()
+  end
   local on = Tr.IsPinned(q)
   local QS = NS.QS
   local look = style and (style.key .. (on and "+" or "-"))
@@ -392,7 +412,7 @@ function Tr.Layout()
     Tr.rows[n] = r
     PlaceRow(r, it.b, it.q, style)
   end
-  for i = n + 1, #Tr.rows do Tr.rows[i].pin:Hide() Tr.rows[i].click:Hide() Tr.rows[i].key = nil end
+  for i = n + 1, #Tr.rows do Tr.rows[i].pin:Hide() Tr.rows[i].click:Hide() if Tr.rows[i].aim then Tr.rows[i].aim:Hide() end Tr.rows[i].key = nil end
   Tr.shown = n
   Tr.PlaceReady(blocks)
 end
@@ -420,6 +440,17 @@ function Tr.OpenQuest(q)
   q = N(q)
   if not q then return false end
   return NS.OpenOnMap(q)
+end
+-- 0.5.2b.36: the round icon and the Ready icon. Arrow and highlight only. Does not open the window or glide.
+function Tr.Aim(q)
+  q = N(q)
+  local QS = NS.QS
+  if not (q and QS) then return end
+  if not QS.TrackQuest(q) then
+    local loc = QS.Locate(q)
+    if loc and not loc.zoneOnly then QS.SetWaypoint(loc.map, loc.x, loc.y, q) end
+  end
+  if NS.MapTab then NS.MapTab.dirty = true end
 end
 
 ---------------------------------------------------------------------------
@@ -607,17 +638,16 @@ local function ReadyRow(i)
   r.title = r:CreateFontString(nil, "ARTWORK")
   r.font = LineFont(r.title)
   r.title:SetJustifyH("LEFT")
-  r.title:SetPoint("TOPLEFT", r, "TOPLEFT", 28, -2)
-  r.title:SetPoint("RIGHT", r, "RIGHT", -24, 0)
+  r.title:SetPoint("RIGHT", r, "RIGHT", -4, 0)
   r.zone = r:CreateFontString(nil, "ARTWORK")
   LineFont(r.zone)
   r.zone:SetJustifyH("LEFT")
   r.zone:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -2)
-  r.zone:SetPoint("RIGHT", r, "RIGHT", -24, 0)
-  -- 0.5.2b.35: its own button. The row body still glides; this click only pins.
+  r.zone:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+  -- 0.5.2b.36: pin, then the turn-in icon, then the name. Same order as the Quests rows.
   local pin = CreateFrame("Button", nil, r)
   pin:SetSize(16, 16)
-  pin:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+  pin:SetPoint("LEFT", r, "LEFT", 2, 0)
   pin.icon = pin:CreateTexture(nil, "ARTWORK")
   pin.icon:SetAllPoints(pin)
   pin:RegisterForClicks("LeftButtonUp")
@@ -635,10 +665,13 @@ local function ReadyRow(i)
   pin:SetScript("OnLeave", Untip)
   pin:Hide()
   r.pin = pin
-  -- the icon: the tracker's POI button, 20 x 20, TOPRIGHT on the title's TOPLEFT (-7, 5)
-  r.iconBox = CreateFrame("Frame", nil, r)
+  -- the icon is its own button: the arrow only. The row body (the name) still opens the map.
+  r.iconBox = CreateFrame("Button", nil, r)
   r.iconBox:SetSize(20, 20)
-  r.iconBox:SetPoint("TOPRIGHT", r.title, "TOPLEFT", -7, 5)
+  r.iconBox:SetPoint("LEFT", pin, "RIGHT", 2, 0)
+  r.iconBox:RegisterForClicks("LeftButtonUp")
+  r.iconBox:SetScript("OnClick", function(self) Tr.Aim(self:GetParent().q) end)
+  r.title:SetPoint("TOPLEFT", r.iconBox, "TOPRIGHT", 4, -2)
   r.face = r.iconBox:CreateTexture(nil, "BORDER")
   r.face:SetPoint("CENTER", r.iconBox, "CENTER", 0, 0)
   r.ficon = r.iconBox:CreateTexture(nil, "ARTWORK")
@@ -646,7 +679,7 @@ local function ReadyRow(i)
   r.icon = r.ficon
   r.poi = GamePOI(r)
   if r.poi then
-    pcall(function() r.poi:ClearAllPoints() r.poi:SetPoint("TOPRIGHT", r.title, "TOPLEFT", -7, 5) end)
+    pcall(function() r.poi:ClearAllPoints() r.poi:SetAllPoints(r.iconBox) end)
   end
   r:RegisterForClicks("LeftButtonUp")
   r:SetScript("OnClick", function(self) Tr.ReadyClick(self.q) end)
@@ -850,7 +883,11 @@ end
 -- zone auto-track (on by default since 0.5.2b.1): this zone's quests plus pinned ones tracked, the rest untracked. Waits for a
 -- flight to land, then switches once; changes go out in batches about a second apart, and never in combat.
 ---------------------------------------------------------------------------
-function Tr.HoldArea() return Tr.hold end
+function Tr.HoldArea()
+  if Tr.taxiRide and Tr.hold then return Tr.hold end
+  if Tr.taxiSettleUntil and (Tr._now or Now()) < Tr.taxiSettleUntil and Tr.settleHold then return Tr.settleHold end
+  return nil
+end
 function Tr.ZoneSet(log)
   local want = {}
   local MD = NS.MapData
@@ -947,20 +984,60 @@ local function AreaSnap()
     real = type(GetRealZoneText) == "function" and GetRealZoneText() or nil,
   }
 end
--- 0.5.2b.35: remember the ground area, and keep it for the whole taxi flight.
--- A reload already in the air has no departure memory: it holds the area reported at load.
--- Landing clears the hold before the zone plan runs. No UnitOnTaxi: no hold.
-function Tr.FlightHold()
-  if type(_G.UnitOnTaxi) ~= "function" then Tr.hold, Tr.taxiApi = nil, false return end
+-- 0.5.2b.36: after a reload, a false taxi flag is not yet "on the ground".
+-- The flag can stay false while the world is still starting, including a flight that is already going.
+-- Plans wait until the flag has answered: true latches the flight from that first yes;
+-- true then false is the one landing. A reload that stays false plans once, after Tr.TAXI_SETTLE.
+-- No UnitOnTaxi function: there is no flight to detect, and plans run as they always have.
+Tr.TAXI_SETTLE = 2
+function Tr.FlightHold(now)
+  now = now or Now()
+  if type(_G.UnitOnTaxi) ~= "function" then
+    Tr.hold, Tr.settleHold, Tr.taxiRide, Tr.taxiSettleUntil, Tr.taxiApi = nil, nil, nil, nil, false
+    Tr.taxiGate = "noapi"
+    return "noapi"
+  end
   Tr.taxiApi = true
   if OnTaxi() then
-    if not Tr.hold then Tr.hold = Tr.ground or AreaSnap() end
-  else
-    Tr.hold = nil
-    Tr.ground = AreaSnap()
+    if not Tr.taxiRide then Tr.hold = Tr.ground or AreaSnap() end
+    Tr.settleHold = nil
+    Tr.taxiRide = true
+    Tr.taxiSettleUntil = nil
+    Tr.taxiGate = "fly"
+    return "fly"
   end
+  if Tr.taxiRide then
+    Tr.hold, Tr.settleHold, Tr.taxiRide, Tr.taxiSettleUntil = nil, nil, nil, nil
+    Tr.ground = AreaSnap()
+    Tr.taxiGate = "land"
+    return "land"
+  end
+  if Tr.taxiSettleUntil and now < Tr.taxiSettleUntil then
+    if not Tr.settleHold then Tr.settleHold = AreaSnap() end
+    Tr.taxiGate = "settle"
+    return "settle"
+  end
+  Tr.hold, Tr.settleHold, Tr.taxiSettleUntil = nil, nil, nil
+  Tr.ground = AreaSnap()
+  Tr.taxiGate = "ground"
+  return "ground"
+end
+function Tr.BeginTaxiSettle()
+  if Tr.taxiRide then return end
+  if type(_G.UnitOnTaxi) ~= "function" then return end
+  Tr.taxiSettleUntil = Now() + Tr.TAXI_SETTLE
+  Tr.settleHold = nil
 end
 function Tr.AutoStep(now)
+  local gate = Tr.taxiGate
+  if gate == "fly" or gate == "settle" then
+    if gate == "fly" then Tr.waitingTaxi = true end
+    return
+  end
+  if gate == "land" then
+    Tr.waitingTaxi = nil
+    Tr.zonePending = Now()
+  end
   if not Tr.AutoWanted() then
     -- auto-track off: the game's own tracking, except that pinned quests are tracked again after a zone change
     -- (0.5.2b.12: and ready quests leave the Quests list while Ready to Turn In is on).
@@ -1165,6 +1242,7 @@ function Tr.OnEvent(event, a1)
   if event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
     Tr.zoneAt = Now()
     Tr.zonePending = Now() -- auto-track re-plans; with it off, pinned quests are still tracked again
+    if event == "PLAYER_ENTERING_WORLD" then Tr.BeginTaxiSettle() end
   elseif event == "PLAYER_CONTROL_GAINED" then -- 0.5.2b.1: landing after a flight (also after a stun or a cinematic)
     if Tr.waitingTaxi or Tr.zonePending then Tr.zonePending = Now() end
   elseif event == "QUEST_ACCEPTED" then
@@ -1179,7 +1257,8 @@ function Tr.OnEvent(event, a1)
 end
 function Tr.Tick(now)
   now = now or Now()
-  Tr.FlightHold()
+  Tr._now = now
+  Tr.FlightHold(now)
   if Tr.diffDirty then Tr.diffDirty = false Tr.Diff() end
   Tr.AutoStep(now)
   Tr.OrderStep(now)
@@ -1202,6 +1281,7 @@ function Tr.Start()
   Tr.frame = f
   Tr.zoneAt = Now()
   Tr.zonePending = Now()
+  Tr.BeginTaxiSettle()
   Tr.FlightHold()
   Tr.Diff()
   Tr.FillReady()
