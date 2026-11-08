@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.45: after the game removes the open quest, the detail returns to the list.
+## Notes: Dark Matter 0.5.2b.46: the quest detail returns to the list once a log scan shows that quest is gone.
 ## Author: Odysseaus
-## Version: 0.5.2b.45
+## Version: 0.5.2b.46
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

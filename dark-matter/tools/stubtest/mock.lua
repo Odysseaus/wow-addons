@@ -31,6 +31,7 @@ function FrameMT.Hide(s) local was=s._shown s._shown=false if was and s._scripts
 function FrameMT.IsShown(s) return s._shown end
 function FrameMT.SetScript(s,k,fn) s._scripts[k]=fn end
 function FrameMT.RegisterEvent(s,e) s._ev=s._ev or {} s._ev[e]=true end
+function FrameMT.UnregisterEvent(s,e) if s._ev then s._ev[e]=nil end end
 function FrameMT.SetPoint(s,...) s._pts[#s._pts+1]={...} s._last={...} end
 function FrameMT.ClearAllPoints(s) s._pts={} end
 function FrameMT.GetPoint(s) local p=s._pts[#s._pts] or {"CENTER",nil,"CENTER",0,0} if type(p[2])=="table" or p[2]==nil then return p[1],p[2],p[3],p[4],p[5] end return p[1],nil,p[1],p[2],p[3] end
@@ -6917,10 +6918,12 @@ if MODE ~= "minimal" then
     GetQuestLogTitle, StaticPopup_Show, StaticPopupDialogs = save.gtitle, save.show, save.dialogs
     QSEL = save.qsel
   end
-  -- 0.5.2b.45: the detail returns to the list only after this same quest has left the log.
+  -- 0.5.2b.46: first embed leaves the column visible with no quest events; the map show registers them.
+  -- Delivery is the registered frame, not a direct call. A positive log index never decides.
   do
     local P = NS.QuestPanel
-    local saveInfo, saveIdx = C_QuestLog.GetInfo, C_QuestLog.GetLogIndexForQuestID
+    local QL = NS.QL
+    local saveInfo, saveNum, saveIdx = C_QuestLog.GetInfo, C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetLogIndexForQuestID
     local function fire(ev, a1)
       for _, fr in ipairs(ALL) do
         if fr._ev and fr._ev[ev] and fr._scripts and fr._scripts.OnEvent then fr._scripts.OnEvent(fr, ev, a1) end
@@ -6928,10 +6931,12 @@ if MODE ~= "minimal" then
     end
     local function detailOn() return P.detailPanel and P.detailPanel:IsShown() end
     local function listOn() return P.list and P.list:IsShown() end
-    local function drop103()
-      C_QuestLog.GetLogIndexForQuestID = function(id)
-        if id == 101 then return 2 elseif id == 102 then return 3 end
-      end
+    local function restore()
+      C_QuestLog.GetInfo, C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetLogIndexForQuestID = saveInfo, saveNum, saveIdx
+      QL.reading = false
+    end
+    local function omit103()
+      C_QuestLog.GetNumQuestLogEntries = function() return 5 end
       C_QuestLog.GetInfo = function(i)
         local row = saveInfo(i)
         if type(row) == "table" and row.questID == 103 then return { title = "Westfall", isHeader = true } end
@@ -6939,28 +6944,65 @@ if MODE ~= "minimal" then
       end
     end
     if NS.ShowTab then NS.ShowTab("map") end
+    if DarkMatterFrame and DarkMatterFrame.Show then DarkMatterFrame:Show() end
+    local TQ = NS.tabs.quests
+    TQ.Events(false, "tab")
+    TQ.Events(false, "panel")
+    P.Drop()
+    P.Embed(NS.MapTab and NS.MapTab.questHost)
     P.OpenQuest(103)
-    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.45 detail: the open quest starts on its detail")
-    fire("QUEST_REMOVED", 103)
-    check(detailOn() and not listOn(), "0.5.2b.45 detail: removal is not acted on while the quest is still in the log")
-    drop103()
+    check(detailOn() and P.detail.quest and P.detail.quest.questID == 103, "0.5.2b.46 detail: the first embed opens the quest before quest events are registered")
+    omit103()
     fire("QUEST_LOG_UPDATE")
-    check(listOn() and not detailOn(), "0.5.2b.45 detail: once that quest has left the log, the detail returns to the list")
-    fire("QUEST_REMOVED", 103)
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: a log change before the map show does not leave the detail")
+    NS.tabs.map.OnShow()
+    fire("QUEST_REMOVED")
+    check(listOn() and not detailOn(), "0.5.2b.46 detail: the map show registers events, and a scan that misses this quest returns to the list with no event argument")
+    fire("QUEST_REMOVED")
     fire("QUEST_LOG_UPDATE")
-    check(listOn() and not detailOn(), "0.5.2b.45 detail: a repeated removal does not open the detail again")
-    C_QuestLog.GetInfo, C_QuestLog.GetLogIndexForQuestID = saveInfo, saveIdx
+    check(listOn() and not detailOn(), "0.5.2b.46 detail: a repeated log event does not open the detail again")
+    restore()
     P.OpenQuest(103)
-    check(detailOn(), "0.5.2b.45 detail: Cancel and a failed confirm leave the detail open")
+    local why = QL.Abandon(P.detail.quest)
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: the confirm itself leaves the detail open (" .. tostring(why) .. ")")
+    fire("QUEST_REMOVED")
+    fire("QUEST_LOG_UPDATE")
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: Cancel and a failed confirm stay while the scan still contains this quest")
+    omit103()
+    fire("QUEST_LOG_UPDATE")
+    check(listOn() and not detailOn(), "0.5.2b.46 detail: a later scan that misses the quest returns to the list")
+    restore()
+    P.OpenQuest(103)
+    C_QuestLog.GetNumQuestLogEntries = function() return nil end
+    QL.reading = true
+    fire("QUEST_LOG_UPDATE")
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: an unreadable log count stays on the detail")
+    restore()
+    C_QuestLog.GetNumQuestLogEntries = function() return 6 end
+    C_QuestLog.GetInfo = function(i) if i == 1 then return nil end return saveInfo(i) end
+    QL.reading = true
+    fire("QUEST_REMOVED")
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: an unreadable log entry stays on the detail")
+    restore()
     P.OpenQuest(101)
-    drop103()
+    omit103()
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 103 then return 6 end end
     fire("QUEST_REMOVED", 103)
-    check(detailOn() and P.detail.quest.questID == 101, "0.5.2b.45 detail: another quest opened in the meantime stays open")
-    C_QuestLog.GetInfo, C_QuestLog.GetLogIndexForQuestID = saveInfo, saveIdx
+    check(detailOn() and P.detail.quest.questID == 101, "0.5.2b.46 detail: removing another quest stays on the detail that is open")
+    restore()
     P.OpenQuest(103)
-    fire("QUEST_REMOVED", 102)
-    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.45 detail: removal of a different quest does not leave this detail")
-    C_QuestLog.GetInfo, C_QuestLog.GetLogIndexForQuestID = saveInfo, saveIdx
+    omit103()
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 103 then return 6 end end
+    fire("QUEST_LOG_UPDATE")
+    check(listOn() and not detailOn(), "0.5.2b.46 detail: a stale positive log index does not keep a quest the scan no longer contains")
+    restore()
+    P.OpenQuest(103)
+    P.detail.quest = { title = "Nameless" }
+    omit103()
+    QL.reading = true
+    fire("QUEST_LOG_UPDATE")
+    check(detailOn() and P.detail.quest.title == "Nameless", "0.5.2b.46 detail: a detail with no quest id stays")
+    restore()
     P.ShowList()
   end
   -- only with the Map tab

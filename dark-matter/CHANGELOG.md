@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.46
+
+- **Quest detail.** The map's quest column listens for quest-log changes as soon as it is showing, including the first time it appears. The open detail returns to the list when a complete read of the log no longer contains that quest. A quest that is still there, a log that cannot be read, and a different open quest stay on the detail.
+
 ## 0.5.2b.45
 
 - **Quest detail.** After the game removes the quest that is open, the detail returns to the quest list, the same as Back. Cancel, a failed confirm, and a quest that is still in the log stay on the detail. Opening another quest in the meantime stays on that quest.

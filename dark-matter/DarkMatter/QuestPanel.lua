@@ -174,21 +174,28 @@ local function ShowDetail(q)
 end
 P.ShowList, P.ShowDetail = ShowList, ShowDetail
 
--- 0.5.2b.45: Back to the list only after this same quest has left the log. Opening the confirm is not removal.
-function P.NoteRemoved(id)
-  id = NS.Num(id)
-  if not (id and dp and dp.IsShown and dp:IsShown() and det and det.quest) then return end
-  if NS.Num(det.quest.questID) ~= id then return end
-  P.removed = id
-  P.CheckRemoved()
+-- 0.5.2b.46: a finished read of the log for the quest on screen. true = it is there, false = it is not,
+-- nil = the count or an entry could not be read. A log index is not consulted.
+local function LogHas(id)
+  local CQ = _G.C_QuestLog
+  if type(CQ) ~= "table" or type(CQ.GetNumQuestLogEntries) ~= "function" or type(CQ.GetInfo) ~= "function" then return nil end
+  local ok, n = pcall(CQ.GetNumQuestLogEntries)
+  n = ok and NS.Num(n) or nil
+  if not n or n < 0 then return nil end
+  for i = 1, n do
+    local rowOk, row = pcall(CQ.GetInfo, i)
+    if not rowOk or row == nil then return nil end
+    row = NS.Tbl(row)
+    if not row then return nil end
+    if NS.Num(row.questID) == id then return true end
+  end
+  return false
 end
 function P.CheckRemoved()
-  local id = P.removed
+  if not (dp and dp.IsShown and dp:IsShown() and det and type(det.quest) == "table") then return end
+  local id = NS.Num(det.quest.questID)
   if not id then return end
-  if not (dp and dp.IsShown and dp:IsShown() and det and det.quest) then P.removed = nil return end
-  if NS.Num(det.quest.questID) ~= id then P.removed = nil return end
-  if NS.QL and NS.QL.InLog and NS.QL.InLog(id) then return end
-  P.removed = nil
+  if LogHas(id) ~= false then return end
   ShowList()
 end
 
@@ -315,7 +322,8 @@ function P.Ensure()
   local home = (P.embedded and P.host) or win
   if parent and home and parent ~= home then P.Drop() end
   P.mapShown = true
-  if not (frame and frame:IsShown()) then P.Sync(true) end
+  if not (frame and frame:IsShown()) then P.Sync(true)
+  elseif T() and T().Events then T().Events(true, "panel") end
   return frame ~= nil and frame:IsShown()
 end
 -- the window is being built again: the panel hung off the old one

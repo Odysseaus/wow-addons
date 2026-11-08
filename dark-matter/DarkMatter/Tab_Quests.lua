@@ -648,8 +648,7 @@ local function Events(on, who)
         local id = NS.Num(a1)
         if id then acceptWait[id] = Now() + 2 end
       end
-      -- 0.5.2b.45: the open detail returns to the list only when that same quest has left the log.
-      if e == "QUEST_REMOVED" and NS.QuestPanel and NS.QuestPanel.NoteRemoved then NS.QuestPanel.NoteRemoved(a1) end
+      -- 0.5.2b.46: the open detail returns to the list when a complete log scan no longer contains it. The event argument is not used.
       if (e == "QUEST_REMOVED" or e == "QUEST_LOG_UPDATE") and NS.QuestPanel and NS.QuestPanel.CheckRemoved then NS.QuestPanel.CheckRemoved() end
       -- 0.5.2b.37: a selection or a reward tooltip still refreshes the list. The refresh does not select.
       -- While a read is in progress, remember the event and let the wait run after it.
