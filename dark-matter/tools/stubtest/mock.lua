@@ -6413,6 +6413,146 @@ if MODE ~= "minimal" then
   rowPin._scripts.OnClick(rowPin)
   check(not NS.Tracker.IsPinned(101) and rowPin.pinned == false and rowPin.tipTitle == "Pin", "0.5.2b.31 pin: the list icon unpins")
   if watched == false then NS.QL.SetWatched(rowPin.row.quest, false) end
+  -- 0.5.2b.34: native Abandon confirm and grouped Share. The stub never accepts the dialog on the click.
+  do
+    local QL = NS.QL
+    local save = {
+      set = C_QuestLog.SetSelectedQuest, get = C_QuestLog.GetSelectedQuest, idx = C_QuestLog.GetLogIndexForQuestID,
+      info = C_QuestLog.GetInfo, iso = C_QuestLog.IsPushableQuest, snap = SetAbandonQuest, abn = AbandonQuest,
+      items = GetAbandonQuestItems, aname = GetAbandonQuestName, show = StaticPopup_Show, dialogs = StaticPopupDialogs,
+      push = QuestLogPushQuest, gp = GetQuestLogPushable, group = IsInGroup, ic = InCombatLockdown, qsel = QSEL,
+    }
+    local SEL, SNAP, SNAP_N, ABANDON_N, ABANDONED, POPUP, PUSH_N = nil, nil, 0, 0, nil, nil, 0
+    local function byIndex(i) return ({ [2] = 101, [3] = 102, [6] = 103 })[i] end
+    local function install()
+      C_QuestLog.SetSelectedQuest = function(id) SEL = id end
+      C_QuestLog.GetSelectedQuest = function() return SEL end
+      C_QuestLog.GetLogIndexForQuestID = function(id)
+        if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+      end
+      SetAbandonQuest = function() SNAP = SEL or byIndex(QSEL) SNAP_N = SNAP_N + 1 end
+      AbandonQuest = function() ABANDON_N = ABANDON_N + 1 ABANDONED = SNAP end
+      GetAbandonQuestName = function() return "The Defias" end
+      GetAbandonQuestItems = function() return nil end
+      StaticPopupDialogs = {
+        ABANDON_QUEST = { OnAccept = function() AbandonQuest() end },
+        ABANDON_QUEST_WITH_ITEMS = { OnAccept = function() AbandonQuest() end },
+      }
+      StaticPopup_Show = function(which) POPUP = which end
+      QuestLogPushQuest = function() PUSH_N = PUSH_N + 1 end
+      C_QuestLog.IsPushableQuest = function(id) return id == 103 end
+      IsInGroup = function() return false end
+    end
+    local function regenN()
+      local n = 0
+      for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then n = n + 1 end end
+      return n
+    end
+    local wasPin = NS.Tracker.IsPinned(101)
+    NS.Tracker.SetPinned(101, true)
+    QWATCH[2] = true
+    local function pinSame()
+      return NS.Tracker.IsPinned(101) == true and QWATCH[2] == true
+    end
+    install()
+    P.OpenQuest(103)
+    local det = P.detail
+    local function hit(a, b)
+      if not (a and b and a.IsShown and a:IsShown() and b:IsShown()) then return false end
+      local al, at, ar, abt = FrameMT._rect(a)
+      local bl, bt, br, bb = FrameMT._rect(b)
+      if not (al and bl) then return false end
+      return al < br - 1 and ar > bl + 1 and abt < bt - 1 and at > bb + 1
+    end
+    check(det.abandon and det.abandon:IsShown() and det.share and det.share:IsShown() and not det.share:IsEnabled(),
+      "0.5.2b.34 share: solo, Share is shown and disabled")
+    check(not hit(det.abandon, det.pin) and not hit(det.abandon, det.title) and not hit(det.abandon, det.showMap) and not hit(det.abandon, P.back)
+      and not hit(det.share, det.pin) and not hit(det.share, det.showMap),
+      "0.5.2b.34 actions: Abandon and Share stay clear of the pin, title, Show on map, and Back")
+    det.share._scripts.OnClick(det.share)
+    check(PUSH_N == 0 and SNAP_N == 0 and ABANDON_N == 0 and pinSame() and det.share.tip == "Cannot share",
+      "0.5.2b.34 share: a disabled click does not share, and the other pin and watch stay")
+    IsInGroup = function() return true end
+    C_QuestLog.IsPushableQuest = function() return false end
+    P.OpenQuest(103)
+    det.share._scripts.OnClick(det.share)
+    check(not det.share:IsEnabled() and PUSH_N == 0, "0.5.2b.34 share: a grouped quest that cannot be shared stays disabled")
+    C_QuestLog.IsPushableQuest = function(id) return id == 103 end
+    P.OpenQuest(103)
+    check(PUSH_N == 0, "0.5.2b.34 share: drawing the detail does not share")
+    SEL = 101
+    det.share._scripts.OnClick(det.share)
+    check(det.share:IsEnabled() and PUSH_N == 1 and SEL == 101 and SNAP_N == 0 and pinSame(),
+      "0.5.2b.34 share: one eligible share, then the previous selection is restored")
+    det.quest.logIndex = 2
+    local qsel0 = QSEL
+    det.abandon._scripts.OnClick(det.abandon)
+    check(POPUP == "ABANDON_QUEST" and SNAP == 103 and SEL == 103 and QSEL == qsel0 and ABANDON_N == 0 and pinSame(),
+      "0.5.2b.34 abandon: the confirm is for the open quest id, and a stale index is not selected")
+    check(ABANDON_N == 0 and QL.InLog(103), "0.5.2b.34 abandon: leaving the confirm does not abandon")
+    SEL = 101
+    StaticPopupDialogs.ABANDON_QUEST.OnAccept()
+    check(ABANDONED == 103 and ABANDON_N == 1, "0.5.2b.34 abandon: the game's Yes abandons the snapshotted quest")
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    ABANDON_N = 0
+    det.abandon._scripts.OnClick(det.abandon)
+    check(POPUP == "ABANDON_QUEST_WITH_ITEMS" and ABANDON_N == 0, "0.5.2b.34 abandon: items use the game's item confirm")
+    GetAbandonQuestItems = function() return nil end
+    local infoFn = C_QuestLog.GetInfo
+    C_QuestLog.GetInfo = function(i)
+      local row = infoFn(i)
+      if type(row) == "table" and row.questID == 103 then return { title = "Westfall", isHeader = true } end
+      return row
+    end
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 101 then return 2 elseif id == 102 then return 3 end end
+    local snap = SNAP_N
+    det.abandon._scripts.OnClick(det.abandon)
+    check(SNAP_N == snap and ABANDON_N == 0, "0.5.2b.34 abandon: a quest that has left the log is not snapshotted")
+    C_QuestLog.GetInfo = infoFn
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    local selN = QSEL_N
+    local rep = table.concat(QL.ActionReport(), "\n")
+    check(QSEL_N == selN and PUSH_N == 1 and SNAP_N == snap and rep:find("SetAbandonQuest present", 1, true) and rep:find("QuestLogPushQuest present", 1, true),
+      "0.5.2b.34 probe: the capability report does not select, abandon, or share")
+    SlashCmdList.DARKMATTER("questprobe")
+    check(SNAP_N == snap and PUSH_N == 1 and pinSame() and table.concat(DarkMatterDB.questprobe.lines, "\n"):find("actions:", 1, true),
+      "0.5.2b.34 probe: /dm questprobe does not abandon, share, or change the other pin")
+    SetAbandonQuest = nil
+    P.OpenQuest(103)
+    POPUP = nil
+    local why = QL.Abandon(det.quest)
+    check(not det.abandon:IsShown() and why == "unsupported" and POPUP == nil and ABANDON_N == 0,
+      "0.5.2b.34 abandon: without a snapshot the button is hidden and nothing is abandoned")
+    C_QuestLog.SetSelectedQuest, C_QuestLog.GetSelectedQuest = nil, nil
+    SetAbandonQuest = function() SNAP = byIndex(QSEL) SNAP_N = SNAP_N + 1 end
+    P.OpenQuest(103)
+    det.quest.logIndex = 2
+    QSEL = 2
+    det.abandon._scripts.OnClick(det.abandon)
+    check(QSEL == 6 and SNAP == 103 and ABANDON_N == 0, "0.5.2b.34 abandon: without a quest-id select, the fresh log index is used")
+    local reg0, push0, snap0 = regenN(), PUSH_N, SNAP_N
+    POPUP = nil
+    InCombatLockdown = function() return true end
+    IsInGroup = function() return true end
+    C_QuestLog.IsPushableQuest = function() return true end
+    det.abandon._scripts.OnClick(det.abandon)
+    det.share._scripts.OnClick(det.share)
+    check(PUSH_N == push0 and SNAP_N == snap0 and regenN() == reg0 and POPUP ~= "ABANDON_QUEST",
+      "0.5.2b.34 combat: Abandon and Share do nothing and are not queued")
+    InCombatLockdown = save.ic
+    check(PUSH_N == push0 and SNAP_N == snap0, "0.5.2b.34 combat: they still have not run after combat")
+    C_QuestLog.SetSelectedQuest, C_QuestLog.GetSelectedQuest = save.set, save.get
+    C_QuestLog.GetLogIndexForQuestID, C_QuestLog.GetInfo, C_QuestLog.IsPushableQuest = save.idx, save.info, save.iso
+    SetAbandonQuest, AbandonQuest = save.snap, save.abn
+    GetAbandonQuestItems, GetAbandonQuestName = save.items, save.aname
+    StaticPopup_Show, StaticPopupDialogs = save.show, save.dialogs
+    QuestLogPushQuest, GetQuestLogPushable, IsInGroup = save.push, save.gp, save.group
+    QSEL = save.qsel
+    if not wasPin then NS.Tracker.SetPinned(101, false) end
+    P.OpenQuest(103)
+  end
   -- only with the Map tab
   NS.ShowTab("quests")
   check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")

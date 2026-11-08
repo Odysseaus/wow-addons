@@ -356,7 +356,24 @@ local function Detail(q, d)
     if col == 1 then y = y - 44 end
   end
 
+  local function PaintActions(quest)
+    local ab, shb = d.abandon, d.share
+    if not (ab and shb) then return end
+    if not quest then ab:Hide() shb:Hide() return end
+    if QL.AbandonSupported() then ab:Show() ab.tip = "Abandon" else ab:Hide() end
+    if QL.Has("QuestLogPushQuest") then
+      shb:Show()
+      local ok = QL.CanShare(quest)
+      if ok then shb:Enable() shb:SetAlpha(1) shb.tip = "Share" else shb:Disable() shb:SetAlpha(0.45) shb.tip = "Cannot share" end
+    else
+      shb:Hide()
+    end
+    shb:ClearAllPoints()
+    if ab:IsShown() then shb:SetPoint("LEFT", ab, "RIGHT", 6, 0)
+    else shb:SetPoint("TOPLEFT", d.panel, "TOPLEFT", 14, -(82 + (d.top or 0))) end
+  end
   if not q then
+    PaintActions(nil)
     d.title:SetText(qtext ~= "" and "No matching quests" or (total == 0 and "No quests" or ""))
     d.meta:SetText("")
     d.status:SetText("")
@@ -425,6 +442,7 @@ local function Detail(q, d)
       if (det.reqMoney or 0) > 0 then line("Required money: " .. QL.Money(det.reqMoney), 13, "listSoft") end
       if not any then line("No rewards listed for this quest.", 13, "listSoft") end
     end
+    PaintActions(q)
   end
   for i = nt + 1, #d.texts do d.texts[i]:Hide() end
   for i = ni + 1, #d.items do d.items[i]:Hide() d.items[i].entry = nil end
@@ -691,6 +709,27 @@ local function NewDetail(dp, w, h, top)
     NS.MapTab.ShowQuest(q, true)
   end)
   d.showMap = sm
+  d.top = top
+  local function ActionTip(self)
+    if not GameTooltip or not self.tip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(self.tip)
+    GameTooltip:Show()
+  end
+  local ab = UI.Button(dp, "Abandon", 84, 22, "red", 11)
+  ab:SetPoint("TOPLEFT", dp, "TOPLEFT", 14, -(82 + top))
+  ab:SetScript("OnClick", function() if d.quest then QL.Abandon(d.quest) end end)
+  ab:SetScript("OnEnter", ActionTip)
+  ab:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  ab:Hide()
+  d.abandon = ab
+  local sh = UI.Button(dp, "Share", 64, 22, "red", 11)
+  sh:SetPoint("LEFT", ab, "RIGHT", 6, 0)
+  sh:SetScript("OnClick", function() if d.quest then QL.Share(d.quest) end end)
+  sh:SetScript("OnEnter", ActionTip)
+  sh:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  sh:Hide()
+  d.share = sh
   local pin = CreateFrame("Button", nil, dp)
   pin:SetSize(18, 18)
   pin.icon = pin:CreateTexture(nil, "OVERLAY")
@@ -705,7 +744,7 @@ local function NewDetail(dp, w, h, top)
   pin:SetScript("OnEnter", PinTip)
   pin:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
   d.pin = pin
-  local headH = 82 + top
+  local headH = QL.DetailHead(top)
   d.scroll = UI.Scroll(dp, w - 2 * b, h - 2 * b - headH, dp)
   d.scroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", b, -(b + headH))
   d.scroll.step = 60

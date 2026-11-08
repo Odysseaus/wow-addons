@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.33: a pinned completed quest is listed under Ready to Turn In, not under Quests.
+## Notes: Dark Matter 0.5.2b.34: Abandon asks the game to confirm that quest. Share is on when you are grouped and the quest can be shared.
 ## Author: Odysseaus
-## Version: 0.5.2b.33
+## Version: 0.5.2b.34
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

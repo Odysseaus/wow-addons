@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.34
+
+- **Abandon.** The quest detail has Abandon when this client has an abandon snapshot and its own confirm dialog. The click selects that quest by id, locks it with the snapshot, and shows the game's confirm. Yes is the game's button. A quest that has left the log is left alone. If the snapshot or the dialog is missing, the button is hidden. Nothing is abandoned in combat, and it is not queued.
+- **Share.** Share is shown when the client can share a quest. It is enabled only in a group, and only when that quest can be shared. A disabled click does nothing. The click selects that quest, shares it once, and puts the previous selection back. Nothing is shared in combat, and it is not queued.
+- **`/dm questprobe`.** It now lists whether the abandon, share, link, item, and timer names are present. That list does not select, abandon, or share.
+
 ## 0.5.2b.33
 
 - **Ready.** Pinning a completed quest lists it under Ready to Turn In, including when the turn-in is another zone, and takes it off the Quests list. The zone pass does not watch it again. An in-progress pin stays on Quests. An unpinned completed quest is Ready only when the turn-in is the current zone or city. Unpinning an out-of-zone quest still removes just that quest.

@@ -357,6 +357,7 @@ function QL.ProbeReport()
     if QL.Has(a[1]) then have[#have + 1] = a[1] else miss[#miss + 1] = a[1] .. " (" .. a[2] .. ")" end
   end
   lines[#lines + 1] = string.format("questprobe 0.4.6: %d of %d quest APIs present.", #have, #QL.API)
+  for _, ln in ipairs(QL.ActionReport()) do lines[#lines + 1] = ln end
   lines[#lines + 1] = "present: " .. (#have > 0 and table.concat(have, ", ") or "none")
   lines[#lines + 1] = "missing: " .. (#miss > 0 and table.concat(miss, ", ") or "none")
   local cq, gl = Scan()
@@ -498,10 +499,193 @@ function QL.SetWatched(q, want)
 end
 
 QL.WATCH_EVENTS = { "QUEST_WATCH_LIST_CHANGED", "QUEST_WATCH_UPDATE", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "QUEST_DATA_LOAD_RESULT",
-  "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT" } -- 0.5.1.3: reward items that load late
+  "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT", "GROUP_ROSTER_UPDATE" } -- 0.5.1.3: reward items that load late; 0.5.2b.34: Share follows the group
 
 function QL.WatchReport()
   local cap, n, src = QL.WatchCap()
   return string.format("watch: %s watched, cap %s (%s); tracker refresh: %s", tostring(n), tostring(cap), tostring(src),
     G("QuestWatch_Update") and "QuestWatch_Update" or G("WatchFrame_Update") and "WatchFrame_Update" or "none (tracker updates from QUEST_WATCH_LIST_CHANGED)")
+end
+
+---------------------------------------------------------------------------
+-- 0.5.2b.34: Abandon and Share for the quest open in the detail. Presence checks never call these.
+-- Abandon uses the client's own snapshot and confirm. This file does not call AbandonQuest.
+-- Share and Abandon do nothing in combat and are not queued.
+---------------------------------------------------------------------------
+QL.ACTION_API = {
+  { "SetAbandonQuest", "abandon snapshot" },
+  { "C_QuestLog.SetAbandonQuest", "abandon snapshot" },
+  { "AbandonQuest", "the game's confirm abandons; Dark Matter does not call this" },
+  { "C_QuestLog.AbandonQuest", "the game's confirm abandons; Dark Matter does not call this" },
+  { "GetAbandonQuestName", "name shown in the confirm" },
+  { "GetAbandonQuestItems", "items shown in the confirm" },
+  { "C_QuestLog.GetAbandonQuestItems", "items shown in the confirm" },
+  { "StaticPopup_Show", "native confirm" },
+  { "GetQuestLogPushable", "share eligibility of the selected quest" },
+  { "C_QuestLog.IsPushableQuest", "share eligibility by quest id" },
+  { "QuestLogPushQuest", "share the selected quest" },
+  { "IsInGroup", "group" },
+  { "GetNumGroupMembers", "group size" },
+  { "GetQuestLink", "quest link" },
+  { "C_QuestLog.GetQuestHyperlink", "quest link" },
+  { "ChatEdit_InsertLink", "insert a link" },
+  { "GetQuestLogSpecialItemInfo", "quest item" },
+  { "GetQuestLogTimeLeft", "quest timer" },
+  { "GameTooltip.SetQuestLogRewardSpell", "spell reward tooltip" },
+}
+function QL.DetailHead(top) return 110 + (top or 0) end -- 82px header plus a 28px Abandon / Share row
+
+local function InCombat()
+  return type(InCombatLockdown) == "function" and InCombatLockdown() == true
+end
+local function Dialog(name)
+  local d = _G.StaticPopupDialogs
+  return type(d) == "table" and type(d[name]) == "table"
+end
+local function HasItems(v)
+  if v == nil or v == false or v == "" or v == 0 then return false end
+  if type(v) == "table" then return next(v) ~= nil end
+  return true
+end
+
+function QL.InLog(id)
+  id = NS.Num(id)
+  if not id then return false end
+  local i = NS.Num(Call(CQ("GetLogIndexForQuestID"), id)) or NS.Num(Call(G("GetQuestLogIndexByID"), id))
+  if i and i > 0 then return true end
+  local n = NS.Num(Call(CQ("GetNumQuestLogEntries")))
+  local info = CQ("GetInfo")
+  if not (n and info) then return false end
+  for k = 1, n do
+    local row = NS.Tbl(Call(info, k))
+    if row and NS.Num(row.questID) == id then return true end
+  end
+  return false
+end
+
+-- Select this quest id. A quest-id select wins over a log index, so a stale index cannot choose another quest.
+function QL.SelectById(q)
+  local id = type(q) == "table" and NS.Num(q.questID) or NS.Num(q)
+  if not id then return false end
+  QL.reading = true
+  local ok, prev, how = false, nil, nil
+  local set = CQ("SetSelectedQuest")
+  if set then
+    prev = NS.Num(Call(CQ("GetSelectedQuest")))
+    ok = pcall(set, id) and true or false
+    how = "id"
+  else
+    local sel = G("SelectQuestLogEntry")
+    local idx = LogIndex({ questID = id, logIndex = type(q) == "table" and q.logIndex })
+    if sel and idx and idx > 0 then
+      prev = NS.Num(Call(G("GetQuestLogSelection")))
+      ok = pcall(sel, idx) and true or false
+      how = "index"
+    end
+  end
+  QL.reading = false
+  QL.lastSelect = (GetTime and NS.Num(GetTime())) or 0
+  return ok == true, prev, how
+end
+function QL.RestoreSelection(prev, how)
+  QL.reading = true
+  if how == "id" then
+    local set = CQ("SetSelectedQuest")
+    if set then pcall(set, prev or 0) end
+  elseif how == "index" and prev then
+    local sel = G("SelectQuestLogEntry")
+    if sel then pcall(sel, prev) end
+  end
+  QL.reading = false
+  QL.lastSelect = (GetTime and NS.Num(GetTime())) or 0
+end
+
+function QL.AbandonSupported()
+  if not (G("SetAbandonQuest") or CQ("SetAbandonQuest")) then return false end
+  if not G("StaticPopup_Show") then return false end
+  return Dialog("ABANDON_QUEST") or Dialog("ABANDON_QUEST_WITH_ITEMS")
+end
+local function SnapshotAbandon()
+  local cq = CQ("SetAbandonQuest")
+  if cq and pcall(cq) then return true end
+  local g = G("SetAbandonQuest")
+  if g and g ~= cq and pcall(g) then return true end
+  return false
+end
+-- Returns "dialog", "combat", "gone", "unsupported", or "no". Never abandons by itself.
+function QL.Abandon(q)
+  if InCombat() then return "combat" end
+  if not QL.AbandonSupported() then return "unsupported" end
+  local id = type(q) == "table" and NS.Num(q.questID)
+  if not id or not QL.InLog(id) then return "gone" end
+  if not QL.SelectById(q) then return "no" end
+  if not SnapshotAbandon() then return "unsupported" end
+  local items = Call(G("GetAbandonQuestItems"))
+  if items == nil then items = Call(CQ("GetAbandonQuestItems")) end
+  local name = Call(G("GetAbandonQuestName")) or Call(CQ("GetAbandonQuestName"))
+  local which
+  if HasItems(items) and Dialog("ABANDON_QUEST_WITH_ITEMS") then which = "ABANDON_QUEST_WITH_ITEMS"
+  elseif Dialog("ABANDON_QUEST") then which = "ABANDON_QUEST" end
+  if not which then return "unsupported" end
+  local show = G("StaticPopup_Show")
+  if which == "ABANDON_QUEST_WITH_ITEMS" then pcall(show, which, name, items) else pcall(show, which, name) end
+  return "dialog"
+end
+
+function QL.Grouped()
+  if type(_G.IsInGroup) == "function" then
+    local ok, v = pcall(_G.IsInGroup)
+    if ok then return v and true or false end
+  end
+  if type(_G.GetNumGroupMembers) == "function" then
+    local ok, n = pcall(_G.GetNumGroupMembers)
+    if ok then return (tonumber(n) or 0) > 0 end
+  end
+  return false
+end
+function QL.Pushable(q)
+  local id = type(q) == "table" and NS.Num(q.questID)
+  local byId = CQ("IsPushableQuest")
+  if byId and id then
+    local v = Call(byId, id)
+    if v == nil then return nil end
+    return v == true or v == 1
+  end
+  local gp = G("GetQuestLogPushable")
+  if not (gp and id) then return nil end
+  if not QL.InLog(id) then return false end
+  local ok, prev, how = QL.SelectById(q)
+  if not ok then return false end
+  local v = Call(gp)
+  QL.RestoreSelection(prev, how)
+  return v == true or v == 1
+end
+function QL.CanShare(q)
+  if InCombat() then return false end
+  if not G("QuestLogPushQuest") then return false end
+  local id = type(q) == "table" and NS.Num(q.questID)
+  if not id or not QL.InLog(id) then return false end
+  if not QL.Grouped() then return false end
+  return QL.Pushable(q) == true
+end
+function QL.Share(q)
+  if InCombat() then return "combat" end
+  if not QL.CanShare(q) then return "no" end
+  local ok, prev, how = QL.SelectById(q)
+  if not ok then return "no" end
+  local push = G("QuestLogPushQuest")
+  local ran = push and pcall(push) or false
+  QL.RestoreSelection(prev, how)
+  return ran and "ok" or "no"
+end
+
+function QL.ActionReport()
+  local parts = {}
+  for _, a in ipairs(QL.ACTION_API) do
+    parts[#parts + 1] = a[1] .. (QL.Has(a[1]) and " present" or " missing")
+  end
+  local lines = { "actions: " .. table.concat(parts, ", ") }
+  lines[#lines + 1] = "actions dialogs: ABANDON_QUEST " .. (Dialog("ABANDON_QUEST") and "present" or "missing")
+    .. ", ABANDON_QUEST_WITH_ITEMS " .. (Dialog("ABANDON_QUEST_WITH_ITEMS") and "present" or "missing")
+  return lines
 end

@@ -48,7 +48,7 @@ local function LayoutColumn()
   -- the list was built at the full window height; keep it inside this panel's border
   if view and view.list then FitScroll(view.list, math.max(40, inner - 2 * b)) end
   if det and det.scroll then
-    local headH = 82 + 28
+    local headH = (NS.QL and NS.QL.DetailHead and NS.QL.DetailHead(28)) or (110 + 28)
     FitScroll(det.scroll, math.max(40, inner - 2 * b - headH))
   end
 end
