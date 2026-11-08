@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.40: Quests and Ready keep the last zone or city while the player map is missing or not a zone or city.
+## Notes: Dark Matter 0.5.2b.41: a newly accepted quest outside this zone leaves the tracker. It stays in the quest log.
 ## Author: Odysseaus
-## Version: 0.5.2b.40
+## Version: 0.5.2b.41
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

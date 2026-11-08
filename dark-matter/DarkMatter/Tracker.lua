@@ -1069,28 +1069,57 @@ function Tr.SyncAccept(now)
     for id in pairs(log) do Tr.logIds[id] = true end
     return
   end
-  local grew = false
+  Tr.fresh = Tr.fresh or {}
+  local sawNew = false
   for id, e in pairs(log) do
-    if not Tr.logIds[id] then
-      if e.zone then grew = true
-      else Tr.pendingAccept[id] = Tr.pendingAccept[id] or (now + Tr.ACCEPT_WAIT) end
+    if not Tr.logIds[id] and (Tr.pendingAccept[id] or Tr.acceptUnknown) then
+      sawNew = true
+      Tr.fresh[id] = true
+      if not e.zone then Tr.pendingAccept[id] = Tr.pendingAccept[id] or (now + Tr.ACCEPT_WAIT) end
     end
   end
   local waiting = false
   for id, til in pairs(Tr.pendingAccept) do
     local e = log[id]
-    if e and e.zone then Tr.pendingAccept[id] = nil grew = true
+    Tr.fresh[id] = true
+    if e and e.zone then Tr.pendingAccept[id] = nil
     elseif now >= til then Tr.pendingAccept[id] = nil
     else waiting = true end
   end
   if Tr.acceptUnknown then
-    if grew or now >= Tr.acceptUnknown then Tr.acceptUnknown = nil
+    if sawNew or now >= Tr.acceptUnknown then Tr.acceptUnknown = nil
     else waiting = true end
   end
   Tr.logIds = {}
   for id in pairs(log) do Tr.logIds[id] = true end
   Tr.deferPlan = waiting or nil
-  if not waiting and grew and Tr.AutoWanted() then Tr.zonePending = now end
+end
+-- 0.5.2b.41: once a new accept has a header (or its wait ends), that id alone is checked.
+-- Watched, unpinned, and outside this zone: the tracker watch comes off. The quest stays in the log.
+-- A current-zone accept is kept, and with auto-track on it is watched if the game did not watch it.
+-- Older watches are not walked. Pinned and now-local quests are left. Combat, flight, and a non-zone map wait.
+function Tr.FilterFresh()
+  if not Tr.fresh then return end
+  local log = Tr.log or ReadLog()
+  local want, w
+  for id in pairs(Tr.fresh) do
+    local e = log[id]
+    if Tr.pendingAccept[id] and not (e and e.zone) then
+      -- header not in yet
+    elseif not e then
+      Tr.fresh[id] = nil
+    else
+      if not want then want = Tr.ZoneSet(log) w = Watched(log) end
+      Tr.fresh[id] = nil
+      if Tr.IsPinned(id) then
+        -- a pin stays
+      elseif w[id] and not want[id] then
+        SetWatch(e, false)
+      elseif Tr.AutoWanted() and not w[id] and want[id] and not DropReady(id) then
+        SetWatch(e, true)
+      end
+    end
+  end
 end
 function Tr.AutoStep(now)
   local gate = Tr.taxiGate
@@ -1105,6 +1134,7 @@ function Tr.AutoStep(now)
   -- 0.5.2b.40: do not watch, unwatch, or apply a queued watch change from a missing or non-zone map.
   local sample = Tr.NoteSample(now)
   if sample == "hold" or sample == "none" then return end
+  if not InCombat() and not OnTaxi() then Tr.FilterFresh() end
   if Tr.deferPlan and gate ~= "land" then return end
   if not Tr.AutoWanted() then
     -- auto-track off: the game's own tracking, except that pinned quests are tracked again after a zone change

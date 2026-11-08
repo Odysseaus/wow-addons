@@ -8876,7 +8876,7 @@ if MODE ~= "minimal" then
     extra[5] = 108
     fire("QUEST_LOG_UPDATE")
     Tr.Tick(TIME_NOW + 1.6)
-    check(not QWATCH[16] and Tr.zonePending ~= nil, "0.5.2b.37 accept: in combat the new quest is not planned")
+    check(not QWATCH[16], "0.5.2b.37 accept: in combat the new quest is not planned")
     fight = false
     Tr.Tick(TIME_NOW + 1.8)
     check(Tr.zonePending == nil and NS.Tracker.IsPinned(101) and QWATCH[2] == true,
@@ -8889,8 +8889,171 @@ if MODE ~= "minimal" then
     for k in pairs(QWATCH) do QWATCH[k] = nil end
     for k, v in pairs(qw) do QWATCH[k] = v end
     Tr.pendingAccept, Tr.acceptUnknown, Tr.deferPlan = {}, nil, nil
+    Tr.fresh = nil
     Tr.logIds, Tr.zonePending, Tr.queue, Tr.nextBatch, Tr.taxiRide, Tr.taxiSettleUntil = nil, nil, {}, 0, nil, nil
     Tr.Tick(TIME_NOW + 2)
+  end
+  -- 0.5.2b.41: a new watched unpinned quest outside this zone leaves the tracker. The log keeps it. Older watches stay.
+  do
+    local Tr = NS.Tracker
+    local saveNum, saveInfo = C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo
+    local saveAuto, saveTaxi, saveIC, saveOrder = NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.db.trackOrder
+    local saveBest, saveRF, saveComp = C_Map.GetBestMapForUnit, C_QuestLog.ReadyForTurnIn, C_QuestLog.IsComplete
+    local pins, qw = {}, {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local LOG = {
+      { title = "Elwynn Forest", isHeader = true },
+      { title = "Wolves", questID = 101 },
+      { title = "Westfall", isHeader = true },
+      { title = "The Defias", questID = 103 },
+    }
+    C_QuestLog.GetNumQuestLogEntries = function() return #LOG end
+    C_QuestLog.GetInfo = function(i) return LOG[i] end
+    local function add(id, header)
+      if header then LOG[#LOG + 1] = { title = header, isHeader = true } end
+      LOG[#LOG + 1] = { title = "Quest " .. id, questID = id }
+      return #LOG
+    end
+    local function inLog(id)
+      local log = Tr.ReadLog()
+      return log[id] ~= nil
+    end
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    NS.db.autoTrack, NS.db.trackOrder = false, false
+    UnitOnTaxi = nil
+    InCombatLockdown = function() return false end
+    Tr.badSample, Tr.fresh, Tr.good, Tr.sample = nil, nil, nil, nil
+    Tr.pendingAccept, Tr.acceptUnknown, Tr.deferPlan = {}, nil, nil
+    Tr.logIds, Tr.zonePending, Tr.queue, Tr.taxiRide, Tr.taxiSettleUntil = nil, nil, {}, nil, nil
+    Tr.Tick(TIME_NOW)
+    QWATCH = { [2] = true, [4] = true }
+    Tr.watch = nil
+    Tr.Diff()
+    local i201 = add(201, "Dungeon")
+    QWATCH[i201] = true
+    Tr.OnEvent("QUEST_ACCEPTED", 201)
+    Tr.OnEvent("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 0.2)
+    check(QWATCH[i201] == nil and inLog(201) and QWATCH[4] == true and QWATCH[2] == true and not Tr.IsPinned(201),
+      "0.5.2b.41 accept: auto-track off, a new quest outside this zone leaves the tracker and stays in the log")
+    NS.db.autoTrack = true
+    local i202 = add(202, "Dungeon")
+    QWATCH[i202] = true
+    Tr.OnEvent("QUEST_ACCEPTED", 202)
+    Tr.Tick(TIME_NOW + 0.4)
+    check(QWATCH[i202] == nil and inLog(202) and QWATCH[4] == true,
+      "0.5.2b.41 accept: auto-track on, the same new quest leaves the tracker and the older watch stays")
+    local i203 = add(203, "Elwynn Forest")
+    Tr.OnEvent("QUEST_ACCEPTED", 203)
+    Tr.Tick(TIME_NOW + 0.6)
+    check(QWATCH[i203] == true and inLog(203) and QWATCH[4] == true,
+      "0.5.2b.41 accept: auto-track on, a new quest for this zone is watched")
+    NS.db.autoTrack = false
+    local i204 = add(204, "Elwynn Forest")
+    QWATCH[i204] = true
+    Tr.OnEvent("QUEST_ACCEPTED", 204)
+    Tr.Tick(TIME_NOW + 0.8)
+    check(QWATCH[i204] == true and inLog(204),
+      "0.5.2b.41 accept: auto-track off, a new quest for this zone stays watched")
+    local i205 = add(205, "Elwynn Forest")
+    QWATCH[i205] = nil
+    Tr.OnEvent("QUEST_ACCEPTED", 205)
+    Tr.Tick(TIME_NOW + 1)
+    check(QWATCH[i205] == nil and inLog(205),
+      "0.5.2b.41 accept: auto-track off does not add a watch the game did not add")
+    local i206 = add(206, "Dungeon")
+    QWATCH[i206] = true
+    Tr.SetPinned(206, true)
+    Tr.OnEvent("QUEST_ACCEPTED", 206)
+    Tr.Tick(TIME_NOW + 1.2)
+    check(Tr.IsPinned(206) and QWATCH[i206] == true and QWATCH[4] == true,
+      "0.5.2b.41 accept: a pinned new quest stays, and the older watch stays")
+    local i207 = add(207, "Dungeon")
+    local i208 = add(208, "Stormwind City")
+    QWATCH[i207], QWATCH[i208] = true, true
+    Tr.OnEvent("QUEST_ACCEPTED", 207)
+    Tr.OnEvent("QUEST_ACCEPTED", 208)
+    Tr.Tick(TIME_NOW + 1.4)
+    check(QWATCH[i207] == nil and QWATCH[i208] == nil and inLog(207) and inLog(208) and QWATCH[4] == true and QWATCH[2] == true,
+      "0.5.2b.41 accept: two new outside quests leave together, and both older watches stay")
+    local kept = LOG
+    LOG = { { title = "Bare", questID = 209 } }
+    QWATCH = { [1] = true }
+    Tr.OnEvent("QUEST_ACCEPTED", 209)
+    Tr.Tick(TIME_NOW + 1.6)
+    check(QWATCH[1] == true and Tr.pendingAccept[209] and inLog(209),
+      "0.5.2b.41 accept: before the header, the new watch stays")
+    LOG = { { title = "Elwynn Forest", isHeader = true }, { title = "Bare", questID = 209 } }
+    QWATCH = { [2] = true }
+    Tr.diffDirty = true
+    Tr.Tick(TIME_NOW + 1.8)
+    check(QWATCH[2] == true and inLog(209) and not Tr.pendingAccept[209],
+      "0.5.2b.41 accept: a header that makes the quest local does not take the watch off")
+    LOG = kept
+    QWATCH = { [2] = true, [4] = true }
+    Tr.logIds, Tr.fresh, Tr.pendingAccept, Tr.watch = nil, nil, {}, nil
+    Tr.diffDirty = true
+    Tr.Tick(TIME_NOW + 1.9)
+    local i210 = add(210, "Dungeon")
+    QWATCH[i210] = true
+    local fight = true
+    InCombatLockdown = function() return fight end
+    Tr.OnEvent("QUEST_ACCEPTED", 210)
+    Tr.Tick(TIME_NOW + 2)
+    check(QWATCH[i210] == true and Tr.fresh and Tr.fresh[210],
+      "0.5.2b.41 accept: combat waits, and the new quest is still the only one pending")
+    for n, row in ipairs(LOG) do if row.title == "Dungeon" and LOG[n + 1] and LOG[n + 1].questID == 210 then row.title = "Elwynn Forest" end end
+    fight = false
+    Tr.diffDirty = true
+    Tr.Tick(TIME_NOW + 2.2)
+    check(QWATCH[i210] == true and QWATCH[4] == true,
+      "0.5.2b.41 accept: after combat a quest that is now local stays watched")
+    local i211 = add(211, "Dungeon")
+    QWATCH[i211] = true
+    C_Map.GetBestMapForUnit = function() return nil end
+    NS.MapData.Forget()
+    Tr.OnEvent("QUEST_ACCEPTED", 211)
+    Tr.Tick(TIME_NOW + 2.4)
+    check(QWATCH[i211] == true and QWATCH[4] == true and Tr.badSample,
+      "0.5.2b.41 accept: a missing map waits, and the older watch stays")
+    C_Map.GetBestMapForUnit = saveBest
+    NS.MapData.Forget()
+    Tr.Tick(TIME_NOW + 2.6)
+    check(QWATCH[i211] == nil and inLog(211) and QWATCH[4] == true and not Tr.badSample,
+      "0.5.2b.41 accept: a valid zone then takes that new quest off the tracker")
+    local i212 = add(212, "Dungeon")
+    QWATCH[i212] = true
+    local flying = true
+    UnitOnTaxi = function() return flying end
+    Tr.ground = { area = 1429, zone = "Elwynn Forest", real = "Elwynn Forest" }
+    Tr.Tick(TIME_NOW + 3)
+    Tr.OnEvent("QUEST_ACCEPTED", 212)
+    Tr.Tick(TIME_NOW + 3.2)
+    check(Tr.taxiRide and QWATCH[i212] == true and QWATCH[4] == true,
+      "0.5.2b.41 accept: in the air the new quest stays on the tracker")
+    flying = false
+    Tr.Tick(TIME_NOW + 3.4)
+    check(not Tr.taxiRide and QWATCH[i212] == nil and inLog(212) and QWATCH[4] == true,
+      "0.5.2b.41 accept: landing takes that new quest off the tracker and leaves the older one")
+    C_QuestLog.ReadyForTurnIn = function(id) if id == 101 then return false end end
+    C_QuestLog.IsComplete = function(id) return id == 101 end
+    check(NS.QS.Status(101) == "progress",
+      "0.5.2b.41 accept: completion detection is unchanged when ReadyForTurnIn is false")
+    C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo = saveNum, saveInfo
+    C_Map.GetBestMapForUnit = saveBest
+    if saveRF == nil then C_QuestLog.ReadyForTurnIn = nil else C_QuestLog.ReadyForTurnIn = saveRF end
+    C_QuestLog.IsComplete = saveComp
+    NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.db.trackOrder = saveAuto, saveTaxi, saveIC, saveOrder
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    for k, v in pairs(pins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.fresh, Tr.pendingAccept, Tr.acceptUnknown, Tr.deferPlan = nil, {}, nil, nil
+    Tr.badSample, Tr.logIds, Tr.zonePending, Tr.queue, Tr.watch = nil, nil, nil, {}, nil
+    Tr.taxiRide, Tr.taxiSettleUntil, Tr.hold, Tr.ground = nil, nil, nil, nil
+    NS.MapData.Forget()
+    Tr.Diff()
   end
   -- 0.5.2b.33: a pinned completed quest is Ready, not on the Quests list, including a turn-in elsewhere.
   do

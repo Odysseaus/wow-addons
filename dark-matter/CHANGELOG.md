@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.41
+
+- **New quests.** After a new quest has its log header, if it is watched, not pinned, and outside this zone, it leaves the tracker. The quest stays in the log. This runs with auto-track on or off. A new quest for this zone stays. Older watched quests are left as they are. The removal still waits in the air, in combat, and while the map is not a zone or a city.
+
 ## 0.5.2b.40
 
 - **Quests and Ready.** While the player map is missing, or is not a zone or a city, membership stays on the last zone or city. Watches are not added or removed from that sample, including a watch change already queued. When a zone or city can be read again, they refresh once, still waiting in the air and in combat. With no earlier zone or city, Ready does not list every completed quest and Quests is left as it is.
