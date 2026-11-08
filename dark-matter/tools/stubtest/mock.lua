@@ -5992,18 +5992,23 @@ do
     check(b.icon._alpha and b.icon._alpha < 0.5, "0.5.0 map: " .. k .. " icon is dimmed")
   end
   NS.SetStatus = origSS
-  -- 0.5.2b.47: Town Pins opens a filter. Only categories with places and a game icon are listed.
+  -- 0.5.2b.48: pins follow the picture that is on screen. ZoneAlpha at 0 must not hide them.
   do
     local tb = M.townBtn
-    check(tb and tb.key == "town" and not tb.soon, "0.5.2b.47 town: the Town Pins button is enabled")
+    check(NS.TownPins and #NS.TownPins.pins > 0, "0.5.2b.48 town: the pin list is registered when the addon loads")
+    check(tb and tb.key == "town" and not tb.soon, "0.5.2b.48 town: the Town Pins button is enabled")
     tb._scripts.OnClick(tb)
-    check(M.townPanel and M.townPanel:IsShown(), "0.5.2b.47 town: the button opens the filter")
-    local labels = {}
-    for _, b in ipairs(M.townPanel.boxes) do if b:IsShown() then labels[b.cat] = true end end
-    check(labels.flight and labels.inn and labels.vendor and labels.bank and labels.auction and not labels.dock,
-      "0.5.2b.47 town: flight, inn, vendors, bank and auction are listed; docks are hidden without a dock icon")
+    local panel = M.townPanel
+    check(panel and panel:IsShown() and panel.titleStr == "Map Icons", "0.5.2b.48 town: the button opens the Map Icons filter")
+    local rows = panel.rows
+    check(rows.flight and rows.inn and rows.vendor and rows.bank and rows.auction and rows.entrance and rows.levels and rows.dock,
+      "0.5.2b.48 town: the filter has both columns, including entrances, levels and docks")
+    check(rows.flight.checked and not rows.dock.checked and rows.dock.disabled and rows.dock.noteStr == "Not available yet",
+      "0.5.2b.48 town: flight starts checked and Docks stays unavailable")
+    rows.dock._scripts.OnClick(rows.dock)
+    check(not (NS.db.map and NS.db.map.town and NS.db.map.town.dock), "0.5.2b.48 town: the disabled Docks row does not save a choice")
     tb._scripts.OnClick(tb)
-    check(not M.townPanel:IsShown(), "0.5.2b.47 town: the button closes the filter")
+    check(not panel:IsShown(), "0.5.2b.48 town: the button closes the filter")
     local function shownTown()
       local out = {}
       local pool = M.pools and M.pools.town
@@ -6015,72 +6020,104 @@ do
     end
     NS.db.map = NS.db.map or {}
     NS.db.map.town = {}
+    local saveZA = M.ZoneAlpha
+    M.ZoneAlpha = function() return 0 end
     M.FlyTo(1455) run(40)
+    M.Layout()
     local pins = shownTown()
-    check(hasName(pins, "Gryth Thurden") and hasName(pins, "Fillius Fizzlespinner") and hasName(pins, "Auctioneer Redmuse")
-      and hasName(pins, "Innkeeper Firebrew") and hasName(pins, "Barnum Stonemantle"),
-      "0.5.2b.47 town: Ironforge's verified pins are on the city (" .. #pins .. ")")
+    local gryth = hasName(pins, "Gryth Thurden")
+    local city = M.layers[1455]
+    local gx, gy = gryth and gryth.sx, gryth and gryth.sy
+    local box = city and city.box
+    check(gryth and hasName(pins, "Fillius Fizzlespinner") and city and city.shown and box
+      and gx and gx >= math.min(box[1], box[3]) and gx <= math.max(box[1], box[3])
+      and gy and gy >= math.min(box[2], box[4]) and gy <= math.max(box[2], box[4]),
+      "0.5.2b.48 town: with ZoneAlpha at 0 the city picture still carries Gryth inside its rectangle")
+    check(gryth and gryth.face == "role" and hasName(pins, "Fillius Fizzlespinner").face == "town"
+      and hasName(pins, "Golnir Bouldertoe").face == "town",
+      "0.5.2b.48 town: a flight master uses its icon and a supplier uses the Town glyph, not the reagent icon")
+    local savePaint = NS.QS.PaintIcon
+    NS.QS.PaintIcon = function() return false end
+    M.Layout()
+    gryth = hasName(shownTown(), "Gryth Thurden")
+    check(gryth and gryth:IsShown() and gryth.face == "town",
+      "0.5.2b.48 town: a missing tracking icon still draws the pin with the Town glyph")
+    NS.QS.PaintIcon = savePaint
+    M.ZoneAlpha = saveZA
     local pass = M.townPass
     run(4)
-    check(M.townPass == pass and not M.dirty, "0.5.2b.47 town: a still map does not redraw the pins")
+    check(M.townPass == pass and not M.dirty, "0.5.2b.48 town: a still map does not redraw the pins")
     M.SetTown("vendor", false)
-    check(M.dirty and NS.db.map.town.vendor == false, "0.5.2b.47 town: a toggle is saved and marks the map dirty")
+    check(M.dirty and NS.db.map.town.vendor == false, "0.5.2b.48 town: a toggle is saved and marks the map dirty")
     M.Layout()
     pins = shownTown()
     check(hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and not hasName(pins, "Golnir Bouldertoe"),
-      "0.5.2b.47 town: turning vendors off leaves the flight master")
+      "0.5.2b.48 town: turning vendors off leaves the flight master")
     M.SetTown("vendor", true)
-    check(M.TownOn("vendor") == true, "0.5.2b.47 town: the saved choice is what the filter reads")
+    check(M.TownOn("vendor") == true, "0.5.2b.48 town: the saved choice is what the filter reads")
     local list = NS.TownPins.pins
+    local n0 = #list
     list[#list + 1] = { cat = "flight", name = "Nowhere", map = 999999, x = 0.5, y = 0.5 }
-    list[#list + 1] = { cat = "dock", name = "Nameless pier", map = 1455, x = 0.5, y = 0.5 }
+    list[#list + 1] = { cat = "entrance", name = "No spot" }
+    list[#list + 1] = { cat = "entrance", name = "Wiki depths", map = 1455, x = 0.20, y = 0.20,
+      levels = { 10, 20 }, levelSrc = "https://warcraft.wiki.gg/wiki/Example" }
+    list[#list + 1] = { cat = "entrance", name = "Shared door", map = 1455, x = 0.40, y = 0.40,
+      levels = { 13, 18 }, levelSrc = "https://www.wowhead.com/forever/zone=16919" }
+    list[#list + 1] = { cat = "entrance", name = "Shared wing", map = 1455, x = 0.40, y = 0.40,
+      levels = { 15, 20 }, levelSrc = "https://www.wowhead.com/forever/zone=16919" }
     M.Layout()
-    check(not hasName(shownTown(), "Nowhere") and not hasName(shownTown(), "Nameless pier"),
-      "0.5.2b.47 town: an unknown map and a dock with no destination are not drawn")
-    list[#list] = nil
-    list[#list] = nil
-    check(not hasName(shownTown(), "Steamwheedle Port"), "0.5.2b.47 town: the Tanaris dock is not drawn while Ironforge is the map on screen")
-    local dockPin = nil
-    for _, p in ipairs(list) do if p.name == "Steamwheedle Port" then dockPin = p end end
-    local saveMap, saveX, saveY = dockPin.map, dockPin.x, dockPin.y
-    dockPin.map, dockPin.x, dockPin.y = 1455, 0.50, 0.50
-    NS.QS.ICON_BY_ROLE.dock = { role = "dock", c = { { file = "Interface\\Minimap\\Tracking\\FlightMaster" } } }
-    NS.QS.ForgetIcons()
-    M.SyncTownPanel()
-    local dockListed = false
-    for _, b in ipairs(M.townPanel.boxes) do if b:IsShown() and b.cat == "dock" then dockListed = true end end
-    check(dockListed, "0.5.2b.47 town: docks are listed once a dock icon loads")
+    pins = shownTown()
+    local door = 0
+    for _, m in ipairs(pins) do if m.pin.x == 0.40 and m.pin.cat == "entrance" then door = door + 1 end end
+    local wiki = hasName(pins, "Wiki depths")
+    local shared = hasName(pins, "Shared door")
+    check(not hasName(pins, "Nowhere") and not hasName(pins, "No spot") and not hasName(pins, "Krol'dok Stronghold"),
+      "0.5.2b.48 town: an unknown map, a pin with no coordinates, and another zone's entrance are not drawn")
+    check(door == 1 and wiki and type(wiki.levelText) ~= "string" and shared and shared.levelText == "13-18",
+      "0.5.2b.48 town: one pin for a shared door, a wiki level is skipped, a Forever level is shown")
+    check(M.TownLevelText(shared.pin, { 0, 0, 40, 40 }) == nil, "0.5.2b.48 town: a small picture hides the level number")
+    M.SetTown("levels", false)
     M.Layout()
-    local dock = hasName(shownTown(), "Steamwheedle Port")
-    check(dock ~= nil, "0.5.2b.47 town: a dock is drawn on the map it belongs to")
-    if dock then dock._scripts.OnEnter(dock) end
-    check(tip.title == "Steamwheedle Port" and tip.lines[#tip.lines] == "To Powderfuse Port, Riverglades",
-      "0.5.2b.47 town: a dock hover names the verified destination")
+    shared = hasName(shownTown(), "Shared door")
+    check(shared and shared:IsShown() and type(shared.levelText) ~= "string", "0.5.2b.48 town: turning levels off hides the number and keeps the entrance")
+    M.SetTown("entrance", false)
+    M.Layout()
+    check(not hasName(shownTown(), "Shared door") and not hasName(shownTown(), "Wiki depths"),
+      "0.5.2b.48 town: turning entrances off removes the pins and their levels")
+    M.SetTown("entrance", true)
+    M.SetTown("levels", true)
+    while #list > n0 do list[#list] = nil end
+    local grythPin
+    for _, p in ipairs(list) do if p.name == "Gryth Thurden" then grythPin = p end end
+    grythPin.dest = "Powderfuse Port, Riverglades"
+    M.Layout()
+    gryth = hasName(shownTown(), "Gryth Thurden")
+    if gryth then gryth._scripts.OnEnter(gryth) end
+    check(tip.title == "Gryth Thurden" and tip.lines[#tip.lines] == "To Powderfuse Port, Riverglades",
+      "0.5.2b.48 town: a hover can name a verified destination")
+    grythPin.dest = nil
     local saveQ = C_QuestLog.GetQuestsOnMap
     local saveSel = NS.QS.selected
     local calls = 0
     local saveSet = NS.QS.SetWaypoint
     NS.QS.SetWaypoint = function() calls = calls + 1 return false, "test" end
     C_QuestLog.GetQuestsOnMap = function(id)
-      if id == 1455 then return { { questID = 501, x = 0.50, y = 0.50 } } end
+      if id == 1455 then return { { questID = 501, x = grythPin.x, y = grythPin.y } } end
       return saveQ(id)
     end
     MD.Forget("quests")
     M.Layout()
-    local quest, townPin = nil, hasName(shownTown(), "Steamwheedle Port")
+    local quest, townPin = nil, hasName(shownTown(), "Gryth Thurden")
     local qp = M.pools.quest
     if qp then for i = 1, qp.n do if qp[i]:IsShown() then quest = qp[i] end end end
     check(quest and townPin and quest:GetFrameLevel() > townPin:GetFrameLevel(),
-      "0.5.2b.47 town: a quest pin stays above a town pin on the same spot")
+      "0.5.2b.48 town: a quest pin stays above a town pin on the same spot")
     if townPin then townPin._scripts.OnMouseUp(townPin, "LeftButton") end
-    check(calls == 0 and NS.QS.selected == saveSel, "0.5.2b.47 town: a town pin sets no waypoint and selects no quest")
+    check(calls == 0 and NS.QS.selected == saveSel, "0.5.2b.48 town: a town pin sets no waypoint and selects no quest")
     C_QuestLog.GetQuestsOnMap = saveQ
     NS.QS.SetWaypoint = saveSet
     NS.QS.selected = saveSel
-    dockPin.map, dockPin.x, dockPin.y = saveMap, saveX, saveY
     MD.Forget("quests")
-    NS.QS.ICON_BY_ROLE.dock = nil
-    NS.QS.ForgetIcons()
     M.FlyTo(1426) run(20)
   end
   -- 14b. 0.5.2b: your own pins (Pin tool): drop, saved in DarkMatterDB, the game's waypoint + arrow, right-click removes

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2b.48
+
+- **Map icons.** Service pins are drawn when that map's picture is on screen, including a city whose zone fade has not started. A missing tracking icon uses the Town Pins glyph. Suppliers use that glyph, not the reagent icon. The filter is a dark panel titled Map Icons, with gold checks, two columns, and a disabled Docks row.
+- **Dungeons.** Krol'dok Stronghold is one entrance in Riverglades, from the Forever guide's pin. Its 40-45 level is the Forever news table. The level line shows only while that entrance is on screen and the picture is wide enough. Other instances stay off the map until an entrance coordinate exists.
+
 ## 0.5.2b.47
 
 - **Town pins.** The Town Pins button opens a filter. Flight masters, innkeepers, vendors, bankers, and auctioneers that have one verified Forever location are drawn with the game's own tracking icons. A category with no places, or no icon on this client, is not listed. Each choice is saved and the map updates immediately. A dock is listed only when this client has a dock icon. Hover names the place. A dock hover also names the verified destination. The pins do not set a waypoint and do not take a quest pin's click.

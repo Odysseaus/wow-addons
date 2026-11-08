@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.47: town pins for verified Forever places, with a saved filter.
+## Notes: Dark Matter 0.5.2b.48: town pins follow the city picture, with a Map Icons filter.
 ## Author: Odysseaus
-## Version: 0.5.2b.47
+## Version: 0.5.2b.48
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

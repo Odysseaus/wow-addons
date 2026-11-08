@@ -17,12 +17,16 @@ local _, NS = ...
 NS.TownPins = {
   fetched = "2026-11-08",
   cats = {
-    { id = "flight", label = "Flight masters", role = "flight", default = true },
-    { id = "inn", label = "Innkeepers", role = "inn", default = true },
-    { id = "vendor", label = "Vendors", role = "reagents", default = true },
-    { id = "bank", label = "Bankers", role = "bank", default = true },
-    { id = "auction", label = "Auctioneers", role = "auction", default = true },
-    { id = "dock", label = "Docks", role = "dock", default = true },
+    { id = "flight", label = "Flight masters", role = "flight", group = "town", default = true },
+    { id = "inn", label = "Innkeepers", role = "inn", group = "town", default = true },
+    -- Suppliers are not reagent vendors. The pin uses the Town Pins glyph, not the reagent icon.
+    { id = "vendor", label = "Vendors", role = "town", group = "town", default = true },
+    { id = "bank", label = "Bankers", role = "bank", group = "town", default = true },
+    { id = "auction", label = "Auctioneers", role = "auction", group = "town", default = true },
+    { id = "entrance", label = "Dungeon entrances", role = "dungeon", group = "dungeon", default = true },
+    { id = "levels", label = "Level ranges", group = "dungeon", default = true,
+      note = "Levels appear beside visible entrances" },
+    { id = "dock", label = "Docks", group = "travel", unavailable = true, note = "Not available yet" },
   },
   pins = {
     { cat = "flight", name = "Gryth Thurden", detail = "Gryphon Master", map = 1455, x = 0.5568, y = 0.4796,
@@ -45,8 +49,14 @@ NS.TownPins = {
       src = "https://nether.wowhead.com/forever/tooltip/npc/257087", whZone = 16591 },
     { cat = "flight", name = "Grakna", detail = "Wind Rider Master", map = 2548, x = 0.5950, y = 0.4500,
       src = "https://nether.wowhead.com/forever/tooltip/npc/255993", whZone = 16591 },
+    -- The Riverglades guide (dateModified 2026-11-07) places this door at /way 37.5 37.5 on Wowhead zone 16591,
+    -- the same zone id as the Riverglades flight masters. uiMapID 2548 is Riverglades in Data_ZoneMasks.lua.
+    -- The level pair is the Forever news table, not the zone's 36-44 and not a wiki page.
+    { cat = "entrance", name = "Krol'dok Stronghold", detail = "Dungeon", map = 2548, x = 0.3750, y = 0.3750,
+      levels = { 40, 45 }, levelSrc = "https://www.wowhead.com/forever/news/explore-the-new-dungeons-of-world-of-warcraft-forever-383506",
+      src = "https://www.wowhead.com/forever/guide/riverglades-zone-overview" },
     -- The Riverglades guide (dateModified 2026-11-07) names each pier and where that boat goes.
-    -- Tanaris is uiMapID 1446. Riverglades is uiMapID 2548.
+    -- Tanaris is uiMapID 1446. Riverglades is uiMapID 2548. No dock texture, so these are not drawn.
     { cat = "dock", name = "Steamwheedle Port", detail = "Tanaris", dest = "Powderfuse Port, Riverglades", map = 1446, x = 0.6860, y = 0.2300,
       src = "https://www.wowhead.com/forever/guide/riverglades-zone-overview" },
     { cat = "dock", name = "Powderfuse Port", detail = "Riverglades", dest = "Steamwheedle Port, Tanaris", map = 2548, x = 0.8060, y = 0.5460,
