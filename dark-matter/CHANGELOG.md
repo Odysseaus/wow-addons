@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.49
+
+- **World services.** Outdoor flight hubs with one Forever coordinate cluster are drawn, then innkeepers, a verified sample of vendors, and bankers and auctioneers on the same rule. Two clusters, including Stormwind's flight master, are listed and not drawn. Ironforge and the Krol'dok entrance are unchanged.
+- **Docks.** Steamwheedle Port and Powderfuse Port use a dock icon. The hover names the destination dock and its zone. Other boat routes stay off the map until a Forever pin gives both.
+- **Map Icons.** The filter sits beside the window, on the side with room, and follows the window. Checks are gold textures: empty, checked, hover, and disabled. The map art and the map size are unchanged.
+
 ## 0.5.2b.48
 
 - **Map icons.** Service pins are drawn when that map's picture is on screen, including a city whose zone fade has not started. A missing tracking icon uses the Town Pins glyph. Suppliers use that glyph, not the reagent icon. The filter is a dark panel titled Map Icons, with gold checks, two columns, and a disabled Docks row.

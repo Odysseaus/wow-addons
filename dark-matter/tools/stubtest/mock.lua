@@ -569,6 +569,13 @@ local function rect(r)
   if res then return res[1], res[2], res[3], res[4] end
 end
 FrameMT._rect = rect
+-- Only the screen and the main window answer here. Area frames keep the old "no rect" answer so
+-- mapprobe's picture-offset check stays on the path it had before this edge helper existed.
+local function edgeFrame(s) return s == UIParent or s == _G.DarkMatterFrame end
+function FrameMT.GetLeft(s) if not edgeFrame(s) then return end local l = rect(s) return l end
+function FrameMT.GetRight(s) if not edgeFrame(s) then return end local _, _, r = rect(s) return r end
+function FrameMT.GetTop(s) if not edgeFrame(s) then return end local _, t = rect(s) return t end
+function FrameMT.GetBottom(s) if not edgeFrame(s) then return end local _, _, _, b = rect(s) return b end
 
 local function visible(r)
   local x = r
@@ -6003,10 +6010,13 @@ do
     local rows = panel.rows
     check(rows.flight and rows.inn and rows.vendor and rows.bank and rows.auction and rows.entrance and rows.levels and rows.dock,
       "0.5.2b.48 town: the filter has both columns, including entrances, levels and docks")
-    check(rows.flight.checked and not rows.dock.checked and rows.dock.disabled and rows.dock.noteStr == "Not available yet",
-      "0.5.2b.48 town: flight starts checked and Docks stays unavailable")
-    rows.dock._scripts.OnClick(rows.dock)
-    check(not (NS.db.map and NS.db.map.town and NS.db.map.town.dock), "0.5.2b.48 town: the disabled Docks row does not save a choice")
+    check(rows.flight.checked and rows.dock.checked and not rows.dock.disabled
+      and rows.dock.box.tex and tostring(rows.dock.box.tex._file):find("dm-check", 1, true)
+      and rows.dock.box.tex._tc and rows.dock.box.tex._tc[1] == 1 / 8,
+      "0.5.2b.49 town: flight and docks start checked, and the check is a texture")
+    local pt, rel, rp, ox = panel:GetPoint()
+    check(panel._parent == _G.DarkMatterFrame and panel.side == "left" and pt == "TOPRIGHT" and rel == _G.DarkMatterFrame and rp == "TOPLEFT" and ox == -8,
+      "0.5.2b.49 town: the filter sits to the left of the window, outside the map")
     tb._scripts.OnClick(tb)
     check(not panel:IsShown(), "0.5.2b.48 town: the button closes the filter")
     local function shownTown()
@@ -6114,6 +6124,73 @@ do
       "0.5.2b.48 town: a quest pin stays above a town pin on the same spot")
     if townPin then townPin._scripts.OnMouseUp(townPin, "LeftButton") end
     check(calls == 0 and NS.QS.selected == saveSel, "0.5.2b.48 town: a town pin sets no waypoint and selects no quest")
+    local tex = rows.flight.box.tex
+    M.PaintCheck(tex, false, false, false)
+    local emptyL = tex._tc and tex._tc[1]
+    M.PaintCheck(tex, true, false, false)
+    local onL = tex._tc and tex._tc[1]
+    M.PaintCheck(tex, false, true, false)
+    local hotL = tex._tc and tex._tc[1]
+    M.PaintCheck(tex, false, false, true)
+    local offL = tex._tc and tex._tc[1]
+    check(emptyL == 0 and onL == 1/8 and hotL == 2/8 and offL == 4/8 and tex._tc[2] == 5/8,
+      "0.5.2b.49 town: empty, checked, hover and disabled use different check textures")
+    M.PaintCheck(tex, true, false, false)
+    rows.flight._scripts.OnEnter(rows.flight)
+    check(rows.flight._hot and rows.flight.box.tex._tc[1] == 3/8, "0.5.2b.49 town: a checked row hovers the gold tick")
+    rows.flight._scripts.OnLeave(rows.flight)
+    check(not rows.flight._hot and rows.flight.box.tex._tc[1] == 1/8, "0.5.2b.49 town: leaving the row restores the resting check")
+    local dungar, named = false, false
+    for _, pin in ipairs(NS.TownPins.pins) do if pin.name == "Dungar Longdrink" then dungar = true end end
+    for _, r in ipairs(NS.TownPins.rejected or {}) do if r.name == "Dungar Longdrink" then named = true end end
+    check(not dungar and named and type(NS.TownPins.gaps) == "table" and #NS.TownPins.gaps >= 2,
+      "0.5.2b.49 town: a two-cluster flight master is listed and not drawn")
+    local steam
+    for _, pin in ipairs(NS.TownPins.pins) do if pin.name == "Steamwheedle Port" then steam = pin end end
+    check(steam and steam.map == 1446 and steam.cat == "dock" and steam.dest == "Powderfuse Port, Riverglades",
+      "0.5.2b.49 town: Steamwheedle Port keeps the Forever dock and its destination")
+    M.FlyTo(1432) run(40)
+    M.Layout()
+    local master = hasName(shownTown(), "Thorgrum Borrelson")
+    check(master and master:IsShown() and master.pin.map == 1432, "0.5.2b.49 town: Loch Modan shows its flight master")
+    M.SetTown("flight", false)
+    M.Layout()
+    check(not hasName(shownTown(), "Thorgrum Borrelson") and NS.db.map.town.flight == false,
+      "0.5.2b.49 town: turning flight masters off removes that pin and the choice is saved")
+    M.SetTown("flight", true)
+    local list = NS.TownPins.pins
+    list[#list + 1] = { cat = "dock", name = "Test Pier", detail = "Loch Modan", dest = "Menethil Harbor, Wetlands", map = 1432, x = 0.50, y = 0.50 }
+    M.Layout()
+    local pier = hasName(shownTown(), "Test Pier")
+    check(pier and pier.face == "dock" and tostring(pier.icon._file):find("dm-dock", 1, true),
+      "0.5.2b.49 town: a dock uses the dock icon, not the town or flight icon")
+    if pier then pier._scripts.OnEnter(pier) end
+    check(tip.title == "Test Pier" and tip.lines[#tip.lines] == "To Menethil Harbor, Wetlands",
+      "0.5.2b.49 town: a dock hover names the destination dock and zone")
+    M.SetTown("dock", false)
+    M.Layout()
+    check(not hasName(shownTown(), "Test Pier") and hasName(shownTown(), "Thorgrum Borrelson"),
+      "0.5.2b.49 town: turning docks off leaves the flight master in that zone")
+    M.SetTown("dock", true)
+    list[#list] = nil
+    local win = _G.DarkMatterFrame
+    local mapW = M.vp:GetWidth()
+    win:ClearAllPoints()
+    win:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    M.PlaceTownPanel()
+    local rpt, rrel, rrp, rox = M.townPanel:GetPoint()
+    check(M.townPanel.side == "right" and rpt == "TOPLEFT" and rrel == win and rox > 0,
+      "0.5.2b.49 town: the filter moves to the free side when the left edge is blocked")
+    local saveSW = UIParent._sw
+    UIParent._sw = 960
+    M.PlaceTownPanel()
+    check(M.townPanel.fit == "tight" and M.townPanel:GetWidth() == 220 and M.vp:GetWidth() == mapW,
+      "0.5.2b.49 town: a narrow screen shrinks the filter and does not resize the map")
+    UIParent._sw = saveSW
+    win:ClearAllPoints()
+    win:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    M.PlaceTownPanel()
+    M.ToggleTownPanel(false)
     C_QuestLog.GetQuestsOnMap = saveQ
     NS.QS.SetWaypoint = saveSet
     NS.QS.selected = saveSel

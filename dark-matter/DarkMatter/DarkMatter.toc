@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.48: town pins follow the city picture, with a Map Icons filter.
+## Notes: Dark Matter 0.5.2b.49: world service pins, boat docks, and a Map Icons panel beside the window.
 ## Author: Odysseaus
-## Version: 0.5.2b.48
+## Version: 0.5.2b.49
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

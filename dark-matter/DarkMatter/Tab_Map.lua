@@ -998,7 +998,28 @@ function M.TownLevelText(pin, box)
   if pin.levels[1] == pin.levels[2] then return tostring(pin.levels[1]) end
   return pin.levels[1] .. "-" .. pin.levels[2]
 end
+local CHECK = "Interface\\AddOns\\DarkMatter\\Media\\dm-check"
+local DOCK = "Interface\\AddOns\\DarkMatter\\Media\\dm-dock"
+function M.PaintCheck(tex, on, hot, off)
+  local i = (off and (on and 5 or 4)) or (hot and (on and 3 or 2)) or (on and 1 or 0)
+  tex:SetTexture(CHECK)
+  tex:SetTexCoord(i / 8, (i + 1) / 8, 0, 1)
+end
+function M.PaintRowIcon(tex, role)
+  if role == "dock" then
+    tex:SetTexture(DOCK)
+    tex:SetTexCoord(0, 1, 0, 1)
+    return
+  end
+  if role and role ~= "town" and NS.QS and NS.QS.PaintIcon(tex, role) then return end
+  Icon(tex, "town")
+end
 local function PaintTownIcon(tex, role)
+  if role == "dock" then
+    tex:SetTexture(DOCK)
+    tex:SetTexCoord(0, 1, 0, 1)
+    return "dock"
+  end
   if role and role ~= "town" and NS.QS and NS.QS.PaintIcon(tex, role) then return "role" end
   Icon(tex, "town")
   return "town"
@@ -1067,6 +1088,9 @@ local function TownHere(z, vw, vh)
   local pic = M.PictureOn(z.id)
   local data = NS.TownPins
   if not (pic and data and data.pins) then return end
+  -- A small picture would stack every service icon on the zone title. Pins wait until the picture is large enough to separate them.
+  local bw, bh = math.abs(pic.box[3] - pic.box[1]), math.abs(pic.box[4] - pic.box[2])
+  if bw < 160 or bh < 160 then return end
   local seen = {}
   for _, pin in ipairs(data.pins) do
     if pin.map == z.id and TownPlaceable(pin) then
@@ -3721,29 +3745,80 @@ function M.ToggleClosePanel(show)
   if show then M.SyncClosePanel() p:Show() else p:Hide() end
 end
 
--- 0.5.2b.48: the Map Icons filter. Live text, gold square checks, two columns. Docks stay disabled.
+-- 0.5.2b.49: Map Icons sits beside the window, not on the map. Checks are textures.
 local GOLD, INK, DIM, SLATE = { 0.93, 0.80, 0.55 }, { 0.93, 0.90, 0.82 }, { 0.55, 0.52, 0.46 }, { 0.11, 0.10, 0.09 }
+local PREF_W, MIN_W, PREF_H = 500, 220, 340
 local function GoldText(parent, size)
   local fs = parent:CreateFontString(nil, "OVERLAY")
   NS.SetFont(fs, size, "")
   fs:SetTextColor(GOLD[1], GOLD[2], GOLD[3], 1)
   return fs
 end
-function M.BuildTownPanel(host, anchor, level)
-  local vw = host.GetWidth and host:GetWidth() or 480
-  local vh = host.GetHeight and host:GetHeight() or 360
-  local w, h = math.min(448, math.max(300, vw - 24)), math.min(312, math.max(240, vh - 24))
-  local p = CreateFrame("Frame", nil, host)
+local function ScreenEdge(f, which)
+  if not (f and f.GetLeft and f.GetRight and f.GetTop) then return nil end
+  local v = f:GetLeft() if which == "right" then v = f:GetRight() elseif which == "top" then v = f:GetTop() end
+  if not v then return nil end
+  local s = (f.GetEffectiveScale and f:GetEffectiveScale()) or 1
+  local u = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+  if not u or u == 0 then u = 1 end
+  return v * s / u
+end
+function M.PlaceTownPanel()
+  local p = M.townPanel
+  local win = _G.DarkMatterFrame
+  if not (p and win) then return end
+  local sw = UIParent and UIParent.GetWidth and UIParent:GetWidth() or 0
+  local sh = UIParent and UIParent.GetHeight and UIParent:GetHeight() or 0
+  local left, right = ScreenEdge(win, "left"), ScreenEdge(win, "right")
+  local q = 0
+  local QP = NS.QuestPanel
+  if QP and QP.Wanted and QP.Wanted() and QP.Extent then q = QP.Extent() or 0 end
+  local ws = (win.GetEffectiveScale and win:GetEffectiveScale()) or 1
+  local us = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+  if not us or us == 0 then us = 1 end
+  local qpx = q * ws / us
+  local roomL = left or sw
+  local roomR = (sw > 0 and right) and (sw - (right + qpx)) or 0
+  local side = (roomR > roomL) and "right" or "left"
+  local room = side == "left" and roomL or roomR
+  local w = PREF_W
+  local fit = "beside"
+  if room < PREF_W + 8 then
+    w = math.max(MIN_W, math.floor(room - 8))
+    if room < MIN_W + 8 then fit = "tight" end
+  end
+  local content = p.contentH or PREF_H
+  local h = math.min(content, PREF_H)
+  if sh > 40 then h = math.min(h, math.max(180, sh - 16)) end
+  if content > h + 1 then fit = (fit == "tight") and "tight" or "scroll" end
   p:SetSize(w, h)
-  p:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -8, 0)
-  p:SetFrameLevel(level)
+  p:ClearAllPoints()
+  if side == "left" then p:SetPoint("TOPRIGHT", win, "TOPLEFT", -8, 0)
+  else p:SetPoint("TOPLEFT", win, "TOPRIGHT", q + 8, 0) end
+  p.side, p.fit, p.room = side, fit, room
+  local wide = w >= 360
+  if p._wide ~= wide then p._wide = wide M.SyncTownPanel() end
+  if p.scroll and p.body then
+    local view = math.max(40, h - 108)
+    p.scroll:SetHeight(view)
+    local maxS = math.max(0, (p.body:GetHeight() or 0) - view)
+    if (p.scroll:GetVerticalScroll() or 0) > maxS then p.scroll:SetVerticalScroll(maxS) end
+  end
+end
+function M.BuildTownPanel(host, anchor, level)
+  if M.townPanel then M.townPanel:Hide() end
+  local win = _G.DarkMatterFrame or host
+  local p = CreateFrame("Frame", nil, win)
+  p:SetSize(PREF_W, PREF_H)
+  p:SetFrameLevel((level or 20))
   p:EnableMouse(true)
+  if p.SetClampedToScreen then p:SetClampedToScreen(true) end
   local edge = p:CreateTexture(nil, "BACKGROUND", nil, -8)
   edge:SetAllPoints(p)
   edge:SetColorTexture(0.62, 0.50, 0.28, 1)
   local bg = p:CreateTexture(nil, "BACKGROUND")
-  bg:SetPoint("TOPLEFT", p, "TOPLEFT", 1, -1)
-  bg:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -1, 1)
+  bg:SetPoint("TOPLEFT", p, "TOPLEFT", 2, -2)
+  bg:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -2, 2)
   bg:SetColorTexture(SLATE[1], SLATE[2], SLATE[3], 0.97)
   local title = GoldText(p, 18)
   title:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -12)
@@ -3758,7 +3833,7 @@ function M.BuildTownPanel(host, anchor, level)
   close:SetPoint("TOPRIGHT", p, "TOPRIGHT", -8, -8)
   local cx = GoldText(close, 16)
   cx:SetPoint("CENTER", close, "CENTER", 0, 0)
-  cx:SetText("×")
+  cx:SetText("x")
   close:SetScript("OnClick", function() M.ToggleTownPanel(false) end)
   local foot = p:CreateFontString(nil, "OVERLAY")
   NS.SetFont(foot, 11, "")
@@ -3766,150 +3841,165 @@ function M.BuildTownPanel(host, anchor, level)
   foot:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 16, 12)
   foot:SetText("Choices are saved automatically")
   p.titleStr, p.subStr, p.footStr = "Map Icons", "Choose what appears on the map", "Choices are saved automatically"
-  p.rows = {}
+  local scroll = CreateFrame("ScrollFrame", nil, p)
+  scroll:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -72)
+  scroll:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -8, 32)
+  local body = CreateFrame("Frame", nil, scroll)
+  body:SetSize(PREF_W - 24, 200)
+  scroll:SetScrollChild(body)
+  scroll:SetScript("OnMouseWheel", function(self, delta)
+    local view = self:GetHeight() or 0
+    local maxS = math.max(0, (body:GetHeight() or 0) - view)
+    local cur = self:GetVerticalScroll() or 0
+    self:SetVerticalScroll(math.max(0, math.min(maxS, cur - (delta or 0) * 28)))
+  end)
+  p.scroll, p.body, p.rows, p.heads = scroll, body, {}, {}
+  p:SetScript("OnUpdate", function(self)
+    if not self:IsShown() then return end
+    local w = _G.DarkMatterFrame
+    if not w then return end
+    local l, t, ww, s = w:GetLeft(), w:GetTop(), w:GetWidth(), w:GetScale()
+    if l == self._lx and t == self._ly and ww == self._lw and s == self._ls then return end
+    self._lx, self._ly, self._lw, self._ls = l, t, w:GetWidth(), s
+    M.PlaceTownPanel()
+  end)
+  p:SetAlpha(0)
   p:Hide()
   M.townPanel = p
   M.SyncTownPanel()
-  local sc = math.min(1, (vh - 8) / h, (vw - 8) / w)
-  if sc < 1 and p.SetScale then p:SetScale(sc) end
+  M.PlaceTownPanel()
   return p
 end
 function M.SyncTownPanel()
   local p = M.townPanel
   local data = NS.TownPins
-  if not (p and data and data.cats) then return end
+  if not (p and p.body and data and data.cats) then return end
   local byId = {}
   for _, c in ipairs(data.cats) do byId[c.id] = c end
+  local wide = (p:GetWidth() or PREF_W) >= 360
   local cols = {
-    { title = "Town services", ids = { "flight", "inn", "vendor", "bank", "auction" }, x = 16 },
-    { title = "Dungeons", ids = { "entrance", "levels" }, x = math.floor(p:GetWidth() * 0.50) },
+    { title = "Town services", ids = { "flight", "inn", "vendor", "bank", "auction" } },
+    { title = "Dungeons", ids = { "entrance", "levels" }, travel = true },
   }
   if type(p.heads) ~= "table" then p.heads = {} end
   if type(p.rows) ~= "table" then p.rows = {} end
   for _, h in ipairs(p.heads) do h:Hide() end
-  local hi = 0
-  for _, col in ipairs(cols) do
+  local colW = wide and math.floor((p:GetWidth() - 36) / 2) or (p:GetWidth() - 28)
+  local hi, y, maxY = 0, 0, 0
+  local function place(id, x, yy)
+    local c = byId[id]
+    if not c then return yy end
+    local row = p.rows[id]
+    if not row then row = M.TownRow(p.body) p.rows[id] = row end
+    row.cat = id
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", p.body, "TOPLEFT", x, -yy)
+    row:SetWidth(colW)
+    row.label:ClearAllPoints()
+    row.label:SetPoint("LEFT", row.icon, "RIGHT", 8, c.note and 6 or 0)
+    row.label:SetWidth(math.max(40, colW - 52))
+    if row.label.SetWordWrap then row.label:SetWordWrap(true) end
+    if row.label.SetJustifyH then row.label:SetJustifyH("LEFT") end
+    row.label:SetText(c.label)
+    row.noteStr = c.note or ""
+    if c.note then
+      row.note:SetWidth(math.max(40, colW - 52))
+      if row.note.SetWordWrap then row.note:SetWordWrap(true) end
+      row.note:SetText(c.note) row.note:Show()
+    else row.note:Hide() end
+    local off = c.unavailable or not M.TownCatOk(id)
+    row.disabled = off
+    row:SetAlpha(off and 0.45 or 1)
+    local on = not off and M.TownOn(id) and true or false
+    row.checked = on
+    row.box.disabled = off
+    row.box:SetChecked(on)
+    M.PaintRowIcon(row.icon, c.role)
+    row:Show()
+    return yy + (c.note and 44 or 30)
+  end
+  for i, col in ipairs(cols) do
+    local x = (wide and i == 2) and (colW + 16) or 4
+    local yy = (wide or i == 1) and 0 or y
     hi = hi + 1
     local head = p.heads[hi]
-    if not head then head = GoldText(p, 13) p.heads[hi] = head end
+    if not head then head = GoldText(p.body, 13) p.heads[hi] = head end
     head:ClearAllPoints()
-    head:SetPoint("TOPLEFT", p, "TOPLEFT", col.x, -58)
+    head:SetPoint("TOPLEFT", p.body, "TOPLEFT", x, -yy)
     head:SetText(col.title)
     head:Show()
-    local y = -82
-    for _, id in ipairs(col.ids) do
-      local c = byId[id]
-      if c then
-        local row = p.rows[id]
-        if not row then row = M.TownRow(p) p.rows[id] = row end
-        row.cat = id
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", p, "TOPLEFT", col.x, y)
-        row:SetWidth(math.floor(p:GetWidth() * 0.46))
-        row.label:SetText(c.label)
-        if row.note then
-          row.noteStr = c.note or ""
-          if c.note then row.note:SetText(c.note) row.note:Show() else row.note:Hide() end
-        end
-        local off = c.unavailable or not M.TownCatOk(id)
-        row.disabled = off
-        row:SetAlpha(off and 0.45 or 1)
-        local on = not off and M.TownOn(id) and true or false
-        row.checked = on
-        row.box:SetChecked(on)
-        row.box.disabled = off
-        M.PaintRowIcon(row.icon, c.role)
-        row:Show()
-        y = y - (c.note and 40 or 28)
-      end
-    end
-    if col.title == "Dungeons" then
+    yy = yy + 22
+    for _, id in ipairs(col.ids) do yy = place(id, x, yy) end
+    if col.travel then
       hi = hi + 1
       local travel = p.heads[hi]
-      if not travel then travel = GoldText(p, 13) p.heads[hi] = travel end
+      if not travel then travel = GoldText(p.body, 13) p.heads[hi] = travel end
       travel:ClearAllPoints()
-      travel:SetPoint("TOPLEFT", p, "TOPLEFT", col.x, y - 8)
+      travel:SetPoint("TOPLEFT", p.body, "TOPLEFT", x, -yy)
       travel:SetText("Travel")
       travel:Show()
-      local c = byId.dock
-      local row = p.rows.dock
-      if c and not row then row = M.TownRow(p) p.rows.dock = row end
-      if row and c then
-        row.cat = "dock"
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", p, "TOPLEFT", col.x, y - 30)
-        row:SetWidth(math.floor(p:GetWidth() * 0.46))
-        row.label:SetText(c.label)
-        row.noteStr = c.note or "Not available yet"
-        row.note:SetText(row.noteStr)
-        row.note:Show()
-        row.disabled = true
-        row.checked = false
-        row:SetAlpha(0.45)
-        row.box:SetChecked(false)
-        row.box.disabled = true
-        M.PaintRowIcon(row.icon, "town")
-        row:Show()
-      end
+      yy = place("dock", x, yy + 22)
     end
+    y = math.max(y, yy)
+    maxY = y
   end
+  p.body:SetWidth(math.max(40, (p:GetWidth() or PREF_W) - 24))
+  p.body:SetHeight(math.max(40, maxY + 8))
+  p.contentH = maxY + 120
   if M.townBtn and M.townBtn.icon then
     if p:IsShown() then M.townBtn.icon:SetVertexColor(1, 0.82, 0.25)
     else M.townBtn.icon:SetVertexColor(0.93, 0.89, 0.8) end
   end
-end
-function M.PaintRowIcon(tex, role)
-  if role and role ~= "town" and NS.QS and NS.QS.PaintIcon(tex, role) then return end
-  Icon(tex, "town")
 end
 function M.TownRow(parent)
   local row = CreateFrame("Button", nil, parent)
   row:SetSize(200, 26)
   row.bg = row:CreateTexture(nil, "BACKGROUND")
   row.bg:SetAllPoints(row)
-  row.bg:SetColorTexture(0.85, 0.72, 0.42, 0.18)
+  row.bg:SetColorTexture(0.85, 0.72, 0.42, 0.16)
   row.bg:Hide()
   local box = CreateFrame("Button", nil, row)
-  box:SetSize(16, 16)
+  box:SetSize(18, 18)
   box:SetPoint("LEFT", row, "LEFT", 0, 0)
-  local border = box:CreateTexture(nil, "BACKGROUND")
-  border:SetAllPoints(box)
-  border:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 1)
-  local inner = box:CreateTexture(nil, "BORDER")
-  inner:SetPoint("TOPLEFT", box, "TOPLEFT", 1, -1)
-  inner:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -1, 1)
-  inner:SetColorTexture(SLATE[1], SLATE[2], SLATE[3], 1)
-  local mark = GoldText(box, 13)
-  mark:SetPoint("CENTER", box, "CENTER", 0, 0)
-  mark:SetText("✓")
-  mark:Hide()
+  local tex = box:CreateTexture(nil, "ARTWORK")
+  tex:SetAllPoints(box)
   function box:SetChecked(on)
     self._on = on and true or false
-    if self._on then mark:Show() else mark:Hide() end
+    M.PaintCheck(tex, self._on, row._hot, self.disabled or row.disabled)
   end
   function box:GetChecked() return self._on and true or false end
+  box.tex = tex
   local function toggle()
     if box.disabled or row.disabled then return end
     box:SetChecked(not box:GetChecked())
+    row.checked = box:GetChecked()
     M.SetTown(row.cat, box:GetChecked())
   end
   box:SetScript("OnClick", toggle)
   row:SetScript("OnClick", toggle)
   local icon = row:CreateTexture(nil, "ARTWORK")
-  icon:SetSize(16, 16)
-  icon:SetPoint("LEFT", box, "RIGHT", 6, 0)
+  icon:SetSize(18, 18)
+  icon:SetPoint("LEFT", box, "RIGHT", 8, 0)
   local label = row:CreateFontString(nil, "OVERLAY")
-  NS.SetFont(label, 12, "")
+  NS.SetFont(label, 13, "")
   label:SetTextColor(INK[1], INK[2], INK[3], 1)
-  label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+  label:SetPoint("LEFT", icon, "RIGHT", 8, 0)
   local note = row:CreateFontString(nil, "OVERLAY")
-  NS.SetFont(note, 10, "")
+  NS.SetFont(note, 11, "")
   note:SetTextColor(DIM[1], DIM[2], DIM[3], 1)
   note:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -1)
   note:Hide()
   row.box, row.icon, row.label, row.note = box, icon, label, note
-  row:SetScript("OnEnter", function(self) if not self.disabled then self.bg:Show() end end)
-  row:SetScript("OnLeave", function(self) self.bg:Hide() end)
+  row:SetScript("OnEnter", function(self)
+    self._hot = true
+    if not self.disabled then self.bg:Show() end
+    if self.box then self.box:SetChecked(self.box:GetChecked()) end
+  end)
+  row:SetScript("OnLeave", function(self)
+    self._hot = false
+    self.bg:Hide()
+    if self.box then self.box:SetChecked(self.box:GetChecked()) end
+  end)
   return row
 end
 function M.ToggleTownPanel(show)
@@ -3919,8 +4009,10 @@ function M.ToggleTownPanel(show)
   if show then
     if M.closePanel and M.closePanel:IsShown() then M.closePanel:Hide() end
     M.SyncTownPanel()
+    M.PlaceTownPanel()
+    p:SetAlpha(1)
     p:Show()
-  else p:Hide() end
+  else p:SetAlpha(0) p:Hide() end
   if M.townBtn and M.townBtn.icon then
     if p:IsShown() then M.townBtn.icon:SetVertexColor(1, 0.82, 0.25)
     else M.townBtn.icon:SetVertexColor(0.93, 0.89, 0.8) end
