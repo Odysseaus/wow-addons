@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.51
+
+- **Professions.** A trainer or supplier pin uses that craft's spellbook icon, chosen from the subtitle. Trainers and suppliers of the same craft share the icon. The two switches and the hover stay. If that file is missing, the pin uses the profession tracking icon, then the town glyph.
+- **Docks.** The map pin is the chosen boat, 28 pixels. Other service pins stay 16. Quest pins stay 18 and above it. The boat in the filter row stays 18.
+- **Mail and repair.** The rows use the game's mailbox and repair tracking icons and draw no pins. No verified place is in this set, and a general vendor is not marked as repair.
+
 ## 0.5.2b.50
 
 - **Map Icons.** The filter sits 8 pixels off the right edge of the window. It uses the left side only when the right side cannot hold it. An embedded quest column is not added to that gap. The checkbox art is unchanged.

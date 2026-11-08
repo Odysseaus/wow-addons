@@ -1005,6 +1005,43 @@ function M.PaintCheck(tex, on, hot, off)
   tex:SetTexture(CHECK)
   tex:SetTexCoord(i / 8, (i + 1) / 8, 0, 1)
 end
+-- Subtitle words only. "engineer" is tested before "mining" so one dual supply line stays engineering.
+local CRAFT_FILE = {
+  blacksmith = "Interface\\Icons\\Trade_BlackSmithing",
+  leather = "Interface\\Icons\\Trade_LeatherWorking",
+  alchemy = "Interface\\Icons\\Trade_Alchemy",
+  enchant = "Interface\\Icons\\Trade_Engraving",
+  engineer = "Interface\\Icons\\Trade_Engineering",
+  tailor = "Interface\\Icons\\Trade_Tailoring",
+  herbal = "Interface\\Icons\\Trade_Herbalism",
+  mining = "Interface\\Icons\\Trade_Mining",
+  skin = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01",
+  cook = "Interface\\Icons\\INV_Misc_Food_15",
+  fish = "Interface\\Icons\\Trade_Fishing",
+  aid = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
+}
+local CRAFT_WORD = {
+  { "engineer", "engineer" }, { "blacksmith", "blacksmith" }, { "leather", "leather" },
+  { "alchem", "alchemy" }, { "enchant", "enchant" }, { "tailor", "tailor" },
+  { "herbal", "herbal" }, { "mining", "mining" }, { "skin", "skin" },
+  { "cook", "cook" }, { "fish", "fish" }, { "first aid", "aid" },
+}
+function M.CraftOf(detail)
+  if type(detail) ~= "string" then return nil end
+  local r = detail:lower()
+  for _, w in ipairs(CRAFT_WORD) do if r:find(w[1], 1, true) then return w[2] end end
+end
+function M.PaintCraft(tex, key)
+  local file = CRAFT_FILE[key]
+  if not file then return nil end
+  local known = not (NS.Stock and NS.Stock.TextureOK) or NS.Stock.TextureOK(file)
+  if known then
+    tex:SetTexture(file)
+    tex:SetTexCoord(0, 1, 0, 1)
+    return "craft"
+  end
+  if NS.QS and NS.QS.PaintIcon(tex, "profession") then return "profession" end
+end
 function M.PaintRowIcon(tex, role)
   if role == "dock" then
     tex:SetTexture(DOCK)
@@ -1014,12 +1051,14 @@ function M.PaintRowIcon(tex, role)
   if role and role ~= "town" and NS.QS and NS.QS.PaintIcon(tex, role) then return end
   Icon(tex, "town")
 end
-local function PaintTownIcon(tex, role)
+local function PaintTownIcon(tex, role, detail)
   if role == "dock" then
     tex:SetTexture(DOCK)
     tex:SetTexCoord(0, 1, 0, 1)
     return "dock"
   end
+  local craft = M.PaintCraft(tex, M.CraftOf(detail))
+  if craft then return craft end
   if role and role ~= "town" and NS.QS and NS.QS.PaintIcon(tex, role) then return "role" end
   Icon(tex, "town")
   return "town"
@@ -1101,7 +1140,9 @@ local function TownHere(z, vw, vh)
         if px > 0 and py > 0 and px < vw and py < vh then
           local mk = Pool("town", MakeTown)
           local def = TownDef(pin.cat)
-          mk.face = PaintTownIcon(mk.icon, def and def.role)
+          local side = pin.cat == "dock" and 28 or 16
+          mk:SetSize(side, side)
+          mk.face = PaintTownIcon(mk.icon, def and def.role, pin.detail)
           mk.pin = pin
           mk.sx, mk.sy = px, py
           mk.levelText = M.TownLevelText(pin, pic.box)
@@ -3881,7 +3922,7 @@ function M.SyncTownPanel()
   for _, c in ipairs(data.cats) do byId[c.id] = c end
   local wide = (p:GetWidth() or PREF_W) >= 360
   local cols = {
-    { title = "Town services", ids = { "flight", "inn", "vendor", "ptrainer", "psupply", "bank", "auction" } },
+    { title = "Town services", ids = { "flight", "inn", "vendor", "ptrainer", "psupply", "bank", "auction", "mail", "repair" } },
     { title = "Dungeons", ids = { "entrance", "levels" }, travel = true },
   }
   if type(p.heads) ~= "table" then p.heads = {} end

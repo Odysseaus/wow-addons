@@ -6008,8 +6008,13 @@ do
     local panel = M.townPanel
     check(panel and panel:IsShown() and panel.titleStr == "Map Icons", "0.5.2b.48 town: the button opens the Map Icons filter")
     local rows = panel.rows
-    check(rows.flight and rows.inn and rows.vendor and rows.ptrainer and rows.psupply and rows.bank and rows.auction and rows.entrance and rows.levels and rows.dock,
-      "0.5.2b.50 town: the filter has profession trainers and suppliers as their own rows")
+    check(rows.flight and rows.inn and rows.vendor and rows.ptrainer and rows.psupply and rows.bank and rows.auction and rows.mail and rows.repair and rows.entrance and rows.levels and rows.dock,
+      "0.5.2b.51 town: the filter has profession rows plus empty mailbox and repair rows")
+    check(rows.mail.disabled and rows.repair.disabled and rows.mail.noteStr == "No verified places yet",
+      "0.5.2b.51 town: mailbox and repair stay unavailable without a verified place")
+    rows.mail._scripts.OnClick(rows.mail)
+    check(not (NS.db.map and NS.db.map.town and NS.db.map.town.mail),
+      "0.5.2b.51 town: the empty mailbox row does not save a choice")
     check(rows.flight.checked and rows.dock.checked and not rows.dock.disabled
       and rows.dock.box.tex and tostring(rows.dock.box.tex._file):find("dm-check", 1, true)
       and rows.dock.box.tex._tc and rows.dock.box.tex._tc[1] == 1 / 8,
@@ -6044,9 +6049,13 @@ do
       and gx and gx >= math.min(box[1], box[3]) and gx <= math.max(box[1], box[3])
       and gy and gy >= math.min(box[2], box[4]) and gy <= math.max(box[2], box[4]),
       "0.5.2b.48 town: with ZoneAlpha at 0 the city picture still carries Gryth inside its rectangle")
+    local golnir = hasName(pins, "Golnir Bouldertoe")
     check(gryth and gryth.face == "role" and hasName(pins, "Fillius Fizzlespinner").face == "town"
-      and hasName(pins, "Golnir Bouldertoe").face == "town",
-      "0.5.2b.48 town: a flight master uses its icon and a supplier uses the Town glyph, not the reagent icon")
+      and golnir and golnir.face == "craft" and tostring(golnir.icon._file):find("Trade_Mining", 1, true),
+      "0.5.2b.51 town: a trade supplier stays the town glyph and a mining supplier uses the mining icon")
+    check(M.CraftOf("Engineering and Mining Supplies") == "engineer" and M.CraftOf("Journeyman Blacksmith") == "blacksmith"
+      and M.CraftOf("Herbalism Trainer") == "herbal",
+      "0.5.2b.51 town: a subtitle picks the craft, and the dual supply line stays engineering")
     local savePaint = NS.QS.PaintIcon
     NS.QS.PaintIcon = function() return false end
     M.Layout()
@@ -6065,7 +6074,15 @@ do
     check(hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and hasName(pins, "Golnir Bouldertoe"),
       "0.5.2b.50 town: turning vendors off leaves the flight master and a profession supplier")
     M.Layout()
-    check(hasName(shownTown(), "Geofram Bouldertoe"), "0.5.2b.50 town: Ironforge shows a profession trainer")
+    local geo = hasName(shownTown(), "Geofram Bouldertoe")
+    check(geo and geo.face == "craft" and tostring(geo.icon._file):find("Trade_Mining", 1, true),
+      "0.5.2b.51 town: Ironforge shows a profession trainer with the mining icon")
+    local saveOK = NS.Stock.TextureOK
+    NS.Stock.TextureOK = function(path) if type(path) == "string" and path:find("Trade_Mining", 1, true) then return false end return saveOK(path) end
+    M.Layout()
+    geo = hasName(shownTown(), "Geofram Bouldertoe")
+    check(geo and geo.face == "profession", "0.5.2b.51 town: a missing craft icon uses the profession tracking icon")
+    NS.Stock.TextureOK = saveOK
     M.SetTown("ptrainer", false)
     M.Layout()
     check(not hasName(shownTown(), "Geofram Bouldertoe") and hasName(shownTown(), "Golnir Bouldertoe") and NS.db.map.town.ptrainer == false,
@@ -6183,8 +6200,10 @@ do
     list[#list + 1] = { cat = "dock", name = "Test Pier", detail = "Loch Modan", dest = "Menethil Harbor, Wetlands", map = 1432, x = 0.50, y = 0.50 }
     M.Layout()
     local pier = hasName(shownTown(), "Test Pier")
-    check(pier and pier.face == "dock" and tostring(pier.icon._file):find("dm-dock", 1, true),
-      "0.5.2b.49 town: a dock uses the dock icon, not the town or flight icon")
+    local masterWide = hasName(shownTown(), "Thorgrum Borrelson")
+    check(pier and pier.face == "dock" and pier:GetWidth() == 28 and masterWide and masterWide:GetWidth() == 16
+      and tostring(pier.icon._file):find("dm-dock", 1, true),
+      "0.5.2b.51 town: a dock is a 28 pixel boat and a flight master stays 16")
     if pier then pier._scripts.OnEnter(pier) end
     check(tip.title == "Test Pier" and tip.lines[#tip.lines] == "To Menethil Harbor, Wetlands",
       "0.5.2b.49 town: a dock hover names the destination dock and zone")

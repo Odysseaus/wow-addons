@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.50: Map Icons on the right edge, profession rows, and boat docks.
+## Notes: Dark Matter 0.5.2b.51: craft icons on profession pins, and a larger boat.
 ## Author: Odysseaus
-## Version: 0.5.2b.50
+## Version: 0.5.2b.51
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
