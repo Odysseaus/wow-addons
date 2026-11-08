@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.44: Abandon uses the snapshot name, or the title of that same quest.
+## Notes: Dark Matter 0.5.2b.45: after the game removes the open quest, the detail returns to the list.
 ## Author: Odysseaus
-## Version: 0.5.2b.44
+## Version: 0.5.2b.45
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

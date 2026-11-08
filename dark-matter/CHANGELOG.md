@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.45
+
+- **Quest detail.** After the game removes the quest that is open, the detail returns to the quest list, the same as Back. Cancel, a failed confirm, and a quest that is still in the log stay on the detail. Opening another quest in the meantime stays on that quest.
+
 ## 0.5.2b.44
 
 - **Abandon.** The confirm uses a non-empty name from the game's abandon snapshot first. If that is missing, it uses the title of that same quest id, then the selected log line only when that line's quest id matches. The key call and the one nil-format table retry are unchanged. Yes and No stay the game's buttons.

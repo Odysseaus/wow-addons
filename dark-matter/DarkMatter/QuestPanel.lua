@@ -174,6 +174,24 @@ local function ShowDetail(q)
 end
 P.ShowList, P.ShowDetail = ShowList, ShowDetail
 
+-- 0.5.2b.45: Back to the list only after this same quest has left the log. Opening the confirm is not removal.
+function P.NoteRemoved(id)
+  id = NS.Num(id)
+  if not (id and dp and dp.IsShown and dp:IsShown() and det and det.quest) then return end
+  if NS.Num(det.quest.questID) ~= id then return end
+  P.removed = id
+  P.CheckRemoved()
+end
+function P.CheckRemoved()
+  local id = P.removed
+  if not id then return end
+  if not (dp and dp.IsShown and dp:IsShown() and det and det.quest) then P.removed = nil return end
+  if NS.Num(det.quest.questID) ~= id then P.removed = nil return end
+  if NS.QL and NS.QL.InLog and NS.QL.InLog(id) then return end
+  P.removed = nil
+  ShowList()
+end
+
 function P.Embed(host)
   if not host then return nil end
   P.embedded = true

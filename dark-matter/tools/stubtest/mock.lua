@@ -6917,6 +6917,52 @@ if MODE ~= "minimal" then
     GetQuestLogTitle, StaticPopup_Show, StaticPopupDialogs = save.gtitle, save.show, save.dialogs
     QSEL = save.qsel
   end
+  -- 0.5.2b.45: the detail returns to the list only after this same quest has left the log.
+  do
+    local P = NS.QuestPanel
+    local saveInfo, saveIdx = C_QuestLog.GetInfo, C_QuestLog.GetLogIndexForQuestID
+    local function fire(ev, a1)
+      for _, fr in ipairs(ALL) do
+        if fr._ev and fr._ev[ev] and fr._scripts and fr._scripts.OnEvent then fr._scripts.OnEvent(fr, ev, a1) end
+      end
+    end
+    local function detailOn() return P.detailPanel and P.detailPanel:IsShown() end
+    local function listOn() return P.list and P.list:IsShown() end
+    local function drop103()
+      C_QuestLog.GetLogIndexForQuestID = function(id)
+        if id == 101 then return 2 elseif id == 102 then return 3 end
+      end
+      C_QuestLog.GetInfo = function(i)
+        local row = saveInfo(i)
+        if type(row) == "table" and row.questID == 103 then return { title = "Westfall", isHeader = true } end
+        return row
+      end
+    end
+    if NS.ShowTab then NS.ShowTab("map") end
+    P.OpenQuest(103)
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.45 detail: the open quest starts on its detail")
+    fire("QUEST_REMOVED", 103)
+    check(detailOn() and not listOn(), "0.5.2b.45 detail: removal is not acted on while the quest is still in the log")
+    drop103()
+    fire("QUEST_LOG_UPDATE")
+    check(listOn() and not detailOn(), "0.5.2b.45 detail: once that quest has left the log, the detail returns to the list")
+    fire("QUEST_REMOVED", 103)
+    fire("QUEST_LOG_UPDATE")
+    check(listOn() and not detailOn(), "0.5.2b.45 detail: a repeated removal does not open the detail again")
+    C_QuestLog.GetInfo, C_QuestLog.GetLogIndexForQuestID = saveInfo, saveIdx
+    P.OpenQuest(103)
+    check(detailOn(), "0.5.2b.45 detail: Cancel and a failed confirm leave the detail open")
+    P.OpenQuest(101)
+    drop103()
+    fire("QUEST_REMOVED", 103)
+    check(detailOn() and P.detail.quest.questID == 101, "0.5.2b.45 detail: another quest opened in the meantime stays open")
+    C_QuestLog.GetInfo, C_QuestLog.GetLogIndexForQuestID = saveInfo, saveIdx
+    P.OpenQuest(103)
+    fire("QUEST_REMOVED", 102)
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.45 detail: removal of a different quest does not leave this detail")
+    C_QuestLog.GetInfo, C_QuestLog.GetLogIndexForQuestID = saveInfo, saveIdx
+    P.ShowList()
+  end
   -- only with the Map tab
   NS.ShowTab("quests")
   check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")
