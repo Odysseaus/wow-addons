@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.31: pin icons beside quest names. The detail pin sits clear of the text.
+## Notes: Dark Matter 0.5.2b.32: unpinning an out-of-zone quest takes it off the objective list.
 ## Author: Odysseaus
-## Version: 0.5.2b.31
+## Version: 0.5.2b.32
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

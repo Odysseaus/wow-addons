@@ -7702,7 +7702,7 @@ if MODE ~= "minimal" then
   Tr.Diff()
   check(P[103] == true and Tr.own[103] == nil, "0.5.2b keep: and that track is ours (still pinned)")
   Tr.SetPinned(103, false)
-  check(P[103] == nil and QWATCH[6] == true, "0.5.2b.1 keep: unpinning does not untrack (auto-track decides at the next zone change)")
+  check(P[103] == nil and QWATCH[6] == nil, "0.5.2b.32 keep: unpinning an out-of-zone quest takes it off Objectives now")
   Tr.SetPinned(103, true) P[102] = nil Tr.zonePending = nil
   -- 2. the tracker rows: our own pin button and title click area, positioned by the blocks (read only)
   local function vis(f) return f._shown == true end
@@ -8147,6 +8147,57 @@ if MODE ~= "minimal" then
     C_QuestLog, NS.QS.Status = saveCQ, saveSt
     NS.MapData.Forget()
     if NS.tabs.quests and NS.tabs.quests.Refresh then NS.tabs.quests.Refresh() end
+  end
+  -- 0.5.2b.32: unpinning one out-of-zone quest takes it off Objectives. A current-zone quest stays. No other watch or pin changes.
+  do
+    local Tr = NS.Tracker
+    local saveSt, saveRH = NS.QS.Status, NS.QS.ReadyHere
+    QWATCH[2], QWATCH[3], QWATCH[6] = true, true, true
+    Tr.Diff()
+    Tr.SetPinned(102, true)
+    Tr.SetPinned(103, true)
+    check(QWATCH[6] == true and Tr.IsPinned(103), "0.5.2b.32 unpin: the out-of-zone quest starts watched and pinned")
+    Tr.SetPinned(103, false)
+    check(not Tr.IsPinned(103) and QWATCH[6] == nil and QWATCH[2] == true and QWATCH[3] == true and Tr.IsPinned(102),
+      "0.5.2b.32 unpin: an ordinary out-of-zone quest leaves Objectives; the current-zone watches and the other pin stay")
+    NS.QS.Status = function(id) if id == 103 then return "ready" end return saveSt(id) end
+    NS.QS.ReadyHere = function(id) if id == 103 then return false end return saveRH(id) end
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    Tr.queue = { { e = { id = 103, idx = 6, questID = 103 }, want = true }, { e = { id = 102, idx = 3, questID = 102 }, want = true } }
+    Tr.SetPinned(103, false)
+    local back = false
+    for _, it in ipairs(Tr.queue or {}) do if it.e and (it.e.id == 103 or it.e.questID == 103) then back = true end end
+    check(not Tr.IsPinned(103) and QWATCH[6] == nil and not back and QWATCH[2] == true and Tr.IsPinned(102),
+      "0.5.2b.32 unpin: a finished quest whose turn-in is elsewhere leaves Objectives and is not queued back on")
+    Tr.SetPinned(101, true)
+    Tr.SetPinned(101, false)
+    check(not Tr.IsPinned(101) and QWATCH[2] == true, "0.5.2b.32 unpin: a current-zone quest stays watched")
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    NS.ShowTab("map")
+    local rowPin, detailPin
+    if NS.QuestPanel and NS.QuestPanel.view then
+      for _, r in ipairs(NS.QuestPanel.view.rows) do
+        if r:IsShown() and r.kind == "q" and r.quest and r.quest.questID == 103 then rowPin = r.pin end
+      end
+    end
+    if rowPin then rowPin._scripts.OnClick(rowPin) end
+    check(rowPin and not Tr.IsPinned(103) and QWATCH[6] == nil, "0.5.2b.32 unpin: the list icon removes the out-of-zone quest")
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    if NS.QuestPanel then NS.QuestPanel.OpenQuest(103) detailPin = NS.QuestPanel.detail and NS.QuestPanel.detail.pin end
+    if detailPin then detailPin._scripts.OnClick(detailPin) end
+    check(detailPin and not Tr.IsPinned(103) and QWATCH[6] == nil, "0.5.2b.32 unpin: the detail icon removes the out-of-zone quest")
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    local trackerPin
+    for _, r in ipairs(Tr.rows or {}) do if r.pin and r.pin._scripts and r.pin._scripts.OnClick then trackerPin = r.pin break end end
+    if trackerPin then trackerPin.q = 103 trackerPin._scripts.OnClick(trackerPin) end
+    check(trackerPin and not Tr.IsPinned(103) and QWATCH[6] == nil, "0.5.2b.32 unpin: the objective-tracker pin removes the out-of-zone quest")
+    NS.QS.Status, NS.QS.ReadyHere = saveSt, saveRH
+    Tr.queue = {}
+    Tr.SetPinned(102, false)
   end
   -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat
   QWATCH = { [6] = true }

@@ -95,9 +95,24 @@ function Tr.SetPinned(q, on)
   q = N(q)
   if not q then return end
   Pins()[q] = on and true or nil
+  local log = Tr.log
+  if not (log and log[q]) then log = ReadLog() end
+  local e = log and log[q]
   if on then
-    local e = Tr.log[q]
     if e and Tr.watch and not Tr.watch[q] then SetWatch(e, true) end
+  elseif e and not Tr.ZoneSet(log)[q] then
+    -- 0.5.2b.32: this click only. An out-of-zone quest leaves Objectives now, including a finished
+    -- quest whose turn-in is elsewhere. A current-zone quest stays because ZoneSet still contains it.
+    -- Drop a queued re-watch so the next auto-track batch cannot put this quest back.
+    if Tr.queue then
+      local keep = {}
+      for _, it in ipairs(Tr.queue) do
+        local id = it.e and N(it.e.id or it.e.questID)
+        if id ~= q then keep[#keep + 1] = it end
+      end
+      Tr.queue = keep
+    end
+    SetWatch(e, false)
   end
   Tr.layoutDirty = true
   Tr.NotifyPins()
