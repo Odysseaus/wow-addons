@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.49: world service pins, boat docks, and a Map Icons panel beside the window.
+## Notes: Dark Matter 0.5.2b.50: Map Icons on the right edge, profession rows, and boat docks.
 ## Author: Odysseaus
-## Version: 0.5.2b.49
+## Version: 0.5.2b.50
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

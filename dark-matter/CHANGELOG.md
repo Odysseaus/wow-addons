@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.2b.50
+
+- **Map Icons.** The filter sits 8 pixels off the right edge of the window. It uses the left side only when the right side cannot hold it. An embedded quest column is not added to that gap. The checkbox art is unchanged.
+- **Westfall.** Innkeeper Heather is marked from her Forever tooltip, one cluster on Westfall.
+- **Professions.** Profession trainers and Profession suppliers are their own saved rows. Vendors stays general and trade goods. A two-cluster or unmapped tooltip is listed and not drawn.
+- **Docks.** The dock mark is a boat. Ratchet and Booty Bay are added where a Forever guide names the route and the wharfmaster tooltip is one cluster. The hover names the destination dock and zone.
+
 ## 0.5.2b.49
 
 - **World services.** Outdoor flight hubs with one Forever coordinate cluster are drawn, then innkeepers, a verified sample of vendors, and bankers and auctioneers on the same rule. Two clusters, including Stormwind's flight master, are listed and not drawn. Ironforge and the Krol'dok entrance are unchanged.

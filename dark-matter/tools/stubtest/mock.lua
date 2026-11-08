@@ -6008,15 +6008,16 @@ do
     local panel = M.townPanel
     check(panel and panel:IsShown() and panel.titleStr == "Map Icons", "0.5.2b.48 town: the button opens the Map Icons filter")
     local rows = panel.rows
-    check(rows.flight and rows.inn and rows.vendor and rows.bank and rows.auction and rows.entrance and rows.levels and rows.dock,
-      "0.5.2b.48 town: the filter has both columns, including entrances, levels and docks")
+    check(rows.flight and rows.inn and rows.vendor and rows.ptrainer and rows.psupply and rows.bank and rows.auction and rows.entrance and rows.levels and rows.dock,
+      "0.5.2b.50 town: the filter has profession trainers and suppliers as their own rows")
     check(rows.flight.checked and rows.dock.checked and not rows.dock.disabled
       and rows.dock.box.tex and tostring(rows.dock.box.tex._file):find("dm-check", 1, true)
       and rows.dock.box.tex._tc and rows.dock.box.tex._tc[1] == 1 / 8,
       "0.5.2b.49 town: flight and docks start checked, and the check is a texture")
     local pt, rel, rp, ox = panel:GetPoint()
-    check(panel._parent == _G.DarkMatterFrame and panel.side == "left" and pt == "TOPRIGHT" and rel == _G.DarkMatterFrame and rp == "TOPLEFT" and ox == -8,
-      "0.5.2b.49 town: the filter sits to the left of the window, outside the map")
+    check(panel._parent == _G.DarkMatterFrame and NS.QuestPanel.embedded and (NS.QuestPanel.Extent() or 0) > 300
+      and panel.side == "right" and pt == "TOPLEFT" and rel == _G.DarkMatterFrame and rp == "TOPRIGHT" and ox == 8,
+      "0.5.2b.50 town: the filter sits 8 pixels off the right edge and ignores the embedded quest column")
     tb._scripts.OnClick(tb)
     check(not panel:IsShown(), "0.5.2b.48 town: the button closes the filter")
     local function shownTown()
@@ -6061,8 +6062,20 @@ do
     check(M.dirty and NS.db.map.town.vendor == false, "0.5.2b.48 town: a toggle is saved and marks the map dirty")
     M.Layout()
     pins = shownTown()
-    check(hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and not hasName(pins, "Golnir Bouldertoe"),
-      "0.5.2b.48 town: turning vendors off leaves the flight master")
+    check(hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and hasName(pins, "Golnir Bouldertoe"),
+      "0.5.2b.50 town: turning vendors off leaves the flight master and a profession supplier")
+    M.Layout()
+    check(hasName(shownTown(), "Geofram Bouldertoe"), "0.5.2b.50 town: Ironforge shows a profession trainer")
+    M.SetTown("ptrainer", false)
+    M.Layout()
+    check(not hasName(shownTown(), "Geofram Bouldertoe") and hasName(shownTown(), "Golnir Bouldertoe") and NS.db.map.town.ptrainer == false,
+      "0.5.2b.50 town: turning profession trainers off leaves the supplier")
+    M.SetTown("psupply", false)
+    M.Layout()
+    check(not hasName(shownTown(), "Golnir Bouldertoe") and hasName(shownTown(), "Gryth Thurden") and NS.db.map.town.psupply == false,
+      "0.5.2b.50 town: turning profession suppliers off leaves the flight master")
+    M.SetTown("ptrainer", true)
+    M.SetTown("psupply", true)
     M.SetTown("vendor", true)
     check(M.TownOn("vendor") == true, "0.5.2b.48 town: the saved choice is what the filter reads")
     local list = NS.TownPins.pins
@@ -6145,10 +6158,18 @@ do
     for _, r in ipairs(NS.TownPins.rejected or {}) do if r.name == "Dungar Longdrink" then named = true end end
     check(not dungar and named and type(NS.TownPins.gaps) == "table" and #NS.TownPins.gaps >= 2,
       "0.5.2b.49 town: a two-cluster flight master is listed and not drawn")
-    local steam
-    for _, pin in ipairs(NS.TownPins.pins) do if pin.name == "Steamwheedle Port" then steam = pin end end
+    local steam, heather, ratchet
+    for _, pin in ipairs(NS.TownPins.pins) do
+      if pin.name == "Steamwheedle Port" then steam = pin
+      elseif pin.name == "Innkeeper Heather" then heather = pin
+      elseif pin.name == "Ratchet" and pin.cat == "dock" then ratchet = pin end
+    end
     check(steam and steam.map == 1446 and steam.cat == "dock" and steam.dest == "Powderfuse Port, Riverglades",
       "0.5.2b.49 town: Steamwheedle Port keeps the Forever dock and its destination")
+    check(heather and heather.cat == "inn" and heather.map == 1436 and math.abs(heather.x - 0.528) < 0.001 and math.abs(heather.y - 0.535) < 0.001,
+      "0.5.2b.50 town: Innkeeper Heather is the single Westfall cluster")
+    check(ratchet and ratchet.dest == "Booty Bay, Stranglethorn Vale" and ratchet.map == 1413,
+      "0.5.2b.50 town: the Ratchet dock names Booty Bay")
     M.FlyTo(1432) run(40)
     M.Layout()
     local master = hasName(shownTown(), "Thorgrum Borrelson")
@@ -6179,8 +6200,16 @@ do
     win:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
     M.PlaceTownPanel()
     local rpt, rrel, rrp, rox = M.townPanel:GetPoint()
-    check(M.townPanel.side == "right" and rpt == "TOPLEFT" and rrel == win and rox > 0,
-      "0.5.2b.49 town: the filter moves to the free side when the left edge is blocked")
+    check(M.townPanel.side == "right" and rpt == "TOPLEFT" and rrel == win and rox == 8,
+      "0.5.2b.50 town: a window on the left still keeps the filter 8 pixels off its right edge")
+    win:ClearAllPoints()
+    win:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
+    M.PlaceTownPanel()
+    rpt, rrel, rrp, rox = M.townPanel:GetPoint()
+    check(M.townPanel.side == "left" and rpt == "TOPRIGHT" and rrel == win and rrp == "TOPLEFT" and rox == -8,
+      "0.5.2b.50 town: the filter falls back to the left when the right edge has no room")
+    win:ClearAllPoints()
+    win:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
     local saveSW = UIParent._sw
     UIParent._sw = 960
     M.PlaceTownPanel()

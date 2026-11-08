@@ -3772,14 +3772,17 @@ function M.PlaceTownPanel()
   local left, right = ScreenEdge(win, "left"), ScreenEdge(win, "right")
   local q = 0
   local QP = NS.QuestPanel
-  if QP and QP.Wanted and QP.Wanted() and QP.Extent then q = QP.Extent() or 0 end
+  -- The quest column is inside the window while it is embedded. Extent() is only the old outside column.
+  if QP and QP.Wanted and QP.Wanted() and not QP.embedded and QP.Extent then q = QP.Extent() or 0 end
   local ws = (win.GetEffectiveScale and win:GetEffectiveScale()) or 1
   local us = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
   if not us or us == 0 then us = 1 end
   local qpx = q * ws / us
   local roomL = left or sw
   local roomR = (sw > 0 and right) and (sw - (right + qpx)) or 0
-  local side = (roomR > roomL) and "right" or "left"
+  -- Prefer the right edge. The left is only the fallback when that side cannot hold the panel.
+  local side = "right"
+  if roomR < MIN_W + 8 then side = "left" end
   local room = side == "left" and roomL or roomR
   local w = PREF_W
   local fit = "beside"
@@ -3878,7 +3881,7 @@ function M.SyncTownPanel()
   for _, c in ipairs(data.cats) do byId[c.id] = c end
   local wide = (p:GetWidth() or PREF_W) >= 360
   local cols = {
-    { title = "Town services", ids = { "flight", "inn", "vendor", "bank", "auction" } },
+    { title = "Town services", ids = { "flight", "inn", "vendor", "ptrainer", "psupply", "bank", "auction" } },
     { title = "Dungeons", ids = { "entrance", "levels" }, travel = true },
   }
   if type(p.heads) ~= "table" then p.heads = {} end
