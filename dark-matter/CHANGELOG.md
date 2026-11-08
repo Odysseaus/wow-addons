@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.44
+
+- **Abandon.** The confirm uses a non-empty name from the game's abandon snapshot first. If that is missing, it uses the title of that same quest id, then the selected log line only when that line's quest id matches. The key call and the one nil-format table retry are unchanged. Yes and No stay the game's buttons.
+
 ## 0.5.2b.43
 
 - **Abandon.** The confirm is requested with the dialog key first. If that fails with only the nil format error, it is requested once more with the dialog table and the same name and items. Any other failure stops. The quest name and, for the item confirm, the item text must already be strings. The dialog text is not changed. Yes and No stay the game's buttons.

@@ -556,6 +556,22 @@ local function AbandonNote(why, extra)
   if NS.Print then NS.Print(extra or msg[why] or "Abandon: stopped.") end
   return why
 end
+local function NonEmpty(v)
+  if type(v) == "string" and v ~= "" then return v end
+end
+-- 0.5.2b.44: the snapshot name wins. Otherwise a title read for this quest id, then the selected log line only when its quest id matches.
+local function AbandonName(id)
+  local native = NonEmpty(Call(G("GetAbandonQuestName"))) or NonEmpty(Call(CQ("GetAbandonQuestName")))
+  if native then return native end
+  local byId = NonEmpty(Call(CQ("GetTitleForQuestID"), id))
+  if byId then return byId end
+  local titleFn = G("GetQuestLogTitle")
+  local idx = LogIndex({ questID = id })
+  if not (titleFn and idx and idx > 0) then return nil end
+  local ok, title, _, _, _, _, _, _, qid = pcall(titleFn, idx)
+  if not ok or NS.Num(qid) ~= id then return nil end
+  return NonEmpty(title)
+end
 local function RowId(idx)
   local info = CQ("GetInfo")
   local row = info and NS.Tbl(Call(info, idx))
@@ -664,7 +680,7 @@ function QL.Abandon(q)
   end
   local items = Call(G("GetAbandonQuestItems"))
   if items == nil then items = Call(CQ("GetAbandonQuestItems")) end
-  local name = Call(G("GetAbandonQuestName")) or Call(CQ("GetAbandonQuestName"))
+  local name = AbandonName(id)
   local which
   if HasItems(items) then
     if not Dialog("ABANDON_QUEST_WITH_ITEMS") then return AbandonNote("unsupported") end

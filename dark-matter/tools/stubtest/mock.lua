@@ -6782,6 +6782,141 @@ if MODE ~= "minimal" then
     StaticPopup_Show, StaticPopupDialogs = save.show, save.dialogs
     QSEL = save.qsel
   end
+  -- 0.5.2b.44: a missing abandon-name getter uses the title of that same quest. The row title alone is not used.
+  do
+    local QL = NS.QL
+    local save = {
+      idx = C_QuestLog.GetLogIndexForQuestID, snap = SetAbandonQuest, show = StaticPopup_Show,
+      dialogs = StaticPopupDialogs, items = GetAbandonQuestItems, aname = GetAbandonQuestName,
+      cname = C_QuestLog.GetAbandonQuestName, title = C_QuestLog.GetTitleForQuestID,
+      gtitle = GetQuestLogTitle, ic = InCombatLockdown, qsel = QSEL,
+    }
+    local NIL = "bad argument #2 to 'SetFormattedText' (string expected, got nil)"
+    local plain = 'Abandon "%s"?'
+    local NIL = "bad argument #2 to 'SetFormattedText' (string expected, got nil)"
+    local calls, last = 0, nil
+    local function reset() calls, last = 0, nil end
+    local function formatText(fmt, a, b)
+      if type(fmt) ~= "string" then error(NIL, 0) end
+      if b == nil then return string.format(fmt, a) end
+      return string.format(fmt, a, b)
+    end
+    local function keyShow(which, a, b)
+      calls = calls + 1
+      local info = type(which) == "table" and which or StaticPopupDialogs[which]
+      last = formatText(info and info.text, a, b)
+      return { text = last }
+    end
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    SetAbandonQuest = function() end
+    GetAbandonQuestItems = function() return nil end
+    GetAbandonQuestName = nil
+    C_QuestLog.GetAbandonQuestName = nil
+    C_QuestLog.GetTitleForQuestID = function(id) if id == 103 then return "The Defias" end end
+    GetQuestLogTitle = nil
+    InCombatLockdown = function() return false end
+    StaticPopupDialogs = {
+      ABANDON_QUEST = { text = plain, OnAccept = function() end, OnCancel = function() end },
+      ABANDON_QUEST_WITH_ITEMS = { text = 'Abandon "%s", destroying %s?', OnAccept = function() end, OnCancel = function() end },
+    }
+    StaticPopup_Show = keyShow
+    P.OpenQuest(103)
+    local q = P.detail.quest
+    q.title = "Stale Row"
+    QSEL = 2
+    local why = QL.Abandon(q)
+    check(why == "dialog" and calls == 1 and last == 'Abandon "The Defias"?',
+      "0.5.2b.44 abandon: a missing name getter uses the title of that quest id")
+    GetAbandonQuestName = function() return nil end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "The Defias"?',
+      "0.5.2b.44 abandon: a nil name getter uses the title of that quest id")
+    GetAbandonQuestName = function() return "" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "The Defias"?',
+      "0.5.2b.44 abandon: an empty name getter uses the title of that quest id")
+    GetAbandonQuestName = function() return "Snapshot Name" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "Snapshot Name"?',
+      "0.5.2b.44 abandon: a native name is used instead of the quest-id title")
+    GetAbandonQuestName = nil
+    C_QuestLog.GetAbandonQuestName = function() return "Namespaced Name" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "Namespaced Name"?',
+      "0.5.2b.44 abandon: the namespaced native name is used instead of the quest-id title")
+    C_QuestLog.GetAbandonQuestName = nil
+    C_QuestLog.GetTitleForQuestID = nil
+    GetQuestLogTitle = function(i)
+      if i == 6 then return "Log Title", 12, nil, false, false, false, 1, 103 end
+      if i == 2 then return "Wolves", 2, nil, false, false, false, 1, 101 end
+    end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "Log Title"?',
+      "0.5.2b.44 abandon: the log line is used only when its quest id matches")
+    GetQuestLogTitle = function() return "Wolves", 2, nil, false, false, false, 1, 101 end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.44 abandon: a log line for another quest makes no confirm call")
+    GetQuestLogTitle = nil
+    C_QuestLog.GetTitleForQuestID = nil
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.44 abandon: a detail-row title alone makes no confirm call")
+    C_QuestLog.GetTitleForQuestID = function(id) if id == 103 then return "The Defias" end end
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 103 then return 2 end end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.44 abandon: a mismatched selection makes no confirm call")
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "The Defias", destroying Wolf Meat?',
+      "0.5.2b.44 abandon: a text item warning is formatted")
+    GetAbandonQuestItems = function() return {} end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "unsupported" and calls == 0, "0.5.2b.44 abandon: a non-text item warning makes no confirm call")
+    GetAbandonQuestItems = function() return nil end
+    StaticPopup_Show = function(first, a, b)
+      calls = calls + 1
+      local fmt = type(first) == "table" and first.text or nil
+      if type(fmt) ~= "string" then error(NIL, 0) end
+      last = b == nil and string.format(fmt, a) or string.format(fmt, a, b)
+      return { text = last }
+    end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 2 and last == 'Abandon "The Defias"?',
+      "0.5.2b.44 abandon: the nil format still retries once with the same title")
+    StaticPopup_Show = function() calls = calls + 1 error("popup failed", 0) end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 1, "0.5.2b.44 abandon: a different confirm error is not retried")
+    StaticPopup_Show = function() calls = calls + 1 error(NIL, 0) end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 2, "0.5.2b.44 abandon: a failed table call is not tried again")
+    InCombatLockdown = function() return true end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "combat" and calls == 0, "0.5.2b.44 abandon: combat makes no confirm call")
+    InCombatLockdown = save.ic
+    C_QuestLog.GetLogIndexForQuestID, SetAbandonQuest = save.idx, save.snap
+    GetAbandonQuestItems, GetAbandonQuestName = save.items, save.aname
+    C_QuestLog.GetAbandonQuestName, C_QuestLog.GetTitleForQuestID = save.cname, save.title
+    GetQuestLogTitle, StaticPopup_Show, StaticPopupDialogs = save.gtitle, save.show, save.dialogs
+    QSEL = save.qsel
+  end
   -- only with the Map tab
   NS.ShowTab("quests")
   check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")
