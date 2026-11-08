@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.35
+
+- **Taxi.** While you are on a flight path, zone-based Quests and Ready to Turn In stay on the area you left. Landing switches them once, to the zone you are actually in, and replaces a watch batch that was still queued. A reload that starts in the air holds the area reported then, until you land. A pinned completed quest stays in Ready the whole time. Pin, unpin, and completion still apply. If this client has no `UnitOnTaxi`, nothing is held. `/dm trackerprobe` says whether that function exists.
+- **Ready pin.** Each Ready to Turn In row has its own pin. That click only pins or unpins. The rest of the row still opens the map.
+- **Map highlight.** A quest marker already on the map lights when it is selected, under the mouse, or the quest the game's arrow is on. The map does not move for the arrow.
+
 ## 0.5.2b.34
 
 - **Abandon.** The quest detail has Abandon when this client has an abandon snapshot and its own confirm dialog. The click selects that quest by id, locks it with the snapshot, and shows the game's confirm. Yes is the game's button. A quest that has left the log is left alone. If the snapshot or the dialog is missing, the button is hidden. Nothing is abandoned in combat, and it is not queued.

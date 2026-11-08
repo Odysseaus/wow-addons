@@ -924,7 +924,7 @@ local function QuestMarker(z, q, vw, vh)
       local role, status = "progress", "progress"
       if QS then role, status = QS.MarkerRole(q.id) end
       local mk = Pool("quest", MakeQuest)
-      local hot = QS and QS.IsHot(q.id)
+      local hot = M.MarkerHot(q.id)
       -- 0.5.2b.7: the objective tracker's own quest POI button (the round button with "..." in progress, "?" when
       -- ready; gold ring and brown dots when selected), as OpenMap draws it; a client without those atlases gets
       -- the 0.5.2a game icons; one with neither draws no marker (/dm questmap)
@@ -958,6 +958,15 @@ local function QuestMarker(z, q, vw, vh)
 end
 -- 0.5.2b.11: the quests whose next waypoint is drawn (the selected one and the game's super-tracked one), as the stock
 -- map's QuestDataProvider does (focused or super-tracked quest + C_QuestLog.GetNextWaypointForMap)
+-- 0.5.2b.35: the bright ring is the selected quest, the hovered one, or the quest the game's arrow is on.
+-- Lighting the arrow's quest does not move the map.
+function M.MarkerHot(id)
+  local QS = NS.QS
+  if not (QS and id) then return false end
+  if QS.IsHot(id) then return true end
+  local arrow = QS.ArrowQuest and QS.ArrowQuest()
+  return arrow ~= nil and arrow == id
+end
 function M.WaypointQuests()
   local out = {}
   local QS = NS.QS

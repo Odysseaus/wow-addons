@@ -301,9 +301,15 @@ end
 -- Show this quest on Ready to Turn In? The turn-in place decides. The log header is used only when the game
 -- has no waypoint and no map point (a handoff with a real destination is not kept in its old category).
 -- A quest we cannot place at all still shows. A placed quest from another zone does not.
-function QS.ReadyHere(q)
+-- 0.5.2b.35: while a taxi flight is held, automatic Ready membership uses the departure area.
+function QS.HereArea()
+  local h = NS.Tracker and NS.Tracker.HoldArea and NS.Tracker.HoldArea()
+  if type(h) == "table" and h.area then return h.area end
   local MD = NS.MapData
-  local here = MD and MD.PlayerArea and MD.PlayerArea()
+  return MD and MD.PlayerArea and MD.PlayerArea()
+end
+function QS.ReadyHere(q)
+  local here = QS.HereArea()
   if not here then return true end
   local turn = QS.TurnInMap(q)
   if turn then return QS.SameArea(turn, here) == true end

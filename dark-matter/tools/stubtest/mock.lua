@@ -8340,6 +8340,129 @@ if MODE ~= "minimal" then
     Tr.queue = {}
     Tr.SetPinned(102, false)
   end
+  -- 0.5.2b.35: taxi hold, Ready-row pin, arrow highlight. Restores every stand-in it installs.
+  do
+    local Tr, QS, MD, M = NS.Tracker, NS.QS, NS.MapData, NS.MapTab
+    local saveTaxi, saveZone, saveReal = UnitOnTaxi, GetZoneText, GetRealZoneText
+    local saveArea, saveTurn, saveComp, saveST = MD.PlayerArea, QS.TurnInMap, C_QuestLog.IsComplete, C_SuperTrack
+    local saveAuto, saveCol = NS.db.autoTrack, NS.db.readyCollapsed
+    local saveShow = M.ShowQuest
+    local pins, qw = {}, {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local function listed(id)
+      for _, e in ipairs(Tr.ReadyList()) do if e.id == id then return true end end
+    end
+    local here, zoneName, flying = 100, "Elwynn Forest", false
+    local extra = {}
+    MD.PlayerArea = function() return here end
+    GetZoneText = function() return zoneName end
+    GetRealZoneText = GetZoneText
+    QS.TurnInMap = function(id)
+      if id == 101 or id == 102 then return 100 end
+      if id == 103 then return 200 end
+    end
+    C_QuestLog.IsComplete = function(id) return id == 102 or extra[id] == true end
+    UnitOnTaxi = function() return flying end
+    NS.db.autoTrack = true
+    NS.db.readyCollapsed = false
+    Tr.ground, Tr.hold = nil, nil
+    Tr.Tick(TIME_NOW)
+    check(not Tr.hold and Tr.taxiApi == true, "0.5.2b.35 taxi: on the ground nothing is held, and UnitOnTaxi is present")
+    flying = true
+    Tr.Tick(TIME_NOW + 1)
+    check(Tr.hold and Tr.hold.area == 100 and Tr.hold.zone == "Elwynn Forest", "0.5.2b.35 taxi: takeoff holds the departure area")
+    here, zoneName = 200, "Westfall"
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    local log = Tr.ReadLog()
+    local oldQ = { { e = log[103], want = true, marker = "stale" } }
+    Tr.queue = oldQ
+    Tr.Tick(TIME_NOW + 2)
+    check(Tr.hold.area == 100 and Tr.queue == oldQ and QS.ReadyHere(102) == true and QS.ReadyHere(103) == false,
+      "0.5.2b.35 taxi: an intermediate zone does not move Ready or apply the queued batch")
+    extra[101], extra[103] = true, true
+    Tr.Diff()
+    check(listed(101) and listed(102) and not listed(103), "0.5.2b.35 taxi: completion for the departure area appears; an intermediate completion does not")
+    Tr.SetPinned(103, true)
+    check(listed(103) and Tr.IsPinned(103), "0.5.2b.35 taxi: a pinned completed quest stays Ready during the flight")
+    Tr.SetPinned(103, false)
+    check(not Tr.IsPinned(103) and not listed(103), "0.5.2b.35 taxi: unpin still uses the held area")
+    flying = false
+    here, zoneName = 300, "Redridge Mountains"
+    Tr.OnEvent("PLAYER_CONTROL_GAINED")
+    Tr.Tick(TIME_NOW + 4)
+    check(not Tr.hold and Tr.queue ~= oldQ and QS.HereArea() == 300, "0.5.2b.35 taxi: landing clears the hold, plans the landing area, and drops the old queue")
+    flying = true
+    Tr.ground, Tr.hold = nil, nil
+    here, zoneName = 200, "Westfall"
+    Tr.FlightHold()
+    check(Tr.hold and Tr.hold.area == 200, "0.5.2b.35 taxi: a reload in the air holds the area reported at load")
+    here, zoneName = 400, "Stranglethorn"
+    Tr.Tick(TIME_NOW + 6)
+    check(Tr.hold.area == 200 and QS.HereArea() == 200, "0.5.2b.35 taxi: later zones on that flight do not replace the loaded area")
+    flying = false
+    Tr.Tick(TIME_NOW + 7)
+    check(not Tr.hold and QS.HereArea() == 400, "0.5.2b.35 taxi: landing after a reload uses the landing area")
+    UnitOnTaxi = nil
+    Tr.hold = { area = 100, zone = "Elwynn Forest", real = "Elwynn Forest" }
+    here = 999
+    Tr.Tick(TIME_NOW + 8)
+    local rep = table.concat(Tr.Report(), "\n")
+    check(not Tr.hold and QS.HereArea() == 999 and rep:find("UnitOnTaxi missing", 1, true),
+      "0.5.2b.35 taxi: with UnitOnTaxi missing, membership stays live and trackerprobe says so")
+    NS.db.readyCollapsed = false
+    here, zoneName = 100, "Elwynn Forest"
+    UnitOnTaxi = function() return false end
+    extra[101], extra[103] = nil, nil
+    C_QuestLog.IsComplete = function(id) return id == 102 end
+    Tr.hold = nil
+    Tr.Tick(TIME_NOW + 9)
+    Tr.SetReadyCollapsed(false)
+    local row
+    for _, r in ipairs(Tr.ready.rows or {}) do if r:IsShown() and r.q == 102 then row = r end end
+    local glides = 0
+    M.ShowQuest = function() glides = glides + 1 end
+    check(row and row.pin and row.pin:IsShown(), "0.5.2b.35 ready: the row has its own pin")
+    row.pin._scripts.OnClick(row.pin)
+    check(glides == 0 and Tr.IsPinned(102), "0.5.2b.35 ready: the pin does not glide")
+    row._scripts.OnClick(row)
+    check(glides == 1, "0.5.2b.35 ready: the row body still opens the map")
+    M.ShowQuest = saveShow
+    Tr.SetPinned(102, false)
+    QS.Hover(nil, "map")
+    QS.Select(nil, "list")
+    local cx, cy = M.Center()
+    C_SuperTrack = { GetSuperTrackedQuestID = function() return 103 end }
+    check(M.MarkerHot(103) and not M.MarkerHot(101) and not M.MarkerHot(102), "0.5.2b.35 map: the arrow's quest is hot")
+    QS.Select(101, "list")
+    QS.Hover(102, "map")
+    check(M.MarkerHot(101) and M.MarkerHot(102) and M.MarkerHot(103), "0.5.2b.35 map: selection and hover stay hot along with the arrow")
+    local cx2, cy2 = M.Center()
+    check(cx == cx2 and cy == cy2 and glides == 1, "0.5.2b.35 map: lighting the arrow's quest does not move the map")
+    if NS.ShowTab then NS.ShowTab("map") end
+    M.dirty = false
+    local fired = false
+    for _, fr in ipairs(ALL) do
+      if fr._ev and fr._ev.SUPER_TRACKING_CHANGED and fr._scripts and fr._scripts.OnEvent then
+        fr._scripts.OnEvent(fr, "SUPER_TRACKING_CHANGED")
+        fired = true
+      end
+    end
+    check(fired and M.dirty == true, "0.5.2b.35 map: an arrow change marks the markers to redraw")
+    QS.Hover(nil, "map")
+    QS.Select(nil, "list")
+    UnitOnTaxi, GetZoneText, GetRealZoneText = saveTaxi, saveZone, saveReal
+    MD.PlayerArea, QS.TurnInMap, C_QuestLog.IsComplete, C_SuperTrack = saveArea, saveTurn, saveComp, saveST
+    NS.db.autoTrack, NS.db.readyCollapsed = saveAuto, saveCol
+    M.ShowQuest = saveShow
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    for k, v in pairs(pins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.hold, Tr.ground, Tr.queue, Tr.zonePending, Tr.watch, Tr.nextBatch = nil, nil, {}, nil, nil, 0
+    Tr.SetReadyCollapsed(saveCol ~= false)
+    Tr.Tick(TIME_NOW + 10)
+  end
   -- 0.5.2b.33: a pinned completed quest is Ready, not on the Quests list, including a turn-in elsewhere.
   do
     local Tr = NS.Tracker

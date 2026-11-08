@@ -585,6 +585,20 @@ function Tr.PaintReadyIcon(r)
   r.iconHow = (okFace and okIcon) and "atlas" or (okIcon and "atlas (no face)" or "none")
   return okIcon
 end
+function Tr.PaintReadyPin(r)
+  local pin = r and r.pin
+  if not pin then return end
+  local QS, style = NS.QS, Tr.KeepStyle()
+  local on = Tr.IsPinned(r.q)
+  pin.q = r.q
+  if style and QS and QS.PaintIcon(pin.icon, on and style.on or style.off) then
+    if pin.icon.SetDesaturated then pin.icon:SetDesaturated(not on and style.on == style.off) end
+    pin.icon:SetAlpha(on and 1 or 0.45)
+    pin:Show()
+  else
+    pin:Hide()
+  end
+end
 local function ReadyRow(i)
   local r = ready.rows[i]
   if r then return r end
@@ -594,12 +608,33 @@ local function ReadyRow(i)
   r.font = LineFont(r.title)
   r.title:SetJustifyH("LEFT")
   r.title:SetPoint("TOPLEFT", r, "TOPLEFT", 28, -2)
-  r.title:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+  r.title:SetPoint("RIGHT", r, "RIGHT", -24, 0)
   r.zone = r:CreateFontString(nil, "ARTWORK")
   LineFont(r.zone)
   r.zone:SetJustifyH("LEFT")
   r.zone:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -2)
-  r.zone:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+  r.zone:SetPoint("RIGHT", r, "RIGHT", -24, 0)
+  -- 0.5.2b.35: its own button. The row body still glides; this click only pins.
+  local pin = CreateFrame("Button", nil, r)
+  pin:SetSize(16, 16)
+  pin:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+  pin.icon = pin:CreateTexture(nil, "ARTWORK")
+  pin.icon:SetAllPoints(pin)
+  pin:RegisterForClicks("LeftButtonUp")
+  pin:SetScript("OnClick", function(self)
+    local q = self.q
+    if not q then return end
+    Tr.SetPinned(q, not Tr.IsPinned(q))
+    Tr.PaintReadyPin(self:GetParent())
+  end)
+  pin:SetScript("OnEnter", function(self)
+    self.tipTitle = Tr.IsPinned(self.q) and "Unpin" or "Pin"
+    self.tipText = "Pin or unpin this quest. The row beside it still opens the map."
+    Tip(self)
+  end)
+  pin:SetScript("OnLeave", Untip)
+  pin:Hide()
+  r.pin = pin
   -- the icon: the tracker's POI button, 20 x 20, TOPRIGHT on the title's TOPLEFT (-7, 5)
   r.iconBox = CreateFrame("Frame", nil, r)
   r.iconBox:SetSize(20, 20)
@@ -725,13 +760,14 @@ function Tr.FillReady()
     r.title:SetText(e.title)
     r.zone:SetText(e.zone or "")
     Tr.PaintReadyIcon(r)
+    Tr.PaintReadyPin(r)
     PaintReadyText(r)
     r:ClearAllPoints()
     r:SetPoint("TOPLEFT", ready, "TOPLEFT", 6, -Tr.HEADER_H - Tr.HEADER_GAP - (i - 1) * 32)
     r:SetPoint("RIGHT", ready, "RIGHT", -6, 0)
     r:Show()
   end
-  for i = n + 1, #ready.rows do ready.rows[i]:Hide() end
+  for i = n + 1, #ready.rows do ready.rows[i]:Hide() if ready.rows[i].pin then ready.rows[i].pin:Hide() end end
   if n > 0 then
     ready:SetHeight(Tr.HEADER_H + Tr.HEADER_GAP + n * 32)
   else
@@ -814,15 +850,18 @@ end
 -- zone auto-track (on by default since 0.5.2b.1): this zone's quests plus pinned ones tracked, the rest untracked. Waits for a
 -- flight to land, then switches once; changes go out in batches about a second apart, and never in combat.
 ---------------------------------------------------------------------------
+function Tr.HoldArea() return Tr.hold end
 function Tr.ZoneSet(log)
   local want = {}
   local MD = NS.MapData
   -- 0.5.2b.25: inside a capital this is the city, not the zone around it (Ironforge, not Dun Morogh)
-  local area = MD and MD.PlayerArea and MD.PlayerArea()
-  local city = area and MD.IsCityID(area)
-  local areaName = area and MD.Name(area)
-  local zone = (type(GetZoneText) == "function" and GetZoneText()) or nil
-  local real = (type(GetRealZoneText) == "function" and GetRealZoneText()) or nil
+  -- 0.5.2b.35: a taxi hold keeps the departure area until landing
+  local hold = Tr.HoldArea()
+  local area = hold and hold.area or (MD and MD.PlayerArea and MD.PlayerArea())
+  local city = area and MD and MD.IsCityID(area)
+  local areaName = area and MD and MD.Name(area)
+  local zone = hold and hold.zone or ((type(GetZoneText) == "function" and GetZoneText()) or nil)
+  local real = hold and hold.real or ((type(GetRealZoneText) == "function" and GetRealZoneText()) or nil)
   for id, e in pairs(log) do
     if e.zone then
       if city then
@@ -900,6 +939,27 @@ function Tr.SetAuto(on)
   if on then Tr.zonePending = Now() end
 end
 local function OnTaxi() return type(_G.UnitOnTaxi) == "function" and _G.UnitOnTaxi("player") == true end
+local function AreaSnap()
+  local MD = NS.MapData
+  return {
+    area = MD and MD.PlayerArea and MD.PlayerArea() or nil,
+    zone = type(GetZoneText) == "function" and GetZoneText() or nil,
+    real = type(GetRealZoneText) == "function" and GetRealZoneText() or nil,
+  }
+end
+-- 0.5.2b.35: remember the ground area, and keep it for the whole taxi flight.
+-- A reload already in the air has no departure memory: it holds the area reported at load.
+-- Landing clears the hold before the zone plan runs. No UnitOnTaxi: no hold.
+function Tr.FlightHold()
+  if type(_G.UnitOnTaxi) ~= "function" then Tr.hold, Tr.taxiApi = nil, false return end
+  Tr.taxiApi = true
+  if OnTaxi() then
+    if not Tr.hold then Tr.hold = Tr.ground or AreaSnap() end
+  else
+    Tr.hold = nil
+    Tr.ground = AreaSnap()
+  end
+end
 function Tr.AutoStep(now)
   if not Tr.AutoWanted() then
     -- auto-track off: the game's own tracking, except that pinned quests are tracked again after a zone change
@@ -1119,6 +1179,7 @@ function Tr.OnEvent(event, a1)
 end
 function Tr.Tick(now)
   now = now or Now()
+  Tr.FlightHold()
   if Tr.diffDirty then Tr.diffDirty = false Tr.Diff() end
   Tr.AutoStep(now)
   Tr.OrderStep(now)
@@ -1141,6 +1202,7 @@ function Tr.Start()
   Tr.frame = f
   Tr.zoneAt = Now()
   Tr.zonePending = Now()
+  Tr.FlightHold()
   Tr.Diff()
   Tr.FillReady()
   Tr.orderDirty = Now()
@@ -1164,6 +1226,9 @@ function Tr.Report()
   for _ in pairs(Pins()) do np = np + 1 end
   lines[#lines + 1] = string.format("kept tracked: %d; ready to turn in: %d; zone auto-track %s; queued changes %d%s",
     np, Tr.readyCount or 0, Tr.AutoWanted() and "on" or "off", #Tr.queue, Tr.waitingTaxi and " (waiting for the flight to land)" or "")
+  lines[#lines + 1] = type(_G.UnitOnTaxi) == "function"
+    and ("taxi: UnitOnTaxi present, in flight " .. (OnTaxi() and "yes" or "no") .. (Tr.hold and " (holding the departure area)" or ""))
+    or "taxi: UnitOnTaxi missing (zone membership is not held in flight)"
   if ready then
     lines[#lines + 1] = string.format("ready section: %s, %s, placed %s at %s, %s (own frame on UIParent; the tracker is only read)",
       ready:IsShown() and "shown" or "hidden", Tr.ReadyCollapsed() and "collapsed" or "expanded", tostring(rawget(ready, "how")), tostring(rawget(ready, "x")), tostring(rawget(ready, "y")))
