@@ -6430,7 +6430,7 @@ if MODE ~= "minimal" then
       C_QuestLog.GetLogIndexForQuestID = function(id)
         if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
       end
-      SetAbandonQuest = function() SNAP = SEL or byIndex(QSEL) SNAP_N = SNAP_N + 1 end
+      SetAbandonQuest = function() SNAP = byIndex(QSEL) or SEL SNAP_N = SNAP_N + 1 end
       AbandonQuest = function() ABANDON_N = ABANDON_N + 1 ABANDONED = SNAP end
       GetAbandonQuestName = function() return "The Defias" end
       GetAbandonQuestItems = function() return nil end
@@ -6438,7 +6438,7 @@ if MODE ~= "minimal" then
         ABANDON_QUEST = { OnAccept = function() AbandonQuest() end },
         ABANDON_QUEST_WITH_ITEMS = { OnAccept = function() AbandonQuest() end },
       }
-      StaticPopup_Show = function(which) POPUP = which end
+      StaticPopup_Show = function(which) POPUP = which return {} end
       QuestLogPushQuest = function() PUSH_N = PUSH_N + 1 end
       C_QuestLog.IsPushableQuest = function(id) return id == 103 end
       IsInGroup = function() return false end
@@ -6485,10 +6485,9 @@ if MODE ~= "minimal" then
     check(det.share:IsEnabled() and PUSH_N == 1 and SEL == 101 and SNAP_N == 0 and pinSame(),
       "0.5.2b.34 share: one eligible share, then the previous selection is restored")
     det.quest.logIndex = 2
-    local qsel0 = QSEL
     det.abandon._scripts.OnClick(det.abandon)
-    check(POPUP == "ABANDON_QUEST" and SNAP == 103 and SEL == 103 and QSEL == qsel0 and ABANDON_N == 0 and pinSame(),
-      "0.5.2b.34 abandon: the confirm is for the open quest id, and a stale index is not selected")
+    check(POPUP == "ABANDON_QUEST" and SNAP == 103 and QSEL == 6 and QSEL ~= 2 and ABANDON_N == 0 and pinSame(),
+      "0.5.2b.42 abandon: the confirm uses the open quest's current log index, not the stale index")
     check(ABANDON_N == 0 and QL.InLog(103), "0.5.2b.34 abandon: leaving the confirm does not abandon")
     SEL = 101
     StaticPopupDialogs.ABANDON_QUEST.OnAccept()
@@ -6552,6 +6551,118 @@ if MODE ~= "minimal" then
     QSEL = save.qsel
     if not wasPin then NS.Tracker.SetPinned(101, false) end
     P.OpenQuest(103)
+  end
+  -- 0.5.2b.42: the native confirm is used only after the open quest is the one selected. Nothing here abandons.
+  do
+    local QL = NS.QL
+    local save = {
+      set = C_QuestLog.SetSelectedQuest, get = C_QuestLog.GetSelectedQuest, idx = C_QuestLog.GetLogIndexForQuestID,
+      snap = SetAbandonQuest, csnap = C_QuestLog.SetAbandonQuest, abn = AbandonQuest,
+      items = GetAbandonQuestItems, show = StaticPopup_Show, dialogs = StaticPopupDialogs, ic = InCombatLockdown, qsel = QSEL,
+    }
+    local POPUP, SNAP_N, NSNAP, ABANDON_N, SAID, SEL42 = nil, 0, 0, 0, nil, nil
+    local function byIndex(i) return ({ [2] = 101, [3] = 102, [6] = 103 })[i] end
+    local accept = function() ABANDON_N = ABANDON_N + 1 end
+    local cancelN = 0
+    local function dialogs(withItems)
+      local d = { ABANDON_QUEST = { OnAccept = accept, OnCancel = function() cancelN = cancelN + 1 end } }
+      if withItems then d.ABANDON_QUEST_WITH_ITEMS = { OnAccept = accept, OnCancel = function() cancelN = cancelN + 1 end } end
+      return d
+    end
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    C_QuestLog.SetSelectedQuest = function(id) SEL42 = id end
+    C_QuestLog.GetSelectedQuest = function() return SEL42 end
+    SetAbandonQuest = function() SNAP_N = SNAP_N + 1 end
+    C_QuestLog.SetAbandonQuest = function() NSNAP = NSNAP + 1 end
+    AbandonQuest = function() ABANDON_N = ABANDON_N + 1 end
+    GetAbandonQuestItems = function() return nil end
+    GetAbandonQuestName = function() return "The Defias" end
+    StaticPopupDialogs = dialogs(true)
+    StaticPopup_Show = function(which) POPUP = which return {} end
+    local oldPrint = NS.Print
+    NS.Print = function(msg) SAID = msg end
+    P.OpenQuest(103)
+    local det = P.detail
+    local q = det.quest
+    SEL42 = 101
+    QSEL = 2
+    local why = QL.Abandon(q)
+    check(why == "dialog" and POPUP == "ABANDON_QUEST" and QSEL == 6 and SNAP_N == 1 and NSNAP == 0 and ABANDON_N == 0 and cancelN == 0,
+      "0.5.2b.42 abandon: the legacy snapshot is used, and the click does not accept or cancel")
+    local owned = StaticPopupDialogs.ABANDON_QUEST.OnAccept
+    check(owned == accept, "0.5.2b.42 abandon: the game still owns the confirm")
+    StaticPopupDialogs.ABANDON_QUEST.OnCancel()
+    check(ABANDON_N == 0 and cancelN == 1, "0.5.2b.42 abandon: Cancel does not abandon")
+    owned()
+    check(ABANDON_N == 1, "0.5.2b.42 abandon: only the game's accept abandons")
+    ABANDON_N = 0
+    SNAP_N = 0
+    SetAbandonQuest = nil
+    SEL42 = nil
+    POPUP = nil
+    why = QL.Abandon(q)
+    check(why == "dialog" and POPUP == "ABANDON_QUEST" and SEL42 == 103 and NSNAP == 1 and ABANDON_N == 0,
+      "0.5.2b.42 abandon: without the legacy snapshot, the quest id is selected and checked")
+    C_QuestLog.GetSelectedQuest = function() return 101 end
+    POPUP = nil
+    NSNAP = 0
+    why = QL.Abandon(q)
+    check(why == "no" and POPUP == nil and NSNAP == 0 and ABANDON_N == 0 and SAID and SAID:find("could not be selected", 1, true),
+      "0.5.2b.42 abandon: a mismatched selection opens nothing")
+    C_QuestLog.GetSelectedQuest = function() return SEL42 end
+    POPUP = nil
+    why = QL.Abandon({ questID = 999 })
+    check(why == "gone" and POPUP == nil and ABANDON_N == 0 and SAID:find("not in the log", 1, true),
+      "0.5.2b.42 abandon: a quest that has left the log is not confirmed")
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    SetAbandonQuest = function() SNAP_N = SNAP_N + 1 end
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    POPUP = nil
+    SNAP_N = 0
+    QSEL = 2
+    why = QL.Abandon(q)
+    check(why == "dialog" and POPUP == "ABANDON_QUEST_WITH_ITEMS" and ABANDON_N == 0,
+      "0.5.2b.42 abandon: items use the item confirm")
+    StaticPopupDialogs = dialogs(false)
+    POPUP = nil
+    SNAP_N = 0
+    why = QL.Abandon(q)
+    check(why == "unsupported" and POPUP == nil and SNAP_N == 1 and ABANDON_N == 0 and SAID:find("cannot confirm", 1, true),
+      "0.5.2b.42 abandon: items without the item confirm stop, and nothing is abandoned")
+    GetAbandonQuestItems = function() return nil end
+    StaticPopupDialogs = dialogs(true)
+    StaticPopup_Show = function() error("popup failed") end
+    POPUP = nil
+    why = QL.Abandon(q)
+    check(why == "no" and ABANDON_N == 0 and SAID:find("did not open", 1, true) and SAID:find("popup failed", 1, true),
+      "0.5.2b.42 abandon: a confirm error is reported and does not abandon")
+    StaticPopup_Show = function(which) POPUP = which return nil end
+    why = QL.Abandon(q)
+    check(why == "no" and POPUP == "ABANDON_QUEST" and ABANDON_N == 0 and SAID:find("did not open", 1, true),
+      "0.5.2b.42 abandon: a confirm that returns nothing is reported and does not abandon")
+    local reg0 = 0
+    for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then reg0 = reg0 + 1 end end
+    InCombatLockdown = function() return true end
+    local snap0 = SNAP_N
+    POPUP = nil
+    why = QL.Abandon(q)
+    local reg1 = 0
+    for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then reg1 = reg1 + 1 end end
+    check(why == "combat" and POPUP == nil and SNAP_N == snap0 and reg1 == reg0 and SAID:find("combat", 1, true),
+      "0.5.2b.42 abandon: combat does nothing and is not queued")
+    InCombatLockdown = function() return false end
+    check(SNAP_N == snap0 and POPUP == nil, "0.5.2b.42 abandon: combat did not leave a confirm waiting")
+    NS.Print = oldPrint
+    C_QuestLog.SetSelectedQuest, C_QuestLog.GetSelectedQuest = save.set, save.get
+    C_QuestLog.GetLogIndexForQuestID, C_QuestLog.SetAbandonQuest = save.idx, save.csnap
+    SetAbandonQuest, AbandonQuest = save.snap, save.abn
+    GetAbandonQuestItems, StaticPopup_Show, StaticPopupDialogs = save.items, save.show, save.dialogs
+    InCombatLockdown = save.ic
+    QSEL = save.qsel
   end
   -- only with the Map tab
   NS.ShowTab("quests")

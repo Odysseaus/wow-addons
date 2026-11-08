@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.42
+
+- **Abandon.** The button selects the open quest and shows the game's own confirm. Cancel does not abandon. A quest with items uses the item confirm, and if that confirm is missing the click stops. A selection that is not the open quest stops. Nothing is abandoned from this addon, including in combat.
+
 ## 0.5.2b.41
 
 - **New quests.** After a new quest has its log header, if it is watched, not pinned, and outside this zone, it leaves the tracker. The quest stays in the log. This runs with auto-track on or off. A new quest for this zone stays. Older watched quests are left as they are. The removal still waits in the air, in combat, and while the map is not a zone or a city.

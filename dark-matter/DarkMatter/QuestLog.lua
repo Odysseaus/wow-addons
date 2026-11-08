@@ -542,10 +542,46 @@ local function Dialog(name)
   local d = _G.StaticPopupDialogs
   return type(d) == "table" and type(d[name]) == "table"
 end
+-- The stock quest log treats any return other than nil or false as "this quest has items".
 local function HasItems(v)
-  if v == nil or v == false or v == "" or v == 0 then return false end
-  if type(v) == "table" then return next(v) ~= nil end
+  return v ~= nil and v ~= false
+end
+local function AbandonNote(why, extra)
+  local msg = {
+    combat = "Abandon: nothing changes in combat.",
+    gone = "Abandon: that quest is not in the log.",
+    no = "Abandon: that quest could not be selected.",
+    unsupported = "Abandon: this client cannot confirm abandoning that quest.",
+  }
+  if NS.Print then NS.Print(extra or msg[why] or "Abandon: stopped.") end
+  return why
+end
+local function RowId(idx)
+  local info = CQ("GetInfo")
+  local row = info and NS.Tbl(Call(info, idx))
+  return row and NS.Num(row.questID)
+end
+local function LegacySelected(id)
+  local idx = LogIndex({ questID = id })
+  local now = NS.Num(Call(G("GetQuestLogSelection")))
+  if not (idx and idx > 0 and now == idx) then return false end
+  local qid = RowId(now)
+  if qid and qid ~= id then return false end
   return true
+end
+local function SelectLegacy(id)
+  local sel = G("SelectQuestLogEntry")
+  local idx = LogIndex({ questID = id })
+  if not (sel and idx and idx > 0) then return false end
+  QL.reading = true
+  local ok = pcall(sel, idx)
+  QL.reading = false
+  return ok == true and LegacySelected(id)
+end
+local function SelectByQuestId(id)
+  local set = CQ("SetSelectedQuest")
+  if not set or not pcall(set, id) then return false end
+  return NS.Num(Call(CQ("GetSelectedQuest"))) == id
 end
 
 function QL.InLog(id)
@@ -605,30 +641,44 @@ function QL.AbandonSupported()
   if not G("StaticPopup_Show") then return false end
   return Dialog("ABANDON_QUEST") or Dialog("ABANDON_QUEST_WITH_ITEMS")
 end
-local function SnapshotAbandon()
-  local cq = CQ("SetAbandonQuest")
-  if cq and pcall(cq) then return true end
-  local g = G("SetAbandonQuest")
-  if g and g ~= cq and pcall(g) then return true end
-  return false
-end
--- Returns "dialog", "combat", "gone", "unsupported", or "no". Never abandons by itself.
+-- Returns "dialog", "combat", "gone", "unsupported", or "no". Never calls AbandonQuest. Combat is not queued.
 function QL.Abandon(q)
-  if InCombat() then return "combat" end
-  if not QL.AbandonSupported() then return "unsupported" end
-  local id = type(q) == "table" and NS.Num(q.questID)
-  if not id or not QL.InLog(id) then return "gone" end
-  if not QL.SelectById(q) then return "no" end
-  if not SnapshotAbandon() then return "unsupported" end
+  if InCombat() then return AbandonNote("combat") end
+  if not QL.AbandonSupported() then return AbandonNote("unsupported") end
+  local id = type(q) == "table" and NS.Num(q.questID) or NS.Num(q)
+  if not id or not QL.InLog(id) then return AbandonNote("gone") end
+  -- The global snapshot reads the quest-log selection. Use that pair when it exists.
+  -- The namespaced snapshot is only the fallback, after the quest id itself is selected.
+  local legacy = G("SetAbandonQuest")
+  local named = CQ("SetAbandonQuest")
+  local indexed = legacy and G("SelectQuestLogEntry") and G("GetQuestLogSelection")
+  if indexed then
+    if not SelectLegacy(id) then return AbandonNote("no") end
+    if not pcall(legacy) then return AbandonNote("unsupported") end
+    if not LegacySelected(id) then return AbandonNote("no") end
+  else
+    local snap = legacy or named
+    if not (snap and SelectByQuestId(id)) then return AbandonNote("no") end
+    if not pcall(snap) then return AbandonNote("unsupported") end
+    if NS.Num(Call(CQ("GetSelectedQuest"))) ~= id then return AbandonNote("no") end
+  end
   local items = Call(G("GetAbandonQuestItems"))
   if items == nil then items = Call(CQ("GetAbandonQuestItems")) end
   local name = Call(G("GetAbandonQuestName")) or Call(CQ("GetAbandonQuestName"))
   local which
-  if HasItems(items) and Dialog("ABANDON_QUEST_WITH_ITEMS") then which = "ABANDON_QUEST_WITH_ITEMS"
-  elseif Dialog("ABANDON_QUEST") then which = "ABANDON_QUEST" end
-  if not which then return "unsupported" end
+  if HasItems(items) then
+    if not Dialog("ABANDON_QUEST_WITH_ITEMS") then return AbandonNote("unsupported") end
+    which = "ABANDON_QUEST_WITH_ITEMS"
+  elseif Dialog("ABANDON_QUEST") then
+    which = "ABANDON_QUEST"
+  end
+  if not which then return AbandonNote("unsupported") end
   local show = G("StaticPopup_Show")
-  if which == "ABANDON_QUEST_WITH_ITEMS" then pcall(show, which, name, items) else pcall(show, which, name) end
+  local ok, shown
+  if which == "ABANDON_QUEST_WITH_ITEMS" then ok, shown = pcall(show, which, name, items)
+  else ok, shown = pcall(show, which, name) end
+  if not ok then return AbandonNote("no", "Abandon: the game's confirm did not open (" .. tostring(shown) .. ").") end
+  if shown == nil then return AbandonNote("no", "Abandon: the game's confirm did not open.") end
   return "dialog"
 end
 
