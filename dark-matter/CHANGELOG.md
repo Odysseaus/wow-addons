@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.52
+
+- **Map Icons.** The filter is the same height as the main window, top and bottom. A taller or shorter window changes that height. The rows scroll inside. Checks, service pins, and the boat stay their current sizes. The 8 pixel gap on the right and the left fallback are unchanged.
+
 ## 0.5.2b.51
 
 - **Professions.** A trainer or supplier pin uses that craft's spellbook icon, chosen from the subtitle. Trainers and suppliers of the same craft share the icon. The two switches and the hover stay. If that file is missing, the pin uses the profession tracking icon, then the town glyph.

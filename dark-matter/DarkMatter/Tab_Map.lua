@@ -3831,9 +3831,12 @@ function M.PlaceTownPanel()
     w = math.max(MIN_W, math.floor(room - 8))
     if room < MIN_W + 8 then fit = "tight" end
   end
-  local content = p.contentH or PREF_H
-  local h = math.min(content, PREF_H)
-  if sh > 40 then h = math.min(h, math.max(180, sh - 16)) end
+  -- Match the main window's height. The panel is a child, so this is the same unit and follows its scale.
+  -- Rows scroll inside. Checkbox and pin art keep their own pixel sizes.
+  local winH = win.GetHeight and win:GetHeight()
+  local h = (type(winH) == "number" and winH > 120) and winH or PREF_H
+  if sh > 40 and h > sh - 16 then h = math.max(180, sh - 16) end
+  local content = p.contentH or h
   if content > h + 1 then fit = (fit == "tight") and "tight" or "scroll" end
   p:SetSize(w, h)
   p:ClearAllPoints()
@@ -3902,9 +3905,9 @@ function M.BuildTownPanel(host, anchor, level)
     if not self:IsShown() then return end
     local w = _G.DarkMatterFrame
     if not w then return end
-    local l, t, ww, s = w:GetLeft(), w:GetTop(), w:GetWidth(), w:GetScale()
-    if l == self._lx and t == self._ly and ww == self._lw and s == self._ls then return end
-    self._lx, self._ly, self._lw, self._ls = l, t, w:GetWidth(), s
+    local l, t, ww, hh, s = w:GetLeft(), w:GetTop(), w:GetWidth(), w:GetHeight(), w:GetScale()
+    if l == self._lx and t == self._ly and ww == self._lw and hh == self._lh and s == self._ls then return end
+    self._lx, self._ly, self._lw, self._lh, self._ls = l, t, ww, hh, s
     M.PlaceTownPanel()
   end)
   p:SetAlpha(0)

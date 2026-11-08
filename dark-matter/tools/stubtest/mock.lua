@@ -6021,8 +6021,18 @@ do
       "0.5.2b.49 town: flight and docks start checked, and the check is a texture")
     local pt, rel, rp, ox = panel:GetPoint()
     check(panel._parent == _G.DarkMatterFrame and NS.QuestPanel.embedded and (NS.QuestPanel.Extent() or 0) > 300
-      and panel.side == "right" and pt == "TOPLEFT" and rel == _G.DarkMatterFrame and rp == "TOPRIGHT" and ox == 8,
-      "0.5.2b.50 town: the filter sits 8 pixels off the right edge and ignores the embedded quest column")
+      and panel.side == "right" and pt == "TOPLEFT" and rel == _G.DarkMatterFrame and rp == "TOPRIGHT" and ox == 8
+      and panel:GetHeight() == _G.DarkMatterFrame:GetHeight(),
+      "0.5.2b.52 town: the filter matches the window height and sits 8 pixels off the right edge")
+    panel._boxH, panel._iconH, panel._h0 = rows.flight.box:GetHeight(), rows.flight.icon:GetHeight(), _G.DarkMatterFrame:GetHeight()
+    _G.DarkMatterFrame:SetHeight(panel._h0 + 48)
+    M.PlaceTownPanel()
+    pt, rel, rp, ox = panel:GetPoint()
+    check(panel:GetHeight() == _G.DarkMatterFrame:GetHeight() and panel:GetHeight() ~= panel._h0 and pt == "TOPLEFT" and rp == "TOPRIGHT" and ox == 8
+      and rows.flight.box:GetHeight() == panel._boxH and rows.flight.icon:GetHeight() == panel._iconH,
+      "0.5.2b.52 town: a taller window lengthens the filter and does not resize the checks or icons")
+    _G.DarkMatterFrame:SetHeight(panel._h0)
+    M.PlaceTownPanel()
     tb._scripts.OnClick(tb)
     check(not panel:IsShown(), "0.5.2b.48 town: the button closes the filter")
     local function shownTown()
