@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.47
+
+- **Town pins.** The Town Pins button opens a filter. Flight masters, innkeepers, vendors, bankers, and auctioneers that have one verified Forever location are drawn with the game's own tracking icons. A category with no places, or no icon on this client, is not listed. Each choice is saved and the map updates immediately. A dock is listed only when this client has a dock icon. Hover names the place. A dock hover also names the verified destination. The pins do not set a waypoint and do not take a quest pin's click.
+
 ## 0.5.2b.46
 
 - **Quest detail.** The map's quest column listens for quest-log changes as soon as it is showing, including the first time it appears. The open detail returns to the list when a complete read of the log no longer contains that quest. A quest that is still there, a log that cannot be read, and a different open quest stay on the detail.

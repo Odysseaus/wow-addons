@@ -979,8 +979,84 @@ function M.WaypointOn(q, zone)
   local ok, x, y = pcall(f, q, zone)
   if ok and type(x) == "number" and type(y) == "number" and x >= 0 and x <= 1 and y >= 0 and y <= 1 then return x, y end
 end
+-- 0.5.2b.47: verified town pins. A category with no places, or no game icon, is not drawn. A dock with no destination is not drawn.
+local function TownDef(id)
+  local data = NS.TownPins
+  if not (data and data.cats) then return nil end
+  for _, c in ipairs(data.cats) do if c.id == id then return c end end
+end
+function M.TownCatOk(id)
+  local def = TownDef(id)
+  if not (def and NS.QS and NS.QS.Icon(def.role) and NS.TownPins.pins) then return false end
+  for _, p in ipairs(NS.TownPins.pins) do if p.cat == id then return true end end
+  return false
+end
+function M.TownOn(id)
+  if not M.TownCatOk(id) then return false end
+  local saved = NS.db and NS.db.map and type(NS.db.map.town) == "table" and NS.db.map.town[id]
+  if saved ~= nil then return saved and true or false end
+  local def = TownDef(id)
+  return def and def.default and true or false
+end
+function M.SetTown(id, on)
+  if not (NS.db and TownDef(id)) then return end
+  NS.db.map = NS.db.map or {}
+  if type(NS.db.map.town) ~= "table" then NS.db.map.town = {} end
+  NS.db.map.town[id] = on and true or false
+  M.dirty = true
+end
+local function TownPlaceable(pin)
+  if type(pin) ~= "table" or type(pin.map) ~= "number" then return false end
+  if type(pin.x) ~= "number" or type(pin.y) ~= "number" then return false end
+  if pin.x < 0 or pin.x > 1 or pin.y < 0 or pin.y > 1 then return false end
+  if pin.cat == "dock" and (type(pin.dest) ~= "string" or pin.dest == "") then return false end
+  return M.TownOn(pin.cat)
+end
+local function MakeTown()
+  local b = CreateFrame("Button", nil, over)
+  b:SetSize(16, 16)
+  b.icon = b:CreateTexture(nil, "ARTWORK")
+  b.icon:SetAllPoints(b)
+  b:SetScript("OnEnter", function(self)
+    local pin = self.pin
+    if not (GameTooltip and pin) then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(pin.name or "", 1, 0.82, 0)
+    if type(pin.detail) == "string" and pin.detail ~= "" then GameTooltip:AddLine(pin.detail, 0.9, 0.9, 0.9, true) end
+    if type(pin.dest) == "string" and pin.dest ~= "" then GameTooltip:AddLine("To " .. pin.dest, 0.6, 0.85, 1, true) end
+    GameTooltip:Show()
+  end)
+  b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  b:SetScript("OnMouseDown", function(_, btn) if M.VpDown then M.VpDown(btn) end end)
+  b:SetScript("OnMouseUp", function(_, btn)
+    if btn == "LeftButton" and drag and not drag.moved then drag = nil return end
+    if M.VpUp then M.VpUp(btn) end
+  end)
+  return b
+end
+local function TownHere(z, vw, vh)
+  local data = NS.TownPins
+  if not (data and data.pins and NS.QS) then return end
+  for _, pin in ipairs(data.pins) do
+    if pin.map == z.id and TownPlaceable(pin) then
+      local def = TownDef(pin.cat)
+      local px, py = M.ToScreen(ToW(z.id, pin.x, pin.y))
+      if def and px > 0 and py > 0 and px < vw and py < vh then
+        local mk = Pool("town", MakeTown)
+        if NS.QS.PaintIcon(mk.icon, def.role) then
+          mk.pin = pin
+          mk:SetFrameLevel(over:GetFrameLevel())
+          mk:ClearAllPoints()
+          mk:SetPoint("CENTER", over, "TOPLEFT", px, -py)
+          mk:Show()
+        else mk:Hide() end
+      end
+    end
+  end
+end
 local function LayoutOverlay()
-  PoolReset("badge") PoolReset("quest")
+  PoolReset("badge") PoolReset("quest") PoolReset("town")
+  M.townPass = (M.townPass or 0) + 1
   local vw, vh = VW(), VH()
   local anyBadge = false
   for _, c in ipairs(ContList()) do
@@ -1019,10 +1095,11 @@ local function LayoutOverlay()
             end
           end
         end
+        if M.ZoneAlpha(z) > 0.6 then TownHere(z, vw, vh) end
       end
     end
   end
-  PoolHideRest("badge") PoolHideRest("quest")
+  PoolHideRest("badge") PoolHideRest("quest") PoolHideRest("town")
   -- 0.5.2b.7: quest objective areas, party / raid members and your corpse (MapExtras.lua)
   if M.DrawExtras then local ok, e = pcall(M.DrawExtras) if not ok then M.extrasErr = e end end
   if M.DrawUserPins then M.DrawUserPins() end
@@ -3105,7 +3182,8 @@ local function Build(body)
     ToolButton("starpen", "Starpen", "Draw on the map. Coming in 0.5.3.", true),
     ToolButton("pin", "Drop a pin", "Click this, then click the map: a pin there, and the game's waypoint and minimap arrow point at it. Click a pin to point at it again; right-click removes it.", false,
       function() M.SetPinMode(not M.pinMode) end),
-    ToolButton("town", "Town Pins", "Flight masters, innkeepers, vendors, trainers and more. Coming in 0.5.4.", true),
+    ToolButton("town", "Town Pins", "Flight masters, innkeepers, vendors, bankers, auctioneers and docks. Choose which to show.", false,
+      function() M.ToggleTownPanel() end),
     ToolButton("findme", "Find me", "Jump to where you are.", false, function() M.FindMe() end),
     ToolButton("full", "Full screen", "", false, function() M.SetFull(not M.full) end),
     ToolButton("closeup", "Close-up detail", "The game's minimap tiles when you zoom in close (blended across the whole zone). On/off and strength.", false,
@@ -3123,9 +3201,11 @@ local function Build(body)
   M.fullBtn = tools[5]
   M.panelBtn = nil
   M.pinBtn = tools[2]
+  M.townBtn = tools[3]
   M.SetPanelIcon()
   SetFullIcon()
   M.BuildClosePanel(vpBox, strip, canvas:GetFrameLevel() + 30)
+  M.BuildTownPanel(vpBox, strip, canvas:GetFrameLevel() + 30)
 
   -- coordinates (bottom right) and the public-data caption (bottom left), each on a solid plate
   local function Box(anchor, rel, x)
@@ -3600,6 +3680,68 @@ function M.ToggleClosePanel(show)
   if not p then return end
   if show == nil then show = not p:IsShown() end
   if show then M.SyncClosePanel() p:Show() else p:Hide() end
+end
+
+-- 0.5.2b.47: the Town Pins filter. Only a category with places and a game icon gets a checkbox.
+function M.BuildTownPanel(host, anchor, level)
+  local p = UI.Panel(host, 220, 40)
+  p:ClearAllPoints()
+  p:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -6, -34)
+  p:SetFrameLevel(level)
+  p:EnableMouse(true)
+  local head = UI.Text(p, "OVERLAY", 13, "listHead", "LEFT")
+  head:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -10)
+  head:SetText("Town Pins")
+  p.boxes = {}
+  p:Hide()
+  M.townPanel = p
+  M.SyncTownPanel()
+  return p
+end
+function M.SyncTownPanel()
+  local p = M.townPanel
+  local data = NS.TownPins
+  if not (p and data and data.cats) then return end
+  for _, b in ipairs(p.boxes) do b:Hide() if b.label then b.label:Hide() end end
+  local n, y = 0, -34
+  for _, c in ipairs(data.cats) do
+    if M.TownCatOk(c.id) then
+      n = n + 1
+      local box = p.boxes[n]
+      if not box then
+        box = UI.Checkbox(p, "", 18, "listInk")
+        p.boxes[n] = box
+      end
+      box.cat = c.id
+      box.label:SetText(c.label)
+      box:ClearAllPoints()
+      box:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y)
+      box.label:Show()
+      box:Show()
+      box.onToggle = function(_, on) M.SetTown(box.cat, on) end
+      box:SetChecked(M.TownOn(c.id))
+      y = y - 26
+    end
+  end
+  p:SetHeight(math.max(40, 18 - y))
+  if M.townBtn and M.townBtn.icon then
+    if p:IsShown() then M.townBtn.icon:SetVertexColor(1, 0.82, 0.25)
+    else M.townBtn.icon:SetVertexColor(0.93, 0.89, 0.8) end
+  end
+end
+function M.ToggleTownPanel(show)
+  local p = M.townPanel
+  if not p then return end
+  if show == nil then show = not p:IsShown() end
+  if show then
+    if M.closePanel and M.closePanel:IsShown() then M.closePanel:Hide() end
+    M.SyncTownPanel()
+    p:Show()
+  else p:Hide() end
+  if M.townBtn and M.townBtn.icon then
+    if p:IsShown() then M.townBtn.icon:SetVertexColor(1, 0.82, 0.25)
+    else M.townBtn.icon:SetVertexColor(0.93, 0.89, 0.8) end
+  end
 end
 
 NS.RegisterTab({

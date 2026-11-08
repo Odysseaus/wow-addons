@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.46: the quest detail returns to the list once a log scan shows that quest is gone.
+## Notes: Dark Matter 0.5.2b.47: town pins for verified Forever places, with a saved filter.
 ## Author: Odysseaus
-## Version: 0.5.2b.46
+## Version: 0.5.2b.47
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
@@ -39,6 +39,7 @@ MapCloseUp.lua
 Data_ZoneLevels.lua
 Data_ZoneMasks.lua
 Data_ZoneSeams.lua
+Data_Town.lua
 Tab_Map.lua
 MapExtras.lua
 MapShapes.lua

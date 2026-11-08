@@ -5978,8 +5978,8 @@ do
   local keys, soon = {}, {}
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
   check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2b.28: the quest log is a column, not a button)")
-  check(soon.starpen and not soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen and Town Pins are disabled (0.5.2b: Pin works)")
-  local wantV = { starpen = "0.5.3", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
+  check(soon.starpen and not soon.pin and not soon.town and not soon.findme, "0.5.0 map: Starpen stays disabled (0.5.2b: Pin works; 0.5.2b.47: Town Pins works)")
+  local wantV = { starpen = "0.5.3" }
   local origSS = NS.SetStatus
   NS.SetStatus = function(t) STATUS_SEEN = t return origSS(t) end
   for k, b in pairs(soon) do
@@ -5992,6 +5992,97 @@ do
     check(b.icon._alpha and b.icon._alpha < 0.5, "0.5.0 map: " .. k .. " icon is dimmed")
   end
   NS.SetStatus = origSS
+  -- 0.5.2b.47: Town Pins opens a filter. Only categories with places and a game icon are listed.
+  do
+    local tb = M.townBtn
+    check(tb and tb.key == "town" and not tb.soon, "0.5.2b.47 town: the Town Pins button is enabled")
+    tb._scripts.OnClick(tb)
+    check(M.townPanel and M.townPanel:IsShown(), "0.5.2b.47 town: the button opens the filter")
+    local labels = {}
+    for _, b in ipairs(M.townPanel.boxes) do if b:IsShown() then labels[b.cat] = true end end
+    check(labels.flight and labels.inn and labels.vendor and labels.bank and labels.auction and not labels.dock,
+      "0.5.2b.47 town: flight, inn, vendors, bank and auction are listed; docks are hidden without a dock icon")
+    tb._scripts.OnClick(tb)
+    check(not M.townPanel:IsShown(), "0.5.2b.47 town: the button closes the filter")
+    local function shownTown()
+      local out = {}
+      local pool = M.pools and M.pools.town
+      if pool then for i = 1, pool.n do local m = pool[i] if m:IsShown() and m.pin then out[#out + 1] = m end end end
+      return out
+    end
+    local function hasName(list, name)
+      for _, m in ipairs(list) do if m.pin.name == name then return m end end
+    end
+    NS.db.map = NS.db.map or {}
+    NS.db.map.town = {}
+    M.FlyTo(1455) run(40)
+    local pins = shownTown()
+    check(hasName(pins, "Gryth Thurden") and hasName(pins, "Fillius Fizzlespinner") and hasName(pins, "Auctioneer Redmuse")
+      and hasName(pins, "Innkeeper Firebrew") and hasName(pins, "Barnum Stonemantle"),
+      "0.5.2b.47 town: Ironforge's verified pins are on the city (" .. #pins .. ")")
+    local pass = M.townPass
+    run(4)
+    check(M.townPass == pass and not M.dirty, "0.5.2b.47 town: a still map does not redraw the pins")
+    M.SetTown("vendor", false)
+    check(M.dirty and NS.db.map.town.vendor == false, "0.5.2b.47 town: a toggle is saved and marks the map dirty")
+    M.Layout()
+    pins = shownTown()
+    check(hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and not hasName(pins, "Golnir Bouldertoe"),
+      "0.5.2b.47 town: turning vendors off leaves the flight master")
+    M.SetTown("vendor", true)
+    check(M.TownOn("vendor") == true, "0.5.2b.47 town: the saved choice is what the filter reads")
+    local list = NS.TownPins.pins
+    list[#list + 1] = { cat = "flight", name = "Nowhere", map = 999999, x = 0.5, y = 0.5 }
+    list[#list + 1] = { cat = "dock", name = "Nameless pier", map = 1455, x = 0.5, y = 0.5 }
+    M.Layout()
+    check(not hasName(shownTown(), "Nowhere") and not hasName(shownTown(), "Nameless pier"),
+      "0.5.2b.47 town: an unknown map and a dock with no destination are not drawn")
+    list[#list] = nil
+    list[#list] = nil
+    check(not hasName(shownTown(), "Steamwheedle Port"), "0.5.2b.47 town: the Tanaris dock is not drawn while Ironforge is the map on screen")
+    local dockPin = nil
+    for _, p in ipairs(list) do if p.name == "Steamwheedle Port" then dockPin = p end end
+    local saveMap, saveX, saveY = dockPin.map, dockPin.x, dockPin.y
+    dockPin.map, dockPin.x, dockPin.y = 1455, 0.50, 0.50
+    NS.QS.ICON_BY_ROLE.dock = { role = "dock", c = { { file = "Interface\\Minimap\\Tracking\\FlightMaster" } } }
+    NS.QS.ForgetIcons()
+    M.SyncTownPanel()
+    local dockListed = false
+    for _, b in ipairs(M.townPanel.boxes) do if b:IsShown() and b.cat == "dock" then dockListed = true end end
+    check(dockListed, "0.5.2b.47 town: docks are listed once a dock icon loads")
+    M.Layout()
+    local dock = hasName(shownTown(), "Steamwheedle Port")
+    check(dock ~= nil, "0.5.2b.47 town: a dock is drawn on the map it belongs to")
+    if dock then dock._scripts.OnEnter(dock) end
+    check(tip.title == "Steamwheedle Port" and tip.lines[#tip.lines] == "To Powderfuse Port, Riverglades",
+      "0.5.2b.47 town: a dock hover names the verified destination")
+    local saveQ = C_QuestLog.GetQuestsOnMap
+    local saveSel = NS.QS.selected
+    local calls = 0
+    local saveSet = NS.QS.SetWaypoint
+    NS.QS.SetWaypoint = function() calls = calls + 1 return false, "test" end
+    C_QuestLog.GetQuestsOnMap = function(id)
+      if id == 1455 then return { { questID = 501, x = 0.50, y = 0.50 } } end
+      return saveQ(id)
+    end
+    MD.Forget("quests")
+    M.Layout()
+    local quest, townPin = nil, hasName(shownTown(), "Steamwheedle Port")
+    local qp = M.pools.quest
+    if qp then for i = 1, qp.n do if qp[i]:IsShown() then quest = qp[i] end end end
+    check(quest and townPin and quest:GetFrameLevel() > townPin:GetFrameLevel(),
+      "0.5.2b.47 town: a quest pin stays above a town pin on the same spot")
+    if townPin then townPin._scripts.OnMouseUp(townPin, "LeftButton") end
+    check(calls == 0 and NS.QS.selected == saveSel, "0.5.2b.47 town: a town pin sets no waypoint and selects no quest")
+    C_QuestLog.GetQuestsOnMap = saveQ
+    NS.QS.SetWaypoint = saveSet
+    NS.QS.selected = saveSel
+    dockPin.map, dockPin.x, dockPin.y = saveMap, saveX, saveY
+    MD.Forget("quests")
+    NS.QS.ICON_BY_ROLE.dock = nil
+    NS.QS.ForgetIcons()
+    M.FlyTo(1426) run(20)
+  end
   -- 14b. 0.5.2b: your own pins (Pin tool): drop, saved in DarkMatterDB, the game's waypoint + arrow, right-click removes
   do
     local pb = M.pinBtn
