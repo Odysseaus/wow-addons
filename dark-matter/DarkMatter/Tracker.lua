@@ -918,10 +918,10 @@ end
 -- 0.5.2b.33: a pinned completed quest is included while the section is on. Unwatching goes through the queue, out of combat only.
 function Tr.ReadyDropOn() return not (DB() and DB().readySection == false) end
 local function DropReady(id)
-  -- off the game's Quests list when it is shown under Ready: a local turn-in, or any completed quest that is pinned
+  -- 0.5.2b.39: a completed quest leaves Quests while Ready is on, including when auto-track is off.
+  -- Pinned: shown in Ready in any zone. Unpinned and here: shown in Ready. Unpinned and elsewhere: neither list.
   if not (Tr.ReadyDropOn() and NS.QS and NS.QS.Status(id) == "ready") then return false end
-  if Tr.IsPinned(id) then return true end
-  return not NS.QS.ReadyHere or NS.QS.ReadyHere(id)
+  return true
 end
 Tr.DropReady = DropReady
 function Tr.ReadyDrops(log, w)
@@ -950,13 +950,7 @@ function Tr.Plan()
   for id in pairs(want) do if DropReady(id) then want[id] = nil end end
   local q = {}
   for id in pairs(w) do
-    if not want[id] then
-      -- 0.5.2b.27: a ready quest whose turn-in is somewhere else stays on the objective tracker.
-      -- Auto-track must not drop it just because the log header is another zone. A pinned quest is already kept.
-      local pinnedReady = Tr.ReadyDropOn() and Tr.IsPinned(id) and NS.QS and NS.QS.Status(id) == "ready"
-      local elsewhere = (not pinnedReady) and log[id] and NS.QS and NS.QS.Status(id) == "ready" and NS.QS.ReadyHere and not NS.QS.ReadyHere(id)
-      if not elsewhere then q[#q + 1] = { e = log[id], want = false } end
-    end
+    if not want[id] then q[#q + 1] = { e = log[id], want = false } end
   end
   local adds = {}
   for id in pairs(want) do if not w[id] then adds[#adds + 1] = { e = log[id], want = true } end end

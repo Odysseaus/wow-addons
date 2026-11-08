@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.39
+
+- **Quests.** An unpinned completed quest whose turn-in is another zone leaves the Quests list, including when auto-track is off. It is not added to Ready. A completed pin stays in Ready in any zone. An in-progress pin stays on Quests. An in-progress quest you are watching yourself stays when auto-track is off. The removal still waits in the air and in combat.
+
 ## 0.5.2b.38
 
 - **One highlight.** The selected quest is the only persistent light on the map and on its Objectives icon, in Quests or Ready. Choosing another quest on the map, on an icon, or on a name clears the previous one and points the arrow at the new one. Hover still lights only while the pointer is there. Icons do not open the window. Names still open and glide.

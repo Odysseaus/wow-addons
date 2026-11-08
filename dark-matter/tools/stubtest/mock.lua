@@ -8276,17 +8276,111 @@ if MODE ~= "minimal" then
     check(NS.MapData.PlayerArea() == 1433, "0.5.2b.27 ready: the player area is Redridge (" .. tostring(NS.MapData.PlayerArea()) .. ")")
     local rq = NS.tabs.quests.Ready()
     check(ids(rq) == "901", "0.5.2b.27 ready: in Redridge the Lakeshire handoff is listed and the Westfall turn-in is not (" .. ids(rq) .. ")")
-    check(NS.Tracker.DropReady(901) == true and NS.Tracker.DropReady(902) == false,
-      "0.5.2b.27 ready: the local turn-in leaves the objective list; the other zone's turn-in stays")
+    check(NS.Tracker.DropReady(901) == true and NS.Tracker.DropReady(902) == true,
+      "0.5.2b.39 ready: a completed quest leaves Quests here and when the turn-in is another zone")
     local plan = NS.Tracker.Plan()
     local dropped = false
     for _, it in ipairs(plan) do if it.e and it.e.id == 902 and it.want == false then dropped = true end end
-    check(not dropped, "0.5.2b.27 ready: auto-track does not unwatch a ready quest whose turn-in is another zone")
+    check(dropped, "0.5.2b.39 ready: the zone plan takes off an unpinned quest whose turn-in is another zone")
     C_Map.GetMapInfo, C_Map.GetBestMapForUnit = saveInfo, saveBest
     GetZoneText, GetRealZoneText = saveZone, saveReal
     C_QuestLog, NS.QS.Status = saveCQ, saveSt
     NS.MapData.Forget()
     if NS.tabs.quests and NS.tabs.quests.Refresh then NS.tabs.quests.Refresh() end
+  end
+  -- 0.5.2b.39: an unpinned completed quest whose turn-in is elsewhere leaves Quests and is not Ready.
+  do
+    local Tr, QS = NS.Tracker, NS.QS
+    local saveRH, saveSt, saveAuto, saveTaxi, saveIC = QS.ReadyHere, QS.Status, NS.db.autoTrack, UnitOnTaxi, InCombatLockdown
+    local pins, qw = {}, {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local function listed(id)
+      for _, e in ipairs(Tr.ReadyList()) do if e.id == id then return true end end
+    end
+    local function clearPins()
+      for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    end
+    QS.ReadyHere = function(id) if id == 102 then return false end return saveRH(id) end
+    clearPins()
+    Tr.taxiRide, Tr.taxiSettleUntil, Tr.deferPlan, Tr.zonePending = nil, nil, nil, nil
+    UnitOnTaxi = nil
+    local function arm()
+      QWATCH[2], QWATCH[3], QWATCH[6] = true, true, nil
+      Tr.readyDropDue = true
+      Tr.watch = nil
+      Tr.Diff()
+    end
+    NS.db.autoTrack = true
+    arm()
+    Tr.zonePending = TIME_NOW
+    Tr.Tick(TIME_NOW)
+    check(QWATCH[3] == nil and not listed(102) and QWATCH[2] == true, "0.5.2b.39 quests: auto-track on, an unpinned turn-in elsewhere leaves Quests and is not Ready")
+    QWATCH[3] = true
+    Tr.zonePending = TIME_NOW
+    Tr.Tick(TIME_NOW + 0.2)
+    check(QWATCH[3] == nil, "0.5.2b.39 quests: a later pass does not put that quest back")
+    NS.db.autoTrack = false
+    arm()
+    QWATCH[6] = true
+    Tr.zonePending = nil
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 2)
+    check(QWATCH[3] == nil and not listed(102) and QWATCH[6] == true and not Tr.IsPinned(103),
+      "0.5.2b.39 quests: auto-track off, the same removal runs and an in-progress watch stays")
+    QS.ReadyHere = function(id) if id == 102 then return true end return saveRH(id) end
+    arm()
+    Tr.zonePending = nil
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 3)
+    check(QWATCH[3] == nil and listed(102), "0.5.2b.39 quests: a local completed quest is Ready and off Quests")
+    QS.ReadyHere = function(id) if id == 102 or id == 103 then return false end return saveRH(id) end
+    NS.QS.Status = function(id) if id == 103 or id == 102 then return "ready" end return "progress" end
+    clearPins()
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    Tr.Diff()
+    check(Tr.IsPinned(103) and listed(103) and QWATCH[6] == nil, "0.5.2b.39 quests: a completed pin is Ready only")
+    NS.QS.Status = function(id) if id == 102 then return "ready" end return "progress" end
+    Tr.SetPinned(103, false)
+    Tr.SetPinned(101, true)
+    QWATCH[2] = true
+    NS.db.autoTrack = false
+    Tr.readyDropDue = true
+    Tr.zonePending = nil
+    Tr.Tick(TIME_NOW + 0.8)
+    check(Tr.IsPinned(101) and QWATCH[2] == true and not listed(101), "0.5.2b.39 quests: an in-progress pin stays on Quests")
+    local flying = true
+    UnitOnTaxi = function() return flying end
+    Tr.ground = { area = 100, zone = "Elwynn Forest", real = "Elwynn Forest" }
+    Tr.Tick(TIME_NOW + 1)
+    QS.ReadyHere = function(id) if id == 102 then return false end return saveRH(id) end
+    QWATCH[3] = true
+    Tr.readyDropDue = true
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 1.2)
+    check(Tr.taxiRide and QWATCH[3] == true, "0.5.2b.39 quests: in the air the removal waits")
+    flying = false
+    Tr.Tick(TIME_NOW + 1.4)
+    check(not Tr.taxiRide and QWATCH[3] == nil, "0.5.2b.39 quests: landing removes it")
+    local fight = true
+    InCombatLockdown = function() return fight end
+    QWATCH[3] = true
+    Tr.readyDropDue = true
+    Tr.Tick(TIME_NOW + 1.6)
+    check(QWATCH[3] == true, "0.5.2b.39 quests: in combat the removal waits")
+    fight = false
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 3)
+    check(QWATCH[3] == nil and Tr.IsPinned(101), "0.5.2b.39 quests: after combat it is removed and the in-progress pin stays")
+    QS.ReadyHere, QS.Status, NS.db.autoTrack, UnitOnTaxi, InCombatLockdown = saveRH, saveSt, saveAuto, saveTaxi, saveIC
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    for k, v in pairs(pins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.taxiRide, Tr.hold, Tr.settleHold, Tr.ground, Tr.zonePending, Tr.queue = nil, nil, nil, nil, nil, {}
+    Tr.readyDropDue, Tr.nextBatch, Tr.deferPlan, Tr.watch = nil, nil, nil, nil
+    Tr.Diff()
   end
   -- 0.5.2b.32: unpinning one out-of-zone quest takes it off Objectives. A current-zone quest stays. No other watch or pin changes.
   do

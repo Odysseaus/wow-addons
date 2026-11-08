@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.38: one selected quest is lit on the map and on the Objectives icon.
+## Notes: Dark Matter 0.5.2b.39: an unpinned completed quest whose turn-in is elsewhere leaves Quests and is not listed under Ready.
 ## Author: Odysseaus
-## Version: 0.5.2b.38
+## Version: 0.5.2b.39
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
