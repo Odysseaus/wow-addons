@@ -6664,6 +6664,124 @@ if MODE ~= "minimal" then
     InCombatLockdown = save.ic
     QSEL = save.qsel
   end
+  -- 0.5.2b.43: the confirm is formatted. The key call is first. The table call happens once, only for this nil format.
+  do
+    local QL = NS.QL
+    local save = {
+      idx = C_QuestLog.GetLogIndexForQuestID, snap = SetAbandonQuest, show = StaticPopup_Show,
+      dialogs = StaticPopupDialogs, items = GetAbandonQuestItems, aname = GetAbandonQuestName, ic = InCombatLockdown, qsel = QSEL,
+    }
+    local NIL = "bad argument #2 to 'SetFormattedText' (string expected, got nil)"
+    local plain, items = 'Abandon "%s"?', 'Abandon "%s", destroying %s?'
+    local calls, last, seen, abandonN, cancelN = 0, nil, {}, 0, 0
+    local function reset() calls, last, seen = 0, nil, {} end
+    local function formatText(fmt, a, b)
+      if type(fmt) ~= "string" then error(NIL, 0) end
+      if b == nil then return string.format(fmt, a) end
+      return string.format(fmt, a, b)
+    end
+    local accept = function() abandonN = abandonN + 1 end
+    local function templates()
+      return {
+        ABANDON_QUEST = { text = plain, OnAccept = accept, OnCancel = function() cancelN = cancelN + 1 end },
+        ABANDON_QUEST_WITH_ITEMS = { text = items, OnAccept = accept, OnCancel = function() cancelN = cancelN + 1 end },
+      }
+    end
+    local function keyShow(which, a, b)
+      calls = calls + 1
+      seen[#seen + 1] = type(which)
+      local info = StaticPopupDialogs[which]
+      last = formatText(info and info.text, a, b)
+      return { text = last }
+    end
+    local function tableShow(first, a, b)
+      calls = calls + 1
+      seen[#seen + 1] = type(first)
+      local fmt = type(first) == "table" and first.text or nil
+      last = formatText(fmt, a, b)
+      return { text = last }
+    end
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    SetAbandonQuest = function() end
+    GetAbandonQuestName = function() return "The Defias" end
+    GetAbandonQuestItems = function() return nil end
+    InCombatLockdown = function() return false end
+    StaticPopupDialogs = templates()
+    StaticPopup_Show = keyShow
+    P.OpenQuest(103)
+    local q = P.detail.quest
+    QSEL = 2
+    local why = QL.Abandon(q)
+    check(why == "dialog" and calls == 1 and seen[1] == "string" and last == 'Abandon "The Defias"?',
+      "0.5.2b.43 abandon: the key call formats the plain confirm")
+    check(StaticPopupDialogs.ABANDON_QUEST.text == plain and abandonN == 0,
+      "0.5.2b.43 abandon: the plain template is unchanged and the click does not accept")
+    StaticPopupDialogs.ABANDON_QUEST.OnCancel()
+    check(cancelN == 1 and abandonN == 0, "0.5.2b.43 abandon: Cancel does not abandon")
+    StaticPopupDialogs.ABANDON_QUEST.OnAccept()
+    check(abandonN == 1, "0.5.2b.43 abandon: only the dialog's accept abandons")
+    abandonN = 0
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 1 and last == 'Abandon "The Defias", destroying Wolf Meat?',
+      "0.5.2b.43 abandon: the key call formats the item confirm")
+    StaticPopup_Show = tableShow
+    GetAbandonQuestItems = function() return nil end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 2 and seen[1] == "string" and seen[2] == "table" and last == 'Abandon "The Defias"?',
+      "0.5.2b.43 abandon: the nil format retries once with the dialog table")
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 2 and seen[2] == "table" and last == 'Abandon "The Defias", destroying Wolf Meat?',
+      "0.5.2b.43 abandon: the item confirm uses the same one table retry")
+    StaticPopup_Show = keyShow
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 1 and seen[1] == "string",
+      "0.5.2b.43 abandon: a key success does not call the table")
+    StaticPopup_Show = function() calls = calls + 1 error("popup failed", 0) end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 1, "0.5.2b.43 abandon: a different confirm error is not retried")
+    StaticPopup_Show = function() calls = calls + 1 error(NIL, 0) end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 2, "0.5.2b.43 abandon: a failed table call is not tried again")
+    StaticPopup_Show = keyShow
+    GetAbandonQuestName = function() return nil end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.43 abandon: a missing quest name makes no confirm call")
+    GetAbandonQuestName = function() return "The Defias" end
+    GetAbandonQuestItems = function() return {} end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "unsupported" and calls == 0, "0.5.2b.43 abandon: a non-text item warning makes no confirm call")
+    GetAbandonQuestItems = function() return nil end
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 103 then return 2 end end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.43 abandon: a mismatched quest makes no confirm call")
+    C_QuestLog.GetLogIndexForQuestID = save.idx
+    InCombatLockdown = function() return true end
+    reset()
+    local reg0 = 0
+    for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then reg0 = reg0 + 1 end end
+    why = QL.Abandon(q)
+    local reg1 = 0
+    for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then reg1 = reg1 + 1 end end
+    check(why == "combat" and calls == 0 and reg1 == reg0, "0.5.2b.43 abandon: combat makes no confirm call and queues nothing")
+    InCombatLockdown = save.ic
+    C_QuestLog.GetLogIndexForQuestID, SetAbandonQuest = save.idx, save.snap
+    GetAbandonQuestItems, GetAbandonQuestName = save.items, save.aname
+    StaticPopup_Show, StaticPopupDialogs = save.show, save.dialogs
+    QSEL = save.qsel
+  end
   -- only with the Map tab
   NS.ShowTab("quests")
   check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")

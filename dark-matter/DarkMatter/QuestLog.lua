@@ -673,10 +673,22 @@ function QL.Abandon(q)
     which = "ABANDON_QUEST"
   end
   if not which then return AbandonNote("unsupported") end
+  if type(name) ~= "string" or name == "" then return AbandonNote("no", "Abandon: the quest name is missing.") end
+  if which == "ABANDON_QUEST_WITH_ITEMS" and (type(items) ~= "string" or items == "") then
+    return AbandonNote("unsupported", "Abandon: the item warning is not text.")
+  end
+  -- 0.5.2b.43: the key call is first. One table call follows only the exact nil-format error.
   local show = G("StaticPopup_Show")
-  local ok, shown
-  if which == "ABANDON_QUEST_WITH_ITEMS" then ok, shown = pcall(show, which, name, items)
-  else ok, shown = pcall(show, which, name) end
+  local info = type(_G.StaticPopupDialogs) == "table" and _G.StaticPopupDialogs[which] or nil
+  local function attempt(arg1)
+    if which == "ABANDON_QUEST_WITH_ITEMS" then return pcall(show, arg1, name, items) end
+    return pcall(show, arg1, name)
+  end
+  local ok, shown = attempt(which)
+  local exact = "bad argument #2 to 'SetFormattedText' (string expected, got nil)"
+  if (not ok) and type(shown) == "string" and shown:find(exact, 1, true) and type(info) == "table" then
+    ok, shown = attempt(info)
+  end
   if not ok then return AbandonNote("no", "Abandon: the game's confirm did not open (" .. tostring(shown) .. ").") end
   if shown == nil then return AbandonNote("no", "Abandon: the game's confirm did not open.") end
   return "dialog"

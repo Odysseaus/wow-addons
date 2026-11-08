@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.43
+
+- **Abandon.** The confirm is requested with the dialog key first. If that fails with only the nil format error, it is requested once more with the dialog table and the same name and items. Any other failure stops. The quest name and, for the item confirm, the item text must already be strings. The dialog text is not changed. Yes and No stay the game's buttons.
+
 ## 0.5.2b.42
 
 - **Abandon.** The button selects the open quest and shows the game's own confirm. Cancel does not abandon. A quest with items uses the item confirm, and if that confirm is missing the click stops. A selection that is not the open quest stops. Nothing is abandoned from this addon, including in combat.
