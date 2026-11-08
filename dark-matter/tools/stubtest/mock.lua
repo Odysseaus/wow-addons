@@ -7682,15 +7682,16 @@ if MODE ~= "minimal" then
   QWATCH[3] = true Tr.Diff()
   check(P[102] == nil, "0.5.2b.1 keep: tracking a quest yourself does not pin it")
   Tr.SetPinned(102, true)
-  check(P[102] == true and QWATCH[3] == true, "0.5.2b.1 keep: a click on the pin pins it")
+  check(P[102] == true and QWATCH[3] == nil, "0.5.2b.33 keep: pinning a completed quest pins it and takes it off Quests")
   QWATCH[6] = true Tr.Diff() QWATCH[6] = nil Tr.Diff()
   check(P[103] == nil, "0.5.2b keep: the game's auto-watch does not pin")
+  Tr.SetPinned(101, true)
   TIME_NOW = TIME_NOW + 100
   Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
-  QWATCH[3] = nil Tr.Diff()
-  check(QWATCH[3] == true and P[102] == true, "0.5.2b keep: a pinned quest the game untracks on a zone change is tracked again")
+  QWATCH[2] = nil Tr.Diff()
+  check(QWATCH[2] == true and P[101] == true, "0.5.2b keep: a pinned in-progress quest the game untracks on a zone change is tracked again")
   Tr.Diff()
-  check(Tr.own[102] == nil and P[102] == true, "0.5.2b keep: our own re-track is not taken as yours")
+  check(Tr.own[101] == nil and P[101] == true, "0.5.2b keep: our own re-track is not taken as yours")
   TIME_NOW = TIME_NOW + 10
   QWATCH[3] = nil Tr.Diff()
   check(QWATCH[3] == nil and P[102] == true, "0.5.2b.1 keep: untracking it yourself does not unpin it")
@@ -7951,9 +7952,9 @@ if MODE ~= "minimal" then
       fight = false
       Tr.OnEvent("PLAYER_REGEN_ENABLED")
       for k = 1, 6 do Tr.Tick(TIME_NOW + 110 + k * 2) end
-      check(not W[701] and W[702] and W[703], "0.5.2b.12 tracker: after combat the ready quest is unwatched, the pinned ready one kept" .. tag)
+      check(not W[701] and W[702] and not W[703], "0.5.2b.33 tracker: after combat a completed quest leaves Quests, pinned or not" .. tag)
       NS.db.readySection = false
-      W[701] = true
+      W[701], W[703] = true, true
       Tr.OnEvent("QUEST_LOG_UPDATE") for k = 1, 6 do Tr.Tick(TIME_NOW + 130 + k * 2) end
       check(W[701] and W[702] and W[703], "0.5.2b.12 tracker: with Ready to Turn In off the ready quest stays watched" .. tag)
       NS.db.readySection = nil
@@ -7961,7 +7962,7 @@ if MODE ~= "minimal" then
     -- Plan: ZoneSet still wants the ready quest; Plan alone leaves it out (unless pinned)
     local log = Tr.ReadLog()
     local zs = Tr.ZoneSet(log)
-    check(zs[703] == true, "0.5.2b.12 tracker: Tr.ZoneSet itself is unchanged (pins still in it)")
+    check(zs[703] ~= true, "0.5.2b.33 tracker: a completed pin is not added back onto the Quests watch set")
     NS.db.readySection = false
     local plan1 = Tr.Plan()
     NS.db.readySection = nil
@@ -8154,11 +8155,11 @@ if MODE ~= "minimal" then
     local saveSt, saveRH = NS.QS.Status, NS.QS.ReadyHere
     QWATCH[2], QWATCH[3], QWATCH[6] = true, true, true
     Tr.Diff()
-    Tr.SetPinned(102, true)
+    Tr.SetPinned(101, true)
     Tr.SetPinned(103, true)
     check(QWATCH[6] == true and Tr.IsPinned(103), "0.5.2b.32 unpin: the out-of-zone quest starts watched and pinned")
     Tr.SetPinned(103, false)
-    check(not Tr.IsPinned(103) and QWATCH[6] == nil and QWATCH[2] == true and QWATCH[3] == true and Tr.IsPinned(102),
+    check(not Tr.IsPinned(103) and QWATCH[6] == nil and QWATCH[2] == true and QWATCH[3] == true and Tr.IsPinned(101),
       "0.5.2b.32 unpin: an ordinary out-of-zone quest leaves Objectives; the current-zone watches and the other pin stay")
     NS.QS.Status = function(id) if id == 103 then return "ready" end return saveSt(id) end
     NS.QS.ReadyHere = function(id) if id == 103 then return false end return saveRH(id) end
@@ -8168,7 +8169,7 @@ if MODE ~= "minimal" then
     Tr.SetPinned(103, false)
     local back = false
     for _, it in ipairs(Tr.queue or {}) do if it.e and (it.e.id == 103 or it.e.questID == 103) then back = true end end
-    check(not Tr.IsPinned(103) and QWATCH[6] == nil and not back and QWATCH[2] == true and Tr.IsPinned(102),
+    check(not Tr.IsPinned(103) and QWATCH[6] == nil and not back and QWATCH[2] == true and Tr.IsPinned(101),
       "0.5.2b.32 unpin: a finished quest whose turn-in is elsewhere leaves Objectives and is not queued back on")
     Tr.SetPinned(101, true)
     Tr.SetPinned(101, false)
@@ -8197,6 +8198,89 @@ if MODE ~= "minimal" then
     check(trackerPin and not Tr.IsPinned(103) and QWATCH[6] == nil, "0.5.2b.32 unpin: the objective-tracker pin removes the out-of-zone quest")
     NS.QS.Status, NS.QS.ReadyHere = saveSt, saveRH
     Tr.queue = {}
+    Tr.SetPinned(102, false)
+  end
+  -- 0.5.2b.33: a pinned completed quest is Ready, not on the Quests list, including a turn-in elsewhere.
+  do
+    local Tr = NS.Tracker
+    local saveSt, saveRH, saveAuto = NS.QS.Status, NS.QS.ReadyHere, NS.db.autoTrack
+    local function readyIds()
+      Tr.Diff()
+      local t = {}
+      for _, e in ipairs(Tr.ReadyList()) do t[#t + 1] = e.id end
+      table.sort(t)
+      return table.concat(t, ",")
+    end
+    local function planWant(id)
+      local watch, drop = false, false
+      for _, it in ipairs(Tr.Plan()) do
+        if it.e and it.e.id == id then if it.want then watch = true else drop = true end end
+      end
+      return watch, drop
+    end
+    QWATCH[2] = true
+    NS.QS.Status = function(id) if id == 103 then return "ready" end return saveSt(id) end
+    NS.QS.ReadyHere = function(id) if id == 103 then return false end return saveRH(id) end
+    Tr.Diff()
+    check(not string.find("," .. readyIds() .. ",", ",103,", 1, true), "0.5.2b.33 ready: an unpinned completed quest whose turn-in is elsewhere is not listed")
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    check(QWATCH[6] == nil and string.find("," .. readyIds() .. ",", ",103,", 1, true) and Tr.IsPinned(103),
+      "0.5.2b.33 ready: pinning a completed quest whose turn-in is elsewhere lists it under Ready and off Quests")
+    local rewatch = planWant(103)
+    check(not rewatch, "0.5.2b.33 ready: a zone pass does not queue that pinned quest back onto Quests")
+    QWATCH[6] = true
+    NS.QS.Status = saveSt
+    Tr.Diff()
+    Tr.SetPinned(103, true)
+    check(QWATCH[6] == true and not string.find("," .. readyIds() .. ",", ",103,", 1, true),
+      "0.5.2b.33 ready: an in-progress pin stays on Quests")
+    NS.QS.Status = function(id) if id == 103 then return "ready" end return saveSt(id) end
+    NS.db.autoTrack = false
+    Tr.zonePending, Tr.queue, Tr.readyDropDue = nil, {}, true
+    QWATCH[6], QWATCH[2] = true, true
+    Tr.AutoStep(TIME_NOW)
+    check(QWATCH[6] == nil and string.find("," .. readyIds() .. ",", ",103,", 1, true),
+      "0.5.2b.33 ready: when that pin completes, it moves to Ready and off Quests")
+    local other = Tr.IsPinned(102)
+    Tr.SetPinned(103, false)
+    check(not Tr.IsPinned(103) and QWATCH[6] == nil and not string.find("," .. readyIds() .. ",", ",103,", 1, true) and Tr.IsPinned(102) == other and QWATCH[2] == true,
+      "0.5.2b.33 ready: unpinning it removes it from Ready and Objectives; the other watch stays")
+    NS.QS.ReadyHere = function(id) if id == 102 then return true end return saveRH(id) end
+    NS.QS.Status = function(id) if id == 102 then return "ready" end return saveSt(id) end
+    QWATCH[3] = true
+    Tr.SetPinned(102, true)
+    check(QWATCH[3] == nil and string.find("," .. readyIds() .. ",", ",102,", 1, true),
+      "0.5.2b.33 ready: a pinned local turn-in is Ready and not on Quests")
+    Tr.SetPinned(102, false)
+    check(not Tr.IsPinned(102) and QWATCH[3] == nil and string.find("," .. readyIds() .. ",", ",102,", 1, true),
+      "0.5.2b.33 ready: unpinning a local turn-in leaves it on Ready")
+    local ic = InCombatLockdown
+    InCombatLockdown = function() return true end
+    QWATCH[6] = true
+    NS.QS.Status = function(id) if id == 103 then return "ready" end return saveSt(id) end
+    NS.QS.ReadyHere = function(id) if id == 103 then return false end return saveRH(id) end
+    Tr.SetPinned(103, true)
+    check(QWATCH[6] == true, "0.5.2b.33 ready: in combat the Quests removal waits")
+    InCombatLockdown = ic
+    for _, fr in ipairs(ALL) do
+      if fr._ev and fr._ev.PLAYER_REGEN_ENABLED and fr._scripts and fr._scripts.OnEvent then fr._scripts.OnEvent(fr, "PLAYER_REGEN_ENABLED") end
+    end
+    check(QWATCH[6] == nil and Tr.IsPinned(103), "0.5.2b.33 ready: after combat the pinned completed quest leaves Quests")
+    QWATCH[6], QWATCH[2] = nil, true
+    NS.db.autoTrack = false
+    Tr.SetPinned(101, true)
+    Tr.queue = { { e = { id = 103, idx = 6, questID = 103 }, want = true } }
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW + 40) Tr.Tick(TIME_NOW + 42)
+    local queued = false
+    for _, it in ipairs(Tr.queue or {}) do if it.want and it.e and (it.e.id == 103 or it.e.questID == 103) then queued = true end end
+    check(QWATCH[6] == nil and not queued and Tr.IsPinned(103) and Tr.IsPinned(101) and QWATCH[2] == true
+      and string.find("," .. readyIds() .. ",", ",103,", 1, true),
+      "0.5.2b.33 ready: a zone pass leaves the completed pin on Ready only, and the other pin stays")
+    NS.QS.Status, NS.QS.ReadyHere, NS.db.autoTrack = saveSt, saveRH, saveAuto
+    Tr.queue, Tr.readyDropDue = {}, true
+    Tr.SetPinned(103, false)
     Tr.SetPinned(102, false)
   end
   -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat

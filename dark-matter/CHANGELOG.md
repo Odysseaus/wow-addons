@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.33
+
+- **Ready.** Pinning a completed quest lists it under Ready to Turn In, including when the turn-in is another zone, and takes it off the Quests list. The zone pass does not watch it again. An in-progress pin stays on Quests. An unpinned completed quest is Ready only when the turn-in is the current zone or city. Unpinning an out-of-zone quest still removes just that quest.
+
 ## 0.5.2b.32
 
 - **Unpin.** Unpinning a quest that is not in the current zone or city takes that quest off the objective list immediately, including a finished quest whose turn-in is somewhere else. A quest that is in the current zone or city stays on the list. Other watched quests and other pins are left as they are. The automatic zone planner is unchanged.

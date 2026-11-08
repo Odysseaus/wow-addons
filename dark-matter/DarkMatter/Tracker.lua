@@ -91,6 +91,18 @@ end
 -- keep-tracked pins (0.5.2b.1: a sticky flag, changed ONLY by a click on the pin). A pinned quest stays tracked in every
 -- zone; an unpinned one follows zone auto-track (or the game, with auto-track off). Abandoning a quest drops its pin. Saved in DarkMatterDB.keepTracked = { [questID] = true }.
 ---------------------------------------------------------------------------
+local function DropQueue(id)
+  if not Tr.queue then return end
+  local keep = {}
+  for _, it in ipairs(Tr.queue) do
+    local qid = it.e and N(it.e.id or it.e.questID)
+    if qid ~= id then keep[#keep + 1] = it end
+  end
+  Tr.queue = keep
+end
+local function IsReady(id)
+  return NS.QS and NS.QS.Status(id) == "ready"
+end
 function Tr.SetPinned(q, on)
   q = N(q)
   if not q then return end
@@ -98,22 +110,23 @@ function Tr.SetPinned(q, on)
   local log = Tr.log
   if not (log and log[q]) then log = ReadLog() end
   local e = log and log[q]
-  if on then
-    if e and Tr.watch and not Tr.watch[q] then SetWatch(e, true) end
-  elseif e and not Tr.ZoneSet(log)[q] then
-    -- 0.5.2b.32: this click only. An out-of-zone quest leaves Objectives now, including a finished
-    -- quest whose turn-in is elsewhere. A current-zone quest stays because ZoneSet still contains it.
-    -- Drop a queued re-watch so the next auto-track batch cannot put this quest back.
-    if Tr.queue then
-      local keep = {}
-      for _, it in ipairs(Tr.queue) do
-        local id = it.e and N(it.e.id or it.e.questID)
-        if id ~= q then keep[#keep + 1] = it end
-      end
-      Tr.queue = keep
-    end
+  local ready = e and IsReady(q)
+  if on and ready and Tr.ReadyDropOn() then
+    -- 0.5.2b.33: a pinned completed quest belongs under Ready, not on the Quests list.
+    DropQueue(q)
     SetWatch(e, false)
+  elseif on then
+    if e and Tr.watch and not Tr.watch[q] then SetWatch(e, true) end
+  elseif e then
+    local here = ready and NS.QS.ReadyHere and NS.QS.ReadyHere(q)
+    if here or not Tr.ZoneSet(log)[q] then
+      -- 0.5.2b.32: one out-of-zone quest leaves Objectives, including a finished quest turned in elsewhere.
+      -- A local completed quest stays in Ready and off the Quests list. A current-zone in-progress quest stays watched.
+      DropQueue(q)
+      SetWatch(e, false)
+    end
   end
+  if ready then Tr.readyDirty = true end
   Tr.layoutDirty = true
   Tr.NotifyPins()
   if NS.SetStatus then NS.SetStatus(on and "Kept tracked: it stays in the objective tracker when you change zone." or "No longer kept tracked.") end
@@ -158,8 +171,9 @@ function Tr.Diff()
       if not w[id] then
         local ours = Own(id, "remove", now)
         if not log[id] then if pins[id] then changed = true end pins[id] = nil -- abandoned or turned in
-        elseif not ours and pins[id] and Tr.zoneAt and now - Tr.zoneAt <= Tr.ZONE_GUARD then
-          SetWatch(log[id], true) -- the game dropped a pinned quest on a zone change: keep it
+        elseif not ours and pins[id] and Tr.zoneAt and now - Tr.zoneAt <= Tr.ZONE_GUARD
+          and not (Tr.ReadyDropOn() and IsReady(id)) then
+          SetWatch(log[id], true) -- the game dropped a pinned in-progress quest on a zone change: keep it
         end
       end
     end
@@ -691,7 +705,8 @@ function Tr.ReadyList()
   table.sort(list, function(a, b) return a.idx < b.idx end)
   for _, e in ipairs(list) do
     -- 0.5.2b.25: this area only. A turn-in we cannot place stays; one we know is somewhere else does not.
-    if QS and QS.Status(e.id) == "ready" and (not QS.ReadyHere or QS.ReadyHere(e.id)) then out[#out + 1] = e end
+    -- 0.5.2b.33: a pin lists a completed quest here whatever the turn-in zone. Unpinned still requires this zone or city.
+    if QS and QS.Status(e.id) == "ready" and (Tr.IsPinned(e.id) or not QS.ReadyHere or QS.ReadyHere(e.id)) then out[#out + 1] = e end
   end
   return out
 end
@@ -820,17 +835,21 @@ function Tr.ZoneSet(log)
   if area and MD and MD.Quests then
     for _, q in ipairs(MD.Quests(area) or {}) do if log[q.id] then want[q.id] = true end end
   end
-  for id in pairs(Pins()) do if log[id] then want[id] = true end end
+  for id in pairs(Pins()) do
+    -- a completed pin is shown under Ready, so the zone pass must not watch it again
+    if log[id] and not (Tr.ReadyDropOn() and NS.QS and NS.QS.Status(id) == "ready") then want[id] = true end
+  end
   return want
 end
 -- 0.5.2b.12: a quest that is ready to turn in is listed in our Ready to Turn In section, so it is not also kept in the
--- game's Quests list, unless the section is turned off (DarkMatterDB.readySection == false; collapsed still counts as on)
--- or the quest is pinned. Unwatching goes through the queue, out of combat only.
+-- game's Quests list, unless the section is turned off (DarkMatterDB.readySection == false; collapsed still counts as on).
+-- 0.5.2b.33: a pinned completed quest is included while the section is on. Unwatching goes through the queue, out of combat only.
 function Tr.ReadyDropOn() return not (DB() and DB().readySection == false) end
 local function DropReady(id)
-  -- only a turn-in that is on the Ready list (this area). One in another zone stays on the game's list.
-  return Tr.ReadyDropOn() and not Tr.IsPinned(id) and NS.QS ~= nil and NS.QS.Status(id) == "ready"
-    and (not NS.QS.ReadyHere or NS.QS.ReadyHere(id))
+  -- off the game's Quests list when it is shown under Ready: a local turn-in, or any completed quest that is pinned
+  if not (Tr.ReadyDropOn() and NS.QS and NS.QS.Status(id) == "ready") then return false end
+  if Tr.IsPinned(id) then return true end
+  return not NS.QS.ReadyHere or NS.QS.ReadyHere(id)
 end
 Tr.DropReady = DropReady
 function Tr.ReadyDrops(log, w)
@@ -862,7 +881,8 @@ function Tr.Plan()
     if not want[id] then
       -- 0.5.2b.27: a ready quest whose turn-in is somewhere else stays on the objective tracker.
       -- Auto-track must not drop it just because the log header is another zone. A pinned quest is already kept.
-      local elsewhere = log[id] and NS.QS and NS.QS.Status(id) == "ready" and NS.QS.ReadyHere and not NS.QS.ReadyHere(id)
+      local pinnedReady = Tr.ReadyDropOn() and Tr.IsPinned(id) and NS.QS and NS.QS.Status(id) == "ready"
+      local elsewhere = (not pinnedReady) and log[id] and NS.QS and NS.QS.Status(id) == "ready" and NS.QS.ReadyHere and not NS.QS.ReadyHere(id)
       if not elsewhere then q[#q + 1] = { e = log[id], want = false } end
     end
   end
@@ -883,7 +903,8 @@ local function OnTaxi() return type(_G.UnitOnTaxi) == "function" and _G.UnitOnTa
 function Tr.AutoStep(now)
   if not Tr.AutoWanted() then
     -- auto-track off: the game's own tracking, except that pinned quests are tracked again after a zone change
-    -- (0.5.2b.12: and ready quests leave the Quests list while Ready to Turn In is on)
+    -- (0.5.2b.12: and ready quests leave the Quests list while Ready to Turn In is on).
+    -- 0.5.2b.33: a pinned completed quest is not watched again while that section is on.
     local keep = {}
     for _, it in ipairs(Tr.queue) do if it.ready then keep[#keep + 1] = it end end
     Tr.queue = keep
@@ -894,7 +915,9 @@ function Tr.AutoStep(now)
       local log = ReadLog()
       local w = Watched(log)
       local ids = {}
-      for id in pairs(Pins()) do if log[id] and not w[id] then ids[#ids + 1] = id end end
+      for id in pairs(Pins()) do
+        if log[id] and not w[id] and not (Tr.ReadyDropOn() and IsReady(id)) then ids[#ids + 1] = id end
+      end
       table.sort(ids, function(a, b) return log[a].idx < log[b].idx end)
       for _, id in ipairs(ids) do if SetWatch(log[id], true) == "cap" then break end end
     end
