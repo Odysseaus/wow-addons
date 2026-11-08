@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.39: an unpinned completed quest whose turn-in is elsewhere leaves Quests and is not listed under Ready.
+## Notes: Dark Matter 0.5.2b.40: Quests and Ready keep the last zone or city while the player map is missing or not a zone or city.
 ## Author: Odysseaus
-## Version: 0.5.2b.39
+## Version: 0.5.2b.40
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

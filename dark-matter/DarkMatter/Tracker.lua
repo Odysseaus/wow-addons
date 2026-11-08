@@ -884,17 +884,58 @@ function Tr.HoldArea()
   if Tr.taxiSettleUntil and (Tr._now or Now()) < Tr.taxiSettleUntil and Tr.settleHold then return Tr.settleHold end
   return nil
 end
+-- 0.5.2b.40: a zone or a capital is a valid membership sample. Anything else (missing map, continent, world) is not.
+-- Cities are recognized by id. A dungeon under a zone already resolves to that zone in PlayerArea.
+function Tr.AreaKind(area)
+  local MD = NS.MapData
+  if not (area and MD) then return nil end
+  if MD.IsCityID(area) then return "city" end
+  if MD.Is(area, "zone") then return "zone" end
+  return nil
+end
+function Tr.ReadSample()
+  local MD = NS.MapData
+  local zone = type(GetZoneText) == "function" and GetZoneText() or nil
+  local real = type(GetRealZoneText) == "function" and GetRealZoneText() or nil
+  local area = MD and MD.PlayerArea and MD.PlayerArea() or nil
+  -- Resolved every call. A city rect changes with position, and the area can change without the map id changing.
+  -- Planning still happens only on a real zone change or on the one step back from an invalid map.
+  Tr.sample = { area = area, kind = Tr.AreaKind(area), zone = zone, real = real }
+  return Tr.sample
+end
+-- Last valid zone or city, else nothing. Does not read the live map while a taxi hold is up.
+function Tr.Membership()
+  local taxi = Tr.HoldArea()
+  if type(taxi) == "table" and taxi.area then return taxi.area, taxi.zone, taxi.real, "taxi" end
+  local s = Tr.ReadSample()
+  if s and s.kind then return s.area, s.zone, s.real, s.kind end
+  if Tr.good and Tr.good.area then return Tr.good.area, Tr.good.zone, Tr.good.real, "hold" end
+  return nil, nil, nil, "none"
+end
+-- One transition out of an invalid sample requests a single refresh. A valid sample does not replan by itself.
+function Tr.NoteSample(now)
+  if Tr.taxiGate == "fly" or Tr.taxiGate == "settle" then return "taxi" end
+  local s = Tr.ReadSample()
+  if s and s.kind then
+    local wasBad = Tr.badSample
+    Tr.good = { area = s.area, zone = s.zone, real = s.real }
+    Tr.badSample = nil
+    if wasBad then Tr.zonePending = now or Now() Tr.readyDirty = true end
+    return "valid"
+  end
+  if not Tr.badSample then Tr.readyDirty = true end
+  Tr.badSample = true
+  return (Tr.good and Tr.good.area) and "hold" or "none"
+end
 function Tr.ZoneSet(log)
   local want = {}
   local MD = NS.MapData
   -- 0.5.2b.25: inside a capital this is the city, not the zone around it (Ironforge, not Dun Morogh)
   -- 0.5.2b.35: a taxi hold keeps the departure area until landing
-  local hold = Tr.HoldArea()
-  local area = hold and hold.area or (MD and MD.PlayerArea and MD.PlayerArea())
+  -- 0.5.2b.40: an invalid map keeps the last zone or city. With no last one, nothing is added from the map.
+  local area, zone, real = Tr.Membership()
   local city = area and MD and MD.IsCityID(area)
   local areaName = area and MD and MD.Name(area)
-  local zone = hold and hold.zone or ((type(GetZoneText) == "function" and GetZoneText()) or nil)
-  local real = hold and hold.real or ((type(GetRealZoneText) == "function" and GetRealZoneText()) or nil)
   for id, e in pairs(log) do
     if e.zone then
       if city then
@@ -1061,6 +1102,9 @@ function Tr.AutoStep(now)
     Tr.waitingTaxi = nil
     Tr.zonePending = Now()
   end
+  -- 0.5.2b.40: do not watch, unwatch, or apply a queued watch change from a missing or non-zone map.
+  local sample = Tr.NoteSample(now)
+  if sample == "hold" or sample == "none" then return end
   if Tr.deferPlan and gate ~= "land" then return end
   if not Tr.AutoWanted() then
     -- auto-track off: the game's own tracking, except that pinned quests are tracked again after a zone change
@@ -1199,6 +1243,7 @@ function Tr.SetOrder(on)
   if on then Tr.orderDirty = Now() - Tr.ORDER_SETTLE end
 end
 function Tr.OrderStep(now)
+  if Tr.badSample then return end
   if not Tr.orderDirty or not Tr.OrderWanted() or Tr.orderGaveUp then return end
   if now < Tr.orderDirty + Tr.ORDER_SETTLE or InCombat() or OnTaxi() or Tr.zonePending or #Tr.queue > 0 then return end
   local order = Tr.WatchOrder()

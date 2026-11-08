@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.40
+
+- **Quests and Ready.** While the player map is missing, or is not a zone or a city, membership stays on the last zone or city. Watches are not added or removed from that sample, including a watch change already queued. When a zone or city can be read again, they refresh once, still waiting in the air and in combat. With no earlier zone or city, Ready does not list every completed quest and Quests is left as it is.
+
 ## 0.5.2b.39
 
 - **Quests.** An unpinned completed quest whose turn-in is another zone leaves the Quests list, including when auto-track is off. It is not added to Ready. A completed pin stays in Ready in any zone. An in-progress pin stays on Quests. An in-progress quest you are watching yourself stays when auto-track is off. The removal still waits in the air and in combat.

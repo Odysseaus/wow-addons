@@ -240,14 +240,19 @@ function QS.TurnInMap(q)
   local wm, wx, wy = Call("C_QuestLog.GetNextWaypoint", q)
   if N(wm) and wm > 0 and N(wx) and N(wy) then return QS.PlaceOnMap(wm, wx, wy) end
   local here = MD and MD.PlayerArea and MD.PlayerArea()
-  if here and OnMap(here, q) then return here end
-  if here and Fn("C_QuestLog.GetNextWaypointForMap") then
+  -- 0.5.2b.40: a continent or other non-zone map is not a turn-in place. A quest spotted on it stays with its zone.
+  local hereOk = here and (not NS.Tracker or not NS.Tracker.AreaKind or NS.Tracker.AreaKind(here))
+  if hereOk and OnMap(here, q) then return here end
+  if hereOk and Fn("C_QuestLog.GetNextWaypointForMap") then
     local x, y = Call("C_QuestLog.GetNextWaypointForMap", q, here)
     if N(x) and N(y) then return QS.PlaceOnMap(here, x, y) end
   end
   if Call("C_QuestLog.IsOnMap", q) == true and MD and MD.PlayerMap() then
     local pm = MD.PlayerMap()
-    if not (here and MD.IsCityID(here) and not MD.IsCityID(pm)) then return MD.ZoneOf(pm) or pm end
+    if not (here and MD.IsCityID(here) and not MD.IsCityID(pm)) then
+      local z = MD.ZoneOf(pm) or pm
+      if not (NS.Tracker and NS.Tracker.AreaKind) or NS.Tracker.AreaKind(z) then return z end
+    end
   end
   if not MD then return nil end
   local hits = {}
@@ -316,14 +321,26 @@ end
 -- A quest we cannot place at all still shows. A placed quest from another zone does not.
 -- 0.5.2b.35: while a taxi flight is held, automatic Ready membership uses the departure area.
 function QS.HereArea()
-  local h = NS.Tracker and NS.Tracker.HoldArea and NS.Tracker.HoldArea()
+  local Tr = NS.Tracker
+  local h = Tr and Tr.HoldArea and Tr.HoldArea()
   if type(h) == "table" and h.area then return h.area end
+  -- 0.5.2b.40: Ready follows the last zone or city while the live map is missing or not a zone/city.
+  if Tr and Tr.Membership then
+    local area, _, _, how = Tr.Membership()
+    if how == "none" then return nil end
+    if area then return area end
+  end
   local MD = NS.MapData
   return MD and MD.PlayerArea and MD.PlayerArea()
 end
 function QS.ReadyHere(q)
   local here = QS.HereArea()
-  if not here then return true end
+  if not here then
+    local Tr = NS.Tracker
+    -- no prior valid zone: do not list every completed quest
+    if Tr and Tr.badSample and not (Tr.good and Tr.good.area) then return false end
+    return true
+  end
   local turn = QS.TurnInMap(q)
   if turn then return QS.SameArea(turn, here) == true end
   local qa = QS.AreaOf(q)

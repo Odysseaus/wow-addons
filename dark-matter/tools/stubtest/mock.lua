@@ -8382,6 +8382,133 @@ if MODE ~= "minimal" then
     Tr.readyDropDue, Tr.nextBatch, Tr.deferPlan, Tr.watch = nil, nil, nil, nil
     Tr.Diff()
   end
+  -- 0.5.2b.40: an unusable map keeps the last zone or city and does not watch or unwatch from that sample.
+  do
+    local Tr, MD = NS.Tracker, NS.MapData
+    local saveBest, saveInfo, savePos, saveZone, saveQOM = C_Map.GetBestMapForUnit, C_Map.GetMapInfo, C_Map.GetPlayerMapPosition, ZONE_TEXT, C_QuestLog.GetQuestsOnMap
+    local saveAuto, saveTaxi, saveIC, saveOrder = NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.db.trackOrder
+    local pins, qw = {}, {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local here = nil
+    local MAPS = {
+      [1429] = { name = "Elwynn Forest", mapType = 3, parentMapID = 1415 },
+      [1415] = { name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+      [1436] = { name = "Westfall", mapType = 3, parentMapID = 1415 },
+      [1455] = { name = "Ironforge", mapType = 3, parentMapID = 1426 },
+      [1426] = { name = "Dun Morogh", mapType = 3, parentMapID = 1415 },
+      [9999] = { name = "The Deadmines", mapType = 4, parentMapID = 1436 },
+    }
+    C_Map.GetBestMapForUnit = function() return here end
+    C_Map.GetMapInfo = function(id) return MAPS[id] end
+    C_Map.GetPlayerMapPosition = function() return nil end
+    C_QuestLog.GetQuestsOnMap = function(id)
+      if id == 1415 then return { { questID = 101, x = 0.2, y = 0.2 }, { questID = 102, x = 0.3, y = 0.3 }, { questID = 103, x = 0.4, y = 0.4 } } end
+      if id == 1429 then return { { questID = 101, x = 0.2, y = 0.2 } } end
+      return {}
+    end
+    local function listed(id)
+      for _, e in ipairs(Tr.ReadyList()) do if e.id == id then return true end end
+    end
+    local function use(map, zone)
+      here = map
+      ZONE_TEXT = zone
+      Tr.sampleKey, Tr.sample = nil, nil
+      MD.Forget()
+    end
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    NS.db.autoTrack, NS.db.trackOrder = true, false
+    UnitOnTaxi, InCombatLockdown = nil, function() return false end
+    Tr.good, Tr.badSample, Tr.sampleKey, Tr.sample = nil, nil, nil, nil
+    Tr.taxiRide, Tr.taxiSettleUntil, Tr.hold, Tr.settleHold, Tr.ground = nil, nil, nil, nil, nil
+    Tr.deferPlan, Tr.zonePending, Tr.queue, Tr.nextBatch, Tr.readyDropDue = nil, nil, {}, 0, nil
+    QWATCH[2], QWATCH[3], QWATCH[6] = true, true, true
+    Tr.watch = nil
+    Tr.Diff()
+    use(nil, nil)
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.zonePending = TIME_NOW
+    Tr.Tick(TIME_NOW)
+    check(QWATCH[2] == true and QWATCH[3] == true and QWATCH[6] == true and not listed(102) and not Tr.good,
+      "0.5.2b.40 map: with no earlier zone, a missing map does not change watches or fill Ready")
+    use(1415, "Eastern Kingdoms")
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 0.2)
+    check(QWATCH[2] == true and QWATCH[6] == true and Tr.badSample and not Tr.good,
+      "0.5.2b.40 map: a continent sample does not watch the quests on that map and does not apply a queued unwatch")
+    use(1429, "Elwynn Forest")
+    QWATCH[2], QWATCH[6] = nil, true
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 1)
+    check(QWATCH[2] == true and QWATCH[6] == nil and QWATCH[3] == nil and listed(102) and not Tr.zonePending and Tr.good and Tr.good.area == 1429,
+      "0.5.2b.40 map: the first valid zone refreshes once, keeps the local turn-in in Ready, and drops the stale unwatch")
+    QWATCH[2] = nil
+    Tr.Tick(TIME_NOW + 1.2)
+    check(QWATCH[2] == nil and not Tr.zonePending, "0.5.2b.40 map: a later tick does not plan again")
+    QWATCH[2], QWATCH[6] = true, true
+    Tr.Diff()
+    use(1415, "Eastern Kingdoms")
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.zonePending = TIME_NOW
+    Tr.Tick(TIME_NOW + 2)
+    check(QWATCH[2] == true and QWATCH[6] == true and listed(102) and not listed(103) and Tr.badSample and Tr.good.area == 1429,
+      "0.5.2b.40 map: Quests and Ready stay on the last zone while the map is a continent")
+    NS.db.autoTrack = false
+    QWATCH[6] = true
+    Tr.queue = { { e = { id = 103, idx = 6, questID = 103 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 2.2)
+    check(QWATCH[6] == true and QWATCH[2] == true, "0.5.2b.40 map: auto-track off keeps a hand-watched quest through the bad sample")
+    local flying = true
+    UnitOnTaxi = function() return flying end
+    Tr.ground = { area = 1429, zone = "Elwynn Forest", real = "Elwynn Forest" }
+    use(1429, "Elwynn Forest")
+    Tr.Tick(TIME_NOW + 3)
+    use(1415, "Eastern Kingdoms")
+    QWATCH[2] = true
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 3.2)
+    check(Tr.taxiRide and QWATCH[2] == true, "0.5.2b.40 map: a taxi still holds, and the continent sample changes nothing")
+    flying = false
+    Tr.Tick(TIME_NOW + 3.4)
+    check(not Tr.taxiRide and QWATCH[2] == true and Tr.badSample, "0.5.2b.40 map: landing on a continent does not refresh yet")
+    local fight = true
+    InCombatLockdown = function() return fight end
+    NS.db.autoTrack = true
+    use(1429, "Elwynn Forest")
+    QWATCH[2] = nil
+    Tr.Tick(TIME_NOW + 4)
+    check(QWATCH[2] == nil and Tr.zonePending, "0.5.2b.40 map: combat defers the one refresh")
+    fight = false
+    InCombatLockdown = function() return false end
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 4.2)
+    check(QWATCH[2] == true and not Tr.zonePending, "0.5.2b.40 map: after combat the valid zone refreshes once")
+    use(1455, "Ironforge")
+    Tr.Tick(TIME_NOW + 5)
+    check(not Tr.badSample and Tr.good and Tr.good.area == 1455 and Tr.AreaKind(1455) == "city",
+      "0.5.2b.40 map: a capital is a valid sample")
+    use(9999, "Westfall")
+    local area = Tr.Membership()
+    check(area == 1436 and Tr.AreaKind(area) == "zone", "0.5.2b.40 map: a dungeon under a zone still uses that zone")
+    C_Map.GetBestMapForUnit, C_Map.GetMapInfo, C_Map.GetPlayerMapPosition = saveBest, saveInfo, savePos
+    ZONE_TEXT = saveZone
+    if saveQOM == nil then C_QuestLog.GetQuestsOnMap = nil else C_QuestLog.GetQuestsOnMap = saveQOM end
+    NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.db.trackOrder = saveAuto, saveTaxi, saveIC, saveOrder
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    for k, v in pairs(pins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.badSample, Tr.good, Tr.sampleKey, Tr.sample = nil, nil, nil, nil
+    Tr.taxiRide, Tr.hold, Tr.settleHold, Tr.ground, Tr.zonePending, Tr.queue = nil, nil, nil, nil, nil, {}
+    Tr.readyDropDue, Tr.nextBatch, Tr.deferPlan, Tr.watch = nil, nil, nil, nil
+    MD.Forget()
+    Tr.Diff()
+  end
   -- 0.5.2b.32: unpinning one out-of-zone quest takes it off Objectives. A current-zone quest stays. No other watch or pin changes.
   do
     local Tr = NS.Tracker
