@@ -17,7 +17,7 @@ local list, empty
 local groups, total = {}, 0
 local T_READY = "Ready to Turn In"
 local selectedId, selQuest
-local pending = false
+local pending, sched = false, false
 local quietUntil = 0
 local ev
 local bar = {}
@@ -608,12 +608,23 @@ local function AnyLive()
   return false
 end
 
+local acceptWait, acceptTries = {}, 0
 local function Schedule()
-  if pending then return end
+  -- 0.5.2b.37: an event during the wait is kept. The list is only reread; nothing is selected.
   pending = true
+  if sched then return end
+  sched = true
   C_Timer.After(0.25, function()
+    sched = false
+    if not pending then return end
     pending = false
     if AnyLive() then Refresh() end
+    local now, again = Now(), false
+    for id, til in pairs(acceptWait) do
+      if FindQuest(id) or now >= til or acceptTries >= 8 then acceptWait[id] = nil
+      else again = true end
+    end
+    if again then acceptTries = acceptTries + 1 Schedule() else acceptTries = 0 end
   end)
 end
 
@@ -633,9 +644,13 @@ local function Events(on, who)
       end
       -- 0.4.6: quest data we asked for (C_QuestLog.RequestLoadQuestByID) arrived: read that quest again
       if e == "QUEST_DATA_LOAD_RESULT" then local id = NS.Num(a1) if id then QL.Forget(id) end end
-      if QL.reading then return end
-      -- our own brief selection (detail read, reward tooltip) fires QUEST_LOG_UPDATE: skip that echo
-      if e == "QUEST_LOG_UPDATE" and (Now() < quietUntil or Now() - (QL.lastSelect or -99) < 0.5) then return end
+      if e == "QUEST_ACCEPTED" then
+        local id = NS.Num(a1)
+        if id then acceptWait[id] = Now() + 2 end
+      end
+      -- 0.5.2b.37: a selection or a reward tooltip still refreshes the list. The refresh does not select.
+      -- While a read is in progress, remember the event and let the wait run after it.
+      if QL.reading then pending = true return end
       Schedule()
     end)
   end

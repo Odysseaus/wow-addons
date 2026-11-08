@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.37
+
+- **New quest.** Accepting a quest refreshes the map quest list, including just after a selection or a reward tooltip. The zone plan waits until that quest is in the log, so a watch the game added is not removed early. A log update that arrives without the accept event is picked up the same way, for about two seconds. The list read does not select the quest or load every reward. In the air and in combat the plan still waits.
+
 ## 0.5.2b.36
 
 - **Icons and names.** The round icon on a Quests row and the turn-in icon on a Ready row set the game's arrow and light a marker that is already on screen. They do not open the window and do not glide. The quest name still opens the map and glides.

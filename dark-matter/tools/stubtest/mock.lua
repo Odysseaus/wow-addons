@@ -8562,6 +8562,108 @@ if MODE ~= "minimal" then
     NS.db.autoTrack, NS.db.readyCollapsed = saveAuto, saveCol
     Tr.taxiRide, Tr.hold, Tr.ground, Tr.settleHold, Tr.taxiSettleUntil, Tr.queue, Tr.zonePending, Tr.nextBatch = nil, nil, nil, nil, nil, {}, nil, 0
   end
+  -- 0.5.2b.37: a new current-zone quest is watched once the log has it. The list refreshes without selecting.
+  do
+    local Tr = NS.Tracker
+    local baseNum, baseInfo = C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo
+    local saveAuto, saveTaxi, saveIC, saveSel = NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.QL.lastSelect
+    local savePins = {}
+    for k, v in pairs(NS.db.keepTracked or {}) do savePins[k] = v end
+    local qw = {}
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local extra = {}
+    local function nBase() local n = baseNum() return n end
+    C_QuestLog.GetNumQuestLogEntries = function()
+      local n, q = baseNum()
+      return n + #extra * 2, (q or 0) + #extra
+    end
+    C_QuestLog.GetInfo = function(i)
+      local n = nBase()
+      local k = i - n
+      if k > 0 then
+        local slot = math.floor((k + 1) / 2)
+        local id = extra[slot]
+        if not id then return nil end
+        if k % 2 == 1 then return { title = "Elwynn Forest", isHeader = true } end
+        return { title = "New " .. id, questID = id, level = 3, isHeader = false }
+      end
+      return baseInfo(i)
+    end
+    local function fire(ev, a1)
+      for _, fr in ipairs(ALL) do
+        if fr._ev and fr._ev[ev] and fr._scripts and fr._scripts.OnEvent then fr._scripts.OnEvent(fr, ev, a1) end
+      end
+    end
+    local function shown(id)
+      local v = NS.QuestPanel and NS.QuestPanel.view
+      if not v then return false end
+      for _, r in ipairs(v.rows) do
+        local q = rawget(r, "quest")
+        if r:IsShown() and type(q) == "table" and q.questID == id then return true end
+      end
+    end
+    if NS.ShowTab then NS.ShowTab("map") end
+    if NS.QuestPanel and NS.QuestPanel.ShowList then NS.QuestPanel.ShowList() end
+    NS.db.autoTrack = true
+    Tr.taxiSettleUntil, Tr.taxiRide, Tr.deferPlan = nil, nil, nil
+    Tr.pendingAccept, Tr.acceptUnknown = {}, nil
+    Tr.Tick(TIME_NOW)
+    local pin = NS.Tracker.IsPinned(101)
+    NS.Tracker.SetPinned(101, true)
+    QWATCH[2] = true
+    local sel0 = QSEL_N
+    fire("QUEST_ACCEPTED", 104)
+    Tr.Tick(TIME_NOW + 0.2)
+    check(not QWATCH[8] and QWATCH[2] == true and NS.Tracker.IsPinned(101) and QSEL_N == sel0,
+      "0.5.2b.37 accept: before the log has the quest, the zone plan does not drop the other watch")
+    extra[1] = 104
+    fire("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 0.4)
+    check(QWATCH[8] == true and shown(104) and QSEL_N == sel0 and NS.Tracker.IsPinned(101),
+      "0.5.2b.37 accept: once the log has it, it is watched and listed, and nothing is selected")
+    extra[2] = 105
+    fire("QUEST_ACCEPTED", 105)
+    fire("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 0.6)
+    check(QWATCH[8] == true and QWATCH[10] == true and shown(104) and shown(105),
+      "0.5.2b.37 accept: a second new quest is watched and listed too")
+    NS.QL.lastSelect = GetTime()
+    extra[3] = 106
+    local sel1 = QSEL_N
+    fire("QUEST_LOG_UPDATE")
+    check(shown(106) and QSEL_N == sel1, "0.5.2b.37 accept: a log update just after a selection still refreshes the list")
+    Tr.Tick(TIME_NOW + 0.8)
+    local flying = true
+    UnitOnTaxi = function() return flying end
+    Tr.Tick(TIME_NOW + 1)
+    extra[4] = 107
+    fire("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 1.2)
+    check(not QWATCH[14] and Tr.taxiRide, "0.5.2b.37 accept: in the air the new quest is not planned")
+    flying = false
+    Tr.Tick(TIME_NOW + 1.4)
+    check(QWATCH[14] == true and not Tr.taxiRide, "0.5.2b.37 accept: landing plans the quest that arrived in the air")
+    local fight = true
+    InCombatLockdown = function() return fight end
+    extra[5] = 108
+    fire("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 1.6)
+    check(not QWATCH[16] and Tr.zonePending ~= nil, "0.5.2b.37 accept: in combat the new quest is not planned")
+    fight = false
+    Tr.Tick(TIME_NOW + 1.8)
+    check(Tr.zonePending == nil and NS.Tracker.IsPinned(101) and QWATCH[2] == true,
+      "0.5.2b.37 accept: after combat the plan runs, and the other pin and watch stay")
+    C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo = baseNum, baseInfo
+    UnitOnTaxi, InCombatLockdown, NS.QL.lastSelect, NS.db.autoTrack = saveTaxi, saveIC, saveSel, saveAuto
+    if not pin then NS.Tracker.SetPinned(101, false) end
+    for k in pairs(NS.db.keepTracked or {}) do if savePins[k] == nil then NS.db.keepTracked[k] = nil end end
+    for k, v in pairs(savePins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.pendingAccept, Tr.acceptUnknown, Tr.deferPlan = {}, nil, nil
+    Tr.logIds, Tr.zonePending, Tr.queue, Tr.nextBatch, Tr.taxiRide, Tr.taxiSettleUntil = nil, nil, {}, 0, nil, nil
+    Tr.Tick(TIME_NOW + 2)
+  end
   -- 0.5.2b.33: a pinned completed quest is Ready, not on the Quests list, including a turn-in elsewhere.
   do
     local Tr = NS.Tracker

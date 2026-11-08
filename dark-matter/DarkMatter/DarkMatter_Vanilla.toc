@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.36: quest icons set the arrow only. The name opens the map. A reload in the air waits for the taxi flag.
+## Notes: Dark Matter 0.5.2b.37: a new current-zone quest shows up when the log has it, without a reload.
 ## Author: Odysseaus
-## Version: 0.5.2b.36
+## Version: 0.5.2b.37
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

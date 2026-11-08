@@ -1028,6 +1028,39 @@ function Tr.BeginTaxiSettle()
   Tr.taxiSettleUntil = Now() + Tr.TAXI_SETTLE
   Tr.settleHold = nil
 end
+Tr.ACCEPT_WAIT = 2
+Tr.pendingAccept = {}
+function Tr.SyncAccept(now)
+  now = now or Now()
+  local log = Tr.log or {}
+  if not Tr.logIds then
+    Tr.logIds = {}
+    for id in pairs(log) do Tr.logIds[id] = true end
+    return
+  end
+  local grew = false
+  for id, e in pairs(log) do
+    if not Tr.logIds[id] then
+      if e.zone then grew = true
+      else Tr.pendingAccept[id] = Tr.pendingAccept[id] or (now + Tr.ACCEPT_WAIT) end
+    end
+  end
+  local waiting = false
+  for id, til in pairs(Tr.pendingAccept) do
+    local e = log[id]
+    if e and e.zone then Tr.pendingAccept[id] = nil grew = true
+    elseif now >= til then Tr.pendingAccept[id] = nil
+    else waiting = true end
+  end
+  if Tr.acceptUnknown then
+    if grew or now >= Tr.acceptUnknown then Tr.acceptUnknown = nil
+    else waiting = true end
+  end
+  Tr.logIds = {}
+  for id in pairs(log) do Tr.logIds[id] = true end
+  Tr.deferPlan = waiting or nil
+  if not waiting and grew and Tr.AutoWanted() then Tr.zonePending = now end
+end
 function Tr.AutoStep(now)
   local gate = Tr.taxiGate
   if gate == "fly" or gate == "settle" then
@@ -1038,6 +1071,7 @@ function Tr.AutoStep(now)
     Tr.waitingTaxi = nil
     Tr.zonePending = Now()
   end
+  if Tr.deferPlan and gate ~= "land" then return end
   if not Tr.AutoWanted() then
     -- auto-track off: the game's own tracking, except that pinned quests are tracked again after a zone change
     -- (0.5.2b.12: and ready quests leave the Quests list while Ready to Turn In is on).
@@ -1246,7 +1280,10 @@ function Tr.OnEvent(event, a1)
   elseif event == "PLAYER_CONTROL_GAINED" then -- 0.5.2b.1: landing after a flight (also after a stun or a cinematic)
     if Tr.waitingTaxi or Tr.zonePending then Tr.zonePending = Now() end
   elseif event == "QUEST_ACCEPTED" then
-    if Tr.AutoWanted() then Tr.zonePending = Now() end
+    -- 0.5.2b.37: do not plan until this id is in the log. An early plan would drop a watch the game just added.
+    local id = N(a1)
+    local til = Now() + Tr.ACCEPT_WAIT
+    if id then Tr.pendingAccept[id] = til else Tr.acceptUnknown = til end
   elseif event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN" then
     local q = N(a1)
     if q then Pins()[q] = nil end
@@ -1260,6 +1297,7 @@ function Tr.Tick(now)
   Tr._now = now
   Tr.FlightHold(now)
   if Tr.diffDirty then Tr.diffDirty = false Tr.Diff() end
+  Tr.SyncAccept(now)
   Tr.AutoStep(now)
   Tr.OrderStep(now)
   if Tr.readyDirty then Tr.FillReady() end
