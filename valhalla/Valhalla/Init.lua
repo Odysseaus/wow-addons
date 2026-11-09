@@ -13,6 +13,7 @@
 --   /valhalla dungeons       which map each dungeon entrance opens (Dungeons.lua)
 --   /valhalla entrance <name>  where you stand, as a dungeon entrance for tools/map-data (Dungeons.lua)
 --   /valhalla highlights     where the game draws each zone's highlight, for tools/map-preview (Debug.lua)
+--   /valhalla objectives on|off  the All Objectives tracker by zone, Ready to Turn In, pins (Objectives/Objectives.lua)
 --------------------------------------------------------------------------------
 
 local ADDON, ns = ...
@@ -25,6 +26,13 @@ local function Options()
 		desc = ns.L["Turning Valhalla off takes a reload."],
 		get = function() return mod.db.enabled end,
 		set = function(_, v) mod.db.enabled = v; ns:Print(ns.L["Takes effect after a /reload."]) end }
+	local objectives = ns:GetModule("objectives")
+	if objectives then
+		args.objectives = { type = "toggle", name = ns.L["Objectives: zone quests, Ready to Turn In and pins"], order = 0.2, width = "full",
+			desc = ns.L["The game's All Objectives tracker lists this zone's quests (lowest level first), a Ready to Turn In section and a pin per quest. Off: the game's own tracking. Also /valhalla objectives on|off."],
+			get = function() return objectives.db.enabled end,
+			set = function(_, v) objectives.O.SetOn(v) end }
+	end
 	args.padWaits = { type = "description", order = 0.5, fontSize = "medium",
 		name = function() return "|cffff8040" .. mod.PadOffText() .. "|r" end,
 		hidden = function() return not mod.padWaits end }
@@ -46,6 +54,13 @@ local function Slash(msg)
 	msg = raw:lower()
 	local mod = ns:GetModule("worldmap")
 	local word, rest = msg:match("^(%S+)%s+(.+)$")
+	-- /valhalla objectives [on|off] (also /vh obj): the zone quests, Ready to Turn In and pins (Objectives/Objectives.lua)
+	local objWord, objArg = msg:match("^(%S+)%s*(%S*)$")
+	if objWord == "objectives" or objWord == "obj" then
+		local objectives = ns:GetModule("objectives")
+		if objectives then objectives:Slash(objArg) end
+		return
+	end
 	local takes = { bench = true, entrance = true }  -- (/valhalla bench 16: at that zoom; /valhalla entrance Dire Maul - East)
 	if takes[word] then msg, rest = word, raw:match("^%S+%s+(.+)$") end
 	local run = {

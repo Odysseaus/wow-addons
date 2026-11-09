@@ -4,6 +4,12 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.2.0", date = "2026-11-09", heads = { [1] = "New", }, items = {
+		"|cff6e2c0aAll Objectives by zone|r: the Quests section lists this zone's quests (in a capital, the city's and its surrounding zone's), lowest level first. It changes only once you've landed or arrived, never in combat.",
+		"|cff6e2c0aReady to Turn In|r: a section of its own at the bottom of All Objectives for this zone's quests that are ready to hand in. Click one to select it and open it.",
+		"|cff6e2c0aPins|r: the pin left of a quest keeps it listed in every zone. Off by default; saved per character.",
+		"|cff6e2c0aTurn it off any time|r with /valhalla objectives off (or in Options): the game's own tracking comes back, with the quests Valhalla untracked tracked again.",
+	} },
 	{ version = "v0.1.0", date = "2026-11-09", heads = { [1] = "New", }, items = {
 		"|cff6e2c0aValhalla|r: Odysseaus's own fork of OpenMap v0.8.2 by OpenMap contributors (MIT). Its own name, settings (ValhallaDB), /valhalla and /vh, key bindings and windows. The notes below are OpenMap's.",
 	} },

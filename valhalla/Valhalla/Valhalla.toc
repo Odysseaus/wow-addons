@@ -16,7 +16,7 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: v0.1.1
+## Version: v0.2.0
 ## SavedVariables: ValhallaDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
@@ -97,6 +97,9 @@ Map\Compat.lua
 Map\Panel.lua
 Map\Launcher.lua
 Map\Welcome.lua
+
+# The game's All Objectives tracker: this zone's quests, Ready to Turn In, pins (v0.2.0)
+Objectives\Objectives.lua
 
 # For other addons (docs/api.md)
 API.lua
