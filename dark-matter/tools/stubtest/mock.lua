@@ -6489,6 +6489,17 @@ do
   check(names["Dun Morogh"] == "1-10" and names["Loch Modan"] == "10-20" and names["Elwynn Forest"] == "1-10", "0.5.0 map: zone level badges at the continent view")
   check(names["Ironforge"] == nil, "0.5.0 map: no badge for a city without a level range")
   check(M.caption:IsShown() and M.caption.text._text == "Levels: public data", "0.5.0 map: badges are captioned as public data")
+  check(bp[1] and bp[1].plate._file == "Interface\\QuestFrame\\UI-QuestItemNameFrame" and bp[1].art == "scroll"
+    and bp[1].text._fflags == "OUTLINE" and bp[1].text._text ~= nil, "0.5.2b.59 map: zone level badge is the parchment scroll, ivory text outlined")
+  ;(function()
+    local saveOK = NS.Stock.TextureOK
+    NS.Stock.TextureOK = function() return false end
+    local fb = M.MakeBadge()
+    fb:Hide()
+    check(fb.art == "tint" and fb.plate._file == nil and fb.plate._color and fb.plate._color[1] > 0.5 and fb.text._fflags == "OUTLINE",
+      "0.5.2b.59 map: a missing scroll file falls back to a parchment tint")
+    NS.Stock.TextureOK = saveOK
+  end)()
   M.caption._scripts.OnEnter(M.caption)
   check(tip.lines[1] and tip.lines[1]:find("Wowhead", 1, true), "0.5.0 map: caption tooltip names the source")
   -- 16. full screen and back (button, Esc, closing the window)

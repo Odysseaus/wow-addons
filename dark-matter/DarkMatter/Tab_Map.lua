@@ -785,23 +785,46 @@ local function PoolHideRest(name)
   for i = p.n + 1, #p do p[i]:Hide() end
 end
 M.Pool, M.PoolReset, M.PoolHideRest = Pool, PoolReset, PoolHideRest -- 0.5.2b.7: for MapExtras.lua
+-- 0.5.2b.59: the zone level label is a parchment scroll with curled ends (option 2).
+-- The art is the client's quest-item name frame, which is that scroll. Nothing is added to the addon.
+-- If that file is missing, the plate is a parchment tint and the text stays ivory with a dark outline.
+local SCROLL_FILE = "Interface\\QuestFrame\\UI-QuestItemNameFrame"
+local SCROLL_TC = { 0.078125, 0.921875, 0.15625, 0.59375 }
+local PARCHMENT = { 0.70, 0.60, 0.42, 0.94 }
+local function PaintBadge(b)
+  local plate, edge = b.plate, b.edge
+  local ok = NS.Stock and NS.Stock.TextureOK and NS.Stock.TextureOK(SCROLL_FILE)
+  if ok then
+    plate:SetTexture(SCROLL_FILE)
+    plate:SetTexCoord(SCROLL_TC[1], SCROLL_TC[2], SCROLL_TC[3], SCROLL_TC[4])
+    plate:SetVertexColor(1, 1, 1, 1)
+    edge:Hide()
+    b.art = "scroll"
+    return
+  end
+  plate:SetColorTexture(PARCHMENT[1], PARCHMENT[2], PARCHMENT[3], PARCHMENT[4])
+  plate:SetTexCoord(0, 1, 0, 1)
+  edge:Show()
+  edge:SetColorTexture(0.38, 0.28, 0.16, 0.9)
+  b.art = "tint"
+end
 local function MakeBadge()
   local b = CreateFrame("Frame", nil, over)
   b:SetSize(44, 18)
   b.plate = b:CreateTexture(nil, "BACKGROUND")
   b.plate:SetAllPoints(b)
-  b.plate:SetColorTexture(0.06, 0.05, 0.035, 0.9)
   b.edge = b:CreateTexture(nil, "BORDER")
   b.edge:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
   b.edge:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
   b.edge:SetHeight(1)
-  b.edge:SetColorTexture(1, 0.82, 0.25, 0.8)
   b.text = b:CreateFontString(nil, "OVERLAY")
-  NS.SetFont(b.text, 11, "")
+  NS.SetFont(b.text, 11, "OUTLINE")
   b.text:SetPoint("CENTER", b, "CENTER", 0, 0)
-  b.text:SetTextColor(1, 0.84, 0.3, 1)
+  b.text:SetTextColor(0.98, 0.95, 0.86, 1)
+  PaintBadge(b)
   return b
 end
+M.MakeBadge = MakeBadge
 -- 0.5.2a quest markers: the game's own quest icons (QuestState.lua: grey ? in progress, yellow ? ready to turn in),
 -- clickable. Hover highlights the quest's row in the Quests tab (and a row's hover highlights its markers here); click
 -- selects the quest there and flies to it; shift-click sets the game's waypoint + arrow. A press that turns into a drag
@@ -1213,7 +1236,7 @@ local function LayoutOverlay()
           local bd = Pool("badge", MakeBadge)
           bd.zone = z.name
           bd.text:SetText(lv)
-          bd:SetWidth(math.max(34, (bd.text:GetStringWidth() or 30) + 14))
+          bd:SetWidth(math.max(44, (bd.text:GetStringWidth() or 30) + 18))
           bd:ClearAllPoints()
           bd:SetPoint("CENTER", over, "TOPLEFT", cx, -cy)
           bd:Show()

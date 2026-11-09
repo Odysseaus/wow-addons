@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2b.59
+
+- **Level labels.** On the world and continent map, a zone's level range sits on a parchment scroll with curled ends. The art is the client's quest-item name frame. If that file is missing, the plate is a parchment tint. The text is ivory with a dark outline. The spots and the other map behavior stay.
+- **Dungeon entrances.** No new pin. The classic meeting stones and the instance doors checked on Forever's object tooltips are either missing or have no coordinates. Krol'dok stays where it was. Raids stay off.
+
 ## 0.5.2b.58
 
 - **Stormwind.** Service pins are drawn on the city map. Each Forever tooltip had two clusters. The cluster farther southeast is the current city, the one that has the southern harbor at 22.6, 56.1 and matches the published spots for Dungar, Allison, Therum, and Chilton. The classic cluster is not drawn, and the two clusters are not averaged. The boat at 22, 56 stays.
