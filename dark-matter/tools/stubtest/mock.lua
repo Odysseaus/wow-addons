@@ -6228,31 +6228,31 @@ do
     M._boats, M._c, M._lake = {}, {}, false
     for _, pin in ipairs(NS.TownPins.pins) do
       M._c[pin.cat] = (M._c[pin.cat] or 0) + 1
-      if pin.cat == "dock" then M._boats[pin.name] = pin end
+      if pin.cat == "dock" then M._boats[pin.name .. "|" .. (pin.dest or "")] = pin end
       if pin.map == 1433 then M._lake = true end
     end
     check(M._c.flight == 62 and M._c.inn == 35 and M._c.vendor == 25 and M._c.ptrainer == 128
       and M._c.psupply == 37 and M._c.bank == 17 and M._c.auction == 24 and M._c.entrance == 1
-      and M._c.dock == 8 and not M._lake,
+      and M._c.dock == 14 and not M._lake,
       "0.5.2b.54 town: the old counts are unchanged, eight docks remain, and Lakeshire has no pin")
-    steam = M._boats["Steamwheedle Port"]
+    steam = M._boats["Steamwheedle Port|Powderfuse Port, Riverglades"]
     check(steam and steam.x == 0.686 and steam.y == 0.23
-      and M._boats["Powderfuse Port"] and M._boats["Powderfuse Port"].map == 2548
-      and M._boats["Powderfuse Port"].x == 0.806 and M._boats["Powderfuse Port"].y == 0.546
-      and M._boats["Powderfuse Port"].dest == "Steamwheedle Port, Tanaris"
-      and M._boats["Booty Bay"] and M._boats["Booty Bay"].map == 1434 and M._boats["Booty Bay"].x == 0.263
-      and M._boats["Booty Bay"].y == 0.735 and M._boats["Booty Bay"].dest == "Ratchet, The Barrens",
+      and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"] and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].map == 2548
+      and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].x == 0.806 and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].y == 0.546
+      and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].dest == "Steamwheedle Port, Tanaris"
+      and M._boats["Booty Bay|Ratchet, The Barrens"] and M._boats["Booty Bay|Ratchet, The Barrens"].map == 1434 and M._boats["Booty Bay|Ratchet, The Barrens"].x == 0.263
+      and M._boats["Booty Bay|Ratchet, The Barrens"].y == 0.735 and M._boats["Booty Bay|Ratchet, The Barrens"].dest == "Ratchet, The Barrens",
       "0.5.2b.53 town: the four earlier docks are unchanged and the flight rows stay in the data")
-    steam = M._boats["Stormwind Harbor"]
+    steam = M._boats["Stormwind Harbor|Auberdine, Darkshore"]
     check(steam and steam.map == 1453 and steam.x == 0.22 and steam.y == 0.56 and steam.detail == "Stormwind City"
       and steam.dest == "Auberdine, Darkshore" and steam.src == "owner coordinates, 8 Nov 2026"
-      and M._boats["Auberdine"].map == 1439 and M._boats["Auberdine"].x == 0.305 and M._boats["Auberdine"].y == 0.41
-      and M._boats["Auberdine"].dest == "Stormwind Harbor"
-      and M._boats["Wetlands"].map == 1437 and M._boats["Wetlands"].x == 0.045 and M._boats["Wetlands"].y == 0.57
-      and M._boats["Wetlands"].dest == "Southshore, Hillsbrad Foothills"
-      and M._boats["Southshore"].map == 1424 and M._boats["Southshore"].x == 0.505 and M._boats["Southshore"].y == 0.70
-      and M._boats["Southshore"].dest == "Auberdine, Darkshore"
-      and M._boats["Southshore"].src == "owner coordinates, 8 Nov 2026",
+      and M._boats["Auberdine|Stormwind Harbor"].map == 1439 and M._boats["Auberdine|Stormwind Harbor"].x == 0.305 and M._boats["Auberdine|Stormwind Harbor"].y == 0.41
+      and M._boats["Auberdine|Stormwind Harbor"].dest == "Stormwind Harbor"
+      and M._boats["Wetlands|Southshore, Hillsbrad Foothills"].map == 1437 and M._boats["Wetlands|Southshore, Hillsbrad Foothills"].x == 0.045 and M._boats["Wetlands|Southshore, Hillsbrad Foothills"].y == 0.57
+      and M._boats["Wetlands|Southshore, Hillsbrad Foothills"].dest == "Southshore, Hillsbrad Foothills"
+      and M._boats["Southshore|Auberdine, Darkshore"].map == 1424 and M._boats["Southshore|Auberdine, Darkshore"].x == 0.505 and M._boats["Southshore|Auberdine, Darkshore"].y == 0.70
+      and M._boats["Southshore|Auberdine, Darkshore"].dest == "Auberdine, Darkshore"
+      and M._boats["Southshore|Auberdine, Darkshore"].src == "owner coordinates, 8 Nov 2026",
       "0.5.2b.53 town: the four owner docks use the named maps and only those destinations")
     M.FlyTo(1432) run(40)
     M.Layout()
@@ -6280,16 +6280,20 @@ do
     MAPS[1439] = { "Darkshore", 3, 1414, { 0.30, 0.42, 0.22, 0.38 } }
     MAPS[1434] = { "Stranglethorn Vale", 3, 1415, { 0.30, 0.42, 0.55, 0.70 } }
     MAPS[1437] = { "Wetlands", 3, 1415, { 0.42, 0.52, 0.28, 0.42 } }
+    MAPS[1438] = { "Teldrassil", 3, 1414, { 0.02, 0.14, 0.02, 0.16 } }
+    MAPS[1444] = { "Feralas", 3, 1414, { 0.02, 0.14, 0.80, 0.94 } }
+    MAPS[1445] = { "Dustwallow Marsh", 3, 1414, { 0.80, 0.94, 0.80, 0.94 } }
     MAPS[1424] = { "Hillsbrad Foothills", 3, 1415, { 0.52, 0.64, 0.28, 0.44 } }
     MAPS[2548] = { "Riverglades", 3, 1414, { 0.18, 0.30, 0.40, 0.55 } }
     MD.Forget()
     M._seeDock = function(id, name, dest)
-      local spot = M._boats[name]
+      local spot = M._boats[name .. "|" .. dest]
       local wx, wy = M.ToW(id, spot.x, spot.y)
       M.FlyTo(id, wx, wy) run(40)
       M.Layout()
       pins = shownTown()
-      gryth = hasName(pins, name)
+      gryth = nil
+      for _, m in ipairs(pins) do if m.pin.name == name and m.pin.dest == dest then gryth = m end end
       city = M.layers[id]
       box = city and city.box
       gx, gy = gryth and gryth.sx, gryth and gryth.sy
@@ -6317,15 +6321,52 @@ do
       "0.5.2b.53 town: the Wetlands boat names Southshore")
     check(M._seeDock(1424, "Southshore", "Auberdine, Darkshore"),
       "0.5.2b.53 town: the Hillsbrad boat names Auberdine")
+    check(M._seeDock(1437, "Menethil Harbor", "Theramore, Dustwallow Marsh"),
+      "0.5.2b.55 town: Menethil Harbor draws on Wetlands and names Theramore")
+    check(M._seeDock(1445, "Theramore", "Menethil Harbor, Wetlands"),
+      "0.5.2b.55 town: Theramore draws on Dustwallow Marsh and names Menethil Harbor")
+    check(M._seeDock(1439, "Auberdine", "Rut'theran Village, Teldrassil"),
+      "0.5.2b.55 town: the second Auberdine pin names Rut'theran Village")
+    check(M._seeDock(1438, "Rut'theran Village", "Auberdine, Darkshore"),
+      "0.5.2b.55 town: Rut'theran Village draws on Teldrassil and names Auberdine")
+    check(M._seeDock(1444, "Feathermoon Stronghold", "Forgotten Coast, Feralas"),
+      "0.5.2b.55 town: Feathermoon Stronghold names the Forgotten Coast")
+    check(M._seeDock(1444, "Forgotten Coast", "Feathermoon Stronghold, Feralas"),
+      "0.5.2b.55 town: the Forgotten Coast names Feathermoon Stronghold")
+    M._men = 0
+    for _, pin in ipairs(NS.TownPins.pins) do
+      if pin.cat == "dock" and pin.map == 1439 and type(pin.dest) == "string" and pin.dest:find("Menethil", 1, true) then M._men = M._men + 1 end
+    end
+    check(M._men == 0 and M._boats["Menethil Harbor|Theramore, Dustwallow Marsh"].x == 0.045
+      and M._boats["Menethil Harbor|Theramore, Dustwallow Marsh"].y == 0.635
+      and M._boats["Theramore|Menethil Harbor, Wetlands"].x == 0.715
+      and M._boats["Theramore|Menethil Harbor, Wetlands"].y == 0.565
+      and M._boats["Auberdine|Rut'theran Village, Teldrassil"].x == 0.332
+      and M._boats["Auberdine|Rut'theran Village, Teldrassil"].y == 0.40
+      and M._boats["Rut'theran Village|Auberdine, Darkshore"].map == 1438
+      and M._boats["Rut'theran Village|Auberdine, Darkshore"].x == 0.548
+      and M._boats["Rut'theran Village|Auberdine, Darkshore"].y == 0.97
+      and M._boats["Feathermoon Stronghold|Forgotten Coast, Feralas"].x == 0.31
+      and M._boats["Feathermoon Stronghold|Forgotten Coast, Feralas"].y == 0.395
+      and M._boats["Forgotten Coast|Feathermoon Stronghold, Feralas"].x == 0.43
+      and M._boats["Forgotten Coast|Feathermoon Stronghold, Feralas"].y == 0.427
+      and M._boats["Auberdine|Stormwind Harbor"].x == 0.305,
+      "0.5.2b.55 town: the six new docks keep the owner spots, and Auberdine has no Menethil route")
     M.SetTown("dock", false)
     M.Layout()
-    check(not hasName(shownTown(), "Southshore"),
-      "0.5.2b.54 town: the saved Docks toggle hides that boat")
+    M._nd = 0
+    for _, m in ipairs(shownTown()) do if m.pin.cat == "dock" then M._nd = M._nd + 1 end end
+    check(M._nd == 0 and not M.TownOn("dock"),
+      "0.5.2b.55 town: the Docks toggle hides every boat still in view")
     M.SetTown("dock", true)
+    M._nd = 0
+    for _, pin in ipairs(NS.TownPins.pins) do if pin.cat == "dock" and M.TownOn("dock") then M._nd = M._nd + 1 end end
+    check(M._nd == 14, "0.5.2b.55 town: turning docks on covers all fourteen boats")
     M.Layout()
-    check(hasName(shownTown(), "Southshore") and hasName(shownTown(), "Southshore"):GetWidth() == 28,
-      "0.5.2b.54 town: turning docks back on restores that boat")
+    check(hasName(shownTown(), "Forgotten Coast") and hasName(shownTown(), "Feathermoon Stronghold"),
+      "0.5.2b.55 town: turning docks back on restores both Feralas boats")
     MAPS[1446], MAPS[1413], MAPS[1439], MAPS[1434], MAPS[1437], MAPS[1424], MAPS[2548] = nil, nil, nil, nil, nil, nil, nil
+    MAPS[1438], MAPS[1444], MAPS[1445] = nil, nil, nil
     MD.Forget()
     local win = _G.DarkMatterFrame
     local mapW = M.vp:GetWidth()
