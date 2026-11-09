@@ -1069,10 +1069,11 @@ local function TownDef(id)
   for _, c in ipairs(data.cats) do if c.id == id then return c end end
 end
 function M.TownCatOk(id)
+  -- 0.5.2b.53: only docks are shown. The other categories stay in the data file and are not drawn.
+  if id ~= "dock" then return false end
   local def = TownDef(id)
   if not (def and not def.unavailable and NS.TownPins and NS.TownPins.pins) then return false end
-  local want = (id == "levels") and "entrance" or id
-  for _, p in ipairs(NS.TownPins.pins) do if p.cat == want then return true end end
+  for _, p in ipairs(NS.TownPins.pins) do if p.cat == id then return true end end
   return false
 end
 function M.TownOn(id)
@@ -3925,12 +3926,12 @@ function M.SyncTownPanel()
   for _, c in ipairs(data.cats) do byId[c.id] = c end
   local wide = (p:GetWidth() or PREF_W) >= 360
   local cols = {
-    { title = "Town services", ids = { "flight", "inn", "vendor", "ptrainer", "psupply", "bank", "auction", "mail", "repair" } },
-    { title = "Dungeons", ids = { "entrance", "levels" }, travel = true },
+    { title = "Travel", ids = { "dock" } },
   }
   if type(p.heads) ~= "table" then p.heads = {} end
   if type(p.rows) ~= "table" then p.rows = {} end
   for _, h in ipairs(p.heads) do h:Hide() end
+  for _, row in pairs(p.rows) do if row.Hide then row:Hide() end end
   local colW = wide and math.floor((p:GetWidth() - 36) / 2) or (p:GetWidth() - 28)
   local hi, y, maxY = 0, 0, 0
   local function place(id, x, yy)
@@ -3977,16 +3978,6 @@ function M.SyncTownPanel()
     head:Show()
     yy = yy + 22
     for _, id in ipairs(col.ids) do yy = place(id, x, yy) end
-    if col.travel then
-      hi = hi + 1
-      local travel = p.heads[hi]
-      if not travel then travel = GoldText(p.body, 13) p.heads[hi] = travel end
-      travel:ClearAllPoints()
-      travel:SetPoint("TOPLEFT", p.body, "TOPLEFT", x, -yy)
-      travel:SetText("Travel")
-      travel:Show()
-      yy = place("dock", x, yy + 22)
-    end
     y = math.max(y, yy)
     maxY = y
   end

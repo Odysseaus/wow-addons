@@ -10,6 +10,7 @@ local function Help()
   NS.Print("v" .. NS.version .. " commands:")
   print("  /dm  toggle the window")
   print("  /dm probe  check this client's APIs (saved to DarkMatterDB.probe)")
+  print("  /dm mappoi  read tracking filters, area points, and vignettes (nothing drawn or saved)")
   print("  /dm raw  show/hide the raw call list in the probe window")
   print("  /dm blocked  last blocked function (with context and stack); /dm blocked clear")
   print("  /dm reset  reset window position   (/dm reset all: also minimap button)")
@@ -98,6 +99,8 @@ SlashCmdList["DARKMATTER"] = function(msg)
   elseif cmd == "probe" then
     local out = NS.RunProbe(false)
     if type(out) == "table" and type(out.summary) == "table" then NS.LogProbe("probe", out.summary) end
+  elseif cmd == "mappoi" then
+    if NS.MapPOILines then Say("mappoi", NS.MapPOILines()) end
   elseif cmd == "blocked" then
     if rest == "clear" then
       NS.db.blockedLog = {}

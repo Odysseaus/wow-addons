@@ -6008,28 +6008,34 @@ do
     local panel = M.townPanel
     check(panel and panel:IsShown() and panel.titleStr == "Map Icons", "0.5.2b.48 town: the button opens the Map Icons filter")
     local rows = panel.rows
-    check(rows.flight and rows.inn and rows.vendor and rows.ptrainer and rows.psupply and rows.bank and rows.auction and rows.mail and rows.repair and rows.entrance and rows.levels and rows.dock,
-      "0.5.2b.51 town: the filter has profession rows plus empty mailbox and repair rows")
-    check(rows.mail.disabled and rows.repair.disabled and rows.mail.noteStr == "No verified places yet",
-      "0.5.2b.51 town: mailbox and repair stay unavailable without a verified place")
-    rows.mail._scripts.OnClick(rows.mail)
-    check(not (NS.db.map and NS.db.map.town and NS.db.map.town.mail),
-      "0.5.2b.51 town: the empty mailbox row does not save a choice")
-    check(rows.flight.checked and rows.dock.checked and not rows.dock.disabled
+    check(rows.dock and rows.dock:IsShown() and not rows.dock.disabled
+      and not (rows.flight and rows.flight:IsShown())
+      and not (rows.inn and rows.inn:IsShown())
+      and not (rows.vendor and rows.vendor:IsShown())
+      and not (rows.ptrainer and rows.ptrainer:IsShown())
+      and not (rows.psupply and rows.psupply:IsShown())
+      and not (rows.bank and rows.bank:IsShown())
+      and not (rows.auction and rows.auction:IsShown())
+      and not (rows.mail and rows.mail:IsShown())
+      and not (rows.repair and rows.repair:IsShown())
+      and not (rows.entrance and rows.entrance:IsShown())
+      and not (rows.levels and rows.levels:IsShown()),
+      "0.5.2b.53 town: the filter shows Docks and no other service or dungeon row")
+    check(rows.dock.checked
       and rows.dock.box.tex and tostring(rows.dock.box.tex._file):find("dm-check", 1, true)
       and rows.dock.box.tex._tc and rows.dock.box.tex._tc[1] == 1 / 8,
-      "0.5.2b.49 town: flight and docks start checked, and the check is a texture")
+      "0.5.2b.53 town: docks start checked, and the check is a texture")
     local pt, rel, rp, ox = panel:GetPoint()
     check(panel._parent == _G.DarkMatterFrame and NS.QuestPanel.embedded and (NS.QuestPanel.Extent() or 0) > 300
       and panel.side == "right" and pt == "TOPLEFT" and rel == _G.DarkMatterFrame and rp == "TOPRIGHT" and ox == 8
       and panel:GetHeight() == _G.DarkMatterFrame:GetHeight(),
       "0.5.2b.52 town: the filter matches the window height and sits 8 pixels off the right edge")
-    panel._boxH, panel._iconH, panel._h0 = rows.flight.box:GetHeight(), rows.flight.icon:GetHeight(), _G.DarkMatterFrame:GetHeight()
+    panel._boxH, panel._iconH, panel._h0 = rows.dock.box:GetHeight(), rows.dock.icon:GetHeight(), _G.DarkMatterFrame:GetHeight()
     _G.DarkMatterFrame:SetHeight(panel._h0 + 48)
     M.PlaceTownPanel()
     pt, rel, rp, ox = panel:GetPoint()
     check(panel:GetHeight() == _G.DarkMatterFrame:GetHeight() and panel:GetHeight() ~= panel._h0 and pt == "TOPLEFT" and rp == "TOPRIGHT" and ox == 8
-      and rows.flight.box:GetHeight() == panel._boxH and rows.flight.icon:GetHeight() == panel._iconH,
+      and rows.dock.box:GetHeight() == panel._boxH and rows.dock.icon:GetHeight() == panel._iconH,
       "0.5.2b.52 town: a taller window lengthens the filter and does not resize the checks or icons")
     _G.DarkMatterFrame:SetHeight(panel._h0)
     M.PlaceTownPanel()
@@ -6055,24 +6061,12 @@ do
     local city = M.layers[1455]
     local gx, gy = gryth and gryth.sx, gryth and gryth.sy
     local box = city and city.box
-    check(gryth and hasName(pins, "Fillius Fizzlespinner") and city and city.shown and box
-      and gx and gx >= math.min(box[1], box[3]) and gx <= math.max(box[1], box[3])
-      and gy and gy >= math.min(box[2], box[4]) and gy <= math.max(box[2], box[4]),
-      "0.5.2b.48 town: with ZoneAlpha at 0 the city picture still carries Gryth inside its rectangle")
-    local golnir = hasName(pins, "Golnir Bouldertoe")
-    check(gryth and gryth.face == "role" and hasName(pins, "Fillius Fizzlespinner").face == "town"
-      and golnir and golnir.face == "craft" and tostring(golnir.icon._file):find("Trade_Mining", 1, true),
-      "0.5.2b.51 town: a trade supplier stays the town glyph and a mining supplier uses the mining icon")
+    check(not gryth and not hasName(pins, "Fillius Fizzlespinner") and not hasName(pins, "Golnir Bouldertoe")
+      and city and city.shown and box,
+      "0.5.2b.53 town: the city picture is on and the static service pins are not drawn")
     check(M.CraftOf("Engineering and Mining Supplies") == "engineer" and M.CraftOf("Journeyman Blacksmith") == "blacksmith"
       and M.CraftOf("Herbalism Trainer") == "herbal",
       "0.5.2b.51 town: a subtitle picks the craft, and the dual supply line stays engineering")
-    local savePaint = NS.QS.PaintIcon
-    NS.QS.PaintIcon = function() return false end
-    M.Layout()
-    gryth = hasName(shownTown(), "Gryth Thurden")
-    check(gryth and gryth:IsShown() and gryth.face == "town",
-      "0.5.2b.48 town: a missing tracking icon still draws the pin with the Town glyph")
-    NS.QS.PaintIcon = savePaint
     M.ZoneAlpha = saveZA
     local pass = M.townPass
     run(4)
@@ -6081,71 +6075,27 @@ do
     check(M.dirty and NS.db.map.town.vendor == false, "0.5.2b.48 town: a toggle is saved and marks the map dirty")
     M.Layout()
     pins = shownTown()
-    check(hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and hasName(pins, "Golnir Bouldertoe"),
-      "0.5.2b.50 town: turning vendors off leaves the flight master and a profession supplier")
-    M.Layout()
-    local geo = hasName(shownTown(), "Geofram Bouldertoe")
-    check(geo and geo.face == "craft" and tostring(geo.icon._file):find("Trade_Mining", 1, true),
-      "0.5.2b.51 town: Ironforge shows a profession trainer with the mining icon")
-    local saveOK = NS.Stock.TextureOK
-    NS.Stock.TextureOK = function(path) if type(path) == "string" and path:find("Trade_Mining", 1, true) then return false end return saveOK(path) end
-    M.Layout()
-    geo = hasName(shownTown(), "Geofram Bouldertoe")
-    check(geo and geo.face == "profession", "0.5.2b.51 town: a missing craft icon uses the profession tracking icon")
-    NS.Stock.TextureOK = saveOK
-    M.SetTown("ptrainer", false)
-    M.Layout()
-    check(not hasName(shownTown(), "Geofram Bouldertoe") and hasName(shownTown(), "Golnir Bouldertoe") and NS.db.map.town.ptrainer == false,
-      "0.5.2b.50 town: turning profession trainers off leaves the supplier")
-    M.SetTown("psupply", false)
-    M.Layout()
-    check(not hasName(shownTown(), "Golnir Bouldertoe") and hasName(shownTown(), "Gryth Thurden") and NS.db.map.town.psupply == false,
-      "0.5.2b.50 town: turning profession suppliers off leaves the flight master")
-    M.SetTown("ptrainer", true)
-    M.SetTown("psupply", true)
+    check(not hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and not hasName(pins, "Golnir Bouldertoe"),
+      "0.5.2b.53 town: a saved vendor flag does not draw a vendor, a trainer, or a flight master")
     M.SetTown("vendor", true)
-    check(M.TownOn("vendor") == true, "0.5.2b.48 town: the saved choice is what the filter reads")
+    check(M.TownOn("vendor") == false and NS.db.map.town.vendor == true,
+      "0.5.2b.53 town: a stored vendor choice stays in the data and is not shown")
     local list = NS.TownPins.pins
     local n0 = #list
     list[#list + 1] = { cat = "flight", name = "Nowhere", map = 999999, x = 0.5, y = 0.5 }
     list[#list + 1] = { cat = "entrance", name = "No spot" }
-    list[#list + 1] = { cat = "entrance", name = "Wiki depths", map = 1455, x = 0.20, y = 0.20,
-      levels = { 10, 20 }, levelSrc = "https://warcraft.wiki.gg/wiki/Example" }
     list[#list + 1] = { cat = "entrance", name = "Shared door", map = 1455, x = 0.40, y = 0.40,
       levels = { 13, 18 }, levelSrc = "https://www.wowhead.com/forever/zone=16919" }
-    list[#list + 1] = { cat = "entrance", name = "Shared wing", map = 1455, x = 0.40, y = 0.40,
-      levels = { 15, 20 }, levelSrc = "https://www.wowhead.com/forever/zone=16919" }
     M.Layout()
     pins = shownTown()
-    local door = 0
-    for _, m in ipairs(pins) do if m.pin.x == 0.40 and m.pin.cat == "entrance" then door = door + 1 end end
-    local wiki = hasName(pins, "Wiki depths")
-    local shared = hasName(pins, "Shared door")
-    check(not hasName(pins, "Nowhere") and not hasName(pins, "No spot") and not hasName(pins, "Krol'dok Stronghold"),
-      "0.5.2b.48 town: an unknown map, a pin with no coordinates, and another zone's entrance are not drawn")
-    check(door == 1 and wiki and type(wiki.levelText) ~= "string" and shared and shared.levelText == "13-18",
-      "0.5.2b.48 town: one pin for a shared door, a wiki level is skipped, a Forever level is shown")
-    check(M.TownLevelText(shared.pin, { 0, 0, 40, 40 }) == nil, "0.5.2b.48 town: a small picture hides the level number")
-    M.SetTown("levels", false)
-    M.Layout()
-    shared = hasName(shownTown(), "Shared door")
-    check(shared and shared:IsShown() and type(shared.levelText) ~= "string", "0.5.2b.48 town: turning levels off hides the number and keeps the entrance")
-    M.SetTown("entrance", false)
-    M.Layout()
-    check(not hasName(shownTown(), "Shared door") and not hasName(shownTown(), "Wiki depths"),
-      "0.5.2b.48 town: turning entrances off removes the pins and their levels")
-    M.SetTown("entrance", true)
-    M.SetTown("levels", true)
+    check(not hasName(pins, "Nowhere") and not hasName(pins, "No spot") and not hasName(pins, "Shared door")
+      and not hasName(pins, "Krol'dok Stronghold"),
+      "0.5.2b.53 town: flight, entrance, and level-label pins are not drawn")
+    check(M.TownLevelText(list[#list], { 0, 0, 400, 400 }) == nil, "0.5.2b.53 town: an entrance level label is not shown")
     while #list > n0 do list[#list] = nil end
     local grythPin
     for _, p in ipairs(list) do if p.name == "Gryth Thurden" then grythPin = p end end
-    grythPin.dest = "Powderfuse Port, Riverglades"
-    M.Layout()
-    gryth = hasName(shownTown(), "Gryth Thurden")
-    if gryth then gryth._scripts.OnEnter(gryth) end
-    check(tip.title == "Gryth Thurden" and tip.lines[#tip.lines] == "To Powderfuse Port, Riverglades",
-      "0.5.2b.48 town: a hover can name a verified destination")
-    grythPin.dest = nil
+    list[#list + 1] = { cat = "dock", name = "Stack Boat", detail = "Ironforge", dest = "Nowhere", map = 1455, x = grythPin.x, y = grythPin.y }
     local saveQ = C_QuestLog.GetQuestsOnMap
     local saveSel = NS.QS.selected
     local calls = 0
@@ -6157,14 +6107,15 @@ do
     end
     MD.Forget("quests")
     M.Layout()
-    local quest, townPin = nil, hasName(shownTown(), "Gryth Thurden")
+    local quest, townPin = nil, hasName(shownTown(), "Stack Boat")
     local qp = M.pools.quest
     if qp then for i = 1, qp.n do if qp[i]:IsShown() then quest = qp[i] end end end
     check(quest and townPin and quest:GetFrameLevel() > townPin:GetFrameLevel(),
       "0.5.2b.48 town: a quest pin stays above a town pin on the same spot")
     if townPin then townPin._scripts.OnMouseUp(townPin, "LeftButton") end
     check(calls == 0 and NS.QS.selected == saveSel, "0.5.2b.48 town: a town pin sets no waypoint and selects no quest")
-    local tex = rows.flight.box.tex
+    list[#list] = nil
+    local tex = rows.dock.box.tex
     M.PaintCheck(tex, false, false, false)
     local emptyL = tex._tc and tex._tc[1]
     M.PaintCheck(tex, true, false, false)
@@ -6176,10 +6127,12 @@ do
     check(emptyL == 0 and onL == 1/8 and hotL == 2/8 and offL == 4/8 and tex._tc[2] == 5/8,
       "0.5.2b.49 town: empty, checked, hover and disabled use different check textures")
     M.PaintCheck(tex, true, false, false)
-    rows.flight._scripts.OnEnter(rows.flight)
-    check(rows.flight._hot and rows.flight.box.tex._tc[1] == 3/8, "0.5.2b.49 town: a checked row hovers the gold tick")
-    rows.flight._scripts.OnLeave(rows.flight)
-    check(not rows.flight._hot and rows.flight.box.tex._tc[1] == 1/8, "0.5.2b.49 town: leaving the row restores the resting check")
+    rows.dock._scripts.OnEnter(rows.dock)
+    check(rows.dock._hot and rows.dock.box.tex._tc[1] == 3/8, "0.5.2b.49 town: a checked row hovers the gold tick")
+    rows.dock._scripts.OnLeave(rows.dock)
+    check(not rows.dock._hot and rows.dock.box.tex._tc[1] == 1/8, "0.5.2b.49 town: leaving the row restores the resting check")
+    check(panel.heads[1] and panel.heads[1]._text == "Travel" and rows.dock.icon:GetHeight() == 18,
+      "0.5.2b.53 town: the only heading is Travel and the boat in the row stays 18")
     local dungar, named = false, false
     for _, pin in ipairs(NS.TownPins.pins) do if pin.name == "Dungar Longdrink" then dungar = true end end
     for _, r in ipairs(NS.TownPins.rejected or {}) do if r.name == "Dungar Longdrink" then named = true end end
@@ -6195,34 +6148,105 @@ do
       "0.5.2b.49 town: Steamwheedle Port keeps the Forever dock and its destination")
     check(heather and heather.cat == "inn" and heather.map == 1436 and math.abs(heather.x - 0.528) < 0.001 and math.abs(heather.y - 0.535) < 0.001,
       "0.5.2b.50 town: Innkeeper Heather is the single Westfall cluster")
-    check(ratchet and ratchet.dest == "Booty Bay, Stranglethorn Vale" and ratchet.map == 1413,
-      "0.5.2b.50 town: the Ratchet dock names Booty Bay")
+    check(ratchet and ratchet.dest == "Booty Bay, Stranglethorn Vale" and ratchet.map == 1413 and ratchet.x == 0.632 and ratchet.y == 0.384,
+      "0.5.2b.53 town: the Ratchet dock keeps its spot and names Booty Bay")
+    M._boats = {}
+    M._nflight, M._ndock = 0, 0
+    for _, pin in ipairs(NS.TownPins.pins) do
+      if pin.cat == "dock" then M._ndock = M._ndock + 1 M._boats[pin.name] = pin
+      elseif pin.cat == "flight" then M._nflight = M._nflight + 1 end
+    end
+    steam = M._boats["Steamwheedle Port"]
+    check(M._ndock == 8 and M._nflight == 62 and steam and steam.x == 0.686 and steam.y == 0.23
+      and M._boats["Powderfuse Port"] and M._boats["Powderfuse Port"].map == 2548
+      and M._boats["Powderfuse Port"].x == 0.806 and M._boats["Powderfuse Port"].y == 0.546
+      and M._boats["Powderfuse Port"].dest == "Steamwheedle Port, Tanaris"
+      and M._boats["Booty Bay"] and M._boats["Booty Bay"].map == 1434 and M._boats["Booty Bay"].x == 0.263
+      and M._boats["Booty Bay"].y == 0.735 and M._boats["Booty Bay"].dest == "Ratchet, The Barrens",
+      "0.5.2b.53 town: the four earlier docks are unchanged and the flight rows stay in the data")
+    steam = M._boats["Stormwind Harbor"]
+    check(steam and steam.map == 1453 and steam.x == 0.22 and steam.y == 0.56 and steam.detail == "Stormwind City"
+      and steam.dest == "Auberdine, Darkshore" and steam.src == "owner coordinates, 8 Nov 2026"
+      and M._boats["Auberdine"].map == 1439 and M._boats["Auberdine"].x == 0.305 and M._boats["Auberdine"].y == 0.41
+      and M._boats["Auberdine"].dest == "Stormwind Harbor"
+      and M._boats["Wetlands"].map == 1437 and M._boats["Wetlands"].x == 0.045 and M._boats["Wetlands"].y == 0.57
+      and M._boats["Wetlands"].dest == "Southshore, Hillsbrad Foothills"
+      and M._boats["Southshore"].map == 1424 and M._boats["Southshore"].x == 0.505 and M._boats["Southshore"].y == 0.70
+      and M._boats["Southshore"].dest == "Auberdine, Darkshore"
+      and M._boats["Southshore"].src == "owner coordinates, 8 Nov 2026",
+      "0.5.2b.53 town: the four owner docks use the named maps and only those destinations")
     M.FlyTo(1432) run(40)
     M.Layout()
     local master = hasName(shownTown(), "Thorgrum Borrelson")
-    check(master and master:IsShown() and master.pin.map == 1432, "0.5.2b.49 town: Loch Modan shows its flight master")
-    M.SetTown("flight", false)
-    M.Layout()
-    check(not hasName(shownTown(), "Thorgrum Borrelson") and NS.db.map.town.flight == false,
-      "0.5.2b.49 town: turning flight masters off removes that pin and the choice is saved")
-    M.SetTown("flight", true)
-    local list = NS.TownPins.pins
+    check(not master, "0.5.2b.53 town: Loch Modan does not draw its flight master")
     list[#list + 1] = { cat = "dock", name = "Test Pier", detail = "Loch Modan", dest = "Menethil Harbor, Wetlands", map = 1432, x = 0.50, y = 0.50 }
     M.Layout()
     local pier = hasName(shownTown(), "Test Pier")
-    local masterWide = hasName(shownTown(), "Thorgrum Borrelson")
-    check(pier and pier.face == "dock" and pier:GetWidth() == 28 and masterWide and masterWide:GetWidth() == 16
+    check(pier and pier.face == "dock" and pier:GetWidth() == 28 and not hasName(shownTown(), "Thorgrum Borrelson")
       and tostring(pier.icon._file):find("dm-dock", 1, true),
-      "0.5.2b.51 town: a dock is a 28 pixel boat and a flight master stays 16")
+      "0.5.2b.53 town: a dock is a 28 pixel boat and the flight master stays off")
     if pier then pier._scripts.OnEnter(pier) end
     check(tip.title == "Test Pier" and tip.lines[#tip.lines] == "To Menethil Harbor, Wetlands",
       "0.5.2b.49 town: a dock hover names the destination dock and zone")
     M.SetTown("dock", false)
     M.Layout()
-    check(not hasName(shownTown(), "Test Pier") and hasName(shownTown(), "Thorgrum Borrelson"),
-      "0.5.2b.49 town: turning docks off leaves the flight master in that zone")
+    check(not hasName(shownTown(), "Test Pier") and not hasName(shownTown(), "Thorgrum Borrelson"),
+      "0.5.2b.53 town: turning docks off removes the boat and does not reveal a flight master")
     M.SetTown("dock", true)
     list[#list] = nil
+    MAPS[1446] = { "Tanaris", 3, 1414, { 0.50, 0.62, 0.62, 0.78 } }
+    MAPS[1413] = { "The Barrens", 3, 1414, { 0.36, 0.50, 0.40, 0.58 } }
+    MAPS[1439] = { "Darkshore", 3, 1414, { 0.30, 0.42, 0.22, 0.38 } }
+    MAPS[1434] = { "Stranglethorn Vale", 3, 1415, { 0.30, 0.42, 0.55, 0.70 } }
+    MAPS[1437] = { "Wetlands", 3, 1415, { 0.42, 0.52, 0.28, 0.42 } }
+    MAPS[1424] = { "Hillsbrad Foothills", 3, 1415, { 0.52, 0.64, 0.28, 0.44 } }
+    MAPS[2548] = { "Riverglades", 3, 1414, { 0.18, 0.30, 0.40, 0.55 } }
+    MD.Forget()
+    M._seeDock = function(id, name, dest)
+      local spot = M._boats[name]
+      local wx, wy = M.ToW(id, spot.x, spot.y)
+      M.FlyTo(id, wx, wy) run(40)
+      M.Layout()
+      pins = shownTown()
+      gryth = hasName(pins, name)
+      city = M.layers[id]
+      box = city and city.box
+      gx, gy = gryth and gryth.sx, gryth and gryth.sy
+      M._other = false
+      for _, m in ipairs(pins) do if m.pin.cat ~= "dock" then M._other = true end end
+      if gryth then gryth._scripts.OnEnter(gryth) end
+      return gryth and not M._other and gryth.pin.map == id and gryth.pin.dest == dest and gryth.face == "dock"
+        and gryth:GetWidth() == 28 and tostring(gryth.icon._file):find("dm-dock", 1, true)
+        and city and city.shown and box
+        and gx and gx >= math.min(box[1], box[3]) and gx <= math.max(box[1], box[3])
+        and gy and gy >= math.min(box[2], box[4]) and gy <= math.max(box[2], box[4])
+        and tip.title == name and tip.lines[#tip.lines] == "To " .. dest
+    end
+    check(M._seeDock(1446, "Steamwheedle Port", "Powderfuse Port, Riverglades"),
+      "0.5.2b.53 town: Steamwheedle Port draws on Tanaris inside the zone picture")
+    check(M._seeDock(2548, "Powderfuse Port", "Steamwheedle Port, Tanaris"),
+      "0.5.2b.53 town: Powderfuse Port draws on Riverglades")
+    check(M._seeDock(1413, "Ratchet", "Booty Bay, Stranglethorn Vale"),
+      "0.5.2b.53 town: Ratchet draws on The Barrens")
+    check(M._seeDock(1434, "Booty Bay", "Ratchet, The Barrens"),
+      "0.5.2b.53 town: Booty Bay draws on Stranglethorn Vale")
+    check(M._seeDock(1453, "Stormwind Harbor", "Auberdine, Darkshore") and gryth.pin.map ~= 1429,
+      "0.5.2b.53 town: Stormwind Harbor draws on the city map, not Elwynn")
+    check(M._seeDock(1439, "Auberdine", "Stormwind Harbor"),
+      "0.5.2b.53 town: Auberdine draws on Darkshore and names Stormwind Harbor")
+    check(M._seeDock(1437, "Wetlands", "Southshore, Hillsbrad Foothills"),
+      "0.5.2b.53 town: the Wetlands boat names Southshore")
+    check(M._seeDock(1424, "Southshore", "Auberdine, Darkshore"),
+      "0.5.2b.53 town: the Hillsbrad boat names Auberdine")
+    M.SetTown("dock", false)
+    M.Layout()
+    check(#shownTown() == 0, "0.5.2b.53 town: the saved Docks toggle hides every boat and shows no other service pin")
+    M.SetTown("dock", true)
+    M.Layout()
+    check(hasName(shownTown(), "Southshore") and not hasName(shownTown(), "Gryth Thurden"),
+      "0.5.2b.53 town: turning docks back on restores that boat only")
+    MAPS[1446], MAPS[1413], MAPS[1439], MAPS[1434], MAPS[1437], MAPS[1424], MAPS[2548] = nil, nil, nil, nil, nil, nil, nil
+    MD.Forget()
     local win = _G.DarkMatterFrame
     local mapW = M.vp:GetWidth()
     win:ClearAllPoints()
@@ -10324,7 +10348,7 @@ do
     NS.MapTab.Reset() NS.ShowTab("quests") NS.ShowTab("map")
     for _ = 1, 5 do NS.MapTab.Tick(0.05) end
     local oldPrint = NS.Print
-    for _, cmd in ipairs({ "probe", "mapprobe", "tileprobe", "mapshapes 4", "zoomprobe", "shottest", "seamsweep", "seamsweep stop", "trackerprobe", "achprobe" }) do
+    for _, cmd in ipairs({ "probe", "mappoi", "mapprobe", "tileprobe", "mapshapes 4", "zoomprobe", "shottest", "seamsweep", "seamsweep stop", "trackerprobe", "achprobe" }) do
       local said, n0 = {}, #log
       NS.Print = function(m) said[#said + 1] = tostring(m) end
       local ok, err = pcall(SlashCmdList.DARKMATTER, cmd)
@@ -10338,5 +10362,98 @@ do
     check(p and p.client.interface == 11509 and p.client.projectId == 2 and not p.areaErrors, "0.5.2b.9 era: /dm probe: interface 11509, project 2, no area errors")
   end
 end
+
+(function()
+  local NS = DarkMatter
+  local save = { ic = InCombatLockdown, mini = C_Minimap, poi = C_AreaPoiInfo, vig = C_VignetteInfo, map = C_Map,
+    num = GetNumTrackingTypes, info = GetTrackingInfo, frame = Minimap, quest = C_QuestLog }
+  local oldQ = C_QuestLog and C_QuestLog.GetQuestsOnMap
+  local hit, qhit = {}, 0
+  local function textOf(lines)
+    local s = ""
+    for i = 1, #lines do s = s .. lines[i] .. "\n" end
+    return s
+  end
+  local function count(text, needle)
+    local n = 0
+    for line in text:gmatch("[^\n]+") do if line:find(needle, 1, true) then n = n + 1 end end
+    return n
+  end
+  InCombatLockdown = function() return false end
+  GetNumTrackingTypes, GetTrackingInfo = nil, nil
+  C_Minimap, C_AreaPoiInfo, C_VignetteInfo = nil, nil, nil
+  C_Map = { GetBestMapForUnit = function() return nil end }
+  Minimap = { UpdateBlips = function() hit.blip = true end, SetBlipTexture = function() hit.tex = true end }
+  local lines = NS.MapPOILines()
+  local text = textOf(lines)
+  check(text:find("FILTER list: API absent", 1, true) and text:find("area POI: no player map", 1, true)
+    and text:find("vignettes: API absent", 1, true) and text:find("not a pin sync", 1, true),
+    "0.5.2b.53 mappoi: missing APIs are reported and nothing is drawn")
+  C_Map = { GetBestMapForUnit = function() return 1453 end }
+  C_Minimap = {
+    GetNumTrackingTypes = function() return 0 end,
+    GetTrackingInfo = function() end,
+    SetTracking = function() hit.set = true end,
+  }
+  C_AreaPoiInfo = { GetAreaPOIForMap = function() return {} end, GetAreaPOIInfo = function() end }
+  C_VignetteInfo = { GetVignettes = function() return {} end, GetVignetteInfo = function() end, GetVignettePosition = function() end }
+  lines = NS.MapPOILines()
+  text = textOf(lines)
+  check(text:find("FILTER count: 0", 1, true) and text:find("area POI: map 1453 count 0", 1, true)
+    and text:find("vignettes: count 0", 1, true) and not hit.set and not hit.blip and not hit.tex,
+    "0.5.2b.53 mappoi: empty results stay empty and do not change tracking")
+  C_Minimap.GetNumTrackingTypes = function() return 2 end
+  C_Minimap.GetTrackingInfo = function(i)
+    if i == 1 then return { name = "Mailbox", active = true, type = "mail" } end
+    return "Innkeeper", 1, false, "inn"
+  end
+  C_AreaPoiInfo.GetAreaPOIForMap = function() return { 1, 2, 3, 4, 5 } end
+  C_AreaPoiInfo.GetAreaPOIInfo = function(_, id)
+    return { name = "Poi" .. id, atlasName = "Atlas" .. id, position = id == 1 and { x = 0.2, y = 0.3 } or {} }
+  end
+  C_VignetteInfo.GetVignettes = function() return { "a", "b", "c", "d" } end
+  C_VignetteInfo.GetVignetteInfo = function(g)
+    return { name = "Vig" .. g, type = 3, atlasName = "vignetteloot", onMinimap = g == "a", zoneInfiniteAOI = g == "b" }
+  end
+  C_VignetteInfo.GetVignettePosition = function(g)
+    if g == "a" then return { x = 0.1, y = 0.2 } end
+  end
+  if not C_QuestLog then C_QuestLog = {} end
+  C_QuestLog.GetQuestsOnMap = function() qhit = qhit + 1 return {} end
+  lines = NS.MapPOILines()
+  text = textOf(lines)
+  check(text:find("FILTER 1: Mailbox type=mail active=true", 1, true)
+    and text:find("FILTER 2: Innkeeper type=inn active=false", 1, true)
+    and count(text, "area POI sample:") == 3 and count(text, "vignette sample:") == 3
+    and text:find("onMinimap=true", 1, true) and text:find("zoneInfiniteAOI=true", 1, true)
+    and text:find("position=yes", 1, true) and text:find("position=no", 1, true)
+    and qhit == 0 and not hit.set and not hit.blip,
+    "0.5.2b.53 mappoi: filters are labeled, and only three area and vignette samples are printed")
+  C_AreaPoiInfo.GetAreaPOIForMap = function() error("poi broke", 0) end
+  C_VignetteInfo.GetVignettes = function() error("vig broke", 0) end
+  lines = NS.MapPOILines()
+  text = textOf(lines)
+  check(text:find("area POI: error", 1, true) and text:find("vignettes: error", 1, true)
+    and text:find("FILTER count: 2", 1, true),
+    "0.5.2b.53 mappoi: one API error does not drop the other reads")
+  InCombatLockdown = function() return true end
+  lines = NS.MapPOILines()
+  check(lines[1] == "mappoi: skipped in combat." and #lines == 1 and not hit.set,
+    "0.5.2b.53 mappoi: combat skips the read")
+  local body = io.open(arg[1] .. "/Probe.lua"):read("*a")
+  local from = body:find("function NS.MapPOILines", 1, true)
+  local to = body:find("\nfunction NS.RunProbe", 1, true)
+  local fn = body:sub(from, to - 1)
+  check(not fn:find("SetTracking", 1, true) and not fn:find("UpdateBlips", 1, true)
+    and not fn:find("SetBlipTexture", 1, true) and not fn:find("AbandonQuest", 1, true)
+    and not fn:find("GetQuestsOnMap", 1, true) and not fn:find("ClearAllTracking", 1, true),
+    "0.5.2b.53 mappoi: the command does not change tracking, refresh blips, read quests, or abandon")
+  local ok = pcall(SlashCmdList.DARKMATTER, "mappoi")
+  check(ok, "0.5.2b.53 mappoi: /dm mappoi is the command")
+  InCombatLockdown = save.ic
+  C_Minimap, C_AreaPoiInfo, C_VignetteInfo, C_Map = save.mini, save.poi, save.vig, save.map
+  GetNumTrackingTypes, GetTrackingInfo, Minimap = save.num, save.info, save.frame
+  if save.quest then save.quest.GetQuestsOnMap = oldQ else C_QuestLog = nil end
+end)()
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

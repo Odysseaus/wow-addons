@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2b.53
+
+- **Map Icons.** The filter lists Docks only. Flight masters, innkeepers, vendors, profession trainers, profession suppliers, bankers, auctioneers, mailboxes, repair, dungeon entrances, and the entrance level label are not drawn and have no row. The pin table and the icon files stay. The four earlier docks stay on the same spots, with the same boat, 28 pixels on the map and 18 in the row, the same destination hover, and the saved Docks toggle. The window height, the 8 pixel right gap, the left fallback, and the checks are unchanged. Continent level badges stay.
+- **Owner docks.** Four boarding pins use owner coordinates from 8 Nov 2026, not a Forever tooltip. Stormwind Harbor is on Stormwind City at 22, 56 and goes to Auberdine, Darkshore. Auberdine is on Darkshore at 30.5, 41 and goes to Stormwind Harbor. Wetlands at 4.5, 57 goes to Southshore, Hillsbrad Foothills. Southshore is on Hillsbrad Foothills at 50.5, 70 and goes to Auberdine, Darkshore. No other route is added.
+- **`/dm mappoi`.** A read-only look at tracking filters, area points on the current map, and current vignettes. It skips combat, does not change tracking, and does not draw or save pins.
+
 ## 0.5.2b.52
 
 - **Map Icons.** The filter is the same height as the main window, top and bottom. A taller or shorter window changes that height. The rows scroll inside. Checks, service pins, and the boat stay their current sizes. The 8 pixel gap on the right and the left fallback are unchanged.

@@ -412,6 +412,16 @@ NS.TownPins = {
       src = "https://nether.wowhead.com/forever/tooltip/npc/3453", whZone = 17 },
     { cat = "dock", name = "Booty Bay", detail = "Stranglethorn Vale", dest = "Ratchet, The Barrens", map = 1434, x = 0.2630, y = 0.7350,
       src = "https://nether.wowhead.com/forever/tooltip/npc/4631", whZone = 33 },
+    -- 0.5.2b.53: owner coordinates, 8 Nov 2026, as a percent of that zone. Not a Forever tooltip.
+    -- Stormwind is the city map, not Elwynn. Each destination is only the hover the owner named.
+    { cat = "dock", name = "Stormwind Harbor", detail = "Stormwind City", dest = "Auberdine, Darkshore", map = 1453, x = 0.2200, y = 0.5600,
+      src = "owner coordinates, 8 Nov 2026" },
+    { cat = "dock", name = "Auberdine", detail = "Darkshore", dest = "Stormwind Harbor", map = 1439, x = 0.3050, y = 0.4100,
+      src = "owner coordinates, 8 Nov 2026" },
+    { cat = "dock", name = "Wetlands", detail = "Wetlands", dest = "Southshore, Hillsbrad Foothills", map = 1437, x = 0.0450, y = 0.5700,
+      src = "owner coordinates, 8 Nov 2026" },
+    { cat = "dock", name = "Southshore", detail = "Hillsbrad Foothills", dest = "Auberdine, Darkshore", map = 1424, x = 0.5050, y = 0.7000,
+      src = "owner coordinates, 8 Nov 2026" },
     { cat = "psupply", name = "Hraq", detail = "Blacksmithing Supplier", map = 1413, x = 0.5120, y = 0.2900,
       src = "https://nether.wowhead.com/forever/tooltip/npc/3477", whZone = 17 },
     { cat = "psupply", name = "Rizz Loosebolt", detail = "Engineering Supplies", map = 1416, x = 0.4733, y = 0.3540,
@@ -738,7 +748,7 @@ NS.TownPins = {
   },
   gaps = {
     "Menethil Harbor and Theramore are named as a boat pair by the Forever Razorfen Kraul guide, and that guide gives no dock coordinate.",
-    "Auberdine, Rut'theran, Stormwind Harbor, and Southshore have no Forever dock coordinate that agrees with one destination. A dungeon guide that sends a boat through Stormwind Harbor and on to Southshore is not used.",
+    "Auberdine, Rut'theran, Stormwind Harbor, and Southshore have no Forever dock coordinate that agrees with one destination. A dungeon guide that sends a boat through Stormwind Harbor and on to Southshore is not used. 0.5.2b.53 draws four boarding pins from owner coordinates on Stormwind City, Darkshore, Wetlands, and Hillsbrad Foothills. Those four are not a Forever tooltip.",
     "Profession trainers and suppliers are the classic name-list ids whose Forever subtitle is a profession rank or a supply role, with one coordinate cluster on a map this addon draws. A trainer Forever added under an id outside that list is not in this set.",
     "Annora, Master Enchanter, is inside Uldaman and has no world coordinate.",
     "Skyboats in the Zephras Isle guide are not sea docks. Zephras Isle and Dalaran are not maps in this addon, and the Thunder Bluff cliff pin is not joined to one uiMap.",
