@@ -16,12 +16,10 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: v0.1.0
+## Version: v0.1.1
 ## SavedVariables: ValhallaDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
-## Category: Map
-## X-Category: Map
 ## X-License: MIT (code); map art is Blizzard's
 ## X-Website: https://github.com/Odysseaus/wow-addons
 ## X-Fork-Of: OpenMap v0.8.2 by OpenMap contributors (MIT)
