@@ -6009,18 +6009,30 @@ do
     check(panel and panel:IsShown() and panel.titleStr == "Map Icons", "0.5.2b.48 town: the button opens the Map Icons filter")
     local rows = panel.rows
     check(rows.dock and rows.dock:IsShown() and not rows.dock.disabled
-      and not (rows.flight and rows.flight:IsShown())
-      and not (rows.inn and rows.inn:IsShown())
-      and not (rows.vendor and rows.vendor:IsShown())
-      and not (rows.ptrainer and rows.ptrainer:IsShown())
-      and not (rows.psupply and rows.psupply:IsShown())
-      and not (rows.bank and rows.bank:IsShown())
-      and not (rows.auction and rows.auction:IsShown())
-      and not (rows.mail and rows.mail:IsShown())
-      and not (rows.repair and rows.repair:IsShown())
-      and not (rows.entrance and rows.entrance:IsShown())
-      and not (rows.levels and rows.levels:IsShown()),
-      "0.5.2b.53 town: the filter shows Docks and no other service or dungeon row")
+      and rows.flight and rows.flight:IsShown() and not rows.flight.disabled
+      and rows.inn and rows.inn:IsShown() and rows.vendor and rows.vendor:IsShown()
+      and rows.ptrainer and rows.ptrainer:IsShown() and rows.psupply and rows.psupply:IsShown()
+      and rows.bank and rows.bank:IsShown() and rows.auction and rows.auction:IsShown()
+      and rows.entrance and rows.entrance:IsShown() and rows.levels and rows.levels:IsShown()
+      and rows.mail and rows.mail:IsShown() and rows.mail.disabled
+      and rows.repair and rows.repair:IsShown() and rows.repair.disabled
+      and rows.mail.noteStr == "No verified places yet",
+      "0.5.2b.54 town: the old rows return, and Mail and Repair stay disabled")
+    rows.mail._scripts.OnClick(rows.mail)
+    check(not (NS.db.map and NS.db.map.town and NS.db.map.town.mail),
+      "0.5.2b.54 town: the empty mailbox row does not save a choice")
+    check(tostring(rows.flight.icon._file):find("Tracking\\FlightMaster", 1, true)
+      and tostring(rows.inn.icon._file):find("Tracking\\Innkeeper", 1, true)
+      and tostring(rows.ptrainer.icon._file):find("Tracking\\Profession", 1, true)
+      and tostring(rows.psupply.icon._file):find("Tracking\\Profession", 1, true)
+      and tostring(rows.bank.icon._file):find("Tracking\\Banker", 1, true)
+      and tostring(rows.auction.icon._file):find("Tracking\\Auctioneer", 1, true)
+      and tostring(rows.mail.icon._file):find("Tracking\\Mailbox", 1, true)
+      and tostring(rows.repair.icon._file):find("Tracking\\Repair", 1, true)
+      and tostring(rows.entrance.icon._file):find("Minimap\\Dungeon", 1, true)
+      and tostring(rows.vendor.icon._file):find("dm-map-icons", 1, true)
+      and not tostring(rows.ptrainer.icon._file):find("Trade_", 1, true),
+      "0.5.2b.54 town: rows use the minimap files, and vendors keep the town glyph")
     check(rows.dock.checked
       and rows.dock.box.tex and tostring(rows.dock.box.tex._file):find("dm-check", 1, true)
       and rows.dock.box.tex._tc and rows.dock.box.tex._tc[1] == 1 / 8,
@@ -6061,9 +6073,53 @@ do
     local city = M.layers[1455]
     local gx, gy = gryth and gryth.sx, gryth and gryth.sy
     local box = city and city.box
-    check(not gryth and not hasName(pins, "Fillius Fizzlespinner") and not hasName(pins, "Golnir Bouldertoe")
-      and city and city.shown and box,
-      "0.5.2b.53 town: the city picture is on and the static service pins are not drawn")
+    local golnir = hasName(pins, "Golnir Bouldertoe")
+    local fillius = hasName(pins, "Fillius Fizzlespinner")
+    check(gryth and gryth:GetWidth() == 16 and tostring(gryth.icon._file):find("Tracking\\FlightMaster", 1, true)
+      and fillius and tostring(fillius.icon._file):find("dm-map-icons", 1, true)
+      and golnir and tostring(golnir.icon._file):find("Tracking\\Profession", 1, true)
+      and not tostring(golnir.icon._file):find("Trade_", 1, true)
+      and city and city.shown and box
+      and gx and gx >= math.min(box[1], box[3]) and gx <= math.max(box[1], box[3])
+      and gy and gy >= math.min(box[2], box[4]) and gy <= math.max(box[2], box[4]),
+      "0.5.2b.54 town: Ironforge draws the flight master, the profession icon, and the vendor glyph")
+    if golnir then golnir._scripts.OnEnter(golnir) end
+    check(tip.title == "Golnir Bouldertoe" and tip.lines[1] == "Mining Supplier",
+      "0.5.2b.54 town: a supplier hover still names the craft")
+    local firebrew = hasName(pins, "Innkeeper Firebrew")
+    local barnum = hasName(pins, "Barnum Stonemantle")
+    local redmuse = hasName(pins, "Auctioneer Redmuse")
+    check(firebrew and tostring(firebrew.icon._file):find("Tracking\\Innkeeper", 1, true)
+      and barnum and tostring(barnum.icon._file):find("Tracking\\Banker", 1, true)
+      and redmuse and tostring(redmuse.icon._file):find("Tracking\\Auctioneer", 1, true),
+      "0.5.2b.54 town: inn, bank, and auction use their minimap files")
+    local saveOK = NS.Stock.TextureOK
+    NS.Stock.TextureOK = function(path)
+      if type(path) == "string" and path:find("Tracking\\FlightMaster", 1, true) then return false end
+      return saveOK(path)
+    end
+    M.Layout()
+    gryth = hasName(shownTown(), "Gryth Thurden")
+    check(gryth and gryth.face == "town" and tostring(gryth.icon._file):find("dm-map-icons", 1, true),
+      "0.5.2b.54 town: a missing minimap file uses the town glyph")
+    local saveAtlas = C_Texture.GetAtlasInfo
+    C_Texture.GetAtlasInfo = function(a)
+      if a == "TaxiNode_Neutral" then return { width = 32, height = 32 } end
+      return saveAtlas(a)
+    end
+    M.Layout()
+    gryth = hasName(shownTown(), "Gryth Thurden")
+    check(gryth and gryth.icon._atlas == "TaxiNode_Neutral",
+      "0.5.2b.54 town: a missing minimap file can use that role's atlas")
+    C_Texture.GetAtlasInfo = saveAtlas
+    NS.Stock.TextureOK = saveOK
+    M.Layout()
+    gryth = hasName(shownTown(), "Gryth Thurden")
+    check(gryth and tostring(gryth.icon._file):find("Tracking\\FlightMaster", 1, true),
+      "0.5.2b.54 town: the minimap file is used again when it is present")
+    check(M.VendorMark("Trade Supplier") == nil and M.VendorMark("Food and Drink") == "food"
+      and M.VendorMark("Reagent Vendor") == "reagents",
+      "0.5.2b.54 town: only a food or reagent subtitle picks a vendor icon")
     check(M.CraftOf("Engineering and Mining Supplies") == "engineer" and M.CraftOf("Journeyman Blacksmith") == "blacksmith"
       and M.CraftOf("Herbalism Trainer") == "herbal",
       "0.5.2b.51 town: a subtitle picks the craft, and the dual supply line stays engineering")
@@ -6075,23 +6131,40 @@ do
     check(M.dirty and NS.db.map.town.vendor == false, "0.5.2b.48 town: a toggle is saved and marks the map dirty")
     M.Layout()
     pins = shownTown()
-    check(not hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and not hasName(pins, "Golnir Bouldertoe"),
-      "0.5.2b.53 town: a saved vendor flag does not draw a vendor, a trainer, or a flight master")
+    check(hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and hasName(pins, "Golnir Bouldertoe"),
+      "0.5.2b.54 town: turning vendors off leaves the flight master and the supplier")
+    M.SetTown("ptrainer", false)
+    M.Layout()
+    check(not hasName(shownTown(), "Geofram Bouldertoe") and hasName(shownTown(), "Golnir Bouldertoe") and NS.db.map.town.ptrainer == false,
+      "0.5.2b.54 town: turning trainers off leaves the supplier")
+    M.SetTown("ptrainer", true)
     M.SetTown("vendor", true)
-    check(M.TownOn("vendor") == false and NS.db.map.town.vendor == true,
-      "0.5.2b.53 town: a stored vendor choice stays in the data and is not shown")
+    check(M.TownOn("vendor") == true and M.TownOn("ptrainer") == true and M.TownOn("psupply") == true,
+      "0.5.2b.54 town: the saved choices are what the filter reads")
     local list = NS.TownPins.pins
     local n0 = #list
     list[#list + 1] = { cat = "flight", name = "Nowhere", map = 999999, x = 0.5, y = 0.5 }
     list[#list + 1] = { cat = "entrance", name = "No spot" }
     list[#list + 1] = { cat = "entrance", name = "Shared door", map = 1455, x = 0.40, y = 0.40,
       levels = { 13, 18 }, levelSrc = "https://www.wowhead.com/forever/zone=16919" }
+    list[#list + 1] = { cat = "vendor", name = "Food Stall", detail = "Food and Drink", map = 1455, x = 0.30, y = 0.30 }
+    list[#list + 1] = { cat = "vendor", name = "Reagent Stall", detail = "Reagent Vendor", map = 1455, x = 0.32, y = 0.32 }
+    list[#list + 1] = { cat = "vendor", name = "Trade Stall", detail = "Trade Supplier", map = 1455, x = 0.34, y = 0.34 }
     M.Layout()
     pins = shownTown()
-    check(not hasName(pins, "Nowhere") and not hasName(pins, "No spot") and not hasName(pins, "Shared door")
+    local shared = hasName(pins, "Shared door")
+    check(not hasName(pins, "Nowhere") and not hasName(pins, "No spot") and shared and shared.levelText == "13-18"
+      and tostring(shared.icon._file):find("Minimap\\Dungeon", 1, true)
       and not hasName(pins, "Krol'dok Stronghold"),
-      "0.5.2b.53 town: flight, entrance, and level-label pins are not drawn")
-    check(M.TownLevelText(list[#list], { 0, 0, 400, 400 }) == nil, "0.5.2b.53 town: an entrance level label is not shown")
+      "0.5.2b.54 town: the entrance returns with its level, and an unknown map stays off")
+    check(M.TownLevelText(shared.pin, { 0, 0, 40, 40 }) == nil, "0.5.2b.48 town: a small picture hides the level number")
+    local food = hasName(pins, "Food Stall")
+    local reagent = hasName(pins, "Reagent Stall")
+    local trade = hasName(pins, "Trade Stall")
+    check(food and tostring(food.icon._file):find("Tracking\\Food", 1, true)
+      and reagent and tostring(reagent.icon._file):find("Tracking\\Reagents", 1, true)
+      and trade and tostring(trade.icon._file):find("dm-map-icons", 1, true),
+      "0.5.2b.54 town: food and reagent vendors use those tracking files, and a trade supplier does not")
     while #list > n0 do list[#list] = nil end
     local grythPin
     for _, p in ipairs(list) do if p.name == "Gryth Thurden" then grythPin = p end end
@@ -6131,8 +6204,10 @@ do
     check(rows.dock._hot and rows.dock.box.tex._tc[1] == 3/8, "0.5.2b.49 town: a checked row hovers the gold tick")
     rows.dock._scripts.OnLeave(rows.dock)
     check(not rows.dock._hot and rows.dock.box.tex._tc[1] == 1/8, "0.5.2b.49 town: leaving the row restores the resting check")
-    check(panel.heads[1] and panel.heads[1]._text == "Travel" and rows.dock.icon:GetHeight() == 18,
-      "0.5.2b.53 town: the only heading is Travel and the boat in the row stays 18")
+    M._tab = io.open(arg[1] .. "/Tab_Map.lua"):read("*a")
+    check(panel.heads[1] and panel.heads[1]._text == "Town services" and rows.dock.icon:GetHeight() == 18
+      and rows.dock.box:GetHeight() == 18 and not M._tab:find("SetTracking", 1, true),
+      "0.5.2b.54 town: the service heading is back, the check stays 18, and tracking is not changed")
     local dungar, named = false, false
     for _, pin in ipairs(NS.TownPins.pins) do if pin.name == "Dungar Longdrink" then dungar = true end end
     for _, r in ipairs(NS.TownPins.rejected or {}) do if r.name == "Dungar Longdrink" then named = true end end
@@ -6150,14 +6225,18 @@ do
       "0.5.2b.50 town: Innkeeper Heather is the single Westfall cluster")
     check(ratchet and ratchet.dest == "Booty Bay, Stranglethorn Vale" and ratchet.map == 1413 and ratchet.x == 0.632 and ratchet.y == 0.384,
       "0.5.2b.53 town: the Ratchet dock keeps its spot and names Booty Bay")
-    M._boats = {}
-    M._nflight, M._ndock = 0, 0
+    M._boats, M._c, M._lake = {}, {}, false
     for _, pin in ipairs(NS.TownPins.pins) do
-      if pin.cat == "dock" then M._ndock = M._ndock + 1 M._boats[pin.name] = pin
-      elseif pin.cat == "flight" then M._nflight = M._nflight + 1 end
+      M._c[pin.cat] = (M._c[pin.cat] or 0) + 1
+      if pin.cat == "dock" then M._boats[pin.name] = pin end
+      if pin.map == 1433 then M._lake = true end
     end
+    check(M._c.flight == 62 and M._c.inn == 35 and M._c.vendor == 25 and M._c.ptrainer == 128
+      and M._c.psupply == 37 and M._c.bank == 17 and M._c.auction == 24 and M._c.entrance == 1
+      and M._c.dock == 8 and not M._lake,
+      "0.5.2b.54 town: the old counts are unchanged, eight docks remain, and Lakeshire has no pin")
     steam = M._boats["Steamwheedle Port"]
-    check(M._ndock == 8 and M._nflight == 62 and steam and steam.x == 0.686 and steam.y == 0.23
+    check(steam and steam.x == 0.686 and steam.y == 0.23
       and M._boats["Powderfuse Port"] and M._boats["Powderfuse Port"].map == 2548
       and M._boats["Powderfuse Port"].x == 0.806 and M._boats["Powderfuse Port"].y == 0.546
       and M._boats["Powderfuse Port"].dest == "Steamwheedle Port, Tanaris"
@@ -6178,20 +6257,22 @@ do
     M.FlyTo(1432) run(40)
     M.Layout()
     local master = hasName(shownTown(), "Thorgrum Borrelson")
-    check(not master, "0.5.2b.53 town: Loch Modan does not draw its flight master")
+    check(master and master:IsShown() and master:GetWidth() == 16
+      and tostring(master.icon._file):find("Tracking\\FlightMaster", 1, true),
+      "0.5.2b.54 town: Loch Modan draws its flight master with the minimap icon")
     list[#list + 1] = { cat = "dock", name = "Test Pier", detail = "Loch Modan", dest = "Menethil Harbor, Wetlands", map = 1432, x = 0.50, y = 0.50 }
     M.Layout()
     local pier = hasName(shownTown(), "Test Pier")
-    check(pier and pier.face == "dock" and pier:GetWidth() == 28 and not hasName(shownTown(), "Thorgrum Borrelson")
+    check(pier and pier.face == "dock" and pier:GetWidth() == 28 and hasName(shownTown(), "Thorgrum Borrelson")
       and tostring(pier.icon._file):find("dm-dock", 1, true),
-      "0.5.2b.53 town: a dock is a 28 pixel boat and the flight master stays off")
+      "0.5.2b.54 town: a dock is a 28 pixel boat and the flight master stays 16")
     if pier then pier._scripts.OnEnter(pier) end
     check(tip.title == "Test Pier" and tip.lines[#tip.lines] == "To Menethil Harbor, Wetlands",
       "0.5.2b.49 town: a dock hover names the destination dock and zone")
     M.SetTown("dock", false)
     M.Layout()
-    check(not hasName(shownTown(), "Test Pier") and not hasName(shownTown(), "Thorgrum Borrelson"),
-      "0.5.2b.53 town: turning docks off removes the boat and does not reveal a flight master")
+    check(not hasName(shownTown(), "Test Pier") and hasName(shownTown(), "Thorgrum Borrelson"),
+      "0.5.2b.54 town: turning docks off removes the boat and leaves the flight master")
     M.SetTown("dock", true)
     list[#list] = nil
     MAPS[1446] = { "Tanaris", 3, 1414, { 0.50, 0.62, 0.62, 0.78 } }
@@ -6212,10 +6293,8 @@ do
       city = M.layers[id]
       box = city and city.box
       gx, gy = gryth and gryth.sx, gryth and gryth.sy
-      M._other = false
-      for _, m in ipairs(pins) do if m.pin.cat ~= "dock" then M._other = true end end
       if gryth then gryth._scripts.OnEnter(gryth) end
-      return gryth and not M._other and gryth.pin.map == id and gryth.pin.dest == dest and gryth.face == "dock"
+      return gryth and gryth.pin.map == id and gryth.pin.dest == dest and gryth.face == "dock"
         and gryth:GetWidth() == 28 and tostring(gryth.icon._file):find("dm-dock", 1, true)
         and city and city.shown and box
         and gx and gx >= math.min(box[1], box[3]) and gx <= math.max(box[1], box[3])
@@ -6240,11 +6319,12 @@ do
       "0.5.2b.53 town: the Hillsbrad boat names Auberdine")
     M.SetTown("dock", false)
     M.Layout()
-    check(#shownTown() == 0, "0.5.2b.53 town: the saved Docks toggle hides every boat and shows no other service pin")
+    check(not hasName(shownTown(), "Southshore"),
+      "0.5.2b.54 town: the saved Docks toggle hides that boat")
     M.SetTown("dock", true)
     M.Layout()
-    check(hasName(shownTown(), "Southshore") and not hasName(shownTown(), "Gryth Thurden"),
-      "0.5.2b.53 town: turning docks back on restores that boat only")
+    check(hasName(shownTown(), "Southshore") and hasName(shownTown(), "Southshore"):GetWidth() == 28,
+      "0.5.2b.54 town: turning docks back on restores that boat")
     MAPS[1446], MAPS[1413], MAPS[1439], MAPS[1434], MAPS[1437], MAPS[1424], MAPS[2548] = nil, nil, nil, nil, nil, nil, nil
     MD.Forget()
     local win = _G.DarkMatterFrame

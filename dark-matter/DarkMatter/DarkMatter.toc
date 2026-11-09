@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.53: Map Icons keeps the docks, and /dm mappoi reads the client.
+## Notes: Dark Matter 0.5.2b.54: town pins return with the minimap's service icons.
 ## Author: Odysseaus
-## Version: 0.5.2b.53
+## Version: 0.5.2b.54
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

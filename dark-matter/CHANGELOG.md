@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.54
+
+- **Map Icons.** The service and dungeon pins hidden in 0.5.2b.53 are drawn again at the same coordinates. Flight masters, inns, bankers, and auctioneers use the minimap tracking icons. Profession trainers and suppliers share the profession minimap icon, keep separate switches, and the hover still names the craft. Vendors stay the town glyph. A food or reagent subtitle can use that tracking icon. Mail and Repair stay disabled, with no pins. Lakeshire is still empty. The eight docks, the boat, and the filter placement are unchanged. This does not read the minimap's live dots and does not change the game's tracking settings.
+
 ## 0.5.2b.53
 
 - **Map Icons.** The filter lists Docks only. Flight masters, innkeepers, vendors, profession trainers, profession suppliers, bankers, auctioneers, mailboxes, repair, dungeon entrances, and the entrance level label are not drawn and have no row. The pin table and the icon files stay. The four earlier docks stay on the same spots, with the same boat, 28 pixels on the map and 18 in the row, the same destination hover, and the saved Docks toggle. The window height, the 8 pixel right gap, the left fallback, and the checks are unchanged. Continent level badges stay.

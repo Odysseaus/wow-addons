@@ -1042,13 +1042,44 @@ function M.PaintCraft(tex, key)
   end
   if NS.QS and NS.QS.PaintIcon(tex, "profession") then return "profession" end
 end
+-- 0.5.2b.54: a town pin prefers the minimap file for that role. An atlas is used only when that file is missing.
+function M.PaintMinimap(tex, role)
+  local list = NS.QS and NS.QS.CheckRole and NS.QS.CheckRole(role)
+  if type(list) ~= "table" then return false end
+  local pick
+  for _, c in ipairs(list) do
+    if c.ok and type(c.file) == "string" and c.file:find("Interface\\Minimap\\", 1, true) then pick = c break end
+  end
+  if not pick then
+    for _, c in ipairs(list) do if c.ok then pick = c break end end
+  end
+  if not pick then return false end
+  if pick.file then
+    tex:SetTexture(pick.file)
+    local t = pick.tc or { 0, 1, 0, 1 }
+    tex:SetTexCoord(t[1], t[2], t[3], t[4])
+    return true
+  end
+  if pick.atlas and tex.SetAtlas then
+    local ok = pcall(tex.SetAtlas, tex, pick.atlas, false)
+    if ok then return true end
+  end
+  return false
+end
+-- Vendors have no general minimap icon. Only a subtitle that names food or a reagent uses those tracking files.
+function M.VendorMark(detail)
+  if type(detail) ~= "string" then return nil end
+  local r = detail:lower()
+  if r:find("reagent", 1, true) then return "reagents" end
+  if r:find("food", 1, true) then return "food" end
+end
 function M.PaintRowIcon(tex, role)
   if role == "dock" then
     tex:SetTexture(DOCK)
     tex:SetTexCoord(0, 1, 0, 1)
     return
   end
-  if role and role ~= "town" and NS.QS and NS.QS.PaintIcon(tex, role) then return end
+  if role and role ~= "town" and M.PaintMinimap(tex, role) then return end
   Icon(tex, "town")
 end
 local function PaintTownIcon(tex, role, detail)
@@ -1057,9 +1088,13 @@ local function PaintTownIcon(tex, role, detail)
     tex:SetTexCoord(0, 1, 0, 1)
     return "dock"
   end
-  local craft = M.PaintCraft(tex, M.CraftOf(detail))
-  if craft then return craft end
-  if role and role ~= "town" and NS.QS and NS.QS.PaintIcon(tex, role) then return "role" end
+  if role == "town" then
+    local mark = M.VendorMark(detail)
+    if mark and M.PaintMinimap(tex, mark) then return mark end
+    Icon(tex, "town")
+    return "town"
+  end
+  if role and M.PaintMinimap(tex, role) then return "role" end
   Icon(tex, "town")
   return "town"
 end
@@ -1069,11 +1104,10 @@ local function TownDef(id)
   for _, c in ipairs(data.cats) do if c.id == id then return c end end
 end
 function M.TownCatOk(id)
-  -- 0.5.2b.53: only docks are shown. The other categories stay in the data file and are not drawn.
-  if id ~= "dock" then return false end
   local def = TownDef(id)
   if not (def and not def.unavailable and NS.TownPins and NS.TownPins.pins) then return false end
-  for _, p in ipairs(NS.TownPins.pins) do if p.cat == id then return true end end
+  local want = (id == "levels") and "entrance" or id
+  for _, p in ipairs(NS.TownPins.pins) do if p.cat == want then return true end end
   return false
 end
 function M.TownOn(id)
@@ -3926,7 +3960,8 @@ function M.SyncTownPanel()
   for _, c in ipairs(data.cats) do byId[c.id] = c end
   local wide = (p:GetWidth() or PREF_W) >= 360
   local cols = {
-    { title = "Travel", ids = { "dock" } },
+    { title = "Town services", ids = { "flight", "inn", "vendor", "ptrainer", "psupply", "bank", "auction", "mail", "repair" } },
+    { title = "Dungeons", ids = { "entrance", "levels" }, travel = true },
   }
   if type(p.heads) ~= "table" then p.heads = {} end
   if type(p.rows) ~= "table" then p.rows = {} end
@@ -3978,6 +4013,16 @@ function M.SyncTownPanel()
     head:Show()
     yy = yy + 22
     for _, id in ipairs(col.ids) do yy = place(id, x, yy) end
+    if col.travel then
+      hi = hi + 1
+      local travel = p.heads[hi]
+      if not travel then travel = GoldText(p.body, 13) p.heads[hi] = travel end
+      travel:ClearAllPoints()
+      travel:SetPoint("TOPLEFT", p.body, "TOPLEFT", x, -yy)
+      travel:SetText("Travel")
+      travel:Show()
+      yy = place("dock", x, yy + 22)
+    end
     y = math.max(y, yy)
     maxY = y
   end
