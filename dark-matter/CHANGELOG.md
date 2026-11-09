@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.60
+
+- **Darnassus and Undercity.** The 21 Darnassus service pins move from map 1458 to map 1457. The 35 Undercity service pins move from map 1457 to map 1458. Coordinates are unchanged. Silva Fil'naveth stays on Moonglade.
+
 ## 0.5.2b.59
 
 - **Level labels.** On the world and continent map, a zone's level range sits on a parchment scroll with curled ends. The art is the client's quest-item name frame. If that file is missing, the plate is a parchment tint. The text is ivory with a dark outline. The spots and the other map behavior stay.

@@ -6241,6 +6241,27 @@ do
       and M._boats["Stormwind Harbor|Auberdine, Darkshore"].x == 0.22
       and M._boats["Stormwind Harbor|Auberdine, Darkshore"].y == 0.56,
       "0.5.2b.58 town: Stormwind services are the current cluster, the boat stays, and Lakeshire is empty")
+    ;(function()
+      local sae, norm, silva, nDar, nUc = nil, nil, nil, 0, 0
+      for _, pin in ipairs(NS.TownPins.pins) do
+        if pin.whZone == 1657 then
+          nDar = nDar + 1
+          if pin.map ~= 1457 then nDar = -1000 end
+          if pin.name == "Innkeeper Saelienne" then sae = pin end
+        elseif pin.whZone == 1497 then
+          nUc = nUc + 1
+          if pin.map ~= 1458 then nUc = -1000 end
+          if pin.name == "Innkeeper Norman" then norm = pin end
+        end
+        if pin.name == "Silva Fil'naveth" then silva = pin end
+      end
+      check(sae and sae.map == 1457 and sae.x == 0.6725 and sae.y == 0.158 and nDar == 21,
+        "0.5.2b.60 town: Saelienne and the 21 Darnassus pins are on 1457")
+      check(norm and norm.map == 1458 and norm.x == 0.674 and norm.y == 0.384 and nUc == 35,
+        "0.5.2b.60 town: Norman and the 35 Undercity pins are on 1458")
+      check(silva and silva.map == 1450 and silva.x == 0.442 and silva.y == 0.452,
+        "0.5.2b.60 town: Silva Fil'naveth stays on Moonglade")
+    end)()
     steam = M._boats["Steamwheedle Port|Powderfuse Port, Riverglades"]
     check(steam and steam.x == 0.686 and steam.y == 0.23
       and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"] and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].map == 2548
