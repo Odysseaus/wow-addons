@@ -1,5 +1,5 @@
 --------------------------------------------------------------------------------
--- Objectives (v0.2.1): the game's "All Objectives" tracker, by zone.
+-- Objectives (v0.2.2): the game's "All Objectives" tracker, by zone.
 --
 --  * Quests lists this zone's in-progress quests plus pinned ones; in a capital, the city's and
 --    its surrounding zone's (CITY below). Lowest [level] first, ties by title.
@@ -8,6 +8,8 @@
 --  * A pin left of each quest (and of the game's quest icon): a pinned quest stays listed in every zone.
 --  * v0.2.1: the quest log's zone header decides where a quest belongs (see Classify); dungeon quests
 --    only inside their dungeon; Ready rows use the game's own quest icon button; /vh objectives why.
+--  * v0.2.2: another zone's quest with a real objective (or, ready, turn-in) marker here is listed too
+--    (O.Marker); pins in the game's quest log as well (QuestLogPins.lua), one store for all.
 --
 -- How: Valhalla never edits, hooks or re-parents anything of the game's tracker. It only decides which
 -- quests are tracked (C_QuestLog.AddQuestWatch / RemoveQuestWatch) and in what order (re-tracking), and
@@ -37,6 +39,8 @@ O.NEW_GAP = 0.4
 O.REORDER_TRIES = 3             -- re-order attempts per change before giving up until the next one
 O.READY_MAX = 12                -- rows shown in Ready to Turn In
 O.PIN_SIZE = 17
+O.MARKER_MISSES = 2             -- a quest listed for its marker here goes after this many misses in a row...
+O.MARKER_GAP = 0.9              -- ...this many seconds apart (POI data can read empty for a moment)
 O.ROW_H = 32
 
 -- the capitals and the zone around each (Forever uiMapIDs, as Data/Forever/Banners.lua's city -> host)
@@ -267,14 +271,15 @@ end
 local INSTANCE_KINDS = { party = true, raid = true, scenario = true }
 
 -- { maps, names (canonical), onMap = { [questID] = true } (the kept pins), pins = { [questID] = { raw pins } },
---   inst (in a dungeon), instName, key }
+--   marker = { [questID] = true } (a real marker here that passes every guard: see O.Marker), inst (in a
+--   dungeon), instName, key }
 function O.Here()
 	local best = C_Map and C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player")
 	local inInst, kind = nil, nil
 	if IsInInstance then inInst, kind = Call(IsInInstance) end
 	local inst = inInst and INSTANCE_KINDS[kind] and true or false
 	local zone = inst and best or O.ZoneOf(best)
-	local here = { maps = {}, names = {}, onMap = {}, pins = {}, best = best, zone = zone, inst = inst, shown = {} }
+	local here = { maps = {}, names = {}, onMap = {}, pins = {}, marker = {}, guard = {}, best = best, zone = zone, inst = inst, shown = {} }
 	local function AddName(s)
 		if type(s) ~= "string" or s == "" then return end
 		here.shown[s] = true
@@ -320,11 +325,45 @@ function O.Here()
 			end
 		end
 	end
+	if not inst then
+		for id in pairs(here.onMap) do O.Marker(id, here) end
+	end
 	local names = {}
 	for k in pairs(here.names) do names[#names + 1] = k end
 	table.sort(names)
 	here.key = tostring(zone) .. (inst and ":inst:" or ":") .. table.concat(names, "|")
 	return here
+end
+
+-- v0.2.2: a quest from another zone with a real marker here (an objective while in progress, its turn-in once
+-- ready). All of these must hold (outdoors only; dungeon quests are left out in Classify):
+--   * a kept pin on a current map: not a map indicator, not a waypoint for that map, not another map's pin;
+--   * the game's next waypoint for it (GetNextWaypoint) is none, or on a current map;
+--   * a pin on the map you stand on (not the capital's surround) also needs the game's own "local POI"
+--     (C_QuestLog.IsOnMap's hasLocalPOI).
+function O.Marker(id, here)
+	local g = { }
+	here.guard[id] = g
+	local CQ = C_QuestLog
+	if CQ.GetNextWaypoint then
+		local m = Call(CQ.GetNextWaypoint, id)
+		g.nextMap = m
+		if m and not here.maps[m] then g.why = ("its next waypoint is on map %s"):format(tostring(m)) return false end
+	end
+	local localPOI
+	if CQ.IsOnMap then local _, l = Call(CQ.IsOnMap, id) localPOI = l and true or false end
+	g.localPOI = localPOI
+	for _, p in ipairs(here.pins[id] or {}) do
+		if p.kept then
+			if p.map ~= here.zone or localPOI ~= false then
+				here.marker[id] = true
+				g.why = nil
+				return true
+			end
+		end
+	end
+	g.why = "the game says it has no local marker on this map"
+	return false
 end
 
 local DUNGEON_TAGS = { [81] = true, [62] = true }   -- Constants.QuestConsts QUEST_INFO_DUNGEON_ID / QUEST_INFO_RAID_ID
@@ -341,9 +380,16 @@ function O.Classify(e, here, placeOnly)
 	local function Here(s) return s and (here.names[ZCanon(s) or ""] or here.names[DCanon(s) or ""]) or false end
 	-- "X: Zone" counts as that zone
 	local suffix = h and h:match("^[^:]+:%s*(.+)$")
+	local function Marked(text)
+		if here.inst or O.IsDungeonQuest(e) or not here.marker[e.id] then return false end
+		return true, ("%s, but it has %s here"):format(text, e.ready and "a turn-in marker" or "an objective marker")
+	end
 	if suffix and O.IsZoneName(suffix) then
 		if Here(suffix) or Here(h) then return true, ("header \"%s\" counts as %s: here"):format(h, suffix) end
-		return false, ("header \"%s\" counts as %s: not here"):format(h, suffix)
+		local text = ("header \"%s\" counts as %s: not here"):format(h, suffix)
+		local yes, why = Marked(text)
+		if yes then return true, why end
+		return false, text
 	end
 	local dungeon = O.IsDungeonQuest(e)
 	if here.inst then
@@ -353,7 +399,14 @@ function O.Classify(e, here, placeOnly)
 	end
 	if dungeon then return false, "a dungeon quest: listed inside its dungeon" end
 	if h and Here(h) then return true, ("header \"%s\" is this zone"):format(h) end
-	if h and O.IsZoneName(h) then return false, ("header \"%s\" is another zone"):format(h) end
+	if h and O.IsZoneName(h) then
+		local text = ("header \"%s\" is another zone"):format(h)
+		local yes, why = Marked(text)
+		if yes then return true, why end
+		local g = here.guard[e.id]
+		if here.onMap[e.id] and g and g.why then text = text .. " (its marker here doesn't count: " .. g.why .. ")" end
+		return false, text
+	end
 	if here.onMap[e.id] then return true, ("header \"%s\" isn't a zone: it has a map pin here"):format(tostring(h)) end
 	return false, ("header \"%s\" isn't a zone: no map pin here"):format(tostring(h))
 end
@@ -423,11 +476,45 @@ end
 
 -- a quick pass on quest log changes: ready quests leave Quests, quests Valhalla hid that belong come
 -- back, and newly accepted quests are placed. The zone stays as it was planned.
+-- the markers here, read again (same place only): a new one counts at once, a lost one after
+-- MARKER_MISSES misses MARKER_GAP apart. Returns the quests whose marker was gained and lost.
+function O.RefreshMarkers(now)
+	local old = S.here
+	local gained, lost = {}, {}
+	if not old or old.inst then return gained, lost end
+	local new = O.Here()
+	if new.key ~= old.key then return gained, lost end   -- (somewhere else: the full plan that's coming decides)
+	S.miss = S.miss or {}
+	for id in pairs(old.marker) do
+		if new.marker[id] then
+			S.miss[id] = nil   -- (seen again: the count starts over)
+		else
+			local m = S.miss[id]
+			if not m then m = { n = 0, t = -math.huge } S.miss[id] = m end
+			if now - m.t >= O.MARKER_GAP then m.n = m.n + 1 m.t = now end
+			if m.n < O.MARKER_MISSES then
+				new.marker[id] = true   -- (kept for now; looked at again shortly)
+				S.partialDue = math.min(S.partialDue or math.huge, now + O.MARKER_GAP + 0.05)
+			else
+				S.miss[id] = nil
+				lost[id] = true
+			end
+		end
+	end
+	for id in pairs(new.marker) do
+		if not old.marker[id] then gained[id] = true end
+	end
+	S.here = new
+	return gained, lost
+end
+
 function O.PlanPartial()
-	local here = S.here
-	if not here then return end
+	if not S.here then return end
 	local log, n = O.ReadLog()
 	if n == 0 then return end
+	local now = Now()
+	local gained, lost = O.RefreshMarkers(now)
+	local here = S.here
 	S.log = log
 	local c = Char()
 	local _, watched = O.WatchOrder()
@@ -437,12 +524,13 @@ function O.PlanPartial()
 		local listed = O.Listed(e, here)
 		if watched[id] and e.ready then
 			Queue(id, false)   -- (ready: shown in Ready to Turn In when listed, never in Quests)
-		elseif not watched[id] and not e.ready and listed and c.hidden[id] and count < O.MAX_WATCHES then
+		elseif watched[id] and lost[id] and not listed then
+			Queue(id, false)   -- (its marker here is gone: nothing left to do here)
+		elseif not watched[id] and not e.ready and listed and (c.hidden[id] or gained[id]) and count < O.MAX_WATCHES then
 			Queue(id, true) count = count + 1 added = true
 		end
 	end
 	-- new quests: placed once their entry (and zone header) is there
-	local now = Now()
 	for id, f in pairs(S.fresh) do
 		if now >= f.due then
 			local e = log[id]
@@ -661,9 +749,12 @@ function O.OnEvent(event, a1)
 		if a1 then S.fresh[a1] = { due = now + O.NEW_GAP, tries = 0 } end
 	elseif event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN" then
 		if a1 then
+			local was = O.Pinned()[a1]
 			O.Pinned()[a1] = nil
 			Char().hidden[a1] = nil
 			S.fresh[a1] = nil
+			if S.miss then S.miss[a1] = nil end
+			if was then O.NotifyPins(a1) end
 		end
 		S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE
 	elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE" then
@@ -675,11 +766,19 @@ function O.OnEvent(event, a1)
 end
 
 -- the pin clicked: listed everywhere (or not), at once (out of combat; else after it)
+-- the one pin store (ValhallaCharDB.objectives.pinned): every change goes through here, and every place that
+-- shows pins (the tracker's rows, Ready to Turn In, the quest log) hears of it
+O.pinListeners = {}
+function O.OnPinsChanged(fn) O.pinListeners[#O.pinListeners + 1] = fn end
+function O.NotifyPins(id)
+	S.layoutDirty, S.readyDirty = true, true
+	for _, fn in ipairs(O.pinListeners) do pcall(fn, id) end
+end
 function O.SetPinned(id, on)
 	if not id then return end
 	O.Pinned()[id] = on and true or nil
 	S.fullDue = Now()
-	S.layoutDirty, S.readyDirty = true, true
+	O.NotifyPins(id)
 end
 
 -- turned off: the quests Valhalla untracked are tracked again (the game's own tracking from then on)
@@ -759,6 +858,7 @@ local function PaintPin(b, q)
 	end
 end
 O.PaintPin = PaintPin
+O.MakePin = MakePin
 
 -- the tracker's visible quest rows (read only): { q, block }, top to bottom
 function O.Blocks()
@@ -1106,6 +1206,8 @@ local events
 function O.Tick()
 	local now = Now()
 	O.Step(now)
+	local LP = O.LogPins
+	if LP and LP.IsOn() and not LP.Hooked() then LP.Hook() end   -- (the quest log not there yet: tried again)
 	if S.readyDirty then O.FillReady() end
 	local T = rawget(_G, "ObjectiveTrackerFrame")
 	if Visible(T) then O.LayoutPins() else for _, p in ipairs(UI.pins) do p:Hide() p.key = nil end end
@@ -1122,11 +1224,13 @@ function mod:OnEnable()
 	if not S.ticker and C_Timer and C_Timer.NewTicker then S.ticker = C_Timer.NewTicker(O.TICK, O.Tick) end
 	S.lastBest = C_Map and C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player")
 	O.ZoneDue(Now() - O.SETTLE + 0.5)   -- (the first plan half a second after starting)
+	if O.LogPins then O.LogPins.Enable() end   -- (Objectives/QuestLogPins.lua)
 end
 
 function mod:OnDisable()
 	if events then events:UnregisterAllEvents() end
 	if S.ticker then S.ticker:Cancel() S.ticker = nil end
+	if O.LogPins then O.LogPins.Disable() end
 	O.HideFrames()
 	O.Reset()
 	if not O.Restore() and events then
@@ -1172,6 +1276,12 @@ function O.Why(id)
 				p.otherMap and ", another map's" or "", p.kept and "kept" or "dropped")
 		end
 		if not here.pins[id] then out[#out + 1] = "  no map pins here" end
+		local g = here.guard[id]
+		if g then
+			out[#out + 1] = ("  next waypoint: %s; local marker: %s; counts as a marker here: %s%s"):format(
+				g.nextMap and ("map " .. tostring(g.nextMap)) or "none", g.localPOI == nil and "?" or tostring(g.localPOI),
+				here.marker[id] and "yes" or "no", g.why and (" (" .. g.why .. ")") or "")
+		end
 	else
 		local list = {}
 		for _, e in pairs(log) do list[#list + 1] = e end

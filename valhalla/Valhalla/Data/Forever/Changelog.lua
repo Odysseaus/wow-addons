@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.2.2", date = "2026-11-09", heads = { [1] = "New", }, items = {
+		"|cff6e2c0aQuests with something to do here show here|r: a quest from another zone that has a real objective marker on this zone's map (or a capital's surrounding zone's) is listed in Quests, and once it's ready, a turn-in marker here puts it in Ready to Turn In. \"Travel this way\" waypoints, map indicators and other maps' pins don't count, and dungeon quests stay in their dungeon. Once its marker here is gone it leaves (after a second look, never in combat or in flight).",
+		"|cff6e2c0aPins in the quest log|r: the same pin left of each quest's icon in the quest log, the same as on All Objectives: pin or unpin in either and both follow.",
+		"|cff6e2c0a/valhalla objectives why|r says when a quest is listed for its marker here, and why a marker doesn't count.",
+	} },
 	{ version = "v0.2.1", date = "2026-11-09", heads = { [1] = "Fixed", [4] = "New", }, items = {
 		"|cff6e2c0aQuests from other zones no longer leak in|r: a quest's zone header in the quest log decides where it's listed (\"Excavation Site: Wetlands\" counts as Wetlands). The game's \"travel this way\" and map-indicator pins no longer pull in Duskwood quests in Stormwind or Wetlands quests in Ironforge, in Quests or in Ready to Turn In.",
 		"|cff6e2c0aReady to Turn In drops unpinned quests from other zones|r, and every ready quest leaves the Quests list.",

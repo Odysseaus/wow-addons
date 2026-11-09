@@ -19,6 +19,7 @@ function ns:Print(fmt, ...) ns.printed[#ns.printed + 1] = select("#", ...) > 0 a
 function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m.defaults or {} if m.defaults.enabled == nil then m.defaults.enabled = true end self.modules[key] = m return m end
 function ns:GetModule(key) return self.modules[key] end
 assert(loadfile(root .. "Objectives/Objectives.lua"))("Valhalla", ns)
+assert(loadfile(root .. "Objectives/QuestLogPins.lua"))("Valhalla", ns)
 local mod = ns:GetModule("objectives")
 local O = mod.O
 
@@ -85,10 +86,14 @@ ok(eq(W.watches, { 2, 6, 3 }), "Goldshire Inn (micro map) -> Elwynn Forest only"
 W.map = 1453 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
 ok(eq(W.watches, { 2, 6, 3, 1 }), "back in Stormwind", list(W.watches))
 
-print("== 1c. (v0.2.1, A3) a map pin no longer pulls in a quest whose log header is another zone")
+print("== 1c. (v0.2.2, E1) another zone's quest: listed for a real marker here, not for a waypoint")
 W.onMap[1429] = { 5 }
 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
-ok(not has(W.watches, 5), "a Dun Morogh quest with a pin on Elwynn's map is not listed in Stormwind", list(W.watches))
+ok(has(W.watches, 5), "a Dun Morogh quest with a real objective marker on Elwynn's map is listed in Stormwind (E1; v0.2.1 said not)", list(W.watches))
+W.waypoints["5:1429"] = true
+Fire("ZONE_CHANGED_NEW_AREA") Run(2)
+ok(not has(W.watches, 5), "the same pin as a waypoint: not listed (the v0.2.1 rule)", list(W.watches))
+W.waypoints["5:1429"] = nil
 W.onMap[1429] = nil
 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
 
@@ -463,6 +468,244 @@ ok(text:find("305") and text:find("listed in Ready") and text:find("not listed")
 mod:Slash("WHY 99999")
 ok(ns.printed[#ns.printed]:find("not in your quest log"), "why <unknown id>")
 ok(mod.enabled, "why changes nothing (still on)")
+
+---------------------------------------------------------------------------
+-- v0.2.2
+---------------------------------------------------------------------------
+local function Why(id) local n0 = #ns.printed mod:Slash("why " .. id) return table.concat(ns.printed, "\n", n0 + 1) end
+
+print("== 25. another zone's quest with a real objective marker here is listed")
+W.Reset()
+W.AddQuest(40, "Stormwind City", "A Noble Brew", 30, false, true)
+W.AddQuest(41, "Wetlands", "Crocs of the Sky", 22, false, true)
+W.AddQuest(42, "Duskwood", "Eight-Legged Menaces", 24, false, true)
+Restart()
+W.onMap[1437] = { { questID = 40, mapID = 1437 } }
+Arrive(1437)
+ok(eq(W.watches, { 41, 40 }), "Wetlands: A Noble Brew (Stormwind header) for its Musquash Root marker", list(W.watches))
+ok(Why(40):find("is another zone, but it has an objective marker here"), "why: 'an objective marker here'")
+W.onMap[1431] = { { questID = 40, mapID = 1431 } }
+Arrive(1431)
+ok(eq(W.watches, { 42, 40 }), "Duskwood: and for its Tear of Tilloa marker", list(W.watches))
+W.onMap[1437] = { 40 } W.waypoints["40:1437"] = true
+Arrive(1437)
+ok(eq(W.watches, { 41 }), "only a waypoint pin: not listed", list(W.watches))
+W.waypoints["40:1437"] = nil W.onMap[1437] = { { questID = 40, mapID = 1437, isMapIndicatorQuest = true } }
+Go(1431) Go(1437)
+ok(eq(W.watches, { 41 }), "only a map indicator: not listed", list(W.watches))
+W.onMap[1437] = { { questID = 40, mapID = 1431 } }
+Go(1431) Go(1437)
+ok(eq(W.watches, { 41 }), "only another map's pin: not listed", list(W.watches))
+W.onMap[1437] = { { questID = 40, mapID = 1437 } } W.next[40] = 1431
+Go(1431) Go(1437)
+ok(eq(W.watches, { 41 }), "a real pin, but the next waypoint is Duskwood: not listed", list(W.watches))
+ok(Why(40):find("next waypoint is on map 1431"), "why: the next-waypoint guard")
+W.next[40] = 1437
+Go(1431) Go(1437)
+ok(has(W.watches, 40), "next waypoint on this map: listed", list(W.watches))
+W.next[40] = nil W.noLocal[40] = true
+Go(1431) Go(1437)
+ok(not has(W.watches, 40), "the game says no local marker on the map you stand on: not listed", list(W.watches))
+ok(Why(40):find("no local marker"), "why: the local-marker guard")
+W.noLocal[40] = nil
+print("== 25b. E1: a capital's surrounding zone counts (no local-marker check there)")
+W.onMap[1429] = { { questID = 42, mapID = 1429 } } W.noLocal[42] = true
+Arrive(1453)
+ok(has(W.watches, 42), "Stormwind: a Duskwood quest with a real marker in Elwynn", list(W.watches))
+W.onMap[1429] = nil W.onMap[1453] = { { questID = 42, mapID = 1453 } }
+Go(1436) Go(1453)
+ok(not has(W.watches, 42), "on Stormwind's own map without the game's local marker: not listed", list(W.watches))
+W.onMap[1453] = nil W.noLocal[42] = nil
+
+print("== 26. the v0.2.0 leaks stay out")
+W.Reset()
+W.AddQuest(1, "Stormwind City", "Rethban Ore", 15, false, true)
+W.AddQuest(2, "Duskwood", "Wolves at Our Heels", 20, false, true)
+W.AddQuest(3, "Wetlands", "Tramping Paws", 22, false, true)
+W.AddQuest(4, "Ironforge", "The Darkmoon Faire", 10, true, false)
+W.AddQuest(5, "Duskwood", "The Legend of Stalvan", 25, true, false)
+W.AddQuest(20, "Gnomeregan", "Save Techbot's Brain", 26, false, true)
+W.AddQuest(21, "Dun Morogh", "Gyrodrillmatic Excavationators", 30, false, true, 81)
+W.AddQuest(22, "Dun Morogh", "Frostmane Hold", 10, false, true)
+W.onMap[1429] = { 2, 5 } W.waypoints["2:1429"] = true W.waypoints["5:1429"] = true W.next[2] = 1431 W.next[5] = 1431
+W.onMap[1453] = { { questID = 4, mapID = 1455 } }
+W.onMap[1426] = { { questID = 3, isMapIndicatorQuest = true }, { questID = 20, mapID = 1426 }, { questID = 21, mapID = 1426 } }
+Restart() Arrive(1453)
+ok(eq(W.watches, { 1 }), "Stormwind: no Duskwood quests (waypoints)", list(W.watches))
+ok(eq(ReadyIds(), {}), "Stormwind Ready: no Darkmoon Faire (Ironforge's pin), no Stalvan (waypoint)", list(ReadyIds()))
+Arrive(1455)
+ok(eq(W.watches, { 22 }), "Ironforge: no Tramping Paws (indicator), no Gnomeregan quests (real entrance pins, but dungeon quests)", list(W.watches))
+ok(eq(ReadyIds(), { 4 }), "Ironforge Ready: its own Darkmoon Faire", list(ReadyIds()))
+
+print("== 27. R1: a ready quest with a turn-in marker here is in Ready")
+W.onMap[1429] = { { questID = 5, mapID = 1429 } } W.waypoints["5:1429"] = nil W.next[5] = nil
+Arrive(1453)
+ok(has(ReadyIds(), 5) and not has(W.watches, 5), "Stormwind: The Legend of Stalvan for its turn-in marker in Elwynn (Ready, not Quests)", list(ReadyIds()))
+ok(Why(5):find("but it has a turn%-in marker here"), "why: 'a turn-in marker here'")
+W.onMap[1429] = { 5 } W.waypoints["5:1429"] = true
+Go(1436) Go(1453)
+ok(not has(ReadyIds(), 5), "the same as a waypoint: not in Ready", list(ReadyIds()))
+W.AddQuest(23, "Gnomeregan", "The Grand Betrayal", 35, true, false)
+W.onMap[1426] = { { questID = 23, mapID = 1426 } }
+Arrive(1455)
+ok(not has(ReadyIds(), 23), "a ready dungeon quest with a real marker outdoors: not in Ready", list(ReadyIds()))
+
+print("== 28. inside a dungeon: no exception")
+W.onMap[9100] = { { questID = 22, mapID = 9100 }, { questID = 21, mapID = 9100 } }
+Arrive(9100, { name = "Gnomeregan", kind = "party" })
+ok(eq(W.watches, { 20, 21 }), "Gnomeregan: a Dun Morogh quest with a pin on the dungeon map stays out", list(W.watches))
+O.SetPinned(22, true) Run(1)
+ok(has(W.watches, 22), "pinned: in", list(W.watches))
+O.SetPinned(22, false) Run(1)
+
+print("== 29. a marker gone: out after 2 misses; a new one: in at once; never in combat or flight")
+W.Reset()
+W.AddQuest(40, "Stormwind City", "A Noble Brew", 30, false, true)
+W.AddQuest(41, "Wetlands", "Crocs of the Sky", 22, false, true)
+W.AddQuest(45, "Duskwood", "Wolves at Our Heels", 20, false, false)
+W.onMap[1437] = { { questID = 40, mapID = 1437 } }
+Restart() Arrive(1437)
+ok(has(W.watches, 40), "listed for its marker", list(W.watches))
+W.onMap[1437] = {}
+Fire("QUEST_POI_UPDATE") Run(0.7)
+ok(has(W.watches, 40), "one miss: kept", list(W.watches))
+W.onMap[1437] = { { questID = 40, mapID = 1437 } }
+Run(1.2)
+ok(has(W.watches, 40) and not (O.S.miss and O.S.miss[40]), "seen again: kept, count starts over", list(W.watches))
+W.onMap[1437] = {}
+Fire("QUEST_POI_UPDATE") Run(0.7)
+ok(has(W.watches, 40), "a new first miss: kept", list(W.watches))
+Run(1.5)
+ok(not has(W.watches, 40), "second miss a second later: out (the root looted)", list(W.watches))
+W.onMap[1437] = { { questID = 45, mapID = 1437 } }
+Fire("QUEST_POI_UPDATE") Run(1.2)
+ok(has(W.watches, 45), "a marker appearing here: tracked at once", list(W.watches))
+W.combat = true W.combatChanges = 0
+W.onMap[1437] = {}
+Fire("QUEST_POI_UPDATE") Run(3)
+ok(has(W.watches, 45) and W.combatChanges == 0, "in combat: nothing changes", list(W.watches))
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(3)
+ok(not has(W.watches, 45), "after combat: two misses, out", list(W.watches))
+W.onMap[1437] = { { questID = 45, mapID = 1437 } }
+Fire("QUEST_POI_UPDATE") Run(1.2)
+W.taxi = true local c0 = W.calls.add + W.calls.remove
+W.onMap[1437] = {}
+Fire("QUEST_POI_UPDATE") Run(3)
+ok(W.calls.add + W.calls.remove == c0 and has(W.watches, 45), "on a taxi: nothing changes", list(W.watches))
+W.taxi = false
+
+print("== 30. the 25 limit with marker quests")
+W.Reset()
+for i = 1, 24 do W.AddQuest(300 + i, "Wetlands", ("W%02d"):format(i), i, false, true) end
+W.AddQuest(400, "Stormwind City", "Low Marker", 5, false, false)
+W.AddQuest(401, "Duskwood", "High Marker", 40, false, false)
+W.onMap[1437] = { { questID = 400, mapID = 1437 }, { questID = 401, mapID = 1437 } }
+Restart() Arrive(1437)
+ok(#W.watches == 25 and has(W.watches, 400) and not has(W.watches, 401) and has(W.watches, 324), "25 tracked: the lowest levels, a marker quest mixed in, the level-40 one off", tostring(#W.watches))
+
+---------------------------------------------------------------------------
+print("== 31. quest-log pins")
+W.Reset()
+W.AddQuest(50, "Wetlands", "Crocs of the Sky", 22, false, true)
+W.AddQuest(51, "Wetlands", "An Exceptionally Long Quest Title!", 24, false, true)   -- (33 letters: 1 line at 210 px, 2 at 190)
+W.AddQuest(52, "Duskwood", "Night Web", 20, false, false)
+local SF = W.NewQuestLog()
+Restart() Arrive(1437)
+ok(O.LogPins.Hooked(), "hooked into the log (pool Acquire, QuestLogQuests_Update)")
+QuestLogQuests_Update()
+local function PinOf(row) for _, f in ipairs(W.frames) do if f._parent == row and f.icon and f.q ~= nil then return f end end end
+local function LogRow(id) for _, r in ipairs(W.log.rows) do if r.questID == id then return r end end end
+ok(#W.log.rows == 3 and PinOf(LogRow(50)) and PinOf(LogRow(51)) and PinOf(LogRow(52)), "a pin on every quest row")
+local onHeader = false
+for _, h in ipairs(W.log.headers) do if PinOf(h) then onHeader = true end end
+ok(#W.log.headers == 2 and not onHeader, "none on the headers")
+ok(W.log.measured[50] == 50 and W.log.measured[51] == 50, "titles moved to x 50 before the game measured them (first show)", tostring(W.log.measured[51]))
+ok(LogRow(51)._height == 8 + 24 + 6, "the long title measured at the narrower width: 2 lines in the row's height", tostring(LogRow(51)._height))
+local poi = SF.Contents:FindButtonByQuestID(50)
+local lp = poi._points[#poi._points]
+ok(lp[1] == "TOPLEFT" and lp[2] == LogRow(50) and lp[4] == 25 and lp[5] == -4, "quest icon moved to x 25")
+local p50 = PinOf(LogRow(50))
+local pp = p50._points[1]
+ok(p50._w == 17 and pp[1] == "TOPLEFT" and pp[2] == LogRow(50) and pp[4] == 4 and pp[5] == -6 and p50._shown, "pin: 17 px at (4, -6), left of the icon")
+ok(p50.icon._tex:find("ValhallaPinOff"), "Pin 2 art, off")
+W.noPOI = { [52] = true }
+QuestLogQuests_Update()
+local p52 = PinOf(LogRow(52))
+ok(p52 and p52._shown and p52._points[1][4] == 4, "a row with no quest icon: the pin in the same place")
+W.noPOI = nil
+
+print("== 32. pooled rows: each update's quest")
+mod.char.pinned[52] = true
+W.order = { 52, 51, 50 }   -- (the rows come back in another order)
+QuestLogQuests_Update()
+local okAll = true
+for _, r in ipairs(W.log.rows) do
+  local p = PinOf(r)
+  if not p or p.q ~= r.questID or (p.icon._tex:find("ValhallaPinOn") ~= nil) ~= (r.questID == 52) then okAll = false end
+end
+ok(okAll and SF.titleFramePool.made == 3, "reused rows show their new quest's pin state", tostring(SF.titleFramePool.made))
+mod.char.pinned[52] = nil
+
+print("== 33. one store, both ways")
+local updates = 0
+local realUpdate = QuestLogQuests_Update
+QuestLogQuests_Update = function(...) updates = updates + 1 return realUpdate(...) end
+local row50 = LogRow(50) local lpin = PinOf(row50)
+lpin._scripts.OnClick(lpin) Run(0.4)
+ok(mod.char.pinned[50] == true and lpin.icon._tex:find("ValhallaPinOn"), "log pin click: pinned in ValhallaCharDB.objectives.pinned")
+ok(O.S.fullDue == nil, "and a replan ran")
+local block = W.NewFrame("Frame") block.poiButton = W.NewFrame("Button")
+_G.QuestObjectiveTracker = { blockTemplate = "ObjectiveTrackerQuestPOIBlockTemplate", usedBlocks = { ObjectiveTrackerQuestPOIBlockTemplate = { [50] = block } } }
+Run(0.4)
+local sp = O.UI.pins[1]
+ok(sp and sp.q == 50 and sp.icon._tex:find("ValhallaPinOn"), "the tracker's pin for it: on")
+sp._scripts.OnClick(sp)
+ok(not mod.char.pinned[50] and lpin.icon._tex:find("ValhallaPinOff"), "tracker pin click: the log's pin off at once")
+ok(updates == 0, "without a quest log update")
+O.SetPinned(51, true)
+ok(PinOf(LogRow(51)).icon._tex:find("ValhallaPinOn"), "pinned anywhere (Ready rows use O.SetPinned too): the log follows")
+W.Drop(51) Fire("QUEST_TURNED_IN", 51) Fire("QUEST_REMOVED", 51)
+ok(mod.char.pinned[51] == nil and PinOf(row50) and not PinOf(LogRow(51) or row50).icon._tex:find("ValhallaPinOn"), "turned in: cleared in the store and the log")
+QuestLogQuests_Update = realUpdate
+_G.QuestObjectiveTracker = nil
+
+print("== 34. combat, and no game fields written")
+W.combat = true W.combatChanges = 0
+QuestLogQuests_Update()
+local p = PinOf(LogRow(52))
+p._scripts.OnClick(p)
+ok(mod.char.pinned[52] == true and W.combatChanges == 0, "in combat: the store changes, the tracking waits")
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(2)
+ok(has(W.watches, 52), "after combat: the pinned quest tracked", list(W.watches))
+ok(W.blockedSetters == 0, "no mouse pass-through / propagation setters, ever")
+local allowedRow = { Text = true, questID = true, info = true }
+local stray
+for _, r in ipairs(W.log.rows) do
+  for k in pairs(r) do if type(k) == "string" and not k:find("^_") and not allowedRow[k] then stray = k end end
+end
+for b in SF.poiPool:EnumerateActive() do
+  for k in pairs(b) do if type(k) == "string" and not k:find("^_") and k ~= "GetQuestID" and k ~= "parent" then stray = k end end
+end
+ok(stray == nil, "no fields written on the game's rows or icons", tostring(stray))
+O.SetPinned(52, false) Run(1)
+
+print("== 35. /valhalla objectives off: no log pins, rows back as they're laid out")
+O.SetOn(false)
+local anyShown = false
+for _, r in ipairs(W.log.rows) do local q = PinOf(r) if q and q._shown then anyShown = true end end
+ok(not anyShown, "off: the pins hidden at once")
+QuestLogQuests_Update()
+anyShown = false
+for _, r in ipairs(W.log.rows) do local q = PinOf(r) if q and q._shown then anyShown = true end end
+local back = true
+for _, r in ipairs(W.log.rows) do if W.log.measured[r.questID] ~= 31 then back = false end end
+local poi2 = SF.Contents:FindButtonByQuestID(50)
+ok(not anyShown and back and (function(t) return t[#t - 1] == 6 end)(poi2._points[#poi2._points]), "next update: titles at 31, icons at 6, no pins")
+O.SetOn(true) Run(1)
+QuestLogQuests_Update()
+back = true
+for _, r in ipairs(W.log.rows) do if W.log.measured[r.questID] ~= 50 or not PinOf(r)._shown then back = false end end
+ok(back, "on again: shifted and pinned from the next update")
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

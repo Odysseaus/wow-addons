@@ -61,6 +61,7 @@ W.templates.ObjectiveTrackerModuleMinimizeButtonTemplate = function(f)
 end
 function CreateFrame(kind, name, parent, template)
   local f = NewFrame(kind, name)
+  f._parent = parent
   if template and not W.noTemplates and W.templates[template] then W.templates[template](f) f._template = template end
   W.frames[#W.frames + 1] = f
   if name then _G[name] = f end
@@ -172,6 +173,9 @@ C_QuestLog = {
     return out
   end,
   GetNextWaypointForMap = function(q, m) if W.waypoints[q .. ":" .. m] then return 0.9, 0.1 end end,
+  -- v0.2.2: W.next[q] = the map of its next waypoint; W.noLocal[q] = the game says no local POI
+  GetNextWaypoint = function(q) local m = W.next[q] if m then return m, 0.5, 0.5 end end,
+  IsOnMap = function(q) return true, not W.noLocal[q] end,
   GetQuestTagInfo = function(q) local x = W.quests[q] if x and x.tag then return { tagID = x.tag, tagName = "Dungeon" } end end,
 }
 W.super = 0
@@ -179,6 +183,19 @@ C_SuperTrack = { GetSuperTrackedQuestID = function() return W.super end, SetSupe
   ClearAllSuperTracked = function() W.super = 0 W.cleared = (W.cleared or 0) + 1 end }
 POIButtonUtil = { Style = { QuestInProgress = 2, QuestComplete = 3 } }
 W.waypoints = {}
+W.next, W.noLocal = {}, {}
+-- frames: the mouse setters combat blocks (counted: the module must never call them)
+W.blockedSetters = 0
+function Frame.SetPassThroughButtons() W.blockedSetters = W.blockedSetters + 1 end
+function Frame.SetPropagateMouseClicks() W.blockedSetters = W.blockedSetters + 1 end
+function Frame.GetFrameLevel(self) return rawget(self, "_level") or 5 end
+function Frame.SetFrameLevel(self, l) self._level = l end
+-- hooksecurefunc: a post-hook
+function hooksecurefunc(t, name, fn)
+  if type(t) == "string" then t, name, fn = _G, t, name end
+  local orig = t[name]
+  t[name] = function(...) local r = { orig(...) } fn(...) return unpack(r) end
+end
 
 function W.AddQuest(id, header, title, level, ready, watched, tag)
   W.quests[id] = { header = header, title = title, level = level, ready = ready or false, tag = tag }
@@ -192,8 +209,103 @@ function W.Drop(id)
 end
 function W.Reset()
   W.quests, W.order, W.watches, W.onMap, W.waypoints, W.inst = {}, {}, {}, {}, {}, nil
+  W.next, W.noLocal = {}, {}
   W.combat, W.taxi, W.super, W.combatChanges = false, false, 0, 0
   W.side = "front"
   W.calls = { add = 0, remove = 0 }
 end
+
+--------------------------------------------------------------------------------
+-- the game's quest log (Blizzard_UIPanels_Game QuestMapFrame.lua, as far as the quest-log pins read it):
+-- a pool of title rows (QuestLogTitleTemplate: Text at TOPLEFT 31, -8), a pool of headers, the quest
+-- icons (POI buttons) found by quest, and QuestLogQuests_Update laying them out as the game does
+--------------------------------------------------------------------------------
+W.ROW_W = 290
+local function TextLeft(t)
+  local x = 31
+  for _, pt in ipairs(t._points) do if pt[1] == "TOPLEFT" then x = (type(pt[2]) == "table") and pt[4] or pt[2] end end
+  return x
+end
+W.TextLeft = TextLeft
+local function Pool(make)
+  local P = { active = {}, free = {}, made = 0 }
+  function P:Acquire()
+    local f = table.remove(self.free)
+    if not f then f = make() self.made = self.made + 1 end
+    self.active[f] = true
+    f:Show()
+    return f
+  end
+  function P:ReleaseAll()
+    for f in pairs(self.active) do f:Hide() f._points = {} rawset(f, "questID", nil) rawset(f, "info", nil) self.free[#self.free + 1] = f end
+    self.active = {}
+  end
+  function P:EnumerateActive() return next, self.active end
+  function P:GetNumActive() local n = 0 for _ in pairs(self.active) do n = n + 1 end return n end
+  return P
+end
+function W.NewQuestLog()
+  local contents = NewFrame("Frame")
+  local function Row()
+    local r = NewFrame("Button")
+    r._kind = "QuestLogTitle"
+    r.Text = NewFrame("FontString") r.Text._text = ""
+    r.Text:SetPoint("TOPLEFT", 31, -8)
+    r.Text:SetPoint("TOP", 0, -8)
+    r.Text.GetHeight = function(self)   -- (wraps: about 6 px a letter, 12 px a line, in the width it has)
+      local width = W.ROW_W - TextLeft(self) - 50
+      local lines = math.max(1, math.ceil(#(self._text or "") * 6 / width))
+      return lines * 12
+    end
+    return r
+  end
+  local SF = { Contents = contents }
+  SF.titleFramePool = Pool(Row)
+  SF.headerFramePool = Pool(function() local h = NewFrame("Button") h._kind = "QuestLogHeader" return h end)
+  local poiPool = Pool(function()
+    local b = NewFrame("Button")
+    b.GetQuestID = function(self) return self._q end
+    return b
+  end)
+  SF.poiPool = poiPool
+  function contents:FindButtonByQuestID(q) for b in poiPool:EnumerateActive() do if b._q == q then return b end end end
+  _G.QuestScrollFrame = SF
+  W.log = { measured = {} }
+  -- the game's update: every row and header released and taken again, in log order
+  _G.QuestLogQuests_Update = function()
+    SF.titleFramePool:ReleaseAll() SF.headerFramePool:ReleaseAll() poiPool:ReleaseAll()
+    W.log.rows, W.log.headers = {}, {}
+    local last
+    for _, id in ipairs(W.order) do
+      local q = W.quests[id]
+      if q and q.header ~= last then
+        last = q.header
+        local h = SF.headerFramePool:Acquire()
+        h._title = q.header
+        W.log.headers[#W.log.headers + 1] = h
+      end
+      if q then
+        local row = SF.titleFramePool:Acquire()
+        row.questID = id
+        row.info = { questID = id }
+        row.Text:SetText(q.title)
+        local height = 8 + row.Text:GetHeight() + 6
+        row:SetHeight(height)
+        row._height = height
+        W.log.measured[id] = TextLeft(row.Text)   -- (where the title was when the game measured it)
+        if not W.noPOI or not W.noPOI[id] then
+          local poi = poiPool:Acquire()
+          poi._q = id
+          poi.parent = row
+          poi:SetPoint("TOPLEFT", row, 6, -4)
+        end
+        W.log.rows[#W.log.rows + 1] = row
+      end
+    end
+  end
+  return SF
+end
+function Frame.SetHeight(self, h) self._height = h end
+function Frame.SetParent(self, p) self._parent = p end
+
 return W
