@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.56
+
+- **Docks.** One more boarding pin from owner coordinates on 8 Nov 2026, 9:51 PM CT. The southern dock at Auberdine, on Darkshore at 32.2, 44, goes to Menethil Harbor, Wetlands. The other fourteen docks are unchanged. The same boat, sizes, and Docks switch are used.
+
 ## 0.5.2b.55
 
 - **Docks.** Six boarding pins from owner coordinates on 8 Nov 2026, 7:33 PM CT. Menethil Harbor on Wetlands goes to Theramore. Theramore on Dustwallow Marsh goes to Menethil Harbor. A second Auberdine pin on Darkshore goes to Rut'theran Village. Rut'theran Village on Teldrassil goes to Auberdine. Feathermoon Stronghold and the Forgotten Coast, both on Feralas, go to each other. The earlier eight docks are unchanged. No Auberdine to Menethil pin was added. The same boat, sizes, and Docks switch are used.

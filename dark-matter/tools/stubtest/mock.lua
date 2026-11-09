@@ -6233,7 +6233,7 @@ do
     end
     check(M._c.flight == 62 and M._c.inn == 35 and M._c.vendor == 25 and M._c.ptrainer == 128
       and M._c.psupply == 37 and M._c.bank == 17 and M._c.auction == 24 and M._c.entrance == 1
-      and M._c.dock == 14 and not M._lake,
+      and M._c.dock == 15 and not M._lake,
       "0.5.2b.54 town: the old counts are unchanged, eight docks remain, and Lakeshire has no pin")
     steam = M._boats["Steamwheedle Port|Powderfuse Port, Riverglades"]
     check(steam and steam.x == 0.686 and steam.y == 0.23
@@ -6327,6 +6327,15 @@ do
       "0.5.2b.55 town: Theramore draws on Dustwallow Marsh and names Menethil Harbor")
     check(M._seeDock(1439, "Auberdine", "Rut'theran Village, Teldrassil"),
       "0.5.2b.55 town: the second Auberdine pin names Rut'theran Village")
+    check(M._seeDock(1439, "Auberdine southern dock", "Menethil Harbor, Wetlands"),
+      "0.5.2b.56 town: Auberdine's southern dock names Menethil Harbor")
+    M._ds = {}
+    for _, m in ipairs(shownTown()) do
+      if m.pin.cat == "dock" and m.pin.map == 1439 then M._ds[m.pin.dest] = m end
+    end
+    check(M._ds["Stormwind Harbor"] and M._ds["Rut'theran Village, Teldrassil"]
+      and M._ds["Menethil Harbor, Wetlands"] and M._ds["Menethil Harbor, Wetlands"]:GetWidth() == 28,
+      "0.5.2b.56 town: Darkshore shows the three boats")
     check(M._seeDock(1438, "Rut'theran Village", "Auberdine, Darkshore"),
       "0.5.2b.55 town: Rut'theran Village draws on Teldrassil and names Auberdine")
     check(M._seeDock(1444, "Feathermoon Stronghold", "Forgotten Coast, Feralas"),
@@ -6337,7 +6346,10 @@ do
     for _, pin in ipairs(NS.TownPins.pins) do
       if pin.cat == "dock" and pin.map == 1439 and type(pin.dest) == "string" and pin.dest:find("Menethil", 1, true) then M._men = M._men + 1 end
     end
-    check(M._men == 0 and M._boats["Menethil Harbor|Theramore, Dustwallow Marsh"].x == 0.045
+    check(M._men == 1 and M._boats["Auberdine southern dock|Menethil Harbor, Wetlands"].x == 0.322
+      and M._boats["Auberdine southern dock|Menethil Harbor, Wetlands"].y == 0.44
+      and M._boats["Auberdine southern dock|Menethil Harbor, Wetlands"].map == 1439
+      and M._boats["Menethil Harbor|Theramore, Dustwallow Marsh"].x == 0.045
       and M._boats["Menethil Harbor|Theramore, Dustwallow Marsh"].y == 0.635
       and M._boats["Theramore|Menethil Harbor, Wetlands"].x == 0.715
       and M._boats["Theramore|Menethil Harbor, Wetlands"].y == 0.565
@@ -6351,7 +6363,7 @@ do
       and M._boats["Forgotten Coast|Feathermoon Stronghold, Feralas"].x == 0.43
       and M._boats["Forgotten Coast|Feathermoon Stronghold, Feralas"].y == 0.427
       and M._boats["Auberdine|Stormwind Harbor"].x == 0.305,
-      "0.5.2b.55 town: the six new docks keep the owner spots, and Auberdine has no Menethil route")
+      "0.5.2b.56 town: the earlier docks stay put, and only the southern dock goes to Menethil")
     M.SetTown("dock", false)
     M.Layout()
     M._nd = 0
@@ -6361,7 +6373,7 @@ do
     M.SetTown("dock", true)
     M._nd = 0
     for _, pin in ipairs(NS.TownPins.pins) do if pin.cat == "dock" and M.TownOn("dock") then M._nd = M._nd + 1 end end
-    check(M._nd == 14, "0.5.2b.55 town: turning docks on covers all fourteen boats")
+    check(M._nd == 15, "0.5.2b.56 town: turning docks on covers all fifteen boats")
     M.Layout()
     check(hasName(shownTown(), "Forgotten Coast") and hasName(shownTown(), "Feathermoon Stronghold"),
       "0.5.2b.55 town: turning docks back on restores both Feralas boats")

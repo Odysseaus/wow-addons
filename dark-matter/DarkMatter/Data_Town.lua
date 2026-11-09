@@ -423,7 +423,7 @@ NS.TownPins = {
     { cat = "dock", name = "Southshore", detail = "Hillsbrad Foothills", dest = "Auberdine, Darkshore", map = 1424, x = 0.5050, y = 0.7000,
       src = "owner coordinates, 8 Nov 2026" },
     -- 0.5.2b.55: owner coordinates, 8 Nov 2026, 7:33 PM CT. Not a Forever tooltip.
-    -- Each destination is only the hover named here. Auberdine does not gain a Menethil route.
+    -- Each destination is only the hover named here. 0.5.2b.55 did not add an Auberdine to Menethil pin.
     { cat = "dock", name = "Menethil Harbor", detail = "Wetlands", dest = "Theramore, Dustwallow Marsh", map = 1437, x = 0.0450, y = 0.6350,
       src = "owner coordinates, 8 Nov 2026, 7:33 PM CT" },
     { cat = "dock", name = "Theramore", detail = "Dustwallow Marsh", dest = "Menethil Harbor, Wetlands", map = 1445, x = 0.7150, y = 0.5650,
@@ -436,6 +436,9 @@ NS.TownPins = {
       src = "owner coordinates, 8 Nov 2026, 7:33 PM CT" },
     { cat = "dock", name = "Forgotten Coast", detail = "Feralas", dest = "Feathermoon Stronghold, Feralas", map = 1444, x = 0.4300, y = 0.4270,
       src = "owner coordinates, 8 Nov 2026, 7:33 PM CT" },
+    -- 0.5.2b.56: owner coordinates, 8 Nov 2026, 9:51 PM CT. Not a Forever tooltip.
+    { cat = "dock", name = "Auberdine southern dock", detail = "Darkshore", dest = "Menethil Harbor, Wetlands", map = 1439, x = 0.3220, y = 0.4400,
+      src = "owner coordinates, 8 Nov 2026, 9:51 PM CT" },
     { cat = "psupply", name = "Hraq", detail = "Blacksmithing Supplier", map = 1413, x = 0.5120, y = 0.2900,
       src = "https://nether.wowhead.com/forever/tooltip/npc/3477", whZone = 17 },
     { cat = "psupply", name = "Rizz Loosebolt", detail = "Engineering Supplies", map = 1416, x = 0.4733, y = 0.3540,
