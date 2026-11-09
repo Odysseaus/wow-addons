@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.56: Auberdine's southern dock, fifteen boats in all.
+## Notes: Dark Matter 0.5.2b.57: Stormwind services stay off; every sampled tooltip has two clusters.
 ## Author: Odysseaus
-## Version: 0.5.2b.56
+## Version: 0.5.2b.57
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB

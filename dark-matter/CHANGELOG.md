@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2b.57
+
+- **Stormwind.** Forever tooltips for the sampled flight master, innkeeper, bankers, auctioneers, vendors, profession trainers, and profession suppliers in Stormwind City each have two coordinate clusters. None was averaged and none was drawn. The boat at 22, 56 stays. Ironforge, Darnassus, and the Goldshire pins are unchanged.
+
 ## 0.5.2b.56
 
 - **Docks.** One more boarding pin from owner coordinates on 8 Nov 2026, 9:51 PM CT. The southern dock at Auberdine, on Darkshore at 32.2, 44, goes to Menethil Harbor, Wetlands. The other fourteen docks are unchanged. The same boat, sizes, and Docks switch are used.

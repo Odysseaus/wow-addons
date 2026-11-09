@@ -6225,16 +6225,21 @@ do
       "0.5.2b.50 town: Innkeeper Heather is the single Westfall cluster")
     check(ratchet and ratchet.dest == "Booty Bay, Stranglethorn Vale" and ratchet.map == 1413 and ratchet.x == 0.632 and ratchet.y == 0.384,
       "0.5.2b.53 town: the Ratchet dock keeps its spot and names Booty Bay")
-    M._boats, M._c, M._lake = {}, {}, false
+    M._boats, M._c, M._lake, M._sw = {}, {}, false, 0
     for _, pin in ipairs(NS.TownPins.pins) do
       M._c[pin.cat] = (M._c[pin.cat] or 0) + 1
       if pin.cat == "dock" then M._boats[pin.name .. "|" .. (pin.dest or "")] = pin end
       if pin.map == 1433 then M._lake = true end
+      if pin.map == 1453 and pin.cat ~= "dock" then M._sw = M._sw + 1 end
     end
+    M._rej = {}
+    for _, r in ipairs(NS.TownPins.rejected or {}) do M._rej[r.name] = true end
     check(M._c.flight == 62 and M._c.inn == 35 and M._c.vendor == 25 and M._c.ptrainer == 128
       and M._c.psupply == 37 and M._c.bank == 17 and M._c.auction == 24 and M._c.entrance == 1
-      and M._c.dock == 15 and not M._lake,
-      "0.5.2b.54 town: the old counts are unchanged, eight docks remain, and Lakeshire has no pin")
+      and M._c.dock == 15 and not M._lake and M._sw == 0
+      and M._rej["Dungar Longdrink"] and M._rej["Tel'Athir"] and M._rej["Innkeeper Allison"]
+      and M._rej["Olivia Burnside"] and M._rej["Auctioneer Chilton"],
+      "0.5.2b.57 town: counts and the fifteen docks stay, Lakeshire is empty, and Stormwind services were rejected")
     steam = M._boats["Steamwheedle Port|Powderfuse Port, Riverglades"]
     check(steam and steam.x == 0.686 and steam.y == 0.23
       and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"] and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].map == 2548
