@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.5.2b.57
+## 0.5.2b.58
 
-- **Stormwind.** Forever tooltips for the sampled flight master, innkeeper, bankers, auctioneers, vendors, profession trainers, and profession suppliers in Stormwind City each have two coordinate clusters. None was averaged and none was drawn. The boat at 22, 56 stays. Ironforge, Darnassus, and the Goldshire pins are unchanged.
+- **Stormwind.** Service pins are drawn on the city map. Each Forever tooltip had two clusters. The cluster farther southeast is the current city, the one that has the southern harbor at 22.6, 56.1 and matches the published spots for Dungar, Allison, Therum, and Chilton. The classic cluster is not drawn, and the two clusters are not averaged. The boat at 22, 56 stays.
 
 ## 0.5.2b.56
 

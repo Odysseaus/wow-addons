@@ -6211,8 +6211,8 @@ do
     local dungar, named = false, false
     for _, pin in ipairs(NS.TownPins.pins) do if pin.name == "Dungar Longdrink" then dungar = true end end
     for _, r in ipairs(NS.TownPins.rejected or {}) do if r.name == "Dungar Longdrink" then named = true end end
-    check(not dungar and named and type(NS.TownPins.gaps) == "table" and #NS.TownPins.gaps >= 2,
-      "0.5.2b.49 town: a two-cluster flight master is listed and not drawn")
+    check(dungar and not named and type(NS.TownPins.gaps) == "table" and #NS.TownPins.gaps >= 2,
+      "0.5.2b.58 town: Dungar is drawn from the current cluster, and the gap list remains")
     local steam, heather, ratchet
     for _, pin in ipairs(NS.TownPins.pins) do
       if pin.name == "Steamwheedle Port" then steam = pin
@@ -6234,12 +6234,13 @@ do
     end
     M._rej = {}
     for _, r in ipairs(NS.TownPins.rejected or {}) do M._rej[r.name] = true end
-    check(M._c.flight == 62 and M._c.inn == 35 and M._c.vendor == 25 and M._c.ptrainer == 128
-      and M._c.psupply == 37 and M._c.bank == 17 and M._c.auction == 24 and M._c.entrance == 1
-      and M._c.dock == 15 and not M._lake and M._sw == 0
-      and M._rej["Dungar Longdrink"] and M._rej["Tel'Athir"] and M._rej["Innkeeper Allison"]
-      and M._rej["Olivia Burnside"] and M._rej["Auctioneer Chilton"],
-      "0.5.2b.57 town: counts and the fifteen docks stay, Lakeshire is empty, and Stormwind services were rejected")
+    check(M._c.flight == 63 and M._c.inn == 36 and M._c.vendor == 30 and M._c.ptrainer == 146
+      and M._c.psupply == 47 and M._c.bank == 20 and M._c.auction == 27 and M._c.entrance == 1
+      and M._c.dock == 15 and not M._lake and M._sw == 41
+      and not M._rej["Dungar Longdrink"] and M._rej["Thulman Flintcrag"]
+      and M._boats["Stormwind Harbor|Auberdine, Darkshore"].x == 0.22
+      and M._boats["Stormwind Harbor|Auberdine, Darkshore"].y == 0.56,
+      "0.5.2b.58 town: Stormwind services are the current cluster, the boat stays, and Lakeshire is empty")
     steam = M._boats["Steamwheedle Port|Powderfuse Port, Riverglades"]
     check(steam and steam.x == 0.686 and steam.y == 0.23
       and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"] and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].map == 2548
@@ -6259,6 +6260,20 @@ do
       and M._boats["Southshore|Auberdine, Darkshore"].dest == "Auberdine, Darkshore"
       and M._boats["Southshore|Auberdine, Darkshore"].src == "owner coordinates, 8 Nov 2026",
       "0.5.2b.53 town: the four owner docks use the named maps and only those destinations")
+    M._dung = nil
+    for _, pin in ipairs(NS.TownPins.pins) do if pin.name == "Dungar Longdrink" then M._dung = pin end end
+    M._wx, M._wy = M.ToW(1453, M._dung.x, M._dung.y)
+    M.FlyTo(1453, M._wx, M._wy) run(40)
+    M.Layout()
+    gryth = nil
+    for _, m in ipairs(shownTown()) do if m.pin.name == "Dungar Longdrink" then gryth = m end end
+    check(gryth and gryth.pin.map == 1453 and gryth.pin.x == 0.712 and gryth.pin.y == 0.724
+      and gryth:GetWidth() == 16 and tostring(gryth.icon._file):find("Tracking\\FlightMaster", 1, true)
+      and not hasName(shownTown(), "Gryth Thurden"),
+      "0.5.2b.58 town: Dungar draws on Stormwind at the current cluster, not Ironforge")
+    if gryth then gryth._scripts.OnEnter(gryth) end
+    check(tip.title == "Dungar Longdrink" and tip.lines[1] == "Gryphon Master",
+      "0.5.2b.58 town: Dungar's hover keeps the gryphon role")
     M.FlyTo(1432) run(40)
     M.Layout()
     local master = hasName(shownTown(), "Thorgrum Borrelson")
