@@ -321,7 +321,11 @@ STOCK_CALLS = 0
 function GetFileIDFromPath(p)
   STOCK_CALLS = STOCK_CALLS + 1
   if type(p) ~= "string" then error("GetFileIDFromPath: string expected", 2) end
-  if STOCK_MISSING or p:find("^Interface\\AddOns\\") then return nil end
+  -- 0.5.2b.61: the bundled level-label scroll is an addon file; the stub otherwise
+  -- reports every Interface\AddOns\ path as missing.
+  if STOCK_MISSING then return nil end
+  if p == "Interface\\AddOns\\DarkMatter\\Media\\dm-level-scroll" then return 140061 end
+  if p:find("^Interface\\AddOns\\") then return nil end
   return 130000 + #p
 end
 C_XMLUtil = { GetTemplateInfo = function(n)
@@ -6510,8 +6514,8 @@ do
   check(names["Dun Morogh"] == "1-10" and names["Loch Modan"] == "10-20" and names["Elwynn Forest"] == "1-10", "0.5.0 map: zone level badges at the continent view")
   check(names["Ironforge"] == nil, "0.5.0 map: no badge for a city without a level range")
   check(M.caption:IsShown() and M.caption.text._text == "Levels: public data", "0.5.0 map: badges are captioned as public data")
-  check(bp[1] and bp[1].plate._file == "Interface\\QuestFrame\\UI-QuestItemNameFrame" and bp[1].art == "scroll"
-    and bp[1].text._fflags == "OUTLINE" and bp[1].text._text ~= nil, "0.5.2b.59 map: zone level badge is the parchment scroll, ivory text outlined")
+  check(bp[1] and bp[1].plate._file == "Interface\\AddOns\\DarkMatter\\Media\\dm-level-scroll" and bp[1].art == "scroll"
+    and bp[1].text._fflags == "OUTLINE" and bp[1].text._text ~= nil, "0.5.2b.61 map: zone level badge is the bundled Option 2 parchment scroll, ivory text outlined")
   ;(function()
     local saveOK = NS.Stock.TextureOK
     NS.Stock.TextureOK = function() return false end

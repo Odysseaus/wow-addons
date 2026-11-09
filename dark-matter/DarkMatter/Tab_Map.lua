@@ -785,23 +785,67 @@ local function PoolHideRest(name)
   for i = p.n + 1, #p do p[i]:Hide() end
 end
 M.Pool, M.PoolReset, M.PoolHideRest = Pool, PoolReset, PoolHideRest -- 0.5.2b.7: for MapExtras.lua
--- 0.5.2b.59: the zone level label is a parchment scroll with curled ends (option 2).
--- The art is the client's quest-item name frame, which is that scroll. Nothing is added to the addon.
--- If that file is missing, the plate is a parchment tint and the text stays ivory with a dark outline.
-local SCROLL_FILE = "Interface\\QuestFrame\\UI-QuestItemNameFrame"
-local SCROLL_TC = { 0.078125, 0.921875, 0.15625, 0.59375 }
+-- 0.5.2b.61: the zone level label uses the Option 2 parchment scroll, bundled as
+-- Media/dm-level-scroll.tga (curled ends, no baked-in numbers). Three slices keep the
+-- rolls the right shape when the label grows with the text. If that file is missing,
+-- the plate is the 0.5.2b.59 parchment tint and the text stays ivory with a dark outline.
+local SCROLL_FILE = "Interface\\AddOns\\DarkMatter\\Media\\dm-level-scroll"
+local SCROLL_V0, SCROLL_V1 = 0.0625, 0.9375
+local SCROLL_CAP_L, SCROLL_CAP_R = 0.158, 0.842
 local PARCHMENT = { 0.70, 0.60, 0.42, 0.94 }
+local function FitScroll(b)
+  local w, h = b:GetWidth() or 52, b:GetHeight() or 18
+  -- the curled end's width follows the label height so the roll does not squash
+  local cap = h * (SCROLL_CAP_L * 256) / ((SCROLL_V1 - SCROLL_V0) * 128)
+  if cap * 2 + 8 > w then cap = math.max(4, (w - 8) / 2) end
+  if b.left then
+    b.left:ClearAllPoints()
+    b.left:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+    b.left:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
+    b.left:SetWidth(cap)
+  end
+  if b.right then
+    b.right:ClearAllPoints()
+    b.right:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0)
+    b.right:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
+    b.right:SetWidth(cap)
+  end
+  b.plate:ClearAllPoints()
+  if b.left and b.right then
+    b.plate:SetPoint("TOPLEFT", b.left, "TOPRIGHT", 0, 0)
+    b.plate:SetPoint("BOTTOMRIGHT", b.right, "BOTTOMLEFT", 0, 0)
+  else
+    b.plate:SetAllPoints(b)
+  end
+end
 local function PaintBadge(b)
   local plate, edge = b.plate, b.edge
   local ok = NS.Stock and NS.Stock.TextureOK and NS.Stock.TextureOK(SCROLL_FILE)
   if ok then
     plate:SetTexture(SCROLL_FILE)
-    plate:SetTexCoord(SCROLL_TC[1], SCROLL_TC[2], SCROLL_TC[3], SCROLL_TC[4])
+    plate:SetTexCoord(SCROLL_CAP_L, SCROLL_CAP_R, SCROLL_V0, SCROLL_V1)
     plate:SetVertexColor(1, 1, 1, 1)
+    if b.left then
+      b.left:SetTexture(SCROLL_FILE)
+      b.left:SetTexCoord(0, SCROLL_CAP_L, SCROLL_V0, SCROLL_V1)
+      b.left:SetVertexColor(1, 1, 1, 1)
+      b.left:Show()
+    end
+    if b.right then
+      b.right:SetTexture(SCROLL_FILE)
+      b.right:SetTexCoord(SCROLL_CAP_R, 1, SCROLL_V0, SCROLL_V1)
+      b.right:SetVertexColor(1, 1, 1, 1)
+      b.right:Show()
+    end
     edge:Hide()
+    FitScroll(b)
     b.art = "scroll"
     return
   end
+  if b.left then b.left:Hide() end
+  if b.right then b.right:Hide() end
+  plate:ClearAllPoints()
+  plate:SetAllPoints(b)
   plate:SetColorTexture(PARCHMENT[1], PARCHMENT[2], PARCHMENT[3], PARCHMENT[4])
   plate:SetTexCoord(0, 1, 0, 1)
   edge:Show()
@@ -810,9 +854,11 @@ local function PaintBadge(b)
 end
 local function MakeBadge()
   local b = CreateFrame("Frame", nil, over)
-  b:SetSize(44, 18)
+  b:SetSize(52, 18)
   b.plate = b:CreateTexture(nil, "BACKGROUND")
   b.plate:SetAllPoints(b)
+  b.left = b:CreateTexture(nil, "BACKGROUND")
+  b.right = b:CreateTexture(nil, "BACKGROUND")
   b.edge = b:CreateTexture(nil, "BORDER")
   b.edge:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
   b.edge:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
@@ -821,6 +867,7 @@ local function MakeBadge()
   NS.SetFont(b.text, 11, "OUTLINE")
   b.text:SetPoint("CENTER", b, "CENTER", 0, 0)
   b.text:SetTextColor(0.98, 0.95, 0.86, 1)
+  b.FitScroll = FitScroll
   PaintBadge(b)
   return b
 end
@@ -1236,7 +1283,8 @@ local function LayoutOverlay()
           local bd = Pool("badge", MakeBadge)
           bd.zone = z.name
           bd.text:SetText(lv)
-          bd:SetWidth(math.max(44, (bd.text:GetStringWidth() or 30) + 18))
+          bd:SetWidth(math.max(52, (bd.text:GetStringWidth() or 30) + 28))
+          if bd.art == "scroll" and bd.FitScroll then bd:FitScroll() end
           bd:ClearAllPoints()
           bd:SetPoint("CENTER", over, "TOPLEFT", cx, -cy)
           bd:Show()

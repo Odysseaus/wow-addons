@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.60: Darnassus pins are on Darnassus, Undercity pins are on Undercity.
+## Notes: Dark Matter 0.5.2b.61: zone level labels use the Option 2 parchment scroll.
 ## Author: Odysseaus
-## Version: 0.5.2b.60
+## Version: 0.5.2b.61
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
