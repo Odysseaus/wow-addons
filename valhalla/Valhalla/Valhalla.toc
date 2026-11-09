@@ -16,8 +16,8 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: v0.2.2
-## SavedVariables: ValhallaDB
+## Version: v0.3.0
+## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
 ## X-License: MIT (code); map art is Blizzard's
@@ -101,6 +101,14 @@ Map\Welcome.lua
 # The game's All Objectives tracker: this zone's quests, Ready to Turn In, pins (v0.2.0-v0.2.2); the same pins in the quest log (v0.2.2)
 Objectives\Objectives.lua
 Objectives\QuestLogPins.lua
+
+# The window's tabs (Map & Quest Log, Investments, Talents, Professions) and Investments: Smart Vendor,
+# Shopping List, the merchant's highlights, the Auction House's list (v0.3.0; ValhallaInvestDB)
+Investments\Invest.lua
+Investments\Tabs.lua
+Investments\Views.lua
+Investments\Merchant.lua
+Investments\AHPanel.lua
 
 # For other addons (docs/api.md)
 API.lua

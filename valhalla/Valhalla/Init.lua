@@ -14,6 +14,9 @@
 --   /valhalla entrance <name>  where you stand, as a dungeon entrance for tools/map-data (Dungeons.lua)
 --   /valhalla highlights     where the game draws each zone's highlight, for tools/map-preview (Debug.lua)
 --   /valhalla objectives on|off|why [questID]  the All Objectives tracker by zone, Ready to Turn In, pins (Objectives/Objectives.lua)
+--   /valhalla invest [vendor|list|market|settings|on|off|diag [replicate]]  the Investments tab (Investments/Invest.lua)
+--   /valhalla tab map|invest|talents|professions   the window's tabs (Investments/Tabs.lua)
+--   /valhalla want <item> [count] [mat|reagent|gear], unwant <item>, list   the Smart Vendor's want list
 --------------------------------------------------------------------------------
 
 local ADDON, ns = ...
@@ -32,6 +35,13 @@ local function Options()
 			desc = ns.L["The game's All Objectives tracker lists this zone's quests (lowest level first), a Ready to Turn In section and a pin per quest. Off: the game's own tracking. Also /valhalla objectives on|off."],
 			get = function() return objectives.db.enabled end,
 			set = function(_, v) objectives.O.SetOn(v) end }
+	end
+	local invest = ns:GetModule("invest")
+	if invest then
+		args.invest = { type = "toggle", name = ns.L["Window tabs and Investments (Smart Vendor, Shopping List)"], order = 0.3, width = "full",
+			desc = ns.L["Tabs on the map window: Map & Quest Log, Investments, Talents and Professions (coming soon). Off: the map as before. Also /valhalla invest on|off."],
+			get = function() return invest.db.enabled end,
+			set = function(_, v) invest.I.SetOn(v) end }
 	end
 	args.padWaits = { type = "description", order = 0.5, fontSize = "medium",
 		name = function() return "|cffff8040" .. mod.PadOffText() .. "|r" end,
@@ -59,6 +69,12 @@ local function Slash(msg)
 	if objWord == "objectives" or objWord == "obj" then
 		local objectives = ns:GetModule("objectives")
 		if objectives then objectives:Slash(objArg) end
+		return
+	end
+	-- the window's tabs and Investments (Investments/Invest.lua, v0.3.0): /valhalla invest ..., tab ..., want ..., unwant ..., list
+	if objWord == "invest" or objWord == "tab" or objWord == "want" or objWord == "unwant" or objWord == "list" then
+		local invest = ns:GetModule("invest")
+		if invest then invest:Slash(objWord, raw:match("^%S+%s*(.-)$")) end
 		return
 	end
 	local takes = { bench = true, entrance = true }  -- (/valhalla bench 16: at that zoom; /valhalla entrance Dire Maul - East)

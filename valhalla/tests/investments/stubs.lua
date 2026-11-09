@@ -1,0 +1,212 @@
+-- WoW API stubs for Valhalla's Investments module and the window's tabs (box tests only)
+local W = {}
+_G.W = W
+W.now = 1762700000
+function time() return W.now end
+function GetTime() return W.now end
+W.frames = {}
+W.blockedSetters = 0
+W.calls = {}
+local function Count(k) W.calls[k] = (W.calls[k] or 0) + 1 end
+W.Count = Count
+
+local Frame = {}
+Frame.__index = function(t, k)
+  local m = rawget(Frame, k)
+  if m then return m end
+  if type(k) == "string" and k:find("^%u") then return function() return nil end end   -- (other widget methods: no-ops)
+  return nil
+end
+local function NewFrame(kind, name, parent)
+  local f = setmetatable({ _kind = kind, _name = name, _parent = parent, _scripts = {}, _hooks = {}, _shown = true, _points = {}, _level = 1 }, Frame)
+  return f
+end
+W.NewFrame = NewFrame
+function Frame.SetScript(self, k, fn) self._scripts[k] = fn end
+function Frame.GetScript(self, k) return self._scripts[k] end
+function Frame.HookScript(self, k, fn) local h = self._hooks[k] or {} self._hooks[k] = h h[#h + 1] = fn end
+function Frame.Show(self) local was = self._shown self._shown = true if not was then W.Run(self, "OnShow") end end
+function Frame.Hide(self) local was = self._shown self._shown = false if was then W.Run(self, "OnHide") end end
+function Frame.SetShown(self, v) if v then self:Show() else self:Hide() end end
+function Frame.IsShown(self) return self._shown end
+function Frame.IsVisible(self)
+  local f = self
+  for _ = 1, 50 do
+    if not f then return true end
+    if not f._shown then return false end
+    f = rawget(f, "_parent")
+  end
+  return true
+end
+function Frame.GetParent(self) return self._parent end
+function Frame.SetParent(self, p) self._parent = p end
+function Frame.SetPoint(self, ...) self._points[#self._points + 1] = { ... } end
+function Frame.ClearAllPoints(self) self._points = {} end
+function Frame.SetAllPoints(self, rel) self._points = { { "ALL", rel } } end
+function Frame.GetPoint(self, i) local p = self._points[i or 1] if p then return unpack(p) end end
+function Frame.SetSize(self, w, h) self._w, self._h = w, h end
+function Frame.SetWidth(self, w) self._w = w end
+function Frame.SetHeight(self, h) self._h = h end
+function Frame.GetWidth(self) return rawget(self, "_w") or 800 end
+function Frame.GetHeight(self) return rawget(self, "_h") or 600 end
+function Frame.SetFrameLevel(self, l) self._level = l end
+function Frame.GetFrameLevel(self) return self._level end
+function Frame.SetFrameStrata(self, s) self._strata = s end
+function Frame.GetFrameStrata(self) return self._strata or "MEDIUM" end
+function Frame.EnableMouse(self, v) self._mouse = v end
+function Frame.EnableMouseWheel(self, v) self._wheel = v end
+function Frame.SetPassThroughButtons() W.blockedSetters = W.blockedSetters + 1 end
+function Frame.SetPropagateMouseClicks() W.blockedSetters = W.blockedSetters + 1 end
+function Frame.SetBackdrop(self, b) self._backdrop = b end
+function Frame.SetBackdropColor(self, r, g, b, a) self._bg = { r, g, b, a } end
+function Frame.SetBackdropBorderColor(self, r, g, b, a) self._edge = { r, g, b, a } end
+function Frame.RegisterEvent(self, e) local t = rawget(self, "_events") or {} self._events = t t[e] = true return true end
+function Frame.UnregisterEvent(self, e) if self._events then self._events[e] = nil end end
+function Frame.UnregisterAllEvents(self) self._events = {} end
+function Frame.CreateTexture(self, _, layer) local t = NewFrame("Texture", nil, self) t._layer = layer return t end
+function Frame.CreateFontString(self) local f = NewFrame("FontString", nil, self) f._text = "" return f end
+function Frame.SetTexture(self, t) self._tex = t end
+function Frame.SetColorTexture(self, r, g, b, a) self._color = { r, g, b, a } end
+function Frame.SetText(self, s) self._text = s if self._kind == "EditBox" and self._scripts.OnTextChanged then self._scripts.OnTextChanged(self) end end
+function Frame.GetText(self) return self._text end
+function Frame.SetTextColor(self, r, g, b) self._tc = { r, g, b } end
+function Frame.SetFocus(self) W.focus = self end
+function Frame.ClearFocus(self) if W.focus == self then W.focus = nil end end
+function Frame.HasFocus(self) return W.focus == self end
+function Frame.SetDesaturated(self, v) self._desat = v end
+function W.Run(f, script, ...)
+  if f._scripts[script] then f._scripts[script](f, ...) end
+  for _, h in ipairs(f._hooks[script] or {}) do h(f, ...) end
+end
+function W.Click(f, button) W.Run(f, "OnClick", button or "LeftButton") end
+
+function CreateFrame(kind, name, parent, template)
+  local f = NewFrame(kind, name, parent)
+  f._template = template
+  if kind == "EditBox" then f._text = "" end
+  W.frames[#W.frames + 1] = f
+  if name then _G[name] = f end
+  return f
+end
+UIParent = NewFrame("Frame", "UIParent")
+GameTooltip = NewFrame("GameTooltip")
+GameFontHighlight, GameFontNormal = {}, {}
+STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
+C_Timer = { After = function(_, fn) fn() end, NewTicker = function() return { Cancel = function() end } end }
+function InCombatLockdown() return W.combat end
+function geterrorhandler() return function(e) error(e) end end
+function hooksecurefunc(a, b, c)
+  if type(a) == "table" then
+    local old = a[b]
+    a[b] = function(...) local r = { old(...) } c(...) return unpack(r) end
+  else
+    local old = _G[a]
+    _G[a] = function(...) local r = { old(...) } b(...) return unpack(r) end
+  end
+end
+function date(fmt, t) return "Nov 09 16:50" end
+function GetBuildInfo() return "1.60.1", "70790", "Nov 1 2026", 16001 end
+function GetRealmName() return "Forever" end
+function UnitName(u) if u == "player" then return W.me or "Odysseaus" end if u == "npc" then return W.npcName end end
+function UnitGUID(u) if u == "npc" and W.npc then return "Creature-0-1-2-3-" .. W.npc .. "-0000ABCD" end end
+
+-- items
+W.items = {
+  [2589] = { "Linen Cloth", 132889 }, [2770] = { "Copper Ore", 134566 }, [2447] = { "Peacebloom", 133939 },
+  [765] = { "Silverleaf", 134190 }, [4470] = { "Simple Wood", 135435 }, [2320] = { "Coarse Thread", 132891 },
+  [3371] = { "Empty Vial", 134712 }, [2324] = { "Bleach", 134743 }, [2604] = { "Red Dye", 134732 },
+  [6256] = { "Fishing Pole", 132932 }, [2321] = { "Fine Thread", 132912 }, [2678] = { "Mild Spices", 134059 },
+  [3026] = { "Hunting Bow", 135490 },
+}
+W.uncached = {}
+C_Item = {
+  GetItemInfo = function(x)
+    local id = tonumber(x) or (type(x) == "string" and tonumber(x:match("item:(%d+)")))
+    if not id and type(x) == "string" then for i, v in pairs(W.items) do if v[1] == x then id = i end end end
+    local v = id and W.items[id]
+    if not v or W.uncached[id] then return nil end
+    return v[1], ("|cffffffff|Hitem:%d::::::::|h[%s]|h|r"):format(id, v[1]), 1, 1, 1, "Trade Goods", "Cloth", 20, "", v[2], 10
+  end,
+  GetItemIconByID = function(id) return W.items[id] and W.items[id][2] end,
+  RequestLoadItemDataByID = function(id) Count("requestLoad") end,
+  GetItemCount = function(id, bank) return 0 end,
+}
+-- bags: W.bags[bag] = { { id, count }, ... } (slot order); bank tabs likewise, by bag ID
+W.bags = {}
+C_Container = {
+  GetContainerNumSlots = function(bag) local b = W.bags[bag] return b and (b.size or #b) or 0 end,
+  GetContainerItemInfo = function(bag, slot) local b = W.bags[bag] local s = b and b[slot] if s and s[1] then return { itemID = s[1], stackCount = s[2] } end end,
+}
+Enum = { BankType = { Character = 0, Account = 2 }, BagIndex = { Backpack = 0, ReagentBag = 5, CharacterBankTab_1 = 6, CharacterBankTab_2 = 7, AccountBankTab_1 = 15 } }
+W.bankTabs = { [0] = { 6, 7 }, [2] = { 15 } }
+W.canViewAccount = true
+C_Bank = {
+  FetchPurchasedBankTabData = function(t) local out = {} for _, id in ipairs(W.bankTabs[t] or {}) do out[#out + 1] = { ID = id } end return out end,
+  CanViewBank = function(t) return t ~= 2 or W.canViewAccount end,
+}
+-- the cursor
+function GetCursorInfo() if W.cursor then return "item", W.cursor end end
+function ClearCursor() W.cursor = nil end
+ChatFrameUtil = { InsertLink = function(text) Count("insertLink") return false end }
+
+-- the world map window
+WorldMapFrame = CreateFrame("Frame", "WorldMapFrame", UIParent)
+WorldMapFrame._shown = false
+WorldMapFrame.ScrollContainer = CreateFrame("ScrollFrame", nil, WorldMapFrame)
+WorldMapFrame.BorderFrame = CreateFrame("Frame", nil, WorldMapFrame)
+WorldMapFrame._max = false
+function WorldMapFrame.IsMaximized(self) return self._max end
+function WorldMapFrame.Maximize(self) self._max = true end
+function WorldMapFrame.Minimize(self) self._max = false end
+function ToggleWorldMap() Count("toggleMap") if WorldMapFrame:IsShown() then WorldMapFrame:Hide() else WorldMapFrame:Show() end end
+
+-- the merchant: W.merchant = { itemID, ... } (with prices W.prices)
+MERCHANT_ITEMS_PER_PAGE = 10
+W.merchant = {}
+W.prices = {}
+MerchantFrame = CreateFrame("Frame", "MerchantFrame", UIParent)
+MerchantFrame._shown = false
+MerchantFrame.page, MerchantFrame.selectedTab = 1, 1
+for i = 1, 10 do
+  local slot = CreateFrame("Frame", "MerchantItem" .. i, MerchantFrame)
+  slot._level = 3
+  CreateFrame("Button", "MerchantItem" .. i .. "ItemButton", slot)
+end
+function GetMerchantNumItems() return #W.merchant end
+function GetMerchantItemID(i) return W.merchant[i] end
+C_MerchantFrame = { GetItemInfo = function(i) local id = W.merchant[i] if id then return { name = W.items[id][1], price = W.prices[id] or 10 } end end }
+function MerchantFrame_UpdateMerchantInfo() Count("merchantUpdate") end
+function MerchantFrame_UpdateBuybackInfo() Count("buybackUpdate") end
+function BuyMerchantItem() Count("BuyMerchantItem") end
+
+-- the auction house
+function W.NewAH()
+  local ah = CreateFrame("Frame", "AuctionHouseFrame", UIParent)
+  ah.displayMode = "Buy"
+  ah.SearchBar = CreateFrame("Frame", nil, ah)
+  ah.SearchBar.SearchBox = CreateFrame("EditBox", nil, ah.SearchBar)
+  function ah.SetSearchText(self, text)
+    if self.displayMode ~= "Buy" then return false end
+    self.SearchBar.SearchBox:SetText(text)
+    W.searchText = text
+    return true
+  end
+  function ah.SearchBar.StartSearch() Count("StartSearch") end
+  return ah
+end
+C_AuctionHouse = {
+  ReplicateItems = function() Count("ReplicateItems") end,
+  GetNumReplicateItems = function() return 31337 end,
+  IsThrottledMessageSystemReady = function() return true end,
+  PlaceBid = function() Count("PlaceBid") end,
+  StartCommoditiesPurchase = function() Count("StartCommoditiesPurchase") end,
+  ConfirmCommoditiesPurchase = function() Count("ConfirmCommoditiesPurchase") end,
+  PostItem = function() Count("PostItem") end,
+}
+
+-- events: to frames that registered them
+function W.Fire(event, ...)
+  for _, f in ipairs(W.frames) do
+    if rawget(f, "_events") and f._events[event] and f._scripts.OnEvent then f._scripts.OnEvent(f, event, ...) end
+  end
+end

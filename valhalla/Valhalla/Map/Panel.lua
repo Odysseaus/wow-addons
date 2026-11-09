@@ -165,6 +165,8 @@ local function Actions()
 			tip = L["Show or hide the quest log beside the map, for more room for the map."],
 			run = ToggleQuestLog, lit = QuestLogShown }
 	end
+	-- the Valhalla window's Investments tab (Investments/Tabs.lua, v0.3.0)
+	if ns.InvestAction then list[#list + 1] = ns.InvestAction(Icon) end
 	list[#list + 1] = { L["Report a problem"], id = "report", icon = Icon("INV_Misc_Note_01"),
 		tip = L["Valhalla is in beta: draw on the map where something looks wrong (a dungeon's map too) and tell us about it."],
 		run = function() mod:ToggleReport() end, lit = function() return mod.IsReporting and mod.IsReporting() end }

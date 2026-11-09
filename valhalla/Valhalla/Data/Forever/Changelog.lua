@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.3.0", date = "2026-11-09", heads = { [1] = "New", [5] = "Note", }, items = {
+		"|cff6e2c0aTabs on the Valhalla window|r: Map & Quest Log (everything as before), Investments, and Talents and Professions (under construction, coming soon). Below the window by default; along the top or as icons down the side in Investments > Settings. /valhalla tab map|invest|talents|professions.",
+		"|cff6e2c0aSmart Vendor|r (Investments): mark the reagents, profession materials and gear upgrades you want and how many; Valhalla counts your bags as they change and your bank as it was last seen open, and works out what you still need. /valhalla want <item> [count] [mat|reagent|gear].",
+		"|cff6e2c0aShopping List|r: what you still need, by where to buy it (a vendor you've visited, else the Auction House). At a vendor, what you need glows gold with \"need N\"; the rest is greyed but still yours to buy. At the Auction House, your list opens beside it with a Search button per item. Valhalla never buys for you.",
+		"|cff6e2c0a/valhalla invest diag|r checks what this client offers for the coming Auction House market (Phase C) and saves it (/reload to write it to disk). /valhalla invest off turns the tabs and Investments off.",
+		"|cff6e2c0aRestart the game|r (not just /reload) after installing: Investments keeps its data in a new saved file, ValhallaInvestDB.",
+	} },
 	{ version = "v0.2.2", date = "2026-11-09", heads = { [1] = "New", }, items = {
 		"|cff6e2c0aQuests with something to do here show here|r: a quest from another zone that has a real objective marker on this zone's map (or a capital's surrounding zone's) is listed in Quests, and once it's ready, a turn-in marker here puts it in Ready to Turn In. \"Travel this way\" waypoints, map indicators and other maps' pins don't count, and dungeon quests stay in their dungeon. Once its marker here is gone it leaves (after a second look, never in combat or in flight).",
 		"|cff6e2c0aPins in the quest log|r: the same pin left of each quest's icon in the quest log, the same as on All Objectives: pin or unpin in either and both follow.",

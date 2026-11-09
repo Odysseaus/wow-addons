@@ -1,0 +1,380 @@
+-- Box tests for Valhalla/Investments (Lua 5.1). Run: lua valhalla/tests/investments/investments_test.lua [path to Valhalla/]
+local here = (arg[0] or ""):match("^(.*[/\\])") or "./"
+local root = arg[1] or (here .. "../../Valhalla/")
+dofile(here .. "stubs.lua")
+
+local ns = { modules = {}, version = "v0.3.0", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
+ns.L = setmetatable({}, { __index = function(_, k) return k end })
+ns.Safe = { Value = function(v) return v end }
+ns.Look = { Font = function(_, fs, size) fs._size = size return fs end }
+ns.printed = {}
+function ns:Print(fmt, ...) ns.printed[#ns.printed + 1] = select("#", ...) > 0 and fmt:format(...) or fmt end
+function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m.defaults or {} if m.defaults.enabled == nil then m.defaults.enabled = true end self.modules[key] = m return m end
+function ns:GetModule(key) return self.modules[key] end
+ns.modules.worldmap = { key = "worldmap", enabled = true }
+for _, f in ipairs({ "Invest", "Tabs", "Views", "Merchant", "AHPanel" }) do
+  assert(loadfile(root .. "Investments/" .. f .. ".lua"))("Valhalla", ns)
+end
+local mod = ns:GetModule("invest")
+local I = mod.I
+local T, M, A = I.Tabs, I.Merchant, I.AH
+
+local pass, fail = 0, 0
+local function ok(cond, name, detail)
+  if cond then pass = pass + 1 print("PASS  " .. name)
+  else fail = fail + 1 print("FAIL  " .. name .. (detail and ("  -- " .. tostring(detail)) or "")) end
+end
+local function Keys(f) local t = {} for k in pairs(f) do t[#t + 1] = tostring(k) end table.sort(t) return table.concat(t, ",") end
+local function Printed(pat) for _, s in ipairs(ns.printed) do if tostring(s):find(pat) then return true end end return false end
+local function Find(parentPred) local out = {} for _, f in ipairs(W.frames) do if parentPred(f) then out[#out + 1] = f end end return out end
+local function Slash(word, arg) mod:Slash(word, arg) end
+
+-- the game's frames as Blizzard made them, to check Valhalla writes nothing on them
+local mapKeys = Keys(WorldMapFrame)
+local slotKeys = {}
+for i = 1, 10 do slotKeys[i] = Keys(_G["MerchantItem" .. i]) end
+local merchantKeys = Keys(MerchantFrame)
+
+-- start as the game does: saved variables, then login
+ValhallaInvestDB = nil
+mod.db, mod.char, mod.enabled = { enabled = true }, {}, true
+W.bags[0] = { { 2589, 12 }, { 2589, 8 }, { 2770, 30 }, size = 16 }
+W.bags[5] = { { 2447, 4 }, size = 20 }      -- (the reagent bag)
+W.bags[6] = { { 2589, 8 }, { 2447, 6 }, { 765, 2 } }   -- (bank tab 1: unreadable until the bank is open)
+W.bags[15] = { { 2447, 1 } }                -- (the warband bank)
+mod:OnEnable()
+
+print("== 1. saved data: ValhallaInvestDB, its settings (graph style kept for Phase D), this character")
+ok(type(ValhallaInvestDB) == "table" and ValhallaInvestDB.v == 1, "ValhallaInvestDB made")
+ok(I.S.tabPos == "bottom" and I.S.graphStyle == "lines" and I.S.greyAlpha == 0.6 and I.S.countBank == true, "defaults: bottom tabs, lines, 60% grey, bank counted")
+ok(ValhallaInvestDB.realms.Forever.chars.Odysseaus ~= nil, "this character's data under its realm")
+ok(I.char.bags[2589] == 20 and I.char.bags[2447] == 4 and I.char.bags[2770] == 30, "bags counted (backpack and reagent bag)", I.char.bags[2589])
+ok(next(I.char.bank) == nil and I.char.bankSeen == nil, "bank: not seen yet (only readable while open)")
+
+print("== 2. the tabs on the map window")
+ok(T.Attached(), "attached to WorldMapFrame")
+ok(#T.Buttons() == 4, "four tabs")
+local labels = {}
+for i, b in ipairs(T.Buttons()) do labels[i] = b.label._text end
+ok(table.concat(labels, "|") == "Map & Quest Log|Investments|Talents|Professions", "in order", table.concat(labels, "|"))
+ok(T.Buttons()[3].tag and T.Buttons()[3].tag._text == "soon" and T.Buttons()[4].tag._text == "soon" and not T.Buttons()[2].tag, "Talents and Professions marked soon")
+ok(T.Current() == "map" and not T.Host():IsShown(), "starts on Map & Quest Log, the view host hidden")
+ok(T.Host()._strata == "HIGH" and T.Host()._level == 9920 and T.Host()._mouse == true, "host: HIGH strata over the map and quest log, takes the mouse")
+local hp = T.Host()._points
+ok(hp[1][2] == WorldMapFrame.ScrollContainer and hp[2][2] == WorldMapFrame, "host from the map's content top to its bottom edge (title strip left visible)")
+local b1 = T.Buttons()[1]._points[1]
+ok(b1[1] == "TOPLEFT" and b1[2] == WorldMapFrame and b1[3] == "BOTTOMLEFT" and b1[4] == 30, "bottom: hanging below the window, clear of the corner grips")
+
+print("== 3. switching tabs")
+WorldMapFrame:Show()
+W.Click(T.Buttons()[2])
+ok(T.Current() == "invest" and T.Host():IsShown() and T.Views().invest:IsShown(), "Investments: the host and its view")
+ok(T.Views().invest.page.current == "vendor" and T.Views().invest.page.pages.vendor:IsShown(), "opens on Smart Vendor")
+W.Click(T.Buttons()[3])
+local tal = T.Views().talents
+ok(tal:IsShown() and not T.Views().invest:IsShown() and tal.page.text._text == "Under construction: coming soon", "Talents: under construction, coming soon")
+W.Click(T.Buttons()[4])
+ok(T.Views().professions.page.text._text == "Under construction: coming soon" and T.Views().professions.page.title._text == "Professions", "Professions: under construction")
+W.Click(T.Buttons()[1])
+ok(T.Current() == "map" and not T.Host():IsShown(), "back to Map & Quest Log: the host hidden, the map as it was")
+ok(Keys(WorldMapFrame) == mapKeys, "nothing written on WorldMapFrame", Keys(WorldMapFrame))
+ok(T.Buttons()[1]._edge[1] == 1 and T.Buttons()[2]._edge[1] ~= 1, "the current tab edged gold")
+
+print("== 4. full screen: no tabs, the map")
+W.Click(T.Buttons()[2])
+WorldMapFrame:Maximize()
+ok(not T.Strip():IsShown() and not T.Host():IsShown() and T.Current() == "map", "maximized: tabs hidden, back on the map")
+ok(not T.Select("invest") or T.Current() == "map", "no switching while maximized")
+WorldMapFrame:Minimize()
+ok(T.Strip():IsShown(), "windowed again: the tabs back")
+
+print("== 5. opening the map")
+W.Click(T.Buttons()[2])
+WorldMapFrame:Hide() WorldMapFrame:Show()
+ok(T.Current() == "map", "opens on Map & Quest Log")
+I.S.rememberTab = true
+W.Click(T.Buttons()[2])
+WorldMapFrame:Hide() WorldMapFrame:Show()
+ok(T.Current() == "invest" and T.Host():IsShown(), "with 'last tab': opens on Investments")
+I.S.rememberTab = false
+W.Click(T.Buttons()[1])
+WorldMapFrame:Hide()
+W.calls.toggleMap = 0
+Slash("tab", "invest")
+ok(W.calls.toggleMap == 1 and WorldMapFrame:IsShown() and T.Current() == "invest", "/valhalla tab invest opens the map on Investments")
+Slash("tab", "talents")
+ok(T.Current() == "talents", "/valhalla tab talents")
+Slash("tab", "bogus")
+ok(Printed("tab map|invest|talents|professions"), "a wrong tab: says which there are")
+WorldMapFrame:Hide()
+W.combat = true W.calls.toggleMap = 0
+Slash("tab", "invest")
+ok(W.calls.toggleMap == 0 and Printed("can't be opened in combat"), "in combat: the map isn't opened")
+W.combat = false
+WorldMapFrame:Show()
+Slash("invest", "settings")
+ok(T.Current() == "invest" and T.Views().invest.page.current == "settings", "/valhalla invest settings: that page")
+local act = ns.InvestAction(function(n) return { texture = n } end)
+W.Click(T.Buttons()[1])
+act.run()
+ok(act[1] == "Investments" and T.Current() == "invest" and act.lit(), "the map menu's Investments opens the tab")
+
+print("== 6. tab placement: bottom, top, side")
+local function SetPos(p) I.S.tabPos = p T.Layout() end
+SetPos("top")
+local tp = T.Buttons()[1]._points[1]
+ok(tp[2] == T.Host() and tp[1] == "TOPLEFT" and tp[5] == -3, "top: a row at the top of the content")
+local vp = T.Views().invest._points[1]
+ok(vp[1] == "TOPLEFT" and vp[3] == -(T.TAB_H + 6), "top: the views start under it")
+SetPos("side")
+local sp = T.Buttons()[2]._points[1]
+ok(sp[2] == WorldMapFrame and sp[3] == "TOPRIGHT" and T.Buttons()[2]._w == 40 and T.Buttons()[2].icon._shown and not T.Buttons()[2].label._shown, "side: icons down the right edge")
+SetPos("bottom")
+ok(T.Buttons()[1]._points[1][3] == "BOTTOMLEFT" and T.Buttons()[1].label._shown, "bottom again")
+WorldMapFrame._w = 480
+T.Layout()
+ok(T.Buttons()[1]._w < 132 and T.Buttons()[1]._w >= 80, "a narrow window: narrower tabs", T.Buttons()[1]._w)
+WorldMapFrame._w = nil T.Layout()
+
+print("== 7. wants, haves and needs")
+I.Want(2589, 40, "mat")
+I.Want(2447, 20, "reagent")
+I.Want(765, 20, "reagent")
+I.Want(4470, 10, "reagent")
+I.Want(2770, 30, "mat")
+local function Row(id) for _, r in ipairs(I.Rows()) do if r.id == id then return r end end end
+ok(Row(2589).need == 20 and Row(2589).bags == 20 and Row(2589).bank == 0, "Linen Cloth: 20 in bags, bank unseen: need 20")
+ok(Row(2770).need == 0, "Copper Ore: 30 of 30: done")
+W.Fire("BANKFRAME_OPENED")
+ok(I.char.bank[2589] == 8 and I.char.bank[2447] == 6 and I.char.bankSeen == W.now, "bank opened: its tabs read, time noted")
+ok(ValhallaInvestDB.account.bank[2447] == 1, "the warband bank too")
+ok(Row(2589).need == 12 and Row(2447).need == 9 and Row(765).need == 18, "needs count the bank (20+8 of 40; 4+6+1 of 20; 2 of 20)", Row(2447).need)
+W.Fire("BANKFRAME_CLOSED")
+W.bags[6] = {}
+W.now = W.now + 3600
+W.Fire("BAG_UPDATE_DELAYED")
+ok(I.char.bank[2589] == 8 and I.char.bankSeen == W.now - 3600, "bank closed: the snapshot kept (not re-read)")
+I.S.countBank = false
+ok(Row(2589).need == 20, "Count bank off: bags only")
+I.S.countBank = true
+W.bags[0][1] = { 2589, 20 }
+W.Fire("BAG_UPDATE_DELAYED")
+ok(Row(2589).bags == 28 and Row(2589).need == 4, "bags counted live as they change")
+-- another character on this realm
+ValhallaInvestDB.realms.Forever.chars.Alt = { bags = { [765] = 10 }, bank = { [765] = 5 }, want = {} }
+ok(Row(765).need == 18, "alts not counted by default")
+I.S.countAlts = true
+ok(Row(765).need == 3 and Row(765).alts == 15, "Count my other characters: 2 + 15 of 20")
+I.S.countAlts = false
+
+print("== 8. typing items, /valhalla want, unwant, list")
+ok(I.ParseItem("|cffffffff|Hitem:2320::::::::|h[Coarse Thread]|h|r") == 2320, "a link")
+ok(I.ParseItem("item:3371") == 3371 and I.ParseItem("2321") == 2321, "item:ID and an ID")
+ok(I.ParseItem("Silverleaf") == 765, "a name the game knows")
+Slash("want", "|cffffffff|Hitem:2320::::::::|h[Coarse Thread]|h|r 15 reagent")
+ok(I.char.want[2320] and I.char.want[2320].want == 15 and I.char.want[2320].cat == "reagent", "/valhalla want <link> 15 reagent")
+Slash("want", "Simple Wood 12 mat")
+ok(I.char.want[4470].want == 12 and I.char.want[4470].cat == "mat", "/valhalla want Simple Wood 12 mat (a name with a space)")
+Slash("want", "3026 gear")
+ok(I.char.want[3026] and I.char.want[3026].cat == "gear" and I.char.want[3026].want == 1, "/valhalla want 3026 gear")
+Slash("unwant", "3026")
+ok(I.char.want[3026] == nil and Printed("No longer wanted: Hunting Bow"), "/valhalla unwant")
+Slash("want", "Nonexistent Thing 3")
+ok(Printed("Which item%?"), "an unknown name: asks for a link or ID")
+W.uncached[2321] = true
+I.Want(2321, 5)
+ok(I.ItemName(2321) == "item:2321" and (W.calls.requestLoad or 0) > 0, "an item not loaded yet: asked for, shown by ID")
+W.uncached[2321] = nil
+W.Fire("GET_ITEM_INFO_RECEIVED", 2321)
+ok(I.char.want[2321].name == "Fine Thread", "named once the game sends it")
+I.Unwant(2321)
+
+print("== 9. the shopping list: by where to buy")
+local list = I.ShoppingList()
+ok(#list.vendor == 0 and #list.ah == 5 and list.done == 1 and list.total == 6, "no vendor seen yet: all from the AH", #list.ah)
+-- a trade supplies vendor
+W.npc, W.npcName = 1250, "Trade Supplies"
+W.merchant = { 4470, 2604, 6256, 2320, 2324, 2678, 3371, 2321, 2604, 2604, 2320 }
+W.prices[4470] = 38
+MerchantFrame:Show()
+W.Fire("MERCHANT_SHOW")
+local m = ValhallaInvestDB.realms.Forever.merchants[1250]
+ok(m and m.name == "Trade Supplies" and m.items[4470] == 38, "the merchant's wares saved (by NPC)")
+list = I.ShoppingList()
+local vendorNames = {}
+for _, r in ipairs(list.vendor) do vendorNames[#vendorNames + 1] = r.name end
+ok(table.concat(vendorNames, ",") == "Coarse Thread,Simple Wood" and #list.ah == 3, "Coarse Thread and Simple Wood: vendor; the rest: AH", table.concat(vendorNames, ","))
+ok(list.vendor[1].vendor == "Trade Supplies", "and which vendor")
+Slash("list", "")
+ok(Printed("Shopping list %(1 of 6 done%)") and Printed("Vendor: Simple Wood x12"), "/valhalla list")
+
+print("== 10. the merchant: needed items glow, the rest greyed (still buyable)")
+MerchantFrame_UpdateMerchantInfo()
+local ov = M.Overlays()
+ok(ov[1] and ov[1]:IsShown() and ov[1].glow._shown and ov[1].tag._shown and ov[1].tag._text == "need 12" and not ov[1].wash._shown, "Simple Wood: gold glow, 'need 12'")
+ok(ov[4].glow._shown and ov[4].tag._text == "need 15", "Coarse Thread: 'need 15'")
+ok(ov[2]:IsShown() and ov[2].wash._shown and not ov[2].glow._shown and ov[2].wash._color[4] == 0.6, "Red Dye: greyed (60%)")
+local mouse = false
+for _, o in pairs(ov) do if o._mouse ~= nil then mouse = true end end
+ok(not mouse, "the overlays take no mouse: every click is the game's")
+local written = false
+for i = 1, 10 do if Keys(_G["MerchantItem" .. i]) ~= slotKeys[i] then written = true end end
+ok(not written and Keys(MerchantFrame) == merchantKeys, "nothing written on the merchant's frames")
+ok((W.calls.BuyMerchantItem or 0) == 0, "nothing bought")
+MerchantFrame.page = 2
+MerchantFrame_UpdateMerchantInfo()
+ok(ov[1]:IsShown() and ov[1].tag._text == "need 15" and not ov[2]:IsShown(), "page 2: item 11 (Coarse Thread) on slot 1; empty slots clear")
+MerchantFrame.page = 1
+I.S.showNeed = false MerchantFrame_UpdateMerchantInfo()
+ok(ov[1].glow._shown and not ov[1].tag._shown, "'need N' off: the glow alone")
+I.S.showNeed = true
+I.S.greyAlpha = 0.8 MerchantFrame_UpdateMerchantInfo()
+ok(ov[2].wash._color[4] == 0.8, "grey-out strength follows the setting")
+I.S.greyAlpha = 0.6
+MerchantFrame.selectedTab = 2
+MerchantFrame_UpdateBuybackInfo()
+ok(not ov[1]:IsShown() and not ov[2]:IsShown(), "buyback tab: nothing drawn")
+MerchantFrame.selectedTab = 1 MerchantFrame_UpdateMerchantInfo()
+I.S.hiVendor = false MerchantFrame_UpdateMerchantInfo()
+ok(not ov[1]:IsShown(), "highlighting off: nothing drawn")
+I.S.hiVendor = true MerchantFrame_UpdateMerchantInfo()
+-- bought: the bags fill, the need goes
+W.bags[1] = { { 4470, 12 }, { 2320, 15 } }
+W.Fire("BAG_UPDATE_DELAYED")
+ok(not ov[1]:IsShown() and not ov[2]:IsShown(), "bought all it had that you need: no glow, no grey")
+W.bags[1] = { { 4470, 2 } }
+W.Fire("BAG_UPDATE_DELAYED")
+ok(ov[1].tag._text == "need 10", "need updates as you buy")
+W.combat = true MerchantFrame_UpdateMerchantInfo() W.combat = false
+ok(W.blockedSetters == 0, "no mouse pass-through setters, ever")
+W.Fire("MERCHANT_CLOSED") MerchantFrame:Hide()
+ok(not ov[1]:IsShown(), "merchant closed: gone")
+
+print("== 11. the Auction House's list and Search")
+W.NewAH()
+W.Fire("AUCTION_HOUSE_SHOW")
+local p = A.Panel()
+ok(p and p:IsShown() and p._parent == AuctionHouseFrame, "beside the AH")
+local shown = {}
+for _, r in ipairs(p.rows) do if r:IsShown() then shown[#shown + 1] = r.name._text end end
+ok(table.concat(shown, ",") == "Linen Cloth,Peacebloom,Silverleaf", "the AH's items only", table.concat(shown, ","))
+W.Click(p.rows[1].search)
+ok(W.searchText == "Linen Cloth" and (W.calls.StartSearch or 0) == 0 and W.focus == AuctionHouseFrame.SearchBar.SearchBox, "Search: the name in the AH's search box, focused (Enter searches)")
+I.S.ahOneClick = true
+W.Click(p.rows[2].search)
+ok(W.searchText == "Peacebloom" and W.calls.StartSearch == 1, "One-click Search: the AH's own search runs")
+I.S.ahOneClick = false
+AuctionHouseFrame.displayMode = "Sell"
+W.Click(p.rows[3].search)
+ok(Printed("Browse tab") and W.searchText == "Peacebloom", "not on Browse: says so")
+AuctionHouseFrame.displayMode = "Buy"
+ok((W.calls.PlaceBid or 0) + (W.calls.StartCommoditiesPurchase or 0) + (W.calls.ConfirmCommoditiesPurchase or 0) + (W.calls.PostItem or 0) == 0, "never buys, bids or posts")
+I.S.ahPanel = false A.Refresh()
+ok(not p:IsShown(), "AH list off: hidden")
+I.S.ahPanel = true A.Refresh()
+W.Click(Find(function(f) return f._parent == p and f.text and f.text._text == "x" end)[1])
+ok(not p:IsShown(), "closed: stays closed this visit")
+I.Changed()
+ok(not p:IsShown(), "even as things change")
+W.Fire("AUCTION_HOUSE_CLOSED")
+W.Fire("AUCTION_HOUSE_SHOW")
+ok(p:IsShown(), "next visit: back")
+
+print("== 12. /valhalla invest diag: saved to the saved log")
+ValhallaInvestDB.diag = {}
+I.bankOpen = false
+Slash("invest", "diag replicate")
+local d = ValhallaInvestDB.diag[1]
+ok(d and d.apis["C_AuctionHouse.ReplicateItems"] == true and d.apis["QueryAuctionItems"] == false, "which APIs this client has (no QueryAuctionItems)")
+ok(d.toc == 16001 and d.version == "v0.3.0", "client and version")
+ok(d.counts.linen.id == 2589 and d.counts.linen.bagsSeen == 28, "counts for Linen Cloth, Copper Ore, Peacebloom")
+ok(d.open.ah == true and W.calls.ReplicateItems == 1 and d.ah.replicateCalled, "at the AH: replicate asked for")
+W.Fire("REPLICATE_ITEM_LIST_UPDATE")
+ok(d.ah.replicateCount == 31337 and type(d.ah.replicateSeconds) == "number", "its answer saved")
+ok(Printed("Saved in ValhallaInvestDB.diag"), "says it's saved (/reload to write it)")
+for _ = 1, 12 do I.Diag() end
+ok(#ValhallaInvestDB.diag == 10, "keeps the last 10")
+
+print("== 13. the Smart Vendor page")
+WorldMapFrame:Show()
+Slash("invest", "vendor")
+local root = T.Views().invest.page
+local vp2 = root.pages.vendor
+vp2:Refresh()
+local names = {}
+for _, r in ipairs(vp2.rows) do if r:IsShown() then names[#names + 1] = r.name._text .. "=" .. r.need._text end end
+ok(table.concat(names, ",") == "Coarse Thread=15,Copper Ore=Done,Linen Cloth=4,Peacebloom=9,Silverleaf=18,Simple Wood=10", "rows: name and need (Done when done)", table.concat(names, ","))
+ok(vp2.foot._text:find("Bank last seen: Nov 09 16:50"), "bank last seen", vp2.foot._text)
+vp2.box:SetText("Empty Vial") vp2.count:SetText("5")
+vp2.Add()
+ok(I.char.want[3371] and I.char.want[3371].want == 5 and vp2.box._text == "", "Add from the box")
+W.cursor = 2321
+vp2.Drop()
+ok(I.char.want[2321] and W.cursor == nil, "an item dropped on the box: added")
+vp2.box:SetFocus()
+ChatFrameUtil.InsertLink("|cffffffff|Hitem:2678::::::::|h[Mild Spices]|h|r")
+ok(vp2.box._text:find("item:2678"), "shift-click while the box has the cursor: the link goes in")
+vp2.box:ClearFocus()
+local lr
+for _, r in ipairs(vp2.rows) do if r.id == 2589 then lr = r end end
+W.Click(lr.plus)
+ok(I.char.want[2589].want == 41, "+ raises the want")
+W.Click(lr.minus) W.Click(lr.minus)
+ok(I.char.want[2589].want == 39, "- lowers it")
+for _, r in ipairs(vp2.rows) do if r.id == 2321 then W.Click(r.remove) end end
+ok(I.char.want[2321] == nil, "x removes it")
+
+print("== 14. the Shopping List page, AH Market, Settings")
+root:ShowPage("list")
+local lp = root.pages.list
+local ents = {}
+for _, ln in ipairs(lp.lines) do if ln:IsShown() then ents[#ents + 1] = ln.name._text end end
+ok(ents[1] == "Vendor" and ents[2] == "Coarse Thread" and ents[5] == "Auction House", "grouped: Vendor, then Auction House", table.concat(ents, ","))
+ok(lp.progress._text == "Done 1 / 7", "progress", lp.progress._text)
+root:ShowPage("market")
+ok(root.pages.market:IsShown(), "AH Market: Phase C placeholder")
+root:ShowPage("settings")
+local sp2 = root.pages.settings
+W.Click(sp2.tabPos.boxes[3])
+ok(I.S.tabPos == "side" and T.Buttons()[1]._w == 40, "Settings: tabs to the side, at once")
+W.Click(sp2.tabPos.boxes[1])
+ok(I.S.tabPos == "bottom", "and back to the bottom")
+W.Click(sp2.graph.boxes[2])
+ok(I.S.graphStyle == "bars" and ValhallaInvestDB.settings.graphStyle == "bars", "graph style saved (for Phase D)")
+W.Click(sp2.grey.plus)
+ok(math.abs(I.S.greyAlpha - 0.7) < 1e-9 and sp2.grey.label._text == "Grey-out strength: 70%", "grey-out strength stepper")
+
+print("== 15. /valhalla invest off: the map as before")
+WorldMapFrame:Show()
+Slash("tab", "invest")
+Slash("invest", "off")
+ok(not mod.enabled and mod.db.enabled == false, "off, and saved")
+ok(not T.Host():IsShown() and not T.Strip():IsShown() and T.Current() == "map", "tabs and views gone")
+W.Fire("MERCHANT_SHOW") MerchantFrame:Show() MerchantFrame_UpdateMerchantInfo()
+local any = false for _, o in pairs(M.Overlays()) do if o:IsShown() then any = true end end
+ok(not any, "no merchant highlights")
+ok(not A.Panel():IsShown(), "no AH list")
+ns.printed = {}
+Slash("tab", "invest")
+ok(Printed("Investments is off") and T.Current() == "map", "/valhalla tab: says it's off")
+WorldMapFrame:Hide() WorldMapFrame:Show()
+ok(not T.Strip():IsShown(), "the map opens without tabs")
+Slash("invest", "on")
+ok(mod.enabled and T.Strip():IsShown(), "on again: the tabs back")
+ok(Keys(WorldMapFrame) == mapKeys, "still nothing written on WorldMapFrame")
+
+print("== 16. without Valhalla's map (off, or the Gamepad UI): no tabs")
+Slash("invest", "off")
+ns.modules.worldmap.enabled = false
+Slash("invest", "on")
+ok(not T.Attached(), "not attached")
+ns.printed = {}
+Slash("tab", "invest")
+ok(Printed("need Valhalla's map"), "says why")
+ns.modules.worldmap.enabled = true
+Slash("invest", "off") Slash("invest", "on")
+ok(T.Attached(), "attached with the map on")
+ok(W.blockedSetters == 0, "no blocked setters anywhere")
+
+print(("\n%d passed, %d failed"):format(pass, fail))
+if fail > 0 then os.exit(1) end
