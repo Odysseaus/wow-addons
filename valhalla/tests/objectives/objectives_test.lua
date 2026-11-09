@@ -7,6 +7,13 @@ dofile(here .. "stubs.lua")
 local ns = { modules = {}, Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
 ns.L = setmetatable({}, { __index = function(_, k) return k end })
 ns.Safe = { Value = function(v) return v end }
+-- (Data/Forever/Places.lua's shape: a few of the game's instances)
+ns.MapPlaces = { instances = {
+  { 0, 0, 0, { { 90, "Gnomeregan", false, 25, 30 } } },
+  { 0, 0, 0, { { 36, "Deadmines", false, 16, 21 } } },
+  { nil, 0.478, 0.562, { { 2998, "Excavation Site: Wetlands", false, 24, 29 } }, map = 1437 },
+  { 0, 0, 0, { { 189, "Scarlet Monastery - Armory", false, 30, 35 } } },
+}, unplaced = { { 0, "Krol'dok Stronghold", false, 40, 45 } } }
 ns.printed = {}
 function ns:Print(fmt, ...) ns.printed[#ns.printed + 1] = select("#", ...) > 0 and fmt:format(...) or fmt end
 function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m.defaults or {} if m.defaults.enabled == nil then m.defaults.enabled = true end self.modules[key] = m return m end
@@ -78,10 +85,10 @@ ok(eq(W.watches, { 2, 6, 3 }), "Goldshire Inn (micro map) -> Elwynn Forest only"
 W.map = 1453 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
 ok(eq(W.watches, { 2, 6, 3, 1 }), "back in Stormwind", list(W.watches))
 
-print("== 1c. GetQuestsOnMap counts a quest whose log header is another zone")
+print("== 1c. (v0.2.1, A3) a map pin no longer pulls in a quest whose log header is another zone")
 W.onMap[1429] = { 5 }
 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
-ok(has(W.watches, 5), "a quest on Elwynn's map is listed in Stormwind", list(W.watches))
+ok(not has(W.watches, 5), "a Dun Morogh quest with a pin on Elwynn's map is not listed in Stormwind", list(W.watches))
 W.onMap[1429] = nil
 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
 
@@ -277,6 +284,185 @@ p._scripts.OnEnter(p)
 p._scripts.OnClick(p) Run(0.4)
 ok(not mod.char.pinned[2], "click again: unpinned")
 ok(rawget(block, "_scripts") and next(block._scripts) == nil and #block._points == 0, "the game's row untouched (no scripts, no points set)")
+
+
+---------------------------------------------------------------------------
+-- v0.2.1
+---------------------------------------------------------------------------
+local function Arrive(map, inst)
+  W.map, W.inst = map, inst
+  Fire("PLAYER_LEAVING_WORLD") Fire("LOADING_SCREEN_ENABLED")
+  Fire("ZONE_CHANGED_NEW_AREA")
+  Fire("LOADING_SCREEN_DISABLED") Fire("PLAYER_ENTERING_WORLD")
+  Run(2.5)
+end
+local function Go(map) W.map, W.inst = map, nil Fire("ZONE_CHANGED_NEW_AREA") Run(2.5) end
+local function Restart(char)
+  mod:OnDisable()
+  Start({ enabled = true, watchSide = "front" }, char or {})
+end
+
+print("== 14. waypoint, map-indicator and other-map pins don't list a quest (Quests or Ready)")
+W.Reset()
+W.AddQuest(1, "Stormwind City", "Rethban Ore", 15, false, true)
+W.AddQuest(2, "Duskwood", "Wolves at Our Heels", 20, false, true)
+W.AddQuest(3, "Wetlands", "Tramping Paws", 22, false, true)
+W.AddQuest(4, "Ironforge", "The Darkmoon Faire", 10, true, false)
+W.AddQuest(5, "Duskwood", "The Legend of Stalvan", 25, true, false)
+W.onMap[1429] = { 2, 5 } W.waypoints["2:1429"] = true W.waypoints["5:1429"] = true   -- "travel to Duskwood" pins on Elwynn
+W.onMap[1453] = { { questID = 4, mapID = 1455 } }                                     -- Ironforge's pin, read on Stormwind's map
+W.onMap[1426] = { { questID = 3, isMapIndicatorQuest = true } }                       -- a map indicator on Dun Morogh
+Restart() Go(1453)
+ok(eq(W.watches, { 1 }), "Stormwind: Duskwood quest's waypoint pin doesn't list it", list(W.watches))
+ok(not has(ReadyIds(), 4) and not has(ReadyIds(), 5), "Stormwind Ready: no Ironforge / Duskwood quests", list(ReadyIds()))
+Go(1455)
+ok(not has(W.watches, 3) and not has(W.watches, 1), "Ironforge: the Wetlands quest's map indicator doesn't list it", list(W.watches))
+ok(eq(ReadyIds(), { 4 }), "Ironforge Ready: its own Darkmoon Faire quest", list(ReadyIds()))
+Go(1431)
+ok(eq(W.watches, { 2 }) and eq(ReadyIds(), { 5 }), "Duskwood: its quests, by header", list(W.watches) .. list(ReadyIds()))
+
+print("== 15. an unpinned, super-tracked ready quest from another zone leaves Ready")
+O.SetPinned(5, true) Run(0.5)
+Go(1453)
+W.super = 5 Fire("SUPER_TRACKING_CHANGED") Run(0.4)
+ok(has(ReadyIds(), 5), "pinned: in Stormwind's Ready", list(ReadyIds()))
+O.SetPinned(5, false) Run(1)
+ok(not has(ReadyIds(), 5), "unpinned: gone, though super-tracked (waypoint pin on Elwynn)", list(ReadyIds()))
+local f0 = O.UI.ready
+ok(not (f0 and f0._shown and (O.S.readyCount or 0) > 0), "Ready section hidden when nothing's ready here")
+
+print("== 16. an already-tracked quest from another zone is untracked on arrival")
+W.watches = { 3, 1 }   -- (Tramping Paws tracked from before)
+W.waypoints["3:1426"] = true W.onMap[1426] = { 3 }
+Arrive(1455)
+ok(not has(W.watches, 3), "Ironforge: Tramping Paws untracked", list(W.watches))
+ok(mod.char.hidden[3], "remembered (given back when turned off)")
+
+print("== 17. 'Excavation Site: Wetlands' counts as Wetlands")
+W.AddQuest(7, "Excavation Site: Wetlands", "Uncovering the Past", 24, false, false, 81)
+Fire("QUEST_ACCEPTED", 7) Run(1.5)
+ok(not has(W.watches, 7), "accepted in Ironforge: untracked (it's Wetlands')", list(W.watches))
+Go(1437)
+ok(has(W.watches, 7) and has(W.watches, 3), "Wetlands: listed (the 'X: Zone' rule wins over its Dungeon tag)", list(W.watches))
+Arrive(9102, { name = "Excavation Site: Wetlands", kind = "party" })
+ok(eq(W.watches, { 7 }), "inside the Excavation Site: its quest only", list(W.watches))
+
+print("== 18. a header that isn't a zone: listed where it has a real map pin")
+W.AddQuest(8, "Warrior", "The Islander", 20, false, true)
+W.onMap[1437] = { { questID = 8, mapID = 1437 } }
+Arrive(1437)
+ok(has(W.watches, 8), "class quest with a pin on Wetlands' own map: listed", list(W.watches))
+W.onMap[1437] = { { questID = 8, mapID = 1437, isMapIndicatorQuest = true } }
+Go(1453) Go(1437)
+ok(not has(W.watches, 8), "only a map-indicator pin: not listed", list(W.watches))
+W.onMap[1437] = { 8 } W.waypoints["8:1437"] = true
+Go(1453) Go(1437)
+ok(not has(W.watches, 8), "only a waypoint pin: not listed", list(W.watches))
+W.onMap[1437] = { { questID = 8, mapID = 1424 } } W.waypoints["8:1437"] = nil
+Go(1453) Go(1437)
+ok(not has(W.watches, 8), "only another map's pin: not listed", list(W.watches))
+
+print("== 19. dungeon quests only inside their dungeon")
+W.Reset()
+W.AddQuest(20, "Gnomeregan", "Save Techbot's Brain", 26, false, true)
+W.AddQuest(21, "Dun Morogh", "Gyrodrillmatic Excavationators", 30, false, true, 81)   -- (the Dungeon tag)
+W.AddQuest(22, "Dun Morogh", "Frostmane Hold", 10, false, true)
+W.AddQuest(23, "Gnomeregan", "The Grand Betrayal", 35, true, false)
+W.AddQuest(24, "Westfall", "The Defias Brotherhood", 22, false, true, 81)
+W.AddQuest(25, "Deadmines", "Red Silk Bandanas", 17, false, true)
+W.AddQuest(26, "Westfall", "Harvest Watchers", 14, false, true)
+W.onMap[1426] = { 20, 21 }   -- (entrance pins on Dun Morogh)
+W.onMap[9100] = { { questID = 21, mapID = 9100 } }
+W.onMap[9101] = { { questID = 24, mapID = 9101 } }
+Restart()
+Arrive(1455)
+ok(eq(W.watches, { 22 }), "Ironforge + Dun Morogh: Gnomeregan quests hidden (header and tag)", list(W.watches))
+ok(not has(ReadyIds(), 23), "and its ready one not in Ready", list(ReadyIds()))
+Arrive(9100, { name = "Gnomeregan", kind = "party" })
+ok(eq(W.watches, { 20, 21 }), "inside Gnomeregan: its quests only (no Dun Morogh)", list(W.watches))
+ok(eq(ReadyIds(), { 23 }), "inside: its ready quest in Ready", list(ReadyIds()))
+Arrive(1436)
+ok(eq(W.watches, { 26 }), "Westfall: the Deadmines quests hidden (tag; header)", list(W.watches))
+Arrive(9101, { name = "The Deadmines", kind = "party" })
+ok(eq(W.watches, { 25, 24 }), "inside The Deadmines: 'Deadmines' header and the tagged Westfall quest", list(W.watches))
+O.SetPinned(20, true) Run(1)
+ok(has(W.watches, 20), "a pinned Gnomeregan quest listed in another dungeon", list(W.watches))
+Arrive(1455)
+ok(eq(W.watches, { 22, 20 }), "and outdoors", list(W.watches))
+ok(O.IsDungeonName("Scarlet Monastery") and O.IsDungeonName("The Stockade") and O.IsDungeonName("Krol'dok Stronghold"), "dungeon names: wings, aliases, the game's tables")
+ok(not O.IsDungeonName("Wetlands") and O.IsZoneName("Wetlands") and O.IsZoneName("Stormwind City"), "zone names from the map tree")
+
+print("== 20. leaving a dungeon: back to the zone list, after loading, never in combat")
+Arrive(9100, { name = "Gnomeregan", kind = "party" })
+ok(eq(W.watches, { 20, 21 }), "in Gnomeregan", list(W.watches))
+W.combat = true W.combatChanges = 0
+Arrive(1426)
+local sorted = {} for i, v in ipairs(W.watches) do sorted[i] = v end table.sort(sorted)
+ok(W.combatChanges == 0 and eq(sorted, { 20, 21 }), "out in combat: Valhalla changes nothing yet (the game's own re-sort aside)", list(W.watches))
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(2.5)
+ok(eq(W.watches, { 22, 20 }), "combat over: Dun Morogh's list (and the pinned one)", list(W.watches))
+W.inst = { name = "Gnomeregan" } W.map = 9100
+W.loadingTest = true Fire("PLAYER_LEAVING_WORLD") Fire("LOADING_SCREEN_ENABLED") Run(3)
+ok(eq(W.watches, { 22, 20 }), "during the loading screen: nothing changes", list(W.watches))
+Fire("LOADING_SCREEN_DISABLED") Fire("PLAYER_ENTERING_WORLD") Run(2.5)
+ok(eq(W.watches, { 20, 21 }), "after it: the dungeon's list", list(W.watches))
+
+print("== 21. a talk-to quest accepted in this zone (complete on accept) goes straight to Ready")
+W.Reset()
+Restart()
+Arrive(1437)
+W.AddQuest(305, "Wetlands", "In Search of the Excavation Team", 24, true, false)
+Fire("QUEST_ACCEPTED", 305) Run(1.5)
+ok(not has(W.watches, 305) and has(ReadyIds(), 305), "In Search of the Excavation Team: in Ready, not Quests", list(W.watches) .. list(ReadyIds()))
+
+print("== 22. the Ready row's quest icon: the game's POI button, a toggle")
+local row = O.UI.ready and O.UI.ready.rows[1]
+local poi = row and row.poi
+ok(poi and poi._template == "ObjectiveTrackerPOIButtonTemplate" and poi._q == 305, "the game's quest POI button, for the quest")
+ok(poi and poi._w == 20 and poi._h == 20 and poi._style == POIButtonUtil.Style.QuestComplete, "20x20, the complete-quest style (as the Quests rows)")
+ok(poi and poi._points[1] and poi._points[1][1] == "TOPRIGHT" and poi._points[1][2] == row.title and poi._points[1][4] == -7, "placed as the tracker places it")
+ok(row.pin._points[1] and row.pin._points[1][2] == poi, "the pin left of it")
+W.super = 0
+local adds = W.calls.add
+poi._scripts.OnClick(poi, "LeftButton") Run(0.4)
+ok(W.super == 305 and poi._selected == true, "first click: selected", tostring(W.super))
+poi._scripts.OnClick(poi, "LeftButton") Run(0.4)
+ok(W.super == 0 and poi._selected == false and (W.cleared or 0) > 0, "second click: cleared", tostring(W.super))
+ok(W.calls.add == adds and not has(W.watches, 305), "never tracks the ready quest (stays out of Quests)")
+W.super = 305 Fire("SUPER_TRACKING_CHANGED") Run(0.4)
+ok(poi._selected == true, "selected state follows the super-tracked quest (selected elsewhere)")
+poi._scripts.OnClick(poi, "RightButton")
+ok(W.super == 305, "right click: nothing")
+local tb = O.UI.ready.toggle
+ok(tb._template == "ObjectiveTrackerModuleMinimizeButtonTemplate" and tb._normal._atlas == "ui-questtrackerbutton-secondary-collapse", "collapse button: the Quests header's template and atlas")
+tb._scripts.OnClick(tb) Run(0.4)
+ok(tb._normal._atlas == "ui-questtrackerbutton-secondary-expand" and tb._pushed._atlas == "ui-questtrackerbutton-secondary-expand-pressed" and O.UI.ready.n == 0, "folded: expand atlas")
+tb._scripts.OnClick(tb) Run(0.4)
+ok(tb._normal._atlas == "ui-questtrackerbutton-secondary-collapse" and O.UI.ready.n == 1, "unfolded again")
+W.combat = true
+poi._scripts.OnClick(poi, "LeftButton")
+ok(W.super == 0 and W.combatChanges == 0, "in combat: the toggle works, no watch changes")
+W.combat = false
+
+print("== 23. a watched ready quest that isn't listed here is untracked")
+W.AddQuest(30, "Duskwood", "Seasoned Wolf Kabobs", 24, true, true)
+Fire("QUEST_LOG_UPDATE") Run(1.5)
+ok(not has(W.watches, 30) and not has(ReadyIds(), 30), "untracked, and not in Ready (another zone's)", list(W.watches))
+
+print("== 24. /valhalla objectives why")
+W.onMap[1437] = { 2 } W.waypoints["2:1437"] = true
+W.AddQuest(2, "Duskwood", "Wolves at Our Heels", 20, false, false)
+local n0 = #ns.printed
+mod:Slash("why 2")
+local text = table.concat(ns.printed, "\n", n0 + 1)
+ok(text:find("Here: .*Wetlands") and text:find("is another zone") and text:find("waypoint") and text:find("dropped"), "why 2: where, the reason, its map pins", text)
+n0 = #ns.printed
+mod:Slash("why")
+text = table.concat(ns.printed, "\n", n0 + 1)
+ok(text:find("305") and text:find("listed in Ready") and text:find("not listed"), "why: every quest", text)
+mod:Slash("WHY 99999")
+ok(ns.printed[#ns.printed]:find("not in your quest log"), "why <unknown id>")
+ok(mod.enabled, "why changes nothing (still on)")
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

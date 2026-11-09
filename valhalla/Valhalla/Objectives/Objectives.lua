@@ -1,11 +1,13 @@
 --------------------------------------------------------------------------------
--- Objectives (v0.2.0): the game's "All Objectives" tracker, by zone.
+-- Objectives (v0.2.1): the game's "All Objectives" tracker, by zone.
 --
 --  * Quests lists this zone's in-progress quests plus pinned ones; in a capital, the city's and
 --    its surrounding zone's (CITY below). Lowest [level] first, ties by title.
 --  * Ready to Turn In: Valhalla's own section under the tracker (below Profession), in the look of
 --    the tracker's section headers, listing this zone's (and pinned) quests that are ready.
 --  * A pin left of each quest (and of the game's quest icon): a pinned quest stays listed in every zone.
+--  * v0.2.1: the quest log's zone header decides where a quest belongs (see Classify); dungeon quests
+--    only inside their dungeon; Ready rows use the game's own quest icon button; /vh objectives why.
 --
 -- How: Valhalla never edits, hooks or re-parents anything of the game's tracker. It only decides which
 -- quests are tracked (C_QuestLog.AddQuestWatch / RemoveQuestWatch) and in what order (re-tracking), and
@@ -89,7 +91,7 @@ function O.IsPinned(id) return id ~= nil and Char().pinned[id] == true end
 -- the quest log (read only)
 --------------------------------------------------------------------------------
 
--- { [questID] = { id, idx, title, header, level, ready } }, count
+-- { [questID] = { id, idx, title, header, level, ready, tag (the game's quest tag ID) } }, count
 function O.ReadLog()
 	local CQ = C_QuestLog
 	local out, n = {}, 0
@@ -108,8 +110,10 @@ function O.ReadLog()
 				if (not level or level == 0) and CQ.GetQuestDifficultyLevel then level = Call(CQ.GetQuestDifficultyLevel, id) end
 				local ready = Call(CQ.ReadyForTurnIn, id)
 				if ready == nil then ready = Call(CQ.IsComplete, id) end
+				local tag = CQ.GetQuestTagInfo and Call(CQ.GetQuestTagInfo, id)
 				out[id] = { id = id, idx = i, title = Plain(info.title) or ("Quest " .. id), header = header,
-					level = tonumber(level) or 0, ready = ready and true or false }
+					level = tonumber(level) or 0, ready = ready and true or false,
+					tag = type(tag) == "table" and tonumber(Plain(tag.tagID)) or nil }
 				n = n + 1
 			end
 		end
@@ -137,10 +141,109 @@ function O.Before(a, b)
 end
 
 --------------------------------------------------------------------------------
--- where the player is: the zone's (and a capital's surrounding zone's) maps and names
+-- where the player is, and which quests belong here (v0.2.1)
+--
+-- The quest log's zone header decides (A3):
+--   * "X: Zone" (e.g. "Excavation Site: Wetlands") counts as that zone;
+--   * a dungeon quest (the game's Dungeon / Raid tag, or a header that names a dungeon) is listed
+--     only inside its dungeon; inside a dungeon only its quests are (no walk up to the outdoor zone);
+--   * a header that names a zone: listed in that zone (a capital: with its surrounding zone);
+--   * any other header (class, profession, event...): listed where it has a real map pin here
+--     (not a map-indicator pin, not a "travel this way" waypoint, not another map's pin).
+--   * pinned: always listed.
 --------------------------------------------------------------------------------
 
 local function MapInfo(id) return C_Map and C_Map.GetMapInfo and Call(C_Map.GetMapInfo, id) end
+
+local function Trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+-- a zone name, compared without case and a leading "The "
+local function ZCanon(s)
+	if type(s) ~= "string" then return nil end
+	s = Trim(s:lower()):gsub("^the%s+", "")
+	return s ~= "" and s or nil
+end
+-- a dungeon name: also without a wing ("Scarlet Monastery - Armory") and through the aliases below
+O.DUNGEON_ALIAS = {
+	["stormwind stockade"] = "stockade",
+	["temple of atal'hakkar"] = "sunken temple",
+	["lower blackrock spire"] = "blackrock spire",
+	["upper blackrock spire"] = "blackrock spire",
+	["ahn'qiraj temple"] = "temple of ahn'qiraj",
+}
+local function DCanon(s)
+	s = ZCanon(s)
+	if not s then return nil end
+	s = Trim(s:gsub("%s+%-%s+.*$", ""))
+	return O.DUNGEON_ALIAS[s] or s
+end
+O.ZCanon, O.DCanon = ZCanon, DCanon
+
+-- known dungeons and raids: the game's tables (Data/Forever/Places.lua), a fallback list, and every
+-- instance you enter
+O.DUNGEON_FALLBACK = {
+	"Ragefire Chasm", "Wailing Caverns", "The Deadmines", "Shadowfang Keep", "Blackfathom Deeps",
+	"The Stockade", "Gnomeregan", "Razorfen Kraul", "Scarlet Monastery", "Razorfen Downs", "Uldaman",
+	"Zul'Farrak", "Maraudon", "Sunken Temple", "Blackrock Depths", "Blackrock Spire", "Dire Maul",
+	"Scholomance", "Stratholme", "Molten Core", "Onyxia's Lair", "Blackwing Lair", "Zul'Gurub",
+	"Ruins of Ahn'Qiraj", "Temple of Ahn'Qiraj", "Naxxramas",
+}
+local DUNGEONS
+local function Dungeons()
+	if DUNGEONS then return DUNGEONS end
+	DUNGEONS = {}
+	local function Add(name) local k = DCanon(name) if k then DUNGEONS[k] = true end end
+	for _, n in ipairs(O.DUNGEON_FALLBACK) do Add(n) end
+	local P = ns.MapPlaces
+	if type(P) == "table" then
+		for _, it in ipairs(P.instances or {}) do
+			for _, d in ipairs(it[4] or {}) do Add(d[2]) end
+		end
+		for _, d in ipairs(P.unplaced or {}) do Add(d[2]) end
+	end
+	return DUNGEONS
+end
+function O.LearnDungeon(name) local k = DCanon(name) if k then Dungeons()[k] = true end end
+function O.IsDungeonName(name) local k = DCanon(name) return k ~= nil and Dungeons()[k] == true end
+
+-- known zones: every Zone-type map in the game's map tree (read once), and the capitals
+local ZONES
+local function Zones()
+	if ZONES and next(ZONES) then return ZONES end
+	ZONES = {}
+	local ZONE = Enum and Enum.UIMapType and Enum.UIMapType.Zone or 3
+	local function Add(name) local k = ZCanon(name) if k then ZONES[k] = true end end
+	for city, around in pairs(O.CITY) do
+		local a, b = MapInfo(city), MapInfo(around)
+		Add(a and a.name) Add(b and b.name)
+	end
+	if C_Map and C_Map.GetMapChildrenInfo then
+		local roots, seen = { 947, 1414, 1415, 1945 }, {}
+		-- (and the top of the player's own map tree)
+		local m, top = C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player"), nil
+		for _ = 1, 8 do
+			local info = m and MapInfo(m)
+			if not info then break end
+			top = m
+			m = info.parentMapID
+			if not m or m == 0 then break end
+		end
+		if top then roots[#roots + 1] = top end
+		for _, r in ipairs(roots) do
+			if not seen[r] then
+				seen[r] = true
+				local list = Call(C_Map.GetMapChildrenInfo, r, ZONE, true)
+				if type(list) == "table" then
+					for _, info in ipairs(list) do
+						if info.mapType == nil or info.mapType == ZONE then Add(info.name) end
+					end
+				end
+			end
+		end
+	end
+	return ZONES
+end
+function O.IsZoneName(name) local k = ZCanon(name) return k ~= nil and Zones()[k] == true end
+function O.ForgetNames() ZONES, DUNGEONS = nil, nil end
 
 -- the zone a map belongs to: a capital as it is, a sub-zone / micro map walked up to its zone
 function O.ZoneOf(mapID)
@@ -161,42 +264,102 @@ function O.ZoneOf(mapID)
 	return m
 end
 
--- { maps = { [uiMapID] = true }, names = { [name] = true }, onMap = { [questID] = true }, key }
+local INSTANCE_KINDS = { party = true, raid = true, scenario = true }
+
+-- { maps, names (canonical), onMap = { [questID] = true } (the kept pins), pins = { [questID] = { raw pins } },
+--   inst (in a dungeon), instName, key }
 function O.Here()
 	local best = C_Map and C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player")
-	local zone = O.ZoneOf(best)
-	local here = { maps = {}, names = {}, onMap = {}, best = best, zone = zone }
-	local function AddName(s) if type(s) == "string" and s ~= "" then here.names[s] = true end end
+	local inInst, kind = nil, nil
+	if IsInInstance then inInst, kind = Call(IsInInstance) end
+	local inst = inInst and INSTANCE_KINDS[kind] and true or false
+	local zone = inst and best or O.ZoneOf(best)
+	local here = { maps = {}, names = {}, onMap = {}, pins = {}, best = best, zone = zone, inst = inst, shown = {} }
+	local function AddName(s)
+		if type(s) ~= "string" or s == "" then return end
+		here.shown[s] = true
+		local z, d = ZCanon(s), DCanon(s)
+		if z then here.names[z] = true end
+		if d then here.names[d] = true end
+	end
 	local function AddMap(m)
 		if not m or here.maps[m] then return end
 		here.maps[m] = true
 		local info = MapInfo(m)
 		AddName(info and info.name)
 	end
-	AddMap(zone)
-	if zone and O.CITY[zone] then AddMap(O.CITY[zone]) end
+	if inst then
+		local name = GetInstanceInfo and Call(GetInstanceInfo)
+		here.instName = name
+		AddName(name)
+		O.LearnDungeon(name)
+		AddMap(best)
+	else
+		AddMap(zone)
+		if zone and O.CITY[zone] then AddMap(O.CITY[zone]) end
+	end
 	AddName(GetZoneText and Call(GetZoneText))
 	AddName(GetRealZoneText and Call(GetRealZoneText))
 	if C_QuestLog and C_QuestLog.GetQuestsOnMap then
+		local wayFn = C_QuestLog.GetNextWaypointForMap
 		for m in pairs(here.maps) do
 			local list = Call(C_QuestLog.GetQuestsOnMap, m)
 			if type(list) == "table" then
-				for _, q in ipairs(list) do if q.questID then here.onMap[q.questID] = true end end
+				for _, q in ipairs(list) do
+					local id = q.questID
+					if id then
+						local p = { map = m, mapID = q.mapID, x = q.x, y = q.y, indicator = q.isMapIndicatorQuest and true or false }
+						if wayFn then p.waypoint = Call(wayFn, id, m) ~= nil end
+						p.otherMap = q.mapID ~= nil and q.mapID ~= m and not here.maps[q.mapID]
+						p.kept = not (p.indicator or p.waypoint or p.otherMap)
+						if p.kept then here.onMap[id] = true end
+						here.pins[id] = here.pins[id] or {}
+						table.insert(here.pins[id], p)
+					end
+				end
 			end
 		end
 	end
 	local names = {}
 	for k in pairs(here.names) do names[#names + 1] = k end
 	table.sort(names)
-	here.key = tostring(zone) .. ":" .. table.concat(names, "|")
+	here.key = tostring(zone) .. (inst and ":inst:" or ":") .. table.concat(names, "|")
 	return here
 end
 
-function O.InZone(e, here)
-	if not (e and here) then return false end
-	return (e.header ~= nil and here.names[e.header]) or here.onMap[e.id] or false
+local DUNGEON_TAGS = { [81] = true, [62] = true }   -- Constants.QuestConsts QUEST_INFO_DUNGEON_ID / QUEST_INFO_RAID_ID
+function O.IsDungeonQuest(e)
+	return (e.tag and DUNGEON_TAGS[e.tag]) or (e.header and O.IsDungeonName(e.header)) or false
 end
-function O.Listed(e, here) return O.IsPinned(e.id) or O.InZone(e, here) end
+
+-- is a quest listed here, and why (the reason is what /valhalla objectives why prints)
+function O.Classify(e, here, placeOnly)
+	if not e then return false, "not in the quest log" end
+	if not placeOnly and O.IsPinned(e.id) then return true, "pinned" end
+	if not here then return false, "no location yet" end
+	local h = e.header
+	local function Here(s) return s and (here.names[ZCanon(s) or ""] or here.names[DCanon(s) or ""]) or false end
+	-- "X: Zone" counts as that zone
+	local suffix = h and h:match("^[^:]+:%s*(.+)$")
+	if suffix and O.IsZoneName(suffix) then
+		if Here(suffix) or Here(h) then return true, ("header \"%s\" counts as %s: here"):format(h, suffix) end
+		return false, ("header \"%s\" counts as %s: not here"):format(h, suffix)
+	end
+	local dungeon = O.IsDungeonQuest(e)
+	if here.inst then
+		if Here(h) then return true, ("header \"%s\" is this dungeon"):format(h) end
+		if dungeon and here.onMap[e.id] then return true, "a dungeon quest with a pin on this dungeon's map" end
+		return false, "in a dungeon: only its own quests are listed"
+	end
+	if dungeon then return false, "a dungeon quest: listed inside its dungeon" end
+	if h and Here(h) then return true, ("header \"%s\" is this zone"):format(h) end
+	if h and O.IsZoneName(h) then return false, ("header \"%s\" is another zone"):format(h) end
+	if here.onMap[e.id] then return true, ("header \"%s\" isn't a zone: it has a map pin here"):format(tostring(h)) end
+	return false, ("header \"%s\" isn't a zone: no map pin here"):format(tostring(h))
+end
+
+function O.InZone(e, here) return e ~= nil and here ~= nil and (O.Classify(e, here, true)) or false end   -- (the place only)
+function O.Listed(e, here) return (O.Classify(e, here)) end
 
 --------------------------------------------------------------------------------
 -- the plan: which quests the Quests section tracks, in order (pinned stay first when over the limit)
@@ -272,8 +435,8 @@ function O.PlanPartial()
 	for _ in pairs(watched) do count = count + 1 end
 	for id, e in pairs(log) do
 		local listed = O.Listed(e, here)
-		if watched[id] and e.ready and listed then
-			Queue(id, false)
+		if watched[id] and e.ready then
+			Queue(id, false)   -- (ready: shown in Ready to Turn In when listed, never in Quests)
 		elseif not watched[id] and not e.ready and listed and c.hidden[id] and count < O.MAX_WATCHES then
 			Queue(id, true) count = count + 1 added = true
 		end
@@ -646,6 +809,12 @@ local function PaintToggle()
 	local collapsed = mod.db and mod.db.readyCollapsed
 	local b = r.toggle
 	local name = collapsed and "ui-questtrackerbutton-secondary-expand" or "ui-questtrackerbutton-secondary-collapse"
+	if b.native then   -- (the Quests header's own button template: as ObjectiveTrackerModuleHeaderMixin:SetCollapsed)
+		local n, p = b:GetNormalTexture(), b:GetPushedTexture()
+		if n then n:SetAtlas(name, true) end
+		if p then p:SetAtlas(name .. "-pressed", true) end
+		return
+	end
 	if b.down then name = name .. "-pressed" end
 	if not Atlas(b.icon, name) then
 		b.icon:SetTexture(collapsed and "Interface\\Buttons\\UI-PlusButton-Up" or "Interface\\Buttons\\UI-MinusButton-Up")
@@ -670,6 +839,84 @@ local function RowLeave(self)
 	if not self.colored then self.title:SetTextColor(r, g, b) end
 	if GameTooltip then GameTooltip:Hide() end
 end
+-- the quest icon on a Ready row: the game's own quest POI button (ObjectiveTrackerPOIButtonTemplate, as the
+-- Quests rows), so it looks and sizes the same. Its click is ours, the same toggle as the game's (first click
+-- selects the quest, a second clears it) but without the game's "track it if untracked" step (a ready
+-- quest stays out of Quests). Nothing here is protected: super-tracking is allowed in combat too.
+function O.PoiClick(self, button)
+	if button and button ~= "LeftButton" then return end
+	local q = self.q
+	if not q then return end
+	local CU = rawget(_G, "ChatFrameUtil")
+	if CU and CU.TryInsertQuestLinkForQuestID then
+		local ok, done = pcall(CU.TryInsertQuestLinkForQuestID, q)
+		if ok and done then return end
+	end
+	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+	if super == q then
+		if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF) end
+		if C_SuperTrack.ClearAllSuperTracked then Call(C_SuperTrack.ClearAllSuperTracked)
+		else Call(C_SuperTrack.SetSuperTrackedQuestID, 0) end
+	else
+		if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
+		if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then Call(C_SuperTrack.SetSuperTrackedQuestID, q) end
+	end
+	S.readyDirty = true
+	O.PaintPoi(self)
+end
+
+-- the POI button's look for its quest: complete, selected when super-tracked
+function O.PaintPoi(b)
+	if not (b and b.q) then return end
+	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+	local sel = super == b.q
+	if b.native then
+		local U = rawget(_G, "POIButtonUtil")
+		local style = U and U.Style and U.Style.QuestComplete or 3
+		if b.painted ~= b.q then pcall(b.SetQuestID, b, b.q) end
+		pcall(b.SetStyle, b, style)
+		pcall(b.SetSelected, b, sel)
+		if b.painted ~= b.q or b.sel ~= sel then pcall(b.UpdateButtonStyle, b) end
+	else
+		if not Atlas(b.icon, "UI-QuestIcon-TurnIn-Normal") then
+			b.icon:SetTexture("Interface\\GossipFrame\\ActiveQuestIcon") b.icon:Show()
+		end
+		b.icon:SetSize(20, 20)
+		b.icon:SetAlpha(sel and 1 or 0.6)
+		if b.glow then b.glow:SetShown(sel) end
+	end
+	b.painted, b.sel = b.q, sel
+	b:Show()
+end
+
+local POI_TEMPLATES = { "ObjectiveTrackerPOIButtonTemplate", "POIButtonTemplate" }
+local function MakePoi(row)
+	for _, t in ipairs(POI_TEMPLATES) do
+		local ok, b = pcall(CreateFrame, "Button", nil, row, t)
+		-- (a mixin's methods sit on the frame itself: SetQuestID there means the template took)
+		if ok and type(b) == "table" and type(rawget(b, "SetQuestID")) == "function" then
+			b.native, b.template = true, t
+			b:SetScript("OnClick", O.PoiClick)
+			if b.RegisterForClicks then b:RegisterForClicks("LeftButtonUp") end
+			return b
+		end
+	end
+	-- (no template: drawn the same size, the same toggle)
+	local b = CreateFrame("Button", nil, row)
+	b:SetSize(20, 20)
+	b.icon = b:CreateTexture(nil, "ARTWORK")
+	b.icon:SetPoint("CENTER")
+	b.glow = b:CreateTexture(nil, "BACKGROUND")
+	b.glow:SetTexture("Interface\\WorldMap\\UI-QuestPoi-IconGlow")
+	b.glow:SetBlendMode("ADD")
+	b.glow:SetSize(50, 50)
+	b.glow:SetPoint("CENTER")
+	b.glow:Hide()
+	b:RegisterForClicks("LeftButtonUp")
+	b:SetScript("OnClick", O.PoiClick)
+	return b
+end
+
 function O.ReadyClick(q)
 	if not q then return end
 	if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then Call(C_SuperTrack.SetSuperTrackedQuestID, q) end
@@ -682,9 +929,6 @@ end
 local function MakeRow(parent)
 	local row = CreateFrame("Button", nil, parent)
 	row:SetHeight(O.ROW_H)
-	row.icon = row:CreateTexture(nil, "ARTWORK")
-	row.icon:SetSize(20, 20)
-	row.icon:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 2)
 	row.title = row:CreateFontString(nil, "ARTWORK")
 	row.title:SetFontObject(rawget(_G, "ObjectiveTrackerLineFont") or GameFontNormal)
 	row.title:SetJustifyH("LEFT")
@@ -697,8 +941,11 @@ local function MakeRow(parent)
 	row.zone:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
 	row.zone:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 	row.zone:SetWordWrap(false)
+	row.poi = MakePoi(row)
+	row.poi:SetPoint("TOPRIGHT", row.title, "TOPLEFT", -7, 5)   -- (where the tracker puts a quest's POI button)
+	row.icon = row.poi   -- (v0.2.0's name for it)
 	row.pin = MakePin(row)
-	row.pin:SetPoint("RIGHT", row.icon, "LEFT", -2, 0)
+	row.pin:SetPoint("RIGHT", row.poi, "LEFT", -2, 0)
 	row:RegisterForClicks("LeftButtonUp")
 	row:SetScript("OnClick", function(self) O.ReadyClick(self.q) end)
 	row:SetScript("OnEnter", RowEnter)
@@ -726,17 +973,24 @@ local function BuildReady()
 	local qh = rawget(_G, "QuestObjectiveTracker")
 	qh = type(qh) == "table" and rawget(qh, "Header")
 	if type(qh) == "table" and qh.Text and qh.Text.GetTextColor then h.text:SetTextColor(qh.Text:GetTextColor()) end
-	local b = CreateFrame("Button", nil, h)
-	b:SetSize(16, 16)
+	-- the collapse button: the Quests header's own template (ObjectiveTrackerModuleMinimizeButtonTemplate:
+	-- 16x16, its atlases, its pushed and highlight textures), placed as the tracker places it
+	local ok, b = pcall(CreateFrame, "Button", nil, h, "ObjectiveTrackerModuleMinimizeButtonTemplate")
+	if ok and type(b) == "table" and b.GetNormalTexture and b:GetNormalTexture() then
+		b.native = true
+	else
+		b = CreateFrame("Button", nil, h)
+		b:SetSize(16, 16)
+		b.icon = b:CreateTexture(nil, "ARTWORK")
+		b.icon:SetPoint("CENTER")
+		b.hl = b:CreateTexture(nil, "HIGHLIGHT")
+		b.hl:SetPoint("CENTER")
+		if Atlas(b.hl, "ui-questtrackerbutton-yellow-highlight") then b.hl:SetBlendMode("ADD") end
+		b:SetScript("OnMouseDown", function(self) self.down = true PaintToggle() end)
+		b:SetScript("OnMouseUp", function(self) self.down = nil PaintToggle() end)
+	end
 	b:SetPoint("RIGHT", h, "RIGHT", 1, 0)
-	b.icon = b:CreateTexture(nil, "ARTWORK")
-	b.icon:SetPoint("CENTER")
-	b.hl = b:CreateTexture(nil, "HIGHLIGHT")
-	b.hl:SetPoint("CENTER")
-	if Atlas(b.hl, "ui-questtrackerbutton-yellow-highlight") then b.hl:SetBlendMode("ADD") end
 	b:RegisterForClicks("LeftButtonUp")
-	b:SetScript("OnMouseDown", function(self) self.down = true PaintToggle() end)
-	b:SetScript("OnMouseUp", function(self) self.down = nil PaintToggle() end)
 	b:SetScript("OnClick", function()
 		if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
 		mod.db.readyCollapsed = not mod.db.readyCollapsed
@@ -768,7 +1022,6 @@ function O.FillReady()
 	if #list == 0 then if UI.ready then UI.ready:Hide() end return 0 end
 	local f = BuildReady()
 	local n = (mod.db and mod.db.readyCollapsed) and 0 or math.min(#list, O.READY_MAX)
-	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
 	for i = 1, n do
 		local e = list[i]
 		local row = f.rows[i] or MakeRow(f)
@@ -780,11 +1033,8 @@ function O.FillReady()
 		if not colored then row.title:SetTextColor(TrackerColor("Header", 0.75, 0.61, 0)) end
 		row.zone:SetText(e.header or "")
 		row.zone:SetTextColor(TrackerColor("Normal", 0.8, 0.8, 0.8))
-		if not Atlas(row.icon, "UI-QuestIcon-TurnIn-Normal") then
-			row.icon:SetTexture("Interface\\GossipFrame\\ActiveQuestIcon") row.icon:Show()
-		end
-		row.icon:SetSize(20, 20)
-		row.icon:SetAlpha(super == e.id and 1 or 0.85)
+		row.poi.q = e.id
+		O.PaintPoi(row.poi)
 		PaintPin(row.pin, e.id)
 		row.pin:Show()
 		row:ClearAllPoints()
@@ -896,11 +1146,52 @@ function O.SetOn(on)
 	end
 end
 
--- /valhalla objectives [on|off]
+-- /valhalla objectives why [questID]: where Valhalla thinks you are, and why each quest is (not) listed
+function O.Why(id)
+	local out = {}
+	local here = O.Here()
+	local log = O.ReadLog()
+	local shown = {}
+	for k in pairs(here.shown) do shown[#shown + 1] = k end
+	table.sort(shown)
+	out[#out + 1] = ("Here: %s%s (map %s)"):format(here.inst and "in a dungeon: " or "", table.concat(shown, ", "), tostring(here.best))
+	local function Line(e)
+		local listed, why = O.Classify(e, here)
+		local where = e.ready and "Ready" or "Quests"
+		local tag = e.tag and (" tag " .. e.tag) or ""
+		out[#out + 1] = ("%d [%s] %s (%s%s): %s, %s"):format(e.id, tostring(e.level), e.title, tostring(e.header), tag,
+			listed and ("listed in " .. where) or "not listed", why)
+	end
+	if id then
+		local e = log[id]
+		if not e then out[#out + 1] = ("%d: not in your quest log"):format(id) return out end
+		Line(e)
+		for _, p in ipairs(here.pins[id] or {}) do
+			out[#out + 1] = ("  map pin on %d: mapID %s at %.3f, %.3f%s%s%s -> %s"):format(p.map, tostring(p.mapID),
+				tonumber(p.x) or 0, tonumber(p.y) or 0, p.indicator and ", map indicator" or "", p.waypoint and ", waypoint" or "",
+				p.otherMap and ", another map's" or "", p.kept and "kept" or "dropped")
+		end
+		if not here.pins[id] then out[#out + 1] = "  no map pins here" end
+	else
+		local list = {}
+		for _, e in pairs(log) do list[#list + 1] = e end
+		table.sort(list, O.Before)
+		for _, e in ipairs(list) do Line(e) end
+	end
+	return out
+end
+
+-- /valhalla objectives [on|off|why [questID]]
 function mod:Slash(arg)
-	arg = (arg or ""):lower()
+	arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+	local word, rest = arg:match("^(%S+)%s*(.-)$")
+	if word == "why" then
+		local id = tonumber(rest and rest:match("%d+"))
+		for _, line in ipairs(O.Why(id)) do ns:Print("%s", line) end
+		return
+	end
 	if arg == "on" then O.SetOn(true)
 	elseif arg == "off" then O.SetOn(false) end
-	ns:Print(L["Objectives (zone quests, Ready to Turn In, pins): %s. /valhalla objectives on|off"]:format(
+	ns:Print(L["Objectives (zone quests, Ready to Turn In, pins): %s. /valhalla objectives on|off|why [questID]"]:format(
 		mod.enabled and L["on"] or L["off"]))
 end

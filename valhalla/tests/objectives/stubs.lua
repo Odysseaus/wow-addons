@@ -37,11 +37,31 @@ function Frame.UnregisterAllEvents(self) self._events = {} end
 function Frame.SetPoint(self, ...) self._points[#self._points + 1] = { ... } end
 function Frame.ClearAllPoints(self) self._points = {} end
 function Frame.GetFrameStrata() return "LOW" end
+function Frame.SetSize(self, w, h) self._w, self._h = w, h end
+function Frame.GetSize(self) return rawget(self, "_w"), rawget(self, "_h") end
 function Frame.GetFrameLevel() return 5 end
 W.NewFrame = NewFrame
 W.frames = {}
-function CreateFrame(kind, name, parent)
+-- the game's templates the module asks for (v0.2.1): a quest POI button, the tracker header's minimize button
+W.templates = {}
+W.templates.ObjectiveTrackerPOIButtonTemplate = function(f)
+  f._w, f._h = 20, 20
+  f.SetQuestID = function(self, q) self._q = q end
+  f.GetQuestID = function(self) return self._q end
+  f.SetStyle = function(self, st) self._style = st end
+  f.SetSelected = function(self, v) self._selected = v and true or false end
+  f.IsSelected = function(self) return self._selected end
+  f.UpdateButtonStyle = function(self) self._styled = (self._styled or 0) + 1 end
+end
+W.templates.ObjectiveTrackerModuleMinimizeButtonTemplate = function(f)
+  f._w, f._h = 16, 16
+  f._normal, f._pushed = NewFrame("Texture"), NewFrame("Texture")
+  f.GetNormalTexture = function(self) return self._normal end
+  f.GetPushedTexture = function(self) return self._pushed end
+end
+function CreateFrame(kind, name, parent, template)
   local f = NewFrame(kind, name)
+  if template and not W.noTemplates and W.templates[template] then W.templates[template](f) f._template = template end
   W.frames[#W.frames + 1] = f
   if name then _G[name] = f end
   return f
@@ -66,14 +86,31 @@ W.MAPS = {
   [1426] = { name = "Dun Morogh", mapType = 3, parentMapID = 1415 },
   [1455] = { name = "Ironforge", mapType = 3, parentMapID = 1415 },
   [9001] = { name = "Goldshire Inn", mapType = 5, parentMapID = 1429 },
+  [1437] = { name = "Wetlands", mapType = 3, parentMapID = 1415 },
+  [1432] = { name = "Loch Modan", mapType = 3, parentMapID = 1415 },
+  [1424] = { name = "Hillsbrad Foothills", mapType = 3, parentMapID = 1415 },
+  [9100] = { name = "Gnomeregan", mapType = 4, parentMapID = 1426 },
+  [9101] = { name = "The Deadmines", mapType = 4, parentMapID = 1436 },
+  [9102] = { name = "Excavation Site: Wetlands", mapType = 4, parentMapID = 1437 },
 }
 W.map = 1453
 W.onMap = {}   -- [mapID] = { questID, ... }
 C_Map = {
   GetBestMapForUnit = function() return W.map end,
   GetMapInfo = function(id) local m = W.MAPS[id] if m then return { mapID = id, name = m.name, mapType = m.mapType, parentMapID = m.parentMapID } end end,
+  GetMapChildrenInfo = function(root, mapType, all)
+    local out = {}
+    local function Under(id) local m = W.MAPS[id] for _ = 1, 8 do if not m then return false end if m.parentMapID == root then return true end if not all then return false end m = W.MAPS[m.parentMapID] end return false end
+    for id, m in pairs(W.MAPS) do
+      if Under(id) and (mapType == nil or m.mapType == mapType) then out[#out + 1] = { mapID = id, name = m.name, mapType = m.mapType, parentMapID = m.parentMapID } end
+    end
+    return out
+  end,
 }
-function GetZoneText() local m = W.MAPS[W.map] return m and m.name or "" end
+-- instances: W.inst = { name, kind } while inside one
+function IsInInstance() if W.inst then return true, W.inst.kind or "party" end return false, "none" end
+function GetInstanceInfo() if W.inst then return W.inst.name, W.inst.kind or "party" end return GetZoneText(), "none" end
+function GetZoneText() if W.inst then return W.inst.name end local m = W.MAPS[W.map] return m and m.name or "" end
 function GetRealZoneText() return GetZoneText() end
 
 -- the quest log: W.quests = { [id] = { header, title, level, ready } }; headers in log order of first appearance
@@ -122,17 +159,29 @@ C_QuestLog = {
     if W.combat then W.combatChanges = (W.combatChanges or 0) + 1 end
     local i = WatchIndex(id) if i then table.remove(W.watches, i) end
   end,
+  -- W.onMap[mapID] = { questID | { questID, mapID, isMapIndicatorQuest }, ... }; W.waypoints["q:map"] = true
   GetQuestsOnMap = function(m)
     local out = {}
-    for _, id in ipairs(W.onMap[m] or {}) do out[#out + 1] = { questID = id, x = 0.5, y = 0.5 } end
+    for _, it in ipairs(W.onMap[m] or {}) do
+      if type(it) == "table" then
+        out[#out + 1] = { questID = it.questID, mapID = it.mapID or m, x = 0.4, y = 0.6, isMapIndicatorQuest = it.isMapIndicatorQuest or false }
+      else
+        out[#out + 1] = { questID = it, x = 0.5, y = 0.5, isMapIndicatorQuest = false }
+      end
+    end
     return out
   end,
+  GetNextWaypointForMap = function(q, m) if W.waypoints[q .. ":" .. m] then return 0.9, 0.1 end end,
+  GetQuestTagInfo = function(q) local x = W.quests[q] if x and x.tag then return { tagID = x.tag, tagName = "Dungeon" } end end,
 }
 W.super = 0
-C_SuperTrack = { GetSuperTrackedQuestID = function() return W.super end, SetSuperTrackedQuestID = function(id) W.super = id end }
+C_SuperTrack = { GetSuperTrackedQuestID = function() return W.super end, SetSuperTrackedQuestID = function(id) W.super = id end,
+  ClearAllSuperTracked = function() W.super = 0 W.cleared = (W.cleared or 0) + 1 end }
+POIButtonUtil = { Style = { QuestInProgress = 2, QuestComplete = 3 } }
+W.waypoints = {}
 
-function W.AddQuest(id, header, title, level, ready, watched)
-  W.quests[id] = { header = header, title = title, level = level, ready = ready or false }
+function W.AddQuest(id, header, title, level, ready, watched, tag)
+  W.quests[id] = { header = header, title = title, level = level, ready = ready or false, tag = tag }
   W.order[#W.order + 1] = id
   if watched then W.watches[#W.watches + 1] = id end
 end
@@ -142,7 +191,7 @@ function W.Drop(id)
   local i = WatchIndex(id) if i then table.remove(W.watches, i) end
 end
 function W.Reset()
-  W.quests, W.order, W.watches, W.onMap = {}, {}, {}, {}
+  W.quests, W.order, W.watches, W.onMap, W.waypoints, W.inst = {}, {}, {}, {}, {}, nil
   W.combat, W.taxi, W.super, W.combatChanges = false, false, 0, 0
   W.side = "front"
   W.calls = { add = 0, remove = 0 }

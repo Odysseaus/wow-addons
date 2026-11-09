@@ -13,7 +13,7 @@
 --   /valhalla dungeons       which map each dungeon entrance opens (Dungeons.lua)
 --   /valhalla entrance <name>  where you stand, as a dungeon entrance for tools/map-data (Dungeons.lua)
 --   /valhalla highlights     where the game draws each zone's highlight, for tools/map-preview (Debug.lua)
---   /valhalla objectives on|off  the All Objectives tracker by zone, Ready to Turn In, pins (Objectives/Objectives.lua)
+--   /valhalla objectives on|off|why [questID]  the All Objectives tracker by zone, Ready to Turn In, pins (Objectives/Objectives.lua)
 --------------------------------------------------------------------------------
 
 local ADDON, ns = ...
@@ -55,7 +55,7 @@ local function Slash(msg)
 	local mod = ns:GetModule("worldmap")
 	local word, rest = msg:match("^(%S+)%s+(.+)$")
 	-- /valhalla objectives [on|off] (also /vh obj): the zone quests, Ready to Turn In and pins (Objectives/Objectives.lua)
-	local objWord, objArg = msg:match("^(%S+)%s*(%S*)$")
+	local objWord, objArg = msg:match("^(%S+)%s*(.-)$")
 	if objWord == "objectives" or objWord == "obj" then
 		local objectives = ns:GetModule("objectives")
 		if objectives then objectives:Slash(objArg) end

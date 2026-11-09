@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.2.1", date = "2026-11-09", heads = { [1] = "Fixed", [4] = "New", }, items = {
+		"|cff6e2c0aQuests from other zones no longer leak in|r: a quest's zone header in the quest log decides where it's listed (\"Excavation Site: Wetlands\" counts as Wetlands). The game's \"travel this way\" and map-indicator pins no longer pull in Duskwood quests in Stormwind or Wetlands quests in Ironforge, in Quests or in Ready to Turn In.",
+		"|cff6e2c0aReady to Turn In drops unpinned quests from other zones|r, and every ready quest leaves the Quests list.",
+		"|cff6e2c0aReady to Turn In's quest icon is the game's own|r, the same size and look as the Quests list's: click to select the quest, click again to clear it. Its collapse button is the Quests header's.",
+		"|cff6e2c0aDungeon quests only in their dungeon|r: outside, they're hidden unless pinned; inside a dungeon only its own quests (and pinned ones) are listed.",
+		"|cff6e2c0a/valhalla objectives why [questID]|r tells you where Valhalla thinks you are and why each quest is listed or not.",
+	} },
 	{ version = "v0.2.0", date = "2026-11-09", heads = { [1] = "New", }, items = {
 		"|cff6e2c0aAll Objectives by zone|r: the Quests section lists this zone's quests (in a capital, the city's and its surrounding zone's), lowest level first. It changes only once you've landed or arrived, never in combat.",
 		"|cff6e2c0aReady to Turn In|r: a section of its own at the bottom of All Objectives for this zone's quests that are ready to hand in. Click one to select it and open it.",
