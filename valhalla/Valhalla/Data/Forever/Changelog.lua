@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.1.0", date = "2026-11-09", heads = { [1] = "New", }, items = {
+		"|cff6e2c0aValhalla|r: Odysseaus's own fork of OpenMap v0.8.2 by OpenMap contributors (MIT). Its own name, settings (ValhallaDB), /valhalla and /vh, key bindings and windows. The notes below are OpenMap's.",
+	} },
 	{ version = "v0.8.2", date = "2026-11-08", heads = { [1] = "Improved", [2] = "Fixed", }, items = {
 		"|cff6e2c0aPanning no longer hitches|r: the map set up to 300 textures' files in a single frame where a pan brought new ground into view, and each set is a load and an upload, so that frame showed as a hitch of about 35 ms. It sets 60 a frame now; the art still fades in, a few frames later.",
 		"|cff6e2c0aThe map no longer stalls a moment after it opens|r: since 0.8.0 OpenMap keeps the map's art loaded while it's closed, then let go of it all in one frame a second into the opening, which the game unloaded at once (about a second's freeze). It now lets go of it a little at a time.",

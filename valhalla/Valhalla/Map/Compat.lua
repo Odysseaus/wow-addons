@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
--- Other world map addons, side by side with OpenMap. On the stitched map the map art and the
--- view are OpenMap's; everything else of theirs keeps working.
+-- Other world map addons, side by side with Valhalla. On the stitched map the map art and the
+-- view are Valhalla's; everything else of theirs keeps working.
 --   * their map art there is hidden while the stitched map shows, and back on other maps
 --     (dungeons, battlegrounds): High Fidelity World Map's minimap tiles and its blend button,
 --     BetterMaps' terrain and caves (under the stitched art: drawn for nothing), HiddenMaps'
@@ -12,11 +12,11 @@
 --     in combat they wait (a frame level change on the map is restricted then: PR #22, Ironship's)
 --     and are lifted as it ends
 --   * their view changes (zoom remembered per map, keep centred, a jump into a cave) and their
---     zoom steps past OpenMap's deepest don't apply there (WorldMap.lua)
+--     zoom steps past Valhalla's deepest don't apply there (WorldMap.lua)
 --   * the zone label, the coordinates CVars and the game's map fade are set again after theirs:
---     Leatrix Maps and OpenMap both replace the label's script at login (theirs reads the map
+--     Leatrix Maps and Valhalla both replace the label's script at login (theirs reads the map
 --     underneath, not the view), and either may turn Blizzard's coordinates or fade back on
---   * Move Any: the map window is its to move and size; OpenMap's title bar, grips and saved
+--   * Move Any: the map window is its to move and size; Valhalla's title bar, grips and saved
 --     place stand down (Window.lua)
 --   * what still clashes, their window options, is named once at login, in their own words
 --------------------------------------------------------------------------------
@@ -64,7 +64,7 @@ end
 
 -- Azeroth Tripview's live ships and docks: unnamed frames on the canvas at fixed levels (2400, 2500),
 -- each holding its icon buttons (a .face, and an .arrow or a .label): kept above the stitched art,
--- wherever that ends. (Its route dots, under the map's own pins, stay under the art: OpenMap's routes
+-- wherever that ends. (Its route dots, under the map's own pins, stay under the art: Valhalla's routes
 -- are there.) Where its ships show is its own doing: the map underneath only (docs/api.md)
 local function TripviewLayers()
 	local top = S.artTop
@@ -172,7 +172,7 @@ local function OnCVar(_, _, name, value)
 	elseif (name == "worldmapshowplayercoords" or name == "worldmapshowcursorcoords") and value ~= "0" and mod.db.coords then Reassert() end
 end
 
--- once, at login: the options of theirs that still fight OpenMap's window or coordinates
+-- once, at login: the options of theirs that still fight Valhalla's window or coordinates
 local function Warn()
 	local loaded = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
 	if not loaded then return end
@@ -184,10 +184,10 @@ local function Warn()
 		end
 		if lea.ShowCoords == "On" and mod.db.coords then names[#names + 1] = "Show coordinates" end
 		if #names > 0 then
-			ns:Print(L["Leatrix Maps: turn off %s there; OpenMap does the same for its map."]:format(table.concat(names, ", ")))
+			ns:Print(L["Leatrix Maps: turn off %s there; Valhalla does the same for its map."]:format(table.concat(names, ", ")))
 		end
 	end
-	-- (not checked against OpenMap yet: both change the map's zoom)
+	-- (not checked against Valhalla yet: both change the map's zoom)
 	for addon, title in pairs({ Mapster = "Mapster", Magnify = "Magnify" }) do
 		if loaded(addon) then
 			ns:Print(L["%s is also changing the world map. Turn off its world map options (or the addon) so the two don't fight."]:format(title))

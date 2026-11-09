@@ -6,7 +6,7 @@
 -- On a dungeon's map, a card of what's in it: its bosses (the game's list, in its order) and, with
 -- Questie, the quests for it. Questie knows no places inside dungeons, so they're listed, not pinned;
 -- the game's own boss pins show by themselves where the client has them (its encounter journal).
--- /openmap entrance <name>, standing in a portal: the line for tools/map-data/build.py's ENTRANCES.
+-- /valhalla entrance <name>, standing in a portal: the line for tools/map-data/build.py's ENTRANCES.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -23,7 +23,7 @@ d.dungeonCard = true            -- the card open (false: folded to its title)
 d.dungeonLevels = true          -- each entrance's level range under its icon
 d.dungeonHints = 0              -- dungeon maps opened with the how-to-leave hint (it shows for the first few)
 d.dungeonTab = "floors"         -- the dungeon map's side panel: floors, bosses, quests or loot
-d.entrances = {}                -- lines /openmap entrance recorded, to paste into build.py
+d.entrances = {}                -- lines /valhalla entrance recorded, to paste into build.py
 
 local LOOK = {
 	dungeon = { atlas = "dungeon", texture = "Interface\\Minimap\\ObjectIcons", size = 26 },
@@ -272,15 +272,15 @@ local function Wheel(delta)
 end
 
 local function BuildView()
-	view = CreateFrame("Frame", "OpenMapDungeonView", sc)
+	view = CreateFrame("Frame", "ValhallaDungeonView", sc)
 	view:SetAllPoints(sc)
-	view:SetFrameLevel(math.min(sc:GetFrameLevel() + 8800, 9800))   -- (over the map and its icons; under OpenMap's menu and card)
+	view:SetFrameLevel(math.min(sc:GetFrameLevel() + 8800, 9800))   -- (over the map and its icons; under Valhalla's menu and card)
 	view:EnableMouse(true)
 	view:EnableMouseWheel(true)
 	view:SetClipsChildren(true)
 	-- (the gamepad's cursor presses its tabs and buttons, and A on it isn't the map's under it: Gamepad.lua)
 	mod.padRoots[#mod.padRoots + 1] = view
-	tinsert(UISpecialFrames, "OpenMapDungeonView")
+	tinsert(UISpecialFrames, "ValhallaDungeonView")
 	local bg = view:CreateTexture(nil, "BACKGROUND")
 	bg:SetAllPoints()
 	bg:SetColorTexture(0.05, 0.04, 0.03, 0.96)
@@ -306,7 +306,7 @@ local function BuildView()
 		or L["There's no map of this dungeon to show here."])
 	view.blankText:Hide()
 	-- who drew a map we didn't get from the game (Data/DungeonDrawn.lua): small, at the picture's foot,
-	-- in the middle (its corners have OpenMap's edge tabs, or its button)
+	-- in the middle (its corners have Valhalla's edge tabs, or its button)
 	local over = CreateFrame("Frame", nil, view)
 	over:SetAllPoints(view.port)
 	over:SetFrameLevel(view:GetFrameLevel() + 20)   -- (over the picture, however far in)
@@ -896,7 +896,7 @@ local function FaceTab(b, turn, on)
 	if on ~= nil then b.selected:SetShown(on) end
 	if not b.icon then return end
 	if b.fill and b.icon.square ~= false then
-		-- (OpenMap's own: the picture filling the face, cut to its shape; the face's middle is nearer the flat side)
+		-- (Valhalla's own: the picture filling the face, cut to its shape; the face's middle is nearer the flat side)
 		if not b.mask then
 			b.mask = b:CreateMaskTexture()
 			if C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(TAB_MASK) then
@@ -944,10 +944,10 @@ end
 -- the side panel's place: in the quest log while it's open (its own tab beside the log's, picked as
 -- the dungeon's map opens), else put away with it. Never Blizzard's log's own state: only frames of ours
 local DockNow
-local railKnew                  -- whether OpenMap's tabs last made room for these
+local railKnew                  -- whether Valhalla's tabs last made room for these
 Dock = function()
 	DockNow()
-	-- (OpenMap's own tabs keep room for these over them while they show, Panel.lua: told when that changes)
+	-- (Valhalla's own tabs keep room for these over them while they show, Panel.lua: told when that changes)
 	local shown = mod.DungeonTabsShown()
 	if shown ~= railKnew and mod.RefreshRail then
 		railKnew = shown
@@ -988,7 +988,7 @@ DockNow = function()
 end
 
 -- the tabs, low down inside the map's right edge (the quest log's left while it's open), turned to sit
--- flat to it; past the end of OpenMap's own tabs when they're on that edge too (Panel.lua). Shown with
+-- flat to it; past the end of Valhalla's own tabs when they're on that edge too (Panel.lua). Shown with
 -- the log put away too: one brings it back, at that tab
 PlaceTabs = function(open)
 	local tabs, log = view.sideTabs, map.QuestLog
@@ -1002,7 +1002,7 @@ PlaceTabs = function(open)
 	FaceTabs("right", open)
 	tabs:Show()
 end
--- (OpenMap's tabs grew or moved: these go with them)
+-- (Valhalla's tabs grew or moved: these go with them)
 function mod.PlaceDungeonTabs()
 	if view and view:IsShown() and not view.leaving then
 		local log = map.QuestLog
@@ -1054,14 +1054,14 @@ local function OpenView(inst, pin)
 		view.hint:Hide()
 	end
 	RefreshCard()                                 -- (fills the side panel too: once, not twice)
-	if t0 then mod.dungeonOpenMs = debugprofilestop() - t0 end   -- (/openmap status)
+	if t0 then mod.dungeonOpenMs = debugprofilestop() - t0 end   -- (/valhalla status)
 	return true
 end
 function mod.DungeonViewShown() return view and view:IsShown() or false end
 
 local function NeedRoll() return SlashCmdList and SlashCmdList.NEEDROLL end
 
--- (in combat with the gamepad's UI the game's own map isn't changed by OpenMap: WorldMap.lua's
+-- (in combat with the gamepad's UI the game's own map isn't changed by Valhalla: WorldMap.lua's
 -- mod.PadCombat; once a while, said why)
 local padSaid = 0
 local function PadWaits()
@@ -1125,7 +1125,7 @@ local function Open(inst, pin)
 	if PadWaits() then return end
 	local u, v, zoom = mod.ViewNow()
 	returnTo = u and { u, v, zoom, maps = MapsOf(id) } or nil
-	S.OpenMap(id)
+	S.Valhalla(id)
 end
 
 -- the stitched map is put up again (WorldMap.lua's view reset): out of a dungeon's map, the world as
@@ -1156,7 +1156,7 @@ function mod.OpenAwayMap(mapID)
 	local u, v, zoom = mod.ViewNow()
 	away[mapID] = true
 	returnTo = u and { u, v, zoom, maps = MapsOf(mapID) } or nil
-	S.OpenMap(mapID)
+	S.Valhalla(mapID)
 	return true
 end
 
@@ -1208,12 +1208,12 @@ local function Enter(pin)
 end
 
 local function Chooser()
-	chooser = CreateFrame("Frame", "OpenMapDungeonChooser", map)
+	chooser = CreateFrame("Frame", "ValhallaDungeonChooser", map)
 	chooser:SetFrameStrata("DIALOG")
 	chooser:EnableMouse(true)
 	chooser:SetClampedToScreen(true)
 	chooser.pad = { Look:Dropdown(chooser) }      -- (the game's own dropdowns' look)
-	tinsert(UISpecialFrames, "OpenMapDungeonChooser")
+	tinsert(UISpecialFrames, "ValhallaDungeonChooser")
 	chooser.rows = {}
 	chooser:SetScript("OnShow", function(self) self:RegisterEvent("GLOBAL_MOUSE_DOWN") end)
 	chooser:SetScript("OnHide", function(self) self:UnregisterEvent("GLOBAL_MOUSE_DOWN") end)
@@ -1878,7 +1878,7 @@ end
 
 mod.RefreshDungeonCard = function() Recolour() RefreshCard() FillSide() end   -- (settings changed: mod:Refresh)
 
--- /openmap dungeons: which map each entrance opens (none: the client has no map of it by that name)
+-- /valhalla dungeons: which map each entrance opens (none: the client has no map of it by that name)
 function mod:DungeonDiag()
 	local found, total = 0, 0
 	for _, g in ipairs(Places().instances or {}) do
@@ -1894,13 +1894,13 @@ function mod:DungeonDiag()
 end
 
 --------------------------------------------------------------------------------
--- /openmap entrance <name>: where you stand, as the line for build.py's ENTRANCES
+-- /valhalla entrance <name>: where you stand, as the line for build.py's ENTRANCES
 --------------------------------------------------------------------------------
 
 function mod:Entrance(name)
 	name = name and strtrim(name) or ""
 	if name == "" then
-		ns:Print(L["Stand in the portal and say which: /openmap entrance Dire Maul - East (the name as OpenMap lists it)."])
+		ns:Print(L["Stand in the portal and say which: /valhalla entrance Dire Maul - East (the name as Valhalla lists it)."])
 		return
 	end
 	local mapID = C_Map.GetBestMapForUnit and Safe.Call(C_Map.GetBestMapForUnit, "player")
@@ -1927,7 +1927,7 @@ function mod:Entrance(name)
 	local line = ('"%s": [(%d, %.1f, %.1f)],'):format(name, cont, best[1], best[2])
 	tinsert(mod.db.entrances, line)
 	ns:Print(line)
-	ns:Print(L["Saved too (OpenMapDB: worldmap, entrances) once you /reload or log out."])
+	ns:Print(L["Saved too (ValhallaDB: worldmap, entrances) once you /reload or log out."])
 end
 
 --------------------------------------------------------------------------------
@@ -1964,7 +1964,7 @@ end
 -- map read each floor's 12 tiles again (the floor shown and the Floors tab's pictures of every floor:
 -- 84 files in Shadowfang Keep), a second or two each time. Inside a dungeon its floors' files are
 -- drawn on a frame that stays shown, a pixel across at almost no alpha (as Extras.lua keeps the world
--- map's art), a few a frame so going in doesn't hitch; let go on the way out. /openmap warm: off too
+-- map's art), a few a frame so going in doesn't hitch; let go on the way out. /valhalla warm: off too
 local HOLD_STEP = 6             -- files set a frame
 local holdFrame, holdTex, holdFiles, holdNext = nil, {}, {}, 1
 local function HoldStep(self)
@@ -2062,7 +2062,7 @@ function mod:SetupDungeons(worldMap)
 			local inst = InstanceHere()
 			if not inst then return end
 			local id = DungeonMap(inst)
-			if not id then OpenView(inst, nil) elseif map:GetMapID() ~= id then S.OpenMap(id) end
+			if not id then OpenView(inst, nil) elseif map:GetMapID() ~= id then S.Valhalla(id) end
 		end)
 	end)
 	map:HookScript("OnHide", function()

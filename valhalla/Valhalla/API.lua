@@ -1,18 +1,18 @@
 --------------------------------------------------------------------------------
--- OpenMapAPI: for other addons (docs/api.md). OpenMapAPI.version goes up when something is added;
--- nothing in it is changed or taken away without a new major version (OpenMapAPI.major).
--- Read-only, plus "add your own": nothing here lets another addon change OpenMap's own settings
+-- ValhallaAPI: for other addons (docs/api.md). ValhallaAPI.version goes up when something is added;
+-- nothing in it is changed or taken away without a new major version (ValhallaAPI.major).
+-- Read-only, plus "add your own": nothing here lets another addon change Valhalla's own settings
 -- or state. Every function is safe to call before the map has opened (it returns nil then).
 --
--- Positions: `u, v` are a point on OpenMap's stitched Azeroth, 0..1 across and down (the same
+-- Positions: `u, v` are a point on Valhalla's stitched Azeroth, 0..1 across and down (the same
 -- space as the in-game report codes); `x, y` a point on a uiMap, 0..1, as Blizzard's map APIs.
 --
--- Callbacks (CallbackHandler-1.0: OpenMapAPI.RegisterCallback(owner, event, method)):
---   "OpenMap_StitchedChanged" (stitched)   the map switched between OpenMap's and Blizzard's own
---   "OpenMap_ViewChanged" (u, v, zoom)     the stitched view moved (a few times a second at most)
---   "OpenMap_DungeonMapShown" (info)       a dungeon's map is up: { mapID, instances = { { name,
+-- Callbacks (CallbackHandler-1.0: ValhallaAPI.RegisterCallback(owner, event, method)):
+--   "Valhalla_StitchedChanged" (stitched)   the map switched between Valhalla's and Blizzard's own
+--   "Valhalla_ViewChanged" (u, v, zoom)     the stitched view moved (a few times a second at most)
+--   "Valhalla_DungeonMapShown" (info)       a dungeon's map is up: { mapID, instances = { { name,
 --                                          minLevel, maxLevel, raid, bosses = { name, ... } } } }
---   "OpenMap_DungeonMapHidden" ()          and it went
+--   "Valhalla_DungeonMapHidden" ()          and it went
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -20,7 +20,7 @@ local S = ns.MapStitch
 local mod = ns:GetModule("worldmap")
 
 local API = { major = 1, version = 4 }
-OpenMapAPI = API
+ValhallaAPI = API
 
 local CBH = LibStub and LibStub("CallbackHandler-1.0", true)
 local events = CBH and CBH:New(API, "RegisterCallback", "UnregisterCallback", "UnregisterAllCallbacks")
@@ -32,7 +32,7 @@ local VIEW_GAP = 0.15           -- seconds between ViewChanged callbacks (the la
 -- Where things are
 --------------------------------------------------------------------------------
 
--- whether the world map is showing OpenMap's stitched map now
+-- whether the world map is showing Valhalla's stitched map now
 function API.IsStitched() return mod.IsStitched and mod.IsStitched() or false end
 
 -- a point on a uiMap (0..1) on the stitched world, and back; nil where the map isn't part of it
@@ -103,13 +103,13 @@ end
 local toggles = {}              -- { owner, id, label, icon, get, set, tab, section }
 local sections = {}             -- owner -> fn
 
--- a switch of yours in OpenMap's menu: spec = { id, label, get = fn() -> bool, set = fn(bool),
+-- a switch of yours in Valhalla's menu: spec = { id, label, get = fn() -> bool, set = fn(bool),
 -- icon = texture path or fileID (optional), tab = "show" | "look" | "more" (default "show"),
--- section = a heading (default "Other addons") }. It can be starred onto the map like OpenMap's own.
+-- section = a heading (default "Other addons") }. It can be starred onto the map like Valhalla's own.
 function API.RegisterMenuToggle(owner, spec)
 	if type(owner) ~= "string" or type(spec) ~= "table" or type(spec.id) ~= "string" or type(spec.label) ~= "string"
 		or type(spec.get) ~= "function" or type(spec.set) ~= "function" then
-		error("OpenMapAPI.RegisterMenuToggle(owner, { id, label, get, set [, icon, tab, section] })", 2)
+		error("ValhallaAPI.RegisterMenuToggle(owner, { id, label, get, set [, icon, tab, section] })", 2)
 	end
 	local tab = (spec.tab == "look" or spec.tab == "more") and spec.tab or "show"
 	for i = #toggles, 1, -1 do if toggles[i].owner == owner and toggles[i].id == spec.id then tremove(toggles, i) end end
@@ -122,7 +122,7 @@ end
 -- text or colour codes; 40 at most), or nil for none. `info` is as DungeonMapShown's.
 function API.RegisterDungeonSection(owner, fn)
 	if type(owner) ~= "string" or (fn ~= nil and type(fn) ~= "function") then
-		error("OpenMapAPI.RegisterDungeonSection(owner, fn(info) -> title, lines)", 2)
+		error("ValhallaAPI.RegisterDungeonSection(owner, fn(info) -> title, lines)", 2)
 	end
 	sections[owner] = fn
 	if mod.RefreshDungeonCard then mod.RefreshDungeonCard() end
@@ -137,7 +137,7 @@ function API.RegisterTownsfolkProvider(owner, provider)
 	if type(owner) ~= "string" or (provider ~= nil and (type(provider) ~= "table" or type(provider.db) ~= "table"
 		or type(provider.zones) ~= "table" or type(provider.db.QueryNPCSingle) ~= "function"
 		or type(provider.db.NPCPointers) ~= "table" or type(provider.zones.GetUiMapIdByAreaId) ~= "function")) then
-		error("OpenMapAPI.RegisterTownsfolkProvider(owner, { db = { NPCPointers, npcFlags, QueryNPCSingle [, QueryObjectSingle] }, zones = { GetUiMapIdByAreaId } [, mailboxes] })", 2)
+		error("ValhallaAPI.RegisterTownsfolkProvider(owner, { db = { NPCPointers, npcFlags, QueryNPCSingle [, QueryObjectSingle] }, zones = { GetUiMapIdByAreaId } [, mailboxes] })", 2)
 	end
 	if mod.SetTownsfolkProvider then mod.SetTownsfolkProvider(provider) end
 end
@@ -184,7 +184,7 @@ mod.OnStitchedChanged = function(on)
 	on = on and true or false
 	if on ~= wasStitched then
 		wasStitched = on
-		Fire("OpenMap_StitchedChanged", on)
+		Fire("Valhalla_StitchedChanged", on)
 	end
 end
 
@@ -193,7 +193,7 @@ local function SendView()
 	viewWaiting = false
 	viewLast = GetTime()
 	local u, v, zoom = API.GetView()
-	if u then Fire("OpenMap_ViewChanged", u, v, zoom) end
+	if u then Fire("Valhalla_ViewChanged", u, v, zoom) end
 end
 mod.OnViewMoved = function()
 	if viewWaiting or not events then return end
@@ -204,5 +204,5 @@ mod.OnViewMoved = function()
 end
 
 mod.OnDungeonMap = function(info)
-	if info then Fire("OpenMap_DungeonMapShown", info) else Fire("OpenMap_DungeonMapHidden") end
+	if info then Fire("Valhalla_DungeonMapShown", info) else Fire("Valhalla_DungeonMapHidden") end
 end

@@ -2,7 +2,7 @@
 -- What's new: the latest versions' notes (Data/Changelog.lua, made from CHANGELOG.md) in a window
 -- laid out like the quest log: the versions listed on the log's dark page (each with how many
 -- changes it brought), the one picked set out on a quest's parchment, Newer and Older to step
--- through them. From the OpenMap menu, Options or /openmap news. After an update the OpenMap button
+-- through them. From the Valhalla menu, Options or /valhalla news. After an update the Valhalla button
 -- and the menu's What's new glow, and a line in chat says so, until the window has been opened once.
 --------------------------------------------------------------------------------
 
@@ -23,7 +23,7 @@ local GOLD = { 1, 0.82, 0 }
 -- (Morpheus has the Latin alphabet only: the client's own font in Korean, Chinese and Russian)
 local NON_LATIN = { koKR = true, zhCN = true, zhTW = true, ruRU = true }
 local TITLE_FONT = NON_LATIN[GetLocale and GetLocale() or ""] and STANDARD_TEXT_FONT or "Fonts\\MORPHEUS.TTF"
-local URL = "https://github.com/openmap-world/openmap"
+local URL = "https://github.com/Odysseaus/wow-addons"
 local MONTHS = { "January", "February", "March", "April", "May", "June", "July", "August", "September",
 	"October", "November", "December" }
 
@@ -177,7 +177,7 @@ end
 
 local function Build()
 	local log = ns.MapChangelog or {}
-	frame = CreateFrame("Frame", "OpenMapNews", UIParent)
+	frame = CreateFrame("Frame", "ValhallaNews", UIParent)
 	if mod.padRoots then mod.padRoots[#mod.padRoots + 1] = frame end   -- (the gamepad's cursor presses its buttons: Gamepad.lua)
 	frame:SetSize(W, H)
 	frame:SetPoint("CENTER")
@@ -192,8 +192,8 @@ local function Build()
 	local fit = math.min(1, (UIParent:GetHeight() - 60) / H, (UIParent:GetWidth() - 60) / W)
 	frame:SetScale(fit)
 	-- (the map window's own frame, its title bar and X)
-	local top = Look:Window(frame, L["What's new in OpenMap"] .. "  |cff998866" .. ns.version .. "|r")
-	tinsert(UISpecialFrames, "OpenMapNews")
+	local top = Look:Window(frame, L["What's new in Valhalla"] .. "  |cff998866" .. ns.version .. "|r")
+	tinsert(UISpecialFrames, "ValhallaNews")
 
 	-- along the top, as the quest log's count: how many versions, how many changes
 	local changes = 0
@@ -233,7 +233,7 @@ local function Build()
 	local head = Font(list:CreateFontString(nil, "OVERLAY"), TITLE_FONT, 18)
 	head:SetPoint("TOPLEFT", 14, -14)
 	head:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
-	head:SetText("OpenMap")
+	head:SetText("Valhalla")
 	local headCount = Font(list:CreateFontString(nil, "OVERLAY"), STANDARD_TEXT_FONT, 12)
 	headCount:SetPoint("RIGHT", list, "TOPRIGHT", -14, -24)
 	headCount:SetTextColor(0.7, 0.62, 0.5)
@@ -346,7 +346,7 @@ function mod:SetupNews()
 		mod.db.newsSeen = newest                    -- (a fresh install: nothing to tell)
 	elseif mod.NewsUnseen() then
 		C_Timer.After(6, function()
-			if mod.NewsUnseen() then ns:Print(L["Updated to %s: see What's new in the OpenMap menu."], ns.version) end
+			if mod.NewsUnseen() then ns:Print(L["Updated to %s: see What's new in the Valhalla menu."], ns.version) end
 		end)
 	end
 end

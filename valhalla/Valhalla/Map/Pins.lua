@@ -1,10 +1,10 @@
 --------------------------------------------------------------------------------
 -- Map pins: as many as you like, each with a note and a colour, kept for every character
--- (OpenMapDB: worldmap -> pins). Ctrl-click the map, or the menu's Drop a pin, adds one (followed:
+-- (ValhallaDB: worldmap -> pins). Ctrl-click the map, or the menu's Drop a pin, adds one (followed:
 -- Blizzard's waypoint and its arrow, and TomTom's; Nav.lua) and opens its note; click a pin to
--- change its note or colour, follow it, share it or delete it. The menu's Pins (/openmap pins)
+-- change its note or colour, follow it, share it or delete it. The menu's Pins (/valhalla pins)
 -- lists them all.
--- Sharing: with your group or guild, or whispered to your target, as addon messages only OpenMap
+-- Sharing: with your group or guild, or whispered to your target, as addon messages only Valhalla
 -- reads (whoever gets them is asked first; a note arrives as plain text, cut short); or as a code
 -- to copy and paste anywhere, which the list's Import adds.
 -- A pin: { id, map (uiMapID), x, y (on that map, 0..1), note, color (COLORS), from (who shared
@@ -22,8 +22,8 @@ mod.defaults.pinsAt = false     -- the Pins list's place once dragged: { point, 
 mod.defaults.ctrlClickPin = true -- Ctrl-click on the map drops a pin (off: another addon's Ctrl-click, Map Pin Enhanced's)
 mod.defaults.pinsHidden = false -- your pins off the map (right-click Pins; the list still has them)
 
-local PREFIX = "OpenMap"        -- (its addon messages)
-local CODE = "OMPINS1:"         -- (a code of pins, to paste)
+local PREFIX = "Valhalla"        -- (its addon messages)
+local CODE = "VHPINS1:"         -- (a code of pins, to paste)
 local NOTE_MAX = 160            -- characters of a note
 local SHARE_MAX = 100           -- pins from one share, at most
 local SEND_GAP = 0.3            -- seconds between messages sent (the game holds back a burst)
@@ -232,7 +232,7 @@ local function Share(pins, to)
 	if not channel or not (C_ChatInfo and C_ChatInfo.SendAddonMessage) or #pins == 0 then return end
 	for _, p in ipairs(pins) do queue[#queue + 1] = { Message(p), channel, target } end
 	sender:Show()
-	ns:Print(L["Sharing %d map pin(s) with %s (players with OpenMap are asked whether to add them)."], #pins,
+	ns:Print(L["Sharing %d map pin(s) with %s (players with Valhalla are asked whether to add them)."], #pins,
 		target or SHARE_TO[to] or "?")
 end
 
@@ -284,7 +284,7 @@ end
 -- pins someone shares: gathered for a moment after their last, then you're asked about them all
 local incoming = {}             -- sender -> { from, pins, at }
 local asking = false
-StaticPopupDialogs.OPENMAP_PINS_SHARED = {
+StaticPopupDialogs.VALHALLA_PINS_SHARED = {
 	text = "%s",
 	button1 = L["Add them"],
 	button2 = L["Ignore"],
@@ -304,7 +304,7 @@ local function Ask(batch)
 	end
 	if #batch.pins > 3 then lines[#lines + 1] = L["... and %d more"]:format(#batch.pins - 3) end
 	asking = true
-	StaticPopup_Show("OPENMAP_PINS_SHARED", L["%s shared %d map pin(s) with you:"]:format(batch.from, #batch.pins)
+	StaticPopup_Show("VALHALLA_PINS_SHARED", L["%s shared %d map pin(s) with you:"]:format(batch.from, #batch.pins)
 		.. "\n|cffffffff" .. table.concat(lines, "\n") .. "|r", nil, batch)
 end
 
@@ -343,14 +343,14 @@ end
 -- a code to copy (Ctrl-C), or a box to paste one into (Import)
 local function CodeBox(text)
 	if not codeFrame then
-		codeFrame = CreateFrame("Frame", "OpenMapPinsCode", UIParent)
+		codeFrame = CreateFrame("Frame", "ValhallaPinsCode", UIParent)
 		if mod.padRoots then mod.padRoots[#mod.padRoots + 1] = codeFrame end   -- (the gamepad's cursor presses its buttons: Gamepad.lua)
 		codeFrame:SetPoint("CENTER")
 		codeFrame:SetFrameStrata("DIALOG")
 		codeFrame:EnableMouse(true)
 		local top, title = Look:Window(codeFrame, "")   -- (the map window's own frame, its title bar and X)
 		codeFrame:SetSize(560, 150 + top)
-		tinsert(UISpecialFrames, "OpenMapPinsCode")
+		tinsert(UISpecialFrames, "ValhallaPinsCode")
 		codeFrame.title = title
 		local scroll = CreateFrame("ScrollFrame", nil, codeFrame, "UIPanelScrollFrameTemplate")
 		scroll:SetPoint("TOPLEFT", 16, -10 - top)
@@ -380,7 +380,7 @@ local function CodeBox(text)
 	end
 	codeFrame.text = text
 	if text then
-		codeFrame.title:SetText(L["Map pins: Ctrl-C to copy, then paste them anywhere (another player's OpenMap: Pins, Import)."])
+		codeFrame.title:SetText(L["Map pins: Ctrl-C to copy, then paste them anywhere (another player's Valhalla: Pins, Import)."])
 		codeFrame.box:SetText(text)
 	else
 		codeFrame.title:SetText(L["Paste a code of map pins here (Ctrl-V), then Add the pins."])
@@ -448,7 +448,7 @@ mod.OnSketchChanged = function() ShowDrawing() end
 
 local function Editor()
 	if editor then return editor end
-	editor = CreateFrame("Frame", "OpenMapPinEditor", UIParent)
+	editor = CreateFrame("Frame", "ValhallaPinEditor", UIParent)
 	editor:SetFrameStrata("DIALOG")
 	editor:EnableMouse(true)
 	-- the map window's own frame, its title bar and X (closing keeps the note, as Enter does)
@@ -532,9 +532,9 @@ local function Editor()
 	share:SetText(L["Share:"])
 	local x = 60
 	for _, s in ipairs({
-		{ "group", L["Group"], L["Your party or raid (those with OpenMap are asked whether to add it)."] },
-		{ "guild", L["Guild"], L["Your guild (those with OpenMap are asked whether to add it)."] },
-		{ "target", L["Target"], L["Whispered to your target (if they have OpenMap, they're asked whether to add it)."] },
+		{ "group", L["Group"], L["Your party or raid (those with Valhalla are asked whether to add it)."] },
+		{ "guild", L["Guild"], L["Your guild (those with Valhalla are asked whether to add it)."] },
+		{ "target", L["Target"], L["Whispered to your target (if they have Valhalla, they're asked whether to add it)."] },
 	}) do
 		local b = Button(editor, 62, s[2], function()
 			local p = editor.pin
@@ -552,7 +552,7 @@ local function Editor()
 		if not p then return end
 		p.note = Clean(editor.box:GetText())
 		CodeBox(CodeOf({ p }))
-	end, L["A code to copy and paste anywhere: another player adds it with their OpenMap (Pins, Import)."])
+	end, L["A code to copy and paste anywhere: another player adds it with their Valhalla (Pins, Import)."])
 	code:SetPoint("BOTTOMLEFT", x, 12)
 	-- done: the note and colour kept, the drawing finished
 	local done = Button(editor, 80, L["Done"], function() Close(true) end, L["Keep the pin as it is (Enter, or the X, too)"])
@@ -632,7 +632,7 @@ RefreshList = function()
 end
 
 local function BuildList()
-	list = CreateFrame("Frame", "OpenMapPins", map)
+	list = CreateFrame("Frame", "ValhallaPins", map)
 	mod.padRoots[#mod.padRoots + 1] = list
 	list:SetPoint("TOPRIGHT", sc, "TOPRIGHT", -8, -66)
 	list:SetFrameStrata("DIALOG")
@@ -714,8 +714,8 @@ local function BuildList()
 	menu:SetPoint("BOTTOMLEFT", shareAll, "TOPLEFT", -4, 2)
 	local items = {
 		{ L["As a code"], function() CodeBox(CodeOf(DB().list)) end, L["Every pin as a code to copy and paste anywhere."] },
-		{ L["To your group"], function() Share(DB().list, "group") end, L["Every pin to your party or raid (those with OpenMap are asked whether to add them)."] },
-		{ L["To your guild"], function() Share(DB().list, "guild") end, L["Every pin to your guild (those with OpenMap are asked whether to add them)."] },
+		{ L["To your group"], function() Share(DB().list, "group") end, L["Every pin to your party or raid (those with Valhalla are asked whether to add them)."] },
+		{ L["To your guild"], function() Share(DB().list, "guild") end, L["Every pin to your guild (those with Valhalla are asked whether to add them)."] },
 	}
 	for i, it in ipairs(items) do
 		local row = CreateFrame("Button", nil, menu)
@@ -739,12 +739,12 @@ local function BuildList()
 	-- every pin off the map at once (asked first)
 	Button(list, 60, L["Clear"], function()
 		local n = #DB().list
-		if n > 0 then StaticPopup_Show("OPENMAP_PINS_CLEAR", L["Delete all %d map pins?"]:format(n)) end
+		if n > 0 then StaticPopup_Show("VALHALLA_PINS_CLEAR", L["Delete all %d map pins?"]:format(n)) end
 	end, L["Delete every map pin (you're asked first). One at a time: Alt-click it."]):SetPoint("BOTTOMRIGHT", -16, 12)
 	list:Hide()
 end
 
-StaticPopupDialogs.OPENMAP_PINS_CLEAR = {
+StaticPopupDialogs.VALHALLA_PINS_CLEAR = {
 	text = "%s",
 	button1 = L["Delete"],
 	button2 = CANCEL,

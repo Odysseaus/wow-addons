@@ -3,7 +3,7 @@
 -- shows a zone's quests only on that zone's own map (its QuestDataProvider: MapUtil.
 -- ShouldMapTypeShowQuests), so zoomed out, or over the next zone, there were none until the map
 -- underneath became theirs. Here every stitched map's quests (C_QuestLog.GetQuestsOnMap) are
--- OpenMap's own icons, in the look of Blizzard's (its map legend's); the map underneath keeps
+-- Valhalla's own icons, in the look of Blizzard's (its map legend's); the map underneath keeps
 -- Blizzard's own pins for its quests (and a continent its super-tracked quest's).
 --------------------------------------------------------------------------------
 
@@ -70,7 +70,7 @@ local function Click(pin)
 	end
 	if S.GlideToWorld then S.GlideToWorld(pin.u, pin.v, ZOOM_TO) end
 	-- (in combat with the gamepad's UI, Blizzard's quest details would set the pad's buttons from
-	-- OpenMap's code, which combat blocks: they wait, as a dungeon's map does)
+	-- Valhalla's code, which combat blocks: they wait, as a dungeon's map does)
 	if mod.PadWaits and mod.PadWaits() then return end
 	local log = map and map.QuestLog
 	local details = G("QuestMapFrame_ShowQuestDetails")

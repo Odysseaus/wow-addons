@@ -1,12 +1,12 @@
 --------------------------------------------------------------------------------
--- The map's menu: the OpenMap button in the map's bottom-left corner opens a floating
+-- The map's menu: the Valhalla button in the map's bottom-left corner opens a floating
 -- panel in the map window's own frame (its metal border; bronze edges and rules): search,
 -- the actions (find me, drop a pin, the quest log, report a problem, options), the
 -- checklist of what the map shows, and the deepest zoom. Drag it by its body; it remembers
 -- where it was and whether it was open. A star on an action or a setting puts it on the
--- map as a button of its own, in the row beside the OpenMap button (favourites); the arrow
--- beside the OpenMap button folds that row away and back. Or (tabRail) all of them as tabs at
--- the window's edge, the favourites up from the OpenMap tab: the rail, below.
+-- map as a button of its own, in the row beside the Valhalla button (favourites); the arrow
+-- beside the Valhalla button folds that row away and back. Or (tabRail) all of them as tabs at
+-- the window's edge, the favourites up from the Valhalla tab: the rail, below.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -19,16 +19,16 @@ d.menuPos = false               -- { left, top, screen = true } on the screen on
 d.menuOpen = false
 d.menuTab = "show"              -- the checklist's tab (TABS)
 d.favorites = {}                -- action and row ids, in the order they were starred: a button each on the map
-d.trayOpen = true               -- the favourites' row shown (the arrow beside the OpenMap button folds it)
+d.trayOpen = true               -- the favourites' row shown (the arrow beside the Valhalla button folds it)
 d.trayStarted = false           -- the first favourites given, once (a fresh install's, or one with none yet)
-d.tabRail = true                -- the OpenMap button and the favourites as tabs at the window's edge (off: a row in its bottom-left corner)
-d.mapButtons = true             -- the OpenMap button and the favourites on the map at all (off: none; /openmap opens the menu)
+d.tabRail = true                -- the Valhalla button and the favourites as tabs at the window's edge (off: a row in its bottom-left corner)
+d.mapButtons = true             -- the Valhalla button and the favourites on the map at all (off: none; /valhalla opens the menu)
 local TRAY_START = { "find", "pin", "quill" }
 
 local map, sc, menu, toggle, trayArrow, checks, favBar, tiles, zoomRow, miniRow, opacityRow
 local W, PAD, COL = 500, 16, 226   -- (two columns of COL, 16 apart, inside the padding)
-local BAR_X, BAR_Y = 14, 14     -- the OpenMap button's corner: the map's bottom left (room for its slot's frame)
-local TOGGLE = 36               -- the OpenMap button (an action button's size)
+local BAR_X, BAR_Y = 14, 14     -- the Valhalla button's corner: the map's bottom left (room for its slot's frame)
+local TOGGLE = 36               -- the Valhalla button (an action button's size)
 local FAV = 30                  -- a favourite's button
 local TILE_H = 60               -- an action's tile in the menu (room for a label on two lines)
 local BRONZE = { 0.66, 0.49, 0.28 }
@@ -50,8 +50,8 @@ local function SetIcon(tex, look)
 	if square then tex:SetTexCoord(0.08, 0.92, 0.08, 0.92) end   -- (the spell icons' own frame cut off)
 	return square and true or false
 end
--- OpenMap's own icon (tools/icon/build.py), framed and trimmed as a spell icon is
-local OPENMAP_ICON = { texture = "Interface\\AddOns\\OpenMap\\Media\\Textures\\OpenMapIcon", icon = true }
+-- Valhalla's own icon (tools/icon/build.py), framed and trimmed as a spell icon is
+local VALHALLA_ICON = { texture = "Interface\\AddOns\\Valhalla\\Media\\Textures\\ValhallaIcon", icon = true }
 
 -- Blizzard's action-button frame round `tex` (`size` square): this client's, with its rounded
 -- mask on the icon, else the classic slot's
@@ -166,7 +166,7 @@ local function Actions()
 			run = ToggleQuestLog, lit = QuestLogShown }
 	end
 	list[#list + 1] = { L["Report a problem"], id = "report", icon = Icon("INV_Misc_Note_01"),
-		tip = L["OpenMap is in beta: draw on the map where something looks wrong (a dungeon's map too) and tell us about it."],
+		tip = L["Valhalla is in beta: draw on the map where something looks wrong (a dungeon's map too) and tell us about it."],
 		run = function() mod:ToggleReport() end, lit = function() return mod.IsReporting and mod.IsReporting() end }
 	list[#list + 1] = { L["What's new"], id = "news", icon = Icon("INV_Scroll_03"),
 		tip = L["This version's changes (it glows after an update until you've looked)."],
@@ -280,14 +280,14 @@ local function Rows()
 	rows[#rows + 1] = optRow(L["Zone levels"], "zoneLevels", Icon("Spell_ChargePositive"))
 	rows[#rows + 1] = optRow(L["Coordinates"], "coords", Icon("INV_Misc_Spyglass_03"))
 	rows[#rows + 1] = optRow(L["Buttons as edge tabs"], "tabRail", Icon("INV_Misc_Book_09"))
-	rows[#rows + 1] = row(L["OpenMap button on the map"], "mapButtons", Icon("INV_Misc_Map_01"), function() return db.mapButtons end,
+	rows[#rows + 1] = row(L["Valhalla button on the map"], "mapButtons", Icon("INV_Misc_Map_01"), function() return db.mapButtons end,
 		function(v)
 			db.mapButtons = v
-			if not v then ns:Print(L["The OpenMap button is hidden. Its menu opens with /openmap, the minimap button or the minimap's AddOns list."]) end
+			if not v then ns:Print(L["The Valhalla button is hidden. Its menu opens with /valhalla, the minimap button or the minimap's AddOns list."]) end
 			mod:Refresh()
 			if ns.NotifyOptions then ns.NotifyOptions() end
 		end)
-	rows[#rows + 1] = row(L["Minimap button"], "minimapButton", OPENMAP_ICON, function() return db.minimapButton end,
+	rows[#rows + 1] = row(L["Minimap button"], "minimapButton", VALHALLA_ICON, function() return db.minimapButton end,
 		function(v)
 			db.minimapButton = v
 			if mod.RefreshLauncher then mod.RefreshLauncher() end
@@ -387,7 +387,7 @@ end
 
 -- iconSize: a tile with a face and an edge, its icon that size at the top (a label goes under
 -- it; move icon.slot for elsewhere); none: an action button, the icon filling it
--- classic: the action bar's own slot frame round it (the OpenMap button and the favourites)
+-- classic: the action bar's own slot frame round it (the Valhalla button and the favourites)
 local function Tile(parent, w, h, iconSize, classic)
 	local b = CreateFrame("Button", nil, parent, iconSize and "BackdropTemplate" or nil)
 	b:SetSize(w, h)
@@ -473,8 +473,8 @@ local function MakeStar(parent, onChange)
 	star:SetScript("OnEnter", function(self)
 		self.icon:SetAlpha(1)
 		Tip(self, "ANCHOR_RIGHT", IsFavorite(self.id) and L["Take this button off the map"] or L["Put this on the map as a button"],
-			{ mod.db.tabRail and L["Favourites are tabs at the window's edge, above the OpenMap tab."]
-				or L["Favourites sit in a row beside the OpenMap button, in the map's bottom-left corner."], 0.8, 0.8, 0.8 })
+			{ mod.db.tabRail and L["Favourites are tabs at the window's edge, above the Valhalla tab."]
+				or L["Favourites sit in a row beside the Valhalla button, in the map's bottom-left corner."], 0.8, 0.8, 0.8 })
 	end)
 	star:SetScript("OnLeave", function(self)
 		if not IsFavorite(self.id) then self.icon:SetAlpha(0.35) end
@@ -491,7 +491,7 @@ local function SetStar(star, id)
 end
 
 --------------------------------------------------------------------------------
--- The bar: the OpenMap button in the map's bottom-left corner, then a button for each favourite
+-- The bar: the Valhalla button in the map's bottom-left corner, then a button for each favourite
 -- (the arrow beside it folds them away). Lit while it's on; click to use it,
 -- Shift-right-click to take it off the bar.
 --------------------------------------------------------------------------------
@@ -553,13 +553,13 @@ local function FavEnter(self)
 	local off = L["Shift-right-click: take it off the map"]
 	Tip(self, self.tipAnchor or "ANCHOR_TOP", e2[1],
 		e2.run and { e2.tip } or { state == "on" and L["On: click to turn it off"] or L["Off: click to turn it on"] },
-		{ off .. " " .. L["(the stars in the OpenMap menu put buttons here)"], 0.6, 0.6, 0.6 })
+		{ off .. " " .. L["(the stars in the Valhalla menu put buttons here)"], 0.6, 0.6, 0.6 })
 end
 
 --------------------------------------------------------------------------------
 -- The rail (tabRail): the same as tabs on the map's edge, in the look of the quest log's tabs: the
--- OpenMap tab, an arrow by it that folds the favourites away, and a tab for each favourite past it,
--- as many as there's room for. Drag the OpenMap tab anywhere round the inside of the map's edge
+-- Valhalla tab, an arrow by it that folds the favourites away, and a tab for each favourite past it,
+-- as many as there's room for. Drag the Valhalla tab anywhere round the inside of the map's edge
 -- (its right edge is the quest log's left while that's open): the tabs turn to sit flat to that
 -- edge, and the favourites go the way along it there's more room. A dungeon map's two tabs
 -- (Dungeons.lua) are on the right edge, past the rail's end when it's there too.
@@ -568,7 +568,7 @@ end
 d.railPos = false               -- { edge = "right" | "left" | "top" | "bottom", at = 0..1 along it } once dragged
 
 local rail
-local RAIL_MAIN = { 40, 42 }    -- the OpenMap tab: out from the edge, along it (WoW Forever's tab art, a little smaller)
+local RAIL_MAIN = { 40, 42 }    -- the Valhalla tab: out from the edge, along it (WoW Forever's tab art, a little smaller)
 local RAIL_FAV = { 32, 34 }     -- a favourite's
 local RAIL_GAP, RAIL_ARROW = 3, 16
 local RAIL_END = 44             -- kept clear at each end of an edge (the quest log button, the coordinates)
@@ -623,7 +623,7 @@ local function RailTab()
 	return b
 end
 
--- dragging the OpenMap tab: the edge nearest the cursor, and how far along it
+-- dragging the Valhalla tab: the edge nearest the cursor, and how far along it
 local function Drag(self, elapsed)
 	self.wait = (self.wait or 0) + elapsed
 	if self.wait < 0.03 then return end
@@ -657,7 +657,7 @@ local function BuildRail()
 	rail:SetFrameLevel(math.min(sc:GetFrameLevel() + 9300, 9950))   -- (over the map and a dungeon's map)
 	rail:SetScript("OnHide", EndDrag)           -- (the map closed mid-drag)
 	rail.main = RailTab()
-	ShowIcon(rail.main.icon, OPENMAP_ICON)
+	ShowIcon(rail.main.icon, VALHALLA_ICON)
 	rail.main:RegisterForDrag("LeftButton")
 	rail.main:SetScript("OnClick", function(_, button)
 		if rail.dragEnd and GetTime() - rail.dragEnd < 0.3 then return end   -- (the end of a drag, not a click)
@@ -672,11 +672,11 @@ local function BuildRail()
 	end)
 	rail.main:SetScript("OnDragStop", EndDrag)
 	rail.main:SetScript("OnEnter", function(self)
-		Tip(self, self.tipAnchor or "ANCHOR_LEFT", "OpenMap", { L["Search, find me, map pins, the quest log, report a problem, options, and what the map shows."] },
+		Tip(self, self.tipAnchor or "ANCHOR_LEFT", "Valhalla", { L["Search, find me, map pins, the quest log, report a problem, options, and what the map shows."] },
 			{ L["Drag it anywhere round the map's edge."], 0.6, 0.6, 0.6 })
 	end)
 	rail.main:SetScript("OnLeave", GameTooltip_Hide)
-	-- the arrow: the way the favourites go to unfold them, back toward the OpenMap tab to fold them
+	-- the arrow: the way the favourites go to unfold them, back toward the Valhalla tab to fold them
 	rail.arrow = CreateFrame("Button", nil, rail)
 	rail.arrow.icon = rail.arrow:CreateTexture(nil, "ARTWORK")
 	rail.arrow.icon:SetSize(20, 20)
@@ -690,7 +690,7 @@ local function BuildRail()
 	end)
 	rail.arrow:SetScript("OnEnter", function(self)
 		Tip(self, self.tipAnchor or "ANCHOR_LEFT", mod.db.trayOpen and L["Fold your buttons away"] or L["Your buttons"],
-			{ L["The stars in the OpenMap menu put buttons here; Shift-right-click one to take it off."], 0.8, 0.8, 0.8 })
+			{ L["The stars in the Valhalla menu put buttons here; Shift-right-click one to take it off."], 0.8, 0.8, 0.8 })
 	end)
 	rail.arrow:SetScript("OnLeave", GameTooltip_Hide)
 	rail.favs = {}
@@ -707,7 +707,7 @@ RefreshRail = function()
 	local list = {}
 	for _, id in ipairs(mod.db.favorites) do if byId[id] then list[#list + 1] = byId[id] end end
 	local open = mod.db.trayOpen or #list == 0
-	-- the OpenMap tab where it was put, kept off the edge's ends; the favourites the way along it
+	-- the Valhalla tab where it was put, kept off the edge's ends; the favourites the way along it
 	-- there's more room (on the right edge, less a dungeon map's tabs while they show)
 	local half = RAIL_MAIN[2] / 2
 	local s0 = math.max(RAIL_END + half, math.min(len - RAIL_END - half, (pos.at or 0) * len))
@@ -716,7 +716,7 @@ RefreshRail = function()
 	local reach = (dir > 0 and (len - s0) or s0) - RAIL_END - reserve
 	SizeFor(rail.main, edge, RAIL_MAIN)
 	OnEdge(rail.main, edge, s0)
-	local at = half                             -- (from the OpenMap tab's middle to the stack's far end)
+	local at = half                             -- (from the Valhalla tab's middle to the stack's far end)
 	local function Next(f, along)
 		OnEdge(f, edge, s0 + dir * (at + RAIL_GAP + along / 2))
 		at = at + RAIL_GAP + along
@@ -998,12 +998,12 @@ Fill = function()
 end
 
 -- the menu stays where it is on the screen while the map window is dragged about: where you put it,
--- or (not moved yet) where it first opens, above the OpenMap button
+-- or (not moved yet) where it first opens, above the Valhalla button
 local function Place()
 	menu:ClearAllPoints()
 	local p = mod.db.menuPos
 	if p and p.screen then menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", p[1], p[2]) return end
-	-- (beside the OpenMap tab, toward the map's middle from its edge)
+	-- (beside the Valhalla tab, toward the map's middle from its edge)
 	if mod.db.tabRail and rail and rail:IsShown() then
 		local e = rail.edge
 		if e == "right" then menu:SetPoint("BOTTOMRIGHT", rail.main, "BOTTOMLEFT", -6, 0)
@@ -1020,7 +1020,7 @@ local function Place()
 	end
 end
 
--- the OpenMap button: lit while the menu's open, and pulsing while there's news not yet seen (News.lua)
+-- the Valhalla button: lit while the menu's open, and pulsing while there's news not yet seen (News.lua)
 LightToggle = function()
 	if not toggle then return end
 	local news = mod.NewsUnseen and mod.NewsUnseen()
@@ -1170,14 +1170,14 @@ function mod:SetupPanel(worldMap)
 	map, sc = worldMap, worldMap.ScrollContainer
 	local level = math.min(sc:GetFrameLevel() + 9300, 9950)
 
-	-- the OpenMap button, its icon alone, in the bottom-left corner: placed again whenever
+	-- the Valhalla button, its icon alone, in the bottom-left corner: placed again whenever
 	-- Blizzard refreshes its overlay buttons
 	toggle = Tile(map, TOGGLE, TOGGLE, nil, true)
 	toggle:SetFrameLevel(level)               -- (over the window's resize grip there: Window.lua)
-	ShowIcon(toggle.icon, OPENMAP_ICON)
+	ShowIcon(toggle.icon, VALHALLA_ICON)
 	toggle:SetScript("OnClick", function() SetOpen(not menu:IsShown()) end)
 	toggle:SetScript("OnEnter", function(self)
-		Tip(self, "ANCHOR_TOP", "OpenMap", { L["Search, find me, map pins, the quest log, report a problem, options, and what the map shows."] })
+		Tip(self, "ANCHOR_TOP", "Valhalla", { L["Search, find me, map pins, the quest log, report a problem, options, and what the map shows."] })
 	end)
 	toggle:SetScript("OnLeave", GameTooltip_Hide)
 	map:HookScript("OnShow", PlaceToggle)
@@ -1207,7 +1207,7 @@ function mod:SetupPanel(worldMap)
 	end)
 	trayArrow:SetScript("OnEnter", function(self)
 		Tip(self, "ANCHOR_TOP", mod.db.trayOpen and L["Fold your buttons away"] or L["Your buttons"],
-			{ L["The stars in the OpenMap menu put buttons here; Shift-right-click one to take it off."], 0.8, 0.8, 0.8 })
+			{ L["The stars in the Valhalla menu put buttons here; Shift-right-click one to take it off."], 0.8, 0.8, 0.8 })
 	end)
 	trayArrow:SetScript("OnLeave", GameTooltip_Hide)
 	favBar = CreateFrame("Frame", nil, map)
@@ -1222,11 +1222,11 @@ function mod:SetupPanel(worldMap)
 	end
 	RefreshFavorites()
 
-	-- the window's portrait (Blizzard's quest log book): OpenMap's icon, while it's stitching
+	-- the window's portrait (Blizzard's quest log book): Valhalla's icon, while it's stitching
 	local border = map.BorderFrame
 	if border and border.SetPortraitToAsset then
 		local function Portrait()
-			border:SetPortraitToAsset(mod.IsStitched() and "Interface\\AddOns\\OpenMap\\Media\\Textures\\OpenMapIconRound" or "Interface\\QuestFrame\\UI-QuestLog-BookIcon")
+			border:SetPortraitToAsset(mod.IsStitched() and "Interface\\AddOns\\Valhalla\\Media\\Textures\\ValhallaIconRound" or "Interface\\QuestFrame\\UI-QuestLog-BookIcon")
 		end
 		Portrait()
 		map:HookScript("OnShow", Portrait)
@@ -1235,7 +1235,7 @@ function mod:SetupPanel(worldMap)
 	end
 
 	-- the floating menu
-	menu = CreateFrame("Frame", "OpenMapMenu", map, "BackdropTemplate")
+	menu = CreateFrame("Frame", "ValhallaMenu", map, "BackdropTemplate")
 	local pad = mod.padRoots      -- (the gamepad's cursor presses their buttons: Gamepad.lua)
 	pad[#pad + 1], pad[#pad + 2], pad[#pad + 3], pad[#pad + 4] = toggle, trayArrow, favBar, menu
 	menu:SetWidth(W)
@@ -1263,7 +1263,7 @@ function mod:SetupPanel(worldMap)
 	close:SetFrameLevel(menu:GetFrameLevel() + 20)
 	close:SetHitRectInsets(-4, -4, -4, -4)
 	close:SetScript("OnClick", function() SetOpen(false) end)
-	tinsert(UISpecialFrames, "OpenMapMenu")
+	tinsert(UISpecialFrames, "ValhallaMenu")
 	menu:SetScript("OnHide", function()
 		-- (Escape, or the X: closed. The map closing hides it too, but then it opens again with the map)
 		if map:IsShown() then
@@ -1283,7 +1283,7 @@ function mod:SetupPanel(worldMap)
 		title:SetPoint("TOP", header, "TOP", 0, -14)
 		close:SetPoint("TOPRIGHT", -4, -4)
 	end
-	title:SetText("OpenMap |cff998866" .. ns.version .. "|r")
+	title:SetText("Valhalla |cff998866" .. ns.version .. "|r")
 
 	local inner = W - 2 * PAD
 	local y = -titleH - 12
@@ -1402,7 +1402,7 @@ function mod:SetupPanel(worldMap)
 		get = function() return mod.db.iconScale or 1 end,
 		set = function(v) mod.db.iconScale = v mod:Refresh() if ns.NotifyOptions then ns.NotifyOptions() end end,
 		fmt = "%d%%", show = function(v) return math.floor(v * 100 + 0.5) end,
-		tip = L["OpenMap's icons on the map at this size: dungeons, flight masters, boats, townsfolk, your pins. Questie's icons have their own size, in Questie's options."] })
+		tip = L["Valhalla's icons on the map at this size: dungeons, flight masters, boats, townsfolk, your pins. Questie's icons have their own size, in Questie's options."] })
 	menu.extraRows[#menu.extraRows + 1] = made.iconSize
 	for _, s in ipairs({
 		{ "windowScale", L["Map size"], Icon("INV_Misc_Spyglass_02") },
@@ -1451,7 +1451,7 @@ function mod:SetupPanel(worldMap)
 	defaults:SetText(L["Defaults"])
 	defaults:SetScript("OnClick", function() mod:ResetSliders() end)
 	defaults:SetScript("OnEnter", function(self)
-		Tip(self, "ANCHOR_TOP", L["Defaults"], { L["Every slider back to how OpenMap comes: the deepest zoom, the minimap's detail and opacity, and those in Options."] })
+		Tip(self, "ANCHOR_TOP", L["Defaults"], { L["Every slider back to how Valhalla comes: the deepest zoom, the minimap's detail and opacity, and those in Options."] })
 	end)
 	defaults:SetScript("OnLeave", GameTooltip_Hide)
 	sliders:SetHeight(height + 4 + 22 + 4)
@@ -1477,7 +1477,7 @@ function mod:SetupPanel(worldMap)
 	if map:IsShown() and mod.db.menuOpen then SetOpen(true) end
 end
 
--- the menu: OpenMap's settings, opened with the map if it isn't (/openmap, Blizzard's settings page)
+-- the menu: Valhalla's settings, opened with the map if it isn't (/valhalla, Blizzard's settings page)
 function mod:OpenMenu()
 	if not menu then return false end
 	if not map:IsShown() then
@@ -1491,13 +1491,13 @@ end
 
 -- Key bindings (Bindings.xml, the game's Key Bindings > AddOns): an action of the menu's by its id,
 -- opening the map first if it's closed (a player's request: a key for Find me)
--- (in a section of their own, each named OpenMap: ..., so the bindings' search finds them: in the AddOns
+-- (in a section of their own, each named Valhalla: ..., so the bindings' search finds them: in the AddOns
 -- section, under a header, they were hard to find)
 for key, text in pairs({ FIND = L["Find me"], PIN = L["Drop a pin"], PINS = L["Pins"], QUILL = L["Quill"],
 	QUESTLOG = L["Quest log"], MENU = L["The map's menu"] }) do
-	_G["BINDING_NAME_OPENMAP_" .. key] = "OpenMap: " .. text
+	_G["BINDING_NAME_VALHALLA_" .. key] = "Valhalla: " .. text
 end
-function _G.OpenMap_Binding(id)
+function _G.Valhalla_Binding(id)
 	if not (mod.enabled and menu) then return end
 	if id == "menu" then mod:OpenMenu() return end
 	local run

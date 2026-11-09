@@ -26,11 +26,11 @@ local TOP_OFF = 0                -- px of the window's top that may go above the
 local map, handle, grip         -- (grip: both corners' grips)
 local FillScreen, SetupQuestLog, TurnArrows
 local blizzardSize              -- the windowed map's own size, for a reset
-local ours = false              -- OpenMap is moving / sizing the window itself (not to be undone)
+local ours = false              -- Valhalla is moving / sizing the window itself (not to be undone)
 local sizing = false            -- a grip is being dragged: the drag sizes the window, nothing puts it back
-local moveAny = false           -- Move Any moves and sizes the window: OpenMap leaves it be
+local moveAny = false           -- Move Any moves and sizes the window: Valhalla leaves it be
 
--- Move Any loaded, or on to load for this character (it may load after OpenMap sets the window up)
+-- Move Any loaded, or on to load for this character (it may load after Valhalla sets the window up)
 local function MoveAnyOn()
 	local loaded = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
 	if loaded and loaded("MoveAny") then return true end
@@ -104,7 +104,7 @@ function mod:ResetWindow()
 	end
 end
 
--- over the map's icons and what OpenMap lays over them (the dungeon view), under OpenMap's menu
+-- over the map's icons and what Valhalla lays over them (the dungeon view), under Valhalla's menu
 local function OverIcons()
 	return math.min(map.ScrollContainer:GetFrameLevel() + 9000, 9900)
 end
@@ -209,7 +209,7 @@ function mod:SetupWindow(worldMap)
 		end
 		if on then
 			mod.db.eqolNoted = true
-			ns:Print(L["Enhance QoL: if its Mover > World Map is on, turn it off. It and OpenMap both size the map, and the map's scale goes wrong."])
+			ns:Print(L["Enhance QoL: if its Mover > World Map is on, turn it off. It and Valhalla both size the map, and the map's scale goes wrong."])
 		end
 	end
 	grip = {}
@@ -217,7 +217,7 @@ function mod:SetupWindow(worldMap)
 	if not moveAny then
 		map:SetClampedToScreen(true)
 		-- partly off the screen: sideways and down while some of it stays on, never up (its title bar is
-		-- what moves it; /openmap reset or the Look tab's Reset size and place bring it back)
+		-- what moves it; /valhalla reset or the Look tab's Reset size and place bring it back)
 		local function Clamp()
 			local w, h = map:GetWidth(), map:GetHeight()
 			if not (w and h) or w <= 0 or InCombatLockdown() then return end
@@ -309,7 +309,7 @@ function mod:SetupWindow(worldMap)
 	for _, name in ipairs({ "HandleUserActionToggleSidePanel", "HandleUserActionOpenSidePanel", "HandleUserActionCloseSidePanel" }) do
 		if map[name] then
 			hooksecurefunc(map, name, function()
-				if Maximized() then return end      -- (full screen hides it: OpenMap's maxQuestLog keeps that one)
+				if Maximized() then return end      -- (full screen hides it: Valhalla's maxQuestLog keeps that one)
 				local log = map.QuestLog
 				if log then Keep("questLogOpen", log:IsShown() and "1" or "0") end
 			end)
@@ -318,7 +318,7 @@ function mod:SetupWindow(worldMap)
 	-- The map is left a UI panel of the game's, opened and closed by its own panel code. (0.7.0 to 0.7.5
 	-- marked the windowed map `editModeManuallyShown` and put it in UISpecialFrames, to keep it open beside
 	-- an NPC's window. Both are read by the game's code that closes it (HideUIPanel, CloseSpecialWindows),
-	-- and a value OpenMap wrote taints that code: the map holds protected frames (the group members' pin),
+	-- and a value Valhalla wrote taints that code: the map holds protected frames (the group members' pin),
 	-- so in combat its Hide was blocked and neither Escape nor M closed it, players' reports)
 	map:HookScript("OnShow", function() mod.ChatOverMap() end)
 	map:HookScript("OnHide", function() mod.ChatOverMap() end)
@@ -348,7 +348,7 @@ end
 -- The quest log: its list's background is an atlas at its own size, anchored at the top only,
 -- so a window taller than Blizzard's ends it in a line: it's stretched to the list's foot.
 -- Blizzard's full-screen map always hides the quest log (and its side-panel toggle leaves full
--- screen first); while it's full screen, OpenMap shows it over the map's right edge when asked
+-- screen first); while it's full screen, Valhalla shows it over the map's right edge when asked
 -- (maxQuestLog), as Blizzard anchors it, and takes it away again just before the map leaves full
 -- screen, so Blizzard's own layout for the window comes back as it was. Never in combat.
 --------------------------------------------------------------------------------
@@ -453,7 +453,7 @@ SetupQuestLog = function()
 		toggle:SetPoint("BOTTOMRIGHT", map:GetCanvasContainer(), "BOTTOMRIGHT", -2, 1)
 		toggle:SetFrameLevel(math.min(map.ScrollContainer:GetFrameLevel() + 9300, 9950))
 		toggle.OnClick = function(self) mod.ToggleMaxQuestLog() self:Refresh() end   -- (its buttons call this)
-		-- (open or not: the log OpenMap shows over the map, not Blizzard's side panel, which is never open here)
+		-- (open or not: the log Valhalla shows over the map, not Blizzard's side panel, which is never open here)
 		toggle.Refresh = function(self)
 			local open = Log() and Log():IsShown() or false
 			self.OpenButton:SetShown(not open)

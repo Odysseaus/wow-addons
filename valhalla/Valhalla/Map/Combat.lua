@@ -4,7 +4,7 @@
 -- the map, to zoom out) and, for a pin you can super-track, whether its clicks go on to the map
 -- (SuperTrackablePinMixin:UpdateMousePropagation). On this engine those setters (SetPassThroughButtons,
 -- SetPropagateMouseClicks) are blocked in combat once the map's own code has met an addon's, and the
--- stitched map's zoom is OpenMap's (its zoom levels in Blizzard's scroll container): every map refresh
+-- stitched map's zoom is Valhalla's (its zoom levels in Blizzard's scroll container): every map refresh
 -- in combat (opening it, the quest log updating) was an "action blocked" error. So in combat each
 -- pin's last request waits, and is applied as soon as combat ends; until then a right-click on a pin
 -- placed in combat doesn't zoom the map out. (With thanks to Ironship, PR #22.)

@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Townsfolk and rare mobs on the world map, from Questie's NPC database
 -- (npcFlags, rank, spawns), or another addon's database of the same shape
--- (OpenMapAPI.RegisterTownsfolkProvider). Each kind is a pin set, built the first time it's
+-- (ValhallaAPI.RegisterTownsfolkProvider). Each kind is a pin set, built the first time it's
 -- turned on (a few hundred NPCs a frame, so nothing stalls).
 --------------------------------------------------------------------------------
 
@@ -55,7 +55,7 @@ local ENGLISH_CLASS_NAMES = {
 }
 local told = false              -- said once this session that Questie isn't installed
 
--- another addon's NPC database in Questie's shape (OpenMapAPI.RegisterTownsfolkProvider): { db, zones,
+-- another addon's NPC database in Questie's shape (ValhallaAPI.RegisterTownsfolkProvider): { db, zones,
 -- mailboxes = fn(faction "A" / "H") -> object IDs (optional) }
 local provider
 function mod.SetTownsfolkProvider(p)

@@ -7,7 +7,7 @@
 -- frame's corners in the chart's corners. Zoomed right out the chart fills the view, and you can pan to
 -- its edges and no further (WorldMap.lua: S.Chart.LeastZoom, S.Chart.Rect).
 -- Stitch.lua draws it under its own art: the world map fades into it through MapChart\Middle instead of
--- its own wide edge fade, and the sea OpenMap draws past the world map (MapSeaFieldOut) is put away.
+-- its own wide edge fade, and the sea Valhalla draws past the world map (MapSeaFieldOut) is put away.
 --------------------------------------------------------------------------------
 
 local _, ns = ...

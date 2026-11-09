@@ -1,13 +1,13 @@
 --------------------------------------------------------------------------------
 -- The debug overlay, for chasing lag: a small panel in the map's top-right corner with the
 -- frame rate, each frame's time as a moving graph (a hitch shows as a spike), the worst
--- frame of the last two seconds, what OpenMap's own updates cost (the zoom update, the
+-- frame of the last two seconds, what Valhalla's own updates cost (the zoom update, the
 -- close-up update), how many of the art's textures are drawn, and what could pile up over a
 -- session: the UI's Lua memory and how fast it grows, the map's pins (all addons', and which
 -- kind there's most of), how much zone art is loaded, how many regions are placed live, and
 -- which parts make the most Lua garbage (WorldMap.lua measures them while this is on; "pins
--- rescaled" is every addon's pins, OpenMap's zoom update with them), and which addons hold and grow
--- the memory. /openmap debug, or the menu's Tools. Its own cost is small (one bar a frame, the
+-- rescaled" is every addon's pins, Valhalla's zoom update with them), and which addons hold and grow
+-- the memory. /valhalla debug, or the menu's Tools. Its own cost is small (one bar a frame, the
 -- text twice a second, the counts once a second, every addon's memory every 10 seconds).
 --------------------------------------------------------------------------------
 
@@ -156,7 +156,7 @@ local function Update(_, elapsed)
 	local _, _, zoom = mod.ViewNow()
 	panel.fps:SetFormattedText("|cff%s%.0f fps|r  %.1f ms   worst %.0f ms", fps >= 55 and "4cd959" or fps >= 30 and "ffcc40" or "ff4d40",
 		fps, fps > 0 and 1000 / fps or 0, worst)
-	panel.ours:SetFormattedText(L["OpenMap: zoom update %.1f ms, close-up %.1f ms (worst %.1f)"], ZoomMs(), cv.ms or 0, cv.worst or 0)
+	panel.ours:SetFormattedText(L["Valhalla: zoom update %.1f ms, close-up %.1f ms (worst %.1f)"], ZoomMs(), cv.ms or 0, cv.worst or 0)
 	panel.art:SetFormattedText(L["zoom %.1f, %d textures drawn, %d minimap tiles"], zoom or 0, drawn, cv.tiles or 0)
 	panel.mem:SetFormattedText(L["Lua memory %.0f MB (%+.1f MB a minute), map pins %d (most: %s %d)"], counts.mb or 0, counts.rate or 0,
 		counts.pins or 0, counts.top or "-", counts.topN or 0)
@@ -236,12 +236,12 @@ function mod:SetupDebug(worldMap)
 end
 
 --------------------------------------------------------------------------------
--- /openmap highlights: where the game draws each zone's highlight on its continent's map (the glow on
+-- /valhalla highlights: where the game draws each zone's highlight on its continent's map (the glow on
 -- the zone under the cursor, C_Map.GetMapHighlightInfoAtPosition: its texture, the part of it used and
 -- its rectangle on the continent), for tools/map-preview/territory.py: a zone's whole area, as its
 -- continent's map draws it. A client with a world of its own only (ns.MapWorld). A grid of points over
 -- each stitched continent, a few rows a frame; each different highlight once, as a line, kept in
--- OpenMapDB (worldmap, highlights) once you /reload or log out: tools/map-preview/highlights.py reads it
+-- ValhallaDB (worldmap, highlights) once you /reload or log out: tools/map-preview/highlights.py reads it
 --------------------------------------------------------------------------------
 
 local HIGHLIGHT_GRID = 160      -- points across and down each continent
@@ -265,7 +265,7 @@ function mod:Highlights()
 			local job = jobs[i]
 			if not job then
 				ticker:Cancel()
-				ns:Print((L["%d highlights recorded: saved (OpenMapDB: worldmap, highlights) once you /reload or log out."]):format(#out))
+				ns:Print((L["%d highlights recorded: saved (ValhallaDB: worldmap, highlights) once you /reload or log out."]):format(#out))
 				return
 			end
 			local c, j = job[1], job[2]

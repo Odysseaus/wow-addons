@@ -1,3 +1,5 @@
+> Valhalla is Odysseaus's fork of OpenMap v0.8.2 by OpenMap contributors (MIT). The notes below are OpenMap's, kept as they were.
+
 # Where these textures come from
 
 OpenMap draws no art of its own. Every texture here is either cut from World of
@@ -7,7 +9,7 @@ OpenMap use it. Each is made by a script in `tools/`, so it
 can be rebuilt from the game's files; the few touched by hand (marked below) are
 Blizzard's art edited by hand, kept in `art/edits/`.
 
-**OpenMap's own icon**: `OpenMapIcon` and `OpenMapIconRound` (cut to the gold ring) (shared by both clients, in `Media/Textures/`: the AddOns list,
+**OpenMap's own icon**: `ValhallaIcon` and `ValhallaIconRound` (renamed from `OpenMapIcon`/`OpenMapIconRound` in the Valhalla fork) (cut to the gold ring) (shared by both clients, in `Media/Textures/`: the AddOns list,
 the minimap button, the map's menu and portrait) is OpenMap's own picture, not Blizzard's: a map scroll
 in a gold ring, drawn by zloyeb and used with his permission (not covered by OpenMap's MIT licence),
 shrunk from `art/icon/openmap.png` by `tools/icon/build.py`.

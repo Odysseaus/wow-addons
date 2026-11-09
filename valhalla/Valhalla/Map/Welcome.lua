@@ -1,8 +1,8 @@
 --------------------------------------------------------------------------------
 -- The first time the map opens on a new install: how it starts out. "Classic" is closer to
--- Blizzard's map: unexplored areas hidden, none of OpenMap's own icons or zone levels, the
--- favourites folded away. "OpenMap" keeps OpenMap's defaults. Settings saved before this are
--- never asked about, or changed. /openmap welcome asks again.
+-- Blizzard's map: unexplored areas hidden, none of Valhalla's own icons or zone levels, the
+-- favourites folded away. "Valhalla" keeps Valhalla's defaults. Settings saved before this are
+-- never asked about, or changed. /valhalla welcome asks again.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -41,7 +41,7 @@ local function Build(map)
 	local text = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	text:SetPoint("TOP", 0, -top - 14)
 	text:SetWidth(440)
-	text:SetText(L["You can change any of it later in OpenMap's menu (its button on the map, or /openmap)."])
+	text:SetText(L["You can change any of it later in Valhalla's menu (its button on the map, or /valhalla)."])
 	local function Choice(x, label, desc, classic)
 		local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 		b:SetSize(180, 28)
@@ -54,7 +54,7 @@ local function Build(map)
 		fs:SetText(desc)
 	end
 	Choice(-106, L["Classic"], L["Unexplored areas hidden. No dungeon or flight master icons and no zone levels."], true)
-	Choice(106, L["OpenMap"], L["Show the whole map, with dungeon entrances, flight masters, zone levels and favourite buttons."], false)
+	Choice(106, L["Valhalla"], L["Show the whole map, with dungeon entrances, flight masters, zone levels and favourite buttons."], false)
 	frame:Hide()
 end
 

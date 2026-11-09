@@ -1,12 +1,12 @@
 --------------------------------------------------------------------------------
 -- Friends and guild on the map. Everyone online on your friends list (Battle.net friends playing
 -- this game too) and in your guild shows by zone, as the game's own lists give it: a badge on the
--- zone, with who's there. Those who use OpenMap and share where they are show as a class-coloured
+-- zone, with who's there. Those who use Valhalla and share where they are show as a class-coloured
 -- dot where they stand instead. Your party and raid are left to Nav.lua's dots and Blizzard's.
 -- Sharing (asked once as the map opens; the menu's and Options' Share where you are; off unless turned on): your place as an addon message
--- (prefix OpenMapLoc) every few seconds while you move, each minute while you stand still, to your
--- guild and to your friends who use OpenMap; never from inside a dungeon, raid or battleground.
--- Friends who use OpenMap are found by a hello to each as they come online (H1, answered H2).
+-- (prefix ValhallaLoc) every few seconds while you move, each minute while you stand still, to your
+-- guild and to your friends who use Valhalla; never from inside a dungeon, raid or battleground.
+-- Friends who use Valhalla are found by a hello to each as they come online (H1, answered H2).
 -- The messages: "L1 map x y class level" (tab-separated; a uiMapID, x and y on it 0..1),
 -- "L0" (stopped sharing), "H1", "H2". Nothing here runs per frame while the map is closed: what
 -- arrives is noted, and drawn when the map opens.
@@ -16,16 +16,16 @@ local _, ns = ...
 local S = ns.MapStitch
 local mod = ns:GetModule("worldmap")
 local Safe, L = ns.Safe, ns.L
--- timed for /openmap status after an opening (WorldMap.lua's mod.TimeAfter; plain, without it)
+-- timed for /valhalla status after an opening (WorldMap.lua's mod.TimeAfter; plain, without it)
 local function Timed(name, fn, ...)
 	if mod.TimeAfter then return mod.TimeAfter(name, fn, ...) end
 	return fn(...)
 end
 
 mod.defaults.friends = true         -- friends and guild on the map
-mod.defaults.friendsShare = false   -- your place sent to your guild and your friends who use OpenMap
+mod.defaults.friendsShare = false   -- your place sent to your guild and your friends who use Valhalla
 
-local PREFIX = "OpenMapLoc"         -- (its own: the game holds back a burst per prefix, Pins.lua's apart)
+local PREFIX = "ValhallaLoc"         -- (its own: the game holds back a burst per prefix, Pins.lua's apart)
 local TICK = 2                      -- seconds between looks at where you are
 local SEND_EVERY = 10               -- seconds between places sent while you move
 local STILL_EVERY = 60              -- ... and while you stand still (a dot that's heard from stays)
@@ -43,7 +43,7 @@ local map
 local dotSet, zoneSet
 local roster = {}                   -- full name -> { name, class, level, area, guild, friend }: online now
 local friends = {}                  -- full name -> { whisper = name } or { bn = gameAccountID }: online now
-local known = {}                    -- full name -> true: friends who use OpenMap
+local known = {}                    -- full name -> true: friends who use Valhalla
 local live = {}                     -- full name -> { map, x, y, class, level, guild, at }: those sharing
 local looks = {}                    -- class -> a dot's look
 local dirty = false
@@ -200,7 +200,7 @@ local function ToFriend(full, text)
 	if f.bn then Send(full, text, nil, nil, f.bn) else Send(full, text, "WHISPER", f.whisper) end
 end
 
--- to your guild and every friend online who uses OpenMap (a friend in your guild has it from the guild's)
+-- to your guild and every friend online who uses Valhalla (a friend in your guild has it from the guild's)
 local function Broadcast(text)
 	local guild = IsInGuild()
 	if guild then Send("GUILD", text, "GUILD") end
@@ -306,7 +306,7 @@ local function Scan()
 	for _, t in ipairs({ roster, friends, live }) do
 		for full in pairs(t) do if IsMe(full) then t[full] = nil end end
 	end
-	-- a friend just online: a hello, to learn whether they use OpenMap (they learn you do)
+	-- a friend just online: a hello, to learn whether they use Valhalla (they learn you do)
 	if mod.db.friends or mod.db.friendsShare then
 		for full in pairs(friends) do
 			if not before[full] then ToFriend(full, "H1") end
@@ -337,7 +337,7 @@ local function Heard(full, text, guild)
 	local kind, m, x, y, class, level = strsplit("\t", text, 6)
 	if friends[full] then known[full] = true end
 	if kind == "H1" or kind == "H2" then
-		-- (a hello: answered with your place when you share it, so they know you use OpenMap either way)
+		-- (a hello: answered with your place when you share it, so they know you use Valhalla either way)
 		if kind == "H1" and friends[full] then ToFriend(full, sharing and last.text or "H2") end
 		return
 	end
@@ -501,7 +501,7 @@ local function BuildAsk(worldMap)
 	local text = ask:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	text:SetPoint("TOP", 0, -top - 12)
 	text:SetWidth(420)
-	text:SetText(L["Your friends and guild members who use OpenMap can show on your map as a dot where they stand. Share where you are, so they see you on theirs?"])
+	text:SetText(L["Your friends and guild members who use Valhalla can show on your map as a dot where they stand. Share where you are, so they see you on theirs?"])
 	local function Button(x, label, share)
 		local b = CreateFrame("Button", nil, ask, "UIPanelButtonTemplate")
 		b:SetSize(170, 26)
@@ -514,7 +514,7 @@ local function BuildAsk(worldMap)
 	local note = ask:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	note:SetPoint("BOTTOM", 0, 16)
 	note:SetWidth(420)
-	note:SetText(L["Only your guild and friends, never from a dungeon, raid or battleground. OpenMap's menu: More, Sharing."])
+	note:SetText(L["Only your guild and friends, never from a dungeon, raid or battleground. Valhalla's menu: More, Sharing."])
 	ask:Hide()
 end
 
@@ -559,7 +559,7 @@ end
 
 function mod:FriendsOptions(opts, get, set, off)
 	opts.friends = { type = "toggle", name = L["Friends and guild"], order = 35.5, get = get, set = set, disabled = off,
-		desc = L["Your friends and guild members who are online: a badge on the zone each is in, with who's there (as the friends list and guild roster show it), or a class-coloured dot where they stand for those who use OpenMap and share where they are."] }
+		desc = L["Your friends and guild members who are online: a badge on the zone each is in, with who's there (as the friends list and guild roster show it), or a class-coloured dot where they stand for those who use Valhalla and share where they are."] }
 	opts.friendsShare = { type = "toggle", name = L["Share where you are"], order = 35.6, get = get, set = set, disabled = off,
-		desc = L["Your guild, and your friends who use OpenMap, see you as a dot where you stand on their map, sent every few seconds while you move. Never from inside a dungeon, raid or battleground. Off, they see only your zone, as the friends list and guild roster show it."] }
+		desc = L["Your guild, and your friends who use Valhalla, see you as a dot where you stand on their map, sent every few seconds while you move. Never from inside a dungeon, raid or battleground. Off, they see only your zone, as the friends list and guild roster show it."] }
 end

@@ -1,14 +1,14 @@
 --------------------------------------------------------------------------------
--- OpenMap's core: saved settings, events, chat output, options plumbing and
+-- Valhalla's core: saved settings, events, chat output, options plumbing and
 -- the few look helpers the map uses. Loaded first; the map files (Map/*.lua)
 -- add a module with ns:NewModule and Init.lua starts it at login.
 --
--- Settings: OpenMapDB (account), OpenMapCharDB (per character), filled from
+-- Settings: ValhallaDB (account), ValhallaCharDB (per character), filled from
 -- the module's defaults (missing keys only, so new defaults reach old saves).
 --------------------------------------------------------------------------------
 
 local ADDON, ns = ...
-_G.OpenMap = ns
+_G.Valhalla = ns
 
 ns.name = ADDON
 ns.version = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)(ADDON, "Version") or "dev"
@@ -16,11 +16,11 @@ if ns.version:find("^@") then ns.version = "dev" end   -- (a checkout: the packa
 ns.ACCENT = "e6b85c"
 -- where players send reports (the "Report a problem" button shows it to copy): a new issue on
 -- GitHub, with the map-problem form
-ns.ISSUES_URL = "https://github.com/openmap-world/openmap/issues/new?template=map-problem.yml&game=" .. ns.Client
+ns.ISSUES_URL = "https://github.com/Odysseaus/wow-addons/issues/new?title=Valhalla+map+problem&game=" .. ns.Client
 ns.Media = { path = "Interface\\AddOns\\" .. ADDON .. "\\Media\\" }
 -- the textures are each client's own (Data\<client>\Client.lua, loaded before this, names it)
 ns.Media.tex = ns.Media.path .. "Textures\\" .. ns.Client .. "\\"
--- what loading costs (ms): its files, the login, the map's setup and its parts (/openmap status)
+-- what loading costs (ms): its files, the login, the map's setup and its parts (/valhalla status)
 ns.loadMs = { start = debugprofilestop and debugprofilestop(), parts = {} }
 
 -- Translations: ns.L["English text"] gives the text for the player's language once a
@@ -29,7 +29,7 @@ ns.L = setmetatable({}, { __index = function(_, k) return k end })
 
 function ns:Print(fmt, ...)
 	local msg = select("#", ...) > 0 and fmt:format(...) or tostring(fmt)
-	DEFAULT_CHAT_FRAME:AddMessage("|cff" .. ns.ACCENT .. "OpenMap|r: " .. msg)
+	DEFAULT_CHAT_FRAME:AddMessage("|cff" .. ns.ACCENT .. "Valhalla|r: " .. msg)
 end
 
 --------------------------------------------------------------------------------
@@ -97,7 +97,7 @@ function ns.UnregisterEvent(owner, event)
 end
 
 --------------------------------------------------------------------------------
--- Modules (OpenMap has one, "worldmap")
+-- Modules (Valhalla has one, "worldmap")
 --------------------------------------------------------------------------------
 
 ns.modules = {}
@@ -128,15 +128,15 @@ local function Fill(t, defaults)
 end
 
 function ns:InitDB()
-	OpenMapDB = OpenMapDB or {}
-	OpenMapCharDB = OpenMapCharDB or {}
+	ValhallaDB = ValhallaDB or {}
+	ValhallaCharDB = ValhallaCharDB or {}
 	for key, mod in pairs(ns.modules) do
-		mod.fresh = OpenMapDB[key] == nil       -- (no saved settings yet: a new install)
+		mod.fresh = ValhallaDB[key] == nil       -- (no saved settings yet: a new install)
 		-- (an old save's settings carried to the keys that replace them, before the defaults fill those)
-		if not mod.fresh and mod.Migrate then mod.Migrate(OpenMapDB[key]) end
-		OpenMapDB[key] = Fill(OpenMapDB[key] or {}, mod.defaults)
-		OpenMapCharDB[key] = OpenMapCharDB[key] or {}
-		mod.db, mod.char = OpenMapDB[key], OpenMapCharDB[key]
+		if not mod.fresh and mod.Migrate then mod.Migrate(ValhallaDB[key]) end
+		ValhallaDB[key] = Fill(ValhallaDB[key] or {}, mod.defaults)
+		ValhallaCharDB[key] = ValhallaCharDB[key] or {}
+		mod.db, mod.char = ValhallaDB[key], ValhallaCharDB[key]
 	end
 end
 

@@ -1,8 +1,8 @@
 --------------------------------------------------------------------------------
 -- Map notes, for working on the map: paint an area, say what's there (fix this, look into
 -- this, an idea), and export them all as text, to paste into an issue or back to whoever is
--- working on the map; tools/map-preview/notes.py renders each one out of game. /openmap notes,
--- or the menu's Tools. Saved in OpenMapDB (worldmap -> paint). Players reporting a single
+-- working on the map; tools/map-preview/notes.py renders each one out of game. /valhalla notes,
+-- or the menu's Tools. Saved in ValhallaDB (worldmap -> paint). Players reporting a single
 -- problem use the Report button instead (Report.lua).
 --
 --   left-drag   paint an area, then say what's there      click         a note at a point
@@ -168,7 +168,7 @@ end
 
 local function Editor()
 	if editor then return editor end
-	editor = CreateFrame("Frame", "OpenMapNoteEditor", UIParent)
+	editor = CreateFrame("Frame", "ValhallaNoteEditor", UIParent)
 	if mod.padRoots then mod.padRoots[#mod.padRoots + 1] = editor end   -- (the gamepad's cursor presses its buttons: Gamepad.lua)
 	editor:SetSize(420, 118)
 	editor:SetFrameStrata("DIALOG")
@@ -397,7 +397,7 @@ end
 
 --------------------------------------------------------------------------------
 -- Export: every note as text, to copy (Ctrl-C) and paste wherever it's needed
---   OpenMap map notes | <version> | <date> | <n> notes
+--   Valhalla map notes | <version> | <date> | <n> notes
 --   #<id> <kind> | <zone> (<uiMapID>) | at <u> <v> | zoom <z> | <text>
 --      area r=<radius> <u> <v>, <u> <v>, ...; <the next stroke> ...
 --------------------------------------------------------------------------------
@@ -407,7 +407,7 @@ local function ExportText()
 	for _, n in ipairs(DB().notes) do notes[#notes + 1] = n end
 	table.sort(notes, function(a, b) return a.id < b.id end)
 	local lines = {
-		("OpenMap map notes | %s | %s | %d notes"):format(ns.version, date("%Y-%m-%d %H:%M"), #notes),
+		("Valhalla map notes | %s | %s | %d notes"):format(ns.version, date("%Y-%m-%d %H:%M"), #notes),
 		"(each: #id kind | zone (uiMapID) | at u v | zoom | text; a painted area follows as: area r=radius u v, u v, ...; next stroke)",
 	}
 	for _, n in ipairs(notes) do
@@ -429,14 +429,14 @@ end
 
 local function ShowExport()
 	if not export then
-		export = CreateFrame("Frame", "OpenMapNotesExport", UIParent)
+		export = CreateFrame("Frame", "ValhallaNotesExport", UIParent)
 		export:SetSize(620, 380)
 		export:SetPoint("CENTER")
 		export:SetFrameStrata("DIALOG")
 		export:EnableMouse(true)
 		-- (the map window's own frame, its title bar and X)
 		local top = Look:Window(export, L["Map notes: Ctrl-C to copy them all, then paste them where they're needed"])
-		tinsert(UISpecialFrames, "OpenMapNotesExport")
+		tinsert(UISpecialFrames, "ValhallaNotesExport")
 		local scroll = CreateFrame("ScrollFrame", nil, export, "UIPanelScrollFrameTemplate")
 		scroll:SetPoint("TOPLEFT", 12, -12 - top)
 		scroll:SetPoint("BOTTOMRIGHT", -32, 34)
@@ -455,7 +455,7 @@ local function ShowExport()
 		tip:SetPoint("BOTTOMLEFT", 12, 12)
 		tip:SetWidth(596)
 		tip:SetJustifyH("LEFT")
-		tip:SetText(L["They're also saved in WTF\\Account\\<account>\\SavedVariables\\OpenMap.lua once you /reload or log out."])
+		tip:SetText(L["They're also saved in WTF\\Account\\<account>\\SavedVariables\\Valhalla.lua once you /reload or log out."])
 	end
 	export.text = ExportText()
 	export.box:SetText(export.text)

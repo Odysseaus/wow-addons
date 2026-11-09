@@ -1,4 +1,4 @@
--- WoW Forever's own dungeons' maps, which the game has none of: drawn by players who let OpenMap
+-- WoW Forever's own dungeons' maps, which the game has none of: drawn by players who let Valhalla
 -- use them (art/drawn/dungeons), shown as Blizzard's dungeon maps are (Data/DungeonMaps.lua's layout)
 -- and credited on the map.
 --   [instance mapID] = { { tiles = { 12 textures, row-major }, credit = who drew it }, ... }

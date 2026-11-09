@@ -1,5 +1,5 @@
 --------------------------------------------------------------------------------
--- Ways into OpenMap's menu besides its button on the map (which can be hidden:
+-- Ways into Valhalla's menu besides its button on the map (which can be hidden:
 -- Panel.lua's mapButtons): the game's addon compartment (the minimap's AddOns
 -- list) and, when turned on, a button on the minimap's edge, dragged round it.
 -- Click: the map with its menu open; right-click: the options window.
@@ -13,7 +13,7 @@ local d = mod.defaults
 d.minimapButton = false         -- a button on the minimap's edge
 d.minimapAngle = 200            -- where round the minimap it sits (degrees, counter-clockwise from east)
 
-local ICON = "Interface\\AddOns\\OpenMap\\Media\\Textures\\OpenMapIconRound"   -- (OpenMap's own, by zloyeb, cut to its gold ring: tools/icon/build.py)
+local ICON = "Interface\\AddOns\\Valhalla\\Media\\Textures\\ValhallaIconRound"   -- (OpenMap's own, by zloyeb, cut to its gold ring: tools/icon/build.py)
 local button
 
 local function OpenMenu()
@@ -22,7 +22,7 @@ end
 
 local function OpenWindow()
 	local ACD = LibStub("AceConfigDialog-3.0", true)
-	if ACD then ACD:Open("OpenMap") end
+	if ACD then ACD:Open("Valhalla") end
 end
 
 local function Click(mouse)
@@ -39,9 +39,9 @@ local function Tip(owner)
 end
 
 -- the addon compartment (the toc's AddonCompartmentFunc*): globals, as the game looks them up by name
-_G.OpenMap_OnAddonCompartmentClick = function(_, mouse) Click(mouse) end
-_G.OpenMap_OnAddonCompartmentEnter = function(_, owner) Tip(owner) end
-_G.OpenMap_OnAddonCompartmentLeave = function() GameTooltip:Hide() end
+_G.Valhalla_OnAddonCompartmentClick = function(_, mouse) Click(mouse) end
+_G.Valhalla_OnAddonCompartmentEnter = function(_, owner) Tip(owner) end
+_G.Valhalla_OnAddonCompartmentLeave = function() GameTooltip:Hide() end
 
 local function Place()
 	local a = math.rad(mod.db.minimapAngle or 200)
@@ -52,7 +52,7 @@ end
 
 -- Blizzard's own minimap button: the tracking button's border round the icon
 local function Make()
-	button = CreateFrame("Button", "OpenMapMinimapButton", Minimap)
+	button = CreateFrame("Button", "ValhallaMinimapButton", Minimap)
 	button:SetSize(31, 31)
 	button:SetFrameStrata("MEDIUM")
 	button:SetFrameLevel(8)
@@ -100,10 +100,10 @@ end
 function mod:LauncherOptions(opts, get, off)
 	local function set(info, v) mod.db[info[#info]] = v mod.RefreshLauncher() end
 	opts.minimapButton = { type = "toggle", name = L["Minimap button"], order = 28.5, get = get, set = set, disabled = off,
-		desc = L["A button on the minimap's edge that opens the map and its menu (right-click: this window). Drag it round the minimap. OpenMap is in the minimap's AddOns list too."] }
-	opts.mapButtons = { type = "toggle", name = L["OpenMap button on the map"], order = 28.6, get = get, disabled = off,
+		desc = L["A button on the minimap's edge that opens the map and its menu (right-click: this window). Drag it round the minimap. Valhalla is in the minimap's AddOns list too."] }
+	opts.mapButtons = { type = "toggle", name = L["Valhalla button on the map"], order = 28.6, get = get, disabled = off,
 		set = function(_, v) mod.db.mapButtons = v mod:Refresh() end,
-		desc = L["The OpenMap button and your favourites on the map. Off, the menu opens with /openmap, the minimap button or the minimap's AddOns list."] }
+		desc = L["The Valhalla button and your favourites on the map. Off, the menu opens with /valhalla, the minimap button or the minimap's AddOns list."] }
 end
 
 -- (at login, before the map is first opened: the button doesn't wait for the map)

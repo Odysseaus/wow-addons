@@ -28,10 +28,10 @@ local function SetCVarSafe(name, value)
 	if C_CVar and C_CVar.SetCVar then pcall(C_CVar.SetCVar, name, value) elseif SetCVar then pcall(SetCVar, name, value) end
 end
 
--- Game settings OpenMap holds while it runs: Blizzard's map coordinates while OpenMap's own show (they'd
--- double them), and the game's map fade (OpenMap's is the one that runs). The player's own values are
--- kept (mod.char.cvars: name -> value) and put back when OpenMap lets go, and at logout, so the game
--- saves the player's values (OpenMap takes the settings again at the next login)
+-- Game settings Valhalla holds while it runs: Blizzard's map coordinates while Valhalla's own show (they'd
+-- double them), and the game's map fade (Valhalla's is the one that runs). The player's own values are
+-- kept (mod.char.cvars: name -> value) and put back when Valhalla lets go, and at logout, so the game
+-- saves the player's values (Valhalla takes the settings again at the next login)
 local COORDS = { "worldMapShowPlayerCoords", "worldMapShowCursorCoords" }
 local loggingOut = false
 local cvarOwner = {}            -- (the logout handler's key)
@@ -366,7 +366,7 @@ local function Lift(icon, questie)
 	icon:SetFixedFrameLevel(true)
 end
 local NEAR = 0.5                        -- how far round the map underneath (its widths) pins are placed (each pin
-                                        --  on the map is laid out again on every frame of a pan or zoom: /openmap bench)
+                                        --  on the map is laid out again on every frame of a pan or zoom: /valhalla bench)
 local VIEW_NEAR = 1.5                   -- ... and wherever the view is, out to this many times its half-size (zoomed
                                         --  out over a zone, its neighbours' quests too, not only the next zone's)
 
@@ -450,7 +450,7 @@ local function OnZoomStep()
 	zoomWatch:Show()
 end
 
-local questie = { placed = 0, ours = 0, moved = 0 }   -- for /openmap status: since the map last changed
+local questie = { placed = 0, ours = 0, moved = 0 }   -- for /valhalla status: since the map last changed
 
 -- The same for every addon's copy of HereBeDragons' pins (TomTom, gatherers, notes ... each may bring
 -- its own): a pin placed from a map point (`uiMapID`, `mapX`, `mapY`: AddWorldMapIconMap) goes where it
@@ -504,17 +504,17 @@ local function SetUpPins(name, pins)
 	local spec = PIN_LIBS[name] or { template = DEFAULT_TEMPLATE }
 	local provider = pins and pins.worldmapProvider
 	if type(provider) ~= "table" or type(provider.HandlePin) ~= "function" then return "unknown" end
-	if provider.openmapPins then return "done" end
+	if provider.valhallaPins then return "done" end
 	local at = NoteAdds(pins)
 	local template = PoolTemplate(spec)
 	if not template then return "waiting" end
-	provider.openmapPins = true
+	provider.valhallaPins = true
 	pinTemplates[template] = true
 	local count = spec.questie and questie or { placed = 0, ours = 0, moved = 0 }
 	if spec.questie then questie.pins = pins end
 	local HandlePin = provider.HandlePin
 	provider.HandlePin = function(self, icon, data, ...)
-		-- (an older Questie's path stretch: not put on the stitched map at all, OpenMap draws the paths
+		-- (an older Questie's path stretch: not put on the stitched map at all, Valhalla draws the paths
 		-- there, as Questie's would be out of place and size; DrawQuestiePaths)
 		if spec.questie and icon.type == "line" and mod.IsStitched() then return end
 		HandlePin(self, icon, data, ...)
@@ -584,7 +584,7 @@ local pending, told = {}, {}    -- library name -> map opens tried; -> said
 local function Tell(name)
 	if told[name] then return end
 	told[name] = true
-	ns:Print(ns.L["A map addon brings its own HereBeDragons (%s), which OpenMap doesn't know: its pins keep the game's own placement."], name)
+	ns:Print(ns.L["A map addon brings its own HereBeDragons (%s), which Valhalla doesn't know: its pins keep the game's own placement."], name)
 end
 
 -- every copy of the pins library loaded so far (an addon loaded later: as it loads, or as the map opens).
@@ -623,7 +623,7 @@ local function SetUpAllPinsAndWait()
 	if next(pending) then PinRetry.at = GetTime() PinRetry:Show() end
 end
 
--- for /openmap status: Questie's pins, and how many are on the map now
+-- for /valhalla status: Questie's pins, and how many are on the map now
 function mod.QuestieStatus()
 	if not questie.pins then return nil end
 	local registered, shown = 0, 0
@@ -704,7 +704,7 @@ end
 -- Keep the map's art warm: the game lets go of the files of a map that's closed, and every opening
 -- read them again (blank parchment, the minimap fading in, a moment each time). As the map closes,
 -- each file shown on it is drawn on a frame that stays shown, a pixel across at almost no alpha, out
--- of sight, till the map opens again (/openmap warm turns it off and on)
+-- of sight, till the map opens again (/valhalla warm turns it off and on)
 --------------------------------------------------------------------------------
 
 local WARM_MOST = 1200          -- files kept at the most (the view's: a few hundred)
@@ -790,13 +790,13 @@ end
 
 --------------------------------------------------------------------------------
 -- Questie's mob paths (its WaypointMap, since Questie 12.2): Questie draws them on the map's canvas
--- itself, only on the path's own zone map and scaled to that map's size, under OpenMap's art (its
+-- itself, only on the path's own zone map and scaled to that map's size, under Valhalla's art (its
 -- fixed frame level). On the stitched map they're drawn here instead, each through its zone's
 -- rectangle, over the art, in Questie's colours, as Questie picks them (a route once: its
 -- highlighted copy, else its most visible), redrawn whenever Questie redraws its own
 --------------------------------------------------------------------------------
 
-local QPATH = { width = 2.5, zones = {}, key = "", dirty = true, at = 0 }   -- set: OpenMap's pin set for them
+local QPATH = { width = 2.5, zones = {}, key = "", dirty = true, at = 0 }   -- set: Valhalla's pin set for them
 local QPATH_MOST_ZONES = 4      -- drawn only zoomed in this far: no more zones than this in view (Questie draws one)
 local QPATH_EVERY = 0.5         -- seconds between redraws at the most (Questie changes its icons in bursts)
 local function QuestiePaths()

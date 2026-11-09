@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
--- The quill: draw on the map in ink, for yourself (OpenMapDB: worldmap -> sketch, every character's).
--- The menu's Quill (or /openmap draw) opens its tray: a quill, a straight line, an arrow, a ring and
+-- The quill: draw on the map in ink, for yourself (ValhallaDB: worldmap -> sketch, every character's).
+-- The menu's Quill (or /valhalla draw) opens its tray: a quill, a straight line, an arrow, a ring and
 -- the raid marks, six inks and three nibs, an eraser, Undo and Clear. Left-drag draws, right-drag
 -- pans, the wheel zooms; Ctrl-Z undoes, Escape puts the quill down. From a map pin's card, Draw
 -- attaches what you draw to that pin: it goes when the pin does.
@@ -663,7 +663,7 @@ end
 function mod:SketchOptions(opts, get, set_, off)
 	opts.sketchShown = { type = "toggle", name = L["Your drawings"], order = 36.5, width = "full", get = get,
 		set = function(info, v) set_(info, v) Redraw() end, disabled = off,
-		desc = L["What you've drawn with the quill (the OpenMap menu's Quill), on the map."] }
+		desc = L["What you've drawn with the quill (the Valhalla menu's Quill), on the map."] }
 end
 
 function mod.RefreshSketch() Redraw() end

@@ -91,7 +91,7 @@ local function Code(note)
 		Marks(), note)
 end
 
-StaticPopupDialogs.OPENMAP_REPORT_NOTE = {
+StaticPopupDialogs.VALHALLA_REPORT_NOTE = {
 	text = "|cffffd100" .. L["Report, step 2 of 2:"] .. "|r " .. L["what's wrong?"] .. "\n|cffaaaaaa"
 		.. L["(the map, the menu, a setting ... anything: a sentence is plenty)"] .. "|r",
 	hasEditBox = true,
@@ -120,7 +120,7 @@ function mod:ShowReportCode(code)
 	tinsert(mod.char.reports, code)
 	while #mod.char.reports > 10 do tremove(mod.char.reports, 1) end
 	if not codeFrame then
-		codeFrame = CreateFrame("Frame", "OpenMapReport", UIParent)
+		codeFrame = CreateFrame("Frame", "ValhallaReport", UIParent)
 		if mod.padRoots then mod.padRoots[#mod.padRoots + 1] = codeFrame end   -- (the gamepad's cursor presses its buttons: Gamepad.lua)
 		codeFrame:SetPoint("CENTER")
 		codeFrame:SetFrameStrata("DIALOG")
@@ -133,7 +133,7 @@ function mod:ShowReportCode(code)
 		-- (the map window's own frame, its title bar and X, as What's new's)
 		local top = ns.Look:Window(codeFrame, L["Report a problem"])
 		codeFrame:SetSize(540, 196 + top)
-		tinsert(UISpecialFrames, "OpenMapReport")
+		tinsert(UISpecialFrames, "ValhallaReport")
 		local function Field(label, y)
 			y = y - top
 			local fs = codeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -148,7 +148,7 @@ function mod:ShowReportCode(code)
 			box:SetScript("OnTextChanged", function(self, user) if user then self:SetText(self.value) self:HighlightText() end end)
 			return box
 		end
-		codeFrame.url = Field(L["1. Open OpenMap's report page on GitHub (Ctrl-C, then paste in your browser):"], -16)
+		codeFrame.url = Field(L["1. Open Valhalla's report page on GitHub (Ctrl-C, then paste in your browser):"], -16)
 		codeFrame.code = Field(L["2. Paste this code into the report, with a screenshot if you can:"], -76)
 		local tip = codeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		tip:SetPoint("TOPLEFT", 14, -140 - top)
@@ -170,7 +170,7 @@ end
 local function Next(list, place)
 	drawn, where = list or {}, place
 	if not place and mod.HoldSketch and #drawn > 0 then mod.HoldSketch(drawn) end
-	StaticPopup_Show("OPENMAP_REPORT_NOTE")
+	StaticPopup_Show("VALHALLA_REPORT_NOTE")
 end
 
 function mod.IsReporting() return reporting end
@@ -183,7 +183,7 @@ function mod:ToggleReport(on)
 			reporting = false
 			if mod:IsSketching() then mod:ToggleSketch(false) end
 			if mod.DungeonMarkup then mod.DungeonMarkup(false) end
-			StaticPopup_Hide("OPENMAP_REPORT_NOTE")
+			StaticPopup_Hide("VALHALLA_REPORT_NOTE")
 		end
 		EndReport()
 		return

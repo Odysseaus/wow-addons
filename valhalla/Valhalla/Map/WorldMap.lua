@@ -1,5 +1,5 @@
 --------------------------------------------------------------------------------
--- OpenMap: Blizzard's world map (quest log, controls, Questie) with every
+-- Valhalla: Blizzard's world map (quest log, controls, Questie) with every
 -- zone stitched into one canvas (ns.MapStitch). More map helpers are in
 -- Extras.lua, Flights.lua, Townsfolk.lua, Panel.lua, Paint.lua and Gamepad.lua.
 --
@@ -29,7 +29,7 @@ local mod = ns:NewModule("worldmap", {
 		flight = true,
 		playerArrow = true,     -- your own arrow on the world map (off: find your way old-school; the party still shows)
 		iconsFrom = 0,          -- the places' icons from this zoom (ICONS_FROM; 1: the whole world); 0: each from its own (Auto)
-		iconScale = 1,          -- OpenMap's icons at this times their own size (ICON_SCALE)
+		iconScale = 1,          -- Valhalla's icons at this times their own size (ICON_SCALE)
 		darkening = 1,          -- how dark darkened unexplored areas are (0..1 of the full shade)
 		darkenColor = false,    -- their shade's colour, { r, g, b } (false: the game-like dark one)
 		routes = false,         -- boat and zeppelin routes
@@ -41,7 +41,7 @@ local mod = ns:NewModule("worldmap", {
 		maxZoom = 48 * (ns.ClientMaps and ns.ClientMaps.zoom or 1),   -- x the whole-world view (MAX_ZOOM: what it can
 		                        --  be set to; a world of smaller zones goes as much further: Data\<client>\Client.lua)
 		chart = false,          -- Santiago Reyes's sea chart round the world (Chart.lua)
-		padMap = false,         -- OpenMap's map with the Gamepad UI on too (Gamepad.lua binds B and full screen; a test)
+		padMap = false,         -- Valhalla's map with the Gamepad UI on too (Gamepad.lua binds B and full screen; a test)
 	},
 })
 
@@ -157,7 +157,7 @@ local function After(name, before)
 	if d > 0 then garbage[name] = (garbage[name] or 0) + d end
 end
 local BLOB_PINS = { "QuestBlobPinTemplate", "ScenarioBlobPinTemplate", "BonusObjectiveBlobPinTemplate" }
--- /openmap bench (Bench.lua): each part's time, added up while it runs (S.bench, ms)
+-- /valhalla bench (Bench.lua): each part's time, added up while it runs (S.bench, ms)
 local function Clock() return S.bench and debugprofilestop and debugprofilestop() end
 local function Clocked(name, t0)
 	if t0 and S.bench then S.bench[name] = (S.bench[name] or 0) + debugprofilestop() - t0 end
@@ -247,7 +247,7 @@ local function PadCursor()
 end
 
 -- Blizzard puts the gamepad's cursor back in the middle of the map whenever the canvas changes
--- (its scroll container's OnCanvasSizeChanged: RefreshBounds, ResetPosition). OpenMap changes the
+-- (its scroll container's OnCanvasSizeChanged: RefreshBounds, ResetPosition). Valhalla changes the
 -- map underneath as you look round (and lays the canvas out again), so the cursor is put back where
 -- it was, as the cursor places itself (SoftCursorMixin:OnUpdate), within its new bounds
 local function KeepPadCursor(fn, ...)
@@ -264,8 +264,8 @@ local function KeepPadCursor(fn, ...)
 end
 mod.KeepPadCursor = KeepPadCursor
 
--- in combat in the gamepad's UI: a map change of OpenMap's then would have Blizzard set the map's
--- gamepad bindings again (its footer, OnMapChanged) from OpenMap's code, which the game blocks in
+-- in combat in the gamepad's UI: a map change of Valhalla's then would have Blizzard set the map's
+-- gamepad bindings again (its footer, OnMapChanged) from Valhalla's code, which the game blocks in
 -- combat, leaving the pad's buttons wrong. Such changes wait (Dungeons.lua)
 function mod.PadCombat()
 	return InCombatLockdown() and InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled() or false
@@ -493,7 +493,7 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
 	elapsedSum = 0
 	if not active then return end
 	-- another addon's zoom steps past ours (BetterMaps', High Fidelity World Map's): the deepest
-	-- zoom is OpenMap's, and Blizzard's icons size themselves from the last step
+	-- zoom is Valhalla's, and Blizzard's icons size themselves from the last step
 	local zl = sc.zoomLevels
 	if levelCount and zl and #zl > levelCount then
 		for i = #zl, levelCount + 1, -1 do zl[i] = nil end
@@ -531,8 +531,8 @@ end)
 -- Hooks into Blizzard's map
 --------------------------------------------------------------------------------
 
--- how long opening the map takes, to the next frame drawn (/openmap status): the game's
--- work, Questie's and ours (the first opening also builds the map); and OpenMap's own part,
+-- how long opening the map takes, to the next frame drawn (/valhalla status): the game's
+-- work, Questie's and ours (the first opening also builds the map); and Valhalla's own part,
 -- its handlers' time from the open until the second frame after it
 local openTimes, openOurs, openFrames = {}, 0, 0
 local openParts, openLast = {}, {}
@@ -550,7 +550,7 @@ openTimer:SetScript("OnUpdate", function(self)
 		self:Hide()
 	end
 end)
--- `fn`, with its time counted as OpenMap's part of an opening (while one is being timed),
+-- `fn`, with its time counted as Valhalla's part of an opening (while one is being timed),
 -- by part. "icons rescaled" (Blizzard telling every addon's map icons the new scale, from
 -- SetView) is timed apart: it runs inside our handlers but is mostly other addons' work.
 Part = function(name, ms)
@@ -567,9 +567,9 @@ local function Ours(name, fn)
 	end
 end
 
--- After an opening (AFTER_OPEN seconds) and as the map closes: OpenMap's later work (timers, the
+-- After an opening (AFTER_OPEN seconds) and as the map closes: Valhalla's later work (timers, the
 -- warm art's let-go, the friends scan, Questie's icons and paths), the worst of each, and the longest
--- frame then, ours or not (/openmap status). A stall after the opening frame shows here, not above
+-- frame then, ours or not (/valhalla status). A stall after the opening frame shows here, not above
 local AFTER_OPEN = 3
 local after = { parts = {}, close = {}, gap = 0, gapAt = 0 }
 local afterFrame = CreateFrame("Frame")
@@ -630,7 +630,7 @@ viewFrame:SetScript("OnUpdate", Ours("view update", function(self)
 	local g, t0 = Before(), Clock()
 	S.SetView(u, v, sc:GetWidth() / 2 * pu, sc:GetHeight() / 2 * pv, zoom * DetailK(), zoom / (ns.ClientMaps and ns.ClientMaps.zoom or 1))
 	After("close-up", g)
-	Clocked("OpenMap's view update", t0)
+	Clocked("Valhalla's view update", t0)
 	if mod.OnViewMoved then mod.OnViewMoved() end   -- (API.lua: other addons told, a few times a second at most)
 end))
 local function ApplyView()
@@ -642,7 +642,7 @@ local function ApplyZoom()
 	local g, t0 = Before(), Clock()
 	S.SetZoom(ZoomFor(map:GetMapID(), sc:GetCanvasScale()) * DetailK(), sc:GetCanvasScale())
 	After("zoom", g)
-	Clocked("OpenMap's zoom update", t0)
+	Clocked("Valhalla's zoom update", t0)
 	ApplyView()
 end
 
@@ -682,8 +682,8 @@ local function OnCreateZoomLevels(self)
 	if not S.IsBuilt() then
 		local t0 = debugprofilestop and debugprofilestop()
 		local fl = map:GetPinFrameLevelsManager()
-		S.Build(map:GetCanvas(), fl:GetValidFrameLevel("PIN_FRAME_LEVEL_OPENMAP_STITCH"), ART_RANGE,
-			fl:GetValidFrameLevel("PIN_FRAME_LEVEL_OPENMAP_ICONS"))
+		S.Build(map:GetCanvas(), fl:GetValidFrameLevel("PIN_FRAME_LEVEL_VALHALLA_STITCH"), ART_RANGE,
+			fl:GetValidFrameLevel("PIN_FRAME_LEVEL_VALHALLA_ICONS"))
 		if mod.BuildFlights then mod:BuildFlights() end
 		if mod.BuildPaint then mod:BuildPaint() end
 		if mod.BuildSketch then mod:BuildSketch() end
@@ -893,7 +893,7 @@ local function PathTo()
 	if not zone or zone == WORLD then return false end
 	local x, y = FromWorld(zone, u, v)
 	if x < 0 or x > 1 or y < 0 or y > 1 then return false end
-	local ok, started = pcall(api.Navigate, "OpenMap", zone, x, y)
+	local ok, started = pcall(api.Navigate, "Valhalla", zone, x, y)
 	return ok and started and true or false
 end
 
@@ -965,7 +965,7 @@ local function OnBlizzardPinAction(_, action, button)
 	return action ~= MapCanvasMixin.MouseAction.Up
 end
 
--- one part of the setup, its time kept (ns.loadMs.parts: /openmap status)
+-- one part of the setup, its time kept (ns.loadMs.parts: /valhalla status)
 local function Timed(name, fn, ...)
 	if not fn then return end
 	local t0 = debugprofilestop and debugprofilestop()
@@ -986,12 +986,12 @@ local function Setup()
 
 	-- our art sits just above Blizzard's exploration overlays, our icons above the highlight
 	local fl = map:GetPinFrameLevelsManager()
-	local okArt = fl:InsertFrameLevelAbove("PIN_FRAME_LEVEL_OPENMAP_STITCH", "PIN_FRAME_LEVEL_MAP_EXPLORATION", ART_RANGE)
-	local okIcons = fl:InsertFrameLevelAbove("PIN_FRAME_LEVEL_OPENMAP_ICONS", "PIN_FRAME_LEVEL_MAP_HIGHLIGHT", 6)
+	local okArt = fl:InsertFrameLevelAbove("PIN_FRAME_LEVEL_VALHALLA_STITCH", "PIN_FRAME_LEVEL_MAP_EXPLORATION", ART_RANGE)
+	local okIcons = fl:InsertFrameLevelAbove("PIN_FRAME_LEVEL_VALHALLA_ICONS", "PIN_FRAME_LEVEL_MAP_HIGHLIGHT", 6)
 	-- (and where they came out: the art over the exploration overlays, the icons over all of the art.
-	-- Said, not acted on, till the real levels are known in game: /openmap status prints them. PR #22)
-	local art = okArt and fl:GetValidFrameLevel("PIN_FRAME_LEVEL_OPENMAP_STITCH")
-	local icons = okIcons and fl:GetValidFrameLevel("PIN_FRAME_LEVEL_OPENMAP_ICONS")
+	-- Said, not acted on, till the real levels are known in game: /valhalla status prints them. PR #22)
+	local art = okArt and fl:GetValidFrameLevel("PIN_FRAME_LEVEL_VALHALLA_STITCH")
+	local icons = okIcons and fl:GetValidFrameLevel("PIN_FRAME_LEVEL_VALHALLA_ICONS")
 	local explore = fl:GetValidFrameLevel("PIN_FRAME_LEVEL_MAP_EXPLORATION")
 	if not (art and icons and explore and art > explore and icons > art + ART_RANGE) then
 		ns:Print(ns.L["World map: Blizzard's map layers aren't the expected ones; the stitched art may cover some map icons."])
@@ -1005,7 +1005,7 @@ local function Setup()
 		local z = math.min(sc:GetWidth() / ((u1 - u0) * W), sc:GetHeight() / ((v1 - v0) * H)) / FitPx()
 		GlideTo((u0 + u1) / 2, (v0 + v1) / 2, z * (fill or 1))
 	end
-	S.OpenMap = function(mapID) KeepPadCursor(map.SetMapID, map, mapID) end
+	S.Valhalla = function(mapID) KeepPadCursor(map.SetMapID, map, mapID) end
 	S.Switching = function() return switching end   -- (the map underneath following the view, not another map put up)
 	hooksecurefunc(sc, "CreateZoomLevels", Ours("zoom levels", OnCreateZoomLevels))
 	local blizzardReset, ourReset = sc.ResetZoom, Ours("reset zoom", ResetView)
@@ -1023,7 +1023,7 @@ local function Setup()
 	end)
 	sc:HookScript("OnUpdate", Animate)
 	-- the gamepad (Forever's gamepad mode): its zoom stick is ours on the stitched map (PadZoom);
-	-- its A (Blizzard's icons under the cursor, then this) presses OpenMap's control or icon under
+	-- its A (Blizzard's icons under the cursor, then this) presses Valhalla's control or icon under
 	-- the cursor (Gamepad.lua), or else zooms in as a click does; its X, with no icon under the
 	-- cursor, zooms out a map as a right-click does (Blizzard's would change the map underneath)
 	if sc.IsGamepadZooming then
@@ -1034,13 +1034,13 @@ local function Setup()
 		end
 	end
 	-- other addons' view changes (zoom remembered per map, keep centred, a jump into a cave) don't
-	-- apply on the stitched map: its view is OpenMap's. Blizzard's own calls go through
+	-- apply on the stitched map: its view is Valhalla's. Blizzard's own calls go through
 	if sc.InstantPanAndZoom and debugstack then
 		local pan = sc.InstantPanAndZoom
 		sc.InstantPanAndZoom = function(self, ...)
 			if active then
 				local caller = (debugstack(2, 1, 0) or ""):match("AddOns[\\/]([^\\/]+)[\\/]")
-				if caller and caller ~= "OpenMap" and not caller:find("^Blizzard_") then return end
+				if caller and caller ~= "Valhalla" and not caller:find("^Blizzard_") then return end
 			end
 			return pan(self, ...)
 		end
@@ -1050,7 +1050,7 @@ local function Setup()
 		map.NavigateToGamepadCursor = function(self, ...)
 			local x, y = PadCursor()
 			-- (A has just clicked Blizzard's own icons under the cursor, GamepadMapClick's ClickHoveredPins:
-			-- then OpenMap's icon there isn't pressed as well, only its windows over the map)
+			-- then Valhalla's icon there isn't pressed as well, only its windows over the map)
 			local clicked = self.GetHoveredPin and self:GetHoveredPin() ~= nil
 			if x and mod.PadPress and mod.PadPress(x, y, clicked) then return true end
 			if not active then return navigate(self, ...) end
@@ -1104,7 +1104,7 @@ local function Setup()
 	dp.OnMapChanged = function()
 		ApplyZoom()
 		if mod.OnHostMapChanged then mod.OnHostMapChanged() end
-		if mod.RefreshPortrait then pcall(mod.RefreshPortrait) end   -- (OpenMap's icon only while stitching)
+		if mod.RefreshPortrait then pcall(mod.RefreshPortrait) end   -- (Valhalla's icon only while stitching)
 		-- (inside Blizzard's map change: a failure here is reported, never left to break it)
 		if mod.RefreshNav then
 			local ok, err = pcall(mod.RefreshNav, mod)
@@ -1235,13 +1235,13 @@ function mod.PinView()
 	return u, v, hu, hv
 end
 
--- The Gamepad UI and OpenMap's map don't mix. The UI sets the controller's buttons on the map again on
--- every map change, and on OpenMap's map those changes (and the view they read) are OpenMap's code,
--- not Blizzard's: the buttons then run as OpenMap's, and closing the map with B does what only
--- Blizzard's code may ("OpenMap has been blocked from an action only available to the Blizzard UI").
--- With the Gamepad UI on at login OpenMap leaves the map alone, touching nothing of it, until the UI
--- is off; turned on later, the map is OpenMap's already and only a reload gives it back. Options'
--- padMap keeps OpenMap's map with the Gamepad UI too: Gamepad.lua binds B and the full-screen buttons
+-- The Gamepad UI and Valhalla's map don't mix. The UI sets the controller's buttons on the map again on
+-- every map change, and on Valhalla's map those changes (and the view they read) are Valhalla's code,
+-- not Blizzard's: the buttons then run as Valhalla's, and closing the map with B does what only
+-- Blizzard's code may ("Valhalla has been blocked from an action only available to the Blizzard UI").
+-- With the Gamepad UI on at login Valhalla leaves the map alone, touching nothing of it, until the UI
+-- is off; turned on later, the map is Valhalla's already and only a reload gives it back. Options'
+-- padMap keeps Valhalla's map with the Gamepad UI too: Gamepad.lua binds B and the full-screen buttons
 -- to secure clicks of the map's own buttons, which the game doesn't block (mod.PadKeys)
 local started = false
 local function Start()
@@ -1253,15 +1253,15 @@ local function Start()
 	end
 end
 
--- (said once at login, and whenever /openmap or the options are opened while it waits)
+-- (said once at login, and whenever /valhalla or the options are opened while it waits)
 function mod.PadOffText()
-	return ns.L["The Gamepad UI is on, so OpenMap leaves the world map to Blizzard: with OpenMap's map the game blocks the controller's buttons (B to close the map). Turn the Gamepad UI off for OpenMap's map."]
+	return ns.L["The Gamepad UI is on, so Valhalla leaves the world map to Blizzard: with Valhalla's map the game blocks the controller's buttons (B to close the map). Turn the Gamepad UI off for Valhalla's map."]
 end
 
 local styleOwner = {}
 local function StyleChanged()
 	if PadUI() then
-		if started and not mod.db.padMap then ns:Print(ns.L["The Gamepad UI is on: /reload so OpenMap leaves the world map to Blizzard (until then the game may block closing the map with the controller)."]) end
+		if started and not mod.db.padMap then ns:Print(ns.L["The Gamepad UI is on: /reload so Valhalla leaves the world map to Blizzard (until then the game may block closing the map with the controller)."]) end
 	elseif mod.padWaits then
 		if InCombatLockdown() then      -- (set up out of combat, as at login)
 			ns.RegisterEvent(styleOwner, "PLAYER_REGEN_ENABLED", function()
@@ -1273,19 +1273,19 @@ local function StyleChanged()
 		mod.padWaits = nil
 		mod.enabled = true
 		Start()
-		ns:Print(ns.L["The Gamepad UI is off: OpenMap's map is back."])
+		ns:Print(ns.L["The Gamepad UI is off: Valhalla's map is back."])
 	end
 end
 
--- Options' padMap turned on or off: on, while OpenMap waits for the Gamepad UI to go, its map at once;
--- off with the Gamepad UI on and the map OpenMap's, only a reload gives it back
+-- Options' padMap turned on or off: on, while Valhalla waits for the Gamepad UI to go, its map at once;
+-- off with the Gamepad UI on and the map Valhalla's, only a reload gives it back
 function mod.SetPadMap(on)
 	if on and mod.padWaits and not InCombatLockdown() then
 		mod.padWaits = nil
 		mod.enabled = true
 		Start()
 	elseif not on and started and PadUI() then
-		ns:Print(ns.L["The Gamepad UI is on: /reload so OpenMap leaves the world map to Blizzard (until then the game may block closing the map with the controller)."])
+		ns:Print(ns.L["The Gamepad UI is on: /reload so Valhalla leaves the world map to Blizzard (until then the game may block closing the map with the controller)."])
 	end
 	if mod.PadKeys then mod.PadKeys() end
 end
@@ -1343,7 +1343,7 @@ function mod:Refresh()
 	if self.RefreshPanel then self:RefreshPanel() end
 end
 
--- /openmap status: what the map is doing
+-- /valhalla status: what the map is doing
 function mod:Diag()
 	-- what loading cost: its files, the login, the map's setup (its dearest parts)
 	local lm = ns.loadMs
@@ -1362,8 +1362,8 @@ function mod:Diag()
 	local fl = map.GetPinFrameLevelsManager and map:GetPinFrameLevelsManager()
 	if fl then
 		local _, explore = pcall(fl.GetValidFrameLevel, fl, "PIN_FRAME_LEVEL_MAP_EXPLORATION")
-		local _, art = pcall(fl.GetValidFrameLevel, fl, "PIN_FRAME_LEVEL_OPENMAP_STITCH")
-		local _, icons = pcall(fl.GetValidFrameLevel, fl, "PIN_FRAME_LEVEL_OPENMAP_ICONS")
+		local _, art = pcall(fl.GetValidFrameLevel, fl, "PIN_FRAME_LEVEL_VALHALLA_STITCH")
+		local _, icons = pcall(fl.GetValidFrameLevel, fl, "PIN_FRAME_LEVEL_VALHALLA_ICONS")
 		ns:Print("Frame levels: exploration %s, art %s (+%d), icons %s.", tostring(explore), tostring(art), ART_RANGE, tostring(icons))
 	end
 	local mapID = map:GetMapID()
@@ -1386,7 +1386,7 @@ function mod:Diag()
 	end
 	if #openTimes > 0 then
 		local list = {}
-		for i, t in ipairs(openTimes) do list[i] = ("%.0f (OpenMap %.0f)"):format(t[1], t[2]) end
+		for i, t in ipairs(openTimes) do list[i] = ("%.0f (Valhalla %.0f)"):format(t[1], t[2]) end
 		ns:Print("Opening the map took %s ms, latest first; the rest is the game and other addons.", table.concat(list, ", "))
 		local parts = {}
 		for name, ms in pairs(openLast) do parts[#parts + 1] = { name, ms } end
@@ -1395,15 +1395,15 @@ function mod:Diag()
 		if #parts > 0 then ns:Print("  the latest, by part (ms; parts can run inside each other): %s.", table.concat(parts, ", ")) end
 	end
 	if after.start then
-		ns:Print("In the %d s after the latest opening: the longest frame %.0f ms, %.1f s in; OpenMap's later work, slowest (ms): %s.",
+		ns:Print("In the %d s after the latest opening: the longest frame %.0f ms, %.1f s in; Valhalla's later work, slowest (ms): %s.",
 			AFTER_OPEN, after.gap, after.gapAt / 1000, Worst(after.parts))
 	end
 	if next(after.close) then ns:Print("As the map last closed (ms): %s.", Worst(after.close)) end
-	if mod.dungeonOpenMs then ns:Print("Opening the latest dungeon's map took %.0f ms (OpenMap's part).", mod.dungeonOpenMs) end
+	if mod.dungeonOpenMs then ns:Print("Opening the latest dungeon's map took %.0f ms (Valhalla's part).", mod.dungeonOpenMs) end
 	local registered, shown, placed, ours, moved
 	if mod.QuestieStatus then registered, shown, placed, ours, moved = mod.QuestieStatus() end
 	if registered then
-		ns:Print("Questie: %d map icons, %d on this map (%d placed by Questie, %d of those moved to Forever's positions, %d placed by OpenMap), map %d.",
+		ns:Print("Questie: %d map icons, %d on this map (%d placed by Questie, %d of those moved to Forever's positions, %d placed by Valhalla), map %d.",
 			registered, shown, placed, moved, ours, map:GetMapID() or 0)
 	end
 	local cv = S.closeView or {}
@@ -1445,9 +1445,9 @@ function mod:Options()
 		hoverHighlight = { type = "toggle", name = ns.L["Highlight the zone under the cursor"], order = 11, width = "full", get = get, set = set, disabled = off,
 			desc = ns.L["Blizzard's glow on the zone you're pointing at."] },
 		-- (not shown yet: it isn't working in game; the setting and Gamepad.lua's keys stay for when it's taken up again)
-		padMap = { type = "toggle", name = ns.L["OpenMap's map with the controller (test)"], order = 12, width = "full", get = get,
+		padMap = { type = "toggle", name = ns.L["Valhalla's map with the controller (test)"], order = 12, width = "full", get = get,
 			set = function(info, v) set(info, v) mod.SetPadMap(v) end, hidden = true,
-			desc = ns.L["With the game's Gamepad UI on, OpenMap's map instead of Blizzard's. The controller's B and full-screen buttons on the map are OpenMap's then, so the game doesn't block them. Still being tried out: if the game blocks something, turn this off and /reload."] },
+			desc = ns.L["With the game's Gamepad UI on, Valhalla's map instead of Blizzard's. The controller's B and full-screen buttons on the map are Valhalla's then, so the game doesn't block them. Still being tried out: if the game blocks something, turn this off and /reload."] },
 		lookHeader = ns.Header(ns.L["Look"], 20),
 		colorMatch = { type = "range", name = ns.L["Colour matching"], order = 21, min = 0, max = 1, step = 0.05, isPercent = true,
 			get = get, set = set, disabled = off,
@@ -1498,7 +1498,7 @@ function mod:Options()
 			desc = ns.L["The zoom (in times the whole-world view) the map's icons for places show from: dungeons, boats, zeppelins and flight masters (1: from the whole world; higher: only further in). 0 is Auto: each from its own zoom, as it comes. Townsfolk never show further out than their own; your pins, drawings and party always show."] },
 		iconScale = { type = "range", name = ns.L["Icon size"], order = 33.6, min = ICON_SCALE[1], max = ICON_SCALE[2], step = ICON_SCALE[3],
 			isPercent = true, get = get, set = set, disabled = off,
-			desc = ns.L["OpenMap's icons on the map (dungeons, flight masters, boats, townsfolk, your pins ...) at this size. Questie's icons have their own size, in Questie's options."] },
+			desc = ns.L["Valhalla's icons on the map (dungeons, flight masters, boats, townsfolk, your pins ...) at this size. Questie's icons have their own size, in Questie's options."] },
 		allQuests = { type = "toggle", name = ns.L["Quests from every zone"], order = 33.7, get = get, set = set, disabled = off,
 			hidden = function() return mod.defaults.allQuests == nil end,   -- (Quests.lua: not in retail's toc)
 			desc = ns.L["The quests in your log on the map from every zone and at any zoom. Blizzard's map shows a zone's quests only once you've zoomed in on that zone."] },
@@ -1517,7 +1517,7 @@ function mod:Options()
 	opts.news = { type = "execute", name = ns.L["What's new"], order = 1.5, func = function() mod:ToggleNews(true) end,
 		desc = ns.L["This version's changes, and the versions before."] }
 	opts.resetSliders = { type = "execute", name = ns.L["Reset sliders to defaults"], order = 2, disabled = off,
-		desc = ns.L["Every slider here (and the OpenMap menu's) back to how OpenMap comes."],
+		desc = ns.L["Every slider here (and the Valhalla menu's) back to how Valhalla comes."],
 		confirm = true, confirmText = ns.L["Put every slider back to its default?"],
 		func = function() mod:ResetSliders() end }
 	-- (what a client's data has none of isn't offered: retail's has no colour matching or painted gaps, and

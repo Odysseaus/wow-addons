@@ -174,10 +174,10 @@ local function PinClick()
 end
 
 -- On the stitched map the pin is always ours, never Blizzard's: a click on Blizzard's runs in
--- the map's code that OpenMap changes, and its Shift-click (copying a slash command to the
--- clipboard, which only Blizzard's UI may do) is then blocked, blaming OpenMap
+-- the map's code that Valhalla changes, and its Shift-click (copying a slash command to the
+-- clipboard, which only Blizzard's UI may do) is then blocked, blaming Valhalla
 -- (and, on a client whose map filter can show Blizzard's own dungeon entrances, retail's, those: the
--- stitched map has OpenMap's, from the same journal, which would show twice)
+-- stitched map has Valhalla's, from the same journal, which would show twice)
 local function HideBlizzardPin()
 	if not (mod.IsStitched and mod.IsStitched()) or not map or not map.EnumeratePinsByTemplate then return end
 	for pin in map:EnumeratePinsByTemplate("WaypointLocationPinTemplate") do pin:Hide() end
@@ -231,8 +231,8 @@ function mod.TrackPoint(mapID, x, y, title)
 	local tomtom = _G.TomTom
 	ClearTomTom()
 	if tomtom and tomtom.AddWaypoint then
-		local name = (title and title ~= "") and title or (info and info.name) or "OpenMap"
-		local ok, point = pcall(tomtom.AddWaypoint, tomtom, mapID, x, y, { title = name, from = "OpenMap" })
+		local name = (title and title ~= "") and title or (info and info.name) or "Valhalla"
+		local ok, point = pcall(tomtom.AddWaypoint, tomtom, mapID, x, y, { title = name, from = "Valhalla" })
 		if ok then tomtomPoint = point end
 	end
 	RefreshWaypoint()

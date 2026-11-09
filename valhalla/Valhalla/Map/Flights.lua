@@ -31,7 +31,7 @@ local factionBit
 --------------------------------------------------------------------------------
 
 -- the flight masters the game says you've found (C_TaxiMap.GetTaxiNodesForMap: isUndiscovered false),
--- read afresh as the map opens: every one learned, before OpenMap was installed too. The same list
+-- read afresh as the map opens: every one learned, before Valhalla was installed too. The same list
 -- names them in the client's own language, so the tables' English is replaced by it here (once the
 -- map opens: the tooltips, the route's caption, the search, the learned names and the measured times
 -- all read a node's name off this table, and in a client not in English the English ones matched

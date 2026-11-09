@@ -1,11 +1,11 @@
 --------------------------------------------------------------------------------
--- /openmap bench: where the map's frame time goes, on this computer. With the map open over a
+-- /valhalla bench: where the map's frame time goes, on this computer. With the map open over a
 -- place where it's slow, it runs a fixed course of about a minute (leave the mouse still): at
 -- several zooms about the view's centre it holds still, pans round a small circle and zooms in
 -- and out, timing every frame; then, at the zoom that was slowest, it turns each part of the map
--- off in turn (OpenMap's layers, every addon's map pins) and times it again. The results show in
--- a box to copy, and are kept in OpenMap's saved settings (lastBench) until the next run.
--- /openmap bench again stops it; /openmap bench 16 turns the parts off at 16x. Vsync and the frame
+-- off in turn (Valhalla's layers, every addon's map pins) and times it again. The results show in
+-- a box to copy, and are kept in Valhalla's saved settings (lastBench) until the next run.
+-- /valhalla bench again stops it; /valhalla bench 16 turns the parts off at 16x. Vsync and the frame
 -- cap are off while it runs (they'd round every frame up to the screen's refresh), and back after. The map doesn't
 -- switch underneath while it runs.
 --------------------------------------------------------------------------------
@@ -65,7 +65,7 @@ local function Zooming(zoom)
 end
 
 -- frame times over `sec` seconds (each(t) every frame): mean, 90th percentile, and each timed part
--- of OpenMap's (and every addon's pins rescaling) a frame
+-- of Valhalla's (and every addon's pins rescaling) a frame
 local function Time(sec, each)
 	frames, S.bench = {}, {}
 	Run(sec, each)
@@ -135,7 +135,7 @@ local function Info()
 	local px = (ph or 768) / 768
 	local es = sc:GetEffectiveScale()
 	local function cvar(name) local ok, v = pcall(GetCVar, name) return ok and v or "-" end
-	Line("OpenMap bench %s, %s", ns.version or "?", date("%Y-%m-%d %H:%M"))
+	Line("Valhalla bench %s, %s", ns.version or "?", date("%Y-%m-%d %H:%M"))
 	Line("screen %dx%d, UI scale %.2f, map view %dx%d px; maxFPS %s, maxFPSBk %s, vsync %s, triple buffering %s",
 		pw or 0, ph or 0, UIParent:GetEffectiveScale(), sc:GetWidth() * es * px, sc:GetHeight() * es * px,
 		cvar("maxFPS"), cvar("maxFPSBk"), cvar("vsync"), cvar("gxTripleBuffer"))
@@ -258,14 +258,14 @@ end
 local box
 local function ShowResults(text)
 	if not box then
-		box = CreateFrame("Frame", "OpenMapBench", UIParent)
+		box = CreateFrame("Frame", "ValhallaBench", UIParent)
 		box:SetSize(640, 420)
 		box:SetPoint("CENTER")
 		box:SetFrameStrata("DIALOG")
 		box:EnableMouse(true)
 		-- (the map window's own frame, its title bar and X)
-		local top = ns.Look:Window(box, L["OpenMap bench: Ctrl-A, Ctrl-C to copy"])
-		tinsert(UISpecialFrames, "OpenMapBench")
+		local top = ns.Look:Window(box, L["Valhalla bench: Ctrl-A, Ctrl-C to copy"])
+		tinsert(UISpecialFrames, "ValhallaBench")
 		local scroll = CreateFrame("ScrollFrame", nil, box, "UIPanelScrollFrameTemplate")
 		scroll:SetPoint("TOPLEFT", 14, -12 - top)
 		scroll:SetPoint("BOTTOMRIGHT", -32, 14)
@@ -342,7 +342,7 @@ end)
 function mod:Bench(at)
 	if course then Stop(L["Bench stopped."]) return end
 	if not (map and map:IsShown() and mod.IsStitched()) then
-		ns:Print(L["Open the world map over a place where it's slow (a zone or continent), then /openmap bench."])
+		ns:Print(L["Open the world map over a place where it's slow (a zone or continent), then /valhalla bench."])
 		return
 	end
 	if InCombatLockdown() then ns:Print(L["Not in combat."]) return end
@@ -352,7 +352,7 @@ function mod:Bench(at)
 	Uncap()
 	course = coroutine.create(Course)
 	driver:Show()
-	ns:Print(L["Bench: about three minutes. Leave the mouse alone; /openmap bench again stops it."])
+	ns:Print(L["Bench: about three minutes. Leave the mouse alone; /valhalla bench again stops it."])
 	if next(capped) then ns:Print(L["(vsync and the frame cap are off while it runs, and back on after.)"]) end
 end
 

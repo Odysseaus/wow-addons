@@ -752,10 +752,10 @@ end
 --------------------------------------------------------------------------------
 
 -- each part runs on its own: one failing (a client difference) mustn't take the others
--- with it. Its error is reported once, and /openmap status lists it.
+-- with it. Its error is reported once, and /valhalla status lists it.
 local failed = {}
 S.closeFailed = failed
-local stepMs = {}               -- each step's time (ms, smoothed) and its worst, for /openmap status
+local stepMs = {}               -- each step's time (ms, smoothed) and its worst, for /valhalla status
 S.closeSteps = stepMs
 local function Try(name, fn, ...)
 	local start = debugprofilestop and debugprofilestop()
@@ -769,7 +769,7 @@ local function Try(name, fn, ...)
 	if ok then return a, b end
 	if not failed[name] then
 		failed[name] = tostring(a)
-		geterrorhandler()(("OpenMap %s: %s"):format(name, tostring(a)))
+		geterrorhandler()(("Valhalla %s: %s"):format(name, tostring(a)))
 	end
 end
 
@@ -779,7 +779,7 @@ end
 -- area, the full screen's wide view took it in later)
 -- the blur rests while the map moves: its four copies of every zone in view are laid out again
 -- on every frame of a zoom or pan (about 60 ms a zoom frame and 8 ms a pan frame at 16x,
--- /openmap bench); back `after` seconds once it stops. A lone view update (the map opening, a
+-- /valhalla bench); back `after` seconds once it stops. A lone view update (the map opening, a
 -- setting changed) applies it at once: it rests from the second update in a row (`gap` apart at most).
 -- It comes back `step` zones a frame: all at once, it was one long frame each time the map stopped,
 -- which the next wheel notch, a moment later, landed on. `after` is longer than a pause between

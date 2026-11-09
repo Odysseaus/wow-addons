@@ -916,7 +916,7 @@ end
 
 function S.GetPinSet(key) return sets[key] end
 
--- the menu's Icon size: every icon of OpenMap's at this times its own size (each about its own
+-- the menu's Icon size: every icon of Valhalla's at this times its own size (each about its own
 -- middle: it's anchored there)
 function S.SetIconScale(k)
 	k = tonumber(k) or 1
@@ -1236,7 +1236,7 @@ function S.Build(parent, artLevel, range, iconLevel)
 	-- not the edge of the paper: its colour (the world's sea colours carried outward, keeping
 	-- the tints of the sea near its edges), and its mottling at the continents' scale (the
 	-- world art and its sea colour fade out into it at their edges)
-	-- (a client whose art paints its own sea, ns.ClientMaps.sea false: none of OpenMap's, only the
+	-- (a client whose art paints its own sea, ns.ClientMaps.sea false: none of Valhalla's, only the
 	-- colour of its world art's sea past its edges)
 	local seaOn = not (ns.ClientMaps and ns.ClientMaps.sea == false)
 	local sea = root:CreateTexture(nil, "BACKGROUND", nil, -8)
@@ -1307,7 +1307,7 @@ function S.Build(parent, artLevel, range, iconLevel)
 	for _, info in ipairs(C_Map.GetMapChildrenInfo(WORLD, Enum.UIMapType.Continent, true) or {}) do
 		if S.Stitched(info.mapID) then
 			PlaceBackdrop(contRoot, info.mapID, "ARTWORK", FEATHER_WIDE)
-			if seaOn then PlaceLand(info.mapID) end   -- (its land kept as land over OpenMap's sea)
+			if seaOn then PlaceLand(info.mapID) end   -- (its land kept as land over Valhalla's sea)
 		end
 	end
 	-- the outer sea's mottling, at the same scale as the sea paper's first octave (the Eastern Kingdoms')
@@ -1543,14 +1543,14 @@ function S.LandMask(layer, mapID)
 	return minimapMasks[mapID] or nil
 end
 
--- for /openmap status: regions placed (art, masks) and placed since (icons, close-up layers)
+-- for /valhalla status: regions placed (art, masks) and placed since (icons, close-up layers)
 function S.RegionCount()
 	local n = 0
 	for _ in pairs(dynamic) do n = n + 1 end
 	return #placed, n
 end
 
--- for /openmap status: how many of the art's regions are being drawn now
+-- for /valhalla status: how many of the art's regions are being drawn now
 function S.DrawnCount()
 	local n = 0
 	for _, rec in ipairs(placed) do
@@ -1579,7 +1579,7 @@ end
 
 function S.IsShownNow() return root and root:IsShown() or false end
 
--- the sea chart (Chart.lua) on or off: OpenMap's own sea past the world map put away (its colour carried out,
+-- the sea chart (Chart.lua) on or off: Valhalla's own sea past the world map put away (its colour carried out,
 -- MapSeaFieldOut; its mottling; the continents' sea colour and their sea past the world map's edges), and the
 -- world map fading into the chart through MapChart\Middle (its continents, islands and coasts whole) instead of
 -- its wide edge fade, its open sea eased toward the chart's (ns.MapChart.seaTint); the sea's own texture, as
@@ -1601,7 +1601,7 @@ function S.SetChart(on)
 	if scaleNow and scaleNow > 0 then S.SetZoom(zoomNow, scaleNow) end
 end
 
--- for /openmap bench (Bench.lua): the art's parts, each { name, regions } it hides for a moment
+-- for /valhalla bench (Bench.lua): the art's parts, each { name, regions } it hides for a moment
 -- to see what that part costs. (Textures straight on root: the sea and the world map's art)
 function S.Parts()
 	if not root then return {} end
@@ -1612,7 +1612,7 @@ function S.Parts()
 	for _, e in ipairs(twins) do copies[#copies + 1] = e[1] end
 	local L = S.closeLayers or {}
 	return {
-		{ "all OpenMap art and icons", { root, pinRoot } },
+		{ "all Valhalla art and icons", { root, pinRoot } },
 		{ "sea and world art", own },
 		{ "continents, land, gap paper", { contRoot } },
 		{ "zone base art", { tilesRoot } },
@@ -1627,7 +1627,7 @@ function S.Parts()
 		{ "grain", { L.grain } },
 		{ "caves", { L.under } },
 		{ "names", { labelsRoot } },
-		{ "OpenMap icons", { pinRoot } },
+		{ "Valhalla icons", { pinRoot } },
 	}
 end
 
@@ -1798,7 +1798,7 @@ function S.Layout(mapID)
 end
 
 -- zoom: 1 = the world fits the view; scale: the host canvas's scale (host units -> view px)
--- for /openmap status: each part of S.SetZoom's time (ms, smoothed) and its worst
+-- for /valhalla status: each part of S.SetZoom's time (ms, smoothed) and its worst
 local zoomSteps = {}
 S.zoomSteps = zoomSteps
 local stepAt
@@ -1886,8 +1886,8 @@ function S.SetZoom(zoom, scale)
 	local wo = math.floor(Smooth(WORLD_OUT) * 20) / 20
 	local ws = math.floor(Smooth(WORLD_SEA_OUT) * 20) / 20
 	local wc = math.floor(Smooth(WORLD_COAST_OUT) * 20) / 20
-	-- (a client whose art paints its own sea: it stays as Blizzard painted it, never muted to OpenMap's sea,
-	-- and the world's art stays under the continents': there's no sea of OpenMap's under it)
+	-- (a client whose art paints its own sea: it stays as Blizzard painted it, never muted to Valhalla's sea,
+	-- and the world's art stays under the continents': there's no sea of Valhalla's under it)
 	if ns.ClientMaps and ns.ClientMaps.sea == false then m, sm, wo, ws, wc = muted, seaNow, worldOut, worldSea, worldCoastOut end
 	if m ~= muted or sm ~= seaNow or wo ~= worldOut or ws ~= worldSea or wc ~= worldCoastOut then
 		muted, seaNow, worldOut, worldSea, worldCoastOut = m, sm, wo, ws, wc

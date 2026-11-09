@@ -2,7 +2,7 @@
 -- The gamepad (Forever's gamepad mode). On the map Blizzard moves a cursor of its own
 -- (SoftCursor) with the left stick and zooms with the right; WorldMap.lua zooms the stitched
 -- map about that cursor and makes its A and X zoom in and out as clicks do. That cursor has
--- no mouse-over: here, what's under it (OpenMap's buttons and menu, its map icons) is entered
+-- no mouse-over: here, what's under it (Valhalla's buttons and menu, its map icons) is entered
 -- and left as the mouse would (tooltips, highlights), and A presses it.
 --------------------------------------------------------------------------------
 
@@ -12,7 +12,7 @@ local mod = ns:GetModule("worldmap")
 
 local REACH = 12                -- px from the cursor that an icon counts as under it (Blizzard's for its own)
 local EVERY = 0.05              -- seconds between looks at what's under the cursor
-local roots = {}                -- OpenMap's controls on the map (Panel, Paint, Report add theirs)
+local roots = {}                -- Valhalla's controls on the map (Panel, Paint, Report add theirs)
 mod.padRoots = roots
 local hovered                   -- what's under the cursor, entered
 local found, foundLevel, blocked
@@ -50,7 +50,7 @@ function Find(f, x, y)
 	FindIn(x, y, f:GetChildren())
 end
 
--- OpenMap's control under (x, y), or its map icon (not with `noPins`); and whether a control is in the way
+-- Valhalla's control under (x, y), or its map icon (not with `noPins`); and whether a control is in the way
 local function Under(x, y, noPins)
 	found, foundLevel, blocked = nil, nil, false
 	for _, root in ipairs(roots) do Find(root, x, y) end
@@ -76,8 +76,8 @@ local function Enter(f)
 	end
 end
 
--- A, with the gamepad's cursor at (x, y): true if it was OpenMap's to take (`noPins`: Blizzard's own
--- icon there has just taken it, so OpenMap's map icons don't too: only its windows over the map)
+-- A, with the gamepad's cursor at (x, y): true if it was Valhalla's to take (`noPins`: Blizzard's own
+-- icon there has just taken it, so Valhalla's map icons don't too: only its windows over the map)
 function mod.PadPress(x, y, noPins)
 	local f, taken = Under(x, y, noPins)
 	if not f then return taken end
@@ -102,9 +102,9 @@ function mod.PadPress(x, y, noPins)
 end
 
 --------------------------------------------------------------------------------
--- The controller's B and full-screen buttons on OpenMap's map with the Gamepad UI (Options' padMap).
--- Blizzard binds them to its map footer's actions, made again on every map change; on OpenMap's map
--- that change runs OpenMap's code too (its zoom and view), so the actions are made as OpenMap's, and
+-- The controller's B and full-screen buttons on Valhalla's map with the Gamepad UI (Options' padMap).
+-- Blizzard binds them to its map footer's actions, made again on every map change; on Valhalla's map
+-- that change runs Valhalla's code too (its zoom and view), so the actions are made as Valhalla's, and
 -- the game blocks what B does (closing the map hands the gamepad cursor back: Blizzard's code only).
 -- While the footer shows they're bound instead to secure buttons that click the map's own buttons, as
 -- Blizzard's B does (SmartNavigation:AttemptClose clicks the close button): B the close button (full
@@ -143,13 +143,13 @@ local function PadKeys()
 	local full = padMap.IsMaximized and padMap:IsMaximized()
 	local details = QuestMapFrame and QuestMapFrame.DetailsFrame and QuestMapFrame.DetailsFrame:IsShown()
 	if not details then   -- (Blizzard's own B then: back to the quest list, nothing blocked)
-		Bind(GAMEPAD_FACE_RIGHT, "OpenMapPadBack", full and sizes and sizes.MinimizeButton or border and border.CloseButton)
+		Bind(GAMEPAD_FACE_RIGHT, "ValhallaPadBack", full and sizes and sizes.MinimizeButton or border and border.CloseButton)
 	end
 	if sizes then
 		if full then
-			Bind(GAMEPAD_DPAD_TOP, "OpenMapPadSmall", sizes.MinimizeButton)
+			Bind(GAMEPAD_DPAD_TOP, "ValhallaPadSmall", sizes.MinimizeButton)
 		else
-			Bind(GAMEPAD_DPAD_BOTTOM, "OpenMapPadFull", sizes.MaximizeButton)
+			Bind(GAMEPAD_DPAD_BOTTOM, "ValhallaPadFull", sizes.MaximizeButton)
 		end
 	end
 end

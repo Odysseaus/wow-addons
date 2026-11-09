@@ -1,4 +1,4 @@
--- The cave and dungeon maps' tiles from OpenMap's own folder (Media/Textures/Forever/MapTile), not
+-- The cave and dungeon maps' tiles from Valhalla's own folder (Media/Textures/Forever/MapTile), not
 -- the game's: WoW Forever doesn't list them for every language, so some clients (esMX, ruRU,
 -- itIT) draw them as solid green squares. Swaps each file ID in Caves.lua's and DungeonMaps.lua's
 -- tile lists for its copy (tools/map-tiles/build.py copies them; RADD95's OpenMap TextureFix found it).
