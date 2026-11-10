@@ -3,6 +3,7 @@
 -- Top 10 (rising and falling over 7 days), My items (bags and bank: vendor or AH), History (one item's
 -- lowest price over a day or a week), Scan results (every item of the last full scan). Craft: v0.4.1.
 -- Every item is an item cell (Views.lua): its icon, name and the game's tooltip, with AH lines under it.
+-- My items and Scan results page (v0.4.0.1): as many rows as the window fits (6-20), page buttons under them.
 -- Prices are the raw lowest buyout per unit (the 1c-dump filter is a setting, off). The AH can't be open
 -- while this window is: scanning is on Valhalla's list beside the Auction House.
 --------------------------------------------------------------------------------
@@ -23,7 +24,9 @@ M.SUBS = {
 	{ key = "craft", label = L["Craft"], soon = true },
 }
 M.TOP = 10
-M.ROWS = 12
+M.ROWS = 12   -- (Top 10's columns; My items and Scan results fit their rows to the window: M.FitRows)
+M.ROW_H, M.MIN_ROWS, M.MAX_ROWS = 25, 6, 20
+M.BELOW = 52  -- (under the rows: the page buttons, then the totals or the count line)
 M.SPARK = 8
 M.SORTS = { { "name", L["Name"] }, { "min", L["Lowest"] }, { "units", L["Units"] }, { "auctions", L["Auctions"] }, { "change", L["7-day change"] } }
 M.RANGES = { { "day", L["1 day"] }, { "week", L["7 days"] } }
@@ -109,6 +112,75 @@ local function Column(parent, text, x, w, justify)
 	fs:SetJustifyH(justify or "RIGHT")
 	fs:SetText(text or "")
 	return fs
+end
+
+--------------------------------------------------------------------------------
+-- Pages (v0.4.0.1): a list view's rows fit its height, and page buttons go through all of it
+--------------------------------------------------------------------------------
+
+-- the rows that fit a view h high whose rows start top px down
+function M.FitRows(h, top)
+	local n = math.floor(((h or 0) - top - M.BELOW) / M.ROW_H)
+	return math.max(M.MIN_ROWS, math.min(M.MAX_ROWS, n))
+end
+
+local function Off(b, off)
+	b.off = off
+	b:SetAlpha(off and 0.4 or 1)
+end
+
+-- f.list, f.offset (always a whole page), f.per rows; newRow(i) makes row i when the view first needs it
+local function Paged(f, page, top, newRow)
+	f.offset, f.rows, f.per = 0, {}, nil
+	function f.Fit()
+		local per = M.FitRows(f:GetHeight(), top)
+		for i = #f.rows + 1, per do f.rows[i] = newRow(i) end
+		if per == f.per then return false end
+		f.per = per
+		f.offset = math.floor(f.offset / per) * per   -- (the page with the first item shown on it)
+		return true
+	end
+	function f.Pages()
+		local n = #(f.list or {})
+		return math.max(1, math.ceil(n / f.per)), math.floor(f.offset / f.per) + 1, n
+	end
+	-- a list that shrank: back onto its last page
+	function f.Clamp()
+		local pages = f.Pages()
+		f.offset = math.max(0, math.min(f.offset, (pages - 1) * f.per))
+	end
+	function f.Page(k)
+		local pages, cur = f.Pages()
+		k = math.max(1, math.min(pages, k))
+		if k == cur then return end
+		f.offset = (k - 1) * f.per
+		page:Refresh(true)
+	end
+	local p = CreateFrame("Frame", nil, f)
+	p:SetPoint("BOTTOMLEFT", 8, 26)
+	p:SetSize(420, 20)
+	p.first = V.Button(p, "<<", 30, 20, function() f.Page(1) end)
+	p.first:SetPoint("LEFT", 0, 0)
+	p.prev = V.Button(p, "<", 30, 20, function() local _, cur = f.Pages() f.Page(cur - 1) end)
+	p.prev:SetPoint("LEFT", 34, 0)
+	p.label = Text(p, 11, GREY)
+	p.label:SetPoint("LEFT", 70, 0)
+	p.label:SetWidth(276)
+	p.next = V.Button(p, ">", 30, 20, function() local _, cur = f.Pages() f.Page(cur + 1) end)
+	p.next:SetPoint("LEFT", 350, 0)
+	p.last = V.Button(p, ">>", 30, 20, function() f.Page(f.Pages()) end)
+	p.last:SetPoint("LEFT", 384, 0)
+	f.pager = p
+	function f.UpdatePager()
+		local pages, cur, n = f.Pages()
+		p:SetShown(n > f.per)
+		p.label:SetText(L["Page %d of %d · items %d-%d of %d"]:format(cur, pages, math.min(n, f.offset + 1), math.min(n, f.offset + f.per), n))
+		Off(p.first, cur <= 1) Off(p.prev, cur <= 1)
+		Off(p.next, cur >= pages) Off(p.last, cur >= pages)
+	end
+	V.Wheel(f, function(delta) local _, cur = f.Pages() f.Page(cur - delta) end)   -- (a notch: a page)
+	f:SetScript("OnSizeChanged", function() if f.Fit() and f:IsShown() then page:Refresh(true) end end)
+	f.Fit()
 end
 
 --------------------------------------------------------------------------------
@@ -199,11 +271,10 @@ local function BuildMine(f, page)
 		Column(head, L["Item"], 2, 180, "LEFT"), Column(head, L["Have"], 190, 44), Column(head, L["Vendor"], 238, 80),
 		Column(head, L["AH (after cut)"], 322, 96), Column(head, L["Best"], 422, 60), Column(head, L["Total"], 486, 100),
 	}
-	f.rows = {}
-	for i = 1, M.ROWS do
+	Paged(f, page, 48, function(i)
 		local r = CreateFrame("Frame", nil, f)
 		r:SetSize(640, 24)
-		r:SetPoint("TOPLEFT", 4, -48 - (i - 1) * 25)
+		r:SetPoint("TOPLEFT", 4, -48 - (i - 1) * M.ROW_H)
 		r.cell = V.ItemCell(r, 184)
 		r.cell:SetPoint("LEFT", 2, 0)
 		r.cell.onClick = function(id) M.ShowHistory(page, id) end
@@ -213,24 +284,25 @@ local function BuildMine(f, page)
 		r.best = Column(r, "", 422, 60)
 		r.total = Column(r, "", 486, 100)
 		r:Hide()
-		f.rows[i] = r
-	end
+		return r
+	end)
 	f.totals = Text(f, 11, GOLD)
 	f.totals:SetPoint("BOTTOMLEFT", 8, 6)
 	f.totals:SetPoint("RIGHT", f, "RIGHT", -8, 0)
 	f.totals:SetJustifyH("LEFT")
 	f.empty = Text(f, 12, GREY)
 	f.empty:SetPoint("TOPLEFT", 8, -52)
-	V.Wheel(f, function(delta) f.offset = math.max(0, math.min(math.max(0, #(f.list or {}) - M.ROWS), f.offset - delta * 3)) f.Refresh(true) end)
 	function f.Refresh(keep)
 		local house = M.House()
-		if not keep then f.list, f.sums = S().Mine(house, I.S.mineBank) end
+		if house ~= f.house then f.offset, f.house = 0, house end   -- (another house: page 1)
+		if not keep or not f.list then f.list, f.sums = S().Mine(house, I.S.mineBank) end
 		f.scope.Update()
+		f.Clamp()
 		local list, shown = f.list, {}
 		f.empty:SetShown(#list == 0)
 		f.empty:SetText(L["Nothing in your bags yet."])
 		for i, r in ipairs(f.rows) do
-			local e = list[f.offset + i]
+			local e = i <= f.per and list[f.offset + i]
 			if e then
 				r.cell:SetItem(e.id, M.Lines)
 				r.n:SetText(tostring(e.n))
@@ -249,6 +321,7 @@ local function BuildMine(f, page)
 		local s = f.sums
 		f.totals:SetText(L["All at a vendor: %s.  All on the AH (after its %d%% cut): %s.  The better of each: %s."]:format(
 			S().Money(s.vendor), math.floor(S().Cut(house) * 100 + 0.5), S().Money(s.ah), S().Money(s.best)))
+		f.UpdatePager()
 		return shown
 	end
 end
@@ -319,7 +392,7 @@ local function BuildHistory(f, page)
 		local max = 0
 		for _, p in ipairs(pts) do if p.min > max then max = p.min end end
 		f.empty:SetShown(#pts == 0)
-		f.empty:SetText(L["No listing of this item in your scans of this range."])
+		f.empty:SetText(L["No listing of this item in your scans of this range. One point per scan, at most one an hour; no minimum."])
 		f.top:SetText(max > 0 and S().Money(max) or "")
 		f.bottom:SetText(max > 0 and "0" or "")
 		local W, H = M.PLOT_W - 8, M.PLOT_H - 8
@@ -377,7 +450,6 @@ end
 --------------------------------------------------------------------------------
 
 local function BuildResults(f, page)
-	f.offset = 0
 	f.search = V.EditBox(f, 200)
 	f.search:SetPoint("TOPLEFT", 8, -4)
 	f.search:SetScript("OnTextChanged", function() f.offset = 0 f.dirty = true f.Refresh() end)
@@ -396,11 +468,10 @@ local function BuildResults(f, page)
 		f.sortButtons[#f.sortButtons + 1] = b
 		x = x + 100
 	end
-	f.rows = {}
-	for i = 1, M.ROWS do
+	Paged(f, page, 56, function(i)
 		local r = CreateFrame("Frame", nil, f)
 		r:SetSize(640, 24)
-		r:SetPoint("TOPLEFT", 4, -56 - (i - 1) * 25)
+		r:SetPoint("TOPLEFT", 4, -56 - (i - 1) * M.ROW_H)
 		r.cell = V.ItemCell(r, 220)
 		r.cell:SetPoint("LEFT", 2, 0)
 		r.cell.onClick = function(id) M.ShowHistory(page, id) end
@@ -409,11 +480,10 @@ local function BuildResults(f, page)
 		r.auctions = Column(r, "", 400, 70)
 		r.change = Column(r, "", 474, 70)
 		r:Hide()
-		f.rows[i] = r
-	end
+		return r
+	end)
 	f.count = Text(f, 11, GREY)
 	f.count:SetPoint("BOTTOMLEFT", 8, 6)
-	V.Wheel(f, function(delta) f.offset = math.max(0, math.min(math.max(0, #(f.list or {}) - M.ROWS), f.offset - delta * M.ROWS)) f.Refresh(true) end)
 	function f.Build()
 		local house = M.House()
 		local m = S().Market(house)
@@ -442,11 +512,15 @@ local function BuildResults(f, page)
 		local house = M.House()
 		local m = S().Market(house)
 		local key = ("%s:%d:%s:%s:%s"):format(house, m and #m.scans or 0, f.search:GetText() or "", tostring(M.sort), tostring(M.desc))
-		if not f.list or (not keep and key ~= f.key) or f.dirty then f.Build() f.key, f.dirty = key, nil end
+		if not f.list or (not keep and key ~= f.key) or f.dirty then
+			if key ~= f.key then f.offset = 0 end   -- (another house, search, sort or scan: page 1)
+			f.Build() f.key, f.dirty = key, nil
+		end
+		f.Clamp()
 		local list, shown = f.list, {}
 		for _, b in ipairs(f.sortButtons) do T.Skin(b, 0.9, b.key == (M.sort or "name") and GOLD or T.BRONZE) end
 		for i, r in ipairs(f.rows) do
-			local e = list[f.offset + i]
+			local e = i <= f.per and list[f.offset + i]
 			if e then
 				r.cell:SetItem(e.id, M.Lines)
 				r.min:SetText(e.min > 0 and S().Money(e.min) or L["bid only"])
@@ -464,7 +538,8 @@ local function BuildResults(f, page)
 		end
 		local sc, at = S().LastScan(f.house, "full")
 		f.count:SetText(#list == 0 and L["No full scan of this house yet."]
-			or L["%d items (showing %d-%d). Full scan %s, %d auctions."]:format(#list, f.offset + 1, math.min(#list, f.offset + M.ROWS), S().Age(at), sc and sc.n or 0))
+			or L["%d items (showing %d-%d). Full scan %s, %d auctions."]:format(#list, f.offset + 1, math.min(#list, f.offset + f.per), S().Age(at), sc and sc.n or 0))
+		f.UpdatePager()
 		return shown
 	end
 end
@@ -526,7 +601,7 @@ function V.BuildMarket(page)
 		self:Sub(key):Show()
 		self:Refresh()
 	end
-	function page:Refresh()
+	function page:Refresh(keep)   -- (keep: the same list, another page)
 		local house, houses = M.House()
 		local sc, at = S().LastScan(house, "full")
 		self.status:SetText(L["%s Auction House. Last full scan: %s%s. %s"]:format(house, S().Age(at),
@@ -537,7 +612,7 @@ function V.BuildMarket(page)
 		for _, b in ipairs(self.subButtons) do T.Skin(b, 0.9, b.key == self.current and GOLD or T.BRONZE) end
 		local f = self:Sub(self.current)
 		f:Show()
-		S().shown = f.Refresh() or {}
+		S().shown = f.Refresh(keep) or {}
 	end
 	page:ShowSub("top")
 end

@@ -1338,6 +1338,108 @@ do
   ok(big.state == "done" and big.items == 5016 and big.maxMs <= 8 + 0.6 and bigFrames >= 150, "149,583 auctions of 5,016 items: done, no frame past the budget", ("%d frames, max %.2f ms"):format(bigFrames, big.maxMs))
   W.Fire("AUCTION_HOUSE_CLOSED")
   ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "still nothing written on the map")
+
+  ;(function()   -- (its own function: the main chunk is at its 200 locals)
+  print("-- 28. v0.4.0.1: My items and Scan results page; rows fit the window; History needs no minimum; round icon")
+  ok(Mk.FitRows(400, 48) == 12 and Mk.FitRows(250, 48) == 6 and Mk.FitRows(100, 48) == 6 and Mk.FitRows(900, 48) == 20 and Mk.FitRows(600, 56) == 19,
+    "rows that fit: 6 to 20 (12 at 400 px)")
+  local keepBags, keepBank, keepScope = I.char.bags, I.char.bank, I.S.mineBank
+  local function Bags(n) local b = {} for i = 1, n do b[2000 + i] = i end I.char.bags = b end
+  Bags(70) I.char.bank = { [2001] = 5, [3001] = 2 } I.S.mineBank = false
+  Slash("tab", "invest")
+  mp:ShowSub("mine")
+  local mf = mp.subs.mine
+  mf:SetHeight(400) W.Run(mf, "OnSizeChanged")
+  local pg = mf.pager
+  local function Shown(f) local n = 0 for _, r in ipairs(f.rows) do if r:IsShown() then n = n + 1 end end return n end
+  ok(mf.per == 12 and #mf.list == 70 and pg:IsShown() and pg.label._text == "Page 1 of 6 · items 1-12 of 70" and Shown(mf) == 12, "My items: 70 items, 12 a page: Page 1 of 6", pg.label._text)
+  ok(pg.first.off and pg.prev.off and not pg.next.off and not pg.last.off, "on page 1: first and back are off")
+  ok(mf.rows[1].cell.id == mf.list[1].id and mf.rows[12].cell.id == mf.list[12].id, "the first page's items")
+  W.Click(pg.next)
+  ok(mf.offset == 12 and pg.label._text == "Page 2 of 6 · items 13-24 of 70" and mf.rows[1].cell.id == mf.list[13].id, "next: items 13-24", pg.label._text)
+  W.Click(pg.last)
+  ok(pg.label._text == "Page 6 of 6 · items 61-70 of 70" and Shown(mf) == 10 and not mf.rows[11]:IsShown() and pg.next.off and pg.last.off, "last: items 61-70, the rest of the rows hidden", pg.label._text)
+  W.Click(pg.next)
+  ok(mf.offset == 60, "next on the last page: stays")
+  W.Run(mf, "OnMouseWheel", 1)
+  ok(pg.label._text:find("^Page 5 of 6"), "the wheel up: a page back", pg.label._text)
+  W.Run(mf, "OnMouseWheel", -1) W.Run(mf, "OnMouseWheel", -1)
+  ok(pg.label._text:find("^Page 6 of 6"), "the wheel down: on to the last page, no further")
+  W.Click(pg.prev) W.Click(pg.first)
+  ok(mf.offset == 0 and pg.label._text:find("^Page 1 of 6"), "back and first")
+  local sv = 0 for _, e in ipairs(mf.list) do sv = sv + (e.vendor or 0) * e.n end
+  ok(mf.sums.vendor == sv and mf.totals._text:find(Sc.Money(sv), 1, true), "the totals: all 70 items, not the page", mf.totals._text)
+  W.Click(pg.last)
+  W.Click(mf.scope.boxes[2])
+  ok(I.S.mineBank == true and mf.offset == 0 and #mf.list == 71 and pg.label._text == "Page 1 of 6 · items 1-12 of 71", "Bags + bank: back to page 1 (the bank counted)", pg.label._text)
+  W.Click(mf.scope.boxes[1])
+  W.Click(pg.last)
+  Bags(30) mp:Refresh()
+  ok(pg.label._text == "Page 3 of 3 · items 25-30 of 30" and Shown(mf) == 6, "the bags emptied: onto the new last page", pg.label._text)
+  Bags(10) mp:Refresh()
+  ok(not pg:IsShown() and Shown(mf) == 10 and mf.offset == 0, "all on one page: no page buttons")
+  Bags(70) mp:Refresh()
+  W.Click(pg.next) W.Click(pg.next)
+  ok(mf.offset == 24, "page 3 at 12 rows")
+  mf:SetHeight(250) W.Run(mf, "OnSizeChanged")
+  ok(mf.per == 6 and mf.offset == 24 and mf.rows[1].cell.id == mf.list[25].id and Shown(mf) == 6 and pg.label._text == "Page 5 of 12 · items 25-30 of 70",
+    "the window smaller: 6 rows, the same first item kept", pg.label._text)
+  mf:SetHeight(900) W.Run(mf, "OnSizeChanged")
+  ok(mf.per == 20 and #mf.rows == 20 and mf.offset == 20 and Shown(mf) == 20 and pg.label._text == "Page 2 of 4 · items 21-40 of 70", "bigger: 20 rows (made as needed, no more)", pg.label._text)
+  mf:SetHeight(400) W.Run(mf, "OnSizeChanged")
+  ok(mf.per == 12 and Shown(mf) == 12, "back to 12 rows (the others hidden)")
+  I.char.bags, I.char.bank, I.S.mineBank = keepBags, keepBank, keepScope
+  -- Scan results: the 5,016 items of the big scan
+  mp:ShowSub("results")
+  local rf2 = mp.subs.results
+  rf2:SetHeight(408) W.Run(rf2, "OnSizeChanged")
+  local rp = rf2.pager
+  ok(rf2.per == 12 and #rf2.list == 5016 and rp:IsShown() and rp.label._text == "Page 1 of 418 · items 1-12 of 5016", "Scan results: 5,016 items, Page 1 of 418", rp.label._text)
+  W.Click(rp.last)
+  ok(rp.label._text == "Page 418 of 418 · items 5005-5016 of 5016" and rf2.count._text:find("showing 5005-5016", 1, true) and rf2.rows[12].cell.id == rf2.list[5016].id, "last page: items 5005-5016 (the count line agrees)", rf2.count._text)
+  W.Run(rf2, "OnMouseWheel", 1)
+  ok(rp.label._text:find("^Page 417 of 418"), "the wheel: a page")
+  W.Click(rf2.sortButtons[3])
+  ok(rf2.offset == 0 and rp.label._text:find("^Page 1 of 418"), "a new sort: page 1")
+  W.Click(rp.next)
+  rf2.search:SetText("Item")
+  ok(rf2.offset == 0, "a search: page 1")
+  rf2.search:SetText("")
+  rf2:SetHeight(220) W.Run(rf2, "OnSizeChanged")
+  ok(rf2.per == 6 and rp.label._text:find("^Page 1 of 836"), "Scan results fit too: 6 rows, 836 pages", rp.label._text)
+  rf2:SetHeight(408) W.Run(rf2, "OnSizeChanged")
+  -- History: no minimum number of scans; one point an hour
+  local hh = Mk.House()
+  local hmk = Sc.Market(hh)
+  local nowM = math.floor(W.now / 60) - hmk.base
+  hmk.hist[777001] = nil
+  Mk.ShowHistory(mp, 777001)
+  local hf2 = mp.subs.history
+  ok(hf2.drawn == 0 and hf2.empty:IsShown() and hf2.empty._text:find("no minimum", 1, true), "History, no points: says one point a scan, no minimum", hf2.empty._text)
+  local slot = math.floor((nowM - 60) / Sc.SLOT) * Sc.SLOT   -- (an hour's slot that has ended)
+  Sc.AddPoint(hmk, 777001, slot + 5, 500, 3, 2)
+  mp:Refresh()
+  ok(hf2.drawn == 1 and hf2.note._text:find("^One point so far"), "one full scan: one point, drawn (no 3-scan minimum)", hf2.note._text)
+  Sc.AddPoint(hmk, 777001, slot + 40, 450, 3, "q")
+  mp:Refresh()
+  local pts = Sc.Points(hh, 777001)
+  ok(hf2.drawn == 1 and #pts == 1 and pts[1].min == 450, "a second scan in the same hour: still one point (the latest)")
+  hmk.hist[777001] = ("%d:520:3:2;%d:450:3:q"):format(nowM - 130, nowM)
+  mp:Refresh()
+  ok(hf2.drawn == 2 and hf2.marks[1]._color[4] == 1 and hf2.marks[2]._color[4] == 0.4, "a full and a quick point in two hours: a line (quick faint)")
+  hmk.hist[777001] = ("%d:520:3:2;%d:0:0:q"):format(nowM - 130, nowM)
+  mp:Refresh()
+  ok(hf2.drawn == 1, "a quick scan's 'none listed' isn't drawn")
+  hmk.hist[777001] = nil
+  -- the round icon (R2): an uncompressed 32-bit TGA, transparent corners, solid centre
+  local fh = io.open("Valhalla/Media/Textures/ValhallaIconRound.tga", "rb")
+  local tga = fh and fh:read("*a") if fh then fh:close() end
+  local hdr = tga and { tga:byte(1, 18) } or {}
+  ok(tga and #tga == 65554 and hdr[3] == 2 and hdr[13] == 128 and hdr[15] == 128 and hdr[17] == 32 and hdr[18] == 8, "round icon: 128x128 32-bit uncompressed TGA", tga and #tga)
+  local function Alpha(x, y) return tga:byte(18 + (y * 128 + x) * 4 + 4) end
+  ok(tga and Alpha(0, 0) == 0 and Alpha(127, 127) == 0 and Alpha(64, 64) == 255, "round icon: transparent corners, solid centre")
+  ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "paging wrote nothing on the map")
+  end)()
 end
 
 print(("\n%d passed, %d failed"):format(pass, fail))

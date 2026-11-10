@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.0.1", date = "2026-11-10", heads = { [1] = "Changed", [5] = "Note", }, items = {
+		"|cff6e2c0aMy items and Scan results go through everything|r: page buttons under the list (first, back, next, last) with Page x of y and which items are shown. The mouse wheel turns a page. Changing bags/bank, the house, the search or the sort goes back to page 1.",
+		"|cff6e2c0aAs many rows as the window fits|r (6 to 20): more in the full-screen map, no overlap in the small one.",
+		"|cff6e2c0aThe round icon shows the whole hall|r: the gable, both dragon heads and the doors, in the window's portrait and on the minimap button.",
+		"History draws every scan's point (one an hour at most): it needs no number of scans. Top 10 still needs 3 full scans.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.0", date = "2026-11-10", heads = { [1] = "New", [7] = "Changed", [9] = "Note", }, items = {
 		"|cff6e2c0aAH Market|r: prices from your own scans at the Auction House. |cff6e2c0aScan|r is on Valhalla's list beside the AH: a full scan of the whole market (about 15 seconds, read a little each frame so the game doesn't stall) when its 15 minutes are up, else a quick scan of your items (shopping list, bags, bank). The button turns into Stop with a bar; minimized, right-click the small button. It only reads prices: nothing is posted, bid or bought.",
 		"|cff6e2c0aTop 10|r rising and falling over 7 days (needs 3 full scans): the median lowest price of the second half of the window against the first, with a small sparkline.",

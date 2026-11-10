@@ -64,6 +64,7 @@ function Frame.RegisterEvent(self, e) local t = rawget(self, "_events") or {} se
 function Frame.UnregisterEvent(self, e) if self._events then self._events[e] = nil end end
 function Frame.UnregisterAllEvents(self) self._events = {} end
 function Frame.CreateTexture(self, _, layer) local t = NewFrame("Texture", nil, self) t._layer = layer return t end
+function Frame.CreateLine(self, _, layer) local l = NewFrame("Line", nil, self) l._layer = layer return l end   -- (SetStartPoint, SetEndPoint, SetThickness: no-ops)
 function Frame.CreateFontString(self) local f = NewFrame("FontString", nil, self) f._text = "" return f end
 function Frame.SetTexture(self, t) self._tex = t end
 function Frame.SetColorTexture(self, r, g, b, a) self._color = { r, g, b, a } end
