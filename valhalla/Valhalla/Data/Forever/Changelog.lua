@@ -4,6 +4,17 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.3.1", date = "2026-11-09", heads = { [1] = "Fixed", [3] = "New", [9] = "Note", }, items = {
+		"|cff6e2c0aThe window always opens on Map & Quest Log|r (M, L, or anything else opening it), with Investments, Talents and Professions really hidden: in v0.3.0 the last tab's panel could come back over the map. With the window open, on any tab, L closes it, as M does from another tab. The 'open on the last tab' setting is gone.",
+		"|cff6e2c0aShift-click into Valhalla's boxes no longer opens the stack-split box|r: when the Smart Vendor box (or another Valhalla box) has the cursor and takes the item, the split box closes again. Anywhere else shift-click is the game's own.",
+		"|cff6e2c0aBought it? It comes off your list|r: once you have what you wanted in hand, it's taken off the list and said in chat, with Undo (the button in Investments, or /valhalla undo). Tick |cff6e2c0aKeep|r on a row to keep it stocked instead: hidden while you have enough, back when it's used up.",
+		"|cff6e2c0aIn the mail|r: what you buy at the Auction House counts as in the mail (Smart Vendor's Mail column, the Shopping List's In the mail group, the AH list's footer) until it reaches your bags, so it isn't bought twice. The mailbox, when open, says what's really there.",
+		"|cff6e2c0aOne-click Search at the Auction House|r: Search puts the name in and presses the AH's own Search button for you, on your click (the game's own search runs). If the game won't allow it, the name is left in the search box: press Enter. The experimental One-click setting is gone.",
+		"|cff6e2c0aThe AH list minimizes|r: its - leaves a small button at the Auction House's top right with how many items you need; click it to bring the list back. Minimized or not is remembered.",
+		"|cff6e2c0aThe bank, visible|r: each bank visit says in chat what was counted (items, kinds, tabs; the warband bank too). The bank is noticed by either of the game's two signals, its own first tab is always read, and 'Bank last seen' is under the menu on every Investments page.",
+		"|cff6e2c0aDiagnostic buttons|r: Investments > Settings > Run diagnostic (and Run AH check at the Auction House) save what Valhalla sees, the bank above all, and print three lines; then /reload writes it to disk.",
+		"|cff6e2c0a/reload is enough|r after installing this version: no new saved file.",
+	} },
 	{ version = "v0.3.0", date = "2026-11-09", heads = { [1] = "New", [5] = "Note", }, items = {
 		"|cff6e2c0aTabs on the Valhalla window|r: Map & Quest Log (everything as before), Investments, and Talents and Professions (under construction, coming soon). Below the window by default; along the top or as icons down the side in Investments > Settings. /valhalla tab map|invest|talents|professions.",
 		"|cff6e2c0aSmart Vendor|r (Investments): mark the reagents, profession materials and gear upgrades you want and how many; Valhalla counts your bags as they change and your bank as it was last seen open, and works out what you still need. /valhalla want <item> [count] [mat|reagent|gear].",

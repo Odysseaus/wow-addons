@@ -7,6 +7,13 @@
 -- Quest Log the host is simply hidden: the map and the quest log ran underneath all along.
 -- Tabs: below the window (bottom, the default), along the top of its content, or icons down its right
 -- side (Investments > Settings). Full-screen map: no tabs (the map's own layout), back to the map.
+--
+-- v0.3.1: the window always opens on Map & Quest Log (M, L, or anything else opening it), the other tabs'
+-- host truly hidden (v0.3.0 left it shown underneath, so a stale Investments came back over the map).
+-- With the window already open, on any tab, L closes it (as M does from another tab; M on Map & Quest
+-- Log is the game's own). The keys are the game's: ToggleQuestLog/ToggleWorldMap are post-hooked (the
+-- global functions, nothing written on the map), and the window is closed with HideUIPanel, never in
+-- combat (in combat: back to Map & Quest Log instead).
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -34,6 +41,7 @@ local views = {}
 local current = "map"
 local attached = false
 local hooked = false
+local shownAt, sizedAt                               -- (GetTime() the map last opened / last went full screen or back)
 
 local function Maximized() return map and map.IsMaximized and map:IsMaximized() or false end
 function T.Current() return current end
@@ -233,7 +241,6 @@ function T.Select(key, page)
 	if not attached then return false end
 	if Maximized() then key = "map" end
 	current = key
-	I.S.tab = key
 	if key == "map" then
 		host:Hide()
 	else
@@ -276,6 +283,38 @@ function T.Open(key, page)
 	return true
 end
 
+-- the map opening, whatever opened it: Map & Quest Log, the other tabs' host hidden
+function T.OnMapShow()
+	if not attached then return end
+	shownAt = GetTime()
+	T.Refresh()
+	T.Select("map")
+end
+
+-- closing the window (the game's own way); in combat Valhalla doesn't, it goes back to Map & Quest Log
+function T.Close()
+	if InCombatLockdown() or not HideUIPanel then
+		T.Select("map")
+		return false
+	end
+	pcall(HideUIPanel, map)
+	if map:IsShown() then T.Select("map") return false end
+	return true
+end
+
+-- after the game's ToggleQuestLog (L) / ToggleWorldMap (M), and OpenQuestLog/OpenWorldMap (key: nil)
+function T.AfterKey(key)
+	if not attached or not map:IsShown() then return end
+	local now = GetTime()
+	if shownAt == now then                     -- it just opened: Map & Quest Log (OnShow saw to it)
+		if current ~= "map" then T.Select("map") end
+		return
+	end
+	if not key then if current ~= "map" then T.Select("map") end return end
+	if sizedAt == now then return end           -- (leaving full screen: the game's own step)
+	if key == "L" or current ~= "map" then T.Close() end
+end
+
 local function Attach()
 	if attached or not mod.enabled then return end
 	local wm = ns:GetModule("worldmap")
@@ -286,18 +325,19 @@ local function Attach()
 	attached = true
 	if not hooked then
 		hooked = true
-		map:HookScript("OnShow", function()
-			if not attached then return end
-			if not I.S.rememberTab then current = "map" end
-			T.Refresh()
-		end)
+		map:HookScript("OnShow", function() T.OnMapShow() end)
 		if map.HookScript then map:HookScript("OnSizeChanged", function() if attached then T.Layout() end end) end
 		for _, method in ipairs({ "Maximize", "Minimize" }) do
-			if map[method] then hooksecurefunc(map, method, function() if attached then T.Refresh() end end) end
+			if map[method] then hooksecurefunc(map, method, function() sizedAt = GetTime() if attached then T.Refresh() end end) end
 		end
+		if _G.ToggleQuestLog then hooksecurefunc("ToggleQuestLog", function() T.AfterKey("L") end) end
+		if _G.ToggleWorldMap then hooksecurefunc("ToggleWorldMap", function() T.AfterKey("M") end) end
+		if _G.OpenQuestLog then hooksecurefunc("OpenQuestLog", function() T.AfterKey() end) end
+		if _G.OpenWorldMap then hooksecurefunc("OpenWorldMap", function() T.AfterKey() end) end
 	end
-	current = I.S.rememberTab and I.S.tab or "map"
+	current = "map"
 	T.Refresh()
+	if host then host:Hide() end
 end
 T.Attach = Attach
 

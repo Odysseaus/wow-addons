@@ -78,7 +78,24 @@ function W.Run(f, script, ...)
   if f._scripts[script] then f._scripts[script](f, ...) end
   for _, h in ipairs(f._hooks[script] or {}) do h(f, ...) end
 end
-function W.Click(f, button) W.Run(f, "OnClick", button or "LeftButton") end
+function Frame.SetAttribute(self, k, v) local a = rawget(self, "_attr") or {} self._attr = a a[k] = v end
+function Frame.GetAttribute(self, k) local a = rawget(self, "_attr") return a and a[k] end
+function Frame.Insert(self, t) self._text = (self._text or "") .. t end
+-- a click; on a secure action button as the game does a mouse press: down then up, acting on the up
+function W.Click(f, button)
+  button = button or "LeftButton"
+  if type(f._template) == "string" and f._template:find("SecureActionButtonTemplate", 1, true) then
+    W.Run(f, "PreClick", button, true) W.Run(f, "PostClick", button, true)
+    W.Run(f, "PreClick", button, false)
+    if f:GetAttribute("type") == "click" and f:GetAttribute("clickbutton") then
+      W.secureClicks = (W.secureClicks or 0) + 1
+      W.Click(f:GetAttribute("clickbutton"), button)
+    end
+    W.Run(f, "PostClick", button, false)
+    return
+  end
+  W.Run(f, "OnClick", button)
+end
 
 function CreateFrame(kind, name, parent, template)
   local f = NewFrame(kind, name, parent)
@@ -92,7 +109,10 @@ UIParent = NewFrame("Frame", "UIParent")
 GameTooltip = NewFrame("GameTooltip")
 GameFontHighlight, GameFontNormal = {}, {}
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
-C_Timer = { After = function(_, fn) fn() end, NewTicker = function() return { Cancel = function() end } end }
+-- C_Timer.After(0): at once; later ones wait for W.RunTimers()
+W.timers = {}
+C_Timer = { After = function(d, fn) if (d or 0) <= 0 then fn() else W.timers[#W.timers + 1] = fn end end, NewTicker = function() return { Cancel = function() end } end }
+function W.RunTimers() local t = W.timers W.timers = {} for _, fn in ipairs(t) do fn() end end
 function InCombatLockdown() return W.combat end
 function geterrorhandler() return function(e) error(e) end end
 function hooksecurefunc(a, b, c)
@@ -137,17 +157,31 @@ C_Container = {
   GetContainerNumSlots = function(bag) local b = W.bags[bag] return b and (b.size or #b) or 0 end,
   GetContainerItemInfo = function(bag, slot) local b = W.bags[bag] local s = b and b[slot] if s and s[1] then return { itemID = s[1], stackCount = s[2] } end end,
 }
-Enum = { BankType = { Character = 0, Account = 2 }, BagIndex = { Backpack = 0, ReagentBag = 5, CharacterBankTab_1 = 6, CharacterBankTab_2 = 7, AccountBankTab_1 = 15 } }
+Enum = { BankType = { Character = 0, Account = 2 }, BagIndex = { Backpack = 0, ReagentBag = 5, CharacterBankTab_1 = 6, CharacterBankTab_2 = 7, CharacterBankTab_3 = 8, AccountBankTab_1 = 15 },
+  PlayerInteractionType = { Merchant = 5, Banker = 8, CharacterBanker = 67, AccountBanker = 68 }, ForbiddenAspect = { ScriptedInput = 32 } }
 W.bankTabs = { [0] = { 6, 7 }, [2] = { 15 } }
 W.canViewAccount = true
 C_Bank = {
   FetchPurchasedBankTabData = function(t) local out = {} for _, id in ipairs(W.bankTabs[t] or {}) do out[#out + 1] = { ID = id } end return out end,
   CanViewBank = function(t) return t ~= 2 or W.canViewAccount end,
+  ShouldUsePlayerBagsInBank = function() return false end,
 }
 -- the cursor
 function GetCursorInfo() if W.cursor then return "item", W.cursor end end
 function ClearCursor() W.cursor = nil end
 ChatFrameUtil = { InsertLink = function(text) Count("insertLink") return false end }
+-- the bags' stack-split box, and a shift-click on a bag item as ContainerFrame.lua does it
+StackSplitFrame = CreateFrame("Frame", "StackSplitFrame", UIParent)
+StackSplitFrame._shown = false
+function StackSplitFrame.OpenStackSplitFrame(self, maxStack, parent) self.owner = parent self:Show() end
+function W.ShiftClickBag(link, stack)
+  if ChatFrameUtil.InsertLink(link) then return end
+  if (stack or 1) > 1 then StackSplitFrame:OpenStackSplitFrame(stack, {}) end
+end
+-- the mailbox
+W.inbox = {}
+function GetInboxNumItems() return #W.inbox end
+function GetInboxItem(i, j) local m = W.inbox[i] local a = m and m[j] if a then return W.items[a[1]][1], a[1], 1, a[2] end end
 
 -- the world map window
 WorldMapFrame = CreateFrame("Frame", "WorldMapFrame", UIParent)
@@ -158,7 +192,17 @@ WorldMapFrame._max = false
 function WorldMapFrame.IsMaximized(self) return self._max end
 function WorldMapFrame.Maximize(self) self._max = true end
 function WorldMapFrame.Minimize(self) self._max = false end
+WorldMapFrame.QuestLog = CreateFrame("Frame", nil, WorldMapFrame)
+-- the game's M and L (QuestLogOwnerMixin): M toggles the map; L closes it if its quest log is showing, else opens it with the log
 function ToggleWorldMap() Count("toggleMap") if WorldMapFrame:IsShown() then WorldMapFrame:Hide() else WorldMapFrame:Show() end end
+function ToggleQuestLog()
+  Count("toggleLog")
+  if WorldMapFrame:IsShown() and WorldMapFrame.QuestLog:IsShown() then WorldMapFrame:Hide()
+  else WorldMapFrame.QuestLog:Show() WorldMapFrame:Show() end
+end
+function OpenQuestLog() WorldMapFrame.QuestLog:Show() WorldMapFrame:Show() end
+function OpenWorldMap() WorldMapFrame:Show() end
+function HideUIPanel(f) Count("HideUIPanel") f:Hide() end
 
 -- the merchant: W.merchant = { itemID, ... } (with prices W.prices)
 MERCHANT_ITEMS_PER_PAGE = 10
@@ -192,6 +236,11 @@ function W.NewAH()
     return true
   end
   function ah.SearchBar.StartSearch() Count("StartSearch") end
+  -- the AH's own Search button (its OnClick: StartSearch)
+  ah.SearchBar.SearchButton = CreateFrame("Button", nil, ah.SearchBar)
+  ah.SearchBar.SearchButton:SetScript("OnClick", function() ah.SearchBar.StartSearch() end)
+  function ah.SearchBar.SearchButton.HasAccessConstraints() return W.ahConstrained or false end
+  function ah.SearchBar.SearchButton.HasAnyForbiddenAspects() return false end
   return ah
 end
 C_AuctionHouse = {

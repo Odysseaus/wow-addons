@@ -14,9 +14,10 @@
 --   /valhalla entrance <name>  where you stand, as a dungeon entrance for tools/map-data (Dungeons.lua)
 --   /valhalla highlights     where the game draws each zone's highlight, for tools/map-preview (Debug.lua)
 --   /valhalla objectives on|off|why [questID]  the All Objectives tracker by zone, Ready to Turn In, pins (Objectives/Objectives.lua)
---   /valhalla invest [vendor|list|market|settings|on|off|diag [replicate]]  the Investments tab (Investments/Invest.lua)
+--   /valhalla invest [vendor|list|market|settings|on|off|diag [ah|replicate]]  the Investments tab (Investments/Invest.lua)
 --   /valhalla tab map|invest|talents|professions   the window's tabs (Investments/Tabs.lua)
 --   /valhalla want <item> [count] [mat|reagent|gear], unwant <item>, list   the Smart Vendor's want list
+--   /valhalla undo   put back the last item that came off the list once bought (v0.3.1)
 --------------------------------------------------------------------------------
 
 local ADDON, ns = ...
@@ -71,8 +72,8 @@ local function Slash(msg)
 		if objectives then objectives:Slash(objArg) end
 		return
 	end
-	-- the window's tabs and Investments (Investments/Invest.lua, v0.3.0): /valhalla invest ..., tab ..., want ..., unwant ..., list
-	if objWord == "invest" or objWord == "tab" or objWord == "want" or objWord == "unwant" or objWord == "list" then
+	-- the window's tabs and Investments (Investments/Invest.lua, v0.3.0): /valhalla invest ..., tab ..., want ..., unwant ..., list, undo
+	if objWord == "invest" or objWord == "tab" or objWord == "want" or objWord == "unwant" or objWord == "list" or objWord == "undo" then
 		local invest = ns:GetModule("invest")
 		if invest then invest:Slash(objWord, raw:match("^%S+%s*(.-)$")) end
 		return

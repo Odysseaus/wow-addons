@@ -2,6 +2,9 @@
 -- The Investments tab's pages (v0.3.0): Smart Vendor (what you want, counted against your bags and your
 -- bank as last seen), Shopping List (what's still needed, by where to buy it), AH Market (Phase C: a
 -- placeholder for now) and Settings. All Valhalla's own frames, in the window's rock and bronze.
+-- v0.3.1: "Bank last seen" under the page menu on every page; Smart Vendor's Mail column, "Keep stocked"
+-- tick and Undo (bought items come off the list); the Shopping List's "In the mail"; Settings' Diagnostic
+-- buttons. Shift-click into the boxes: Links.lua (no stack-split box when the box took the item).
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -107,6 +110,32 @@ local function Wheel(f, scroll)
 	f:SetScript("OnMouseWheel", function(_, delta) scroll(delta) end)
 end
 
+-- "Bank last seen" (every page)
+function V.BankLine()
+	local seen = I.char and I.char.bankSeen
+	if not seen then return L["Bank not seen yet: open your bank once so it's counted."] end
+	local r = I.char.bankInfo
+	if r and r.items then return L["Bank last seen: %s (%d items). Open your bank to refresh it."]:format(When(seen), r.items) end
+	return L["Bank last seen: %s. Open your bank to refresh it."]:format(When(seen))
+end
+
+-- Undo: the last item that came off the list (shown only when there is one)
+function V.UndoButton(parent)
+	local b = V.Button(parent, L["Undo"], 180, 24)
+	b:SetScript("OnClick", function() I.Undo() end)
+	function b.Update()
+		local u = I.LastUndo()
+		if u then
+			b.text:SetText(L["Undo: %s"]:format(I.ItemName(u.id)))
+			b:Show()
+		else
+			b:Hide()
+		end
+	end
+	b:Hide()
+	return b
+end
+
 --------------------------------------------------------------------------------
 -- Smart Vendor
 --------------------------------------------------------------------------------
@@ -117,7 +146,7 @@ local function BuildVendor(page)
 	Header(page, L["Smart Vendor: items I want"])
 	local hint = Text(page, 11, GREY)
 	hint:SetPoint("TOPLEFT", 16, -36)
-	hint:SetText(L["Shift-click or drop an item in the box (or type its name or item ID), how many you want, and Add."])
+	hint:SetText(L["Shift-click or drop an item in the box (or type its name or item ID), how many you want, and Add. Bought: it comes off the list (Undo below); tick Keep to keep it stocked."])
 
 	local box = EditBox(page, 240)
 	box:SetPoint("TOPLEFT", 14, -56)
@@ -127,6 +156,13 @@ local function BuildVendor(page)
 	count:SetNumeric(true)
 	count:SetText("20")
 	page.count = count
+	-- shift-click while either box has the cursor: the item goes in the item box (no stack-split box)
+	local function TakeItem(_, link)
+		if type(link) ~= "string" or not link:find("|Hitem:", 1, true) then return false end
+		box:SetText(link)
+		return true
+	end
+	if ns.LinkBox then ns.LinkBox(box, TakeItem) ns.LinkBox(count, TakeItem) end
 	page.cat = "mat"
 	local catBtn = V.Button(page, I.CAT_NAME.mat, 110, 22)
 	catBtn:SetPoint("LEFT", count, "RIGHT", 6, 0)
@@ -162,7 +198,8 @@ local function BuildVendor(page)
 	box:SetScript("OnMouseDown", function() if GetCursorInfo and GetCursorInfo() == "item" then Drop() end end)
 
 	-- the table
-	local cols = { { L["Item"], 30 }, { L["Category"], 230 }, { L["Want"], 340 }, { L["Bags"], 420 }, { L["Bank"], 470 }, { L["Need"], 525 } }
+	local cols = { { L["Item"], 30 }, { L["Category"], 230 }, { L["Want"], 340 }, { L["Bags"], 410 }, { L["Bank"], 455 },
+		{ L["Mail"], 500 }, { L["Need"], 545 }, { L["Keep"], 612 } }
 	for _, c in ipairs(cols) do
 		local h = Text(page, 12, GOLD)
 		h:SetPoint("TOPLEFT", c[2] - 10 + 14, -88)
@@ -192,11 +229,15 @@ local function BuildVendor(page)
 		r.plus = V.Button(r, "+", 18, 18)
 		r.plus:SetPoint("LEFT", 376, 0)
 		r.bags = Text(r, 12)
-		r.bags:SetPoint("LEFT", 410, 0)
+		r.bags:SetPoint("LEFT", 400, 0)
 		r.bank = Text(r, 12)
-		r.bank:SetPoint("LEFT", 460, 0)
+		r.bank:SetPoint("LEFT", 445, 0)
+		r.mail = Text(r, 12)
+		r.mail:SetPoint("LEFT", 490, 0)
 		r.need = Text(r, 12)
-		r.need:SetPoint("LEFT", 515, 0)
+		r.need:SetPoint("LEFT", 535, 0)
+		r.keep = V.Check(r, "", function() return r.keepOn end, function(v) if r.id then I.SetKeep(r.id, v) end end)
+		r.keep:SetPoint("LEFT", 604, 0)
 		r.remove = V.Button(r, "x", 18, 18)
 		r.remove:SetPoint("RIGHT", -3, 0)
 		r:Hide()
@@ -207,9 +248,13 @@ local function BuildVendor(page)
 	page.foot = foot
 	local build = V.Button(page, L["Build Shopping List"], 160, 24, function() page.root:ShowPage("list") end)
 	build:SetPoint("BOTTOMRIGHT", -14, 10)
+	page.undo = V.UndoButton(page)
+	page.undo:SetPoint("RIGHT", build, "LEFT", -8, 0)
 	page.empty = Text(page, 12, GREY)
 	page.empty:SetPoint("TOPLEFT", 30, -112)
-	page.empty:SetText(L["Nothing wanted yet: add reagents, profession materials or gear upgrades above."])
+	page.empty:SetPoint("RIGHT", page, "RIGHT", -30, 0)
+	page.empty:SetJustifyH("LEFT")
+	page.empty:SetText(L["Nothing wanted yet. Add an item above (shift-click it from your bags, drop it on the box, or type its name or item ID) and how many you want. Each row then shows how many you have in your Bags, in your Bank (as of your last visit: open your bank once to count it), in the Mail (bought at the Auction House, not yet looted), and how many you still Need. Bought enough? It comes off the list by itself (Undo brings it back); tick Keep to keep it stocked instead."])
 	Wheel(page, function(delta) page.offset = math.max(0, page.offset - delta) page:Refresh() end)
 
 	function page:Refresh()
@@ -233,13 +278,19 @@ local function BuildVendor(page)
 				r.plus:SetScript("OnClick", function() I.SetWantCount(d.id, d.want + 1) end)
 				r.bags:SetText(tostring(d.bags + (d.alts or 0)))
 				r.bank:SetText(I.S.countBank and tostring(d.bank) or "-")
+				r.mail:SetText(d.mail > 0 and tostring(d.mail) or "-")
 				if d.need > 0 then
 					r.need:SetText(tostring(d.need))
 					r.need:SetTextColor(RED[1], RED[2], RED[3])
+				elseif d.short > 0 then
+					r.need:SetText(L["In mail"])
+					r.need:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
 				else
-					r.need:SetText(L["Done"])
+					r.need:SetText(d.keep and L["Stocked"] or L["Done"])
 					r.need:SetTextColor(GREEN[1], GREEN[2], GREEN[3])
 				end
+				r.keepOn = d.keep
+				r.keep.Update()
 				r.remove:SetScript("OnClick", function() I.Unwant(d.id) end)
 				r:Show()
 			else
@@ -247,9 +298,8 @@ local function BuildVendor(page)
 				r:Hide()
 			end
 		end
-		local seen = I.char.bankSeen
-		self.foot:SetText(seen and L["Bank last seen: %s. Open your bank to refresh it."]:format(When(seen))
-			or L["Bank not seen yet: open your bank once so it's counted."])
+		self.foot:SetText(V.BankLine())
+		self.undo.Update()
 	end
 end
 
@@ -263,7 +313,7 @@ local function BuildList(page)
 	Header(page, L["Shopping List"])
 	local sub = Text(page, 11, GREY)
 	sub:SetPoint("TOPLEFT", 16, -36)
-	sub:SetText(L["What you still need, by where to buy it. At a vendor these glow gold (the rest are greyed, still buyable); at the Auction House a list with Search buttons opens beside it."])
+	sub:SetText(L["What you still need, by where to buy it. At a vendor these glow gold (the rest are greyed, still buyable); at the Auction House a list with Search buttons opens beside it. Bought at the Auction House: In the mail until you loot it. Bought enough: off the list (Undo)."])
 	sub:SetPoint("RIGHT", page, "RIGHT", -14, 0)
 	sub:SetJustifyH("LEFT")
 	page.lines = {}
@@ -296,6 +346,8 @@ local function BuildList(page)
 	page.fill:SetPoint("TOPLEFT", 1, -1)
 	page.fill:SetPoint("BOTTOMLEFT", 1, 1)
 	page.fill:SetColorTexture(GOLD[1], GOLD[2] * 0.8, 0.1, 0.9)
+	page.undo = V.UndoButton(page)
+	page.undo:SetPoint("BOTTOMRIGHT", -14, 10)
 	page.empty = Text(page, 12, GREY)
 	page.empty:SetPoint("TOPLEFT", 30, -80)
 	page.empty:SetText(L["Nothing to buy: everything you want is in your bags and bank (or nothing is wanted yet)."])
@@ -304,10 +356,11 @@ local function BuildList(page)
 	function page:Refresh()
 		local list = I.ShoppingList()
 		local entries = {}
-		for _, src in ipairs({ "vendor", "ah" }) do
+		local HEAD = { vendor = L["Vendor"], ah = L["Auction House"], mail = L["In the mail (bought, not yet looted)"] }
+		for _, src in ipairs({ "vendor", "ah", "mail" }) do
 			if #list[src] > 0 then
-				entries[#entries + 1] = { header = src == "vendor" and L["Vendor"] or L["Auction House"] }
-				for _, r in ipairs(list[src]) do entries[#entries + 1] = r end
+				entries[#entries + 1] = { header = HEAD[src] }
+				for _, r in ipairs(list[src]) do entries[#entries + 1] = { row = r, mailed = src == "mail" } end
 			end
 		end
 		self.entries = entries
@@ -325,11 +378,19 @@ local function BuildList(page)
 				ln.count:SetText("")
 				ln:Show()
 			else
-				ln.icon:SetTexture(I.ItemIcon(e.id))
-				ln.name:SetText(e.name)
+				local r = e.row
+				ln.icon:SetTexture(I.ItemIcon(r.id))
+				ln.name:SetText(r.name)
 				ln.name:SetTextColor(1, 1, 1)
-				ln.where:SetText(e.vendor and L["at %s"]:format(e.vendor) or "")
-				ln.count:SetText("x" .. e.need)
+				if e.mailed then
+					ln.where:SetText(L["in your mailbox"])
+					ln.count:SetText(L["%d in the mail"]:format(r.mail))
+				else
+					local where = r.vendor and L["at %s"]:format(r.vendor) or ""
+					if r.mail > 0 then where = where .. (where ~= "" and "; " or "") .. L["%d more in the mail"]:format(r.mail) end
+					ln.where:SetText(where)
+					ln.count:SetText("x" .. r.need)
+				end
 				ln:Show()
 			end
 		end
@@ -337,6 +398,7 @@ local function BuildList(page)
 		local frac = list.total > 0 and list.done / list.total or 0
 		self.fill:SetWidth(math.max(1, 218 * frac))
 		self.fill:SetShown(frac > 0)
+		self.undo.Update()
 	end
 end
 
@@ -364,10 +426,24 @@ end
 local function BuildSettings(page)
 	Header(page, L["Investments settings"])
 	local S = I.S
-	local y = -44
+	-- the settings scroll (the wheel) inside the page, under its header
+	local view = CreateFrame("Frame", nil, page)
+	view:SetPoint("TOPLEFT", 0, -36)
+	view:SetPoint("BOTTOMRIGHT", 0, 4)
+	if view.SetClipsChildren then view:SetClipsChildren(true) end
+	local body = CreateFrame("Frame", nil, view)
+	page.view, page.body, page.scroll = view, body, 0
+	local function Scroll(to)
+		local max = math.max(0, (body:GetHeight() or 0) - (view:GetHeight() or 0))
+		page.scroll = math.max(0, math.min(max, to))
+		body:ClearAllPoints()
+		body:SetPoint("TOPLEFT", view, "TOPLEFT", 0, page.scroll)
+		body:SetPoint("RIGHT", view, "RIGHT", 0, 0)
+	end
+	local y = -8
 	local items = {}
 	local function Section(text)
-		local h = Text(page, 13, GOLD)
+		local h = Text(body, 13, GOLD)
 		h:SetPoint("TOPLEFT", 16, y)
 		h:SetText(text)
 		y = y - 22
@@ -379,19 +455,35 @@ local function BuildSettings(page)
 		return w
 	end
 	local function Opt(label, key, after)
-		return Place(V.Check(page, label, function() return S[key] end, function(v) S[key] = v if after then after() end I.Changed() end))
+		return Place(V.Check(body, label, function() return S[key] end, function(v) S[key] = v if after then after() end I.Changed() end))
 	end
 	Section(L["Window tabs"])
-	page.tabPos = Place(V.Radio(page, L["Tabs:"], { { "bottom", L["Bottom"] }, { "top", L["Top"] }, { "side", L["Side icons"] } },
+	page.tabPos = Place(V.Radio(body, L["Tabs:"], { { "bottom", L["Bottom"] }, { "top", L["Top"] }, { "side", L["Side icons"] } },
 		function() return S.tabPos end, function(v) S.tabPos = v if T.Layout then T.Layout() end end))
-	Opt(L["Open on the last tab used (else Map & Quest Log)"], "rememberTab")
+	local tabNote = Text(body, 11, GREY)
+	Place(tabNote, 18)
+	tabNote:SetText(L["M, L and anything else that opens the window open it on Map & Quest Log."])
+	Section(L["Diagnostic"])
+	local run = V.Button(body, L["Run diagnostic"], 150, 22, function() I.RunDiag() end)
+	local runAH = V.Button(body, L["Run AH check"], 150, 22, function() I.RunDiag("ah") end)
+	runAH:SetPoint("LEFT", run, "RIGHT", 10, 0)
+	Place(run, 26)
+	page.run, page.runAH = run, runAH
+	local last = Text(body, 11)
+	Place(last, 16)
+	page.last = last
+	local how = Text(body, 11, GREY)
+	Place(how, 30)
+	how:SetWidth(520)
+	how:SetJustifyH("LEFT")
+	how:SetText(L["Saves what Valhalla sees (your bank above all) and prints three lines. Then type /reload: that writes it to disk where it can be read back. Run AH check works at the Auction House."])
 	Section(L["Smart Vendor"])
 	Opt(L["Count bank items (as last seen)"], "countBank")
 	Opt(L["Count my other characters' items on this realm"], "countAlts")
 	Section(L["Shopping List at vendors"])
 	Opt(L["Highlight what I need at vendors (the rest greyed, still buyable)"], "hiVendor")
 	Opt(L["Show 'need N' on those items"], "showNeed")
-	local grey = CreateFrame("Frame", nil, page)
+	local grey = CreateFrame("Frame", nil, body)
 	grey:SetSize(400, 22)
 	local gl = Text(grey, 12)
 	gl:SetPoint("LEFT")
@@ -405,23 +497,33 @@ local function BuildSettings(page)
 	Place(grey)
 	Section(L["Auction House"])
 	Opt(L["Show my Shopping List beside the Auction House"], "ahPanel", function() if I.AH then I.AH.Refresh() end end)
-	Opt(L["One-click Search (also runs the AH's own search; off: Search fills the AH's search box, press Enter)"], "ahOneClick")
+	local ahNote = Text(body, 11, GREY)
+	Place(ahNote, 18)
+	ahNote:SetText(L["Search runs the Auction House's own search, on your click. The list's - minimizes it to a small button."])
 	Section(L["Graphs (Phase D)"])
-	page.graph = Place(V.Radio(page, L["Graph style:"], { { "lines", L["Lines"] }, { "bars", L["Bars"] } },
+	page.graph = Place(V.Radio(body, L["Graph style:"], { { "lines", L["Lines"] }, { "bars", L["Bars"] } },
 		function() return S.graphStyle end, function(v) S.graphStyle = v end))
 	Section(L["Data"])
-	local forget = V.Button(page, L["Forget the bank snapshot"], 200, 22, function()
-		I.char.bank, I.char.bankSeen = {}, nil
+	local forget = V.Button(body, L["Forget the bank snapshot"], 200, 22, function()
+		I.char.bank, I.char.bankSeen, I.char.bankInfo = {}, nil, nil
 		I.Changed()
 	end)
 	Place(forget, 28)
-	local off = Text(page, 11, GREY)
+	local off = Text(body, 11, GREY)
 	Place(off)
 	off:SetText(L["Turn the tabs and Investments off: /valhalla invest off (the map is as before)."])
+	body:SetHeight(-y + 10)
+	Scroll(0)
+	Wheel(page, function(delta) Scroll(page.scroll - delta * 40) end)
 	page.items = items
 	function page:Refresh()
 		for _, w in ipairs(items) do if w.Update then w.Update() end end
 		GreyText()
+		local d = I.LastDiag()
+		self.last:SetText(d and L["Last run: %s%s"]:format(tostring(d.when), d.kind == "ah" and L[" (AH check)"] or "") or L["Last run: never"])
+		local ahOn = I.ahOpen and true or false
+		if runAH.SetEnabled then runAH:SetEnabled(ahOn) end
+		runAH:SetAlpha(ahOn and 1 or 0.45)
 	end
 end
 
@@ -479,20 +581,18 @@ function V.BuildInvest(parent)
 			local on = b.key == key
 			T.Skin(b, on and 0.98 or 0.9, on and GOLD or BRONZE)
 		end
+		self.bankLine:SetText(V.BankLine())
 	end
+	-- "Bank last seen" under the page menu: on every page
+	root.bankLine = Text(nav, 11, GREY)
+	root.bankLine:SetPoint("BOTTOMLEFT", 8, 10)
+	root.bankLine:SetPoint("RIGHT", nav, "RIGHT", -8, 0)
+	root.bankLine:SetJustifyH("LEFT")
 	I.OnChanged(function()
+		root.bankLine:SetText(V.BankLine())
 		local page = root.pages[root.current]
 		if page and page:IsShown() and page:IsVisible() then page:Refresh() end
 	end)
-	-- shift-click an item while the Smart Vendor box has the cursor: it goes in the box (ChatFrameUtil.InsertLink)
-	local function Insert(text)
-		local page = root.pages.vendor
-		if page and page.box and page.box:HasFocus() and type(text) == "string" and text:find("item:", 1, true) then
-			page.box:SetText(text)
-		end
-	end
-	if ChatFrameUtil and ChatFrameUtil.InsertLink then hooksecurefunc(ChatFrameUtil, "InsertLink", Insert)
-	elseif ChatEdit_InsertLink then hooksecurefunc("ChatEdit_InsertLink", Insert) end
 	root:ShowPage("vendor")
 	return root
 end
