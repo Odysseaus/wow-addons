@@ -3,7 +3,7 @@ local here = (arg[0] or ""):match("^(.*[/\\])") or "./"
 local root = arg[1] or (here .. "../../Valhalla/")
 dofile(here .. "stubs.lua")
 
-local ns = { modules = {}, version = "v0.3.4", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
+local ns = { modules = {}, version = "v0.3.5", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
 ns.L = setmetatable({}, { __index = function(_, k) return k end })
 ns.Safe = { Value = function(v) return v end }
 ns.Look = { Font = function(_, fs, size) fs._size = size return fs end }
@@ -12,6 +12,7 @@ function ns:Print(fmt, ...) ns.printed[#ns.printed + 1] = select("#", ...) > 0 a
 function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m.defaults or {} if m.defaults.enabled == nil then m.defaults.enabled = true end self.modules[key] = m return m end
 function ns:GetModule(key) return self.modules[key] end
 ns.modules.worldmap = { key = "worldmap", enabled = true }
+function ns.modules.worldmap.TabAway(away) ns.modules.worldmap.away = away end   -- (Map/Panel.lua: its menu put away on the other tabs)
 assert(loadfile(root .. "Links.lua"))("Valhalla", ns)
 for _, f in ipairs({ "Invest", "Tabs", "Views", "Merchant", "AHPanel" }) do
   assert(loadfile(root .. "Investments/" .. f .. ".lua"))("Valhalla", ns)
@@ -54,10 +55,10 @@ ok(next(I.char.bank) == nil and I.char.bankSeen == nil, "bank: not seen yet (onl
 
 print("== 2. the tabs on the map window")
 ok(T.Attached(), "attached to WorldMapFrame")
-ok(#T.Buttons() == 4, "four tabs")
+ok(#T.Buttons() == 5, "five tabs")
 local labels = {}
 for i, b in ipairs(T.Buttons()) do labels[i] = b.label._text end
-ok(table.concat(labels, "|") == "Map & Quest Log|Investments|Talents|Professions", "in order", table.concat(labels, "|"))
+ok(table.concat(labels, "|") == "Map & Quest Log|Investments|Talents|Professions|Settings", "in order", table.concat(labels, "|"))
 ok(T.Buttons()[3].tag and T.Buttons()[3].tag._text == "soon" and T.Buttons()[4].tag._text == "soon" and not T.Buttons()[2].tag, "Talents and Professions marked soon")
 ok(T.Current() == "map" and not T.Host():IsShown(), "starts on Map & Quest Log, the view host hidden")
 ok(T.Host()._strata == "HIGH" and T.Host()._level == 9920 and T.Host()._mouse == true, "host: HIGH strata over the map and quest log, takes the mouse")
@@ -133,7 +134,7 @@ ok(W.calls.toggleMap == 1 and WorldMapFrame:IsShown() and T.Current() == "invest
 Slash("tab", "talents")
 ok(T.Current() == "talents", "/valhalla tab talents")
 Slash("tab", "bogus")
-ok(Printed("tab map|invest|talents|professions"), "a wrong tab: says which there are")
+ok(Printed("tab map|invest|talents|professions|settings"), "a wrong tab: says which there are")
 WorldMapFrame:Hide()
 W.combat = true W.calls.toggleMap = 0
 Slash("tab", "invest")
@@ -141,7 +142,7 @@ ok(W.calls.toggleMap == 0 and Printed("can't be opened in combat"), "in combat: 
 W.combat = false
 WorldMapFrame:Show()
 Slash("invest", "settings")
-ok(T.Current() == "invest" and T.Views().invest.page.current == "settings", "/valhalla invest settings: that page")
+ok(T.Current() == "settings" and T.Views().settings:IsShown() and T.Views().settings.page.key == "settings", "/valhalla invest settings: the Settings tab")
 local act = ns.InvestAction(function(n) return { texture = n } end)
 W.Click(T.Buttons()[1])
 act.run()
@@ -386,7 +387,7 @@ I.bankOpen = false
 Slash("invest", "diag replicate")
 local d = ValhallaInvestDB.diag[1]
 ok(d and d.apis["C_AuctionHouse.ReplicateItems"] == true and d.apis["QueryAuctionItems"] == false, "which APIs this client has (no QueryAuctionItems)")
-ok(d.toc == 16001 and d.version == "v0.3.4", "client and version")
+ok(d.toc == 16001 and d.version == "v0.3.5", "client and version")
 ok(d.bankInfo and d.bankInfo.seen and d.bankInfo.read.tabs == 2 and d.bankInfo.events.BANKFRAME_OPENED == 1, "the bank: last read, its tabs, which event said it opened")
 ok(d.ah.search and d.ah.search.button == true and d.ah.search.blocked == false, "the AH's Search button: there, and clickable for one-click Search")
 ok(d.counts.linen.id == 2589 and d.counts.linen.bagsSeen == 28, "counts for Linen Cloth, Copper Ore, Peacebloom")
@@ -495,7 +496,8 @@ ok(L2.name == "Other" and #L2.items == 1 and L2.items[1].n == 3 and I.Lists()[2]
 root:ShowPage("market")
 ok(root.pages.market:IsShown(), "AH Market: Phase C placeholder")
 root:ShowPage("settings")
-local sp2 = root.pages.settings
+ok(T.Current() == "settings" and not root.pages.settings, "Investments' old Settings page: now the Settings tab")
+local sp2 = T.Views().settings.page
 W.Click(sp2.tabPos.boxes[3])
 ok(I.S.tabPos == "side" and T.Buttons()[1]._w == 40, "Settings: tabs to the side, at once")
 W.Click(sp2.tabPos.boxes[1])
@@ -571,7 +573,7 @@ WorldMapFrame:Show()
 Slash("invest", "vendor")
 local root2 = T.Views().invest.page
 local every = true
-for _, k in ipairs({ "vendor", "list", "market", "settings" }) do
+for _, k in ipairs({ "vendor", "list", "market" }) do
 	root2:ShowPage(k)
 	if not (root2.bankLine:IsVisible() and root2.bankLine._text:find("Bank last seen: Nov 09 16:50 %(17 items%)")) then every = false end
 end
@@ -668,9 +670,9 @@ ok(ValhallaInvestDB.settings.rememberTab == nil and ValhallaInvestDB.settings.ta
 	"rememberTab, tab and ahOneClick gone; ahPanelMin added")
 ok(#I.Lists() == 6 and I.ActiveList() == ML, "the lists and the active one kept")
 
-print("== 21. the diagnostic's buttons (Investments > Settings)")
-root2:ShowPage("settings")
-local sp3 = root2.pages.settings
+print("== 21. the diagnostic's buttons (the Settings tab)")
+Slash("tab", "settings")
+local sp3 = T.Views().settings.page
 ok(sp3.run.text._text == "Run diagnostic" and sp3.runAH.text._text == "Run AH check" and sp3.last._text, "Run diagnostic, Run AH check, last run")
 ValhallaInvestDB.diag = {}
 ns.printed = {}
@@ -898,6 +900,141 @@ Slash("invest", "diag stop")
 ok(Printed("isn't running"), "stop when not running: says so")
 W.Fire("AUCTION_HOUSE_CLOSED")
 ok(#ValhallaInvestDB.diag <= I.DIAG_KEEP and W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "the log stays capped; still nothing written on the map")
+
+print("== 26. v0.3.5: the Settings tab, the title, the strip covered, the AH check on the AH list")
+WorldMapFrame:Show()
+Slash("tab", "map")
+local wmod = ns.modules.worldmap
+ok(T.Buttons()[5].label._text == "Settings" and not T.Buttons()[5].tag, "Settings: the fifth tab, right of Professions (not 'soon')")
+local navKeys = {}
+for i, p in ipairs(I.Views.PAGES) do navKeys[i] = p.key end
+ok(table.concat(navKeys, ",") == "vendor,list,market", "Investments' menu: Smart Vendor, Shopping List, AH Market", table.concat(navKeys, ","))
+Slash("tab", "settings")
+ok(T.Current() == "settings" and T.Views().settings:IsVisible() and not T.Views().invest:IsVisible(), "/valhalla tab settings")
+Slash("tab", "invest")
+Slash("invest", "settings")
+ok(T.Current() == "settings", "/valhalla invest settings: the Settings tab")
+Slash("tab", "invest")
+T.Views().invest.page:ShowPage("settings")
+ok(T.Current() == "settings", "Investments asked for its old Settings page: the Settings tab")
+local placesOk = true
+for _, pos in ipairs({ "bottom", "top", "side" }) do
+  I.S.tabPos = pos
+  T.Layout()
+  local seen, n = {}, 0
+  for _, b in ipairs(T.Buttons()) do
+    local pt = b._points[1]
+    local k = pt and (tostring(pt[4]) .. ":" .. tostring(pt[5])) or "none"
+    if b:IsShown() and pt and not seen[k] then seen[k] = true n = n + 1 end
+  end
+  if n ~= 5 then placesOk = false end
+end
+I.S.tabPos = "bottom" T.Layout()
+ok(placesOk, "five tabs, each in its own place, bottom, top and side")
+-- the title: Valhalla, windowed and full screen
+local BF = WorldMapFrame.BorderFrame
+WorldMapFrame:Hide() WorldMapFrame:Show()
+ok(BF._title == "Valhalla", "title: Valhalla (shown)", BF._title)
+WorldMapFrame:Maximize()
+ok(BF._title == "Valhalla", "title: Valhalla (maximized: after the game's own World Map)", BF._title)
+WorldMapFrame:Minimize()
+ok(BF._title == "Valhalla", "title: Valhalla (windowed again)", BF._title)
+WorldMapFrame:SynchronizeDisplayState()
+ok(BF._title == "Valhalla", "title: Valhalla after any of the game's title updates")
+-- the strip over the map (breadcrumb, quest search, Quests count): covered on the other tabs
+local band = T.Band()
+local bp = band._points
+ok(band._parent == T.Host() and band._strata == "HIGH" and band._level == T.LEVEL and band._mouse == true and band._wheel == true and band.bg and band.bg._tex == "Interface\\FrameGeneral\\UI-Background-Rock", "the band: ours, solid, over the strip, takes the clicks")
+ok(bp[1][1] == "TOPLEFT" and bp[1][2] == WorldMapFrame and bp[1][4] == 64 and bp[1][5] == -23 and bp[2][1] == "BOTTOMRIGHT" and bp[2][2] == T.Host() and bp[2][3] == "TOPRIGHT",
+  "from under the title bar (right of the portrait) down to the tab's panel, across the whole window")
+Slash("tab", "settings")
+ok(band:IsVisible() and wmod.away == true, "Settings: the strip covered, Valhalla's map menu put away")
+Slash("tab", "talents")
+ok(band:IsVisible() and wmod.away == true, "Talents: the same")
+Slash("tab", "map")
+ok(not band:IsVisible() and wmod.away == false, "Map & Quest Log: the strip and the map menu back")
+-- Settings: nothing overlaps, at any width
+Slash("tab", "settings")
+local sp = T.Views().settings.page
+I.ahOpen = false
+sp:Refresh()
+ok(sp.hint._text:find("press Run AH check on its Valhalla list"), "AH closed: the hint says where the AH check is", sp.hint._text)
+ok(#sp.how._text < 260, "the AH check's description: short (the long one in its tooltip)", #sp.how._text)
+local tipLines = {}
+local addLine = GameTooltip.AddLine
+GameTooltip.AddLine = function(_, t) tipLines[#tipLines + 1] = t end
+W.Run(sp.runAH, "OnEnter")
+GameTooltip.AddLine = addLine
+ok(#tipLines >= 2 and tipLines[2]:find("nothing is posted, bid or bought"), "Run AH check: its tooltip has the long description")
+local function NoOverlap()
+  local rows = sp.rows
+  for i, r in ipairs(rows) do
+    if r.note then
+      local t = r.w._text or ""
+      if t ~= "" and r.height < r.w:GetStringHeight() then return false, "note " .. i .. " too short" end
+    end
+    local nxt = rows[i + 1]
+    if nxt and nxt.y > r.y - r.height + 0.001 then return false, "row " .. (i + 1) .. " over row " .. i end
+  end
+  return true
+end
+local heights = {}
+for _, w in ipairs({ 760, 330 }) do
+  sp.view:SetWidth(w)
+  W.Run(sp.view, "OnSizeChanged")
+  local good, why = NoOverlap()
+  ok(good, ("Settings at %d px: nothing overlaps"):format(w), why)
+  heights[w] = sp.body._h
+end
+ok(heights[330] > heights[760], "narrower: the notes measured again, the page longer", ("%s %s"):format(heights[330], heights[760]))
+sp.view:SetWidth(760) W.Run(sp.view, "OnSizeChanged")
+I.ahOpen = true
+sp:Refresh()
+ok(sp.hint._text == "" and NoOverlap(), "AH open: no hint, still nothing overlaps")
+I.ahOpen = false
+-- the AH check from the AH's Valhalla list
+W.Fire("AUCTION_HOUSE_SHOW")
+I.S.ahPanelMin = false
+A.Refresh()
+local p = A.Panel()
+local ck = p.check
+ok(p:IsShown() and ck and ck.button.text._text == "Run AH check" and not ck.bar:IsShown(), "the AH list: Run AH check (the bar hidden)")
+ok(84 + (A.ROWS - 1) * 26 + 24 <= A.H - 26 - 34 and p._h == A.H, "its strip under the rows, above the mail line")
+ok(AC.Progress() == nil, "not running: no progress")
+W.replicateThrottled = false
+Rows(20000)
+ns.printed = {}
+W.Click(ck.button)
+ok(AC.Running() and ck.button.text._text == "Stop" and ck.bar:IsShown() and ck.status._text:find("Step %d/7") and Printed("AH check started"), "pressed: running, the button says Stop, step and bar", ck.status._text)
+TickUntil(function() local o = AC.run and AC.run.out return o and o.replicate and o.replicate.readAt end, 3000)
+local _, _, f = A.CheckRefresh()
+ok(f and f > 4 / 7 and f < 5 / 7 and ck.status._text:find("auctions read") and ck.bar._w > 1, "reading the full scan: the bar moves, how many read", ck.status._text)
+local before = ck.bar._w
+TickUntil(function() return (AC.run.out.replicate.readAt or 0) > 10000 end, 3000)
+W.Run(ck, "OnUpdate", 0.3)
+ok(ck.bar._w > before, "the bar moves on its own while it runs", ("%s > %s"):format(ck.bar._w, before))
+W.Click(ck.button)
+ok(not AC.Running() and ValhallaInvestDB.diag[#ValhallaInvestDB.diag].ahcheck.state == "stopped" and ck.button.text._text == "Run AH check" and not ck.bar:IsShown(), "Stop: stopped (saved), the button back")
+ok(ck.status._text:find("Last AH check: stopped"), "and says how the last one ended", ck.status._text)
+-- minimized: the small button's right-click
+A.SetMinimized(true)
+local mb = A.Mini()
+ok(mb:IsShown() and not p:IsShown(), "minimized")
+W.replicateThrottled = false
+Rows(100)
+W.Click(mb, "RightButton")
+ok(AC.Running() and mb:IsShown() and not p:IsShown() and mb.ring:IsShown(), "right-click: the AH check runs, still minimized, its bar on the button")
+W.Click(mb, "RightButton")
+ok(not AC.Running() and not mb.ring:IsShown(), "right-click again: stopped")
+W.Click(mb, "LeftButton")
+ok(p:IsShown() and not mb:IsShown(), "left-click: the list back")
+W.Fire("AUCTION_HOUSE_CLOSED")
+-- off: the game's own title back; on: Valhalla again
+Slash("invest", "off")
+ok(BF._title == "Map & Quest Log" and wmod.away == false, "off: the game's own title back, the map menu back")
+Slash("invest", "on")
+ok(BF._title == "Valhalla", "on: Valhalla")
+ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "still nothing written on the map")
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end

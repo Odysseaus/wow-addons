@@ -4,6 +4,15 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.3.5", date = "2026-11-10", heads = { [1] = "Fixed", [3] = "Changed", [7] = "Note", }, items = {
+		"|cff6e2c0aRun AH check works|r: its button is now on Valhalla's list beside the Auction House (the game never shows the Valhalla window and the Auction House together, so the Settings button could never be pressed). It turns into Stop while the check runs, with its step and a bar; minimized, right-click the small button to run or stop it. Settings keeps the button with a hint, and /valhalla invest diag ah still works.",
+		"|cff6e2c0aSettings no longer overlaps|r: each note is as tall as its text at the window's width (measured again when the window is resized). The AH check's long description moved into the button's tooltip.",
+		"|cff6e2c0aSettings is its own tab|r, right of Professions. Investments' menu is Smart Vendor, Shopping List and AH Market. /valhalla invest settings and /valhalla tab settings open it.",
+		"|cff6e2c0aThe window is called Valhalla|r, windowed and full screen, and its portrait is Valhalla's icon on every tab.",
+		"|cff6e2c0aThe other tabs are clean|r: on Investments, Talents, Professions and Settings, the map's breadcrumb, the quest log's search box and the Quests count are covered by the tab's own panel, and Valhalla's map menu is put away (back on Map & Quest Log).",
+		"Nothing of the game's window is changed: the title is set again after the game's own, the strip is covered by a panel of Valhalla's.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.3.4", date = "2026-11-10", heads = { [1] = "New", [3] = "Note", }, items = {
 		"|cff6e2c0aRun AH check|r (Investments > Settings, at the Auction House, or /valhalla invest diag ah): measures what the coming AH Market can use: how long the full scan takes to answer and to read, how many auctions, whether stackable goods (commodities) are in it and its cooldown, how fast quick price searches answer and how many items one can ask for, whether recipes can be read with the profession window closed or for recipes you don't know, which house this is (faction or neutral), and a deposit sample. It runs a few steps over 1-4 minutes without freezing the game and prints its results; /reload writes them to disk.",
 		"|cff6e2c0aIt only reads prices|r: it never posts, bids, buys or cancels, and nothing of the market is stored beyond its few numbers. Closing the Auction House stops it (saved as stopped); /valhalla invest diag stop stops it too. The plain diagnostic now also says which recipes can be read.",

@@ -1048,6 +1048,14 @@ SetOpen = function(on)
 	LightToggle()
 end
 
+-- the Valhalla window's other tabs (Investments/Tabs.lua, v0.3.5): the menu put away there (not forgotten:
+-- back on Map & Quest Log if it was open)
+function mod.TabAway(away)
+	if not menu then return end
+	if away then menu:Hide()
+	elseif mod.db.menuOpen and map and map:IsShown() and not menu:IsShown() then SetOpen(true) end
+end
+
 -- a slider under the checklist (the deepest zoom, the minimap's): { label, icon, range { least, most,
 -- step }, get, set, tip }; f:Fill() shows the setting as it is. Its name over it, the slider (and its
 -- value) under: a column's width
@@ -1224,11 +1232,11 @@ function mod:SetupPanel(worldMap)
 	end
 	RefreshFavorites()
 
-	-- the window's portrait (Blizzard's quest log book): Valhalla's icon, while it's stitching
+	-- the window's portrait (Blizzard's quest log book): Valhalla's icon (v0.3.5: always, stitched or not)
 	local border = map.BorderFrame
 	if border and border.SetPortraitToAsset then
 		local function Portrait()
-			border:SetPortraitToAsset(mod.IsStitched() and "Interface\\AddOns\\Valhalla\\Media\\Textures\\ValhallaIconRound" or "Interface\\QuestFrame\\UI-QuestLog-BookIcon")
+			border:SetPortraitToAsset("Interface\\AddOns\\Valhalla\\Media\\Textures\\ValhallaIconRound")
 		end
 		Portrait()
 		map:HookScript("OnShow", Portrait)

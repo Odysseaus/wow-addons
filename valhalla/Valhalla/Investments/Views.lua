@@ -27,7 +27,6 @@ V.PAGES = {
 	{ key = "vendor", label = L["Smart Vendor"], icon = "Interface\\Icons\\INV_Misc_Bag_10" },
 	{ key = "list", label = L["Shopping List"], icon = "Interface\\Icons\\INV_Scroll_03" },
 	{ key = "market", label = L["AH Market"], icon = "Interface\\Icons\\INV_Hammer_15" },
-	{ key = "settings", label = L["Settings"], icon = "Interface\\Icons\\Trade_Engineering" },
 }
 local GOLD, BRONZE = T.GOLD, T.BRONZE
 local GREEN, RED, GREY = { 0.3, 0.9, 0.3 }, { 1, 0.45, 0.3 }, { 0.6, 0.6, 0.6 }
@@ -608,7 +607,7 @@ local function BuildMarket(page)
 end
 
 local function BuildSettings(page)
-	Header(page, L["Investments settings"])
+	Header(page, L["Settings"])
 	local S = I.S
 	-- the settings scroll (the wheel) inside the page, under its header
 	local view = CreateFrame("Frame", nil, page)
@@ -624,43 +623,74 @@ local function BuildSettings(page)
 		body:SetPoint("TOPLEFT", view, "TOPLEFT", 0, page.scroll)
 		body:SetPoint("RIGHT", view, "RIGHT", 0, 0)
 	end
-	local y = -8
-	local items = {}
+	-- v0.3.5: rows laid out top to bottom, a note's height measured from its text (at the page's width), and
+	-- laid out again when the page is resized or a note's text changes (no fixed heights: nothing overlaps)
+	local rows, items = {}, {}
+	page.rows = rows
+	local function Row(w, x, h, note) rows[#rows + 1] = { w = w, x = x, h = h, note = note } return w end
 	local function Section(text)
 		local h = Text(body, 13, GOLD)
-		h:SetPoint("TOPLEFT", 16, y)
 		h:SetText(text)
-		y = y - 22
+		Row(h, 16, 22)
 	end
 	local function Place(w, h)
-		w:SetPoint("TOPLEFT", 26, y)
-		y = y - (h or 22)
 		items[#items + 1] = w
-		return w
+		return Row(w, 26, h or 22)
 	end
+	local function Note(text, color, min)
+		local fs = Text(body, 11, color or GREY)
+		fs:SetJustifyH("LEFT")
+		fs:SetText(text or "")
+		Row(fs, 26, min or 16, true)
+		return fs
+	end
+	local function Reflow()
+		local width = math.max(260, math.floor((view:GetWidth() or 560) - 46))
+		local y = -8
+		for _, r in ipairs(rows) do
+			r.w:ClearAllPoints()
+			r.w:SetPoint("TOPLEFT", r.x, y)
+			local h = r.h
+			if r.note then
+				r.w:SetWidth(width)
+				local text = r.w:GetText() or ""
+				local sh = text ~= "" and r.w.GetStringHeight and r.w:GetStringHeight() or 0
+				h = (text == "") and 4 or math.max(r.h, math.ceil(sh or 0) + 6)
+			end
+			r.y, r.height = y, h
+			y = y - h
+		end
+		body:SetHeight(-y + 10)
+		Scroll(page.scroll or 0)
+	end
+	page.Reflow = Reflow
 	local function Opt(label, key, after)
 		return Place(V.Check(body, label, function() return S[key] end, function(v) S[key] = v if after then after() end I.Changed() end))
 	end
 	Section(L["Window tabs"])
 	page.tabPos = Place(V.Radio(body, L["Tabs:"], { { "bottom", L["Bottom"] }, { "top", L["Top"] }, { "side", L["Side icons"] } },
 		function() return S.tabPos end, function(v) S.tabPos = v if T.Layout then T.Layout() end end))
-	local tabNote = Text(body, 11, GREY)
-	Place(tabNote, 18)
-	tabNote:SetText(L["M, L and anything else that opens the window open it on Map & Quest Log."])
+	page.tabNote = Note(L["M, L and anything else that opens the window open it on Map & Quest Log."])
 	Section(L["Diagnostic"])
 	local run = V.Button(body, L["Run diagnostic"], 150, 22, function() I.RunDiag() end)
 	local runAH = V.Button(body, L["Run AH check"], 150, 22, function() I.RunDiag("ah") end)
 	runAH:SetPoint("LEFT", run, "RIGHT", 10, 0)
+	local function Tip(b, lines)
+		b:HookScript("OnEnter", function(self)
+			if not GameTooltip then return end
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			for i, l in ipairs(lines) do GameTooltip:AddLine(l, i == 1 and 1 or 1, i == 1 and 0.82 or 1, i == 1 and 0 or 1, i > 1) end
+			GameTooltip:Show()
+		end)
+		b:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	end
+	Tip(run, { L["Run diagnostic"], L["Saves what Valhalla sees (your bank above all, and which recipes can be read) and prints three lines. Then /reload writes it to disk, where it can be read back."] })
+	Tip(runAH, { L["Run AH check"], L["At the Auction House (its button is on Valhalla's list beside the AH): measures, for the coming AH Market, how fast the full scan and quick searches answer, whether stackable goods are in the scan, whether recipes can be read, which house it is and a deposit sample. A few steps over 1-4 minutes, without freezing the game. It only reads prices: nothing is posted, bid or bought. Keep the Auction House open while it runs, then /reload."] })
 	Place(run, 26)
 	page.run, page.runAH = run, runAH
-	local last = Text(body, 11)
-	Place(last, 16)
-	page.last = last
-	local how = Text(body, 11, GREY)
-	Place(how, 30)
-	how:SetWidth(520)
-	how:SetJustifyH("LEFT")
-	how:SetText(L["Saves what Valhalla sees (your bank above all) and prints three lines. Then type /reload: that writes it to disk where it can be read back. Run AH check works at the Auction House: it measures, for the coming AH Market, how fast the full scan and quick searches answer, whether recipes can be read, and the house's deposit, a few steps over 1-4 minutes without freezing the game, then prints its results. It only reads prices: nothing is posted, bid or bought. Keep the Auction House open while it runs."])
+	page.last = Note("", { 1, 1, 1 })
+	page.hint = Note("", GOLD)
+	page.how = Note(L["Run diagnostic saves what Valhalla sees, then /reload writes it to disk. Run AH check (at the Auction House, on Valhalla's list beside it) measures scan speed for the coming AH Market; it only reads prices."])
 	Section(L["Counting what you have"])
 	Opt(L["Count bank items (as last seen)"], "countBank")
 	Opt(L["Count my other characters' items on this realm"], "countAlts")
@@ -681,9 +711,7 @@ local function BuildSettings(page)
 	Place(grey)
 	Section(L["Auction House"])
 	Opt(L["Show my Shopping List beside the Auction House"], "ahPanel", function() if I.AH then I.AH.Refresh() end end)
-	local ahNote = Text(body, 11, GREY)
-	Place(ahNote, 18)
-	ahNote:SetText(L["Search runs the Auction House's own search, on your click. The list's - minimizes it to a small button."])
+	Note(L["Search runs the Auction House's own search, on your click. The list's - minimizes it to a small button. Run AH check is on that list too."])
 	Section(L["Graphs (Phase D)"])
 	page.graph = Place(V.Radio(body, L["Graph style:"], { { "lines", L["Lines"] }, { "bars", L["Bars"] } },
 		function() return S.graphStyle end, function(v) S.graphStyle = v end))
@@ -693,10 +721,9 @@ local function BuildSettings(page)
 		I.Changed()
 	end)
 	Place(forget, 28)
-	local off = Text(body, 11, GREY)
-	Place(off)
-	off:SetText(L["Turn the tabs and Investments off: /valhalla invest off (the map is as before)."])
-	body:SetHeight(-y + 10)
+	Note(L["Turn the tabs and Investments off: /valhalla invest off (the map is as before)."])
+	Reflow()
+	view:SetScript("OnSizeChanged", Reflow)
 	Scroll(0)
 	Wheel(page, function(delta) Scroll(page.scroll - delta * 40) end)
 	page.items = items
@@ -714,14 +741,28 @@ local function BuildSettings(page)
 		local ahOn = (I.ahOpen and not check) and true or false
 		if runAH.SetEnabled then runAH:SetEnabled(ahOn) end
 		runAH:SetAlpha(ahOn and 1 or 0.45)
+		self.hint:SetText((not I.ahOpen and not check) and L["Open the Auction House, then press Run AH check on its Valhalla list (or type /valhalla invest diag ah)."] or "")
+		Reflow()
 	end
+end
+
+-- the Settings tab (v0.3.5: its own tab, right of Professions)
+function V.BuildSettings(parent)
+	local page = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+	page:SetPoint("TOPLEFT", 8, -8)
+	page:SetPoint("BOTTOMRIGHT", -8, 8)
+	T.Skin(page, 0.6)
+	page.key = "settings"
+	BuildSettings(page)
+	I.OnChanged(function() if page:IsShown() and page:IsVisible() then page:Refresh() end end)
+	return page
 end
 
 --------------------------------------------------------------------------------
 -- The tab: its menu down the left and the page
 --------------------------------------------------------------------------------
 
-local BUILD = { vendor = BuildVendor, list = BuildList, market = BuildMarket, settings = BuildSettings }
+local BUILD = { vendor = BuildVendor, list = BuildList, market = BuildMarket }   -- (Settings: its own tab, v0.3.5)
 
 function V.BuildInvest(parent)
 	local root = CreateFrame("Frame", nil, parent)
@@ -760,6 +801,7 @@ function V.BuildInvest(parent)
 	end
 	root.Page = Page
 	function root:ShowPage(key)
+		if key == "settings" then return T.Select("settings") end   -- (v0.3.5: its own tab)
 		key = key or self.current or "list"
 		if not BUILD[key] then key = "list" end
 		self.current = key

@@ -1104,7 +1104,7 @@ local function Setup()
 	dp.OnMapChanged = function()
 		ApplyZoom()
 		if mod.OnHostMapChanged then mod.OnHostMapChanged() end
-		if mod.RefreshPortrait then pcall(mod.RefreshPortrait) end   -- (Valhalla's icon only while stitching)
+		if mod.RefreshPortrait then pcall(mod.RefreshPortrait) end   -- (Valhalla's icon: always, v0.3.5)
 		-- (inside Blizzard's map change: a failure here is reported, never left to break it)
 		if mod.RefreshNav then
 			local ok, err = pcall(mod.RefreshNav, mod)

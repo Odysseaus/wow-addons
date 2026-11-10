@@ -14,6 +14,11 @@
 -- Log is the game's own). The keys are the game's: ToggleQuestLog/ToggleWorldMap are post-hooked (the
 -- global functions, nothing written on the map), and the window is closed with HideUIPanel, never in
 -- combat (in combat: back to Map & Quest Log instead).
+-- v0.3.5: a fifth tab, Settings (out of Investments' menu). The window's title is "Valhalla" (windowed and
+-- full screen: set again after the game's own SetTitle calls). On the other tabs the strip between the
+-- title bar and the map (the game's breadcrumb, the quest log's search box and Quests count) is covered too,
+-- by a band of Valhalla's own (solid, it takes the clicks): nothing of the game's is hidden or moved.
+-- Valhalla's own map menu is put away there, and back on Map & Quest Log.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -28,14 +33,18 @@ T.LIST = {
 	{ key = "invest", label = L["Investments"], icon = "Interface\\Icons\\INV_Misc_Coin_01" },
 	{ key = "talents", label = L["Talents"], icon = "Interface\\Icons\\Ability_Marksmanship", soon = true },
 	{ key = "professions", label = L["Professions"], icon = "Interface\\Icons\\Trade_BlackSmithing", soon = true },
+	{ key = "settings", label = L["Settings"], icon = "Interface\\Icons\\Trade_Engineering" },
 }
+T.TITLE = L["Valhalla"]
+T.TITLE_H = 23                                       -- (the title bar: the band starts under it)
+T.PORTRAIT_W = 64                                    -- (the band starts right of the portrait, as the game's breadcrumb does)
 T.TAB_W, T.TAB_H, T.GAP, T.EDGE = 132, 28, 4, 30      -- (bottom/top: clear of the corners' resize grips)
 T.SIDE = 40                                          -- side icons
 T.LEVEL = 9920                                       -- over the map, the quest log and Valhalla's map overlays (HIGH strata), under the grips (9990)
 T.BRONZE = { 0.66, 0.49, 0.28 }
 T.GOLD = { 1, 0.82, 0 }
 
-local map, strip, host
+local map, strip, host, band
 local buttons = {}
 local views = {}
 local current = "map"
@@ -46,6 +55,7 @@ local shownAt, sizedAt                               -- (GetTime() the map last 
 local function Maximized() return map and map.IsMaximized and map:IsMaximized() or false end
 function T.Current() return current end
 function T.Host() return host end
+function T.Band() return band end
 function T.Strip() return strip end
 function T.Buttons() return buttons end
 function T.Views() return views end
@@ -77,6 +87,7 @@ local function Rock(f)
 	local shade = f:CreateTexture(nil, "BACKGROUND", nil, 1)
 	shade:SetAllPoints()
 	shade:SetColorTexture(0, 0, 0, 0.45)
+	return bg
 end
 
 --------------------------------------------------------------------------------
@@ -112,6 +123,15 @@ local function BuildHost()
 	host:EnableMouseWheel(true)
 	host:SetScript("OnMouseWheel", function() end)
 	Rock(host)
+	-- the strip above the map (the game's breadcrumb, the quest log's search and count): a band of ours, a
+	-- child of the host (shown and hidden with it), reaching up to the title bar, right of the portrait
+	band = CreateFrame("Frame", nil, host)
+	band:SetFrameStrata("HIGH")
+	band:SetFrameLevel(T.LEVEL)
+	band:EnableMouse(true)
+	band:EnableMouseWheel(true)
+	band:SetScript("OnMouseWheel", function() end)
+	band.bg = Rock(band)
 	host:Hide()
 	T.PlaceHost()
 end
@@ -122,6 +142,9 @@ function T.PlaceHost()
 	local top = map.ScrollContainer or map
 	host:SetPoint("TOPLEFT", top, "TOPLEFT", 0, 0)
 	host:SetPoint("BOTTOMRIGHT", map, "BOTTOMRIGHT", -2, 2)
+	band:ClearAllPoints()
+	band:SetPoint("TOPLEFT", map, "TOPLEFT", T.PORTRAIT_W, -T.TITLE_H)
+	band:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, 0)
 end
 
 local function View(key)
@@ -134,6 +157,8 @@ local function View(key)
 	inner:SetPoint("BOTTOMRIGHT")
 	if key == "invest" and I.Views then
 		inner.page = I.Views.BuildInvest(inner)
+	elseif key == "settings" and I.Views then
+		inner.page = I.Views.BuildSettings(inner)
 	else
 		inner.page = Placeholder(inner, entry)
 	end
@@ -249,9 +274,19 @@ function T.Select(key, page)
 		host:Show()
 		if v then v:Show() end
 		if key == "invest" and v and v.page and v.page.ShowPage then v.page:ShowPage(page) end
+		if key == "settings" and v and v.page and v.page.Refresh then v.page:Refresh() end
 	end
+	local wm = ns:GetModule("worldmap")
+	if wm and wm.TabAway then pcall(wm.TabAway, key ~= "map") end   -- (Valhalla's own map menu: away on the other tabs)
 	for _, b in ipairs(buttons) do Paint(b) end
 	return true
+end
+
+-- the window's title: Valhalla (after the game's own SetupTitle / SynchronizeDisplayState: text only)
+function T.Title()
+	if not attached then return end
+	local b = map and map.BorderFrame
+	if b and b.SetTitle then pcall(b.SetTitle, b, T.TITLE) end
 end
 
 -- shown with the map (not full screen), hidden with it
@@ -287,6 +322,7 @@ end
 function T.OnMapShow()
 	if not attached then return end
 	shownAt = GetTime()
+	T.Title()
 	T.Refresh()
 	T.Select("map")
 end
@@ -334,8 +370,10 @@ local function Attach()
 		if _G.ToggleWorldMap then hooksecurefunc("ToggleWorldMap", function() T.AfterKey("M") end) end
 		if _G.OpenQuestLog then hooksecurefunc("OpenQuestLog", function() T.AfterKey() end) end
 		if _G.OpenWorldMap then hooksecurefunc("OpenWorldMap", function() T.AfterKey() end) end
+		if map.SynchronizeDisplayState then hooksecurefunc(map, "SynchronizeDisplayState", function() T.Title() end) end
 	end
 	current = "map"
+	T.Title()
 	T.Refresh()
 	if host then host:Hide() end
 end
@@ -354,6 +392,11 @@ function T.Disable()
 	current = "map"
 	host:Hide()
 	strip:Hide()
+	local wm = ns:GetModule("worldmap")
+	if wm and wm.TabAway then pcall(wm.TabAway, false) end
+	-- the game's own title back
+	local b = map and map.BorderFrame
+	if b and b.SetTitle then pcall(b.SetTitle, b, Maximized() and (_G.WORLD_MAP or "World Map") or (_G.MAP_AND_QUEST_LOG or "Map & Quest Log")) end
 	attached = false
 end
 

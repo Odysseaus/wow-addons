@@ -1352,6 +1352,21 @@ end
 AC.Tick = OnUpdate   -- (the tests drive it)
 function AC.Running() return AC.run ~= nil end
 
+-- how far it is (v0.3.5, for the AH list's bar): fraction 0-1, the step's number and label, and while the
+-- full scan is read, how many of how many
+function AC.Progress()
+	local r = AC.run
+	if not r then return nil end
+	local o = r.out
+	local n, label = tostring(o.step or ""):match("^(%d+)/7%s*(.*)$")
+	n = tonumber(n) or 0
+	local f = math.max(0, n - 1) / 7
+	local rp = o.replicate
+	local at, count = rp and rp.readAt, rp and rp.count
+	if at and (count or 0) > 0 then f = f + (at / count) / 7 end
+	return math.max(0, math.min(1, f)), n, label or "", at, count
+end
+
 -- start (the diagnostic's entry d gets d.ahcheck, filled as it goes: a /reload mid-way keeps what's done)
 function AC.Start(d)
 	if AC.run then return false end
@@ -1451,11 +1466,11 @@ end
 
 --------------------------------------------------------------------------------
 -- Slash commands (Init.lua sends them here)
---   /valhalla invest [vendor|list|market|settings]   open Investments (at that page)
+--   /valhalla invest [vendor|list|market|settings]   open Investments (at that page; settings: the Settings tab)
 --   /valhalla invest on|off                          the whole tabbed window and Investments (off: the map as before)
 --   /valhalla invest diag [ah|replicate|stop]        what this client has, saved to the saved log (ah: the AH check)
 --   /valhalla undo                                   put back the last deleted list (or a list as it was before an edit)
---   /valhalla tab map|invest|talents|professions     switch the window's tab
+--   /valhalla tab map|invest|talents|professions|settings   switch the window's tab
 --   /valhalla want <item> [count], /valhalla unwant <item>   into / out of the Shopping List's builder
 --   /valhalla list                                   the active shopping list
 --------------------------------------------------------------------------------
@@ -1484,7 +1499,8 @@ function mod:Slash(word, arg)
 			I.Changed()
 			return
 		end
-		local page = ({ vendor = "vendor", list = "list", shopping = "list", market = "market", ah = "market", settings = "settings" })[sub]
+		if sub == "settings" then if I.Tabs then I.Tabs.Open("settings") end return end   -- (v0.3.5: its own tab)
+		local page = ({ vendor = "vendor", list = "list", shopping = "list", market = "market", ah = "market" })[sub]
 		if I.Tabs then I.Tabs.Open("invest", page) end
 		return
 	end
@@ -1493,8 +1509,8 @@ function mod:Slash(word, arg)
 		local what = I.Undo()
 		if what then Say(L["Put back: %s."], what) else Say("%s", L["Nothing to undo."]) end
 	elseif word == "tab" then
-		local key = ({ map = "map", invest = "invest", investments = "invest", talents = "talents", professions = "professions" })[low]
-		if not key then Say(L["/valhalla tab map|invest|talents|professions"]) return end
+		local key = ({ map = "map", invest = "invest", investments = "invest", talents = "talents", professions = "professions", settings = "settings" })[low]
+		if not key then Say(L["/valhalla tab map|invest|talents|professions|settings"]) return end
 		if I.Tabs then I.Tabs.Open(key) end
 	elseif word == "want" then
 		-- into the Shopping List's builder (the draft): the item may be a link (with spaces), then a count

@@ -69,6 +69,13 @@ function Frame.SetTexture(self, t) self._tex = t end
 function Frame.SetColorTexture(self, r, g, b, a) self._color = { r, g, b, a } end
 function Frame.SetText(self, s) self._text = s if self._kind == "EditBox" and self._scripts.OnTextChanged then self._scripts.OnTextChanged(self) end end
 function Frame.GetText(self) return self._text end
+-- a font string's height at its width: about 6 px a character, 13 px a line (enough to catch overlaps)
+function Frame.GetStringHeight(self)
+  local t = tostring(self._text or "")
+  if t == "" then return 0 end
+  local w = rawget(self, "_w") or 800
+  return math.ceil(#t * 6 / math.max(1, w)) * 13
+end
 function Frame.SetTextColor(self, r, g, b) self._tc = { r, g, b } end
 function Frame.SetFocus(self) W.focus = self end
 function Frame.ClearFocus(self) if W.focus == self then W.focus = nil end end
@@ -190,8 +197,16 @@ WorldMapFrame.ScrollContainer = CreateFrame("ScrollFrame", nil, WorldMapFrame)
 WorldMapFrame.BorderFrame = CreateFrame("Frame", nil, WorldMapFrame)
 WorldMapFrame._max = false
 function WorldMapFrame.IsMaximized(self) return self._max end
-function WorldMapFrame.Maximize(self) self._max = true end
-function WorldMapFrame.Minimize(self) self._max = false end
+-- as Blizzard_WorldMap.lua: the title from SetupTitle / SynchronizeDisplayState (Maximize/Minimize call it)
+WorldMapFrame.TitleCanvasSpacerFrame = CreateFrame("Frame", nil, WorldMapFrame)
+function WorldMapFrame.BorderFrame.SetTitle(self, t) self._title = t end
+function WorldMapFrame.BorderFrame.GetTitleText(self) return self._title end
+function WorldMapFrame.SynchronizeDisplayState(self)
+  self.BorderFrame:SetTitle(self._max and "World Map" or "Map & Quest Log")
+end
+function WorldMapFrame.Maximize(self) self._max = true self:SynchronizeDisplayState() end
+function WorldMapFrame.Minimize(self) self._max = false self:SynchronizeDisplayState() end
+WorldMapFrame.BorderFrame:SetTitle("Map & Quest Log")
 WorldMapFrame.QuestLog = CreateFrame("Frame", nil, WorldMapFrame)
 -- the game's M and L (QuestLogOwnerMixin): M toggles the map; L closes it if its quest log is showing, else opens it with the log
 function ToggleWorldMap() Count("toggleMap") if WorldMapFrame:IsShown() then WorldMapFrame:Hide() else WorldMapFrame:Show() end end

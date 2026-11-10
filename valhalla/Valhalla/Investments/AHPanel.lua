@@ -14,6 +14,9 @@
 -- v0.3.3: the list's Auction House items stay listed once you have enough (Done) or bought them (In mail);
 -- "None" chosen: no list here.
 -- Buying is always your own click on the game's own Buy button: Valhalla buys nothing.
+-- v0.3.5: the AH check's button is here (it needs the Auction House open, and the Valhalla window and the
+-- AH can't be open together: the game shows one or the other). Run AH check / Stop, its step and a bar;
+-- minimized, the small button's right-click runs or stops it.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -25,6 +28,7 @@ I.AH = A
 
 A.ROWS = 14
 A.W = 270
+A.H = 530
 A.WATCH = 3                                 -- (seconds to wait for the AH's answer to a search)
 local panel, mini
 local on = false
@@ -144,7 +148,7 @@ local function Build()
 	if InCombatLockdown() then A.waiting = true return nil end   -- (secure buttons aren't made in combat: once it ends)
 	local T, V = I.Tabs, I.Views
 	panel = CreateFrame("Frame", "ValhallaAHList", ah, "BackdropTemplate")
-	panel:SetSize(A.W, 500)
+	panel:SetSize(A.W, A.H)
 	panel:SetPoint("TOPLEFT", ah, "TOPRIGHT", 6, 0)
 	T.Skin(panel, 0.96)
 	panel:EnableMouse(true)
@@ -184,6 +188,36 @@ local function Build()
 	panel.mail:SetPoint("BOTTOMLEFT", 12, 10)
 	panel.mail:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
 	panel.mail:SetJustifyH("LEFT")
+	-- the AH check (v0.3.5): its button, what it's doing and a bar
+	local check = CreateFrame("Frame", nil, panel)
+	check:SetPoint("BOTTOMLEFT", 8, 26)
+	check:SetPoint("RIGHT", panel, "RIGHT", -8, 0)
+	check:SetHeight(34)
+	check.button = V.Button(check, L["Run AH check"], 110, 22, function() A.CheckClick() end)
+	check.button:SetPoint("TOPLEFT", 2, 0)
+	check.button:HookScript("OnEnter", function(self)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:AddLine(L["Run AH check"], 1, 0.82, 0)
+		GameTooltip:AddLine(L["Measures how fast the Auction House answers (full scan and quick searches), for the coming AH Market. 1-4 minutes, without freezing the game. It only reads prices: nothing is posted, bid or bought. Keep the Auction House open, then /reload."], 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	check.button:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	check.status = T.Font(check:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 10, { 0.75, 0.75, 0.75 })
+	check.status:SetPoint("LEFT", check.button, "RIGHT", 8, 0)
+	check.status:SetPoint("RIGHT", check, "RIGHT", -2, 0)
+	check.status:SetJustifyH("LEFT")
+	check.track = check:CreateTexture(nil, "BACKGROUND")
+	check.track:SetColorTexture(0, 0, 0, 0.6)
+	check.track:SetPoint("BOTTOMLEFT", 2, 0)
+	check.track:SetPoint("BOTTOMRIGHT", -2, 0)
+	check.track:SetHeight(6)
+	check.bar = check:CreateTexture(nil, "ARTWORK")
+	check.bar:SetColorTexture(T.GOLD[1], T.GOLD[2], T.GOLD[3], 0.9)
+	check.bar:SetPoint("TOPLEFT", check.track, "TOPLEFT", 0, 0)
+	check.bar:SetPoint("BOTTOMLEFT", check.track, "BOTTOMLEFT", 0, 0)
+	check.bar:SetWidth(1)
+	panel.check = check
 	panel.empty = T.Font(panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight"), 12, { 0.6, 0.6, 0.6 })
 	panel.empty:SetPoint("TOPLEFT", 14, -88)
 	panel.empty:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
@@ -200,17 +234,92 @@ local function Build()
 	mini.icon:SetTexture("Interface\\Icons\\INV_Scroll_03")
 	mini.count = T.Font(mini:CreateFontString(nil, "OVERLAY", "GameFontNormal"), 12, T.GOLD)
 	mini.count:SetPoint("BOTTOMRIGHT", -2, 2)
-	mini:SetScript("OnClick", function() A.SetMinimized(false) end)
+	if mini.RegisterForClicks then mini:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+	mini:SetScript("OnClick", function(_, button)
+		if button == "RightButton" then A.CheckClick() else A.SetMinimized(false) end
+	end)
+	mini.ring = mini:CreateTexture(nil, "OVERLAY")
+	mini.ring:SetColorTexture(T.GOLD[1], T.GOLD[2], T.GOLD[3], 0.9)
+	mini.ring:SetPoint("BOTTOMLEFT", 2, 2)
+	mini.ring:SetHeight(3)
+	mini.ring:SetWidth(1)
+	mini.ring:Hide()
 	mini:SetScript("OnEnter", function(self)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		GameTooltip:AddLine(L["Valhalla: Shopping List"], 1, 0.82, 0)
 		GameTooltip:AddLine(L["Click to show it again."], 1, 1, 1)
+		GameTooltip:AddLine(A.CheckRunning() and L["Right-click: stop the AH check."] or L["Right-click: run the AH check."], 1, 1, 1)
+		GameTooltip:AddLine(A.CheckStatus(), 0.75, 0.75, 0.75, true)
 		GameTooltip:Show()
 	end)
 	mini:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 	mini:Hide()
 	return panel
+end
+
+-- the AH check from here (v0.3.5)
+function A.CheckRunning() return I.AHCheck and I.AHCheck.Running() or false end
+
+function A.CheckClick()
+	if A.CheckRunning() then I.AHCheck.Stop("stopped") else I.RunDiag("ah") end
+	A.CheckRefresh()
+end
+
+function A.CheckStatus()
+	local AC = I.AHCheck
+	if AC and AC.Running() then
+		local f, n, label, at, count = AC.Progress()
+		local s = L["Step %d/7: %s (%d%%)"]:format(n, label ~= "" and label or "...", math.floor(f * 100))
+		if at and count then s = s .. " " .. L["%d / %d auctions read"]:format(at, count) end
+		return s, f
+	end
+	local d = I.LastDiag()
+	local ac = d and d.ahcheck
+	if ac then return L["Last AH check: %s (%s). /reload saves it."]:format(tostring(ac.state), tostring(d.when)), nil end
+	return L["Not run yet. Read-only: nothing is posted, bid or bought."], nil
+end
+
+local ticker = 0
+function A.CheckRefresh()
+	local running = A.CheckRunning()
+	local text, f = A.CheckStatus()
+	if panel and panel.check then
+		local c = panel.check
+		c.button.text:SetText(running and L["Stop"] or L["Run AH check"])
+		c.status:SetText(text)
+		local w = (c.track:GetWidth() or 0)
+		if w <= 0 then w = A.W - 20 end
+		c.bar:SetWidth(math.max(1, w * (f or 0)))
+		c.bar:SetShown(running)
+		c.track:SetShown(running)
+		-- while it runs: the bar moves on its own (the scan's read gives no event), four times a second
+		if running and not c.ticking then
+			c.ticking = true
+			c:SetScript("OnUpdate", function(_, e)
+				ticker = ticker + (e or 0)
+				if ticker < 0.25 then return end
+				ticker = 0
+				if not A.CheckRunning() then c.ticking = nil c:SetScript("OnUpdate", nil) end
+				A.CheckRefresh()
+			end)
+		end
+	end
+	if mini then
+		mini.ring:SetWidth(math.max(1, 26 * (f or 0)))
+		mini.ring:SetShown(running)
+		if running and not mini.ticking then
+			mini.ticking = true
+			mini:SetScript("OnUpdate", function(_, e)
+				ticker = ticker + (e or 0)
+				if ticker < 0.25 then return end
+				ticker = 0
+				if not A.CheckRunning() then mini.ticking = nil mini:SetScript("OnUpdate", nil) end
+				A.CheckRefresh()
+			end)
+		end
+	end
+	return running, text, f
 end
 
 function A.SetMinimized(v)
@@ -240,6 +349,7 @@ function A.Refresh()
 		panel:Hide()
 		mini.count:SetText(needed > 0 and tostring(needed) or "")
 		mini:Show()
+		A.CheckRefresh()
 		return
 	end
 	mini:Hide()
@@ -280,6 +390,7 @@ function A.Refresh()
 	local mailed = {}
 	for _, d in ipairs(I.ListRows(list.list)) do if d.mail > 0 then mailed[#mailed + 1] = ("%s x%d"):format(d.name, d.mail) end end
 	panel.mail:SetText(#mailed > 0 and L["In the mail: %s"]:format(table.concat(mailed, ", ")) or "")
+	A.CheckRefresh()
 	panel:Show()
 end
 
