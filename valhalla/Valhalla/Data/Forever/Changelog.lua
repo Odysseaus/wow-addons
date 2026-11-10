@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.0.2", date = "2026-11-10", heads = { [1] = "Fixed", [3] = "Note", }, items = {
+		"|cff6e2c0aNo more freeze opening My items or Scan results|r: v0.4.0.1 could build the list dozens of times over when it first measured the window, leaving copies drawn over each other (rows doubled, History's box and the Count and Range rows overlapping, the game slow). Each list is now built once, and resizing the window only lays out its own rows again.",
+		"Changing to another view hides every other one, so nothing is left drawn underneath.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.0.1", date = "2026-11-10", heads = { [1] = "Changed", [5] = "Note", }, items = {
 		"|cff6e2c0aMy items and Scan results go through everything|r: page buttons under the list (first, back, next, last) with Page x of y and which items are shown. The mouse wheel turns a page. Changing bags/bank, the house, the search or the sort goes back to page 1.",
 		"|cff6e2c0aAs many rows as the window fits|r (6 to 20): more in the full-screen map, no overlap in the small one.",

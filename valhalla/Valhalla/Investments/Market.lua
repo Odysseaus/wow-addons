@@ -4,6 +4,7 @@
 -- lowest price over a day or a week), Scan results (every item of the last full scan). Craft: v0.4.1.
 -- Every item is an item cell (Views.lua): its icon, name and the game's tooltip, with AH lines under it.
 -- My items and Scan results page (v0.4.0.1): as many rows as the window fits (6-20), page buttons under them.
+-- Each view is built once and listed before it's built; a resize lays out only its own rows (v0.4.0.2).
 -- Prices are the raw lowest buyout per unit (the 1c-dump filter is a setting, off). The AH can't be open
 -- while this window is: scanning is on Valhalla's list beside the Auction House.
 --------------------------------------------------------------------------------
@@ -129,11 +130,15 @@ local function Off(b, off)
 	b:SetAlpha(off and 0.4 or 1)
 end
 
--- f.list, f.offset (always a whole page), f.per rows; newRow(i) makes row i when the view first needs it
+-- f.list, f.offset (always a whole page), f.per rows; newRow(i) makes row i when the view first needs it.
+-- (v0.4.0.2) No size is asked while the view is built: in the game, asking a new frame its size lays it out
+-- there and then and fires OnSizeChanged. And a resize redraws only this view's own list, never the page.
 local function Paged(f, page, top, newRow)
+	local key = f.view
 	f.offset, f.rows, f.per = 0, {}, nil
-	function f.Fit()
-		local per = M.FitRows(f:GetHeight(), top)
+	-- the rows for a view h high (no h: as it is, 12 at first)
+	function f.Fit(h)
+		local per = h and M.FitRows(h, top) or f.per or M.ROWS
 		for i = #f.rows + 1, per do f.rows[i] = newRow(i) end
 		if per == f.per then return false end
 		f.per = per
@@ -149,12 +154,16 @@ local function Paged(f, page, top, newRow)
 		local pages = f.Pages()
 		f.offset = math.max(0, math.min(f.offset, (pages - 1) * f.per))
 	end
+	-- this view's list drawn again (the same list; S.shown: what a quick scan asks about)
+	function f.Redraw()
+		S().shown = f.Refresh(true) or {}
+	end
 	function f.Page(k)
 		local pages, cur = f.Pages()
 		k = math.max(1, math.min(pages, k))
 		if k == cur then return end
 		f.offset = (k - 1) * f.per
-		page:Refresh(true)
+		f.Redraw()
 	end
 	local p = CreateFrame("Frame", nil, f)
 	p:SetPoint("BOTTOMLEFT", 8, 26)
@@ -179,7 +188,14 @@ local function Paged(f, page, top, newRow)
 		Off(p.next, cur >= pages) Off(p.last, cur >= pages)
 	end
 	V.Wheel(f, function(delta) local _, cur = f.Pages() f.Page(cur - delta) end)   -- (a notch: a page)
-	f:SetScript("OnSizeChanged", function() if f.Fit() and f:IsShown() then page:Refresh(true) end end)
+	f:SetScript("OnSizeChanged", function(self, _, h)
+		if f.building or f.fitting or page.current ~= key or not f:IsShown() then return end
+		f.fitting = true
+		local ok, changed = pcall(f.Fit, h or self:GetHeight())
+		if ok and changed then ok, changed = pcall(f.Redraw) end
+		f.fitting = nil
+		if not ok then error(changed, 0) end
+	end)
 	f.Fit()
 end
 
@@ -584,21 +600,33 @@ function V.BuildMarket(page)
 		x = x + 108
 	end
 	page.current = "top"
+	page.allSubs = {}
 	function page:Sub(key)
 		if self.subs[key] then return self.subs[key] end
 		local f = CreateFrame("Frame", nil, self)
 		f:SetPoint("TOPLEFT", 8, -100)
 		f:SetPoint("BOTTOMRIGHT", -8, 8)
+		f.view, f.building = key, true   -- (f.view: Scan results keeps its own f.key, its list cache key)
+		self.subs[key] = f   -- (v0.4.0.2: registered before it's built, so a lookup while building finds this one)
+		self.allSubs[#self.allSubs + 1] = f
 		BUILD[key](f, self)
+		f.building = nil
 		f:Hide()
-		self.subs[key] = f
 		return f
 	end
 	function page:ShowSub(key)
 		if not BUILD[key] then key = "top" end
 		self.current = key
-		for k, f in pairs(self.subs) do if k ~= key then f:Hide() end end
-		self:Sub(key):Show()
+		local f = self:Sub(key)
+		for _, g in ipairs(self.allSubs) do if g ~= f then g:Hide() end end   -- (every view ever made, not only the listed ones)
+		f:Show()
+		-- fit its rows now that it's listed and shown (its own OnSizeChanged waits while this runs)
+		if f.Fit and not f.fitting then
+			f.fitting = true
+			local ok, err = pcall(f.Fit, f:GetHeight())
+			f.fitting = nil
+			if not ok then error(err, 0) end
+		end
 		self:Refresh()
 	end
 	function page:Refresh(keep)   -- (keep: the same list, another page)

@@ -47,8 +47,22 @@ function Frame.GetPoint(self, i) local p = self._points[i or 1] if p then return
 function Frame.SetSize(self, w, h) self._w, self._h = w, h end
 function Frame.SetWidth(self, w) self._w = w end
 function Frame.SetHeight(self, h) self._h = h end
-function Frame.GetWidth(self) return rawget(self, "_w") or 800 end
-function Frame.GetHeight(self) return rawget(self, "_h") or 600 end
+-- (v0.4.0.2) as the game does: asking a frame anchored by two points its size the first time lays it out
+-- there and then and fires its OnSizeChanged (a handler's error caught, as the game catches each script's)
+W.sizeFired, W.sizeDepth, W.sizeMaxDepth, W.sizeErrors = 0, 0, 0, {}
+local function LayOut(self)
+  if rawget(self, "_laid") or #self._points < 2 then return end
+  self._laid = true
+  W.sizeFired = W.sizeFired + 1
+  W.sizeDepth = W.sizeDepth + 1
+  if W.sizeDepth > W.sizeMaxDepth then W.sizeMaxDepth = W.sizeDepth end
+  if W.sizeDepth > 50 then W.sizeDepth = W.sizeDepth - 1 error("OnSizeChanged nested 50 deep (a runaway)") end
+  local ok, e = pcall(W.Run, self, "OnSizeChanged", rawget(self, "_w") or 800, rawget(self, "_h") or 600)
+  if not ok then W.sizeErrors[#W.sizeErrors + 1] = e end
+  W.sizeDepth = W.sizeDepth - 1
+end
+function Frame.GetWidth(self) LayOut(self) return rawget(self, "_w") or 800 end
+function Frame.GetHeight(self) LayOut(self) return rawget(self, "_h") or 600 end
 function Frame.SetFrameLevel(self, l) self._level = l end
 function Frame.GetFrameLevel(self) return self._level end
 function Frame.SetFrameStrata(self, s) self._strata = s end

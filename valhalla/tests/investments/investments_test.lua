@@ -1440,6 +1440,68 @@ do
   ok(tga and Alpha(0, 0) == 0 and Alpha(127, 127) == 0 and Alpha(64, 64) == 255, "round icon: transparent corners, solid centre")
   ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "paging wrote nothing on the map")
   end)()
+
+  ;(function()
+  print("-- 29. v0.4.0.2: a view is built once; a resize redraws only its own list (the freeze of v0.4.0.1)")
+  local errs0 = #W.sizeErrors
+  W.sizeMaxDepth = 0
+  local CF, made, views = CreateFrame, 0, {}
+  local host = CreateFrame("Frame", nil, nil)
+  CreateFrame = function(k, n, parent, ...)
+    made = made + 1
+    local fr = CF(k, n, parent, ...)
+    if parent == host then views[#views + 1] = fr end
+    return fr
+  end
+  local ok1, e1 = pcall(V.BuildMarket, host)
+  local function Count(key) local n = 0 for _, v in ipairs(views) do if v.view == key then n = n + 1 end end return n end
+  local function ShownLists() local n = 0 for _, v in ipairs(views) do if rawget(v, "pager") and v:IsShown() then n = n + 1 end end return n end
+  made = 0
+  local ok2, e2 = pcall(host.ShowSub, host, "mine")
+  local mineMade = made
+  ok(ok1 and ok2 and Count("mine") == 1 and host.subs.mine and host.subs.mine:IsShown(), "My items opened: one view built, not dozens", tostring(e1 or e2) .. " " .. Count("mine"))
+  ok(W.sizeMaxDepth <= 1 and #W.sizeErrors == errs0, "its size asked as the game does: OnSizeChanged never nested, no error", W.sizeMaxDepth)
+  ok(mineMade <= 80, "frames made for it: its rows, pager and header only", mineMade)
+  made = 0
+  host:ShowSub("results")
+  ok(Count("results") == 1 and made <= 80 and W.sizeMaxDepth <= 1 and not host.subs.mine:IsShown() and host.subs.results:IsShown(), "Scan results: one view too, My items hidden", made)
+  host:ShowSub("history")
+  ok(ShownLists() == 0 and host.subs.history:IsShown(), "History: no list view left showing under it")
+  host:ShowSub("mine") host:ShowSub("results") host:ShowSub("mine")
+  ok(Count("mine") == 1 and Count("results") == 1 and #host.allSubs == 4 and ShownLists() == 1, "back and forth: each view built once (4 views made in all)", #host.allSubs)
+  -- 10 resizes: rows made once (up to 20), one redraw of its own list when the rows change, never the page
+  local mf = host.subs.mine
+  local redraws, pageRefresh, subs = 0, 0, 0
+  local R, PR, PS = mf.Refresh, host.Refresh, host.Sub
+  mf.Refresh = function(...) redraws = redraws + 1 return R(...) end
+  host.Refresh = function(...) pageRefresh = pageRefresh + 1 return PR(...) end
+  host.Sub = function(...) subs = subs + 1 return PS(...) end
+  made = 0
+  local most, prev, bad = 0, mf.per, nil
+  for _, h in ipairs({ 400, 900, 250, 900, 400, 400, 620, 250, 900, 400 }) do
+    local before = redraws
+    mf:SetHeight(h) W.Run(mf, "OnSizeChanged", 800, h)
+    local want = (Mk.FitRows(h, 48) ~= prev) and 1 or 0
+    if redraws - before ~= want then bad = ("%d px: %d redraws"):format(h, redraws - before) end
+    prev = mf.per
+    most = math.max(most, #mf.rows)
+  end
+  ok(not bad, "each resize: one redraw when the rows change, none when they don't", bad)
+  ok(pageRefresh == 0 and subs == 0, "a resize never redraws the page or looks up a view", pageRefresh .. " " .. subs)
+  ok(most == 20 and #mf.rows == 20 and made <= 8 * 3, "rows made only as needed, 20 at most, never again", made)
+  host:ShowSub("history")
+  pageRefresh, redraws = 0, 0
+  local per = mf.per
+  W.Run(mf, "OnSizeChanged", 800, 250)
+  ok(mf.per == per and redraws == 0, "a resize while hidden: nothing")
+  host:ShowSub("mine")
+  redraws = 0
+  mf.fitting = true W.Run(mf, "OnSizeChanged", 800, 900) mf.fitting = nil
+  ok(redraws == 0, "a resize inside a resize: nothing")
+  mf.Refresh, host.Refresh, host.Sub = R, PR, PS
+  CreateFrame = CF
+  ok(#W.sizeErrors == errs0, "no handler error anywhere", tostring(W.sizeErrors[#W.sizeErrors]))
+  end)()
 end
 
 print(("\n%d passed, %d failed"):format(pass, fail))
