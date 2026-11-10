@@ -34,6 +34,9 @@ I.SETTINGS = {
 	-- AH Market (v0.4.0): read speed (smooth 4 / balanced 8 / fast 12 ms a frame), history days and cap,
 	-- the 1c-dump filter (off: the raw lowest buyout), shift-hover compare, bags + bank in My items
 	scanSpeed = "balanced", histDays = 7, histCapMB = 3, dumpFilter = false, compare = true, mineBank = true,
+	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (what you own costs nothing) | "vendor" (at its
+	-- vendor value); only the recipes this character knows
+	craftOwned = "market", craftKnownOnly = false,
 }
 I.CATS = { "mat", "reagent", "gear" }
 I.CAT_NAME = { mat = L["Profession Mat"], reagent = L["Reagent"], gear = L["Gear Upgrade"] }
@@ -724,7 +727,9 @@ I.EVENTS = { "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "PLAY
 	-- (v0.3.4: the AH check's: searches and the AH's throttle)
 	"COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED", "AUCTION_HOUSE_THROTTLED_MESSAGE_SENT",
 	"AUCTION_HOUSE_THROTTLED_MESSAGE_QUEUED", "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED",
-	"AUCTION_HOUSE_THROTTLED_MESSAGE_RESPONSE_RECEIVED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" }
+	"AUCTION_HOUSE_THROTTLED_MESSAGE_RESPONSE_RECEIVED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
+	-- (v0.4.1: a profession window's recipes, for Craft)
+	"TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "NEW_RECIPE_LEARNED" }
 
 function I.OnEvent(event, a1, a2)
 	if I.AHCheck and I.AHCheck.run then I.AHCheck.OnEvent(event, a1) end
@@ -784,6 +789,8 @@ function I.OnEvent(event, a1, a2)
 			for _, e in ipairs(I.Draft().items) do if e.id == a1 then e.name = name or e.name hit = true end end
 			if hit then I.Changed() end
 		end
+	elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE" or event == "NEW_RECIPE_LEARNED" then
+		if I.Craft and I.Craft.ReadOpen then pcall(I.Craft.ReadOpen, event ~= "TRADE_SKILL_LIST_UPDATE") end
 	elseif event == "REPLICATE_ITEM_LIST_UPDATE" then
 		if I.diagReplicate then I.DiagReplicateDone() end
 	end

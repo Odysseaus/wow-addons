@@ -4,6 +4,14 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.1", date = "2026-11-10", heads = { [1] = "New", [6] = "Note", }, items = {
+		"|cff6e2c0aCraft|r (AH Market): the Top 10 crafts of each profession by profit at the Auction House shown: craft cost, sell price (the lowest buyout, no undercut), profit per item and margin, how many are listed, a star on the recipes you know and how many you can make. Every item shows its icon and the game's tooltip, with each reagent's cost under it.",
+		"|cff6e2c0aRecipes come from the game|r: open a profession window once (any character) and Valhalla keeps its whole list, learned or not, for every character. Reagents and outputs are always read from the game. A few recipe IDs are bundled for the professions not opened yet; a fuller bundled list will follow.",
+		"|cff6e2c0aCosts|r: each reagent at the cheaper of the AH's lowest and a merchant you've visited. Reagents: Market (all bought), Owned free (what's in your bags, or bags + bank, costs nothing) or Owned: vendor (at its vendor value). Known only shows just your recipes.",
+		"The sale is less the house's cut (5%, 15% at Booty Bay, Gadgetzan and Everlook). The deposit isn't taken off: the game gives it back when the item sells (the tooltip shows it, estimated).",
+		"A craft with a reagent nobody prices, or whose item isn't listed, isn't ranked: it's named under the Top 10 (your next quick scan asks about them). Enchants and bind-on-pickup items are skipped.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.0.2", date = "2026-11-10", heads = { [1] = "Fixed", [3] = "Note", }, items = {
 		"|cff6e2c0aNo more freeze opening My items or Scan results|r: v0.4.0.1 could build the list dozens of times over when it first measured the window, leaving copies drawn over each other (rows doubled, History's box and the Count and Range rows overlapping, the game slow). Each list is now built once, and resizing the window only lays out its own rows again.",
 		"Changing to another view hides every other one, so nothing is left drawn underneath.",

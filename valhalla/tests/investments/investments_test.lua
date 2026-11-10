@@ -14,8 +14,8 @@ function ns:GetModule(key) return self.modules[key] end
 ns.modules.worldmap = { key = "worldmap", enabled = true }
 function ns.modules.worldmap.TabAway(away) ns.modules.worldmap.away = away end   -- (Map/Panel.lua: its menu put away on the other tabs)
 assert(loadfile(root .. "Links.lua"))("Valhalla", ns)
-for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Craft", "Merchant", "AHPanel" }) do
-  assert(loadfile(root .. "Investments/" .. f .. ".lua"))("Valhalla", ns)
+for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Data/Forever/Recipes", "Craft", "Merchant", "AHPanel" }) do
+  assert(loadfile(root .. (f:find("/") and f or ("Investments/" .. f)) .. ".lua"))("Valhalla", ns)   -- (the TOC's order)
 end
 local mod = ns:GetModule("invest")
 local I = mod.I
@@ -1244,7 +1244,7 @@ do
   Slash("invest", "market")
   local root = T.Views().invest.page
   local mp = root.pages.market
-  ok(mp and mp:IsShown() and #mp.subButtons == 5 and mp.subButtons[5].soon and mp.current == "top", "AH Market: Top 10, My items, History, Scan results, Craft (soon)")
+  ok(mp and mp:IsShown() and #mp.subButtons == 5 and not mp.subButtons[5].soon and mp.current == "top", "AH Market: Top 10, My items, History, Scan results, Craft")
   ok(mp.hint._text:find("Scan at the Auction House: the Scan button is on Valhalla's list beside it"), "the AH closed: where to scan")
   ok(mp.status._text:find("^Horde Auction House") and mp.houseButton:IsShown(), "the house last visited, a button to switch houses", mp.status._text)
   local top = mp.subs.top
@@ -1274,7 +1274,8 @@ do
   ok(rf.list[1].min <= rf.list[#rf.list].min, "sorted by lowest")
   mp:ShowSub("top")
   W.Click(mp.subButtons[5])
-  ok(mp.current == "top", "Craft: coming in v0.4.1 (not opened)")
+  ok(mp.current == "craft" and mp.subs.craft:IsShown(), "Craft: opens (v0.4.1)")
+  mp:ShowSub("top")
   Mk.house = "Alliance" mp:Refresh()
   ok(mp.status._text:find("^Alliance"), "another house chosen")
   Mk.house = nil
@@ -1501,6 +1502,160 @@ do
   mf.Refresh, host.Refresh, host.Sub = R, PR, PS
   CreateFrame = CF
   ok(#W.sizeErrors == errs0, "no handler error anywhere", tostring(W.sizeErrors[#W.sizeErrors]))
+  end)()
+
+  ;(function()
+  print("-- 30. v0.4.1: Craft: recipes from the game (and the bundle), the Top 10 by profit, owned reagents, the view")
+  local Cr = I.Craft
+  ok(Cr and Cr.ready and ns.Recipes and ns.Recipes.professions[197].ids == "2963" and not ns.Recipes.professions[197].ids:find("2330"),
+    "the bundle: the probe's IDs only (2330, empty in the game, left out)")
+  -- items, prices, a merchant
+  local A, B, X = 920001, 920002, 920009
+  for id, name in pairs({ [A] = "Test Thread", [B] = "Test Dye", [X] = "Test Unpriced", [910001] = "Test Shirt", [910002] = "Test Bolts",
+    [910003] = "Test Missing", [910004] = "Test Unlisted", [910005] = "Test Soulbound" }) do W.items[id] = { name, 132912 } end
+  for k = 1, 11 do W.items[910100 + k] = { "Test Craft " .. k, 132912 } end
+  W.bind = { [910005] = 1 }
+  I.realm.merchants.crafttest = { name = "Test Vendor", items = { [B] = 300 } }
+  local function House(name, scans)
+    local m = Sc.Market(name, true)
+    local tm = math.floor(W.now / 60) - m.base
+    m.scans = {}
+    for i = 1, scans do m.scans[i] = { t = tm, kind = "full", n = 100, items = 10 } end
+    local function Put(id, min) m.cur[id] = ("%d,%d,%d,%d"):format(min, 20, 2, tm) end
+    Put(A, 100) Put(B, 500) Put(910001, 2000) Put(910002, 400) Put(910003, 5000) Put(910005, 9000)
+    for k = 1, 11 do Put(910100 + k, 1000 + k * 10) end
+    return m
+  end
+  local cm = House("CraftTest", 1)
+  House("Neutral", 1)
+  -- the game's recipes
+  local R = {
+    [901001] = { outputItemID = 910001, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = { { quantityRequired = 2, reagents = { { itemID = A } } }, { quantityRequired = 1, reagents = { { itemID = B } } } } },
+    [901002] = { outputItemID = 910002, quantityMin = 2, quantityMax = 4, reagentSlotSchematics = { { quantityRequired = 3, reagents = { { itemID = A } } } } },
+    [901003] = { outputItemID = 910003, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = { { quantityRequired = 1, reagents = { { itemID = X } } } } },
+    [901004] = { outputItemID = 910004, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = { { quantityRequired = 1, reagents = { { itemID = A } } } } },
+    [901005] = { outputItemID = 910005, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = { { quantityRequired = 1, reagents = { { itemID = A } } } } },
+    [901006] = { outputItemID = 0, quantityMin = 0, quantityMax = 0, reagentSlotSchematics = {} },   -- (as the game answered 2330)
+    [901007] = { outputItemID = 0, recipeType = 3, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = {} },   -- (an enchant)
+  }
+  for k = 1, 11 do R[901100 + k] = { outputItemID = 910100 + k, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = { { quantityRequired = 1, reagents = { { itemID = A } } },
+    { quantityRequired = 1, required = false, reagents = { { itemID = X } } } } } end   -- (an optional reagent: not costed)
+  local ids = {}
+  for id in pairs(R) do ids[#ids + 1] = id end
+  table.sort(ids)
+  local TS = C_TradeSkillUI
+  local reads = 0
+  local cost = 0
+  Enum.TradeskillRecipeType = { Item = 1, Enchant = 3 }
+  C_TradeSkillUI = {
+    GetBaseProfessionInfo = function() return { professionID = 2540, professionName = "Classic Tailoring", parentProfessionID = 197, parentProfessionName = "Tailoring" } end,
+    GetAllRecipeIDs = function() return ids end,
+    GetRecipeInfo = function(id) return { recipeID = id, learned = id == 901001 or id == 901002 } end,
+    GetRecipeSchematic = function(id) reads = reads + 1 W.clock = W.clock + cost local r = R[id] if r then local c = {} for k, v in pairs(r) do c[k] = v end c.recipeID = id return c end return TS.GetRecipeSchematic(id) end,
+  }
+  Cr.schem, Cr.results = {}, {}
+  W.Fire("TRADE_SKILL_SHOW")
+  local store = I.db.account.recipes
+  ok(store and store[197] and store[197].name == "Tailoring" and select(2, store[197].ids:gsub(",", "")) + 1 == #ids and I.char.known[197] == "901001,901002",
+    "a profession window opens: its whole list kept for the account (keyed by its skill line), what this character knows", store and store[197] and store[197].ids)
+  local p = Cr.Profession(197)
+  ok(p and p.source == "live" and #p.ids == #ids and Cr.Profession(129) and Cr.Profession(129).source == "bundled", "the window's list replaces the bundled one; other professions keep theirs")
+  ok(Cr.Key(nil, "Classic Tailoring") == 197 and Cr.Key(2540, "") == 2540 and Cr.Key(nil, "Basketry") == "Basketry", "a profession's key: its skill line by name, else the game's ID or name")
+  local infos = 0
+  local GRI = C_TradeSkillUI.GetRecipeInfo
+  C_TradeSkillUI.GetRecipeInfo = function(id) infos = infos + 1 return GRI(id) end
+  W.Fire("TRADE_SKILL_LIST_UPDATE")
+  ok(infos == 0, "the same list again within 3 s: not read again")
+  ids[#ids + 1] = 901008 R[901008] = R[901001]
+  W.Fire("TRADE_SKILL_LIST_UPDATE")
+  ok(infos == #ids and select(2, I.db.account.recipes[197].ids:gsub(",", "")) + 1 == #ids, "a longer list (the window was still loading): read at once", infos)
+  ids[#ids] = nil R[901008] = nil
+  W.Fire("TRADE_SKILL_SHOW")
+  C_TradeSkillUI.GetRecipeInfo = GRI
+  -- the math
+  local opts = { owned = "market", bank = false, knownOnly = false }
+  local res = Cr.Rank("CraftTest", 197, opts)
+  local r1 = res.rows[1]
+  ok(r1 and r1.id == 901001 and r1.cost == 500 and r1.sell == 2000 and math.abs(r1.net - 1900) < 0.01 and math.abs(r1.profit - 1400) < 0.01 and math.abs(r1.margin - 2.8) < 0.001,
+    "sell at the lowest buyout (no undercut) less 5%; cost: 2 x 100 + the vendor's 300 (cheaper than the AH's 500)", r1 and r1.cost)
+  ok(r1.parts[1].src == "ah" and r1.parts[2].src == "vendor", "each reagent's source: AH or vendor")
+  local e2 = Cr.Price("CraftTest", Cr.Resolve(901002), opts, {})
+  ok(e2.qty == 3 and e2.cost == 300 and math.abs(e2.net - 1140) < 0.01 and math.abs(e2.each - 280) < 0.01, "makes 2-4: sold as 3, profit per item", e2.each)
+  ok(#res.rows == 10 and res.ranked == 13 and res.rows[2].id == 901111 and res.rows[10].id == 901103, "the Top 10 by profit per craft (13 priced; 2 x 4 makes fall out)", res.rows[2] and res.rows[2].id)
+  ok(#res.missing == 1 and res.missing[1].missing[1] == X and #res.unlisted == 1 and res.unlisted[1].out == 910004, "a reagent nobody prices, an output nobody lists: not ranked, listed apart")
+  ok(res.skipped == 2 and res.unknown == 1, "an enchant and a bind-on-pickup output skipped; an empty answer counted unknown", res.skipped .. " " .. res.unknown)
+  ok(#res.rows[2].parts == 1, "an optional reagent isn't costed")
+  local en = Cr.Price("Neutral", Cr.Resolve(901001), opts, {})
+  ok(math.abs(en.profit - (2000 * 0.85 - 500)) < 0.01, "at a neutral house: its 15% cut", en.profit)
+  ok(Cr.Deposit({ out = 910001, qty = 1 }) == 100 and math.abs(r1.profit - 1400) < 0.01, "the deposit (est.): 100c at least, not taken off the profit")
+  local lines = table.concat(Cr.Lines(r1, "CraftTest"), "\n")
+  ok(lines:find("Test Thread", 1, true) and lines:find("vendor", 1, true) and lines:find("Deposit if unsold", 1, true) and lines:find("5% cut", 1, true), "its tooltip: each reagent, the cut, the deposit if unsold", lines)
+  -- what you own
+  local have = { [A] = 1, [B] = 1 }
+  local f1 = Cr.Price("CraftTest", Cr.Resolve(901001), { owned = "free" }, have)
+  local v1 = Cr.Price("CraftTest", Cr.Resolve(901001), { owned = "vendor" }, have)
+  ok(f1.cost == 100 and f1.can == 0 and v1.cost == 120, "owned free: 1 thread bought, the dye yours; at vendor value: +10c each", f1.cost .. " " .. v1.cost)
+  local keepBags, keepBank = I.char.bags, I.char.bank
+  I.char.bags, I.char.bank = { [A] = 1, [B] = 1 }, { [A] = 5 }
+  local rb = Cr.Rank("CraftTest", 197, { owned = "free", bank = true })
+  local rn = Cr.Rank("CraftTest", 197, { owned = "free", bank = false })
+  local function Find(rs, id) for _, e in ipairs(rs.rows) do if e.id == id then return e end end end
+  ok(Find(rb, 901001).cost == 0 and Find(rb, 901001).can == 1 and Find(rn, 901001).cost == 100, "with the bank: all owned (free), can make 1; bags only: 1 bought")
+  ok(#Cr.Rank("CraftTest", 197, { owned = "market", knownOnly = true }).rows == 2, "Known only: the 2 this character knows")
+  -- the view
+  Mk.house = "CraftTest"
+  W.sizeMaxDepth = 0
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  ok(cf:IsShown() and cf.profButtons[1]:IsShown() and W.sizeMaxDepth <= 1, "Craft: one view, profession buttons")
+  local tb
+  for _, b in ipairs(cf.profButtons) do if b.prof == 197 then tb = b end end
+  W.Click(tb)
+  ok(Mk.craftProf == 197 and cf.status._text:find("reading", 1, true) and not cf.rows[1]:IsShown(), "Tailoring: read a little each frame first", cf.status._text)
+  for _ = 1, 200 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  local row = cf.rows[1]
+  ok(row:IsShown() and row.cell.id == 910001 and row.cell.icon._tex ~= nil and row.cost._text == Sc.Money(500) and row.known._text:find("*", 1, true), "the Top 10: item cells (icon, name), cost, known", row.cost._text)
+  ok(cf.missing._text:find("Can't price (1)", 1, true) and cf.missing._text:find("Test Unpriced", 1, true) and cf.unlisted._text:find("Test Unlisted", 1, true), "under it: can't price, not listed", cf.missing._text)
+  local inShown = false for _, id in ipairs(Sc.shown or {}) do if id == X then inShown = true end end
+  ok(inShown, "the unpriced reagent goes to the quick scan")
+  ok(table.concat(row.Lines(), " "):find("Deposit if unsold", 1, true), "hover: the craft's lines under the game's tooltip")
+  local jobs = Cr.job
+  mp:Refresh()
+  ok(not Cr.Running() and jobs == nil, "cached: drawn again without working it out again")
+  table.insert(cm.scans, { t = cm.scans[1].t, kind = "full", n = 100, items = 10 })
+  mp:Refresh()
+  ok(Cr.Running(), "a new full scan: ranked again")
+  for _ = 1, 200 do if not Cr.Running() then break end Cr.Tick() end
+  W.Click(cf.owned.boxes[2])
+  ok(I.S.craftOwned == "free" and Cr.Running(), "Owned free: ranked again")
+  for _ = 1, 200 do if not Cr.Running() then break end Cr.Tick() end
+  I.S.craftOwned = "market"
+  local ns2 = Sc.Market("NoScanYet", true) ns2.cur[A] = "1,1,1,0"
+  Mk.house = "NoScanYet" mp:Refresh()
+  ok(cf.status._text:find("No full scan of NoScanYet", 1, true) and not cf.rows[1]:IsShown(), "a house without a full scan: says so")
+  Sc.Houses().NoScanYet = nil
+  local keepStore, keepB = I.db.account.recipes, ns.Recipes.professions
+  I.db.account.recipes, ns.Recipes.professions = {}, {}
+  Mk.house = "CraftTest" mp:Refresh()
+  ok(cf.status._text:find("No recipes yet", 1, true), "no recipes at all: open a profession window once")
+  I.db.account.recipes, ns.Recipes.professions = keepStore, keepB
+  -- 3,000 recipes, 0.2 ms each to read: no frame past the budget
+  local big = {}
+  for k = 1, 3000 do local id = 950000 + k big[#big + 1] = id R[id] = R[901001] end
+  I.db.account.recipes[999] = { name = "Test Big", ids = table.concat(big, ","), t = W.now }
+  Cr.schem, Cr.results = {}, {}
+  cost = 0.2
+  local _, _, _ = Cr.Get("CraftTest", 999, opts)
+  local frames = 0
+  for _ = 1, 2000 do if not Cr.Running() then break end Cr.Tick() frames = frames + 1 end
+  cost = 0
+  ok(Cr.last and Cr.last.maxMs <= Cr.BUDGET + 1.2 and frames >= 70, "3,000 recipes: read and ranked over frames, none past the budget", ("%d frames, max %.2f ms"):format(frames, Cr.last and Cr.last.maxMs or -1))
+  I.db.account.recipes[999] = nil
+  I.char.bags, I.char.bank = keepBags, keepBank
+  C_TradeSkillUI = TS
+  Mk.house, Mk.craftProf = nil, nil
+  ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == 0, "Craft wrote nothing on the map; no handler error")
   end)()
 end
 
