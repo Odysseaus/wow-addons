@@ -4,6 +4,17 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.0", date = "2026-11-10", heads = { [1] = "New", [7] = "Changed", [9] = "Note", }, items = {
+		"|cff6e2c0aAH Market|r: prices from your own scans at the Auction House. |cff6e2c0aScan|r is on Valhalla's list beside the AH: a full scan of the whole market (about 15 seconds, read a little each frame so the game doesn't stall) when its 15 minutes are up, else a quick scan of your items (shopping list, bags, bank). The button turns into Stop with a bar; minimized, right-click the small button. It only reads prices: nothing is posted, bid or bought.",
+		"|cff6e2c0aTop 10|r rising and falling over 7 days (needs 3 full scans): the median lowest price of the second half of the window against the first, with a small sparkline.",
+		"|cff6e2c0aMy items|r: everything in your bags (or bags + bank), its vendor price against the AH's lowest after the cut (5%, 15% at Booty Bay, Gadgetzan and Everlook), and the better of the two.",
+		"|cff6e2c0aHistory|r: one item's lowest price over a day or a week (lines or bars, Settings' graph style). |cff6e2c0aScan results|r: every item of the last full scan, searchable and sortable by name, lowest, units, auctions or 7-day change.",
+		"|cff6e2c0aEvery item shows its icon and the game's own tooltip|r (shift-hover compares gear), with what the AH said under it. Shift-click links it, ctrl-click tries it on, click opens its History, right-click puts it in the Shopping List's builder. Items the game hasn't loaded show their icon at once and their name a moment later. The AH list's items show the tooltip too.",
+		"Each Auction House is its own market (Alliance, Horde, neutral). History keeps one point per item an hour (the latest wins), 7 days, at most 3 MB. A full scan cut off by closing the AH saves nothing. Settings > AH Market: scan speed, days kept, history size, the 1c-dump filter (off: the raw lowest price), shift-compare, forget a house.",
+		"|cff6e2c0aRun AH check|r moved to /valhalla invest diag ah (the AH list's button is Scan now). /valhalla invest scan scans from chat.",
+		"Valhalla's icon is the hall: the AddOn list, the minimap button and the window's portrait.",
+		"|cff6e2c0aRestart the game once|r after installing (new files: a /reload doesn't load them). Craft profit (v0.4.1) will need only a /reload.",
+	} },
 	{ version = "v0.3.5", date = "2026-11-10", heads = { [1] = "Fixed", [3] = "Changed", [7] = "Note", }, items = {
 		"|cff6e2c0aRun AH check works|r: its button is now on Valhalla's list beside the Auction House (the game never shows the Valhalla window and the Auction House together, so the Settings button could never be pressed). It turns into Stop while the check runs, with its step and a bar; minimized, right-click the small button to run or stop it. Settings keeps the button with a hint, and /valhalla invest diag ah still works.",
 		"|cff6e2c0aSettings no longer overlaps|r: each note is as tall as its text at the window's width (measured again when the window is resized). The AH check's long description moved into the button's tooltip.",

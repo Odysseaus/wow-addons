@@ -14,9 +14,9 @@
 -- v0.3.3: the list's Auction House items stay listed once you have enough (Done) or bought them (In mail);
 -- "None" chosen: no list here.
 -- Buying is always your own click on the game's own Buy button: Valhalla buys nothing.
--- v0.3.5: the AH check's button is here (it needs the Auction House open, and the Valhalla window and the
--- AH can't be open together: the game shows one or the other). Run AH check / Stop, its step and a bar;
--- minimized, the small button's right-click runs or stops it.
+-- v0.3.5: the AH check's button was here. v0.4.0: Scan instead (the AH check: /valhalla invest diag ah):
+-- a full scan when its 15 minutes are up, else a quick scan of your items; Stop, what it's doing and a bar;
+-- minimized, the small button's right-click scans or stops. The rows' items show the game's tooltip.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -177,6 +177,11 @@ local function Build()
 		r.name:SetPoint("LEFT", 26, 0)
 		r.name:SetWidth(120)
 		r.name:SetJustifyH("LEFT")
+		r.hover = CreateFrame("Button", nil, r)
+		r.hover:SetPoint("LEFT", 0, 0)
+		r.hover:SetSize(146, 22)
+		r.hover:SetScript("OnEnter", function(self) if r.id then V.ItemTooltip(self, r.id, I.Market and I.Market.Lines) end end)
+		r.hover:SetScript("OnLeave", function() V.HideItemTooltip() end)
 		r.need = T.Font(r:CreateFontString(nil, "OVERLAY", "GameFontNormal"), 12, T.GOLD)
 		r.need:SetPoint("LEFT", 150, 0)
 		r.search = SearchButton(r, T, V)
@@ -193,13 +198,14 @@ local function Build()
 	check:SetPoint("BOTTOMLEFT", 8, 26)
 	check:SetPoint("RIGHT", panel, "RIGHT", -8, 0)
 	check:SetHeight(34)
-	check.button = V.Button(check, L["Run AH check"], 110, 22, function() A.CheckClick() end)
+	check.button = V.Button(check, L["Scan"], 110, 22, function() A.CheckClick() end)
 	check.button:SetPoint("TOPLEFT", 2, 0)
 	check.button:HookScript("OnEnter", function(self)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:AddLine(L["Run AH check"], 1, 0.82, 0)
-		GameTooltip:AddLine(L["Measures how fast the Auction House answers (full scan and quick searches), for the coming AH Market. 1-4 minutes, without freezing the game. It only reads prices: nothing is posted, bid or bought. Keep the Auction House open, then /reload."], 1, 1, 1, true)
+		GameTooltip:AddLine(L["Scan"], 1, 0.82, 0)
+		GameTooltip:AddLine(L["Full scan (the whole market, about 15 seconds) when its 15 minutes are up, else a quick scan of your items (shopping list, bags, bank). Keep the Auction House open. It only reads prices: nothing is posted, bid or bought. The quick scan uses the AH's own browse list (its results show there)."], 1, 1, 1, true)
+		GameTooltip:AddLine(I.Scan.CooldownText(), 0.7, 0.7, 0.7)
 		GameTooltip:Show()
 	end)
 	check.button:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -249,7 +255,7 @@ local function Build()
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		GameTooltip:AddLine(L["Valhalla: Shopping List"], 1, 0.82, 0)
 		GameTooltip:AddLine(L["Click to show it again."], 1, 1, 1)
-		GameTooltip:AddLine(A.CheckRunning() and L["Right-click: stop the AH check."] or L["Right-click: run the AH check."], 1, 1, 1)
+		GameTooltip:AddLine(A.CheckRunning() and L["Right-click: stop the scan."] or L["Right-click: scan."], 1, 1, 1)
 		GameTooltip:AddLine(A.CheckStatus(), 0.75, 0.75, 0.75, true)
 		GameTooltip:Show()
 	end)
@@ -258,26 +264,28 @@ local function Build()
 	return panel
 end
 
--- the AH check from here (v0.3.5)
-function A.CheckRunning() return I.AHCheck and I.AHCheck.Running() or false end
+-- Scan from here (v0.4.0; v0.3.5's AH check button: now /valhalla invest diag ah)
+function A.CheckRunning() return I.Scan and I.Scan.Running() or false end
 
 function A.CheckClick()
-	if A.CheckRunning() then I.AHCheck.Stop("stopped") else I.RunDiag("ah") end
+	I.Scan.Toggle()
 	A.CheckRefresh()
 end
 
 function A.CheckStatus()
-	local AC = I.AHCheck
-	if AC and AC.Running() then
-		local f, n, label, at, count = AC.Progress()
-		local s = L["Step %d/7: %s (%d%%)"]:format(n, label ~= "" and label or "...", math.floor(f * 100))
-		if at and count then s = s .. " " .. L["%d / %d auctions read"]:format(at, count) end
-		return s, f
+	local Sc = I.Scan
+	if Sc.Running() then
+		local f, text = Sc.Progress()
+		return ("%s (%d%%)"):format(text, math.floor(f * 100)), f
 	end
-	local d = I.LastDiag()
-	local ac = d and d.ahcheck
-	if ac then return L["Last AH check: %s (%s). /reload saves it."]:format(tostring(ac.state), tostring(d.when)), nil end
-	return L["Not run yet. Read-only: nothing is posted, bid or bought."], nil
+	local last = Sc.last
+	local cd = Sc.CooldownText()
+	if Sc.NextFull() > 0 then cd = cd .. " " .. L["Scan: a quick scan now."] end
+	if last then
+		local what = last.kind == "full" and L["full scan"] or L["quick scan"]
+		return cd .. " " .. L["Last %s: %s, %s."]:format(what, L[last.state] or last.state, Sc.Age(last.at)), nil
+	end
+	return cd, nil
 end
 
 local ticker = 0
@@ -286,7 +294,7 @@ function A.CheckRefresh()
 	local text, f = A.CheckStatus()
 	if panel and panel.check then
 		local c = panel.check
-		c.button.text:SetText(running and L["Stop"] or L["Run AH check"])
+		c.button.text:SetText(running and L["Stop"] or L["Scan"])
 		c.status:SetText(text)
 		local w = (c.track:GetWidth() or 0)
 		if w <= 0 then w = A.W - 20 end

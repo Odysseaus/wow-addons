@@ -49,6 +49,166 @@ function V.Button(parent, label, w, h, onClick)
 	return b
 end
 
+--------------------------------------------------------------------------------
+-- An item, as AH Market shows it (v0.4.0): its icon, its name in its quality's colour, and the game's own
+-- tooltip on hover (shift: compared with what you wear). An item the game hasn't loaded yet shows its
+-- icon at once (client data) and "Item #id" until its name arrives (Item:ContinueOnItemLoad; at most 30
+-- asked at a time, only for rows on screen; a reused row never takes an old answer).
+-- Clicks: shift puts its link in chat (or in the Valhalla box that has the cursor), ctrl opens the
+-- dressing room, a plain click opens its History, right-click adds it to the Shopping List's builder.
+-- Only the game's tooltip API is used (SetOwner, SetItemByID / SetHyperlink, AddLine, Show, Hide).
+--------------------------------------------------------------------------------
+
+V.LOAD_MAX = 30
+V.loading = {}
+V.loadingCount = 0
+local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
+
+-- the item's name, link and quality, if the game has it
+function V.ItemData(id)
+	local ok, name, link, quality = pcall(GetItemInfo, id)
+	if ok and name then return name, link, quality end
+end
+
+function V.QualityColor(q)
+	local c = q and _G.ITEM_QUALITY_COLORS and _G.ITEM_QUALITY_COLORS[q]
+	if c then return c.r, c.g, c.b end
+	return 1, 1, 1
+end
+
+-- ask the game for an item's data once (at most LOAD_MAX at a time); done(id) when it's there
+function V.LoadItem(id, done)
+	if V.loading[id] then V.loading[id][#V.loading[id] + 1] = done return true end
+	if V.loadingCount >= V.LOAD_MAX then
+		-- (an item the game never answers for: given up after 10 seconds, so it can't hold a place)
+		local now = GetTime and GetTime() or 0
+		for k, w in pairs(V.loading) do
+			if w.at and now - w.at > 10 then V.loading[k] = nil V.loadingCount = math.max(0, V.loadingCount - 1) end
+		end
+		if V.loadingCount >= V.LOAD_MAX then return false end
+	end
+	local Item = _G.Item
+	if not (Item and Item.CreateFromItemID) then
+		if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
+		return false
+	end
+	local ok, item = pcall(Item.CreateFromItemID, Item, id)
+	if not ok or not item then return false end
+	V.loading[id] = { done, at = GetTime and GetTime() or 0 }
+	V.loadingCount = V.loadingCount + 1
+	local ok2 = pcall(item.ContinueOnItemLoad, item, function()
+		local waiting = V.loading[id]
+		V.loading[id] = nil
+		V.loadingCount = math.max(0, V.loadingCount - 1)
+		for _, fn in ipairs(waiting or {}) do pcall(fn, id) end
+	end)
+	if not ok2 then V.loading[id] = nil V.loadingCount = math.max(0, V.loadingCount - 1) return false end
+	return true
+end
+
+-- the game's tooltip for an item, and our lines under it
+function V.ItemTooltip(owner, id, extra)
+	if not (GameTooltip and id) then return end
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	local _, link = V.ItemData(id)
+	if link and GameTooltip.SetHyperlink then GameTooltip:SetHyperlink(link)
+	elseif GameTooltip.SetItemByID then GameTooltip:SetItemByID(id) end
+	if extra then
+		for _, line in ipairs(extra(id) or {}) do GameTooltip:AddLine(line, 0.7, 0.7, 0.7, true) end
+	end
+	GameTooltip:Show()
+	if I.S.compare ~= false and IsShiftKeyDown and IsShiftKeyDown() and _G.GameTooltip_ShowCompareItem then
+		pcall(_G.GameTooltip_ShowCompareItem, GameTooltip)
+		V.comparing = true
+	else
+		V.comparing = nil
+	end
+end
+
+function V.HideItemTooltip()
+	if GameTooltip then
+		if _G.GameTooltip_HideShoppingTooltips then pcall(_G.GameTooltip_HideShoppingTooltips, GameTooltip) end
+		GameTooltip:Hide()
+	end
+	V.comparing = nil
+end
+
+function V.InsertLink(link)
+	if not link then return false end
+	if _G.ChatFrameUtil and _G.ChatFrameUtil.InsertLink then return _G.ChatFrameUtil.InsertLink(link) end
+	if _G.ChatEdit_InsertLink then return _G.ChatEdit_InsertLink(link) end
+	return false
+end
+
+-- an item cell: cell:SetItem(id[, extra]) / cell:SetItem(nil); cell.onClick(id) for a plain click
+function V.ItemCell(parent, w)
+	local cell = CreateFrame("Button", nil, parent)
+	cell:SetSize(w or 200, 22)
+	cell.icon = cell:CreateTexture(nil, "ARTWORK")
+	cell.icon:SetSize(20, 20)
+	cell.icon:SetPoint("LEFT", 0, 0)
+	cell.name = Text(cell, 12)
+	cell.name:SetPoint("LEFT", 24, 0)
+	cell.name:SetPoint("RIGHT", cell, "RIGHT", -2, 0)
+	cell.name:SetJustifyH("LEFT")
+	if cell.SetHyperlinksEnabled then cell:SetHyperlinksEnabled(false) end
+	if cell.RegisterForClicks then cell:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+	function cell:Paint()
+		local id = self.id
+		if not id then self.name:SetText("") self.icon:SetTexture(nil) return end
+		self.icon:SetTexture(I.ItemIcon(id))
+		local name, _, q = V.ItemData(id)
+		if name then
+			self.name:SetText(name)
+			self.name:SetTextColor(V.QualityColor(q))
+			self.loaded = true
+		else
+			self.name:SetText(L["Item #%d"]:format(id))
+			self.name:SetTextColor(0.6, 0.6, 0.6)
+			self.loaded = false
+			local want = id
+			V.LoadItem(id, function() if self.id == want then self:Paint() end end)
+		end
+	end
+	function cell:SetItem(id, extra)
+		self.id, self.extra = id, extra
+		self:Paint()
+		self:SetShown(id ~= nil)
+	end
+	cell:SetScript("OnEnter", function(self)
+		if not self.id then return end
+		V.ItemTooltip(self, self.id, self.extra)
+		if self.RegisterEvent then self:RegisterEvent("MODIFIER_STATE_CHANGED") end
+	end)
+	cell:SetScript("OnLeave", function(self)
+		if self.UnregisterEvent then self:UnregisterEvent("MODIFIER_STATE_CHANGED") end
+		V.HideItemTooltip()
+	end)
+	cell:SetScript("OnEvent", function(self, event)
+		if event == "MODIFIER_STATE_CHANGED" and self.id and GameTooltip and GameTooltip:IsShown() then
+			if _G.GameTooltip_HideShoppingTooltips then pcall(_G.GameTooltip_HideShoppingTooltips, GameTooltip) end
+			V.ItemTooltip(self, self.id, self.extra)
+		end
+	end)
+	cell:SetScript("OnClick", function(self, button)
+		local id = self.id
+		if not id then return end
+		local _, link = V.ItemData(id)
+		link = link or ("item:%d"):format(id)
+		if button == "RightButton" then
+			I.DraftAdd(id)
+			ns:Print("%s", L["%s: in the Shopping List's builder."]:format(V.ItemData(id) or L["Item #%d"]:format(id)))
+		elseif IsShiftKeyDown and IsShiftKeyDown() then
+			V.InsertLink(link)
+		elseif IsControlKeyDown and IsControlKeyDown() then
+			if _G.DressUpItemLink then pcall(_G.DressUpItemLink, link) end
+		elseif self.onClick then
+			self.onClick(id)
+		end
+	end)
+	return cell
+end
+
 -- a tick box and its label: get() / set(v)
 function V.Check(parent, label, get, set)
 	local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
@@ -116,6 +276,7 @@ local function Wheel(f, scroll)
 	f:EnableMouseWheel(true)
 	f:SetScript("OnMouseWheel", function(_, delta) scroll(delta) end)
 end
+V.Text, V.EditBox, V.Header, V.Wheel, V.When = Text, EditBox, Header, Wheel, When   -- (for Market.lua)
 
 -- "Bank last seen" (every page)
 function V.BankLine()
@@ -673,8 +834,6 @@ local function BuildSettings(page)
 	page.tabNote = Note(L["M, L and anything else that opens the window open it on Map & Quest Log."])
 	Section(L["Diagnostic"])
 	local run = V.Button(body, L["Run diagnostic"], 150, 22, function() I.RunDiag() end)
-	local runAH = V.Button(body, L["Run AH check"], 150, 22, function() I.RunDiag("ah") end)
-	runAH:SetPoint("LEFT", run, "RIGHT", 10, 0)
 	local function Tip(b, lines)
 		b:HookScript("OnEnter", function(self)
 			if not GameTooltip then return end
@@ -685,12 +844,11 @@ local function BuildSettings(page)
 		b:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 	end
 	Tip(run, { L["Run diagnostic"], L["Saves what Valhalla sees (your bank above all, and which recipes can be read) and prints three lines. Then /reload writes it to disk, where it can be read back."] })
-	Tip(runAH, { L["Run AH check"], L["At the Auction House (its button is on Valhalla's list beside the AH): measures, for the coming AH Market, how fast the full scan and quick searches answer, whether stackable goods are in the scan, whether recipes can be read, which house it is and a deposit sample. A few steps over 1-4 minutes, without freezing the game. It only reads prices: nothing is posted, bid or bought. Keep the Auction House open while it runs, then /reload."] })
 	Place(run, 26)
-	page.run, page.runAH = run, runAH
+	page.run = run
 	page.last = Note("", { 1, 1, 1 })
 	page.hint = Note("", GOLD)
-	page.how = Note(L["Run diagnostic saves what Valhalla sees, then /reload writes it to disk. Run AH check (at the Auction House, on Valhalla's list beside it) measures scan speed for the coming AH Market; it only reads prices."])
+	page.how = Note(L["Run diagnostic saves what Valhalla sees, then /reload writes it to disk. The AH check (scan speed, at the Auction House): type /valhalla invest diag ah there; it only reads prices."])
 	Section(L["Counting what you have"])
 	Opt(L["Count bank items (as last seen)"], "countBank")
 	Opt(L["Count my other characters' items on this realm"], "countAlts")
@@ -711,7 +869,31 @@ local function BuildSettings(page)
 	Place(grey)
 	Section(L["Auction House"])
 	Opt(L["Show my Shopping List beside the Auction House"], "ahPanel", function() if I.AH then I.AH.Refresh() end end)
-	Note(L["Search runs the Auction House's own search, on your click. The list's - minimizes it to a small button. Run AH check is on that list too."])
+	Note(L["Search runs the Auction House's own search, on your click. The list's - minimizes it to a small button. Scan (AH Market's prices) is on that list too."])
+	Section(L["AH Market"])
+	page.speed = Place(V.Radio(body, L["Scan speed:"], { { "smooth", L["Smooth"] }, { "balanced", L["Balanced"] }, { "fast", L["Fast"] } },
+		function() return S.scanSpeed end, function(v) S.scanSpeed = v end))
+	Note(L["How much of each frame a full scan may use to read: Smooth 4 ms, Balanced 8 ms, Fast 12 ms (faster scans, small hitches)."])
+	local days = CreateFrame("Frame", nil, body)
+	days:SetSize(400, 22)
+	local dl = Text(days, 12)
+	dl:SetPoint("LEFT")
+	local function DaysText() dl:SetText(L["Keep history: %d days"]:format(S.histDays)) end
+	local dminus = V.Button(days, "-", 22, 20, function() S.histDays = math.max(1, S.histDays - 1) DaysText() if I.Scan then I.Scan.PruneAll() end I.Changed() end)
+	dminus:SetPoint("LEFT", 200, 0)
+	local dplus = V.Button(days, "+", 22, 20, function() S.histDays = math.min(7, S.histDays + 1) DaysText() I.Changed() end)
+	dplus:SetPoint("LEFT", 226, 0)
+	DaysText()
+	page.days = { frame = days, minus = dminus, plus = dplus, label = dl }
+	Place(days)
+	page.size = Note("", { 1, 1, 1 })
+	page.dump = Opt(L["Ignore a 1c dump (a lowest price under 30% of its 7-day median)"], "dumpFilter")
+	page.compare = Opt(L["Shift-hover: compare with what I wear"], "compare")
+	local forgetAH = V.Button(body, L["Forget this house's market"], 220, 22, function()
+		if I.Scan and I.Market then I.Scan.Forget((I.Market.House())) end
+	end)
+	Place(forgetAH, 28)
+	page.forgetAH = forgetAH
 	Section(L["Graphs (Phase D)"])
 	page.graph = Place(V.Radio(body, L["Graph style:"], { { "lines", L["Lines"] }, { "bars", L["Bars"] } },
 		function() return S.graphStyle end, function(v) S.graphStyle = v end))
@@ -738,10 +920,10 @@ local function BuildSettings(page)
 			local ac = d and d.ahcheck
 			self.last:SetText(d and L["Last run: %s%s"]:format(tostring(d.when), d.kind == "ah" and (ac and L[" (AH check: %s)"]:format(tostring(ac.state)) or L[" (AH check)"]) or "") or L["Last run: never"])
 		end
-		local ahOn = (I.ahOpen and not check) and true or false
-		if runAH.SetEnabled then runAH:SetEnabled(ahOn) end
-		runAH:SetAlpha(ahOn and 1 or 0.45)
-		self.hint:SetText((not I.ahOpen and not check) and L["Open the Auction House, then press Run AH check on its Valhalla list (or type /valhalla invest diag ah)."] or "")
+		self.hint:SetText("")
+		DaysText()
+		local size = I.Scan and I.Scan.TotalSize() or 0
+		self.size:SetText(L["History: %.1f MB of %d MB (one point per item an hour, the oldest scans dropped first)."]:format(size / 1048576, S.histCapMB or 3))
 		Reflow()
 	end
 end
@@ -762,7 +944,8 @@ end
 -- The tab: its menu down the left and the page
 --------------------------------------------------------------------------------
 
-local BUILD = { vendor = BuildVendor, list = BuildList, market = BuildMarket }   -- (Settings: its own tab, v0.3.5)
+local BUILD = { vendor = BuildVendor, list = BuildList,
+	market = function(page) return (V.BuildMarket or BuildMarket)(page) end }   -- (AH Market: Market.lua, v0.4.0; Settings: its own tab, v0.3.5)
 
 function V.BuildInvest(parent)
 	local root = CreateFrame("Frame", nil, parent)

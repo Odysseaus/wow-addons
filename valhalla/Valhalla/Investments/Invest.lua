@@ -31,14 +31,15 @@ I.SETTINGS = {
 	hiVendor = true, greyAlpha = 0.6, showNeed = true,
 	ahPanel = true, ahPanelMin = false,                         -- (the AH's list: shown; minimized to its small button)
 	graphStyle = "lines",                                       -- Phase D: "lines" | "bars" (kept now, drawn later)
-	-- Phase C (kept now so saves carry them): the AH market view
-	panels = { trending = true, vendorVsAH = true, craft = true, graph = true },
-	trendDays = 7, minScans = 3, priceSource = "min", keepDays = 14, maxSnapsPerItem = 60, ahCut = true,
+	-- AH Market (v0.4.0): read speed (smooth 4 / balanced 8 / fast 12 ms a frame), history days and cap,
+	-- the 1c-dump filter (off: the raw lowest buyout), shift-hover compare, bags + bank in My items
+	scanSpeed = "balanced", histDays = 7, histCapMB = 3, dumpFilter = false, compare = true, mineBank = true,
 }
 I.CATS = { "mat", "reagent", "gear" }
 I.CAT_NAME = { mat = L["Profession Mat"], reagent = L["Reagent"], gear = L["Gear Upgrade"] }
 I.DIAG_KEEP = 10
-I.RETIRED = { "rememberTab", "tab", "ahOneClick" }              -- (settings v0.3.1 took out: cleared from saves)
+I.RETIRED = { "rememberTab", "tab", "ahOneClick",               -- (settings v0.3.1 took out: cleared from saves)
+	"panels", "trendDays", "minScans", "priceSource", "keepDays", "maxSnapsPerItem", "ahCut" }   -- (v0.4.0: Phase C's placeholders)
 I.MAIL_DAYS = 30                                                -- (the game returns unopened mail after 30 days)
 I.UNDO_KEEP = 5
 I.ITEMS = { linen = 2589, copperOre = 2770, peacebloom = 2447 }   -- (diag: Linen Cloth, Copper Ore, Peacebloom)
@@ -752,10 +753,12 @@ function I.OnEvent(event, a1, a2)
 		if I.Merchant then I.Merchant.HideAll() end
 	elseif event == "AUCTION_HOUSE_SHOW" then
 		I.ahOpen = true
+		if I.Scan then I.realm.ahLast = I.Scan.House() end   -- (AH Market shows the house you last visited)
 		if I.AH then I.AH.Show() end
 		I.Changed()
 	elseif event == "AUCTION_HOUSE_CLOSED" then
 		I.ahOpen = false
+		if I.Scan then I.Scan.OnAHClosed() end
 		if I.AH then I.AH.Hide() end
 		I.Changed()
 	elseif event == "ITEM_PURCHASED" then
@@ -795,6 +798,7 @@ function mod:OnEnable()
 	end
 	for _, e in ipairs(I.EVENTS) do pcall(events.RegisterEvent, events, e) end
 	I.CountBags()
+	if I.Scan then pcall(I.Scan.PruneAll) end   -- (history past its days dropped at login)
 	if I.Tabs then I.Tabs.Enable() end
 	if I.Merchant then I.Merchant.Enable() end
 	if I.AH then I.AH.Enable() end
@@ -802,6 +806,7 @@ end
 
 function mod:OnDisable()
 	if I.AHCheck then I.AHCheck.Stop("stopped: Investments turned off") end
+	if I.Scan then I.Scan.Stop() end
 	if events then events:UnregisterAllEvents() end
 	if I.Tabs then I.Tabs.Disable() end
 	if I.Merchant then I.Merchant.Disable() end
@@ -957,6 +962,10 @@ end
 function I.RunDiag(kind)
 	if kind == "ah" and not I.ahOpen then
 		ns:Print("%s", L["Run AH check: open the Auction House first."])
+		return nil
+	end
+	if kind == "ah" and I.Scan and I.Scan.Running() then
+		ns:Print("%s", L["A scan is running: wait for it (or press Stop on Valhalla's list beside the AH)."])
 		return nil
 	end
 	if kind == "ah" and I.AHCheck.Running() then
@@ -1469,6 +1478,7 @@ end
 --   /valhalla invest [vendor|list|market|settings]   open Investments (at that page; settings: the Settings tab)
 --   /valhalla invest on|off                          the whole tabbed window and Investments (off: the map as before)
 --   /valhalla invest diag [ah|replicate|stop]        what this client has, saved to the saved log (ah: the AH check)
+--   /valhalla invest scan [stop]                     at the Auction House: Scan (full when ready, else quick), or stop
 --   /valhalla undo                                   put back the last deleted list (or a list as it was before an edit)
 --   /valhalla tab map|invest|talents|professions|settings   switch the window's tab
 --   /valhalla want <item> [count], /valhalla unwant <item>   into / out of the Shopping List's builder
@@ -1485,6 +1495,10 @@ function mod:Slash(word, arg)
 		if sub == "on" then I.SetOn(true) Say(L["Investments and the window's tabs: on."]) return end
 		if sub == "off" then I.SetOn(false) Say(L["Investments and the window's tabs: off (the map is as before). /valhalla invest on brings them back."]) return end
 		if not mod.enabled then Say(L["Investments is off. /valhalla invest on"]) return end
+		if sub == "scan" then
+			if rest == "stop" then I.Scan.Stop() else I.Scan.Toggle() end
+			return
+		end
 		if sub == "diag" and (rest == "ah" or rest == "stop") then
 			if rest == "stop" then
 				if I.AHCheck.Running() then I.AHCheck.Stop("stopped") else Say("%s", L["The AH check isn't running."]) end

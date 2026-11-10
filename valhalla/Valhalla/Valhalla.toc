@@ -16,7 +16,7 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: v0.3.5
+## Version: v0.4.0
 ## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
@@ -104,11 +104,16 @@ Map\Welcome.lua
 Objectives\Objectives.lua
 Objectives\QuestLogPins.lua
 
-# The window's tabs (Map & Quest Log, Investments, Talents, Professions) and Investments: Smart Vendor,
-# Shopping List, the merchant's highlights, the Auction House's list (v0.3.0-v0.3.5; ValhallaInvestDB)
+# The window's tabs (Map & Quest Log, Investments, Talents, Professions, Settings) and Investments: Smart Vendor,
+# Shopping List, the merchant's highlights, the Auction House's list (v0.3.0-v0.3.5; ValhallaInvestDB);
+# AH Market: the scanner and its views (v0.4.0), craft profit and its recipe data (v0.4.1, registered now)
 Investments\Invest.lua
+Investments\Scan.lua
 Investments\Tabs.lua
 Investments\Views.lua
+Investments\Market.lua
+Data\Forever\Recipes.lua
+Investments\Craft.lua
 Investments\Merchant.lua
 Investments\AHPanel.lua
 

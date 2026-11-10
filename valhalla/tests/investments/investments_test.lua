@@ -3,7 +3,7 @@ local here = (arg[0] or ""):match("^(.*[/\\])") or "./"
 local root = arg[1] or (here .. "../../Valhalla/")
 dofile(here .. "stubs.lua")
 
-local ns = { modules = {}, version = "v0.3.5", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
+local ns = { modules = {}, version = "v0.4.0", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
 ns.L = setmetatable({}, { __index = function(_, k) return k end })
 ns.Safe = { Value = function(v) return v end }
 ns.Look = { Font = function(_, fs, size) fs._size = size return fs end }
@@ -14,7 +14,7 @@ function ns:GetModule(key) return self.modules[key] end
 ns.modules.worldmap = { key = "worldmap", enabled = true }
 function ns.modules.worldmap.TabAway(away) ns.modules.worldmap.away = away end   -- (Map/Panel.lua: its menu put away on the other tabs)
 assert(loadfile(root .. "Links.lua"))("Valhalla", ns)
-for _, f in ipairs({ "Invest", "Tabs", "Views", "Merchant", "AHPanel" }) do
+for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Craft", "Merchant", "AHPanel" }) do
   assert(loadfile(root .. "Investments/" .. f .. ".lua"))("Valhalla", ns)
 end
 local mod = ns:GetModule("invest")
@@ -387,7 +387,7 @@ I.bankOpen = false
 Slash("invest", "diag replicate")
 local d = ValhallaInvestDB.diag[1]
 ok(d and d.apis["C_AuctionHouse.ReplicateItems"] == true and d.apis["QueryAuctionItems"] == false, "which APIs this client has (no QueryAuctionItems)")
-ok(d.toc == 16001 and d.version == "v0.3.5", "client and version")
+ok(d.toc == 16001 and d.version == "v0.4.0", "client and version")
 ok(d.bankInfo and d.bankInfo.seen and d.bankInfo.read.tabs == 2 and d.bankInfo.events.BANKFRAME_OPENED == 1, "the bank: last read, its tabs, which event said it opened")
 ok(d.ah.search and d.ah.search.button == true and d.ah.search.blocked == false, "the AH's Search button: there, and clickable for one-click Search")
 ok(d.counts.linen.id == 2589 and d.counts.linen.bagsSeen == 28, "counts for Linen Cloth, Copper Ore, Peacebloom")
@@ -673,7 +673,7 @@ ok(#I.Lists() == 6 and I.ActiveList() == ML, "the lists and the active one kept"
 print("== 21. the diagnostic's buttons (the Settings tab)")
 Slash("tab", "settings")
 local sp3 = T.Views().settings.page
-ok(sp3.run.text._text == "Run diagnostic" and sp3.runAH.text._text == "Run AH check" and sp3.last._text, "Run diagnostic, Run AH check, last run")
+ok(sp3.run.text._text == "Run diagnostic" and sp3.runAH == nil and sp3.last._text, "Run diagnostic, last run (the AH check: /valhalla invest diag ah only, v0.4.0)")
 ValhallaInvestDB.diag = {}
 ns.printed = {}
 W.Click(sp3.run)
@@ -682,11 +682,11 @@ ok(d2 and d2.bankInfo.read.items == 17 and d2.list and d2.list.merchants == 1 an
 ok(#ns.printed == 3 and Printed("Diagnostic saved") and Printed("/reload writes it to disk") and Printed("Bank: last read Nov 09 16:50: 17 items in 3 tabs") and Printed("Lists: 6 saved, active 'Mail'"), "three lines in chat", table.concat(ns.printed, " || "))
 ok(sp3.last._text == "Last run: Nov 09 16:50", "last run shown", sp3.last._text)
 ns.printed = {}
-W.Click(sp3.runAH)
+Slash("invest", "diag ah")
 ok(#ValhallaInvestDB.diag == 1 and Printed("open the Auction House first"), "Run AH check away from the AH: says where")
 W.Fire("AUCTION_HOUSE_SHOW")
 ns.printed = {}
-W.Click(sp3.runAH)
+Slash("invest", "diag ah")
 local d3 = ValhallaInvestDB.diag[2]
 ok(d3 and d3.kind == "ah" and d3.ah.search.button and Printed("ready for one%-click Search"), "Run AH check at the AH: its Search button checked")
 ok(I.AHCheck.Running() and Printed("AH check started") and sp3.last._text:find("AH check running"), "the AH check started; Settings shows it running", sp3.last._text)
@@ -839,7 +839,7 @@ I.db.account.replicateAt = nil
 ValhallaInvestDB.diag = {}
 W.Fire("AUCTION_HOUSE_SHOW")
 ns.printed = {}
-W.Click(sp3.runAH)
+Slash("invest", "diag ah")
 local e = ValhallaInvestDB.diag[1]
 ok(AC.Running() and e and e.ahcheck and e.ahcheck.state == "running" and Printed("AH check started") and Printed("nothing is posted, bid or bought"), "Run AH check at the AH: started, saved as running")
 ok(e.recipeProbe and e.recipeProbe.window == false, "the plain diagnostic's part: recipes probed too (window closed)")
@@ -958,14 +958,14 @@ Slash("tab", "settings")
 local sp = T.Views().settings.page
 I.ahOpen = false
 sp:Refresh()
-ok(sp.hint._text:find("press Run AH check on its Valhalla list"), "AH closed: the hint says where the AH check is", sp.hint._text)
-ok(#sp.how._text < 260, "the AH check's description: short (the long one in its tooltip)", #sp.how._text)
+ok(sp.how._text:find("/valhalla invest diag ah", 1, true) and not sp.runAH, "the AH check: by slash command only (said in Settings)", sp.how._text)
+ok(#sp.how._text < 260, "the diagnostic's description: short (the long one in its tooltip)", #sp.how._text)
 local tipLines = {}
 local addLine = GameTooltip.AddLine
 GameTooltip.AddLine = function(_, t) tipLines[#tipLines + 1] = t end
-W.Run(sp.runAH, "OnEnter")
+W.Run(sp.run, "OnEnter")
 GameTooltip.AddLine = addLine
-ok(#tipLines >= 2 and tipLines[2]:find("nothing is posted, bid or bought"), "Run AH check: its tooltip has the long description")
+ok(#tipLines >= 2 and tipLines[2]:find("/reload writes it to disk"), "Run diagnostic: its tooltip has the long description")
 local function NoOverlap()
   local rows = sp.rows
   for i, r in ipairs(rows) do
@@ -992,49 +992,353 @@ I.ahOpen = true
 sp:Refresh()
 ok(sp.hint._text == "" and NoOverlap(), "AH open: no hint, still nothing overlaps")
 I.ahOpen = false
--- the AH check from the AH's Valhalla list
-W.Fire("AUCTION_HOUSE_SHOW")
-I.S.ahPanelMin = false
-A.Refresh()
-local p = A.Panel()
-local ck = p.check
-ok(p:IsShown() and ck and ck.button.text._text == "Run AH check" and not ck.bar:IsShown(), "the AH list: Run AH check (the bar hidden)")
-ok(84 + (A.ROWS - 1) * 26 + 24 <= A.H - 26 - 34 and p._h == A.H, "its strip under the rows, above the mail line")
-ok(AC.Progress() == nil, "not running: no progress")
-W.replicateThrottled = false
-Rows(20000)
-ns.printed = {}
-W.Click(ck.button)
-ok(AC.Running() and ck.button.text._text == "Stop" and ck.bar:IsShown() and ck.status._text:find("Step %d/7") and Printed("AH check started"), "pressed: running, the button says Stop, step and bar", ck.status._text)
-TickUntil(function() local o = AC.run and AC.run.out return o and o.replicate and o.replicate.readAt end, 3000)
-local _, _, f = A.CheckRefresh()
-ok(f and f > 4 / 7 and f < 5 / 7 and ck.status._text:find("auctions read") and ck.bar._w > 1, "reading the full scan: the bar moves, how many read", ck.status._text)
-local before = ck.bar._w
-TickUntil(function() return (AC.run.out.replicate.readAt or 0) > 10000 end, 3000)
-W.Run(ck, "OnUpdate", 0.3)
-ok(ck.bar._w > before, "the bar moves on its own while it runs", ("%s > %s"):format(ck.bar._w, before))
-W.Click(ck.button)
-ok(not AC.Running() and ValhallaInvestDB.diag[#ValhallaInvestDB.diag].ahcheck.state == "stopped" and ck.button.text._text == "Run AH check" and not ck.bar:IsShown(), "Stop: stopped (saved), the button back")
-ok(ck.status._text:find("Last AH check: stopped"), "and says how the last one ended", ck.status._text)
--- minimized: the small button's right-click
-A.SetMinimized(true)
-local mb = A.Mini()
-ok(mb:IsShown() and not p:IsShown(), "minimized")
-W.replicateThrottled = false
-Rows(100)
-W.Click(mb, "RightButton")
-ok(AC.Running() and mb:IsShown() and not p:IsShown() and mb.ring:IsShown(), "right-click: the AH check runs, still minimized, its bar on the button")
-W.Click(mb, "RightButton")
-ok(not AC.Running() and not mb.ring:IsShown(), "right-click again: stopped")
-W.Click(mb, "LeftButton")
-ok(p:IsShown() and not mb:IsShown(), "left-click: the list back")
-W.Fire("AUCTION_HOUSE_CLOSED")
+-- (v0.3.5's AH check button on the AH list: Scan since v0.4.0, tested in 27)
 -- off: the game's own title back; on: Valhalla again
 Slash("invest", "off")
 ok(BF._title == "Map & Quest Log" and wmod.away == false, "off: the game's own title back, the map menu back")
 Slash("invest", "on")
 ok(BF._title == "Valhalla", "on: Valhalla")
 ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "still nothing written on the map")
+
+print("== 27. v0.4.0: the scanner, AH Market, item cells")
+do
+  local Sc, Mk, V = I.Scan, I.Market, I.Views
+  local function STick(n) for _ = 1, n or 1 do Tick() Sc.Tick() end end
+  local function SUntil(cond, max) for _ = 1, max or 6000 do if cond() then return true end STick() end return cond() end
+  local function Events(f) local n, list = 0, {} for e in pairs(f and rawget(f, "_events") or {}) do n = n + 1 list[#list + 1] = e end table.sort(list) return n, table.concat(list, ",") end
+  -- the auctions: { id, count, buyout } rows, read by GetReplicateItemInfo (10 us a row)
+  local auctions = {}
+  local function Market(n, price)
+    auctions = {}
+    for i = 1, n do
+      local id = (i % 3 == 0) and 2589 or (1000 + i % 50)
+      local count = (i % 3 == 0) and 20 or 1
+      local unit = (price and price(id)) or 100 * (1 + i % 7)
+      auctions[i] = { id = id, count = count, buyout = (i % 97 == 0) and 0 or unit * count }
+    end
+  end
+  CA.GetNumReplicateItems = function() return #auctions end
+  CA.GetReplicateItemInfo = function(i)
+    local r = auctions[i + 1]
+    W.clock = W.clock + 0.01
+    return nil, nil, r.count, 1, true, 1, nil, 0, 0, r.buyout, 0, nil, nil, nil, nil, 0, r.id, false
+  end
+  local function Expect(id)
+    local min, units, n = 0, 0, 0
+    for _, r in ipairs(auctions) do
+      if r.id == id then
+        n, units = n + 1, units + r.count
+        if r.buyout > 0 then local u = math.floor(r.buyout / r.count) if min == 0 or u < min then min = u end end
+      end
+    end
+    return min, units, n
+  end
+  W.now = W.now - (W.now % 3600) + 3600 + 60        -- (just past an hour: two scans 15 minutes apart share it)
+  function GetSubZoneText() return "The Commons" end
+  function GetRealZoneText() return "Ironforge" end
+  function UnitFactionGroup() return "Alliance" end
+  I.realm.ah = nil
+  I.db.account.replicateAt = nil
+  W.replicateThrottled = false
+  W.throttleReady = true
+  Market(3000)
+  I.S.ahPanelMin = false
+  W.Fire("AUCTION_HOUSE_SHOW")
+  A.Refresh()
+  local ck = A.Panel().check
+  ok(ck.button.text._text == "Scan" and ck.status._text:find("Full scan ready"), "the AH list: one Scan button, 'Full scan ready'", ck.status._text)
+  ok(Sc.House() == "Alliance" and I.realm.ahLast == "Alliance", "this house: Alliance (remembered for AH Market)")
+  ns.printed = {}
+  W.Click(ck.button)
+  local run = Sc.run
+  STick(1)
+  ok(Sc.Running() and run.kind == "full" and ck.button.text._text == "Stop" and Printed("Full scan started"), "Scan, the cooldown ready: a full scan; the button says Stop")
+  local n1, ev1 = Events(Sc.Listener())
+  ok(n1 == 1 and ev1 == "REPLICATE_ITEM_LIST_UPDATE" and W.calls.ReplicateItems, "one request, one listener: only the full scan's event", ev1)
+  ok(I.AHCheck.Start and I.RunDiag("ah") == nil and Printed("A scan is running"), "the AH check waits for a scan (one at a time)")
+  SUntil(function() return run.answered end)
+  local n2 = Events(Sc.Listener())
+  ok(n2 == 0 and I.db.account.replicateAt == W.now, "answered: the listener dropped at once (the 33 stray updates can't reach it); the 15 minutes start")
+  for _ = 1, 33 do W.Fire("REPLICATE_ITEM_LIST_UPDATE") end
+  local frames, reading = 0, false
+  SUntil(function() if run.phase == "read" then frames = frames + 1 end return not Sc.Running() end)
+  ok(run.state == "done" and frames >= 3, "read over several frames", frames)
+  ok(run.maxMs <= 8 + 0.6, "no frame past the 8 ms budget (+ one 50-row chunk)", run.maxMs)
+  local m = Sc.Market("Alliance")
+  local c = Sc.Cur("Alliance", 2589)
+  local emin, eunits, en = Expect(2589)
+  ok(c and c.min == emin and c.units == eunits and c.auctions == en and not c.quick, "per item: lowest buyout per unit, units, auctions", ("%s %s %s"):format(c and c.min, c and c.units, c and c.auctions))
+  local items = 0 for _ in pairs(m.cur) do items = items + 1 end
+  ok(items == 51 and #m.scans == 1 and m.scans[1].kind == "full" and m.scans[1].n == 3000 and m.scans[1].items == 51, "51 items from 3,000 auctions, one full scan saved")
+  ok(Printed("Full scan done: 3000 auctions of 51 items %(Alliance%)") and Printed("Next full scan in 15:00"), "said in chat, with the cooldown", table.concat(ns.printed, " || "))
+  ok(Sc.CooldownText() == "Next full scan in 15:00." and ck.status._text:find("Next full scan in 15:00"), "the AH list: next full scan in mm:ss", ck.status._text)
+  W.now = W.now + 61
+  ok(Sc.CooldownText() == "Next full scan in 13:59.", "the timer counts down", Sc.CooldownText())
+  -- quick scan (the cooldown runs): your items, 100 per search, paced by the AH's throttle
+  local savedBags = I.char.bags
+  local bags = {} for k, v in pairs(savedBags) do bags[k] = v end
+  for id = 5000, 5249 do bags[id] = 1 end
+  I.char.bags = bags
+  local interest = Sc.Interest("Alliance")
+  local sent = {}
+  W.calls.SearchForItemKeys, W.calls.RequestMoreBrowseResults = 0, 0
+  CA.SearchForItemKeys = function(keys) W.Count("SearchForItemKeys") sent = {} for _, k in ipairs(keys) do sent[#sent + 1] = k.itemID end W.lastKeys = #keys Later(3, "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED") end
+  local fullOnce = false
+  CA.HasFullBrowseResults = function() if not fullOnce then fullOnce = true return false end return true end
+  CA.RequestMoreBrowseResults = function() W.Count("RequestMoreBrowseResults") Later(2, "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED") end
+  CA.GetBrowseResults = function()
+    local t = {}
+    for _, id in ipairs(sent) do if id % 5 ~= 0 then t[#t + 1] = { itemKey = { itemID = id }, totalQuantity = 3, minPrice = 100 + id % 7 } end end
+    return t
+  end
+  W.throttleReady = false
+  ns.printed = {}
+  W.Click(ck.button)
+  local q = Sc.run
+  ok(q and q.kind == "quick" and Printed("Quick scan started"), "Scan inside the 15 minutes: a quick scan of your items")
+  STick(20)
+  ok(W.calls.SearchForItemKeys == 0, "the AH busy: no search sent (waits for its throttle)")
+  W.throttleReady = true
+  STick(1)
+  local nq, evq = Events(Sc.Listener())
+  ok(W.calls.SearchForItemKeys == 1 and W.lastKeys == 100 and evq == "AUCTION_HOUSE_BROWSE_FAILURE,AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "ready: one search of 100 keys, only its events listened to", evq)
+  SUntil(function() return not Sc.Running() end)
+  local batches = math.ceil(#interest / 100)
+  ok(q.state == "done" and W.calls.SearchForItemKeys == batches and batches == 3 and W.calls.RequestMoreBrowseResults == 1, "all of them in 3 searches; a partial answer asked for more", ("%d items, %d searches"):format(#interest, W.calls.SearchForItemKeys))
+  local c5001, c5000 = Sc.Cur("Alliance", 5001), Sc.Cur("Alliance", 5000)
+  ok(c5001 and c5001.quick and c5001.min == 100 + 5001 % 7 and c5001.units == 3 and c5000 and c5000.min == 0, "quick: lowest and units (marked quick); none listed kept as such")
+  local p2589 = Sc.Points("Alliance", 2589)
+  ok(#p2589 == 1 and p2589[1].quick, "the same hour: one point per item, the latest wins", #p2589)
+  ok(Events(Sc.Listener()) == 0, "done: nothing listened to")
+  I.char.bags = savedBags
+  -- the AH closing mid-read: nothing saved
+  W.now = W.now + 901
+  W.replicateThrottled = false
+  Market(20000)
+  local before = m.cur[2589]
+  local scansBefore = #m.scans
+  ns.printed = {}
+  Sc.Start()
+  local pr = Sc.run
+  SUntil(function() return pr.phase == "read" and (pr.readAt or 0) > 0 end)
+  W.Fire("AUCTION_HOUSE_CLOSED")
+  ok(not Sc.Running() and pr.state == "closed" and #m.scans == scansBefore and m.cur[2589] == before, "AH closed mid-read: nothing saved, the market as it was")
+  ok(Printed("Full scan stopped: the Auction House closed. Nothing saved. Next full scan in 15:00"), "said, with the timer (the 15 minutes were spent)", table.concat(ns.printed, " || "))
+  -- another house: Horde, its own market; four days of full scans: trending
+  function UnitFactionGroup() return "Horde" end
+  W.Fire("AUCTION_HOUSE_SHOW")
+  ok(Sc.House() == "Horde", "a Horde Auction House: Horde")
+  local factor = { 1, 1, 2, 2 }
+  local start = W.now
+  for k = 1, 4 do
+    W.now = start + (k - 1) * 86400
+    W.replicateThrottled = false
+    Market(300, function(id) if id == 1001 then return 100 * factor[k] elseif id == 1002 then return 200 / factor[k] end end)
+    Sc.Start("full")
+    SUntil(function() return not Sc.Running() end)
+    if k == 2 then
+      local r2, f2, n2 = Sc.Trending("Horde")
+      ok(n2 == 2 and #r2 == 0 and #f2 == 0, "two full scans: no Top 10 yet (needs 3)")
+    end
+  end
+  local hm = Sc.Market("Horde")
+  ok(hm ~= Sc.Market("Alliance") and #hm.scans == 4 and Sc.Cur("Alliance", 1001).min ~= Sc.Cur("Horde", 1001).min, "houses apart: Horde's market isn't Alliance's")
+  local rising, falling, fulls = Sc.Trending("Horde")
+  ok(fulls == 4 and rising[1] and rising[1].id == 1001 and math.abs(rising[1].change - 1) < 1e-9, "Top 10 rising: +100% (median of each half of the window)", rising[1] and rising[1].change)
+  ok(falling[1] and falling[1].id == 1002 and math.abs(falling[1].change + 0.5) < 1e-9 and #rising <= 10 and #falling <= 10, "Top 10 falling: -50%", falling[1] and falling[1].change)
+  -- a full scan 15 minutes later, in the same hour: its point replaces the last
+  W.now = W.now + 901
+  W.replicateThrottled = false
+  Sc.Start("full")
+  SUntil(function() return not Sc.Running() end)
+  ok(#Sc.Points("Horde", 1001) == 4 and #hm.scans == 5, "a second scan in the same hour: still one point an hour (the scan logged)", #Sc.Points("Horde", 1001))
+  -- neutral: Booty Bay is its own market, 15% cut
+  function GetSubZoneText() return "Booty Bay" end
+  function GetRealZoneText() return "Stranglethorn Vale" end
+  W.Fire("AUCTION_HOUSE_SHOW")
+  ok(Sc.House() == "Neutral" and Sc.Cut("Neutral") == 0.15 and Sc.Cut("Horde") == 0.05 and Sc.Market("Neutral") == nil, "Booty Bay: the neutral house, its own market, 15% cut")
+  W.Fire("AUCTION_HOUSE_CLOSED")
+  function GetSubZoneText() return "The Commons" end
+  function GetRealZoneText() return "Ironforge" end
+  I.realm.ahLast = "Horde"
+
+  print("-- item cells")
+  local loads = {}
+  Item = { CreateFromItemID = function(_, id) return { ContinueOnItemLoad = function(_, fn) loads[#loads + 1] = { id = id, fn = fn } end } end }
+  local tips = {}
+  local GT = GameTooltip
+  local gtKeys = {}
+  for k in pairs(GT) do if not tostring(k):find("^_") then gtKeys[#gtKeys + 1] = tostring(k) end end
+  table.sort(gtKeys)
+  local gtBefore = table.concat(gtKeys, ",")
+  GT.SetOwner = function(_, o) tips.owner = o end
+  GT.SetHyperlink = function(_, l) tips.link = l tips.byID = nil end
+  GT.SetItemByID = function(_, id) tips.byID = id tips.link = nil end
+  GT.AddLine = function(_, t) tips.lines[#tips.lines + 1] = t end
+  local compares = 0
+  function GameTooltip_ShowCompareItem() compares = compares + 1 end
+  function GameTooltip_HideShoppingTooltips() end
+  function IsShiftKeyDown() return W.shift end
+  function IsControlKeyDown() return W.ctrl end
+  local dressed = 0
+  function DressUpItemLink() dressed = dressed + 1 end
+  W.uncached[2770] = true
+  local cell = V.ItemCell(UIParent, 200)
+  cell:SetItem(2770, Mk.Lines)
+  ok(cell.icon._tex == 134566 and cell.name._text == "Item #2770" and #loads == 1 and V.loadingCount == 1, "not loaded yet: the icon at once, 'Item #id', its data asked for")
+  local cell2 = V.ItemCell(UIParent, 200)
+  cell2:SetItem(2770)
+  ok(#loads == 1, "the same item twice: asked once")
+  cell:SetItem(2447, Mk.Lines)
+  W.uncached[2770] = nil
+  loads[1].fn()
+  ok(cell.name._text == "Peacebloom" and cell2.name._text == "Copper Ore" and V.loadingCount == 0, "the answer: the row that still shows it gets the name; a reused row keeps its new item")
+  for id = 7000, 7040 do W.items[id] = { "Thing " .. id, 134400 } W.uncached[id] = true V.ItemCell(UIParent):SetItem(id) end
+  ok(V.loadingCount == V.LOAD_MAX and V.LOAD_MAX == 30, "at most 30 items asked for at a time", V.loadingCount)
+  tips.lines = {}
+  W.shift = false
+  W.Run(cell, "OnEnter")
+  ok(tips.owner == cell and tips.link and tips.link:find("item:2447") and GT:IsShown(), "hover: the game's tooltip for the item (its link)")
+  ok(tips.lines[1] and tips.lines[1]:find("Valhalla AH %(Horde%)"), "with what the AH said under it", tips.lines[1])
+  W.Run(cell, "OnLeave")
+  W.uncached[2770] = true
+  cell2:SetItem(2770)
+  tips.lines = {}
+  W.Run(cell2, "OnEnter")
+  ok(tips.byID == 2770, "not loaded: the tooltip by item ID (the game fills it in)")
+  W.Run(cell2, "OnLeave")
+  W.uncached[2770] = nil
+  W.shift = true
+  tips.lines = {}
+  W.Run(cell, "OnEnter")
+  ok(compares == 1 and V.comparing, "shift-hover: compared with what you wear")
+  W.shift = false
+  W.Fire("MODIFIER_STATE_CHANGED")
+  ok(compares == 1 and not V.comparing and GT:IsShown(), "shift let go: the plain tooltip")
+  W.Run(cell, "OnLeave")
+  ok(not GT:IsShown() and Events(cell) == 0, "leave: hidden, nothing listened to")
+  W.calls.insertLink = 0
+  W.shift = true W.Click(cell) W.shift = false
+  ok(W.calls.insertLink == 1, "shift-click: its link into chat")
+  W.ctrl = true W.Click(cell) W.ctrl = false
+  ok(dressed == 1, "ctrl-click: the dressing room")
+  local clicked
+  cell.onClick = function(id) clicked = id end
+  W.Click(cell)
+  ok(clicked == 2447, "click: its History")
+  W.Click(cell, "RightButton")
+  local inDraft = false for _, e in ipairs(I.Draft().items) do if e.id == 2447 then inDraft = true end end
+  ok(inDraft, "right-click: into the Shopping List's builder")
+  local gtKeys2 = {}
+  for k in pairs(GT) do if not tostring(k):find("^_") then gtKeys2[#gtKeys2 + 1] = tostring(k) end end
+  table.sort(gtKeys2)
+  local set, want = {}, {}
+  for _, k in ipairs(gtKeys) do set[k] = true end
+  for _, k in ipairs({ "AddLine", "SetHyperlink", "SetItemByID", "SetOwner" }) do set[k] = true end   -- (the test's own spies)
+  for k in pairs(set) do want[#want + 1] = k end
+  table.sort(want)
+  ok(table.concat(gtKeys2, ",") == table.concat(want, ","), "nothing of ours written on the game's tooltip", table.concat(gtKeys2, ","))
+
+  print("-- AH Market's views")
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local root = T.Views().invest.page
+  local mp = root.pages.market
+  ok(mp and mp:IsShown() and #mp.subButtons == 5 and mp.subButtons[5].soon and mp.current == "top", "AH Market: Top 10, My items, History, Scan results, Craft (soon)")
+  ok(mp.hint._text:find("Scan at the Auction House: the Scan button is on Valhalla's list beside it"), "the AH closed: where to scan")
+  ok(mp.status._text:find("^Horde Auction House") and mp.houseButton:IsShown(), "the house last visited, a button to switch houses", mp.status._text)
+  local top = mp.subs.top
+  ok(top.cols[1].rows[1].cell.id == 1001 and top.cols[2].rows[1].cell.id == 1002 and top.cols[1].rows[1].change._text == "+100%" and not top.empty:IsShown(), "Top 10: rising and falling, each with its icon and tooltip", top.cols[1].rows[1].change._text)
+  ok(top.cols[1].rows[1].cell.icon._tex ~= nil, "every row an item cell (icon)")
+  W.Click(top.cols[1].rows[1].cell)
+  local hf = mp.subs.history
+  ok(mp.current == "history" and Mk.historyID == 1001 and hf.drawn == 4 and hf.cell.id == 1001, "a Top 10 item clicked: its History", hf.drawn)
+  I.S.graphStyle = "bars" mp:Refresh()
+  ok(hf.drawn == 4 and hf.marks[1]:IsShown() and hf.marks[1]._h > 1, "bars too (Settings' graph style)")
+  I.S.graphStyle = "lines"
+  mp:ShowSub("mine")
+  local mf = mp.subs.mine
+  local r1
+  for _, r in ipairs(mf.rows) do if r.cell.id == 2589 then r1 = r end end
+  local low = Sc.Lowest("Horde", 2589)
+  ok(r1 and r1.vendor._text == Sc.Money(10) and r1.ah._text == Sc.Money(math.floor(low * 0.95)), "My items: vendor price vs the AH's lowest after the 5% cut", r1 and r1.ah._text)
+  ok(mf.totals._text:find("after its 5%% cut"), "totals")
+  mp:ShowSub("results")
+  local rf = mp.subs.results
+  local hitems = 0 for _ in pairs(hm.cur) do hitems = hitems + 1 end
+  ok(#rf.list == hitems and rf.rows[1].cell.id ~= nil and rf.count._text:find(hitems .. " items"), "Scan results: every item of the last full scan", rf.count._text)
+  rf.search:SetText("linen")
+  ok(#rf.list == 1 and rf.rows[1].cell.id == 2589, "search by name")
+  rf.search:SetText("")
+  W.Click(rf.sortButtons[2])
+  ok(rf.list[1].min <= rf.list[#rf.list].min, "sorted by lowest")
+  mp:ShowSub("top")
+  W.Click(mp.subButtons[5])
+  ok(mp.current == "top", "Craft: coming in v0.4.1 (not opened)")
+  Mk.house = "Alliance" mp:Refresh()
+  ok(mp.status._text:find("^Alliance"), "another house chosen")
+  Mk.house = nil
+
+  -- 7 days: older points dropped
+  W.now = start + 7 * 86400 + 30 * 3600
+  Sc.PruneAll()
+  local left = Sc.Points("Horde", 1001)
+  ok(#left == 2 and left[1].t >= W.now - 7 * 86400, "past 7 days: dropped (the last two days kept)", #left)
+  -- the size cap: the oldest scans go first
+  I.S.histCapMB = 0.004
+  Sc.Prune(hm)
+  ok(Sc.TotalSize() <= 0.004 * 1048576 or #hm.scans == 1, "over the cap: the oldest scans dropped first", Sc.TotalSize())
+  I.S.histCapMB = 3
+  -- the dump filter (off by default)
+  local nowMin = math.floor(W.now / 60) - hm.base
+  hm.hist[2589] = ("%d:100:20:1;%d:120:20:1;%d:110:20:1"):format(nowMin - 300, nowMin - 200, nowMin - 100)
+  local mid = Sc.Median7("Horde", 2589)
+  hm.cur[2589] = ("%d,%d,%d,%d"):format(1, 20, 1, math.floor(W.now / 60) - hm.base)
+  ok(Sc.Lowest("Horde", 2589) == 1, "the raw lowest buyout by default (no filter)")
+  I.S.dumpFilter = true
+  local low, _, dumped = Sc.Lowest("Horde", 2589)
+  ok(mid == 110 and dumped and low == 110, "dump filter on: a 1c dump ignored (the 7-day median instead)", tostring(low))
+  I.S.dumpFilter = false
+  print("-- Settings > AH Market; the minimized button; /valhalla invest scan")
+  Slash("tab", "settings")
+  local sp4 = T.Views().settings.page
+  sp4:Refresh()
+  ok(sp4.speed and sp4.days and sp4.size._text:find("^History: %d+%.%d MB of 3 MB") and sp4.forgetAH and sp4.dump and sp4.compare, "Settings: scan speed, days, history size, dump filter, compare, forget", sp4.size._text)
+  W.Click(sp4.speed.boxes[3])
+  ok(I.S.scanSpeed == "fast", "scan speed: Fast")
+  I.S.scanSpeed = "balanced"
+  W.Fire("AUCTION_HOUSE_SHOW")
+  A.SetMinimized(true)
+  local mb = A.Mini()
+  W.now = W.now + 901
+  W.replicateThrottled = false
+  W.Click(mb, "RightButton")
+  ok(Sc.Running() and mb:IsShown(), "minimized: right-click scans")
+  W.Click(mb, "RightButton")
+  ok(not Sc.Running() and Printed("Nothing saved"), "right-click again: stopped, nothing saved")
+  A.SetMinimized(false)
+  Slash("invest", "scan")
+  ok(Sc.Running(), "/valhalla invest scan")
+  Slash("invest", "scan stop")
+  ok(not Sc.Running(), "/valhalla invest scan stop")
+  W.Fire("AUCTION_HOUSE_CLOSED")
+  ns.printed = {}
+  Slash("invest", "scan")
+  ok(not Sc.Running() and Printed("open the Auction House first"), "away from the AH: says where")
+  -- the size measured in Ironforge: 149,583 auctions of 5,016 items
+  W.Fire("AUCTION_HOUSE_SHOW")
+  W.now = W.now + 901
+  W.replicateThrottled = false
+  auctions = {}
+  for i = 1, 149583 do local id = 10000 + i % 5016 auctions[i] = { id = id, count = 1 + i % 5, buyout = (1 + i % 5) * (50 + i % 13) } end
+  Sc.Start("full")
+  local big = Sc.run
+  local bigFrames = 0
+  SUntil(function() if big.phase == "read" then bigFrames = bigFrames + 1 end return not Sc.Running() end, 100000)
+  ok(big.state == "done" and big.items == 5016 and big.maxMs <= 8 + 0.6 and bigFrames >= 150, "149,583 auctions of 5,016 items: done, no frame past the budget", ("%d frames, max %.2f ms"):format(bigFrames, big.maxMs))
+  W.Fire("AUCTION_HOUSE_CLOSED")
+  ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "still nothing written on the map")
+end
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end
