@@ -362,7 +362,7 @@ function T.Attached() return attached end
 -- the map's menu: Investments (Map/Panel.lua)
 function ns.InvestAction(Icon)
 	return { L["Investments"], id = "invest", icon = Icon and Icon("INV_Misc_Coin_01") or { texture = "Interface\\Icons\\INV_Misc_Coin_01" },
-		tip = L["Smart Vendor, your Shopping List and (soon) the Auction House market: the Investments tab."],
+		tip = L["Your shopping lists (and soon Smart Vendor and the Auction House market): the Investments tab."],
 		run = function()
 			if not mod.enabled then ns:Print(L["Investments is off. /valhalla invest on"]) return end
 			T.Open("invest")

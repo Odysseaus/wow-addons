@@ -4,6 +4,8 @@
 -- layer, which takes no clicks). Nothing on the game's buttons is changed or written on, and nothing
 -- is bought for you: painted after the game lays a page out (a secure hook on
 -- MerchantFrame_UpdateMerchantInfo); hidden on the buyback tab and when the merchant closes.
+-- v0.3.2: only the active shopping list glows; a small "List: <name>" picker above the merchant window's
+-- top right chooses which (Valhalla's own button: a menu of your lists; none yet: build one).
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -47,8 +49,24 @@ local function Overlay(i)
 	return o
 end
 
+local picker
+function M.Picker() return picker end
+
+-- the list picker, above the merchant window's top right (made the first time it's needed)
+function M.ShowPicker()
+	local frame = _G.MerchantFrame
+	if not (on and I.S.hiVendor and frame and I.Views and I.Views.Picker) then if picker then picker:Hide() end return end
+	if not picker then
+		picker = I.Views.Picker(frame, 200)
+		picker:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
+	end
+	picker.Update()
+	picker:Show()
+end
+
 function M.HideAll()
 	for _, o in pairs(overlays) do o:Hide() end
+	if picker then picker.menu:Hide() picker:Hide() end
 end
 
 -- what each slot on this page shows: "need" (glow, tag), "grey" (the wash) or nil (as the game drew it)
@@ -77,6 +95,7 @@ end
 function M.Paint()
 	local plan = M.Plan()
 	if not plan then M.HideAll() return end
+	M.ShowPicker()
 	for i = 1, PerPage() do
 		local p = plan[i]
 		local o = p and Overlay(i) or overlays[i]

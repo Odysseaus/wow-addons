@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.3.2", date = "2026-11-10", heads = { [1] = "Changed", [5] = "Note", }, items = {
+		"|cff6e2c0aShopping lists you build and name|r: the Shopping List page now has a builder at the top. Give the list a name (left empty, it's named List 1, List 2, ...), find items by typing part of a name (or shift-click or drop an item into the box: still no stack-split box), Add or Remove them, set how many (- / + or type it; 0 to start) and tick Keep to keep one stocked. Build Shopping List saves it below and clears the builder for the next one.",
+		"|cff6e2c0aYour lists below|r, each with its items and how many you still need (from your bags and bank, live), what's in the mail, Done or Stocked. Edit puts a list back in the builder (Save List keeps it in its place); Delete removes it, with Undo.",
+		"|cff6e2c0aBought it? Only that line comes off|r, and only on the active list (said in chat, with Undo). What you buy at the Auction House stays 'In the mail' until you loot it. Your other lists are left alone; Keep lines stay as a standing target.",
+		"|cff6e2c0aChoose the active list at a vendor or the Auction House|r: a small 'List: ...' button above the merchant window and under the AH list's title opens a menu of your lists. The highlights and the AH list follow it at once, and it's remembered. With one list it's chosen for you; with none, the button says to build one and opens the Shopping List.",
+		"|cff6e2c0aSmart Vendor is under construction|r (coming soon): what you had on it became one list, \"My List\", the first time you log in with this version, and the old list is kept as it was in your saved data. /valhalla want and unwant now add to and remove from the builder; /valhalla list shows the active list. A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.3.1", date = "2026-11-09", heads = { [1] = "Fixed", [3] = "New", [9] = "Note", }, items = {
 		"|cff6e2c0aThe window always opens on Map & Quest Log|r (M, L, or anything else opening it), with Investments, Talents and Professions really hidden: in v0.3.0 the last tab's panel could come back over the map. With the window open, on any tab, L closes it, as M does from another tab. The 'open on the last tab' setting is gone.",
 		"|cff6e2c0aShift-click into Valhalla's boxes no longer opens the stack-split box|r: when the Smart Vendor box (or another Valhalla box) has the cursor and takes the item, the split box closes again. Anywhere else shift-click is the game's own.",

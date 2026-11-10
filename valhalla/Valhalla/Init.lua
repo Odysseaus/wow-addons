@@ -16,8 +16,8 @@
 --   /valhalla objectives on|off|why [questID]  the All Objectives tracker by zone, Ready to Turn In, pins (Objectives/Objectives.lua)
 --   /valhalla invest [vendor|list|market|settings|on|off|diag [ah|replicate]]  the Investments tab (Investments/Invest.lua)
 --   /valhalla tab map|invest|talents|professions   the window's tabs (Investments/Tabs.lua)
---   /valhalla want <item> [count] [mat|reagent|gear], unwant <item>, list   the Smart Vendor's want list
---   /valhalla undo   put back the last item that came off the list once bought (v0.3.1)
+--   /valhalla want <item> [count], unwant <item>, list   the Shopping List's builder; the active list (v0.3.2)
+--   /valhalla undo   put back the last line bought off a list, or a deleted list (v0.3.1, v0.3.2)
 --------------------------------------------------------------------------------
 
 local ADDON, ns = ...
@@ -39,7 +39,7 @@ local function Options()
 	end
 	local invest = ns:GetModule("invest")
 	if invest then
-		args.invest = { type = "toggle", name = ns.L["Window tabs and Investments (Smart Vendor, Shopping List)"], order = 0.3, width = "full",
+		args.invest = { type = "toggle", name = ns.L["Window tabs and Investments (Shopping Lists)"], order = 0.3, width = "full",
 			desc = ns.L["Tabs on the map window: Map & Quest Log, Investments, Talents and Professions (coming soon). Off: the map as before. Also /valhalla invest on|off."],
 			get = function() return invest.db.enabled end,
 			set = function(_, v) invest.I.SetOn(v) end }

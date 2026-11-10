@@ -4,6 +4,9 @@
 -- list (AHPanel.lua). This file: the saved data, what you have (bags live, the bank as last seen, what's
 -- in the mail), what you want and need (bought: off the list, with Undo; "Keep stocked": a standing target),
 -- the merchants' wares, the diagnostic (/valhalla invest diag and Settings' buttons), and the slash commands.
+-- v0.3.2: named shopping lists (built on the Shopping List page from a draft), one of them active for the
+-- vendor's highlights and the AH's list; a purchase takes only its line off the active list. The old want
+-- list (Smart Vendor, now under construction) is kept in the save untouched; it became "My List" once.
 --
 -- Saved: ValhallaInvestDB (its own file: a reset of the map's settings doesn't touch it; a new saved
 -- variable needs a full restart of the game, not /reload). On/off: ValhallaDB.invest.enabled
@@ -61,7 +64,8 @@ local function Fill(t, d)
 end
 
 -- ValhallaInvestDB: { v, settings, diag = { ... }, account = { bank, bankSeen, bankInfo },
---   realms = { [realm] = { chars = { [name] = { bags, bank, bankSeen, bankInfo, want = { [itemID] = { want, cat, keep, short } },
+--   realms = { [realm] = { chars = { [name] = { bags, bank, bankSeen, bankInfo, want (v0.3.1's, kept, unused),
+--     lists = { { id, name, created, items = { { id, n, keep, short, name } } } }, activeList, nextList, draft,
 --     mail = { [itemID] = { n, t, bought } } } }, merchants = { [npcID] = { name, items = { [itemID] = price } } } } } }
 function I.InitDB()
 	local db = type(_G.ValhallaInvestDB) == "table" and _G.ValhallaInvestDB or {}
@@ -85,6 +89,7 @@ function I.InitDB()
 	c.want = c.want or {}
 	c.mail = c.mail or {}
 	I.db, I.realm, I.char, I.me = db, r, c, name
+	I.MigrateLists(c)
 	I.S = db.settings
 	return db
 end
@@ -98,8 +103,14 @@ function I.ItemName(id)
 	local name = Call(GetItemInfo, id)
 	if name then return name, true end
 	if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
-	local w = I.char and I.char.want[id]
-	return (w and w.name) or ("item:" .. tostring(id)), false
+	local c = I.char
+	local w = c and c.want[id]
+	if w and w.name then return w.name, false end
+	for _, l in ipairs(c and c.lists or {}) do
+		for _, e in ipairs(l.items) do if e.id == id and e.name then return e.name, false end end
+	end
+	for _, e in ipairs(c and type(c.draft) == "table" and c.draft.items or {}) do if e.id == id and e.name then return e.name, false end end
+	return "item:" .. tostring(id), false
 end
 
 function I.ItemIcon(id)
@@ -269,7 +280,7 @@ end
 
 function I.AddMail(id, n)
 	id, n = tonumber(id), tonumber(n) or 1
-	if not (id and I.char and I.char.want[id]) or n <= 0 then return false end
+	if not (id and I.char and I.Listed(id)) or n <= 0 then return false end
 	local m = I.char.mail[id] or { n = 0 }
 	m.n = m.n + n
 	m.t = Now()
@@ -305,7 +316,7 @@ function I.ReadInbox()
 		if not found[id] and not Fresh(m) then I.char.mail[id] = nil end
 	end
 	for id, count in pairs(found) do
-		if I.char.want[id] then
+		if I.Listed(id) then
 			local m = I.char.mail[id]
 			if m then
 				m.n = Fresh(m) and math.max(m.n, count) or count
@@ -337,94 +348,85 @@ function I.Have(id)
 end
 
 --------------------------------------------------------------------------------
--- What you want, and what you need
+-- Shopping lists (v0.3.2): a draft (the builder on the Shopping List page) saved as named lists; one of
+-- them active (the vendor's highlights and the AH's list follow it). The old want list (Smart Vendor, v0.3.0
+-- and v0.3.1) stays in the save as it was, untouched: read once to make "My List", never written.
+--   lists = { { id, name, created, items = { { id, n, keep, short, name } } } }, activeList = list id,
+--   draft = { name, items = { { id, n, keep, name } }, editing = list id }
 --------------------------------------------------------------------------------
 
--- still short of it, counting what's in hand only (the mail isn't, yet)
-function I.ShortOf(id)
-	local w = I.char and I.char.want[id]
-	if not w then return 0 end
-	local have, _, _, _, mail = I.Have(id)
-	return math.max(0, w.want - (have - mail))
-end
+local function Trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 
-function I.Want(id, n, cat, keep)
-	id = tonumber(id)
-	if not (id and I.char) then return false end
-	n = math.max(1, math.floor(tonumber(n) or 1))
-	local w = I.char.want[id] or {}
-	w.want = n
-	w.cat = (cat == "mat" or cat == "reagent" or cat == "gear") and cat or w.cat or "mat"
-	w.added = w.added or Now()
-	w.name = Call(GetItemInfo, id) or w.name
-	if keep ~= nil then w.keep = keep and true or nil end
-	I.char.want[id] = w
-	w.short = I.ShortOf(id) > 0 or nil
-	I.Changed()
-	return true
-end
-
-function I.Unwant(id)
-	id = tonumber(id)
-	if not (id and I.char and I.char.want[id]) then return false end
-	I.char.want[id] = nil
-	I.char.mail[id] = nil
-	I.Changed()
-	return true
-end
-
-function I.SetWantCount(id, n)
-	local w = I.char and I.char.want[id]
-	if not w then return end
-	w.want = math.max(1, math.floor(tonumber(n) or w.want))
-	w.short = I.ShortOf(id) > 0 or nil
-	I.Changed()
-end
-
--- "Keep stocked": a standing target, hidden while you have enough, back when it's used up
-function I.SetKeep(id, on)
-	local w = I.char and I.char.want[id]
-	if not w then return end
-	w.keep = on and true or nil
-	I.Changed()
-end
-
--- bought: a want you were short of that's now in hand (it reached your bags) comes off the list, with
--- Undo; "Keep stocked" ones stay. gains: { [itemID] = how many more are in the bags } (none: only notes
--- what you're short of)
-I.undo = {}
-function I.Reconcile(gains)
-	if not I.char then return {} end
-	local removed = {}
-	for id, w in pairs(I.char.want) do
-		if I.ShortOf(id) > 0 then
-			w.short = true
-		elseif w.short and gains and (gains[id] or 0) > 0 then
-			w.short = nil
-			if not w.keep then removed[#removed + 1] = id end
+-- the first time: the old wants become one list, "My List" (the wants themselves are left as they were)
+function I.MigrateLists(c)
+	if type(c.lists) == "table" then return false end
+	c.lists = {}
+	c.nextList = c.nextList or 1
+	local ids = {}
+	for id in pairs(c.want or {}) do ids[#ids + 1] = id end
+	if #ids == 0 then return false end
+	table.sort(ids)
+	local l = { id = c.nextList, name = L["My List"], created = Now(), items = {} }
+	c.nextList = c.nextList + 1
+	for _, id in ipairs(ids) do
+		local w = c.want[id]
+		if type(w) == "table" and (tonumber(w.want) or 0) > 0 then
+			l.items[#l.items + 1] = { id = id, n = math.floor(tonumber(w.want)), keep = w.keep and true or nil, name = w.name }
 		end
 	end
-	table.sort(removed)
-	for _, id in ipairs(removed) do
-		local w = I.char.want[id]
-		I.char.want[id] = nil
-		I.char.mail[id] = nil
-		table.insert(I.undo, { id = id, w = w })
-		while #I.undo > I.UNDO_KEEP do table.remove(I.undo, 1) end
-		ns:Print("%s", L["%s x%d: you have them, so it's off your list. Undo: the Undo button in Investments, or /valhalla undo."]:format(I.ItemName(id), w.want))
-	end
-	return removed
+	c.lists[1] = l
+	c.activeList = l.id
+	return true
 end
 
-function I.LastUndo() return I.undo[#I.undo] end
+function I.Lists() return I.char and I.char.lists or {} end
 
-function I.Undo()
-	local u = table.remove(I.undo)
-	if not u then return nil end
-	u.w.short = nil
-	I.char.want[u.id] = u.w
+function I.ListByID(lid)
+	for i, l in ipairs(I.Lists()) do if l.id == lid then return l, i end end
+end
+
+-- the active list (one list: that one, chosen for you); nil when there are none, or several and none chosen
+function I.ActiveList()
+	if not I.char then return nil end
+	local l = I.char.activeList and I.ListByID(I.char.activeList)
+	if l then return l end
+	local lists = I.Lists()
+	if #lists == 1 then I.char.activeList = lists[1].id return lists[1] end
+	return nil
+end
+
+function I.SetActive(lid)
+	if not (I.char and I.ListByID(lid)) then return false end
+	I.char.activeList = lid
+	I.Reconcile()
 	I.Changed()
-	return u.id
+	return true
+end
+
+-- on some saved list? (what's bought at the AH is followed in the mail only then)
+function I.Listed(id)
+	for _, l in ipairs(I.Lists()) do
+		for _, e in ipairs(l.items) do if e.id == id then return true end end
+	end
+	return false
+end
+
+local function LineOf(l, id)
+	for i, e in ipairs(l and l.items or {}) do if e.id == id then return e, i end end
+end
+I.LineOf = LineOf
+
+-- still short of n, counting what's in hand only (the mail isn't, yet)
+function I.ShortOfN(id, n)
+	local have, _, _, _, mail = I.Have(id)
+	return math.max(0, (n or 0) - (have - mail))
+end
+
+-- how many more of an item the active list needs (the vendor's highlights)
+function I.NeedOf(id)
+	local e = LineOf(I.ActiveList(), id)
+	if not e then return 0 end
+	return math.max(0, e.n - (I.Have(id)))
 end
 
 -- sold by a merchant you've visited (on this realm)? (its price, the merchant's name)
@@ -435,30 +437,29 @@ function I.VendorPrice(id)
 	end
 end
 
--- every wanted item: { id, name, cat, keep, want, have, bags, bank, alts, mail, need, short, source = "vendor"|"ah" }
+-- one line, counted: { id, name, n, keep, have, bags, bank, alts, mail, need, short, source = "vendor"|"ah", vendor }
 -- (need counts the mail; short doesn't)
-function I.Rows()
+function I.LineRow(e)
+	local have, bags, bank, alts, mail = I.Have(e.id)
+	local price, vendor = I.VendorPrice(e.id)
+	return { id = e.id, name = I.ItemName(e.id), n = e.n, want = e.n, keep = e.keep and true or false, have = have,
+		bags = bags, bank = bank, alts = alts, mail = mail, need = math.max(0, e.n - have),
+		short = math.max(0, e.n - (have - mail)), source = price and "vendor" or "ah", price = price, vendor = vendor }
+end
+
+-- a list's lines, counted, in the list's order
+function I.ListRows(l)
 	local rows = {}
-	for id, w in pairs(I.char and I.char.want or {}) do
-		local have, bags, bank, alts, mail = I.Have(id)
-		local name = I.ItemName(id)
-		local price, vendor = I.VendorPrice(id)
-		rows[#rows + 1] = { id = id, name = name, cat = w.cat, keep = w.keep and true or false, want = w.want, have = have,
-			bags = bags, bank = bank, alts = alts, mail = mail, need = math.max(0, w.want - have),
-			short = math.max(0, w.want - (have - mail)), source = price and "vendor" or "ah", price = price, vendor = vendor }
-	end
-	table.sort(rows, function(a, b)
-		if a.name ~= b.name then return a.name < b.name end
-		return a.id < b.id
-	end)
+	for _, e in ipairs(l and l.items or {}) do rows[#rows + 1] = I.LineRow(e) end
 	return rows
 end
 
--- the shopping list: what's still needed, by where to buy it; mail = bought, on its way; done = wanted
--- items you have enough of in hand (the "Keep stocked" ones)
-function I.ShoppingList()
-	local list = { vendor = {}, ah = {}, mail = {}, done = 0, total = 0 }
-	for _, r in ipairs(I.Rows()) do
+-- a list by where to buy: what's still needed (vendor / ah), bought and on its way (mail), done (in hand)
+-- (the active list when none is given)
+function I.ShoppingList(l)
+	l = l or I.ActiveList()
+	local list = { vendor = {}, ah = {}, mail = {}, done = 0, total = 0, list = l, name = l and l.name }
+	for _, r in ipairs(I.ListRows(l)) do
 		list.total = list.total + 1
 		if r.need > 0 then table.insert(list[r.source], r)
 		elseif r.short > 0 then table.insert(list.mail, r)
@@ -467,10 +468,227 @@ function I.ShoppingList()
 	return list
 end
 
-function I.NeedOf(id)
-	local w = I.char and I.char.want[id]
-	if not w then return 0 end
-	return math.max(0, w.want - (I.Have(id)))
+-- bought: a line of the active list you were short of, now in hand (it reached your bags), comes off that
+-- list (only that line), with Undo; "Keep stocked" lines stay. gains: { [itemID] = how many more are in
+-- the bags } (none: only notes what you're short of)
+I.undo = {}
+local function PushUndo(u)
+	table.insert(I.undo, u)
+	while #I.undo > I.UNDO_KEEP do table.remove(I.undo, 1) end
+end
+
+function I.Reconcile(gains)
+	local l = I.ActiveList()
+	if not l then return {} end
+	local removed = {}
+	for i = #l.items, 1, -1 do
+		local e = l.items[i]
+		if I.ShortOfN(e.id, e.n) > 0 then
+			e.short = true
+		elseif e.short and gains and (gains[e.id] or 0) > 0 then
+			e.short = nil
+			if not e.keep then
+				table.remove(l.items, i)
+				removed[#removed + 1] = { index = i, e = e }
+			end
+		end
+	end
+	for _, r in ipairs(removed) do
+		PushUndo({ kind = "line", list = l.id, index = r.index, e = r.e })
+		ns:Print("%s", L["%s x%d: bought, so it's off your shopping list '%s'. Undo: the Undo button on the Shopping List, or /valhalla undo."]:format(I.ItemName(r.e.id), r.e.n, l.name))
+	end
+	return removed
+end
+
+function I.LastUndo() return I.undo[#I.undo] end
+
+-- what the last undo would put back, for its button
+function I.UndoLabel(u)
+	u = u or I.LastUndo()
+	if not u then return nil end
+	if u.kind == "list" then return L["the list '%s'"]:format(u.l.name) end
+	return I.ItemName(u.e.id)
+end
+
+-- put the last one back: a line (in its list, where it was) or a deleted list. Returns what (a label).
+function I.Undo()
+	local u = table.remove(I.undo)
+	if not u then return nil end
+	local label = I.UndoLabel(u)
+	if u.kind == "list" then
+		local lists = I.char.lists
+		table.insert(lists, math.min(u.index, #lists + 1), u.l)
+		if u.active then I.char.activeList = u.l.id end
+	else
+		local l = I.ListByID(u.list)
+		if not l then return I.Undo() end      -- (its list is gone: the one before)
+		u.e.short = nil
+		table.insert(l.items, math.min(u.index, #l.items + 1), u.e)
+	end
+	I.Changed()
+	return label
+end
+
+-- the builder's draft
+function I.Draft()
+	local c = I.char
+	if type(c.draft) ~= "table" then c.draft = { name = "", items = {} } end
+	c.draft.items = c.draft.items or {}
+	return c.draft
+end
+
+function I.DraftAdd(id, n)
+	id = tonumber(id)
+	if not (id and I.char) then return false end
+	local d = I.Draft()
+	local e = LineOf(d, id)
+	if e then
+		if n then e.n = math.max(0, math.floor(tonumber(n) or e.n)) I.Changed() end
+		return false
+	end
+	d.items[#d.items + 1] = { id = id, n = math.max(0, math.floor(tonumber(n) or 0)), name = (Call(GetItemInfo, id)) }
+	I.Changed()
+	return true
+end
+
+function I.DraftRemove(id)
+	local d = I.Draft()
+	local _, i = LineOf(d, tonumber(id))
+	if not i then return false end
+	table.remove(d.items, i)
+	I.Changed()
+	return true
+end
+
+function I.DraftSet(id, n)
+	local e = LineOf(I.Draft(), id)
+	if not e then return end
+	e.n = math.max(0, math.floor(tonumber(n) or e.n))
+	I.Changed()
+end
+
+function I.DraftKeep(id, on)
+	local e = LineOf(I.Draft(), id)
+	if not e then return end
+	e.keep = on and true or nil
+	I.Changed()
+end
+
+function I.DraftName(text)
+	I.Draft().name = Trim(text)
+end
+
+function I.DraftClear()
+	local d = I.Draft()
+	d.name, d.items, d.editing = "", {}, nil
+	I.Changed()
+end
+
+-- "List N": the first N not taken
+function I.AutoName()
+	local taken = {}
+	for _, l in ipairs(I.Lists()) do taken[l.name] = true end
+	local n = 1
+	while taken[L["List %d"]:format(n)] do n = n + 1 end
+	return L["List %d"]:format(n)
+end
+
+-- Build Shopping List: the draft saved as a list (a new one, or the one being edited, in place), the draft
+-- cleared. Lines with 0 are left out. Returns the list (nil when nothing to save).
+function I.BuildList()
+	local c, d = I.char, I.Draft()
+	local items, zero = {}, 0
+	for _, e in ipairs(d.items) do
+		if (e.n or 0) > 0 then items[#items + 1] = { id = e.id, n = e.n, keep = e.keep, name = e.name or (Call(GetItemInfo, e.id)) }
+		else zero = zero + 1 end
+	end
+	if #items == 0 then
+		ns:Print("%s", #d.items == 0 and L["Add an item first: search it above, or shift-click it into the search box."]
+			or L["Set how many you need (the numbers are 0), then Build Shopping List."])
+		return nil
+	end
+	local name = Trim(d.name)
+	local l = d.editing and I.ListByID(d.editing)
+	if name == "" then name = l and l.name or I.AutoName() end
+	if l then
+		l.name, l.items = name, items
+	else
+		c.nextList = c.nextList or 1
+		l = { id = c.nextList, name = name, created = Now(), items = items }
+		c.nextList = c.nextList + 1
+		c.lists[#c.lists + 1] = l
+	end
+	if not I.ActiveList() then c.activeList = l.id end
+	d.name, d.items, d.editing = "", {}, nil
+	local msg = L["Shopping list '%s' saved (%d items)."]:format(name, #items)
+	if zero > 0 then msg = msg .. " " .. L["%d with 0 left out."]:format(zero) end
+	ns:Print("%s", msg)
+	I.Reconcile()
+	I.Changed()
+	return l
+end
+
+-- Edit: a list back into the builder (what was in the draft is replaced); Build saves it in its place
+function I.EditList(lid)
+	local l = I.ListByID(lid)
+	if not l then return false end
+	local d = I.Draft()
+	d.name, d.editing, d.items = l.name, l.id, {}
+	for _, e in ipairs(l.items) do d.items[#d.items + 1] = { id = e.id, n = e.n, keep = e.keep, name = e.name } end
+	I.Changed()
+	return true
+end
+
+function I.DeleteList(lid)
+	local l, i = I.ListByID(lid)
+	if not l then return false end
+	local wasActive = I.char.activeList == lid
+	table.remove(I.char.lists, i)
+	if wasActive then I.char.activeList = nil end
+	if I.Draft().editing == lid then I.Draft().editing = nil end
+	PushUndo({ kind = "list", l = l, index = i, active = wasActive })
+	ns:Print("%s", L["Shopping list '%s' deleted. Undo: the Undo button, or /valhalla undo."]:format(l.name))
+	I.ActiveList()
+	I.Changed()
+	return true
+end
+
+-- the item search box: up to max items whose names hold what's typed, from what Valhalla has seen (bags,
+-- bank, merchants, your lists, the draft, the old wants, the mail), the game's own cache for an exact name;
+-- a link or an ID: that item
+function I.SearchItems(text, max)
+	max = max or 6
+	text = Trim(text)
+	if text == "" then return {} end
+	local id = text:match("item:(%d+)") or text:match("^(%d+)$")
+	if id then return { tonumber(id) } end
+	local low = text:lower()
+	local found, seen = {}, {}
+	local function Try(i)
+		if seen[i] then return end
+		seen[i] = true
+		local n = Call(GetItemInfo, i)
+		if n and n:lower():find(low, 1, true) then found[#found + 1] = { id = i, name = n, exact = n:lower() == low, prefix = n:lower():sub(1, #low) == low } end
+	end
+	local _, link = Call(GetItemInfo, text)
+	local exact = link and tonumber(link:match("item:(%d+)"))
+	if exact then Try(exact) end
+	local c = I.char
+	if c then
+		for _, t in ipairs({ c.bags, c.bank, (I.db.account or {}).bank, c.want, c.mail }) do for i in pairs(t or {}) do Try(i) end end
+		for _, l in ipairs(c.lists or {}) do for _, e in ipairs(l.items) do Try(e.id) end end
+		for _, e in ipairs(I.Draft().items) do Try(e.id) end
+	end
+	for _, m in pairs(I.realm and I.realm.merchants or {}) do for i in pairs(m.items or {}) do Try(i) end end
+	table.sort(found, function(a, b)
+		if a.exact ~= b.exact then return a.exact end
+		if a.prefix ~= b.prefix then return a.prefix end
+		if a.name ~= b.name then return a.name < b.name end
+		return a.id < b.id
+	end)
+	local out = {}
+	for i = 1, math.min(max, #found) do out[i] = found[i].id end
+	return out
 end
 
 --------------------------------------------------------------------------------
@@ -580,9 +798,14 @@ function I.OnEvent(event, a1, a2)
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if I.AH and I.AH.waiting and I.ahOpen then I.AH.Show() end
 	elseif event == "GET_ITEM_INFO_RECEIVED" then
-		if I.char and a1 and I.char.want[a1] then
-			I.char.want[a1].name = Call(GetItemInfo, a1) or I.char.want[a1].name
-			I.Changed()
+		-- (a name arrived: kept on its lines, for when the game's cache is cold)
+		if I.char and a1 then
+			local name, hit = Call(GetItemInfo, a1), false
+			for _, l in ipairs(I.char.lists or {}) do
+				for _, e in ipairs(l.items) do if e.id == a1 then e.name = name or e.name hit = true end end
+			end
+			for _, e in ipairs(I.Draft().items) do if e.id == a1 then e.name = name or e.name hit = true end end
+			if hit then I.Changed() end
 		end
 	elseif event == "REPLICATE_ITEM_LIST_UPDATE" then
 		if I.diagReplicate then I.DiagReplicateDone() end
@@ -676,7 +899,8 @@ function I.Diag(arg)
 	local list = I.ShoppingList()
 	local merchants = 0
 	for _ in pairs(I.realm.merchants) do merchants = merchants + 1 end
-	d.list = { wanted = list.total, buy = #list.vendor + #list.ah, mail = #list.mail, done = list.done, merchants = merchants }
+	d.list = { lists = #I.Lists(), active = list.name, wanted = list.total, buy = #list.vendor + #list.ah, mail = #list.mail, done = list.done,
+		merchants = merchants, draft = #I.Draft().items, oldWants = (function() local n = 0 for _ in pairs(I.char.want) do n = n + 1 end return n end)() }
 	if I.bankOpen then
 		local BT = Enum and Enum.BankType or {}
 		d.bank = { character = {}, account = {} }
@@ -743,7 +967,8 @@ function I.DiagSummary(d)
 		local s = d.ah.search or {}
 		ah = L["AH open: its Search button %s"]:format(s.button and (s.blocked and L["can't be clicked for you (Enter fallback)"] or L["ready for one-click Search"]) or L["not found"])
 	end
-	out[3] = L["List: %d wanted, %d to buy, %d in the mail, %d done; %d merchants known; %s."]:format(d.list.wanted, d.list.buy, d.list.mail, d.list.done, d.list.merchants, ah)
+	out[3] = L["Lists: %d saved, active %s: %d to buy, %d in the mail, %d done; %d merchants known; %s."]:format(d.list.lists or 0,
+		d.list.active and ("'" .. d.list.active .. "'") or L["none"], d.list.buy, d.list.mail, d.list.done, d.list.merchants, ah)
 	return out
 end
 
@@ -814,9 +1039,10 @@ end
 --   /valhalla invest [vendor|list|market|settings]   open Investments (at that page)
 --   /valhalla invest on|off                          the whole tabbed window and Investments (off: the map as before)
 --   /valhalla invest diag [ah|replicate]             what this client has, saved to the saved log
---   /valhalla undo                                   put back the last item that came off the list
+--   /valhalla undo                                   put back the last line bought off a list (or a deleted list)
 --   /valhalla tab map|invest|talents|professions     switch the window's tab
---   /valhalla want <item> [count] [mat|reagent|gear], /valhalla unwant <item>, /valhalla list
+--   /valhalla want <item> [count], /valhalla unwant <item>   into / out of the Shopping List's builder
+--   /valhalla list                                   the active shopping list
 --------------------------------------------------------------------------------
 
 local function Say(fmt, ...) ns:Print(fmt, ...) end
@@ -841,31 +1067,37 @@ function mod:Slash(word, arg)
 	end
 	if not mod.enabled then Say(L["Investments is off. /valhalla invest on"]) return end
 	if word == "undo" then
-		local id = I.Undo()
-		if id then Say(L["Back on your list: %s."], I.ItemName(id)) else Say("%s", L["Nothing to undo."]) end
+		local what = I.Undo()
+		if what then Say(L["Put back: %s."], what) else Say("%s", L["Nothing to undo."]) end
 	elseif word == "tab" then
 		local key = ({ map = "map", invest = "invest", investments = "invest", talents = "talents", professions = "professions" })[low]
 		if not key then Say(L["/valhalla tab map|invest|talents|professions"]) return end
 		if I.Tabs then I.Tabs.Open(key) end
 	elseif word == "want" then
-		-- the item may be a link (with spaces), then an optional count and category
-		local item, n, cat = arg:match("^(.-)%s+(%d+)%s+(%a+)%s*$")
+		-- into the Shopping List's builder (the draft): the item may be a link (with spaces), then a count
+		-- (an old category word after it is ignored)
+		local item, n = arg:match("^(.-)%s+(%d+)%s+%a+%s*$")
 		if not item then item, n = arg:match("^(.-)%s+(%d+)%s*$") end
 		if not item or item == "" then item = arg end
-		if not cat and item then
+		if not n and item then
 			local i2, c2 = item:match("^(.-)%s+(%a+)$")
-			if c2 and (c2 == "mat" or c2 == "reagent" or c2 == "gear") then item, cat = i2, c2 end
+			if c2 and (c2 == "mat" or c2 == "reagent" or c2 == "gear") then item = i2 end
 		end
 		local id = I.ParseItem(item)
-		if not id then Say(L["Which item? Shift-click it into the command, or give its item ID: /valhalla want <item> [count] [mat|reagent|gear]"]) return end
-		I.Want(id, n or (I.char.want[id] and I.char.want[id].want) or 1, cat and cat:lower())
-		Say(L["Wanted: %s x%d (need %d)."], I.ItemName(id), I.char.want[id].want, I.NeedOf(id))
+		if not id then Say(L["Which item? Shift-click it into the command, or give its item ID: /valhalla want <item> [count]"]) return end
+		I.DraftAdd(id, n or 0)
+		local e = I.LineOf(I.Draft(), id)
+		Say(L["In the builder: %s x%d (Investments > Shopping List, then Build Shopping List)."], I.ItemName(id), e and e.n or 0)
 	elseif word == "unwant" then
 		local id = I.ParseItem(arg)
-		if id and I.Unwant(id) then Say(L["No longer wanted: %s."], I.ItemName(id)) else Say(L["That item isn't on your want list."]) end
+		if id and I.DraftRemove(id) then Say(L["Out of the builder: %s."], I.ItemName(id)) else Say("%s", L["That item isn't in the builder."]) end
 	elseif word == "list" then
 		local list = I.ShoppingList()
-		Say(L["Shopping list (%d of %d done):"], list.done, list.total)
+		if not list.list then
+			Say("%s", #I.Lists() == 0 and L["No shopping list yet: build one in Investments > Shopping List."] or L["No list chosen: pick one at a vendor or the Auction House."])
+			return
+		end
+		Say(L["Shopping list '%s' (%d of %d done):"], list.name, list.done, list.total)
 		for _, src in ipairs({ "vendor", "ah" }) do
 			for _, r in ipairs(list[src]) do
 				Say("  %s: %s x%d", src == "vendor" and L["Vendor"] or L["Auction House"], r.name, r.need)

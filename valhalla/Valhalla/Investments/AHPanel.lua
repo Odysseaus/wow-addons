@@ -10,6 +10,7 @@
 -- name is left in the search box, focused: press Enter.
 -- The list's "-" minimizes it to a small button at the AH's top right (with how many items are needed);
 -- that button brings it back. Minimized or not is remembered across visits.
+-- v0.3.2: the active shopping list only; a "List: <name>" picker under the title chooses which.
 -- Buying is always your own click on the game's own Buy button: Valhalla buys nothing.
 --------------------------------------------------------------------------------
 
@@ -141,7 +142,7 @@ local function Build()
 	if InCombatLockdown() then A.waiting = true return nil end   -- (secure buttons aren't made in combat: once it ends)
 	local T, V = I.Tabs, I.Views
 	panel = CreateFrame("Frame", "ValhallaAHList", ah, "BackdropTemplate")
-	panel:SetSize(A.W, 470)
+	panel:SetSize(A.W, 500)
 	panel:SetPoint("TOPLEFT", ah, "TOPRIGHT", 6, 0)
 	T.Skin(panel, 0.96)
 	panel:EnableMouse(true)
@@ -151,15 +152,17 @@ local function Build()
 	local minimize = V.Button(panel, "-", 20, 20, function() A.SetMinimized(true) end)
 	minimize:SetPoint("TOPRIGHT", -6, -6)
 	panel.minimize = minimize
+	panel.picker = V.Picker(panel, A.W - 20)
+	panel.picker:SetPoint("TOPLEFT", 10, -30)
 	panel.sub = T.Font(panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 10, { 0.6, 0.6, 0.6 })
-	panel.sub:SetPoint("TOPLEFT", 12, -28)
+	panel.sub:SetPoint("TOPLEFT", 12, -58)
 	panel.sub:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
 	panel.sub:SetJustifyH("LEFT")
 	panel.rows = {}
 	for i = 1, A.ROWS do
 		local r = CreateFrame("Frame", nil, panel)
 		r:SetHeight(24)
-		r:SetPoint("TOPLEFT", 8, -56 - (i - 1) * 26)
+		r:SetPoint("TOPLEFT", 8, -84 - (i - 1) * 26)
 		r:SetPoint("RIGHT", panel, "RIGHT", -8, 0)
 		r.icon = r:CreateTexture(nil, "ARTWORK")
 		r.icon:SetSize(20, 20)
@@ -180,10 +183,9 @@ local function Build()
 	panel.mail:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
 	panel.mail:SetJustifyH("LEFT")
 	panel.empty = T.Font(panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight"), 12, { 0.6, 0.6, 0.6 })
-	panel.empty:SetPoint("TOPLEFT", 14, -60)
+	panel.empty:SetPoint("TOPLEFT", 14, -88)
 	panel.empty:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
 	panel.empty:SetJustifyH("LEFT")
-	panel.empty:SetText(L["Nothing needed from the Auction House. (Investments > Smart Vendor: what you want.)"])
 	panel:Hide()
 	-- minimized: a small button at the AH's top right, with how many items are needed
 	mini = CreateFrame("Button", "ValhallaAHListButton", ah, "BackdropTemplate")
@@ -230,7 +232,15 @@ function A.Refresh()
 		return
 	end
 	mini:Hide()
-	panel.sub:SetText(L["Still needed: %d. Done %d / %d. Search, then buy with the AH's own button."]:format(#rows, list.done, list.total))
+	panel.picker.Update()
+	if list.list then
+		panel.sub:SetText(L["Still needed: %d. Done %d / %d. Search, then buy with the AH's own button."]:format(#rows, list.done, list.total))
+		panel.empty:SetText(L["Nothing needed from the Auction House on this list."])
+	else
+		panel.sub:SetText("")
+		panel.empty:SetText(#I.Lists() == 0 and L["No shopping list yet: build one in Investments > Shopping List (click the button above)."]
+			or L["Choose a shopping list above."])
+	end
 	panel.empty:SetShown(#rows == 0)
 	for i, r in ipairs(panel.rows) do
 		local d = rows[i]
@@ -263,7 +273,7 @@ function A.Show()
 end
 
 function A.Hide()
-	if panel then panel:Hide() end
+	if panel then panel.picker.menu:Hide() panel:Hide() end
 	if mini then mini:Hide() end
 	A.pending = nil
 end
