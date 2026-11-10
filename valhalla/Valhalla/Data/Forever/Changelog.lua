@@ -13,7 +13,7 @@ ns.MapChangelog = {
 		"|cff6e2c0aThe AH list minimizes|r: its - leaves a small button at the Auction House's top right with how many items you need; click it to bring the list back. Minimized or not is remembered.",
 		"|cff6e2c0aThe bank, visible|r: each bank visit says in chat what was counted (items, kinds, tabs; the warband bank too). The bank is noticed by either of the game's two signals, its own first tab is always read, and 'Bank last seen' is under the menu on every Investments page.",
 		"|cff6e2c0aDiagnostic buttons|r: Investments > Settings > Run diagnostic (and Run AH check at the Auction House) save what Valhalla sees, the bank above all, and print three lines; then /reload writes it to disk.",
-		"|cff6e2c0a/reload is enough|r after installing this version: no new saved file.",
+		"|cff6e2c0aRestart the game|r (not just /reload) after installing: this version adds a file (Links.lua), and the game reads its list of files only at start. No new saved file.",
 	} },
 	{ version = "v0.3.0", date = "2026-11-09", heads = { [1] = "New", [5] = "Note", }, items = {
 		"|cff6e2c0aTabs on the Valhalla window|r: Map & Quest Log (everything as before), Investments, and Talents and Professions (under construction, coming soon). Below the window by default; along the top or as icons down the side in Investments > Settings. /valhalla tab map|invest|talents|professions.",
