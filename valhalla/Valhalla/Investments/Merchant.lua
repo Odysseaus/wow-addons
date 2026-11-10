@@ -6,6 +6,7 @@
 -- MerchantFrame_UpdateMerchantInfo); hidden on the buyback tab and when the merchant closes.
 -- v0.3.2: only the active shopping list glows; a small "List: <name>" picker above the merchant window's
 -- top right chooses which (Valhalla's own button: a menu of your lists; none yet: build one).
+-- v0.3.3: what's on the active list keeps its glow once you have enough ("Done"); "None": no highlights.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -74,11 +75,11 @@ function M.Plan()
 	local frame = _G.MerchantFrame
 	if not (on and I.S.hiVendor and frame and frame:IsShown() and frame.selectedTab == 1) then return nil end
 	local n = I.Call(GetMerchantNumItems) or 0
+	local active = I.ActiveList()
 	local needs, any = {}, false
 	for idx = 1, n do
 		local id = I.Call(GetMerchantItemID, idx)
-		local need = id and I.NeedOf(id) or 0
-		if need > 0 then needs[idx] = need any = true end
+		if id and active and I.LineOf(active, id) then needs[idx] = I.NeedOf(id) any = true end
 	end
 	local page = tonumber(frame.page) or 1
 	local plan = {}
@@ -106,7 +107,9 @@ function M.Paint()
 				local need = p.state == "need"
 				o.glow:SetShown(need)
 				o.tag:SetShown(need and I.S.showNeed)
-				o.tag:SetText(need and ns.L["need %d"]:format(p.need) or "")
+				local done = need and p.need <= 0
+				o.tag:SetText(need and (done and ns.L["Done"] or ns.L["need %d"]:format(p.need)) or "")
+				if done then o.tag:SetTextColor(0.3, 0.9, 0.3) else o.tag:SetTextColor(1, 0.82, 0) end
 				o.wash:SetShown(not need)
 				o.wash:SetColorTexture(0.05, 0.05, 0.05, I.S.greyAlpha)
 				o:Show()

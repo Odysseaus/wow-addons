@@ -11,6 +11,8 @@
 -- The list's "-" minimizes it to a small button at the AH's top right (with how many items are needed);
 -- that button brings it back. Minimized or not is remembered across visits.
 -- v0.3.2: the active shopping list only; a "List: <name>" picker under the title chooses which.
+-- v0.3.3: the list's Auction House items stay listed once you have enough (Done) or bought them (In mail);
+-- "None" chosen: no list here.
 -- Buying is always your own click on the game's own Buy button: Valhalla buys nothing.
 --------------------------------------------------------------------------------
 
@@ -216,29 +218,39 @@ function A.SetMinimized(v)
 	A.Refresh()
 end
 
+-- the active list's Auction House items (what no vendor you've visited sells), whatever their state;
+-- needed: how many are still to buy
 function A.Rows()
 	local list = I.ShoppingList()
-	return list.ah, list
+	local rows, needed = {}, 0
+	for _, r in ipairs(I.ListRows(list.list)) do
+		if r.source == "ah" then
+			rows[#rows + 1] = r
+			if r.need > 0 then needed = needed + 1 end
+		end
+	end
+	return rows, list, needed
 end
 
 function A.Refresh()
 	if not panel then return end
 	if not (on and I.ahOpen and I.S.ahPanel) then panel:Hide() mini:Hide() return end
-	local rows, list = A.Rows()
+	local rows, list, needed = A.Rows()
 	if I.S.ahPanelMin then
 		panel:Hide()
-		mini.count:SetText(#rows > 0 and tostring(#rows) or "")
+		mini.count:SetText(needed > 0 and tostring(needed) or "")
 		mini:Show()
 		return
 	end
 	mini:Hide()
 	panel.picker.Update()
 	if list.list then
-		panel.sub:SetText(L["Still needed: %d. Done %d / %d. Search, then buy with the AH's own button."]:format(#rows, list.done, list.total))
-		panel.empty:SetText(L["Nothing needed from the Auction House on this list."])
+		panel.sub:SetText(L["Still needed: %d. Done %d / %d. Search, then buy with the AH's own button."]:format(needed, list.done, list.total))
+		panel.empty:SetText(L["Nothing on this list from the Auction House."])
 	else
 		panel.sub:SetText("")
 		panel.empty:SetText(#I.Lists() == 0 and L["No shopping list yet: build one in Investments > Shopping List (click the button above)."]
+			or I.NoneChosen() and L["No list selected (None). Choose one above."]
 			or L["Choose a shopping list above."])
 	end
 	panel.empty:SetShown(#rows == 0)
@@ -247,7 +259,16 @@ function A.Refresh()
 		if d then
 			r.icon:SetTexture(I.ItemIcon(d.id))
 			r.name:SetText(d.name)
-			r.need:SetText("x" .. d.need)
+			if d.need > 0 then
+				r.need:SetText("x" .. d.need)
+				r.need:SetTextColor(1, 0.82, 0)
+			elseif d.short > 0 then
+				r.need:SetText(L["In mail"])
+				r.need:SetTextColor(1, 0.82, 0)
+			else
+				r.need:SetText(L["Done"])
+				r.need:SetTextColor(0.3, 0.9, 0.3)
+			end
 			r.id = d.id
 			r:Show()
 		else
@@ -257,8 +278,7 @@ function A.Refresh()
 	end
 	-- bought, in the mail (not to buy again)
 	local mailed = {}
-	for _, d in ipairs(list.mail) do mailed[#mailed + 1] = ("%s x%d"):format(d.name, d.mail) end
-	for _, d in ipairs(rows) do if d.mail > 0 then mailed[#mailed + 1] = ("%s x%d"):format(d.name, d.mail) end end
+	for _, d in ipairs(I.ListRows(list.list)) do if d.mail > 0 then mailed[#mailed + 1] = ("%s x%d"):format(d.name, d.mail) end end
 	panel.mail:SetText(#mailed > 0 and L["In the mail: %s"]:format(table.concat(mailed, ", ")) or "")
 	panel:Show()
 end

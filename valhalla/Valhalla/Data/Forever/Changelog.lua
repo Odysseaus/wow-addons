@@ -4,6 +4,12 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.3.3", date = "2026-11-10", heads = { [1] = "Changed", [3] = "New", [4] = "Note", }, items = {
+		"|cff6e2c0aBuying never changes your lists|r: a vendor or Auction House purchase no longer takes anything off a list. Lists change only when you edit or delete them. Each line just shows how many you still need, Done once you have enough, or In the mail for what you bought at the Auction House until you loot it. Undo is for deleting and editing a list.",
+		"|cff6e2c0aWhat's on your list keeps glowing at vendors|r once you have enough (tagged Done), and stays in the Auction House list (Done) as long as it's on the chosen list.",
+		"|cff6e2c0aNone|r: the list picker at vendors and the Auction House has None at the top: no list, no highlights, and the AH list says No list selected. None is remembered until you choose a list.",
+		"|cff6e2c0aKeep is gone|r from the builder (with nothing ever taken off a list, it had nothing left to do). A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.3.2", date = "2026-11-10", heads = { [1] = "Changed", [5] = "Note", }, items = {
 		"|cff6e2c0aShopping lists you build and name|r: the Shopping List page now has a builder at the top. Give the list a name (left empty, it's named List 1, List 2, ...), find items by typing part of a name (or shift-click or drop an item into the box: still no stack-split box), Add or Remove them, set how many (- / + or type it; 0 to start) and tick Keep to keep one stocked. Build Shopping List saves it below and clears the builder for the next one.",
 		"|cff6e2c0aYour lists below|r, each with its items and how many you still need (from your bags and bank, live), what's in the mail, Done or Stocked. Edit puts a list back in the builder (Save List keeps it in its place); Delete removes it, with Undo.",

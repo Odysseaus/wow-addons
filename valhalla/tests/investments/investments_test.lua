@@ -3,7 +3,7 @@ local here = (arg[0] or ""):match("^(.*[/\\])") or "./"
 local root = arg[1] or (here .. "../../Valhalla/")
 dofile(here .. "stubs.lua")
 
-local ns = { modules = {}, version = "v0.3.2", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
+local ns = { modules = {}, version = "v0.3.3", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
 ns.L = setmetatable({}, { __index = function(_, k) return k end })
 ns.Safe = { Value = function(v) return v end }
 ns.Look = { Font = function(_, fs, size) fs._size = size return fs end }
@@ -294,23 +294,23 @@ ok(#I.Lists() == 2 and I.ActiveList() == L1, "a second list: the active one stay
 local pk = M.Picker()
 local ppt = pk._points[1]
 ok(pk:IsShown() and pk.text._text == "List: List 1  v" and pk._parent == MerchantFrame and ppt[1] == "BOTTOMRIGHT" and ppt[3] == "TOPRIGHT", "above the merchant window's top right: which list", pk.text._text)
--- bought: the bags fill; only those lines come off the active list
+-- bought: the bags fill; the lists stay as they are (v0.3.3), the glow too, now "Done"
 W.bags[1] = { { 4470, 12 }, { 2320, 15 } }
-ns.printed = {}
+ns.printed, I.undo = {}, {}
 W.Fire("BAG_UPDATE_DELAYED")
-ok(not ov[1]:IsShown() and not ov[2]:IsShown(), "bought all it had that you need: no glow, no grey")
-ok(I.LineOf(L1, 4470) == nil and I.LineOf(L1, 2320) == nil and #L1.items == 4 and Printed("Simple Wood x12: bought, so it's off your shopping list 'List 1'"), "bought enough: only those lines off the active list, said in chat")
-ok(I.LineOf(L2, 4470) and L2.items[1].n == 3, "the other list untouched")
-ok(I.Undo() == "Simple Wood" and I.Undo() == "Coarse Thread" and L1.items[4].id == 4470 and L1.items[6].id == 2320 and L1.items[4].n == 12, "Undo: back, where they were")
+ok(#L1.items == 6 and I.LineOf(L1, 4470).n == 12 and I.LineOf(L1, 2320).n == 15 and #L2.items == 1 and L2.items[1].n == 3, "bought enough: no list changes (nothing taken off, no counts changed)")
+ok(#ns.printed == 0 and I.LastUndo() == nil, "nothing said in chat, nothing to undo")
+ok(ov[1]:IsShown() and ov[1].glow._shown and ov[1].tag._text == "Done" and ov[4].glow._shown and ov[4].tag._text == "Done" and not ov[1].wash._shown, "still glowing, tagged Done")
+ok(ov[2]:IsShown() and ov[2].wash._shown, "the rest still greyed")
 W.bags[1] = { { 4470, 2 } }
 W.Fire("BAG_UPDATE_DELAYED")
 ok(ov[1].tag._text == "need 10" and I.LineOf(L1, 2320), "need updates as you use them (and they stay listed)")
 W.Click(pk)
-ok(pk.menu:IsShown() and pk.menu.items[1].text._text == "> List 1" and pk.menu.items[2].text._text == "Other" and not pk.menu.items[3]:IsShown(), "its menu: your lists, the active one marked")
-W.Click(pk.menu.items[2])
+ok(pk.menu:IsShown() and pk.menu.items[1].text._text == "None" and pk.menu.items[2].text._text == "> List 1" and pk.menu.items[3].text._text == "Other" and not pk.menu.items[4]:IsShown(), "its menu: None, then your lists, the active one marked")
+W.Click(pk.menu.items[3])
 ok(I.ActiveList() == L2 and I.char.activeList == L2.id and not pk.menu:IsShown() and pk.text._text == "List: Other  v", "Other chosen: active (remembered)")
 ok(ov[1].tag._text == "need 1" and ov[4]:IsShown() and ov[4].wash._shown and not ov[4].glow._shown, "the highlights follow at once: Simple Wood need 1; Coarse Thread (not on Other) greyed")
-W.Click(pk) W.Click(pk.menu.items[1])
+W.Click(pk) W.Click(pk.menu.items[2])
 ok(I.ActiveList() == L1 and ov[1].tag._text == "need 10", "back to List 1")
 W.combat = true MerchantFrame_UpdateMerchantInfo() W.combat = false
 ok(W.blockedSetters == 0, "no mouse pass-through setters, ever")
@@ -328,11 +328,12 @@ local p = A.Panel()
 ok(p and p:IsShown() and p._parent == AuctionHouseFrame, "beside the AH")
 ok(p.picker and p.picker.text._text == "List: List 1  v", "under its title: which list")
 local function Shown() local t = {} for _, r in ipairs(p.rows) do if r:IsShown() then t[#t + 1] = r.name._text end end return table.concat(t, ",") end
-ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf", "the AH's items only", Shown())
+ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf,Copper Ore", "the list's AH items, Copper Ore (enough) too", Shown())
+ok(p.rows[1].need._text == "x4" and p.rows[4].need._text == "Done", "still needed, or Done")
+W.Click(p.picker) W.Click(p.picker.menu.items[3])
+ok(Shown() == "" and p.empty:IsShown() and p.empty._text == "Nothing on this list from the Auction House.", "Other chosen here: its list at once (nothing from the AH)")
 W.Click(p.picker) W.Click(p.picker.menu.items[2])
-ok(Shown() == "" and p.empty:IsShown() and p.empty._text == "Nothing needed from the Auction House on this list.", "Other chosen here: its list at once (nothing from the AH)")
-W.Click(p.picker) W.Click(p.picker.menu.items[1])
-ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf" and I.ActiveList() == L1, "List 1 again")
+ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf,Copper Ore" and I.ActiveList() == L1, "List 1 again")
 local sb = p.rows[1].search
 ok(sb._template:find("SecureActionButtonTemplate", 1, true) and sb:GetAttribute("type") == "click" and sb:GetAttribute("clickbutton") == AuctionHouseFrame.SearchBar.SearchButton,
 	"Search: a secure click whose target is the AH's own Search button")
@@ -385,7 +386,7 @@ I.bankOpen = false
 Slash("invest", "diag replicate")
 local d = ValhallaInvestDB.diag[1]
 ok(d and d.apis["C_AuctionHouse.ReplicateItems"] == true and d.apis["QueryAuctionItems"] == false, "which APIs this client has (no QueryAuctionItems)")
-ok(d.toc == 16001 and d.version == "v0.3.2", "client and version")
+ok(d.toc == 16001 and d.version == "v0.3.3", "client and version")
 ok(d.bankInfo and d.bankInfo.seen and d.bankInfo.read.tabs == 2 and d.bankInfo.events.BANKFRAME_OPENED == 1, "the bank: last read, its tabs, which event said it opened")
 ok(d.ah.search and d.ah.search.button == true and d.ah.search.blocked == false, "the AH's Search button: there, and clickable for one-click Search")
 ok(d.counts.linen.id == 2589 and d.counts.linen.bagsSeen == 28, "counts for Linen Cloth, Copper Ore, Peacebloom")
@@ -453,8 +454,7 @@ ok(I.LineOf(I.Draft(), 2589).n == 0, "never below 0")
 local q = DRow(3371).qty
 q:SetFocus() q:SetText("7") W.Run(q, "OnEnterPressed")
 ok(I.LineOf(I.Draft(), 3371).n == 7 and not q:HasFocus(), "typed: 7")
-W.Click(DRow(2604).keep)
-ok(I.LineOf(I.Draft(), 2604).keep == true and DRow(2604).keep.tick._shown, "Keep ticked")
+ok(DRow(2604).keep == nil and #Find(function(f) return f._parent == DRow(2604) and f.tick end) == 0, "no Keep tick any more")
 W.Click(DRow(2604).plus) W.Click(DRow(2604).plus) W.Click(DRow(2604).plus)
 W.Click(DRow(2321).plus) W.Click(DRow(2321).plus)
 W.Click(DRow(2678).remove)
@@ -464,7 +464,7 @@ ok(I.Draft().name == "Alchemy", "the name box")
 ns.printed = {}
 W.Click(lp.build)
 local L3 = I.Lists()[3]
-ok(L3 and L3.name == "Alchemy" and #L3.items == 3 and L3.items[2].keep and Printed("1 with 0 left out") and #I.Draft().items == 0 and lp.name._text == "", "Build Shopping List: 'Alchemy' saved below (Linen at 0 left out), the builder cleared")
+ok(L3 and L3.name == "Alchemy" and #L3.items == 3 and L3.items[2].keep == nil and Printed("1 with 0 left out") and #I.Draft().items == 0 and lp.name._text == "", "Build Shopping List: 'Alchemy' saved below (Linen at 0 left out), the builder cleared")
 ok(I.ActiveList() == L1, "the active list stays List 1")
 
 print("== 14. the saved lists below (live); Edit, Delete (Undo); AH Market, Settings")
@@ -488,7 +488,10 @@ W.Click(Lines()[8].edit)
 ok(lp.builderHead._text == "Editing 'Other'" and lp.build.text._text == "Save List" and lp.name._text == "Other" and DRow(4470) and DRow(4470).qty._text == "3", "Edit: in the builder, Save List", lp.builderHead._text)
 lp.name:SetText("Other things")
 W.Click(lp.build)
-ok(I.Lists()[2] == L2 and L2.name == "Other things" and lp.builderHead._text == "New list" and #I.Lists() == 3, "Save List: saved in its place, renamed")
+ok(I.Lists()[2] == L2 and L2.name == "Other things" and lp.builderHead._text == "New list" and #I.Lists() == 3 and Printed("Undo puts back what it was"), "Save List: saved in its place, renamed")
+ok(lp.undo:IsShown() and lp.undo.text._text == "Undo: the edit of 'Other'", "Undo for the edit", lp.undo.text._text)
+W.Click(lp.undo)
+ok(L2.name == "Other" and #L2.items == 1 and L2.items[1].n == 3 and I.Lists()[2] == L2, "Undo: the list as it was before the edit")
 root:ShowPage("market")
 ok(root.pages.market:IsShown(), "AH Market: Phase C placeholder")
 root:ShowPage("settings")
@@ -576,44 +579,38 @@ ok(every, "every Investments page: 'Bank last seen' (with the count) under the p
 I.DraftClear()
 root2:ShowPage("list")
 local ve = root2.pages.list.dempty
-ok(ve:IsShown() and ve._text:find("Bags") and ve._text:find("Bank") and ve._text:find("last visit") and ve._text:find("Keep"), "an empty builder: the page explains its columns and the bank")
+ok(ve:IsShown() and ve._text:find("Bags") and ve._text:find("Bank") and ve._text:find("last visit") and ve._text:find("never changes a list"), "an empty builder: the page explains its columns and the bank")
 I.char.bankSeen = nil
 I.Changed()
 ok(root2.bankLine._text:find("Bank not seen yet"), "never seen: says to open the bank once")
 W.Fire("BANKFRAME_OPENED") W.Fire("BANKFRAME_CLOSED") W.RunTimers()
 
-print("== 18. bought: only its line off the active list (Undo); Keep stocked: a standing line")
+print("== 18. buying never changes a list: still needed, Done, used up; Undo is for Delete and Edit only")
 W.bags[2] = {}
 W.Fire("BAG_UPDATE_DELAYED")
-local SL = MakeList("Stock", { { 3371, 5 }, { 2604, 3, true } })
+local SL = MakeList("Stock", { { 3371, 5 }, { 2604, 3 } })
 I.SetActive(SL.id)
 local function Listed(id) local l = I.ShoppingList() for _, src in ipairs({ "vendor", "ah", "mail" }) do for _, r in ipairs(l[src]) do if r.id == id then return src end end end end
-ok(SL.items[1].short and SL.items[2].short and SL.items[2].keep and Listed(3371) and Listed(2604), "both short, both to buy")
+ok(Listed(3371) and Listed(2604), "both to buy")
 local l1n = #L1.items
+I.undo = {}
 ns.printed = {}
 W.bags[2] = { { 3371, 5 }, { 2604, 3 } }
 W.Fire("BAG_UPDATE_DELAYED")
-ok(not I.LineOf(SL, 3371) and Printed("Empty Vial x5: bought, so it's off your shopping list 'Stock'%. Undo"), "Empty Vial bought: its line off, said with Undo")
-ok(I.LineOf(SL, 2604) and not Listed(2604), "Red Dye (Keep stocked): its line stays, nothing to buy while you have enough")
-ok(#L1.items == l1n and I.LineOf(L3, 3371) and I.LineOf(L3, 3371).n == 7, "the other lists untouched (Alchemy still has Empty Vial)")
+ok(#SL.items == 2 and SL.items[1].id == 3371 and SL.items[1].n == 5 and SL.items[2].n == 3 and not Listed(3371) and not Listed(2604), "bought both: both lines still there, as they were, nothing left to buy")
+ok(not Printed("bought") and I.LastUndo() == nil, "no chat line, no Undo for a purchase")
+ok(#L1.items == l1n and I.LineOf(L3, 3371).n == 7, "the other lists untouched")
 root2:ShowPage("list")
 local lp2 = root2.pages.list
 lp2.offset = 99 lp2:Refresh()
 local last = lp2.lines[12]
-ok(last.name._text == "Red Dye" and last.count._text == "Stocked", "on the page: Red Dye 'Stocked'", last.name._text .. "=" .. tostring(last.count._text))
+ok(last.name._text == "Red Dye" and last.count._text == "Done" and lp2.lines[11].count._text == "Done", "on the page: Done", last.name._text .. "=" .. tostring(last.count._text))
 W.bags[2] = { { 2604, 1 } }
 W.Fire("BAG_UPDATE_DELAYED")
-ok(I.LineOf(SL, 2604) and Listed(2604) and last.count._text == "x2", "used up: to buy again (x2)", last.count._text)
-ok(lp2.undo:IsShown() and lp2.undo.text._text == "Undo: Empty Vial", "Undo, named")
-W.Click(lp2.undo)
-ok(SL.items[1].id == 3371 and SL.items[1].n == 5 and not lp2.undo:IsShown(), "Undo: the line back, first, as it was")
-W.Fire("BAG_UPDATE_DELAYED")
-ok(I.LineOf(SL, 3371), "and not taken off again by the next bag change (nothing gained)")
+ok(Listed(2604) and last.count._text == "x2" and lp2.lines[11].count._text == "x5", "used up: still needed again (x2, x5)", last.count._text)
+ok(not lp2.undo:IsShown(), "no Undo button for purchases")
 local HL = MakeList("Have", { { 2770, 30 } })
 I.SetActive(HL.id)
-W.bags[2] = { { 2770, 1 } }
-W.Fire("BAG_UPDATE_DELAYED")
-ok(I.LineOf(HL, 2770), "had enough all along: a bag gain doesn't take it off (it was never short)")
 ns.printed = {}
 I.DeleteList(HL.id)
 ok(I.ActiveList() == nil and I.char.activeList == nil, "the active list deleted (others left): none active")
@@ -645,7 +642,9 @@ ok(I.MailOf(6256) == 0, "something not on a list: not tracked")
 ns.printed = {}
 W.bags[3] = { { 2321, 10 } }
 W.Fire("BAG_UPDATE_DELAYED")
-ok(I.MailOf(2321) == 0 and not I.LineOf(ML, 2321) and Printed("Fine Thread x10: bought"), "looted: out of the mail, its line off the list")
+ok(I.MailOf(2321) == 0 and I.LineOf(ML, 2321) and I.LineOf(ML, 2321).n == 10 and not Printed("bought") and I.LineRow(I.LineOf(ML, 2321)).need == 0, "looted: out of the mail; the line stays (Done)")
+lp2:Refresh()
+ok(lp2.lines[12].name._text == "Fine Thread" and lp2.lines[12].count._text == "Done", "on the page: Done")
 MakeList("Bleach", { { 2324, 5 } })
 W.Fire("ITEM_PURCHASED", 2324)
 ok(I.MailOf(2324) == 1, "an item auction bought (on a list): 1 in the mail")
@@ -702,7 +701,7 @@ local old = { [250342] = { want = 20, cat = "mat", short = true, added = 1794331
 local c = { want = old }
 ok(I.MigrateLists(c) and #c.lists == 1 and c.lists[1].name == "My List" and c.activeList == c.lists[1].id, "My List made, active")
 local my = c.lists[1]
-ok(#my.items == 2 and my.items[1].id == 3371 and my.items[1].n == 5 and my.items[1].keep and my.items[2].id == 250342 and my.items[2].n == 20 and my.items[2].name == "Lesser Arcane Elixir", "its items: each want and how many, Keep carried")
+ok(#my.items == 2 and my.items[1].id == 3371 and my.items[1].n == 5 and my.items[1].keep == nil and my.items[2].id == 250342 and my.items[2].n == 20 and my.items[2].name == "Lesser Arcane Elixir", "its items: each want and how many (Keep isn't carried: v0.3.3 has none)")
 ok(c.want == old and old[250342].want == 20 and old[250342].short == true and old[250342].added == 1794331383 and old[3371].keep == true and old[2589].want == 0, "the old wants untouched")
 ok(not I.MigrateLists(c) and #c.lists == 1, "only once")
 local c2 = { want = {} }
@@ -734,10 +733,46 @@ MerchantFrame:Show() W.Fire("MERCHANT_SHOW") MerchantFrame_UpdateMerchantInfo()
 ok(M.Picker():IsShown() and M.Picker().text._text == "Choose a shopping list  v", "the vendor's picker: choose one", M.Picker().text._text)
 local anyGlow = false for _, o in pairs(M.Overlays()) do if o:IsShown() and o.glow._shown then anyGlow = true end end
 ok(not anyGlow, "none chosen: nothing glows")
-W.Click(M.Picker()) W.Click(M.Picker().menu.items[1])
+W.Click(M.Picker()) W.Click(M.Picker().menu.items[2])
 ok(I.ActiveList() == only and M.Overlays()[1]:IsShown() and M.Overlays()[1].glow._shown and M.Overlays()[1].tag._text == "need 48", "Only chosen: Simple Wood glows at once (need 48)", M.Overlays()[1].tag._text)
 W.Fire("MERCHANT_CLOSED") MerchantFrame:Hide()
 ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys and Keys(MerchantFrame) == merchantKeys, "still no blocked setters, nothing written on the map or the merchant")
+
+print("== 24. None: no list chosen, remembered; not the same as having no lists")
+MerchantFrame:Show() W.Fire("MERCHANT_SHOW") MerchantFrame_UpdateMerchantInfo()
+local pk2 = M.Picker()
+W.Click(pk2)
+ok(pk2.menu.items[1].text._text == "None" and pk2.menu.items[2].text._text == "> Only", "the menu: None first")
+W.Click(pk2.menu.items[1])
+ok(I.char.activeList == "none" and I.ActiveList() == nil and I.NoneChosen() and pk2.text._text == "List: None  v", "None chosen: no active list", pk2.text._text)
+local lit = false for _, o in pairs(M.Overlays()) do if o:IsShown() then lit = true end end
+ok(not lit, "None: no highlights, no grey")
+W.Click(pk2)
+ok(pk2.menu.items[1].text._text == "> None", "None marked in the menu")
+pk2.menu:Hide()
+W.Fire("MERCHANT_CLOSED") MerchantFrame:Hide()
+table.remove(I.char.lists, 2)
+ok(#I.Lists() == 1 and I.ActiveList() == nil and I.NoneChosen(), "one list left: None still chosen (not picked for you)")
+W.Fire("AUCTION_HOUSE_SHOW")
+ok(A.Panel().picker.text._text == "List: None  v" and A.Panel().empty:IsShown() and A.Panel().empty._text == "No list selected (None). Choose one above." and #A.Rows() == 0, "the AH: None, 'No list selected'")
+W.Fire("AUCTION_HOUSE_CLOSED")
+mod:OnDisable() mod:OnEnable()
+ok(I.char.activeList == "none" and I.NoneChosen(), "remembered (saved as the choice)")
+MakeList("Later", { { 2589, 5 } })
+ok(I.NoneChosen() and I.ActiveList() == nil, "a new list built: None stays chosen")
+ns.printed = {}
+Slash("list", "")
+ok(Printed("None chosen"), "/valhalla list: says None is chosen")
+local d4 = I.Diag("")
+ok(d4.list.none == true and I.DiagSummary(d4)[3]:find("active None %(chosen%)"), "the diagnostic: None (chosen)", I.DiagSummary(d4)[3])
+I.char.lists = {}
+W.Fire("AUCTION_HOUSE_SHOW")
+ok(not I.NoneChosen() and A.Panel().picker.text._text == "No shopping list: build one" and A.Panel().empty._text:find("No shopping list yet"), "no lists at all: says build one (not None)")
+W.Fire("AUCTION_HOUSE_CLOSED")
+W.Fire("AUCTION_HOUSE_SHOW")
+W.Click(A.Panel().picker)
+W.Fire("AUCTION_HOUSE_CLOSED")
+ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "still nothing written on the map")
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end

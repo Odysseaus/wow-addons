@@ -8,6 +8,8 @@
 -- v0.3.2: Smart Vendor is under construction; the Shopping List page builds named lists (a name, items
 -- found by name, shift-click or drop, how many, Keep) and shows them below, each with what's still needed;
 -- V.Picker: the active list's chooser (at a vendor, at the AH).
+-- v0.3.3: no Keep (buying never changes a list: lines show still needed, Done, In the mail); the picker's
+-- first choice is None (no list: no highlights, nothing beside the AH), remembered.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -124,7 +126,7 @@ function V.BankLine()
 	return L["Bank last seen: %s. Open your bank to refresh it."]:format(When(seen))
 end
 
--- Undo: the last line that came off a list (bought), or the last list deleted (shown only when there is one)
+-- Undo: the last list deleted, or a list as it was before its last edit (shown only when there is one)
 function V.UndoButton(parent)
 	local b = V.Button(parent, L["Undo"], 200, 24)
 	b:SetScript("OnClick", function() I.Undo() end)
@@ -153,7 +155,7 @@ function V.Picker(parent, w)
 	T.Skin(menu, 0.98)
 	menu:EnableMouse(true)
 	menu.items = {}
-	for i = 1, V.PICK_MAX do
+	for i = 1, V.PICK_MAX + 1 do
 		local it = V.Button(menu, "", (w or 220) - 8, 20)
 		it:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 22)
 		it:Hide()
@@ -166,6 +168,8 @@ function V.Picker(parent, w)
 		local l = I.ActiveList()
 		if #lists == 0 then
 			b.text:SetText(L["No shopping list: build one"])
+		elseif I.NoneChosen() then
+			b.text:SetText(L["List: None  v"])
 		elseif l then
 			b.text:SetText(L["List: %s  v"]:format(l.name))
 		else
@@ -176,8 +180,13 @@ function V.Picker(parent, w)
 	function b.Fill()
 		local lists = I.Lists()
 		local active = I.ActiveList()
-		for i, it in ipairs(menu.items) do
-			local l = lists[i]
+		-- first: None (no list); then your lists
+		local none = menu.items[1]
+		none.text:SetText((I.NoneChosen() and "> " or "") .. L["None"])
+		none:SetScript("OnClick", function() menu:Hide() I.SetActive(I.NONE) b.Update() end)
+		none:Show()
+		for i = 2, #menu.items do
+			local it, l = menu.items[i], lists[i - 1]
 			if l then
 				it.text:SetText((active and active.id == l.id and "> " or "") .. l.name)
 				it:SetScript("OnClick", function() menu:Hide() I.SetActive(l.id) b.Update() end)
@@ -186,7 +195,7 @@ function V.Picker(parent, w)
 				it:Hide()
 			end
 		end
-		menu:SetHeight(8 + math.min(#lists, V.PICK_MAX) * 22)
+		menu:SetHeight(8 + (1 + math.min(#lists, V.PICK_MAX)) * 22)
 	end
 	b:SetScript("OnClick", function()
 		if #I.Lists() == 0 then
@@ -362,7 +371,7 @@ local function BuildList(page)
 	search:SetScript("OnMouseDown", function() if GetCursorInfo and GetCursorInfo() == "item" then Drop() end end)
 
 	-- the draft's rows
-	local cols = { { L["Item"], 30 }, { L["How many"], 262 }, { L["Bags"], 372 }, { L["Bank"], 422 }, { L["Keep"], 472 } }
+	local cols = { { L["Item"], 30 }, { L["How many"], 262 }, { L["Bags"], 372 }, { L["Bank"], 422 } }
 	for _, c in ipairs(cols) do
 		local h = Text(page, 12, GOLD)
 		h:SetPoint("TOPLEFT", c[2] - 10 + 14, -120)
@@ -374,7 +383,7 @@ local function BuildList(page)
 		local r = CreateFrame("Frame", nil, page, "BackdropTemplate")
 		r:SetHeight(V.ROW_H)
 		r:SetPoint("TOPLEFT", 14, -136 - (i - 1) * (V.ROW_H + 2))
-		r:SetWidth(540)
+		r:SetWidth(500)
 		T.Skin(r, 0.55, { 0.25, 0.2, 0.15 })
 		r.icon = Icon(r, 3)
 		r.name = Text(r, 12)
@@ -398,8 +407,6 @@ local function BuildList(page)
 		r.bags:SetPoint("LEFT", 362, 0)
 		r.bank = Text(r, 12)
 		r.bank:SetPoint("LEFT", 412, 0)
-		r.keep = V.Check(r, "", function() return r.keepOn end, function(v) if r.id then I.DraftKeep(r.id, v) end end)
-		r.keep:SetPoint("LEFT", 466, 0)
 		r.remove = V.Button(r, "x", 18, 18)
 		r.remove:SetPoint("RIGHT", -3, 0)
 		r:Hide()
@@ -409,7 +416,7 @@ local function BuildList(page)
 	page.dempty:SetPoint("TOPLEFT", 30, -142)
 	page.dempty:SetWidth(520)
 	page.dempty:SetJustifyH("LEFT")
-	page.dempty:SetText(L["Nothing in this list yet. Find an item above (type its name, or shift-click or drop it into the box) and Add it, then set how many you need. Bags and Bank show what you have (the bank as of your last visit). Tick Keep to keep an item stocked: it stays on the list once bought."])
+	page.dempty:SetText(L["Nothing in this list yet. Find an item above (type its name, or shift-click or drop it into the box) and Add it, then set how many you need. Bags and Bank show what you have (the bank as of your last visit). Buying never changes a list: it shows what's still needed, Done, or In the mail."])
 	page.dmore = Text(page, 11, GREY)
 	page.dmore:SetPoint("TOPLEFT", 16, -136 - V.DRAFT_ROWS * (V.ROW_H + 2) - 2)
 	local build = V.Button(page, L["Build Shopping List"], 170, 24, function()
@@ -492,8 +499,6 @@ local function BuildList(page)
 				r.plus:SetScript("OnClick", function() I.DraftSet(e.id, (e.n or 0) + 1) end)
 				r.bags:SetText(tostring(bags + (alts or 0)))
 				r.bank:SetText(I.S.countBank and tostring(bank) or "-")
-				r.keepOn = e.keep
-				r.keep.Update()
 				r.remove:SetScript("OnClick", function() I.DraftRemove(e.id) end)
 				r:Show()
 			else
@@ -562,7 +567,7 @@ local function BuildList(page)
 					ln.count:SetText(L["In the mail"])
 					ln.count:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
 				else
-					ln.count:SetText(r.keep and L["Stocked"] or L["Done"])
+					ln.count:SetText(L["Done"])
 					ln.count:SetTextColor(GREEN[1], GREEN[2], GREEN[3])
 				end
 				ln.where:SetText(where)
