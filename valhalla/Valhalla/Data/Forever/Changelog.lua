@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.3.4", date = "2026-11-10", heads = { [1] = "New", [3] = "Note", }, items = {
+		"|cff6e2c0aRun AH check|r (Investments > Settings, at the Auction House, or /valhalla invest diag ah): measures what the coming AH Market can use: how long the full scan takes to answer and to read, how many auctions, whether stackable goods (commodities) are in it and its cooldown, how fast quick price searches answer and how many items one can ask for, whether recipes can be read with the profession window closed or for recipes you don't know, which house this is (faction or neutral), and a deposit sample. It runs a few steps over 1-4 minutes without freezing the game and prints its results; /reload writes them to disk.",
+		"|cff6e2c0aIt only reads prices|r: it never posts, bids, buys or cancels, and nothing of the market is stored beyond its few numbers. Closing the Auction House stops it (saved as stopped); /valhalla invest diag stop stops it too. The plain diagnostic now also says which recipes can be read.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.3.3", date = "2026-11-10", heads = { [1] = "Changed", [3] = "New", [4] = "Note", }, items = {
 		"|cff6e2c0aBuying never changes your lists|r: a vendor or Auction House purchase no longer takes anything off a list. Lists change only when you edit or delete them. Each line just shows how many you still need, Done once you have enough, or In the mail for what you bought at the Auction House until you loot it. Undo is for deleting and editing a list.",
 		"|cff6e2c0aWhat's on your list keeps glowing at vendors|r once you have enough (tagged Done), and stays in the Auction House list (Done) as long as it's on the chosen list.",

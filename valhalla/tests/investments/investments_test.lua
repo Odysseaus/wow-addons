@@ -3,7 +3,7 @@ local here = (arg[0] or ""):match("^(.*[/\\])") or "./"
 local root = arg[1] or (here .. "../../Valhalla/")
 dofile(here .. "stubs.lua")
 
-local ns = { modules = {}, version = "v0.3.3", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
+local ns = { modules = {}, version = "v0.3.4", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
 ns.L = setmetatable({}, { __index = function(_, k) return k end })
 ns.Safe = { Value = function(v) return v end }
 ns.Look = { Font = function(_, fs, size) fs._size = size return fs end }
@@ -386,7 +386,7 @@ I.bankOpen = false
 Slash("invest", "diag replicate")
 local d = ValhallaInvestDB.diag[1]
 ok(d and d.apis["C_AuctionHouse.ReplicateItems"] == true and d.apis["QueryAuctionItems"] == false, "which APIs this client has (no QueryAuctionItems)")
-ok(d.toc == 16001 and d.version == "v0.3.3", "client and version")
+ok(d.toc == 16001 and d.version == "v0.3.4", "client and version")
 ok(d.bankInfo and d.bankInfo.seen and d.bankInfo.read.tabs == 2 and d.bankInfo.events.BANKFRAME_OPENED == 1, "the bank: last read, its tabs, which event said it opened")
 ok(d.ah.search and d.ah.search.button == true and d.ah.search.blocked == false, "the AH's Search button: there, and clickable for one-click Search")
 ok(d.counts.linen.id == 2589 and d.counts.linen.bagsSeen == 28, "counts for Linen Cloth, Copper Ore, Peacebloom")
@@ -687,8 +687,10 @@ ns.printed = {}
 W.Click(sp3.runAH)
 local d3 = ValhallaInvestDB.diag[2]
 ok(d3 and d3.kind == "ah" and d3.ah.search.button and Printed("ready for one%-click Search"), "Run AH check at the AH: its Search button checked")
-ok(sp3.last._text:find("%(AH check%)"), "last run: the AH check")
+ok(I.AHCheck.Running() and Printed("AH check started") and sp3.last._text:find("AH check running"), "the AH check started; Settings shows it running", sp3.last._text)
 W.Fire("AUCTION_HOUSE_CLOSED")
+I.AHCheck.Tick() I.AHCheck.Tick()
+ok(not I.AHCheck.Running() and d3.ahcheck.state:find("Auction House closed") and sp3.last._text:find("%(AH check: stopped"), "closing the AH stops it (saved as stopped)", sp3.last._text)
 local seen0 = I.char.bankSeen
 I.char.bankSeen = nil
 I.bankEvents = {}
@@ -773,6 +775,129 @@ W.Fire("AUCTION_HOUSE_SHOW")
 W.Click(A.Panel().picker)
 W.Fire("AUCTION_HOUSE_CLOSED")
 ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "still nothing written on the map")
+
+print("== 25. v0.3.4: the AH check (Phase C0)")
+local AC = I.AHCheck
+W.clock = 0
+function debugprofilestop() return W.clock end
+function GetTimePreciseSec() return W.clock / 1000 end
+W.pending = {}
+local function Later(n, event, ...) W.pending[#W.pending + 1] = { n = n, event = event, args = { ... } } end
+local function Tick(n)
+  for _ = 1, n or 1 do
+    W.clock = W.clock + 16
+    local keep = {}
+    for _, p in ipairs(W.pending) do p.n = p.n - 1 if p.n <= 0 then W.Fire(p.event, unpack(p.args)) else keep[#keep + 1] = p end end
+    W.pending = keep
+    AC.Tick()
+  end
+end
+local function TickUntil(cond, max) for _ = 1, max or 3000 do if cond() then return true end Tick() end return cond() end
+local rows = {}
+local function Rows(n)
+  rows = {}
+  for i = 1, n do rows[i] = { id = (i % 3 == 0) and 2589 or (1000 + i % 50), count = (i % 3 == 0) and 20 or 1, buyout = (i % 97 == 0) and 0 or 100 * (1 + i % 7) * ((i % 3 == 0) and 20 or 1) } end
+end
+Rows(2500)
+local CA = C_AuctionHouse
+W.throttleReady = true
+CA.IsThrottledMessageSystemReady = function() return W.throttleReady end
+CA.MakeItemKey = function(id) return { itemID = id, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 } end
+CA.SearchForItemKeys = function(keys) W.Count("SearchForItemKeys") W.lastKeys = #keys Later(3, "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED") end
+CA.GetBrowseResults = function() local t = {} for i = 1, math.min(W.lastKeys, 40) do t[i] = { itemKey = { itemID = i }, totalQuantity = 5, minPrice = i <= 30 and 100 or 0 } end return t end
+CA.HasFullBrowseResults = function() return true end
+CA.SendSearchQuery = function(key) W.Count("SendSearchQuery") W.searched = key.itemID Later(2, "COMMODITY_SEARCH_RESULTS_UPDATED", key.itemID) end
+CA.GetNumCommoditySearchResults = function() return 12 end
+CA.HasFullCommoditySearchResults = function() return true end
+CA.GetCommoditySearchResultsQuantity = function() return 16660 end
+CA.GetCommoditySearchResultInfo = function(_, i) return i == 1 and { unitPrice = 21, quantity = 200 } or nil end
+W.replicateThrottled = false
+CA.ReplicateItems = function() W.Count("ReplicateItems") if not W.replicateThrottled then W.replicateThrottled = true Later(5, "REPLICATE_ITEM_LIST_UPDATE") end end
+CA.GetNumReplicateItems = function() return #rows end
+CA.GetReplicateItemInfo = function(i)
+  local r = rows[i + 1]
+  W.clock = W.clock + 0.01   -- (a row costs 10 us)
+  return nil, nil, r.count, 1, true, 1, nil, 0, 0, r.buyout, 0, nil, nil, nil, nil, 0, r.id, false
+end
+CA.CalculateCommodityDeposit = function(id, dur, q) return 100 * dur end
+CA.CalculateItemDeposit = function(loc, dur, q) return 50 * dur end
+CA.GetItemCommodityStatus = function(loc) return (loc.bag == 0 and loc.slot == 1) and 2 or 1 end
+ItemLocation = { CreateFromBagAndSlot = function(_, bag, slot) return { bag = bag, slot = slot } end }
+C_TradeSkillUI = {
+  GetRecipeSchematic = function(id) if id == 2963 then return { recipeID = 2963, name = "Bolt of Linen Cloth", outputItemID = 2996, quantityMin = 1, quantityMax = 1,
+    reagentSlotSchematics = { { quantityRequired = 2, reagents = { { itemID = 2589 } } } } } end end,
+  GetRecipeInfo = function(id) if id == 2963 then return { recipeID = 2963, learned = true } end end,
+  IsTradeSkillReady = function() return false end,
+}
+function GetSubZoneText() return "Booty Bay" end
+function GetRealZoneText() return "Stranglethorn Vale" end
+function UnitFactionGroup() return "Horde" end
+W.calls.PostItem, W.calls.PlaceBid, W.calls.StartCommoditiesPurchase, W.calls.ConfirmCommoditiesPurchase = nil, nil, nil, nil
+I.db.account.replicateAt = nil
+ValhallaInvestDB.diag = {}
+W.Fire("AUCTION_HOUSE_SHOW")
+ns.printed = {}
+W.Click(sp3.runAH)
+local e = ValhallaInvestDB.diag[1]
+ok(AC.Running() and e and e.ahcheck and e.ahcheck.state == "running" and Printed("AH check started") and Printed("nothing is posted, bid or bought"), "Run AH check at the AH: started, saved as running")
+ok(e.recipeProbe and e.recipeProbe.window == false, "the plain diagnostic's part: recipes probed too (window closed)")
+ns.printed = {}
+I.RunDiag("ah")
+ok(#ValhallaInvestDB.diag == 1 and Printed("already running"), "a second click while it runs: says so, starts nothing")
+ok(TickUntil(function() return not AC.Running() end, 3000), "it ends by itself")
+local o = e.ahcheck
+ok(o.state == "done" and o.step == "7/7 done", "done, all 7 steps", tostring(o.state))
+ok(o.house.neutral == true and o.house.house == "Neutral" and o.house.faction == "Horde" and o.house.sub == "Booty Bay", "the house: neutral (Booty Bay), faction saved")
+ok(o.deposit.commodity and o.deposit.commodity[1] == 100 and o.deposit.commodity[3] == 300 and o.deposit.item and o.deposit.item[1] == 50 and o.deposit.item[3] == 150, "deposits: a commodity and an item, calculated only (12/24/48 h)")
+ok(o.recipes.read == 1 and o.recipes.learned == 1 and o.recipes.tried == #I.PROBE_RECIPES and o.recipes.samples[1].r1 == 2589 and o.recipes.samples[1].r1n == 2, "recipes: what reads (Bolt of Linen Cloth: Linen x2), learned or not")
+ok(#o.quick == 3 and o.quick[1].keys == 10 and o.quick[2].keys == 50 and o.quick[3].keys == 100 and o.quick[1].results == 10 and o.quick[3].results == 40 and o.quick[3].priced == 30 and o.quick[1].answer == "results" and o.quick[1].secs > 0, "quick scan: 10 / 50 / 100 keys, results, time")
+ok(o.commodity.kind == "commodity" and o.commodity.min == 21 and o.commodity.units == 16660 and o.commodity.results == 12 and W.searched == 2589, "Linen Cloth: a commodity, its lowest and units")
+local rp = o.replicate
+local bid = 0 for i = 1, 2500 do if i % 97 == 0 then bid = bid + 1 end end
+ok(rp.called and rp.answered and rp.readySecs > 0 and rp.count == 2500 and rp.items == 51 and rp.bidOnly == bid, "full scan: answered, 2,500 auctions of 51 items, bid-only counted", ("%s %s %s"):format(tostring(rp.count), tostring(rp.items), tostring(rp.bidOnly)))
+ok(rp.watch[2589].units == 833 * 20 and rp.watch[2589].auctions == 833 and rp.watch[2589].min and rp.linenVsSearch == 1, "commodities in the full scan: Linen's units match its search")
+ok(rp.frames >= 3 and o.maxFrameMs <= AC.BUDGET_MS + 1.5 and rp.cpuMs >= 25, "read over several frames, no frame past the budget", ("frames %s max %s cpu %s"):format(rp.frames, o.maxFrameMs, rp.cpuMs))
+ok(rp.secondCalled and rp.secondEvents == 0 and rp.quietEvents == 0, "second call within the cooldown: no answer")
+ok(I.db.account.replicateAt == W.now and #rp.top == 5 and rp.top[1].id == 2589, "the last full scan's time kept (account-wide); top items")
+ok(Printed("AH check done") and Printed("Full scan: ready in") and Printed("2500 auctions of 51 items") and Printed("Linen Cloth search: commodity") and Printed("Quick scan: 10 keys") and Printed("Recipes %(profession window closed%): 1 of") and Printed("writes it to disk"), "its results in chat", table.concat(ns.printed, " || "))
+ok(not W.calls.PostItem and not W.calls.PlaceBid and not W.calls.StartCommoditiesPurchase and not W.calls.ConfirmCommoditiesPurchase, "never posts, bids or buys")
+sp3:Refresh()
+ok(sp3.last._text:find("%(AH check: done%)"), "Settings: last run, the AH check done", sp3.last._text)
+-- cooldown: a new check at once: no answer (saved as such, with the minutes since the last one)
+W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW")
+local saveTimeout = AC.TIMEOUT.replicate
+AC.TIMEOUT.replicate = 2
+ns.printed = {}
+I.RunDiag("ah")
+TickUntil(function() return not AC.Running() end, 3000)
+local o2 = ValhallaInvestDB.diag[#ValhallaInvestDB.diag].ahcheck
+ok(o2.state == "done" and o2.replicate.called and o2.replicate.answered == false and o2.replicate.minutesSince == 0 and Printed("Full scan: no answer in"), "within the cooldown: no answer, said and saved")
+AC.TIMEOUT.replicate = saveTimeout
+-- the AH closed in the middle of the read
+W.replicateThrottled = false
+Rows(20000)
+ns.printed = {}
+I.RunDiag("ah")
+TickUntil(function() return o and (ValhallaInvestDB.diag[#ValhallaInvestDB.diag].ahcheck.step or ""):find("^5/7") and ValhallaInvestDB.diag[#ValhallaInvestDB.diag].ahcheck.replicate.readAt end, 3000)
+W.Fire("AUCTION_HOUSE_CLOSED")
+Tick(2)
+local o3 = ValhallaInvestDB.diag[#ValhallaInvestDB.diag].ahcheck
+ok(not AC.Running() and o3.state:find("Auction House closed") and o3.replicate.aborted and o3.replicate.aborted > 0 and o3.replicate.aborted < 20000, "AH closed mid-read: stopped, where saved", tostring(o3.replicate.aborted))
+ok(Printed("AH check stopped"), "said in chat")
+-- /valhalla invest diag ah | stop
+W.Fire("AUCTION_HOUSE_SHOW")
+W.replicateThrottled = false
+Rows(100)
+ns.printed = {}
+Slash("invest", "diag ah")
+ok(AC.Running() and Printed("AH check started"), "/valhalla invest diag ah starts it")
+Slash("invest", "diag stop")
+ok(not AC.Running() and ValhallaInvestDB.diag[#ValhallaInvestDB.diag].ahcheck.state == "stopped", "/valhalla invest diag stop stops it")
+ns.printed = {}
+Slash("invest", "diag stop")
+ok(Printed("isn't running"), "stop when not running: says so")
+W.Fire("AUCTION_HOUSE_CLOSED")
+ok(#ValhallaInvestDB.diag <= I.DIAG_KEEP and W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "the log stays capped; still nothing written on the map")
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end

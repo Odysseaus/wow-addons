@@ -16,7 +16,7 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: v0.3.3
+## Version: v0.3.4
 ## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
@@ -105,7 +105,7 @@ Objectives\Objectives.lua
 Objectives\QuestLogPins.lua
 
 # The window's tabs (Map & Quest Log, Investments, Talents, Professions) and Investments: Smart Vendor,
-# Shopping List, the merchant's highlights, the Auction House's list (v0.3.0-v0.3.3; ValhallaInvestDB)
+# Shopping List, the merchant's highlights, the Auction House's list (v0.3.0-v0.3.4; ValhallaInvestDB)
 Investments\Invest.lua
 Investments\Tabs.lua
 Investments\Views.lua

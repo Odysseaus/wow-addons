@@ -8,6 +8,7 @@
 -- vendor's highlights and the AH's list. v0.3.3: buying never changes a list (only shown: still needed, Done,
 -- In the mail); "None" can be chosen. The old want
 -- list (Smart Vendor, now under construction) is kept in the save untouched; it became "My List" once.
+-- v0.3.4: the AH check (Run AH check; below the diagnostic): what the coming AH Market can use, measured.
 --
 -- Saved: ValhallaInvestDB (its own file: a reset of the map's settings doesn't touch it; a new saved
 -- variable needs a full restart of the game, not /reload). On/off: ValhallaDB.invest.enabled
@@ -718,9 +719,14 @@ I.EVENTS = { "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "PLAY
 	"MERCHANT_SHOW", "MERCHANT_UPDATE", "MERCHANT_CLOSED", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
 	"ITEM_PURCHASED", "COMMODITY_PURCHASED", "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_FAILURE",
 	"MAIL_SHOW", "MAIL_INBOX_UPDATE", "MAIL_CLOSED", "PLAYER_REGEN_ENABLED",
-	"GET_ITEM_INFO_RECEIVED", "REPLICATE_ITEM_LIST_UPDATE" }
+	"GET_ITEM_INFO_RECEIVED", "REPLICATE_ITEM_LIST_UPDATE",
+	-- (v0.3.4: the AH check's: searches and the AH's throttle)
+	"COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED", "AUCTION_HOUSE_THROTTLED_MESSAGE_SENT",
+	"AUCTION_HOUSE_THROTTLED_MESSAGE_QUEUED", "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED",
+	"AUCTION_HOUSE_THROTTLED_MESSAGE_RESPONSE_RECEIVED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" }
 
 function I.OnEvent(event, a1, a2)
+	if I.AHCheck and I.AHCheck.run then I.AHCheck.OnEvent(event, a1) end
 	if event == "BAG_UPDATE_DELAYED" then
 		local old = I.char.bags
 		I.CountBags()
@@ -747,9 +753,11 @@ function I.OnEvent(event, a1, a2)
 	elseif event == "AUCTION_HOUSE_SHOW" then
 		I.ahOpen = true
 		if I.AH then I.AH.Show() end
+		I.Changed()
 	elseif event == "AUCTION_HOUSE_CLOSED" then
 		I.ahOpen = false
 		if I.AH then I.AH.Hide() end
+		I.Changed()
 	elseif event == "ITEM_PURCHASED" then
 		if I.AddMail(a1, 1) then I.Changed() end
 	elseif event == "COMMODITY_PURCHASED" then
@@ -793,6 +801,7 @@ function mod:OnEnable()
 end
 
 function mod:OnDisable()
+	if I.AHCheck then I.AHCheck.Stop("stopped: Investments turned off") end
 	if events then events:UnregisterAllEvents() end
 	if I.Tabs then I.Tabs.Disable() end
 	if I.Merchant then I.Merchant.Disable() end
@@ -835,6 +844,11 @@ I.DIAG_APIS = {
 	"C_TradeSkillUI.GetAllRecipeIDs", "C_TradeSkillUI.GetFilteredRecipeIDs", "C_TradeSkillUI.GetRecipeSchematic",
 	"GetInboxInvoiceInfo", "GetInboxHeaderInfo", "GetMoney", "ChatFrameUtil.InsertLink", "ChatEdit_InsertLink",
 	"C_Bank.ShouldUsePlayerBagsInBank", "GetInboxNumItems", "GetInboxItem", "ToggleQuestLog", "ToggleWorldMap", "HideUIPanel",
+	-- (v0.3.4: what the market scanner and the craft profit would use)
+	"C_AuctionHouse.SendSearchQuery", "C_AuctionHouse.GetBrowseResults", "C_AuctionHouse.HasFullBrowseResults",
+	"C_AuctionHouse.GetCommoditySearchResultInfo", "C_AuctionHouse.GetNumCommoditySearchResults", "C_AuctionHouse.MakeItemKey",
+	"C_AuctionHouse.CalculateCommodityDeposit", "C_AuctionHouse.CalculateItemDeposit", "C_TradeSkillUI.GetRecipeInfo",
+	"C_TradeSkillUI.GetRecipeOutputItemData", "C_TradeSkillUI.GetBaseProfessionInfo", "GetTimePreciseSec", "debugprofilestop",
 }
 
 local function Copy(t)
@@ -905,6 +919,7 @@ function I.Diag(arg)
 		local filtered = C_TradeSkillUI.GetFilteredRecipeIDs and Call(C_TradeSkillUI.GetFilteredRecipeIDs)
 		d.recipes = { all = type(all) == "table" and #all or nil, filtered = type(filtered) == "table" and #filtered or nil }
 	end
+	d.recipeProbe = I.RecipeProbe()
 	local log = I.db.diag
 	table.insert(log, d)
 	while #log > I.DIAG_KEEP do table.remove(log, 1) end
@@ -944,8 +959,16 @@ function I.RunDiag(kind)
 		ns:Print("%s", L["Run AH check: open the Auction House first."])
 		return nil
 	end
+	if kind == "ah" and I.AHCheck.Running() then
+		ns:Print("%s", L["The AH check is already running: keep the Auction House open (step %s)."]:format(tostring(I.AHCheck.run.out.step)))
+		return nil
+	end
 	local d = I.Diag(kind or "")
 	for _, line in ipairs(I.DiagSummary(d)) do ns:Print("%s", line) end
+	if kind == "ah" then
+		I.AHCheck.Start(d)
+		ns:Print("%s", L["AH check started: keep the Auction House open, about 1-4 minutes (it asks for a full scan, which may wait on the game's 15-minute cooldown). It only reads prices: nothing is posted, bid or bought. Its results print here when it ends."])
+	end
 	I.Changed()
 	return d
 end
@@ -1001,10 +1024,436 @@ function I.DiagLines(d)
 end
 
 --------------------------------------------------------------------------------
+-- The AH check (v0.3.4, Phase C0): Investments > Settings > Run AH check (at the Auction House), or
+-- /valhalla invest diag ah. Measures what the coming market scanner can use, step by step, a few ms per
+-- frame (never a freeze), and saves it in the diagnostic's entry (ValhallaInvestDB.diag[n].ahcheck):
+--   house (faction or neutral), deposit samples (calculated only: nothing is posted), recipes readable
+--   (with the profession window open or closed, learned or not), quick-scan batches (SearchForItemKeys with
+--   10 / 50 / 100 items) and the throttle's timing, one commodity search (Linen Cloth), the full scan
+--   (ReplicateItems: time to answer, auctions, read time, commodities in it) and a second call (cooldown).
+-- It only asks the Auction House for prices: it never posts, bids, buys or cancels, and calls nothing
+-- protected. Nothing of the market is stored beyond these few numbers. Closing the AH stops it (saved as such).
+--------------------------------------------------------------------------------
+
+local AC = { BUDGET_MS = 8, CHUNK = 100 }
+I.AHCheck = AC
+AC.TIMEOUT = { throttle = 10, browse = 15, commodity = 15, replicate = 180, quiet = 5, second = 15 }
+AC.BATCHES = { 10, 50, 100 }
+AC.LINEN = 2589
+-- Classic trade goods (cloth, ore, bars, stone, herbs, leather, enchanting, parts, cooking, gems): the
+-- quick scan's sample keys
+AC.SAMPLE = { 2589, 2592, 4306, 4338, 14047, 2770, 2771, 2772, 3858, 10620, 2775, 2776, 7911, 2840, 3576, 2841, 3575,
+	3860, 12359, 3859, 2842, 3577, 6037, 2835, 2836, 2838, 7912, 12365, 2447, 765, 2449, 785, 2450, 2452, 3820, 2453, 3355,
+	3369, 3356, 3357, 3818, 3821, 3358, 3819, 4625, 8831, 8836, 8838, 8839, 8845, 8846, 13464, 13463, 13465, 13466, 13467,
+	13468, 2318, 2319, 4234, 4304, 8170, 783, 4232, 4235, 8169, 8171, 2934, 10940, 11083, 11137, 11176, 16204, 10938, 10939,
+	11082, 2996, 2997, 4305, 4339, 14048, 2321, 2320, 4291, 8343, 14341, 2324, 2604, 6260, 2605, 3371, 3372, 8925, 2678,
+	2692, 159, 4470, 2880, 3466, 4357, 4364, 4377, 10505, 4359, 4361, 2672, 2673, 769, 3173, 1468, 5503, 5504, 6303, 6291,
+	6308, 6289, 12808, 7076, 7078, 7080, 7082, 12803, 7067, 7068, 7069, 7070, 7972, 818, 1210, 1705, 1206, 1529, 3864, 7909,
+	7910, 12361, 12799, 12800, 774 }
+-- the replicate's totals kept for these (cloth, ore, herbs): compared with the commodity search
+AC.WATCH = { 2589, 2592, 2770, 2447, 765, 2318 }
+-- recipes to try (Bolt of Linen Cloth, Linen Bandage, Smelt Copper, Rough Sharpening Stone, Minor Healing
+-- Potion, Charred Wolf Meat, Handstitched Leather Boots): readable when not learned, or the window closed?
+I.PROBE_RECIPES = { 2963, 3275, 2657, 2660, 2330, 2538, 2149 }
+-- neutral (Blackwater) houses: Booty Bay, Gadgetzan, Everlook (English names; zones Stranglethorn Vale,
+-- Tanaris, Winterspring by name and Classic map ID): a guess, saved with what it's based on
+AC.NEUTRAL_SUB = { ["Booty Bay"] = true, ["Gadgetzan"] = true, ["Everlook"] = true }
+AC.NEUTRAL_ZONE = { ["Tanaris"] = true, ["Stranglethorn Vale"] = true, ["Cape of Stranglethorn"] = true, ["Winterspring"] = true }
+AC.NEUTRAL_MAP = { [1446] = true, [1434] = true, [1452] = true }
+
+local ABORT = {}
+local function T() return (GetTimePreciseSec and GetTimePreciseSec()) or (debugprofilestop and debugprofilestop() / 1000) or Now() end
+local function MS() return (debugprofilestop and debugprofilestop()) or T() * 1000 end
+local function R2(x) return x and math.floor(x * 100 + 0.5) / 100 end
+local SORTS = { { sortOrder = 0, reverseSort = false } }   -- (Enum.AuctionHouseSortOrder.Price)
+
+local function Key(id)
+	local k = C_AuctionHouse and C_AuctionHouse.MakeItemKey and Call(C_AuctionHouse.MakeItemKey, id)
+	return type(k) == "table" and k or { itemID = id, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 }
+end
+
+local function ProfessionOpen()
+	local f = _G.ProfessionsFrame
+	return (f and f.IsShown and Call(f.IsShown, f)) and true or false
+end
+
+-- recipes: what the client tells with the profession window open or closed, learned or not (also in the
+-- plain diagnostic)
+function I.RecipeProbe()
+	local T2 = C_TradeSkillUI
+	local p = { window = ProfessionOpen(), samples = {} }
+	if not T2 then p.api = false return p end
+	p.ready = Call(T2.IsTradeSkillReady)
+	local base = Call(T2.GetBaseProfessionInfo)
+	if type(base) == "table" then p.profession = base.professionName or base.parentProfessionName end
+	local all = T2.GetAllRecipeIDs and Call(T2.GetAllRecipeIDs)
+	local filtered = T2.GetFilteredRecipeIDs and Call(T2.GetFilteredRecipeIDs)
+	p.all = type(all) == "table" and #all or nil
+	p.filtered = type(filtered) == "table" and #filtered or nil
+	local ids = {}
+	for _, id in ipairs(I.PROBE_RECIPES) do ids[#ids + 1] = id end
+	if type(filtered) == "table" and filtered[1] then ids[#ids + 1] = filtered[1] p.fromWindow = filtered[1] end
+	local read, learned = 0, 0
+	for _, id in ipairs(ids) do
+		local s = Call(T2.GetRecipeSchematic, id, false)
+		local info = Call(T2.GetRecipeInfo, id)
+		local out = Call(T2.GetRecipeOutputItemData, id)
+		local e = { id = id, schematic = type(s) == "table", learned = type(info) == "table" and info.learned or nil, info = type(info) == "table" }
+		if type(s) == "table" then
+			read = read + 1
+			e.name, e.out, e.qmin, e.qmax = s.name, s.outputItemID, s.quantityMin, s.quantityMax
+			e.reagents = type(s.reagentSlotSchematics) == "table" and #s.reagentSlotSchematics or nil
+			local first = type(s.reagentSlotSchematics) == "table" and s.reagentSlotSchematics[1]
+			if type(first) == "table" then
+				e.r1n = first.quantityRequired
+				local r = type(first.reagents) == "table" and first.reagents[1]
+				e.r1 = type(r) == "table" and r.itemID or nil
+			end
+		end
+		if type(out) == "table" then e.outData = out.itemID or out.hyperlink and true end
+		if e.learned then learned = learned + 1 end
+		p.samples[#p.samples + 1] = e
+	end
+	p.read, p.learned, p.tried = read, learned, #ids
+	return p
+end
+
+-- where this Auction House is (faction or neutral), and what the guess is based on
+function AC.House()
+	local h = { faction = Call(UnitFactionGroup, "player"), zone = Call(GetRealZoneText) or Call(GetZoneText), sub = Call(GetSubZoneText),
+		map = C_Map and Call(C_Map.GetBestMapForUnit, "player"), npc = Call(UnitName, "npc") }
+	h.neutral = (AC.NEUTRAL_SUB[h.sub or ""] or AC.NEUTRAL_ZONE[h.zone or ""] or AC.NEUTRAL_MAP[h.map or 0]) and true or false
+	h.house = h.neutral and "Neutral" or (h.faction or "?")
+	return h
+end
+
+-- deposits, calculated by the client for an item and a commodity in your bags (12 / 24 / 48 h): nothing posted
+function AC.Deposits()
+	local out = { item = nil, commodity = nil }
+	local A = C_AuctionHouse
+	if not (A and ItemLocation and ItemLocation.CreateFromBagAndSlot) then out.note = "no ItemLocation" return out end
+	for bag = 0, 4 do
+		for slot = 1, (Call(C_Container.GetContainerNumSlots, bag) or 0) do
+			local info = Call(C_Container.GetContainerItemInfo, bag, slot)
+			if type(info) == "table" and info.itemID and not info.isBound then
+				local loc = ItemLocation:CreateFromBagAndSlot(bag, slot)
+				local status = Call(A.GetItemCommodityStatus, loc)
+				local kind = status == 2 and "commodity" or status == 1 and "item" or nil
+				if kind and not out[kind] then
+					local e = { id = info.itemID, stack = info.stackCount }
+					local got = { pcall(GetItemInfo, info.itemID) }   -- (sellPrice: the 11th value)
+					e.vendor = got[1] and Value(got[12]) or nil
+					for dur = 1, 3 do
+						if kind == "commodity" then e[dur] = Call(A.CalculateCommodityDeposit, info.itemID, dur, 1)
+						else e[dur] = Call(A.CalculateItemDeposit, loc, dur, 1) end
+					end
+					out[kind] = e
+				end
+			end
+			if out.item and out.commodity then return out end
+		end
+	end
+	return out
+end
+
+-- the coroutine's helpers: wait (a frame at a time) for something, or until the time's up
+local function Yield() coroutine.yield() end
+local function Wait(cond, timeout)
+	local t = T()
+	while true do
+		if not I.ahOpen then error(ABORT) end
+		if cond() then return true, R2(T() - t) end
+		if T() - t > timeout then return false, R2(T() - t) end
+		Yield()
+	end
+end
+local function Step(o, n, label)
+	o.step = ("%d/7 %s"):format(n, label)
+	I.Changed()
+end
+local function ThrottleReady(r)
+	return Wait(function() return Call(C_AuctionHouse.IsThrottledMessageSystemReady) ~= false end, AC.TIMEOUT.throttle)
+end
+
+-- the full scan's read: only count, buyout and itemID per auction (the fields there at once), a few ms per frame
+function AC.Read(r, rp)
+	local A = C_AuctionHouse
+	local n = Call(A.GetNumReplicateItems) or 0
+	rp.count = n
+	local Get = A.GetReplicateItemInfo
+	local per, items, bidOnly, units = {}, 0, 0, 0
+	local cpu, frames, t0 = 0, 1, T()
+	local mem0 = collectgarbage and collectgarbage("count") or 0
+	local i = 0
+	while i < n do
+		local s = MS()
+		local last = math.min(n - 1, i + AC.CHUNK - 1)
+		for k = i, last do
+			local ok, _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = pcall(Get, k)
+			if ok then
+				itemID, count, buyout = Value(itemID), Value(count) or 0, Value(buyout) or 0
+				if itemID then
+					local e = per[itemID]
+					if not e then e = { a = 0, q = 0 } per[itemID] = e items = items + 1 end
+					e.a, e.q = e.a + 1, e.q + count
+					units = units + count
+					if buyout > 0 and count > 0 then
+						local unit = math.floor(buyout / count)
+						if not e.min or unit < e.min then e.min = unit end
+					else
+						bidOnly = bidOnly + 1
+					end
+				end
+			end
+		end
+		i = last + 1
+		cpu = cpu + (MS() - s)
+		if i < n and MS() - r.frameStart > AC.BUDGET_MS then
+			rp.readAt = i
+			Yield()
+			frames = frames + 1
+			if not I.ahOpen then rp.aborted = i error(ABORT) end
+		end
+	end
+	rp.readAt = nil
+	rp.items, rp.bidOnly, rp.units = items, bidOnly, units
+	rp.readSecs, rp.cpuMs, rp.frames = R2(T() - t0), R2(cpu), frames
+	rp.memKB = collectgarbage and math.floor(collectgarbage("count") - mem0) or nil
+	rp.watch = {}
+	for _, id in ipairs(AC.WATCH) do
+		local e = per[id]
+		rp.watch[id] = e and { auctions = e.a, units = e.q, min = e.min } or false
+	end
+	-- the 5 items with the most auctions
+	local top = {}
+	for id, e in pairs(per) do top[#top + 1] = { id = id, auctions = e.a, units = e.q, min = e.min } end
+	table.sort(top, function(a, b) if a.auctions ~= b.auctions then return a.auctions > b.auctions end return a.id < b.id end)
+	rp.top = {}
+	for k = 1, math.min(5, #top) do rp.top[k] = top[k] end
+end
+
+local function Run(r)
+	local A, o = C_AuctionHouse, r.out
+	Step(o, 1, "house, deposits, recipes")
+	o.house = AC.House()
+	o.deposit = AC.Deposits()
+	o.recipes = I.RecipeProbe()
+	Yield()
+	-- quick scan batches, each when the throttle says ready
+	Step(o, 2, "quick scan batches")
+	o.quick = {}
+	for _, size in ipairs(AC.BATCHES) do
+		local b = {}
+		b.ready, b.readyWait = ThrottleReady(r)
+		local keys = {}
+		for k = 1, math.min(size, #AC.SAMPLE) do keys[k] = Key(AC.SAMPLE[k]) end
+		b.keys = #keys
+		r.browse = nil
+		local ok, err = pcall(A.SearchForItemKeys, keys, SORTS)
+		if not ok then
+			b.error = tostring(err)
+		else
+			local got, secs = Wait(function() return r.browse ~= nil end, AC.TIMEOUT.browse)
+			b.secs, b.answer = secs, got and r.browse or "timeout"
+			if got then
+				local res = Call(A.GetBrowseResults)
+				b.results = type(res) == "table" and #res or nil
+				b.full = Call(A.HasFullBrowseResults)
+				if type(res) == "table" then
+					local priced = 0
+					for _, x in ipairs(res) do if type(x) == "table" and (Value(x.minPrice) or 0) > 0 then priced = priced + 1 end end
+					b.priced = priced
+				end
+			end
+		end
+		o.quick[#o.quick + 1] = b
+		Yield()
+	end
+	-- one commodity search (Linen Cloth): commodity or item, and what it says
+	Step(o, 3, "commodity search")
+	local c = { itemID = AC.LINEN }
+	c.ready, c.readyWait = ThrottleReady(r)
+	r.commodity, r.itemSearch = nil, nil
+	local ok, err = pcall(A.SendSearchQuery, Key(AC.LINEN), SORTS, false)
+	if not ok then
+		c.error = tostring(err)
+	else
+		local got, secs = Wait(function() return r.commodity or r.itemSearch end, AC.TIMEOUT.commodity)
+		c.secs = secs
+		c.kind = r.commodity and "commodity" or r.itemSearch and "item" or "timeout"
+		if r.commodity then
+			c.results = Call(A.GetNumCommoditySearchResults, AC.LINEN)
+			c.full = Call(A.HasFullCommoditySearchResults, AC.LINEN)
+			c.units = Call(A.GetCommoditySearchResultsQuantity, AC.LINEN)
+			local first = Call(A.GetCommoditySearchResultInfo, AC.LINEN, 1)
+			c.min = type(first) == "table" and Value(first.unitPrice) or nil
+		elseif r.itemSearch then
+			c.results = Call(A.GetNumItemSearchResults, Key(AC.LINEN))
+		end
+	end
+	o.commodity = c
+	Yield()
+	-- the full scan
+	Step(o, 4, "full scan: waiting for the Auction House")
+	local acct = I.db.account
+	local rp = { lastOkAt = acct.replicateAt, minutesSince = acct.replicateAt and R2((Now() - acct.replicateAt) / 60) or nil }
+	r.replicated = nil
+	r.repEvents = 0
+	ok, err = pcall(A.ReplicateItems)
+	rp.called = ok
+	o.replicate = rp
+	if not ok then
+		rp.error = tostring(err)
+	else
+		local got, secs = Wait(function() return r.replicated ~= nil end, AC.TIMEOUT.replicate)
+		rp.answered, rp.readySecs = got, secs
+		if not got then
+			rp.countNoAnswer = Call(A.GetNumReplicateItems)
+		else
+			acct.replicateAt = Now()
+			Step(o, 5, "full scan: reading")
+			AC.Read(r, rp)
+			if c.units and rp.watch and rp.watch[AC.LINEN] then
+				rp.linenVsSearch = R2(rp.watch[AC.LINEN].units / math.max(1, c.units))
+			end
+			-- the item data the read asked for also fires REPLICATE_ITEM_LIST_UPDATE: count them while quiet,
+			-- then ask again (on Retail the second call within 15 min gets no answer)
+			Step(o, 6, "full scan: second call (cooldown)")
+			r.repEvents = 0
+			Wait(function() return false end, AC.TIMEOUT.quiet)
+			rp.quietEvents = r.repEvents
+			r.repEvents, r.replicated = 0, nil
+			local asked = T()
+			rp.secondCalled = pcall(A.ReplicateItems)
+			Wait(function() return false end, AC.TIMEOUT.second)
+			rp.secondEvents = r.repEvents
+			rp.secondFirst = r.replicated and R2(r.replicated - asked) or nil
+			rp.secondCount = Call(A.GetNumReplicateItems)
+		end
+	end
+	Step(o, 7, "done")
+end
+
+local driver
+local function OnUpdate()
+	local r = AC.run
+	if not r then if driver then driver:SetScript("OnUpdate", nil) end return end
+	r.frameStart = MS()
+	local ok, err = coroutine.resume(r.co, r)
+	local spent = MS() - r.frameStart
+	if spent > (r.out.maxFrameMs or 0) then r.out.maxFrameMs = R2(spent) end
+	if not ok then
+		AC.Finish(err == ABORT and "stopped: the Auction House closed" or ("error: " .. tostring(err)))
+	elseif coroutine.status(r.co) == "dead" then
+		AC.Finish("done")
+	end
+end
+
+AC.Tick = OnUpdate   -- (the tests drive it)
+function AC.Running() return AC.run ~= nil end
+
+-- start (the diagnostic's entry d gets d.ahcheck, filled as it goes: a /reload mid-way keeps what's done)
+function AC.Start(d)
+	if AC.run then return false end
+	local o = { state = "running", started = d.when, budgetMs = AC.BUDGET_MS, maxFrameMs = 0, throttle = {} }
+	d.ahcheck = o
+	local r = { out = o, t0 = T(), co = coroutine.create(Run) }
+	AC.run = r
+	if not driver then driver = CreateFrame("Frame") end
+	driver:SetScript("OnUpdate", OnUpdate)
+	return true
+end
+
+function AC.Stop(why)
+	if AC.run then AC.Finish(why or "stopped") end
+end
+
+function AC.Finish(state)
+	local r = AC.run
+	if not r then return end
+	AC.run = nil
+	if driver then driver:SetScript("OnUpdate", nil) end
+	r.out.state, r.out.secs = state, R2(T() - r.t0)
+	for _, line in ipairs(AC.Summary(r.out)) do ns:Print("%s", line) end
+	I.Changed()
+end
+
+-- events (from I.OnEvent): only while it runs
+local THROTTLE = { AUCTION_HOUSE_THROTTLED_MESSAGE_SENT = "sent", AUCTION_HOUSE_THROTTLED_MESSAGE_QUEUED = "queued",
+	AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED = "dropped", AUCTION_HOUSE_THROTTLED_MESSAGE_RESPONSE_RECEIVED = "response",
+	AUCTION_HOUSE_THROTTLED_SYSTEM_READY = "ready" }
+AC.EVENTS = { "COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED" }
+for e in pairs(THROTTLE) do AC.EVENTS[#AC.EVENTS + 1] = e end
+table.sort(AC.EVENTS)
+
+function AC.OnEvent(event, a1)
+	local r = AC.run
+	if not r then return end
+	if event == "REPLICATE_ITEM_LIST_UPDATE" then
+		r.repEvents = (r.repEvents or 0) + 1
+		if not r.replicated then r.replicated = T() end
+	elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" then
+		r.browse = r.browse or "results"
+	elseif event == "AUCTION_HOUSE_BROWSE_FAILURE" then
+		r.browse = r.browse or "failure"
+	elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
+		if a1 == AC.LINEN then r.commodity = true end
+	elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
+		if type(a1) == "table" and a1.itemID == AC.LINEN then r.itemSearch = true end
+	elseif THROTTLE[event] then
+		local log = r.out.throttle
+		if #log < 80 then log[#log + 1] = ("%s@%.2f"):format(THROTTLE[event], T() - r.t0) end
+	end
+end
+
+local function Secs(x) return x and ("%.1f s"):format(x) or "?" end
+
+-- the lines in chat when it ends
+function AC.Summary(o)
+	local out = {}
+	local h = o.house or {}
+	out[1] = ("AH check %s in %s at the %s house (%s%s). Longest frame %.1f ms (budget %d ms)."):format(tostring(o.state), Secs(o.secs),
+		tostring(h.house or "?"), tostring(h.sub ~= "" and h.sub or h.zone or "?"), h.neutral and ", neutral" or "", o.maxFrameMs or 0, o.budgetMs or AC.BUDGET_MS)
+	local rp = o.replicate
+	if rp then
+		if not rp.called then out[#out + 1] = "Full scan: the call failed: " .. tostring(rp.error)
+		elseif not rp.answered then
+			out[#out + 1] = ("Full scan: no answer in %s (cooldown? last one %s min ago)."):format(Secs(rp.readySecs), tostring(rp.minutesSince or "?"))
+		else
+			out[#out + 1] = ("Full scan: ready in %s; %s auctions of %s items read in %s (%s ms of work over %d frames%s). Second call: %d events in %d s."):format(
+				Secs(rp.readySecs), tostring(rp.count), tostring(rp.items or "?"), Secs(rp.readSecs), tostring(rp.cpuMs or "?"), rp.frames or 0,
+				rp.aborted and (", stopped at " .. rp.aborted) or "", rp.secondEvents or 0, AC.TIMEOUT.second)
+		end
+	else
+		out[#out + 1] = "Full scan: not reached."
+	end
+	local c = o.commodity
+	if c then
+		local w = rp and rp.watch and rp.watch[AC.LINEN]
+		out[#out + 1] = ("Linen Cloth search: %s in %s, %s prices, %s units, lowest %s; in the full scan: %s."):format(tostring(c.kind), Secs(c.secs),
+			tostring(c.results or "-"), tostring(c.units or "-"), tostring(c.min or "-"),
+			w and ("%d auctions, %d units"):format(w.auctions, w.units) or (w == false and "not in it" or "-"))
+	end
+	if o.quick then
+		local parts = {}
+		for _, b in ipairs(o.quick) do
+			parts[#parts + 1] = ("%d keys %s (%s results)"):format(b.keys or 0, b.error and "error" or Secs(b.secs), tostring(b.results or b.answer or "-"))
+		end
+		out[#out + 1] = "Quick scan: " .. table.concat(parts, ", ") .. "; throttle events " .. #(o.throttle or {}) .. "."
+	end
+	local p = o.recipes
+	if p then
+		out[#out + 1] = ("Recipes (profession window %s): %d of %d sample recipes readable, %d learned."):format(p.window and "open" or "closed", p.read or 0, p.tried or 0, p.learned or 0)
+	end
+	out[#out + 1] = "Saved in ValhallaInvestDB.diag: /reload (or log out) writes it to disk."
+	return out
+end
+
+--------------------------------------------------------------------------------
 -- Slash commands (Init.lua sends them here)
 --   /valhalla invest [vendor|list|market|settings]   open Investments (at that page)
 --   /valhalla invest on|off                          the whole tabbed window and Investments (off: the map as before)
---   /valhalla invest diag [ah|replicate]             what this client has, saved to the saved log
+--   /valhalla invest diag [ah|replicate|stop]        what this client has, saved to the saved log (ah: the AH check)
 --   /valhalla undo                                   put back the last deleted list (or a list as it was before an edit)
 --   /valhalla tab map|invest|talents|professions     switch the window's tab
 --   /valhalla want <item> [count], /valhalla unwant <item>   into / out of the Shopping List's builder
@@ -1021,6 +1470,14 @@ function mod:Slash(word, arg)
 		if sub == "on" then I.SetOn(true) Say(L["Investments and the window's tabs: on."]) return end
 		if sub == "off" then I.SetOn(false) Say(L["Investments and the window's tabs: off (the map is as before). /valhalla invest on brings them back."]) return end
 		if not mod.enabled then Say(L["Investments is off. /valhalla invest on"]) return end
+		if sub == "diag" and (rest == "ah" or rest == "stop") then
+			if rest == "stop" then
+				if I.AHCheck.Running() then I.AHCheck.Stop("stopped") else Say("%s", L["The AH check isn't running."]) end
+			else
+				I.RunDiag("ah")
+			end
+			return
+		end
 		if sub == "diag" then
 			local d = I.Diag(rest)
 			for _, line in ipairs(I.DiagLines(d)) do Say("%s", line) end

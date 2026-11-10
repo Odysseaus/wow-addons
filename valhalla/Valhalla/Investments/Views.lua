@@ -8,6 +8,7 @@
 -- v0.3.2: Smart Vendor is under construction; the Shopping List page builds named lists (a name, items
 -- found by name, shift-click or drop, how many, Keep) and shows them below, each with what's still needed;
 -- V.Picker: the active list's chooser (at a vendor, at the AH).
+-- v0.3.4: Settings' Run AH check runs the AH check (Invest.lua) and shows its step.
 -- v0.3.3: no Keep (buying never changes a list: lines show still needed, Done, In the mail); the picker's
 -- first choice is None (no list: no highlights, nothing beside the AH), remembered.
 --------------------------------------------------------------------------------
@@ -659,7 +660,7 @@ local function BuildSettings(page)
 	Place(how, 30)
 	how:SetWidth(520)
 	how:SetJustifyH("LEFT")
-	how:SetText(L["Saves what Valhalla sees (your bank above all) and prints three lines. Then type /reload: that writes it to disk where it can be read back. Run AH check works at the Auction House."])
+	how:SetText(L["Saves what Valhalla sees (your bank above all) and prints three lines. Then type /reload: that writes it to disk where it can be read back. Run AH check works at the Auction House: it measures, for the coming AH Market, how fast the full scan and quick searches answer, whether recipes can be read, and the house's deposit, a few steps over 1-4 minutes without freezing the game, then prints its results. It only reads prices: nothing is posted, bid or bought. Keep the Auction House open while it runs."])
 	Section(L["Counting what you have"])
 	Opt(L["Count bank items (as last seen)"], "countBank")
 	Opt(L["Count my other characters' items on this realm"], "countAlts")
@@ -703,8 +704,14 @@ local function BuildSettings(page)
 		for _, w in ipairs(items) do if w.Update then w.Update() end end
 		GreyText()
 		local d = I.LastDiag()
-		self.last:SetText(d and L["Last run: %s%s"]:format(tostring(d.when), d.kind == "ah" and L[" (AH check)"] or "") or L["Last run: never"])
-		local ahOn = I.ahOpen and true or false
+		local check = I.AHCheck and I.AHCheck.run
+		if check then
+			self.last:SetText(L["AH check running, step %s: keep the Auction House open."]:format(tostring(check.out.step or "1/7")))
+		else
+			local ac = d and d.ahcheck
+			self.last:SetText(d and L["Last run: %s%s"]:format(tostring(d.when), d.kind == "ah" and (ac and L[" (AH check: %s)"]:format(tostring(ac.state)) or L[" (AH check)"]) or "") or L["Last run: never"])
+		end
+		local ahOn = (I.ahOpen and not check) and true or false
 		if runAH.SetEnabled then runAH:SetEnabled(ahOn) end
 		runAH:SetAlpha(ahOn and 1 or 0.45)
 	end
