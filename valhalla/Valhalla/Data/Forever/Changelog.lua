@@ -4,6 +4,12 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2.5", date = "2026-11-11", heads = { [1] = "Changed", [4] = "Note", }, items = {
+		"|cff6e2c0aQuest flights, timed|r: each speed is now one fixed time for the whole flight, near or far: Slow 5 seconds, Normal 3, Fast 1.2 (it was 0.6 to 2 seconds by distance).",
+		"The same smooth curve, out, across and down; drag, the wheel, Back, closing or changing the map still stop it, and on a very low frame rate it may still end a little sooner rather than stutter.",
+		"The More tab's Flight speed rows show the new times.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.2.4", date = "2026-11-11", heads = { [1] = "New", [5] = "Settings", [8] = "Note", }, items = {
 		"|cff6e2c0aFly to a quest|r: click a quest title in the tracker or the quest log, a Ready to Turn In row, or a quest icon on the Valhalla map, and the map flies there in one smooth move: out as far as the trip needs, across, and down onto the quest, then a ping.",
 		"It goes where the game's own marker is: the objective, the turn-in once the quest is complete, or the next stop of a route (a boat, a portal). A dungeon's quest flies to the dungeon's entrance. A quest the game shows only as a zone lands on the whole zone; one with no place at all says No map location for this quest.",

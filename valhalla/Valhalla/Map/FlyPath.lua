@@ -7,7 +7,7 @@
 -- continent or the world.
 --   P.New(x0, y0, w0, x1, y1, w1[, rho])  the path: .S (its length), :At(t) -> x, y, w (t 0..1 along it)
 --   P.ZoomOut(... , factor)                the same, rising at least `factor` times out from the wider end
---   P.Duration(S, speed)                   seconds: clamp(0.45 + 0.30 S, 0.6, 2.0) x the speed's factor
+--   P.Duration(S, speed)                   seconds: the speed's fixed time, whatever the distance (v0.4.2.5)
 --   P.Ease(t)                              ease in-out cubic
 --   P.Flight(path, dur)                    the flight in time, its slow-frame guard: :Step(elapsed) -> x, y, w, done
 --------------------------------------------------------------------------------
@@ -17,8 +17,7 @@ local P = {}
 ns.FlyPath = P
 
 P.RHO = 1.4                     -- how far out a trip rises (van Wijk's rho; d3's default is sqrt 2)
-P.SPEED = { slow = 1.5, normal = 1, fast = 0.6 }
-P.BASE, P.PER, P.LEAST, P.MOST = 0.45, 0.30, 0.6, 2.0   -- duration at Normal: BASE + PER x S, in LEAST .. MOST
+P.SECONDS = { slow = 5, normal = 3, fast = 1.2 }   -- a flight's whole time by speed, near or far (v0.4.2.5)
 P.SLOW_FRAME = 0.05             -- a frame this long (s) is a slow one
 P.SLOW_FRAMES = 2               -- this many and the rest of the flight is cut to
 P.SLOW_REST = 0.3               -- this long (s)
@@ -98,9 +97,9 @@ function P.ZoomOut(x0, y0, w0, x1, y1, w1, factor)
 end
 
 function P.Duration(S, speed)
-	local k = P.SPEED[speed] or 1
-	local d = P.BASE + P.PER * abs(S or 0)
-	return math.min(math.max(d, P.LEAST), P.MOST) * k
+	-- (S, the path's length, no longer sets the time: every flight at a speed takes the same seconds; the
+	-- slow-frame guard in Flight may still end it sooner)
+	return P.SECONDS[speed] or P.SECONDS.normal
 end
 
 function P.Ease(t)

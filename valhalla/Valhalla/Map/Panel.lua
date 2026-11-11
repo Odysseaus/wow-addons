@@ -343,9 +343,9 @@ local function Rows()
 			{ "blizzard", L["As Blizzard"], "INV_Misc_Map_01", L["The quest's whole zone, no flight"] },
 		}, QF.Mode)
 		choose(L["Flight speed (choose one)"], "questFlySpeed", {
-			{ "slow", L["Slow"], "Spell_Nature_Swiftness", L["About 0.9 - 3 s"] },
-			{ "normal", L["Normal"], "Spell_Nature_Swiftness", L["About 0.6 - 2 s"] },
-			{ "fast", L["Fast"], "Spell_Nature_Swiftness", L["About 0.4 - 1.2 s"] },
+			{ "slow", L["Slow"], "Spell_Nature_Swiftness", L["5 s"] },
+			{ "normal", L["Normal"], "Spell_Nature_Swiftness", L["3 s"] },
+			{ "fast", L["Fast"], "Spell_Nature_Swiftness", L["1.2 s"] },
 		}, QF.Speed)
 		choose(L["Quest landing (choose one)"], "questFlyLanding", {
 			{ "zone", L["Whole zone"], "INV_Misc_Map_01", L["Centred on the quest"] },

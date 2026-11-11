@@ -68,20 +68,20 @@ do
   -- (in world px, as WorldMap.lua flies: y in the world's own height, 668/1002 of its width)
   local k = 668 / 1002
   local ew = P.New(0.72699, 0.64909 * k, 1 / 12.9, 0.70587, 0.69157 * k, 1 / 13.4)
-  ok(near(ew.S, 0.63, 0.02) and near(P.Duration(ew.S, "normal"), 0.64, 0.01), "Elwynn -> Westfall: S 0.63, 0.64 s at Normal (a gentle glide)", ew.S)
+  ok(near(ew.S, 0.63, 0.02) and near(P.Duration(ew.S, "normal"), 3), "Elwynn -> Westfall: S 0.63, 3 s at Normal", ew.S)
   local sd = P.New(0.71040, 0.61990 * k, 1 / 25.7, 0.18284, 0.27120 * k, 1 / 7.2)
-  ok(near(sd.S, 4.0, 0.1) and near(P.Duration(sd.S, "normal"), 1.65, 0.04), "Stormwind -> Darkshore: S about 4, about 1.65 s at Normal", sd.S)
+  ok(near(sd.S, 4.0, 0.1) and near(P.Duration(sd.S, "normal"), 3), "Stormwind -> Darkshore: S about 4, 3 s at Normal too", sd.S)
   ok(near(1 / sd:Peak(), 1.74, 0.05), "and it rises to about zoom 1.7 (most of the world in view) on the way", 1 / sd:Peak())
 end
 
 print("== 2. durations, speeds and easing")
 do
-  ok(near(P.Duration(0, "normal"), 0.6) and near(P.Duration(100, "normal"), 2.0), "Normal: 0.6 s at least, 2.0 s at most")
-  ok(near(P.Duration(0, "slow"), 0.9) and near(P.Duration(100, "slow"), 3.0), "Slow x1.5: 0.9 .. 3.0 s")
-  ok(near(P.Duration(0, "fast"), 0.36) and near(P.Duration(100, "fast"), 1.2), "Fast x0.6: 0.36 .. 1.2 s")
-  ok(near(P.Duration(3, "normal"), 1.35), "in between: 0.45 + 0.30 S")
-  ok(near(P.Duration(-3, "normal"), 1.35), "a zoom out is as long as the zoom in")
-  ok(near(P.Duration(3, "bogus"), 1.35), "an unknown speed is Normal")
+  ok(near(P.Duration(0, "normal"), 3) and near(P.Duration(100, "normal"), 3), "Normal: 3 s, near or far")
+  ok(near(P.Duration(0, "slow"), 5) and near(P.Duration(100, "slow"), 5), "Slow: 5 s, near or far")
+  ok(near(P.Duration(0, "fast"), 1.2) and near(P.Duration(100, "fast"), 1.2), "Fast: 1.2 s, near or far")
+  ok(near(P.Duration(3, "normal"), 3), "in between: 3 s")
+  ok(near(P.Duration(-3, "normal"), 3), "a zoom out is as long as the zoom in")
+  ok(near(P.Duration(3, "bogus"), 3), "an unknown speed is Normal")
   local mono, prev = true, -1
   for i = 0, 100 do local e = P.Ease(i / 100) if e < prev then mono = false end prev = e end
   ok(mono and P.Ease(0) == 0 and P.Ease(1) == 1 and near(P.Ease(0.5), 0.5), "ease in-out cubic: 0 to 1, never back")
@@ -187,7 +187,7 @@ do
   local lu, lv, lz = View()
   ok(near(lu, tu, 1e-6) and near(lv, tv, 1e-6), "lands on the game's marker for the quest")
   ok(near(lz, math.max(6, 1.05 * Fit(1436)), 1e-6), "Whole zone: the zone's fit x1.05, centred on the quest", lz)
-  ok(near(frames / 60, 0.64, 0.08), "about 0.64 s at Normal (Elwynn -> Westfall)", frames / 60)
+  ok(near(frames / 60, 3, 0.05), "3 s at Normal (Elwynn -> Westfall)", frames / 60)
   ok(Pings(q1, before) == 2, "pinged by Blizzard on the click and once more on landing", Pings(q1, before))
 end
 
@@ -380,7 +380,7 @@ do
     return n / 60
   end
   local tn, ts, tf = Time("normal"), Time("slow"), Time("fast")
-  ok(near(ts / tn, 1.5, 0.06) and near(tf / tn, 0.6, 0.06), ("Slow x1.5, Fast x0.6 (%.2f / %.2f / %.2f s)"):format(ts, tn, tf))
+  ok(near(ts, 5, 0.05) and near(tn, 3, 0.05) and near(tf, 1.2, 0.05), ("Slow 5 s, Normal 3 s, Fast 1.2 s, frame for frame (%.2f / %.2f / %.2f s)"):format(ts, tn, tf))
   Defaults()
   -- Close-up
   mod.db.questFlyLanding = "close"

@@ -269,7 +269,7 @@ function mod:QuestFlyOptions(opts, get, set, off)
 	opts.questFlySpeed = { type = "select", name = L["Flight speed"], order = 11.2, get = function() return Q.Speed() end, set = set,
 		disabled = function() return off() or Q.Mode() ~= "fly" end,
 		values = { slow = L["Slow"], normal = L["Normal"], fast = L["Fast"] }, sorting = { "slow", "normal", "fast" },
-		desc = L["Normal takes about 0.6 to 2 seconds by distance; Slow half as long again, Fast a little over half."] }
+		desc = L["Every flight takes the same time, near or far: Slow 5 seconds, Normal 3, Fast 1.2."] }
 	opts.questFlyLanding = { type = "select", name = L["Quest landing"], order = 11.3, get = get, set = set,
 		disabled = function() return off() or Q.Mode() == "blizzard" end,
 		values = { zone = L["Whole zone"], close = L["Close-up"] }, sorting = { "zone", "close" },
