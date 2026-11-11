@@ -2794,7 +2794,8 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
     "Trending: Most units sold / Most gold sold, Sold/day / Gold/day, Price, Listed (saved)")
   ok(I.SETTINGS.topView == "movers", "the view kept in the settings (Price movers at first)")
   local lp, vp = top.level._points[1], top.views[1]._points[1]
-  ok(lp[3] == -32 and top.levelTitle._points[1][3] == -35 and vp[5] == -6 and top.views[2]._points[1][1] == "TOPRIGHT", "the toggle on the top row, the Level under it (no overlap)")
+  ok(lp[3] == -52 and top.levelTitle._points[1][3] == -35 and lp[2] == top.levelTitle._points[1][2] and vp[5] == -6 and top.views[2]._points[1][1] == "TOPRIGHT",
+    "the toggle on the top row (to y -26), the Level title under it (y -35), its dropdown under the title (y -52): no overlap")
   W.Click(top.views[1])
   ok(I.S.topView == "movers", "back to Price movers")
   -- 6. Invest Amount: parsing; how many it makes; Total; live as you type; empty: as before
@@ -2835,7 +2836,7 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   local cf = mp.subs.craft
   for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
   mp:Refresh()
-  ok(cf.invest and cf.invest:IsShown() and cf.investTitle._text == "Invest Amount:" and cf.investHint:IsShown() and cf.invest._points[1][2] == cf.investTitle
+  ok(cf.invest and cf.invest:IsShown() and cf.investTitle._text == "Invest Amount:" and cf.investHint:IsShown() and cf.invest._points[1][2] == cf.countDrop and cf.invest._points[1][4] > 12 + (cf.investTitle:GetStringWidth() or 0)
     and cf.investTitle._points[1][2] == cf.countDrop, "one Invest Amount box above the table, after the Count dropdown, its hint while empty")
   local r1e = cf.list[1]
   local before = r1e and cf.rows[1].can._text
