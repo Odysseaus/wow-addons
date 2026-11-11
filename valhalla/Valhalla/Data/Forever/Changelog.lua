@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2.1", date = "2026-11-10", heads = { [1] = "Changed", [6] = "New", [8] = "Note", }, items = {
+		"|cff6e2c0aPages, not scrolling|r: every paged list (AH Market's views and Craft, the Shopping List's draft and saved lists, the list beside the Auction House) builds one page at a time and turns with its buttons only; the mouse wheel no longer pages them. Map Pins and Paint lists still scroll.",
+		"The pager's first and last buttons are one arrow with a thin gold stop bar (|< and >|), the same size as < and >: no more overlapping double arrows.",
+		"Craft: the tick boxes line up in measured columns (Reagents: and Show: Known only, Count the bank), so no word runs over a box.",
+		"Norse: the list beside the Auction House gets the heavy bronze frame and corner brackets, and the look is applied again each time the Auction House opens. Its list picker drops the trailing v (the arrow says it).",
+		"Dropdowns (Craft's profession, the shopping list picker) close when you click anywhere else.",
+		"|cff6e2c0aCraft name filter|r: a box beside Crafts | Harvest filters this profession's list by name, paged. Shift-click an item into it, or into Scan results' search box, to search its name.",
+		"|cff6e2c0a/valhalla look check|r: the look in use, framed panels, any missing art or paint errors; saved for after a /reload.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.2", date = "2026-11-10", heads = { [1] = "Changed", [7] = "New", [8] = "Note", }, items = {
 		"|cff6e2c0aA new look for all of Valhalla|r: WoW Forever's own profession window. Red and gold buttons, the profession tick boxes, arrows for steppers and page buttons, the page box for text boxes, the game's dropdown arrow and menu, the game's tabs, its metal frame over the profession background.",
 		"|cff6e2c0aEverywhere at once|r: Investments (AH Market, Shopping List, Smart Vendor), Settings, the Auction House list, the map menu (Map Icons), the map's own windows (pins, notes, sketch, news, friends, report), their buttons, text boxes and scroll bars, and the window's tabs (bottom, top or side icons).",

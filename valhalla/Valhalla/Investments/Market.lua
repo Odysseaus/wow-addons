@@ -66,6 +66,15 @@ function M.Lines(id)
 end
 
 -- one item's change over 7 days (the two halves of the window from its first point)
+-- a search box's shift-click (v0.4.2.1, as the game's own search boxes): the item's name, in place of what was typed
+function M.TakeName(box, link)
+	local name = type(link) == "string" and link:match("|h%[(.-)%]|h")
+	if not name or name == "" then return false end
+	box:SetText(name)
+	if box.SetCursorPosition then box:SetCursorPosition(#name) end
+	return true
+end
+
 function M.Change(house, id)
 	local pts = {}
 	local from = Now() - 7 * 86400
@@ -127,11 +136,6 @@ function M.FitRows(h, top)
 	return math.max(M.MIN_ROWS, math.min(M.MAX_ROWS, n))
 end
 
-local function Off(b, off)
-	b.off = off
-	b:SetAlpha(off and 0.4 or 1)
-end
-
 -- f.list, f.offset (always a whole page), f.per rows; newRow(i) makes row i when the view first needs it.
 -- (v0.4.0.2) No size is asked while the view is built: in the game, asking a new frame its size lays it out
 -- there and then and fires OnSizeChanged. And a resize redraws only this view's own list, never the page.
@@ -167,29 +171,18 @@ local function Paged(f, page, top, newRow)
 		f.offset = (k - 1) * f.per
 		f.Redraw()
 	end
-	local p = CreateFrame("Frame", nil, f)
+	-- (v0.4.2.1: the pager only, no wheel: one page built at a time)
+	local p = V.Pager(f, function(k)
+		local pages, cur = f.Pages()
+		f.Page(k == "first" and 1 or k == "prev" and cur - 1 or k == "next" and cur + 1 or pages)
+	end)
 	p:SetPoint("BOTTOMLEFT", 8, 26)
-	p:SetSize(420, 20)
-	p.first = V.Button(p, "<<", 30, 20, function() f.Page(1) end)
-	p.first:SetPoint("LEFT", 0, 0)
-	p.prev = V.Button(p, "<", 30, 20, function() local _, cur = f.Pages() f.Page(cur - 1) end)
-	p.prev:SetPoint("LEFT", 34, 0)
-	p.label = Text(p, 11, GREY)
-	p.label:SetPoint("LEFT", 70, 0)
-	p.label:SetWidth(276)
-	p.next = V.Button(p, ">", 30, 20, function() local _, cur = f.Pages() f.Page(cur + 1) end)
-	p.next:SetPoint("LEFT", 350, 0)
-	p.last = V.Button(p, ">>", 30, 20, function() f.Page(f.Pages()) end)
-	p.last:SetPoint("LEFT", 384, 0)
 	f.pager = p
 	function f.UpdatePager()
 		local pages, cur, n = f.Pages()
 		p:SetShown(n > f.per)
-		p.label:SetText(L["Page %d of %d · items %d-%d of %d"]:format(cur, pages, math.min(n, f.offset + 1), math.min(n, f.offset + f.per), n))
-		Off(p.first, cur <= 1) Off(p.prev, cur <= 1)
-		Off(p.next, cur >= pages) Off(p.last, cur >= pages)
+		p.Set(cur, pages, L["Page %d of %d · items %d-%d of %d"]:format(cur, pages, math.min(n, f.offset + 1), math.min(n, f.offset + f.per), n))
 	end
-	V.Wheel(f, function(delta) local _, cur = f.Pages() f.Page(cur - delta) end)   -- (a notch: a page)
 	f:SetScript("OnSizeChanged", function(self, _, h)
 		if f.building or f.fitting or page.current ~= key or not f:IsShown() then return end
 		f.fitting = true
@@ -478,6 +471,7 @@ local function BuildResults(f, page)
 	f.searchHint = Text(f, 10, GREY)
 	f.searchHint:SetPoint("LEFT", f.search, "RIGHT", 8, 0)
 	f.searchHint:SetText(L["search by name"])
+	if ns.LinkBox then ns.LinkBox(f.search, M.TakeName) end   -- (v0.4.2.1: shift-click an item: its name searched)
 	f.sortButtons = {}
 	local x = 8
 	for _, s in ipairs(M.SORTS) do
@@ -637,10 +631,32 @@ local function BuildCraft(f, page)
 	f.owned = V.Radio(f, L["Reagents:"], M.OWNED, function() return I.S.craftOwned or "market" end,
 		function(v) I.S.craftOwned = v page:Refresh() end)
 	f.owned:SetPoint("TOPLEFT", 8, -54)
-	f.known = V.Check(f, L["Known only"], function() return I.S.craftKnownOnly end, function(v) I.S.craftKnownOnly = v page:Refresh() end)
-	f.known:SetPoint("TOPLEFT", 8, -76)
-	f.bank = V.Check(f, L["Count the bank"], function() return I.S.mineBank end, function(v) I.S.mineBank = v page:Refresh() end)
-	f.bank:SetPoint("TOPLEFT", 150, -76)
+	-- (v0.4.2.1) the second row, Show:, its boxes in the same columns as Reagents' (measured: no label over a box)
+	f.showRow = CreateFrame("Frame", nil, f)
+	f.showRow:SetSize(420, 18)
+	f.showRow:SetPoint("TOPLEFT", 8, -76)
+	f.showTitle = Text(f.showRow, 12)
+	f.showTitle:SetPoint("LEFT")
+	f.showTitle:SetText(L["Show:"])
+	f.known = V.Check(f.showRow, L["Known only"], function() return I.S.craftKnownOnly end, function(v) I.S.craftKnownOnly = v page:Refresh() end)
+	f.bank = V.Check(f.showRow, L["Count the bank"], function() return I.S.mineBank end, function(v) I.S.mineBank = v page:Refresh() end)
+	V.Grid({
+		{ frame = f.owned, title = f.owned.title, boxes = f.owned.boxes },
+		{ frame = f.showRow, title = f.showTitle, boxes = { f.known, f.bank } },
+	})
+	-- (v0.4.2.1) a name filter: this profession's crafts (or harvest) whose item's name has it; shift-click an item: its name
+	f.filter = V.EditBox(f, 150)
+	f.filter:SetPoint("TOPLEFT", 400, -29)
+	f.filterHint = Text(f.filter, 10, GREY)
+	f.filterHint:SetPoint("LEFT", 8, 0)
+	f.filterHint:SetText(L["filter by name"])
+	f.filterCount = Text(f, 10, GREY)
+	f.filterCount:SetPoint("LEFT", f.filter, "RIGHT", 8, 0)
+	f.filter:SetScript("OnTextChanged", function(box)
+		f.filterHint:SetShown((box:GetText() or "") == "")
+		if f.Redraw then f.Redraw() end
+	end)
+	if ns.LinkBox then ns.LinkBox(f.filter, M.TakeName) end
 	-- the two headers (crafts, harvest)
 	local head = CreateFrame("Frame", nil, f)
 	head:SetPoint("TOPLEFT", 4, -96)
@@ -713,7 +729,20 @@ local function BuildCraft(f, page)
 		f.known:SetShown(mode == "crafts")
 	end
 	-- the list shown: another list (profession, house, scan, setting) starts on page 1
-	local function SetList(list, key)
+	local function SetList(list, key, field)
+		local q = (f.filter:GetText() or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+		if q ~= "" then
+			local all = list
+			list = {}
+			for _, e in ipairs(all) do
+				local name = V.ItemData(e[field]) or ""
+				if name:lower():find(q, 1, true) then list[#list + 1] = e end
+			end
+			f.filterCount:SetText(L["%d of %d"]:format(#list, #all))
+		else
+			f.filterCount:SetText("")
+		end
+		key = key .. "|" .. q
 		if key ~= f.listKey then f.offset, f.listKey = 0, key end
 		f.list = list
 		f.Clamp()
@@ -737,7 +766,7 @@ local function BuildCraft(f, page)
 		f.profs = profs
 		if #profs == 0 then
 			Clear()
-			f.drop.text:SetText(L["Profession  v"])
+			f.drop.text:SetText(L["Profession"] .. (ns.Style and "" or "  v"))
 			f.modeCrafts:Hide() f.modeHarvest:Hide()
 			f.status:SetText(L["No recipes yet: open a profession window once (any character); Valhalla reads its whole list for every character."])
 			return {}
@@ -765,7 +794,7 @@ local function BuildCraft(f, page)
 		if mode == "harvest" then
 			local h = C.Harvest(house, p.key, bank)
 			local m = S().Market(house)
-			SetList(h.list, ("harvest|%s|%s|%d"):format(house, tostring(p.key), m and #m.scans or 0))
+			SetList(h.list, ("harvest|%s|%s|%d"):format(house, tostring(p.key), m and #m.scans or 0), "id")
 			for i, r in ipairs(f.rows) do
 				local e = i <= f.per and f.list[f.offset + i]
 				r.e = nil
@@ -797,7 +826,7 @@ local function BuildCraft(f, page)
 			f.status:SetText(L["%s: reading %d recipes... %d/%d"]:format(p.name, #p.ids, done or 0, of or #p.ids))
 			return {}
 		end
-		SetList(res.list or res.rows, C.CacheKey(house, p.key, opts))
+		SetList(res.list or res.rows, C.CacheKey(house, p.key, opts), "out")
 		for i, r in ipairs(f.rows) do
 			local e = i <= f.per and f.list[f.offset + i]
 			r.e, r.house = e or nil, house

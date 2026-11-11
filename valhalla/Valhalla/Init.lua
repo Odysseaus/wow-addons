@@ -78,6 +78,20 @@ local function Slash(msg)
 		if invest then invest:Slash(objWord, raw:match("^%S+%s*(.-)$")) end
 		return
 	end
+	-- /valhalla look check (v0.4.2.1): the look on every widget, framed panels, missing art, errors; printed and saved
+	-- (ValhallaDB.ui.lookCheck) for after a /reload
+	if objWord == "look" then
+		if objArg == "check" and ns.Style and ns.Style.CheckLook then
+			local invest = ns:GetModule("invest")
+			local ah = invest and invest.I and invest.I.AH
+			local d = ns.Style.CheckLook(ah and ah.LookInfo and ah.LookInfo() or nil)
+			for _, line in ipairs(d.lines) do ns:Print("%s", line) end
+			ns:Print("%s", ns.L["Saved for a /reload: ValhallaDB.ui.lookCheck."])
+		else
+			ns:Print("%s", ns.L["/valhalla look check: the look's state (Settings > Look chooses it)."])
+		end
+		return
+	end
 	local takes = { bench = true, entrance = true }  -- (/valhalla bench 16: at that zoom; /valhalla entrance Dire Maul - East)
 	if takes[word] then msg, rest = word, raw:match("^%S+%s+(.+)$") end
 	local run = {

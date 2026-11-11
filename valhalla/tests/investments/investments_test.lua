@@ -295,7 +295,7 @@ local L2 = MakeList("Other", { { 4470, 3 } })
 ok(#I.Lists() == 2 and I.ActiveList() == L1, "a second list: the active one stays")
 local pk = M.Picker()
 local ppt = pk._points[1]
-ok(pk:IsShown() and pk.text._text == "List: List 1  v" and pk._parent == MerchantFrame and ppt[1] == "BOTTOMRIGHT" and ppt[3] == "TOPRIGHT", "above the merchant window's top right: which list", pk.text._text)
+ok(pk:IsShown() and pk.text._text == "List: List 1" and pk._parent == MerchantFrame and ppt[1] == "BOTTOMRIGHT" and ppt[3] == "TOPRIGHT", "above the merchant window's top right: which list", pk.text._text)
 -- bought: the bags fill; the lists stay as they are (v0.3.3), the glow too, now "Done"
 W.bags[1] = { { 4470, 12 }, { 2320, 15 } }
 ns.printed, I.undo = {}, {}
@@ -310,7 +310,7 @@ ok(ov[1].tag._text == "need 10" and I.LineOf(L1, 2320), "need updates as you use
 W.Click(pk)
 ok(pk.menu:IsShown() and pk.menu.items[1].text._text == "None" and pk.menu.items[2].text._text == "> List 1" and pk.menu.items[3].text._text == "Other" and not pk.menu.items[4]:IsShown(), "its menu: None, then your lists, the active one marked")
 W.Click(pk.menu.items[3])
-ok(I.ActiveList() == L2 and I.char.activeList == L2.id and not pk.menu:IsShown() and pk.text._text == "List: Other  v", "Other chosen: active (remembered)")
+ok(I.ActiveList() == L2 and I.char.activeList == L2.id and not pk.menu:IsShown() and pk.text._text == "List: Other", "Other chosen: active (remembered)")
 ok(ov[1].tag._text == "need 1" and ov[4]:IsShown() and ov[4].wash._shown and not ov[4].glow._shown, "the highlights follow at once: Simple Wood need 1; Coarse Thread (not on Other) greyed")
 W.Click(pk) W.Click(pk.menu.items[2])
 ok(I.ActiveList() == L1 and ov[1].tag._text == "need 10", "back to List 1")
@@ -328,7 +328,7 @@ W.combat = false
 W.Fire("PLAYER_REGEN_ENABLED")
 local p = A.Panel()
 ok(p and p:IsShown() and p._parent == AuctionHouseFrame, "beside the AH")
-ok(p.picker and p.picker.text._text == "List: List 1  v", "under its title: which list")
+ok(p.picker and p.picker.text._text == "List: List 1", "under its title: which list")
 local function Shown() local t = {} for _, r in ipairs(p.rows) do if r:IsShown() then t[#t + 1] = r.name._text end end return table.concat(t, ",") end
 ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf,Copper Ore", "the list's AH items, Copper Ore (enough) too", Shown())
 ok(p.rows[1].need._text == "x4" and p.rows[4].need._text == "Done", "still needed, or Done")
@@ -478,9 +478,12 @@ ok(ls[2].name._text == "Linen Cloth" and ls[2].count._text == "x4" and ls[2].whe
 ok(ls[5].name._text == "Simple Wood" and ls[5].count._text == "x10" and ls[5].where._text == "at Trade Supplies", "a vendor's item: at that vendor")
 ok(ls[6].name._text == "Copper Ore" and ls[6].count._text == "Done", "had enough: Done")
 ok(ls[8].name._text == "Other" and ls[9].name._text == "Simple Wood" and ls[9].count._text == "x1" and ls[10].name._text == "Alchemy", "the next lists, each with its items")
-W.Run(lp, "OnMouseWheel", -1)
-ok(lp.offset == 1 and Lines()[12].name._text == "Fine Thread", "the wheel scrolls the lists")
-W.Run(lp, "OnMouseWheel", 1)
+ok(lp.lpager:IsShown() and lp.lpager.label._text == "1 of 2" and lp.lpager.first.off and not lp.lpager.next.off, "more lines than a page: the lists' pager, page 1 of 2", lp.lpager.label._text)
+ok(not rawget(lp, "_wheel") and not rawget(lp, "_scripts").OnMouseWheel, "no wheel: the pager only")
+W.Click(lp.lpager.next)
+ok(lp.offset == 12 and Lines()[1].name._text == "Fine Thread" and lp.lpager.label._text == "2 of 2" and lp.lpager.last.off, "next: page 2, the lines after the first 12", Lines()[1] and Lines()[1].name._text)
+W.Click(lp.lpager.first)
+ok(lp.offset == 0, "first: back to page 1")
 ns.printed = {}
 W.Click(Lines()[8].delete)
 ok(#I.Lists() == 2 and not I.ListByID(L2.id) and Printed("'Other' deleted") and lp.undo:IsShown() and lp.undo.text._text == "Undo: the list 'Other'", "Delete: gone, said, with Undo")
@@ -605,12 +608,16 @@ ok(not Printed("bought") and I.LastUndo() == nil, "no chat line, no Undo for a p
 ok(#L1.items == l1n and I.LineOf(L3, 3371).n == 7, "the other lists untouched")
 root2:ShowPage("list")
 local lp2 = root2.pages.list
-lp2.offset = 99 lp2:Refresh()
-local last = lp2.lines[12]
-ok(last.name._text == "Red Dye" and last.count._text == "Done" and lp2.lines[11].count._text == "Done", "on the page: Done", last.name._text .. "=" .. tostring(last.count._text))
+local function LastLines()
+  lp2:Refresh() W.Click(lp2.lpager.last)
+  local t = {} for _, ln in ipairs(lp2.lines) do if ln:IsShown() then t[#t + 1] = ln end end
+  return t[#t], t[#t - 1]
+end
+local last, before = LastLines()
+ok(last.name._text == "Red Dye" and last.count._text == "Done" and before.count._text == "Done", "on the page: Done", last.name._text .. "=" .. tostring(last.count._text))
 W.bags[2] = { { 2604, 1 } }
 W.Fire("BAG_UPDATE_DELAYED")
-ok(Listed(2604) and last.count._text == "x2" and lp2.lines[11].count._text == "x5", "used up: still needed again (x2, x5)", last.count._text)
+ok(Listed(2604) and last.count._text == "x2" and before.count._text == "x5", "used up: still needed again (x2, x5)", last.count._text)
 ok(not lp2.undo:IsShown(), "no Undo button for purchases")
 local HL = MakeList("Have", { { 2770, 30 } })
 I.SetActive(HL.id)
@@ -634,8 +641,7 @@ ok(I.MailOf(2321) == 6 and fr.mail == 6 and fr.need == 4 and fr.short == 10, "6 
 W.Fire("COMMODITY_PURCHASED", 2321, 4)
 ok(Listed(2321) == "mail" and I.LineRow(I.LineOf(ML, 2321)).need == 0, "all 10 bought: 'In the mail', not to buy")
 ok(I.LineOf(ML, 2321), "still on the list until it reaches your bags")
-lp2.offset = 99 lp2:Refresh()
-local ml = lp2.lines[12]
+local ml = LastLines()
 ok(ml.name._text == "Fine Thread" and ml.count._text == "In the mail" and ml.where._text == "10 in the mail (bought, not yet looted)", "Shopping List: 'In the mail'", ml.name._text .. "=" .. tostring(ml.count._text))
 W.Fire("AUCTION_HOUSE_SHOW")
 ok(A.Panel().mail._text:find("In the mail: Fine Thread x10"), "the AH's list: what's in the mail", A.Panel().mail._text)
@@ -646,8 +652,8 @@ ns.printed = {}
 W.bags[3] = { { 2321, 10 } }
 W.Fire("BAG_UPDATE_DELAYED")
 ok(I.MailOf(2321) == 0 and I.LineOf(ML, 2321) and I.LineOf(ML, 2321).n == 10 and not Printed("bought") and I.LineRow(I.LineOf(ML, 2321)).need == 0, "looted: out of the mail; the line stays (Done)")
-lp2:Refresh()
-ok(lp2.lines[12].name._text == "Fine Thread" and lp2.lines[12].count._text == "Done", "on the page: Done")
+local ml2 = LastLines()
+ok(ml2.name._text == "Fine Thread" and ml2.count._text == "Done", "on the page: Done")
 MakeList("Bleach", { { 2324, 5 } })
 W.Fire("ITEM_PURCHASED", 2324)
 ok(I.MailOf(2324) == 1, "an item auction bought (on a list): 1 in the mail")
@@ -735,7 +741,7 @@ I.char.lists[2] = { id = 99, name = "Two", items = {} }
 I.char.activeList = nil
 ok(I.ActiveList() == nil, "two lists, none chosen: none")
 MerchantFrame:Show() W.Fire("MERCHANT_SHOW") MerchantFrame_UpdateMerchantInfo()
-ok(M.Picker():IsShown() and M.Picker().text._text == "Choose a shopping list  v", "the vendor's picker: choose one", M.Picker().text._text)
+ok(M.Picker():IsShown() and M.Picker().text._text == "Choose a shopping list", "the vendor's picker: choose one", M.Picker().text._text)
 local anyGlow = false for _, o in pairs(M.Overlays()) do if o:IsShown() and o.glow._shown then anyGlow = true end end
 ok(not anyGlow, "none chosen: nothing glows")
 W.Click(M.Picker()) W.Click(M.Picker().menu.items[2])
@@ -749,7 +755,7 @@ local pk2 = M.Picker()
 W.Click(pk2)
 ok(pk2.menu.items[1].text._text == "None" and pk2.menu.items[2].text._text == "> Only", "the menu: None first")
 W.Click(pk2.menu.items[1])
-ok(I.char.activeList == "none" and I.ActiveList() == nil and I.NoneChosen() and pk2.text._text == "List: None  v", "None chosen: no active list", pk2.text._text)
+ok(I.char.activeList == "none" and I.ActiveList() == nil and I.NoneChosen() and pk2.text._text == "List: None", "None chosen: no active list", pk2.text._text)
 local lit = false for _, o in pairs(M.Overlays()) do if o:IsShown() then lit = true end end
 ok(not lit, "None: no highlights, no grey")
 W.Click(pk2)
@@ -759,7 +765,7 @@ W.Fire("MERCHANT_CLOSED") MerchantFrame:Hide()
 table.remove(I.char.lists, 2)
 ok(#I.Lists() == 1 and I.ActiveList() == nil and I.NoneChosen(), "one list left: None still chosen (not picked for you)")
 W.Fire("AUCTION_HOUSE_SHOW")
-ok(A.Panel().picker.text._text == "List: None  v" and A.Panel().empty:IsShown() and A.Panel().empty._text == "No list selected (None). Choose one above." and #A.Rows() == 0, "the AH: None, 'No list selected'")
+ok(A.Panel().picker.text._text == "List: None" and A.Panel().empty:IsShown() and A.Panel().empty._text == "No list selected (None). Choose one above." and #A.Rows() == 0, "the AH: None, 'No list selected'")
 W.Fire("AUCTION_HOUSE_CLOSED")
 mod:OnDisable() mod:OnEnable()
 ok(I.char.activeList == "none" and I.NoneChosen(), "remembered (saved as the choice)")
@@ -1364,9 +1370,7 @@ do
   W.Click(pg.next)
   ok(mf.offset == 60, "next on the last page: stays")
   W.Run(mf, "OnMouseWheel", 1)
-  ok(pg.label._text:find("^Page 5 of 6"), "the wheel up: a page back", pg.label._text)
-  W.Run(mf, "OnMouseWheel", -1) W.Run(mf, "OnMouseWheel", -1)
-  ok(pg.label._text:find("^Page 6 of 6"), "the wheel down: on to the last page, no further")
+  ok(pg.label._text:find("^Page 6 of 6") and not rawget(mf, "_scripts").OnMouseWheel, "v0.4.2.1: no wheel on a paged list (its buttons only)", pg.label._text)
   W.Click(pg.prev) W.Click(pg.first)
   ok(mf.offset == 0 and pg.label._text:find("^Page 1 of 6"), "back and first")
   local sv = 0 for _, e in ipairs(mf.list) do sv = sv + (e.vendor or 0) * e.n end
@@ -1399,8 +1403,8 @@ do
   ok(rf2.per == 12 and #rf2.list == 5016 and rp:IsShown() and rp.label._text == "Page 1 of 418 · items 1-12 of 5016", "Scan results: 5,016 items, Page 1 of 418", rp.label._text)
   W.Click(rp.last)
   ok(rp.label._text == "Page 418 of 418 · items 5005-5016 of 5016" and rf2.count._text:find("showing 5005-5016", 1, true) and rf2.rows[12].cell.id == rf2.list[5016].id, "last page: items 5005-5016 (the count line agrees)", rf2.count._text)
-  W.Run(rf2, "OnMouseWheel", 1)
-  ok(rp.label._text:find("^Page 417 of 418"), "the wheel: a page")
+  W.Click(rp.prev)
+  ok(rp.label._text:find("^Page 417 of 418"), "prev: a page")
   W.Click(rf2.sortButtons[3])
   ok(rf2.offset == 0 and rp.label._text:find("^Page 1 of 418"), "a new sort: page 1")
   W.Click(rp.next)
@@ -1777,8 +1781,8 @@ do
   local onPage2 = false for _, id in ipairs(Sc.shown or {}) do if id == 961031 then onPage2 = true end end
   local onPage1 = false for _, id in ipairs(Sc.shown or {}) do if id == 961039 then onPage1 = true end end
   ok(cf.offset == 8 and cf.rows[1].cell.id == cf.list[9].out and onPage2 and not onPage1, "next: crafts 9-16; the quick scan asks only about this page", pg.label._text)
-  W.Run(cf, "OnMouseWheel", 1)
-  ok(cf.offset == 0, "the wheel: a page back")
+  W.Click(pg.prev)
+  ok(cf.offset == 0, "prev: a page back")
   -- Total = profit x can make (Count the bank)
   local e1 = cf.list[1]
   ok(e1.can == 10 and math.abs(e1.total - e1.profit * 10) < 0.01 and cf.rows[1].total._text == Sc.Money(e1.total), "Total: profit x can make (10 from the bags)", cf.rows[1].total._text)
@@ -1886,7 +1890,7 @@ print("== 32. v0.4.2: the look (UI/Style.lua): Profession by default, Norse from
   local mn = I.Views.Button(parent, "-", 20, 20)
   ok(mn.vh.parts.sq._atlas == "128-redbutton-minus-c60" and mn.text._alpha == 0, "the square minus: the game's art, its '-' hidden under it")
   local nx = I.Views.Button(parent, ">>", 30, 20)
-  ok(nx.vh.parts.a1._atlas == "profession-button-arrow-right-c60" and nx.vh.parts.a2:IsShown() and nx.text._alpha == 0, "last page: two profession arrows")
+  ok(nx.vh.parts.a1._atlas == "profession-button-arrow-right-c60" and not nx.vh.parts.a2 and nx.vh.parts.stop:IsShown() and nx.text._alpha == 0, "last page: one profession arrow box and its stop bar (v0.4.2.1)")
   -- art the client lacks: its standard name, else a colour
   W.atlases["128-redbutton-left-c60"] = nil W.atlases["128-redbutton-left"] = { 114, 128 }
   W.atlases["_128-redbutton-center-c60"] = nil
@@ -2029,6 +2033,182 @@ print("== 32. v0.4.2: the look (UI/Style.lua): Profession by default, Norse from
   local sf = St.UIScroll(parent)
   ok(sf._template == "UIPanelScrollFrameTemplate" and sf.vh and sf.vh.kind == "scroll", "UIPanelScrollFrameTemplate: the look's bar")
   ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == errs0, "v0.4.2 wrote nothing on the map; no handler error")
+  ValhallaDB = nil
+  T.Select("map")
+end)()
+
+print("== 33. v0.4.2.1: pages not scrolling, |< >| pager ends, Craft's grid and filter, the AH list framed and paged, dropdowns close outside, shift-click into search")
+;(function()
+  local St, Mk, V = ns.Style, I.Market, I.Views
+  local errs0 = #W.sizeErrors
+  ValhallaDB = nil
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local root = T.Views().invest.page
+  local mp = root.pages.market
+  for _, look in ipairs({ "profession", "norse" }) do
+    St.SetLook(look)
+    local tag = look == "norse" and "Norse: " or "Profession: "
+    -- 1. the pager's ends: one arrow, a stop bar at its far side; the four the same size
+    mp:ShowSub("mine")
+    local pg = mp.subs.mine.pager
+    local f1, l1 = pg.first.vh.parts, pg.last.vh.parts
+    ok(f1.a1:IsShown() and not (f1.a2 and f1.a2:IsShown()) and f1.stop:IsShown() and l1.a1:IsShown() and l1.stop:IsShown(), tag .. "|< and >|: one arrow each and a stop bar (no second arrow over it)")
+    local fp, lpnt = f1.stop._points[1], l1.stop._points[1]
+    ok(fp and lpnt and fp[2] < 0 and lpnt[2] > 0 and f1.stop._w == 2, tag .. "the bar: left of |<'s arrow, right of >|'s, 2 px wide", fp and fp[2])
+    ok(pg.first._w == pg.prev._w and pg.prev._w == pg.next._w and pg.next._w == pg.last._w and pg.first._h == pg.prev._h, tag .. "the four the same size")
+    ok(f1.a1._atlas == pg.prev.vh.parts.a1._atlas, tag .. "|<'s arrow: < 's own art")
+  end
+  St.SetLook("profession")
+  -- 2. no wheel on a paged list; Settings' page still scrolls
+  for _, key in ipairs({ "mine", "results", "craft" }) do
+    mp:ShowSub(key)
+    local f = mp.subs[key]
+    ok(not rawget(f, "_wheel") and not rawget(f, "_scripts").OnMouseWheel, "no wheel on " .. key .. ": its pager's buttons only")
+  end
+  -- 3. Craft: Reagents: and Show: in measured columns; a name filter
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  ok(cf.showTitle._text == "Show:" and cf.known:GetParent() == cf.showRow and cf.bank:GetParent() == cf.showRow, "Craft's second row: Show: Known only, Count the bank")
+  local rows = { cf.owned.boxes, { cf.known, cf.bank } }
+  local clear = true
+  for _, bx in ipairs(rows) do
+    for k = 1, #bx - 1 do
+      local a, b = bx[k], bx[k + 1]
+      if not (a.col + 16 + 6 + a.labelW + 8 <= b.col - 3) then clear = false end
+    end
+  end
+  ok(clear, "each label ends 8 px or more before the next box's art (3 px over its edge)")
+  ok(cf.known.col == cf.owned.boxes[1].col and cf.bank.col == cf.owned.boxes[2].col, "Show:'s boxes in Reagents' columns")
+  ok(cf.owned.boxes[1].col >= V.TextWidth(cf.owned.title) + 16 and cf.owned.boxes[1].col >= V.TextWidth(cf.showTitle) + 16, "the boxes start after the wider title", cf.owned.boxes[1].col)
+  ok(cf.known._w == 16 and cf.known.labelW > 0, "the box still 16 px (its label measured)")
+  ok(cf.filter and cf.filter.vh.kind == "input" and cf.filterHint:IsShown(), "a name filter box (the look's), its hint while empty")
+  Mk.craftProf, Mk.craftMode = 182, "harvest" mp:Refresh()   -- (Herbalism's harvest: read at once)
+  for _ = 1, 400 do if not I.Craft.Running() then break end I.Craft.Tick() end
+  cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged")
+  local all = #(cf.list or {})
+  local want
+  for _, e in ipairs(cf.list or {}) do want = want or V.ItemData(e.out or e.id) end
+  if want then
+    cf.filter:SetText(want) W.Run(cf.filter, "OnTextChanged")
+    local good = #cf.list >= 1 and #cf.list <= all
+    for _, e in ipairs(cf.list) do if not (V.ItemData(e.out or e.id) or ""):lower():find(want:lower(), 1, true) then good = false end end
+    ok(good and not cf.filterHint:IsShown() and cf.filterCount._text == ("%d of %d"):format(#cf.list, all) and cf.offset == 0, "filtered: only names with it, on page 1, 'n of all' beside it", cf.filterCount._text)
+    cf.filter:SetText("zzzz no such") W.Run(cf.filter, "OnTextChanged")
+    ok(#cf.list == 0 and not cf.pager:IsShown(), "nothing matches: an empty page")
+  else
+    ok(false, "Craft had a list to filter", tostring(all) .. " " .. tostring(cf.status._text))
+  end
+  -- shift-click an item while the filter has the cursor: its name
+  cf.filter:SetFocus() W.now = W.now + 1
+  W.ShiftClickBag("|cffffffff|Hitem:2589::::::::|h[Linen Cloth]|h|r", 20)
+  ok(cf.filter._text == "Linen Cloth" and not StackSplitFrame:IsShown(), "Craft's filter: a shift-clicked item's name (in place of what was typed), no stack-split box", cf.filter._text)
+  cf.filter:ClearFocus() cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged")
+  ok(#cf.list == all, "cleared: the whole list again")
+  Mk.craftMode = "crafts" mp:Refresh()
+  -- 4. the dropdown closes on a click outside it
+  W.Click(cf.drop)
+  ok(cf.menu:IsShown() and St.openMenus[cf.menu] == cf.drop, "open: watched")
+  cf.menu.IsMouseOver = function() return true end
+  W.Fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+  ok(cf.menu:IsShown(), "a press on the menu: stays open (its line's click picks)")
+  cf.menu.IsMouseOver = nil cf.drop.IsMouseOver = function() return true end
+  W.Fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+  ok(cf.menu:IsShown(), "a press on its own button: left to the button (it toggles)")
+  cf.drop.IsMouseOver = nil
+  W.Fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+  ok(not cf.menu:IsShown() and next(St.openMenus) == nil, "a press anywhere else: closed, nothing watched")
+  local closer
+  for _, f in ipairs(W.frames) do if rawget(f, "_scripts") and f._scripts.OnEvent == St.CloseOutside then closer = f end end
+  ok(closer and not closer._events.GLOBAL_MOUSE_DOWN, "no menu open: the listener off (GLOBAL_MOUSE_DOWN unregistered)")
+  -- 5. Scan results' search: shift-click an item: its name
+  mp:ShowSub("results")
+  local rf = mp.subs.results
+  rf.search:SetFocus() W.now = W.now + 1
+  W.ShiftClickBag("|cffffffff|Hitem:2589::::::::|h[Linen Cloth]|h|r", 20)
+  ok(rf.search._text == "Linen Cloth" and not StackSplitFrame:IsShown() and rf.offset == 0, "Scan results' search: a shift-clicked item's name, page 1", rf.search._text)
+  W.ShiftClickBag("|cffffffff|Hitem:2592::::::::|h[Wool Cloth]|h|r", 20)
+  ok(rf.search._text == "Wool Cloth", "another: in place of the first (as the game's search boxes)")
+  rf.search:ClearFocus() rf.search:SetText("") W.Run(rf.search, "OnTextChanged")
+  W.ShiftClickBag("|cffffffff|Hitem:2589::::::::|h[Linen Cloth]|h|r", 20)
+  ok(rf.search._text == "", "no cursor in it: the game's own shift-click")
+  -- 6. the Shopping List: its draft and its lists page (no wheel)
+  root:ShowPage("list")
+  local lp = root.pages.list
+  I.DraftClear()
+  for k = 1, 8 do I.DraftAdd(961000 + k) end
+  lp:Refresh()
+  local shown = 0 for _, r in ipairs(lp.drows) do if r:IsShown() then shown = shown + 1 end end
+  ok(lp.dpager:IsShown() and shown == V.DRAFT_ROWS and lp.dpager.label._text == "1 of 2 · 8 items" and lp.dpager.first.off, "8 in the draft: 6 on page 1, its pager", lp.dpager.label._text)
+  W.Click(lp.dpager.next)
+  shown = 0 for _, r in ipairs(lp.drows) do if r:IsShown() then shown = shown + 1 end end
+  ok(lp.doffset == 6 and shown == 2 and lp.drows[1].id == 961007 and lp.dpager.last.off, "next: the last 2")
+  local wheel = false for _, r in ipairs(lp.drows) do if rawget(r, "_scripts").OnMouseWheel then wheel = true end end
+  ok(not wheel, "the draft's rows: no wheel")
+  I.DraftRemove(961007) I.DraftRemove(961008)
+  ok(lp.doffset == 0 and not lp.dpager:IsShown(), "back to 6: one page, no pager")
+  I.DraftClear()
+  -- the saved lists: as many lines as the page has room for (from its own OnSizeChanged), the pager under the last
+  local SL1 = MakeList("Fit A", { { 961001, 1 }, { 961002, 1 }, { 961003, 1 }, { 961004, 1 }, { 961005, 1 } })
+  local SL2 = MakeList("Fit B", { { 961006, 1 }, { 961007, 1 }, { 961008, 1 }, { 961009, 1 }, { 961010, 1 } })
+  local laid = W.sizeFired
+  W.Run(lp, "OnSizeChanged", 760, 590)
+  local vis = 0 for _, ln in ipairs(lp.lines) do if ln:IsShown() then vis = vis + 1 end end
+  local pp = lp.lpager._points[1]
+  local top = lp.lines[1]._points[1][3] + 20
+  ok(top == -324 and lp.per == 10 and vis == 10 and pp[3] == top - 20 - 10 * 21 - 2 and lp.lpager:IsShown(), "590 px high: 10 lines, the pager under the 10th", lp.per .. " " .. vis)
+  W.Run(lp, "OnSizeChanged", 760, 900)
+  vis = 0 for _, ln in ipairs(lp.lines) do if ln:IsShown() then vis = vis + 1 end end
+  ok(lp.per == 20 and #lp.lines == 20 and vis == math.min(20, #lp.entries), "taller: up to 20 (made when first needed)", lp.per)
+  W.Run(lp, "OnSizeChanged", 760, 300)
+  ok(lp.per == 3, "very short: 3 at least")
+  ok(W.sizeFired == laid, "fitting asked no size")
+  W.Run(lp, "OnSizeChanged", 760, 626)
+  ok(lp.per == 12, "626 px: 12, as before")
+  I.DeleteList(SL1.id) I.DeleteList(SL2.id) I.undo = {}
+  -- 7. the AH list: framed in Norse (the bronze and its brackets), a page of 13, secure buttons untouched
+  local items = {} for k = 1, 20 do items[k] = { 961000 + k, 1 } end
+  local PL = MakeList("Paged AH", items)
+  I.SetActive(PL.id)
+  W.Fire("AUCTION_HOUSE_SHOW")
+  local ap = A.Panel()
+  local function Rows() local n = 0 for _, r in ipairs(ap.rows) do if r:IsShown() then n = n + 1 end end return n end
+  ok(#A.Rows() == 20 and Rows() == 13 and ap.pager:IsShown() and ap.pager.label._text == "1 of 2", "20 to buy: 13 on page 1, its pager", ap.pager.label._text)
+  local sb1 = ap.rows[1].search
+  local attr = sb1:GetAttribute("clickbutton")
+  W.Click(ap.pager.next)
+  ok(Rows() == 7 and ap.rows[1].id == 961014 and sb1:GetAttribute("clickbutton") == attr and sb1.vh == nil, "next: the other 7 (the same secure buttons, nothing set on them)")
+  ok(ap.vh.framed and not ap.vh.parts.n1:IsShown(), "Profession: framed, no bronze (its own edge)")
+  St.SetLook("norse")
+  ok(ap.vh.parts.n1:IsShown() and ap.vh.parts.ktl:IsShown() and ap.vh.parts.ktl._atlas == "heavybronze-horz-cornerbracket-tl-c60", "Norse: the AH list in heavy bronze, bracketed")
+  ok(ap.picker.vh.parts.iron:IsShown() and sb1.vh == nil, "its controls iron; the secure Search buttons untouched")
+  ok(not ap.picker.text._text:find("  v", 1, true) and ap.picker.text._text == "List: Paged AH", "its list picker: no trailing 'v'", ap.picker.text._text)
+  -- painted again on each visit (a widget left in the other look: right again)
+  ap.vh.look = "profession" ap.vh.parts.n1:Hide()
+  W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW")
+  ok(ap.vh.look == "norse" and ap.vh.parts.n1:IsShown(), "the AH opened: the look applied again to its list")
+  -- the picker's menu closes on a click outside too
+  W.Click(ap.picker)
+  ok(ap.picker.menu:IsShown(), "the AH list's picker: open")
+  W.Fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+  ok(not ap.picker.menu:IsShown(), "a click outside: closed")
+  -- /valhalla look check: printed lines, saved
+  local d = St.CheckLook(A.LookInfo())
+  ok(d.look == "norse" and d.widgets > 50 and d.ahBronze and d.ahFramed and d.ahLook == "norse" and ValhallaDB.ui.lookCheck == d and #d.lines >= 3, "look check: Norse, the AH list framed in bronze; saved in ValhallaDB.ui.lookCheck", d.lines[1])
+  ok(d.lines[#d.lines]:find("AH side window: norse look, framed yes, bronze shown", 1, true), "its AH line", d.lines[#d.lines])
+  local bad = CreateFrame("Frame", nil, UIParent)
+  bad.vh = { kind = "button", parts = {}, state = {}, used = {} }
+  St.all[bad] = true
+  bad.CreateTexture = function() error("boom") end
+  St.Reskin()
+  St.all[bad] = nil
+  local d2 = St.CheckLook()
+  ok(#St.errors >= 1 and d2.errors[#d2.errors]:find("boom", 1, true), "a widget that fails to paint: recorded, the rest painted")
+  St.errors = {}
+  St.SetLook("profession")
+  W.Fire("AUCTION_HOUSE_CLOSED")
+  I.DeleteList(PL.id) I.undo = {}
+  ok(Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == errs0, "v0.4.2.1 wrote nothing on the map; no handler error")
   ValhallaDB = nil
   T.Select("map")
 end)()

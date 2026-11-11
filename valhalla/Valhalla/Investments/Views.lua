@@ -232,24 +232,101 @@ function V.Check(parent, label, get, set)
 	return b
 end
 
--- choose one: { {value, label}, ... }
+-- a label's width (v0.4.2.1: measured, the text's own; an estimate where the game can't say yet)
+function V.TextWidth(fs, text)
+	local w = fs and fs.GetStringWidth and fs:GetStringWidth()
+	if type(w) ~= "number" or w <= 0 then w = #tostring(text or (fs and fs.GetText and fs:GetText()) or "") * 6.5 end
+	return w
+end
+
+-- tick boxes in columns (v0.4.2.1): each row a title then its boxes; the boxes start where the widest title ends,
+-- each column as wide as its widest label needs (the box, its art's 3 px over each side, 6 px, the label, a gap),
+-- 90 at least; a label's click ticks its box too
+V.COL_MIN, V.COL_GAP = 90, 33
+function V.Grid(rows, x0)
+	local start = x0 or 0
+	for _, r in ipairs(rows) do
+		if r.title then start = math.max(start, math.floor(V.TextWidth(r.title) + 16 + 0.5)) end
+	end
+	local cols = {}
+	for _, r in ipairs(rows) do
+		for k, box in ipairs(r.boxes) do
+			local lw = V.TextWidth(box.label)
+			box.labelW = lw
+			if box.SetHitRectInsets then box:SetHitRectInsets(0, -math.floor(lw + 6), 0, 0) end
+			cols[k] = math.max(cols[k] or V.COL_MIN, math.floor(lw + V.COL_GAP + 0.5))
+		end
+	end
+	for _, r in ipairs(rows) do
+		local x = start
+		for k, box in ipairs(r.boxes) do
+			box:ClearAllPoints()
+			box:SetPoint("LEFT", r.frame, "LEFT", x, 0)
+			box.col = x
+			x = x + cols[k]
+		end
+		r.frame.right = x
+	end
+	return start, cols
+end
+
+-- choose one: { {value, label}, ... } (its boxes in measured columns: V.Grid)
 function V.Radio(parent, label, options, get, set)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetSize(420, 18)
 	local title = Text(f, 12)
 	title:SetPoint("LEFT")
 	title:SetText(label)
+	f.title = title
 	f.boxes = {}
-	local x = 150
 	for _, o in ipairs(options) do
 		local box = V.Check(f, o[2], function() return get() == o[1] end, function() set(o[1]) for _, other in ipairs(f.boxes) do other.Update() end end)
-		box:SetPoint("LEFT", f, "LEFT", x, 0)
 		box.value = o[1]
 		f.boxes[#f.boxes + 1] = box
-		x = x + 90
 	end
+	V.Grid({ { frame = f, boxes = f.boxes } }, 150)
 	function f.Update() for _, box in ipairs(f.boxes) do box.Update() end end
 	return f
+end
+
+-- a pager (v0.4.2.1, every paged list's): |<  <  Page 2 of 6  >  >| ; go("first" | "prev" | "next" | "last");
+-- the four the same size, the first and last one arrow with a stop bar (the look's)
+local function Off(b, off)
+	b.off = off and true or nil
+	b:SetAlpha(off and 0.4 or 1)
+end
+V.Off = Off
+function V.Pager(parent, go, labelW, size)
+	labelW = labelW or 276
+	local bw = size or 30
+	local p = CreateFrame("Frame", nil, parent)
+	p:SetSize(4 * bw + 3 * 4 + 6 + labelW, 20)
+	p.first = V.Button(p, "<<", bw, 20, function() go("first") end)
+	p.first:SetPoint("LEFT", 0, 0)
+	p.prev = V.Button(p, "<", bw, 20, function() go("prev") end)
+	p.prev:SetPoint("LEFT", bw + 4, 0)
+	p.label = Text(p, 11, GREY)
+	p.label:SetPoint("LEFT", 2 * bw + 10, 0)
+	p.label:SetWidth(labelW)
+	p.label:SetJustifyH("CENTER")
+	p.next = V.Button(p, ">", bw, 20, function() go("next") end)
+	p.next:SetPoint("LEFT", 2 * bw + 10 + labelW + 4, 0)
+	p.last = V.Button(p, ">>", bw, 20, function() go("last") end)
+	p.last:SetPoint("LEFT", 3 * bw + 18 + labelW, 0)
+	-- cur of pages: the buttons that can't go further dimmed
+	function p.Set(cur, pages, text)
+		p.label:SetText(text or "")
+		Off(p.first, cur <= 1) Off(p.prev, cur <= 1)
+		Off(p.next, cur >= pages) Off(p.last, cur >= pages)
+	end
+	return p
+end
+
+-- page k's first index (0-based offset) of n things, per a page, clamped
+function V.PageOffset(k, n, per)
+	local pages = math.max(1, math.ceil(n / per))
+	k = math.max(1, math.min(pages, k))
+	return (k - 1) * per, k, pages
 end
 
 local function EditBox(parent, w)
@@ -313,6 +390,7 @@ end
 -- which shopping list is active (at a vendor and at the Auction House): a button that opens a menu of your
 -- lists; none yet: it says so and opens the Shopping List page
 V.PICK_MAX = 12
+local ARROW_V = ns.Style and "" or "  v"   -- (v0.4.2.1: the look's dropdown arrow says it; no trailing " v")
 function V.Picker(parent, w)
 	local b = V.Button(parent, "", w or 220, 22)
 	local menu = CreateFrame("Frame", nil, b, "BackdropTemplate")
@@ -336,11 +414,11 @@ function V.Picker(parent, w)
 		if #lists == 0 then
 			b.text:SetText(L["No shopping list: build one"])
 		elseif I.NoneChosen() then
-			b.text:SetText(L["List: None  v"])
+			b.text:SetText(L["List: None"] .. ARROW_V)
 		elseif l then
-			b.text:SetText(L["List: %s  v"]:format(l.name))
+			b.text:SetText(L["List: %s"]:format(l.name) .. ARROW_V)
 		else
-			b.text:SetText(L["Choose a shopping list  v"])
+			b.text:SetText(L["Choose a shopping list"] .. ARROW_V)
 		end
 		if menu:IsShown() then b.Fill() end
 	end
@@ -585,8 +663,15 @@ local function BuildList(page)
 	page.dempty:SetWidth(520)
 	page.dempty:SetJustifyH("LEFT")
 	page.dempty:SetText(L["Nothing in this list yet. Find an item above (type its name, or shift-click or drop it into the box) and Add it, then set how many you need. Bags and Bank show what you have (the bank as of your last visit). Buying never changes a list: it shows what's still needed, Done, or In the mail."])
-	page.dmore = Text(page, 11, GREY)
-	page.dmore:SetPoint("TOPLEFT", 16, -136 - V.DRAFT_ROWS * (V.ROW_H + 2) - 2)
+	-- (v0.4.2.1: the draft pages, no wheel: |<  <  1 of 2  >  >|, left of Clear and Build)
+	page.dpager = V.Pager(page, function(k)
+		local n = #I.Draft().items
+		local _, cur, pages = V.PageOffset(page.doffset / V.DRAFT_ROWS + 1, n, V.DRAFT_ROWS)
+		page.doffset = V.PageOffset(k == "first" and 1 or k == "prev" and cur - 1 or k == "next" and cur + 1 or pages, n, V.DRAFT_ROWS)
+		page:Refresh()
+	end, 150)
+	page.dpager:SetPoint("TOPLEFT", 14, -136 - V.DRAFT_ROWS * (V.ROW_H + 2) - 10)
+	page.dpager:Hide()
 	local build = V.Button(page, L["Build Shopping List"], 170, 24, function()
 		page.name:ClearFocus()
 		for _, r in ipairs(page.drows) do if r.qty:HasFocus() then r.qty:ClearFocus() end end
@@ -609,7 +694,8 @@ local function BuildList(page)
 	lsub:SetText(L["Still needed, from your bags and bank. The active list glows at vendors and opens beside the Auction House (choose it there)."])
 	page.lines = {}
 	page.offset = 0
-	for i = 1, V.LINES do
+	page.per = V.LINES
+	local function NewLine(i)
 		local ln = CreateFrame("Frame", nil, page)
 		ln:SetHeight(20)
 		ln:SetPoint("TOPLEFT", 14, top - 20 - (i - 1) * 21)
@@ -627,17 +713,43 @@ local function BuildList(page)
 		ln.delete = V.Button(ln, L["Delete"], 60, 18)
 		ln.delete:SetPoint("RIGHT", 0, 0)
 		ln:Hide()
-		page.lines[i] = ln
+		return ln
 	end
+	for i = 1, page.per do page.lines[i] = NewLine(i) end
 	page.undo = V.UndoButton(page)
 	page.undo:SetPoint("BOTTOMRIGHT", -14, 10)
 	page.empty = Text(page, 12, GREY)
 	page.empty:SetPoint("TOPLEFT", 30, top - 24)
 	page.empty:SetText(L["No shopping lists yet: build one above."])
-	Wheel(page, function(delta)
+	-- (v0.4.2.1: the saved lists page too, under their lines)
+	page.lpager = V.Pager(page, function(k)
 		local n = #(page.entries or {})
-		page.offset = math.max(0, math.min(math.max(0, n - V.LINES), page.offset - delta))
+		local _, cur, pages = V.PageOffset(page.offset / page.per + 1, n, page.per)
+		page.offset = V.PageOffset(k == "first" and 1 or k == "prev" and cur - 1 or k == "next" and cur + 1 or pages, n, page.per)
 		page:Refresh()
+	end, 150)
+	page.lpager:SetPoint("TOPLEFT", 14, top - 20 - page.per * 21 - 2)
+	page.lpager:Hide()
+	-- (v0.4.2.1) as many lines as the page has room for (3 to 20), from its own OnSizeChanged's height: no size asked,
+	-- lines made only when first needed, the pager under the last
+	function page.FitLines(h)
+		local per = math.max(3, math.min(20, math.floor(((h or 0) + top - 20 - 30) / 21)))
+		if per == page.per then return false end
+		for i = #page.lines + 1, per do page.lines[i] = NewLine(i) end
+		for i = per + 1, #page.lines do page.lines[i]:Hide() end
+		page.per = per
+		page.offset = math.floor(page.offset / per) * per
+		page.lpager:ClearAllPoints()
+		page.lpager:SetPoint("TOPLEFT", 14, top - 20 - per * 21 - 2)
+		return true
+	end
+	page:HookScript("OnSizeChanged", function(_, _, h)
+		if page.fitting or not h or h <= 0 then return end
+		page.fitting = true
+		local ok, changed = pcall(page.FitLines, h)
+		if ok and changed and page:IsShown() then ok, changed = pcall(page.Refresh, page) end
+		page.fitting = nil
+		if not ok then error(changed, 0) end
 	end)
 
 	function page:Refresh()
@@ -653,7 +765,8 @@ local function BuildList(page)
 		self.nameHint:SetText(L["Empty: it's named %s"]:format(editing and editing.name or I.AutoName()))
 		if self.results:IsShown() then self.Results() end
 		-- the draft
-		self.doffset = math.min(self.doffset, math.max(0, #d.items - V.DRAFT_ROWS))
+		local dcur, dpages
+		self.doffset, dcur, dpages = V.PageOffset(math.floor(self.doffset / V.DRAFT_ROWS) + 1, #d.items, V.DRAFT_ROWS)
 		self.dempty:SetShown(#d.items == 0)
 		for i, r in ipairs(self.drows) do
 			local e = d.items[i + self.doffset]
@@ -674,8 +787,8 @@ local function BuildList(page)
 				r:Hide()
 			end
 		end
-		local more = #d.items - V.DRAFT_ROWS
-		self.dmore:SetText(more > 0 and L["%d more (scroll the list)"]:format(more) or "")
+		self.dpager:SetShown(#d.items > V.DRAFT_ROWS)
+		self.dpager.Set(dcur, dpages, L["%d of %d · %d items"]:format(dcur, dpages, #d.items))
 		-- the saved lists: each name, its lines beneath
 		local entries = {}
 		local active = I.ActiveList()
@@ -686,10 +799,13 @@ local function BuildList(page)
 			if #rows == 0 then entries[#entries + 1] = { note = L["Nothing left to buy."] } end
 		end
 		self.entries = entries
-		self.offset = math.min(self.offset, math.max(0, #entries - V.LINES))
+		local lcur, lpages
+		self.offset, lcur, lpages = V.PageOffset(math.floor(self.offset / self.per) + 1, #entries, self.per)
+		self.lpager:SetShown(#entries > self.per)
+		self.lpager.Set(lcur, lpages, L["%d of %d"]:format(lcur, lpages))
 		self.empty:SetShown(#I.Lists() == 0)
 		for i, ln in ipairs(self.lines) do
-			local e = entries[i + self.offset]
+			local e = i <= self.per and entries[i + self.offset]
 			ln.entry = e
 			ln.edit:Hide()
 			ln.delete:Hide()
@@ -743,13 +859,6 @@ local function BuildList(page)
 			end
 		end
 		self.undo.Update()
-	end
-	-- the draft's rows scroll with the wheel over them
-	for _, r in ipairs(page.drows) do
-		Wheel(r, function(delta)
-			page.doffset = math.max(0, math.min(math.max(0, #I.Draft().items - V.DRAFT_ROWS), page.doffset - delta))
-			page:Refresh()
-		end)
 	end
 end
 

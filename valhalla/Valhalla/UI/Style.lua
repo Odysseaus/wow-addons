@@ -187,16 +187,72 @@ local function Apply(w)
 	local fn = APPLY[vh.kind]
 	if fn then fn(w, vh, th) end
 	for k, p in pairs(vh.parts) do if not vh.used[k] then p:Hide() end end
+	vh.look = th.key
 end
 Style.Apply = Apply
+
+-- what went wrong painting (v0.4.2.1: kept, the last few, for /valhalla look check)
+Style.errors = {}
+local function Failed(w, err)
+	local e = Style.errors
+	e[#e + 1] = { look = Style.Look(), kind = w and w.vh and (w.vh.as or w.vh.kind) or "?", err = tostring(err) }
+	while #e > 10 do table.remove(e, 1) end
+end
 
 function Style.Reskin()
 	local n = 0
 	for w in pairs(Style.all) do
-		local ok = pcall(Apply, w)
-		if ok then n = n + 1 end
+		local ok, err = pcall(Apply, w)
+		if ok then n = n + 1 else Failed(w, err) end
 	end
 	return n
+end
+
+-- the look painted again on root's widgets only (v0.4.2.1: the AH's side window, each time the AH opens)
+function Style.ReskinUnder(root)
+	local n = 0
+	if not root then return n end
+	for w in pairs(Style.all) do
+		local f, hops = w, 0
+		while f and f ~= root and hops < 30 do f = f.GetParent and f:GetParent() or nil hops = hops + 1 end
+		if f == root then
+			local ok, err = pcall(Apply, w)
+			if ok then n = n + 1 else Failed(w, err) end
+		end
+	end
+	return n
+end
+
+-- /valhalla look check: the look, how many widgets wear it, framed panels, art that's missing, errors; printed and
+-- saved (ValhallaDB.ui.lookCheck) so it can be read after a /reload. extra: other modules' lines (name = value)
+function Style.CheckLook(extra)
+	local look = Style.Look()
+	local th = Style.Theme()
+	local d = { look = look, at = time and time() or 0, widgets = 0, framed = 0, bronze = 0, wrongLook = 0, errors = {}, missing = {} }
+	for w in pairs(Style.all) do
+		local vh = w.vh or {}
+		d.widgets = d.widgets + 1
+		if vh.look and vh.look ~= look then d.wrongLook = d.wrongLook + 1 end
+		if vh.framed then
+			d.framed = d.framed + 1
+			local b = vh.parts and vh.parts.n1   -- (the bronze border's first piece)
+			if b and b.IsShown and b:IsShown() then d.bronze = d.bronze + 1 end
+		end
+	end
+	for _, e in ipairs(Style.errors) do d.errors[#d.errors + 1] = ("%s %s: %s"):format(e.look, e.kind, e.err) end
+	for k, v in pairs(Style.missing) do d.missing[#d.missing + 1] = k .. " -> " .. tostring(v) end
+	table.sort(d.missing)
+	if type(extra) == "table" then for k, v in pairs(extra) do d[k] = v end end
+	d.lines = {
+		("Look: %s (%s). Widgets: %d; framed panels: %d, in bronze: %d; not yet repainted: %d."):format(th.label, look, d.widgets, d.framed, d.bronze, d.wrongLook),
+		("Errors: %d. Missing art: %d%s"):format(#d.errors, #d.missing, #d.missing > 0 and (" (" .. table.concat(d.missing, ", ", 1, math.min(4, #d.missing)) .. ")") or ""),
+	}
+	for _, e in ipairs(d.errors) do d.lines[#d.lines + 1] = "  " .. e end
+	if type(extra) == "table" and extra.line then d.lines[#d.lines + 1] = extra.line end
+	if type(_G.ValhallaDB) ~= "table" then _G.ValhallaDB = {} end
+	if type(_G.ValhallaDB.ui) ~= "table" then _G.ValhallaDB.ui = {} end
+	_G.ValhallaDB.ui.lookCheck = d
+	return d
 end
 
 -- one of w's own textures, by name (made once, shown while this look uses it)
@@ -404,20 +460,30 @@ end
 local SQUARE = { minus = true, plus = true, delete = true, close = true }
 local ARROW = { dec = "left", inc = "right", prev = "left", next = "right", first = "left", last = "right" }
 
-local function ArrowArt(w, vh, th, dir, double)
+-- a pager's first / last (v0.4.2.1): the one arrow box, the same as < and >, with a thin gold stop bar at its far
+-- side (|< and >|: no second arrow over the first)
+local function ArrowArt(w, vh, th, dir, stop)
 	local a = th.arrow
 	local name = a[dir]
 	local size = math.min(a.size, (vh.h or 20), (vh.w or 20))
-	local keys = double and { "a1", "a2" } or { "a1" }
-	for i, k in ipairs(keys) do
-		local t = Part(w, k, "ARTWORK", 1)
-		t:SetSize(size, size)
-		local dx = double and ((i == 1) and -4 or 4) or 0
-		t:SetPoint("CENTER", dx, 0)
-		local art = (vh.state.down and th.key == "profession") and Variant(name, "pressed") or name
-		if not Art(t, art, { 1, 0.82, 0, 1 }) and art ~= name then Art(t, name, { 1, 0.82, 0, 1 }) end
-		if th.key == "norse" and t.SetVertexColor then t:SetVertexColor(1, 0.85, 0.45, 1) end
-		if vh.state.off and t.SetDesaturated then t:SetDesaturated(true) elseif t.SetDesaturated then t:SetDesaturated(false) end
+	local prof = th.key == "profession"
+	local t = Part(w, "a1", "ARTWORK", 1)
+	t:SetSize(size, size)
+	-- (Norse's bare chevron moves aside a little for its bar; Profession's arrow is a whole box: it stays put)
+	local dx = (stop and not prof) and (dir == "left" and 2 or -2) or 0
+	t:SetPoint("CENTER", dx, 0)
+	local art = (vh.state.down and prof) and Variant(name, "pressed") or name
+	if not Art(t, art, { 1, 0.82, 0, 1 }) and art ~= name then Art(t, name, { 1, 0.82, 0, 1 }) end
+	if th.key == "norse" and t.SetVertexColor then t:SetVertexColor(1, 0.85, 0.45, 1) end
+	if t.SetDesaturated then t:SetDesaturated(vh.state.off and true or false) end
+	if stop then
+		local bar = Part(w, "stop", "ARTWORK", 3)
+		local bh = math.max(6, math.floor(size * (prof and 0.45 or 0.85) + 0.5))
+		bar:SetSize(2, bh)
+		local bx = prof and 5 or 6
+		bar:SetPoint("CENTER", dir == "left" and -bx or bx, 0)
+		local c = vh.state.off and { 0.5, 0.48, 0.45, 0.9 } or (prof and { 1, 0.86, 0.3, 1 } or { 1, 0.85, 0.45, 1 })
+		Color(bar, c)
 	end
 end
 
@@ -597,12 +663,39 @@ function Style.Stepper(dec, inc, box, bw, bh)
 end
 
 -- a dropdown's button and its menu (the button lit while the menu is open)
+-- open dropdowns close on a click anywhere else (v0.4.2.1): one listener for the game's GLOBAL_MOUSE_DOWN (an event:
+-- no hook, nothing of the game's touched), registered only while a menu is open; a press on the menu or on its own
+-- button is left alone (the button's click opens and closes it as before)
+Style.openMenus = {}
+local closer
+local function Outside(f) return not (f and f.IsMouseOver and f:IsMouseOver()) end
+local function CloseOutside()
+	for menu, b in pairs(Style.openMenus) do
+		if not (menu.IsShown and menu:IsShown()) then
+			Style.openMenus[menu] = nil
+		elseif Outside(menu) and Outside(b) then
+			menu:Hide()
+			Style.openMenus[menu] = nil
+		end
+	end
+	if not next(Style.openMenus) and closer then closer:UnregisterEvent("GLOBAL_MOUSE_DOWN") end
+end
+Style.CloseOutside = CloseOutside
+local function Watch(menu, b)
+	if not closer then
+		closer = CreateFrame("Frame")
+		closer:SetScript("OnEvent", CloseOutside)
+	end
+	Style.openMenus[menu] = b
+	closer:RegisterEvent("GLOBAL_MOUSE_DOWN")
+end
+
 function Style.Dropdown(b, menu, width, height)
 	Style.Button(b, "dropdown", width, height, { menu = menu })
 	if menu then
 		Style.Menu(menu)
-		Hook(menu, "OnShow", function() Apply(b) end)
-		Hook(menu, "OnHide", function() Apply(b) end)
+		Hook(menu, "OnShow", function() Apply(b) Watch(menu, b) end)
+		Hook(menu, "OnHide", function() Apply(b) Style.openMenus[menu] = nil end)
 	end
 	return b
 end

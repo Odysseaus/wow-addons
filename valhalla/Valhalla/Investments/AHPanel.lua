@@ -26,7 +26,8 @@ local I = mod.I
 local A = {}
 I.AH = A
 
-A.ROWS = 14
+A.ROWS = 13                                 -- (v0.4.2.1: a page of 13, its pager under them)
+A.offset = 0
 A.W = 270
 A.H = 530
 A.WATCH = 3                                 -- (seconds to wait for the AH's answer to a search)
@@ -150,7 +151,7 @@ local function Build()
 	panel = CreateFrame("Frame", "ValhallaAHList", ah, "BackdropTemplate")
 	panel:SetSize(A.W, A.H)
 	panel:SetPoint("TOPLEFT", ah, "TOPRIGHT", 6, 0)
-	T.Skin(panel, 0.96)
+	T.Skin(panel, 0.96, nil, true)   -- (v0.4.2.1: framed: in Norse the bronze frame and its corner brackets)
 	panel:EnableMouse(true)
 	local title = T.Font(panel:CreateFontString(nil, "OVERLAY", "GameFontNormal"), 13, T.GOLD)
 	title:SetPoint("TOPLEFT", 12, -10)
@@ -190,6 +191,15 @@ local function Build()
 		r:Hide()
 		panel.rows[i] = r
 	end
+	-- (v0.4.2.1: a page at a time, no scrolling: |<  <  1 of 2  >  >|)
+	panel.pager = V.Pager(panel, function(k)
+		local n = #A.Rows()
+		local _, cur, pages = V.PageOffset(math.floor(A.offset / A.ROWS) + 1, n, A.ROWS)
+		A.offset = V.PageOffset(k == "first" and 1 or k == "prev" and cur - 1 or k == "next" and cur + 1 or pages, n, A.ROWS)
+		A.Refresh()
+	end, A.W - 16 - 4 * 30 - 18)
+	panel.pager:SetPoint("TOPLEFT", 8, -84 - A.ROWS * 26 - 2)
+	panel.pager:Hide()
 	panel.mail = T.Font(panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 11, T.GOLD)
 	panel.mail:SetPoint("BOTTOMLEFT", 12, 10)
 	panel.mail:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
@@ -373,8 +383,14 @@ function A.Refresh()
 			or L["Choose a shopping list above."])
 	end
 	panel.empty:SetShown(#rows == 0)
+	local cur, pages
+	local lid = list.list and list.list.id or false
+	if lid ~= A.shownList then A.shownList, A.offset = lid, 0 end   -- (another list: its first page)
+	A.offset, cur, pages = I.Views.PageOffset(math.floor(A.offset / A.ROWS) + 1, #rows, A.ROWS)
+	panel.pager:SetShown(#rows > A.ROWS)
+	panel.pager.Set(cur, pages, L["%d of %d"]:format(cur, pages))
 	for i, r in ipairs(panel.rows) do
-		local d = rows[i]
+		local d = rows[A.offset + i]
 		if d then
 			r.icon:SetTexture(I.ItemIcon(d.id))
 			r.name:SetText(d.name)
@@ -407,9 +423,26 @@ function A.Show()
 	if not on then return end
 	A.waiting = nil
 	Build()
+	-- (v0.4.2.1: the look painted again on this window each visit, the secure Search buttons refused as ever)
+	if panel and ns.Style then ns.Style.ReskinUnder(panel) ns.Style.ReskinUnder(mini) end
 	-- (the AH's Search button can be made after its frame: the targets set again on each visit)
 	if panel then for _, r in ipairs(panel.rows) do if not r.search.armed then A.Arm(r.search) end end end
 	A.Refresh()
+end
+
+-- for /valhalla look check: this window's frame in the look
+function A.LookInfo()
+	local vh = panel and panel.vh
+	local n1 = vh and vh.parts and vh.parts.n1
+	local info = {
+		ahPanel = panel and true or false,
+		ahLook = vh and vh.look or "none",
+		ahFramed = vh and vh.framed and true or false,
+		ahBronze = (n1 and n1:IsShown()) and true or false,
+	}
+	info.line = panel and ("AH side window: %s look, framed %s, bronze %s."):format(info.ahLook, info.ahFramed and "yes" or "no", info.ahBronze and "shown" or "hidden")
+		or "AH side window: not built yet (open the Auction House once)."
+	return info
 end
 
 function A.Hide()
