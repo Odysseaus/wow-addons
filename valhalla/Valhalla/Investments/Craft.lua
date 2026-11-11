@@ -124,6 +124,25 @@ end
 -- the bundled IDs (Data/Forever/Recipes.lua): { [skill line] = { name, ids = "id,id,..." } }
 function C.Bundled() return (ns.Recipes and ns.Recipes.professions) or {} end
 
+-- (v0.4.2.3) Top 10's filter: each item's required skill per profession, from Data/Forever/TopSkills.lua
+-- (Wowhead Forever, read 2026-11-11): TopMap("craft"|"harvest")[skill line][item] = skill | false (unknown);
+-- nil: not that profession's item. Parsed once.
+local topMaps = {}
+function C.TopMap(kind)
+	if topMaps[kind] then return topMaps[kind] end
+	local src = ns.TopSkills and ns.TopSkills[kind]
+	if not src then return nil end
+	local out = {}
+	for prof, e in pairs(src) do
+		local t = {}
+		for id, sk in (e.known or ""):gmatch("(%d+):(%d+)") do t[tonumber(id)] = tonumber(sk) end
+		for id in (e.unknown or ""):gmatch("%d+") do t[tonumber(id)] = false end
+		out[prof] = t
+	end
+	topMaps[kind] = out
+	return out
+end
+
 -- every profession with recipes: { key, name, ids, source = "live" | "bundled" }, by name
 function C.Professions()
 	local byKey = {}

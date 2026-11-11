@@ -15,7 +15,7 @@ ns.modules.worldmap = { key = "worldmap", enabled = true }
 function ns.modules.worldmap.TabAway(away) ns.modules.worldmap.away = away end   -- (Map/Panel.lua: its menu put away on the other tabs)
 assert(loadfile(root .. "UI/Style.lua"))("Valhalla", ns)   -- (v0.4.2: the look, loaded after Core.lua)
 assert(loadfile(root .. "Links.lua"))("Valhalla", ns)
-for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Data/Forever/Recipes", "Craft", "Merchant", "AHPanel" }) do
+for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Data/Forever/Recipes", "Data/Forever/TopSkills", "Craft", "Merchant", "AHPanel" }) do
   assert(loadfile(root .. (f:find("/") and f or ("Investments/" .. f)) .. ".lua"))("Valhalla", ns)   -- (the TOC's order)
 end
 local mod = ns:GetModule("invest")
@@ -2210,6 +2210,128 @@ print("== 33. v0.4.2.1: pages not scrolling, |< >| pager ends, Craft's grid and 
   I.DeleteList(PL.id) I.undo = {}
   ok(Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == errs0, "v0.4.2.1 wrote nothing on the map; no handler error")
   ValhallaDB = nil
+  T.Select("map")
+end)()
+
+print("== 34. v0.4.2.3: Top 10 filtered: All | Crafted | Harvested, a profession, its level (Wowhead Forever's skills)")
+;(function()
+  local St, Mk, Sc, Cr = ns.Style, I.Market, I.Scan, I.Craft
+  local errs0 = #W.sizeErrors
+  ValhallaDB = nil
+  -- the bundled levels: numbers or false (unknown, never a guess); Mining harvested only
+  local TS = ns.TopSkills
+  ok(TS and TS.craft and TS.harvest and TS.source:find("Wowhead Forever", 1, true), "Data/Forever/TopSkills.lua loaded, its source named")
+  local bad, nums, unk = 0, 0, 0
+  for _, kind in ipairs({ "craft", "harvest" }) do
+    for p, t in pairs(Cr.TopMap(kind)) do
+      for id, v in pairs(t) do
+        if v == false then unk = unk + 1 elseif type(v) == "number" and v >= 1 and v <= 400 then nums = nums + 1 else bad = bad + 1 end
+      end
+    end
+  end
+  ok(bad == 0 and nums > 1000 and unk > 0, "every level a skill (1-400) or false (unknown)", ("%d known, %d unknown, %d bad"):format(nums, unk, bad))
+  ok(Cr.TopMap("craft")[186] == nil and Cr.TopMap("harvest")[186] ~= nil, "Mining: Harvested only, not Crafted")
+  local sk, fi = 0, 0
+  for _, v in pairs(Cr.TopMap("harvest")[393]) do if v ~= false then sk = sk + 1 end end
+  for _, v in pairs(Cr.TopMap("harvest")[356]) do if v ~= false then fi = fi + 1 end end
+  ok(sk == 0 and fi == 0, "Skinning and Fishing: none read, so all unknown (none estimated)")
+  ok(Mk.TopSkill("harvest", 182, 2447) == 1 and Mk.TopSkill("harvest", 182, 785) == 50 and Mk.TopSkill("harvest", 182, 13463) == 270 and Mk.TopSkill("harvest", 182, 19726) == false,
+    "Herbalism: Peacebloom 1, Mageroyal 50, Dreamfoil 270 (node skills), Bloodvine unknown")
+  ok(Mk.TopSkill("craft", 171, 2459) == 60 and Mk.TopSkill("craft", 171, 3387) == 250 and Mk.TopSkill("craft", 171, 2455) == false and Mk.TopSkill("craft", 171, 2447) == nil,
+    "Alchemy: Swiftness Potion 60, Limited Invulnerability Potion 250, Minor Mana Potion unknown; a herb isn't Alchemy's")
+  -- the defaults, saved with the settings
+  ok(I.S.topKind == "all" and I.S.topProf == 0 and I.S.topBracket == "all" and ValhallaInvestDB.settings == I.S, "defaults: All, any profession, all levels (in ValhallaInvestDB's settings)")
+  -- a house: 12 other items rising faster than any herb, then herbs, ore, a hide, potions
+  local hm = Sc.Market("Filt", true)
+  local now = math.floor(W.now / 60) - hm.base
+  local s = math.floor(now / Sc.SLOT)
+  local a, b, c = (s - 5) * Sc.SLOT, (s - 2) * Sc.SLOT, s * Sc.SLOT + 1
+  hm.scans = { { t = a, kind = "full", n = 1, items = 1 }, { t = b, kind = "full", n = 1, items = 1 }, { t = c, kind = "full", n = 1, items = 1 } }
+  local function Item(id, change)
+    local x = math.floor(100 * (1 + change) + 0.5)
+    Sc.AddPoint(hm, id, a, 100, 1, 1) Sc.AddPoint(hm, id, b, x, 1, 1) Sc.AddPoint(hm, id, c, x, 1, 1)
+    hm.cur[id] = ("%d,%d,%d,%d"):format(x, 1, 1, c)
+  end
+  for k = 1, 12 do Item(900000 + k, 1 + k / 10) end
+  Item(2447, 0.10) Item(785, 0.09) Item(13463, 0.08) Item(19726, 0.07) Item(2770, 0.04) Item(4232, 0.03)
+  Item(2459, -0.20) Item(2455, -0.15) Item(3387, -0.10)
+  local r10, f10 = Sc.Trending("Filt", 10)
+  local rAll, fAll, fulls = Sc.TrendingAll("Filt")
+  ok(fulls == 3 and #r10 == 10 and #rAll == 18 and #fAll == 3 and rAll[1].id == 900012, "Scan keeps the full sorted lists (18 rising); Trending gives the first 10", #rAll)
+  ok(select(1, Sc.TrendingAll("Filt")) == rAll, "the full lists cached (one read per scan)")
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  Mk.house = "Filt"
+  mp:ShowSub("top")
+  local top = mp.subs.top
+  local function Ids(c2) local t = {} for _, r in ipairs(top.cols[c2].rows) do if r:IsShown() then t[#t + 1] = r.cell.id end end return t end
+  for _, look in ipairs({ "profession", "norse" }) do
+    St.SetLook(look)
+    local tag = look == "norse" and "Norse: " or "Profession: "
+    I.S.topKind, I.S.topProf, I.S.topBracket = "all", 0, "all"
+    mp:Refresh()
+    local r = Ids(1)
+    ok(#r == 10 and r[1] == 900012 and top.kinds[1]:IsShown() and not top.prof:IsShown() and not top.level:IsShown() and not top.note:IsShown(),
+      tag .. "All: the top 10 as before; no profession or level dropdown")
+    W.Click(top.kinds[3])
+    r = Ids(1)
+    ok(I.S.topKind == "harvest" and top.prof:IsShown() and not top.level:IsShown() and #r == 6 and r[1] == 2447 and r[6] == 4232,
+      tag .. "Harvested: filtered first, then the top 10 (herbs, ore, a hide; the 12 faster items aren't harvested)", table.concat(r, ","))
+    W.Click(top.prof)
+    local names, herb = {}, nil
+    for _, it in ipairs(top.prof.menu.items) do if it:IsShown() then names[#names + 1] = it.text._text if it.value == 182 then herb = it end end end
+    ok(top.prof.menu:IsShown() and #names == 5 and names[1]:find("Any profession", 1, true), tag .. "the profession dropdown: Any, then the four gathering professions", table.concat(names, "|"))
+    W.Click(herb)
+    r = Ids(1)
+    ok(I.S.topProf == 182 and not top.prof.menu:IsShown() and top.level:IsShown() and top.levelTitle:IsShown() and #r == 4 and top.level.text._text == "All levels",
+      tag .. "Herbalism picked: its herbs; the Level dropdown appears (All levels)", table.concat(r, ","))
+    -- the level dropdown: right of the lists, its menu over no prices
+    local lp = top.level._points[1]
+    local colRight = 0
+    for _, col in ipairs(top.cols) do local cp = col._points[1] colRight = math.max(colRight, cp[2] + col._w) end
+    ok(lp and lp[2] >= colRight and top.level.menu._points[1][2] == top.level and top.level.menu._points[1][3] == "BOTTOMLEFT",
+      tag .. "the Level dropdown sits right of Rising and Falling, its menu opens below it: no prices covered", ("%s >= %s"):format(lp and lp[2], colRight))
+    W.Click(top.level)
+    local lv = {}
+    for _, it in ipairs(top.level.menu.items) do if it:IsShown() then lv[#lv + 1] = it.text._text end end
+    ok(top.level.menu:IsShown() and table.concat(lv, "|") == "> All levels|1-150|151-225|226-300|301-375+", tag .. "Level: All levels, 1-150, 151-225, 226-300, 301-375+ (the chosen one marked)", table.concat(lv, "|"))
+    W.Fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+    ok(not top.level.menu:IsShown(), tag .. "a click anywhere else: the Level menu closes")
+    W.Click(top.level)
+    W.Click(top.level.menu.items[2])
+    r = Ids(1)
+    ok(I.S.topBracket == "1" and #r == 2 and r[1] == 2447 and r[2] == 785 and top.note:IsShown() and top.note._text:find("^1 Herbalism items with no known skill level are hidden"),
+      tag .. "1-150: Peacebloom and Mageroyal; Bloodvine (no known level) hidden and counted", top.note._text)
+    W.Click(top.level) W.Click(top.level.menu.items[4])
+    r = Ids(1)
+    ok(I.S.topBracket == "226" and #r == 1 and r[1] == 13463 and top.level.text._text == "226-300", tag .. "226-300: Dreamfoil only (one bracket at a time)")
+    W.Click(top.level) W.Click(top.level.menu.items[5])
+    ok(#Ids(1) == 0 and top.empty:IsShown() and top.empty._text:find("No Herbalism (301-375+) item moved", 1, true) and top.note:IsShown() and not top.cols[1]:IsShown(),
+      tag .. "301-375+: nothing; says so, and the hidden count still shown", top.empty._text)
+    -- Crafted: Mining isn't offered; Alchemy 226-300
+    W.Click(top.kinds[2])
+    ok(I.S.topKind == "craft" and I.S.topProf == 0 and I.S.topBracket == "all" and not top.level:IsShown(), tag .. "Crafted: the profession and level start over")
+    W.Click(top.prof)
+    local alch, mining = nil, false
+    for _, it in ipairs(top.prof.menu.items) do if it:IsShown() then if it.value == 171 then alch = it end if it.value == 186 then mining = true end end end
+    ok(alch and not mining, tag .. "Crafted's professions: no Mining")
+    W.Click(alch)
+    W.Click(top.level) W.Click(top.level.menu.items[4])
+    local f2 = Ids(2)
+    ok(#f2 == 1 and f2[1] == 3387 and top.note._text:find("^1 Alchemy items", 1) and #Ids(1) == 0, tag .. "Alchemy 226-300: Limited Invulnerability Potion falling; Minor Mana Potion hidden, counted", table.concat(f2, ","))
+  end
+  St.SetLook("profession")
+  -- kept between sessions (ValhallaInvestDB.settings), a saved value that no longer fits starts over
+  ok(ValhallaInvestDB.settings.topKind == "craft" and ValhallaInvestDB.settings.topProf == 171 and ValhallaInvestDB.settings.topBracket == "226", "the filter saved (SavedVariables)")
+  I.S.topProf = 186
+  local k2, p2, b2 = Mk.TopState()
+  ok(k2 == "craft" and p2 == nil and b2 == "all", "a saved Mining under Crafted: any profession, all levels")
+  I.S.topKind, I.S.topProf, I.S.topBracket = "all", 0, "all"
+  mp:Refresh()
+  Sc.Houses().Filt = nil
+  Mk.house = nil
+  ok(Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == errs0, "v0.4.2.3 wrote nothing on the map; no handler error")
   T.Select("map")
 end)()
 

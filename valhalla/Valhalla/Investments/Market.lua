@@ -198,15 +198,129 @@ end
 -- Top 10
 --------------------------------------------------------------------------------
 
+-- (v0.4.2.3) the filter: All | Crafted | Harvested, a profession, and (one profession picked) its level bracket.
+-- The levels: Data/Forever/TopSkills.lua (Wowhead Forever; an item with no known level is hidden from a bracket and
+-- counted). Mining is Harvested only. Kept in the settings (topKind, topProf, topBracket). Filter first, then the top 10.
+M.TOP_KINDS = { { "all", L["All"] }, { "craft", L["Crafted"] }, { "harvest", L["Harvested"] } }
+M.TOP_BRACKETS = { { "all", L["All levels"] }, { "1", "1-150", 1, 150 }, { "151", "151-225", 151, 225 }, { "226", "226-300", 226, 300 }, { "301", "301-375+", 301, math.huge } }
+M.TOP_CRAFT = { 171, 164, 333, 202, 165, 197, 185, 129 }   -- (Mining: Harvested only)
+M.TOP_HARVEST = { 182, 186, 393, 356 }
+-- the item's skill for a profession: a number, false (made or gathered by it, skill unknown), nil (not its)
+function M.TopSkill(kind, prof, id)
+	local C = I.Craft
+	local map = C and C.TopMap and C.TopMap(kind)
+	local t = map and map[prof]
+	if not t then return nil end
+	return t[id]
+end
+function M.TopFilter(list, kind, prof, bracket)
+	if kind ~= "craft" and kind ~= "harvest" then return list, 0 end
+	local out, hidden = {}, 0
+	local profs = {}
+	if prof then profs[1] = prof else for _, p in ipairs(kind == "craft" and M.TOP_CRAFT or M.TOP_HARVEST) do profs[#profs + 1] = p end end
+	local b
+	for _, x in ipairs(M.TOP_BRACKETS) do if x[1] == bracket then b = x end end
+	for _, e in ipairs(list) do
+		local best, member
+		for _, p in ipairs(profs) do
+			local sk = M.TopSkill(kind, p, e.id)
+			if sk ~= nil then member = true if sk and (not best or sk < best) then best = sk end end
+		end
+		if member then
+			if not prof or not b or b[1] == "all" then out[#out + 1] = e
+			elseif not best then hidden = hidden + 1
+			elseif best >= b[3] and best <= b[4] then out[#out + 1] = e end
+		end
+	end
+	return out, hidden
+end
+
+M.TOP_COLS_W = 660   -- (Rising and Falling: two columns of 330)
+-- the saved filter, made sane: (kind, profession or nil, bracket)
+function M.TopState()
+	local kind = I.S.topKind
+	if kind ~= "craft" and kind ~= "harvest" then kind = "all" end
+	local prof = I.S.topProf
+	local okProf = false
+	if kind ~= "all" then for _, p in ipairs(kind == "craft" and M.TOP_CRAFT or M.TOP_HARVEST) do if p == prof then okProf = true end end end
+	prof = okProf and prof or nil
+	local bracket = "all"
+	if prof then for _, x in ipairs(M.TOP_BRACKETS) do if x[1] == I.S.topBracket then bracket = x[1] end end end
+	return kind, prof, bracket
+end
+
+local function DropMenu(f, w, n, onPick)
+	local drop = V.Button(f, "", w, 20)
+	local menu = CreateFrame("Frame", nil, drop, "BackdropTemplate")
+	menu:SetPoint("TOPLEFT", drop, "BOTTOMLEFT", 0, -2)
+	menu:SetWidth(w)
+	menu:SetFrameStrata("DIALOG")
+	if ns.Style then ns.Style.Dropdown(drop, menu, w, 20) else T.Skin(menu, 0.98) end
+	menu:EnableMouse(true)
+	menu.items = {}
+	for i = 1, n do
+		local it = V.Button(menu, "", w - 8, 20, function(self) menu:Hide() onPick(self.value) end, "item")
+		it:SetPoint("TOPLEFT", 4, -10 - (i - 1) * 22)   -- (inside the menu art: its edge and shadow take about 10 above, 20 below)
+		it:Hide()
+		menu.items[i] = it
+	end
+	menu:Hide()
+	drop.menu = menu
+	function drop.Fill(entries, cur)
+		for i, it in ipairs(menu.items) do
+			local e = entries[i]
+			it.value = e and e[1]
+			if e then it.text:SetText((e[1] == cur and "> " or "") .. e[2]) it:Show() else it:Hide() end
+		end
+		menu:SetHeight(10 + math.min(#entries, n) * 22 + 20)
+	end
+	drop:SetScript("OnClick", function() if menu:IsShown() then menu:Hide() else drop.Open() end end)
+	f:HookScript("OnHide", function() menu:Hide() end)
+	return drop
+end
+
 local function BuildTop(f, page)
+	local TOPY = -34
+	local C = I.Craft
+	-- the filter row: All | Crafted | Harvested, a profession, a level
+	f.kinds = {}
+	for k, kd in ipairs(M.TOP_KINDS) do
+		local b = V.Button(f, kd[2], 76, 20, function() I.S.topKind = kd[1] I.S.topProf = 0 I.S.topBracket = "all" f.Redraw() end)
+		b:SetPoint("TOPLEFT", 8 + (k - 1) * 80, -6)
+		b.kind = kd[1]
+		f.kinds[k] = b
+	end
+	local function ProfName(p) return C and C.SKILL and C.SKILL[p] or tostring(p) end
+	local function ProfEntries()
+		local out = { { false, L["Any profession"] } }
+		local mine = C and C.Mine and C.Mine() or {}
+		local list = {}
+		for _, p in ipairs(I.S.topKind == "harvest" and M.TOP_HARVEST or M.TOP_CRAFT) do list[#list + 1] = p end
+		table.sort(list, function(a, b) if (mine[a] and 1 or 0) ~= (mine[b] and 1 or 0) then return mine[a] and true or false end return ProfName(a) < ProfName(b) end)
+		for _, p in ipairs(list) do out[#out + 1] = { p, (mine[p] and "|cffffd100*|r " or "") .. ProfName(p) } end
+		return out
+	end
+	f.prof = DropMenu(f, 190, 10, function(v) I.S.topProf = v or 0 I.S.topBracket = "all" f.Redraw() end)
+	f.prof:SetPoint("TOPLEFT", 252, -6)
+	function f.prof.Open() f.prof.Fill(ProfEntries(), select(2, M.TopState()) or false) f.prof.menu:Show() end
+	-- the level: right of the columns, so its menu opens over no prices (columns end at M.TOP_COLS_W)
+	f.levelTitle = Text(f, 12)
+	f.levelTitle:SetPoint("TOPLEFT", M.TOP_COLS_W + 8, -9)
+	f.levelTitle:SetText(L["Level:"])
+	f.level = DropMenu(f, 130, 5, function(v) I.S.topBracket = v f.Redraw() end)
+	f.level:SetPoint("TOPLEFT", M.TOP_COLS_W + 50, -6)
+	function f.level.Open() f.level.Fill(M.TOP_BRACKETS, I.S.topBracket or "all") f.level.menu:Show() end
 	f.empty = Text(f, 12, GREY)
-	f.empty:SetPoint("TOPLEFT", 8, -8)
-	f.empty:SetPoint("RIGHT", f, "RIGHT", -8, 0)
+	f.empty:SetPoint("TOPLEFT", 8, TOPY - 4)
+	f.empty:SetPoint("RIGHT", f, "LEFT", M.TOP_COLS_W - 8, 0)   -- (left of the Level dropdown and its menu)
 	f.empty:SetJustifyH("LEFT")
+	f.note = Text(f, 11, GREY)
+	f.note:SetPoint("TOPLEFT", 8, TOPY - 30 - M.TOP * 26 - 6)
+	f.note:SetJustifyH("LEFT")
 	f.cols = {}
 	for c, title in ipairs({ L["Rising"], L["Falling"] }) do
 		local col = CreateFrame("Frame", nil, f)
-		col:SetPoint("TOPLEFT", (c - 1) * 330 + 4, -4)
+		col:SetPoint("TOPLEFT", (c - 1) * 330 + 4, TOPY)
 		col:SetSize(320, 30 + M.TOP * 26)
 		col.title = Text(col, 13, c == 1 and GREEN or RED)
 		col.title:SetPoint("TOPLEFT", 4, 0)
@@ -228,19 +342,37 @@ local function BuildTop(f, page)
 		end
 		f.cols[c] = col
 	end
+	function f.Redraw() f.Refresh() end
 	function f.Refresh()
+		local kind, prof, bracket = M.TopState()
+		for _, b in ipairs(f.kinds) do T.Skin(b, 0.9, b.kind == kind and GOLD or T.BRONZE) end
+		f.prof:SetShown(kind ~= "all")
+		f.prof.text:SetText(prof and ProfName(prof) or L["Any profession"])
+		f.levelTitle:SetShown(prof ~= nil) f.level:SetShown(prof ~= nil)
+		local bl for _, x in ipairs(M.TOP_BRACKETS) do if x[1] == bracket then bl = x[2] end end
+		f.level.text:SetText(bl or L["All levels"])
 		local house = M.House()
-		local rising, falling, fulls, nextAt = S().Trending(house, M.TOP)
+		local rising, falling, fulls, nextAt = S().TrendingAll(house)
+		local hr, hf
+		rising, hr = M.TopFilter(rising, kind, prof, bracket)
+		falling, hf = M.TopFilter(falling, kind, prof, bracket)
 		local shown = {}
-		-- (v0.4.1.1) the columns only with something in them; else the message alone (they shared the same corner)
 		local any = fulls >= 3 and (#rising > 0 or #falling > 0)
 		f.empty:SetShown(not any)
 		local when = (not nextAt or nextAt <= Now()) and L["now"] or (date and date("%H:%M", nextAt) or tostring(nextAt))
+		local what = kind == "all" and "" or ((prof and ProfName(prof) or (kind == "craft" and L["crafted"] or L["harvested"])) .. (bracket ~= "all" and (" (" .. bl .. ")") or "") .. " ")
 		if fulls < 3 then
 			f.empty:SetText(L["Top 10 needs full scans in 3 different hours within 7 days (you have %d). History keeps one point an hour, so two scans in the same hour count once; your next full scan counts from %s. Scan at the Auction House: the Scan button is on Valhalla's list beside it."]:format(fulls, when))
-		else
+		elseif kind == "all" then
 			f.empty:SetText(L["No price moved in your scans of the last 7 days (full scans in %d different hours). Your next full scan counts from %s."]:format(fulls, when))
+		else
+			f.empty:SetText(L["No %sitem moved in your scans of the last 7 days (full scans in %d different hours). Your next full scan counts from %s."]:format(what, fulls, when))
 		end
+		local hidden = (hr or 0) + (hf or 0)
+		f.note:SetShown(hidden > 0)
+		f.note:SetText(L["%d %s items with no known skill level are hidden from this level."]:format(hidden, prof and ProfName(prof) or ""))
+		if not any then f.note:ClearAllPoints() f.note:SetPoint("TOPLEFT", 8, TOPY - 50)
+		else f.note:ClearAllPoints() f.note:SetPoint("TOPLEFT", 8, TOPY - 30 - M.TOP * 26 - 6) end
 		f.nextAt = nextAt
 		for c, list in ipairs({ rising, falling }) do
 			local col = f.cols[c]

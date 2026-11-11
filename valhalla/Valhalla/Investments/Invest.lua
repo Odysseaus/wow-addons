@@ -37,6 +37,8 @@ I.SETTINGS = {
 	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (what you own costs nothing) | "vendor" (at its
 	-- vendor value); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false,
+	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
+	topKind = "all", topProf = 0, topBracket = "all",
 }
 I.CATS = { "mat", "reagent", "gear" }
 I.CAT_NAME = { mat = L["Profession Mat"], reagent = L["Reagent"], gear = L["Gear Upgrade"] }

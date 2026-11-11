@@ -4,6 +4,14 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2.3", date = "2026-11-11", heads = { [1] = "New", [6] = "Note", }, items = {
+		"|cff6e2c0aTop 10, filtered|r: All | Crafted | Harvested above AH Market's Top 10, and a profession to pick (yours starred). Mining is under Harvested only.",
+		"With one profession picked, a Level dropdown: All levels, 1-150, 151-225, 226-300 or 301-375+ (one at a time). It opens to the right of the lists, over no prices.",
+		"The levels are Wowhead Forever's: a recipe's required skill for crafts, the node's skill for herbs and ore. An item with no known level is left out of a level and counted in a note under the lists; nothing is guessed (Skinning and Fishing have none yet).",
+		"The filter comes first, then the top 10: a filtered view still shows up to 10 rising and 10 falling.",
+		"Your filter is kept between sessions. Dropdowns close when you click anywhere else.",
+		"A /reload is not enough this time: one new file (Data/Forever/TopSkills.lua). Restart the game after installing.",
+	} },
 	{ version = "v0.4.2.2", date = "2026-11-11", heads = { [1] = "Fixed", [5] = "New", [6] = "Note", }, items = {
 		"|cff6e2c0aQuest progress kept in step|r: when the game counts your last quest item a moment after its quest log update, the tracker no longer keeps saying you still need it. Valhalla reads the quest log again on the events that carry the count (bags, quest log changes, quest progress messages), half a second and again a second and a half after, and when the tracker missed a change it makes it read again by re-tracking one quest where it already is (the order stays; never in combat, at most every 2 seconds).",
 		"Ready to Turn In fills at once, in combat, in flight and right after a zone change too; only the tracking changes still wait for the end of the fight or the landing, as before.",

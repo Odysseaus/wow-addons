@@ -292,7 +292,7 @@ local function Full(r)
 	S.Prune(m)
 	-- Top 10 worked out here too, a little each frame (reading 7 days of every item is the costly part)
 	r.phase = "trend"
-	S.Trending(r.house, 10, function() if Spent(r) then Yield() end end)
+	S.TrendingAll(r.house, function() if Spent(r) then Yield() end end)
 	r.done = L["Full scan done: %d auctions of %d items (%s). %s"]:format(n, items, r.house, S.CooldownText())
 end
 
@@ -491,17 +491,28 @@ end
 -- now) is cut in two halves; change = the median lowest price of the second half against the first's.
 -- Ties: the change in auctions listed.
 S.trendCache = {}
-function S.Trending(house, max, step)
-	max = max or 10
+-- (v0.4.2.3) the full sorted lists are kept (cached per house and scan); a caller filters them, then takes its top
+-- max (the Top 10 filter: profession, crafted or harvested, level). S.Trending gives the first max (10 if none).
+function S.TrendingAll(house, step)
 	local m = S.Market(house)
 	if not m then return {}, {}, 0 end
 	local last = m.scans[#m.scans]
-	local key = ("%d:%s:%d:%s"):format(#m.scans, last and last.t or "-", max, tostring(I.S.histDays))
+	local key = ("%d:%s:%s"):format(#m.scans, last and last.t or "-", tostring(I.S.histDays))
 	local c = S.trendCache[house]
 	if c and c.key == key and c.m == m then return c.rising, c.falling, c.fulls, c.nextAt end
-	local rising, falling, fulls, nextAt = S.TrendingNow(house, max, step)
+	local rising, falling, fulls, nextAt = S.TrendingNow(house, nil, step)
 	S.trendCache[house] = { key = key, m = m, rising = rising, falling = falling, fulls = fulls, nextAt = nextAt }
 	return rising, falling, fulls, nextAt
+end
+local function Head(list, max)
+	local out = {}
+	for i = 1, math.min(#list, max) do out[i] = list[i] end
+	return out
+end
+function S.Trending(house, max, step)
+	local rising, falling, fulls, nextAt = S.TrendingAll(house, step)
+	max = max or 10
+	return Head(rising, max), Head(falling, max), fulls, nextAt
 end
 
 function S.TrendingNow(house, max, step)
@@ -545,8 +556,10 @@ function S.TrendingNow(house, max, step)
 	end
 	table.sort(rising, function(x, y) if x.change ~= y.change then return x.change > y.change end if x.auctions ~= y.auctions then return x.auctions > y.auctions end return x.id < y.id end)
 	table.sort(falling, function(x, y) if x.change ~= y.change then return x.change < y.change end if x.auctions ~= y.auctions then return x.auctions < y.auctions end return x.id < y.id end)
-	for k = #rising, max + 1, -1 do rising[k] = nil end
-	for k = #falling, max + 1, -1 do falling[k] = nil end
+	if max then   -- (none: the full lists)
+		for k = #rising, max + 1, -1 do rising[k] = nil end
+		for k = #falling, max + 1, -1 do falling[k] = nil end
+	end
 	return rising, falling, fulls, nextAt
 end
 
