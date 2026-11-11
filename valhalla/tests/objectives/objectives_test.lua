@@ -707,5 +707,167 @@ back = true
 for _, r in ipairs(W.log.rows) do if W.log.measured[r.questID] ~= 50 or not PinOf(r)._shown then back = false end end
 ok(back, "on again: shifted and pinned from the next update")
 
+
+---------------------------------------------------------------------------
+-- v0.4.2.2: progress kept in step
+---------------------------------------------------------------------------
+print("== 36. (v0.4.2.2, A) the count lands after the quest log update: BAG_UPDATE_DELAYED / UNIT_QUEST_LOG_CHANGED catch it")
+W.Reset()
+W.map = 1436
+W.AddQuest(60, "Westfall", "Linen", 12, false, true) W.quests[60].obj = { { 9, 10 } }
+W.AddQuest(61, "Westfall", "Murlocs", 14, false, true) W.quests[61].obj = { { 7, 8 } }
+W.AddQuest(62, "Westfall", "Two Things", 13, false, true) W.quests[62].obj = { { 5, 5 }, { 2, 6 } }
+W.AddQuest(63, "Westfall", "Gnolls", 15, false, true) W.quests[63].obj = { { 1, 2 } }
+W.AddQuest(64, "Westfall", "Bandanas", 16, false, true) W.quests[64].obj = { { 3, 4 } }
+W.AddQuest(65, "Westfall", "Feathers", 17, false, true) W.quests[65].obj = { { 3, 4 } }
+W.AddQuest(66, "Westfall", "Oats", 18, false, true) W.quests[66].obj = { { 3, 4 } }
+W.AddQuest(67, "Westfall", "Report", 11, false, true) W.quests[67].obj = { { 1, 1 } }
+W.AddQuest(68, "Westfall", "Hides", 19, false, true) W.quests[68].obj = { { 0, 5 } }
+W.AddQuest(70, "Elwynn Forest", "Wolves", 6, false, false) W.quests[70].obj = { { 0, 8 } }
+Start({ enabled = true, readyCollapsed = false, watchSide = "front" })
+Run(2)
+ok(eq(W.watches, { 67, 60, 62, 61, 63, 64, 65, 66, 68 }), "Westfall's quests, by level", list(W.watches))
+Fire("QUEST_LOG_UPDATE") Run(1)   -- (the update came: still 9/10)
+W.quests[60].obj = { { 10, 10 } } W.quests[60].ready = true   -- (the tenth counted a moment later, no quest log update)
+Fire("BAG_UPDATE_DELAYED") Run(2)
+ok(not has(W.watches, 60) and has(ReadyIds(), 60), "BAG_UPDATE_DELAYED: the ready quest moves to Ready to Turn In", list(W.watches))
+W.quests[61].obj = { { 8, 8 } } W.quests[61].ready = true
+Fire("UNIT_QUEST_LOG_CHANGED", "party1") Run(1)
+ok(has(W.watches, 61), "UNIT_QUEST_LOG_CHANGED for someone else: nothing read")
+Fire("UNIT_QUEST_LOG_CHANGED", "player") Run(1)
+ok(not has(W.watches, 61) and has(ReadyIds(), 61), "UNIT_QUEST_LOG_CHANGED (player): moved too", list(W.watches))
+ok(has(O.EVENTS, "QUEST_WATCH_UPDATE") and has(O.EVENTS, "QUEST_LOG_CRITERIA_UPDATE") and has(O.EVENTS, "UI_INFO_MESSAGE") and has(O.EVENTS, "QUEST_ITEM_UPDATE"),
+  "QUEST_WATCH_UPDATE, QUEST_LOG_CRITERIA_UPDATE, UI_INFO_MESSAGE, QUEST_ITEM_UPDATE heard as well")
+
+print("== 37. (A) a second read after the last event")
+Fire("QUEST_LOG_UPDATE") Run(0.8)
+W.quests[63].obj = { { 2, 2 } } W.quests[63].ready = true   -- (after the first read, before the second; no event)
+ok(has(W.watches, 63), "the first read (0.5 s) saw it unfinished")
+Run(1.0)
+ok(not has(W.watches, 63) and has(ReadyIds(), 63), "the second read (1.5 s) caught it", list(W.watches))
+
+print("== 38. (B) progress reads go on in combat, in flight and before a zone's plan; watch changes wait")
+W.combat = true W.combatChanges = 0
+W.quests[64].obj = { { 4, 4 } } W.quests[64].ready = true
+Fire("QUEST_LOG_CRITERIA_UPDATE", 64) Run(1)
+O.Tick()
+ok(has(ReadyIds(), 64) and (O.S.readyCount or 0) >= 1, "in combat: Ready to Turn In lists it at once", list(ReadyIds()))
+ok(has(W.watches, 64) and W.combatChanges == 0, "in combat: no watch calls (still in Quests until the fight ends)")
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(1)
+ok(not has(W.watches, 64), "fight over: out of Quests", list(W.watches))
+local c0 = W.calls.add + W.calls.remove
+W.taxi = true
+W.quests[65].obj = { { 4, 4 } } W.quests[65].ready = true
+Fire("UI_INFO_MESSAGE", 288) Run(1)
+ok(has(ReadyIds(), 65) and has(W.watches, 65) and W.calls.add + W.calls.remove == c0, "on a taxi: Ready follows, no watch calls")
+W.taxi = false Fire("PLAYER_CONTROL_GAINED") Run(3)
+ok(not has(W.watches, 65) and has(ReadyIds(), 65), "landed: out of Quests", list(W.watches))
+Fire("ZONE_CHANGED_NEW_AREA")   -- (same zone: a plan due in a second)
+W.quests[66].obj = { { 4, 4 } } W.quests[66].ready = true
+Fire("BAG_UPDATE_DELAYED") Run(0.6)
+ok(O.S.fullDue ~= nil and has(ReadyIds(), 66), "a zone's plan still due: Ready already lists it", tostring(O.S.fullDue))
+Run(2)
+ok(not has(W.watches, 66), "then the plan takes it out of Quests", list(W.watches))
+
+print("== 39. the landing rule for zones is unchanged")
+local before39 = list(W.watches)
+local c39 = W.calls.add + W.calls.remove
+W.taxi = true W.map = 1429 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
+Fire("BAG_UPDATE_DELAYED") Fire("UNIT_QUEST_LOG_CHANGED", "player") Run(2)
+ok(W.calls.add + W.calls.remove == c39, "in flight over Elwynn: no watch changes, progress events or not")
+W.taxi = false Fire("PLAYER_CONTROL_GAINED") Run(0.6)
+ok(not has(W.watches, 70), "landed: waits about a second, as before")
+Run(2)
+ok(eq(W.watches, { 70 }), "then Elwynn's quests", list(W.watches))
+W.map = 1436 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
+ok(eq(W.watches, { 67, 62, 68 }) or eq(W.watches, { 62, 68 }), "back in Westfall: its unfinished quests", list(W.watches))
+
+print("== 40. (E) ready when ReadyForTurnIn or IsComplete says it")
+W.quests[67].rft, W.quests[67].ic = false, true
+ok(O.ReadLog()[67].ready == true, "ReadyForTurnIn false, IsComplete true: ready")
+Fire("QUEST_LOG_UPDATE") Run(1)
+ok(not has(W.watches, 67) and has(ReadyIds(), 67), "and in Ready to Turn In, not Quests", list(W.watches))
+W.quests[68].rft = nil
+
+print("== 41. (C) the tracker made to read again: one re-track that keeps the order, out of combat, not too often")
+ok(eq(W.watches, { 62, 68 }), "Quests: Two Things, Hides", list(W.watches))
+Fire("QUEST_LOG_UPDATE") Run(1)
+local order41 = list(W.watches)
+local a41, r41 = W.calls.add, W.calls.remove
+W.quests[62].obj = { { 5, 5 }, { 3, 6 } }   -- (counted, no quest log update)
+Fire("UNIT_QUEST_LOG_CHANGED", "player") Run(1)
+ok(W.calls.add == a41 + 1 and W.calls.remove == r41 + 1 and list(W.watches) == order41, "one re-track, the order kept", list(W.watches))
+ok(O.S.nudges == 1 and next(O.S.stale) == nil, "counted once, nothing left stale")
+Fire("UNIT_QUEST_LOG_CHANGED", "player") Run(3)
+ok(W.calls.add == a41 + 1 and W.calls.remove == r41 + 1, "nothing changed: no re-track")
+W.combat = true W.combatChanges = 0
+W.quests[62].obj = { { 5, 5 }, { 4, 6 } }
+Fire("BAG_UPDATE_DELAYED") Run(3)
+ok(W.combatChanges == 0 and O.S.stale[62], "in combat: waits (marked)")
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(0.4)
+ok(W.calls.add == a41 + 2 and list(W.watches) == order41, "fight over: re-tracked once", list(W.watches))
+W.quests[62].obj = { { 5, 5 }, { 5, 6 } }
+Fire("BAG_UPDATE_DELAYED") Run(0.8)
+ok(W.calls.add == a41 + 2 and O.S.stale[62], "within NUDGE_GAP of the last: waits")
+Run(2)
+ok(W.calls.add == a41 + 3 and O.S.nudges == 3, "then once", tostring(O.S.nudges))
+W.quests[62].obj = { { 5, 5 }, { 6, 6 } }
+Fire("QUEST_LOG_UPDATE") Fire("BAG_UPDATE_DELAYED") Run(3)
+ok(W.calls.add == a41 + 3, "a quest log update in between (the tracker heard it): no re-track")
+W.quests[62].obj = { { 5, 5 }, { 2, 6 } }   -- (as before)
+mod.db.watchSide = "end" W.side = "end"
+Fire("QUEST_LOG_UPDATE") Run(1)
+W.quests[62].obj = { { 5, 5 }, { 3, 6 } }
+local a41b = W.calls.add
+Fire("BAG_UPDATE_DELAYED") Run(3)
+ok(W.calls.add == a41b + 1 and eq(W.watches, { 62, 68 }), "new watches at the end: the last one re-tracked, the order kept", list(W.watches))
+mod.db.watchSide = "front"
+W.side = "front"
+
+print("== 42. /valhalla objectives sync: read only, saved, late changes flagged")
+local a42, r42 = W.calls.add, W.calls.remove
+mod:Slash("sync on")
+ok(mod.db.syncOn == true and type(mod.db.syncLog) == "table" and #mod.db.syncLog >= 1, "on: ValhallaDB.objectives.syncLog")
+local evf
+for _, f in ipairs(W.frames) do if rawget(f, "_events") and f._events.QUEST_LOG_UPDATE then evf = f end end
+ok(evf and evf._events.CHAT_MSG_LOOT, "the loot events heard while it's on")
+local function LogHas(pat) for _, l in ipairs(mod.db.syncLog) do if l:find(pat) then return l end end end
+ok(LogHas("q67 .* RFT!=IC"), "ReadyForTurnIn and IsComplete disagreeing: flagged")
+Fire("CHAT_MSG_LOOT", "You receive loot: Hide") Run(0.4)
+W.quests[68].obj = { { 1, 5 } }   -- (after the loot, no quest log update)
+Run(1)
+ok(LogHas("CHAT_MSG_LOOT You receive loot") and LogHas("late%+1s noQLU q68 1/5"), "the loot logged; the count that came later flagged late, unheard",
+  tostring(LogHas("q68")))
+ok(W.calls.add == a42 and W.calls.remove == r42, "no watch calls from the log")
+mod:Slash("sync show")
+local shown = false
+for _, l in ipairs(ns.printed) do if l:find("late%+1s noQLU q68") then shown = true end end
+ok(shown, "/valhalla objectives sync show: the late change printed")
+for i = 1, 100 do O.SyncAdd("x" .. i) end
+ok(#mod.db.syncLog == O.SYNC_MAX, "the last 80 kept", tostring(#mod.db.syncLog))
+W.epoch = W.epoch + 31 * 60 Run(0.2)
+ok(not mod.db.syncOn and LogHas("after 30 minutes") and not evf._events.CHAT_MSG_LOOT, "off by itself after 30 minutes; the log kept")
+mod:Slash("sync on") mod:Slash("sync off")
+ok(not mod.db.syncOn and LogHas("turned off"), "/valhalla objectives sync off")
+
+print("== 43. no handler errors; nothing of the tracker's called or written")
+local dirty = 0
+_G.QuestObjectiveTracker = { MarkDirty = function() dirty = dirty + 1 end }
+local keys0 = 0 for _ in pairs(ObjectiveTrackerFrame) do keys0 = keys0 + 1 end
+mod:Slash("sync on")
+local errs = 0
+for _, e in ipairs({ "UNIT_QUEST_LOG_CHANGED", "QUEST_WATCH_UPDATE", "QUEST_LOG_CRITERIA_UPDATE", "QUEST_ITEM_UPDATE", "BAG_UPDATE_DELAYED",
+  "UI_INFO_MESSAGE", "QUEST_AUTOCOMPLETE", "CHAT_MSG_LOOT", "ITEM_PUSH", "QUEST_LOG_UPDATE" }) do
+  if not pcall(O.OnEvent, e) then errs = errs + 1 end
+  if not pcall(O.OnEvent, e, "player", 12345) then errs = errs + 1 end
+end
+W.quests[68].obj = { { 2, 5 } }
+local tickOk = pcall(Run, 4)
+ok(errs == 0 and tickOk, "every new event, with or without arguments: no error")
+local keys1 = 0 for _ in pairs(ObjectiveTrackerFrame) do keys1 = keys1 + 1 end
+ok(dirty == 0 and keys1 == keys0, "the tracker's MarkDirty never called; nothing written on its frame")
+mod:Slash("sync off")
+_G.QuestObjectiveTracker = nil
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

@@ -34,6 +34,11 @@ function Frame.SetAtlas(self, a) self._atlas = a end
 function Frame.SetTexture(self, t) self._tex = t end
 function Frame.RegisterEvent(self, e) local t = rawget(self, "_events") or {} self._events = t t[e] = true end
 function Frame.UnregisterAllEvents(self) self._events = {} end
+function Frame.UnregisterEvent(self, e) local t = rawget(self, "_events") if t then t[e] = nil end end
+-- the game's date() and time() (v0.4.2.2's sync log)
+W.epoch = 1000000
+date = os.date
+time = function() return W.epoch end
 function Frame.SetPoint(self, ...) self._points[#self._points + 1] = { ... } end
 function Frame.ClearAllPoints(self) self._points = {} end
 function Frame.GetFrameStrata() return "LOW" end
@@ -144,8 +149,16 @@ local function WatchIndex(id) for i, w in ipairs(W.watches) do if w == id then r
 C_QuestLog = {
   GetNumQuestLogEntries = function() return #Entries() end,
   GetInfo = function(i) return Entries()[i] end,
-  ReadyForTurnIn = function(id) local q = W.quests[id] return q and q.ready or false end,
-  IsComplete = function(id) local q = W.quests[id] return q and q.ready or false end,
+  -- (v0.4.2.2: q.rft / q.ic answer for one of the two on their own; q.obj = { { have, need }, ... })
+  ReadyForTurnIn = function(id) local q = W.quests[id] if q and q.rft ~= nil then return q.rft end return q and q.ready or false end,
+  IsComplete = function(id) local q = W.quests[id] if q and q.ic ~= nil then return q.ic end return q and q.ready or false end,
+  GetQuestObjectives = function(id)
+    local q = W.quests[id]
+    if not q then return nil end
+    local out = {}
+    for i, o in ipairs(q.obj or {}) do out[i] = { text = "Item: " .. o[1] .. "/" .. o[2], type = "item", numFulfilled = o[1], numRequired = o[2], finished = o[1] >= o[2] } end
+    return out
+  end,
   GetNumQuestWatches = function() return #W.watches end,
   GetQuestIDForQuestWatchIndex = function(i) return W.watches[i] end,
   AddQuestWatch = function(id)

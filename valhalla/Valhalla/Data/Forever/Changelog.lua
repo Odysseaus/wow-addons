@@ -4,6 +4,14 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2.2", date = "2026-11-11", heads = { [1] = "Fixed", [5] = "New", [6] = "Note", }, items = {
+		"|cff6e2c0aQuest progress kept in step|r: when the game counts your last quest item a moment after its quest log update, the tracker no longer keeps saying you still need it. Valhalla reads the quest log again on the events that carry the count (bags, quest log changes, quest progress messages), half a second and again a second and a half after, and when the tracker missed a change it makes it read again by re-tracking one quest where it already is (the order stays; never in combat, at most every 2 seconds).",
+		"Ready to Turn In fills at once, in combat, in flight and right after a zone change too; only the tracking changes still wait for the end of the fight or the landing, as before.",
+		"A quest counts as ready when the game says it's ready for turn-in or complete (as its tracker shows it).",
+		"Zone lists, level order, pinned quests and capitals with their surrounding zone are unchanged.",
+		"|cff6e2c0a/valhalla objectives sync on|r: a read-only log of quest progress as the game reports it, for 30 minutes, saved for after a /reload (ValhallaDB.objectives.syncLog); /valhalla objectives sync show prints anything that came late.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.2.1", date = "2026-11-10", heads = { [1] = "Changed", [6] = "New", [8] = "Note", }, items = {
 		"|cff6e2c0aPages, not scrolling|r: every paged list (AH Market's views and Craft, the Shopping List's draft and saved lists, the list beside the Auction House) builds one page at a time and turns with its buttons only; the mouse wheel no longer pages them. Map Pins and Paint lists still scroll.",
 		"The pager's first and last buttons are one arrow with a thin gold stop bar (|< and >|), the same size as < and >: no more overlapping double arrows.",

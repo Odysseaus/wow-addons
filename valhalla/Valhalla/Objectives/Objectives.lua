@@ -17,6 +17,19 @@
 -- Nothing changes while on a flight, during a loading screen or in combat: it waits for the landing,
 -- the arrival or the end of the fight. /valhalla objectives off turns it all off (and gives back the
 -- quests it untracked).
+--
+-- v0.4.2.2, progress kept in step: the game can say "9/10" on its quest log update and only have the
+-- tenth item counted a moment later, with an event its tracker doesn't listen to. So:
+--  * the events that carry it (UNIT_QUEST_LOG_CHANGED, QUEST_WATCH_UPDATE, QUEST_LOG_CRITERIA_UPDATE,
+--    QUEST_ITEM_UPDATE, BAG_UPDATE_DELAYED, UI_INFO_MESSAGE) read the log again, 0.5 s after and once more
+--    1.5 s after the last one (O.Progress);
+--  * those reads (and the Ready to Turn In list) go on in combat, in flight and before a zone's plan:
+--    only the watch changes wait, as before;
+--  * what the tracker last read is kept (O.Snapshot, at each event it listens to); when a watched quest's
+--    objectives change without one, the tracker is made to read again by re-tracking one quest that keeps
+--    the order (O.Nudge: out of combat, at most every NUDGE_GAP s). Nothing of the tracker's is called.
+--  * ready = the game's ReadyForTurnIn or IsComplete (as its tracker shows it);
+--  * /valhalla objectives sync on|off|show: a read-only log (ValhallaDB.objectives.syncLog).
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -42,6 +55,10 @@ O.PIN_SIZE = 17
 O.MARKER_MISSES = 2             -- a quest listed for its marker here goes after this many misses in a row...
 O.MARKER_GAP = 0.9              -- ...this many seconds apart (POI data can read empty for a moment)
 O.ROW_H = 32
+O.SETTLE_READ = 1.5             -- v0.4.2.2: a second read this long after the last progress event
+O.NUDGE_GAP = 2.0               -- ...and the tracker made to read again at most this often
+O.SYNC_MAX = 80                 -- /valhalla objectives sync: entries kept
+O.SYNC_MINUTES = 30             -- ...and how long it stays on
 
 -- the capitals and the zone around each (Forever uiMapIDs, as Data/Forever/Banners.lua's city -> host)
 O.CITY = {
@@ -78,6 +95,8 @@ function O.Reset()
 	S.fresh = {}            -- newly accepted quests waiting for their data { [id] = { due, tries } }
 	S.loading = false
 	S.waitingTaxi = false
+	S.seen = {}             -- v0.4.2.2: [id] = the watched quest's objectives as the tracker last read them
+	S.stale = {}            -- [id] = true: changed since, with no event the tracker hears
 end
 O.Reset()
 
@@ -113,7 +132,7 @@ function O.ReadLog()
 				if not level or level == 0 then level = Plain(info.level) end
 				if (not level or level == 0) and CQ.GetQuestDifficultyLevel then level = Call(CQ.GetQuestDifficultyLevel, id) end
 				local ready = Call(CQ.ReadyForTurnIn, id)
-				if ready == nil then ready = Call(CQ.IsComplete, id) end
+				if not ready then ready = Call(CQ.IsComplete, id) end   -- (v0.4.2.2: either says it, as the tracker)
 				local tag = CQ.GetQuestTagInfo and Call(CQ.GetQuestTagInfo, id)
 				out[id] = { id = id, idx = i, title = Plain(info.title) or ("Quest " .. id), header = header,
 					level = tonumber(level) or 0, ready = ready and true or false,
@@ -444,6 +463,9 @@ function O.ReadyList(log, here)
 	return out
 end
 
+local function Add(id) Call(C_QuestLog.AddQuestWatch, id) end
+local function Remove(id) Call(C_QuestLog.RemoveQuestWatch, id) end
+
 local function Queue(id, add)
 	for _, op in ipairs(S.ops) do
 		if op.id == id then op.add = add return end
@@ -569,6 +591,99 @@ function O.SweepPins(log, n)
 	for id in pairs(p) do if not log[id] then p[id] = nil end end
 end
 
+--------------------------------------------------------------------------------
+-- v0.4.2.2: progress kept in step (read only, except the one re-track in O.Nudge)
+--------------------------------------------------------------------------------
+
+-- a quest's objectives as one string: "9/10- 3/3+ o" (counts, finished, and c when complete)
+function O.Sig(id)
+	local CQ = C_QuestLog
+	if not (id and CQ and CQ.GetQuestObjectives) then return nil end
+	local objs = Call(CQ.GetQuestObjectives, id)
+	if type(objs) ~= "table" then return nil end
+	local parts = {}
+	for _, o in ipairs(objs) do
+		if type(o) == "table" then
+			parts[#parts + 1] = ("%s/%s%s"):format(tostring(Plain(o.numFulfilled)), tostring(Plain(o.numRequired)),
+				Plain(o.finished) and "+" or "-")
+		end
+	end
+	parts[#parts + 1] = Call(CQ.IsComplete, id) and "c" or "o"
+	return table.concat(parts, " ")
+end
+
+-- what the tracker reads now (at each event it listens to, and after Valhalla re-tracks): nothing stale
+function O.Snapshot()
+	local order = O.WatchOrder()
+	local seen = {}
+	for _, id in ipairs(order) do seen[id] = O.Sig(id) end
+	S.seen = seen
+	S.stale = {}
+end
+
+-- the log read again (also in combat, in flight, before a zone's plan): the Ready list follows at once;
+-- a ready quest still in Quests gets its partial (its watch change waits as ever); a watched quest whose
+-- objectives changed since the tracker last read is marked for O.Nudge
+function O.Progress(now)
+	if not S.here then return end
+	local log, n = O.ReadLog()
+	if n == 0 then return end
+	local old = S.log or {}
+	S.log = log
+	S.readyDirty = true
+	local _, watched = O.WatchOrder()
+	local moved = false
+	for id, e in pairs(log) do
+		local o = old[id]
+		if (o and o.ready or false) ~= e.ready or (watched[id] and e.ready) then moved = true end
+	end
+	if moved then S.partialDue = S.partialDue or now end
+	for id in pairs(watched) do
+		local e = log[id]
+		local sig = e and not e.ready and O.Sig(id)
+		if sig then
+			local seen = S.seen[id]
+			if seen == nil then S.seen[id] = sig
+			elseif seen ~= sig then S.stale[id] = true end
+		end
+	end
+	return moved
+end
+
+-- the tracker made to read again: one quest re-tracked where it already is (the front one when new
+-- watches go to the front, the last when they go to the end), so the order stays; out of combat only
+function O.Nudge(now)
+	local _, watched = O.WatchOrder()
+	local any
+	for id in pairs(S.stale) do
+		local sig = watched[id] and O.Sig(id)
+		if sig and sig ~= S.seen[id] then any = id else S.stale[id] = nil end
+	end
+	if not any then return nil end
+	local order = O.WatchOrder()
+	local side = mod.db and mod.db.watchSide
+	local lever = (side == "front" and order[1]) or (side == "end" and order[#order]) or any
+	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+	Remove(lever) Add(lever)
+	if super and super ~= 0 and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID
+		and Call(C_SuperTrack.GetSuperTrackedQuestID) ~= super then
+		Call(C_SuperTrack.SetSuperTrackedQuestID, super)
+	end
+	if O.SyncOn() then
+		local ids = {}
+		for id in pairs(S.stale) do ids[#ids + 1] = id end
+		table.sort(ids)
+		O.SyncAdd(("nudge: tracker re-read (re-tracked %s) for %s"):format(tostring(lever), table.concat(ids, ",")))
+	end
+	S.nudges = (S.nudges or 0) + 1
+	S.nudgeAt = now + O.NUDGE_GAP
+	O.Snapshot()
+	if not O.Same(O.WatchOrder(), order) then   -- (the side guessed wrong, or not known: put back in order)
+		S.reorderDue, S.reorderTries = now + O.TICK, 0
+	end
+	return "nudged"
+end
+
 -- the queued watch changes, a few at a time
 function O.RunOps()
 	local c = Char()
@@ -589,6 +704,7 @@ function O.RunOps()
 		end
 		done = done + 1
 	end
+	if done > 0 then O.Snapshot() end   -- (v0.4.2.2: the watch list changed: the tracker reads it all again)
 	return done
 end
 
@@ -635,9 +751,6 @@ function O.OrderFix(order, want, side)
 	return fix
 end
 
-local function Add(id) Call(C_QuestLog.AddQuestWatch, id) end
-local function Remove(id) Call(C_QuestLog.RemoveQuestWatch, id) end
-
 function O.Reorder()
 	S.reorderDue = nil
 	local order = O.WatchOrder()
@@ -673,6 +786,7 @@ function O.Reorder()
 		and Call(C_SuperTrack.GetSuperTrackedQuestID) ~= super then
 		Call(C_SuperTrack.SetSuperTrackedQuestID, super)
 	end
+	O.Snapshot()   -- (v0.4.2.2: re-tracked: the tracker reads it all again)
 	-- checked again next tick; a wrong guess of the side is unlearned
 	local after = O.WatchOrder()
 	if not Same(after, want) then
@@ -690,6 +804,9 @@ function O.Blocked() return InCombat() or OnTaxi() or S.loading end
 
 function O.Step(now)
 	now = now or Now()
+	-- v0.4.2.2: progress reads are never held (only watch changes are)
+	if S.progressDue and now >= S.progressDue then S.progressDue = nil O.Progress(now) end
+	if S.settleDue and now >= S.settleDue then S.settleDue = nil O.Progress(now) end
 	if O.Blocked() then
 		if OnTaxi() then S.waitingTaxi = true end
 		return "blocked"
@@ -715,6 +832,10 @@ function O.Step(now)
 		if #S.ops == 0 then S.reorderDue = math.max(S.reorderDue or 0, now + O.TICK) end
 		return "ops"
 	end
+	if next(S.stale) and not S.fullDue and now >= (S.nudgeAt or 0) then   -- (not while a zone's plan is due)
+		local r = O.Nudge(now)
+		if r then return r end
+	end
 	if S.reorderDue and now >= S.reorderDue then return O.Reorder() end
 end
 
@@ -729,10 +850,38 @@ O.EVENTS = {
 	"QUEST_POI_UPDATE", "SUPER_TRACKING_CHANGED", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED", "PLAYER_ENTERING_WORLD",
 	"PLAYER_LEAVING_WORLD", "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "PLAYER_CONTROL_GAINED",
 	"PLAYER_REGEN_ENABLED",
+	-- v0.4.2.2: progress the tracker doesn't hear (O.Progress), and its own QUEST_AUTOCOMPLETE (O.Snapshot)
+	"UNIT_QUEST_LOG_CHANGED", "QUEST_WATCH_UPDATE", "QUEST_LOG_CRITERIA_UPDATE", "QUEST_ITEM_UPDATE",
+	"BAG_UPDATE_DELAYED", "UI_INFO_MESSAGE", "QUEST_AUTOCOMPLETE",
 }
+O.PROGRESS_EVENTS = { UNIT_QUEST_LOG_CHANGED = true, QUEST_WATCH_UPDATE = true, QUEST_LOG_CRITERIA_UPDATE = true,
+	QUEST_ITEM_UPDATE = true, BAG_UPDATE_DELAYED = true, UI_INFO_MESSAGE = true }
+-- the events the game's quest tracker updates on (Blizzard_QuestObjectiveTracker.lua): it reads every quest then
+O.TRACKER_EVENTS = { QUEST_LOG_UPDATE = true, QUEST_WATCH_LIST_CHANGED = true, QUEST_AUTOCOMPLETE = true,
+	SUPER_TRACKING_CHANGED = true, QUEST_TURNED_IN = true, QUEST_POI_UPDATE = true }
+-- heard only while the sync log is on
+O.SYNC_EVENTS = { "CHAT_MSG_LOOT", "ITEM_PUSH" }
+-- ...and the ones it leaves out (frequent, nothing to do with counts)
+O.SYNC_SKIP = { QUEST_POI_UPDATE = true, SUPER_TRACKING_CHANGED = true, ZONE_CHANGED = true }
 
-function O.OnEvent(event, a1)
+-- a read soon (debounced) and a second one SETTLE_READ after the last event
+function O.ProgressDue(now)
+	S.progressDue = S.progressDue or now + O.LOG_DEBOUNCE
+	S.settleDue = now + O.SETTLE_READ
+end
+
+function O.OnEvent(event, a1, a2, ...)
 	local now = Now()
+	if O.SYNC_SKIP[event] == nil and O.SyncOn() then O.SyncEvent(event, a1, a2, now) end
+	if O.PROGRESS_EVENTS[event] then
+		if event ~= "UNIT_QUEST_LOG_CHANGED" or a1 == "player" then O.ProgressDue(now) end
+		return
+	end
+	if event == "CHAT_MSG_LOOT" or event == "ITEM_PUSH" then return end   -- (the sync log's only)
+	if O.TRACKER_EVENTS[event] then
+		O.Snapshot()
+		if event == "QUEST_LOG_UPDATE" then S.lastQLU = now end
+	end
 	if event == "ZONE_CHANGED_NEW_AREA" then
 		O.ZoneDue(now)
 	elseif event == "ZONE_CHANGED" then
@@ -759,6 +908,7 @@ function O.OnEvent(event, a1)
 		S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE
 	elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE" then
 		S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE
+		if event == "QUEST_LOG_UPDATE" then O.ProgressDue(now) end
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if S.restorePending then O.Restore() end
 	end
@@ -1205,7 +1355,9 @@ end
 local events
 function O.Tick()
 	local now = Now()
+	if mod.db and mod.db.syncOn and not O.SyncOn() then O.SyncSet(false, "after " .. O.SYNC_MINUTES .. " minutes") end
 	O.Step(now)
+	if O.SyncOn() then O.SyncLate(now) end
 	local LP = O.LogPins
 	if LP and LP.IsOn() and not LP.Hooked() then LP.Hook() end   -- (the quest log not there yet: tried again)
 	if S.readyDirty then O.FillReady() end
@@ -1218,9 +1370,10 @@ function mod:OnEnable()
 	O.Reset()
 	if not events then
 		events = CreateFrame("Frame")
-		events:SetScript("OnEvent", function(_, event, a1) O.OnEvent(event, a1) end)
+		events:SetScript("OnEvent", function(_, event, ...) O.OnEvent(event, ...) end)
 	end
 	for _, e in ipairs(O.EVENTS) do pcall(events.RegisterEvent, events, e) end
+	if O.SyncOn() then for _, e in ipairs(O.SYNC_EVENTS) do pcall(events.RegisterEvent, events, e) end end
 	if not S.ticker and C_Timer and C_Timer.NewTicker then S.ticker = C_Timer.NewTicker(O.TICK, O.Tick) end
 	S.lastBest = C_Map and C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player")
 	O.ZoneDue(Now() - O.SETTLE + 0.5)   -- (the first plan half a second after starting)
@@ -1291,10 +1444,144 @@ function O.Why(id)
 	return out
 end
 
--- /valhalla objectives [on|off|why [questID]]
+--------------------------------------------------------------------------------
+-- /valhalla objectives sync on|off|show (v0.4.2.2): a read-only log of quest progress as the game reports it,
+-- saved in ValhallaDB.objectives.syncLog (the last SYNC_MAX entries; on for SYNC_MINUTES). Each event, with
+-- what held Valhalla back then; each watched or ready quest whose objectives changed, with ReadyForTurnIn and
+-- IsComplete; re-read 1 s and 3 s later ("late": changed after the event; "noQLU": with no quest log update
+-- since, so the tracker didn't hear it). It changes no watches.
+--------------------------------------------------------------------------------
+
+local function Epoch() local t = rawget(_G, "time") return type(t) == "function" and t() or nil end
+function O.SyncOn()
+	local d = mod.db
+	if not (d and d.syncOn) then return false end
+	local t = Epoch()
+	return not (t and d.syncUntil and t >= d.syncUntil)
+end
+
+function O.SyncAdd(line)
+	local d = mod.db
+	if not d then return end
+	if type(d.syncLog) ~= "table" then d.syncLog = {} end
+	local date = rawget(_G, "date")
+	local clock = type(date) == "function" and date("%H:%M:%S") or ""
+	local log = d.syncLog
+	log[#log + 1] = ("%s %.1f %s"):format(clock, Now(), line)
+	while #log > O.SYNC_MAX do table.remove(log, 1) end
+end
+
+function O.SyncSet(on, why)
+	local d = mod.db
+	if not d then return end
+	if on then
+		d.syncOn, d.syncUntil = true, (Epoch() or 0) + O.SYNC_MINUTES * 60
+		if not Epoch() then d.syncUntil = nil end
+		d.syncLog = {}
+		S.diagSig, S.lateAt = {}, nil
+		if events then for _, e in ipairs(O.SYNC_EVENTS) do pcall(events.RegisterEvent, events, e) end end
+		O.SyncAdd("sync log on")
+		O.SyncQuests("start", Now())
+	else
+		if d.syncOn then O.SyncAdd("sync log off" .. (why and (" (" .. why .. ")") or "")) end
+		d.syncOn, d.syncUntil = nil, nil
+		S.diagSig, S.lateAt = nil, nil
+		if events and events.UnregisterEvent then for _, e in ipairs(O.SYNC_EVENTS) do pcall(events.UnregisterEvent, events, e) end end
+	end
+end
+
+local function BlockedWhy()
+	local t = {}
+	if InCombat() then t[#t + 1] = "combat" end
+	if OnTaxi() then t[#t + 1] = "taxi" end
+	if S.loading then t[#t + 1] = "loading" end
+	if S.fullDue then t[#t + 1] = "zone plan due" end
+	return #t > 0 and table.concat(t, ",") or "-"
+end
+
+-- the watched and ready quests whose objectives changed since last written down
+function O.SyncQuests(tag, now)
+	S.diagSig = S.diagSig or {}
+	local CQ = C_QuestLog
+	local log = O.ReadLog()
+	local _, watched = O.WatchOrder()
+	local ready = {}
+	for _, e in ipairs(S.here and O.ReadyList(S.log, S.here) or {}) do ready[e.id] = true end
+	local ids = {}
+	for id, e in pairs(log) do if watched[id] or e.ready then ids[#ids + 1] = id end end
+	table.sort(ids)
+	local n = 0
+	for _, id in ipairs(ids) do
+		local sig = O.Sig(id) or "?"
+		local rft, ic = Call(CQ.ReadyForTurnIn, id), Call(CQ.IsComplete, id)
+		local key = sig .. "|" .. tostring(rft)
+		if S.diagSig[id] ~= key then
+			S.diagSig[id] = key
+			n = n + 1
+			O.SyncAdd(("  %s q%d %s rft=%s ic=%s %s%s%s%s"):format(tag, id, sig, tostring(rft), tostring(ic),
+				watched[id] and "watched" or "not watched", ready[id] and ", in Ready" or "",
+				((rft and true or false) ~= (ic and true or false)) and " RFT!=IC" or "",
+				S.stale[id] and " stale" or ""))
+		end
+	end
+	return n
+end
+
+function O.SyncEvent(event, a1, a2, now)
+	local args = {}
+	if a1 ~= nil then args[#args + 1] = tostring(a1) end
+	if a2 ~= nil then args[#args + 1] = tostring(a2) end
+	O.SyncAdd(("%s %s [held: %s]"):format(event, table.concat(args, " "), BlockedWhy()))
+	O.SyncQuests("at", now)
+	S.lateFrom = now
+	S.lateAt = { now + 1, now + 3 }
+end
+
+-- the re-reads after an event
+function O.SyncLate(now)
+	local L2 = S.lateAt
+	if not L2 then return end
+	for i = 1, 2 do
+		if L2[i] and now >= L2[i] then
+			L2[i] = false
+			local heard = S.lastQLU and S.lateFrom and S.lastQLU > S.lateFrom
+			O.SyncQuests(("late+%ds%s"):format(i == 1 and 1 or 3, heard and "" or " noQLU"), now)
+		end
+	end
+	if not L2[1] and not L2[2] then S.lateAt = nil end
+end
+
+function O.SyncShow()
+	local d = mod.db or {}
+	local log = type(d.syncLog) == "table" and d.syncLog or {}
+	local out = {}
+	out[#out + 1] = ("Objectives sync log: %s, %d entries (ValhallaDB.objectives.syncLog); tracker re-reads this session: %d")
+		:format(O.SyncOn() and "on" or "off", #log, S.nudges or 0)
+	local hits = {}
+	for _, line in ipairs(log) do
+		if line:find("late%+") or line:find("RFT!=IC") or line:find("nudge:") or line:find(" stale") then hits[#hits + 1] = line end
+	end
+	if #hits == 0 then out[#out + 1] = "  nothing late or mismatched recorded"
+	else for i = math.max(1, #hits - 14), #hits do out[#out + 1] = hits[i] end end
+	return out
+end
+
+-- /valhalla objectives [on|off|why [questID]|sync on|off|show]
 function mod:Slash(arg)
 	arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
 	local word, rest = arg:match("^(%S+)%s*(.-)$")
+	if word == "sync" then
+		if rest == "on" then
+			O.SyncSet(true)
+			ns:Print("Objectives sync log on for %d minutes (read only; saved in ValhallaDB.objectives.syncLog). /valhalla objectives sync show|off", O.SYNC_MINUTES)
+		elseif rest == "off" then
+			O.SyncSet(false, "turned off")
+			ns:Print("Objectives sync log off (kept until it's turned on again).")
+		else
+			for _, line in ipairs(O.SyncShow()) do ns:Print("%s", line) end
+		end
+		return
+	end
 	if word == "why" then
 		local id = tonumber(rest and rest:match("%d+"))
 		for _, line in ipairs(O.Why(id)) do ns:Print("%s", line) end
@@ -1302,6 +1589,6 @@ function mod:Slash(arg)
 	end
 	if arg == "on" then O.SetOn(true)
 	elseif arg == "off" then O.SetOn(false) end
-	ns:Print(L["Objectives (zone quests, Ready to Turn In, pins): %s. /valhalla objectives on|off|why [questID]"]:format(
+	ns:Print(L["Objectives (zone quests, Ready to Turn In, pins): %s. /valhalla objectives on|off|why [questID]|sync on|off|show"]:format(
 		mod.enabled and L["on"] or L["off"]))
 end

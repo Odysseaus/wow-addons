@@ -13,7 +13,7 @@
 --   /valhalla dungeons       which map each dungeon entrance opens (Dungeons.lua)
 --   /valhalla entrance <name>  where you stand, as a dungeon entrance for tools/map-data (Dungeons.lua)
 --   /valhalla highlights     where the game draws each zone's highlight, for tools/map-preview (Debug.lua)
---   /valhalla objectives on|off|why [questID]  the All Objectives tracker by zone, Ready to Turn In, pins (Objectives/Objectives.lua)
+--   /valhalla objectives on|off|why [questID]|sync on|off|show  the All Objectives tracker by zone, Ready to Turn In, pins (Objectives/Objectives.lua)
 --   /valhalla invest [vendor|list|market|settings|on|off|diag [ah|replicate]]  the Investments tab (Investments/Invest.lua)
 --   /valhalla tab map|invest|talents|professions   the window's tabs (Investments/Tabs.lua)
 --   /valhalla want <item> [count], unwant <item>, list   the Shopping List's builder; the active list (v0.3.2)
