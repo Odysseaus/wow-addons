@@ -111,6 +111,8 @@ local function AddPoint(m, id, tmin, min, units, auctions)
 	if not last then head, last = nil, s end
 	local lt = tonumber(last:match("^(%-?%d+):"))
 	if lt and math.floor(lt / S.SLOT) == math.floor(tmin / S.SLOT) then
+		-- (v0.4.2.8) a quick scan never replaces the hour's full-scan point (Top 10 reads full points only)
+		if auctions == "q" and not last:find(":q$") then return end
 		m.hist[id] = head and (head .. ";" .. p) or p
 	else
 		m.hist[id] = s .. ";" .. p
@@ -561,6 +563,60 @@ function S.TrendingNow(house, max, step)
 		for k = #falling, max + 1, -1 do falling[k] = nil end
 	end
 	return rising, falling, fulls, nextAt
+end
+
+-- (v0.4.2.8) Trending: what's selling most, estimated from the units that left the AH between full scans. Per item:
+-- consecutive full-scan points of the last 7 days at most S.SOLD_GAP apart; gone = every drop in units listed (an
+-- increase: new listings, not counted); per day over the hours those pairs cover. Gold: each drop x the lowest price
+-- before it. Bought, expired and cancelled look the same (the full scan has no auction IDs or sellers).
+-- Returns byUnits, byGold (each { id, perDay, goldDay, now }), fulls, nextAt (as S.TrendingAll's).
+S.SOLD_GAP = 12 * 3600
+S.soldCache = {}
+function S.SoldNow(house, step)
+	local m = S.Market(house)
+	local byUnits = {}
+	if not m then return byUnits, {} end
+	local from = Now() - 7 * 86400
+	local k = 0
+	for id in pairs(m.hist) do
+		k = k + 1
+		if step and k % 100 == 0 then step() end
+		local prev, gone, gold, span = nil, 0, 0, 0
+		for _, p in ipairs(S.Points(house, id)) do
+			if not p.quick and p.t >= from then
+				if prev and p.t - prev.t <= S.SOLD_GAP and p.t > prev.t then
+					span = span + (p.t - prev.t)
+					local d = prev.units - p.units
+					if d > 0 then gone = gone + d gold = gold + d * math.max(0, prev.min) end
+				end
+				prev = p
+			end
+		end
+		if span > 0 and gone > 0 then
+			local c = S.Cur(house, id)
+			local now = (c and not c.quick and c.min) or (prev and prev.min) or 0
+			byUnits[#byUnits + 1] = { id = id, perDay = gone * 86400 / span, goldDay = gold * 86400 / span, gone = gone, hours = span / 3600, now = now }
+		end
+	end
+	local byGold = {}
+	for i, e in ipairs(byUnits) do byGold[i] = e end
+	table.sort(byUnits, function(a, b) if a.perDay ~= b.perDay then return a.perDay > b.perDay end return a.id < b.id end)
+	table.sort(byGold, function(a, b) if a.goldDay ~= b.goldDay then return a.goldDay > b.goldDay end return a.id < b.id end)
+	return byUnits, byGold
+end
+function S.SoldAll(house, step)
+	local _, _, fulls, nextAt = S.TrendingAll(house, step)
+	local m = S.Market(house)
+	if not m then return {}, {}, 0 end
+	local last = m.scans[#m.scans]
+	local key = ("%d:%s"):format(#m.scans, last and last.t or "-")
+	local c = S.soldCache[house]
+	if not (c and c.key == key and c.m == m) then
+		local u, g = S.SoldNow(house, step)
+		c = { key = key, m = m, units = u, gold = g }
+		S.soldCache[house] = c
+	end
+	return c.units, c.gold, fulls, nextAt
 end
 
 -- an item's vendor price (what a merchant pays you): the game's sellPrice

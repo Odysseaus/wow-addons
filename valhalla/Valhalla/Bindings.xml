@@ -8,4 +8,6 @@
 	<Binding name="VALHALLA_QUILL" category="Valhalla">Valhalla_Binding("quill")</Binding>
 	<Binding name="VALHALLA_QUESTLOG" category="Valhalla">Valhalla_Binding("questlog")</Binding>
 	<Binding name="VALHALLA_MENU" category="Valhalla">Valhalla_Binding("menu")</Binding>
+	<!-- (v0.4.2.8) the window on its Investments tab, or closed when it's there (Invest.lua; I by default, if free) -->
+	<Binding name="VALHALLA_INVEST" category="Valhalla">Valhalla_ToggleInvest()</Binding>
 </Bindings>

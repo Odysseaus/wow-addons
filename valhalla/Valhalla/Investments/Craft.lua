@@ -278,9 +278,10 @@ local function BindType(id)
 	return got[1] and got[15] or nil
 end
 
--- what you have: bags (+ bank)
+-- what you have: bags (+ bank); withBank "none" (v0.4.2.8, Craft's Count: None): nothing counted
 function C.Have(withBank)
 	local have = {}
+	if withBank == "none" then return have end
 	for id, n in pairs(I.char.bags or {}) do have[id] = (have[id] or 0) + n end
 	if withBank then for id, n in pairs(I.char.bank or {}) do have[id] = (have[id] or 0) + n end end
 	return have

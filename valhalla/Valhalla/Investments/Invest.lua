@@ -38,7 +38,7 @@ I.SETTINGS = {
 	-- vendor value); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false,
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
-	topKind = "all", topProf = 0, topBracket = "all",
+	topKind = "all", topProf = 0, topBracket = "all", topView = "movers",
 	marketHouse = "Alliance",   -- (v0.4.2.7: AH Market's house buttons)
 	-- AH Market's sorts (v0.4.2.6): "column:asc|desc" per list (Market.lua's M.COLS); these are the defaults
 	sortResults = "name:asc", sortMine = "total:desc", sortCraft = "each:desc", sortHarvest = "sell:desc",
@@ -821,6 +821,7 @@ function mod:OnEnable()
 	if I.Tabs then I.Tabs.Enable() end
 	if I.Merchant then I.Merchant.Enable() end
 	if I.AH then I.AH.Enable() end
+	if C_Timer and C_Timer.After then C_Timer.After(2, I.ClaimKey) end   -- (v0.4.2.8: the I key, once)
 end
 
 function mod:OnDisable()
@@ -1506,6 +1507,49 @@ end
 
 local function Say(fmt, ...) ns:Print(fmt, ...) end
 
+--------------------------------------------------------------------------------
+-- (v0.4.2.8) The key: Key Bindings > Valhalla > "Valhalla: Investments" (Bindings.xml) opens the window on the
+-- Investments tab, or closes it when it's already there. Default key I, taken once per account only when
+-- I is free: a key the game or the player already gave I is left alone (said once, with how to change it).
+--------------------------------------------------------------------------------
+
+_G.BINDING_NAME_VALHALLA_INVEST = "Valhalla: " .. L["Investments"]
+I.KEY, I.KEY_ACTION = "I", "VALHALLA_INVEST"
+
+function _G.Valhalla_ToggleInvest()
+	if not mod.enabled then Say(L["Investments is off. /valhalla invest on"]) return end
+	local T = I.Tabs
+	if not T then return end
+	local map = _G.WorldMapFrame
+	if T.Attached() and map and map:IsShown() and T.Current() == "invest" then T.Close() return end
+	T.Open("invest")
+end
+
+local function KeyName(action) return (action and _G["BINDING_NAME_" .. action]) or action or "?" end
+local function SetKey()
+	if not (SetBinding and SetBinding(I.KEY, I.KEY_ACTION)) then return false end
+	if SaveBindings then SaveBindings(GetCurrentBindingSet and GetCurrentBindingSet() or 1) end
+	return true
+end
+-- once per account, a moment after login (bindings loaded; never in combat): I if it's free
+function I.ClaimKey()
+	local acct = I.db and I.db.account
+	if not acct or acct.investKey or not (GetBindingKey and GetBindingAction) then return end
+	if InCombatLockdown and InCombatLockdown() then
+		if C_Timer and C_Timer.After then C_Timer.After(10, I.ClaimKey) end
+		return
+	end
+	acct.investKey = true
+	if GetBindingKey(I.KEY_ACTION) then return "kept" end   -- (the player gave it a key already)
+	local action = GetBindingAction(I.KEY) or ""
+	if action == "" then
+		if SetKey() then Say(L["I now opens Investments (Key Bindings > Valhalla to change it)."]) return "set" end
+		return
+	end
+	Say(L["I already does \"%s\" in your key bindings, so Valhalla left it. To open Investments with I: /valhalla invest key (or Key Bindings > Valhalla)."]:format(KeyName(action)))
+	return "taken"
+end
+
 function mod:Slash(word, arg)
 	arg = arg or ""
 	local low = arg:lower():gsub("^%s+", ""):gsub("%s+$", "")
@@ -1533,6 +1577,14 @@ function mod:Slash(word, arg)
 			return
 		end
 		if sub == "settings" then if I.Tabs then I.Tabs.Open("settings") end return end   -- (v0.3.5: its own tab)
+		if sub == "key" then   -- (v0.4.2.8) I for Investments, replacing what I did
+			if InCombatLockdown and InCombatLockdown() then Say(L["Key bindings can't change in combat."]) return end
+			local was = GetBindingAction and GetBindingAction(I.KEY) or ""
+			if SetKey() then
+				Say(was ~= "" and was ~= I.KEY_ACTION and L["I now opens Investments (it did \"%s\")."]:format(KeyName(was)) or L["I now opens Investments."])
+			end
+			return
+		end
 		local page = ({ vendor = "vendor", list = "list", shopping = "list", market = "market", ah = "market" })[sub]
 		if I.Tabs then I.Tabs.Open("invest", page) end
 		return

@@ -1115,7 +1115,7 @@ do
   local c5001, c5000 = Sc.Cur("Alliance", 5001), Sc.Cur("Alliance", 5000)
   ok(c5001 and c5001.quick and c5001.min == 100 + 5001 % 7 and c5001.units == 3 and c5000 and c5000.min == 0, "quick: lowest and units (marked quick); none listed kept as such")
   local p2589 = Sc.Points("Alliance", 2589)
-  ok(#p2589 == 1 and p2589[1].quick, "the same hour: one point per item, the latest wins", #p2589)
+  ok(#p2589 == 1 and not p2589[1].quick, "the same hour: one point per item; a quick scan keeps the full scan's point (v0.4.2.8)", #p2589)
   ok(Events(Sc.Listener()) == 0, "done: nothing listened to")
   I.char.bags = savedBags
   -- the AH closing mid-read: nothing saved
@@ -1432,10 +1432,12 @@ do
   Sc.AddPoint(hmk, 777001, slot + 5, 500, 3, 2)
   mp:Refresh()
   ok(hf2.drawn == 1 and hf2.note._text:find("^One point so far"), "one full scan: one point, drawn (no 3-scan minimum)", hf2.note._text)
-  Sc.AddPoint(hmk, 777001, slot + 40, 450, 3, "q")
+  Sc.AddPoint(hmk, 777001, slot + 30, 470, 3, "q")
+  ok(#Sc.Points(hh, 777001) == 1 and Sc.Points(hh, 777001)[1].min == 500 and not Sc.Points(hh, 777001)[1].quick, "(v0.4.2.8) a quick scan in the hour of a full scan: the full point kept")
+  Sc.AddPoint(hmk, 777001, slot + 40, 450, 3, 2)
   mp:Refresh()
   local pts = Sc.Points(hh, 777001)
-  ok(hf2.drawn == 1 and #pts == 1 and pts[1].min == 450, "a second scan in the same hour: still one point (the latest)")
+  ok(hf2.drawn == 1 and #pts == 1 and pts[1].min == 450, "a second full scan in the same hour: still one point (the latest)")
   hmk.hist[777001] = ("%d:520:3:2;%d:450:3:q"):format(nowM - 130, nowM)
   mp:Refresh()
   ok(hf2.drawn == 2 and hf2.marks[1]._color[4] == 1 and hf2.marks[2]._color[4] == 0.4, "a full and a quick point in two hours: a line (quick faint)")
@@ -1790,12 +1792,15 @@ do
   W.Click(pg.prev)
   ok(cf.offset == 0, "prev: a page back")
   -- Total = profit x can make (Count the bank)
-  local e1 = cf.list[1]
-  ok(e1.can == 10 and math.abs(e1.total - e1.profit * 10) < 0.01 and cf.rows[1].total._text == Sc.Money(e1.total), "Total: profit x can make (10 from the bags)", cf.rows[1].total._text)
-  W.Click(cf.count.boxes[2])   -- (v0.4.2.6: Count: Bags + bank, as My items')
+  W.Click(cf.countDrop) W.Click(cf.countDrop.menu.items[2])   -- (v0.4.2.8: Count: Bags only, Craft's own dropdown)
   for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
   mp:Refresh()
-  ok(I.S.mineBank and cf.list[1].can == 15 and math.abs(cf.list[1].total - cf.list[1].profit * 15) < 0.01, "Count the bank: can make 15, Total follows")
+  local e1 = cf.list[1]
+  ok(e1.can == 10 and math.abs(e1.total - e1.profit * 10) < 0.01 and cf.rows[1].total._text == Sc.Money(e1.total), "Total: profit x can make (10 from the bags)", cf.rows[1].total._text)
+  W.Click(cf.countDrop) W.Click(cf.countDrop.menu.items[3])   -- (v0.4.2.8: Count: Bags + bank)
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  ok(I.S.craftCount == "bank" and cf.list[1].can == 15 and math.abs(cf.list[1].total - cf.list[1].profit * 15) < 0.01, "Count the bank: can make 15, Total follows")
   I.char.bags = {}
   Cr.results = {}
   mp:Refresh()
@@ -2075,9 +2080,9 @@ print("== 33. v0.4.2.1: pages not scrolling, |< >| pager ends, Craft's grid and 
   -- 3. Craft: Reagents: and Show: in measured columns; a name filter
   mp:ShowSub("craft")
   local cf = mp.subs.craft
-  ok(cf.showTitle._text == "Show:" and cf.known:GetParent() == cf.showRow and not cf.count.title:IsShown()
-    and cf.count.boxes[1].label._text == "Bags only" and cf.count.boxes[2].label._text == "Bags + bank", "Craft's second row: Show: Known only | Bags only | Bags + bank, no Count: title (v0.4.2.7)")
-  local rows = { cf.owned.boxes, { cf.known, cf.count.boxes[1], cf.count.boxes[2] } }
+  ok(cf.showTitle._text == "Show:" and cf.known:GetParent() == cf.showRow and cf.countDrop:IsShown() and cf.countDrop.text._text:find("^Count: "),
+    "Craft's second row: Show: Known only | the Count dropdown (v0.4.2.8)", cf.countDrop.text._text)
+  local rows = { cf.owned.boxes }
   local clear = true
   for _, bx in ipairs(rows) do
     for k = 1, #bx - 1 do
@@ -2087,8 +2092,8 @@ print("== 33. v0.4.2.1: pages not scrolling, |< >| pager ends, Craft's grid and 
   end
   ok(clear, "each label ends 8 px or more before the next box's art (3 px over its edge)")
   ok(cf.known.col == cf.owned.boxes[1].col, "Show:'s box in Reagents' first column")
-  local b1, b2 = cf.count.boxes[1], cf.count.boxes[2]
-  ok(b1.col == cf.owned.boxes[2].col and b2.col == cf.owned.boxes[3].col and b1._points[1][2] == cf.showRow and b2._points[1][2] == cf.showRow, "the two rows one grid: Bags only under Owned free, Bags + bank under Owned: vendor", b1.col .. " " .. cf.owned.boxes[2].col)
+  local dp = cf.countDrop._points
+  ok(dp[1][2] == cf.owned.boxes[2] and dp[1][1] == "LEFT" and dp[2][2] == cf.showRow, "the Count dropdown under Owned free (Reagents' 2nd column), on the Show row")
   local mf0 = mp:Sub("mine")
   ok(mf0.scope.boxes[1].col == cf.owned.boxes[1].col, "My items' Count boxes start where Craft's do", mf0.scope.boxes[1].col .. " " .. cf.owned.boxes[1].col)
   ok(cf.owned.boxes[1].col >= V.TextWidth(cf.owned.title) + 16 and cf.owned.boxes[1].col >= V.TextWidth(cf.showTitle) + 16, "the boxes start after the wider title", cf.owned.boxes[1].col)
@@ -2428,8 +2433,8 @@ print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), 
   I.S.craftKnownOnly = false
   Mk.craftProf, Mk.craftMode = 182, "harvest" mp:Refresh()
   local hl = {} for _, b in ipairs(cf.head.harvest) do hl[#hl + 1] = b.text._text end
-  ok(table.concat(hl, "|") == "Item|Sell at|Profit/item|Margin|Listed|Have|Total" and cf.head.harvestStrip:IsShown() and not cf.head.craftStrip:IsShown(),
-    "Harvest's headers: Crafts' less Cost and Known (Have for Can make)", table.concat(hl, "|"))
+  ok(table.concat(hl, "|") == "Item|Sell at|Profit/item|Listed|Have|Total" and cf.head.harvestStrip:IsShown() and not cf.head.craftStrip:IsShown(),
+    "Harvest's headers: Crafts' less Cost, Margin (v0.4.2.8) and Known (Have for Can make)", table.concat(hl, "|"))
   al, why = Aligned(cf.head.harvestStrip, cf.rows[1], cf.rows[1].harvest)
   ok(al, "Harvest: every header over its own column (the item wider: no Cost)", why)
   local cut = Sc.Cut("Cols")
@@ -2439,7 +2444,7 @@ print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), 
     "Peacebloom: profit = the AH's lowest less the cut; Have 4; Total = 4 x profit; Known (skill 1, yours 60)")
   ok(dr and dr.known == false and dr.total == nil, "Dreamfoil: not Known (270 over your 60); none had: Total -")
   local row1 = cf.rows[1]
-  ok(cf.list[1].id == 13463 and row1.harvest.sell._text == Sc.Money(5000) and row1.harvest.margin._text == "-" and row1.harvest.known == nil
+  ok(cf.list[1].id == 13463 and row1.harvest.sell._text == Sc.Money(5000) and row1.harvest.margin == nil and row1.harvest.known == nil
     and row1.harvest.total._text == "-" and row1.harvest.listed._text == "3" and row1.harvest.sell:IsShown() and not row1.cost:IsShown(),
     "the dearest first (Sell at), drawn in Crafts' columns; no Cost")
   ok(cf.owned:IsShown() and cf.owned:GetAlpha() < 1 and cf.owned.boxes[1]._mouse == false and cf.ownedNote:IsShown() and cf.ownedNote._text == "(crafts only)"
@@ -2449,9 +2454,10 @@ print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), 
   local hiddenDF = true for _, e in ipairs(cf.list) do if e.id == 13463 then hiddenDF = false end end
   ok(hiddenDF and cf.status._text:find("above your skill hidden", 1, true), "Known only: Dreamfoil (above your skill) hidden, said", cf.status._text)
   W.Click(cf.known)
-  W.Click(cf.count.boxes[2])
-  ok(I.S.mineBank == true, "Count: Bags + bank (My items' setting too)")
-  W.Click(cf.head.harvest[6])
+  local mb0 = I.S.mineBank
+  W.Click(cf.countDrop) W.Click(cf.countDrop.menu.items[3])
+  ok(I.S.craftCount == "bank" and I.S.mineBank == mb0, "Count: Bags + bank (Craft's own; My items' unchanged)")
+  W.Click(cf.head.harvest[5])
   ok(I.S.sortHarvest == "have:desc" and cf.list[1].id == 2447 and cf.list[2].id == 765 and cf.offset == 0, "Have: most first; page 1")
   W.Click(cf.modeCrafts)
   ok(cf.owned:GetAlpha() == 1 and cf.owned.boxes[1]._mouse == true and not cf.ownedNote:IsShown() and cf.rows[1].cell._w == Mk.COLS.craft[1].w, "back to Crafts: Reagents live again; the item column its own width")
@@ -2669,8 +2675,9 @@ print("== 36. v0.4.2.7: Harvest's Known only, titles that fit, one lit header, o
     return not early and tip.shown and tip.owner == w, tip.lines
   end
   local good, lines = Hover(rf.head.buttons[2])
-  ok(good and lines[2] == "Click to sort by this column; click again to reverse.", "a header: after 3 s, how it sorts", lines[2])
-  ok(V.TIP_DELAY == 3, "the delay: 3 seconds")
+  ok(good and lines[2] == Mk.HeadTip("results", "min") and lines[2]:find("lowest buyout per unit", 1, true) and not lines[2]:find("sort", 1, true),
+    "a header: after the delay, what the column means (v0.4.2.8: no \"click to sort\")", lines[2])
+  ok(V.TIP_DELAY == 2, "the delay: 2 seconds (v0.4.2.8)")
   W.Run(rf.head.buttons[2], "OnEnter") W.Run(rf.head.buttons[2], "OnLeave") tip.shown = false W.RunTimers()
   ok(not tip.shown, "moved off before 3 s: nothing")
   W.Run(rf.head.buttons[2], "OnEnter") W.Run(rf.head.buttons[2], "OnMouseDown") W.RunTimers()
@@ -2687,7 +2694,7 @@ print("== 36. v0.4.2.7: Harvest's Known only, titles that fit, one lit header, o
   ok(Has(rf.search, "search") and Has(mf.scope.boxes[1], "bags") and Has(mf.scope.boxes[2], "bank") and Has(hf.range.boxes[1], "day") and Has(hf.range.boxes[2], "week"), "Scan results, My items, History")
   ok(Has(cf.drop, "craftProf") and Has(cf.modeCrafts, "crafts") and Has(cf.modeHarvest, "harvest") and Has(cf.filter, "filter")
     and Has(cf.owned.boxes[1], "market") and Has(cf.owned.boxes[2], "free") and Has(cf.owned.boxes[3], "vendor")
-    and Has(cf.count.boxes[1], "craftBags") and Has(cf.count.boxes[2], "craftBank"), "Craft's filters")
+    and Has(cf.countDrop, "craftCount") and Has(cf.invest, "invest"), "Craft's filters (v0.4.2.8: the Count dropdown, the Invest Amount)")
   mp:ShowSub("craft")
   Mk.craftMode = "crafts"
   local _, kl = Hover(cf.known)
@@ -2710,6 +2717,207 @@ print("== 36. v0.4.2.7: Harvest's Known only, titles that fit, one lit header, o
   GT.SetOwner, GT.AddLine, GT.Show, GT.Hide, GT.GetOwner = keep[1], keep[2], keep[3], keep[4], keep[5]
   GetProfessions, GetProfessionInfo, Cr.Mine = keepGP, keepGPI, keepMine
   for _, k in ipairs({ "sortResults", "sortMine", "sortCraft", "sortHarvest" }) do I.S[k] = nil end
+  Mk.house, Mk.craftProf, Mk.craftMode = nil, nil, nil
+  mp:Refresh()
+  ok(#W.sizeErrors == errs0, "no handler error")
+end)()
+
+print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without Margin, Top 10's titles and Trending, the quick point, Invest Amount, Craft's Count, the I key")
+;(function()
+  local St, Mk, Sc, Cr, V = ns.Style, I.Market, I.Scan, I.Craft, I.Views
+  local Frame = getmetatable(UIParent)
+  local errs0 = #W.sizeErrors
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  -- 1. every header: what its column means (no "click to sort"); the cut as the house's; the Reagents mode named
+  local all, none = true, {}
+  for _, list in ipairs({ "results", "mine", "craft", "harvest" }) do
+    for _, c in ipairs(Mk.COLS[list]) do
+      local t = Mk.HeadTip(list, c.key)
+      if t == "" or t:lower():find("sort", 1, true) then all = false none[#none + 1] = list .. "." .. c.key end
+    end
+  end
+  ok(all, "every column of every list: a tooltip saying what it means, none about sorting", table.concat(none, ","))
+  Mk.house = "Neutral"
+  ok(Mk.HeadTip("mine", "ah"):find("15%", 1, true) and Mk.HeadTip("craft", "each"):find("15%", 1, true) and Mk.HeadTip("harvest", "each"):find("15%", 1, true), "Neutral: its 15% cut in the tooltips")
+  Mk.house = "Alliance"
+  ok(Mk.HeadTip("craft", "total"):find("5%", 1, true) and Mk.HeadTip("craft", "total"):find("net return", 1, true), "Alliance: 5%; Total: the net return with an Invest Amount")
+  local keepOwned = I.S.craftOwned
+  I.S.craftOwned = "free" local tf = Mk.HeadTip("craft", "cost")
+  I.S.craftOwned = "vendor" local tv = Mk.HeadTip("craft", "cost")
+  I.S.craftOwned = "market" local tm = Mk.HeadTip("craft", "cost")
+  ok(tf:find("Owned free", 1, true) and tv:find("Owned: vendor", 1, true) and tm:find("Market:", 1, true), "Cost to Make: the Reagents mode in use, named")
+  I.S.craftOwned = keepOwned
+  ok(V.TIP_DELAY == 2, "every tooltip after 2 s")
+  -- 2. Harvest: no Margin; a saved Margin sort: the default
+  local hasMargin = false for _, c in ipairs(Mk.COLS.harvest) do if c.key == "margin" then hasMargin = true end end
+  I.S.sortHarvest = "margin:desc"
+  ok(not hasMargin and Mk.SortTag("harvest") == "sell:desc", "Harvest: no Margin column; a saved Margin sort falls back to Sell at", Mk.SortTag("harvest"))
+  I.S.sortHarvest = nil
+  -- 3. a quick scan never replaces the hour's full point
+  local qm = Sc.Market("Quick8", true)
+  local qt = math.floor(W.now / 60) - qm.base
+  local slot = math.floor((qt - 60) / Sc.SLOT) * Sc.SLOT
+  Sc.AddPoint(qm, 1, slot + 1, 100, 10, 2) Sc.AddPoint(qm, 1, slot + 20, 90, 4, "q")
+  local qp = Sc.Points("Quick8", 1)
+  ok(#qp == 1 and not qp[1].quick and qp[1].units == 10, "a quick scan in a full scan's hour: the full point kept")
+  Sc.AddPoint(qm, 2, slot + 1, 100, 10, "q") Sc.AddPoint(qm, 2, slot + 20, 95, 12, 3)
+  ok(#Sc.Points("Quick8", 2) == 1 and not Sc.Points("Quick8", 2)[1].quick, "a full scan after a quick one in the hour: the full point wins")
+  -- 4. Trending: units gone between full scans (12 h apart at most), per day; gold the same
+  local tmk = Sc.Market("Trend8", true)
+  local base = math.floor(W.now / 60) - tmk.base
+  local h = 60
+  tmk.hist[501] = ("%d:100:100:5;%d:100:70:4;%d:100:90:5;%d:200:60:3"):format(base - 4 * h, base - 3 * h, base - 2 * h, base - h)   -- (30 + 30 gone in 3 h)
+  tmk.hist[502] = ("%d:50:20:2;%d:50:10:1"):format(base - 30 * h, base - 15 * h)   -- (15 h apart: not counted)
+  tmk.hist[503] = ("%d:10:40:2;%d:10:5:q;%d:10:30:2"):format(base - 3 * h, base - 2 * h, base - h)   -- (the quick point ignored: 10 gone in 2 h)
+  tmk.cur[501] = ("%d,%d,%d,%d"):format(250, 60, 3, base - h)
+  local u, g = Sc.SoldNow("Trend8")
+  local by = {} for _, e in ipairs(u) do by[e.id] = e end
+  ok(by[501] and math.abs(by[501].perDay - 480) < 0.01 and math.abs(by[501].goldDay - (30 * 100 + 30 * 100) * 8) < 0.01 and by[501].now == 250,
+    "100 > 70 > 90 > 60 units in 3 h: 60 gone, 480 a day; gold: each drop x the price before it; Price: the last full scan's", by[501] and by[501].perDay)
+  ok(not by[502] and by[503] and math.abs(by[503].perDay - 120) < 0.01, "pairs over 12 h apart skipped; quick points ignored", by[503] and by[503].perDay)
+  ok(u[1].id == 501 and g[1].id == 501 and #u == 2, "ranked by units a day, and by gold a day")
+  -- 5. Top 10: Price movers | Trending (kept), titles over the columns with what they mean; the Level clear of the toggle
+  mp:ShowSub("top")
+  local top = mp.subs.top
+  I.S.topView = nil mp:Refresh()
+  ok(top.views and #top.views == 2 and top.views[1].text._text == "Price movers" and top.views[2].text._text == "Trending" and Mk.TopView() == "movers"
+    and top.cols[1].title._text == "Rising" and top.cols[2].title._text == "Falling" and top.cols[1].heads[2].text._text == "Change" and top.cols[1].heads[3].text._text == "Price"
+    and top.cols[1].heads[4].text._text == "Last 8", "Price movers by default: Rising / Falling, Change, Price, Last 8")
+  ok(top.cols[1].heads[2].tip.text:find("median", 1, true) and top.cols[1].titleHit.tip.text:find("went up", 1, true) and not top.cols[1].heads[2]._scripts.OnClick,
+    "the titles' tooltips say what they mean; no sorting")
+  Mk.house = "Trend8"
+  W.Click(top.views[2])
+  ok(I.S.topView == "sold" and top.cols[1].title._text == "Most units sold" and top.cols[2].title._text == "Most gold sold" and top.cols[1].heads[2].text._text == "Sold/day"
+    and top.cols[2].heads[2].text._text == "Gold/day" and top.cols[1].heads[4].text._text == "Listed" and top.cols[1].heads[2].tip.text:find("12 h", 1, true),
+    "Trending: Most units sold / Most gold sold, Sold/day / Gold/day, Price, Listed (saved)")
+  ok(I.SETTINGS.topView == "movers", "the view kept in the settings (Price movers at first)")
+  local lp, vp = top.level._points[1], top.views[1]._points[1]
+  ok(lp[3] == -32 and top.levelTitle._points[1][3] == -35 and vp[5] == -6 and top.views[2]._points[1][1] == "TOPRIGHT", "the toggle on the top row, the Level under it (no overlap)")
+  W.Click(top.views[1])
+  ok(I.S.topView == "movers", "back to Price movers")
+  -- 6. Invest Amount: parsing; how many it makes; Total; live as you type; empty: as before
+  local P = Mk.ParseMoney
+  ok(P("50g") == 500000 and P("1g 20s") == 12000 and P("1.5") == 15000 and P("75s") == 7500 and P("33c") == 33 and P("2") == 20000 and P("") == nil and P("abc") == nil and P("0") == nil,
+    "Invest Amount: 50g, 1g 20s, 1.5 (gold), 75s, 33c; junk and 0: none")
+  local Sp = Sc.SellPrice
+  Sc.SellPrice = function(id) return id == 1 and 5 or nil end
+  local e = { parts = { { id = 1, n = 2, unit = 100 }, { id = 2, n = 1, unit = 300 } } }   -- (500 a craft at market)
+  ok(Mk.Afford(e, 2600, {}, "market") == 5 and select(2, Mk.Afford(e, 2600, {}, "market")) == 2500, "Market: amount / Cost to Make (2600 / 500: 5, costing 2500)")
+  ok(Mk.Afford(e, 2600, { [1] = 4, [2] = 1 }, "market") == 5, "Market: yours priced too (as Cost to Make)")
+  local nf, cf2 = Mk.Afford(e, 1000, { [1] = 4, [2] = 1 }, "free")
+  ok(nf == 3 and cf2 == 2 * 100 + 2 * 300, "Owned free: yours first (free), then bought: 3 for 800 (a 4th: 1300)", nf .. " " .. cf2)
+  local nv, cv = Mk.Afford(e, 1000, { [1] = 4 }, "vendor")
+  ok(nv == 2 and cv == 4 * 5 + 2 * 300, "Owned: vendor: yours at a vendor's price first", nv .. " " .. cv)
+  ok(Mk.Afford(e, 499, {}, "market") == 0 and Mk.Afford({ parts = {} }, 1, {}, "market") == Mk.INVEST_MAX, "less than one craft: 0; no reagents: capped")
+  Sc.SellPrice = Sp
+  -- in the view: 12 crafts of 2 reagents at house Inv8
+  local keepTS, keepBags, keepBank = C_TradeSkillUI, I.char.bags, I.char.bank
+  local SCH = {}
+  for k = 1, 12 do SCH[970000 + k] = { 971000 + k, { { 972001, k % 3 + 1 }, { 972002, 1 } } } W.items[971000 + k] = { "Invest Test " .. k, 132912 } end
+  W.items[972001] = { "Reagent A", 132912 } W.items[972002] = { "Reagent B", 132912 }
+  C_TradeSkillUI = { GetRecipeSchematic = function(id)
+    local r = SCH[id] if not r then return nil end
+    local slots = {} for _, g in ipairs(r[2]) do slots[#slots + 1] = { quantityRequired = g[2], reagents = { { itemID = g[1] } } } end
+    return { recipeID = id, outputItemID = r[1], quantityMin = 1, quantityMax = 1, reagentSlotSchematics = slots }
+  end }
+  local im = Sc.Market("Inv8", true)
+  local itm = math.floor(W.now / 60) - im.base
+  im.scans = { { t = itm, kind = "full", n = 100, items = 14 } }
+  im.cur[972001] = ("%d,%d,%d,%d"):format(150, 50, 5, itm) im.cur[972002] = ("%d,%d,%d,%d"):format(400, 50, 5, itm)
+  for k = 1, 12 do im.cur[971000 + k] = ("%d,%d,%d,%d"):format(1000 + k * 300, 10, 2, itm) end
+  I.db.account.recipes[998] = { name = "Invest Test", ids = (function() local t = {} for k = 1, 12 do t[k] = 970000 + k end return table.concat(t, ",") end)(), t = W.now }
+  I.char.bags, I.char.bank = { [972001] = 7, [972002] = 2 }, { [972002] = 5 }
+  Mk.house, Mk.craftProf, Mk.craftMode = "Inv8", 998, "crafts"
+  I.S.craftCount = "bags"
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  ok(cf.invest and cf.invest:IsShown() and cf.investTitle._text == "Invest Amount:" and cf.investHint:IsShown() and cf.invest._points[1][2] == cf.investTitle
+    and cf.investTitle._points[1][2] == cf.countDrop, "one Invest Amount box above the table, after the Count dropdown, its hint while empty")
+  local r1e = cf.list[1]
+  local before = r1e and cf.rows[1].can._text
+  cf.invest:SetText("50g") W.Run(cf.invest, "OnTextChanged")
+  ok(Mk.investAmount == nil, "typing: not yet (a moment after the last key)")
+  W.RunTimers()
+  local e1 = cf.list[1]
+  local n1 = e1 and Mk.Afford(e1, 500000, Cr.Have(false), I.S.craftOwned or "market")
+  local cut = Sc.Cut("KnownTest")
+  local want = e1 and n1 > 0 and (n1 * e1.sell * e1.qty * (1 - cut) - select(2, Mk.Afford(e1, 500000, Cr.Have(false), I.S.craftOwned or "market"))) or nil
+  ok(Mk.investAmount == 500000 and e1 and cf.rows[1].can._text == tostring(n1) and (want == nil and cf.rows[1].total._text == "-" or cf.rows[1].total._text:find(Sc.Money(math.abs(want)), 1, true)),
+    "50g typed: every row's Can make what it buys, Total the net return", e1 and (cf.rows[1].can._text .. " " .. cf.rows[1].total._text))
+  local allRows = true
+  for i, r in ipairs(cf.rows) do local x = cf.list[cf.offset + i] if x and r:IsShown() and r.can._text ~= tostring((Mk.Shown(x))) then allRows = false end end
+  ok(allRows, "the amount on every row shown")
+  I.S.sortCraft = "can:desc" mp:Refresh()
+  local sorted = true for i = 2, #cf.list do if (Mk.Shown(cf.list[i - 1])) < (Mk.Shown(cf.list[i])) then sorted = false end end
+  ok(sorted, "Can make sorts by what it shows (with the amount)")
+  I.S.sortCraft = nil
+  cf.invest:SetText("") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
+  ok(Mk.investAmount == nil and cf.list[1] and cf.rows[1].can._text == tostring(cf.list[1].can) and cf.investHint:IsShown(), "emptied: as before (your reagents)")
+  ok(I.SETTINGS.craftInvest == nil and I.S.craftInvest == nil and I.S.investAmount == nil, "the amount isn't saved (this session only)")
+  -- 7. Craft's Count: None | Bags only | Bags + bank, its own (first from My items'); None: nothing counted
+  local keepMB = I.S.mineBank
+  I.S.craftCount, I.S.mineBank = nil, true
+  ok(Mk.CraftCount() == "bank" and I.S.craftCount == "bank", "first: from My items' (Bags + bank)")
+  I.S.craftCount, I.S.mineBank = nil, false
+  ok(Mk.CraftCount() == "bags", "first: from My items' (Bags only)")
+  W.Click(cf.countDrop)
+  local labels = {} for _, it in ipairs(cf.countDrop.menu.items) do if it:IsShown() then labels[#labels + 1] = it.text._text end end
+  ok(table.concat(labels, "|") == "None|> Bags only|Bags + bank", "the dropdown: None | Bags only | Bags + bank (the current marked)", table.concat(labels, "|"))
+  W.Click(cf.countDrop.menu.items[1])
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  local zero = true for _, x in ipairs(cf.list) do if x.can ~= 0 or x.total ~= nil then zero = false end end
+  ok(I.S.craftCount == "none" and I.S.mineBank == false and zero and cf.countDrop.text._text == "Count: None", "None: Can make 0, Total - everywhere; My items' setting untouched")
+  cf.invest:SetText("10g") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
+  local e2 = cf.list[1]
+  ok(e2 and (Mk.Shown(e2)) == math.floor(100000 / e2.cost), "None + an amount: everything bought (amount / Cost to Make)", e2 and ((Mk.Shown(e2)) .. " " .. e2.cost))
+  cf.invest:SetText("") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
+  local hv = Cr.Harvest("Fit", 182, "none", false)
+  local hz = true for _, x in ipairs(hv.list) do if x.have ~= 0 or x.total ~= nil then hz = false end end
+  ok(hz, "Harvest under None: Have 0, Total -")
+  I.S.craftCount, I.S.mineBank = "bags", keepMB
+  -- 8. the I key: Key Bindings > Valhalla > Valhalla: Investments; I by default only if free
+  C_TradeSkillUI, I.char.bags, I.char.bank = keepTS, keepBags, keepBank
+  local xml = io.open("Valhalla/Bindings.xml"):read("*a")
+  ok(xml:find('<Binding name="VALHALLA_INVEST" category="Valhalla">Valhalla_ToggleInvest()</Binding>', 1, true) and BINDING_NAME_VALHALLA_INVEST == "Valhalla: Investments",
+    "the binding in Valhalla's section: \"Valhalla: Investments\"")
+  local binds, saved = {}, nil
+  local kb = { GetBindingKey, GetBindingAction, SetBinding, SaveBindings, GetCurrentBindingSet }
+  GetBindingKey = function(a) for k, v in pairs(binds) do if v == a then return k end end end
+  GetBindingAction = function(k) return binds[k] or "" end
+  SetBinding = function(k, a) binds[k] = a return true end
+  SaveBindings = function(set) saved = set end
+  GetCurrentBindingSet = function() return 2 end
+  ns.printed = {}
+  I.db.account.investKey = nil
+  ok(I.ClaimKey() == "set" and binds.I == "VALHALLA_INVEST" and saved == 2 and Printed("I now opens Investments"), "I free: taken for Investments, saved, said")
+  ok(I.ClaimKey() == nil, "once per account")
+  binds, saved = { I = "TOGGLEGROUPFINDER" }, nil
+  BINDING_NAME_TOGGLEGROUPFINDER = "Toggle Group Finder"
+  I.db.account.investKey = nil ns.printed = {}
+  ok(I.ClaimKey() == "taken" and binds.I == "TOGGLEGROUPFINDER" and saved == nil and Printed("Toggle Group Finder") and Printed("/valhalla invest key"),
+    "I already used (the game's or yours): left alone, said once with how to change it")
+  binds = { ["CTRL-I"] = "VALHALLA_INVEST" } I.db.account.investKey = nil
+  ok(I.ClaimKey() == "kept" and binds.I == nil, "a key of your own for it: nothing changed")
+  binds = { I = "TOGGLEGROUPFINDER" } ns.printed = {}
+  Slash("invest", "key")
+  ok(binds.I == "VALHALLA_INVEST" and saved == 2 and Printed("it did \"Toggle Group Finder\""), "/valhalla invest key: I for Investments (what it did, said)")
+  local opened, closed = {}, 0
+  local keepOpen, keepClose, keepCur, keepAtt = T.Open, T.Close, T.Current, T.Attached
+  T.Open = function(k, p) opened[#opened + 1] = k return true end
+  T.Close = function() closed = closed + 1 return true end
+  T.Attached = function() return true end
+  T.Current = function() return "map" end
+  Valhalla_ToggleInvest()
+  T.Current = function() return "invest" end
+  Valhalla_ToggleInvest()
+  ok(opened[1] == "invest" and #opened == 1 and closed == 1, "the key: opens Investments; pressed on it again: closes")
+  T.Open, T.Close, T.Current, T.Attached = keepOpen, keepClose, keepCur, keepAtt
+  GetBindingKey, GetBindingAction, SetBinding, SaveBindings, GetCurrentBindingSet = kb[1], kb[2], kb[3], kb[4], kb[5]
   Mk.house, Mk.craftProf, Mk.craftMode = nil, nil, nil
   mp:Refresh()
   ok(#W.sizeErrors == errs0, "no handler error")

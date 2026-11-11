@@ -159,15 +159,14 @@ M.COLS = {
 		{ key = "margin", label = L["Margin"], x = 418, w = 46, value = function(e) return e.margin end },
 		{ key = "listed", label = L["Listed"], x = 468, w = 42, value = function(e) return e.listed end },
 		{ key = "known", label = L["Known"], x = 512, w = 38, justify = "CENTER", value = function(e) return e.known and 1 or nil end },
-		{ key = "can", label = L["Can make"], x = 554, w = 56, value = function(e) return e.can end },
-		{ key = "total", label = L["Total"], x = 614, w = 90, value = function(e) return e.total end },
+		{ key = "can", label = L["Can make"], x = 554, w = 56, value = function(e) return (M.Shown(e)) end },
+		{ key = "total", label = L["Total"], x = 614, w = 90, value = function(e) return select(2, M.Shown(e)) end },
 	},
 	-- (Crafts' columns for a gathered item, no Cost: Sell at the AH's lowest, Profit/item after the cut, Have, Total)
 	harvest = {
 		{ key = "name", label = L["Item"], x = 2, w = 252, justify = "LEFT", item = true, first = "asc", value = function(e) return NameOf(e.id) end },
 		{ key = "sell", label = L["Sell at"], x = 258, w = 72, value = function(e) return e.low end },
 		{ key = "each", label = L["Profit/item"], x = 334, w = 80, value = function(e) return e.each end },
-		{ key = "margin", label = L["Margin"], x = 418, w = 46, value = function(e) return e.margin end },
 		{ key = "listed", label = L["Listed"], x = 468, w = 42, value = function(e) return e.low and e.units or nil end },
 		{ key = "have", label = L["Have"], x = 554, w = 56, value = function(e) return e.have end },
 		{ key = "total", label = L["Total"], x = 614, w = 90, value = function(e) return e.total end },
@@ -324,7 +323,7 @@ function M.Headers(f, y, list, onSort)
 		else b.text:SetPoint("RIGHT", -5, 0) b.arrow:SetPoint("LEFT", 4, 0) end
 		b.text:SetJustifyH(j == "CENTER" and "RIGHT" or j)
 		if b.vh then b.vh.keepText = true end   -- (the title's colour is the sort's alone: hovering doesn't light it)
-		V.Tip(b, c.label, L["Click to sort by this column; click again to reverse."])
+		V.Tip(b, c.label, function() return M.HeadTip(list, c.key) end)   -- (v0.4.2.8: what the column means)
 		b.arrow:Hide()
 		head.buttons[i] = b
 	end
@@ -578,6 +577,12 @@ function M.FitTop(col, atLeast)
 		r.cell:SetWidth(cx - M.TOP_GAP - 2)
 	end
 	col.fit = { change = cw, price = pw, changeX = cx, priceX = px, sparkX = sx, name = cx - M.TOP_GAP - 2 }
+	-- (v0.4.2.8) the column titles over their columns
+	if col.heads then
+		col.heads[2]:ClearAllPoints() col.heads[2]:SetPoint("TOPLEFT", cx, -2) col.heads[2]:SetWidth(cw)
+		col.heads[3]:ClearAllPoints() col.heads[3]:SetPoint("TOPLEFT", px, -2) col.heads[3]:SetWidth(pw)
+		col.heads[4]:ClearAllPoints() col.heads[4]:SetPoint("TOPLEFT", sx, -2) col.heads[4]:SetWidth(M.SPARK * M.SPARK_STEP + 8)
+	end
 	return col.fit
 end
 -- the saved filter, made sane: (kind, profession or nil, bracket)
@@ -624,6 +629,158 @@ local function DropMenu(f, w, n, onPick)
 end
 
 M.HOUSES = { "Alliance", "Horde", "Neutral" }
+M.INVEST_WAIT = 0.3   -- (seconds after the last key before the rows update)
+
+-- (v0.4.2.8) what each column means (its header's tooltip); a function: worded for the settings now
+local function CutPct() return ("%d%%"):format(math.floor(S().Cut(M.House()) * 100 + 0.5)) end
+local REAGENTS = {
+	market = "Market: each at the AH's lowest, or a merchant's price you've seen if cheaper.",
+	free = "Owned free: yours (per Count) count 0; the rest at the AH's lowest, or a merchant's if cheaper.",
+	vendor = "Owned: vendor: yours (per Count) at what a vendor pays; the rest at the AH's lowest, or a merchant's if cheaper.",
+}
+M.HEAD_TIPS = {
+	results = {
+		name = "The item's name. Click a row for its price history.",
+		min = "The lowest buyout per unit in your last full scan. \"bid only\": no auction with a buyout.",
+		units = "Units listed, all auctions added up (bid-only ones too).",
+		auctions = "How many auctions are listed.",
+		change = "The lowest price's move over 7 days: the median of the recent half of your full scans against the earlier half's. \"-\": fewer than 3 full scans of it in 7 days.",
+	},
+	mine = {
+		name = "What you have. Click a row for its price history.",
+		n = "How many you have: bags, or bags + bank (as last seen), per Count.",
+		vendor = "What a vendor pays you for one.",
+		ah = function() return "The AH's lowest buyout for one, less its " .. CutPct() .. " cut." end,
+		best = "Where one is worth more: the AH (after its cut) or a vendor.",
+		total = "Have x the better of the two prices.",
+	},
+	craft = {
+		name = "The recipe, by what it makes. Hover a row for its reagents and costs.",
+		cost = function() return "What one craft's reagents cost. " .. (REAGENTS[I.S.craftOwned or "market"] or REAGENTS.market) end,
+		sell = "The AH's lowest buyout for one of what it makes.",
+		each = function() return "Per item made: the sale less the AH's " .. CutPct() .. " cut, less the cost to make." end,
+		margin = "Profit as a share of the cost to make. \"-\": the reagents cost nothing.",
+		listed = "Units of it on the AH now.",
+		known = "*: you have learned this recipe.",
+		can = "How many crafts the reagents you have make (per Count). With an Invest Amount: how many crafts that gold buys (Market: the amount / Cost to Make; Owned: yours used first, then buying the rest).",
+		total = function() return "Profit per craft x Can make. With an Invest Amount: your net return, the sale after the AH's " .. CutPct() .. " cut x Can make, less what those crafts cost." end,
+	},
+	harvest = {
+		name = "What this profession gathers.",
+		sell = "The AH's lowest buyout for one.",
+		each = function() return "Sell at, less the AH's " .. CutPct() .. " cut. (You gathered it: no cost.)" end,
+		listed = "Units of it on the AH now.",
+		have = "How many you have: bags, or bags + bank, per Count (None: 0).",
+		total = "Have x Profit/item.",
+	},
+}
+function M.HeadTip(list, key)
+	local t = (M.HEAD_TIPS[list] or {})[key]
+	if type(t) == "function" then t = t() end
+	return t and L[t] or ""
+end
+
+-- (v0.4.2.8) Top 10's two views, their titles over each column (no sorting) and what each means:
+-- { list title, the number column, Price, the bars } per side
+M.TOP_VIEWS = { { "movers", "Price movers" }, { "sold", "Trending" } }
+local CHANGE = { "Change", "The lowest price's move: the median of the recent half of your full scans in 7 days against the earlier half's." }
+local LAST8 = { "Last 8", "The last 8 full-scan lowest prices (one an hour at most), oldest left; bar height against the highest kept." }
+local LISTED8 = { "Listed", "Units listed in each of your last 8 full scans, oldest left." }
+local NOWPRICE = { "Price", "The lowest buyout in your last full scan." }
+M.TOP_HEADS = {
+	movers = {
+		{ { "Rising", "Items whose lowest price went up over 7 days. Click one for its price history." }, CHANGE,
+		  { "Price", "The recent half's median lowest buyout." }, LAST8 },
+		{ { "Falling", "Items whose lowest price went down over 7 days. Click one for its price history." }, CHANGE,
+		  { "Price", "The recent half's median lowest buyout." }, LAST8 },
+	},
+	sold = {
+		{ { "Most units sold", "Estimated: the units that left the AH between your full scans, per day. Bought, expired and cancelled look the same." },
+		  { "Sold/day", "Units gone per day: every drop in units listed between two full scans (12 h apart at most), added up, over the hours those scans cover." },
+		  NOWPRICE, LISTED8 },
+		{ { "Most gold sold", "Estimated: units gone per day x their lowest price at the time." },
+		  { "Gold/day", "Each drop in units x the lowest price before it, added up, per day." },
+		  NOWPRICE, LISTED8 },
+	},
+}
+M.TOP_VIEW_TIPS = { movers = "Items whose lowest price moved most over 7 days.",
+	sold = "Items selling the most, estimated from units leaving the AH between your full scans." }
+M.SOLD_NOTE = "Estimate: units that left the AH between your full scans. Bought, expired and cancelled look the same; new listings hide some. More full scans, closer together: a better estimate."
+function M.TopView() return I.S.topView == "sold" and "sold" or "movers" end
+
+-- (v0.4.2.8) Craft's Count (None | Bags only | Bags + bank): its own setting, first from My items' (mineBank)
+M.COUNTS = { { "none", "None" }, { "bags", "Bags only" }, { "bank", "Bags + bank" } }
+function M.CraftCount()
+	local c = I.S.craftCount
+	if c ~= "none" and c ~= "bags" and c ~= "bank" then
+		c = I.S.mineBank and "bank" or "bags"
+		I.S.craftCount = c
+	end
+	return c
+end
+-- what C.Have / C.Rank take for it: "none", true (bags + bank) or false (bags)
+function M.CountArg() local c = M.CraftCount() return c == "none" and "none" or c == "bank" end
+
+-- (v0.4.2.8) the Invest Amount (one box over the Craft table, for every row; this session only): copper or nil
+M.investAmount = nil
+function M.ParseMoney(t)
+	t = tostring(t or ""):lower():gsub("%s+", "")
+	if t == "" then return nil end
+	if t:match("^%d+%.?%d*$") or t:match("^%.%d+$") then
+		local n = math.floor(tonumber(t) * 10000 + 0.5)
+		return n > 0 and n or nil
+	end
+	if not t:match("^[%dgsc]+$") or not t:match("%d[gsc]") then return nil end
+	local g, s, c = tonumber(t:match("(%d+)g") or 0), tonumber(t:match("(%d+)s") or 0), tonumber(t:match("(%d+)c") or 0)
+	local n = g * 10000 + s * 100 + c
+	return n > 0 and n or nil
+end
+-- how many crafts amount buys: the largest n whose cost for n crafts fits (the Reagents mode: Market prices all of
+-- them, owned ones too; Owned free / Owned: vendor use yours first, per Count); returns n, that cost
+M.INVEST_MAX = 9999
+function M.Afford(e, amount, have, owned)
+	local function CostN(n)
+		local cost = 0
+		for _, p in ipairs(e.parts or {}) do
+			local need = n * p.n
+			local own = owned == "market" and 0 or math.min(need, have[p.id] or 0)
+			local buy = need - own
+			if owned == "vendor" and own > 0 then cost = cost + own * (S().SellPrice(p.id) or 0) end
+			if buy > 0 then
+				if not p.unit then return math.huge end
+				cost = cost + buy * p.unit
+			end
+		end
+		return cost
+	end
+	if CostN(1) > amount then return 0, 0 end
+	if CostN(M.INVEST_MAX) <= amount then return M.INVEST_MAX, CostN(M.INVEST_MAX) end
+	local lo, hi = 1, M.INVEST_MAX   -- (CostN(lo) fits, CostN(hi) doesn't)
+	while hi - lo > 1 do
+		local mid = math.floor((lo + hi) / 2)
+		if CostN(mid) <= amount then lo = mid else hi = mid end
+	end
+	return lo, CostN(lo)
+end
+-- a craft row's Can make and Total as shown (and sorted): from the Invest Amount when there is one
+function M.Shown(e)
+	local amount = M.investAmount
+	local cnt = M.CraftCount()
+	if amount and e.sell and e.parts then
+		local owned = I.S.craftOwned or "market"
+		local house = M.House()
+		local tag = ("%d|%s|%s|%s|%s|%s"):format(amount, cnt, owned, house, tostring(I.char and I.char.bagsSeen), tostring(I.char and I.char.bankSeen))
+		if e._shownTag ~= tag then
+			if M._haveTag ~= tag then M._have, M._haveTag = I.Craft.Have(M.CountArg()), tag end
+			local n, cost = M.Afford(e, amount, M._have, owned)
+			e._shownN = n
+			e._shownTotal = n > 0 and (n * e.sell * e.qty * (1 - S().Cut(house)) - cost) or nil
+			e._shownTag = tag
+		end
+		return e._shownN, e._shownTotal
+	end
+	return e.can, e.total
+end
 
 local function BuildTop(f, page)
 	local TOPY = -34
@@ -650,11 +807,20 @@ local function BuildTop(f, page)
 	f.prof:SetPoint("TOPLEFT", 252, -6)
 	function f.prof.Open() f.prof.Fill(ProfEntries(), select(2, M.TopState()) or false) f.prof.menu:Show() end
 	-- the level: right of the columns, so its menu opens over no prices (columns end at M.TOP_COLS_W)
+	-- (v0.4.2.8) Price movers | Trending at the top right; the Level under them (right of the columns: no overlap)
+	f.views = {}
+	for k, vw in ipairs(M.TOP_VIEWS) do
+		local b = V.Button(f, L[vw[2]], 100, 20, function() I.S.topView = vw[1] f.Redraw() end)
+		b:SetPoint("TOPRIGHT", f, "TOPRIGHT", -8 - (#M.TOP_VIEWS - k) * 104, -6)
+		b.view = vw[1]
+		V.Tip(b, L[vw[2]], L[M.TOP_VIEW_TIPS[vw[1]]])
+		f.views[k] = b
+	end
 	f.levelTitle = Text(f, 12)
-	f.levelTitle:SetPoint("TOPLEFT", M.TOP_COLS_W + 8, -9)
+	f.levelTitle:SetPoint("TOPLEFT", M.TOP_COLS_W + 8, -35)
 	f.levelTitle:SetText(L["Level:"])
 	f.level = DropMenu(f, 130, 5, function(v) I.S.topBracket = v f.Redraw() end)
-	f.level:SetPoint("TOPLEFT", M.TOP_COLS_W + 50, -6)
+	f.level:SetPoint("TOPLEFT", M.TOP_COLS_W + 50, -32)
 	function f.level.Open() f.level.Fill(M.TOP_BRACKETS, I.S.topBracket or "all") f.level.menu:Show() end
 	f.empty = Text(f, 12, GREY)
 	f.empty:SetPoint("TOPLEFT", 8, TOPY - 4)
@@ -671,6 +837,23 @@ local function BuildTop(f, page)
 		col.title = Text(col, 13, c == 1 and GREEN or RED)
 		col.title:SetPoint("TOPLEFT", 4, 0)
 		col.title:SetText(title)
+		-- (v0.4.2.8) the column titles (no sorting), each with what it means
+		col.titleHit = CreateFrame("Frame", nil, col)
+		col.titleHit:SetPoint("TOPLEFT", 0, 0)
+		col.titleHit:SetSize(150, 16)
+		if col.titleHit.EnableMouse then col.titleHit:EnableMouse(true) end
+		V.Tip(col.titleHit, "", "")
+		col.heads = {}
+		for k = 2, 4 do
+			local h = CreateFrame("Frame", nil, col)
+			h:SetSize(60, 16)
+			h.text = Text(h, 10, DIM)
+			h.text:SetAllPoints()
+			h.text:SetJustifyH(k == 4 and "LEFT" or "RIGHT")
+			if h.EnableMouse then h:EnableMouse(true) end
+			V.Tip(h, "", "")
+			col.heads[k] = h
+		end
 		col.rows = {}
 		for i = 1, M.TOP do
 			local r = CreateFrame("Frame", nil, col)
@@ -701,7 +884,21 @@ local function BuildTop(f, page)
 		local bl for _, x in ipairs(M.TOP_BRACKETS) do if x[1] == bracket then bl = x[2] end end
 		f.level.text:SetText(bl or L["All levels"])
 		local house = M.House()
-		local rising, falling, fulls, nextAt = S().TrendingAll(house)
+		local view = M.TopView()
+		for _, b in ipairs(f.views) do T.Skin(b, 0.9, b.view == view and GOLD or T.BRONZE) end
+		local rising, falling, fulls, nextAt
+		if view == "sold" then rising, falling, fulls, nextAt = S().SoldAll(house)
+		else rising, falling, fulls, nextAt = S().TrendingAll(house) end
+		for c, col in ipairs(f.cols) do
+			local H = M.TOP_HEADS[view][c]
+			col.title:SetText(L[H[1][1]])
+			col.title:SetTextColor(unpack(view == "sold" and GOLD or (c == 1 and GREEN or RED)))
+			col.titleHit.tip.title, col.titleHit.tip.text = L[H[1][1]], L[H[1][2]]
+			for k = 2, 4 do
+				col.heads[k].text:SetText(L[H[k][1]])
+				col.heads[k].tip.title, col.heads[k].tip.text = L[H[k][1]], L[H[k][2]]
+			end
+		end
 		local hr, hf
 		rising, hr = M.TopFilter(rising, kind, prof, bracket)
 		falling, hf = M.TopFilter(falling, kind, prof, bracket)
@@ -712,16 +909,23 @@ local function BuildTop(f, page)
 		local what = kind == "all" and "" or ((prof and ProfName(prof) or (kind == "craft" and L["crafted"] or L["harvested"])) .. (bracket ~= "all" and (" (" .. bl .. ")") or "") .. " ")
 		if fulls < 3 then
 			f.empty:SetText(L["Top 10 needs full scans in 3 different hours within 7 days (you have %d). History keeps one point an hour, so two scans in the same hour count once; your next full scan counts from %s. Scan at the Auction House: the Scan button is on Valhalla's list beside it."]:format(fulls, when))
+		elseif view == "sold" then
+			f.empty:SetText(L["Nothing left the AH between your full scans of the last 7 days (12 h apart at most). Your next full scan counts from %s."]:format(when))
 		elseif kind == "all" then
 			f.empty:SetText(L["No price moved in your scans of the last 7 days (full scans in %d different hours). Your next full scan counts from %s."]:format(fulls, when))
 		else
 			f.empty:SetText(L["No %sitem moved in your scans of the last 7 days (full scans in %d different hours). Your next full scan counts from %s."]:format(what, fulls, when))
 		end
 		local hidden = (hr or 0) + (hf or 0)
-		f.note:SetShown(hidden > 0)
-		f.note:SetText(L["%d %s items with no known skill level are hidden from this level."]:format(hidden, prof and ProfName(prof) or ""))
+		local notes = {}
+		if view == "sold" and any then notes[#notes + 1] = L[M.SOLD_NOTE] end
+		if hidden > 0 then notes[#notes + 1] = L["%d %s items with no known skill level are hidden from this level."]:format(hidden, prof and ProfName(prof) or "") end
+		f.note:SetShown(#notes > 0)
+		f.note:SetText(table.concat(notes, " "))
 		if not any then f.note:ClearAllPoints() f.note:SetPoint("TOPLEFT", 8, TOPY - 50)
 		else f.note:ClearAllPoints() f.note:SetPoint("TOPLEFT", 8, TOPY - 30 - M.TOP * 26 - 6) end
+		f.note:SetPoint("RIGHT", f, "RIGHT", -8, 0)   -- (v0.4.2.8: wraps inside the page)
+		if f.note.SetWordWrap then f.note:SetWordWrap(true) end
 		f.nextAt = nextAt
 		for c, list in ipairs({ rising, falling }) do
 			local col = f.cols[c]
@@ -730,12 +934,21 @@ local function BuildTop(f, page)
 				local e = list[i]
 				if e and any then
 					r.cell:SetItem(e.id, M.Lines)
-					r.change:SetText(Pct(e.change))
-					r.change:SetTextColor(unpack(e.change > 0 and GREEN or RED))
-					r.price:SetText(S().Money(e.now))
-					local mins = {}
-					for _, p in ipairs(S().Points(house, e.id)) do if not p.quick and p.min > 0 then mins[#mins + 1] = p.min end end
-					r.spark.Set(mins)
+					if view == "sold" then
+						r.change:SetText(c == 1 and tostring(math.floor(e.perDay + 0.5)) or (S().Money(e.goldDay):gsub(" %d+c$", "")))
+						r.change:SetTextColor(1, 1, 1)
+						r.price:SetText(e.now and e.now > 0 and S().Money(e.now) or "-")
+						local units = {}
+						for _, p in ipairs(S().Points(house, e.id)) do if not p.quick then units[#units + 1] = p.units end end
+						r.spark.Set(units)
+					else
+						r.change:SetText(Pct(e.change))
+						r.change:SetTextColor(unpack(e.change > 0 and GREEN or RED))
+						r.price:SetText(S().Money(e.now))
+						local mins = {}
+						for _, p in ipairs(S().Points(house, e.id)) do if not p.quick and p.min > 0 then mins[#mins + 1] = p.min end end
+						r.spark.Set(mins)
+					end
 					r.id = e.id
 					shown[#shown + 1] = e.id
 					r:Show()
@@ -1139,15 +1352,43 @@ local function BuildCraft(f, page)
 	f.showTitle:SetPoint("LEFT")
 	f.showTitle:SetText(L["Show:"])
 	f.known = V.Check(f.showRow, L["Known only"], function() return I.S.craftKnownOnly end, function(v) I.S.craftKnownOnly = v page:Refresh() end)
-	-- (v0.4.2.7) Bags only | Bags + bank on the Show row (no "Count:" title), in Reagents' 2nd and 3rd columns
-	f.count = V.Radio(f, L["Count:"], { { false, L["Bags only"] }, { true, L["Bags + bank"] } },
-		function() return I.S.mineBank and true or false end, function(v) I.S.mineBank = v f.offset = 0 page:Refresh() end)
-	f.count:SetPoint("TOPLEFT", f.showRow, "TOPLEFT", 0, 0)
-	f.count.title:Hide()
 	V.Grid({
 		{ frame = f.owned, title = f.owned.title, boxes = f.owned.boxes },
-		{ frame = f.showRow, title = f.showTitle, boxes = { f.known, f.count.boxes[1], f.count.boxes[2] } },
+		{ frame = f.showRow, title = f.showTitle, boxes = { f.known } },
 	}, M.FilterStart(f))
+	-- (v0.4.2.8) Count: None | Bags only | Bags + bank, a dropdown in Reagents' 2nd column (Craft's own setting)
+	f.countDrop = DropMenu(f, 170, #M.COUNTS, function(v) I.S.craftCount = v f.offset = 0 page:Refresh() end)
+	f.countDrop:SetPoint("LEFT", f.owned.boxes[2], "LEFT", 0, 0)
+	f.countDrop:SetPoint("TOP", f.showRow, "TOP", 0, 1)
+	local function CountEntries() local out = {} for i, x in ipairs(M.COUNTS) do out[i] = { x[1], L[x[2]] } end return out end
+	function f.countDrop.Open() f.countDrop.Fill(CountEntries(), M.CraftCount()) f.countDrop.menu:Show() end
+	f.count = f.countDrop
+	function f.count.Update()
+		local c = M.CraftCount()
+		for _, x in ipairs(M.COUNTS) do if x[1] == c then f.countDrop.text:SetText(L["Count: %s"]:format(L[x[2]])) end end
+	end
+	-- (v0.4.2.8) Invest Amount: one box for every row, live as you type (this session only)
+	f.investTitle = Text(f, 12)
+	f.investTitle:SetPoint("LEFT", f.countDrop, "RIGHT", 12, 0)
+	f.investTitle:SetText(L["Invest Amount:"])
+	f.invest = V.EditBox(f, 100)
+	f.invest:SetPoint("LEFT", f.investTitle, "RIGHT", 6, 0)
+	f.investHint = Text(f.invest, 10, GREY)
+	f.investHint:SetPoint("LEFT", 8, 0)
+	f.investHint:SetText(L["e.g. 50g"])
+	f.invest.token = 0
+	f.invest:SetScript("OnTextChanged", function(box)
+		local text = box:GetText() or ""
+		f.investHint:SetShown(text == "")
+		box.token = box.token + 1
+		local mine = box.token
+		local function Apply()
+			if mine ~= box.token then return end
+			local amount = M.ParseMoney(text)
+			if amount ~= M.investAmount then M.investAmount = amount page:Refresh() end
+		end
+		if C_Timer and C_Timer.After then C_Timer.After(M.INVEST_WAIT, Apply) else Apply() end
+	end)
 	-- (Harvest: Reagents greyed, it's for crafts only)
 	f.ownedNote = Text(f, 10, GREY)
 	f.ownedNote:SetPoint("LEFT", f.owned, "LEFT", (f.owned.right or 380) + 8, 0)
@@ -1285,7 +1526,7 @@ local function BuildCraft(f, page)
 			f.status:SetText(L["No full scan of %s yet: scan at its Auction House (the Scan button is on Valhalla's list beside it)."]:format(house))
 			return {}
 		end
-		local bank = I.S.mineBank and true or false
+		local bank = M.CountArg()   -- (v0.4.2.8: Craft's own Count; "none": nothing counted)
 		local shown = {}
 		if mode == "harvest" then
 			local knownOnly = I.S.craftKnownOnly and true or false
@@ -1301,7 +1542,6 @@ local function BuildCraft(f, page)
 					r.cell:SetItem(e.id, M.Lines)
 					c.sell:SetText(Money(e.low))
 					Signed(c.each, e.each)
-					c.margin:SetText("-")   -- (no cost to a gathered item: no margin)
 					c.listed:SetText(e.low and tostring(e.units) or "-")
 					c.have:SetText(tostring(e.have))
 					Signed(c.total, e.total)
@@ -1339,8 +1579,9 @@ local function BuildCraft(f, page)
 				r.margin:SetText(e.margin and ("%d%%"):format(math.floor(e.margin * 100 + 0.5)) or "-")
 				r.listed:SetText(tostring(e.listed))
 				r.known:SetText(e.known and STAR or "")
-				r.can:SetText(tostring(e.can))
-				Signed(r.total, e.total)
+				local n, total = M.Shown(e)   -- (v0.4.2.8: from the Invest Amount when one is typed)
+				r.can:SetText(tostring(n or 0))
+				Signed(r.total, total)
 				shown[#shown + 1] = e.out
 				for _, part in ipairs(e.parts) do shown[#shown + 1] = part.id end
 				r:Show()
@@ -1381,8 +1622,8 @@ M.TIPS = {
 	vendor = { L["Owned: vendor"], L["Reagents you have cost what a vendor pays for them; the rest at market price."] },
 	knownCrafts = { L["Known only"], L["Only recipes you have learned."] },
 	knownHarvest = { L["Known only"], L["Hide what's above your skill. Items with no level data stay."] },
-	craftBags = { L["Bags only"], L["Can make, Have and owned reagents count only your bags."] },
-	craftBank = { L["Bags + bank"], L["Can make, Have and owned reagents count your bags and bank."] },
+	craftCount = { L["Count"], L["What Can make, Have and owned reagents count: None (buy everything), your bags, or bags and bank (as last seen)."] },
+	invest = { L["Invest Amount"], L["Gold to invest in each craft: 50g, 1g 20s, or a number (gold). Can make and Total then show what it buys, on every row. Empty: your reagents only. Not saved."] },
 	Alliance = { L["Alliance"], L["Prices from the Alliance Auction House (your scans there)."] },
 	Horde = { L["Horde"], L["Prices from the Horde Auction House (your scans there)."] },
 	Neutral = { L["Neutral"], L["The goblin Auction House in Booty Bay, Gadgetzan and Everlook, shared by Alliance and Horde. Its own prices (your scans there); it keeps 15% of a sale."] },
@@ -1400,7 +1641,7 @@ M.TIP_ON = {
 		Tip(f.drop, "craftProf") Tip(f.modeCrafts, "crafts") Tip(f.modeHarvest, "harvest") Tip(f.filter, "filter")
 		for _, b in ipairs(f.owned.boxes) do Tip(b, b.value) end
 		V.Tip(f.known, L["Known only"], function() local t = M.TIPS[M.craftMode == "harvest" and "knownHarvest" or "knownCrafts"] return t[2] end)
-		Tip(f.count.boxes[1], "craftBags") Tip(f.count.boxes[2], "craftBank")
+		Tip(f.countDrop, "craftCount") Tip(f.invest, "invest")
 	end,
 }
 

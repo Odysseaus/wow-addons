@@ -4,6 +4,18 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2.8", date = "2026-11-11", heads = { [1] = "New", [5] = "Changed", [9] = "Fixed", [10] = "Note", }, items = {
+		"|cff6e2c0aInvest Amount|r above the Craft table: type 50g, 1g 20s or a number (gold) and Can make and Total show, on every row, what that buys and your net return (the sale after the AH's cut, less what those crafts cost). Empty: your reagents only, as before. Not saved.",
+		"|cff6e2c0aTop 10, Trending|r: a Price movers | Trending switch (kept). Trending estimates what sells most, by units and by gold a day, from listings gone between full scans up to 12 hours apart (an estimate: cancelled and expired auctions count too).",
+		"|cff6e2c0aKey I|r opens Valhalla on Investments (pressed again there, it closes). Set once, only if I is free; otherwise Valhalla says what I does and leaves it. Change it in Key Bindings > Valhalla, or /valhalla invest key.",
+		"Top 10's columns have titles (Change, Price, Last 8; Sold/day or Gold/day, Price, Listed) with tooltips.",
+		"|cff6e2c0aTooltips|r say what each column means, after 2 seconds (was 3).",
+		"|cff6e2c0aCraft, Count|r: None | Bags only | Bags + bank, Craft's own setting (first taken from My items'). None counts nothing you have; it applies to Harvest too.",
+		"|cff6e2c0aHarvest|r: no Margin column (a saved Margin sort goes back to Sell at).",
+		"Top 10's Level dropdown sits under the switch, clear of it.",
+		"A quick scan no longer replaces the hour's full-scan price in Top 10.",
+		"Restart the game once after installing so the new key binding shows up; a /reload is enough for the rest.",
+	} },
 	{ version = "v0.4.2.7", date = "2026-11-11", heads = { [1] = "Changed", [7] = "New", [10] = "Fixed", [13] = "Note", }, items = {
 		"|cff6e2c0aColumn titles fit|r: every column is as wide as its title and its widest value need, measured with the game's own font; a long title goes on two lines (Cost to / Make). Names take what's left, on one line (the tooltip has it all). Numbers are never cut.",
 		"|cff6e2c0aOne column sorts|r: only the sorted header is lit, with its arrow; hovering another no longer lights it. Equal values are never ordered by another column (they keep one fixed order).",
