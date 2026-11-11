@@ -156,6 +156,7 @@ function V.ItemCell(parent, w)
 	cell.name:SetPoint("LEFT", 24, 0)
 	cell.name:SetPoint("RIGHT", cell, "RIGHT", -2, 0)
 	cell.name:SetJustifyH("LEFT")
+	if cell.name.SetWordWrap then cell.name:SetWordWrap(false) end   -- (v0.4.2.7: one line; a name too long ends in "...", the tooltip has it all)
 	if cell.SetHyperlinksEnabled then cell:SetHyperlinksEnabled(false) end
 	if cell.RegisterForClicks then cell:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
 	function cell:Paint()
@@ -230,6 +231,39 @@ function V.Check(parent, label, get, set)
 	b:SetScript("OnClick", function() set(not get()) b.Update() end)
 	b.Update()
 	return b
+end
+
+-- (v0.4.2.7) a short tooltip on a control, shown after the mouse rests on it V.TIP_DELAY seconds (moving off,
+-- clicking or the control hiding cancels it). text: a string, or a function(control) for one that depends on the mode
+V.TIP_DELAY = 3
+function V.Tip(w, title, text)
+	if not w then return w end
+	w.tip = { title = title, text = text }
+	if w.tipHooked or not w.HookScript then return w end
+	w.tipHooked = true
+	local token = 0
+	local function Cancel(self)
+		token = token + 1
+		if GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+	end
+	w:HookScript("OnEnter", function(self)
+		token = token + 1
+		local mine = token
+		if not (C_Timer and C_Timer.After and GameTooltip) then return end
+		C_Timer.After(V.TIP_DELAY, function()
+			if mine ~= token or not self:IsVisible() or (self.IsMouseOver and not self:IsMouseOver()) then return end
+			local t = self.tip
+			local body = type(t.text) == "function" and t.text(self) or t.text
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:AddLine(t.title, 1, 0.82, 0)
+			if body and body ~= "" then GameTooltip:AddLine(body, 1, 1, 1, true) end
+			GameTooltip:Show()
+		end)
+	end)
+	w:HookScript("OnLeave", Cancel)
+	w:HookScript("OnMouseDown", Cancel)
+	w:HookScript("OnHide", Cancel)
+	return w
 end
 
 -- a label's width (v0.4.2.1: measured, the text's own; an estimate where the game can't say yet)

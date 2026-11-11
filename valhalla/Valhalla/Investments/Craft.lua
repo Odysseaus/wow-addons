@@ -486,7 +486,7 @@ function C.Harvest(house, key, withBank, knownOnly)
 	local cut = S().Cut(house)
 	local levels = (C.TopMap("harvest") or {})[key] or {}
 	local rank = C.SkillRank(key)
-	local list, listed, hidden = {}, 0, 0
+	local list, listed, hidden, above, unknown = {}, 0, 0, 0, 0
 	for _, id in ipairs(g.ids) do
 		local low, c = S().Lowest(house, id)
 		local e = { id = id, low = low, units = c and c.units or 0, have = have[id] or 0 }
@@ -499,12 +499,18 @@ function C.Harvest(house, key, withBank, knownOnly)
 			e.each = e.net
 			e.total = e.have > 0 and e.each * e.have or nil
 		end
-		if knownOnly and e.known == false then hidden = hidden + 1 else list[#list + 1] = e end
+		-- (v0.4.2.7) Known only: only what your skill can gather; above it, or no level known: left out (counted)
+		-- (v0.4.2.7) Known only: above your skill left out; no level known: kept (counted)
+		if e.known == nil then unknown = unknown + 1 end
+		if knownOnly and e.known == false then hidden = hidden + 1 above = above + 1
+		else list[#list + 1] = e end
 	end
+	local levelled = 0
+	for _ in pairs(levels) do levelled = levelled + 1 end
 	table.sort(list, function(a, b)
 		if (a.low ~= nil) ~= (b.low ~= nil) then return a.low ~= nil end
 		if a.low and a.low ~= b.low then return a.low > b.low end
 		return a.id < b.id
 	end)
-	return { list = list, listed = listed, label = g.label, hidden = hidden, rank = rank }
+	return { list = list, listed = listed, label = g.label, hidden = hidden, above = above, unknown = unknown, rank = rank, noLevels = levelled == 0 }
 end

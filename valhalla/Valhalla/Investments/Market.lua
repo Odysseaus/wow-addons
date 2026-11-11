@@ -42,9 +42,9 @@ local Text = function(...) return V.Text(...) end
 -- the house shown: the one chosen, else the last one visited, else any with data
 function M.House()
 	local houses = S().HouseNames()
-	local want = M.house or I.realm.ahLast
-	for _, h in ipairs(houses) do if h == want then return h, houses end end
-	return houses[1] or want or "?", houses
+	-- (v0.4.2.7) the house picked with the buttons, kept in the settings; Alliance until one is picked
+	-- (M.house: one set for a moment by code, never saved)
+	return M.house or I.S.marketHouse or "Alliance", houses
 end
 
 -- under every item's tooltip: what the AH said
@@ -131,7 +131,7 @@ end
 -- empty values last either way, ties by the list's default column then by id; kept per list in the settings
 --------------------------------------------------------------------------------
 
-M.LIST_X, M.HEAD_H, M.HEAD_FONT = 4, 20, 11   -- (rows and header strips start LIST_X into their view)
+M.LIST_X, M.HEAD_H, M.HEAD_H2, M.HEAD_FONT = 4, 20, 30, 10   -- (rows and header strips start LIST_X into their view)
 local function NameOf(id) local n = id and V.ItemData(id) return n and n:lower() or nil end
 local function Pos(v) return v and v > 0 and v or nil end
 -- { key, label, x, w, justify (RIGHT), item (the row's item cell), first (a first click's direction: desc), value(e) }
@@ -169,7 +169,6 @@ M.COLS = {
 		{ key = "each", label = L["Profit/item"], x = 334, w = 80, value = function(e) return e.each end },
 		{ key = "margin", label = L["Margin"], x = 418, w = 46, value = function(e) return e.margin end },
 		{ key = "listed", label = L["Listed"], x = 468, w = 42, value = function(e) return e.low and e.units or nil end },
-		{ key = "known", label = L["Known"], x = 512, w = 38, justify = "CENTER", value = function(e) return e.known == true and 1 or e.known == false and 0 or nil end },
 		{ key = "have", label = L["Have"], x = 554, w = 56, value = function(e) return e.have end },
 		{ key = "total", label = L["Total"], x = 614, w = 90, value = function(e) return e.total end },
 	},
@@ -201,10 +200,9 @@ function M.SortTag(list) local k, d = M.GetSort(list) return k .. ":" .. (d and 
 function M.SortList(rows, list)
 	local cols = M.COLS[list]
 	local key, desc = M.GetSort(list)
-	local dkey, ddesc = ParseSort(M.SORT_DEFAULT[list])
-	local c, d = ColOf(cols, key), ColOf(cols, dkey)
-	local v, w = {}, {}
-	for _, e in ipairs(rows) do v[e] = c.value(e) w[e] = d.value(e) end
+	local c = ColOf(cols, key)
+	local v = {}
+	for _, e in ipairs(rows) do v[e] = c.value(e) end
 	local function Cmp(x, y, down)
 		if x == y then return nil end
 		if x == nil then return false end
@@ -214,9 +212,11 @@ function M.SortList(rows, list)
 	end
 	table.sort(rows, function(a, b)
 		local r = Cmp(v[a], v[b], desc)
-		if r == nil then r = Cmp(w[a], w[b], ddesc) end
-		if r == nil then return (a.id or 0) < (b.id or 0) end
-		return r
+		if r ~= nil then return r end
+		-- (v0.4.2.7) equal values: no other column decides; a fixed hidden order, the item's ID number (then the recipe's)
+		local ia, ib = a.out or a.id or 0, b.out or b.id or 0
+		if ia ~= ib then return ia < ib end
+		return (a.id or 0) < (b.id or 0)
 	end)
 	return rows
 end
@@ -230,28 +230,101 @@ local function Arrow(tex, dir)
 	if atlas and tex.SetAtlas then tex:SetAtlas(atlas) else tex:SetTexture(a[2]) end
 	tex.dir = dir
 end
+-- (v0.4.2.7) the widths measured with the game's own font: a column as wide as the wider of its title (one line, or two
+-- when the row's too narrow for all on one) plus the arrow, and its widest value; the name column takes what's left
+M.ROW_W = { results = 700, mine = 700, craft = 800, harvest = 800 }
+M.NAME_MIN = 190
+M.ARROW_W, M.HEAD_PAD, M.CELL_PAD, M.COL_GAP = 12, 9, 8, 4
+local MONEY, SMONEY, BIG = "99g 99s 99c", "-99g 99s 99c", "999g 99s 99c"
+M.SAMPLE = { cost = MONEY, sell = MONEY, each = SMONEY, total = SMONEY, min = BIG, vendor = MONEY, ah = MONEY, margin = "9999%",
+	listed = "9999", units = "99999", auctions = "9999", can = "9999", have = "9999", n = "9999", known = "*", best = "Vendor", change = "+1234%" }
+M.SAMPLE_LIST = { mine = { total = BIG } }
+local function Halves(label)
+	local best
+	for i in label:gmatch("() ") do
+		local a, b = label:sub(1, i - 1), label:sub(i + 1)
+		if not best or math.max(#a, #b) < math.max(#best[1], #best[2]) then best = { a, b } end
+	end
+	return best
+end
+function M.FitCols(list, parent, samples)
+	local cols = M.COLS[list]
+	parent._fitfs = parent._fitfs or parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	local fs = parent._fitfs
+	local function W(t, size) T.Font(fs, size) fs:SetText(t) return V.TextWidth(fs, t) end
+	local need, two = {}, {}
+	for i, c in ipairs(cols) do
+		if not c.item then
+			local sample = (samples and samples[c.key]) or (M.SAMPLE_LIST[list] or {})[c.key] or M.SAMPLE[c.key] or "9999"
+			local v = W(sample, 11) + M.CELL_PAD
+			local one = W(c.label, M.HEAD_FONT) + M.ARROW_W + M.HEAD_PAD
+			local h = Halves(c.label)
+			local t = h and math.max(W(h[1], M.HEAD_FONT), W(h[2], M.HEAD_FONT)) + M.ARROW_W + M.HEAD_PAD
+			need[i] = { one = math.ceil(math.max(v, one)), two = t and math.ceil(math.max(v, t)) }
+		end
+	end
+	local function Sum()
+		local n = 0
+		for i, c in ipairs(cols) do if need[i] then n = n + (two[i] and need[i].two or need[i].one) + M.COL_GAP end end
+		return n
+	end
+	local rowW = M.ROW_W[list]
+	-- (too wide on one line: the titles with the most to gain go to two lines, one at a time)
+	while rowW - 2 - Sum() < M.NAME_MIN do
+		local gain, at = 0, nil
+		for i in pairs(need) do
+			local g = (not two[i] and need[i].two) and (need[i].one - need[i].two) or 0
+			if g > gain then gain, at = g, i end
+		end
+		if not at then break end
+		two[at] = true
+	end
+	local x = 2
+	local anyTwo = false
+	for i, c in ipairs(cols) do
+		if c.item then c.x, c.w = x, rowW - 2 - Sum() - 2 x = x + c.w + 2
+		else
+			c.two = two[i] or nil
+			if c.two then anyTwo = true end
+			c.x, c.w = x, two[i] and need[i].two or need[i].one
+			x = x + c.w + M.COL_GAP
+		end
+	end
+	fs:Hide()
+	if samples then return end   -- (a relayout: the strip keeps the height it was built with)
+	M.HEAD_OF = M.HEAD_OF or {}
+	M.HEAD_OF[list] = anyTwo and M.HEAD_H2 or M.HEAD_H
+	return M.HEAD_OF[list]
+end
+local DIM = { 0.72, 0.63, 0.45 }
 -- list's header strip, y down in f: a button per column at the column's own x and width (the rows': LIST_X in),
 -- its label aligned as the column's values are; onSort(key) after a click has set the sort
 function M.Headers(f, y, list, onSort)
+	local hh = M.FitCols(list, f)
 	local cols = M.COLS[list]
 	local last = cols[#cols]
 	local head = CreateFrame("Frame", nil, f)
 	head:SetPoint("TOPLEFT", M.LIST_X, y)
-	head:SetSize(last.x + last.w, M.HEAD_H)
-	head.list, head.buttons = list, {}
+	head:SetSize(last.x + last.w, hh)
+	head.list, head.buttons, head.h = list, {}, hh
 	for i, c in ipairs(cols) do
-		local b = V.Button(head, c.label, c.w, M.HEAD_H, function() M.SetSort(list, c.key) if onSort then onSort(c.key) end end)
+		local b = V.Button(head, c.label, c.w, hh, function() M.SetSort(list, c.key) if onSort then onSort(c.key) end end)
 		b:SetPoint("TOPLEFT", c.x, 0)
 		b.key, b.col = c.key, c
 		T.Font(b.text, M.HEAD_FONT)
 		b.text:ClearAllPoints()
+		b.text:SetWidth(c.w - M.ARROW_W - M.HEAD_PAD + 2)
+		if b.text.SetWordWrap then b.text:SetWordWrap(c.two and true or false) end
+		if b.text.SetMaxLines then b.text:SetMaxLines(c.two and 2 or 1) end
 		b.arrow = b:CreateTexture(nil, "OVERLAY")
 		b.arrow:SetSize(9, 9)
+		-- (the arrow in its own place, never over the title: the far side from the title's)
 		local j = c.justify or "RIGHT"
-		if j == "LEFT" then b.text:SetPoint("LEFT", 6, 0)
-		elseif j == "CENTER" then b.text:SetPoint("CENTER", 3, 0)
-		else b.text:SetPoint("RIGHT", -4, 0) end
-		b.text:SetJustifyH(j)
+		if j == "LEFT" then b.text:SetPoint("LEFT", 6, 0) b.arrow:SetPoint("RIGHT", -5, 0)
+		else b.text:SetPoint("RIGHT", -5, 0) b.arrow:SetPoint("LEFT", 4, 0) end
+		b.text:SetJustifyH(j == "CENTER" and "RIGHT" or j)
+		if b.vh then b.vh.keepText = true end   -- (the title's colour is the sort's alone: hovering doesn't light it)
+		V.Tip(b, c.label, L["Click to sort by this column; click again to reverse."])
 		b.arrow:Hide()
 		head.buttons[i] = b
 	end
@@ -262,19 +335,104 @@ function M.Headers(f, y, list, onSort)
 			local on = b.key == key
 			b.text:SetText(labels and labels[b.key] or b.col.label)
 			T.Skin(b, 0.9, on and GOLD or T.BRONZE)
-			if on then
-				-- (beside its label, measured: after a left label, before a right or centred one)
-				Arrow(b.arrow, desc and "down" or "up")
-				local tw, j = V.TextWidth(b.text), b.col.justify or "RIGHT"
-				b.arrow:ClearAllPoints()
-				if j == "LEFT" then b.arrow:SetPoint("LEFT", b, "LEFT", 6 + tw + 3, 0)
-				elseif j == "CENTER" then b.arrow:SetPoint("RIGHT", b, "CENTER", 3 - tw / 2 - 1, 0)
-				else b.arrow:SetPoint("RIGHT", b, "RIGHT", -4 - tw - 2, 0) end
-			end
+			local c = on and ((ns.Style and ns.Style.WHITE) or { 1, 1, 1 }) or DIM
+			b.text:SetTextColor(c[1], c[2], c[3])
+			if on then Arrow(b.arrow, desc and "down" or "up") end
 			b.arrow:SetShown(on)
 		end
 	end
 	return head
+end
+-- (v0.4.2.7) the widths again from the widest value in the WHOLE list shown (not one page), so columns
+-- are only as wide as this list needs and the name gets the rest; laid out again only when that changes
+M.MONEY_KEYS = { cost = true, sell = true, each = true, total = true, min = true, vendor = true, ah = true }
+function M.Samples(rows, list)
+	local out = {}
+	for _, c in ipairs(M.COLS[list]) do
+		if not c.item then
+			local max, neg = nil, false
+			for _, e in ipairs(rows) do
+				local v = c.value(e)
+				if type(v) == "number" then
+					if v < 0 then neg = true end
+					if not max or math.abs(v) > max then max = math.abs(v) end
+				end
+			end
+			if max then
+				if M.MONEY_KEYS[c.key] then out[c.key] = (neg and "-" or "") .. I.Scan.Money(max)
+				elseif c.key == "margin" then out[c.key] = ("%d%%"):format(math.floor(max * 100 + 0.5))
+				elseif c.key == "known" then out[c.key] = "*"
+				else out[c.key] = tostring(math.floor(max)) end
+			else out[c.key] = "-" end
+		end
+	end
+	return out
+end
+function M.Relayout(f, head, list, rowsKey, samples)
+	local sig = {}
+	for _, c in ipairs(M.COLS[list]) do sig[#sig + 1] = samples[c.key] or "" end
+	sig = table.concat(sig, "|")
+	if head.sig == sig then return false end
+	head.sig = sig
+	M.FitCols(list, f, samples)
+	for _, b in ipairs(head.buttons) do
+		local c = b.col
+		b:ClearAllPoints()
+		b:SetPoint("TOPLEFT", c.x, 0)
+		b:SetSize(c.w, head.h)
+		b.text:SetWidth(c.w - M.ARROW_W - M.HEAD_PAD + 2)
+	end
+	local item = M.COLS[list][1]
+	for _, r in ipairs(f.rows) do
+		r.cell:SetWidth(item.w)
+		for _, fs in pairs(r[rowsKey]) do
+			fs:ClearAllPoints()
+			fs:SetPoint("LEFT", fs.col.x, 0)
+			fs:SetWidth(fs.col.w)
+		end
+	end
+	return true
+end
+-- (v0.4.2.7) a sort that needs the game's item data (a name, a vendor price) waits for all of the list's items, not
+-- only the page shown: the missing ones asked for (30 at a time, V.LoadItem), then sorted again (again()) once all
+-- are in. Until then: a note says how many are still coming; the missing ones sort last (never by a placeholder).
+M.NEEDS = { results = { name = true }, mine = { name = true, vendor = true, best = true, total = true }, craft = { name = true }, harvest = { name = true } }
+function M.NeedsData(list) return M.NEEDS[list][(M.GetSort(list))] and true or false end
+function M.Fetch(f, ids, again, y)
+	f.asked = f.asked or {}
+	f.want = {}
+	for _, id in ipairs(ids) do if not V.ItemData(id) then f.want[id] = true end end
+	if not f.loadNote then
+		f.loadNote = Text(f, 11, GREY)
+		f.loadNote:SetPoint("TOPRIGHT", -8, y or -6)
+		f.loadNote:SetJustifyH("RIGHT")
+	end
+	local function Pump()
+		local n, full = 0, false
+		for id in pairs(f.want) do
+			if V.ItemData(id) then f.want[id] = nil
+			else
+				n = n + 1
+				if not f.asked[id] then
+					if V.LoadItem(id, function() f.asked[id] = nil if f.want[id] then f.Arrived() end end) then f.asked[id] = true else full = true end
+				end
+			end
+		end
+		-- (30 already asked for: the rest asked again in a second)
+		if full and not f.retry and C_Timer and C_Timer.After then
+			f.retry = true
+			C_Timer.After(1, function() f.retry = nil if f.want and next(f.want) then f.Arrived() end end)
+		end
+		f.loadNote:SetText(n > 0 and L["Sorting: %d items still coming from the game..."]:format(n) or "")
+		f.loadNote:SetShown(n > 0)
+		return n
+	end
+	function f.Arrived()
+		if Pump() == 0 and f.waiting then f.waiting = nil again() end
+	end
+	local n = Pump()
+	f.waiting = n > 0 or nil
+	return n
 end
 -- a row's cells for list's columns (not the item column: the row's item cell): { [key] = font string }
 function M.Cells(r, list)
@@ -465,6 +623,8 @@ local function DropMenu(f, w, n, onPick)
 	return drop
 end
 
+M.HOUSES = { "Alliance", "Horde", "Neutral" }
+
 local function BuildTop(f, page)
 	local TOPY = -34
 	local C = I.Craft
@@ -518,6 +678,7 @@ local function BuildTop(f, page)
 			r:SetPoint("TOPLEFT", 0, -20 - (i - 1) * 26)
 			r.cell = V.ItemCell(r, 160)
 			r.cell:SetPoint("LEFT", 2, 0)
+			if r.cell.name.SetWordWrap then r.cell.name:SetWordWrap(true) end   -- (Top 10 keeps its two-line names)
 			if r.cell.name.SetMaxLines then r.cell.name:SetMaxLines(2) end   -- (v0.4.2.6: a long name, two lines at most)
 			r.cell.onClick = function(id) M.ShowHistory(page, id) end
 			r.change = Column(r, "", 164, M.TOP_CHANGE_W)
@@ -597,19 +758,32 @@ end
 -- My items: bags (+ bank), vendor vs the AH (after its cut)
 --------------------------------------------------------------------------------
 
+-- (v0.4.2.7) every filter row's boxes start at the same x: after the widest of all the filter titles
+M.FILTER_TITLES = { L["Reagents:"], L["Show:"], L["Count:"] }
+function M.FilterStart(parent)
+	local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	T.Font(fs, 12)
+	local w = 0
+	for _, t in ipairs(M.FILTER_TITLES) do fs:SetText(t) w = math.max(w, V.TextWidth(fs, t)) end
+	fs:Hide()
+	return math.floor(w + 16 + 0.5)
+end
+
 local function BuildMine(f, page)
 	f.offset = 0
 	f.scope = V.Radio(f, L["Count:"], { { false, L["Bags only"] }, { true, L["Bags + bank"] } },
 		function() return I.S.mineBank and true or false end, function(v) I.S.mineBank = v f.offset = 0 f.Refresh() end)
 	f.scope:SetPoint("TOPLEFT", 8, -4)
+	V.Grid({ { frame = f.scope, title = f.scope.title, boxes = f.scope.boxes } }, M.FilterStart(f))   -- (Craft's filter columns)
 	-- (v0.4.2.6) the headers sort (M.COLS.mine: the rows' own columns)
 	f.head = M.Headers(f, -28, "mine", function() f.offset = 0 f.Refresh() end)
 	f.sortButtons = f.head.buttons
 	local item = M.COLS.mine[1]
-	Paged(f, page, 48, function(i)
+	local top = 28 + f.head.h
+	Paged(f, page, top, function(i)
 		local r = CreateFrame("Frame", nil, f)
-		r:SetSize(640, 24)
-		r:SetPoint("TOPLEFT", M.LIST_X, -48 - (i - 1) * M.ROW_H)
+		r:SetSize(M.ROW_W.mine, 24)
+		r:SetPoint("TOPLEFT", M.LIST_X, -top - (i - 1) * M.ROW_H)
 		r.cell = V.ItemCell(r, item.w)
 		r.cell:SetPoint("LEFT", item.x, 0)
 		r.cell.onClick = function(id) M.ShowHistory(page, id) end
@@ -631,6 +805,9 @@ local function BuildMine(f, page)
 		if not keep or not f.list or f.sortTag ~= tag then
 			f.list, f.sums = S().Mine(house, I.S.mineBank)
 			M.SortList(f.list, "mine")
+			local ids = {}
+			if M.NeedsData("mine") then for _, e in ipairs(f.list) do ids[#ids + 1] = e.id end end
+			M.Fetch(f, ids, function() f.list = nil f.Refresh(true) end, -6)
 			f.sortTag = tag
 		end
 		f.scope.Update()
@@ -647,7 +824,7 @@ local function BuildMine(f, page)
 				r.vendor:SetText(e.vendor and e.vendor > 0 and S().Money(e.vendor) or "-")
 				r.ah:SetText(e.ah and S().Money(e.ah) or "-")
 				r.best:SetText(e.best == "ah" and L["AH"] or e.best == "vendor" and L["Vendor"] or "-")
-				r.best:SetTextColor(unpack(e.best == "ah" and GREEN or GOLD))
+				r.best:SetTextColor(1, 1, 1)   -- (plain: green is for profit only)
 				r.total:SetText(e.total > 0 and S().Money(e.total) or "-")
 				shown[#shown + 1] = e.id
 				r:Show()
@@ -800,10 +977,11 @@ local function BuildResults(f, page)
 	f.head = M.Headers(f, -30, "results", function() f.offset = 0 f.dirty = true f.Refresh() end)
 	f.sortButtons = f.head.buttons
 	local item = M.COLS.results[1]
-	Paged(f, page, 56, function(i)
+	local top = 30 + f.head.h + 6
+	Paged(f, page, top, function(i)
 		local r = CreateFrame("Frame", nil, f)
-		r:SetSize(640, 24)
-		r:SetPoint("TOPLEFT", M.LIST_X, -56 - (i - 1) * M.ROW_H)
+		r:SetSize(M.ROW_W.results, 24)
+		r:SetPoint("TOPLEFT", M.LIST_X, -top - (i - 1) * M.ROW_H)
 		r.cell = V.ItemCell(r, item.w)
 		r.cell:SetPoint("LEFT", item.x, 0)
 		r.cell.onClick = function(id) M.ShowHistory(page, id) end
@@ -824,13 +1002,16 @@ local function BuildResults(f, page)
 			if c and not c.quick then
 				local name = V.ItemData(id)
 				if q == "" or (name and name:lower():find(q, 1, true)) then
-					list[#list + 1] = { id = id, name = name or ("~" .. id), min = c.min, units = c.units, auctions = c.auctions or 0 }
+					list[#list + 1] = { id = id, name = name, min = c.min, units = c.units, auctions = c.auctions or 0 }
 				end
 			end
 		end
 		-- (v0.4.2.6: no change worked out sorts last, not as 0)
 		if M.GetSort("results") == "change" then for _, e in ipairs(list) do e.change = M.Change(house, e.id) end end
 		M.SortList(list, "results")
+		local ids = {}
+		if M.NeedsData("results") then for _, e in ipairs(list) do if not e.name then ids[#ids + 1] = e.id end end end
+		M.Fetch(f, ids, function() f.dirty = true f.Refresh(true) end, -6)
 		f.list, f.house = list, house
 	end
 	function f.Refresh(keep)
@@ -878,10 +1059,18 @@ end
 --------------------------------------------------------------------------------
 
 M.PROF_MAX = 16
-M.CRAFT_TOP = 116          -- (the rows start here; the status above may take two lines)
+M.CRAFT_TOP = 150          -- (the rows start here; the status above may take two lines)
 M.CRAFT_STRIPS = 18        -- (a second line under the rows: Can't price and Not listed each have one)
 M.OWNED = { { "market", L["Market"] }, { "free", L["Owned free"] }, { "vendor", L["Owned: vendor"] } }
-M.CRAFT_W = 706            -- (the rows' width: the last column ends at 704)
+-- Craft's status line, short enough for one line (v0.4.2.7)
+function M.CraftStatus(name, recipes, live, priced, cut, age, unknown, skipped)
+	local t = L["%s: %d recipes (%s), %d priced; %d%% AH cut; scan %s"]:format(name, recipes, live and L["live"] or L["client data"],
+		priced, math.floor(cut * 100 + 0.5), age)
+	if (unknown or 0) > 0 then t = t .. L["; %d not loaded"]:format(unknown) end
+	if (skipped or 0) > 0 then t = t .. L["; %d skipped"]:format(skipped) end
+	return t .. "."
+end
+M.CRAFT_W = 800            -- (v0.4.2.7: the rows' width, M.ROW_W.craft; was 706)
 local STAR = "|cffffd100*|r"
 
 local function BuildCraft(f, page)
@@ -950,18 +1139,15 @@ local function BuildCraft(f, page)
 	f.showTitle:SetPoint("LEFT")
 	f.showTitle:SetText(L["Show:"])
 	f.known = V.Check(f.showRow, L["Known only"], function() return I.S.craftKnownOnly end, function(v) I.S.craftKnownOnly = v page:Refresh() end)
-	V.Grid({
-		{ frame = f.owned, title = f.owned.title, boxes = f.owned.boxes },
-		{ frame = f.showRow, title = f.showTitle, boxes = { f.known } },
-	})
-	-- (v0.4.2.6) Count: Bags only | Bags + bank, as My items' (the same setting), beside Known only when it fits
-	-- (measured), else on its own under the name filter
+	-- (v0.4.2.7) Bags only | Bags + bank on the Show row (no "Count:" title), in Reagents' 2nd and 3rd columns
 	f.count = V.Radio(f, L["Count:"], { { false, L["Bags only"] }, { true, L["Bags + bank"] } },
 		function() return I.S.mineBank and true or false end, function(v) I.S.mineBank = v f.offset = 0 page:Refresh() end)
-	V.Grid({ { frame = f.count, title = f.count.title, boxes = f.count.boxes } })
-	local cx = (f.showRow.right or 180) + 24
-	f.count.beside = 8 + cx + (f.count.right or 260) <= M.CRAFT_W
-	if f.count.beside then f.count:SetPoint("LEFT", f.showRow, "LEFT", cx, 0) else f.count:SetPoint("TOPLEFT", 400, -54) end
+	f.count:SetPoint("TOPLEFT", f.showRow, "TOPLEFT", 0, 0)
+	f.count.title:Hide()
+	V.Grid({
+		{ frame = f.owned, title = f.owned.title, boxes = f.owned.boxes },
+		{ frame = f.showRow, title = f.showTitle, boxes = { f.known, f.count.boxes[1], f.count.boxes[2] } },
+	}, M.FilterStart(f))
 	-- (Harvest: Reagents greyed, it's for crafts only)
 	f.ownedNote = Text(f, 10, GREY)
 	f.ownedNote:SetPoint("LEFT", f.owned, "LEFT", (f.owned.right or 380) + 8, 0)
@@ -982,7 +1168,8 @@ local function BuildCraft(f, page)
 	if ns.LinkBox then ns.LinkBox(f.filter, M.TakeName) end
 	-- the two header strips (v0.4.2.6: buttons that sort, from M.COLS.craft and M.COLS.harvest, the rows' own)
 	local function Resort() f.offset = 0 page:Refresh() end
-	f.head = { craftStrip = M.Headers(f, -96, "craft", Resort), harvestStrip = M.Headers(f, -96, "harvest", Resort) }
+	f.head = { craftStrip = M.Headers(f, -98, "craft", Resort), harvestStrip = M.Headers(f, -98, "harvest", Resort) }
+	M.CRAFT_TOP = 98 + math.max(f.head.craftStrip.h, f.head.harvestStrip.h) + 2
 	f.head.craft, f.head.harvest = f.head.craftStrip.buttons, f.head.harvestStrip.buttons
 	Paged(f, page, M.CRAFT_TOP + M.CRAFT_STRIPS, function(i)
 		local r = CreateFrame("Frame", nil, f)
@@ -1034,6 +1221,7 @@ local function BuildCraft(f, page)
 		for _, box in ipairs(f.owned.boxes) do if box.EnableMouse then box:EnableMouse(crafts) end end
 		f.ownedNote:SetShown(not crafts)
 	end
+
 	-- the list shown: another list (profession, house, scan, setting) starts on page 1
 	-- (v0.4.2.6: a copy, sorted by sortList's column: the ranking and its cache stay as they are)
 	local function SetList(list, key, field, sortList)
@@ -1045,6 +1233,9 @@ local function BuildCraft(f, page)
 		end
 		f.filterCount:SetText(q ~= "" and L["%d of %d"]:format(#list, #all) or "")
 		M.SortList(list, sortList)
+		local ids = {}
+		if M.NeedsData(sortList) then for _, e in ipairs(list) do ids[#ids + 1] = e[field] end end
+		M.Fetch(f, ids, function() page:Refresh(true) end, -34)
 		key = key .. "|" .. q .. "|" .. M.SortTag(sortList)
 		if key ~= f.listKey then f.offset, f.listKey = 0, key end
 		f.list = list
@@ -1058,8 +1249,9 @@ local function BuildCraft(f, page)
 	end
 	local function Money(v) return v and S().Money(v) or "-" end
 	local function Signed(fs, v)
-		if not v then fs:SetText("-") fs:SetTextColor(unpack(GREY)) return end
+		if not v then fs:SetText("-") fs._loss = nil fs:SetTextColor(unpack(GREY)) return end
 		fs:SetText((v < 0 and "-" or "") .. S().Money(math.abs(v)))
+		fs._loss = v < 0 or nil
 		fs:SetTextColor(unpack(v >= 0 and GREEN or RED))
 	end
 	function f.Refresh(keep)
@@ -1100,6 +1292,7 @@ local function BuildCraft(f, page)
 			local h = C.Harvest(house, p.key, bank, knownOnly)
 			local m = S().Market(house)
 			SetList(h.list, ("harvest|%s|%s|%d|%s|%s"):format(house, tostring(p.key), m and #m.scans or 0, tostring(bank), tostring(knownOnly)), "id", "harvest")
+			M.Relayout(f, f.head.harvestStrip, "harvest", "harvest", M.Samples(f.list, "harvest"))
 			for i, r in ipairs(f.rows) do
 				local e = i <= f.per and f.list[f.offset + i]
 				r.e = nil
@@ -1110,7 +1303,6 @@ local function BuildCraft(f, page)
 					Signed(c.each, e.each)
 					c.margin:SetText("-")   -- (no cost to a gathered item: no margin)
 					c.listed:SetText(e.low and tostring(e.units) or "-")
-					c.known:SetText(e.known and STAR or "")
 					c.have:SetText(tostring(e.have))
 					Signed(c.total, e.total)
 					shown[#shown + 1] = e.id
@@ -1121,9 +1313,9 @@ local function BuildCraft(f, page)
 				end
 			end
 			f.missing:SetText("") f.unlisted:SetText("")
-			f.status:SetText(L["%s: %d %s, %d listed at %s. Sell at: the AH's lowest; profit after its %d%% cut (gathered: no cost); Total: what you have x profit; full scan %s.%s"]:format(
-				p.name, #h.list, h.label:lower(), h.listed, house, math.floor(S().Cut(house) * 100 + 0.5), S().Age(at),
-				h.hidden > 0 and L[" %d above your skill hidden."]:format(h.hidden) or ""))
+			-- (v0.4.2.7: one short line, never into the dropdown's row; what the columns mean: the Harvest button's tooltip)
+			f.status:SetText(L["%s: %d %s%s, %d listed; %d%% AH cut; full scan %s."]:format(p.name, #h.list, h.label:lower(),
+				knownOnly and L[" (%d above your skill hidden)"]:format(h.above) or "", h.listed, math.floor(S().Cut(house) * 100 + 0.5), S().Age(at)))
 			f.UpdatePager()
 			return shown
 		end
@@ -1135,6 +1327,7 @@ local function BuildCraft(f, page)
 			return {}
 		end
 		SetList(res.list or res.rows, C.CacheKey(house, p.key, opts), "out", "craft")
+		M.Relayout(f, f.head.craftStrip, "craft", "craft", M.Samples(f.list, "craft"))
 		for i, r in ipairs(f.rows) do
 			local e = i <= f.per and f.list[f.offset + i]
 			r.e, r.house = e or nil, house
@@ -1160,14 +1353,56 @@ local function BuildCraft(f, page)
 		for _, e in ipairs(res.unlisted) do shown[#shown + 1] = e.out end
 		f.missing:SetText(#res.missing > 0 and L["Can't price (%d): no price for %s."]:format(#res.missing, Names(res.missing, "missing", 4)) or "")
 		f.unlisted:SetText(#res.unlisted > 0 and L["Not listed (%d): %s."]:format(#res.unlisted, Names(res.unlisted, "out", 4)) or "")
-		local src = p.source == "live" and L["from its profession window"] or L["client data"]
-		f.status:SetText(L["%s: %d recipes (%s), %d priced, by profit per craft at %s after its %d%% cut; full scan %s.%s"]:format(p.name, #p.ids, src,
-			res.ranked or #f.list, house, math.floor(S().Cut(house) * 100 + 0.5), S().Age(at),
-			(res.unknown > 0 and L[" %d unknown to this client."]:format(res.unknown) or "") .. (res.skipped > 0 and L[" %d skipped (enchants, bind on pickup)."]:format(res.skipped) or "")))
+		-- (v0.4.2.7: kept to one line, above the profession dropdown)
+		f.status:SetText(M.CraftStatus(p.name, #p.ids, p.source == "live", res.ranked or #f.list, S().Cut(house), S().Age(at), res.unknown, res.skipped))
 		f.UpdatePager()
 		return shown
 	end
 end
+
+-- (v0.4.2.7) the filters' tooltips: every text in one place
+M.TIPS = {
+	all = { L["All"], L["Every item in your last full scan."] },
+	crafted = { L["Crafted"], L["Only items a profession makes."] },
+	harvested = { L["Harvested"], L["Only herbs, ore, skins and fish you gather."] },
+	topProf = { L["Profession"], L["Only this profession's items. * = yours."] },
+	topLevel = { L["Level"], L["Only items needing skill in this range. Items with no known level are left out."] },
+	search = { L["Search"], L["Show only names containing this text. Shift-click an item to fill it in."] },
+	bags = { L["Bags only"], L["Count only what's in your bags."] },
+	bank = { L["Bags + bank"], L["Count your bags and your bank (as you last saw it)."] },
+	day = { L["1 day"], L["Prices over the last 24 hours."] },
+	week = { L["7 days"], L["Prices over the last 7 days."] },
+	craftProf = { L["Profession"], L["Pick a profession. * = yours."] },
+	crafts = { L["Crafts"], L["What this profession makes, with cost and profit."] },
+	harvest = { L["Harvest"], L["What this profession gathers. Sell at: the AH's lowest; profit: that less the AH's cut (no cost)."] },
+	filter = { L["Filter by name"], L["Show only names containing this text. Shift-click an item to fill it in."] },
+	market = { L["Market"], L["Price every reagent at the AH's lowest, or a vendor's if cheaper."] },
+	free = { L["Owned free"], L["Reagents you have cost nothing; the rest at market price."] },
+	vendor = { L["Owned: vendor"], L["Reagents you have cost what a vendor pays for them; the rest at market price."] },
+	knownCrafts = { L["Known only"], L["Only recipes you have learned."] },
+	knownHarvest = { L["Known only"], L["Hide what's above your skill. Items with no level data stay."] },
+	craftBags = { L["Bags only"], L["Can make, Have and owned reagents count only your bags."] },
+	craftBank = { L["Bags + bank"], L["Can make, Have and owned reagents count your bags and bank."] },
+	Alliance = { L["Alliance"], L["Prices from the Alliance Auction House (your scans there)."] },
+	Horde = { L["Horde"], L["Prices from the Horde Auction House (your scans there)."] },
+	Neutral = { L["Neutral"], L["The goblin Auction House in Booty Bay, Gadgetzan and Everlook, shared by Alliance and Horde. Its own prices (your scans there); it keeps 15% of a sale."] },
+}
+local function Tip(w, key) local t = M.TIPS[key] return V.Tip(w, t[1], t[2]) end
+M.TIP_ON = {
+	top = function(f)
+		for _, b in ipairs(f.kinds) do Tip(b, b.kind == "all" and "all" or b.kind == "craft" and "crafted" or "harvested") end
+		Tip(f.prof, "topProf") Tip(f.level, "topLevel")
+	end,
+	results = function(f) Tip(f.search, "search") end,
+	mine = function(f) Tip(f.scope.boxes[1], "bags") Tip(f.scope.boxes[2], "bank") end,
+	history = function(f) Tip(f.range.boxes[1], "day") Tip(f.range.boxes[2], "week") end,
+	craft = function(f)
+		Tip(f.drop, "craftProf") Tip(f.modeCrafts, "crafts") Tip(f.modeHarvest, "harvest") Tip(f.filter, "filter")
+		for _, b in ipairs(f.owned.boxes) do Tip(b, b.value) end
+		V.Tip(f.known, L["Known only"], function() local t = M.TIPS[M.craftMode == "harvest" and "knownHarvest" or "knownCrafts"] return t[2] end)
+		Tip(f.count.boxes[1], "craftBags") Tip(f.count.boxes[2], "craftBank")
+	end,
+}
 
 local BUILD = { top = BuildTop, mine = BuildMine, history = BuildHistory, results = BuildResults, craft = BuildCraft }
 
@@ -1179,18 +1414,21 @@ function V.BuildMarket(page)
 	V.Header(page, L["AH Market"])
 	page.status = Text(page, 11)
 	page.status:SetPoint("TOPLEFT", 14, -36)
-	page.status:SetPoint("RIGHT", page, "RIGHT", -120, 0)
+	page.status:SetPoint("RIGHT", page, "RIGHT", -250, 0)
 	page.status:SetJustifyH("LEFT")
 	page.hint = Text(page, 11, GOLD)
 	page.hint:SetPoint("TOPLEFT", 14, -52)
 	page.hint:SetPoint("RIGHT", page, "RIGHT", -14, 0)
 	page.hint:SetJustifyH("LEFT")
-	page.houseButton = V.Button(page, "", 110, 20, function()
-		local cur, houses = M.House()
-		for i, h in ipairs(houses) do if h == cur then M.house = houses[i % #houses + 1] break end end
-		page:Refresh()
-	end)
-	page.houseButton:SetPoint("TOPRIGHT", -10, -8)
+	-- (v0.4.2.7) Alliance | Horde | Neutral, each lit when picked (a house with no scan yet: dimmer)
+	page.houseButtons = {}
+	for k, h in ipairs(M.HOUSES) do
+		local b = V.Button(page, L[h], 76, 20, function() I.S.marketHouse, M.house = h, nil page:Refresh() end)
+		b:SetPoint("TOPRIGHT", -10 - (#M.HOUSES - k) * 80, -8)
+		b.house = h
+		Tip(b, h)
+		page.houseButtons[k] = b
+	end
 	page.subButtons, page.subs = {}, {}
 	local x = 12
 	for _, s in ipairs(M.SUBS) do
@@ -1213,6 +1451,7 @@ function V.BuildMarket(page)
 		self.subs[key] = f   -- (v0.4.0.2: registered before it's built, so a lookup while building finds this one)
 		self.allSubs[#self.allSubs + 1] = f
 		BUILD[key](f, self)
+		if M.TIP_ON[key] then M.TIP_ON[key](f) end
 		f.building = nil
 		f:Hide()
 		return f
@@ -1238,8 +1477,12 @@ function V.BuildMarket(page)
 		self.status:SetText(L["%s Auction House. Last full scan: %s%s. %s"]:format(house, S().Age(at),
 			sc and L[" (%d items)"]:format(sc.items or 0) or "", S().CooldownText()))
 		self.hint:SetText(I.ahOpen and "" or L["Scan at the Auction House: the Scan button is on Valhalla's list beside it."])
-		self.houseButton.text:SetText(house)
-		self.houseButton:SetShown(#houses > 1)
+		local have = {}
+		for _, h in ipairs(houses) do have[h] = true end
+		for _, b in ipairs(self.houseButtons) do
+			T.Skin(b, 0.9, b.house == house and GOLD or T.BRONZE)
+			b:SetAlpha((have[b.house] or b.house == house) and 1 or 0.6)
+		end
 		for _, b in ipairs(self.subButtons) do T.Skin(b, 0.9, b.key == self.current and GOLD or T.BRONZE) end
 		local f = self:Sub(self.current)
 		f:Show()

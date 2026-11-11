@@ -39,6 +39,7 @@ I.SETTINGS = {
 	craftOwned = "market", craftKnownOnly = false,
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all",
+	marketHouse = "Alliance",   -- (v0.4.2.7: AH Market's house buttons)
 	-- AH Market's sorts (v0.4.2.6): "column:asc|desc" per list (Market.lua's M.COLS); these are the defaults
 	sortResults = "name:asc", sortMine = "total:desc", sortCraft = "each:desc", sortHarvest = "sell:desc",
 }

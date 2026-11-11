@@ -4,6 +4,21 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2.7", date = "2026-11-11", heads = { [1] = "Changed", [7] = "New", [10] = "Fixed", [13] = "Note", }, items = {
+		"|cff6e2c0aColumn titles fit|r: every column is as wide as its title and its widest value need, measured with the game's own font; a long title goes on two lines (Cost to / Make). Names take what's left, on one line (the tooltip has it all). Numbers are never cut.",
+		"|cff6e2c0aOne column sorts|r: only the sorted header is lit, with its arrow; hovering another no longer lights it. Equal values are never ordered by another column (they keep one fixed order).",
+		"|cff6e2c0aSorting by name|r waits for every item's name from the game, not only the page shown, then sorts the whole list again (a note says how many are still coming).",
+		"|cff6e2c0aHarvest|r: no Known column. Known only hides what's above your gathering skill; items whose level isn't known stay (Skinning and Fishing: all). A shorter status line.",
+		"|cff6e2c0aCraft filters|r: Show: Known only | Bags only | Bags + bank, in the same columns as Reagents.",
+		"Values: profit green, a loss red; My items' Best column plain.",
+		"|cff6e2c0aAlliance | Horde | Neutral|r buttons at the top right: Alliance until you pick another; your pick is kept. Neutral is the goblin Auction House (Booty Bay, Gadgetzan, Everlook), shared by both factions, with its own prices and a 15% cut.",
+		"|cff6e2c0aTooltips|r on every filter and column header: rest the mouse on one for 3 seconds.",
+		"Craft and Harvest rows are wider (800 px).",
+		"Item names that hadn't loaded no longer sort as placeholders.",
+		"The Neutral house no longer depends on which Auction House you visited last.",
+		"Long Harvest and Craft status lines no longer run into the profession dropdown (shorter wording).",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.2.6", date = "2026-11-11", heads = { [1] = "Changed", [4] = "New", [7] = "Fixed", [9] = "Note", }, items = {
 		"|cff6e2c0aScan results|r: the column titles sit over their columns. The price title reads Lowest or Highest by the way it's sorted; Units is now Quantity.",
 		"The sorted column's title is gold with an arrow (up: low to high, down: high to low).",
