@@ -39,6 +39,8 @@ I.SETTINGS = {
 	craftOwned = "market", craftKnownOnly = false,
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all",
+	-- AH Market's sorts (v0.4.2.6): "column:asc|desc" per list (Market.lua's M.COLS); these are the defaults
+	sortResults = "name:asc", sortMine = "total:desc", sortCraft = "each:desc", sortHarvest = "sell:desc",
 }
 I.CATS = { "mat", "reagent", "gear" }
 I.CAT_NAME = { mat = L["Profession Mat"], reagent = L["Reagent"], gear = L["Gear Upgrade"] }

@@ -454,22 +454,57 @@ function C.GatherInfo(key)
 	return { label = g.label, ids = Split(g.ids) }
 end
 
--- { list = { {id, low, units, vendor, have, change} }, listed, label }: dearest first, unlisted last (by id)
-function C.Harvest(house, key, withBank)
+-- your skill in a profession (v0.4.2.6, Harvest's Known): its rank; 0 when it isn't yours; nil when the game can't say
+function C.SkillRank(key)
+	if not C.Mine()[key] then return 0 end
+	local got = { Call(GetProfessions) }
+	for i = 1, table.maxn(got) do
+		local idx = got[i]
+		if idx then
+			local info = { Call(GetProfessionInfo, idx) }
+			if C.Key(info[7], info[1]) == key and tonumber(info[3]) then return tonumber(info[3]) end
+		end
+	end
+	if type(GetNumSkillLines) == "function" then
+		for i = 1, (Call(GetNumSkillLines) or 0) do
+			local name, header, _, rank = Call(GetSkillLineInfo, i)
+			if name and not header and C.BYNAME[tostring(name):lower()] == key and tonumber(rank) then return tonumber(rank) end
+		end
+	end
+	return nil
+end
+
+-- { list = { {id, low, units, have, net, each, total, known, skill} }, listed, label, hidden }: dearest first, unlisted
+-- last (by id). v0.4.2.6, Crafts' columns read for a gathered item: Sell at = the AH's lowest; Profit/item = that less
+-- the house's cut (you gather it: no cost); Total = what you have x that; Known = your skill reaches the item's (the
+-- bundled Wowhead Forever levels, Data/Forever/TopSkills.lua: nil where the level isn't known). knownOnly: the ones
+-- above your skill left out (hidden: how many); the ones whose level isn't known stay.
+function C.Harvest(house, key, withBank, knownOnly)
 	local g = C.GatherInfo(key)
 	if not g then return nil end
 	local have = C.Have(withBank)
-	local list, listed = {}, 0
+	local cut = S().Cut(house)
+	local levels = (C.TopMap("harvest") or {})[key] or {}
+	local rank = C.SkillRank(key)
+	local list, listed, hidden = {}, 0, 0
 	for _, id in ipairs(g.ids) do
 		local low, c = S().Lowest(house, id)
-		local e = { id = id, low = low, units = c and c.units or 0, vendor = S().SellPrice(id), have = have[id] or 0 }
-		if low then listed = listed + 1 e.change = I.Market and I.Market.Change and I.Market.Change(house, id) end
-		list[#list + 1] = e
+		local e = { id = id, low = low, units = c and c.units or 0, have = have[id] or 0 }
+		local skill = levels[id]
+		e.skill = type(skill) == "number" and skill or nil
+		if e.skill and rank then e.known = rank >= e.skill end
+		if low then
+			listed = listed + 1
+			e.net = low * (1 - cut)
+			e.each = e.net
+			e.total = e.have > 0 and e.each * e.have or nil
+		end
+		if knownOnly and e.known == false then hidden = hidden + 1 else list[#list + 1] = e end
 	end
 	table.sort(list, function(a, b)
 		if (a.low ~= nil) ~= (b.low ~= nil) then return a.low ~= nil end
 		if a.low and a.low ~= b.low then return a.low > b.low end
 		return a.id < b.id
 	end)
-	return { list = list, listed = listed, label = g.label }
+	return { list = list, listed = listed, label = g.label, hidden = hidden, rank = rank }
 end

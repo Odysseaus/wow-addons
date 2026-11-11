@@ -4,6 +4,17 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2.6", date = "2026-11-11", heads = { [1] = "Changed", [4] = "New", [7] = "Fixed", [9] = "Note", }, items = {
+		"|cff6e2c0aScan results|r: the column titles sit over their columns. The price title reads Lowest or Highest by the way it's sorted; Units is now Quantity.",
+		"The sorted column's title is gold with an arrow (up: low to high, down: high to low).",
+		"|cff6e2c0aCraft|r: Cost is now Cost to Make.",
+		"|cff6e2c0aSort by any column|r: click a title in My items, Craft and Harvest, as in Scan results; click it again to turn the order around. Each list keeps its sort between sessions. Empty values go last.",
+		"|cff6e2c0aCraft, Count|r: Bags only or Bags + bank (the same setting as My items) for what you can make.",
+		"|cff6e2c0aHarvest|r: the same columns as Crafts, without a cost: Sell at, Profit/item (after the AH's cut), Margin, Listed, Known (a star where your gathering skill reaches the node), Have and Total. Known only and Count work here too; Reagents is greyed (crafts only).",
+		"|cff6e2c0aTop 10|r: the change and price columns are as wide as their numbers need: no more cut percents (+207%) or prices on two lines; Rising and Falling line up alike.",
+		"A long name in Top 10 takes two lines at most.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.2.5", date = "2026-11-11", heads = { [1] = "Changed", [4] = "Note", }, items = {
 		"|cff6e2c0aQuest flights, timed|r: each speed is now one fixed time for the whole flight, near or far: Slow 5 seconds, Normal 3, Fast 1.2 (it was 0.6 to 2 seconds by distance).",
 		"The same smooth curve, out, across and down; drag, the wheel, Back, closing or changing the map still stop it, and on a very low frame rate it may still end a little sooner rather than stutter.",

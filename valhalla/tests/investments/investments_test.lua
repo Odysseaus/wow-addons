@@ -1786,7 +1786,7 @@ do
   -- Total = profit x can make (Count the bank)
   local e1 = cf.list[1]
   ok(e1.can == 10 and math.abs(e1.total - e1.profit * 10) < 0.01 and cf.rows[1].total._text == Sc.Money(e1.total), "Total: profit x can make (10 from the bags)", cf.rows[1].total._text)
-  W.Click(cf.bank)
+  W.Click(cf.count.boxes[2])   -- (v0.4.2.6: Count: Bags + bank, as My items')
   for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
   mp:Refresh()
   ok(I.S.mineBank and cf.list[1].can == 15 and math.abs(cf.list[1].total - cf.list[1].profit * 15) < 0.01, "Count the bank: can make 15, Total follows")
@@ -1809,15 +1809,15 @@ do
   Mk.craftProf = 182 mp:Refresh()
   ok(cf.modeHarvest:IsShown() and cf.modeCrafts:IsShown(), "Herbalism: Crafts | Harvest")
   W.Click(cf.modeHarvest)
-  ok(Mk.craftMode == "harvest" and cf.rows[1].cell.id == 785 and cf.rows[2].cell.id == 2447 and cf.rows[3].cell.id == 765 and cf.rows[4].low._text == "-"
-    and cf.rows[1].low._text == Sc.Money(80) and cf.head.harvest[1]:IsShown() and not cf.head.craft[1]:IsShown() and not cf.owned:IsShown()
+  ok(Mk.craftMode == "harvest" and cf.rows[1].cell.id == 785 and cf.rows[2].cell.id == 2447 and cf.rows[3].cell.id == 765 and cf.rows[4].harvest.sell._text == "-"
+    and cf.rows[1].harvest.sell._text == Sc.Money(80) and cf.head.harvestStrip:IsShown() and not cf.head.craftStrip:IsShown() and cf.owned:IsShown()
     and cf.status._text:find("herbs", 1, true) and #cf.list == Count(G[182].ids) and pg:IsShown(),
-    "Harvest: every herb, dearest first, unlisted after; its own columns; paged", cf.status._text)
+    "Harvest: every herb, dearest first, unlisted after; Crafts' columns (no Cost); paged", cf.status._text)
   Mk.craftProf = 186 mp:Refresh()
   local bar = false for _, e in ipairs(cf.list) do if e.id == 2840 then bar = true end end
   ok(Mk.craftMode == "harvest" and #cf.list == Count(G[186].ids) and not bar, "Mining's harvest: ores and stone, no bars")
   W.Click(cf.modeCrafts)
-  ok(Mk.craftMode == "crafts" and cf.head.craft[1]:IsShown() and not cf.head.harvest[1]:IsShown(), "back to Crafts")
+  ok(Mk.craftMode == "crafts" and cf.head.craftStrip:IsShown() and not cf.head.harvestStrip:IsShown() and cf.owned:GetAlpha() == 1 and not cf.ownedNote:IsShown(), "back to Crafts")
   -- Top 10: hours, not scans; the message alone (no overlap)
   local hm = Sc.Market("Hours", true)
   local now = math.floor(W.now / 60) - hm.base
@@ -2069,8 +2069,9 @@ print("== 33. v0.4.2.1: pages not scrolling, |< >| pager ends, Craft's grid and 
   -- 3. Craft: Reagents: and Show: in measured columns; a name filter
   mp:ShowSub("craft")
   local cf = mp.subs.craft
-  ok(cf.showTitle._text == "Show:" and cf.known:GetParent() == cf.showRow and cf.bank:GetParent() == cf.showRow, "Craft's second row: Show: Known only, Count the bank")
-  local rows = { cf.owned.boxes, { cf.known, cf.bank } }
+  ok(cf.showTitle._text == "Show:" and cf.known:GetParent() == cf.showRow and cf.count.title._text == "Count:"
+    and cf.count.boxes[1].label._text == "Bags only" and cf.count.boxes[2].label._text == "Bags + bank", "Craft's second row: Show: Known only; Count: Bags only | Bags + bank (v0.4.2.6)")
+  local rows = { cf.owned.boxes, cf.count.boxes }
   local clear = true
   for _, bx in ipairs(rows) do
     for k = 1, #bx - 1 do
@@ -2079,7 +2080,9 @@ print("== 33. v0.4.2.1: pages not scrolling, |< >| pager ends, Craft's grid and 
     end
   end
   ok(clear, "each label ends 8 px or more before the next box's art (3 px over its edge)")
-  ok(cf.known.col == cf.owned.boxes[1].col and cf.bank.col == cf.owned.boxes[2].col, "Show:'s boxes in Reagents' columns")
+  ok(cf.known.col == cf.owned.boxes[1].col, "Show:'s box in Reagents' first column")
+  local cp = cf.count._points[1]
+  ok(cf.count.beside and cp[2] == cf.showRow and cp[4] >= cf.showRow.right + 8 and 8 + cp[4] + cf.count.right <= Mk.CRAFT_W, "Count: beside Known only (it fits)", cp[4])
   ok(cf.owned.boxes[1].col >= V.TextWidth(cf.owned.title) + 16 and cf.owned.boxes[1].col >= V.TextWidth(cf.showTitle) + 16, "the boxes start after the wider title", cf.owned.boxes[1].col)
   ok(cf.known._w == 16 and cf.known.labelW > 0, "the box still 16 px (its label measured)")
   ok(cf.filter and cf.filter.vh.kind == "input" and cf.filterHint:IsShown(), "a name filter box (the look's), its hint while empty")
@@ -2333,6 +2336,166 @@ print("== 34. v0.4.2.3: Top 10 filtered: All | Crafted | Harvested, a profession
   Mk.house = nil
   ok(Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == errs0, "v0.4.2.3 wrote nothing on the map; no handler error")
   T.Select("map")
+end)()
+
+print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), Craft's Count, Harvest like Crafts, Top 10's numbers fit")
+;(function()
+  local St, Mk, Sc, Cr = ns.Style, I.Market, I.Scan, I.Craft
+  local errs0 = #W.sizeErrors
+  St.SetLook("profession")
+  for _, k in ipairs({ "sortResults", "sortMine", "sortCraft", "sortHarvest" }) do I.S[k] = nil end
+  ok(Mk.SortTag("results") == "name:asc" and Mk.SortTag("mine") == "total:desc" and Mk.SortTag("craft") == "each:desc" and Mk.SortTag("harvest") == "sell:desc",
+    "defaults: today's orders (Name; Total; Profit/item; Sell at)")
+  local hm = Sc.Market("Cols", true)
+  local tm = math.floor(W.now / 60) - hm.base
+  hm.scans = { { t = tm, kind = "full", n = 12, items = 5 } }
+  local function Put(id, min, units, auctions) hm.cur[id] = ("%d,%d,%d,%d"):format(min, units, auctions, tm) end
+  Put(2589, 120, 40, 4) Put(2447, 300, 10, 2) Put(2770, 0, 5, 1) Put(765, 900, 25, 5) Put(13463, 5000, 3, 1)
+  Mk.house = "Cols"
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  -- one spec: each header over its own column (the same x and width as the rows' cells)
+  local function Aligned(head, row, cells)
+    local hx, rx = head._points[1][2], row._points[1][2]
+    for _, b in ipairs(head.buttons) do
+      local c = b.col
+      local cell = c.item and row.cell or cells[c.key]
+      if not cell then return false, c.key .. ": no cell" end
+      if hx + b._points[1][2] ~= rx + cell._points[1][2] then return false, c.key .. ": x" end
+      if b._w ~= c.w or cell._w ~= c.w then return false, c.key .. ": width" end
+    end
+    return true, ""
+  end
+  -- Scan results
+  mp:ShowSub("results")
+  local rf = mp.subs.results
+  rf.search:SetText("")
+  mp:Refresh()
+  local al, why = Aligned(rf.head, rf.rows[1], rf.rows[1].cells)
+  ok(al, "Scan results: every header over its own column (was off by up to 120 px)", why)
+  local labels = {} for _, b in ipairs(rf.head.buttons) do labels[#labels + 1] = b.text._text end
+  ok(table.concat(labels, "|") == "Name|Lowest|Quantity|Auctions|7-day change", "headers: Name, Lowest, Quantity (was Units), Auctions, 7-day change", table.concat(labels, "|"))
+  ok(rf.head.buttons[1].arrow:IsShown() and rf.head.buttons[1].arrow.dir == "up" and not rf.head.buttons[2].arrow:IsShown(), "Name sorted A-Z: its arrow up, the others none")
+  local function Mins() local t = {} for _, e in ipairs(rf.list) do t[#t + 1] = e.min end return table.concat(t, ",") end
+  W.Click(rf.head.buttons[2])
+  ok(Mins() == "120,300,900,5000,0" and rf.head.buttons[2].text._text == "Lowest" and rf.head.buttons[2].arrow.dir == "up", "Lowest: low to high, bid only (0) last", Mins())
+  W.Click(rf.head.buttons[2])
+  ok(Mins() == "5000,900,300,120,0" and rf.head.buttons[2].text._text == "Highest" and rf.head.buttons[2].arrow.dir == "down", "again: Highest (high to low), bid only still last", Mins())
+  ok(I.S.sortResults == "min:desc", "kept in the settings (SavedVariables)", I.S.sortResults)
+  W.Click(rf.head.buttons[3])
+  ok(rf.list[1].units == 40 and rf.list[#rf.list].units == 3 and rf.head.buttons[2].text._text == "Lowest", "Quantity: most first; the price header back to Lowest")
+  W.Click(rf.head.buttons[5])
+  ok(I.S.sortResults == "change:desc" and #rf.list == 5 and rf.offset == 0, "7-day change: no change worked out goes last (here all: by name)")
+  rf.list = nil mp:Refresh()
+  ok(rf.head.buttons[5].arrow:IsShown(), "a rebuilt list keeps its sort")
+  -- My items
+  local keepBags, keepBank, keepScope = I.char.bags, I.char.bank, I.S.mineBank
+  I.char.bags, I.char.bank, I.S.mineBank = { [2589] = 5, [2447] = 3, [2770] = 2 }, {}, false
+  mp:ShowSub("mine")
+  local mf = mp.subs.mine
+  al, why = Aligned(mf.head, mf.rows[1], mf.rows[1].cells)
+  ok(al, "My items: every header over its own column", why)
+  ok(#mf.head.buttons == 6 and mf.head.buttons[6].arrow:IsShown() and mf.head.buttons[6].arrow.dir == "down", "My items: Total, high to low, by default (as before)")
+  local function Names(list, field) local t = {} for _, e in ipairs(list) do t[#t + 1] = I.Views.ItemData(e[field or "id"]) or "?" end return table.concat(t, ",") end
+  W.Click(mf.head.buttons[1])
+  ok(Names(mf.list) == "Copper Ore,Linen Cloth,Peacebloom" and I.S.sortMine == "name:asc", "Item: A-Z", Names(mf.list))
+  W.Click(mf.head.buttons[1])
+  ok(Names(mf.list) == "Peacebloom,Linen Cloth,Copper Ore", "again: Z-A", Names(mf.list))
+  W.Click(mf.head.buttons[2])
+  ok(mf.list[1].n == 5 and mf.list[3].n == 2 and mf.rows[1].n._text == "5", "Have: most first, drawn so")
+  -- Craft: Cost to Make; Harvest: Crafts' columns, no Cost
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  local cl = {} for _, b in ipairs(cf.head.craft) do cl[#cl + 1] = b.text._text end
+  ok(table.concat(cl, "|") == "Craft (makes)|Cost to Make|Sell at|Profit/item|Margin|Listed|Known|Can make|Total", "Crafts' headers: Cost to Make", table.concat(cl, "|"))
+  al, why = Aligned(cf.head.craftStrip, cf.rows[1], cf.rows[1].craft)
+  ok(al, "Crafts: every header over its own column", why)
+  local keepGP, keepGPI = GetProfessions, GetProfessionInfo
+  GetProfessions = function() return 1, nil, nil, nil, nil, nil end
+  GetProfessionInfo = function(i) if i == 1 then return "Herbalism", 0, 60, 300, 0, 0, 182 end end
+  Cr.Learned()
+  ok(Cr.SkillRank(182) == 60 and Cr.SkillRank(186) == 0, "your skill: Herbalism 60 (the game's); Mining not yours: 0")
+  I.char.bags = { [2447] = 4, [765] = 2 }
+  I.S.craftKnownOnly = false
+  Mk.craftProf, Mk.craftMode = 182, "harvest" mp:Refresh()
+  local hl = {} for _, b in ipairs(cf.head.harvest) do hl[#hl + 1] = b.text._text end
+  ok(table.concat(hl, "|") == "Item|Sell at|Profit/item|Margin|Listed|Known|Have|Total" and cf.head.harvestStrip:IsShown() and not cf.head.craftStrip:IsShown(),
+    "Harvest's headers: Crafts' less Cost (Have for Can make)", table.concat(hl, "|"))
+  al, why = Aligned(cf.head.harvestStrip, cf.rows[1], cf.rows[1].harvest)
+  ok(al, "Harvest: every header over its own column (the item wider: no Cost)", why)
+  local cut = Sc.Cut("Cols")
+  local pb, dr
+  for _, e in ipairs(cf.list) do if e.id == 2447 then pb = e elseif e.id == 13463 then dr = e end end
+  ok(pb and math.abs(pb.each - 300 * (1 - cut)) < 1e-6 and pb.have == 4 and math.abs(pb.total - 4 * pb.each) < 1e-6 and pb.known == true,
+    "Peacebloom: profit = the AH's lowest less the cut; Have 4; Total = 4 x profit; Known (skill 1, yours 60)")
+  ok(dr and dr.known == false and dr.total == nil, "Dreamfoil: not Known (270 over your 60); none had: Total -")
+  local row1 = cf.rows[1]
+  ok(cf.list[1].id == 13463 and row1.harvest.sell._text == Sc.Money(5000) and row1.harvest.margin._text == "-" and row1.harvest.known._text == ""
+    and row1.harvest.total._text == "-" and row1.harvest.listed._text == "3" and row1.harvest.sell:IsShown() and not row1.cost:IsShown(),
+    "the dearest first (Sell at), drawn in Crafts' columns; no Cost")
+  ok(cf.owned:IsShown() and cf.owned:GetAlpha() < 1 and cf.owned.boxes[1]._mouse == false and cf.ownedNote:IsShown() and cf.ownedNote._text == "(crafts only)"
+    and cf.known:IsShown() and cf.count:IsShown(), "the same filters: Reagents greyed (crafts only); Known only and Count work")
+  W.Click(cf.known)
+  ok(I.S.craftKnownOnly == true, "Known only on")
+  local hiddenDF = true for _, e in ipairs(cf.list) do if e.id == 13463 then hiddenDF = false end end
+  ok(hiddenDF and cf.status._text:find("above your skill hidden", 1, true), "Known only: Dreamfoil (above your skill) hidden, said", cf.status._text)
+  W.Click(cf.known)
+  W.Click(cf.count.boxes[2])
+  ok(I.S.mineBank == true, "Count: Bags + bank (My items' setting too)")
+  W.Click(cf.head.harvest[7])
+  ok(I.S.sortHarvest == "have:desc" and cf.list[1].id == 2447 and cf.list[2].id == 765 and cf.offset == 0, "Have: most first; page 1")
+  W.Click(cf.modeCrafts)
+  ok(cf.owned:GetAlpha() == 1 and cf.owned.boxes[1]._mouse == true and not cf.ownedNote:IsShown() and cf.rows[1].cell._w == 176, "back to Crafts: Reagents live again; the item column its own width")
+  GetProfessions, GetProfessionInfo = keepGP, keepGPI
+  Cr.Learned()
+  -- a stale saved column: the default
+  I.S.sortMine = "bogus:up"
+  ok(Mk.SortTag("mine") == "total:desc", "a saved sort that no longer fits: the default")
+  -- empty last, stable ties (the list's default, then id)
+  local rows = { { id = 3, total = 5 }, { id = 1 }, { id = 2, total = 5 }, { id = 4, total = 9 } }
+  I.S.sortMine = "total:asc"
+  Mk.SortList(rows, "mine")
+  ok(rows[1].id == 2 and rows[2].id == 3 and rows[3].id == 4 and rows[4].id == 1, "low to high: empty last, a tie by id")
+  I.S.sortMine = "total:desc"
+  Mk.SortList(rows, "mine")
+  ok(rows[1].id == 4 and rows[2].id == 2 and rows[3].id == 3 and rows[4].id == 1, "high to low: empty still last")
+  -- Top 10: the widest change and price fit, one line each, measured with the game's font (FRIZQT, 11 px) drawn 1.3x
+  -- wider (as the owner's client did: "+207%" didn't fit 46 px)
+  mp:ShowSub("top")
+  local top = mp.subs.top
+  local col = top.cols[1]
+  local ADV = { ["0"] = 7.047, ["1"] = 7.047, ["2"] = 7.047, ["3"] = 7.047, ["4"] = 7.047, ["5"] = 7.047, ["6"] = 7.047, ["7"] = 7.047, ["8"] = 7.047,
+    ["9"] = 7.047, ["g"] = 6.812, ["s"] = 5.141, ["c"] = 5.734, [" "] = 2.875, ["+"] = 7.047, ["-"] = 4.328, ["%"] = 8.125 }
+  local function Wd(s) local w = 0 for ch in tostring(s):gmatch(".") do w = w + (ADV[ch] or 8) end return w * 1.3 end
+  for _, r in ipairs(col.rows) do
+    r.change.GetStringWidth = function(self) return Wd(self._text or "") end
+    r.price.GetStringWidth = function(self) return Wd(self._text or "") end
+    r:Hide()
+  end
+  local function Row(i, ch, pr) local r = col.rows[i] r.change:SetText(ch) r.price:SetText(pr) r:Show() end
+  Row(1, "+207%", "4g 33s 00c") Row(2, "+12%", "1g 30s 00c")
+  local fit = Mk.FitTop(col)
+  ok(fit.change >= Wd("+207%") and fit.price >= Wd("4g 33s 00c") and fit.name >= 130, "the owner's rows: +207% and 4g 33s 00c whole, the name roomy", ("%d %d %d"):format(fit.change, fit.price, fit.name))
+  Row(3, "+1234%", "9999g 99s 99c") Row(4, "-100%", "1234g 56s 78c")
+  fit = Mk.FitTop(col)
+  local r1 = col.rows[1]
+  ok(fit.change >= Wd("+1234%") and fit.price >= Wd("9999g 99s 99c") and r1.change._w == fit.change and r1.price._w == fit.price,
+    "the widest: +1234% and 9999g 99s 99c fit their columns", ("%d >= %.1f, %d >= %.1f"):format(fit.change, Wd("+1234%"), fit.price, Wd("9999g 99s 99c")))
+  ok(fit.changeX + fit.change + Mk.TOP_GAP <= fit.priceX and fit.priceX + fit.price + Mk.TOP_GAP <= fit.sparkX and fit.sparkX + Mk.SPARK * Mk.SPARK_STEP <= Mk.TOP_ROW_W
+    and r1.cell._w + 2 + Mk.TOP_GAP <= fit.changeX and fit.name >= 100,
+    "no overlap: name, change, price, sparkline, all in the row; the name keeps 100 px or more", fit.name)
+  ok(r1.change._wrap == false and r1.price._wrap == false, "one line each: no wrapping")
+  -- both lists line up alike: a narrower list takes the other's widths
+  local wide = Mk.FitTop(col, { change = fit.change + 10, price = fit.price + 10 })
+  ok(wide.change == fit.change + 10 and wide.price == fit.price + 10, "a column takes the other column's wider numbers")
+  Mk.FitTop(col)
+  for _, r in ipairs(col.rows) do r.change.GetStringWidth, r.price.GetStringWidth = nil, nil end
+  I.char.bags, I.char.bank, I.S.mineBank = keepBags, keepBank, keepScope
+  for _, k in ipairs({ "sortResults", "sortMine", "sortCraft", "sortHarvest" }) do I.S[k] = nil end
+  Mk.house = nil
+  mp:Refresh()
+  ok(#W.sizeErrors == errs0, "no handler error")
 end)()
 
 print(("\n%d passed, %d failed"):format(pass, fail))
