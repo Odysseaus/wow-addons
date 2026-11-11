@@ -687,7 +687,7 @@ local function Watch(menu, b)
 		closer:SetScript("OnEvent", CloseOutside)
 	end
 	Style.openMenus[menu] = b
-	closer:RegisterEvent("GLOBAL_MOUSE_DOWN")
+	pcall(closer.RegisterEvent, closer, "GLOBAL_MOUSE_DOWN")   -- (a client without the event: the menu as before, no error)
 end
 
 function Style.Dropdown(b, menu, width, height)
