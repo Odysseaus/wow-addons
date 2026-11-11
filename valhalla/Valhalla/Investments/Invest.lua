@@ -729,7 +729,9 @@ I.EVENTS = { "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "PLAY
 	"AUCTION_HOUSE_THROTTLED_MESSAGE_QUEUED", "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED",
 	"AUCTION_HOUSE_THROTTLED_MESSAGE_RESPONSE_RECEIVED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
 	-- (v0.4.1: a profession window's recipes, for Craft)
-	"TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "NEW_RECIPE_LEARNED" }
+	"TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "NEW_RECIPE_LEARNED",
+	-- (v0.4.1.1: something learned, a profession taken or dropped: Known and your professions asked again)
+	"LEARNED_SPELL_IN_TAB", "SKILL_LINES_CHANGED" }
 
 function I.OnEvent(event, a1, a2)
 	if I.AHCheck and I.AHCheck.run then I.AHCheck.OnEvent(event, a1) end
@@ -790,7 +792,12 @@ function I.OnEvent(event, a1, a2)
 			if hit then I.Changed() end
 		end
 	elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE" or event == "NEW_RECIPE_LEARNED" then
+		if event == "NEW_RECIPE_LEARNED" and I.Craft and I.Craft.Learned then pcall(I.Craft.Learned) end
 		if I.Craft and I.Craft.ReadOpen then pcall(I.Craft.ReadOpen, event ~= "TRADE_SKILL_LIST_UPDATE") end
+	elseif event == "LEARNED_SPELL_IN_TAB" then
+		if I.Craft and I.Craft.Learned then pcall(I.Craft.Learned) end
+	elseif event == "SKILL_LINES_CHANGED" then
+		if I.Craft then I.Craft.mine = nil end   -- (a skill-up fires it too: only your professions asked again)
 	elseif event == "REPLICATE_ITEM_LIST_UPDATE" then
 		if I.diagReplicate then I.DiagReplicateDone() end
 	end

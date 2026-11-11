@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.1.1", date = "2026-11-10", heads = { [1] = "Changed", [6] = "Fixed", [8] = "Note", }, items = {
+		"|cff6e2c0aEvery profession in Craft|r: all 12 (Alchemy, Blacksmithing, Enchanting, Engineering, Herbalism, Leatherworking, Mining, Skinning, Tailoring, Cooking, First Aid, Fishing) with every recipe, from the client's own data tables (WoW Forever 1.60.1.70888). No profession window needs opening; a tab you show still replaces its list with the game's own.",
+		"|cff6e2c0aA profession dropdown|r replaces the buttons: yours are starred and listed first, then the primary professions, then the secondary.",
+		"|cff6e2c0aAll the priced crafts, paged|r, by profit per craft (was the Top 10). Crafts that can't be priced or aren't listed stay named under the list.",
+		"|cff6e2c0aTotal|r column: profit per craft x how many you can make (follows Count the bank).",
+		"|cff6e2c0aHarvest|r: Herbalism, Mining, Skinning and Fishing get a Crafts | Harvest switch: every herb, ore and stone, hide and raw fish or meat, with its AH lowest, how many are listed, its vendor price, what you have and its 7-day change.",
+		"|cff6e2c0aKnown only works for every profession|r (Cooking and First Aid too): each recipe is asked of the game, no window needed.",
+		"|cff6e2c0aTop 10|r counts the hours with a full scan, not the scans (history keeps one point an hour, so two scans in one hour count once), and says when your next full scan counts. Its message no longer sits on top of the Rising and Falling headers.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.1", date = "2026-11-10", heads = { [1] = "New", [6] = "Note", }, items = {
 		"|cff6e2c0aCraft|r (AH Market): the Top 10 crafts of each profession by profit at the Auction House shown: craft cost, sell price (the lowest buyout, no undercut), profit per item and margin, how many are listed, a star on the recipes you know and how many you can make. Every item shows its icon and the game's tooltip, with each reagent's cost under it.",
 		"|cff6e2c0aRecipes come from the game|r: open a profession window once (any character) and Valhalla keeps its whole list, learned or not, for every character. Reagents and outputs are always read from the game. A few recipe IDs are bundled for the professions not opened yet; a fuller bundled list will follow.",

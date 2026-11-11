@@ -1507,8 +1507,8 @@ do
   ;(function()
   print("-- 30. v0.4.1: Craft: recipes from the game (and the bundle), the Top 10 by profit, owned reagents, the view")
   local Cr = I.Craft
-  ok(Cr and Cr.ready and ns.Recipes and ns.Recipes.professions[197].ids == "2963" and not ns.Recipes.professions[197].ids:find("2330"),
-    "the bundle: the probe's IDs only (2330, empty in the game, left out)")
+  ok(Cr and Cr.ready and ns.Recipes and (","..ns.Recipes.professions[197].ids..","):find(",2963,", 1, true) and not (","..ns.Recipes.professions[197].ids..","):find(",2330,", 1, true),
+    "the bundle: the probe's 2963 in it (2330, empty in the game, isn't a recipe in the client's tables either)")
   -- items, prices, a merchant
   local A, B, X = 920001, 920002, 920009
   for id, name in pairs({ [A] = "Test Thread", [B] = "Test Dye", [X] = "Test Unpriced", [910001] = "Test Shirt", [910002] = "Test Bolts",
@@ -1581,7 +1581,7 @@ do
   ok(r1.parts[1].src == "ah" and r1.parts[2].src == "vendor", "each reagent's source: AH or vendor")
   local e2 = Cr.Price("CraftTest", Cr.Resolve(901002), opts, {})
   ok(e2.qty == 3 and e2.cost == 300 and math.abs(e2.net - 1140) < 0.01 and math.abs(e2.each - 280) < 0.01, "makes 2-4: sold as 3, profit per item", e2.each)
-  ok(#res.rows == 10 and res.ranked == 13 and res.rows[2].id == 901111 and res.rows[10].id == 901103, "the Top 10 by profit per craft (13 priced; 2 x 4 makes fall out)", res.rows[2] and res.rows[2].id)
+  ok(#res.rows == 10 and res.ranked == 13 and #res.list == 13 and res.rows[2].id == 901111 and res.rows[10].id == 901103, "the Top 10 by profit per craft (13 priced; 2 x 4 makes fall out)", res.rows[2] and res.rows[2].id)
   ok(#res.missing == 1 and res.missing[1].missing[1] == X and #res.unlisted == 1 and res.unlisted[1].out == 910004, "a reagent nobody prices, an output nobody lists: not ranked, listed apart")
   ok(res.skipped == 2 and res.unknown == 1, "an enchant and a bind-on-pickup output skipped; an empty answer counted unknown", res.skipped .. " " .. res.unknown)
   ok(#res.rows[2].parts == 1, "an optional reagent isn't costed")
@@ -1607,10 +1607,12 @@ do
   W.sizeMaxDepth = 0
   mp:ShowSub("craft")
   local cf = mp.subs.craft
-  ok(cf:IsShown() and cf.profButtons[1]:IsShown() and W.sizeMaxDepth <= 1, "Craft: one view, profession buttons")
+  ok(cf:IsShown() and cf.drop:IsShown() and not cf.menu:IsShown() and W.sizeMaxDepth <= 1, "Craft: one view, the profession dropdown (closed)")
+  W.Click(cf.drop)
   local tb
-  for _, b in ipairs(cf.profButtons) do if b.prof == 197 then tb = b end end
+  for _, b in ipairs(cf.menu.items) do if b:IsShown() and b.prof == 197 then tb = b end end
   W.Click(tb)
+  ok(not cf.menu:IsShown(), "a profession picked: the menu closes")
   ok(Mk.craftProf == 197 and cf.status._text:find("reading", 1, true) and not cf.rows[1]:IsShown(), "Tailoring: read a little each frame first", cf.status._text)
   for _ = 1, 200 do if not Cr.Running() then break end Cr.Tick() end
   mp:Refresh()
@@ -1656,6 +1658,188 @@ do
   C_TradeSkillUI = TS
   Mk.house, Mk.craftProf = nil, nil
   ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == 0, "Craft wrote nothing on the map; no handler error")
+  end)()
+
+  ;(function()
+  print("-- 31. v0.4.1.1: every profession from the client's data, Known without a window, the dropdown, pages, Total, Harvest, Top 10's hours")
+  local Cr = I.Craft
+  local P, G = ns.Recipes.professions, ns.Recipes.gather
+  local function Count(s) local n = 0 for _ in tostring(s):gmatch("%d+") do n = n + 1 end return n end
+  local function Has(s, id) return (("," .. s .. ","):find("," .. id .. ",", 1, true)) ~= nil end
+  local n, bad = 0, 0
+  for k, e in pairs(P) do n = n + 1 if not Cr.SKILL[k] or e.name ~= Cr.SKILL[k] or tostring(e.ids):find("[^%d,]") then bad = bad + 1 end end
+  ok(n == 12 and bad == 0 and not P[755] and not P[773] and Count(P[185].ids) == 132 and Count(P[129].ids) == 32 and Count(P[165].ids) == 605
+    and P[185].secondary and P[129].secondary and P[356].secondary and not P[171].secondary and ns.Recipes.source:find("70888", 1, true),
+    "the bundle: all 12 professions from the client's tables (Cooking's 132 = the game's own list), IDs only", n)
+  ok(Has(G[182].ids, 2447) and Has(G[186].ids, 2770) and not Has(G[186].ids, 2840) and Has(G[393].ids, 783) and not Has(G[393].ids, 2318)
+    and Has(G[356].ids, 6291) and not Has(G[356].ids, 6290) and not G[197],
+    "Harvest lists: herbs, ores (no bars), hides (no crafted leather), raw fish (no cooked); none for Tailoring")
+  -- no window opened anywhere: all 12, yours first (starred), then primary, then secondary
+  local keepStore, keepKnown, keepBags, keepBank, keepScope = I.db.account.recipes, I.char.known, I.char.bags, I.char.bank, I.S.mineBank
+  I.db.account.recipes, I.char.known = {}, {}
+  GetProfessions = function() return 1, nil, nil, 4, 5, nil end
+  GetProfessionInfo = function(i)
+    if i == 1 then return "Alchemy", 0, 1, 300, 0, 0, 171 elseif i == 4 then return "Fishing", 0, 1, 300, 0, 0, 356
+    elseif i == 5 then return "Cooking", 0, 1, 300, 0, 0, 185 end
+  end
+  Cr.Learned()
+  local profs = Cr.Professions()
+  ok(#profs == 12 and profs[1].name == "Alchemy" and profs[1].mine and profs[2].name == "Cooking" and profs[3].name == "Fishing" and profs[3].mine
+    and profs[4].name == "Blacksmithing" and not profs[4].mine and profs[11].name == "Tailoring" and profs[12].name == "First Aid" and profs[12].secondary,
+    "no window opened: all 12 professions; yours first, then primary, then secondary", profs[1].name .. "," .. profs[2].name .. "," .. profs[12].name)
+  ok(Cr.Key(2939, "") == 185 and Cr.Key(2942, nil) == 129 and Cr.Key(2948, "Classic Tailoring") == 197, "a profession's child line (Classic Cooking 2939): its parent")
+  -- Known, asked of the game per recipe: no window
+  local TS = C_TradeSkillUI
+  local learned, spells = { [3275] = true, [2538] = true }, { [3277] = true }
+  local Linen, Wool, Wolf = 2589, 2592, 2672
+  local SCH = {
+    [3275] = { 1251, { { Linen, 1 } } }, [3276] = { 2581, { { Linen, 2 } } }, [3277] = { 3530, { { Wool, 1 } } }, [2538] = { 2679, { { Wolf, 1 } } },
+  }
+  for k = 1, 40 do SCH[960000 + k] = { 961000 + k, { { Linen, 1 } } } end
+  SCH[960040] = { 961040, { { 929999, 1 } } }   -- (a reagent nobody prices)
+  for id, name in pairs({ [1251] = "Linen Bandage", [2581] = "Heavy Linen Bandage", [3530] = "Wool Bandage", [2679] = "Charred Wolf Meat", [Wool] = "Wool Cloth",
+    [Wolf] = "Stringy Wolf Meat", [765] = "Silverleaf", [785] = "Mageroyal", [2447] = "Peacebloom" }) do W.items[id] = W.items[id] or { name, 132912 } end
+  for k = 1, 40 do W.items[961000 + k] = { "Test Paged " .. k, 132912 } end
+  C_TradeSkillUI = {
+    GetBaseProfessionInfo = function() return { professionID = 2942, professionName = "" } end,
+    GetAllRecipeIDs = function() return { 3275, 3276 } end,
+    GetRecipeInfo = function(id) if id == 3277 then return nil end return { recipeID = id, learned = learned[id] or false } end,
+    GetRecipeSchematic = function(id)
+      local r = SCH[id]
+      if not r then return nil end
+      local slots = {}
+      for _, g in ipairs(r[2]) do slots[#slots + 1] = { quantityRequired = g[2], reagents = { { itemID = g[1] } } } end
+      return { recipeID = id, outputItemID = r[1], quantityMin = 1, quantityMax = 1, reagentSlotSchematics = slots }
+    end,
+  }
+  IsPlayerSpell = function(id) return spells[id] or false end
+  local km = Sc.Market("KnownTest", true)
+  local tm = math.floor(W.now / 60) - km.base
+  km.scans = { { t = tm, kind = "full", n = 100, items = 10 } }
+  local function Put(m, id, min) m.cur[id] = ("%d,%d,%d,%d"):format(min, 20, 2, tm) end
+  Put(km, Linen, 10) Put(km, Wool, 20) Put(km, Wolf, 5) Put(km, 1251, 100) Put(km, 2581, 150) Put(km, 3530, 300) Put(km, 2679, 60)
+  for k = 1, 40 do Put(km, 961000 + k, 100 + k * 10) end
+  Cr.schem, Cr.results = {}, {}
+  local ko = { owned = "market", bank = false, knownOnly = true }
+  local fa = Cr.Rank("KnownTest", 129, ko)
+  local got = {} for _, e in ipairs(fa.list) do got[#got + 1] = e.id .. (e.known and "*" or "") end
+  table.sort(got)
+  ok(#fa.list == 2 and table.concat(got, ",") == "3275*,3277*" and fa.unknown == 29,
+    "Known only, First Aid, its tab never shown: the game asked per recipe (learned, else IsPlayerSpell)", table.concat(got, ","))
+  local co = Cr.Rank("KnownTest", 185, ko)
+  ok(#co.list == 1 and co.list[1].id == 2538 and co.list[1].known, "Known only, Cooking: the same, no window", #co.list)
+  learned[3276] = true
+  ok(#Cr.Rank("KnownTest", 129, ko).list == 2, "asked once (cached) until something is learned")
+  W.Fire("LEARNED_SPELL_IN_TAB")
+  ok(#Cr.Rank("KnownTest", 129, ko).list == 3 and Cr.gen > 0, "something learned: asked again (3 now)")
+  W.Fire("TRADE_SKILL_SHOW")
+  ok(I.db.account.recipes[129] and I.db.account.recipes[129].name == "First Aid" and not I.db.account.recipes[2942] and Cr.Profession(129).source == "live",
+    "First Aid's tab shown (its child line 2942, no name): kept as First Aid")
+  -- the view: the dropdown
+  Mk.house, Mk.craftProf, Mk.craftMode = "KnownTest", nil, nil
+  I.S.craftKnownOnly = false
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  ok(Mk.craftProf == 171 and cf.drop.text._text:find("Alchemy", 1, true) and cf.drop.text._text:find("*", 1, true), "the dropdown: your first profession, starred", cf.drop.text._text)
+  W.Click(cf.drop)
+  local items = 0 for _, it in ipairs(cf.menu.items) do if it:IsShown() then items = items + 1 end end
+  ok(cf.menu:IsShown() and items == 12 and cf.menu.items[1].text._text:find("*", 1, true) and cf.menu.items[1].text._text:find("Alchemy", 1, true) and cf.menu.items[12].text._text:find("First Aid", 1, true)
+    and cf.menu.items[12].text._text:find("secondary", 1, true) and not cf.menu.items[4].text._text:find("*", 1, true),
+    "open: all 12, yours starred and first, the secondary ones last", items)
+  cf:Hide()
+  ok(not cf.menu:IsShown(), "the view hidden: its menu closes too")
+  cf:Show() W.Click(cf.drop)
+  W.Click(cf.menu.items[12])
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  I.S.craftKnownOnly = true mp:Refresh()
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  ok(Mk.craftProf == 129 and not cf.menu:IsShown() and cf.rows[1]:IsShown() and cf.rows[1].known._text:find("*", 1, true), "First Aid picked, Known only: its known crafts listed", cf.status._text)
+  I.S.craftKnownOnly = false
+  -- pages: 40 priced crafts
+  I.db.account.recipes[999] = { name = "Test Paged", ids = (function() local t = {} for k = 1, 40 do t[k] = 960000 + k end return table.concat(t, ",") end)(), t = W.now }
+  I.char.bags, I.char.bank, I.S.mineBank = { [Linen] = 10 }, { [Linen] = 5 }, false
+  Mk.craftProf = 999
+  W.sizeMaxDepth = 0
+  local errs0 = #W.sizeErrors
+  cf:SetHeight(400) W.Run(cf, "OnSizeChanged")
+  mp:Refresh()
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  local pg = cf.pager
+  ok(cf.per == 8 and #cf.list == 39 and pg:IsShown() and pg.label._text == "Page 1 of 5 · items 1-8 of 39" and cf.rows[1].cell.id == 961039,
+    "all the priced crafts, 8 a page at 400 px (the one with an unpriced reagent's in the strip)", pg.label._text)
+  ok(cf.missing._text:find("Can't price (1)", 1, true), "the rest under it: Can't price")
+  W.Click(pg.next)
+  local onPage2 = false for _, id in ipairs(Sc.shown or {}) do if id == 961031 then onPage2 = true end end
+  local onPage1 = false for _, id in ipairs(Sc.shown or {}) do if id == 961039 then onPage1 = true end end
+  ok(cf.offset == 8 and cf.rows[1].cell.id == cf.list[9].out and onPage2 and not onPage1, "next: crafts 9-16; the quick scan asks only about this page", pg.label._text)
+  W.Run(cf, "OnMouseWheel", 1)
+  ok(cf.offset == 0, "the wheel: a page back")
+  -- Total = profit x can make (Count the bank)
+  local e1 = cf.list[1]
+  ok(e1.can == 10 and math.abs(e1.total - e1.profit * 10) < 0.01 and cf.rows[1].total._text == Sc.Money(e1.total), "Total: profit x can make (10 from the bags)", cf.rows[1].total._text)
+  W.Click(cf.bank)
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  ok(I.S.mineBank and cf.list[1].can == 15 and math.abs(cf.list[1].total - cf.list[1].profit * 15) < 0.01, "Count the bank: can make 15, Total follows")
+  I.char.bags = {}
+  Cr.results = {}
+  mp:Refresh()
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  ok(cf.list[1].can == 5 and cf.rows[1].total._text ~= "-", "bank only: 5")
+  I.char.bank = {} Cr.results = {}
+  mp:Refresh()
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh()
+  ok(cf.list[1].can == 0 and cf.list[1].total == nil and cf.rows[1].total._text == "-", "none to make with: Total -")
+  ok(W.sizeMaxDepth <= 1 and #W.sizeErrors == errs0, "no layout loop: OnSizeChanged never nested, no error")
+  -- Harvest
+  Put(km, 785, 80) Put(km, 2447, 50) Put(km, 765, 30)
+  Mk.craftProf = 197 mp:Refresh()
+  ok(not cf.modeHarvest:IsShown() and not cf.modeCrafts:IsShown(), "Tailoring: no Harvest switch")
+  Mk.craftProf = 182 mp:Refresh()
+  ok(cf.modeHarvest:IsShown() and cf.modeCrafts:IsShown(), "Herbalism: Crafts | Harvest")
+  W.Click(cf.modeHarvest)
+  ok(Mk.craftMode == "harvest" and cf.rows[1].cell.id == 785 and cf.rows[2].cell.id == 2447 and cf.rows[3].cell.id == 765 and cf.rows[4].low._text == "-"
+    and cf.rows[1].low._text == Sc.Money(80) and cf.head.harvest[1]:IsShown() and not cf.head.craft[1]:IsShown() and not cf.owned:IsShown()
+    and cf.status._text:find("herbs", 1, true) and #cf.list == Count(G[182].ids) and pg:IsShown(),
+    "Harvest: every herb, dearest first, unlisted after; its own columns; paged", cf.status._text)
+  Mk.craftProf = 186 mp:Refresh()
+  local bar = false for _, e in ipairs(cf.list) do if e.id == 2840 then bar = true end end
+  ok(Mk.craftMode == "harvest" and #cf.list == Count(G[186].ids) and not bar, "Mining's harvest: ores and stone, no bars")
+  W.Click(cf.modeCrafts)
+  ok(Mk.craftMode == "crafts" and cf.head.craft[1]:IsShown() and not cf.head.harvest[1]:IsShown(), "back to Crafts")
+  -- Top 10: hours, not scans; the message alone (no overlap)
+  local hm = Sc.Market("Hours", true)
+  local now = math.floor(W.now / 60) - hm.base
+  local s = math.floor(now / Sc.SLOT)
+  local a, b = (s - 5) * Sc.SLOT, s * Sc.SLOT + 1
+  hm.scans = { { t = a, kind = "full", n = 1, items = 1 }, { t = a + 16, kind = "full", n = 1, items = 1 }, { t = b, kind = "full", n = 1, items = 1 } }
+  Sc.AddPoint(hm, 1001, a, 100, 1, 1) Sc.AddPoint(hm, 1001, a + 16, 100, 1, 1) Sc.AddPoint(hm, 1001, b, 100, 1, 1)
+  hm.cur[1001] = ("%d,%d,%d,%d"):format(100, 1, 1, b)
+  local r1, f1, fulls, nextAt = Sc.Trending("Hours")
+  ok(fulls == 2 and #r1 == 0 and #f1 == 0 and nextAt == Sc.AbsTime(hm, (s + 1) * Sc.SLOT), "3 full scans, 2 of them in one hour: 2 hours (one point an hour); the next counts from the next hour", fulls)
+  Mk.house = "Hours"
+  mp:ShowSub("top")
+  local top = mp.subs.top
+  ok(top.empty:IsShown() and top.empty._text:find("3 different hours", 1, true) and top.empty._text:find("(you have 2)", 1, true) and top.empty._text:find("counts from", 1, true)
+    and not top.cols[1]:IsShown() and not top.cols[2]:IsShown(), "Top 10: needs 3 different hours, says when the next scan counts; no headers under it", top.empty._text)
+  hm.scans[#hm.scans + 1] = { t = (s - 2) * Sc.SLOT, kind = "full", n = 1, items = 1 }
+  Sc.AddPoint(hm, 1001, (s - 2) * Sc.SLOT, 100, 1, 1)
+  mp:Refresh()
+  ok(top.empty:IsShown() and top.empty._text:find("No price moved", 1, true) and not top.cols[1]:IsShown() and not top.cols[2]:IsShown(),
+    "3 hours, nothing moved: the message alone (Rising and Falling no longer drawn over it)", top.empty._text)
+  -- as it was
+  Sc.Houses().Hours, Sc.Houses().KnownTest = nil, nil
+  I.db.account.recipes, I.char.known, I.char.bags, I.char.bank, I.S.mineBank = keepStore, keepKnown, keepBags, keepBank, keepScope
+  C_TradeSkillUI, GetProfessions, GetProfessionInfo, IsPlayerSpell = TS, nil, nil, nil
+  Cr.Learned()
+  Mk.house, Mk.craftProf, Mk.craftMode = nil, nil, nil
+  ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == errs0, "v0.4.1.1 wrote nothing on the map; no handler error")
   end)()
 end
 

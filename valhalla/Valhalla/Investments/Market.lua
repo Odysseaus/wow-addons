@@ -1,8 +1,9 @@
 --------------------------------------------------------------------------------
 -- Investments > AH Market (v0.4.0): what your scans at the Auction House saw (Scan.lua), as four views:
 -- Top 10 (rising and falling over 7 days), My items (bags and bank: vendor or AH), History (one item's
--- lowest price over a day or a week), Scan results (every item of the last full scan), Craft (v0.4.1: the Top 10
--- crafts per profession by profit, Craft.lua).
+-- lowest price over a day or a week), Scan results (every item of the last full scan), Craft (v0.4.1: crafts per
+-- profession by profit, Craft.lua; v0.4.1.1: all the priced ones, paged, a profession dropdown, Harvest, Total).
+-- v0.4.1.1: Top 10 counts the hours with a full scan (history keeps one point an hour), says when the next counts.
 -- Every item is an item cell (Views.lua): its icon, name and the game's tooltip, with AH lines under it.
 -- My items and Scan results page (v0.4.0.1): as many rows as the window fits (6-20), page buttons under them.
 -- Each view is built once and listed before it's built; a resize lays out only its own rows (v0.4.0.2).
@@ -236,20 +237,24 @@ local function BuildTop(f, page)
 	end
 	function f.Refresh()
 		local house = M.House()
-		local rising, falling, fulls = S().Trending(house, M.TOP)
+		local rising, falling, fulls, nextAt = S().Trending(house, M.TOP)
 		local shown = {}
-		f.empty:SetShown(fulls < 3 or (#rising == 0 and #falling == 0))
+		-- (v0.4.1.1) the columns only with something in them; else the message alone (they shared the same corner)
+		local any = fulls >= 3 and (#rising > 0 or #falling > 0)
+		f.empty:SetShown(not any)
+		local when = (not nextAt or nextAt <= Now()) and L["now"] or (date and date("%H:%M", nextAt) or tostring(nextAt))
 		if fulls < 3 then
-			f.empty:SetText(L["Top 10 needs 3 full scans in 7 days (you have %d). Scan at the Auction House: the Scan button is on Valhalla's list beside it."]:format(fulls))
+			f.empty:SetText(L["Top 10 needs full scans in 3 different hours within 7 days (you have %d). History keeps one point an hour, so two scans in the same hour count once; your next full scan counts from %s. Scan at the Auction House: the Scan button is on Valhalla's list beside it."]:format(fulls, when))
 		else
-			f.empty:SetText(L["No price moved in your scans of the last 7 days."])
+			f.empty:SetText(L["No price moved in your scans of the last 7 days (full scans in %d different hours). Your next full scan counts from %s."]:format(fulls, when))
 		end
+		f.nextAt = nextAt
 		for c, list in ipairs({ rising, falling }) do
 			local col = f.cols[c]
-			col:SetShown(fulls >= 3)
+			col:SetShown(any)
 			for i, r in ipairs(col.rows) do
 				local e = list[i]
-				if e and fulls >= 3 then
+				if e and any then
 					r.cell:SetItem(e.id, M.Lines)
 					r.change:SetText(Pct(e.change))
 					r.change:SetTextColor(unpack(e.change > 0 and GREEN or RED))
@@ -562,12 +567,17 @@ local function BuildResults(f, page)
 end
 
 --------------------------------------------------------------------------------
--- Craft (v0.4.1): the Top 10 crafts of a profession by profit at the house shown (Craft.lua works it out)
--- Fixed rows (10) and no resize handler: nothing here lays out again when the window's size changes.
+-- Craft (v0.4.1, v0.4.1.1): every priced craft of a profession by profit at the house shown (Craft.lua works it
+-- out), paged like My items; a dropdown of all the professions (yours starred, first); Crafts | Harvest on the
+-- gathering ones. Built once (rows made by Paged as the view first needs them); a resize lays out only its own
+-- rows (Paged's guarded OnSizeChanged); nothing asks a size while building.
 --------------------------------------------------------------------------------
 
-M.CRAFT_ROWS, M.PROF_BUTTONS, M.PROF_PER_ROW = 10, 14, 7
+M.PROF_MAX = 16
+M.CRAFT_TOP = 116          -- (the rows start here; the status above may take two lines)
+M.CRAFT_STRIPS = 18        -- (a second line under the rows: Can't price and Not listed each have one)
 M.OWNED = { { "market", L["Market"] }, { "free", L["Owned free"] }, { "vendor", L["Owned: vendor"] } }
+local STAR = "|cffffd100*|r"
 
 local function BuildCraft(f, page)
 	local C = I.Craft
@@ -575,47 +585,104 @@ local function BuildCraft(f, page)
 	f.status:SetPoint("TOPLEFT", 8, -2)
 	f.status:SetPoint("RIGHT", f, "RIGHT", -8, 0)
 	f.status:SetJustifyH("LEFT")
+	f.status:SetJustifyV("TOP")
+	f.status:SetHeight(26)
+	if f.status.SetMaxLines then f.status:SetMaxLines(2) end   -- (two lines at most: never over the controls)
+	-- the profession: a dropdown (v0.4.1.1; was a row of buttons)
+	f.drop = V.Button(f, "", 230, 20)
+	f.drop:SetPoint("TOPLEFT", 8, -30)
+	local menu = CreateFrame("Frame", nil, f.drop, "BackdropTemplate")
+	menu:SetPoint("TOPLEFT", f.drop, "BOTTOMLEFT", 0, -2)
+	menu:SetWidth(230)
+	menu:SetFrameStrata("DIALOG")
+	T.Skin(menu, 0.98)
+	menu:EnableMouse(true)
+	menu.items = {}
+	for i = 1, M.PROF_MAX do
+		local it = V.Button(menu, "", 222, 20, function(self)
+			menu:Hide()
+			M.craftProf = self.prof
+			page:Refresh()
+		end)
+		it:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 22)
+		it:Hide()
+		menu.items[i] = it
+	end
+	menu:Hide()
+	f.menu = menu
+	f:HookScript("OnHide", function() menu:Hide() end)   -- (another view, the window closed: the menu goes too)
+	function f.FillMenu()
+		local profs = f.profs or {}
+		for i, it in ipairs(menu.items) do
+			local p = profs[i]
+			it.prof = p and p.key
+			if p then
+				it.text:SetText((p.key == M.craftProf and "> " or "") .. (p.mine and STAR .. " " or "") .. p.name
+					.. (p.secondary and " |cff999999" .. L["(secondary)"] .. "|r" or ""))
+				it:Show()
+			else
+				it:Hide()
+			end
+		end
+		menu:SetHeight(8 + math.min(#profs, M.PROF_MAX) * 22)
+	end
+	f.drop:SetScript("OnClick", function()
+		if menu:IsShown() then menu:Hide() else f.FillMenu() menu:Show() end
+	end)
+	-- Crafts | Harvest (Herbalism, Mining, Skinning, Fishing)
+	f.modeCrafts = V.Button(f, L["Crafts"], 70, 20, function() M.craftMode = "crafts" f.offset = 0 page:Refresh() end)
+	f.modeCrafts:SetPoint("TOPLEFT", 246, -30)
+	f.modeHarvest = V.Button(f, L["Harvest"], 70, 20, function() M.craftMode = "harvest" f.offset = 0 page:Refresh() end)
+	f.modeHarvest:SetPoint("TOPLEFT", 320, -30)
 	f.owned = V.Radio(f, L["Reagents:"], M.OWNED, function() return I.S.craftOwned or "market" end,
 		function(v) I.S.craftOwned = v page:Refresh() end)
-	f.owned:SetPoint("TOPLEFT", 8, -20)
+	f.owned:SetPoint("TOPLEFT", 8, -54)
 	f.known = V.Check(f, L["Known only"], function() return I.S.craftKnownOnly end, function(v) I.S.craftKnownOnly = v page:Refresh() end)
-	f.known:SetPoint("TOPLEFT", 8, -44)
+	f.known:SetPoint("TOPLEFT", 8, -76)
 	f.bank = V.Check(f, L["Count the bank"], function() return I.S.mineBank end, function(v) I.S.mineBank = v page:Refresh() end)
-	f.bank:SetPoint("TOPLEFT", 150, -44)
-	f.profButtons = {}
-	for i = 1, M.PROF_BUTTONS do
-		local b = V.Button(f, "", 90, 20, function(self) M.craftProf = self.prof page:Refresh() end)
-		b:SetPoint("TOPLEFT", 8 + ((i - 1) % M.PROF_PER_ROW) * 94, -66 - math.floor((i - 1) / M.PROF_PER_ROW) * 24)
-		b:Hide()
-		f.profButtons[i] = b
-	end
+	f.bank:SetPoint("TOPLEFT", 150, -76)
+	-- the two headers (crafts, harvest)
 	local head = CreateFrame("Frame", nil, f)
-	head:SetPoint("TOPLEFT", 4, -116)
-	head:SetSize(640, 18)
-	f.head = {
-		Column(head, L["Craft (makes)"], 2, 200, "LEFT"), Column(head, L["Cost"], 206, 80), Column(head, L["Sell at"], 290, 80),
-		Column(head, L["Profit/item"], 374, 90), Column(head, L["Margin"], 468, 56), Column(head, L["Listed"], 528, 50),
-		Column(head, L["Known"], 580, 40), Column(head, L["Can make"], 622, 56),
+	head:SetPoint("TOPLEFT", 4, -96)
+	head:SetSize(706, 18)
+	f.head = head
+	f.head.craft = {
+		Column(head, L["Craft (makes)"], 2, 176, "LEFT"), Column(head, L["Cost"], 182, 72), Column(head, L["Sell at"], 258, 72),
+		Column(head, L["Profit/item"], 334, 80), Column(head, L["Margin"], 418, 46), Column(head, L["Listed"], 468, 42),
+		Column(head, L["Known"], 512, 38, "CENTER"), Column(head, L["Can make"], 554, 56), Column(head, L["Total"], 614, 90),
 	}
-	f.rows = {}
-	for i = 1, M.CRAFT_ROWS do
+	f.head.harvest = {
+		Column(head, L["Item"], 2, 220, "LEFT"), Column(head, L["AH lowest"], 226, 90), Column(head, L["Listed"], 320, 60),
+		Column(head, L["Vendor"], 384, 80), Column(head, L["Have"], 468, 50), Column(head, L["7-day change"], 522, 80),
+	}
+	Paged(f, page, M.CRAFT_TOP + M.CRAFT_STRIPS, function(i)
 		local r = CreateFrame("Frame", nil, f)
-		r:SetSize(680, 24)
-		r:SetPoint("TOPLEFT", 4, -136 - (i - 1) * 25)
-		r.cell = V.ItemCell(r, 200)
+		r:SetSize(706, 24)
+		r:SetPoint("TOPLEFT", 4, -M.CRAFT_TOP - (i - 1) * M.ROW_H)
+		r.cell = V.ItemCell(r, 176)
 		r.cell:SetPoint("LEFT", 2, 0)
 		r.cell.onClick = function(id) M.ShowHistory(page, id) end
 		r.Lines = function() return r.e and C.Lines(r.e, r.house) or {} end
-		r.cost = Column(r, "", 206, 80)
-		r.sell = Column(r, "", 290, 80)
-		r.each = Column(r, "", 374, 90)
-		r.margin = Column(r, "", 468, 56)
-		r.listed = Column(r, "", 528, 50)
-		r.known = Column(r, "", 580, 40)
-		r.can = Column(r, "", 622, 56)
+		r.cost = Column(r, "", 182, 72)
+		r.sell = Column(r, "", 258, 72)
+		r.each = Column(r, "", 334, 80)
+		r.margin = Column(r, "", 418, 46)
+		r.listed = Column(r, "", 468, 42)
+		r.known = Column(r, "", 512, 38, "CENTER")
+		r.can = Column(r, "", 554, 56)
+		r.total = Column(r, "", 614, 90)
+		r.craftCols = { r.cost, r.sell, r.each, r.margin, r.listed, r.known, r.can, r.total }
+		r.low = Column(r, "", 226, 90)
+		r.hunits = Column(r, "", 320, 60)
+		r.vendor = Column(r, "", 384, 80)
+		r.have = Column(r, "", 468, 50)
+		r.change = Column(r, "", 522, 80)
+		r.harvestCols = { r.low, r.hunits, r.vendor, r.have, r.change }
 		r:Hide()
-		f.rows[i] = r
-	end
+		return r
+	end)
+	f.pager:ClearAllPoints()
+	f.pager:SetPoint("BOTTOMLEFT", 8, 44)   -- (above the two strips)
 	f.missing = Text(f, 11, GREY)
 	f.missing:SetPoint("BOTTOMLEFT", 8, 24)
 	f.missing:SetPoint("RIGHT", f, "RIGHT", -8, 0)
@@ -635,21 +702,43 @@ local function BuildCraft(f, page)
 		while #out > most do table.remove(out) end
 		return table.concat(out, ", ") .. (n > most and L[", and %d more"]:format(n - most) or "")
 	end
+	local function Mode(mode)
+		for _, c in ipairs(f.head.craft) do c:SetShown(mode == "crafts") end
+		for _, c in ipairs(f.head.harvest) do c:SetShown(mode == "harvest") end
+		for _, r in ipairs(f.rows) do
+			for _, c in ipairs(r.craftCols) do c:SetShown(mode == "crafts") end
+			for _, c in ipairs(r.harvestCols) do c:SetShown(mode == "harvest") end
+		end
+		f.owned:SetShown(mode == "crafts")
+		f.known:SetShown(mode == "crafts")
+	end
+	-- the list shown: another list (profession, house, scan, setting) starts on page 1
+	local function SetList(list, key)
+		if key ~= f.listKey then f.offset, f.listKey = 0, key end
+		f.list = list
+		f.Clamp()
+	end
 	local function Clear()
+		f.list = {}
 		for _, r in ipairs(f.rows) do r.e = nil r.cell:SetItem(nil) r:Hide() end
 		f.missing:SetText("") f.unlisted:SetText("")
+		f.UpdatePager()
 	end
-	function f.Refresh()
+	local function Money(v) return v and S().Money(v) or "-" end
+	local function Signed(fs, v)
+		if not v then fs:SetText("-") fs:SetTextColor(unpack(GREY)) return end
+		fs:SetText((v < 0 and "-" or "") .. S().Money(math.abs(v)))
+		fs:SetTextColor(unpack(v >= 0 and GREEN or RED))
+	end
+	function f.Refresh(keep)
 		local house = M.House()
 		f.owned.Update() f.known.Update() f.bank.Update()
 		local profs = C.Professions()
-		for i, b in ipairs(f.profButtons) do
-			local p = profs[i]
-			b.prof = p and p.key
-			if p then b.text:SetText(p.name) b:Show() else b:Hide() end
-		end
+		f.profs = profs
 		if #profs == 0 then
 			Clear()
+			f.drop.text:SetText(L["Profession  v"])
+			f.modeCrafts:Hide() f.modeHarvest:Hide()
 			f.status:SetText(L["No recipes yet: open a profession window once (any character); Valhalla reads its whole list for every character."])
 			return {}
 		end
@@ -657,35 +746,71 @@ local function BuildCraft(f, page)
 		for _, q in ipairs(profs) do if q.key == M.craftProf then p = q end end
 		p = p or profs[1]
 		M.craftProf = p.key
-		for _, b in ipairs(f.profButtons) do if b:IsShown() then T.Skin(b, 0.9, b.prof == p.key and GOLD or T.BRONZE) end end
+		f.drop.text:SetText((p.mine and STAR .. " " or "") .. p.name .. "  v")
+		if f.menu:IsShown() then f.FillMenu() end
+		local gather = C.GATHER[p.key] and C.GatherInfo(p.key)
+		local mode = (gather and M.craftMode == "harvest") and "harvest" or "crafts"
+		f.modeCrafts:SetShown(gather and true or false) f.modeHarvest:SetShown(gather and true or false)
+		T.Skin(f.modeCrafts, 0.9, mode == "crafts" and GOLD or T.BRONZE)
+		T.Skin(f.modeHarvest, 0.9, mode == "harvest" and GOLD or T.BRONZE)
+		Mode(mode)
 		local sc, at = S().LastScan(house, "full")
 		if not sc then
 			Clear()
 			f.status:SetText(L["No full scan of %s yet: scan at its Auction House (the Scan button is on Valhalla's list beside it)."]:format(house))
 			return {}
 		end
-		local opts = { owned = I.S.craftOwned or "market", bank = I.S.mineBank and true or false, knownOnly = I.S.craftKnownOnly and true or false }
+		local bank = I.S.mineBank and true or false
+		local shown = {}
+		if mode == "harvest" then
+			local h = C.Harvest(house, p.key, bank)
+			local m = S().Market(house)
+			SetList(h.list, ("harvest|%s|%s|%d"):format(house, tostring(p.key), m and #m.scans or 0))
+			for i, r in ipairs(f.rows) do
+				local e = i <= f.per and f.list[f.offset + i]
+				r.e = nil
+				if e then
+					r.cell:SetItem(e.id, M.Lines)
+					r.low:SetText(Money(e.low))
+					r.hunits:SetText(e.low and tostring(e.units) or "-")
+					r.vendor:SetText(e.vendor and e.vendor > 0 and S().Money(e.vendor) or "-")
+					r.have:SetText(tostring(e.have))
+					r.change:SetText(Pct(e.change))
+					r.change:SetTextColor(unpack(not e.change and GREY or e.change > 0 and GREEN or e.change < 0 and RED or GREY))
+					shown[#shown + 1] = e.id
+					r:Show()
+				else
+					r.cell:SetItem(nil)
+					r:Hide()
+				end
+			end
+			f.missing:SetText("") f.unlisted:SetText("")
+			f.status:SetText(L["%s: %d %s, %d listed at %s. AH lowest (before the cut), vendor price, what you have; full scan %s."]:format(
+				p.name, #h.list, h.label:lower(), h.listed, house, S().Age(at)))
+			f.UpdatePager()
+			return shown
+		end
+		local opts = { owned = I.S.craftOwned or "market", bank = bank, knownOnly = I.S.craftKnownOnly and true or false }
 		local res, done, of = C.Get(house, p.key, opts)
 		if not res then
 			Clear()
 			f.status:SetText(L["%s: reading %d recipes... %d/%d"]:format(p.name, #p.ids, done or 0, of or #p.ids))
 			return {}
 		end
-		local shown = {}
+		SetList(res.list or res.rows, C.CacheKey(house, p.key, opts))
 		for i, r in ipairs(f.rows) do
-			local e = res.rows[i]
-			r.e, r.house = e, house
+			local e = i <= f.per and f.list[f.offset + i]
+			r.e, r.house = e or nil, house
 			if e then
 				r.cell:SetItem(e.out, r.Lines)
 				r.cost:SetText(S().Money(e.cost))
 				r.sell:SetText(S().Money(e.sell))
-				r.each:SetText(S().Money(math.abs(e.each)))
-				r.each:SetTextColor(unpack(e.each >= 0 and GREEN or RED))
-				if e.each < 0 then r.each:SetText("-" .. S().Money(-e.each)) end
+				Signed(r.each, e.each)
 				r.margin:SetText(e.margin and ("%d%%"):format(math.floor(e.margin * 100 + 0.5)) or "-")
 				r.listed:SetText(tostring(e.listed))
-				r.known:SetText(e.known and "|cffffd100*|r" or "")
+				r.known:SetText(e.known and STAR or "")
 				r.can:SetText(tostring(e.can))
+				Signed(r.total, e.total)
 				shown[#shown + 1] = e.out
 				for _, part in ipairs(e.parts) do shown[#shown + 1] = part.id end
 				r:Show()
@@ -698,10 +823,11 @@ local function BuildCraft(f, page)
 		for _, e in ipairs(res.unlisted) do shown[#shown + 1] = e.out end
 		f.missing:SetText(#res.missing > 0 and L["Can't price (%d): no price for %s."]:format(#res.missing, Names(res.missing, "missing", 4)) or "")
 		f.unlisted:SetText(#res.unlisted > 0 and L["Not listed (%d): %s."]:format(#res.unlisted, Names(res.unlisted, "out", 4)) or "")
-		local src = p.source == "live" and L["from its profession window"] or L["bundled: open its window for the whole list"]
-		f.status:SetText(L["%s: %d recipes (%s). Top %d by profit per craft at %s, after its %d%% cut; full scan %s.%s"]:format(p.name, #p.ids, src,
-			C.SHOWN, house, math.floor(S().Cut(house) * 100 + 0.5), S().Age(at),
+		local src = p.source == "live" and L["from its profession window"] or L["client data"]
+		f.status:SetText(L["%s: %d recipes (%s), %d priced, by profit per craft at %s after its %d%% cut; full scan %s.%s"]:format(p.name, #p.ids, src,
+			res.ranked or #f.list, house, math.floor(S().Cut(house) * 100 + 0.5), S().Age(at),
 			(res.unknown > 0 and L[" %d unknown to this client."]:format(res.unknown) or "") .. (res.skipped > 0 and L[" %d skipped (enchants, bind on pickup)."]:format(res.skipped) or "")))
+		f.UpdatePager()
 		return shown
 	end
 end

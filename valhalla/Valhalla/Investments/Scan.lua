@@ -498,10 +498,10 @@ function S.Trending(house, max, step)
 	local last = m.scans[#m.scans]
 	local key = ("%d:%s:%d:%s"):format(#m.scans, last and last.t or "-", max, tostring(I.S.histDays))
 	local c = S.trendCache[house]
-	if c and c.key == key and c.m == m then return c.rising, c.falling, c.fulls end
-	local rising, falling, fulls = S.TrendingNow(house, max, step)
-	S.trendCache[house] = { key = key, m = m, rising = rising, falling = falling, fulls = fulls }
-	return rising, falling, fulls
+	if c and c.key == key and c.m == m then return c.rising, c.falling, c.fulls, c.nextAt end
+	local rising, falling, fulls, nextAt = S.TrendingNow(house, max, step)
+	S.trendCache[house] = { key = key, m = m, rising = rising, falling = falling, fulls = fulls, nextAt = nextAt }
+	return rising, falling, fulls, nextAt
 end
 
 function S.TrendingNow(house, max, step)
@@ -510,12 +510,20 @@ function S.TrendingNow(house, max, step)
 	local now = Now()
 	local from = now - 7 * 86400
 	local first
-	local fulls = 0
+	-- (v0.4.1.1) fulls: the hours with a full scan, not the scans: history keeps one point an hour (S.SLOT), so two
+	-- scans in one hour are one point. nextAt: when the next full scan starts a new hour (a new point).
+	local fulls, hours, last = 0, {}, nil
 	for _, sc in ipairs(m.scans) do
 		local t = S.AbsTime(m, sc.t)
-		if sc.kind == "full" and t >= from then fulls = fulls + 1 if not first or t < first then first = t end end
+		if sc.kind == "full" and t >= from then
+			local h = math.floor(sc.t / S.SLOT)
+			if not hours[h] then hours[h] = true fulls = fulls + 1 end
+			if not last or h > last then last = h end
+			if not first or t < first then first = t end
+		end
 	end
-	if fulls < 3 then return rising, falling, fulls end
+	local nextAt = last and S.AbsTime(m, (last + 1) * S.SLOT) or nil
+	if fulls < 3 then return rising, falling, fulls, nextAt end
 	local mid = (first + now) / 2
 	local k = 0
 	for id in pairs(m.hist) do
@@ -539,7 +547,7 @@ function S.TrendingNow(house, max, step)
 	table.sort(falling, function(x, y) if x.change ~= y.change then return x.change < y.change end if x.auctions ~= y.auctions then return x.auctions < y.auctions end return x.id < y.id end)
 	for k = #rising, max + 1, -1 do rising[k] = nil end
 	for k = #falling, max + 1, -1 do falling[k] = nil end
-	return rising, falling, fulls
+	return rising, falling, fulls, nextAt
 end
 
 -- an item's vendor price (what a merchant pays you): the game's sellPrice

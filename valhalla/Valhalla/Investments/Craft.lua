@@ -1,8 +1,9 @@
 --------------------------------------------------------------------------------
--- AH Market > Craft (v0.4.1): the Top 10 crafts per profession by profit at the Auction House shown.
--- Recipes: each profession's whole list as the game gives it when its window opens (any character, kept for
--- the account), and Data/Forever/Recipes.lua's bundled recipe IDs for professions not opened yet. Only IDs are
--- bundled: the output, its quantity and the reagents always come from the game (C_TradeSkillUI.
+-- AH Market > Craft (v0.4.1): every priced craft of a profession, by profit at the Auction House shown (v0.4.1.1:
+-- all of them, paged; was the Top 10).
+-- Recipes: Data/Forever/Recipes.lua's IDs from the client's own data tables (v0.4.1.1: all 12 professions), and a
+-- profession's list as the game gives it when its tab is shown in the professions window (it replaces the
+-- bundled one; any character, kept for the account). Only IDs are bundled: the output, its quantity and the reagents always come from the game (C_TradeSkillUI.
 -- GetRecipeSchematic, which answers with the profession window closed, learned or not).
 -- Per craft: sell = the output's lowest buyout (no undercut) x its quantity, less the house's cut (5%, 15% at
 -- a neutral house); cost = each reagent at the cheaper of the AH's lowest and a merchant you've visited (or,
@@ -10,6 +11,9 @@
 -- gives it back when the item sells (the tooltip shows it, estimated). A craft with a reagent nobody prices,
 -- or whose output isn't listed, isn't ranked: it's listed under the Top 10 instead. Enchants and bind-on-
 -- pickup outputs are skipped (they can't be sold on the AH).
+-- Known (v0.4.1.1): each recipe asked of the game (GetRecipeInfo's learned, else IsPlayerSpell): no window needed.
+-- Your professions (GetProfessions, else the skill lines) are starred and listed first.
+-- Harvest (v0.4.1.1): Herbalism, Mining, Skinning and Fishing's gathered items (bundled IDs) at the AH and a vendor.
 -- Reading and ranking run a little each frame (a coroutine, 8 ms), cached until a scan or a setting changes.
 --------------------------------------------------------------------------------
 
@@ -30,9 +34,15 @@ C.EVERY = 5                 -- recipes between looks at the clock (a recipe's re
 C.BUDGET = 8                -- ms a frame
 C.DEPOSIT_RATE, C.DEPOSIT_MIN, C.DEPOSIT_HOURS = 0.15, 100, 24   -- (est.: the AH check's 3 samples fit vendor x 15% a 12 h, 100c at least)
 -- the professions by their skill line (the game's IDs) and English name
+-- (v0.4.1.1: the 12 this client has; no Jewelcrafting or Inscription in WoW Forever's data)
 C.SKILL = { [171] = "Alchemy", [164] = "Blacksmithing", [333] = "Enchanting", [202] = "Engineering", [182] = "Herbalism",
 	[165] = "Leatherworking", [186] = "Mining", [393] = "Skinning", [197] = "Tailoring", [185] = "Cooking", [129] = "First Aid",
-	[356] = "Fishing", [755] = "Jewelcrafting", [773] = "Inscription" }
+	[356] = "Fishing" }
+C.SECONDARY = { [185] = true, [129] = true, [356] = true }
+C.GATHER = { [182] = true, [186] = true, [393] = true, [356] = true }
+-- each profession's "Classic" child line (the client's SkillLine table): its parent
+C.PARENT = { [2937] = 171, [2938] = 164, [2939] = 185, [2940] = 333, [2941] = 202, [2942] = 129, [2943] = 356, [2944] = 182,
+	[2945] = 165, [2946] = 186, [2947] = 393, [2948] = 197 }
 C.BYNAME = {}
 for id, name in pairs(C.SKILL) do C.BYNAME[name:lower()] = id end
 
@@ -43,9 +53,16 @@ local function Call(fn, ...)
 	return unpack(got, 2, table.maxn(got))
 end
 
+-- "id,id,..." as numbers (v0.4.1.1: kept by string, the bundle's lists are long; read-only to callers)
+local splits, nsplits = {}, 0
 local function Split(s)
-	local out = {}
-	for id in tostring(s or ""):gmatch("%d+") do out[#out + 1] = tonumber(id) end
+	s = tostring(s or "")
+	local out = splits[s]
+	if out then return out end
+	out = {}
+	for id in s:gmatch("%d+") do out[#out + 1] = tonumber(id) end
+	if nsplits > 64 then splits, nsplits = {}, 0 end
+	splits[s], nsplits = out, nsplits + 1
 	return out
 end
 
@@ -58,6 +75,7 @@ function C.Key(id, name)
 	end
 	if known then return known end
 	id = tonumber(id)
+	if id and C.PARENT[id] then return C.PARENT[id] end   -- (a child line, "Classic Cooking" 2939: Cooking)
 	if id and id > 0 then return id end
 	if name and name ~= "" then return name end
 end
@@ -117,10 +135,47 @@ function C.Professions()
 		local ids = Split(e.ids)
 		if #ids > 0 then byKey[key] = { key = key, name = e.name or C.SKILL[key] or tostring(key), ids = ids, source = "live", t = e.t } end
 	end
+	local mine = C.Mine()
 	local out = {}
-	for _, p in pairs(byKey) do if #p.ids > 0 then out[#out + 1] = p end end
-	table.sort(out, function(a, b) return a.name < b.name end)
+	for _, p in pairs(byKey) do
+		if #p.ids > 0 then
+			p.mine, p.secondary = mine[p.key] or false, C.SECONDARY[p.key] or false
+			out[#out + 1] = p
+		end
+	end
+	-- yours first, then the primary professions, then the secondary; each by name
+	local function Rank(p) return p.mine and 0 or p.secondary and 2 or 1 end
+	table.sort(out, function(a, b)
+		local x, y = Rank(a), Rank(b)
+		if x ~= y then return x < y end
+		return a.name < b.name
+	end)
 	return out
+end
+
+-- this character's professions: { [skill line] = true } (GetProfessions + GetProfessionInfo's skill line, else
+-- the skill list's names; cached until the skills change)
+function C.Mine()
+	if C.mine then return C.mine end
+	local set = {}
+	local got = { Call(GetProfessions) }
+	for i = 1, table.maxn(got) do
+		local idx = got[i]
+		if idx then
+			local info = { Call(GetProfessionInfo, idx) }
+			local key = C.Key(info[7], info[1])
+			if key and C.SKILL[key] then set[key] = true end
+		end
+	end
+	if not next(set) and type(GetNumSkillLines) == "function" then
+		for i = 1, (Call(GetNumSkillLines) or 0) do
+			local name, header = Call(GetSkillLineInfo, i)
+			local key = name and not header and C.BYNAME[tostring(name):lower()]
+			if key then set[key] = true end
+		end
+	end
+	C.mine = set
+	return set
 end
 
 function C.Profession(key) for _, p in ipairs(C.Professions()) do if p.key == key then return p end end end
@@ -130,6 +185,24 @@ function C.Known(key)
 	local set = {}
 	for _, id in ipairs(Split(KnownStore()[key])) do set[id] = true end
 	return set
+end
+
+-- v0.4.1.1: one recipe asked of the game, no window needed (GetRecipeInfo's learned, else IsPlayerSpell: a recipe
+-- is its spell). Cached until something is learned (C.Learned: the events in Invest.lua).
+C.gen, C.knownCache = 0, {}
+function C.IsKnown(id)
+	local v = C.knownCache[id]
+	if v ~= nil then return v end
+	local info = C_TradeSkillUI and Call(C_TradeSkillUI.GetRecipeInfo, id)
+	v = (type(info) == "table" and info.learned) and true or (Call(IsPlayerSpell, id) and true) or false
+	C.knownCache[id] = v
+	return v
+end
+function C.Learned()
+	C.gen = C.gen + 1
+	C.knownCache, C.mine = {}, nil
+	C.results = {}
+	I.Changed()
 end
 
 --------------------------------------------------------------------------------
@@ -247,14 +320,15 @@ function C.Rank(house, key, opts, step)
 			res.unknown = res.unknown + 1
 		elseif sch.skip then
 			res.skipped = res.skipped + 1
-		elseif opts.knownOnly and not known[id] then
+		elseif opts.knownOnly and not (known[id] or C.IsKnown(id)) then
 			-- (not this character's)
 		elseif BindType(sch.out) == 1 then
 			res.skipped = res.skipped + 1
 		else
 			res.total = res.total + 1
 			local e = C.Price(house, sch, opts, have)
-			e.known = known[id] or false
+			e.known = known[id] or C.IsKnown(id)
+			e.total = e.profit and e.can > 0 and e.profit * e.can or nil   -- (v0.4.1.1: profit per craft x can make)
 			if not e.sell then res.unlisted[#res.unlisted + 1] = e
 			elseif #e.missing > 0 then res.missing[#res.missing + 1] = e
 			else ranked[#ranked + 1] = e end
@@ -263,7 +337,7 @@ function C.Rank(house, key, opts, step)
 	end
 	table.sort(ranked, function(a, b) if a.profit ~= b.profit then return a.profit > b.profit end return a.id < b.id end)
 	for i = 1, math.min(C.SHOWN, #ranked) do res.rows[i] = ranked[i] end
-	res.ranked = #ranked
+	res.list, res.ranked = ranked, #ranked   -- (v0.4.1.1: all of them, paged)
 	return res
 end
 
@@ -281,6 +355,7 @@ function C.Lines(e, house)
 		if price then said[#said + 1] = price end
 		out[#out + 1] = ("  %s: %s = %s"):format(Name(r.id), table.concat(said, ", "), Money(r.cost))
 	end
+	if e.total then out[#out + 1] = L["Total for the %d you can make: %s"]:format(e.can, Money(e.total)) end
 	if e.sell then
 		out[#out + 1] = L["Sells at %s each x %s, less the %d%% cut: %s"]:format(Money(e.sell), tostring(e.qty), math.floor(S().Cut(house) * 100 + 0.5), Money(e.net))
 	end
@@ -300,8 +375,8 @@ function C.CacheKey(house, key, opts)
 	local m = S().Market(house)
 	local p = C.Profession(key)
 	local own = opts.owned ~= "market" and ("%s:%s"):format(tostring(I.char.bagsSeen), opts.bank and tostring(I.char.bankSeen) or "-") or ""
-	return ("%s|%s|%d|%s|%s|%s|%d|%s|%s"):format(tostring(house), tostring(key), m and #m.scans or 0, tostring(opts.owned), tostring(opts.bank),
-		tostring(opts.knownOnly), p and #p.ids or 0, own, tostring(KnownStore()[key] and #KnownStore()[key] or 0))
+	return ("%s|%s|%d|%s|%s|%s|%d|%s|%s|%d"):format(tostring(house), tostring(key), m and #m.scans or 0, tostring(opts.owned), tostring(opts.bank),
+		tostring(opts.knownOnly), p and #p.ids or 0, own, tostring(KnownStore()[key] and #KnownStore()[key] or 0), C.gen)
 end
 
 function C.Tick()
@@ -349,3 +424,33 @@ function C.Get(house, key, opts)
 end
 
 function C.Running() return C.job ~= nil end
+
+--------------------------------------------------------------------------------
+-- Harvest (v0.4.1.1): a gathering profession's items (bundled IDs), at the AH and a vendor, what you have
+--------------------------------------------------------------------------------
+
+function C.GatherInfo(key)
+	local g = ns.Recipes and ns.Recipes.gather and ns.Recipes.gather[key]
+	if not g then return nil end
+	return { label = g.label, ids = Split(g.ids) }
+end
+
+-- { list = { {id, low, units, vendor, have, change} }, listed, label }: dearest first, unlisted last (by id)
+function C.Harvest(house, key, withBank)
+	local g = C.GatherInfo(key)
+	if not g then return nil end
+	local have = C.Have(withBank)
+	local list, listed = {}, 0
+	for _, id in ipairs(g.ids) do
+		local low, c = S().Lowest(house, id)
+		local e = { id = id, low = low, units = c and c.units or 0, vendor = S().SellPrice(id), have = have[id] or 0 }
+		if low then listed = listed + 1 e.change = I.Market and I.Market.Change and I.Market.Change(house, id) end
+		list[#list + 1] = e
+	end
+	table.sort(list, function(a, b)
+		if (a.low ~= nil) ~= (b.low ~= nil) then return a.low ~= nil end
+		if a.low and a.low ~= b.low then return a.low > b.low end
+		return a.id < b.id
+	end)
+	return { list = list, listed = listed, label = g.label }
+end
