@@ -325,6 +325,37 @@ local function Rows()
 			function() return mod.GetReopenView() == mode end,
 			function() db.reopenView = mode mod:Refresh() end)
 	end
+	-- (v0.4.2.4) a quest clicked (QuestFly.lua): how the map gets there, how fast, where it lands, short trips
+	local function choose(heading, key, choices, current)
+		rows[#rows + 1] = { heading }
+		for _, c in ipairs(choices) do
+			local value = c[1]
+			rows[#rows + 1] = row(c[2], key .. "." .. value, Icon(c[3]), function() return current() == value end,
+				function() db[key] = value mod:Refresh() if ns.NotifyOptions then ns.NotifyOptions() end end)
+			if c[4] then rows[#rows].note = c[4] end
+		end
+	end
+	local QF = mod.QuestFly
+	if QF then
+		choose(L["Quest click (choose one)"], "questFly", {
+			{ "fly", L["Fly to it"], "Ability_Mount_Gryphon_01", L["Zoom out, glide over, zoom in"] },
+			{ "jump", L["Jump to it"], "Spell_Arcane_Blink", L["Straight there"] },
+			{ "blizzard", L["As Blizzard"], "INV_Misc_Map_01", L["The quest's whole zone, no flight"] },
+		}, QF.Mode)
+		choose(L["Flight speed (choose one)"], "questFlySpeed", {
+			{ "slow", L["Slow"], "Spell_Nature_Swiftness", L["About 0.9 - 3 s"] },
+			{ "normal", L["Normal"], "Spell_Nature_Swiftness", L["About 0.6 - 2 s"] },
+			{ "fast", L["Fast"], "Spell_Nature_Swiftness", L["About 0.4 - 1.2 s"] },
+		}, QF.Speed)
+		choose(L["Quest landing (choose one)"], "questFlyLanding", {
+			{ "zone", L["Whole zone"], "INV_Misc_Map_01", L["Centred on the quest"] },
+			{ "close", L["Close-up"], "INV_Misc_Spyglass_02", L["About twice as close"] },
+		}, function() return db.questFlyLanding == "close" and "close" or "zone" end)
+		choose(L["Short trips (choose one)"], "questFlyShort", {
+			{ "auto", L["Zoom out by distance"], "Ability_Hunter_Pathfinding", L["A short hop barely zooms out"] },
+			{ "out", L["Always zoom out"], "INV_Misc_PocketWatch_01", L["Every flight rises at least 2x"] },
+		}, function() return db.questFlyShort == "out" and "out" or "auto" end)
+	end
 	rows[#rows + 1] = { L["Sharing"] }
 	fromOptions(L["Pins others share with you"], "pinsShared", Icon("INV_Misc_Map_01"))
 	rows[#rows + 1] = optRow(L["Share where you are"], "friendsShare", Icon("Ability_Hunter_EagleEye"))

@@ -1172,7 +1172,11 @@ function O.ReadyClick(q)
 	if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then Call(C_SuperTrack.SetSuperTrackedQuestID, q) end
 	if not InCombat() then
 		local open = rawget(_G, "QuestMapFrame_OpenToQuestDetails")
-		if open then pcall(open, q) end
+		if open then pcall(open, q) end   -- (the map's quest fly-to follows Blizzard's details: Map/QuestFly.lua)
+	else
+		-- (v0.4.2.4) in combat, with the map open: the fly-to alone (Blizzard's details still wait)
+		local wm = ns.GetModule and ns:GetModule("worldmap")
+		if wm and wm.FlyToQuest then pcall(wm.FlyToQuest, q) end
 	end
 end
 

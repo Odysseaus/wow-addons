@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2.4", date = "2026-11-11", heads = { [1] = "New", [5] = "Settings", [8] = "Note", }, items = {
+		"|cff6e2c0aFly to a quest|r: click a quest title in the tracker or the quest log, a Ready to Turn In row, or a quest icon on the Valhalla map, and the map flies there in one smooth move: out as far as the trip needs, across, and down onto the quest, then a ping.",
+		"It goes where the game's own marker is: the objective, the turn-in once the quest is complete, or the next stop of a route (a boat, a portal). A dungeon's quest flies to the dungeon's entrance. A quest the game shows only as a zone lands on the whole zone; one with no place at all says No map location for this quest.",
+		"With the map closed it starts from your character. Drag, the mouse wheel, Back, closing the map or putting another map up stops it at once. It runs in combat too (the map's zone switch underneath still waits for the fight's end, as before).",
+		"Hooked after Blizzard's own quest click, never replacing it: the quest log and its buttons work as before.",
+		"|cff6e2c0aMore tab|r: Quest click (Fly to it, Jump to it, As Blizzard), Flight speed (Slow, Normal, Fast), Quest landing (Whole zone, Close-up) and Short trips (Zoom out by distance, Always zoom out).",
+		"Defaults: Fly to it, Normal, Whole zone, Zoom out by distance.",
+		"The quest icons' old 0.4 s glide is now the flight (As Blizzard keeps the glide).",
+		"A /reload is not enough this time: two new files (Map/FlyPath.lua, Map/QuestFly.lua). Restart the game after installing.",
+	} },
 	{ version = "v0.4.2.3", date = "2026-11-11", heads = { [1] = "New", [6] = "Note", }, items = {
 		"|cff6e2c0aTop 10, filtered|r: All | Crafted | Harvested above AH Market's Top 10, and a profession to pick (yours starred). Mining is under Harvested only.",
 		"With one profession picked, a Level dropdown: All levels, 1-150, 151-225, 226-300 or 301-375+ (one at a time). It opens to the right of the lists, over no prices.",

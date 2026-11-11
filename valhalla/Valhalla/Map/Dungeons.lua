@@ -1148,6 +1148,14 @@ function mod.ReturnView(newMapID)
 	if e and e.u then return e.u, e.v, math.max(mod.FitZoom(newMapID) * 2, 6) end
 end
 
+-- a dungeon's entrance on the stitched map (normalized), for a quest whose map is the dungeon's (v0.4.2.4,
+-- QuestFly.lua: dungeon quests fly to the entrance); nil for any other map or an entrance not placed
+function mod.DungeonEntrance(mapID)
+	if not IsDungeonMap(mapID) then return end
+	local e = Index()[mapID]
+	if e and e.u then return e.u, e.v end
+end
+
 -- a map off the stitched world (Zephras Isle, from the Dalaran skydock: Stitch.lua's docks), opened as
 -- a dungeon's is: the game's own map of it in the window, the world as it was on the way back out
 function mod.OpenAwayMap(mapID)

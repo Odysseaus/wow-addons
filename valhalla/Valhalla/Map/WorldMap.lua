@@ -212,11 +212,14 @@ end
 -- and a drag mid-zoom just carries that point with the cursor.
 --   anchor: wheel zoom about a world point held at a view offset
 --   glide:  click zoom from one view to another, as one zoom about a fixed point
+--   fly:    a quest's place (v0.4.2.4, QuestFly.lua): zoom out, glide over, zoom in, one smooth
+--           path (FlyPath.lua); stopped by a grab, the wheel, the gamepad, Back, a map put up, closing
 --------------------------------------------------------------------------------
 
 local ZOOM_RATE = 14            -- the wheel zoom's approach, per second (in log zoom)
 local GLIDE_TIME = 0.4
 local anim                      -- the running animation, or nil
+local live                      -- { u, v, zoom, width, height }: the view on screen, and the view's size then
 
 -- the gamepad's cursor on the map (Blizzard's SoftCursor, in gamepad mode), in screen px as
 -- GetCursorPosition: while it's what's in use. That's from when it shows or moves until the
@@ -337,6 +340,36 @@ local function GlideTo(u, v, zoom)
 	userMoved = true
 end
 
+-- flies the view to a world point (normalized) at `zoom` (v0.4.2.4): from the view now (or o.from = { u, v,
+-- zoom }), along FlyPath's path in world px (x = u W, y = v H; a view's width there: the view's px over px a
+-- unit). o: speed ("slow" | "normal" | "fast"), zoomOut (rise at least this many times out), id (the
+-- quest's), onDone (on landing). Returns the flight's duration
+local flights = 0                 -- flights started (each its own number: anim.n)
+local function FlyTo(u, v, zoom, o)
+	o = o or {}
+	local u0, v0, z0
+	if o.from then u0, v0, z0 = o.from[1], o.from[2], o.from[3] else u0, v0, z0 = View() end
+	local P = ns.FlyPath
+	local W, H = S.Size()
+	local span = sc:GetWidth() / FitPx()          -- (the view's width in world px at zoom 1)
+	local z1 = Clamp(zoom, LeastZoom(), MaxZoomAt(u, v))
+	z0 = math.max(z0, LeastZoom())
+	local args = { u0 * W, v0 * H, span / z0, u * W, v * H, span / z1 }
+	local path
+	if o.zoomOut and o.zoomOut > 1 then
+		args[7] = o.zoomOut
+		path = P.ZoomOut(unpack(args))
+	else
+		path = P.New(unpack(args))
+	end
+	local dur = P.Duration(path:Length(), o.speed)
+	flights = flights + 1
+	anim = { mode = "fly", flight = P.Flight(path, dur), W = W, H = H, span = span, u1 = u, v1 = v, z1 = z1,
+		id = o.id, onDone = o.onDone, n = flights, at = GetTime() }
+	userMoved = true
+	return dur
+end
+
 -- the gamepad's zoom stick: a steady rate in log zoom, about its cursor (Blizzard's adds a fixed
 -- scale a second, which at the stitched map's depths is too slow zoomed in, too fast out)
 local PAD_ZOOM_RATE = 1.8       -- per second at full tilt (in log zoom: 6x a second)
@@ -362,7 +395,10 @@ end
 local function Animate(_, elapsed)
 	if active and (sc.gamepadZoom or 0) ~= 0 then return PadZoom(elapsed) end
 	-- the gamepad's cursor at the view's edge pans it (Blizzard's): a move of the user's
-	if active and sc.HasGamepadScrollSpeed and sc:HasGamepadScrollSpeed() then userMoved = true end
+	if active and sc.HasGamepadScrollSpeed and sc:HasGamepadScrollSpeed() then
+		userMoved = true
+		if anim and anim.mode == "fly" then anim = nil end   -- (the pad's own pan: a flight stops where it is)
+	end
 	if not anim then return end
 	if not active then anim = nil return end
 	local a = anim
@@ -385,6 +421,21 @@ local function Animate(_, elapsed)
 		local pu, pv = PerPx(zoom)
 		ShowWorld(a.u - a.sx * pu, a.v - a.sy * pv, zoom)
 		if done then anim = nil end
+	elseif a.mode == "fly" then
+		local x, y, w, done = a.flight:Step(elapsed)
+		if done then
+			anim = nil
+			ShowWorld(a.u1, a.v1, a.z1)
+			if a.onDone then
+				local ok, err = pcall(a.onDone)
+				if not ok then geterrorhandler()(err) end
+			end
+		else
+			ShowWorld(x / a.W, y / a.H, Clamp(a.span / w, LeastZoom(), math.max(a.z1, MaxZoomAt(x / a.W, y / a.H))))
+		end
+		-- (the view on screen kept with the flight, not a frame behind: a quest clicked mid-flight, or Back, starts
+		-- from exactly here)
+		if live then live[1], live[2], live[3] = View() end
 	else
 		a.t = math.min(1, a.t + elapsed / GLIDE_TIME)
 		local e = a.t * a.t * (3 - 2 * a.t)
@@ -613,7 +664,7 @@ end
 
 -- the view for Close.lua (minimap, grain, caves): centre, half extents (normalized), zoom
 -- (Blizzard reports a pan several times a frame: the work is done once, on the next frame)
-local live                      -- { u, v, zoom, width, height }: the view on screen, and the view's size then
+-- (live, the view on screen: declared above, with anim)
 local viewFrame = CreateFrame("Frame")
 viewFrame:Hide()
 viewFrame:SetScript("OnUpdate", Ours("view update", function(self)
@@ -717,9 +768,11 @@ end
 -- map put up while it's open (the quest log's, the dropdown's) shows whole, as Blizzard's does
 local beforeReset                 -- the view on screen when Blizzard last put up a map: { u, v, zoom, at = GetTime() }
 local resize                      -- the window's corner being dragged: { left, scroll } (FollowResize)
+local resets = 0                  -- views Blizzard has put up (a flight cut by one, the same moment it began, starts again: QuestFly.lua)
 local function ResetView(self)
 	userMoved = false
 	anim = nil
+	resets = resets + 1
 	if live and map:IsShown() then beforeReset = { live[1], live[2], live[3], at = GetTime() } end
 	local u, v, zoom
 	if resize and live and map:IsShown() then
@@ -938,7 +991,7 @@ end
 -- the map was grabbed (on it or on one of our icons)
 local function OnGrab()
 	userMoved = true
-	if anim and anim.mode == "glide" then anim = nil end   -- a grab stops a glide where it is
+	if anim and (anim.mode == "glide" or anim.mode == "fly") then anim = nil end   -- a grab stops a glide or a flight where it is
 end
 
 local function OnPinMouseDown(_, button)
@@ -1093,6 +1146,7 @@ local function Setup()
 	-- puts up shows whole: the view from just before that comes back
 	if QuestMapFrame_ReturnFromQuestDetails then
 		hooksecurefunc("QuestMapFrame_ReturnFromQuestDetails", function()
+			if anim and anim.mode == "fly" then anim = nil end   -- (Back: a quest's flight stops)
 			local b = beforeReset
 			if b and b.at == GetTime() and active and map:IsShown() then mod.ShowNow(b[1], b[2], b[3]) end
 		end)
@@ -1113,6 +1167,7 @@ local function Setup()
 	end
 	dp.OnHide = function()
 		live = nil
+		if anim and anim.mode == "fly" then anim = nil end   -- (closed mid-flight: it doesn't go on next time)
 		if mod.OnMapHidden then mod:OnMapHidden() end
 		ticker:Hide()
 	end
@@ -1127,6 +1182,7 @@ local function Setup()
 		if mod.OnMapShown then mod:OnMapShown() end
 	end)
 	dp.OnShow = function()
+		mod.shownAt = GetTime()                -- (QuestFly.lua: a quest clicked with the map closed opened it just now)
 		if debugprofilestop then openStart, openOurs, openFrames, openParts = debugprofilestop(), 0, 0, {} openTimer:Show() end
 		AfterOpening()
 		shown()
@@ -1142,6 +1198,7 @@ local function Setup()
 	Timed("Pins", mod.SetupPins, mod, map)
 	Timed("Friends", mod.SetupFriends, mod, map)
 	Timed("Quests", mod.SetupQuests, mod, map)
+	Timed("QuestFly", mod.SetupQuestFly, mod, map)
 	Timed("Dungeons", mod.SetupDungeons, mod, map)
 	Timed("Combat", mod.SetupCombat, mod, map)
 	Timed("News", mod.SetupNews, mod)
@@ -1213,6 +1270,15 @@ function mod.PanTo(u, v)
 	sc.targetScrollY = Clamp(y, sc.scrollYExtentsMin, sc.scrollYExtentsMax)
 end
 function mod.Animating() return anim ~= nil end
+-- the quest fly-to (QuestFly.lua): a flight to a world point (normalized) at a zoom, from the view now or
+-- o.from; the running flight's id and number; stop it; the view last drawn (before a map put up this
+-- frame, nil before the first); Blizzard's view resets so far
+function mod.FlyTo(u, v, zoom, o) if active then return FlyTo(u, v, zoom, o) end end
+function mod.Flying() if anim and anim.mode == "fly" then return anim.id, anim.n, anim.at end end
+function mod.StopFlying() if anim and anim.mode == "fly" then anim = nil end end
+function mod.LastView() if active and live and map:IsShown() then return live[1], live[2], live[3] end end
+function mod.Resets() return resets end
+function mod.MaxZoomAt(u, v) if sc then return MaxZoomAt(u, v) end end
 function mod.FitZoom(mapID) return FitZoom(mapID) end
 -- the deepest zoom (the menu's slider and the options): the zoom levels are rebuilt for it
 function mod.SetMaxZoom(v)
@@ -1507,6 +1573,7 @@ function mod:Options()
 	}
 	if mod.ExtraOptions then mod:ExtraOptions(opts, get, set, off) end
 	if mod.NavOptions then mod:NavOptions(opts, get, set, off) end
+	if mod.QuestFlyOptions then mod:QuestFlyOptions(opts, get, set, off) end
 	if mod.PinOptions then mod:PinOptions(opts, get, set, off) end
 	if mod.FriendsOptions then mod:FriendsOptions(opts, get, set, off) end
 	if mod.DungeonOptions then mod:DungeonOptions(opts, get, set, off) end

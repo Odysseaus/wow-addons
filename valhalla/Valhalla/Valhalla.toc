@@ -16,7 +16,7 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: v0.4.2.3
+## Version: v0.4.2.4
 ## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
@@ -77,6 +77,7 @@ Data\Forever\Changelog.lua
 # The map
 Map\Stitch.lua
 Map\Chart.lua
+Map\FlyPath.lua
 Map\WorldMap.lua
 Map\Close.lua
 Map\Extras.lua
@@ -84,6 +85,7 @@ Map\Flights.lua
 Map\Routes.lua
 Map\Townsfolk.lua
 Map\Quests.lua
+Map\QuestFly.lua
 Map\Dungeons.lua
 Map\Paint.lua
 Map\Sketch.lua

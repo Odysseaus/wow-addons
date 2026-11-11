@@ -68,7 +68,10 @@ local function Click(pin)
 		end
 		C_SuperTrack.SetSuperTrackedQuestID(q.id)
 	end
-	if S.GlideToWorld then S.GlideToWorld(pin.u, pin.v, ZOOM_TO) end
+	-- (v0.4.2.4) the quest fly-to's way there (QuestFly.lua: fly, or jump, by the setting); As Blizzard: the glide
+	if not (mod.QuestIconClick and mod.QuestIconClick(q.id, pin.u, pin.v, q.map)) and S.GlideToWorld then
+		S.GlideToWorld(pin.u, pin.v, ZOOM_TO)
+	end
 	-- (in combat with the gamepad's UI, Blizzard's quest details would set the pad's buttons from
 	-- Valhalla's code, which combat blocks: they wait, as a dungeon's map does)
 	if mod.PadWaits and mod.PadWaits() then return end
@@ -123,7 +126,7 @@ function mod:RefreshQuests()
 					if key and not seen[key] and not onHost then
 						seen[key] = true
 						local complete = C_QuestLog.IsComplete and C_QuestLog.IsComplete(id) or false
-						local pin = S.AddPin(set, u, v, BADGE, { id = id, complete = complete })
+						local pin = S.AddPin(set, u, v, BADGE, { id = id, complete = complete, map = mapID })
 						Mark(pin, complete)
 						pin:SetScript("OnEnter", Enter)
 						pin:SetScript("OnLeave", GameTooltip_Hide)
