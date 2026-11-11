@@ -30,7 +30,8 @@ Style.ORDER = { "profession", "norse" }
 Style.THEMES = {
 	profession = {
 		key = "profession", label = "Profession",
-		text = GOLD, hover = WHITE, selected = WHITE, highlight = { 1, 0.85, 0.45, 0.16 },
+		text = GOLD, hover = WHITE, selected = WHITE, dim = { 0.72, 0.63, 0.45 }, highlight = { 1, 0.85, 0.45, 0.16 },
+		lit = { glow = { 1, 0.78, 0.3, 0.2 }, edge = { 1, 0.82, 0.35, 0.95 } },   -- (a toggle's chosen one)
 		button = { left = "128-redbutton-left-c60", mid = "_128-redbutton-center-c60", right = "128-redbutton-right-c60",
 			leftW = 114, rightW = 292, artH = 128, color = { 0.42, 0.07, 0.05, 1 } },
 		square = { minus = "128-redbutton-minus-c60", plus = "128-redbutton-plus-c60",
@@ -54,7 +55,7 @@ Style.THEMES = {
 	},
 	norse = {
 		key = "norse", label = "Norse",
-		text = GOLD, hover = { 1, 0.93, 0.62 }, selected = { 1, 0.9, 0.55 }, highlight = { 0.85, 0.6, 0.3, 0.18 },
+		text = GOLD, hover = { 1, 0.93, 0.62 }, selected = { 1, 0.95, 0.72 }, dim = { 0.7, 0.62, 0.45 }, highlight = { 0.85, 0.6, 0.3, 0.18 },
 		iron = { top = { 0.25, 0.22, 0.19 }, bottom = { 0.10, 0.09, 0.08 } },
 		edge = { 0.69, 0.5, 0.25 }, edgeOn = { 1, 0.8, 0.35 }, glow = { 1, 0.72, 0.25, 0.22 },
 		arrow = { left = "common-icon-backarrow", right = "common-icon-forwardarrow", size = 13 },
@@ -268,7 +269,9 @@ function Style.Select(w, on)
 	local vh = w and w.vh
 	if not vh then return w end
 	on = on and true or nil
-	if vh.selected ~= on then vh.selected = on Apply(w) end
+	local first = not vh.toggle
+	vh.toggle = true   -- (one of a set: the chosen one bright, the others dimmed)
+	if vh.selected ~= on or first then vh.selected = on Apply(w) end
 	return w
 end
 
@@ -287,7 +290,8 @@ local function TextColor(w, vh, th)
 	local c = th.text
 	if vh.state.off then c = GREY
 	elseif vh.selected then c = th.selected
-	elseif vh.state.hover then c = th.hover end
+	elseif vh.state.hover then c = th.hover
+	elseif vh.toggle and (vh.as or "button") == "button" then c = th.dim or c end
 	fs:SetTextColor(c[1], c[2], c[3])
 end
 
@@ -324,13 +328,14 @@ local function Highlight(w, th, inset)
 end
 
 -- Norse: dark iron, a bronze edge (gold while lit), a bevel's light line
-local function Iron(w, vh, th, lit, inset)
+local function Iron(w, vh, th, lit, inset, dim)
 	inset = inset or 0
 	local bg = Part(w, "iron", "BACKGROUND", -7)
 	bg:SetPoint("TOPLEFT", inset, -inset)
 	bg:SetPoint("BOTTOMRIGHT", -inset, inset)
 	local top, bottom = th.iron.top, th.iron.bottom
 	if vh.state.down then top, bottom = bottom, top end
+	if dim then top, bottom = { top[1] * 0.7, top[2] * 0.7, top[3] * 0.7 }, { bottom[1] * 0.7, bottom[2] * 0.7, bottom[3] * 0.7 } end
 	Gradient(bg, top, bottom)
 	local bevel = Part(w, "bevel", "BORDER", 2)
 	bevel:SetPoint("TOPLEFT", inset + 2, -inset - 2)
@@ -338,7 +343,8 @@ local function Iron(w, vh, th, lit, inset)
 	bevel:SetHeight(1)
 	Color(bevel, { 1, 0.9, 0.7, 0.12 })
 	local e = (lit or vh.state.hover) and th.edgeOn or th.edge
-	Edge(w, { e[1], e[2], e[3], 1 }, inset, 1)
+	local k = (dim and not vh.state.hover) and 0.6 or 1
+	Edge(w, { e[1] * k, e[2] * k, e[3] * k, 1 }, inset, 1)
 	if lit then
 		local glow = Part(w, "glow", "BORDER", 3)
 		glow:SetPoint("TOPLEFT", inset + 1, -inset - 1)
@@ -435,14 +441,7 @@ APPLY.button = function(w, vh, th)
 				t.capW * h / t.artH, t.capW * h / t.artH, { 0.12, 0.1, 0.08, 1 }, vh.pos == "top")
 			Highlight(w, th, 4)
 		else
-			Iron(w, vh, th, lit)
-			-- the shield's point, under its middle
-			local pt = Part(w, "point", "BORDER", 4)
-			pt:SetSize(9, 9)
-			pt:SetPoint("CENTER", w, "BOTTOM", 0, 0)
-			local e = lit and th.edgeOn or th.edge
-			Color(pt, { e[1], e[2], e[3], 1 })
-			if not (pt.SetRotation and pcall(pt.SetRotation, pt, math.pi / 4)) then vh.used.point = nil end
+			Iron(w, vh, th, lit, nil, not lit)   -- (the current one: a gold edge and glow; the others dimmer)
 		end
 		ShowText(w, true)
 		return   -- (the window's tabs colour their own labels: Tabs.lua)
@@ -542,16 +541,28 @@ APPLY.button = function(w, vh, th)
 	if prof then
 		local b = th.button
 		local h = vh.h or 22
-		local sfx = vh.state.off and "disabled" or (vh.state.down or lit) and "pressed" or nil
+		-- a toggle's chosen one: the bright art with a gold glow and edge; the others: the pressed (darker) art
+		local dim = vh.toggle and not lit
+		local sfx = vh.state.off and "disabled" or (vh.state.down or dim) and "pressed" or nil
 		local l, m, r = b.left, b.mid, b.right
 		if sfx then
 			local vl = Variant(l, sfx)
 			if Style.Atlas(vl) then l, m, r = vl, Variant(m, sfx), Variant(r, sfx) end
 		end
 		Three(w, vh, l, m, r, b.leftW * h / b.artH, b.rightW * h / b.artH, b.color)
+		if dim then
+			for _, k in ipairs({ "3L", "3M", "3R" }) do local t = vh.parts[k] if t and vh.used[k] and t.SetVertexColor then t:SetVertexColor(0.78, 0.74, 0.7, 1) end end
+		end
+		if lit then
+			local g = Part(w, "glow", "BORDER", 3)
+			g:SetPoint("TOPLEFT", 3, -3) g:SetPoint("BOTTOMRIGHT", -3, 3)
+			Color(g, th.lit.glow)
+			if g.SetBlendMode then g:SetBlendMode("ADD") end
+			Edge(w, th.lit.edge, 1, 1)
+		end
 		Highlight(w, th, 3)
 	else
-		Iron(w, vh, th, lit)
+		Iron(w, vh, th, lit, nil, vh.toggle and not lit)
 	end
 	ShowText(w, true)
 	TextColor(w, vh, th)

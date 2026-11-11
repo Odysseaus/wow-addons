@@ -1937,7 +1937,21 @@ print("== 32. v0.4.2: the look (UI/Style.lua): Profession by default, Norse from
   ok(Mk.ROW_H == 25 and Mk.MIN_ROWS == 6 and Mk.MAX_ROWS == 20 and Mk.BELOW == 52 and Mk.FitRows(600, 134) == 16, "fit rows as before: 25 px rows, 6 to 20", Mk.FitRows(600, 134))
   ok(cf.pager.first._w == 30 and cf.drop._w == 230 and cf.modeCrafts._w == 70, "sizes unchanged")
   T.Skin(cf.modeHarvest, 0.9, T.GOLD) T.Skin(cf.modeCrafts, 0.9, T.BRONZE)
-  ok(cf.modeHarvest.vh.selected and not cf.modeCrafts.vh.selected and cf.modeHarvest.vh.parts["3L"]._atlas == "128-redbutton-left-pressed-c60", "Harvest chosen: lit (pressed art)")
+  local hv, cr = cf.modeHarvest.vh, cf.modeCrafts.vh
+  ok(hv.selected and not cr.selected and hv.parts["3L"]._atlas == "128-redbutton-left-c60" and hv.parts.glow:IsShown() and hv.parts.glow._blend == "ADD" and hv.parts.eT:IsShown() and hv.parts.eT._color[1] == 1,
+    "Harvest chosen: the bright red art, a gold glow and edge")
+  ok(cf.modeHarvest.text._tc[1] == 1 and cf.modeHarvest.text._tc[2] == 1 and cf.modeHarvest.text._tc[3] == 1, "the chosen one's text: bright (white)")
+  ok(cr.parts["3L"]._atlas == "128-redbutton-left-pressed-c60" and cr.parts["3L"]._vc[1] < 1 and not (cr.parts.glow and cr.parts.glow:IsShown()) and not (cr.parts.eT and cr.parts.eT:IsShown()), "Crafts (not chosen): the darker pressed art, dimmed, no glow or edge")
+  ok(cf.modeCrafts.text._tc[1] == 0.72 and cf.modeCrafts.text._tc[3] == 0.45, "the one not chosen: grey-gold text")
+  W.Run(cf.modeCrafts, "OnEnter")
+  ok(cf.modeCrafts.text._tc[1] == 1 and cf.modeCrafts.text._tc[3] == 1, "hovered: bright text (still a button)")
+  W.Run(cf.modeCrafts, "OnLeave")
+  T.Skin(cf.modeCrafts, 0.9, T.GOLD) T.Skin(cf.modeHarvest, 0.9, T.BRONZE)
+  ok(cr.selected and cr.parts["3L"]._atlas == "128-redbutton-left-c60" and cr.parts.glow:IsShown() and hv.parts["3L"]._atlas == "128-redbutton-left-pressed-c60" and not hv.parts.glow:IsShown() and not hv.parts.eT:IsShown(),
+    "switched: Crafts bright with its glow, Harvest dimmed (no glow or edge left over)")
+  local plain = I.Views.Button(UIParent, "Plain", 80, 22)
+  ok(not plain.vh.toggle and plain.vh.parts["3L"]._atlas == "128-redbutton-left-c60" and plain.text._tc[1] == 1 and plain.text._tc[2] < 1, "a plain button (not a toggle): untouched (bright art, gold text, no glow)")
+  T.Skin(cf.modeHarvest, 0.9, T.GOLD) T.Skin(cf.modeCrafts, 0.9, T.BRONZE)
   ok(not cf.drop.text._text:find("  v", 1, true), "the dropdown's text: no 'v' (its arrow says it)", cf.drop.text._text)
   mp:Refresh()
   -- the Shopping List's - [qty] +
@@ -1960,7 +1974,16 @@ print("== 32. v0.4.2: the look (UI/Style.lua): Profession by default, Norse from
   ok(b.vh.parts.iron:IsShown() and not b.vh.parts["3L"]:IsShown() and b.vh.parts.eT:IsShown(), "live: the buttons are iron with a bronze edge (the red pieces hidden)")
   ok(T.Host().vh.parts.bg._atlas == "heavybronze-frame-background-c60", "the host: heavy bronze's background")
   ok(sp.vh.framed and sp.vh.parts.ktl and sp.vh.parts.ktl:IsShown() and sp.vh.parts.ktl._atlas == "heavybronze-horz-cornerbracket-tl-c60" and sp.vh.parts.n1._coord ~= nil, "the pages and the menu: framed in heavy bronze, bracketed")
-  ok(tb[1].vh.parts.iron:IsShown() and tb[1].vh.parts.point._rot ~= nil and tb[1].vh.parts.point:IsShown(), "the tabs: shields (their point)")
+  ok(tb[1].vh.parts.iron:IsShown() and tb[1].vh.parts.point == nil, "the tabs: iron, no point under them")
+  local tOn, tOff
+  for _, x in ipairs(tb) do if x.vh.selected then tOn = x elseif not x.soon then tOff = x end end
+  ok(tOn and tOn.vh.parts.glow:IsShown() and tOn.vh.parts.eT._color[1] == 1 and tOn.label._tc[1] == 1 and tOn.label._tc[3] > 0.7,
+    "the current tab: a gold edge, its glow, bright text")
+  ok(tOff and not (tOff.vh.parts.glow and tOff.vh.parts.glow:IsShown()) and tOff.vh.parts.eT._color[1] < 0.5 and tOff.label._tc[1] == 0.7, "the other tabs: a dimmer edge, grey-gold text")
+  local mOn, mOff = cf.modeCrafts, cf.modeHarvest
+  if mOff.vh.selected then mOn, mOff = mOff, mOn end
+  ok(mOn.vh.selected and mOn.vh.parts.iron:IsShown() and mOn.vh.parts.glow:IsShown() and mOn.vh.parts.eT._color[1] == 1 and mOn.text._tc[3] == 0.72, "Norse: the chosen toggle lit (gold edge, glow, bright text)")
+  ok(not (mOff.vh.parts.glow and mOff.vh.parts.glow:IsShown()) and mOff.vh.parts.eT._color[1] < 0.5 and mOff.text._tc[1] == 0.7, "Norse: the other one dimmer (edge, text)")
   ok(cf.known.vh.parts.fill:IsShown() and not cf.known.vh.parts.box:IsShown() and cf.known.tick._vc[3] == 0.4, "the tick box: iron, its tick gold")
   ok(r1.minus.vh.parts.a1._atlas == "common-icon-backarrow" and r1.minus.vh.parts.iron:IsShown(), "the stepper: gold arrows on iron")
   local hdr = lp.builderHead

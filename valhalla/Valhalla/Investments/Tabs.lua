@@ -189,10 +189,12 @@ local function Paint(b)
 	local e = on and T.GOLD or T.BRONZE
 	T.Skin(b, on and 0.98 or 0.85, e)
 	if b.label then
+		local norse = ns.Style and b.vh and b.vh.as == "tab" and ns.Style.Look() == "norse"
 		if on then
-			local c = (ns.Style and b.vh and b.vh.as == "tab" and ns.Style.Look() == "profession") and ns.Style.WHITE or T.GOLD   -- (the game's own tabs: the current one white)
+			local c = (ns.Style and b.vh and b.vh.as == "tab") and (norse and { 1, 0.95, 0.72 } or ns.Style.WHITE) or T.GOLD   -- (the current tab: bright)
 			b.label:SetTextColor(c[1], c[2], c[3])
 		elseif b.soon then b.label:SetTextColor(0.55, 0.52, 0.48)
+		elseif norse then b.label:SetTextColor(0.7, 0.62, 0.45)   -- (Norse: the others grey-gold, the current one lit)
 		else b.label:SetTextColor(0.85, 0.8, 0.7) end
 	end
 	if b.icon and b.icon.SetDesaturated then b.icon:SetDesaturated(b.soon and not on) end   -- (our own texture)

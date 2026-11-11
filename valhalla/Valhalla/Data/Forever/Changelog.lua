@@ -9,9 +9,10 @@ ns.MapChangelog = {
 		"|cff6e2c0aEverywhere at once|r: Investments (AH Market, Shopping List, Smart Vendor), Settings, the Auction House list, the map menu (Map Icons), the map's own windows (pins, notes, sketch, news, friends, report), their buttons, text boxes and scroll bars, and the window's tabs (bottom, top or side icons).",
 		"Steppers (how many, grey-out strength, history days) are the game's left and right arrows; the pager's are too (double arrows for first and last).",
 		"Sizes and places are unchanged: lists fit the same rows, nothing moves.",
+		"Toggles (Crafts | Harvest, AH Market's views, the page menu): the chosen one bright with a gold edge and glow, the others dimmer with grey-gold text.",
 		"The secure Search buttons beside the Auction House keep their old look (secure buttons are never restyled).",
 		"Art the game lacks falls back to its standard version, else a plain colour, so nothing breaks.",
-		"|cff6e2c0aSettings > Look|r: Profession (the default) or Norse: heavy bronze frames with corner brackets over dark iron, iron and bronze controls, shield tabs, Morpheus for titles. It changes at once.",
+		"|cff6e2c0aSettings > Look|r: Profession (the default) or Norse: heavy bronze frames with corner brackets over dark iron, iron and bronze controls, iron tabs (the current one gold-edged and bright), Morpheus for titles. It changes at once.",
 		"Install it fully (a new file, UI/Style.lua): the game reads new files only at start, so restart the game, not just /reload.",
 	} },
 	{ version = "v0.4.1.1", date = "2026-11-10", heads = { [1] = "Changed", [6] = "Fixed", [8] = "Note", }, items = {
