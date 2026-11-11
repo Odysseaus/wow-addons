@@ -35,17 +35,22 @@ local function Text(parent, size, color, template)
 	return T.Font(parent:CreateFontString(nil, "OVERLAY", template or "GameFontHighlight"), size or 12, color)
 end
 
--- a bronze-edged button of our own
-function V.Button(parent, label, w, h, onClick)
+-- a button of our own, in the look (UI/Style.lua, v0.4.2: the red and gold one; "-", "+", "x" its square
+-- ones, "<<" "<" ">" ">>" its arrows); as: another kind (dec, inc, nav, tab, item, dropdown)
+function V.Button(parent, label, w, h, onClick, as)
 	local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
 	b:SetSize(w or 100, h or 22)
-	T.Skin(b, 0.9)
 	b.text = Text(b, 12, GOLD)
 	b.text:SetPoint("CENTER")
 	b.text:SetText(label)
 	b:SetScript("OnClick", onClick)
-	b:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1) end)
-	b:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(BRONZE[1], BRONZE[2], BRONZE[3], 1) end)
+	if ns.Style then
+		ns.Style.Button(b, as or ns.Style.AutoKind(label), w or 100, h or 22)
+	else
+		T.SkinFlat(b, 0.9)
+		b:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1) end)
+		b:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(BRONZE[1], BRONZE[2], BRONZE[3], 1) end)
+	end
 	return b
 end
 
@@ -213,7 +218,6 @@ end
 function V.Check(parent, label, get, set)
 	local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
 	b:SetSize(16, 16)
-	T.Skin(b, 0.9)
 	b.tick = b:CreateTexture(nil, "OVERLAY")
 	b.tick:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
 	b.tick:SetPoint("TOPLEFT", -3, 3)
@@ -221,6 +225,7 @@ function V.Check(parent, label, get, set)
 	b.label = Text(b, 12)
 	b.label:SetPoint("LEFT", b, "RIGHT", 6, 0)
 	b.label:SetText(label)
+	if ns.Style then ns.Style.Check(b, 16) else T.SkinFlat(b, 0.9) end   -- (the look's tick box, the same 16 px)
 	function b.Update() b.tick:SetShown(get() and true or false) end
 	b:SetScript("OnClick", function() set(not get()) b.Update() end)
 	b.Update()
@@ -250,7 +255,7 @@ end
 local function EditBox(parent, w)
 	local e = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
 	e:SetSize(w, 22)
-	T.Skin(e, 0.95)
+	if ns.Style then ns.Style.Input(e, w, 22) else T.SkinFlat(e, 0.95) end
 	e:SetFontObject(GameFontHighlight)
 	e:SetTextInsets(6, 6, 0, 0)
 	e:SetAutoFocus(false)
@@ -265,6 +270,7 @@ end
 
 local function Header(parent, text)
 	local h = Text(parent, 16, GOLD, "GameFontNormalLarge")
+	if ns.Style then ns.Style.Title(h, 16) end
 	h:SetPoint("TOPLEFT", 14, -12)
 	h:SetText(text)
 	return h
@@ -313,11 +319,11 @@ function V.Picker(parent, w)
 	menu:SetPoint("TOPLEFT", b, "BOTTOMLEFT", 0, -2)
 	menu:SetWidth(w or 220)
 	menu:SetFrameStrata("DIALOG")
-	T.Skin(menu, 0.98)
+	if ns.Style then ns.Style.Dropdown(b, menu, w or 220, 22) else T.SkinFlat(menu, 0.98) end
 	menu:EnableMouse(true)
 	menu.items = {}
 	for i = 1, V.PICK_MAX + 1 do
-		local it = V.Button(menu, "", (w or 220) - 8, 20)
+		local it = V.Button(menu, "", (w or 220) - 8, 20, nil, "item")
 		it:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 22)
 		it:Hide()
 		menu.items[i] = it
@@ -564,6 +570,7 @@ local function BuildList(page)
 		if ns.LinkBox then ns.LinkBox(r.qty, TakeItem) end
 		r.plus = V.Button(r, "+", 18, 18)
 		r.plus:SetPoint("LEFT", 318, 0)
+		if ns.Style then ns.Style.Stepper(r.minus, r.plus, r.qty, 46, 18) end   -- (- [qty] +: the look's arrows round its box)
 		r.bags = Text(r, 12)
 		r.bags:SetPoint("LEFT", 362, 0)
 		r.bank = Text(r, 12)
@@ -828,6 +835,13 @@ local function BuildSettings(page)
 	local function Opt(label, key, after)
 		return Place(V.Check(body, label, function() return S[key] end, function(v) S[key] = v if after then after() end I.Changed() end))
 	end
+	-- v0.4.2: the look (UI/Style.lua): Profession (the default) or Norse, for all of Valhalla, at once
+	if ns.Style then
+		Section(L["Look"])
+		page.look = Place(V.Radio(body, L["Look:"], { { "profession", L["Profession"] }, { "norse", L["Norse"] } },
+			function() return ns.Style.Look() end, function(v) ns.Style.SetLook(v) end))
+		page.lookNote = Note(L["Profession: WoW Forever's profession window (its red and gold buttons, bronze frame). Norse: heavy bronze with corner brackets over dark iron. It changes at once, everywhere (the game's own parts, such as the close buttons and the map menu's tabs, stay the game's)."])
+	end
 	Section(L["Window tabs"])
 	page.tabPos = Place(V.Radio(body, L["Tabs:"], { { "bottom", L["Bottom"] }, { "top", L["Top"] }, { "side", L["Side icons"] } },
 		function() return S.tabPos end, function(v) S.tabPos = v if T.Layout then T.Layout() end end))
@@ -864,6 +878,7 @@ local function BuildSettings(page)
 	minus:SetPoint("LEFT", 200, 0)
 	local plus = V.Button(grey, "+", 22, 20, function() S.greyAlpha = math.min(0.9, S.greyAlpha + 0.1) GreyText() I.Changed() end)
 	plus:SetPoint("LEFT", 226, 0)
+	if ns.Style then ns.Style.Stepper(minus, plus) end
 	GreyText()
 	page.grey = { frame = grey, minus = minus, plus = plus, label = gl }
 	Place(grey)
@@ -883,6 +898,7 @@ local function BuildSettings(page)
 	dminus:SetPoint("LEFT", 200, 0)
 	local dplus = V.Button(days, "+", 22, 20, function() S.histDays = math.min(7, S.histDays + 1) DaysText() I.Changed() end)
 	dplus:SetPoint("LEFT", 226, 0)
+	if ns.Style then ns.Style.Stepper(dminus, dplus) end
 	DaysText()
 	page.days = { frame = days, minus = dminus, plus = dplus, label = dl }
 	Place(days)
@@ -933,7 +949,7 @@ function V.BuildSettings(parent)
 	local page = CreateFrame("Frame", nil, parent, "BackdropTemplate")
 	page:SetPoint("TOPLEFT", 8, -8)
 	page:SetPoint("BOTTOMRIGHT", -8, 8)
-	T.Skin(page, 0.6)
+	T.Skin(page, 0.6, nil, true)
 	page.key = "settings"
 	BuildSettings(page)
 	I.OnChanged(function() if page:IsShown() and page:IsVisible() then page:Refresh() end end)
@@ -954,11 +970,11 @@ function V.BuildInvest(parent)
 	nav:SetPoint("TOPLEFT", 8, -8)
 	nav:SetPoint("BOTTOMLEFT", 8, 8)
 	nav:SetWidth(V.NAV_W)
-	T.Skin(nav, 0.75)
+	T.Skin(nav, 0.75, nil, true)
 	root.nav, root.pages, root.navButtons = nav, {}, {}
 	root.current = "list"
 	for i, p in ipairs(V.PAGES) do
-		local b = V.Button(nav, p.label, V.NAV_W - 12, 30, function() root:ShowPage(p.key) end)
+		local b = V.Button(nav, p.label, V.NAV_W - 12, 30, function() root:ShowPage(p.key) end, "nav")
 		b:SetPoint("TOPLEFT", 6, -6 - (i - 1) * 36)
 		b.text:ClearAllPoints()
 		b.text:SetPoint("LEFT", 36, 0)
@@ -974,7 +990,7 @@ function V.BuildInvest(parent)
 		local page = CreateFrame("Frame", nil, root, "BackdropTemplate")
 		page:SetPoint("TOPLEFT", nav, "TOPRIGHT", 8, 0)
 		page:SetPoint("BOTTOMRIGHT", -8, 8)
-		T.Skin(page, 0.6)
+		T.Skin(page, 0.6, nil, true)
 		page.root = root
 		page.key = key
 		BUILD[key](page)

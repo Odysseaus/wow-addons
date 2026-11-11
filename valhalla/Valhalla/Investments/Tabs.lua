@@ -60,8 +60,9 @@ function T.Strip() return strip end
 function T.Buttons() return buttons end
 function T.Views() return views end
 
--- a dark panel with a bronze edge (our own frames only)
-function T.Skin(f, alpha, edge)
+-- the flat look of v0.3-v0.4.1: a dark panel with a bronze edge. Only the AH list's secure Search
+-- buttons keep it (v0.4.2: secure buttons are never restyled)
+function T.SkinFlat(f, alpha, edge)
 	if not f.SetBackdrop then return f end
 	f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
 	f:SetBackdropColor(0.07, 0.06, 0.05, alpha or 0.95)
@@ -70,14 +71,25 @@ function T.Skin(f, alpha, edge)
 	return f
 end
 
+-- v0.4.2: the look's (UI/Style.lua). A panel: the look's dark panel (edge: a row's fainter one); a
+-- button, tab or tick box already skinned: edge gold = lit (the current tab, mode, page, sort)
+function T.Skin(f, alpha, edge, framed)
+	local Style = ns.Style
+	if not Style then return T.SkinFlat(f, alpha, edge) end
+	if f.vh and f.vh.kind ~= "panel" then return Style.Select(f, edge == T.GOLD) end
+	return Style.Panel(f, alpha, edge ~= nil and edge ~= T.BRONZE and edge ~= T.GOLD, framed)
+end
+
 function T.Font(fs, size, color)
 	if ns.Look and ns.Look.Font then ns.Look:Font(fs, size) end
 	if color then fs:SetTextColor(color[1], color[2], color[3]) end
 	return fs
 end
 
--- the host's background: the map window's own dark rock (Core.lua's Look:Window), darkened
-local function Rock(f)
+-- the host's background (v0.4.2): the look's (Profession: the profession window's own background; Norse:
+-- heavy bronze's), else the map window's dark rock
+local function Rock(f, strip)
+	if ns.Style then ns.Style.Content(f, strip) return f.vh and f.vh.parts.bg end
 	local bg = f:CreateTexture(nil, "BACKGROUND")
 	bg:SetAllPoints()
 	if bg:SetTexture("Interface\\FrameGeneral\\UI-Background-Rock", "REPEAT", "REPEAT") == false then
@@ -106,6 +118,7 @@ local function Placeholder(parent, entry)
 	icon:SetPoint("TOP", 0, -18)
 	icon:SetTexture(entry.icon)
 	local title = T.Font(card:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge"), 18, T.GOLD)
+	if ns.Style then ns.Style.Title(title, 18) end
 	title:SetPoint("TOP", icon, "BOTTOM", 0, -10)
 	title:SetText(entry.label)
 	local text = T.Font(card:CreateFontString(nil, "OVERLAY", "GameFontHighlight"), 13)
@@ -131,7 +144,7 @@ local function BuildHost()
 	band:EnableMouse(true)
 	band:EnableMouseWheel(true)
 	band:SetScript("OnMouseWheel", function() end)
-	band.bg = Rock(band)
+	band.bg = Rock(band, true)
 	host:Hide()
 	T.PlaceHost()
 end
@@ -176,7 +189,9 @@ local function Paint(b)
 	local e = on and T.GOLD or T.BRONZE
 	T.Skin(b, on and 0.98 or 0.85, e)
 	if b.label then
-		if on then b.label:SetTextColor(T.GOLD[1], T.GOLD[2], T.GOLD[3])
+		if on then
+			local c = (ns.Style and b.vh and b.vh.as == "tab" and ns.Style.Look() == "profession") and ns.Style.WHITE or T.GOLD   -- (the game's own tabs: the current one white)
+			b.label:SetTextColor(c[1], c[2], c[3])
 		elseif b.soon then b.label:SetTextColor(0.55, 0.52, 0.48)
 		else b.label:SetTextColor(0.85, 0.8, 0.7) end
 	end
@@ -203,6 +218,7 @@ local function MakeButton(entry)
 		GameTooltip:Show()
 	end)
 	b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	if ns.Style then ns.Style.Tab(b, I.S and I.S.tabPos or "bottom", T.TAB_W, T.TAB_H) end
 	return b
 end
 
@@ -220,6 +236,7 @@ function T.Layout()
 		if b.tag then b.tag:ClearAllPoints() end
 		if pos == "side" then
 			b:SetSize(T.SIDE, T.SIDE)
+			if ns.Style then ns.Style.Tab(b, "side", T.SIDE, T.SIDE) end
 			b:SetPoint("TOPLEFT", map, "TOPRIGHT", 0, -70 - (i - 1) * (T.SIDE + T.GAP))
 			b.icon:SetSize(T.SIDE - 10, T.SIDE - 10)
 			b.icon:SetPoint("CENTER")
@@ -229,6 +246,7 @@ function T.Layout()
 		else
 			local w = math.max(80, math.min(T.TAB_W, math.floor((width - 2 * T.EDGE - (n - 1) * T.GAP) / n)))
 			b:SetSize(w, T.TAB_H)
+			if ns.Style then ns.Style.Tab(b, pos == "top" and "top" or "bottom", w, T.TAB_H) end
 			local x = T.EDGE + (i - 1) * (w + T.GAP)
 			if pos == "top" then
 				b:SetPoint("TOPLEFT", host, "TOPLEFT", x, -3)
@@ -401,6 +419,9 @@ function T.Disable()
 end
 
 function T.Attached() return attached end
+
+-- another look (Settings > Look): the tabs' labels coloured again (their art: Style.Reskin)
+if ns.Style then ns.Style.OnLook(function() for _, b in ipairs(buttons) do Paint(b) end end) end
 
 -- the map's menu: Investments (Map/Panel.lua)
 function ns.InvestAction(Icon)

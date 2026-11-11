@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2", date = "2026-11-10", heads = { [1] = "Changed", [7] = "New", [8] = "Note", }, items = {
+		"|cff6e2c0aA new look for all of Valhalla|r: WoW Forever's own profession window. Red and gold buttons, the profession tick boxes, arrows for steppers and page buttons, the page box for text boxes, the game's dropdown arrow and menu, the game's tabs, its metal frame over the profession background.",
+		"|cff6e2c0aEverywhere at once|r: Investments (AH Market, Shopping List, Smart Vendor), Settings, the Auction House list, the map menu (Map Icons), the map's own windows (pins, notes, sketch, news, friends, report), their buttons, text boxes and scroll bars, and the window's tabs (bottom, top or side icons).",
+		"Steppers (how many, grey-out strength, history days) are the game's left and right arrows; the pager's are too (double arrows for first and last).",
+		"Sizes and places are unchanged: lists fit the same rows, nothing moves.",
+		"The secure Search buttons beside the Auction House keep their old look (secure buttons are never restyled).",
+		"Art the game lacks falls back to its standard version, else a plain colour, so nothing breaks.",
+		"|cff6e2c0aSettings > Look|r: Profession (the default) or Norse: heavy bronze frames with corner brackets over dark iron, iron and bronze controls, shield tabs, Morpheus for titles. It changes at once.",
+		"Install it fully (a new file, UI/Style.lua): the game reads new files only at start, so restart the game, not just /reload.",
+	} },
 	{ version = "v0.4.1.1", date = "2026-11-10", heads = { [1] = "Changed", [6] = "Fixed", [8] = "Note", }, items = {
 		"|cff6e2c0aEvery profession in Craft|r: all 12 (Alchemy, Blacksmithing, Enchanting, Engineering, Herbalism, Leatherworking, Mining, Skinning, Tailoring, Cooking, First Aid, Fishing) with every recipe, from the client's own data tables (WoW Forever 1.60.1.70888). No profession window needs opening; a tab you show still replaces its list with the game's own.",
 		"|cff6e2c0aA profession dropdown|r replaces the buttons: yours are starred and listed first, then the primary professions, then the secondary.",

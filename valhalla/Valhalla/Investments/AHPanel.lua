@@ -111,7 +111,7 @@ end
 local function SearchButton(r, T, V)
 	local b = CreateFrame("Button", nil, r, "SecureActionButtonTemplate,BackdropTemplate")
 	b:SetSize(64, 20)
-	T.Skin(b, 0.9)
+	T.SkinFlat(b, 0.9)   -- (v0.4.2: a secure button keeps the flat look; the looks never touch one)
 	b.text = T.Font(b:CreateFontString(nil, "OVERLAY", "GameFontHighlight"), 12, T.GOLD)
 	b.text:SetPoint("CENTER")
 	b.text:SetText(L["Search"])
@@ -155,6 +155,7 @@ local function Build()
 	local title = T.Font(panel:CreateFontString(nil, "OVERLAY", "GameFontNormal"), 13, T.GOLD)
 	title:SetPoint("TOPLEFT", 12, -10)
 	title:SetText(L["Valhalla: Shopping List"])
+	if ns.Style then ns.Style.Title(title, 13) end
 	local minimize = V.Button(panel, "-", 20, 20, function() A.SetMinimized(true) end)
 	minimize:SetPoint("TOPRIGHT", -6, -6)
 	panel.minimize = minimize

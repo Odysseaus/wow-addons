@@ -80,8 +80,8 @@ function Frame.UnregisterAllEvents(self) self._events = {} end
 function Frame.CreateTexture(self, _, layer) local t = NewFrame("Texture", nil, self) t._layer = layer return t end
 function Frame.CreateLine(self, _, layer) local l = NewFrame("Line", nil, self) l._layer = layer return l end   -- (SetStartPoint, SetEndPoint, SetThickness: no-ops)
 function Frame.CreateFontString(self) local f = NewFrame("FontString", nil, self) f._text = "" return f end
-function Frame.SetTexture(self, t) self._tex = t end
-function Frame.SetColorTexture(self, r, g, b, a) self._color = { r, g, b, a } end
+function Frame.SetTexture(self, t) self._tex = t self._atlas = nil end
+function Frame.SetColorTexture(self, r, g, b, a) self._color = { r, g, b, a } self._atlas = nil end
 function Frame.SetText(self, s) self._text = s if self._kind == "EditBox" and self._scripts.OnTextChanged then self._scripts.OnTextChanged(self) end end
 function Frame.GetText(self) return self._text end
 -- a font string's height at its width: about 6 px a character, 13 px a line (enough to catch overlaps)
@@ -96,6 +96,24 @@ function Frame.SetFocus(self) W.focus = self end
 function Frame.ClearFocus(self) if W.focus == self then W.focus = nil end end
 function Frame.HasFocus(self) return W.focus == self end
 function Frame.SetDesaturated(self, v) self._desat = v end
+-- (v0.4.2) art: atlases the client has (W.atlases[name] = { w, h }; nil: missing), what a texture shows
+function Frame.SetAtlas(self, name) self._atlas = name self._tex = nil self._color = nil end
+function Frame.SetTexCoord(self, ...) self._coord = { ... } end
+function Frame.SetVertexColor(self, r, g, b, a) self._vc = { r, g, b, a } end
+function Frame.SetRotation(self, r) self._rot = r end
+function Frame.SetBlendMode(self, m) self._blend = m end
+function Frame.SetAlpha(self, a) self._alpha = a end
+function Frame.GetAlpha(self) return self._alpha or 1 end
+function Frame.SetFont(self, file, size, flags) self._font = { file, size, flags } return true end
+function Frame.GetFont(self) if self._font then return unpack(self._font) end end
+W.atlases = {}
+W.atlasAsked = 0
+C_Texture = { GetAtlasInfo = function(name)
+  W.atlasAsked = W.atlasAsked + 1
+  local a = W.atlases[name]
+  if not a then return nil end
+  return { width = a[1], height = a[2], file = 4000000 + #name, leftTexCoord = 0.1, rightTexCoord = 0.3, topTexCoord = 0.2, bottomTexCoord = 0.4 }
+end }
 function W.Run(f, script, ...)
   if f._scripts[script] then f._scripts[script](f, ...) end
   for _, h in ipairs(f._hooks[script] or {}) do h(f, ...) end

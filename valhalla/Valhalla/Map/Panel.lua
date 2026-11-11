@@ -399,6 +399,7 @@ local function Tile(parent, w, h, iconSize, classic)
 	if iconSize then
 		b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
 		b:SetBackdropColor(0.08, 0.06, 0.04, 0.92)
+		if ns.Style then ns.Style.Tile(b) end   -- (v0.4.2: the look's face; the edge still says lit)
 		slot:SetPoint("TOP", 0, -6)
 		local hl = b:CreateTexture(nil, "HIGHLIGHT")
 		hl:SetPoint("TOPLEFT", 1, -1)
@@ -425,6 +426,11 @@ end
 -- the menu's frame: the map window's own border kit (Blizzard's nine-slice, without the
 -- portrait), else the classic dialog's gold border
 local function Dress(f)
+	if ns.Style then
+		-- v0.4.2: the look's frame (UI/Style.lua), the same title bar
+		local top = ns.Style.Frame(f)
+		if top > 0 then return top end
+	end
 	local util = _G.NineSliceUtil
 	local layout = util and util.GetLayout and util.GetLayout("ButtonFrameTemplateNoPortrait") and "ButtonFrameTemplateNoPortrait"
 	if layout then
@@ -847,6 +853,7 @@ local function CheckBox(parent)
 	if not HasAtlas("checkbox-minimal") then
 		local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
 		cb:SetSize(22, 22)
+		if ns.Style then ns.Style.Check(cb, 22) end
 		return cb
 	end
 	local cb = CreateFrame("CheckButton", nil, parent)
@@ -864,6 +871,7 @@ local function CheckBox(parent)
 	cb:SetHighlightTexture(Tex("checkbox-minimal", "HIGHLIGHT", "ADD", 0.25))
 	cb:SetCheckedTexture(Tex("checkmark-minimal", "ARTWORK"))
 	if HasAtlas("checkmark-minimal-disabled") then cb:SetDisabledCheckedTexture(Tex("checkmark-minimal-disabled", "ARTWORK")) end
+	if ns.Style then ns.Style.Check(cb, 20) end   -- (v0.4.2: the look's tick box)
 	return cb
 end
 
@@ -1267,6 +1275,7 @@ function mod:SetupPanel(worldMap)
 		Place()
 	end)
 	local title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	if ns.Style then ns.Style.Title(title, 12) end
 	-- the close button over everything else in the menu, and a little easier to catch than it looks;
 	-- Escape closes the menu too (the map stays open)
 	local close = CreateFrame("Button", nil, menu, "UIPanelCloseButton")
@@ -1342,7 +1351,7 @@ function mod:SetupPanel(worldMap)
 			b.Text:SetText(t.name)
 			b:SetWidth(math.max(84, b.Text:GetStringWidth() + 40))
 		else
-			b = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+			b = ns.Style.UIButton(menu)
 			b:SetSize(100, 22)
 			b:SetText(t.name)
 		end
@@ -1449,11 +1458,11 @@ function mod:SetupPanel(worldMap)
 		height = math.max(height, -y)
 	end
 	-- the sliders back to their defaults (every slider, Options' too: WorldMap.lua's ResetSliders)
-	local defaults = CreateFrame("Button", nil, sliders, "UIPanelButtonTemplate")
+	local defaults = ns.Style.UIButton(sliders)
 	defaults:SetSize(96, 22)
 	defaults:SetPoint("TOPRIGHT", -2, -height - 4)
 	-- the windowed map's size and place back to Blizzard's
-	local resetWindow = CreateFrame("Button", nil, sliders, "UIPanelButtonTemplate")
+	local resetWindow = ns.Style.UIButton(sliders)
 	resetWindow:SetSize(150, 22)
 	resetWindow:SetPoint("RIGHT", defaults, "LEFT", -6, 0)
 	resetWindow:SetText(L["Reset size and place"])

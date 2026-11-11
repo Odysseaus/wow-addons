@@ -13,6 +13,7 @@ function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m
 function ns:GetModule(key) return self.modules[key] end
 ns.modules.worldmap = { key = "worldmap", enabled = true }
 function ns.modules.worldmap.TabAway(away) ns.modules.worldmap.away = away end   -- (Map/Panel.lua: its menu put away on the other tabs)
+assert(loadfile(root .. "UI/Style.lua"))("Valhalla", ns)   -- (v0.4.2: the look, loaded after Core.lua)
 assert(loadfile(root .. "Links.lua"))("Valhalla", ns)
 for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Data/Forever/Recipes", "Craft", "Merchant", "AHPanel" }) do
   assert(loadfile(root .. (f:find("/") and f or ("Investments/" .. f)) .. ".lua"))("Valhalla", ns)   -- (the TOC's order)
@@ -80,7 +81,7 @@ ok(T.Views().professions.page.text._text == "Under construction: coming soon" an
 W.Click(T.Buttons()[1])
 ok(T.Current() == "map" and not T.Host():IsShown(), "back to Map & Quest Log: the host hidden, the map as it was")
 ok(Keys(WorldMapFrame) == mapKeys, "nothing written on WorldMapFrame", Keys(WorldMapFrame))
-ok(T.Buttons()[1]._edge[1] == 1 and T.Buttons()[2]._edge[1] ~= 1, "the current tab edged gold")
+ok(T.Buttons()[1].vh.selected and not T.Buttons()[2].vh.selected, "the current tab lit (the look's active tab)")
 
 print("== 4. full screen: no tabs, the map")
 W.Click(T.Buttons()[2])
@@ -97,7 +98,7 @@ W.Click(T.Buttons()[2])
 ok(T.Host():IsShown() and T.Views().invest:IsVisible(), "on Investments")
 WorldMapFrame:Hide() Tick() WorldMapFrame:Show()
 ok(T.Current() == "map" and not T.Host():IsShown() and not T.Views().invest:IsVisible(), "reopened: Map & Quest Log, the Investments panel hidden (v0.3.0 left it shown over the map)")
-ok(T.Buttons()[1]._edge[1] == 1 and T.Buttons()[2]._edge[1] ~= 1, "and the Map & Quest Log tab lit")
+ok(T.Buttons()[1].vh.selected and not T.Buttons()[2].vh.selected, "and the Map & Quest Log tab lit")
 W.Click(T.Buttons()[3]) WorldMapFrame:Hide() Tick()
 ToggleWorldMap()
 ok(OnMapTab() and not T.Views().talents:IsVisible(), "M (left on Talents): opens on Map & Quest Log, Talents hidden")
@@ -1842,6 +1843,172 @@ do
   ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == errs0, "v0.4.1.1 wrote nothing on the map; no handler error")
   end)()
 end
+
+
+print("== 32. v0.4.2: the look (UI/Style.lua): Profession by default, Norse from Settings; every widget through it")
+;(function()
+  local St, Mk = ns.Style, I.Market
+  local errs0 = #W.sizeErrors
+  -- the client's art: the looks' atlases (a few of the -c60 ones missing below, on purpose)
+  local function Have(t) for _, v in pairs(t) do if type(v) == "string" and v:find("%-") and not v:find("\\", 1, true) then W.atlases[v] = { 64, 64 } elseif type(v) == "table" then Have(v) end end end
+  Have(St.THEMES.profession) Have(St.THEMES.norse)
+  for _, k in ipairs({ "tl", "tr", "bl", "br" }) do W.atlases["heavybronze-horz-cornerbracket-" .. k .. "-c60"] = { 32, 32 } end
+  for _, n in ipairs({ "128-redbutton-left-pressed-c60", "_128-redbutton-center-pressed-c60", "128-redbutton-right-pressed-c60",
+      "128-redbutton-left-disabled-c60", "_128-redbutton-center-disabled-c60", "128-redbutton-right-disabled-c60",
+      "profession-button-arrow-left-pressed-c60", "profession-button-arrow-right-pressed-c60", "128-redbutton-minus-pressed-c60" }) do W.atlases[n] = { 64, 64 } end
+  St.ForgetArt()
+  ValhallaDB = nil
+  ok(St.Look() == "profession" and St.Theme().key == "profession", "the default look: Profession (no ValhallaDB.ui yet)")
+  local parent = CreateFrame("Frame", nil, UIParent)
+  -- the red button: three pieces, its caps at their art's width for its height
+  local b = I.Views.Button(parent, "Build", 170, 22)
+  ok(b.vh and b.vh.kind == "button" and b.vh.as == "button" and b._backdrop == nil, "V.Button: the look's button (its flat backdrop cleared)")
+  local L3, M3, R3 = b.vh.parts["3L"], b.vh.parts["3M"], b.vh.parts["3R"]
+  ok(L3._atlas == "128-redbutton-left-c60" and M3._atlas == "_128-redbutton-center-c60" and R3._atlas == "128-redbutton-right-c60", "Profession: 128-redbutton left / center / right (-c60)")
+  ok(math.abs(L3._w - 114 * 22 / 128) < 0.01 and math.abs(R3._w - 292 * 22 / 128) < 0.01 and M3:IsShown(), "caps at the art's width for 22 px, the center between", L3._w)
+  ok(b.text._tc[1] == 1 and b.text._tc[2] == 0.82, "its text gold")
+  W.Run(b, "OnEnter")
+  ok(b.text._tc[2] == 1, "hover: white")
+  W.Run(b, "OnMouseDown")
+  ok(b.vh.parts["3L"]._atlas == "128-redbutton-left-pressed-c60", "pressed: the pressed art")
+  W.Run(b, "OnMouseUp") W.Run(b, "OnLeave")
+  ok(b.vh.parts["3L"]._atlas == "128-redbutton-left-c60" and b.text._tc[2] == 0.82, "back to normal")
+  -- a new size, from the button's own OnSizeChanged (no size asked): squeezed caps, no center
+  local fired0, depth0 = W.sizeFired, W.sizeMaxDepth
+  W.Run(b, "OnSizeChanged", 50, 20)
+  local lw, rw = b.vh.parts["3L"]._w, b.vh.parts["3R"]._w
+  ok(b.vh.w == 50 and b.vh.h == 20 and math.abs(lw + rw - 50) < 0.01 and not b.vh.parts["3M"]:IsShown(), "OnSizeChanged: its own pieces again (narrow: the caps squeezed)", lw + rw)
+  ok(W.sizeFired == fired0 and W.sizeMaxDepth == depth0, "and nothing laid out: no size asked, no OnSizeChanged nested")
+  -- the kinds from the label
+  local kinds = {}
+  for _, l in ipairs({ "-", "+", "x", "<<", "<", ">", ">>", "OK" }) do kinds[#kinds + 1] = I.Views.Button(parent, l, 22, 20).vh.as end
+  ok(table.concat(kinds, ",") == "minus,plus,delete,first,prev,next,last,button", "kinds: - + x square, << < > >> the pager's arrows", table.concat(kinds, ","))
+  local mn = I.Views.Button(parent, "-", 20, 20)
+  ok(mn.vh.parts.sq._atlas == "128-redbutton-minus-c60" and mn.text._alpha == 0, "the square minus: the game's art, its '-' hidden under it")
+  local nx = I.Views.Button(parent, ">>", 30, 20)
+  ok(nx.vh.parts.a1._atlas == "profession-button-arrow-right-c60" and nx.vh.parts.a2:IsShown() and nx.text._alpha == 0, "last page: two profession arrows")
+  -- art the client lacks: its standard name, else a colour
+  W.atlases["128-redbutton-left-c60"] = nil W.atlases["128-redbutton-left"] = { 114, 128 }
+  W.atlases["_128-redbutton-center-c60"] = nil
+  St.ForgetArt()
+  local fb = I.Views.Button(parent, "Fallback", 120, 22)
+  ok(fb.vh.parts["3L"]._atlas == "128-redbutton-left" and St.missing["128-redbutton-left-c60"] == "128-redbutton-left", "a missing -c60: its standard art")
+  ok(fb.vh.parts["3M"]._atlas == nil and fb.vh.parts["3M"]._color ~= nil and St.missing["_128-redbutton-center-c60"] == false, "missing both: a plain colour (nothing breaks)")
+  local rep = table.concat(St.ArtReport(), "|")
+  ok(rep:find("128-redbutton-left-c60 -> 128-redbutton-left", 1, true) and rep:find("_128-redbutton-center-c60 -> colour", 1, true), "ArtReport says which", rep)
+  W.atlases["128-redbutton-left-c60"], W.atlases["_128-redbutton-center-c60"], W.atlases["128-redbutton-left"] = { 64, 64 }, { 64, 64 }, nil
+  St.ForgetArt() St.Reskin()
+  ok(fb.vh.parts["3L"]._atlas == "128-redbutton-left-c60", "the art back: the -c60 again")
+  -- the window's tabs, the views
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local root = T.Views().invest.page
+  local mp = root.pages.market
+  local tb = T.Buttons()
+  ok(tb[1].vh.as == "tab" and tb[1].vh.pos == "bottom" and not tb[1].vh.selected and tb[1].vh.parts["3L"]._atlas == "uiframe-tab-left-c60", "the window's tabs: the game's tabs (bottom)")
+  ok(tb[2].vh.selected and tb[2].vh.parts["3L"]._atlas == "uiframe-activetab-left" and tb[2].label._tc[1] == 1 and tb[2].label._tc[3] == 1, "the current one: the active tab's art, its label white")
+  I.S.tabPos = "top" T.Layout()
+  local c = tb[1].vh.parts["3L"]._coord
+  ok(tb[1].vh.pos == "top" and c and c[3] > c[4], "top: the tab's art upside down (its own coords)", c and table.concat(c, ","))
+  I.S.tabPos = "side" T.Layout()
+  ok(tb[1].vh.as == "side" and tb[1].vh.parts.side:IsShown(), "side icons: the square button")
+  I.S.tabPos = "bottom" T.Layout()
+  ok(tb[1].vh.as == "tab" and tb[1].vh.pos == "bottom", "bottom again")
+  ok(T.Host().vh and T.Host().vh.kind == "content" and T.Host().vh.parts.bg._atlas == "profession-background-template2-c60", "the host: the profession window's background (F2)")
+  ok(T.Band().vh.strip and T.Band().vh.parts.bg._coord and T.Band().vh.parts.bg._coord[4] - T.Band().vh.parts.bg._coord[3] < 0.02, "the band over the breadcrumb: the art's top edge (not all of it squashed)")
+  ok(mp.subButtons[1].vh.as == "tab" and mp.subButtons[1].vh.pos == "top", "AH Market's views: top tabs")
+  ok(root.navButtons[1].vh.as == "nav" and root.navButtons[1].vh.parts.nav._atlas == "profession-tab-c60", "the page menu: the profession list's bars")
+  local navOn
+  for _, nb in ipairs(root.navButtons) do if nb.key == "market" then navOn = nb end end
+  ok(navOn.vh.selected and navOn.vh.parts.glow:IsShown(), "the page shown: lit (its glow)")
+  -- Craft: dropdown, its menu, Crafts | Harvest, Known only, the pager
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  ok(cf.drop.vh.as == "dropdown" and cf.drop.vh.parts.arrow._atlas == "common-dropdown-a-button-c60" and cf.menu.vh.kind == "menu", "Craft's profession: the look's dropdown and menu")
+  ok(cf.menu.items[1].vh.as == "item", "its lines: menu lines")
+  W.Click(cf.drop)
+  ok(cf.menu:IsShown() and cf.drop.vh.parts.arrow._atlas == "common-dropdown-a-button-open-c60", "open: the arrow's open art")
+  cf:Hide()
+  ok(not cf.menu:IsShown() and cf.drop.vh.parts.arrow._atlas == "common-dropdown-a-button-c60", "the view hidden: the menu closes (still), the arrow back")
+  cf:Show()
+  ok(cf.known.vh.kind == "check" and cf.known.vh.parts.box._atlas == "profession-checkbox-c60" and cf.known.tick._atlas == "checkmark-minimal" and cf.known._w == 16, "Known only: the profession tick box, the same 16 px")
+  ok(cf.owned.boxes[1].vh.kind == "check", "radios: the look's tick boxes")
+  ok(cf.pager.first.vh.as == "first" and cf.pager.prev.vh.as == "prev" and cf.pager.next.vh.as == "next" and cf.pager.last.vh.as == "last", "the pager: arrows")
+  ok(Mk.ROW_H == 25 and Mk.MIN_ROWS == 6 and Mk.MAX_ROWS == 20 and Mk.BELOW == 52 and Mk.FitRows(600, 134) == 16, "fit rows as before: 25 px rows, 6 to 20", Mk.FitRows(600, 134))
+  ok(cf.pager.first._w == 30 and cf.drop._w == 230 and cf.modeCrafts._w == 70, "sizes unchanged")
+  T.Skin(cf.modeHarvest, 0.9, T.GOLD) T.Skin(cf.modeCrafts, 0.9, T.BRONZE)
+  ok(cf.modeHarvest.vh.selected and not cf.modeCrafts.vh.selected and cf.modeHarvest.vh.parts["3L"]._atlas == "128-redbutton-left-pressed-c60", "Harvest chosen: lit (pressed art)")
+  ok(not cf.drop.text._text:find("  v", 1, true), "the dropdown's text: no 'v' (its arrow says it)", cf.drop.text._text)
+  mp:Refresh()
+  -- the Shopping List's - [qty] +
+  root:ShowPage("list")
+  local lp = root.pages.list
+  local r1 = lp.drows[1]
+  ok(r1.minus.vh.as == "dec" and r1.plus.vh.as == "inc" and r1.qty.vh.kind == "input" and r1.remove.vh.as == "delete", "how many: the profession arrows round the page box; x the delete button")
+  ok(r1.minus.vh.parts.a1._atlas == "profession-button-arrow-left-c60" and r1.qty.vh.parts.bL._coord ~= nil, "the arrows' art; the box cut in three")
+  ok(lp.name.vh.kind == "input" and lp.drows[1]._backdrop.edgeSize == 1, "text boxes: the page box; the rows: the look's panel")
+  -- Settings: the Look switch
+  T.Select("settings")
+  local sp = T.Views().settings.page
+  ok(sp.look and #sp.look.boxes == 2 and sp.look.boxes[1].value == "profession" and sp.look.boxes[2].value == "norse" and sp.look.boxes[1].tick._shown and not sp.look.boxes[2].tick._shown,
+    "Settings > Look: Profession (ticked) / Norse")
+  ok(sp.grey.minus.vh.as == "dec" and sp.days.plus.vh.as == "inc", "Settings' steppers: arrows")
+  local n0 = 0 for _ in pairs(St.all) do n0 = n0 + 1 end
+  local laid0 = W.sizeFired
+  W.Click(sp.look.boxes[2])
+  ok(ValhallaDB.ui.look == "norse" and St.Look() == "norse" and sp.look.boxes[2].tick._shown and not sp.look.boxes[1].tick._shown, "Norse chosen: saved in ValhallaDB.ui.look")
+  ok(b.vh.parts.iron:IsShown() and not b.vh.parts["3L"]:IsShown() and b.vh.parts.eT:IsShown(), "live: the buttons are iron with a bronze edge (the red pieces hidden)")
+  ok(T.Host().vh.parts.bg._atlas == "heavybronze-frame-background-c60", "the host: heavy bronze's background")
+  ok(sp.vh.framed and sp.vh.parts.ktl and sp.vh.parts.ktl:IsShown() and sp.vh.parts.ktl._atlas == "heavybronze-horz-cornerbracket-tl-c60" and sp.vh.parts.n1._coord ~= nil, "the pages and the menu: framed in heavy bronze, bracketed")
+  ok(tb[1].vh.parts.iron:IsShown() and tb[1].vh.parts.point._rot ~= nil and tb[1].vh.parts.point:IsShown(), "the tabs: shields (their point)")
+  ok(cf.known.vh.parts.fill:IsShown() and not cf.known.vh.parts.box:IsShown() and cf.known.tick._vc[3] == 0.4, "the tick box: iron, its tick gold")
+  ok(r1.minus.vh.parts.a1._atlas == "common-icon-backarrow" and r1.minus.vh.parts.iron:IsShown(), "the stepper: gold arrows on iron")
+  local hdr = lp.builderHead
+  local titleFont
+  for fs in pairs(St.all) do if fs.vh.kind == "title" then titleFont = fs break end end
+  ok(titleFont and titleFont._font[1] == "Fonts\\MORPHEUS.TTF", "titles: Morpheus")
+  ok(lp.name._font == nil and b.text._font == nil, "small print: the game's font still")
+  ok(W.sizeFired == laid0, "switching laid nothing out (no size asked)")
+  local n1 = 0 for _ in pairs(St.all) do n1 = n1 + 1 end
+  ok(n1 == n0, "no widget made again (the same ones repainted)", n0 .. " " .. n1)
+  W.Click(sp.look.boxes[1])
+  ok(St.Look() == "profession" and b.vh.parts["3L"]:IsShown() and not b.vh.parts.iron:IsShown() and titleFont._font[1] ~= "Fonts\\MORPHEUS.TTF", "Profession again: the red pieces back, the iron hidden, the game's font")
+  ok(not St.SetLook("bogus") and St.Look() == "profession", "an unknown look: refused")
+  ok(not sp.vh.parts.ktl:IsShown() and not sp.vh.parts.n1:IsShown() and sp._edge ~= nil, "Profession: the pages' plain edge again (the bronze hidden)")
+  -- the AH list: its secure Search buttons untouched
+  local secure = Find(function(f) return type(f._template) == "string" and f._template:find("SecureActionButtonTemplate", 1, true) end)
+  local untouched = #secure > 0
+  for _, f in ipairs(secure) do if f.vh or not (f._backdrop and f._backdrop.edgeSize == 1 and f._edge and math.abs(f._edge[1] - 0.66) < 0.001) then untouched = false end end
+  ok(untouched, "the secure Search buttons: never skinned (their flat look kept)", #secure)
+  local ref0 = St.refused
+  St.Button(secure[1], "button", 64, 20) St.Check(secure[1]) St.Panel(secure[1]) St.SetLook("norse") St.SetLook("profession")
+  ok(secure[1].vh == nil and St.refused >= ref0 + 1 and secure[1]._edge[1] - 0.66 < 0.001, "and refused when asked", St.refused - ref0)
+  local ah = _G.ValhallaAHList
+  ok(ah and ah.vh and ah.vh.kind == "panel" and ah.minimize.vh.as == "minus" and ah.picker.vh.as == "dropdown", "the AH list: the look's panel, its - the square minus, its list a dropdown")
+  -- a window's frame (Map windows, the map menu) on a client without the nine-slice layout: a plain frame, 0
+  local win = CreateFrame("Frame", nil, UIParent)
+  ok(St.Frame(win) == 0 and win.vh.kind == "frame" and win.vh.parts.bg._atlas == "profession-background-template2-c60", "Style.Frame: the profession background (no layout here: no title bar)")
+  NineSliceUtil = { GetLayout = function() return {} end, ApplyLayoutByName = function() return true end }
+  local win2 = CreateFrame("Frame", nil, UIParent)
+  ok(St.Frame(win2) == 21 and win2.vh.nine and win2.vh.nine._template == "NineSlicePanelTemplate", "with it: the metal nine-slice, a 21 px title bar")
+  St.SetLook("norse")
+  ok(not win2.vh.nine._shown and win2.vh.parts.n1:IsShown() and win2.vh.parts.ktl._atlas == "heavybronze-horz-cornerbracket-tl-c60" and win2.vh.parts.n1._coord ~= nil, "Norse: heavy bronze, cut in nine, its corner brackets")
+  St.SetLook("profession")
+  ok(win2.vh.nine._shown and not win2.vh.parts.n1:IsShown(), "Profession: the metal again")
+  NineSliceUtil = nil
+  -- the game's template buttons and boxes (Map windows): theirs hidden, ours on
+  local tbn = St.UIButton(parent)
+  tbn.Left, tbn.Middle, tbn.Right = tbn:CreateTexture(), tbn:CreateTexture(), tbn:CreateTexture()
+  St.Apply(tbn)
+  ok(tbn._template == "UIPanelButtonTemplate" and tbn.vh.template and tbn.Left._alpha == 0 and tbn.vh.parts["3L"]:IsShown(), "UIPanelButtonTemplate: its own art hidden under the look's")
+  local ib = St.UIInput(parent)
+  ok(ib._template == "InputBoxTemplate" and ib.vh.kind == "input" and ib.vh.template, "InputBoxTemplate: the look's box")
+  local sf = St.UIScroll(parent)
+  ok(sf._template == "UIPanelScrollFrameTemplate" and sf.vh and sf.vh.kind == "scroll", "UIPanelScrollFrameTemplate: the look's bar")
+  ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == errs0, "v0.4.2 wrote nothing on the map; no handler error")
+  ValhallaDB = nil
+  T.Select("map")
+end)()
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end

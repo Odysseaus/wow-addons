@@ -366,7 +366,7 @@ end
 -- the search box, on `parent` (the map's menu), `width` wide; its results drop down below it
 function mod.CreateSearch(parent, width)
 	map = map or _G.WorldMapFrame
-	box = CreateFrame("EditBox", nil, parent, "SearchBoxTemplate")
+	box = ns.Style.Input(CreateFrame("EditBox", nil, parent, "SearchBoxTemplate"), nil, 20, { template = true })
 	box:SetSize(width, 22)
 	box:SetAutoFocus(false)
 	if box.Instructions then box.Instructions:SetText(L["Find a place"]) end

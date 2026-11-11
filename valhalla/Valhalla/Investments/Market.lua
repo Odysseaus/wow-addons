@@ -595,7 +595,7 @@ local function BuildCraft(f, page)
 	menu:SetPoint("TOPLEFT", f.drop, "BOTTOMLEFT", 0, -2)
 	menu:SetWidth(230)
 	menu:SetFrameStrata("DIALOG")
-	T.Skin(menu, 0.98)
+	if ns.Style then ns.Style.Dropdown(f.drop, menu, 230, 20) else T.Skin(menu, 0.98) end   -- (v0.4.2: the look's dropdown)
 	menu:EnableMouse(true)
 	menu.items = {}
 	for i = 1, M.PROF_MAX do
@@ -603,7 +603,7 @@ local function BuildCraft(f, page)
 			menu:Hide()
 			M.craftProf = self.prof
 			page:Refresh()
-		end)
+		end, "item")
 		it:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 22)
 		it:Hide()
 		menu.items[i] = it
@@ -746,7 +746,7 @@ local function BuildCraft(f, page)
 		for _, q in ipairs(profs) do if q.key == M.craftProf then p = q end end
 		p = p or profs[1]
 		M.craftProf = p.key
-		f.drop.text:SetText((p.mine and STAR .. " " or "") .. p.name .. "  v")
+		f.drop.text:SetText((p.mine and STAR .. " " or "") .. p.name .. (ns.Style and "" or "  v"))   -- (v0.4.2: the look's arrow says it)
 		if f.menu:IsShown() then f.FillMenu() end
 		local gather = C.GATHER[p.key] and C.GatherInfo(p.key)
 		local mode = (gather and M.craftMode == "harvest") and "harvest" or "crafts"
@@ -857,7 +857,8 @@ function V.BuildMarket(page)
 	page.subButtons, page.subs = {}, {}
 	local x = 12
 	for _, s in ipairs(M.SUBS) do
-		local b = V.Button(page, s.label, 104, 22, function() if not s.soon then page:ShowSub(s.key) end end)
+		local b = V.Button(page, s.label, 104, 22, function() if not s.soon then page:ShowSub(s.key) end end, "tab")
+		if ns.Style then ns.Style.Tab(b, "top", 104, 22) end
 		b:SetPoint("TOPLEFT", x, -72)
 		b.key, b.soon = s.key, s.soon
 		if s.soon then b:SetAlpha(0.5) b.text:SetText(s.label .. " " .. L["(soon)"]) end

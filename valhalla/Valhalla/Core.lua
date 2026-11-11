@@ -223,6 +223,7 @@ function Look:Panel(frame, opts)
 	bd:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
 	bd:SetBackdropColor(0.06, 0.06, 0.07, opts.alpha or 0.9)
 	bd:SetBackdropBorderColor(0, 0, 0, 1)
+	if ns.Style then ns.Style.Panel(bd, opts.alpha or 0.9) end   -- (v0.4.2: the look's panel, UI/Style.lua)
 	return bd
 end
 
@@ -230,6 +231,7 @@ end
 -- bronze: Blizzard_Menu's MenuStyle1, the same offsets), else the plain panel with a bronze edge.
 -- Returns the room to leave inside it: left, top, right, bottom
 function Look:Dropdown(frame)
+	if ns.Style then return ns.Style.Menu(frame) end   -- (v0.4.2: the look's, the same room inside)
 	if C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("common-dropdown-bg") then
 		local bg = frame:CreateTexture(nil, "BACKGROUND")
 		bg:SetAtlas("common-dropdown-bg")
@@ -248,30 +250,37 @@ end
 -- close button; else (a client without that layout) the plain panel with a title and a close button.
 -- Returns the title bar's height (content starts below it), the title and the close button.
 function Look:Window(frame, title, onClose)
-	local util = _G.NineSliceUtil
 	local top = 0
-	local layout = util and util.GetLayout and util.GetLayout("ButtonFrameTemplateNoPortrait") and "ButtonFrameTemplateNoPortrait"
-	local ok, nine = false, nil
-	if layout then ok, nine = pcall(CreateFrame, "Frame", nil, frame, "NineSlicePanelTemplate") end
-	if ok and nine and pcall(util.ApplyLayoutByName, nine, layout) then
-		nine:SetAllPoints()
-		nine:SetFrameLevel(frame:GetFrameLevel())
-		local bg = frame:CreateTexture(nil, "BACKGROUND")
-		bg:SetPoint("TOPLEFT", 6, -21)
-		bg:SetPoint("BOTTOMRIGHT", -2, 3)
-		if bg:SetTexture("Interface\\FrameGeneral\\UI-Background-Rock", "REPEAT", "REPEAT") == false then
-			bg:SetColorTexture(0.1, 0.09, 0.08, 1)
-		end
-		bg:SetHorizTile(true)
-		bg:SetVertTile(true)
-		local shade = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-		shade:SetAllPoints(bg)
-		shade:SetColorTexture(0, 0, 0, 0.45)       -- (the rock darkened, so the small print reads)
-		top = 21
+	if ns.Style then
+		-- v0.4.2: the look's frame (UI/Style.lua): Profession the same metal nine-slice over the profession
+		-- window's background, Norse heavy bronze with corner brackets; without the layout, a plain frame
+		top = ns.Style.Frame(frame)
 	else
-		Look:Panel(frame, { alpha = 0.96 })
+		local util = _G.NineSliceUtil
+		local layout = util and util.GetLayout and util.GetLayout("ButtonFrameTemplateNoPortrait") and "ButtonFrameTemplateNoPortrait"
+		local ok, nine = false, nil
+		if layout then ok, nine = pcall(CreateFrame, "Frame", nil, frame, "NineSlicePanelTemplate") end
+		if ok and nine and pcall(util.ApplyLayoutByName, nine, layout) then
+			nine:SetAllPoints()
+			nine:SetFrameLevel(frame:GetFrameLevel())
+			local bg = frame:CreateTexture(nil, "BACKGROUND")
+			bg:SetPoint("TOPLEFT", 6, -21)
+			bg:SetPoint("BOTTOMRIGHT", -2, 3)
+			if bg:SetTexture("Interface\\FrameGeneral\\UI-Background-Rock", "REPEAT", "REPEAT") == false then
+				bg:SetColorTexture(0.1, 0.09, 0.08, 1)
+			end
+			bg:SetHorizTile(true)
+			bg:SetVertTile(true)
+			local shade = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+			shade:SetAllPoints(bg)
+			shade:SetColorTexture(0, 0, 0, 0.45)       -- (the rock darkened, so the small print reads)
+			top = 21
+		else
+			Look:Panel(frame, { alpha = 0.96 })
+		end
 	end
 	local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	if ns.Style then ns.Style.Title(text, 12) end
 	text:SetPoint("TOPLEFT", top > 0 and 30 or 12, top > 0 and -4 or -10)
 	text:SetPoint("TOPRIGHT", -30, top > 0 and -4 or -10)
 	text:SetJustifyH(top > 0 and "CENTER" or "LEFT")

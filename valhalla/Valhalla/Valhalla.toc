@@ -16,7 +16,7 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: v0.4.1.1
+## Version: v0.4.2
 ## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
@@ -30,6 +30,8 @@ Data\Forever\Client.lua
 Libs\Libs.xml
 
 Core.lua
+# The look (v0.4.2): every button, tick box, text box, dropdown, tab and frame, Profession or Norse
+UI\Style.lua
 # Shift-click an item into Valhalla's text boxes, no stack-split box (v0.3.1)
 Links.lua
 

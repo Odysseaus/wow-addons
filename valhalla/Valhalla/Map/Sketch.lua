@@ -346,7 +346,7 @@ RefreshTray = function()
 end
 
 local function TextButton(width, text, fn, tip)
-	local b = CreateFrame("Button", nil, tray, "UIPanelButtonTemplate")
+	local b = ns.Style.UIButton(tray)
 	b:SetSize(width, 22)
 	b:SetText(text)
 	b:SetScript("OnClick", fn)
