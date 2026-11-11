@@ -2852,6 +2852,28 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   local allRows = true
   for i, r in ipairs(cf.rows) do local x = cf.list[cf.offset + i] if x and r:IsShown() and r.can._text ~= tostring((Mk.Shown(x))) then allRows = false end end
   ok(allRows, "the amount on every row shown")
+  -- (owner, 5:57 PM) the amount changes Can make and Total only: Cost to Make, Sell at, Profit/item, Margin as without it, in every Reagents mode
+  local function Snap()
+    local t = {}
+    for i, r in ipairs(cf.rows) do local x = cf.list[cf.offset + i] if x and r:IsShown() then
+      t[#t + 1] = table.concat({ x.out, r.cost._text, r.sell._text, r.each._text, r.margin._text, tostring(x.cost), tostring(x.each), tostring(x.margin), tostring(x.can), tostring(x.total) }, "|")
+    end end
+    table.sort(t) return table.concat(t, "\n")
+  end
+  local keepMode = I.S.craftOwned
+  local same, n0 = true, 0
+  for _, mode in ipairs({ "market", "free", "vendor" }) do
+    I.S.craftOwned = mode
+    for _ = 1, 400 do mp:Refresh() if not Cr.Running() then break end Cr.Tick() end
+    cf.invest:SetText("") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
+    local without = Snap()
+    cf.invest:SetText("50g") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
+    local with = Snap()
+    n0 = n0 + #without
+    if with ~= without or without == "" then same = false end
+  end
+  I.S.craftOwned = keepMode mp:Refresh()
+  ok(same and n0 > 0, "Profit/item, Margin, Cost to Make (and Sell at) identical with and without an amount: Market, Owned free, Owned: vendor")
   I.S.sortCraft = "can:desc" mp:Refresh()
   local sorted = true for i = 2, #cf.list do if (Mk.Shown(cf.list[i - 1])) < (Mk.Shown(cf.list[i])) then sorted = false end end
   ok(sorted, "Can make sorts by what it shows (with the amount)")
