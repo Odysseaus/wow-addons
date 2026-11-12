@@ -678,7 +678,7 @@ ok(mod.char.pinned[52] == true and W.combatChanges == 0, "in combat: the store c
 W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(2)
 ok(has(W.watches, 52), "after combat: the pinned quest tracked", list(W.watches))
 ok(W.blockedSetters == 0, "no mouse pass-through / propagation setters, ever")
-local allowedRow = { Text = true, questID = true, info = true }
+local allowedRow = { Text = true, Checkbox = true, questID = true, info = true }   -- (Checkbox: the template's own)
 local stray
 for _, r in ipairs(W.log.rows) do
   for k in pairs(r) do if type(k) == "string" and not k:find("^_") and not allowedRow[k] then stray = k end end

@@ -265,6 +265,8 @@ function W.NewQuestLog()
     r.Text = NewFrame("FontString") r.Text._text = ""
     r.Text:SetPoint("TOPLEFT", 31, -8)
     r.Text:SetPoint("TOP", 0, -8)
+    r.Checkbox = NewFrame("Frame")   -- (QuestLogTitleTemplate's Track tick, TOPRIGHT y -8: 1.1.0's chain view hides it)
+    r.Checkbox.CheckMark = NewFrame("Texture")
     r.Text.GetHeight = function(self)   -- (wraps: about 6 px a letter, 12 px a line, in the width it has)
       local width = W.ROW_W - TextLeft(self) - 50
       local lines = math.max(1, math.ceil(#(self._text or "") * 6 / width))
