@@ -72,6 +72,12 @@ local function Slash(msg)
 		if objectives then objectives:Slash(objArg) end
 		return
 	end
+	-- /valhalla chain [coverage|on|off] (1.1.0): the quest log's Chain quest view (Objectives/QuestChains.lua)
+	if objWord == "chain" or objWord == "chains" then
+		local chains = ns:GetModule("chains")
+		if chains and chains.Slash then chains:Slash(objArg) end
+		return
+	end
 	-- the window's tabs and Investments (Investments/Invest.lua, v0.3.0): /valhalla invest ..., tab ..., want ..., unwant ..., list, undo
 	if objWord == "invest" or objWord == "tab" or objWord == "want" or objWord == "unwant" or objWord == "list" or objWord == "undo" then
 		local invest = ns:GetModule("invest")
