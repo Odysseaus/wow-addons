@@ -356,6 +356,14 @@ local function Rows()
 			{ "out", L["Always zoom out"], "INV_Misc_PocketWatch_01", L["Every flight rises at least 2x"] },
 		}, function() return db.questFlyShort == "out" and "out" or "auto" end)
 	end
+	-- (1.1.0) the quest log's Chain quest view (Objectives/QuestChains.lua; also in the log's gear menu)
+	local QC = ns.QuestChains
+	if QC then
+		rows[#rows + 1] = { L["Quest log"] }
+		rows[#rows + 1] = row(L["Chain quest view"], "chainView", Icon("INV_Misc_Book_08"), function() return QC.IsViewOn() end,
+			function(v) QC.SetView(v) end)
+		rows[#rows].note = L["Chain buttons instead of the Track ticks"]
+	end
 	rows[#rows + 1] = { L["Sharing"] }
 	fromOptions(L["Pins others share with you"], "pinsShared", Icon("INV_Misc_Map_01"))
 	rows[#rows + 1] = optRow(L["Share where you are"], "friendsShare", Icon("Ability_Hunter_EagleEye"))

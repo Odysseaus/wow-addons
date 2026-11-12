@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.1.0", date = "2026-11-11", heads = { [1] = "New", [5] = "Note", }, items = {
+		"|cff6e2c0aChain quest view|r (the quest log's gear menu, or Valhalla's menu > More > Quest log; off at first): the Track tick beside each quest is hidden, and a quest that's part of a chain gets a chain button in its place.",
+		"Click a chain button: a window to the right of the map lists the chain's quests in order, first at the top. Done ones are grey; the quest you clicked is highlighted (In your log on the ones you have).",
+		"An 'or' quest (one of two at a step) is indented under its step, an optional one dimmed.",
+		"The window follows your Look (Profession or Norse). Escape or X closes it.",
+		"Tracking stays as it was: by zone, with the pin, Shift-click or right-click > Track.",
+		"Chains come from Wowhead WoW Forever's quest Series boxes, each series its own chain: 507 chains, 1,757 quests (210 Alliance, 175 Horde, 122 both; some for one class). A quest with no series data has no chain icon. /valhalla chain coverage lists your log's quests with and without.",
+		"The chain data was first read for the quests in Vaelan's log; it now comes from 925 Wowhead WoW Forever quest pages.",
+		"Restart the game after installing (new files).",
+	} },
 	{ version = "1.0.1", date = "2026-11-11", heads = { [1] = "Changed", [5] = "Fixed", [6] = "Note", }, items = {
 		"|cff6e2c0aReagents: Market | Owned|r. Owned (was Owned free): what you have (per Count) costs nothing; Can make is what your reagents make and Total follows. The Invest Amount box is greyed with Owned (what you typed is kept for Market).",
 		"|cff6e2c0aOwned: vendor is gone|r; if you had it, Reagents is now Market.",
