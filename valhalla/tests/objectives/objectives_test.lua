@@ -276,7 +276,7 @@ ok(eq(W.watches, { 2, 3, 1 }), "re-ordered with the learned side", list(W.watche
 
 ---------------------------------------------------------------------------
 print("== 13. pins on the tracker's rows")
-local block = W.NewFrame("Frame") block.poiButton = W.NewFrame("Button") block.HeaderText = W.NewFrame("FontString")
+local block = W.NewFrame("Frame") block.poiButton = W.NewFrame("Button") block.HeaderText = W.NewFrame("FontString") block.HeaderText._text = "[5] Wolves"
 _G.QuestObjectiveTracker = { blockTemplate = "ObjectiveTrackerQuestPOIBlockTemplate", usedBlocks = { ObjectiveTrackerQuestPOIBlockTemplate = { [2] = block } } }
 Run(0.4)
 local p = O.UI.pins[1]
@@ -868,6 +868,125 @@ local keys1 = 0 for _ in pairs(ObjectiveTrackerFrame) do keys1 = keys1 + 1 end
 ok(dirty == 0 and keys1 == keys0, "the tracker's MarkDirty never called; nothing written on its frame")
 mod:Slash("sync off")
 _G.QuestObjectiveTracker = nil
+
+---------------------------------------------------------------------------
+-- 1.2.2: new quests' data, blank tracker titles, the Quest Timers box
+---------------------------------------------------------------------------
+print("== 44. (1.2.2) a dungeon quest picked up before its data: placed when the data's in, no zone change")
+W.Reset()
+local asked = {}
+C_QuestLog.RequestLoadQuestByID = function(id) asked[id] = (asked[id] or 0) + 1 end
+W.AddQuest(85, "Dun Morogh", "Frostmane Hold", 10, false, true)
+Restart()
+Arrive(1426)
+ok(eq(W.watches, { 85 }), "Dun Morogh: its quest", list(W.watches))
+W.AddQuest(80, "Dun Morogh", "Horrors in the Highland", 31, false, false)   -- (Dungeon tag not loaded yet)
+Fire("QUEST_ACCEPTED", 80)
+ok(asked[80] == 1, "accepted: its data asked for", tostring(asked[80]))
+Run(1.2)
+ok(has(W.watches, 80) and O.S.fresh[80] ~= nil, "not placed yet (its data not in): left as the game tracked it", list(W.watches))
+W.quests[80].tag = 81
+Fire("QUEST_DATA_LOAD_RESULT", 80) Run(1.2)
+ok(not has(W.watches, 80) and mod.char.hidden[80] and O.S.fresh[80] == nil, "data in: the Dungeon tag read, untracked here (no zone change)", list(W.watches))
+local why80 = O.Why(80)
+ok(type(why80) == "table" and table.concat(why80, " "):find("dungeon quest"), "why: a dungeon quest", type(why80) == "table" and table.concat(why80, " | ") or tostring(why80))
+
+print("== 45. (1.2.2) normal outdoor quests: placed as before; no load result: placed after DATA_TRIES")
+W.AddQuest(81, "Dun Morogh", "Wolves of Dun Morogh", 9, false, false)
+Fire("QUEST_ACCEPTED", 81) Fire("QUEST_DATA_LOAD_RESULT", 81) Run(1.2)
+ok(has(W.watches, 81) and O.S.fresh[81] == nil and W.watches[1] == 81, "data in: tracked here, in its place (lvl 9 first)", list(W.watches))
+W.AddQuest(82, "Dun Morogh", "Ice Troll Tusks", 12, false, false)
+Fire("QUEST_ACCEPTED", 82) Run(1.2)
+ok(O.S.fresh[82] ~= nil, "no load result yet: waiting", list(W.watches))
+Run(3.6)
+ok(O.S.fresh[82] == nil and eq(W.watches, { 81, 85, 82 }), "after DATA_TRIES looks: placed anyway (tracked here, in its place)", list(W.watches))
+W.AddQuest(86, "Westfall", "Harvest Watchers", 14, false, false)
+Fire("QUEST_ACCEPTED", 86) Fire("QUEST_DATA_LOAD_RESULT", 86) Run(1.2)
+ok(not has(W.watches, 86), "another zone's quest: untracked as before", list(W.watches))
+local saveRL = C_QuestLog.RequestLoadQuestByID
+C_QuestLog.RequestLoadQuestByID = nil
+W.AddQuest(87, "Dun Morogh", "Beer Basted Boar", 11, false, false)
+Fire("QUEST_ACCEPTED", 87) Run(1.2)
+ok(O.S.fresh[87] == nil and has(W.watches, 87), "a client that can't be asked: placed at once, as before", list(W.watches))
+C_QuestLog.RequestLoadQuestByID = saveRL
+
+print("== 46. (1.2.2) a watched quest is placed again when its tag or header changes")
+W.AddQuest(83, "Dun Morogh", "Gnomeregan Gears", 28, false, false)   -- (data never comes: placed by its header)
+Fire("QUEST_ACCEPTED", 83) Run(4)
+ok(has(W.watches, 83), "placed by its header (no tag yet)", list(W.watches))
+W.quests[83].tag = 81
+Fire("QUEST_LOG_UPDATE") Run(1.5)
+ok(not has(W.watches, 83) and mod.char.hidden[83], "its Dungeon tag read later: untracked, no zone change", list(W.watches))
+W.quests[82].header = "Westfall"
+Fire("QUEST_LOG_UPDATE") Run(1.5)
+ok(not has(W.watches, 82) and has(W.watches, 81) and has(W.watches, 85), "its header now another zone: untracked; the others kept", list(W.watches))
+local a46, r46 = W.calls.add, W.calls.remove
+Fire("QUEST_LOG_UPDATE") Run(2)
+ok(W.calls.add == a46 and W.calls.remove == r46, "nothing changed: no watch changes")
+W.quests[82].header = "Dun Morogh"
+Fire("QUEST_LOG_UPDATE") Run(1.5)
+ok(has(W.watches, 82), "back to this zone's header: tracked again", list(W.watches))
+
+print("== 47. (1.2.2) a tracker row with an empty title: no pin; redrawn once its data's in")
+local order47 = list(W.watches)
+local function Block(text) local b = W.NewFrame("Frame") b.poiButton = W.NewFrame("Button") b.HeaderText = W.NewFrame("FontString") b.HeaderText._text = text return b end
+local good, blankB = Block("[9] Wolves of Dun Morogh"), Block("")
+_G.QuestObjectiveTracker = { blockTemplate = "ObjectiveTrackerQuestPOIBlockTemplate", usedBlocks = { ObjectiveTrackerQuestPOIBlockTemplate = { [81] = good, [85] = blankB } } }
+local function PinsOn() local out = {} for _, p in ipairs(O.UI.pins) do if p._shown then out[#out + 1] = p.q end end table.sort(out) return out end
+asked[85] = nil
+local a47, r47 = W.calls.add, W.calls.remove
+Run(0.4)
+ok(eq(PinsOn(), { 81 }), "a pin on the titled row only", list(PinsOn()))
+ok(asked[85] == 1 and O.S.blank[85], "the empty row's quest data asked for (once)", tostring(asked[85]))
+Run(2)
+ok(W.calls.add == a47 and W.calls.remove == r47 and asked[85] == 1, "data not in yet: no re-track, not asked again")
+W.combat = true W.combatChanges = 0
+Fire("QUEST_DATA_LOAD_RESULT", 85) Run(1)
+ok(W.combatChanges == 0, "in combat: waits")
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(0.4)
+ok(W.calls.add == a47 + 1 and W.calls.remove == r47 + 1 and list(W.watches) == order47, "data in, fight over: one re-track, the order kept", list(W.watches))
+Run(10)
+ok(W.calls.add - a47 <= O.REDRAW_TRIES and W.calls.add - a47 >= 2 and (O.S.redraw[85] or 0) == O.REDRAW_TRIES, "a title that stays empty: at most REDRAW_TRIES, NUDGE_GAP apart", tostring(W.calls.add - a47))
+local a47b = W.calls.add
+Run(6)
+ok(W.calls.add == a47b, "then it stops")
+blankB.HeaderText._text = "[10] Frostmane Hold"
+Run(0.4)
+ok(eq(PinsOn(), { 81, 85 }) and not O.S.blank[85] and O.S.redraw[85] == nil, "the title in: its pin back, nothing waiting", list(PinsOn()))
+_G.QuestObjectiveTracker = nil
+
+print("== 48. (1.2.2) the Quest Timers box: the tracker laid out again once, debounced; never in combat")
+local timer = W.NewFrame("Frame")
+timer._hk = {}
+timer.HookScript = function(self, k, fn) self._hk[k] = self._hk[k] or {} table.insert(self._hk[k], fn) end
+local keysT0 = 0 for k in pairs(timer) do keysT0 = keysT0 + 1 end
+local function Hooks(k) local n = 0 for _, fn in ipairs(timer._hk[k] or {}) do fn(timer) n = n + 1 end return n end
+local function NHooks() local n = 0 for _, l in pairs(timer._hk) do n = n + #l end return n end
+_G.QuestTimerFrame = timer
+Run(0.4)
+ok(NHooks() == 3 and timer._hk.OnShow and timer._hk.OnHide and timer._hk.OnSizeChanged, "hooked: OnShow, OnHide, OnSizeChanged", tostring(NHooks()))
+local order48 = list(W.watches)
+local a48 = W.calls.add
+Hooks("OnShow") Hooks("OnSizeChanged") Run(0.2) Hooks("OnSizeChanged")
+ok(W.calls.add == a48, "not at once (settling)")
+Run(1)
+ok(W.calls.add == a48 + 1 and list(W.watches) == order48 and O.S.timerLayouts == 1, "one re-track for the burst, the order kept", list(W.watches))
+Run(3)
+ok(W.calls.add == a48 + 1, "no more after")
+W.combat = true W.combatChanges = 0
+Hooks("OnHide") Run(2)
+ok(W.combatChanges == 0, "in combat: waits")
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(0.6)
+ok(W.calls.add == a48 + 2, "fight over: once")
+Restart() Run(1)
+ok(NHooks() == 3, "turned off and on: no second set of hooks", tostring(NHooks()))
+local keysT = 0 for k in pairs(timer) do keysT = keysT + 1 end
+ok(keysT == keysT0, "nothing written on the timer frame (only hooked)", keysT0 .. " -> " .. keysT)
+W.watches = {}
+Hooks("OnShow") local okT = pcall(Run, 1)
+ok(okT, "nothing tracked: no error, nothing to re-track")
+_G.QuestTimerFrame = nil
+C_QuestLog.RequestLoadQuestByID = nil
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.2", date = "2026-11-12", heads = { [1] = "Fixed", [5] = "Note", }, items = {
+		"|cff6e2c0aNew quests go to the right section|r: a quest you pick up is placed once the game has its data (its Dungeon tag), so a dungeon quest no longer lands in this zone's Quests until you change zones.",
+		"A quest whose log header or tag changes is placed again at once, not only at the next zone change.",
+		"|cff6e2c0aNo more blank pinned rows|r: a tracker row whose title hasn't loaded gets no pin, and the tracker is made to read it again once the quest's data is in.",
+		"The game's Quest Timers box no longer covers the All Objectives header: the tracker lays out again when the box shows, hides or grows.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.1", date = "2026-11-12", heads = { [1] = "Fixed", [4] = "New", [5] = "Changed", [6] = "Note", }, items = {
 		"|cff6e2c0aTop 10's trainer levels|r: the trainer's list is read again as it fills in (recipe names arrive after the window opens), so its skill levels are recorded; your trainer filters are put back each time.",
 		"A recipe is matched to the item it makes by its link, by what the recipe makes, or by its name (names the game hasn't loaded yet are asked for, then read).",

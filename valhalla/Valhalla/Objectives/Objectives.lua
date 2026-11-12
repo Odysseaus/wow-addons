@@ -30,6 +30,16 @@
 --    the order (O.Nudge: out of combat, at most every NUDGE_GAP s). Nothing of the tracker's is called.
 --  * ready = the game's ReadyForTurnIn or IsComplete (as its tracker shows it);
 --  * /valhalla objectives sync on|off|show: a read-only log (ValhallaDB.objectives.syncLog).
+--
+-- 1.2.2, new quests: the game can list a quest before its data (its Dungeon tag, its title) is loaded.
+--  * QUEST_ACCEPTED asks for the quest's data (C_QuestLog.RequestLoadQuestByID); where it belongs is
+--    decided when QUEST_DATA_LOAD_RESULT says it's in (or after DATA_TRIES looks, NEW_GAP apart);
+--  * a quest whose log header or tag changes is placed again (O.PlanPartial), not only at a zone change;
+--  * a tracker row whose title reads empty gets no pin, and once the quest's data is in the tracker is made
+--    to read again (one order-keeping re-track, O.Retrack; at most REDRAW_TRIES a quest);
+--  * the game's Quest Timers box (QuestTimerFrame, above the tracker) showing, hiding or resizing: the
+--    tracker is made to lay out again once (TIMER_SETTLE after the last), so its header moves below it.
+--    (HookScript post-hooks on that frame: nothing of it is changed.)
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -57,6 +67,9 @@ O.MARKER_GAP = 0.9              -- ...this many seconds apart (POI data can read
 O.ROW_H = 32
 O.SETTLE_READ = 1.5             -- v0.4.2.2: a second read this long after the last progress event
 O.NUDGE_GAP = 2.0               -- ...and the tracker made to read again at most this often
+O.DATA_TRIES = 6                -- 1.2.2: a new quest's data (tag) waited for this many looks (NEW_GAP apart)
+O.REDRAW_TRIES = 3              -- 1.2.2: re-tracks for one quest's empty tracker title (again when its data comes)
+O.TIMER_SETTLE = 0.3            -- 1.2.2: after the Quest Timers box shows / hides / resizes, one re-layout
 O.SYNC_MAX = 80                 -- /valhalla objectives sync: entries kept
 O.SYNC_MINUTES = 30             -- ...and how long it stays on
 
@@ -97,6 +110,10 @@ function O.Reset()
 	S.waitingTaxi = false
 	S.seen = {}             -- v0.4.2.2: [id] = the watched quest's objectives as the tracker last read them
 	S.stale = {}            -- [id] = true: changed since, with no event the tracker hears
+	S.loaded = {}           -- 1.2.2: [id] = true: QUEST_DATA_LOAD_RESULT said its data is in
+	S.keys = {}             -- 1.2.2: [id] = "header|tag" as last placed (a change places it again)
+	S.redraw = {}           -- 1.2.2: [id] = re-tracks so far for its empty tracker title
+	S.blank = {}            -- 1.2.2: [id] = true: its tracker row's title read empty (waiting)
 end
 O.Reset()
 
@@ -143,6 +160,24 @@ function O.ReadLog()
 	end
 	return out, n
 end
+
+-- 1.2.2: is a quest's data in (its tag readable)? The load result said so, the game's HaveQuestData says so,
+-- or this client can't be asked (no RequestLoadQuestByID: decided as before)
+function O.DataReady(id)
+	if S.loaded[id] then return true end
+	local CQ = C_QuestLog
+	if not (CQ and CQ.RequestLoadQuestByID) then return true end
+	local have = rawget(_G, "HaveQuestData")
+	if have and Call(have, id) then return true end
+	return false
+end
+function O.RequestData(id)
+	local CQ = C_QuestLog
+	if id and CQ and CQ.RequestLoadQuestByID then Call(CQ.RequestLoadQuestByID, id) end
+end
+-- what places a quest (a change: placed again)
+local function KeyOfPlace(e) return tostring(e.header) .. "|" .. tostring(e.tag) end
+O.KeyOfPlace = KeyOfPlace
 
 -- the watch list, in the tracker's order: ids, and { [id] = index }
 function O.WatchOrder()
@@ -491,6 +526,8 @@ function O.PlanFull()
 		if not watched[e.id] then Queue(e.id, true) end
 	end
 	O.SweepPins(log, n)
+	S.keys = {}
+	for id, e in pairs(log) do S.keys[id] = KeyOfPlace(e) end
 	S.reorderDue, S.reorderTries = Now(), 0
 	S.readyDirty = true
 	return true
@@ -542,12 +579,20 @@ function O.PlanPartial()
 	local _, watched = O.WatchOrder()
 	local count, added = 0, false
 	for _ in pairs(watched) do count = count + 1 end
+	-- (1.2.2) a quest whose header or tag changed since it was placed (its data came in late): placed again
+	local changed = {}
+	for id, e in pairs(log) do
+		local k = KeyOfPlace(e)
+		if S.keys[id] ~= nil and S.keys[id] ~= k and not S.fresh[id] then changed[id] = true end
+		if not S.fresh[id] then S.keys[id] = k end
+	end
+	for id in pairs(S.keys) do if not log[id] then S.keys[id] = nil end end
 	for id, e in pairs(log) do
 		local listed = O.Listed(e, here)
 		if watched[id] and e.ready then
 			Queue(id, false)   -- (ready: shown in Ready to Turn In when listed, never in Quests)
-		elseif watched[id] and lost[id] and not listed then
-			Queue(id, false)   -- (its marker here is gone: nothing left to do here)
+		elseif watched[id] and (lost[id] or changed[id]) and not listed then
+			Queue(id, false)   -- (its marker here is gone, or now it says it's another place's: nothing to do here)
 		elseif not watched[id] and not e.ready and listed and (c.hidden[id] or gained[id]) and count < O.MAX_WATCHES then
 			Queue(id, true) count = count + 1 added = true
 		end
@@ -556,8 +601,10 @@ function O.PlanPartial()
 	for id, f in pairs(S.fresh) do
 		if now >= f.due then
 			local e = log[id]
-			if e and e.header then
+			-- (1.2.2) its data in (the Dungeon tag readable), or waited DATA_TRIES looks
+			if e and e.header and (O.DataReady(id) or f.tries >= O.DATA_TRIES) then
 				S.fresh[id] = nil
+				S.keys[id] = KeyOfPlace(e)
 				if O.Listed(e, here) then
 					if e.ready then
 						if watched[id] then Queue(id, false) end
@@ -660,15 +707,7 @@ function O.Nudge(now)
 		if sig and sig ~= S.seen[id] then any = id else S.stale[id] = nil end
 	end
 	if not any then return nil end
-	local order = O.WatchOrder()
-	local side = mod.db and mod.db.watchSide
-	local lever = (side == "front" and order[1]) or (side == "end" and order[#order]) or any
-	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
-	Remove(lever) Add(lever)
-	if super and super ~= 0 and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID
-		and Call(C_SuperTrack.GetSuperTrackedQuestID) ~= super then
-		Call(C_SuperTrack.SetSuperTrackedQuestID, super)
-	end
+	local lever, order = O.Retrack(any)
 	if O.SyncOn() then
 		local ids = {}
 		for id in pairs(S.stale) do ids[#ids + 1] = id end
@@ -677,11 +716,76 @@ function O.Nudge(now)
 	end
 	S.nudges = (S.nudges or 0) + 1
 	S.nudgeAt = now + O.NUDGE_GAP
+	O.AfterRetrack(now, order)
+	return "nudged"
+end
+
+-- one quest re-tracked where it already is (the front one when new watches go to the front, the last when
+-- they go to the end; else 'any'): the tracker lays out again, the order kept, the super-tracked quest kept.
+-- Returns the quest re-tracked and the order before (nil: nothing tracked)
+function O.Retrack(any)
+	local order = O.WatchOrder()
+	if #order == 0 then return nil, order end
+	local side = mod.db and mod.db.watchSide
+	local lever = (side == "front" and order[1]) or (side == "end" and order[#order]) or any or order[1]
+	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+	Remove(lever) Add(lever)
+	if super and super ~= 0 and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID
+		and Call(C_SuperTrack.GetSuperTrackedQuestID) ~= super then
+		Call(C_SuperTrack.SetSuperTrackedQuestID, super)
+	end
+	return lever, order
+end
+function O.AfterRetrack(now, order)
 	O.Snapshot()
 	if not O.Same(O.WatchOrder(), order) then   -- (the side guessed wrong, or not known: put back in order)
 		S.reorderDue, S.reorderTries = now + O.TICK, 0
 	end
-	return "nudged"
+end
+
+-- (1.2.2) tracker rows whose title read empty, their quest's data now in: the tracker made to read again
+-- (out of combat, NUDGE_GAP apart, at most REDRAW_TRIES a quest until its data comes again)
+function O.Redraw(now)
+	local want
+	for id in pairs(S.blank) do
+		local n = S.redraw[id] or 0
+		if n < O.REDRAW_TRIES and O.DataReady(id) then want = want or id S.redraw[id] = n + 1 end
+	end
+	if not want then return nil end
+	local lever, order = O.Retrack(want)
+	if not lever then return nil end
+	if O.SyncOn() then O.SyncAdd(("redraw: an empty tracker title (quest %s), re-tracked %s"):format(tostring(want), tostring(lever))) end
+	S.redraws = (S.redraws or 0) + 1
+	S.nudgeAt = now + O.NUDGE_GAP
+	O.AfterRetrack(now, order)
+	return "redrawn"
+end
+
+-- (1.2.2) the Quest Timers box changed: the tracker lays out again once (its header goes below the box)
+function O.TimerChanged()
+	S.timerDue = Now() + O.TIMER_SETTLE
+end
+function O.HookTimer()
+	if S.timerHooked and O.timerFrame == rawget(_G, "QuestTimerFrame") then return true end
+	local f = rawget(_G, "QuestTimerFrame")
+	if type(f) ~= "table" or type(f.HookScript) ~= "function" then return false end
+	if O.timerFrame ~= f then
+		for _, k in ipairs({ "OnShow", "OnHide", "OnSizeChanged" }) do
+			pcall(f.HookScript, f, k, function() if mod.enabled ~= false and O.timerFrame == f then O.TimerChanged() end end)
+		end
+		O.timerFrame = f
+	end
+	S.timerHooked = true
+	return true
+end
+function O.TimerLayout(now)
+	S.timerDue = nil
+	local lever, order = O.Retrack()
+	if not lever then return nil end
+	if O.SyncOn() then O.SyncAdd(("quest timers changed: re-tracked %s"):format(tostring(lever))) end
+	S.timerLayouts = (S.timerLayouts or 0) + 1
+	O.AfterRetrack(now, order)
+	return "timer"
 end
 
 -- the queued watch changes, a few at a time
@@ -836,6 +940,14 @@ function O.Step(now)
 		local r = O.Nudge(now)
 		if r then return r end
 	end
+	if S.timerDue and now >= S.timerDue then
+		local r = O.TimerLayout(now)
+		if r then return r end
+	end
+	if next(S.blank) and not S.fullDue and now >= (S.nudgeAt or 0) then
+		local r = O.Redraw(now)
+		if r then return r end
+	end
 	if S.reorderDue and now >= S.reorderDue then return O.Reorder() end
 end
 
@@ -853,6 +965,8 @@ O.EVENTS = {
 	-- v0.4.2.2: progress the tracker doesn't hear (O.Progress), and its own QUEST_AUTOCOMPLETE (O.Snapshot)
 	"UNIT_QUEST_LOG_CHANGED", "QUEST_WATCH_UPDATE", "QUEST_LOG_CRITERIA_UPDATE", "QUEST_ITEM_UPDATE",
 	"BAG_UPDATE_DELAYED", "UI_INFO_MESSAGE", "QUEST_AUTOCOMPLETE",
+	-- 1.2.2: a quest's data loaded (a new quest's tag; an empty tracker title)
+	"QUEST_DATA_LOAD_RESULT",
 }
 O.PROGRESS_EVENTS = { UNIT_QUEST_LOG_CHANGED = true, QUEST_WATCH_UPDATE = true, QUEST_LOG_CRITERIA_UPDATE = true,
 	QUEST_ITEM_UPDATE = true, BAG_UPDATE_DELAYED = true, UI_INFO_MESSAGE = true }
@@ -895,13 +1009,27 @@ function O.OnEvent(event, a1, a2, ...)
 	elseif event == "PLAYER_CONTROL_GAINED" then
 		if S.waitingTaxi or S.fullDue then S.waitingTaxi = false O.ZoneDue(now) end
 	elseif event == "QUEST_ACCEPTED" then
-		if a1 then S.fresh[a1] = { due = now + O.NEW_GAP, tries = 0 } end
+		if a1 then
+			S.fresh[a1] = { due = now + O.NEW_GAP, tries = 0 }
+			S.loaded[a1] = nil
+			O.RequestData(a1)   -- (1.2.2: its tag and title; placed when they're in)
+		end
+	elseif event == "QUEST_DATA_LOAD_RESULT" then
+		if a1 and (a2 == nil or a2) and (S.fresh[a1] or (S.log and S.log[a1]) or S.blank[a1]) then
+			S.loaded[a1] = true
+			S.redraw[a1] = nil   -- (its empty title: tried again now its data is in)
+			local f = S.fresh[a1]
+			if f then f.due = math.min(f.due, now) end
+			S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE
+		end
+		return
 	elseif event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN" then
 		if a1 then
 			local was = O.Pinned()[a1]
 			O.Pinned()[a1] = nil
 			Char().hidden[a1] = nil
 			S.fresh[a1] = nil
+			S.blank[a1], S.redraw[a1], S.loaded[a1], S.keys[a1] = nil, nil, nil, nil
 			if S.miss then S.miss[a1] = nil end
 			if was then O.NotifyPins(a1) end
 		end
@@ -1031,24 +1159,36 @@ function O.LayoutPins()
 	local T = rawget(_G, "ObjectiveTrackerFrame")
 	local blocks = Visible(T) and O.Blocks() or {}
 	local n = 0
+	local blank = {}
 	for _, it in ipairs(blocks) do
-		n = n + 1
-		local p = UI.pins[n] or MakePin(UIParent)
-		UI.pins[n] = p
 		local b = it.b
-		local poi = Visible(rawget(b, "poiButton")) and b.poiButton or nil
-		local key = tostring(b) .. ":" .. it.q .. ":" .. tostring(poi)
-		if p.key ~= key then
-			p.key = key
-			p:ClearAllPoints()
-			p:SetPoint("RIGHT", poi or rawget(b, "HeaderText") or b, "LEFT", -2, 0)
+		-- (1.2.2) a row whose title reads empty (its quest's data not in when the tracker drew it): no pin;
+		-- the tracker is made to read it again once the data's in (O.Redraw)
+		local ht = rawget(b, "HeaderText")
+		local text = type(ht) == "table" and ht.GetText and ht:GetText()
+		if type(ht) == "table" and (type(text) ~= "string" or text == "") then
+			blank[it.q] = true
+			if not S.blank[it.q] then O.RequestData(it.q) end
+		else
+			n = n + 1
+			local p = UI.pins[n] or MakePin(UIParent)
+			UI.pins[n] = p
+			local poi = Visible(rawget(b, "poiButton")) and b.poiButton or nil
+			local key = tostring(b) .. ":" .. it.q .. ":" .. tostring(poi)
+			if p.key ~= key then
+				p.key = key
+				p:ClearAllPoints()
+				p:SetPoint("RIGHT", poi or rawget(b, "HeaderText") or b, "LEFT", -2, 0)
+			end
+			p:SetFrameStrata(b:GetFrameStrata() or "LOW")
+			p:SetFrameLevel((b:GetFrameLevel() or 1) + 5)
+			PaintPin(p, it.q)
+			p:Show()
 		end
-		p:SetFrameStrata(b:GetFrameStrata() or "LOW")
-		p:SetFrameLevel((b:GetFrameLevel() or 1) + 5)
-		PaintPin(p, it.q)
-		p:Show()
 	end
 	for i = n + 1, #UI.pins do UI.pins[i]:Hide() UI.pins[i].key = nil end
+	for id in pairs(S.redraw) do if not blank[id] then S.redraw[id] = nil end end
+	S.blank = blank
 	return n
 end
 
@@ -1364,6 +1504,7 @@ function O.Tick()
 	if O.SyncOn() then O.SyncLate(now) end
 	local LP = O.LogPins
 	if LP and LP.IsOn() and not LP.Hooked() then LP.Hook() end   -- (the quest log not there yet: tried again)
+	if not S.timerHooked then O.HookTimer() end   -- (1.2.2: Blizzard_QuestTimer may load later)
 	if S.readyDirty then O.FillReady() end
 	local T = rawget(_G, "ObjectiveTrackerFrame")
 	if Visible(T) then O.LayoutPins() else for _, p in ipairs(UI.pins) do p:Hide() p.key = nil end end
