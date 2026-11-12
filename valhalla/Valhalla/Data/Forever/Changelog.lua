@@ -4,6 +4,14 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.1", date = "2026-11-12", heads = { [1] = "Fixed", [4] = "New", [5] = "Changed", [6] = "Note", }, items = {
+		"|cff6e2c0aTop 10's trainer levels|r: the trainer's list is read again as it fills in (recipe names arrive after the window opens), so its skill levels are recorded; your trainer filters are put back each time.",
+		"A recipe is matched to the item it makes by its link, by what the recipe makes, or by its name (names the game hasn't loaded yet are asked for, then read).",
+		"The chat line says how many were recorded and how many couldn't be matched to an item.",
+		"/valhalla invest trainer: what each profession's trainers gave (recorded, matched, and the names not matched).",
+		"Top 10's ? note: a recipe you find or buy (not taught by trainers) stays ? until its level is in Valhalla's data.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.0", date = "2026-11-12", heads = { [1] = "New", [5] = "Changed", [8] = "Fixed", [9] = "Note", }, items = {
 		"|cff6e2c0aAH price on item tooltips|r: every item tooltip ends with the AH's lowest price from your last scan (the house shown in AH Market) and how old it is; holding 2 or more (bags + bank), what they're worth at it. Nothing for an item with no scan data or a soulbound one. Settings > AH Market to turn it off.",
 		"|cff6e2c0aHistory: hover the graph|r for the nearest point's price, scan time, units listed and full or quick scan (lines and bars).",

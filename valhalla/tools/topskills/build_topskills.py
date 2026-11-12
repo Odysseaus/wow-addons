@@ -23,6 +23,9 @@ w('--   Herbalism, Mining: the node\'s orange skill (guide node tables), the low
 for g in guides:
     if any(x in g for x in ('herbalism', 'mining')): w('--       ' + g)
 w('--   Skinning (creature level) and Fishing (zone skill): not readable (item pages blocked); all unknown.')
+for x in d.get('extra_reads', []):
+    w('--   Added (%s): %d craft values from Wowhead Forever item pages (recipe item "Requires (N)", or the crafted' % (', '.join(x['read']) or 'read time not given', x['values']))
+    w('--     item\'s Created by tab), https://www.wowhead.com/forever/item=<id> (merge_raw.py; %s).' % ', '.join(x['files']))
 w('--   Which recipe makes which item: the client\'s DB2 (as Data/Forever/Recipes.lua). Mining: Harvested only.')
 w('-- Format: ns.TopSkills.<craft|harvest>[<skill line>] = { known = "<item>:<skill>,...", unknown = "<item>,..." }')
 w('-- Rebuilt by valhalla/tools/topskills/build_topskills.py; regenerate rather than edit.')

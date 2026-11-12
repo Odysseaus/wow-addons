@@ -3348,5 +3348,100 @@ print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's b
   ok(#W.sizeErrors == errs0, "no handler error")
 end)()
 
+print("== 41. 1.2.1: trainer reads as the list fills in, more ways to the item, what the read saw, the ? note")
+;(function()
+  local Mk, R = I.Market, I.Trainer
+  W.items[3383] = { "Elixir of Wisdom", 134711 } W.items[3385] = { "Lesser Mana Potion", 134851 } W.items[3389] = { "Elixir of Defense", 134846 }
+  W.items[8949] = { "Elixir of Agility", 134873 }
+  local services, filters, setLog = {}, { available = true, unavailable = false, used = false }, {}
+  local ready, fireOnSet = false, false
+  local function Visible() local t = {} if not ready then return t end for _, s in ipairs(services) do if s[2] == "header" or filters[s[2]] then t[#t + 1] = s end end return t end
+  GetTrainerServiceTypeFilter = function(t) return filters[t] end
+  SetTrainerServiceTypeFilter = function(t, v) setLog[#setLog + 1] = t .. "=" .. tostring(v) filters[t] = v and true or false if fireOnSet then W.Fire("TRAINER_UPDATE") end end
+  GetNumTrainerServices = function() return #Visible() end
+  GetTrainerServiceInfo = function(i) local s = Visible()[i] if s then if s.hideName then return nil, s[2] end return s[1], s[2] end end
+  GetTrainerServiceSkillReq = function(i) local s = Visible()[i] if s and s.skill then return s.skill[1], s.skill[2], true end end
+  GetTrainerServiceItemLink = function(i) local s = Visible()[i] return s and s.link end
+  IsTradeskillTrainer = function() return true end
+  local schem = { [3171] = 3389 }
+  C_TradeSkillUI = C_TradeSkillUI or {}
+  local keepSchem = C_TradeSkillUI.GetRecipeSchematic
+  C_TradeSkillUI.GetRecipeSchematic = function(id) return schem[id] and { outputItemID = schem[id] } or nil end
+  services = {
+    { "Alchemy", "header" },
+    { "Elixir of Wisdom", "unavailable", skill = { "Alchemy", 90 }, hideName = true },               -- (its name comes later)
+    { "Elixir of Defense", "available", skill = { "Alchemy", 130 }, link = "|Hspell:3171|h[Elixir of Defense]|h" },   -- (a spell link)
+    { "Lesser Mana Potion", "used", skill = { "Alchemy", 120 } },                                  -- (by name)
+    { "Elixir of Agility", "unavailable", skill = { "Alchemy", 185 } },                              -- (its item not loaded yet)
+  }
+  W.uncached[8949] = true
+  I.db.trainer = nil
+  W.timers = {}
+  ns.printed = {}
+  W.now = W.now + 100
+  W.Fire("TRAINER_SHOW")
+  ok(R.open and (I.db.trainer == nil or next(I.db.trainer) == nil) and table.concat(setLog, ",") == "unavailable=true,used=true,unavailable=false,used=false" and #ns.printed == 0,
+    "the window opens with its list still empty: nothing recorded, the filters put back")
+  -- the list fills in
+  ready = true
+  W.Fire("TRAINER_UPDATE")
+  ok(#W.timers == 0, "an update within a second of our own read: taken as our filter switching (no read)")
+  W.now = W.now + 5
+  W.Fire("TRAINER_UPDATE") W.Fire("TRAINER_UPDATE")
+  ok(#W.timers == 2, "the list updates: a read waits half a second (each update restarts the wait)")
+  setLog = {}
+  W.RunTimers()
+  local tr = I.db.trainer and I.db.trainer[171]
+  ok(tr and tr.items[3389] == 130 and tr.items[3385] == 120 and tr.items[3383] == nil and tr.items[8949] == nil and #setLog == 4 and filters.unavailable == false and filters.used == false,
+    "read once when it filled in: a spell link (what the recipe makes) and a name matched; filters put back", tostring(tr and tr.n))
+  ok(tr.last and tr.last.services == 4 and tr.last.matched == 2 and table.concat(tr.last.unmatched, ",") == "#2,Elixir of Agility" and tr.last.link:find("spell:3171", 1, true),
+    "what the read saw saved: 4 recipes, 2 matched, the unmatched (a missing name, an unloaded item), a sample link", tr.last and table.concat(tr.last.unmatched or {}, ","))
+  ok(Printed("recorded 2 skill levels from this Alchemy trainer %(2 not matched to an item; /valhalla invest trainer%)"), "chat: recorded and not matched", ns.printed[#ns.printed])
+  ok(R.wait and R.wait[8949] and W.calls.requestLoad and W.calls.requestLoad > 0, "the item not loaded yet: asked for")
+  -- names arrive
+  W.now = W.now + 5
+  services[2].hideName = nil
+  W.Fire("TRAINER_SERVICE_INFO_NAME_UPDATE")
+  W.RunTimers()
+  ok(tr.items[3383] == 90 and tr.items[8949] == nil and tr.last.matched == 3, "a recipe name arrives: read again, Elixir of Wisdom 90")
+  W.now = W.now + 5
+  W.uncached[8949] = nil
+  W.Fire("GET_ITEM_INFO_RECEIVED", 8949)
+  W.RunTimers()
+  ok(tr.items[8949] == 185 and tr.last.matched == 4 and #tr.last.unmatched == 0 and tr.n == 4, "the item's name arrives: read again, Elixir of Agility 185; all matched")
+  -- our own filter switching firing updates (as the game does, at once): no second read
+  W.now = W.now + 5
+  fireOnSet = true
+  local reads = R.reads
+  W.Fire("TRAINER_UPDATE") W.RunTimers()
+  ok(R.reads == reads + 1 and #W.timers == 0, "the updates our own filter switching makes: no read of their own")
+  fireOnSet = false
+  -- at most MAX_READS for one opening
+  for _ = 1, 10 do W.now = W.now + 5 W.Fire("TRAINER_UPDATE") W.RunTimers() end
+  ok(R.openReads == R.MAX_READS, "at most " .. R.MAX_READS .. " reads for one opening of the window", R.openReads)
+  W.Fire("TRAINER_CLOSED")
+  W.now = W.now + 5
+  W.Fire("TRAINER_UPDATE")
+  ok(not R.open and #W.timers == 0, "closed: no more reads")
+  -- /valhalla invest trainer
+  ns.printed = {}
+  Slash("invest", "trainer")
+  ok(Printed("^Alchemy: 4 skill levels recorded%. Last read: 4 recipes, 4 matched to an item%.$"), "/valhalla invest trainer: recorded and the last read", ns.printed[1])
+  -- Top 10 at once (no reload): Alchemy 151-225
+  local list = { { id = 3383 }, { id = 3385 }, { id = 8949 }, { id = 6371 } }
+  local out, n, unk = Mk.TopFilter(list, "craft", 171, "151")
+  local ids = {} for _, e in ipairs(out) do ids[#ids + 1] = e.id .. (unk[e.id] and "?" or "") end
+  ok(table.concat(ids, ",") == "8949,6371?" and Mk.TopSkill("craft", 171, 6371) == false,
+    "Top 10 at once: Elixir of Wisdom and Lesser Mana Potion gone from 151-225, Elixir of Agility (185) unmarked; Fire Oil (a recipe item) still ?", table.concat(ids, ","))
+  ok(Mk.UNKNOWN_NOTE:find("a recipe you find or buy %(not taught by trainers%) stays %? until its level is in Valhalla's data"), "the note: why a found or bought recipe stays ?")
+  -- a class trainer: never read
+  IsTradeskillTrainer = function() return false end
+  setLog = {}
+  W.Fire("TRAINER_SHOW")
+  ok(#setLog == 0, "a class trainer: not read, its filters untouched")
+  W.Fire("TRAINER_CLOSED")
+  C_TradeSkillUI.GetRecipeSchematic = keepSchem
+end)()
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end

@@ -777,7 +777,7 @@ M.TOP_HEADS = {
 M.TOP_VIEW_TIPS = { movers = "Items whose lowest price moved most over 7 days.",
 	sold = "Items selling the most, estimated from units leaving the AH between your full scans." }
 M.UNKNOWN_MARK = " |cffaaaaaa?|r"
-M.UNKNOWN_NOTE = "? %d shown with no known %s skill level yet: they show at every level. Open a %s trainer once to record the levels it teaches."
+M.UNKNOWN_NOTE = "? %d shown with no known %s skill level yet: they show at every level. Open a %s trainer once to record the levels it teaches; a recipe you find or buy (not taught by trainers) stays ? until its level is in Valhalla's data."
 M.SOLD_NOTE = "Estimate: units that left the AH between your full scans. Bought, expired and cancelled look the same; new listings hide some. More full scans, closer together: a better estimate."
 function M.TopView() return I.S.topView == "sold" and "sold" or "movers" end
 
