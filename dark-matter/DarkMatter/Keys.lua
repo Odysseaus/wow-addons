@@ -18,20 +18,16 @@ local owner, regen
 local function InCombat() return type(InCombatLockdown) == "function" and InCombatLockdown() == true end
 function K.Wanted() return not (NS.db and NS.db.mlKeys == false) end
 
--- 0.5.2b.10: M toggles the Map tab, L the Quests tab: the same key on its own tab closes the window, else that tab opens
+-- 0.5.2b.28: M and L both toggle Map & Quest Logs. Either key closes it when it is open.
+-- Opening centres on you. ALT-M and ALT-L are unchanged (the stock map and stock quest log).
 function K.Press(which)
   local f = _G.DarkMatterFrame
-  local tab = which == "log" and "quests" or "map"
-  if f and f:IsShown() and NS.db and NS.db.tab == tab then
+  local shown = f and f.IsShown and f:IsShown()
+  if shown then
     NS.ToggleWindow(false)
     return "closed"
   end
-  if tab == "map" then
-    NS.OpenOnMap(nil, true) -- shows the window on the Map tab (opens at your map, like the game's)
-  else
-    NS.ToggleWindow(true)
-    NS.ShowTab("quests")
-  end
+  NS.OpenOnMap(nil, true)
   return "opened"
 end
 
@@ -44,12 +40,27 @@ local function Build()
       btn:Hide()
       btn:RegisterForClicks("AnyUp", "AnyDown")
       local which = b.key == "L" and "log" or "map"
-      -- a key click can come as a press and a release: act once (on whichever comes first)
+      -- a key click can come as a press and a release: act once. M and L keep separate timers,
+      -- so alternating the two keys is not swallowed.
       btn:SetScript("OnClick", function(_, _, down)
         local now = (type(GetTime) == "function" and GetTime()) or 0
-        if down == false and K.downAt and now - K.downAt < 1 then K.downAt = nil return end
-        K.downAt = down and now or nil
-        K.Press(which)
+        K.downAtBy = K.downAtBy or {}
+        local prev = K.downAtBy[which]
+        if down == false and prev and now - prev < 1 then K.downAtBy[which] = nil return end
+        K.downAtBy[which] = (down ~= false) and now or nil
+        local f = _G.DarkMatterFrame
+        local before = f and f.IsShown and f:IsShown()
+        local result = K.Press(which)
+        if K.probeArmed then
+          K.probeArmed = nil
+          local after = f and f.IsShown and f:IsShown()
+          local line = string.format("keyprobe hit key=%s down=%s press=%s shownBefore=%s shownAfter=%s ownerShown=%s",
+            which == "log" and "L" or "M", tostring(down), tostring(result), tostring(before and true or false), tostring(after and true or false),
+            tostring(K.owner and K.owner.IsShown and K.owner:IsShown() and true or false))
+          K.lastHit = line
+          if NS.Print then NS.Print(line) end
+          if NS.LogProbe then NS.LogProbe("keyprobe", { line }) end
+        end
       end)
       K[which .. "Button"] = btn
     end
@@ -57,6 +68,13 @@ local function Build()
   K.owner = owner
 end
 
+-- true when this key still runs our button. GetBindingAction's second argument asks for the override.
+function K.Bound(key, click)
+  if type(_G.GetBindingAction) ~= "function" then return true end
+  local ok, act = pcall(_G.GetBindingAction, key, true)
+  if not ok or type(act) ~= "string" or act == "" then return false end
+  return act:find(click, 1, true) ~= nil
+end
 -- set (or clear) our override bindings; out of combat only, else queued until PLAYER_REGEN_ENABLED
 function K.Apply()
   Build()
@@ -109,22 +127,60 @@ function K.Set(on)
 end
 -- 0.5.2b.10: re-apply when the player rebinds (UPDATE_BINDINGS); our own override changes can fire it too, so ignore
 -- the ones that come while we are applying
-local busy
+local busy, again
 local Apply0 = K.Apply
 function K.Apply(...)
-  if busy then return "busy" end
+  if busy then again = true return "busy" end
   busy = true
   local ok, r = pcall(Apply0, ...)
   busy = false
   if not ok then error(r, 0) end
   return r
 end
+-- 0.5.2b.27: bindings are session overrides. A loading screen, a rebind, or a combat boundary can clear them,
+-- and an UPDATE_BINDINGS that arrives while we are applying used to be ignored. Put them back out of combat.
+-- 0.5.2b.29: one read of the bindings. Does not change M or L. The next real click, if it arrives, prints what it did.
+function K.ProbeArm()
+  K.probeArmed = true
+  K.lastHit = nil
+  local function act(key)
+    if type(_G.GetBindingAction) ~= "function" then return "noapi" end
+    local ok, a = pcall(_G.GetBindingAction, key, true)
+    if not ok or type(a) ~= "string" then return "" end
+    return a
+  end
+  local function shown(f) return type(f) == "table" and f.IsShown and f:IsShown() and true or false end
+  return {
+    string.format("keyprobe armed bindM=%s bindL=%s ownerShown=%s btnMShown=%s btnLShown=%s",
+      act("M"), act("L"), tostring(shown(K.owner)), tostring(shown(K.mapButton)), tostring(shown(K.logButton))),
+  }
+end
+function K.Ensure()
+  if not K.Wanted() then return K.Apply() end
+  if K.applied and K.Bound("M", "DarkMatterKeyMap") and K.Bound("L", "DarkMatterKeyLog") then return "on" end
+  return K.Apply()
+end
 local watch
 function K.Start()
   if not watch then
     watch = CreateFrame("Frame") -- private
-    watch:SetScript("OnEvent", function() K.Apply() end)
+    local acc = 0
+    watch:SetScript("OnEvent", function(_, ev)
+      if busy then again = true return end
+      if ev == "PLAYER_REGEN_ENABLED" and K.pending then K.pending = nil end
+      K.Apply()
+    end)
+    watch:SetScript("OnUpdate", function(_, dt)
+      acc = acc + (dt or 0)
+      if again and not busy then again = nil K.Apply() end
+      if acc < 2 then return end
+      acc = 0
+      if K.Wanted() and not InCombat() then K.Ensure() end
+    end)
     pcall(watch.RegisterEvent, watch, "UPDATE_BINDINGS")
+    pcall(watch.RegisterEvent, watch, "PLAYER_ENTERING_WORLD")
+    pcall(watch.RegisterEvent, watch, "PLAYER_REGEN_ENABLED")
+    pcall(watch.RegisterEvent, watch, "ZONE_CHANGED_NEW_AREA")
   end
   return K.Apply()
 end

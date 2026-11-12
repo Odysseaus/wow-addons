@@ -91,14 +91,42 @@ end
 -- keep-tracked pins (0.5.2b.1: a sticky flag, changed ONLY by a click on the pin). A pinned quest stays tracked in every
 -- zone; an unpinned one follows zone auto-track (or the game, with auto-track off). Abandoning a quest drops its pin. Saved in DarkMatterDB.keepTracked = { [questID] = true }.
 ---------------------------------------------------------------------------
+local function DropQueue(id)
+  if not Tr.queue then return end
+  local keep = {}
+  for _, it in ipairs(Tr.queue) do
+    local qid = it.e and N(it.e.id or it.e.questID)
+    if qid ~= id then keep[#keep + 1] = it end
+  end
+  Tr.queue = keep
+end
+local function IsReady(id)
+  return NS.QS and NS.QS.Status(id) == "ready"
+end
 function Tr.SetPinned(q, on)
   q = N(q)
   if not q then return end
   Pins()[q] = on and true or nil
-  if on then
-    local e = Tr.log[q]
+  local log = Tr.log
+  if not (log and log[q]) then log = ReadLog() end
+  local e = log and log[q]
+  local ready = e and IsReady(q)
+  if on and ready and Tr.ReadyDropOn() then
+    -- 0.5.2b.33: a pinned completed quest belongs under Ready, not on the Quests list.
+    DropQueue(q)
+    SetWatch(e, false)
+  elseif on then
     if e and Tr.watch and not Tr.watch[q] then SetWatch(e, true) end
+  elseif e then
+    local here = ready and NS.QS.ReadyHere and NS.QS.ReadyHere(q)
+    if here or not Tr.ZoneSet(log)[q] then
+      -- 0.5.2b.32: one out-of-zone quest leaves Objectives, including a finished quest turned in elsewhere.
+      -- A local completed quest stays in Ready and off the Quests list. A current-zone in-progress quest stays watched.
+      DropQueue(q)
+      SetWatch(e, false)
+    end
   end
+  if ready then Tr.readyDirty = true end
   Tr.layoutDirty = true
   Tr.NotifyPins()
   if NS.SetStatus then NS.SetStatus(on and "Kept tracked: it stays in the objective tracker when you change zone." or "No longer kept tracked.") end
@@ -143,8 +171,9 @@ function Tr.Diff()
       if not w[id] then
         local ours = Own(id, "remove", now)
         if not log[id] then if pins[id] then changed = true end pins[id] = nil -- abandoned or turned in
-        elseif not ours and pins[id] and Tr.zoneAt and now - Tr.zoneAt <= Tr.ZONE_GUARD then
-          SetWatch(log[id], true) -- the game dropped a pinned quest on a zone change: keep it
+        elseif not ours and pins[id] and Tr.zoneAt and now - Tr.zoneAt <= Tr.ZONE_GUARD
+          and not (Tr.ReadyDropOn() and IsReady(id)) then
+          SetWatch(log[id], true) -- the game dropped a pinned in-progress quest on a zone change: keep it
         end
       end
     end
@@ -284,7 +313,17 @@ local function MakeRow()
   end)
   click:SetScript("OnLeave", Untip)
   click:Hide()
-  r.pin, r.click = pin, click
+  local aim = CreateFrame("Button", nil, UIParent)
+  aim:RegisterForClicks("LeftButtonUp")
+  aim:SetScript("OnClick", function(self) Tr.Aim(self.q) end)
+  aim:SetScript("OnEnter", function(self)
+    self.tipTitle = NS.QS and NS.QS.Title(self.q) or "Quest"
+    self.tipText = "Click: the game's arrow. The quest name opens the map."
+    Tip(self)
+  end)
+  aim:SetScript("OnLeave", Untip)
+  aim:Hide()
+  r.pin, r.click, r.aim = pin, click, aim
   return r
 end
 
@@ -297,7 +336,7 @@ local function PlaceRow(r, b, q, style)
   local head = type(b.HeaderText) == "table" and b.HeaderText or nil
   local poi = Visible(b.poiButton) and b.poiButton or nil
   local key = tostring(b) .. ":" .. q .. ":" .. tostring(poi ~= nil)
-  local pin, click = r.pin, r.click
+  local pin, click, aim = r.pin, r.click, r.aim
   if r.key ~= key then
     r.key = key
     pin:ClearAllPoints()
@@ -310,8 +349,18 @@ local function PlaceRow(r, b, q, style)
     end
   end
   pin.q, click.q = q, q
+  if aim then aim.q = q end
   pin:SetFrameStrata(strata) pin:SetFrameLevel(level)
   click:SetFrameStrata(strata) click:SetFrameLevel(level)
+  if aim and poi then
+    aim:ClearAllPoints()
+    aim:SetAllPoints(poi)
+    aim:SetFrameStrata(strata)
+    aim:SetFrameLevel(level + 2)
+    aim:Show()
+  elseif aim then
+    aim:Hide()
+  end
   local on = Tr.IsPinned(q)
   local QS = NS.QS
   local look = style and (style.key .. (on and "+" or "-"))
@@ -363,7 +412,7 @@ function Tr.Layout()
     Tr.rows[n] = r
     PlaceRow(r, it.b, it.q, style)
   end
-  for i = n + 1, #Tr.rows do Tr.rows[i].pin:Hide() Tr.rows[i].click:Hide() Tr.rows[i].key = nil end
+  for i = n + 1, #Tr.rows do Tr.rows[i].pin:Hide() Tr.rows[i].click:Hide() if Tr.rows[i].aim then Tr.rows[i].aim:Hide() end Tr.rows[i].key = nil end
   Tr.shown = n
   Tr.PlaceReady(blocks)
 end
@@ -377,7 +426,8 @@ function NS.OpenOnMap(q, keepPanel)
   if not (f and f:IsShown()) then return false end
   if NS.ShowTab and not (NS.db and NS.db.tab == "map" and NS.tabs.map and NS.tabs.map.frame and NS.tabs.map.frame:IsShown()) then NS.ShowTab("map") end
   local P = NS.QuestPanel
-  if P and not P.Wanted() then P.SetOpen(true) end
+  if P and not P.Wanted() and P.SetOpen then P.SetOpen(true) end
+  if P and P.Ensure then P.Ensure() end
   if q then
     if NS.MapTab and NS.MapTab.ShowQuest then NS.MapTab.ShowQuest(q) end
     if P then P.OpenQuest(q) end
@@ -390,6 +440,13 @@ function Tr.OpenQuest(q)
   q = N(q)
   if not q then return false end
   return NS.OpenOnMap(q)
+end
+-- 0.5.2b.36: the round icon and the Ready icon. Arrow and highlight only. Does not open the window or glide.
+function Tr.Aim(q)
+  q = N(q)
+  if not (q and NS.QS and NS.QS.Choose) then return end
+  NS.QS.Choose(q, "icon")
+  if Tr.FillReady then Tr.FillReady() end
 end
 
 ---------------------------------------------------------------------------
@@ -535,7 +592,7 @@ local function GamePOI(r)
   return nil
 end
 function Tr.PaintReadyIcon(r)
-  local sel = SuperTracked(r.q)
+  local sel = NS.QS and NS.QS.selected == r.q
   local b = rawget(r, "poi")
   if b then
     local ok = pcall(function()
@@ -555,6 +612,20 @@ function Tr.PaintReadyIcon(r)
   r.iconHow = (okFace and okIcon) and "atlas" or (okIcon and "atlas (no face)" or "none")
   return okIcon
 end
+function Tr.PaintReadyPin(r)
+  local pin = r and r.pin
+  if not pin then return end
+  local QS, style = NS.QS, Tr.KeepStyle()
+  local on = Tr.IsPinned(r.q)
+  pin.q = r.q
+  if style and QS and QS.PaintIcon(pin.icon, on and style.on or style.off) then
+    if pin.icon.SetDesaturated then pin.icon:SetDesaturated(not on and style.on == style.off) end
+    pin.icon:SetAlpha(on and 1 or 0.45)
+    pin:Show()
+  else
+    pin:Hide()
+  end
+end
 local function ReadyRow(i)
   local r = ready.rows[i]
   if r then return r end
@@ -563,17 +634,40 @@ local function ReadyRow(i)
   r.title = r:CreateFontString(nil, "ARTWORK")
   r.font = LineFont(r.title)
   r.title:SetJustifyH("LEFT")
-  r.title:SetPoint("TOPLEFT", r, "TOPLEFT", 28, -2)
   r.title:SetPoint("RIGHT", r, "RIGHT", -4, 0)
   r.zone = r:CreateFontString(nil, "ARTWORK")
   LineFont(r.zone)
   r.zone:SetJustifyH("LEFT")
   r.zone:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -2)
   r.zone:SetPoint("RIGHT", r, "RIGHT", -4, 0)
-  -- the icon: the tracker's POI button, 20 x 20, TOPRIGHT on the title's TOPLEFT (-7, 5)
-  r.iconBox = CreateFrame("Frame", nil, r)
+  -- 0.5.2b.36: pin, then the turn-in icon, then the name. Same order as the Quests rows.
+  local pin = CreateFrame("Button", nil, r)
+  pin:SetSize(16, 16)
+  pin:SetPoint("LEFT", r, "LEFT", 2, 0)
+  pin.icon = pin:CreateTexture(nil, "ARTWORK")
+  pin.icon:SetAllPoints(pin)
+  pin:RegisterForClicks("LeftButtonUp")
+  pin:SetScript("OnClick", function(self)
+    local q = self.q
+    if not q then return end
+    Tr.SetPinned(q, not Tr.IsPinned(q))
+    Tr.PaintReadyPin(self:GetParent())
+  end)
+  pin:SetScript("OnEnter", function(self)
+    self.tipTitle = Tr.IsPinned(self.q) and "Unpin" or "Pin"
+    self.tipText = "Pin or unpin this quest. The row beside it still opens the map."
+    Tip(self)
+  end)
+  pin:SetScript("OnLeave", Untip)
+  pin:Hide()
+  r.pin = pin
+  -- the icon is its own button: the arrow only. The row body (the name) still opens the map.
+  r.iconBox = CreateFrame("Button", nil, r)
   r.iconBox:SetSize(20, 20)
-  r.iconBox:SetPoint("TOPRIGHT", r.title, "TOPLEFT", -7, 5)
+  r.iconBox:SetPoint("LEFT", pin, "RIGHT", 2, 0)
+  r.iconBox:RegisterForClicks("LeftButtonUp")
+  r.iconBox:SetScript("OnClick", function(self) Tr.Aim(self:GetParent().q) end)
+  r.title:SetPoint("TOPLEFT", r.iconBox, "TOPRIGHT", 4, -2)
   r.face = r.iconBox:CreateTexture(nil, "BORDER")
   r.face:SetPoint("CENTER", r.iconBox, "CENTER", 0, 0)
   r.ficon = r.iconBox:CreateTexture(nil, "ARTWORK")
@@ -581,7 +675,7 @@ local function ReadyRow(i)
   r.icon = r.ficon
   r.poi = GamePOI(r)
   if r.poi then
-    pcall(function() r.poi:ClearAllPoints() r.poi:SetPoint("TOPRIGHT", r.title, "TOPLEFT", -7, 5) end)
+    pcall(function() r.poi:ClearAllPoints() r.poi:SetAllPoints(r.iconBox) end)
   end
   r:RegisterForClicks("LeftButtonUp")
   r:SetScript("OnClick", function(self) Tr.ReadyClick(self.q) end)
@@ -674,7 +768,9 @@ function Tr.ReadyList()
   for _, e in pairs(Tr.log) do list[#list + 1] = e end
   table.sort(list, function(a, b) return a.idx < b.idx end)
   for _, e in ipairs(list) do
-    if QS and QS.Status(e.id) == "ready" then out[#out + 1] = e end
+    -- 0.5.2b.25: this area only. A turn-in we cannot place stays; one we know is somewhere else does not.
+    -- 0.5.2b.33: a pin lists a completed quest here whatever the turn-in zone. Unpinned still requires this zone or city.
+    if QS and QS.Status(e.id) == "ready" and (Tr.IsPinned(e.id) or not QS.ReadyHere or QS.ReadyHere(e.id)) then out[#out + 1] = e end
   end
   return out
 end
@@ -693,13 +789,14 @@ function Tr.FillReady()
     r.title:SetText(e.title)
     r.zone:SetText(e.zone or "")
     Tr.PaintReadyIcon(r)
+    Tr.PaintReadyPin(r)
     PaintReadyText(r)
     r:ClearAllPoints()
     r:SetPoint("TOPLEFT", ready, "TOPLEFT", 6, -Tr.HEADER_H - Tr.HEADER_GAP - (i - 1) * 32)
     r:SetPoint("RIGHT", ready, "RIGHT", -6, 0)
     r:Show()
   end
-  for i = n + 1, #ready.rows do ready.rows[i]:Hide() end
+  for i = n + 1, #ready.rows do ready.rows[i]:Hide() if ready.rows[i].pin then ready.rows[i].pin:Hide() end end
   if n > 0 then
     ready:SetHeight(Tr.HEADER_H + Tr.HEADER_GAP + n * 32)
   else
@@ -782,28 +879,90 @@ end
 -- zone auto-track (on by default since 0.5.2b.1): this zone's quests plus pinned ones tracked, the rest untracked. Waits for a
 -- flight to land, then switches once; changes go out in batches about a second apart, and never in combat.
 ---------------------------------------------------------------------------
+function Tr.HoldArea()
+  if Tr.taxiRide and Tr.hold then return Tr.hold end
+  if Tr.taxiSettleUntil and (Tr._now or Now()) < Tr.taxiSettleUntil and Tr.settleHold then return Tr.settleHold end
+  return nil
+end
+-- 0.5.2b.40: a zone or a capital is a valid membership sample. Anything else (missing map, continent, world) is not.
+-- Cities are recognized by id. A dungeon under a zone already resolves to that zone in PlayerArea.
+function Tr.AreaKind(area)
+  local MD = NS.MapData
+  if not (area and MD) then return nil end
+  if MD.IsCityID(area) then return "city" end
+  if MD.Is(area, "zone") then return "zone" end
+  return nil
+end
+function Tr.ReadSample()
+  local MD = NS.MapData
+  local zone = type(GetZoneText) == "function" and GetZoneText() or nil
+  local real = type(GetRealZoneText) == "function" and GetRealZoneText() or nil
+  local area = MD and MD.PlayerArea and MD.PlayerArea() or nil
+  -- Resolved every call. A city rect changes with position, and the area can change without the map id changing.
+  -- Planning still happens only on a real zone change or on the one step back from an invalid map.
+  Tr.sample = { area = area, kind = Tr.AreaKind(area), zone = zone, real = real }
+  return Tr.sample
+end
+-- Last valid zone or city, else nothing. Does not read the live map while a taxi hold is up.
+function Tr.Membership()
+  local taxi = Tr.HoldArea()
+  if type(taxi) == "table" and taxi.area then return taxi.area, taxi.zone, taxi.real, "taxi" end
+  local s = Tr.ReadSample()
+  if s and s.kind then return s.area, s.zone, s.real, s.kind end
+  if Tr.good and Tr.good.area then return Tr.good.area, Tr.good.zone, Tr.good.real, "hold" end
+  return nil, nil, nil, "none"
+end
+-- One transition out of an invalid sample requests a single refresh. A valid sample does not replan by itself.
+function Tr.NoteSample(now)
+  if Tr.taxiGate == "fly" or Tr.taxiGate == "settle" then return "taxi" end
+  local s = Tr.ReadSample()
+  if s and s.kind then
+    local wasBad = Tr.badSample
+    Tr.good = { area = s.area, zone = s.zone, real = s.real }
+    Tr.badSample = nil
+    if wasBad then Tr.zonePending = now or Now() Tr.readyDirty = true end
+    return "valid"
+  end
+  if not Tr.badSample then Tr.readyDirty = true end
+  Tr.badSample = true
+  return (Tr.good and Tr.good.area) and "hold" or "none"
+end
 function Tr.ZoneSet(log)
   local want = {}
-  local zone = (type(GetZoneText) == "function" and GetZoneText()) or nil
-  local real = (type(GetRealZoneText) == "function" and GetRealZoneText()) or nil
-  for id, e in pairs(log) do
-    if e.zone and (e.zone == zone or e.zone == real) then want[id] = true end
-  end
   local MD = NS.MapData
-  local here = MD and MD.PlayerMap()
-  local z = here and (MD.ZoneOf(here) or here)
-  if z and MD.Quests then
-    for _, q in ipairs(MD.Quests(z) or {}) do if log[q.id] then want[q.id] = true end end
+  -- 0.5.2b.25: inside a capital this is the city, not the zone around it (Ironforge, not Dun Morogh)
+  -- 0.5.2b.35: a taxi hold keeps the departure area until landing
+  -- 0.5.2b.40: an invalid map keeps the last zone or city. With no last one, nothing is added from the map.
+  local area, zone, real = Tr.Membership()
+  local city = area and MD and MD.IsCityID(area)
+  local areaName = area and MD and MD.Name(area)
+  for id, e in pairs(log) do
+    if e.zone then
+      if city then
+        if e.zone == areaName then want[id] = true end
+      elseif e.zone == zone or e.zone == real or (areaName and e.zone == areaName) then
+        want[id] = true
+      end
+    end
   end
-  for id in pairs(Pins()) do if log[id] then want[id] = true end end
+  if area and MD and MD.Quests then
+    for _, q in ipairs(MD.Quests(area) or {}) do if log[q.id] then want[q.id] = true end end
+  end
+  for id in pairs(Pins()) do
+    -- a completed pin is shown under Ready, so the zone pass must not watch it again
+    if log[id] and not (Tr.ReadyDropOn() and NS.QS and NS.QS.Status(id) == "ready") then want[id] = true end
+  end
   return want
 end
 -- 0.5.2b.12: a quest that is ready to turn in is listed in our Ready to Turn In section, so it is not also kept in the
--- game's Quests list, unless the section is turned off (DarkMatterDB.readySection == false; collapsed still counts as on)
--- or the quest is pinned. Unwatching goes through the queue, out of combat only.
+-- game's Quests list, unless the section is turned off (DarkMatterDB.readySection == false; collapsed still counts as on).
+-- 0.5.2b.33: a pinned completed quest is included while the section is on. Unwatching goes through the queue, out of combat only.
 function Tr.ReadyDropOn() return not (DB() and DB().readySection == false) end
 local function DropReady(id)
-  return Tr.ReadyDropOn() and not Tr.IsPinned(id) and NS.QS ~= nil and NS.QS.Status(id) == "ready"
+  -- 0.5.2b.39: a completed quest leaves Quests while Ready is on, including when auto-track is off.
+  -- Pinned: shown in Ready in any zone. Unpinned and here: shown in Ready. Unpinned and elsewhere: neither list.
+  if not (Tr.ReadyDropOn() and NS.QS and NS.QS.Status(id) == "ready") then return false end
+  return true
 end
 Tr.DropReady = DropReady
 function Tr.ReadyDrops(log, w)
@@ -831,7 +990,9 @@ function Tr.Plan()
   local want = Tr.ZoneSet(log)
   for id in pairs(want) do if DropReady(id) then want[id] = nil end end
   local q = {}
-  for id in pairs(w) do if not want[id] then q[#q + 1] = { e = log[id], want = false } end end
+  for id in pairs(w) do
+    if not want[id] then q[#q + 1] = { e = log[id], want = false } end
+  end
   local adds = {}
   for id in pairs(want) do if not w[id] then adds[#adds + 1] = { e = log[id], want = true } end end
   table.sort(q, function(a, b) return a.e.idx < b.e.idx end)
@@ -846,10 +1007,139 @@ function Tr.SetAuto(on)
   if on then Tr.zonePending = Now() end
 end
 local function OnTaxi() return type(_G.UnitOnTaxi) == "function" and _G.UnitOnTaxi("player") == true end
+local function AreaSnap()
+  local MD = NS.MapData
+  return {
+    area = MD and MD.PlayerArea and MD.PlayerArea() or nil,
+    zone = type(GetZoneText) == "function" and GetZoneText() or nil,
+    real = type(GetRealZoneText) == "function" and GetRealZoneText() or nil,
+  }
+end
+-- 0.5.2b.36: after a reload, a false taxi flag is not yet "on the ground".
+-- The flag can stay false while the world is still starting, including a flight that is already going.
+-- Plans wait until the flag has answered: true latches the flight from that first yes;
+-- true then false is the one landing. A reload that stays false plans once, after Tr.TAXI_SETTLE.
+-- No UnitOnTaxi function: there is no flight to detect, and plans run as they always have.
+Tr.TAXI_SETTLE = 2
+function Tr.FlightHold(now)
+  now = now or Now()
+  if type(_G.UnitOnTaxi) ~= "function" then
+    Tr.hold, Tr.settleHold, Tr.taxiRide, Tr.taxiSettleUntil, Tr.taxiApi = nil, nil, nil, nil, false
+    Tr.taxiGate = "noapi"
+    return "noapi"
+  end
+  Tr.taxiApi = true
+  if OnTaxi() then
+    if not Tr.taxiRide then Tr.hold = Tr.ground or AreaSnap() end
+    Tr.settleHold = nil
+    Tr.taxiRide = true
+    Tr.taxiSettleUntil = nil
+    Tr.taxiGate = "fly"
+    return "fly"
+  end
+  if Tr.taxiRide then
+    Tr.hold, Tr.settleHold, Tr.taxiRide, Tr.taxiSettleUntil = nil, nil, nil, nil
+    Tr.ground = AreaSnap()
+    Tr.taxiGate = "land"
+    return "land"
+  end
+  if Tr.taxiSettleUntil and now < Tr.taxiSettleUntil then
+    if not Tr.settleHold then Tr.settleHold = AreaSnap() end
+    Tr.taxiGate = "settle"
+    return "settle"
+  end
+  Tr.hold, Tr.settleHold, Tr.taxiSettleUntil = nil, nil, nil
+  Tr.ground = AreaSnap()
+  Tr.taxiGate = "ground"
+  return "ground"
+end
+function Tr.BeginTaxiSettle()
+  if Tr.taxiRide then return end
+  if type(_G.UnitOnTaxi) ~= "function" then return end
+  Tr.taxiSettleUntil = Now() + Tr.TAXI_SETTLE
+  Tr.settleHold = nil
+end
+Tr.ACCEPT_WAIT = 2
+Tr.pendingAccept = {}
+function Tr.SyncAccept(now)
+  now = now or Now()
+  local log = Tr.log or {}
+  if not Tr.logIds then
+    Tr.logIds = {}
+    for id in pairs(log) do Tr.logIds[id] = true end
+    return
+  end
+  Tr.fresh = Tr.fresh or {}
+  local sawNew = false
+  for id, e in pairs(log) do
+    if not Tr.logIds[id] and (Tr.pendingAccept[id] or Tr.acceptUnknown) then
+      sawNew = true
+      Tr.fresh[id] = true
+      if not e.zone then Tr.pendingAccept[id] = Tr.pendingAccept[id] or (now + Tr.ACCEPT_WAIT) end
+    end
+  end
+  local waiting = false
+  for id, til in pairs(Tr.pendingAccept) do
+    local e = log[id]
+    Tr.fresh[id] = true
+    if e and e.zone then Tr.pendingAccept[id] = nil
+    elseif now >= til then Tr.pendingAccept[id] = nil
+    else waiting = true end
+  end
+  if Tr.acceptUnknown then
+    if sawNew or now >= Tr.acceptUnknown then Tr.acceptUnknown = nil
+    else waiting = true end
+  end
+  Tr.logIds = {}
+  for id in pairs(log) do Tr.logIds[id] = true end
+  Tr.deferPlan = waiting or nil
+end
+-- 0.5.2b.41: once a new accept has a header (or its wait ends), that id alone is checked.
+-- Watched, unpinned, and outside this zone: the tracker watch comes off. The quest stays in the log.
+-- A current-zone accept is kept, and with auto-track on it is watched if the game did not watch it.
+-- Older watches are not walked. Pinned and now-local quests are left. Combat, flight, and a non-zone map wait.
+function Tr.FilterFresh()
+  if not Tr.fresh then return end
+  local log = Tr.log or ReadLog()
+  local want, w
+  for id in pairs(Tr.fresh) do
+    local e = log[id]
+    if Tr.pendingAccept[id] and not (e and e.zone) then
+      -- header not in yet
+    elseif not e then
+      Tr.fresh[id] = nil
+    else
+      if not want then want = Tr.ZoneSet(log) w = Watched(log) end
+      Tr.fresh[id] = nil
+      if Tr.IsPinned(id) then
+        -- a pin stays
+      elseif w[id] and not want[id] then
+        SetWatch(e, false)
+      elseif Tr.AutoWanted() and not w[id] and want[id] and not DropReady(id) then
+        SetWatch(e, true)
+      end
+    end
+  end
+end
 function Tr.AutoStep(now)
+  local gate = Tr.taxiGate
+  if gate == "fly" or gate == "settle" then
+    if gate == "fly" then Tr.waitingTaxi = true end
+    return
+  end
+  if gate == "land" then
+    Tr.waitingTaxi = nil
+    Tr.zonePending = Now()
+  end
+  -- 0.5.2b.40: do not watch, unwatch, or apply a queued watch change from a missing or non-zone map.
+  local sample = Tr.NoteSample(now)
+  if sample == "hold" or sample == "none" then return end
+  if not InCombat() and not OnTaxi() then Tr.FilterFresh() end
+  if Tr.deferPlan and gate ~= "land" then return end
   if not Tr.AutoWanted() then
     -- auto-track off: the game's own tracking, except that pinned quests are tracked again after a zone change
-    -- (0.5.2b.12: and ready quests leave the Quests list while Ready to Turn In is on)
+    -- (0.5.2b.12: and ready quests leave the Quests list while Ready to Turn In is on).
+    -- 0.5.2b.33: a pinned completed quest is not watched again while that section is on.
     local keep = {}
     for _, it in ipairs(Tr.queue) do if it.ready then keep[#keep + 1] = it end end
     Tr.queue = keep
@@ -860,7 +1150,9 @@ function Tr.AutoStep(now)
       local log = ReadLog()
       local w = Watched(log)
       local ids = {}
-      for id in pairs(Pins()) do if log[id] and not w[id] then ids[#ids + 1] = id end end
+      for id in pairs(Pins()) do
+        if log[id] and not w[id] and not (Tr.ReadyDropOn() and IsReady(id)) then ids[#ids + 1] = id end
+      end
       table.sort(ids, function(a, b) return log[a].idx < log[b].idx end)
       for _, id in ipairs(ids) do if SetWatch(log[id], true) == "cap" then break end end
     end
@@ -981,6 +1273,7 @@ function Tr.SetOrder(on)
   if on then Tr.orderDirty = Now() - Tr.ORDER_SETTLE end
 end
 function Tr.OrderStep(now)
+  if Tr.badSample then return end
   if not Tr.orderDirty or not Tr.OrderWanted() or Tr.orderGaveUp then return end
   if now < Tr.orderDirty + Tr.ORDER_SETTLE or InCombat() or OnTaxi() or Tr.zonePending or #Tr.queue > 0 then return end
   local order = Tr.WatchOrder()
@@ -1048,10 +1341,14 @@ function Tr.OnEvent(event, a1)
   if event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
     Tr.zoneAt = Now()
     Tr.zonePending = Now() -- auto-track re-plans; with it off, pinned quests are still tracked again
+    if event == "PLAYER_ENTERING_WORLD" then Tr.BeginTaxiSettle() end
   elseif event == "PLAYER_CONTROL_GAINED" then -- 0.5.2b.1: landing after a flight (also after a stun or a cinematic)
     if Tr.waitingTaxi or Tr.zonePending then Tr.zonePending = Now() end
   elseif event == "QUEST_ACCEPTED" then
-    if Tr.AutoWanted() then Tr.zonePending = Now() end
+    -- 0.5.2b.37: do not plan until this id is in the log. An early plan would drop a watch the game just added.
+    local id = N(a1)
+    local til = Now() + Tr.ACCEPT_WAIT
+    if id then Tr.pendingAccept[id] = til else Tr.acceptUnknown = til end
   elseif event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN" then
     local q = N(a1)
     if q then Pins()[q] = nil end
@@ -1062,7 +1359,10 @@ function Tr.OnEvent(event, a1)
 end
 function Tr.Tick(now)
   now = now or Now()
+  Tr._now = now
+  Tr.FlightHold(now)
   if Tr.diffDirty then Tr.diffDirty = false Tr.Diff() end
+  Tr.SyncAccept(now)
   Tr.AutoStep(now)
   Tr.OrderStep(now)
   if Tr.readyDirty then Tr.FillReady() end
@@ -1084,6 +1384,8 @@ function Tr.Start()
   Tr.frame = f
   Tr.zoneAt = Now()
   Tr.zonePending = Now()
+  Tr.BeginTaxiSettle()
+  Tr.FlightHold()
   Tr.Diff()
   Tr.FillReady()
   Tr.orderDirty = Now()
@@ -1107,6 +1409,9 @@ function Tr.Report()
   for _ in pairs(Pins()) do np = np + 1 end
   lines[#lines + 1] = string.format("kept tracked: %d; ready to turn in: %d; zone auto-track %s; queued changes %d%s",
     np, Tr.readyCount or 0, Tr.AutoWanted() and "on" or "off", #Tr.queue, Tr.waitingTaxi and " (waiting for the flight to land)" or "")
+  lines[#lines + 1] = type(_G.UnitOnTaxi) == "function"
+    and ("taxi: UnitOnTaxi present, in flight " .. (OnTaxi() and "yes" or "no") .. (Tr.hold and " (holding the departure area)" or ""))
+    or "taxi: UnitOnTaxi missing (zone membership is not held in flight)"
   if ready then
     lines[#lines + 1] = string.format("ready section: %s, %s, placed %s at %s, %s (own frame on UIParent; the tracker is only read)",
       ready:IsShown() and "shown" or "hidden", Tr.ReadyCollapsed() and "collapsed" or "expanded", tostring(rawget(ready, "how")), tostring(rawget(ready, "x")), tostring(rawget(ready, "y")))

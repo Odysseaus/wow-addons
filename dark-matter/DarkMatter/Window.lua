@@ -82,6 +82,29 @@ local function ArtMap(m)
 end
 NS.ClassArtMap = ArtMap
 
+-- 0.5.2b.25: where the sidebar and the page meet the wood. The corner slot is 120 css. The painted bar is the
+-- outer 85 css of that slot (about 170 texels, the same depth the frame art was built to). The old content line was
+-- the thin 38 css rim (pad / shellTop). After the map hole grew, that left the shell's parchment showing between the
+-- wood and the sidebar, and above the map. Returns left, top, right, bottom in window units, y down. nil when the
+-- frame is not the fitted map-window art (the WoW theme, or no map window to fit to).
+NS.FRAME_BAR = 85
+function NS.ClassInner(m)
+  m = m or (NS.theme and NS.theme.m)
+  if not (NS.theme and NS.theme.classArt and m) then return nil end
+  local sx, sy, ax, ay, AW, AH, fit = ArtMap(m)
+  if not fit then return nil end
+  local E = NS.theme.classArt.edges
+  local c = (E and E.corner) or 120
+  local bar = math.min(NS.FRAME_BAR, c - ((E and E.fade) or 8))
+  if bar < 40 then return nil end
+  local l = ax + bar * sx
+  local t = ay + bar * sy
+  local r = ax + (AW - bar) * sx
+  local b = ay + (AH - bar) * sy
+  if r - l < 200 or b - t < 120 then return nil end
+  return l, t, r, b
+end
+
 -- where a class theme's crest, base plate and edge sprites go (window-relative, y down); fitted art keeps them inside
 local function ArtParts(ca, m)
   local sx, sy, ax, ay, AW, AH, fit = ArtMap(m)
@@ -212,7 +235,9 @@ local function BuildClassArt(f)
       Put(A.fc[i], fr.corners, l, r, t, b, X(pos[i][1]), Y(pos[i][2]), c * sx, c * sy)
       Put(A.oc[i], ov.corners, l, r, t, b, X(pos[i][1]), Y(pos[i][2]), c * sx, c * sy)
     end
-    -- edge strips start under the corner fade (c - fd) and repeat len[i] css per tile
+    -- edge strips start under the corner fade (c - fd) and repeat len[i] css per tile.
+    -- All four use the same thickness (the corner size): top/bottom height c, left/right width c.
+    -- A side that looks thinner is the picture inside the TGA, not a smaller slot.
     local s0 = c - fd
     local hw, vh = AW - 2 * s0, AH - 2 * s0
     local L = fr.len
@@ -592,7 +617,16 @@ local function Build()
   UI.NineSlice(rail, "pane", m.railBorder, "BORDER", 3, "rail") -- 0.5.1.3: an inset divider in the class themes
   W.rail = rail
   W.railTabs = {}
-  for i, tid in ipairs(NS.tabOrder) do
+  local function VisibleTabs()
+    local out = {}
+    for _, tid in ipairs(NS.tabOrder) do
+      local def = NS.tabs[tid]
+      if def and not def.hidden then out[#out + 1] = tid end
+    end
+    return out
+  end
+  NS.VisibleTabs = VisibleTabs
+  for i, tid in ipairs(VisibleTabs()) do
     local def = NS.tabs[tid]
     local t = UI.RailTab(rail, def.name, NS.theme.glyphs[def.glyph])
     t:SetPoint("TOPLEFT", rail, "TOPLEFT", m.tabX - m.railX, -(m.tabY - m.railY) - (i - 1) * (m.tabH + m.tabGap))
@@ -657,6 +691,7 @@ local function Build()
   closeGlow:SetAlpha(0.25)
   NS.OnSkin(function() NS.SetPiece(closeTex, "xbtn") NS.SetPiece(closeGlow, "xbtn") end)
   close:SetScript("OnClick", function() f:Hide() end)
+  W.close = close
   -- 0.5.1 WoW theme: the game's own close button (UIPanelCloseButton template) when the client has it
   local stockClose = NS.Stock.FromTemplate("Button", f, "UIPanelCloseButton")
   if stockClose then

@@ -1,5 +1,206 @@
 # Changelog
 
+## 0.5.2b.60
+
+- **Darnassus and Undercity.** The 21 Darnassus service pins move from map 1458 to map 1457. The 35 Undercity service pins move from map 1457 to map 1458. Coordinates are unchanged. Silva Fil'naveth stays on Moonglade.
+
+## 0.5.2b.59
+
+- **Level labels.** On the world and continent map, a zone's level range sits on a parchment scroll with curled ends. The art is the client's quest-item name frame. If that file is missing, the plate is a parchment tint. The text is ivory with a dark outline. The spots and the other map behavior stay.
+- **Dungeon entrances.** No new pin. The classic meeting stones and the instance doors checked on Forever's object tooltips are either missing or have no coordinates. Krol'dok stays where it was. Raids stay off.
+
+## 0.5.2b.58
+
+- **Stormwind.** Service pins are drawn on the city map. Each Forever tooltip had two clusters. The cluster farther southeast is the current city, the one that has the southern harbor at 22.6, 56.1 and matches the published spots for Dungar, Allison, Therum, and Chilton. The classic cluster is not drawn, and the two clusters are not averaged. The boat at 22, 56 stays.
+
+## 0.5.2b.56
+
+- **Docks.** One more boarding pin from owner coordinates on 8 Nov 2026, 9:51 PM CT. The southern dock at Auberdine, on Darkshore at 32.2, 44, goes to Menethil Harbor, Wetlands. The other fourteen docks are unchanged. The same boat, sizes, and Docks switch are used.
+
+## 0.5.2b.55
+
+- **Docks.** Six boarding pins from owner coordinates on 8 Nov 2026, 7:33 PM CT. Menethil Harbor on Wetlands goes to Theramore. Theramore on Dustwallow Marsh goes to Menethil Harbor. A second Auberdine pin on Darkshore goes to Rut'theran Village. Rut'theran Village on Teldrassil goes to Auberdine. Feathermoon Stronghold and the Forgotten Coast, both on Feralas, go to each other. The earlier eight docks are unchanged. No Auberdine to Menethil pin was added. The same boat, sizes, and Docks switch are used.
+
+## 0.5.2b.54
+
+- **Map Icons.** The service and dungeon pins hidden in 0.5.2b.53 are drawn again at the same coordinates. Flight masters, inns, bankers, and auctioneers use the minimap tracking icons. Profession trainers and suppliers share the profession minimap icon, keep separate switches, and the hover still names the craft. Vendors stay the town glyph. A food or reagent subtitle can use that tracking icon. Mail and Repair stay disabled, with no pins. Lakeshire is still empty. The eight docks, the boat, and the filter placement are unchanged. This does not read the minimap's live dots and does not change the game's tracking settings.
+
+## 0.5.2b.53
+
+- **Map Icons.** The filter lists Docks only. Flight masters, innkeepers, vendors, profession trainers, profession suppliers, bankers, auctioneers, mailboxes, repair, dungeon entrances, and the entrance level label are not drawn and have no row. The pin table and the icon files stay. The four earlier docks stay on the same spots, with the same boat, 28 pixels on the map and 18 in the row, the same destination hover, and the saved Docks toggle. The window height, the 8 pixel right gap, the left fallback, and the checks are unchanged. Continent level badges stay.
+- **Owner docks.** Four boarding pins use owner coordinates from 8 Nov 2026, not a Forever tooltip. Stormwind Harbor is on Stormwind City at 22, 56 and goes to Auberdine, Darkshore. Auberdine is on Darkshore at 30.5, 41 and goes to Stormwind Harbor. Wetlands at 4.5, 57 goes to Southshore, Hillsbrad Foothills. Southshore is on Hillsbrad Foothills at 50.5, 70 and goes to Auberdine, Darkshore. No other route is added.
+- **`/dm mappoi`.** A read-only look at tracking filters, area points on the current map, and current vignettes. It skips combat, does not change tracking, and does not draw or save pins.
+
+## 0.5.2b.52
+
+- **Map Icons.** The filter is the same height as the main window, top and bottom. A taller or shorter window changes that height. The rows scroll inside. Checks, service pins, and the boat stay their current sizes. The 8 pixel gap on the right and the left fallback are unchanged.
+
+## 0.5.2b.51
+
+- **Professions.** A trainer or supplier pin uses that craft's spellbook icon, chosen from the subtitle. Trainers and suppliers of the same craft share the icon. The two switches and the hover stay. If that file is missing, the pin uses the profession tracking icon, then the town glyph.
+- **Docks.** The map pin is the chosen boat, 28 pixels. Other service pins stay 16. Quest pins stay 18 and above it. The boat in the filter row stays 18.
+- **Mail and repair.** The rows use the game's mailbox and repair tracking icons and draw no pins. No verified place is in this set, and a general vendor is not marked as repair.
+
+## 0.5.2b.50
+
+- **Map Icons.** The filter sits 8 pixels off the right edge of the window. It uses the left side only when the right side cannot hold it. An embedded quest column is not added to that gap. The checkbox art is unchanged.
+- **Westfall.** Innkeeper Heather is marked from her Forever tooltip, one cluster on Westfall.
+- **Professions.** Profession trainers and Profession suppliers are their own saved rows. Vendors stays general and trade goods. A two-cluster or unmapped tooltip is listed and not drawn.
+- **Docks.** The dock mark is a boat. Ratchet and Booty Bay are added where a Forever guide names the route and the wharfmaster tooltip is one cluster. The hover names the destination dock and zone.
+
+## 0.5.2b.49
+
+- **World services.** Outdoor flight hubs with one Forever coordinate cluster are drawn, then innkeepers, a verified sample of vendors, and bankers and auctioneers on the same rule. Two clusters, including Stormwind's flight master, are listed and not drawn. Ironforge and the Krol'dok entrance are unchanged.
+- **Docks.** Steamwheedle Port and Powderfuse Port use a dock icon. The hover names the destination dock and its zone. Other boat routes stay off the map until a Forever pin gives both.
+- **Map Icons.** The filter sits beside the window, on the side with room, and follows the window. Checks are gold textures: empty, checked, hover, and disabled. The map art and the map size are unchanged.
+
+## 0.5.2b.48
+
+- **Map icons.** Service pins are drawn when that map's picture is on screen, including a city whose zone fade has not started. A missing tracking icon uses the Town Pins glyph. Suppliers use that glyph, not the reagent icon. The filter is a dark panel titled Map Icons, with gold checks, two columns, and a disabled Docks row.
+- **Dungeons.** Krol'dok Stronghold is one entrance in Riverglades, from the Forever guide's pin. Its 40-45 level is the Forever news table. The level line shows only while that entrance is on screen and the picture is wide enough. Other instances stay off the map until an entrance coordinate exists.
+
+## 0.5.2b.47
+
+- **Town pins.** The Town Pins button opens a filter. Flight masters, innkeepers, vendors, bankers, and auctioneers that have one verified Forever location are drawn with the game's own tracking icons. A category with no places, or no icon on this client, is not listed. Each choice is saved and the map updates immediately. A dock is listed only when this client has a dock icon. Hover names the place. A dock hover also names the verified destination. The pins do not set a waypoint and do not take a quest pin's click.
+
+## 0.5.2b.46
+
+- **Quest detail.** The map's quest column listens for quest-log changes as soon as it is showing, including the first time it appears. The open detail returns to the list when a complete read of the log no longer contains that quest. A quest that is still there, a log that cannot be read, and a different open quest stay on the detail.
+
+## 0.5.2b.45
+
+- **Quest detail.** After the game removes the quest that is open, the detail returns to the quest list, the same as Back. Cancel, a failed confirm, and a quest that is still in the log stay on the detail. Opening another quest in the meantime stays on that quest.
+
+## 0.5.2b.44
+
+- **Abandon.** The confirm uses a non-empty name from the game's abandon snapshot first. If that is missing, it uses the title of that same quest id, then the selected log line only when that line's quest id matches. The key call and the one nil-format table retry are unchanged. Yes and No stay the game's buttons.
+
+## 0.5.2b.43
+
+- **Abandon.** The confirm is requested with the dialog key first. If that fails with only the nil format error, it is requested once more with the dialog table and the same name and items. Any other failure stops. The quest name and, for the item confirm, the item text must already be strings. The dialog text is not changed. Yes and No stay the game's buttons.
+
+## 0.5.2b.42
+
+- **Abandon.** The button selects the open quest and shows the game's own confirm. Cancel does not abandon. A quest with items uses the item confirm, and if that confirm is missing the click stops. A selection that is not the open quest stops. Nothing is abandoned from this addon, including in combat.
+
+## 0.5.2b.41
+
+- **New quests.** After a new quest has its log header, if it is watched, not pinned, and outside this zone, it leaves the tracker. The quest stays in the log. This runs with auto-track on or off. A new quest for this zone stays. Older watched quests are left as they are. The removal still waits in the air, in combat, and while the map is not a zone or a city.
+
+## 0.5.2b.40
+
+- **Quests and Ready.** While the player map is missing, or is not a zone or a city, membership stays on the last zone or city. Watches are not added or removed from that sample, including a watch change already queued. When a zone or city can be read again, they refresh once, still waiting in the air and in combat. With no earlier zone or city, Ready does not list every completed quest and Quests is left as it is.
+
+## 0.5.2b.39
+
+- **Quests.** An unpinned completed quest whose turn-in is another zone leaves the Quests list, including when auto-track is off. It is not added to Ready. A completed pin stays in Ready in any zone. An in-progress pin stays on Quests. An in-progress quest you are watching yourself stays when auto-track is off. The removal still waits in the air and in combat.
+
+## 0.5.2b.38
+
+- **One highlight.** The selected quest is the only persistent light on the map and on its Objectives icon, in Quests or Ready. Choosing another quest on the map, on an icon, or on a name clears the previous one and points the arrow at the new one. Hover still lights only while the pointer is there. Icons do not open the window. Names still open and glide.
+
+## 0.5.2b.37
+
+- **New quest.** Accepting a quest refreshes the map quest list, including just after a selection or a reward tooltip. The zone plan waits until that quest is in the log, so a watch the game added is not removed early. A log update that arrives without the accept event is picked up the same way, for about two seconds. The list read does not select the quest or load every reward. In the air and in combat the plan still waits.
+
+## 0.5.2b.36
+
+- **Icons and names.** The round icon on a Quests row and the turn-in icon on a Ready row set the game's arrow and light a marker that is already on screen. They do not open the window and do not glide. The quest name still opens the map and glides.
+- **Ready pin.** The pin sits to the left of the turn-in icon, then the name, as on the Quests rows. The pin only pins or unpins.
+- **Reload on a flight.** For two seconds after entering the world, a taxi flag that reads false is not treated as landed. Zone plans wait. The first true latches the area at that moment and keeps it until the flag has been true and then turns false. That change plans the landing once. A reload that stays false plans once when the two seconds end. If the client has no `UnitOnTaxi`, plans are not delayed.
+
+## 0.5.2b.35
+
+- **Taxi.** While you are on a flight path, zone-based Quests and Ready to Turn In stay on the area you left. Landing switches them once, to the zone you are actually in, and replaces a watch batch that was still queued. A reload that starts in the air holds the area reported then, until you land. A pinned completed quest stays in Ready the whole time. Pin, unpin, and completion still apply. If this client has no `UnitOnTaxi`, nothing is held. `/dm trackerprobe` says whether that function exists.
+- **Ready pin.** Each Ready to Turn In row has its own pin. That click only pins or unpins. The rest of the row still opens the map.
+- **Map highlight.** A quest marker already on the map lights when it is selected, under the mouse, or the quest the game's arrow is on. The map does not move for the arrow.
+
+## 0.5.2b.34
+
+- **Abandon.** The quest detail has Abandon when this client has an abandon snapshot and its own confirm dialog. The click selects that quest by id, locks it with the snapshot, and shows the game's confirm. Yes is the game's button. A quest that has left the log is left alone. If the snapshot or the dialog is missing, the button is hidden. Nothing is abandoned in combat, and it is not queued.
+- **Share.** Share is shown when the client can share a quest. It is enabled only in a group, and only when that quest can be shared. A disabled click does nothing. The click selects that quest, shares it once, and puts the previous selection back. Nothing is shared in combat, and it is not queued.
+- **`/dm questprobe`.** It now lists whether the abandon, share, link, item, and timer names are present. That list does not select, abandon, or share.
+
+## 0.5.2b.33
+
+- **Ready.** Pinning a completed quest lists it under Ready to Turn In, including when the turn-in is another zone, and takes it off the Quests list. The zone pass does not watch it again. An in-progress pin stays on Quests. An unpinned completed quest is Ready only when the turn-in is the current zone or city. Unpinning an out-of-zone quest still removes just that quest.
+
+## 0.5.2b.32
+
+- **Unpin.** Unpinning a quest that is not in the current zone or city takes that quest off the objective list immediately, including a finished quest whose turn-in is somewhere else. A quest that is in the current zone or city stays on the list. Other watched quests and other pins are left as they are. The automatic zone planner is unchanged.
+
+## 0.5.2b.31
+
+- **Pins.** The quest list shows a pin icon beside the name. It uses the same keep-tracked pin as the objective tracker, filled when pinned and dim when not, with a tooltip. The detail pin is that same icon at the top right, clear of the title, the level line, the status, Back, and Show on map. The track checkboxes in the list are hidden. Tracking rules, saved watches, and saved pins are unchanged.
+
+## 0.5.2b.30
+
+- **Quest list.** The list scroll is sized to the inside of its panel, and the panel clips. A row no longer draws through the bottom border. The map and the column stay where they are.
+- **Rewards.** Opening a quest still loads its rewards, and a missing item name still says Loading…. The list no longer selects every quest to preload those names.
+
+## 0.5.2b.29
+
+- **The map keeps its size.** The quest column is no longer carved out of the map. The window grows by the measured column width (`QuestMapFrame`, or `questLogWidth`, or the last saved width). The picture stays the scroll hole, on class frames too. The column is the page's height and clips, so the list stops at the footer. It has no close button. The window's own close button stays. The rail still says Map & Quest Logs, on two lines.
+- **Pin.** A quest row and its detail have a Pin button. It uses the same keep-tracked pin as the objective tracker. The track checkbox still only tracks.
+- **Rewards.** Item names are requested when the quest row is first shown. Until the name arrives, the reward says Loading…
+- **`/dm keyprobe`.** One read of the M and L bindings, whether the owner and buttons are shown, and whether the world map is shown. The next real click, if one arrives, prints what Press did and whether the window stayed that way. M and L themselves are unchanged.
+
+## 0.5.2b.28
+
+- **Map & Quest Logs.** The separate Quests tab and the map button that showed or hid the side log are gone. The quest list is a column inside the map section. M and L both open and close that section. ALT-M and ALT-L still open the stock map and the stock quest log. A saved Quests tab opens this section. Pins are not cleared.
+- **Click a quest, then Back.** The column shows the quest list. Choosing a quest replaces that list with the quest's title, objectives, description, and rewards. Item names use the game's tooltip. Back returns to the list and keeps its scroll and search. Show on map still glides.
+- **Size.** The stock quest frame is no longer measured as part of the map chrome and then drawn again beside the window. A quest frame that sits inside the map is a column only. A quest frame that sticks out adds just the part that sticks out, and hiding it does not shrink the window. `questLogWidth` sizes that column and is not added on top of a map frame we can already measure. `/dm sizeprobe` prints the live outer size, the scroll size, and the column width. It does not claim they already match. Share and Abandon are not in this quest view; this build does not add them.
+
+## 0.5.2b.27
+
+- **Ready to Turn In follows the turn-in, not the log category.** A finished quest is listed for the zone or city where you hand it in. The log header is where it was filed (The Defias Brotherhood stays under Westfall while Wiley is in Lakeshire). The game's next waypoint, then a point on a map, decides. A turn-in in another zone stays on the objective tracker; it is not removed and it is not listed here. A pinned quest is unchanged. A capital is still its own area.
+- **M and L keep closing the window.** Closing follows the tab on screen, so a stale saved tab cannot leave the window stuck open. If the override is cleared (a loading screen, combat, or a rebind), it is put back out of combat, including when the rebind arrives while the keys are being applied.
+- **The docked quest log comes back without a reload.** If it was left on a previous window, or the map's startup failed before showing it, the map puts it back while that tab is open.
+
+## 0.5.2b.26
+
+- **Original thin class frames.** The nine class corner and edge pictures (`cls-<class>-fc.tga`, `-ftb.tga`, `-flr.tga`) are the 0.5.2b.19 art again (commit a238294), byte for byte. The thick side bars from 0.5.2b.24 and the corner-arm pass from 0.5.2b.25 are not used. Repeat lengths, top / bottom / left / right: warrior 146, 142, 146, 142; paladin 256, 176, 154, 176; hunter 238, 129, 204, 132; rogue 215, 129, 215, 129; priest 230, 240, 186, 240; shaman 225, 207, 150, 138; mage 172, 256, 172, 255; warlock 212, 188, 210, 156; druid 174, 144, 174, 144. The sidebar and map still meet the wood, and Ready to Turn In is still the zone or city you are in. Overlay art and coast pictures are unchanged.
+
+## 0.5.2b.25
+
+- **The sidebar and the map meet the wood.** On a class theme the painted bar is the outer 85 css of the 120 css corner. The sidebar and the page used to start on the old thin-frame line (9 px in from the window, 37 px down), so the shell's parchment showed between the wood and the sidebar and around the map. They now start on that 85 css edge. Measured on a 1035×534 map frame (window 1034×532, Hunter): the opening inside the wood was about x 30–1004, y 37–495. The sidebar was at x 15, y 77 (40 px of parchment under the top wood) and the page sat in the old body column. The sidebar now spans that opening down to the footer row, and the map fills the page beside it. The WoW theme's scroll hole is unchanged.
+- **Corner arms meet the top and bottom strips.** The nine corner pictures (`cls-<class>-fc.tga`) are replaced so the wood continues through the fade into the top and bottom strips. The edge strips (`-ftb.tga`, `-flr.tga`) and their repeat lengths are the 0.5.2b.24 pictures. Overlay corners, sprites, the parts sheet, and coast pictures are unchanged.
+- **Ready to Turn In is the area you are in.** The list (the tracker section and the Quests tab group) shows turn-ins for your current zone, or for the capital when you are standing in one. Ironforge is not Dun Morogh: a turn-in in the city is not listed out in the snow, and a Dun Morogh turn-in is not listed inside Ironforge. The same rule is what zone auto-track uses. A turn-in whose area cannot be read still shows. Standing in a capital is the city rectangle on the continent, then a zone name that is the city, then the player map. Forever often reports Dun Morogh while you are inside Ironforge; the rectangle still counts as the city.
+
+## 0.5.2b.24
+
+- **Class frame edges for the signed-off map hole.** The nine class frames (`cls-<class>-fc.tga`, `-ftb.tga`, `-flr.tga`) are rebuilt so the side bars sit outside the 1020×500 map picture, the corner arms meet the top and bottom strips, and those strips repeat without a dark break. Repeat lengths, top / bottom / left / right: warrior 146, 142, 146, 141; paladin 256, 176, 153, 176; hunter 238, 129, 204, 132; rogue 215, 129, 215, 129; priest 230, 240, 186, 240; shaman 225, 207, 150, 138; mage 172, 256, 172, 252; warlock 212, 188, 210, 156; druid 174, 144, 174, 144. Overlay corners, sprites, and the parts sheet are unchanged. Coast pictures are unchanged.
+
+## 0.5.2b.23
+
+- **A capital fills the map.** Zooming or panning deep into a capital (Ironforge, Stormwind, and the others) frames that city's picture so it fills the map hole, the same as choosing the city on the breadcrumb. It is no longer a small feathered rectangle sitting on Dun Morogh's close-up snow. Zooming out from that filled city returns to the zone around it. The extra zoom cap still clears when you leave the city, close the window, or open another tab.
+- **Breadcrumb dropdowns.** Each step on the trail (world, continent, zone or city) opens a list of the other places at that level. Choosing one goes there. The world step lists continents. A continent lists its zones. A zone or city lists the zones on that continent.
+
+## 0.5.2b.22
+
+- **Ironforge's floor stays above the snow.** In 0.5.2b.21 the city picture was raised to a fixed frame level. On Forever the close-up tile planes still painted Dun Morogh over it at the deepest zoom. After those planes are drawn, a capital you are looking at is placed one level above the highest of them. The pins stay above the floor. The floor picture is solid (not feathered) when it fills the view, so snow does not show through the rim.
+- **Standing in a capital opens that city.** If your position is inside a capital's rectangle, the map opens on that city even when Forever's "which map" helper and your player map both name the land around it (Dun Morogh instead of Ironforge). The extra zoom cap still clears when you leave the city, close the window, or open another tab.
+
+## 0.5.2b.21
+
+- **Ironforge (and the other capitals) stay above the close-up tiles.** When a capital is the map you are looking at, its floor picture is drawn above the deepest minimap tiles, so Dun Morogh's snow does not cover Ironforge. A city that is only fading in over its zone stays under the tiles. The extra zoom that open needs is cleared when you leave that city, close the window, or open another tab.
+- **M opens centred on you.** The Map tab puts your character in the middle of the picture, the way the game's own map and OpenMap do. Show on map and a tracker click still glide to that quest.
+- **The map picture matches the game's scroll area.** The Map tab's viewport follows `WorldMapFrame.ScrollContainer` when that size can be read. Otherwise it uses the frame interior: about 1020×500 inside a 1035×534 frame (15px across and 34px down). In that frame the old picture was about 781×373. The window grows by a few pixels when the larger picture does not fit.
+- **Coast bakes, Batch 1.** When `Interface/AddOns/DarkMatter/Media/coast/z<id>.tga` is installed, that picture replaces the stock tiles for Durotar, The Barrens, Arathi Highlands, Blasted Lands, Tirisfal Glades, Silverpine Forest, Hillsbrad Foothills, The Hinterlands, Stranglethorn Vale, Swamp of Sorrows, Westfall, Wetlands, Teldrassil, Darkshore, Ashenvale, Thousand Needles, Desolace, Feralas, Dustwallow Marsh, Tanaris, Azshara, and Silithus (uiMapIDs 1411, 1413, 1417, 1419, 1420, 1421, 1424, 1425, 1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441, 1443, 1444, 1445, 1446, 1447, 1451). Same file as Westfall: 1002×668, uncompressed 32-bit TGA, BGRA, bottom-left origin (descriptor 8). A missing file, or a file that is not that picture, keeps the masked game art. These pictures are not in git. The solo-coast mask (drawn even when the whole continent is not masked) stays Westfall only. A bake that is present fills that zone's slot in the continent puzzle, the same way a mask does.
+
+## 0.5.2b.20
+
+- **Ironforge (and the other capitals) on open.** The map you are standing on is used when that map is a capital and it has its own picture. Forever's "which map should open" helper often names the land around the city (Dun Morogh for Ironforge), so 0.5.2b.19 still framed the snowy exterior. Opening inside a capital now frames that city's floor map. `/dm mapprobe` adds one line: the map Dark Matter will open, your map, the helper's map, and the city in focus.
+- **Westfall's coast when you are looking at Westfall.** The Westfall picture is cut with its mask even if masks for the whole continent are off (one zone whose mask did not stick no longer turns Westfall's mask off too). This is not the same as OpenMap's painted coast. If `Interface/AddOns/DarkMatter/Media/coast/z1436.tga` is installed, that picture is used instead: 1002×668, uncompressed 32-bit TGA, BGRA, bottom-left origin (descriptor 8), same packing as the zone masks. Land keeps its colour; the sea outside the coast is transparent. A missing file, or a file that is not that picture, is ignored and the masked game art is used. The picture is the game's own map art, so it is not in git. For a Mac install, copy the bake to `Interface/AddOns/DarkMatter/Media/coast/z1436.tga` (the file Illusionist verified as sha256 `f1c243661e033c52a67aced9d07c2d65e5585c99d160fca217d5ffe2ce438186`, from `/workspace/dm-coast-bake/final/z1436.tga` when that bake is on the machine).
+- **Hunter and Paladin emblems.** Smaller and seated higher (hunter 88 / -22, paladin 84 / -22), and the new seat is applied before a theme change repaints the frame. The numbers stay in Theme_CrestOverrides.lua.
+- **Class frame edges.** Top, bottom, left and right stay in the same slot (corner size 120, matching insets). The left and right pictures were the thin part: their ornaments spanned about 44–78 pixels while the top and bottom spanned about 132–172. Those side pictures are rebuilt so the ornament is about as thick as the top and bottom, for warrior, paladin, hunter, rogue, priest, shaman, mage, warlock and druid (`cls-<class>-fc.tga`, `cls-<class>-ftb.tga`, `cls-<class>-flr.tga`). Tile repeat lengths that changed with the new art: paladin bottom 176 → 256, rogue bottom 129 → 256, mage right 255 → 252.
+
+## 0.5.2b.19
+
+- Westfall on the Map tab is cut to its coastline when you are looking at that zone alone (uses the existing Westfall mask). Other zones unchanged for now.
+- Hunter and Paladin top emblems: size and height tuned so they sit more evenly on the frame. Tweaks live in Theme_CrestOverrides.lua so regenerating Theme_Classes.lua will not wipe them.
+- **Ironforge (and other capitals) city map on open**: Classic often nests a capital under its host zone (Ironforge → Dun Morogh), so the city was missing from the continent zone list. Opening then framed Dun Morogh and only the snowy exterior showed even at deep zoom / “Ironforge” breadcrumbs. Capitals are pulled into Zones via a composed continent rect; OpeningMap keeps a city with art instead of raising it to the host; when the city fills the view (cover open) its floor map draws at full strength.
+
 ## 0.5.2b.18
 
 - Group member dots and edge arrows stay at full brightness (no fading when far away). The tooltip still says when someone is out of range or in another zone.

@@ -107,6 +107,9 @@ local function ZMax()
     if sMax then cap = math.max(cap or 0, sMax / RefFit()) end -- 0.5.2b.8.2: the reference window's levels (was / SFit())
   end
   if cap then m = math.min(m, math.max(8, cap)) end
+  -- 0.5.2b.20: a capital is a small rect. The minimap sharpness cap can stop the open before the city
+  -- art fills the box, so the host exterior stays in frame. A city open may go as deep as its cover.
+  if M.fitCap and M.fitCap > m then m = M.fitCap end
   return m
 end
 M.ZMax = function() return ZMax() end
@@ -350,7 +353,8 @@ local function Piece(L, fid, layer, x, y, w, h, u2, v2, list)
     local k = L.mask and L.fitSc or 1
     t:SetSize(pw * k, ph * k)
     t:SetPoint("TOPLEFT", f, "TOPLEFT", px * k, -py * k)
-    if L.mask then t:SetTexture(fid) else t:SetTexture(fid, nil, nil, "TRILINEAR") end
+    -- a baked coast picture already has its alpha; a trilinear filter fringes that edge
+    if L.mask or L.baked then t:SetTexture(fid) else t:SetTexture(fid, nil, nil, "TRILINEAR") end
     t:SetTexCoord(u1, uu2, v1, vv2)
     t.dmG = { px, py, pw, ph }
     -- 0.5.2b.6.1: the mask goes on last, once the texture has its file, size and place (as /dm masktest does)
@@ -391,6 +395,11 @@ local function Piece(L, fid, layer, x, y, w, h, u2, v2, list)
 end
 local function BuildTiles(L)
   local a = L.art
+  -- 0.5.2b.20: one baked coast picture instead of the stock tiles (ocean already transparent in the file)
+  if L.baked then
+    Piece(L, L.baked, "BACKGROUND", 0, 0, a.w, a.h, 1, 1, L.tiles)
+    return
+  end
   for i, fid in ipairs(a.tex) do
     local col, row = (i - 1) % a.cols, math.floor((i - 1) / a.cols)
     local x, y = col * a.tw, row * a.th
@@ -469,6 +478,109 @@ function M.HighlightInfo(z)
   M.hl[z.id] = c
   return c
 end
+-- 0.5.2b.19: solo coastline pilot — these map IDs always get their zone mask when drawn as a layer, even if the
+-- continent is not ContMasked. Cuts ocean outside the coast on the focused zone picture. Westfall only for now.
+-- 0.5.2b.20: not gated on M.maskBroken. That flag means some other zone's mask did not stick, and the whole
+-- continent then falls back to one feathered rectangle. Westfall's own file is still valid; a global fallback
+-- was leaving the solo picture uncut (the cookie-cutter west edge). maskOff (/dm mapmask off) and a client
+-- with no mask API still skip it.
+M.SOLO_COAST = { [1436] = true }  -- Westfall
+function M.SoloCoastMask(id)
+  return M.SOLO_COAST and M.SOLO_COAST[id] == true and M.MaskFile(id) ~= nil and not M.maskOff and M.canMask ~= false
+end
+-- 0.5.2b.20 / 0.5.2b.21: baked coast art (Illusionist). This is NOT OpenMap.
+-- Forever coast Batch 1, install-only (not in git). Same packing as Media/masks: uncompressed TGA
+-- (type 2), 32-bit BGRA, bottom-left origin (descriptor 8), the zone art size 1002 x 668.
+-- Land keeps its colour; the sea outside the coast is transparent.
+--   Interface\AddOns\DarkMatter\Media\coast\z<uiMapID>.tga
+-- A missing file, or one that is not that picture, is ignored and the masked stock art is used.
+-- SOLO_COAST stays Westfall-only (the pilot that draws its mask when the continent is not ContMasked).
+-- Every id here prefers its bake over the stock tiles whenever the file is present.
+M.BAKED_COAST_IDS = {
+  1411, 1413, 1417, 1419, 1420, 1421, 1424, 1425,
+  1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441,
+  1443, 1444, 1445, 1446, 1447, 1451,
+}
+M.BAKED_COAST = {}
+for _, id in ipairs(M.BAKED_COAST_IDS) do M.BAKED_COAST[id] = { w = 1002, h = 668 } end
+function M.BakedCoastPath(id)
+  if not (M.BAKED_COAST and M.BAKED_COAST[id]) then return nil end
+  return "Interface\\AddOns\\DarkMatter\\Media\\coast\\z" .. tostring(id)
+end
+-- true = this bake, false = missing or not the bake, nil = this host cannot see the disk (the game)
+local function CoastOnDisk(id)
+  if type(io) ~= "table" or type(io.open) ~= "function" then return nil end
+  local spec = M.BAKED_COAST and M.BAKED_COAST[id]
+  if not spec then return false end
+  local name = "z" .. tostring(id) .. ".tga"
+  local roots = {}
+  local function add(r)
+    if type(r) == "string" and r ~= "" then roots[#roots + 1] = r end
+  end
+  if type(arg) == "table" and type(arg[1]) == "string" then add(arg[1]) end
+  if debug and debug.getinfo then
+    local info = debug.getinfo(1, "S")
+    local src = info and info.source
+    if type(src) == "string" then
+      local dir = src:gsub("^@", ""):match("^(.*)[/\\][^/\\]+$")
+      add(dir)
+    end
+  end
+  if #roots == 0 then return nil end
+  local function headerOk(f)
+    local h = f:read(18)
+    if type(h) ~= "string" or #h < 18 then return false end
+    local w = h:byte(13) + h:byte(14) * 256
+    local ht = h:byte(15) + h:byte(16) * 256
+    if h:byte(3) ~= 2 or h:byte(17) ~= 32 or h:byte(18) ~= 8 then return false end
+    if w ~= spec.w or ht ~= spec.h then return false end
+    local size = f:seek("end")
+    return size == 18 + w * ht * 4
+  end
+  for _, root in ipairs(roots) do
+    local sep = (root:find("\\", 1, true) and not root:find("/", 1, true)) and "\\" or "/"
+    local f = io.open(root .. sep .. "Media" .. sep .. "coast" .. sep .. name, "rb")
+    if f then
+      local ok = headerOk(f)
+      f:close()
+      if ok then return true end
+    end
+  end
+  return false
+end
+-- In the game, SetTexture returns true only when the file loads. nil/false (and the stub, which stores
+-- the path without a file) are not a hit. Requires a real success so a missing TGA cannot blank the zone.
+function M.BakedCoastLoads(path)
+  if not (canvas and canvas.CreateTexture) then return nil end
+  local ok, probe = pcall(canvas.CreateTexture, canvas, nil, "BACKGROUND")
+  if not ok or not probe or not probe.SetTexture then return false end
+  local okS, res = pcall(probe.SetTexture, probe, path)
+  local got
+  if probe.GetTexture then
+    local okG, g = pcall(probe.GetTexture, probe)
+    if okG then got = g end
+  end
+  if probe.Hide then probe:Hide() end
+  pcall(probe.SetTexture, probe, nil)
+  if not okS or res == false or res == nil then return false end
+  if res ~= true and res ~= 1 then return false end
+  if got == nil or got == "" or got == false then return false end
+  return true
+end
+function M.BakedCoastFile(id)
+  local path = M.BakedCoastPath(id)
+  if not path then return nil end
+  local cache = M.bakedCache or {}
+  M.bakedCache = cache
+  if cache[id] ~= nil then return cache[id] or nil end
+  local on = CoastOnDisk(id)
+  if on == nil then
+    on = M.BakedCoastLoads(path)
+    if on == nil then return nil end -- no canvas yet; ask again once the map exists
+  end
+  cache[id] = on and path or false
+  return on and path or nil
+end
 -- 0.5.2b.6.2: a layer frame may be built on another host (the /dm masktest zone panels build the map's own layer
 -- there); force = the zone's mask even where the continent is not drawn masked
 local function NewLayer(id, level, host, force)
@@ -485,6 +597,13 @@ local function NewLayer(id, level, host, force)
   -- 0.5.1.6: zone pictures are feathered at their rim; 0.5.1.7: continent pictures too when the world picture lies under
   -- them (the world picture is the base and is never feathered). 0.5.2b.4: always (no masked zones)
   L.feather = CU and CU.CornerGrad and id ~= M.world and (M.hasWorld or not MD.Is(id, "continent")) or false
+  -- 0.5.2b.20: a shipped baked coast replaces the stock tiles. Its own alpha is the coastline, so it is not
+  -- feathered and it does not take a mask texture. Absent file: the masked stock art below.
+  local baked = M.BakedCoastFile(id)
+  if baked then
+    L.baked, L.feather = baked, false
+    return L
+  end
   -- 0.5.2b.5: a zone with a shape mask (Data_ZoneMasks.lua) on a continent whose zones all have one is cut to its real
   -- outline by that mask (its own soft edge) instead of being feathered at its rectangle
   local mf = id ~= M.world and not MD.Is(id, "continent") and M.MaskFile(id)
@@ -542,13 +661,29 @@ local function NewLayer(id, level, host, force)
       M.canMask, M.masked = false, nil
     end
   end
+  -- tried the solo mask and the client did not take it: do not rebuild this layer every frame
+  if force and not L.mask then L.coastTried = true end
   return L
 end
 local function Layer(id, level)
   local L = M.layers[id]
+  local force = M.SoloCoastMask(id)
+  local baked = M.BakedCoastFile(id)
+  -- 0.5.2b.22: the city floor (the open you are looking at) is one solid picture, not a feathered inset
+  local solid = M.cityFloor and M.cityFloor[id]
+  -- rebuilt when a solo-coast zone was drawn as a plain rectangle, or the baked file arrived / went away
+  local stale = L and ((baked and L.baked ~= baked) or (not baked and L.baked) or (force and not baked and not L.mask and not L.coastTried) or (solid and L.feather) or (L.cityFloor and not solid))
+  if stale then
+    if L.frame then L.frame:Hide() end
+    M.layers[id] = nil
+    L = nil
+  end
   if L then return L end
-  L = NewLayer(id, level, canvas)
-  if L then M.layers[id] = L end
+  L = NewLayer(id, level, canvas, force or nil)
+  if L then
+    if solid then L.feather, L.cityFloor = false, true end
+    M.layers[id] = L
+  end
   return L
 end
 -- 0.5.2b.6.2: put a built layer on its host at screen px (l, t), sc screen px per art texel. A masked layer is drawn
@@ -650,23 +785,93 @@ local function PoolHideRest(name)
   for i = p.n + 1, #p do p[i]:Hide() end
 end
 M.Pool, M.PoolReset, M.PoolHideRest = Pool, PoolReset, PoolHideRest -- 0.5.2b.7: for MapExtras.lua
+-- 0.5.2b.61: the zone level label uses the Option 2 parchment scroll, bundled as
+-- Media/dm-level-scroll.tga (curled ends, no baked-in numbers). Three slices keep the
+-- rolls the right shape when the label grows with the text. If that file is missing,
+-- the plate is the 0.5.2b.59 parchment tint and the text stays ivory with a dark outline.
+local SCROLL_FILE = "Interface\\AddOns\\DarkMatter\\Media\\dm-level-scroll"
+local SCROLL_V0, SCROLL_V1 = 0.0625, 0.9375
+local SCROLL_CAP_L, SCROLL_CAP_R = 0.158, 0.842
+local PARCHMENT = { 0.70, 0.60, 0.42, 0.94 }
+local function FitScroll(b)
+  local w, h = b:GetWidth() or 52, b:GetHeight() or 18
+  -- the curled end's width follows the label height so the roll does not squash
+  local cap = h * (SCROLL_CAP_L * 256) / ((SCROLL_V1 - SCROLL_V0) * 128)
+  if cap * 2 + 8 > w then cap = math.max(4, (w - 8) / 2) end
+  if b.left then
+    b.left:ClearAllPoints()
+    b.left:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+    b.left:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
+    b.left:SetWidth(cap)
+  end
+  if b.right then
+    b.right:ClearAllPoints()
+    b.right:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0)
+    b.right:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
+    b.right:SetWidth(cap)
+  end
+  b.plate:ClearAllPoints()
+  if b.left and b.right then
+    b.plate:SetPoint("TOPLEFT", b.left, "TOPRIGHT", 0, 0)
+    b.plate:SetPoint("BOTTOMRIGHT", b.right, "BOTTOMLEFT", 0, 0)
+  else
+    b.plate:SetAllPoints(b)
+  end
+end
+local function PaintBadge(b)
+  local plate, edge = b.plate, b.edge
+  local ok = NS.Stock and NS.Stock.TextureOK and NS.Stock.TextureOK(SCROLL_FILE)
+  if ok then
+    plate:SetTexture(SCROLL_FILE)
+    plate:SetTexCoord(SCROLL_CAP_L, SCROLL_CAP_R, SCROLL_V0, SCROLL_V1)
+    plate:SetVertexColor(1, 1, 1, 1)
+    if b.left then
+      b.left:SetTexture(SCROLL_FILE)
+      b.left:SetTexCoord(0, SCROLL_CAP_L, SCROLL_V0, SCROLL_V1)
+      b.left:SetVertexColor(1, 1, 1, 1)
+      b.left:Show()
+    end
+    if b.right then
+      b.right:SetTexture(SCROLL_FILE)
+      b.right:SetTexCoord(SCROLL_CAP_R, 1, SCROLL_V0, SCROLL_V1)
+      b.right:SetVertexColor(1, 1, 1, 1)
+      b.right:Show()
+    end
+    edge:Hide()
+    FitScroll(b)
+    b.art = "scroll"
+    return
+  end
+  if b.left then b.left:Hide() end
+  if b.right then b.right:Hide() end
+  plate:ClearAllPoints()
+  plate:SetAllPoints(b)
+  plate:SetColorTexture(PARCHMENT[1], PARCHMENT[2], PARCHMENT[3], PARCHMENT[4])
+  plate:SetTexCoord(0, 1, 0, 1)
+  edge:Show()
+  edge:SetColorTexture(0.38, 0.28, 0.16, 0.9)
+  b.art = "tint"
+end
 local function MakeBadge()
   local b = CreateFrame("Frame", nil, over)
-  b:SetSize(44, 18)
+  b:SetSize(52, 18)
   b.plate = b:CreateTexture(nil, "BACKGROUND")
   b.plate:SetAllPoints(b)
-  b.plate:SetColorTexture(0.06, 0.05, 0.035, 0.9)
+  b.left = b:CreateTexture(nil, "BACKGROUND")
+  b.right = b:CreateTexture(nil, "BACKGROUND")
   b.edge = b:CreateTexture(nil, "BORDER")
   b.edge:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
   b.edge:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
   b.edge:SetHeight(1)
-  b.edge:SetColorTexture(1, 0.82, 0.25, 0.8)
   b.text = b:CreateFontString(nil, "OVERLAY")
-  NS.SetFont(b.text, 11, "")
+  NS.SetFont(b.text, 11, "OUTLINE")
   b.text:SetPoint("CENTER", b, "CENTER", 0, 0)
-  b.text:SetTextColor(1, 0.84, 0.3, 1)
+  b.text:SetTextColor(0.98, 0.95, 0.86, 1)
+  b.FitScroll = FitScroll
+  PaintBadge(b)
   return b
 end
+M.MakeBadge = MakeBadge
 -- 0.5.2a quest markers: the game's own quest icons (QuestState.lua: grey ? in progress, yellow ? ready to turn in),
 -- clickable. Hover highlights the quest's row in the Quests tab (and a row's hover highlights its markers here); click
 -- selects the quest there and flies to it; shift-click sets the game's waypoint + arrow. A press that turns into a drag
@@ -789,7 +994,7 @@ local function QuestMarker(z, q, vw, vh)
       local role, status = "progress", "progress"
       if QS then role, status = QS.MarkerRole(q.id) end
       local mk = Pool("quest", MakeQuest)
-      local hot = QS and QS.IsHot(q.id)
+      local hot = M.MarkerHot(q.id)
       -- 0.5.2b.7: the objective tracker's own quest POI button (the round button with "..." in progress, "?" when
       -- ready; gold ring and brown dots when selected), as OpenMap draws it; a client without those atlases gets
       -- the 0.5.2a game icons; one with neither draws no marker (/dm questmap)
@@ -823,6 +1028,11 @@ local function QuestMarker(z, q, vw, vh)
 end
 -- 0.5.2b.11: the quests whose next waypoint is drawn (the selected one and the game's super-tracked one), as the stock
 -- map's QuestDataProvider does (focused or super-tracked quest + C_QuestLog.GetNextWaypointForMap)
+-- 0.5.2b.38: one persistent highlight, the selected quest. Hover lights only while the pointer is on a marker.
+function M.MarkerHot(id)
+  local QS = NS.QS
+  return (QS and id and QS.IsHot(id)) and true or false
+end
 function M.WaypointQuests()
   local out = {}
   local QS = NS.QS
@@ -839,8 +1049,223 @@ function M.WaypointOn(q, zone)
   local ok, x, y = pcall(f, q, zone)
   if ok and type(x) == "number" and type(y) == "number" and x >= 0 and x <= 1 and y >= 0 and y <= 1 then return x, y end
 end
+-- 0.5.2b.48: a pin is drawn when that map's own picture is on screen, not when ZoneAlpha passes.
+-- ZoneAlpha is the zone-picture fade. A capital is drawn earlier, from how much of the view its box fills.
+function M.PictureOn(id)
+  local L = M.layers and M.layers[id]
+  if not (L and L.shown and (L.alpha or 0) >= 0.35 and L.box) then return nil end
+  return L
+end
+local function LevelOk(pin)
+  local lv = pin and pin.levels
+  if type(lv) ~= "table" or type(lv[1]) ~= "number" or type(lv[2]) ~= "number" then return false end
+  local src = pin.levelSrc
+  return type(src) == "string" and src:find("wowhead.com/forever/", 1, true) ~= nil
+end
+function M.TownLevelText(pin, box)
+  if not (pin and box and M.TownOn("levels") and M.TownOn("entrance") and LevelOk(pin)) then return nil end
+  if (box[3] - box[1]) < 140 then return nil end
+  if pin.levels[1] == pin.levels[2] then return tostring(pin.levels[1]) end
+  return pin.levels[1] .. "-" .. pin.levels[2]
+end
+local CHECK = "Interface\\AddOns\\DarkMatter\\Media\\dm-check"
+local DOCK = "Interface\\AddOns\\DarkMatter\\Media\\dm-dock"
+function M.PaintCheck(tex, on, hot, off)
+  local i = (off and (on and 5 or 4)) or (hot and (on and 3 or 2)) or (on and 1 or 0)
+  tex:SetTexture(CHECK)
+  tex:SetTexCoord(i / 8, (i + 1) / 8, 0, 1)
+end
+-- Subtitle words only. "engineer" is tested before "mining" so one dual supply line stays engineering.
+local CRAFT_FILE = {
+  blacksmith = "Interface\\Icons\\Trade_BlackSmithing",
+  leather = "Interface\\Icons\\Trade_LeatherWorking",
+  alchemy = "Interface\\Icons\\Trade_Alchemy",
+  enchant = "Interface\\Icons\\Trade_Engraving",
+  engineer = "Interface\\Icons\\Trade_Engineering",
+  tailor = "Interface\\Icons\\Trade_Tailoring",
+  herbal = "Interface\\Icons\\Trade_Herbalism",
+  mining = "Interface\\Icons\\Trade_Mining",
+  skin = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01",
+  cook = "Interface\\Icons\\INV_Misc_Food_15",
+  fish = "Interface\\Icons\\Trade_Fishing",
+  aid = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
+}
+local CRAFT_WORD = {
+  { "engineer", "engineer" }, { "blacksmith", "blacksmith" }, { "leather", "leather" },
+  { "alchem", "alchemy" }, { "enchant", "enchant" }, { "tailor", "tailor" },
+  { "herbal", "herbal" }, { "mining", "mining" }, { "skin", "skin" },
+  { "cook", "cook" }, { "fish", "fish" }, { "first aid", "aid" },
+}
+function M.CraftOf(detail)
+  if type(detail) ~= "string" then return nil end
+  local r = detail:lower()
+  for _, w in ipairs(CRAFT_WORD) do if r:find(w[1], 1, true) then return w[2] end end
+end
+function M.PaintCraft(tex, key)
+  local file = CRAFT_FILE[key]
+  if not file then return nil end
+  local known = not (NS.Stock and NS.Stock.TextureOK) or NS.Stock.TextureOK(file)
+  if known then
+    tex:SetTexture(file)
+    tex:SetTexCoord(0, 1, 0, 1)
+    return "craft"
+  end
+  if NS.QS and NS.QS.PaintIcon(tex, "profession") then return "profession" end
+end
+-- 0.5.2b.54: a town pin prefers the minimap file for that role. An atlas is used only when that file is missing.
+function M.PaintMinimap(tex, role)
+  local list = NS.QS and NS.QS.CheckRole and NS.QS.CheckRole(role)
+  if type(list) ~= "table" then return false end
+  local pick
+  for _, c in ipairs(list) do
+    if c.ok and type(c.file) == "string" and c.file:find("Interface\\Minimap\\", 1, true) then pick = c break end
+  end
+  if not pick then
+    for _, c in ipairs(list) do if c.ok then pick = c break end end
+  end
+  if not pick then return false end
+  if pick.file then
+    tex:SetTexture(pick.file)
+    local t = pick.tc or { 0, 1, 0, 1 }
+    tex:SetTexCoord(t[1], t[2], t[3], t[4])
+    return true
+  end
+  if pick.atlas and tex.SetAtlas then
+    local ok = pcall(tex.SetAtlas, tex, pick.atlas, false)
+    if ok then return true end
+  end
+  return false
+end
+-- Vendors have no general minimap icon. Only a subtitle that names food or a reagent uses those tracking files.
+function M.VendorMark(detail)
+  if type(detail) ~= "string" then return nil end
+  local r = detail:lower()
+  if r:find("reagent", 1, true) then return "reagents" end
+  if r:find("food", 1, true) then return "food" end
+end
+function M.PaintRowIcon(tex, role)
+  if role == "dock" then
+    tex:SetTexture(DOCK)
+    tex:SetTexCoord(0, 1, 0, 1)
+    return
+  end
+  if role and role ~= "town" and M.PaintMinimap(tex, role) then return end
+  Icon(tex, "town")
+end
+local function PaintTownIcon(tex, role, detail)
+  if role == "dock" then
+    tex:SetTexture(DOCK)
+    tex:SetTexCoord(0, 1, 0, 1)
+    return "dock"
+  end
+  if role == "town" then
+    local mark = M.VendorMark(detail)
+    if mark and M.PaintMinimap(tex, mark) then return mark end
+    Icon(tex, "town")
+    return "town"
+  end
+  if role and M.PaintMinimap(tex, role) then return "role" end
+  Icon(tex, "town")
+  return "town"
+end
+local function TownDef(id)
+  local data = NS.TownPins
+  if not (data and data.cats) then return nil end
+  for _, c in ipairs(data.cats) do if c.id == id then return c end end
+end
+function M.TownCatOk(id)
+  local def = TownDef(id)
+  if not (def and not def.unavailable and NS.TownPins and NS.TownPins.pins) then return false end
+  local want = (id == "levels") and "entrance" or id
+  for _, p in ipairs(NS.TownPins.pins) do if p.cat == want then return true end end
+  return false
+end
+function M.TownOn(id)
+  if not M.TownCatOk(id) then return false end
+  local town = NS.db and NS.db.map and NS.db.map.town
+  if type(town) == "table" and town[id] ~= nil then return town[id] and true or false end
+  local def = TownDef(id)
+  return def and def.default and true or false
+end
+function M.SetTown(id, on)
+  if not (NS.db and TownDef(id)) then return end
+  NS.db.map = NS.db.map or {}
+  if type(NS.db.map.town) ~= "table" then NS.db.map.town = {} end
+  NS.db.map.town[id] = on and true or false
+  M.dirty = true
+end
+local function TownPlaceable(pin)
+  if type(pin) ~= "table" or type(pin.map) ~= "number" then return false end
+  if type(pin.x) ~= "number" or type(pin.y) ~= "number" then return false end
+  if pin.x < 0 or pin.x > 1 or pin.y < 0 or pin.y > 1 then return false end
+  if pin.cat == "dock" and (type(pin.dest) ~= "string" or pin.dest == "") then return false end
+  return M.TownOn(pin.cat)
+end
+local function MakeTown()
+  local b = CreateFrame("Button", nil, over)
+  b:SetSize(16, 16)
+  b.icon = b:CreateTexture(nil, "ARTWORK")
+  b.icon:SetAllPoints(b)
+  b.lvl = b:CreateFontString(nil, "OVERLAY")
+  NS.SetFont(b.lvl, 11, "OUTLINE")
+  b.lvl:SetPoint("LEFT", b, "RIGHT", 3, 0)
+  b.lvl:SetTextColor(0.95, 0.86, 0.62, 1)
+  b.lvl:Hide()
+  b:SetScript("OnEnter", function(self)
+    local pin = self.pin
+    if not (GameTooltip and pin) then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(pin.name or "", 1, 0.82, 0)
+    if type(pin.detail) == "string" and pin.detail ~= "" then GameTooltip:AddLine(pin.detail, 0.9, 0.9, 0.9, true) end
+    if type(pin.dest) == "string" and pin.dest ~= "" then GameTooltip:AddLine("To " .. pin.dest, 0.6, 0.85, 1, true) end
+    GameTooltip:Show()
+  end)
+  b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  b:SetScript("OnMouseDown", function(_, btn) if M.VpDown then M.VpDown(btn) end end)
+  b:SetScript("OnMouseUp", function(_, btn)
+    if btn == "LeftButton" and drag and not drag.moved then drag = nil return end
+    if M.VpUp then M.VpUp(btn) end
+  end)
+  return b
+end
+local function TownHere(z, vw, vh)
+  local pic = M.PictureOn(z.id)
+  local data = NS.TownPins
+  if not (pic and data and data.pins) then return end
+  -- A small picture would stack every service icon on the zone title. Pins wait until the picture is large enough to separate them.
+  local bw, bh = math.abs(pic.box[3] - pic.box[1]), math.abs(pic.box[4] - pic.box[2])
+  if bw < 160 or bh < 160 then return end
+  local seen = {}
+  for _, pin in ipairs(data.pins) do
+    if pin.map == z.id and TownPlaceable(pin) then
+      local spot = pin.cat == "entrance" and string.format("%d:%.3f:%.3f", pin.map, pin.x, pin.y) or nil
+      if not (spot and seen[spot]) then
+        if spot then seen[spot] = true end
+        local px, py = M.ToScreen(ToW(z.id, pin.x, pin.y))
+        if px > 0 and py > 0 and px < vw and py < vh then
+          local mk = Pool("town", MakeTown)
+          local def = TownDef(pin.cat)
+          local side = pin.cat == "dock" and 28 or 16
+          mk:SetSize(side, side)
+          mk.face = PaintTownIcon(mk.icon, def and def.role, pin.detail)
+          mk.pin = pin
+          mk.sx, mk.sy = px, py
+          mk.levelText = M.TownLevelText(pin, pic.box)
+          if mk.lvl then
+            if mk.levelText then mk.lvl:SetText(mk.levelText) mk.lvl:Show() else mk.lvl:SetText("") mk.lvl:Hide() end
+          end
+          mk:SetFrameLevel(over:GetFrameLevel())
+          mk:ClearAllPoints()
+          mk:SetPoint("CENTER", over, "TOPLEFT", px, -py)
+          mk:Show()
+        end
+      end
+    end
+  end
+end
 local function LayoutOverlay()
-  PoolReset("badge") PoolReset("quest")
+  PoolReset("badge") PoolReset("quest") PoolReset("town")
+  M.townPass = (M.townPass or 0) + 1
   local vw, vh = VW(), VH()
   local anyBadge = false
   for _, c in ipairs(ContList()) do
@@ -858,7 +1283,8 @@ local function LayoutOverlay()
           local bd = Pool("badge", MakeBadge)
           bd.zone = z.name
           bd.text:SetText(lv)
-          bd:SetWidth(math.max(34, (bd.text:GetStringWidth() or 30) + 14))
+          bd:SetWidth(math.max(52, (bd.text:GetStringWidth() or 30) + 28))
+          if bd.art == "scroll" and bd.FitScroll then bd:FitScroll() end
           bd:ClearAllPoints()
           bd:SetPoint("CENTER", over, "TOPLEFT", cx, -cy)
           bd:Show()
@@ -879,10 +1305,11 @@ local function LayoutOverlay()
             end
           end
         end
+        TownHere(z, vw, vh)
       end
     end
   end
-  PoolHideRest("badge") PoolHideRest("quest")
+  PoolHideRest("badge") PoolHideRest("quest") PoolHideRest("town")
   -- 0.5.2b.7: quest objective areas, party / raid members and your corpse (MapExtras.lua)
   if M.DrawExtras then local ok, e = pcall(M.DrawExtras) if not ok then M.extrasErr = e end end
   if M.DrawUserPins then M.DrawUserPins() end
@@ -937,8 +1364,17 @@ local function Trail()
     local p = Place(f)
     local x, y = (cx - p[1]) / (p[2] - p[1]), (cy - p[3]) / (p[4] - p[3])
     local z = MD.ZoneAt(f, x, y)
-    -- a city's rect sits inside its zone: while the city is still faded out, the trail names the zone you see
-    if not (z and M.ZoneAlpha(z) > 0.5) then
+    -- 0.5.2b.19: when the capital's own picture is up under the middle, the trail names the city (Forever's city
+    -- map). While it is still faded out, name the host zone you actually see.
+    local cityE = M.focusCity and MD.ZoneEntry(M.focusCity)
+    local cityL = cityE and M.layers[cityE.id]
+    -- only rename to the capital when its picture fills enough of the view (city open / deep zoom onto it);
+    -- a Dun Morogh open that merely sits over the IF footprint keeps naming Dun Morogh
+    if cityE and cityL and cityL.shown and (cityL.alpha or 0) > 0.5
+      and (M.Frac(cityE) >= 0.15 or M.LevelOf() >= M.CityLevel() - 1e-6
+        or (M.pendingFit and M.pendingFit.id == cityE.id)) then
+      z = cityE
+    elseif not (z and M.ZoneAlpha(z) > 0.5) then
       z = nil
       for _, e in ipairs(MD.Zones(f)) do
         local r = e.r
@@ -1233,14 +1669,29 @@ function M.TexCount()
     r.total, r.tiles, r.ov, r.core, r.layers, r.coreLayers, r.shown, r.shownTex, r.fps and string.format("%.0f", r.fps) or "?")
   return r
 end
+-- 0.5.2b.21: a zone fills its slot in the continent puzzle with a mask, or with a baked coast that is
+-- actually on disk. A bake that has not been looked at yet (no canvas, disk not readable) is unknown:
+-- the continent is not cached, so a later look can still fit the puzzle.
+local function ZoneFitted(id)
+  if M.MaskFile(id) then return true end
+  if M.BakedCoastFile(id) then return true end
+  local cache = M.bakedCache
+  if M.BAKED_COAST and M.BAKED_COAST[id] and (not cache or cache[id] == nil) then return nil end
+  return false
+end
 function M.ContMasked(cont)
   M.masked = M.masked or {}
   local c = M.masked[cont]
   if c ~= nil then return c end
-  local n, have = 0, 0
+  local n, have, unknown = 0, 0, false
   for _, z in ipairs(MD.Zones(cont)) do
-    if not IsCity(z) then n = n + 1 if M.MaskFile(z.id) then have = have + 1 end end
+    if not IsCity(z) then
+      n = n + 1
+      local fit = ZoneFitted(z.id)
+      if fit == nil then unknown = true elseif fit then have = have + 1 end
+    end
   end
+  if unknown then return false end
   c = n > 0 and have == n and M.canMask ~= false and not M.maskBroken and not M.maskOff
   M.masked[cont] = c
   return c
@@ -1298,6 +1749,11 @@ function M.FocusZones(cont)
       if not IsCity(e) and Inside(e.r, mx, my) and (not best or e.area < best.area) then best = e end
     end
     z = best
+  else
+    -- 0.5.2b.19: ZoneAt often names the host (Dun Morogh) for a capital's footprint; still pick the city under the middle
+    for _, e in ipairs(MD.Zones(cont)) do
+      if IsCity(e) and Inside(e.r, x, y) and (not city or e.area < city.area) then city = e end
+    end
   end
   if z and IsCity(z) then z = nil end
   return z, city
@@ -1320,6 +1776,30 @@ function M.CityParent(cont, z)
 end
 
 local function Hide(L) if not M.dry then L.frame:Hide() end L.shown = false end
+-- 0.5.2b.22: after the close-up planes exist, put every focused capital one level above the highest
+-- of them (they sit on closeHost + 1). Pins (M.over) stay above the floor. A fixed canvas+9 lost
+-- in Forever when a plane's real level was higher than the stub's.
+function M.RaiseCities()
+  if not closeHost then return end
+  local top = (closeHost:GetFrameLevel() or 0) + 1
+  if CU and CU.planes then
+    for _, P in pairs(CU.planes) do
+      local f = P.f
+      local lv = f and f.GetFrameLevel and f:GetFrameLevel()
+      if type(lv) == "number" and lv > top then top = lv end
+    end
+  end
+  local cityLv = top + 1
+  local any = false
+  for _, L in pairs(M.layers) do
+    if L.aboveTiles and L.frame then
+      any = true
+      if L.frame:GetFrameLevel() ~= cityLv then L.frame:SetFrameLevel(cityLv) end
+      if L.coreFrame and L.coreFrame:GetFrameLevel() ~= cityLv + 1 then L.coreFrame:SetFrameLevel(cityLv + 1) end
+    end
+  end
+  if any and over and over:GetFrameLevel() <= cityLv + 1 then over:SetFrameLevel(cityLv + 2) end
+end
 function M.Layout()
   M.dirty = false
   local dry = M.dry
@@ -1344,18 +1824,34 @@ function M.Layout()
   end
   local fz, city = M.FocusZones(M.focus)
   M.focusZone, M.focusCity = fz and fz.id, city and city.id
+  -- 0.5.2b.21: the deep cap exists only while that capital is the focus. Leaving it, or a pending open of
+  -- something else, drops the cap and pulls a too-deep view back to the normal limit.
+  if not dry and M.fitCapCity and M.focusCity ~= M.fitCapCity and not (M.pendingFit and M.pendingFit.id == M.fitCapCity) then
+    M.fitCap, M.fitCapCity = nil, nil
+    local top = SFit() * ZMax()
+    if V.s > top * 1.0001 then
+      local cx, cy = M.Center()
+      SetView(cx, cy, top)
+      M.focus = Focus()
+      fz, city = M.FocusZones(M.focus)
+      M.focusZone, M.focusCity = fz and fz.id, city and city.id
+    end
+  end
   local cityA = city and Smooth((Frac(city) - CITY[1]) / (CITY[2] - CITY[1])) or 0
   M.cityA = cityA
   local base = canvas:GetFrameLevel()
   local zf = M.zfade or {}
   M.zfade = zf
+  M.cityFloor = {}
   for _, c in ipairs(ContList()) do
     local cl = Layer(c.id, 2)
     local a = M.ContAlpha(c.id)
     -- 0.5.1.11: the continent picture is always drawn (the base); 0.5.2b.3: faded toward the backdrop when magnified
     if cl then local p = Place(c.id) Show(cl, p[1], p[2], p[3], p[4], a * M.BaseFade(c.id)) end
     local masked = M.ContMasked(c.id)
-    local maskIn = masked and M.MaskIn(c.id) or 0
+    -- 0.5.2b.20: solo-coast zones use this fade even when the continent is not ContMasked (maskIn is 0 at
+    -- continent view and 1 once you are zoomed into a zone, same as the other masked pictures)
+    local maskIn = M.MaskIn()
     local cityFade = M.CityFade(c.id)
     -- 0.5.2b.7.1: cities after the zones, so each one can follow its parent zone (see M.CityParent)
     local order, cities, dz = {}, {}, {}
@@ -1363,23 +1859,46 @@ function M.Layout()
     for _, z in ipairs(cities) do order[#order + 1] = z end
     for _, z in ipairs(order) do
       local isCity, isFocus = IsCity(z), fz and z.id == fz.id
+      local coast = (not isCity) and M.SoloCoastMask(z.id)
       -- 0.5.2b.4: one zone picture (the focus zone; the one just left while it fades out), never the neighbours.
       -- The sweep (dry) checks the settled view: the focus zone at its full fade, no zone fading out.
-      local d = 0
+      local d, above = 0, false
       if a > 0 then
         if isCity then
           -- 0.5.2b.7.2: a capital is drawn from the city zoom level on (/dm citylevel), whenever any of it is in view,
-          -- above its parent zone and feathered at its rim (0.5.2b.7.1 followed the parent zone's picture)
-          d = Frac(z) > 0 and a * cityFade or 0
-        elseif masked then d = a * maskIn -- 0.5.2b.5: every zone, cut to its shape
+          -- above its parent zone and feathered at its rim (0.5.2b.7.1 followed the parent zone's picture).
+          -- 0.5.2b.20: full strength when this open is the city, or the city fills the view (floor map, not the
+          -- host's exterior). A pending open counts even before the focus pass names the city.
+          local fr = Frac(z)
+          if fr > 0 then
+            d = a * cityFade
+            local pendingCity = M.pendingFit and M.pendingFit.id == z.id
+            local fills = fr >= (M.CITY and M.CITY[1] or 0.45)
+            if pendingCity or (M.focusCity == z.id and fills) or fr >= 0.85 then
+              d = a
+            end
+            -- 0.5.2b.22: any time this capital is the focus (the open, the view centre, or the deep cap),
+            -- its floor is raised above the close-up tiles after those planes exist. A solid picture
+            -- (no feather) when it actually fills the view, so snow cannot show through the rim.
+            above = pendingCity or M.focusCity == z.id or M.fitCapCity == z.id
+            if pendingCity or fr >= 0.85 or (fills and (M.focusCity == z.id or M.fitCapCity == z.id)) then
+              M.cityFloor = M.cityFloor or {}
+              M.cityFloor[z.id] = true
+            end
+          end
+        elseif masked or coast then d = a * maskIn -- masked continent, or a solo-coast zone on its own
         else d = a * M.ZoneIn(z) * (dry and (isFocus and 1 or 0) or (zf[z.id] or 0)) end
       end
       dz[z.id] = d
-      local zl = M.layers[z.id]
-      if d >= 0.01 then zl = zl or Layer(z.id, 3) end
+      -- always go through Layer when the zone is drawn: a solo-coast picture built earlier as a plain
+      -- rectangle (or before its baked file was present) has to be rebuilt, not reused as-is
+      local zl
+      if d >= 0.01 then zl = Layer(z.id, 3) else zl = M.layers[z.id] end
       if zl then
         zl.wantOv = true
-        local lv = isCity and 6 or ((isFocus or masked) and 4 or 3)
+        zl.aboveTiles = above or false
+        -- under the tiles until RaiseCities(), which runs after the close-up planes exist
+        local lv = isCity and 6 or ((isFocus or masked or coast) and 4 or 3)
         if zl.level ~= lv then
           zl.level = lv
           zl.frame:SetFrameLevel(base + lv)
@@ -1406,6 +1925,7 @@ function M.Layout()
     local clock = debugprofilestop
     local t0 = type(clock) == "function" and clock()
     M.close = CU.Layout(ctx)
+    M.RaiseCities()
     if t0 then
       local ms = clock() - t0
       local st = M.closeMs or { n = 0, sum = 0, max = 0 }
@@ -1782,8 +2302,32 @@ end
 function M.Wheel(delta)
   if not M.ready then return end
   M.pendingFit = nil
+  -- 0.5.2b.23: zooming out of a filled capital returns to its host zone (stock city map → zone map).
+  if delta < 0 and M.fitCapCity and MD.IsCityID(M.fitCapCity) then
+    local cover = M.CoverScale(M.fitCapCity)
+    if cover > 0 and (zoomT and zoomT.s or V.s) <= cover * 1.08 then
+      local ze = MD.ZoneEntry(M.fitCapCity)
+      local host = ze and M.CityParent(ze.cont, ze)
+      M.fitCap, M.fitCapCity = nil, nil
+      if host then FlyTo(host.id) return end
+    end
+  end
   local px, py = Cursor()
   local u, v = M.ToWorld(px, py)
+  -- 0.5.2b.23: the last wheel steps into a capital fill the hole with that city, same as the breadcrumb.
+  if delta > 0 then
+    local city = M.CityAtWorld(u, v) or (M.focusCity and MD.IsCityID(M.focusCity) and M.focusCity)
+    if city and MD.IsCityID(city) and MD.Art(city) then
+      local cover = M.CoverScale(city)
+      local nextS = M.WheelNext(zoomT and zoomT.s or V.s, delta)
+      local idx, mx = M.LevelIndex(nextS), M.MaxLevel()
+      local deep = idx >= mx or (M.close and (M.close.alpha or 0) > 0.2 and idx >= math.max(1, mx - 1))
+      if cover > 0 and V.s < cover * 0.98 and deep then
+        FlyTo(city)
+        return
+      end
+    end
+  end
   local base = zoomT and zoomT.s or V.s
   zoomT = { s = M.WheelNext(base, delta), u = u, v = v, px = px, py = py }
   fly = nil
@@ -1837,6 +2381,17 @@ FlyTo = function(id, wx, wy, hop, sMin)
     end
   end
   if sMin and s < sMin then s = sMin end
+  -- 0.5.2b.21: flying to a capital may pass the usual zoom cap; flying anywhere else drops that cap
+  if MD.IsCityID(id) then
+    local sf = SFit()
+    if sf > 0 then
+      M.fitCap = math.max(M.fitCap or 0, s / sf)
+      M.fitCapCity = id
+    end
+  elseif M.fitCapCity then
+    M.fitCap, M.fitCapCity = nil, nil
+    M._filledCity = nil
+  end
   local cx, cy = M.Center()
   fly = { t = 0, dur = 0.45, c0 = { cx, cy }, s0 = V.s, c1 = { wx or (x1 + x2) / 2, wy or (y1 + y2) / 2 }, s1 = s }
   if hop then
@@ -1853,6 +2408,33 @@ FlyTo = function(id, wx, wy, hop, sMin)
   M.flyTarget = id
 end
 M.FlyTo = function(...) return FlyTo(...) end
+-- continent fraction under a world point → the capital there (smallest wins)
+function M.CityAtWorld(wx, wy, cont)
+  cont = cont or M.focus
+  if not (cont and wx and wy) then return nil end
+  local p = Place(cont)
+  if not (p and p[2] > p[1] and p[4] > p[3]) then return nil end
+  local x, y = (wx - p[1]) / (p[2] - p[1]), (wy - p[3]) / (p[4] - p[3])
+  local best
+  for _, z in ipairs(MD.Zones(cont) or {}) do
+    if MD.IsCityID(z.id) and MD.Art(z.id) and z.r and x >= z.r[1] and x <= z.r[2] and y >= z.r[3] and y <= z.r[4]
+      and (not best or z.area < best.area) then best = z end
+  end
+  return best and best.id
+end
+-- 0.5.2b.23: already at the deepest exterior zoom and the view sits in a capital → fill the hole with that city
+function M.MaybeFillCity()
+  if not M.ready or fly or zoomT or drag then return end
+  local id = M.focusCity
+  if not (id and MD.IsCityID(id) and MD.Art(id)) then return end
+  local cover = M.CoverScale(id)
+  if cover <= 0 or V.s >= cover * 0.98 then return end
+  local idx, mx = M.LevelIndex(), M.MaxLevel()
+  local deep = idx >= mx or (M.close and (M.close.alpha or 0) > 0.2 and idx >= math.max(1, mx - 1))
+  if not deep or M._filledCity == id then return end
+  M._filledCity = id
+  FlyTo(id)
+end
 
 function M.FindMe()
   UpdatePlayer()
@@ -2033,7 +2615,7 @@ function M.ShowQuest(q, wp)
   if not M.ready or VW() < 50 or VH() < 50 then M.pendingQuest = { q = q, wp = wp } return "pending" end
   MD.Forget("quests")
   local title = QS.Title(q)
-  QS.Select(q, "map")
+  if QS.Choose then QS.Choose(q, "map") else QS.Select(q, "map") end
   local loc = QS.Locate(q)
   if loc and not loc.zoneOnly then
     local wx, wy = WorldOf(loc.map, loc.x, loc.y)
@@ -2075,7 +2657,7 @@ QuestClick = function(mk)
     NS.SetStatus("\"" .. QS.Title(mk.qid) .. "\": " .. (ok and why or ("no waypoint: " .. tostring(why))))
     return
   end
-  QS.Select(mk.qid, "map")
+  if QS.Choose then QS.Choose(mk.qid, "map") else QS.Select(mk.qid, "map") end
   if NS.QuestPanel and NS.QuestPanel.OpenQuest then NS.QuestPanel.OpenQuest(mk.qid) end
   NS.SetStatus("Selected \"" .. QS.Title(mk.qid) .. "\" (Quest Log panel). Shift-click a marker for the game's waypoint and arrow.")
   M.dirty = true
@@ -2084,6 +2666,20 @@ M.QuestClick = function(mk) return QuestClick(mk) end
 
 function M.Tick(dt)
   dt = math.min(dt or 0, 0.1)
+  -- 0.5.2b.28: the column stays inside. If the client publishes a quest width later, the column takes it.
+  M._panelAcc = (M._panelAcc or 0) + dt
+  if M._panelAcc >= 1 then
+    M._panelAcc = 0
+    local lay = 0
+    if NS.MapWindow and NS.MapWindow.QuestLay then
+      lay = NS.MapWindow.QuestLay(NS.MapWindow.last and NS.MapWindow.last.scale) or 0
+    end
+    if qhost and lay ~= M._qlay and page and root and root:GetParent() == page then
+      M._qlay = lay
+      PlaceRoot(page, PageInset())
+    end
+    if NS.QuestPanel and NS.QuestPanel.Ensure then pcall(NS.QuestPanel.Ensure) end
+  end
   -- 0.5.2b.7.2: the frame counter (0.5.2b.7.3: quest areas are drawn in the frame they move, after LayoutBlobs; MapExtras.lua)
   if M.ExtrasPreTick then local ok, e = pcall(M.ExtrasPreTick) if not ok then M.extrasErr = e end end
   M.ExploreTick(dt)
@@ -2144,6 +2740,7 @@ function M.Tick(dt)
   end
   if fz and (zf[fz.id] or 0) < 1 then zf[fz.id] = math.min(1, (zf[fz.id] or 0) + dt * 5) M.dirty = true end
   if M.dirty then M.Layout() end
+  if M.MaybeFillCity then M.MaybeFillCity() end
   M.acc = (M.acc or 0) + dt
   if M.acc >= 0.05 then M.acc = 0 UpdatePlayer() UpdateCoords() end
   if M.ExtrasTick then local ok, e = pcall(M.ExtrasTick, dt) if not ok then M.extrasErr = e end end
@@ -2182,11 +2779,33 @@ local function ToolButton(key, title, text, soon, onClick)
   return b
 end
 
+-- 0.5.2b.25: a class theme's page already ends at the wood. A 10 px inset there was another parchment band.
+local function PageInset()
+  if NS.theme and NS.theme.classArt and NS.ClassInner and NS.ClassInner() then return 0 end
+  return 10
+end
+local qhost
+local function QuestLay()
+  local MW = NS.MapWindow
+  if not (MW and MW.QuestLay) then return 0 end
+  local lay, inside = MW.QuestLay(MW.last and MW.last.scale)
+  if inside then return lay end
+  return lay
+end
 local function PlaceRoot(host, inset, top)
+  local q = (host == page) and QuestLay() or 0
   root:SetParent(host)
   root:ClearAllPoints()
   root:SetPoint("TOPLEFT", host, "TOPLEFT", inset, -(top or inset))
-  root:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -inset, inset)
+  root:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -(inset + q), inset)
+  if qhost and host == page then
+    qhost:ClearAllPoints()
+    qhost:SetPoint("TOPRIGHT", host, "TOPRIGHT", -inset, -(top or inset))
+    qhost:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -inset, inset)
+    qhost:SetWidth(math.max(q, 1))
+    if qhost.SetClipsChildren then qhost:SetClipsChildren(true) end
+    if q > 1 then qhost:Show() else qhost:Hide() end
+  end
 end
 -- the first view (your zone) is fitted to the box's real size: until you move the map, it is fitted again on resize
 local function ApplyFit()
@@ -2199,7 +2818,24 @@ local function ApplyFit()
   if f.blizz then
     local art = MD.Art(f.id)
     local ms = (art and art.minScale and art.minScale > 0) and art.minScale or 1
-    SetView((x1 + x2) / 2, (y1 + y2) / 2, ms * M.CoverScale(f.id))
+    local cover = M.CoverScale(f.id)
+    local s = ms * cover
+    -- 0.5.2b.20: a capital open fills the box with the city art. A minScale below 1 would leave the host exterior
+    -- in frame, and the usual zoom cap can be too shallow for a small capital, so this open may go deeper.
+    if MD.IsCityID(f.id) then
+      s = math.max(s, cover)
+      local sf = SFit()
+      if sf > 0 then
+        M.fitCap = math.max(M.fitCap or 0, s / sf)
+        M.fitCapCity = f.id
+      end
+    else
+      M.fitCap, M.fitCapCity = nil, nil
+    end
+    -- 0.5.2b.21: M opens centred on you (stock map / OpenMap). A quest flight still goes to the quest.
+    local cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+    if f.onPlayer and f.wx and f.wy then cx, cy = f.wx, f.wy end
+    SetView(cx, cy, s)
     return true
   end
   -- 0.5.1.10: a zone (or city) is opened like the game's map: its art fills the box (0.5.1.11: a framing only, no lock)
@@ -2215,20 +2851,70 @@ local function ApplyFit()
   end
   return true
 end
-local function Refit()
-  if not vp then return end
-  -- 0.5.2b.8.2: the last box size seen in each mode (window, full screen), for /dm zoomprobe
-  if VW() > 50 and VH() > 50 then M.boxSize = M.boxSize or {} M.boxSize[M.full and "full" or "window"] = { VW(), VH() } end
-  canvas:SetSize(VW(), VH())
-  over:SetSize(VW(), VH())
-  if closeHost then closeHost:SetSize(VW(), VH()) end
-  if not ApplyFit() then
-    -- the view as last laid out (centre + zoom relative to the fit), so a new box size keeps the place
-    local lv = M.lastView
-    if lv then SetView(lv.cx, lv.cy, lv.z * SFit())
-    else local cx, cy = M.Center() SetView(cx, cy, M.Zoom() * SFit()) end
+-- 0.5.2b.21: size the map picture to WorldMapFrame.ScrollContainer (or the frame interior). The window is grown
+-- a little in MapWindow.Need when that hole does not fit. No live size: the old body-column layout stays.
+local fittingVp
+function M.FitViewport()
+  if fittingVp or not (vp and vpBox) then return end
+  -- 0.5.2b.25: the page fills the opening inside the wood. Centering the scroll hole on the window left that
+  -- parchment band and let the picture slide under the frame. The WoW theme still uses the scroll hole.
+  if NS.theme and NS.theme.classArt and NS.ClassInner and NS.ClassInner() then return end
+  local MW = NS.MapWindow
+  if not (MW and MW.HolePad) then return end
+  local last = MW.last
+  -- the size the window was just built for; a later read can miss the map frame (it is often closed)
+  local holeW, holeH = last and last.holeW, last and last.holeH
+  if not (holeW and holeH) and MW.HoleLayout then holeW, holeH = MW.HoleLayout(last and last.scale) end
+  if not (holeW and holeH) then return end
+  local host = _G.DarkMatterFrame
+  if not host then return end
+  local b = (NS.theme and NS.theme.m and NS.theme.m.listBorder) or 0
+  local hw, hh = host:GetWidth() or 0, host:GetHeight() or 0
+  local pad = MW.HolePad()
+  local maxW, maxH = hw - pad, hh - pad
+  if maxW < 40 or maxH < 40 then return end
+  fittingVp = true
+  -- the hole is not reduced to make room for the column; the window already grew by it
+  holeW, holeH = math.min(holeW, maxW), math.min(holeH, maxH)
+  local q = QuestLay() or 0
+  vpBox:ClearAllPoints()
+  vpBox:SetSize(holeW + 2 * b, holeH + 2 * b)
+  vpBox:SetPoint("CENTER", host, "CENTER", -q / 2, 0)
+  vp:ClearAllPoints()
+  vp:SetPoint("TOPLEFT", vpBox, "TOPLEFT", b, -b)
+  vp:SetPoint("BOTTOMRIGHT", vpBox, "BOTTOMRIGHT", -b, b)
+  -- tabs stay clickable over the larger hole, and under the class-frame overlay (window + 25)
+  if NS.windowParts and NS.windowParts.rail and host.GetFrameLevel then
+    local lvl = host:GetFrameLevel() + 24
+    if NS.windowParts.rail:GetFrameLevel() < lvl then NS.windowParts.rail:SetFrameLevel(lvl) end
   end
-  M.Layout()
+  if bar and canvas and canvas.GetFrameLevel then
+    local lvl = canvas:GetFrameLevel() + 14
+    if bar:GetFrameLevel() < lvl then bar:SetFrameLevel(lvl) end
+  end
+  fittingVp = false
+end
+local refitting
+local function Refit()
+  if refitting or not vp then return end
+  refitting = true
+  local ok, err = pcall(function()
+    M.FitViewport()
+    -- 0.5.2b.8.2: the last box size seen in each mode (window, full screen), for /dm zoomprobe
+    if VW() > 50 and VH() > 50 then M.boxSize = M.boxSize or {} M.boxSize[M.full and "full" or "window"] = { VW(), VH() } end
+    canvas:SetSize(VW(), VH())
+    over:SetSize(VW(), VH())
+    if closeHost then closeHost:SetSize(VW(), VH()) end
+    if not ApplyFit() then
+      -- the view as last laid out (centre + zoom relative to the fit), so a new box size keeps the place
+      local lv = M.lastView
+      if lv then SetView(lv.cx, lv.cy, lv.z * SFit())
+      else local cx, cy = M.Center() SetView(cx, cy, M.Zoom() * SFit()) end
+    end
+    M.Layout()
+  end)
+  refitting = false
+  if not ok then error(err, 0) end
 end
 M.Refit = Refit
 -- 0.5.2b.8.2: /dm zoomprobe: the zoom level now and, for the window and the full-screen box at that SAME level and
@@ -2386,7 +3072,7 @@ function M.SetFull(on)
     if NS.SpecialFrame then NS.SpecialFrame("DarkMatterFrame", false) NS.SpecialFrame("DarkMatterMapFull", true) end
   else
     M.full = false
-    PlaceRoot(page, 10)
+    PlaceRoot(page, PageInset())
     if full and full:IsShown() then full:Hide() end
     if NS.SpecialFrame then NS.SpecialFrame("DarkMatterMapFull", false) end
     -- next frame: Esc is still walking UISpecialFrames, and re-adding the main window now would close it too
@@ -2430,6 +3116,80 @@ local function Pick(r)
 end
 M.Pick = Pick
 
+-- 0.5.2b.23: peers at one breadcrumb level (OpenMap-style). World → continents. Continent → its zones.
+-- A zone or capital → the other zones on that continent.
+function M.CrumbPeers(entry)
+  local list = {}
+  local function add(id, name)
+    if id and name and name ~= "" then list[#list + 1] = { id = id, name = name } end
+  end
+  if not entry then return list end
+  if entry.world or (M.hasWorld and entry.id == M.world) then
+    for _, c in ipairs(MD.Continents() or {}) do add(c.id, c.name or MD.Name(c.id)) end
+    return list
+  end
+  if MD.Is(entry.id, "continent") then
+    for _, z in ipairs(MD.Zones(entry.id) or {}) do add(z.id, z.name) end
+  else
+    local z = MD.ZoneEntry(entry.id)
+    local cont = (z and z.cont) or MD.ContinentOf(entry.id)
+    for _, e in ipairs(cont and MD.Zones(cont) or {}) do add(e.id, e.name) end
+  end
+  table.sort(list, function(a, b) return a.name < b.name end)
+  return list
+end
+local crumbMenu
+function M.HideCrumbMenu()
+  if crumbMenu then crumbMenu:Hide() end
+end
+function M.ToggleCrumb(entry, anchor)
+  if not entry then return end
+  if crumbMenu and crumbMenu:IsShown() and crumbMenu.forId == entry.id then crumbMenu:Hide() return end
+  local peers = M.CrumbPeers(entry)
+  if #peers == 0 then FlyTo(entry.id) return end
+  if not crumbMenu then
+    crumbMenu = CreateFrame("Frame", nil, bar)
+    crumbMenu:SetFrameLevel((bar:GetFrameLevel() or 1) + 40)
+    local bg = crumbMenu:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(crumbMenu)
+    bg:SetColorTexture(0.05, 0.05, 0.05, 0.94)
+    crumbMenu.border = UI.NineSlice(crumbMenu, "pane", 4, "BORDER", 1)
+    crumbMenu.rows = {}
+    crumbMenu:Hide()
+  end
+  local rows, width = crumbMenu.rows, 120
+  for i, peer in ipairs(peers) do
+    local row = rows[i]
+    if not row then
+      row = CreateFrame("Button", nil, crumbMenu)
+      row:SetHeight(22)
+      row.text = UI.Text(row, "OVERLAY", 12, "listInk", "LEFT")
+      row.text:SetPoint("LEFT", row, "LEFT", 8, 0)
+      row.text:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+      row:SetScript("OnClick", function(self)
+        crumbMenu:Hide()
+        FlyTo(self.mapID)
+      end)
+      rows[i] = row
+    end
+    row.mapID = peer.id
+    row.text:SetText(peer.name)
+    row.text:SetTextColor(NS.Color(peer.id == entry.id and "gold" or "listInk"))
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", crumbMenu, "TOPLEFT", 4, -4 - (i - 1) * 22)
+    row:SetPoint("TOPRIGHT", crumbMenu, "TOPRIGHT", -4, -4 - (i - 1) * 22)
+    row:Show()
+    width = math.max(width, (row.text:GetStringWidth() or 80) + 24)
+  end
+  for i = #peers + 1, #rows do rows[i]:Hide() end
+  crumbMenu.forId = entry.id
+  crumbMenu:SetSize(math.min(width, 260), #peers * 22 + 8)
+  crumbMenu:ClearAllPoints()
+  crumbMenu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+  crumbMenu:Show()
+  M.crumbMenu = crumbMenu
+end
+
 -- 0.5.1.4 WoW theme (theme.crumbFaces): each crumb is drawn like the stock map's top-bar buttons: the first (the
 -- world) on the red panel-button face, the rest on the dark field face with a small down arrow, and no ">" between
 -- them. Class themes keep the plain text crumbs with ">".
@@ -2441,6 +3201,7 @@ Crumbs = function()
   for _, s in ipairs(t) do key = key .. s.id .. ">" end
   if key == crumbKey then return end
   crumbKey = key
+  if M.HideCrumbMenu then M.HideCrumbMenu() end
   for _, c in ipairs(crumbs) do
     c:Hide() if c.sep then c.sep:Hide() end
   end
@@ -2459,17 +3220,17 @@ Crumbs = function()
       UI.Hover(c)
       c.sep = UI.Text(bar, "OVERLAY", 13, "listSoft", "CENTER")
       c.sep:SetText(">")
-      c:SetScript("OnClick", function(self) FlyTo(self.mapID) end)
+      c:SetScript("OnClick", function(self) M.ToggleCrumb(self.entry, self) end)
       crumbs[i] = c
     end
     local last = (i == #t)
-    c.mapID = s.id
+    c.mapID, c.entry = s.id, s
     c.text:SetText(s.name)
     local tw = c.text:GetStringWidth() or 60
     c.text:ClearAllPoints()
     if faces then
       c.face:Show()
-      local arrow = i > 1 and NS.Stock.TextureOK(ARROW)
+      local arrow = NS.Stock.TextureOK(ARROW)
       if arrow then c.arrow:SetTexture(ARROW) c.arrow:Show() else c.arrow:Hide() end
       c.text:SetPoint("LEFT", c, "LEFT", 10, 0)
       c.text:SetTextColor(1, 0.82, 0)
@@ -2509,8 +3270,12 @@ local function Build(body)
   page = UI.Page(tab, m.pageW, m.pageH)
   page:SetPoint("TOPLEFT", tab, "TOPLEFT", m.pageX, 0)
   root = CreateFrame("Frame", nil, page)
-  PlaceRoot(page, 10)
+  qhost = CreateFrame("Frame", nil, page)
+  qhost:SetFrameLevel(page:GetFrameLevel() + 2)
+  M.questHost = qhost
+  PlaceRoot(page, PageInset())
   M.root = root
+  if NS.QuestPanel and NS.QuestPanel.Embed then NS.QuestPanel.Embed(qhost) end
 
   -- top bar: breadcrumb (left) + zone search (right)
   bar = UI.Panel(root, 100, 32)
@@ -2533,7 +3298,7 @@ local function Build(body)
   -- the map: a ScrollFrame clips the canvas (the game's tiles never draw outside the box)
   vpBox = UI.Panel(root, 100, 100)
   vpBox:ClearAllPoints()
-  vpBox:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -6)
+  vpBox:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, PageInset() == 0 and -2 or -6)
   vpBox:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", 0, 0)
   local b = m.listBorder
   -- 0.5.2b.6.2: the viewport is a plain frame that clips its children (SetClipsChildren), as /dm masktest zone panel 2
@@ -2556,8 +3321,9 @@ local function Build(body)
   over = CreateFrame("Frame", nil, canvas)
   over:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
   over:SetSize(VW(), VH())
-  over:SetFrameLevel(canvas:GetFrameLevel() + 8)
-  -- 0.5.1.4: the close-up minimap tiles sit above the zone layers (levels 1-6) and under the markers
+  over:SetFrameLevel(canvas:GetFrameLevel() + 12) -- pins; RaiseCities lifts this further if a tile plane is higher
+  -- 0.5.1.4: the close-up minimap tiles sit above the zone layers (levels 1-6) and under the markers.
+  -- 0.5.2b.22: a focused capital is raised above those tile planes after they are drawn (M.RaiseCities).
   closeHost = CreateFrame("Frame", nil, canvas)
   closeHost:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
   closeHost:SetSize(VW(), VH())
@@ -2589,7 +3355,13 @@ local function Build(body)
   vp:SetScript("OnMouseWheel", function(_, delta) M.Wheel(delta) end)
   -- 0.5.2a: the same press and release handlers serve the quest markers (a press on a marker can still drag the map)
   M.VpDown = function(btn)
-    if btn == "LeftButton" then M.pendingFit = nil local x, y = Cursor() drag = { x = x, y = y, ox = V.ox, oy = V.oy } fly, zoomT = nil, nil end
+    if btn == "LeftButton" then
+      M.pendingFit = nil
+      if M.HideCrumbMenu then M.HideCrumbMenu() end
+      local x, y = Cursor()
+      drag = { x = x, y = y, ox = V.ox, oy = V.oy }
+      fly, zoomT = nil, nil
+    end
   end
   M.VpUp = function(btn)
     if btn == "RightButton" then M.ZoomOutLevel() return end
@@ -2610,7 +3382,7 @@ local function Build(body)
   -- right tool strip
   strip = CreateFrame("Frame", nil, vpBox)
   strip:SetFrameLevel(canvas:GetFrameLevel() + 20)
-  strip:SetSize(40, 7 * 34 + 8)
+  strip:SetSize(40, 6 * 34 + 8)
   strip:SetPoint("TOPRIGHT", vp, "TOPRIGHT", -6, -6)
   local sbg = strip:CreateTexture(nil, "BACKGROUND")
   sbg:SetAllPoints(strip)
@@ -2620,13 +3392,12 @@ local function Build(body)
     ToolButton("starpen", "Starpen", "Draw on the map. Coming in 0.5.3.", true),
     ToolButton("pin", "Drop a pin", "Click this, then click the map: a pin there, and the game's waypoint and minimap arrow point at it. Click a pin to point at it again; right-click removes it.", false,
       function() M.SetPinMode(not M.pinMode) end),
-    ToolButton("town", "Town Pins", "Flight masters, innkeepers, vendors, trainers and more. Coming in 0.5.4.", true),
+    ToolButton("town", "Town Pins", "Choose which map icons to show.", false,
+      function() M.ToggleTownPanel() end),
     ToolButton("findme", "Find me", "Jump to where you are.", false, function() M.FindMe() end),
     ToolButton("full", "Full screen", "", false, function() M.SetFull(not M.full) end),
     ToolButton("closeup", "Close-up detail", "The game's minimap tiles when you zoom in close (blended across the whole zone). On/off and strength.", false,
       function() M.ToggleClosePanel() end),
-    -- 0.5.2a.1: the docked quest panel beside the window (open or closed, remembered)
-    ToolButton("quest", "Quest log", "Show or hide the quest list docked beside the window.", false, function() if NS.QuestPanel then NS.QuestPanel.Toggle() end end),
   }
   -- the close-up button shows the game's spyglass icon (stock art by path); the strip's own find-me icon if missing
   do
@@ -2638,11 +3409,13 @@ local function Build(body)
   for i, tb in ipairs(tools) do tb:SetPoint("TOP", strip, "TOP", 0, -5 - (i - 1) * 34) end
   M.tools = tools
   M.fullBtn = tools[5]
-  M.panelBtn = tools[7]
+  M.panelBtn = nil
   M.pinBtn = tools[2]
+  M.townBtn = tools[3]
   M.SetPanelIcon()
   SetFullIcon()
   M.BuildClosePanel(vpBox, strip, canvas:GetFrameLevel() + 30)
+  M.BuildTownPanel(vpBox, strip, canvas:GetFrameLevel() + 30)
 
   -- coordinates (bottom right) and the public-data caption (bottom left), each on a solid plate
   local function Box(anchor, rel, x)
@@ -2747,6 +3520,7 @@ local function Build(body)
   end
   results:Hide()
   M.results = results
+  M.FitViewport()
   return tab
 end
 
@@ -2905,15 +3679,83 @@ local function Start()
   UpdateCoords()
   M.UpdateStatus()
 end
--- 0.5.2b.10: the map the game's map would open on, raised to the first one Dark Matter can frame (zone, continent, world)
-function M.OpeningMap(p)
-  local d = MD.DisplayableForPlayer and MD.DisplayableForPlayer()
-  for _, m in ipairs(d and MD.Chain(d) or {}) do
-    if (M.hasWorld and m == M.world) or MD.Is(m, "continent") or (not MD.Is(m, "continent") and MD.ZoneEntry(m)) then
-      local c = (M.hasWorld and m == M.world) and nil or (MD.Is(m, "continent") and m or MD.ContinentOf(m))
-      if M.hasWorld or not c or c == (p and p.cont) then return m end
+-- 0.5.2b.10: the map the game's map would open on, raised to the first one Dark Matter can frame (zone, continent, world).
+-- 0.5.2b.19: keep a capital (Ironforge, …) when it has art — do not raise it to the host zone. Capitals nested under
+-- their host (Classic: Ironforge → Dun Morogh) are in Zones via RectOnContinent; framing CoverScale of the city then
+-- shows the city floor map over the exterior, like Forever's city uiMapID.
+-- 0.5.2b.20: Forever's GetDisplayableMapForPlayer often returns that host zone, so a walk which starts there never
+-- sees 1455. Prefer the player's own map (or a parent of it) when that map is a capital with art, then Displayable.
+-- 0.5.2b.22: the capital whose rect contains the player, even when Forever's player map and
+-- Displayable helper both name the host zone (Dun Morogh while you are standing in Ironforge).
+function M.CityAtPlayer(p)
+  local pm = (p and p.map) or (MD.PlayerMap and MD.PlayerMap())
+  local cont = (p and p.cont) or (pm and MD.ContinentOf(pm))
+  if not cont then return nil end
+  local x, y
+  local wx, wy = p and p[1], p and p[2]
+  local place = Place(cont)
+  if wx and wy and place and place[2] > place[1] and place[4] > place[3] then
+    x = (wx - place[1]) / (place[2] - place[1])
+    y = (wy - place[3]) / (place[4] - place[3])
+  else
+    x, y = MD.PlayerPos(cont)
+    if not x then
+      local zid = pm and (MD.ZoneOf(pm) or pm)
+      local ze = zid and MD.ZoneEntry(zid)
+      local zx, zy = ze and MD.PlayerPos(zid)
+      if zx and ze.r and ze.r[2] > ze.r[1] and ze.r[4] > ze.r[3] then
+        x = ze.r[1] + zx * (ze.r[2] - ze.r[1])
+        y = ze.r[3] + zy * (ze.r[4] - ze.r[3])
+      end
     end
   end
+  if not x then return nil end
+  local best
+  for _, z in ipairs(MD.Zones(cont) or {}) do
+    if MD.IsCityID(z.id) and MD.Art(z.id) and z.r and x >= z.r[1] and x <= z.r[2] and y >= z.r[3] and y <= z.r[4]
+      and (not best or z.area < best.area) then
+      best = z
+    end
+  end
+  return best and best.id
+end
+function M.OpeningMap(p)
+  local function accept(m)
+    if not m then return nil end
+    local keepCity = MD.IsCityID(m) and MD.Art(m) ~= nil
+    if not (keepCity or (M.hasWorld and m == M.world) or MD.Is(m, "continent") or (not MD.Is(m, "continent") and MD.ZoneEntry(m))) then
+      return nil
+    end
+    local c = (M.hasWorld and m == M.world) and nil or (MD.Is(m, "continent") and m or MD.ContinentOf(m))
+    if M.hasWorld or not c or c == (p and p.cont) then return m end
+  end
+  local standing = M.CityAtPlayer(p)
+  if standing then
+    local hit = accept(standing)
+    if hit then return hit end
+  end
+  local pm = MD.PlayerMap and MD.PlayerMap()
+  if pm then
+    for _, m in ipairs(MD.Chain(pm)) do
+      if MD.IsCityID(m) and MD.Art(m) then
+        local hit = accept(m)
+        if hit then return hit end
+      end
+    end
+  end
+  local d = MD.DisplayableForPlayer and MD.DisplayableForPlayer()
+  for _, m in ipairs(d and MD.Chain(d) or {}) do
+    local hit = accept(m)
+    if hit then return hit end
+  end
+end
+-- 0.5.2b.20: one short /dm mapprobe line — opening id, the player's map, Displayable, the city in focus
+function M.OpenProbeLine()
+  local pm = MD.PlayerMap()
+  local disp = MD.DisplayableForPlayer and MD.DisplayableForPlayer()
+  local openId = M.OpeningMap(M.player)
+  return string.format("map 2 open: opening %s; player %s; displayable %s; focusCity %s",
+    tostring(openId), tostring(pm), tostring(disp), tostring(M.focusCity))
 end
 -- centre the view on the player at the zone's zoom (no animation); false when the game gives no position
 function M.CentreOnPlayer()
@@ -2932,11 +3774,13 @@ function M.CentreOnPlayer()
   if p.cont then M.fade[p.cont] = 1 end
   fly, zoomT, drag = nil, nil, nil -- the opening is instant; later Show on map / marker flights still glide (FlyTo)
   local id = M.OpeningMap(p)
+  -- 0.5.2b.21: the open (M, or switching onto the Map tab) is centred on you, like the stock map and OpenMap.
+  -- Show on map / a tracker click calls ShowQuest after this and that glide still wins.
   if id then
-    M.pendingFit = { id = id, blizz = true }
+    M.pendingFit = { id = id, blizz = true, wx = p[1], wy = p[2], onPlayer = true }
   else
     local z = MD.ZoneOf(p.map) or p.map
-    M.pendingFit = { id = MD.ZoneEntry(z) and z or p.cont, wx = p[1], wy = p[2], centre = true }
+    M.pendingFit = { id = MD.ZoneEntry(z) and z or p.cont, wx = p[1], wy = p[2], centre = true, onPlayer = true }
   end
   ApplyFit()
   M.dirty = true
@@ -2952,7 +3796,7 @@ function M.Reset()
   M.maskBroken, M.rebuildLayers = nil, nil
   M.maskStat = { add = 0, ok = 0, none = 0, err = 0, noCount = 0 }
   M.started, M.ready, M.only, M.hasWorld, M.player = false, false, nil, nil, nil
-  M.pendingFit, M.lastView = nil, nil
+  M.pendingFit, M.lastView, M.fitCap = nil, nil, nil
   drag, zoomT, fly, crumbKey = nil, nil, nil, nil
   MD.Forget()
   if CU then CU.Reset() end
@@ -3048,14 +3892,302 @@ function M.ToggleClosePanel(show)
   if show then M.SyncClosePanel() p:Show() else p:Hide() end
 end
 
+-- 0.5.2b.49: Map Icons sits beside the window, not on the map. Checks are textures.
+local GOLD, INK, DIM, SLATE = { 0.93, 0.80, 0.55 }, { 0.93, 0.90, 0.82 }, { 0.55, 0.52, 0.46 }, { 0.11, 0.10, 0.09 }
+local PREF_W, MIN_W, PREF_H = 500, 220, 340
+local function GoldText(parent, size)
+  local fs = parent:CreateFontString(nil, "OVERLAY")
+  NS.SetFont(fs, size, "")
+  fs:SetTextColor(GOLD[1], GOLD[2], GOLD[3], 1)
+  return fs
+end
+local function ScreenEdge(f, which)
+  if not (f and f.GetLeft and f.GetRight and f.GetTop) then return nil end
+  local v = f:GetLeft() if which == "right" then v = f:GetRight() elseif which == "top" then v = f:GetTop() end
+  if not v then return nil end
+  local s = (f.GetEffectiveScale and f:GetEffectiveScale()) or 1
+  local u = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+  if not u or u == 0 then u = 1 end
+  return v * s / u
+end
+function M.PlaceTownPanel()
+  local p = M.townPanel
+  local win = _G.DarkMatterFrame
+  if not (p and win) then return end
+  local sw = UIParent and UIParent.GetWidth and UIParent:GetWidth() or 0
+  local sh = UIParent and UIParent.GetHeight and UIParent:GetHeight() or 0
+  local left, right = ScreenEdge(win, "left"), ScreenEdge(win, "right")
+  local q = 0
+  local QP = NS.QuestPanel
+  -- The quest column is inside the window while it is embedded. Extent() is only the old outside column.
+  if QP and QP.Wanted and QP.Wanted() and not QP.embedded and QP.Extent then q = QP.Extent() or 0 end
+  local ws = (win.GetEffectiveScale and win:GetEffectiveScale()) or 1
+  local us = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+  if not us or us == 0 then us = 1 end
+  local qpx = q * ws / us
+  local roomL = left or sw
+  local roomR = (sw > 0 and right) and (sw - (right + qpx)) or 0
+  -- Prefer the right edge. The left is only the fallback when that side cannot hold the panel.
+  local side = "right"
+  if roomR < MIN_W + 8 then side = "left" end
+  local room = side == "left" and roomL or roomR
+  local w = PREF_W
+  local fit = "beside"
+  if room < PREF_W + 8 then
+    w = math.max(MIN_W, math.floor(room - 8))
+    if room < MIN_W + 8 then fit = "tight" end
+  end
+  -- Match the main window's height. The panel is a child, so this is the same unit and follows its scale.
+  -- Rows scroll inside. Checkbox and pin art keep their own pixel sizes.
+  local winH = win.GetHeight and win:GetHeight()
+  local h = (type(winH) == "number" and winH > 120) and winH or PREF_H
+  if sh > 40 and h > sh - 16 then h = math.max(180, sh - 16) end
+  local content = p.contentH or h
+  if content > h + 1 then fit = (fit == "tight") and "tight" or "scroll" end
+  p:SetSize(w, h)
+  p:ClearAllPoints()
+  if side == "left" then p:SetPoint("TOPRIGHT", win, "TOPLEFT", -8, 0)
+  else p:SetPoint("TOPLEFT", win, "TOPRIGHT", q + 8, 0) end
+  p.side, p.fit, p.room = side, fit, room
+  local wide = w >= 360
+  if p._wide ~= wide then p._wide = wide M.SyncTownPanel() end
+  if p.scroll and p.body then
+    local view = math.max(40, h - 108)
+    p.scroll:SetHeight(view)
+    local maxS = math.max(0, (p.body:GetHeight() or 0) - view)
+    if (p.scroll:GetVerticalScroll() or 0) > maxS then p.scroll:SetVerticalScroll(maxS) end
+  end
+end
+function M.BuildTownPanel(host, anchor, level)
+  if M.townPanel then M.townPanel:Hide() end
+  local win = _G.DarkMatterFrame or host
+  local p = CreateFrame("Frame", nil, win)
+  p:SetSize(PREF_W, PREF_H)
+  p:SetFrameLevel((level or 20))
+  p:EnableMouse(true)
+  if p.SetClampedToScreen then p:SetClampedToScreen(true) end
+  local edge = p:CreateTexture(nil, "BACKGROUND", nil, -8)
+  edge:SetAllPoints(p)
+  edge:SetColorTexture(0.62, 0.50, 0.28, 1)
+  local bg = p:CreateTexture(nil, "BACKGROUND")
+  bg:SetPoint("TOPLEFT", p, "TOPLEFT", 2, -2)
+  bg:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -2, 2)
+  bg:SetColorTexture(SLATE[1], SLATE[2], SLATE[3], 0.97)
+  local title = GoldText(p, 18)
+  title:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -12)
+  title:SetText("Map Icons")
+  local sub = p:CreateFontString(nil, "OVERLAY")
+  NS.SetFont(sub, 12, "")
+  sub:SetTextColor(INK[1], INK[2], INK[3], 1)
+  sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
+  sub:SetText("Choose what appears on the map")
+  local close = CreateFrame("Button", nil, p)
+  close:SetSize(22, 22)
+  close:SetPoint("TOPRIGHT", p, "TOPRIGHT", -8, -8)
+  local cx = GoldText(close, 16)
+  cx:SetPoint("CENTER", close, "CENTER", 0, 0)
+  cx:SetText("x")
+  close:SetScript("OnClick", function() M.ToggleTownPanel(false) end)
+  local foot = p:CreateFontString(nil, "OVERLAY")
+  NS.SetFont(foot, 11, "")
+  foot:SetTextColor(DIM[1], DIM[2], DIM[3], 1)
+  foot:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 16, 12)
+  foot:SetText("Choices are saved automatically")
+  p.titleStr, p.subStr, p.footStr = "Map Icons", "Choose what appears on the map", "Choices are saved automatically"
+  local scroll = CreateFrame("ScrollFrame", nil, p)
+  scroll:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -72)
+  scroll:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -8, 32)
+  local body = CreateFrame("Frame", nil, scroll)
+  body:SetSize(PREF_W - 24, 200)
+  scroll:SetScrollChild(body)
+  scroll:SetScript("OnMouseWheel", function(self, delta)
+    local view = self:GetHeight() or 0
+    local maxS = math.max(0, (body:GetHeight() or 0) - view)
+    local cur = self:GetVerticalScroll() or 0
+    self:SetVerticalScroll(math.max(0, math.min(maxS, cur - (delta or 0) * 28)))
+  end)
+  p.scroll, p.body, p.rows, p.heads = scroll, body, {}, {}
+  p:SetScript("OnUpdate", function(self)
+    if not self:IsShown() then return end
+    local w = _G.DarkMatterFrame
+    if not w then return end
+    local l, t, ww, hh, s = w:GetLeft(), w:GetTop(), w:GetWidth(), w:GetHeight(), w:GetScale()
+    if l == self._lx and t == self._ly and ww == self._lw and hh == self._lh and s == self._ls then return end
+    self._lx, self._ly, self._lw, self._lh, self._ls = l, t, ww, hh, s
+    M.PlaceTownPanel()
+  end)
+  p:SetAlpha(0)
+  p:Hide()
+  M.townPanel = p
+  M.SyncTownPanel()
+  M.PlaceTownPanel()
+  return p
+end
+function M.SyncTownPanel()
+  local p = M.townPanel
+  local data = NS.TownPins
+  if not (p and p.body and data and data.cats) then return end
+  local byId = {}
+  for _, c in ipairs(data.cats) do byId[c.id] = c end
+  local wide = (p:GetWidth() or PREF_W) >= 360
+  local cols = {
+    { title = "Town services", ids = { "flight", "inn", "vendor", "ptrainer", "psupply", "bank", "auction", "mail", "repair" } },
+    { title = "Dungeons", ids = { "entrance", "levels" }, travel = true },
+  }
+  if type(p.heads) ~= "table" then p.heads = {} end
+  if type(p.rows) ~= "table" then p.rows = {} end
+  for _, h in ipairs(p.heads) do h:Hide() end
+  for _, row in pairs(p.rows) do if row.Hide then row:Hide() end end
+  local colW = wide and math.floor((p:GetWidth() - 36) / 2) or (p:GetWidth() - 28)
+  local hi, y, maxY = 0, 0, 0
+  local function place(id, x, yy)
+    local c = byId[id]
+    if not c then return yy end
+    local row = p.rows[id]
+    if not row then row = M.TownRow(p.body) p.rows[id] = row end
+    row.cat = id
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", p.body, "TOPLEFT", x, -yy)
+    row:SetWidth(colW)
+    row.label:ClearAllPoints()
+    row.label:SetPoint("LEFT", row.icon, "RIGHT", 8, c.note and 6 or 0)
+    row.label:SetWidth(math.max(40, colW - 52))
+    if row.label.SetWordWrap then row.label:SetWordWrap(true) end
+    if row.label.SetJustifyH then row.label:SetJustifyH("LEFT") end
+    row.label:SetText(c.label)
+    row.noteStr = c.note or ""
+    if c.note then
+      row.note:SetWidth(math.max(40, colW - 52))
+      if row.note.SetWordWrap then row.note:SetWordWrap(true) end
+      row.note:SetText(c.note) row.note:Show()
+    else row.note:Hide() end
+    local off = c.unavailable or not M.TownCatOk(id)
+    row.disabled = off
+    row:SetAlpha(off and 0.45 or 1)
+    local on = not off and M.TownOn(id) and true or false
+    row.checked = on
+    row.box.disabled = off
+    row.box:SetChecked(on)
+    M.PaintRowIcon(row.icon, c.role)
+    row:Show()
+    return yy + (c.note and 44 or 30)
+  end
+  for i, col in ipairs(cols) do
+    local x = (wide and i == 2) and (colW + 16) or 4
+    local yy = (wide or i == 1) and 0 or y
+    hi = hi + 1
+    local head = p.heads[hi]
+    if not head then head = GoldText(p.body, 13) p.heads[hi] = head end
+    head:ClearAllPoints()
+    head:SetPoint("TOPLEFT", p.body, "TOPLEFT", x, -yy)
+    head:SetText(col.title)
+    head:Show()
+    yy = yy + 22
+    for _, id in ipairs(col.ids) do yy = place(id, x, yy) end
+    if col.travel then
+      hi = hi + 1
+      local travel = p.heads[hi]
+      if not travel then travel = GoldText(p.body, 13) p.heads[hi] = travel end
+      travel:ClearAllPoints()
+      travel:SetPoint("TOPLEFT", p.body, "TOPLEFT", x, -yy)
+      travel:SetText("Travel")
+      travel:Show()
+      yy = place("dock", x, yy + 22)
+    end
+    y = math.max(y, yy)
+    maxY = y
+  end
+  p.body:SetWidth(math.max(40, (p:GetWidth() or PREF_W) - 24))
+  p.body:SetHeight(math.max(40, maxY + 8))
+  p.contentH = maxY + 120
+  if M.townBtn and M.townBtn.icon then
+    if p:IsShown() then M.townBtn.icon:SetVertexColor(1, 0.82, 0.25)
+    else M.townBtn.icon:SetVertexColor(0.93, 0.89, 0.8) end
+  end
+end
+function M.TownRow(parent)
+  local row = CreateFrame("Button", nil, parent)
+  row:SetSize(200, 26)
+  row.bg = row:CreateTexture(nil, "BACKGROUND")
+  row.bg:SetAllPoints(row)
+  row.bg:SetColorTexture(0.85, 0.72, 0.42, 0.16)
+  row.bg:Hide()
+  local box = CreateFrame("Button", nil, row)
+  box:SetSize(18, 18)
+  box:SetPoint("LEFT", row, "LEFT", 0, 0)
+  local tex = box:CreateTexture(nil, "ARTWORK")
+  tex:SetAllPoints(box)
+  function box:SetChecked(on)
+    self._on = on and true or false
+    M.PaintCheck(tex, self._on, row._hot, self.disabled or row.disabled)
+  end
+  function box:GetChecked() return self._on and true or false end
+  box.tex = tex
+  local function toggle()
+    if box.disabled or row.disabled then return end
+    box:SetChecked(not box:GetChecked())
+    row.checked = box:GetChecked()
+    M.SetTown(row.cat, box:GetChecked())
+  end
+  box:SetScript("OnClick", toggle)
+  row:SetScript("OnClick", toggle)
+  local icon = row:CreateTexture(nil, "ARTWORK")
+  icon:SetSize(18, 18)
+  icon:SetPoint("LEFT", box, "RIGHT", 8, 0)
+  local label = row:CreateFontString(nil, "OVERLAY")
+  NS.SetFont(label, 13, "")
+  label:SetTextColor(INK[1], INK[2], INK[3], 1)
+  label:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+  local note = row:CreateFontString(nil, "OVERLAY")
+  NS.SetFont(note, 11, "")
+  note:SetTextColor(DIM[1], DIM[2], DIM[3], 1)
+  note:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -1)
+  note:Hide()
+  row.box, row.icon, row.label, row.note = box, icon, label, note
+  row:SetScript("OnEnter", function(self)
+    self._hot = true
+    if not self.disabled then self.bg:Show() end
+    if self.box then self.box:SetChecked(self.box:GetChecked()) end
+  end)
+  row:SetScript("OnLeave", function(self)
+    self._hot = false
+    self.bg:Hide()
+    if self.box then self.box:SetChecked(self.box:GetChecked()) end
+  end)
+  return row
+end
+function M.ToggleTownPanel(show)
+  local p = M.townPanel
+  if not p then return end
+  if show == nil then show = not p:IsShown() end
+  if show then
+    if M.closePanel and M.closePanel:IsShown() then M.closePanel:Hide() end
+    M.SyncTownPanel()
+    M.PlaceTownPanel()
+    p:SetAlpha(1)
+    p:Show()
+  else p:SetAlpha(0) p:Hide() end
+  if M.townBtn and M.townBtn.icon then
+    if p:IsShown() then M.townBtn.icon:SetVertexColor(1, 0.82, 0.25)
+    else M.townBtn.icon:SetVertexColor(0.93, 0.89, 0.8) end
+  end
+end
+
 NS.RegisterTab({
-  id = "map", name = "Map", glyph = "map",
+  id = "map", name = "Map & Quest Logs", glyph = "map",
   Build = Build,
-  OnShow = function() Events(true) Start() if NS.QuestPanel then NS.QuestPanel.Sync(true) end end,
+  OnShow = function()
+    -- 0.5.2b.27: a failure while starting the map must not skip the quest panel
+    pcall(Events, true)
+    pcall(Start)
+    if NS.QuestPanel and NS.QuestPanel.Ensure then pcall(NS.QuestPanel.Ensure) end
+  end,
   OnHide = function()
     Events(false)
     if NS.QuestPanel then NS.QuestPanel.Sync(false) end
     drag, zoomT, fly = nil, nil, nil
+    -- 0.5.2b.21: closing the window, or opening another tab, drops the capital's deep zoom cap
+    M.fitCap, M.fitCapCity = nil, nil
     if M.full then M.SetFull(false) end
   end,
   Refresh = function() if M.started then M.dirty = true end end,

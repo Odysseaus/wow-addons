@@ -615,6 +615,141 @@ local AREA_FUNCS = { { "quests", AreaQuests }, { "fishing", AreaFishing }, { "ac
   { "journal", AreaJournal }, { "map", AreaMap }, { "lfg", AreaLFG }, { "saved", AreaSaved },
   { "items", AreaItems }, { "loot", AreaLoot }, { "rules", AreaRules } }
 
+-- 0.5.2b.53: /dm mappoi. Read-only capability evidence. Not a pin sync and not a draw.
+local function HasPos(p)
+  if IsSecret(p) or type(p) ~= "table" then return false end
+  if type(p.x) == "number" and type(p.y) == "number" then return true end
+  if type(p.GetXY) == "function" then
+    local r = Pack(pcall(p.GetXY, p))
+    return r[1] and type(r[2]) == "number" and type(r[3]) == "number"
+  end
+  return false
+end
+local function Shown(v)
+  if v == nil or IsSecret(v) then return v == nil and "?" or "secret" end
+  local k = type(v)
+  if k == "string" or k == "number" or k == "boolean" then return tostring(v) end
+  return k
+end
+function NS.MapPOILines()
+  if type(InCombatLockdown) == "function" and InCombatLockdown() then
+    return { "mappoi: skipped in combat." }
+  end
+  local lines = { "mappoi " .. tostring(NS.version) .. " (read-only capability; not a pin sync; nothing drawn or saved)" }
+  lines[#lines + 1] = "FILTER list (tracking toggles, not locations):"
+  local mini = type(_G.C_Minimap) == "table" and _G.C_Minimap or nil
+  local numFn = mini and mini.GetNumTrackingTypes or _G.GetNumTrackingTypes
+  local infoFn = mini and mini.GetTrackingInfo or _G.GetTrackingInfo
+  if type(numFn) ~= "function" or type(infoFn) ~= "function" then
+    lines[#lines + 1] = "FILTER list: API absent"
+  else
+    local nr = Pack(pcall(numFn))
+    if not nr[1] then
+      lines[#lines + 1] = "FILTER list: error " .. Trunc(nr[2], 80)
+    else
+      local n = Num(nr[2]) or 0
+      if n < 0 then n = 0 end
+      lines[#lines + 1] = "FILTER count: " .. tostring(n)
+      local shown = math.min(n, 40)
+      for i = 1, shown do
+        local ir = Pack(pcall(infoFn, i))
+        if not ir[1] then
+          lines[#lines + 1] = "FILTER " .. i .. ": error"
+        else
+          local row = ir[2]
+          local name, active, kind = "?", "?", "?"
+          if type(row) == "table" and not IsSecret(row) then
+            name, active, kind = Shown(row.name), Shown(row.active), Shown(row.type)
+          elseif type(row) == "string" then
+            name, active, kind = row, Shown(ir[4]), Shown(ir[5])
+          else
+            name = Shown(row)
+          end
+          lines[#lines + 1] = string.format("FILTER %d: %s type=%s active=%s", i, name, kind, active)
+        end
+      end
+      if n > shown then lines[#lines + 1] = "FILTER list: " .. (n - shown) .. " more not printed" end
+    end
+  end
+  lines[#lines + 1] = "area POI (this map's area points, not minimap blips):"
+  local map
+  local best = type(_G.C_Map) == "table" and _G.C_Map.GetBestMapForUnit
+  if type(best) == "function" then
+    local br = Pack(pcall(best, "player"))
+    if br[1] then map = Num(br[2]) end
+  end
+  local poi = type(_G.C_AreaPoiInfo) == "table" and _G.C_AreaPoiInfo or nil
+  local idsFn = poi and poi.GetAreaPOIForMap
+  local oneFn = poi and poi.GetAreaPOIInfo
+  if not map then
+    lines[#lines + 1] = "area POI: no player map"
+  elseif type(idsFn) ~= "function" or type(oneFn) ~= "function" then
+    lines[#lines + 1] = "area POI: API absent"
+  else
+    local pr = Pack(pcall(idsFn, map))
+    if not pr[1] then
+      lines[#lines + 1] = "area POI: error " .. Trunc(pr[2], 80)
+    else
+      local ids = Tbl(pr[2]) or {}
+      lines[#lines + 1] = "area POI: map " .. tostring(map) .. " count " .. tostring(#ids)
+      for i = 1, math.min(3, #ids) do
+        local ir = Pack(pcall(oneFn, map, ids[i]))
+        if not ir[1] then
+          lines[#lines + 1] = "area POI sample: error"
+        else
+          local info = Tbl(ir[2])
+          local name = info and Shown(info.name) or "?"
+          local atlas = info and Shown(info.atlasName) or "?"
+          local pos = info and HasPos(info.position) and "yes" or "no"
+          lines[#lines + 1] = string.format("area POI sample: %s atlas=%s position=%s", name, atlas, pos)
+        end
+      end
+    end
+  end
+  lines[#lines + 1] = "vignettes (currently known, not a zone catalog):"
+  local vig = type(_G.C_VignetteInfo) == "table" and _G.C_VignetteInfo or nil
+  local listFn = vig and vig.GetVignettes
+  local infoFnV = vig and vig.GetVignetteInfo
+  local posFn = vig and vig.GetVignettePosition
+  if type(listFn) ~= "function" or type(infoFnV) ~= "function" then
+    lines[#lines + 1] = "vignettes: API absent"
+  else
+    local vr = Pack(pcall(listFn))
+    if not vr[1] then
+      lines[#lines + 1] = "vignettes: error " .. Trunc(vr[2], 80)
+    else
+      local guids = Tbl(vr[2]) or {}
+      lines[#lines + 1] = "vignettes: count " .. tostring(#guids)
+      for i = 1, math.min(3, #guids) do
+        local ir = Pack(pcall(infoFnV, guids[i]))
+        if not ir[1] then
+          lines[#lines + 1] = "vignette sample: error"
+        else
+          local info = Tbl(ir[2])
+          local name = info and Shown(info.name) or "?"
+          local kind = info and Shown(info.type) or "?"
+          local atlas = info and Shown(info.atlasName) or "?"
+          local onMap = info and Shown(info.onMinimap) or "?"
+          local zone = info and Shown(info.zoneInfiniteAOI) or "?"
+          local pos = "no"
+          if map and type(posFn) == "function" then
+            local xy = Pack(pcall(posFn, guids[i], map))
+            if xy[1] and HasPos(xy[2]) then pos = "yes" elseif not xy[1] then pos = "error" end
+          elseif not map then
+            pos = "no map"
+          else
+            pos = "API absent"
+          end
+          lines[#lines + 1] = string.format("vignette sample: %s type=%s atlas=%s onMinimap=%s zoneInfiniteAOI=%s position=%s",
+            name, kind, atlas, onMap, zone, pos)
+        end
+      end
+    end
+  end
+  lines[#lines + 1] = "service pins stay the docks only; this command adds none."
+  return lines
+end
+
 function NS.RunProbe(quiet)
   -- Only ever run from our own slash command / button (never from a secure path),
   -- and not in combat lockdown.
