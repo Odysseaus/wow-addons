@@ -1792,6 +1792,8 @@ do
   W.Click(pg.prev)
   ok(cf.offset == 0, "prev: a page back")
   -- Total = profit x can make (Count the bank)
+  I.S.craftOwned = "free"   -- (v0.4.2.9: Count works with the Owned modes; Market: greyed, None)
+  mp:Refresh()
   W.Click(cf.countDrop) W.Click(cf.countDrop.menu.items[2])   -- (v0.4.2.8: Count: Bags only, Craft's own dropdown)
   for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
   mp:Refresh()
@@ -1812,6 +1814,7 @@ do
   for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
   mp:Refresh()
   ok(cf.list[1].can == 0 and cf.list[1].total == nil and cf.rows[1].total._text == "-", "none to make with: Total -")
+  I.S.craftOwned = "market"
   ok(W.sizeMaxDepth <= 1 and #W.sizeErrors == errs0, "no layout loop: OnSizeChanged never nested, no error")
   -- Harvest
   Put(km, 785, 80) Put(km, 2447, 50) Put(km, 765, 30)
@@ -2677,7 +2680,7 @@ print("== 36. v0.4.2.7: Harvest's Known only, titles that fit, one lit header, o
   local good, lines = Hover(rf.head.buttons[2])
   ok(good and lines[2] == Mk.HeadTip("results", "min") and lines[2]:find("lowest buyout per unit", 1, true) and not lines[2]:find("sort", 1, true),
     "a header: after the delay, what the column means (v0.4.2.8: no \"click to sort\")", lines[2])
-  ok(V.TIP_DELAY == 2, "the delay: 2 seconds (v0.4.2.8)")
+  ok(V.TIP_DELAY == 1, "the delay: 1 second (v0.4.2.9)")
   W.Run(rf.head.buttons[2], "OnEnter") W.Run(rf.head.buttons[2], "OnLeave") tip.shown = false W.RunTimers()
   ok(not tip.shown, "moved off before 3 s: nothing")
   W.Run(rf.head.buttons[2], "OnEnter") W.Run(rf.head.buttons[2], "OnMouseDown") W.RunTimers()
@@ -2742,14 +2745,14 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   Mk.house = "Neutral"
   ok(Mk.HeadTip("mine", "ah"):find("15%", 1, true) and Mk.HeadTip("craft", "each"):find("15%", 1, true) and Mk.HeadTip("harvest", "each"):find("15%", 1, true), "Neutral: its 15% cut in the tooltips")
   Mk.house = "Alliance"
-  ok(Mk.HeadTip("craft", "total"):find("5%", 1, true) and Mk.HeadTip("craft", "total"):find("net return", 1, true), "Alliance: 5%; Total: the net return with an Invest Amount")
+  ok(Mk.HeadTip("craft", "total"):find("5%", 1, true) and Mk.HeadTip("craft", "total"):find("gold spent", 1, true), "Alliance: 5%; Total: less the gold spent with an Invest Amount")
   local keepOwned = I.S.craftOwned
   I.S.craftOwned = "free" local tf = Mk.HeadTip("craft", "cost")
   I.S.craftOwned = "vendor" local tv = Mk.HeadTip("craft", "cost")
   I.S.craftOwned = "market" local tm = Mk.HeadTip("craft", "cost")
   ok(tf:find("Owned free", 1, true) and tv:find("Owned: vendor", 1, true) and tm:find("Market:", 1, true), "Cost to Make: the Reagents mode in use, named")
   I.S.craftOwned = keepOwned
-  ok(V.TIP_DELAY == 2, "every tooltip after 2 s")
+  ok(V.TIP_DELAY == 1, "every tooltip after 1 s (v0.4.2.9)")
   -- 2. Harvest: no Margin; a saved Margin sort: the default
   local hasMargin = false for _, c in ipairs(Mk.COLS.harvest) do if c.key == "margin" then hasMargin = true end end
   I.S.sortHarvest = "margin:desc"
@@ -2810,7 +2813,8 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   local nf, cf2 = Mk.Afford(e, 1000, { [1] = 4, [2] = 1 }, "free")
   ok(nf == 3 and cf2 == 2 * 100 + 2 * 300, "Owned free: yours first (free), then bought: 3 for 800 (a 4th: 1300)", nf .. " " .. cf2)
   local nv, cv = Mk.Afford(e, 1000, { [1] = 4 }, "vendor")
-  ok(nv == 2 and cv == 4 * 5 + 2 * 300, "Owned: vendor: yours at a vendor's price first", nv .. " " .. cv)
+  local _, _, tv8 = Mk.Afford(e, 1000, { [1] = 4 }, "vendor")
+  ok(nv == 2 and cv == 2 * 300 and tv8 == 2 * 300 + 4 * 5, "Owned: vendor (v0.4.2.9): yours not paid from the amount (2 for 600); Total's cost adds their vendor value", nv .. " " .. cv .. " " .. tv8)
   ok(Mk.Afford(e, 499, {}, "market") == 0 and Mk.Afford({ parts = {} }, 1, {}, "market") == Mk.INVEST_MAX, "less than one craft: 0; no reagents: capped")
   Sc.SellPrice = Sp
   -- in the view: 12 crafts of 2 reagents at house Inv8
@@ -2846,7 +2850,7 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   local e1 = cf.list[1]
   local n1 = e1 and Mk.Afford(e1, 500000, Cr.Have(false), I.S.craftOwned or "market")
   local cut = Sc.Cut("KnownTest")
-  local want = e1 and n1 > 0 and (n1 * e1.sell * e1.qty * (1 - cut) - select(2, Mk.Afford(e1, 500000, Cr.Have(false), I.S.craftOwned or "market"))) or nil
+  local want = e1 and n1 > 0 and (n1 * e1.sell * e1.qty * (1 - cut) - select(3, Mk.Afford(e1, 500000, Cr.Have(false), I.S.craftOwned or "market"))) or nil
   ok(Mk.investAmount == 500000 and e1 and cf.rows[1].can._text == tostring(n1) and (want == nil and cf.rows[1].total._text == "-" or cf.rows[1].total._text:find(Sc.Money(math.abs(want)), 1, true)),
     "50g typed: every row's Can make what it buys, Total the net return", e1 and (cf.rows[1].can._text .. " " .. cf.rows[1].total._text))
   local allRows = true
@@ -2883,6 +2887,8 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   ok(I.SETTINGS.craftInvest == nil and I.S.craftInvest == nil and I.S.investAmount == nil, "the amount isn't saved (this session only)")
   -- 7. Craft's Count: None | Bags only | Bags + bank, its own (first from My items'); None: nothing counted
   local keepMB = I.S.mineBank
+  local keepOwned7 = I.S.craftOwned
+  I.S.craftOwned = "free" mp:Refresh()   -- (v0.4.2.9: Count is live with the Owned modes)
   I.S.craftCount, I.S.mineBank = nil, true
   ok(Mk.CraftCount() == "bank" and I.S.craftCount == "bank", "first: from My items' (Bags + bank)")
   I.S.craftCount, I.S.mineBank = nil, false
@@ -2903,6 +2909,7 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   local hz = true for _, x in ipairs(hv.list) do if x.have ~= 0 or x.total ~= nil then hz = false end end
   ok(hz, "Harvest under None: Have 0, Total -")
   I.S.craftCount, I.S.mineBank = "bags", keepMB
+  I.S.craftOwned = keepOwned7
   -- 8. the I key: Key Bindings > Valhalla > Valhalla: Investments; I by default only if free
   C_TradeSkillUI, I.char.bags, I.char.bank = keepTS, keepBags, keepBank
   local xml = io.open("Valhalla/Bindings.xml"):read("*a")
@@ -2942,6 +2949,98 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   T.Open, T.Close, T.Current, T.Attached = keepOpen, keepClose, keepCur, keepAtt
   GetBindingKey, GetBindingAction, SetBinding, SaveBindings, GetCurrentBindingSet = kb[1], kb[2], kb[3], kb[4], kb[5]
   Mk.house, Mk.craftProf, Mk.craftMode = nil, nil, nil
+  mp:Refresh()
+  ok(#W.sizeErrors == errs0, "no handler error")
+end)()
+
+print("== 38. v0.4.2.9: Invest Amount uses your reagents (Owned modes) first; Market greys Count (None); Invest greyed in Harvest; tooltips after 1 s")
+;(function()
+  local Mk, Sc, Cr = I.Market, I.Scan, I.Craft
+  local errs0 = #W.sizeErrors
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  local keep = { owned = I.S.craftOwned, count = I.S.craftCount, bags = I.char.bags, bank = I.char.bank, sp = Sc.SellPrice, house = Mk.house, mode = Mk.craftMode }
+  -- 1. the worked example (v0429-plan.md): 2 A (1s; vendor 5c) + 1 B (3s; vendor 25c); sells 1g, 5% cut (95s); 10s to invest;
+  --    bags A 4, B 1; bank A 6, B 4
+  Mk.house, Mk.craftMode = "Alliance", "crafts"
+  I.char.bags, I.char.bank = { [990001] = 4, [990002] = 1 }, { [990001] = 6, [990002] = 4 }
+  Sc.SellPrice = function(id) return ({ [990001] = 5, [990002] = 25 })[id] or keep.sp(id) end
+  local function E() return { id = 990100, out = 990101, qty = 1, sell = 10000, parts = { { id = 990001, n = 2, unit = 100 }, { id = 990002, n = 1, unit = 300 } } } end
+  Mk.investAmount = 1000
+  local want = {   -- [Reagents][Count] = { Can make, Total (copper) }
+    market = { none = { 2, 18000 }, bags = { 2, 18000 }, bank = { 2, 18000 } },   -- (Market: Count is None)
+    free = { none = { 2, 18000 }, bags = { 3, 27700 }, bank = { 7, 65500 } },
+    vendor = { none = { 2, 18000 }, bags = { 3, 27655 }, bank = { 7, 65325 } },
+  }
+  local bad = {}
+  for _, mode in ipairs({ "market", "free", "vendor" }) do
+    for _, cnt in ipairs({ "none", "bags", "bank" }) do
+      I.S.craftOwned, I.S.craftCount = mode, cnt
+      local n, total = Mk.Shown(E())
+      local w = want[mode][cnt]
+      if n ~= w[1] or math.abs((total or 0) - w[2]) > 0.01 then bad[#bad + 1] = ("%s/%s: %s %s (want %d %d)"):format(mode, cnt, tostring(n), tostring(total), w[1], w[2]) end
+    end
+  end
+  ok(#bad == 0, "the worked example, every Reagents mode x Count: yours first, the rest bought with 10s; Total = sale after the cut x Can make - gold spent (vendor: + yours at a vendor's price)", table.concat(bad, "; "))
+  local n, gold, cost = Mk.Afford(E(), 1000, { [990001] = 10, [990002] = 5 }, "vendor")
+  ok(n == 7 and gold == 1000 and cost == 1000 + 10 * 5 + 5 * 25, "Owned: vendor: yours aren't paid from the amount (7 for 10s); their vendor value only in Total")
+  ok(Mk.Afford(E(), 1000, { [990001] = 10, [990002] = 5 }, "market") == 2, "Market: yours never used (Count is None there)")
+  Mk.investAmount = nil
+  -- 2. the view: Market greys Count and makes it None; the Owned modes bring the choice back
+  local SCH = {}
+  local keepTS = C_TradeSkillUI
+  for k = 1, 6 do SCH[980000 + k] = { 981000 + k, { { 990001, 2 }, { 990002, 1 } } } W.items[981000 + k] = { "Count Test " .. k, 132912 } end
+  W.items[990001] = { "Reagent A", 132912 } W.items[990002] = { "Reagent B", 132912 }
+  C_TradeSkillUI = { GetRecipeSchematic = function(id)
+    local r = SCH[id] if not r then return nil end
+    local slots = {} for _, g in ipairs(r[2]) do slots[#slots + 1] = { quantityRequired = g[2], reagents = { { itemID = g[1] } } } end
+    return { recipeID = id, outputItemID = r[1], quantityMin = 1, quantityMax = 1, reagentSlotSchematics = slots }
+  end }
+  local im = Sc.Market("Inv9", true)
+  local itm = math.floor(W.now / 60) - im.base
+  im.scans = { { t = itm, kind = "full", n = 100, items = 8 } }
+  im.cur[990001] = ("%d,%d,%d,%d"):format(100, 50, 5, itm) im.cur[990002] = ("%d,%d,%d,%d"):format(300, 50, 5, itm)
+  for k = 1, 6 do im.cur[981000 + k] = ("%d,%d,%d,%d"):format(10000, 10, 2, itm) end
+  I.db.account.recipes[997] = { name = "Count Test", ids = "980001,980002,980003,980004,980005,980006", t = W.now }
+  Mk.house, Mk.craftProf, Mk.craftMode = "Inv9", 997, "crafts"
+  local function Settle() for _ = 1, 400 do mp:Refresh() if not Cr.Running() then break end Cr.Tick() end mp:Refresh() end
+  I.S.craftOwned, I.S.craftCount = "free", "bank"
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  Settle()
+  ok(not cf.countDrop.locked and cf.countDrop._alpha ~= 0.45 and cf.countDrop.text._text == "Count: Bags + bank" and cf.list[1] and cf.list[1].can == 5,
+    "Owned free: Count live (Bags + bank: 5 from yours)", cf.list[1] and cf.list[1].can)
+  W.Click(cf.owned.boxes[1])   -- (Reagents: Market)
+  Settle()
+  local zero = true for _, x in ipairs(cf.list) do if x.can ~= 0 then zero = false end end
+  ok(I.S.craftOwned == "market" and cf.countDrop.locked and cf.countDrop._alpha == 0.45 and cf.countDrop.text._text == "Count: None" and zero and I.S.craftCount == "bank",
+    "Market: Count greyed and None, Can make 0 (no amount); your choice kept")
+  W.Click(cf.countDrop)
+  ok(not cf.countDrop.menu:IsShown(), "greyed: its menu doesn't open")
+  cf.invest:SetText("10s") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
+  ok(cf.list[1] and cf.rows[1].can._text == "2", "Market + 10s: only what the gold buys (2)", cf.rows[1].can._text)
+  W.Click(cf.owned.boxes[2])   -- (Owned free)
+  Settle()
+  ok(I.S.craftOwned == "free" and not cf.countDrop.locked and cf.countDrop.text._text == "Count: Bags + bank" and cf.rows[1].can._text == "7",
+    "Owned free again: Bags + bank back; with 10s: 7 (yours first)", cf.rows[1].can._text)
+  W.Click(cf.countDrop) W.Click(cf.countDrop.menu.items[2])
+  Settle()
+  ok(I.S.craftCount == "bags" and cf.rows[1].can._text == "3", "Bags only with 10s: 3", cf.rows[1].can._text)
+  -- 3. Harvest: the Invest Amount greyed and off; Count works (no reagents there)
+  I.S.craftOwned = "market"
+  Mk.craftProf, Mk.craftMode = 182, "harvest"
+  mp:Refresh()
+  ok(cf.invest._alpha == 0.45 and cf.investTitle._alpha == 0.45 and cf.invest.off and cf.invest._mouse == false and not cf.countDrop.locked,
+    "Harvest: Invest Amount greyed and off; Count live (even with Market)")
+  Mk.craftProf, Mk.craftMode = 997, "crafts"
+  mp:Refresh()
+  ok(cf.invest._alpha == 1 and not cf.invest.off and cf.invest:GetText() == "10s", "back to Crafts: the box on again, the amount kept")
+  cf.invest:SetText("") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
+  ok(Mk.HeadTip("craft", "can"):find("Market", 1, true) and I.Views.TIP_DELAY == 1, "the tooltips: Market's Count named; 1 s")
+  C_TradeSkillUI = keepTS
+  I.S.craftOwned, I.S.craftCount, I.char.bags, I.char.bank, Sc.SellPrice, Mk.house, Mk.craftMode = keep.owned, keep.count, keep.bags, keep.bank, keep.sp, keep.house, keep.mode
+  Mk.craftProf = nil
   mp:Refresh()
   ok(#W.sizeErrors == errs0, "no handler error")
 end)()

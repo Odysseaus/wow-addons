@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "v0.4.2.9", date = "2026-11-11", heads = { [1] = "Changed", [6] = "Fixed", [8] = "Note", }, items = {
+		"|cff6e2c0aInvest Amount, your reagents first|r: with Owned free or Owned: vendor, Can make counts your reagents (per Count) first and buys the rest with the amount, so Bags + bank can make more than Bags only. Total: the sale after the AH's cut x Can make, less the gold spent (Owned: vendor: and what yours used would fetch at a vendor).",
+		"|cff6e2c0aReagents: Market|r greys the Count dropdown and sets it to None (Market prices every reagent, yours too): Can make is what the amount buys, 0 without one. Owned free / Owned: vendor bring your Count back.",
+		"The Invest Amount box is greyed in Harvest (it's for crafts); what you typed is kept for Crafts.",
+		"|cff6e2c0aTooltips|r after 1 second (was 2).",
+		"Profit/item, Margin and Cost to Make never change with an Invest Amount.",
+		"Owned: vendor no longer spends the amount on reagents you already have.",
+		"The Count dropdown is wider: \"Count: Bags + bank\" is no longer cut.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "v0.4.2.8", date = "2026-11-11", heads = { [1] = "New", [5] = "Changed", [9] = "Fixed", [10] = "Note", }, items = {
 		"|cff6e2c0aInvest Amount|r above the Craft table: type 50g, 1g 20s or a number (gold) and Can make and Total show, on every row, what that buys and your net return (the sale after the AH's cut, less what those crafts cost). Empty: your reagents only, as before. Not saved.",
 		"|cff6e2c0aTop 10, Trending|r: a Price movers | Trending switch (kept). Trending estimates what sells most, by units and by gold a day, from listings gone between full scans up to 12 hours apart (an estimate: cancelled and expired auctions count too).",

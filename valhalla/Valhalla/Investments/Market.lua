@@ -662,8 +662,8 @@ M.HEAD_TIPS = {
 		margin = "Profit as a share of the cost to make. \"-\": the reagents cost nothing.",
 		listed = "Units of it on the AH now.",
 		known = "*: you have learned this recipe.",
-		can = "How many crafts the reagents you have make (per Count). With an Invest Amount: how many crafts that gold buys (Market: the amount / Cost to Make; Owned: yours used first, then buying the rest).",
-		total = function() return "Profit per craft x Can make. With an Invest Amount: your net return, the sale after the AH's " .. CutPct() .. " cut x Can make, less what those crafts cost." end,
+		can = "How many crafts the reagents you have make (per Count; Market: Count is None, so 0). With an Invest Amount: how many that gold buys, yours (per Count) used first, the rest bought at the AH.",
+		total = function() return "Profit per craft x Can make. With an Invest Amount: the sale after the AH's " .. CutPct() .. " cut x Can make, less the gold spent (Owned: vendor: and what yours used would fetch at a vendor)." end,
 	},
 	harvest = {
 		name = "What this profession gathers.",
@@ -719,7 +719,11 @@ function M.CraftCount()
 	return c
 end
 -- what C.Have / C.Rank take for it: "none", true (bags + bank) or false (bags)
-function M.CountArg() local c = M.CraftCount() return c == "none" and "none" or c == "bank" end
+-- (v0.4.2.9) Reagents = Market (crafts): Count greyed and None (Market prices every reagent, yours too); the choice kept
+-- for Owned free / Owned: vendor. Harvest has no reagents: Count works there as chosen
+function M.CountLocked() return (I.S.craftOwned or "market") == "market" and M.craftMode ~= "harvest" end
+function M.CountNow() if M.CountLocked() then return "none" end return M.CraftCount() end
+function M.CountArg() local c = M.CountNow() return c == "none" and "none" or c == "bank" end
 
 -- (v0.4.2.8) the Invest Amount (one box over the Craft table, for every row; this session only): copper or nil
 M.investAmount = nil
@@ -735,44 +739,47 @@ function M.ParseMoney(t)
 	local n = g * 10000 + s * 100 + c
 	return n > 0 and n or nil
 end
--- how many crafts amount buys: the largest n whose cost for n crafts fits (the Reagents mode: Market prices all of
--- them, owned ones too; Owned free / Owned: vendor use yours first, per Count); returns n, that cost
+-- how many crafts amount buys (v0.4.2.9): yours (per Count) used first, the rest bought at the AH with the amount: the
+-- largest n whose gold fits. Returns n, the gold spent, and the cost taken off Total: the gold, plus (Owned: vendor) what
+-- yours used would fetch at a vendor. (Market: Count is None, nothing of yours used.)
 M.INVEST_MAX = 9999
 function M.Afford(e, amount, have, owned)
-	local function CostN(n)
-		local cost = 0
+	have = owned == "market" and {} or have or {}
+	local function Gold(n)
+		local gold, ownValue = 0, 0
 		for _, p in ipairs(e.parts or {}) do
 			local need = n * p.n
-			local own = owned == "market" and 0 or math.min(need, have[p.id] or 0)
+			local own = math.min(need, have[p.id] or 0)
 			local buy = need - own
-			if owned == "vendor" and own > 0 then cost = cost + own * (S().SellPrice(p.id) or 0) end
+			if owned == "vendor" and own > 0 then ownValue = ownValue + own * (S().SellPrice(p.id) or 0) end
 			if buy > 0 then
-				if not p.unit then return math.huge end
-				cost = cost + buy * p.unit
+				if not p.unit then return math.huge, 0 end
+				gold = gold + buy * p.unit
 			end
 		end
-		return cost
+		return gold, ownValue
 	end
-	if CostN(1) > amount then return 0, 0 end
-	if CostN(M.INVEST_MAX) <= amount then return M.INVEST_MAX, CostN(M.INVEST_MAX) end
-	local lo, hi = 1, M.INVEST_MAX   -- (CostN(lo) fits, CostN(hi) doesn't)
+	local function Out(n) local g, v = Gold(n) return n, g, g + v end
+	if Gold(1) > amount then return 0, 0, 0 end
+	if Gold(M.INVEST_MAX) <= amount then return Out(M.INVEST_MAX) end
+	local lo, hi = 1, M.INVEST_MAX   -- (Gold(lo) fits, Gold(hi) doesn't)
 	while hi - lo > 1 do
 		local mid = math.floor((lo + hi) / 2)
-		if CostN(mid) <= amount then lo = mid else hi = mid end
+		if Gold(mid) <= amount then lo = mid else hi = mid end
 	end
-	return lo, CostN(lo)
+	return Out(lo)
 end
 -- a craft row's Can make and Total as shown (and sorted): from the Invest Amount when there is one
 function M.Shown(e)
 	local amount = M.investAmount
-	local cnt = M.CraftCount()
+	local cnt = M.CountNow()
 	if amount and e.sell and e.parts then
 		local owned = I.S.craftOwned or "market"
 		local house = M.House()
 		local tag = ("%d|%s|%s|%s|%s|%s"):format(amount, cnt, owned, house, tostring(I.char and I.char.bagsSeen), tostring(I.char and I.char.bankSeen))
 		if e._shownTag ~= tag then
 			if M._haveTag ~= tag then M._have, M._haveTag = I.Craft.Have(M.CountArg()), tag end
-			local n, cost = M.Afford(e, amount, M._have, owned)
+			local n, _, cost = M.Afford(e, amount, M._have, owned)
 			e._shownN = n
 			e._shownTotal = n > 0 and (n * e.sell * e.qty * (1 - S().Cut(house)) - cost) or nil
 			e._shownTag = tag
@@ -1357,14 +1364,20 @@ local function BuildCraft(f, page)
 		{ frame = f.showRow, title = f.showTitle, boxes = { f.known } },
 	}, M.FilterStart(f))
 	-- (v0.4.2.8) Count: None | Bags only | Bags + bank, a dropdown in Reagents' 2nd column (Craft's own setting)
-	f.countDrop = DropMenu(f, 170, #M.COUNTS, function(v) I.S.craftCount = v f.offset = 0 page:Refresh() end)
+	f.countDrop = DropMenu(f, 200, #M.COUNTS, function(v) I.S.craftCount = v f.offset = 0 page:Refresh() end)
 	f.countDrop:SetPoint("LEFT", f.owned.boxes[2], "LEFT", 0, 0)
 	f.countDrop:SetPoint("TOP", f.showRow, "TOP", 0, 1)
 	local function CountEntries() local out = {} for i, x in ipairs(M.COUNTS) do out[i] = { x[1], L[x[2]] } end return out end
-	function f.countDrop.Open() f.countDrop.Fill(CountEntries(), M.CraftCount()) f.countDrop.menu:Show() end
+	function f.countDrop.Open() if f.countDrop.locked then return end f.countDrop.Fill(CountEntries(), M.CraftCount()) f.countDrop.menu:Show() end
 	f.count = f.countDrop
 	function f.count.Update()
-		local c = M.CraftCount()
+		-- (v0.4.2.9) Reagents = Market: greyed, None (the choice kept for the Owned modes)
+		local locked = M.CountLocked()
+		f.countDrop.locked = locked
+		if locked and f.countDrop.menu:IsShown() then f.countDrop.menu:Hide() end
+		if f.countDrop.EnableMouse then f.countDrop:EnableMouse(not locked) end
+		f.countDrop:SetAlpha(locked and 0.45 or 1)
+		local c = M.CountNow()
 		for _, x in ipairs(M.COUNTS) do if x[1] == c then f.countDrop.text:SetText(L["Count: %s"]:format(L[x[2]])) end end
 	end
 	-- (v0.4.2.8) Invest Amount: one box for every row, live as you type (this session only)
@@ -1461,6 +1474,11 @@ local function BuildCraft(f, page)
 		f.owned:SetAlpha(crafts and 1 or 0.45)
 		for _, box in ipairs(f.owned.boxes) do if box.EnableMouse then box:EnableMouse(crafts) end end
 		f.ownedNote:SetShown(not crafts)
+		-- (v0.4.2.9) the Invest Amount is for crafts: greyed and off in Harvest (what's typed is kept for Crafts)
+		f.investTitle:SetAlpha(crafts and 1 or 0.45) f.invest:SetAlpha(crafts and 1 or 0.45)
+		if f.invest.EnableMouse then f.invest:EnableMouse(crafts) end
+		if not crafts and f.invest.ClearFocus then f.invest:ClearFocus() end
+		f.invest.off = not crafts
 	end
 
 	-- the list shown: another list (profession, house, scan, setting) starts on page 1
@@ -1622,8 +1640,8 @@ M.TIPS = {
 	vendor = { L["Owned: vendor"], L["Reagents you have cost what a vendor pays for them; the rest at market price."] },
 	knownCrafts = { L["Known only"], L["Only recipes you have learned."] },
 	knownHarvest = { L["Known only"], L["Hide what's above your skill. Items with no level data stay."] },
-	craftCount = { L["Count"], L["What Can make, Have and owned reagents count: None (buy everything), your bags, or bags and bank (as last seen)."] },
-	invest = { L["Invest Amount"], L["Gold to invest in each craft: 50g, 1g 20s, or a number (gold). Can make and Total then show what it buys, on every row. Empty: your reagents only. Not saved."] },
+	craftCount = { L["Count"], L["What Can make, Have and owned reagents count: None (buy everything), your bags, or bags and bank (as last seen). With Reagents: Market it's greyed and None (Owned free / Owned: vendor bring your choice back)."] },
+	invest = { L["Invest Amount"], L["Gold to invest in each craft: 50g, 1g 20s, or a number (gold). Can make and Total then show what it buys, your reagents (per Count) used first, on every row. Empty: your reagents only. Crafts only (greyed in Harvest). Not saved."] },
 	Alliance = { L["Alliance"], L["Prices from the Alliance Auction House (your scans there)."] },
 	Horde = { L["Horde"], L["Prices from the Horde Auction House (your scans there)."] },
 	Neutral = { L["Neutral"], L["The goblin Auction House in Booty Bay, Gadgetzan and Everlook, shared by Alliance and Horde. Its own prices (your scans there); it keeps 15% of a sale."] },

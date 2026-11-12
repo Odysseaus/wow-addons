@@ -235,7 +235,7 @@ end
 
 -- (v0.4.2.7) a short tooltip on a control, shown after the mouse rests on it V.TIP_DELAY seconds (moving off,
 -- clicking or the control hiding cancels it). text: a string, or a function(control) for one that depends on the mode
-V.TIP_DELAY = 2
+V.TIP_DELAY = 1
 function V.Tip(w, title, text)
 	if not w then return w end
 	w.tip = { title = title, text = text }
