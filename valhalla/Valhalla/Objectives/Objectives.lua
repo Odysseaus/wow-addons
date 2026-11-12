@@ -40,6 +40,14 @@
 --  * the game's Quest Timers box (QuestTimerFrame, above the tracker) showing, hiding or resizing: the
 --    tracker is made to lay out again once (TIMER_SETTLE after the last), so its header moves below it.
 --    (HookScript post-hooks on that frame: nothing of it is changed.)
+--
+-- 1.2.3, battlegrounds (IsInInstance "pvp"): a battleground quest is one whose log header names a
+-- battleground (Alterac Valley, Warsong Gulch, Arathi Basin, their sides' names, or "Battlegrounds").
+--  * inside a battleground only its quests are listed (Quests and Ready to Turn In): the header names it, or
+--    a battleground quest (that header, or the game's PvP tag 41) with a real pin on its map; pinned as ever;
+--  * outdoors and in dungeons battleground quests are hidden, as dungeon quests are (no marker exception);
+--  * a quest with the PvP tag under a zone's header (world PvP) stays that zone's quest;
+--  * arenas are left as they were (the game's tracker shows no quests there).
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -324,6 +332,37 @@ end
 
 local INSTANCE_KINDS = { party = true, raid = true, scenario = true }
 
+-- (1.2.3) battlegrounds: their names (and the names their quests' headers use) -> one key each
+O.BG_FALLBACK = { "Alterac Valley", "Warsong Gulch", "Arathi Basin" }
+O.BG_ALIAS = {
+	["silverwing hold"] = "warsong gulch", ["warsong lumber mill"] = "warsong gulch", ["silverwing sentinels"] = "warsong gulch",
+	["warsong outriders"] = "warsong gulch",
+	["league of arathor"] = "arathi basin", ["defilers"] = "arathi basin", ["trollbane hall"] = "arathi basin",
+	["defiler's den"] = "arathi basin",
+	["stormpike guard"] = "alterac valley", ["frostwolf clan"] = "alterac valley", ["dun baldar"] = "alterac valley",
+	["frostwolf keep"] = "alterac valley",
+	["battlegrounds"] = "*", ["battleground"] = "*",   -- (the game's general header: any battleground)
+}
+local BGS
+local function BGs()
+	if BGS then return BGS end
+	BGS = {}
+	for _, n in ipairs(O.BG_FALLBACK) do local k = ZCanon(n) if k then BGS[k] = true end end
+	return BGS
+end
+-- a name's battleground key ("*": any battleground), or nil
+function O.BGOf(name)
+	local k = ZCanon(name)
+	if not k then return nil end
+	k = k:gsub("%s+%-%s+.*$", "")
+	if O.BG_ALIAS[k] then return O.BG_ALIAS[k] end
+	return BGs()[k] and k or nil
+end
+function O.LearnBG(name) local k = ZCanon(name) if k and not O.BG_ALIAS[k] then BGs()[k] = true end end
+O.PVP_TAG = 41   -- Enum.QuestTag.PvP
+-- a battleground quest by its header (the PvP tag alone isn't one: world PvP quests sit under their zone)
+function O.IsBGQuest(e) return e ~= nil and e.header ~= nil and O.BGOf(e.header) ~= nil end
+
 -- { maps, names (canonical), onMap = { [questID] = true } (the kept pins), pins = { [questID] = { raw pins } },
 --   marker = { [questID] = true } (a real marker here that passes every guard: see O.Marker), inst (in a
 --   dungeon), instName, key }
@@ -332,7 +371,8 @@ function O.Here()
 	local inInst, kind = nil, nil
 	if IsInInstance then inInst, kind = Call(IsInInstance) end
 	local inst = inInst and INSTANCE_KINDS[kind] and true or false
-	local zone = inst and best or O.ZoneOf(best)
+	local bg = inInst and kind == "pvp" or false   -- (1.2.3: a battleground, its own kind)
+	local zone = (inst or bg) and best or O.ZoneOf(best)
 	local here = { maps = {}, names = {}, onMap = {}, pins = {}, marker = {}, guard = {}, best = best, zone = zone, inst = inst, shown = {} }
 	local function AddName(s)
 		if type(s) ~= "string" or s == "" then return end
@@ -352,6 +392,14 @@ function O.Here()
 		here.instName = name
 		AddName(name)
 		O.LearnDungeon(name)
+		AddMap(best)
+	elseif bg then
+		local name = GetInstanceInfo and Call(GetInstanceInfo)
+		if type(name) ~= "string" or name == "" then name = GetRealZoneText and Call(GetRealZoneText) end
+		O.LearnBG(name)
+		here.bg = name or "?"
+		here.bgKey = O.BGOf(name) or ZCanon(name) or "?"
+		AddName(name)
 		AddMap(best)
 	else
 		AddMap(zone)
@@ -379,13 +427,13 @@ function O.Here()
 			end
 		end
 	end
-	if not inst then
+	if not inst and not bg then
 		for id in pairs(here.onMap) do O.Marker(id, here) end
 	end
 	local names = {}
 	for k in pairs(here.names) do names[#names + 1] = k end
 	table.sort(names)
-	here.key = tostring(zone) .. (inst and ":inst:" or ":") .. table.concat(names, "|")
+	here.key = tostring(zone) .. (inst and ":inst:" or bg and ":bg:" or ":") .. table.concat(names, "|")
 	return here
 end
 
@@ -431,6 +479,18 @@ function O.Classify(e, here, placeOnly)
 	if not placeOnly and O.IsPinned(e.id) then return true, "pinned" end
 	if not here then return false, "no location yet" end
 	local h = e.header
+	-- (1.2.3) battlegrounds
+	local bgOf = h and O.BGOf(h)
+	if here.bg then
+		if bgOf and bgOf ~= "*" and bgOf == here.bgKey then return true, ("header \"%s\" is this battleground"):format(h) end
+		local pvp = bgOf ~= nil or e.tag == O.PVP_TAG
+		if pvp and here.onMap[e.id] then
+			return true, ("a battleground quest (%s) with a pin on this battleground's map"):format(bgOf and ("header \"" .. h .. "\"") or "PvP tag")
+		end
+		if bgOf then return false, ("in a battleground: header \"%s\" is %s"):format(h, bgOf == "*" and "a battleground quest with no pin here" or "another battleground") end
+		return false, "in a battleground: only its own quests are listed"
+	end
+	if bgOf then return false, ("header \"%s\": a battleground quest, listed inside its battleground"):format(h) end
 	local function Here(s) return s and (here.names[ZCanon(s) or ""] or here.names[DCanon(s) or ""]) or false end
 	-- "X: Zone" counts as that zone
 	local suffix = h and h:match("^[^:]+:%s*(.+)$")
@@ -1556,7 +1616,7 @@ function O.Why(id)
 	local shown = {}
 	for k in pairs(here.shown) do shown[#shown + 1] = k end
 	table.sort(shown)
-	out[#out + 1] = ("Here: %s%s (map %s)"):format(here.inst and "in a dungeon: " or "", table.concat(shown, ", "), tostring(here.best))
+	out[#out + 1] = ("Here: %s%s (map %s)"):format(here.inst and "in a dungeon: " or here.bg and "in a battleground: " or "", table.concat(shown, ", "), tostring(here.best))
 	local function Line(e)
 		local listed, why = O.Classify(e, here)
 		local where = e.ready and "Ready" or "Quests"

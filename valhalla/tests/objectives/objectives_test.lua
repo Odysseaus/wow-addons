@@ -988,5 +988,86 @@ ok(okT, "nothing tracked: no error, nothing to re-track")
 _G.QuestTimerFrame = nil
 C_QuestLog.RequestLoadQuestByID = nil
 
+---------------------------------------------------------------------------
+-- 1.2.3: battlegrounds
+---------------------------------------------------------------------------
+print("== 49. (1.2.3) inside a battleground: only its quests (Quests and Ready), pinned as ever")
+W.Reset()
+W.MAPS[1416] = { name = "Alterac Mountains", mapType = 3, parentMapID = 1415 }
+W.MAPS[1459] = { name = "Alterac Valley", mapType = 3, parentMapID = 1415 }   -- (the worst case: a battleground map that reads as a zone)
+W.MAPS[1460] = { name = "Warsong Gulch", mapType = 3, parentMapID = 1415 }
+W.MAPS[1461] = { name = "Arathi Basin", mapType = 3, parentMapID = 1415 }
+O.ForgetNames()
+W.AddQuest(90, "Alterac Valley", "The Battle of Alterac", 51, false, true)
+W.AddQuest(91, "Alterac Valley", "Capture a Mine", 53, true, false)
+W.AddQuest(92, "Warsong Gulch", "Fight for Warsong Gulch", 50, false, true)
+W.AddQuest(93, "Battlegrounds", "Concerted Efforts", 55, false, true, 41)
+W.AddQuest(94, "Alterac Mountains", "Syndicate Assassins", 33, false, true)
+W.AddQuest(95, "Hillsbrad Foothills", "Hillsbrad Skirmish", 30, false, true, 41)   -- (world PvP: the PvP tag under a zone)
+W.AddQuest(96, "Gnomeregan", "Save Techbot's Brain", 26, false, true)
+W.AddQuest(97, "Alterac Valley", "Frostwolf Supplies", 52, true, false)
+W.AddQuest(98, "Silverwing Hold", "Warsong Outfitting", 50, false, true)
+W.onMap[1416] = { 90, 97 }   -- (an Alterac Valley quest's pin and turn-in outdoors, in Alterac Mountains)
+Restart()
+Arrive(1459, { name = "Alterac Valley", kind = "pvp" })
+ok(eq(W.watches, { 90 }), "in Alterac Valley: its quest only", list(W.watches))
+ok(eq(ReadyIds(), { 97, 91 }), "Ready: its ready quests only (by level)", list(ReadyIds()))
+ok(O.S.here.bg == "Alterac Valley" and not O.S.here.inst and O.S.here.key:find(":bg:"), "a battleground: its own kind (not a dungeon)", tostring(O.S.here.key))
+W.onMap[1459] = { 93 }
+Fire("ZONE_CHANGED_NEW_AREA") Run(2.5)
+ok(eq(W.watches, { 90, 93 }), "the 'Battlegrounds' quest with a pin here: listed", list(W.watches))
+ok(not has(W.watches, 95), "a PvP-tagged zone quest with no pin here: not", list(W.watches))
+W.onMap[1459] = { 93, 95 }
+Fire("ZONE_CHANGED_NEW_AREA") Run(2.5)
+ok(eq(W.watches, { 95, 90, 93 }) and table.concat(O.Why(95), " "):find("PvP tag"), "a PvP-tagged quest with a pin on this battleground's map: listed", list(W.watches))
+W.onMap[1459] = { 93 }
+Fire("ZONE_CHANGED_NEW_AREA") Run(2.5)
+O.SetPinned(94, true) Run(1)
+ok(eq(W.watches, { 94, 90, 93 }), "a pinned outdoor quest: listed inside too", list(W.watches))
+local why49 = table.concat(O.Why(90), " | ")
+ok(why49:find("in a battleground: ") and why49:find("is this battleground"), "why: the battleground and its reason", why49)
+ok(table.concat(O.Why(92), " "):find("another battleground"), "why: another battleground's quest")
+ok(table.concat(O.Why(96), " "):find("only its own quests"), "why: a dungeon quest inside a battleground")
+O.SetPinned(94, false) W.onMap[1459] = nil
+
+print("== 50. (1.2.3) Warsong Gulch: its header's other names; a quest picked up outside shows on entering")
+Arrive(1460, { name = "Warsong Gulch", kind = "pvp" })
+ok(eq(W.watches, { 92, 98 }), "in Warsong Gulch: 'Warsong Gulch' and 'Silverwing Hold' headers", list(W.watches))
+ok(not has(W.watches, 90) and not has(ReadyIds(), 91), "Alterac Valley's quests: not here", list(ReadyIds()))
+local bk = W.map
+Arrive(1461, { name = "Arathi Basin", kind = "pvp" })
+ok(#W.watches == 0 and #ReadyIds() == 0, "in Arathi Basin with none of its quests: an empty list", list(W.watches))
+
+print("== 51. (1.2.3) outdoors (Option A): battleground quests hidden like dungeon quests, no marker exception")
+Arrive(1416)
+ok(eq(W.watches, { 94 }), "Alterac Mountains: its own quest; Alterac Valley's (with a pin here) hidden", list(W.watches))
+ok(#ReadyIds() == 0, "an Alterac Valley turn-in with a marker here: not in Ready", list(ReadyIds()))
+ok(table.concat(O.Why(90), " "):find("listed inside its battleground"), "why: a battleground quest outdoors")
+Arrive(1424)
+ok(eq(W.watches, { 95 }), "Hillsbrad: the world PvP quest (PvP tag, zone header) is that zone's", list(W.watches))
+O.SetPinned(92, true) Run(1)
+ok(has(W.watches, 92), "a pinned battleground quest: listed outdoors", list(W.watches))
+O.SetPinned(92, false) Run(1)
+W.AddQuest(99, "Alterac Valley", "The Legend of Korrak", 51, false, false)
+Fire("QUEST_ACCEPTED", 99) Run(1.5)
+ok(not has(W.watches, 99) and mod.char.hidden[99], "picked up outdoors: untracked until inside", list(W.watches))
+Arrive(1459, { name = "Alterac Valley", kind = "pvp" })
+ok(has(W.watches, 99) and has(W.watches, 90), "inside Alterac Valley: tracked", list(W.watches))
+
+print("== 52. (1.2.3) leaving restores the zone list (never in combat); dungeons, arenas unchanged")
+W.combat = true W.combatChanges = 0
+Arrive(1424)
+ok(W.combatChanges == 0 and has(W.watches, 90), "left in combat: nothing changes yet", list(W.watches))
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(2)
+ok(eq(W.watches, { 95 }), "fight over: Hillsbrad's list back", list(W.watches))
+Arrive(9100, { name = "Gnomeregan", kind = "party" })
+ok(eq(W.watches, { 96 }) and O.S.here.inst and not O.S.here.bg, "in Gnomeregan: its quest only, as before", list(W.watches))
+Arrive(1424, { name = "Nagrand Arena", kind = "arena" })
+ok(eq(W.watches, { 95 }) and not O.S.here.bg, "an arena: as before (no battleground rule)", list(W.watches))
+ok(O.BGOf("The Defilers") == "arathi basin" and O.BGOf("Frostwolf Keep") == "alterac valley" and O.BGOf("Battlegrounds") == "*"
+  and O.BGOf("Alterac Mountains") == nil and O.BGOf("Hillsbrad Foothills") == nil, "battleground names: aliases, the general header; zones aren't")
+W.MAPS[1416], W.MAPS[1459], W.MAPS[1460], W.MAPS[1461] = nil, nil, nil, nil
+O.ForgetNames()
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

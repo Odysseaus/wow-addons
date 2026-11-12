@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.3", date = "2026-11-12", heads = { [1] = "New", [4] = "Changed", [5] = "Note", }, items = {
+		"|cff6e2c0aBattleground quests in battlegrounds|r: inside Alterac Valley, Warsong Gulch or Arathi Basin the side panel lists only that battleground's quests (and your pinned ones), in Quests and Ready to Turn In, as a dungeon lists only its own.",
+		"A quest belongs to a battleground by its log header (the battleground's name or its sides' names, e.g. Silverwing Hold, Frostwolf); a \"Battlegrounds\" quest or one with the PvP tag shows where it has a pin on that battleground's map.",
+		"/valhalla objectives why says when you're in a battleground and why each quest is or isn't listed there.",
+		"Outdoors and in dungeons, battleground quests are hidden as dungeon quests are (pin one to keep it listed). A PvP quest under a zone's header stays that zone's.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.2", date = "2026-11-12", heads = { [1] = "Fixed", [5] = "Note", }, items = {
 		"|cff6e2c0aNew quests go to the right section|r: a quest you pick up is placed once the game has its data (its Dungeon tag), so a dungeon quest no longer lands in this zone's Quests until you change zones.",
 		"A quest whose log header or tag changes is placed again at once, not only at the next zone change.",
