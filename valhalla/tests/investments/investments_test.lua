@@ -15,7 +15,7 @@ ns.modules.worldmap = { key = "worldmap", enabled = true }
 function ns.modules.worldmap.TabAway(away) ns.modules.worldmap.away = away end   -- (Map/Panel.lua: its menu put away on the other tabs)
 assert(loadfile(root .. "UI/Style.lua"))("Valhalla", ns)   -- (v0.4.2: the look, loaded after Core.lua)
 assert(loadfile(root .. "Links.lua"))("Valhalla", ns)
-for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Data/Forever/Recipes", "Data/Forever/TopSkills", "Craft", "Merchant", "AHPanel" }) do
+for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Tooltip", "Data/Forever/Recipes", "Data/Forever/TopSkills", "Craft", "Trainer", "Merchant", "AHPanel" }) do
   assert(loadfile(root .. (f:find("/") and f or ("Investments/" .. f)) .. ".lua"))("Valhalla", ns)   -- (the TOC's order)
 end
 local mod = ns:GetModule("invest")
@@ -2320,14 +2320,22 @@ print("== 34. v0.4.2.3: Top 10 filtered: All | Crafted | Harvested, a profession
     W.Click(top.level)
     W.Click(top.level.menu.items[2])
     r = Ids(1)
-    ok(I.S.topBracket == "1" and #r == 2 and r[1] == 2447 and r[2] == 785 and top.note:IsShown() and top.note._text:find("^1 Herbalism items with no known skill level are hidden"),
-      tag .. "1-150: Peacebloom and Mageroyal; Bloodvine (no known level) hidden and counted", top.note._text)
+    -- (1.2.0) an unknown level: shown at every level, marked "?" (was hidden and counted)
+    local function Both() local t = {} for c2 = 1, 2 do for _, id in ipairs(Ids(c2)) do t[id] = true end end return t end
+    local function Mark(id) for c2 = 1, 2 do for _, rr in ipairs(top.cols[c2].rows) do if rr:IsShown() and rr.cell.id == id then return rr.cell.suffix end end end end
+    local b = Both()
+    ok(I.S.topBracket == "1" and b[2447] and b[785] and b[19726] and not b[13463] and Mark(19726) == Mk.UNKNOWN_MARK and Mark(2447) == nil and Mark(785) == nil
+      and top.cols[1].rows[1].cell.name._text:sub(-#Mk.UNKNOWN_MARK) ~= Mk.UNKNOWN_MARK
+      and top.note:IsShown() and top.note._text:find("^%? 1 shown with no known Herbalism skill level yet: they show at every level%. Open a Herbalism trainer"),
+      tag .. "1-150: Peacebloom and Mageroyal; Bloodvine (no known level) shown too, marked ?, the note says why", top.note._text)
     W.Click(top.level) W.Click(top.level.menu.items[4])
-    r = Ids(1)
-    ok(I.S.topBracket == "226" and #r == 1 and r[1] == 13463 and top.level.text._text == "226-300", tag .. "226-300: Dreamfoil only (one bracket at a time)")
+    b = Both()
+    ok(I.S.topBracket == "226" and b[13463] and b[19726] and not b[2447] and not b[785] and top.level.text._text == "226-300", tag .. "226-300: Dreamfoil, and Bloodvine marked ? (one bracket at a time)")
     W.Click(top.level) W.Click(top.level.menu.items[5])
-    ok(#Ids(1) == 0 and top.empty:IsShown() and top.empty._text:find("No Herbalism (301-375+) item moved", 1, true) and top.note:IsShown() and not top.cols[1]:IsShown(),
-      tag .. "301-375+: nothing; says so, and the hidden count still shown", top.empty._text)
+    b = Both()
+    local n = 0 for _ in pairs(b) do n = n + 1 end
+    ok(n == 1 and b[19726] and Mark(19726) == Mk.UNKNOWN_MARK and not top.empty:IsShown() and top.note:IsShown(),
+      tag .. "301-375+: only Bloodvine (unknown: every level), marked ?", top.note._text)
     -- Crafted: Mining isn't offered; Alchemy 226-300
     W.Click(top.kinds[2])
     ok(I.S.topKind == "craft" and I.S.topProf == 0 and I.S.topBracket == "all" and not top.level:IsShown(), tag .. "Crafted: the profession and level start over")
@@ -2338,7 +2346,9 @@ print("== 34. v0.4.2.3: Top 10 filtered: All | Crafted | Harvested, a profession
     W.Click(alch)
     W.Click(top.level) W.Click(top.level.menu.items[4])
     local f2 = Ids(2)
-    ok(#f2 == 1 and f2[1] == 3387 and top.note._text:find("^1 Alchemy items", 1) and #Ids(1) == 0, tag .. "Alchemy 226-300: Limited Invulnerability Potion falling; Minor Mana Potion hidden, counted", table.concat(f2, ","))
+    local has = {} for _, id in ipairs(f2) do has[id] = true end
+    ok(#f2 == 2 and has[3387] and has[2455] and Mark(2455) == Mk.UNKNOWN_MARK and Mark(3387) == nil and top.note._text:find("^%? 1 shown with no known Alchemy skill level") and #Ids(1) == 0,
+      tag .. "Alchemy 226-300: Limited Invulnerability Potion falling; Minor Mana Potion too, marked ?", table.concat(f2, ","))
   end
   St.SetLook("profession")
   -- kept between sessions (ValhallaInvestDB.settings), a saved value that no longer fits starts over
@@ -2648,6 +2658,7 @@ print("== 36. v0.4.2.7: Harvest's Known only, titles that fit, one lit header, o
   V.loading, V.loadingCount = {}, 0   -- (the items earlier tests left unanswered)
   W.uncached[2589] = true W.uncached[765] = true
   mp:ShowSub("results")
+  rf.cache = nil   -- (1.2.0: a scan's rows are read once; a cold game cache, as at login, read afresh)
   I.S.sortResults = "name:asc" rf.dirty = true mp:Refresh()
   local lastIds = {} for _, e in ipairs(rf.list) do lastIds[#lastIds + 1] = e.name or "?" end
   ok(#loads == 2 and rf.loadNote:IsShown() and rf.loadNote._text:find("2 items", 1, true) and rf.list[#rf.list].name == nil and rf.list[#rf.list - 1].name == nil,
@@ -3089,6 +3100,251 @@ print("== 39. 1.0.1: Reagents Market | Owned (Owned: vendor moved to Market), Cr
   ok(one, "a strip one line high: its titles stay on one line (the name gives way)")
   head.h, head.sig = keepH, nil
   mp:Refresh()
+  ok(#W.sizeErrors == errs0, "no handler error")
+end)()
+
+print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's bars and trainers, the History graph's hover")
+;(function()
+  local Mk, Sc, V, P, R = I.Market, I.Scan, I.Views, I.Tooltip, I.Trainer
+  local errs0 = #W.sizeErrors
+  local GT = GameTooltip
+  local keepGT = { GT.SetOwner, GT.AddLine, GT.Show, GT.Hide, GT.GetOwner, GT.SetHyperlink }
+  local tip = { lines = {} }
+  GT.SetOwner = function(self, o) tip.owner = o tip.lines = {} tip.shown = false end
+  GT.GetOwner = function() return tip.owner end
+  GT.AddLine = function(self, t, r, g, b) tip.lines[#tip.lines + 1] = { t, r, g, b } end
+  GT.Show = function() tip.shown = true end
+  GT.Hide = function() tip.shown = false tip.owner = nil end
+  GT.SetHyperlink = function() end
+  local function Has(pat) for _, l in ipairs(tip.lines) do if tostring(l[1]):find(pat) then return true end end return false end
+
+  print("-- item tooltips")
+  ok(I.SETTINGS.ahTooltip == true and I.S.ahTooltip == true, "setting 'AH price on item tooltips': on by default")
+  Slash("tab", "settings")
+  local sp = T.Views().settings.page
+  ok(sp.ahTooltip and sp.ahTooltip.label._text == "AH price on item tooltips" and sp.ahTooltip.tick:IsShown(), "Settings > AH Market: the box, ticked")
+  -- the hook: TooltipDataProcessor's post-call for items (once)
+  local posted = {}
+  TooltipDataProcessor = { AddTooltipPostCall = function(kind, fn) posted[#posted + 1] = { kind, fn } end }
+  Enum.TooltipDataType = { Item = 0 }
+  P.hooked = nil
+  ok(P.Hook() == "processor" and #posted == 1 and posted[1][1] == 0 and posted[1][2] == P.OnItem, "hooked through TooltipDataProcessor (items)")
+  P.Hook()
+  ok(#posted == 1, "hooked once")
+  local hm = Sc.Market("Tip", true)
+  local tm = math.floor(W.now / 60) - hm.base
+  hm.scans = { { t = tm, kind = "full", n = 3, items = 3 } }
+  hm.cur[2589] = ("%d,%d,%d,%d"):format(1234, 40, 4, tm)
+  hm.cur[2770] = ("%d,%d,%d,%d"):format(0, 5, 1, tm)
+  Mk.house = "Tip"
+  local keepBags, keepBank, keepSeen, keepAcc, keepAccSeen = I.char.bags, I.char.bank, I.char.bankSeen, I.db.account.bank, I.db.account.bankSeen
+  I.char.bags, I.char.bank, I.char.bankSeen, I.db.account.bank, I.db.account.bankSeen = { [2589] = 5 }, {}, nil, {}, nil
+  local l = P.Lines(2589)
+  ok(#l == 2 and l[1] == "AH lowest: 12s 34c each (just now)" and l[2] == "You have 5: 61s 70c", "bags only (bank never seen): lowest each and 5 x lowest", table.concat(l, " | "))
+  I.char.bankSeen, I.char.bank[2589] = W.now, 3
+  l = P.Lines(2589)
+  ok(#l == 2 and l[2] == "You have 8 (bags 5, bank 3): 98s 72c", "the bank seen: bags + bank, split shown", l[2])
+  I.char.bags[2589], I.char.bank[2589] = 1, nil
+  l = P.Lines(2589)
+  ok(#l == 1 and l[1]:find("^AH lowest"), "holding 1: the price only")
+  I.char.bags[2589] = 5
+  ok(#P.Lines(2320) == 0, "an item not in your scans: no line")
+  ok(#P.Lines(2770) == 0, "none listed in the last scan: no line")
+  Mk.house = "NoSuchHouse"
+  ok(#P.Lines(2589) == 0, "no scan data for the house: no line")
+  Mk.house = "Tip"
+  W.bind = { [2589] = 1 }
+  ok(#P.Lines(2589) == 0, "bind on pickup: no line")
+  W.bind = nil
+  ITEM_SOULBOUND = "Soulbound"
+  ok(#P.Lines(2589, { id = 2589, lines = { { leftText = "Linen Cloth" }, { leftText = "Soulbound" } } }) == 0, "a soulbound one (its tooltip says so): no line")
+  W.Click(sp.ahTooltip)
+  ok(I.S.ahTooltip == false and #P.Lines(2589) == 0, "setting off: no line")
+  W.Click(sp.ahTooltip)
+  ok(I.S.ahTooltip == true, "setting on again")
+  -- the post-call on the game's tooltips
+  tip.lines = {}
+  P.OnItem(GT, { id = 2589 })
+  ok(#tip.lines == 2 and tip.lines[1][1]:find("^AH lowest") and tip.lines[1][2] == P.R, "GameTooltip: two lines added (Valhalla's gold)")
+  ItemRefTooltip = W.NewFrame("GameTooltip")
+  local ref = {}
+  ItemRefTooltip.AddLine = function(self, t) ref[#ref + 1] = t end
+  P.OnItem(ItemRefTooltip, { id = 2589 })
+  ok(#ref == 2, "ItemRefTooltip (a clicked link): the same two lines")
+  local other, n = W.NewFrame("GameTooltip"), 0
+  other.AddLine = function() n = n + 1 end
+  P.OnItem(other, { id = 2589 })
+  ok(n == 0, "other tooltips (compare, addons'): nothing")
+  -- Valhalla's own rows: the post-call's lines, not AH Market's again
+  V.ItemTooltip(UIParent, 2589, Mk.Lines)
+  ok(not Has("^Valhalla AH"), "a Valhalla row's tooltip: AH Market's own lines not added (the tooltip already has them)")
+  I.S.ahTooltip = false
+  V.ItemTooltip(UIParent, 2589, Mk.Lines)
+  ok(Has("^Valhalla AH %(Tip%): lowest 12s 34c each"), "setting off: a Valhalla row keeps AH Market's lines")
+  I.S.ahTooltip = true
+  I.char.bags, I.char.bank, I.char.bankSeen, I.db.account.bank, I.db.account.bankSeen = keepBags, keepBank, keepSeen, keepAcc, keepAccSeen
+
+  print("-- Scan results: a scan read once, each column sorted once, the other way flipped, arrivals one by one")
+  local pm = Sc.Market("Perf", true)
+  local ptm = math.floor(W.now / 60) - pm.base
+  pm.scans = { { t = ptm, kind = "full", n = 300, items = 120 } }
+  for i = 1, 120 do
+    local id = 810000 + i
+    W.items[id] = { ("Perf Item %03d"):format(121 - i), 134400 }
+    -- (ties on purpose: 6 prices; every 10th none listed)
+    pm.cur[id] = ("%d,%d,%d,%d"):format(i % 10 == 0 and 0 or 100 * (i % 6 + 1), i % 7 + 1, i % 3 + 1, ptm)
+  end
+  Mk.house = "Perf"
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  mp:ShowSub("results")
+  local rf = mp.subs.results
+  rf.cache = nil
+  I.S.sortResults = "min:asc" rf.dirty = true mp:Refresh()
+  local C = rf.cache
+  local builds, sorts = rf.cacheBuilds, C.sorts
+  ok(C and #C.all == 120 and #rf.list == 120 and C.orders.min, "the scan read once into the cache; Lowest sorted", #rf.list)
+  -- the cached orders are exactly M.SortBy's, both ways, every column
+  local same = true
+  for _, c in ipairs(Mk.COLS.results) do
+    for _, d in ipairs({ false, true }) do
+      local want = {} for i, e in ipairs(C.all) do want[i] = e end
+      Mk.SortBy(want, "results", c.key, d)
+      local got = Mk.ResultsOrder(C, c.key, d)
+      for i = 1, #want do if want[i] ~= got[i] then same = false end end
+    end
+  end
+  ok(same, "every column, both directions: the cached / flipped order is the same as a full sort (ties by id, empty last)")
+  sorts = C.sorts
+  W.Click(rf.head.buttons[2])   -- (Lowest again: Highest)
+  ok(I.S.sortResults == "min:desc" and C.sorts == sorts and rf.cacheBuilds == builds and rf.list == C.desc.min, "the other direction: flipped from the cached sort (no sort, no re-read)")
+  local firstPage = rf.list[1]
+  rf.Page(2)
+  local e = rf.list[rf.per + 1]
+  ok(rf.rows[1].cell.id == e.id and rf.list[1] == firstPage and rf.cacheBuilds == builds and C.sorts == sorts, "page 2: the next rows of the same sort (nothing read or sorted again)")
+  ok(rf.list[1].min >= rf.list[2].min and rf.list[#rf.list].min == 0, "Highest first, none listed last")
+  rf.search:SetText("perf item 00")
+  ok(#rf.list == 9 and rf.cacheBuilds == builds and C.sorts == sorts and rf.offset == 0, "a search filters the cached order (page 1)", #rf.list)
+  rf.search:SetText("")
+  -- names arriving: only that item checked, the list redrawn at most once a second, at once when the last is in
+  local loads = {}
+  local keepItem = Item
+  Item = { CreateFromItemID = function(_, id) return { ContinueOnItemLoad = function(_, fn) loads[#loads + 1] = { id = id, fn = fn } end } end }
+  V.loading, V.loadingCount = {}, 0
+  for i = 1, 5 do W.uncached[810000 + i] = true end
+  rf.cache = nil
+  I.S.sortResults = "name:asc" rf.dirty = true mp:Refresh()
+  C = rf.cache
+  local r0, ck0 = rf.redraws or 0, rf.checked or 0
+  W.timers = {}
+  ok(#loads == 5 and rf.wantN == 5 and rf.loadNote:IsShown(), "5 names missing: 5 asked for, said")
+  W.uncached[810001] = nil loads[1].fn()
+  ok(rf.checked == ck0 + 1 and rf.wantN == 4 and (rf.redraws or 0) == r0 and #W.timers == 1, "one in: only it checked, the redraw waits (one timer)")
+  W.uncached[810002] = nil loads[2].fn()
+  ok(rf.checked == ck0 + 2 and (rf.redraws or 0) == r0 and #W.timers == 1, "another: still the one timer (at most once a second)")
+  W.RunTimers()
+  ok(rf.redraws == r0 + 1 and C.byId[810001].name and C.byId[810002].name, "a second later: one redraw, the new names in the cache")
+  for k = 3, 5 do W.uncached[810000 + k] = nil loads[k].fn() end
+  ok(rf.redraws == r0 + 2 and rf.wantN == 0 and not rf.loadNote:IsShown(), "the last in: redrawn at once")
+  local az = true
+  for k = 2, #rf.list do if not rf.list[k - 1].name or rf.list[k - 1].name:lower() > rf.list[k].name:lower() then az = false end end
+  ok(az and rf.cacheBuilds == builds + 1, "A-Z through the whole list (the scan read once more only for the cold start)")
+  Item = keepItem
+  W.timers = {}
+  -- a new scan: read again
+  pm.scans[#pm.scans + 1] = { t = ptm + 61, kind = "full", n = 1, items = 120 }
+  mp:Refresh()
+  ok(rf.cacheBuilds == builds + 2 and rf.cache ~= C, "a new scan: the cache read again")
+  I.S.sortResults = nil
+
+  print("-- Top 10: Listed bars, trainers' skill levels")
+  local top = mp.subs.top
+  local sp1 = top.cols[1].rows[1].spark
+  local vals = { 1000, 900, 800, 700, 10, 20, 30, 40, 50, 60, 70, 80 }
+  sp1.Set(vals)
+  local shown = 0 for _, b in ipairs(sp1.bars) do if b:IsShown() then shown = shown + 1 end end
+  ok(#sp1.bars == 8 and shown == 8 and sp1.max == 80 and sp1.bars[8]._h == 16 and sp1.bars[1]._h == 2, "the last 8 scans, scaled to those 8 (an older high doesn't flatten them)", sp1.max)
+  sp1.Set({ 5, 10 })
+  shown = 0 for _, b in ipairs(sp1.bars) do if b:IsShown() then shown = shown + 1 end end
+  ok(shown == 2 and sp1.bars[8]._h == 16 and sp1.bars[7]._h == 8, "fewer than 8: only those, right-aligned")
+  -- a trainer: its services through the window's filters
+  W.items[3383] = { "Elixir of Wisdom", 134711 } W.items[2455] = { "Minor Mana Potion", 134851 } W.items[118] = { "Minor Healing Potion", 134829 }
+  local services = {
+    { "Alchemy", "header" },
+    { "Journeyman Alchemy", "available", skill = { "Alchemy", 50 } },
+    { "Minor Healing Potion", "used", skill = { "Alchemy", 1 }, link = "|Hitem:118|h[Minor Healing Potion]|h" },
+    { "Elixir of Wisdom", "unavailable", skill = { "Alchemy", 90 }, link = "|Hitem:3383|h[Elixir of Wisdom]|h" },
+    { "Minor Mana Potion", "available", skill = { "Alchemy", 25 } },   -- (no item link: by name)
+  }
+  local filters, setLog = { available = true, unavailable = false, used = false }, {}
+  local function Visible() local t = {} for _, s in ipairs(services) do if s[2] == "header" or filters[s[2]] then t[#t + 1] = s end end return t end
+  GetTrainerServiceTypeFilter = function(t) return filters[t] end
+  SetTrainerServiceTypeFilter = function(t, v) setLog[#setLog + 1] = t .. "=" .. tostring(v) filters[t] = v and true or false end
+  GetNumTrainerServices = function() return #Visible() end
+  GetTrainerServiceInfo = function(i) local s = Visible()[i] if s then return s[1], s[2] end end
+  GetTrainerServiceSkillReq = function(i) local s = Visible()[i] if s and s.skill then return s.skill[1], s.skill[2], true end end
+  GetTrainerServiceItemLink = function(i) local s = Visible()[i] return s and s.link end
+  W.tradeskill = true
+  IsTradeskillTrainer = function() return W.tradeskill end
+  ok(Mk.TopSkill("craft", 171, 2455) == false and Mk.TopSkill("craft", 171, 3383) ~= 90, "before: Minor Mana Potion unknown (bundled), Elixir of Wisdom not 90")
+  I.db.trainer = nil
+  ns.printed = {}
+  W.Fire("TRAINER_SHOW")
+  local tr = I.db.trainer and I.db.trainer[171]
+  ok(tr and tr.items[118] == 1 and tr.items[3383] == 90 and tr.items[2455] == 25 and tr.n == 3, "TRAINER_SHOW: every recipe's skill recorded, used and unavailable ones too (all filters on); the rank itself skipped")
+  ok(filters.available == true and filters.unavailable == false and filters.used == false and table.concat(setLog, ",") == "unavailable=true,used=true,unavailable=false,used=false",
+    "the player's filters put back as they were", table.concat(setLog, ","))
+  ok(ValhallaInvestDB.trainer == I.db.trainer and Printed("recorded 3 skill levels from this Alchemy trainer"), "saved (ValhallaInvestDB.trainer, account-wide) and said once")
+  ok(Mk.TopSkill("craft", 171, 2455) == 25 and Mk.TopSkill("craft", 171, 3383) == 90 and Mk.TopSkill("harvest", 182, 2447) == 1, "Top 10 takes a recorded level over the bundled one (crafts)")
+  local list = { { id = 3383 }, { id = 2455 }, { id = 3387 } }
+  local o1, n1, u1 = Mk.TopFilter(list, "craft", 171, "1")
+  local o2 = Mk.TopFilter(list, "craft", 171, "151")
+  ok(#o1 == 2 and o1[1].id == 3383 and n1 == 0 and not u1[3383] and #o2 == 0, "Elixir of Wisdom (90) and Minor Mana Potion (25) in 1-150, not in 151-225")
+  ns.printed = {} setLog = {}
+  W.Fire("TRAINER_SHOW")
+  ok(#ns.printed == 0 and I.db.trainer[171].n == 3, "the same trainer again: nothing new, nothing said")
+  W.tradeskill = false
+  setLog = {}
+  ok(R.Read() == nil and #setLog == 0, "a class trainer: not read, its filters untouched")
+  W.tradeskill = true
+  local keepInfo = GetTrainerServiceInfo
+  GetTrainerServiceInfo = function() error("broken") end
+  setLog = {}
+  ok(R.Read() == nil and filters.unavailable == false and filters.used == false and #setLog == 4, "a read that fails: the filters still put back")
+  GetTrainerServiceInfo = keepInfo
+
+  print("-- History: hover a point")
+  ok(Mk.Nearest({ { 4, 1 }, { 100, 1 }, { 300, 1 } }, 180) == 2 and Mk.Nearest({ { 4, 1 }, { 100, 1 }, { 300, 1 } }, 250) == 3 and Mk.Nearest({}, 5) == nil, "the nearest point by x")
+  local hh = Sc.Market("Perf")
+  local id = 810007
+  hh.hist[id] = ("%d:%d:%d:%d;%d:%d:%d:%d;%d:%d:%d:q"):format(ptm - 600, 150, 30, 3, ptm - 300, 200, 25, 2, ptm - 60, 180, 22)
+  Mk.historyID = id
+  mp:ShowSub("history")
+  local hf = mp.subs.history
+  for _, style in ipairs({ "lines", "bars" }) do
+    I.S.graphStyle = style
+    hf.Refresh()
+    ok(#hf.xy == 3 and hf.hover and hf.hover._mouse == true and not hf.dot:IsShown(), style .. ": one overlay over the plot, no dot yet")
+    hf.plot.GetLeft = function() return 1000 end
+    hf.plot.GetEffectiveScale = function() return 1 end
+    GetCursorPosition = function() return 1000 + hf.xy[3][1] - 1, 50 end
+    W.Run(hf.hover, "OnEnter")
+    hf.hover._scripts.OnUpdate(hf.hover)
+    local dp = hf.dot._points[1]
+    ok(hf.hovered == 3 and hf.dot:IsShown() and dp[4] == hf.xy[3][1] and dp[5] == hf.xy[3][2] and tip.owner == hf.hover and tip.shown,
+      style .. ": the nearest point (the last), a dot on it, the tooltip")
+    ok(tip.lines[1][1] == "1s 80c" and Has("22 units listed") and Has("Quick scan") and Has("%(") , style .. ": its price, time, units, quick scan", tip.lines[2] and tip.lines[2][1])
+    GetCursorPosition = function() return 1000 + hf.xy[2][1] + 2, 50 end
+    hf.hover._scripts.OnUpdate(hf.hover)
+    ok(hf.hovered == 2 and tip.lines[1][1] == "2s 00c" and Has("25 units in 2 auctions") and Has("Full scan"), style .. ": moved: the middle point (a full scan)")
+    W.Run(hf.hover, "OnLeave")
+    ok(not hf.dot:IsShown() and not tip.shown and hf.hover._scripts.OnUpdate == nil, style .. ": left: dot and tooltip gone, no OnUpdate")
+  end
+  I.S.graphStyle = "lines"
+  Mk.historyID = nil
+  Mk.house = nil
+  GT.SetOwner, GT.AddLine, GT.Show, GT.Hide, GT.GetOwner, GT.SetHyperlink = unpack(keepGT)
   ok(#W.sizeErrors == errs0, "no handler error")
 end)()
 

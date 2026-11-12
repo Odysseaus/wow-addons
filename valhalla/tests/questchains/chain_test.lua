@@ -14,7 +14,12 @@ function Frame.SetClampedToScreen(self, v) self._clamped = v end
 function Frame.SetFrameStrata(self, s) self._strata = s end
 function Frame.GetTop(self) return rawget(self, "_top") or 700 end
 function Frame.RegisterForClicks(self, ...) self._clicks = { ... } end
-function Frame.HookScript(self, k, fn) self._hooked = (self._hooked or 0) + 1 end
+function Frame.HookScript(self, k, fn)
+  self._hooked = (rawget(self, "_hooked") or 0) + 1
+  local h = rawget(self, "_hk") or {} self._hk = h
+  h[k] = h[k] or {} table.insert(h[k], fn)
+end
+local function RunHooks(f, k) for _, fn in ipairs((rawget(f, "_hk") or {})[k] or {}) do fn(f) end end
 Frame.protectedCalls = 0
 
 -- the game: quests completed, the player, the menu, Escape's list
@@ -254,6 +259,15 @@ b45._scripts.OnClick(b45)
 QC.SetView(false)
 ok(not Shown(win), "turning the view off closes the window")
 QC.SetView(true)
+-- (1.2.0) the map window (Valhalla's main window) closing closes the chain too
+b45._scripts.OnClick(b45)
+ok(Shown(win) and QC.ShownFor() == 45, "open again (quest 45)")
+local mapHooks = #((rawget(WorldMapFrame, "_hk") or {}).OnHide or {})
+WorldMapFrame:Hide() RunHooks(WorldMapFrame, "OnHide")
+ok(mapHooks == 1 and not Shown(win) and QC.ShownFor() == nil, "the map window hides: the chain window closes with it (one hook, made once)", mapHooks)
+WorldMapFrame:Show()
+b45._scripts.OnClick(b45) b45._scripts.OnClick(b45)
+ok(#WorldMapFrame._hk.OnHide == 1, "opening it again adds no second hook")
 
 ---------------------------------------------------------------------------
 print("== 7. /valhalla chain coverage, combat, off")

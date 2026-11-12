@@ -16,7 +16,7 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: 1.1.0
+## Version: 1.2.0
 ## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
@@ -118,9 +118,11 @@ Investments\Scan.lua
 Investments\Tabs.lua
 Investments\Views.lua
 Investments\Market.lua
+Investments\Tooltip.lua
 Data\Forever\Recipes.lua
 Data\Forever\TopSkills.lua
 Investments\Craft.lua
+Investments\Trainer.lua
 Investments\Merchant.lua
 Investments\AHPanel.lua
 

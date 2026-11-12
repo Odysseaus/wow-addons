@@ -4,6 +4,17 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.0", date = "2026-11-12", heads = { [1] = "New", [5] = "Changed", [8] = "Fixed", [9] = "Note", }, items = {
+		"|cff6e2c0aAH price on item tooltips|r: every item tooltip ends with the AH's lowest price from your last scan (the house shown in AH Market) and how old it is; holding 2 or more (bags + bank), what they're worth at it. Nothing for an item with no scan data or a soulbound one. Settings > AH Market to turn it off.",
+		"|cff6e2c0aHistory: hover the graph|r for the nearest point's price, scan time, units listed and full or quick scan (lines and bars).",
+		"|cff6e2c0aTop 10 learns skill levels from trainers|r: open a profession trainer and Valhalla reads the skill every recipe it teaches needs (your trainer filters are put back as they were); the level filter uses these first.",
+		"Top 10: an item with no known skill level now shows at every level, marked ?, instead of being hidden.",
+		"|cff6e2c0aScan results is faster|r: a scan is read once, each column sorted once (the other direction flipped), and arriving item names re-sort the list at most once a second. Your sort stays as you page.",
+		"Top 10's Listed bars: the last 8 full scans, scaled to those 8.",
+		"Valhalla's own item rows no longer repeat the AH lines under their tooltips.",
+		"The quest chain window closes when the map window closes.",
+		"Restart the game after installing (new files).",
+	} },
 	{ version = "1.1.0", date = "2026-11-11", heads = { [1] = "New", [5] = "Note", }, items = {
 		"|cff6e2c0aChain quest view|r (the quest log's gear menu, or Valhalla's menu > More > Quest log; off at first): the Track tick beside each quest is hidden, and a quest that's part of a chain gets a chain button in its place.",
 		"Click a chain button: a window to the right of the map lists the chain's quests in order, first at the top. Done ones are grey; the quest you clicked is highlighted (In your log on the ones you have).",
