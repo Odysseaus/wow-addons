@@ -1607,7 +1607,7 @@ do
   local have = { [A] = 1, [B] = 1 }
   local f1 = Cr.Price("CraftTest", Cr.Resolve(901001), { owned = "free" }, have)
   local v1 = Cr.Price("CraftTest", Cr.Resolve(901001), { owned = "vendor" }, have)
-  ok(f1.cost == 100 and f1.can == 0 and v1.cost == 120, "owned free: 1 thread bought, the dye yours; at vendor value: +10c each", f1.cost .. " " .. v1.cost)
+  ok(f1.cost == 100 and f1.can == 0 and v1.cost == 100, "Owned: 1 thread bought, the dye yours (1.0.1: no vendor value; an old \"vendor\" prices as Owned here, Market after the migration)", f1.cost .. " " .. v1.cost)
   local keepBags, keepBank = I.char.bags, I.char.bank
   I.char.bags, I.char.bank = { [A] = 1, [B] = 1 }, { [A] = 5 }
   local rb = Cr.Rank("CraftTest", 197, { owned = "free", bank = true })
@@ -1630,7 +1630,7 @@ do
   for _ = 1, 200 do if not Cr.Running() then break end Cr.Tick() end
   mp:Refresh()
   local row = cf.rows[1]
-  ok(row:IsShown() and row.cell.id == 910001 and row.cell.icon._tex ~= nil and row.cost._text == Sc.Money(500) and row.known._text:find("*", 1, true), "the Top 10: item cells (icon, name), cost, known", row.cost._text)
+  ok(row:IsShown() and row.cell.id == 910001 and row.cell.icon._tex ~= nil and row.cost._text == Sc.Money(500) and row.known == nil, "the Top 10: item cells (icon, name), cost (1.0.1: no Known column)", row.cost._text)
   ok(cf.missing._text:find("Can't price (1)", 1, true) and cf.missing._text:find("Test Unpriced", 1, true) and cf.unlisted._text:find("Test Unlisted", 1, true), "under it: can't price, not listed", cf.missing._text)
   local inShown = false for _, id in ipairs(Sc.shown or {}) do if id == X then inShown = true end end
   ok(inShown, "the unpriced reagent goes to the quick scan")
@@ -1769,7 +1769,7 @@ do
   I.S.craftKnownOnly = true mp:Refresh()
   for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
   mp:Refresh()
-  ok(Mk.craftProf == 129 and not cf.menu:IsShown() and cf.rows[1]:IsShown() and cf.rows[1].known._text:find("*", 1, true), "First Aid picked, Known only: its known crafts listed", cf.status._text)
+  ok(Mk.craftProf == 129 and not cf.menu:IsShown() and cf.rows[1]:IsShown() and cf.list[1].known, "First Aid picked, Known only: its known crafts listed", cf.status._text)
   I.S.craftKnownOnly = false
   -- pages: 40 priced crafts
   I.db.account.recipes[999] = { name = "Test Paged", ids = (function() local t = {} for k = 1, 40 do t[k] = 960000 + k end return table.concat(t, ",") end)(), t = W.now }
@@ -2424,7 +2424,7 @@ print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), 
   mp:ShowSub("craft")
   local cf = mp.subs.craft
   local cl = {} for _, b in ipairs(cf.head.craft) do cl[#cl + 1] = b.text._text end
-  ok(table.concat(cl, "|") == "Craft (makes)|Cost to Make|Sell at|Profit/item|Margin|Listed|Known|Can make|Total", "Crafts' headers: Cost to Make", table.concat(cl, "|"))
+  ok(table.concat(cl, "|") == "Craft (makes)|Cost to Make|Sell at|Profit/item|Margin|Listed|Can make|Total", "Crafts' headers: Cost to Make (1.0.1: no Known)", table.concat(cl, "|"))
   al, why = Aligned(cf.head.craftStrip, cf.rows[1], cf.rows[1].craft)
   ok(al, "Crafts: every header over its own column", why)
   local keepGP, keepGPI = GetProfessions, GetProfessionInfo
@@ -2696,7 +2696,7 @@ print("== 36. v0.4.2.7: Harvest's Known only, titles that fit, one lit header, o
   ok(Has(top.kinds[1], "all") and Has(top.kinds[2], "crafted") and Has(top.kinds[3], "harvested") and Has(top.prof, "topProf") and Has(top.level, "topLevel"), "Top 10's filters")
   ok(Has(rf.search, "search") and Has(mf.scope.boxes[1], "bags") and Has(mf.scope.boxes[2], "bank") and Has(hf.range.boxes[1], "day") and Has(hf.range.boxes[2], "week"), "Scan results, My items, History")
   ok(Has(cf.drop, "craftProf") and Has(cf.modeCrafts, "crafts") and Has(cf.modeHarvest, "harvest") and Has(cf.filter, "filter")
-    and Has(cf.owned.boxes[1], "market") and Has(cf.owned.boxes[2], "free") and Has(cf.owned.boxes[3], "vendor")
+    and Has(cf.owned.boxes[1], "market") and Has(cf.owned.boxes[2], "free") and cf.owned.boxes[3] == nil
     and Has(cf.countDrop, "craftCount") and Has(cf.invest, "invest"), "Craft's filters (v0.4.2.8: the Count dropdown, the Invest Amount)")
   mp:ShowSub("craft")
   Mk.craftMode = "crafts"
@@ -2748,9 +2748,8 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   ok(Mk.HeadTip("craft", "total"):find("5%", 1, true) and Mk.HeadTip("craft", "total"):find("gold spent", 1, true), "Alliance: 5%; Total: less the gold spent with an Invest Amount")
   local keepOwned = I.S.craftOwned
   I.S.craftOwned = "free" local tf = Mk.HeadTip("craft", "cost")
-  I.S.craftOwned = "vendor" local tv = Mk.HeadTip("craft", "cost")
   I.S.craftOwned = "market" local tm = Mk.HeadTip("craft", "cost")
-  ok(tf:find("Owned free", 1, true) and tv:find("Owned: vendor", 1, true) and tm:find("Market:", 1, true), "Cost to Make: the Reagents mode in use, named")
+  ok(tf:find("Owned:", 1, true) and not tf:find("vendor", 1, true) and tm:find("Market:", 1, true), "Cost to Make: the Reagents mode in use, named (1.0.1: Owned)")
   I.S.craftOwned = keepOwned
   ok(V.TIP_DELAY == 1, "every tooltip after 1 s (v0.4.2.9)")
   -- 2. Harvest: no Margin; a saved Margin sort: the default
@@ -2812,9 +2811,6 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   ok(Mk.Afford(e, 2600, { [1] = 4, [2] = 1 }, "market") == 5, "Market: yours priced too (as Cost to Make)")
   local nf, cf2 = Mk.Afford(e, 1000, { [1] = 4, [2] = 1 }, "free")
   ok(nf == 3 and cf2 == 2 * 100 + 2 * 300, "Owned free: yours first (free), then bought: 3 for 800 (a 4th: 1300)", nf .. " " .. cf2)
-  local nv, cv = Mk.Afford(e, 1000, { [1] = 4 }, "vendor")
-  local _, _, tv8 = Mk.Afford(e, 1000, { [1] = 4 }, "vendor")
-  ok(nv == 2 and cv == 2 * 300 and tv8 == 2 * 300 + 4 * 5, "Owned: vendor (v0.4.2.9): yours not paid from the amount (2 for 600); Total's cost adds their vendor value", nv .. " " .. cv .. " " .. tv8)
   ok(Mk.Afford(e, 499, {}, "market") == 0 and Mk.Afford({ parts = {} }, 1, {}, "market") == Mk.INVEST_MAX, "less than one craft: 0; no reagents: capped")
   Sc.SellPrice = Sp
   -- in the view: 12 crafts of 2 reagents at house Inv8
@@ -2866,7 +2862,7 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   end
   local keepMode = I.S.craftOwned
   local same, n0 = true, 0
-  for _, mode in ipairs({ "market", "free", "vendor" }) do
+  for _, mode in ipairs({ "market", "free" }) do
     I.S.craftOwned = mode
     for _ = 1, 400 do mp:Refresh() if not Cr.Running() then break end Cr.Tick() end
     cf.invest:SetText("") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
@@ -2877,7 +2873,7 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
     if with ~= without or without == "" then same = false end
   end
   I.S.craftOwned = keepMode mp:Refresh()
-  ok(same and n0 > 0, "Profit/item, Margin, Cost to Make (and Sell at) identical with and without an amount: Market, Owned free, Owned: vendor")
+  ok(same and n0 > 0, "Profit/item, Margin, Cost to Make (and Sell at) identical with and without an amount: Market, Owned")
   I.S.sortCraft = "can:desc" mp:Refresh()
   local sorted = true for i = 2, #cf.list do if (Mk.Shown(cf.list[i - 1])) < (Mk.Shown(cf.list[i])) then sorted = false end end
   ok(sorted, "Can make sorts by what it shows (with the amount)")
@@ -2903,7 +2899,7 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   ok(I.S.craftCount == "none" and I.S.mineBank == false and zero and cf.countDrop.text._text == "Count: None", "None: Can make 0, Total - everywhere; My items' setting untouched")
   cf.invest:SetText("10g") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
   local e2 = cf.list[1]
-  ok(e2 and (Mk.Shown(e2)) == math.floor(100000 / e2.cost), "None + an amount: everything bought (amount / Cost to Make)", e2 and ((Mk.Shown(e2)) .. " " .. e2.cost))
+  ok(e2 and (Mk.Shown(e2)) == e2.can and cf.invest.off, "Owned (1.0.1): an amount typed is ignored (the box greyed): what yours make", e2 and ((Mk.Shown(e2)) .. " " .. e2.can))
   cf.invest:SetText("") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
   local hv = Cr.Harvest("Fit", 182, "none", false)
   local hz = true for _, x in ipairs(hv.list) do if x.have ~= 0 or x.total ~= nil then hz = false end end
@@ -2968,24 +2964,20 @@ print("== 38. v0.4.2.9: Invest Amount uses your reagents (Owned modes) first; Ma
   Sc.SellPrice = function(id) return ({ [990001] = 5, [990002] = 25 })[id] or keep.sp(id) end
   local function E() return { id = 990100, out = 990101, qty = 1, sell = 10000, parts = { { id = 990001, n = 2, unit = 100 }, { id = 990002, n = 1, unit = 300 } } } end
   Mk.investAmount = 1000
-  local want = {   -- [Reagents][Count] = { Can make, Total (copper) }
-    market = { none = { 2, 18000 }, bags = { 2, 18000 }, bank = { 2, 18000 } },   -- (Market: Count is None)
-    free = { none = { 2, 18000 }, bags = { 3, 27700 }, bank = { 7, 65500 } },
-    vendor = { none = { 2, 18000 }, bags = { 3, 27655 }, bank = { 7, 65325 } },
-  }
   local bad = {}
-  for _, mode in ipairs({ "market", "free", "vendor" }) do
-    for _, cnt in ipairs({ "none", "bags", "bank" }) do
-      I.S.craftOwned, I.S.craftCount = mode, cnt
-      local n, total = Mk.Shown(E())
-      local w = want[mode][cnt]
-      if n ~= w[1] or math.abs((total or 0) - w[2]) > 0.01 then bad[#bad + 1] = ("%s/%s: %s %s (want %d %d)"):format(mode, cnt, tostring(n), tostring(total), w[1], w[2]) end
-    end
+  for _, cnt in ipairs({ "none", "bags", "bank" }) do
+    I.S.craftOwned, I.S.craftCount = "market", cnt
+    local n, total = Mk.Shown(E())
+    if n ~= 2 or math.abs((total or 0) - 18000) > 0.01 then bad[#bad + 1] = cnt .. ": " .. tostring(n) .. " " .. tostring(total) end
   end
-  ok(#bad == 0, "the worked example, every Reagents mode x Count: yours first, the rest bought with 10s; Total = sale after the cut x Can make - gold spent (vendor: + yours at a vendor's price)", table.concat(bad, "; "))
-  local n, gold, cost = Mk.Afford(E(), 1000, { [990001] = 10, [990002] = 5 }, "vendor")
-  ok(n == 7 and gold == 1000 and cost == 1000 + 10 * 5 + 5 * 25, "Owned: vendor: yours aren't paid from the amount (7 for 10s); their vendor value only in Total")
-  ok(Mk.Afford(E(), 1000, { [990001] = 10, [990002] = 5 }, "market") == 2, "Market: yours never used (Count is None there)")
+  ok(#bad == 0, "Market + 10s, every Count (None there): 2 bought, Total 1g 80s (sale after the cut x 2 - 10s)", table.concat(bad, "; "))
+  ok(Mk.Afford(E(), 1000, { [990001] = 10, [990002] = 5 }, "market") == 2, "Market: yours never used")
+  -- (1.0.1) Owned: the amount kept but not used: Can make and Total are what yours make (yours free)
+  I.S.craftOwned, I.S.craftCount = "free", "bank"
+  local eo = E() eo.can, eo.total = 5, 47500
+  local on, ot = Mk.Shown(eo)
+  ok(Mk.investAmount == 1000 and on == 5 and ot == 47500 and not Mk.InvestOn(), "Owned: the amount ignored (kept): Can make and Total from your reagents")
+  ok(#Mk.OWNED == 2 and Mk.OWNED[1][2] == "Market" and Mk.OWNED[2][1] == "free" and Mk.OWNED[2][2] == "Owned", "Reagents: Market | Owned (no Owned: vendor)")
   Mk.investAmount = nil
   -- 2. the view: Market greys Count and makes it None; the Owned modes bring the choice back
   local SCH = {}
@@ -3022,11 +3014,16 @@ print("== 38. v0.4.2.9: Invest Amount uses your reagents (Owned modes) first; Ma
   ok(cf.list[1] and cf.rows[1].can._text == "2", "Market + 10s: only what the gold buys (2)", cf.rows[1].can._text)
   W.Click(cf.owned.boxes[2])   -- (Owned free)
   Settle()
-  ok(I.S.craftOwned == "free" and not cf.countDrop.locked and cf.countDrop.text._text == "Count: Bags + bank" and cf.rows[1].can._text == "7",
-    "Owned free again: Bags + bank back; with 10s: 7 (yours first)", cf.rows[1].can._text)
+  ok(I.S.craftOwned == "free" and not cf.countDrop.locked and cf.countDrop.text._text == "Count: Bags + bank" and cf.rows[1].can._text == "5"
+    and cf.invest.off and cf.invest._alpha == 0.45 and cf.investTitle._alpha == 0.45 and cf.invest._mouse == false and cf.invest:GetText() == "10s",
+    "Owned again: Bags + bank back; Invest greyed and off (10s kept, ignored): 5 from yours", cf.rows[1].can._text)
+  local r1 = cf.list[1]
+  ok(r1 and r1.cost == 0 and math.abs(r1.total - 5 * r1.net) < 0.01 and cf.rows[1].total._text == Sc.Money(r1.total), "Owned: yours free: Total = 5 x the sale after the cut", r1 and r1.total)
   W.Click(cf.countDrop) W.Click(cf.countDrop.menu.items[2])
   Settle()
-  ok(I.S.craftCount == "bags" and cf.rows[1].can._text == "3", "Bags only with 10s: 3", cf.rows[1].can._text)
+  ok(I.S.craftCount == "bags" and cf.rows[1].can._text == "1", "Owned, Bags only: 1 (A 4, B 1)", cf.rows[1].can._text)
+  W.Click(cf.owned.boxes[1]) Settle()
+  ok(I.S.craftOwned == "market" and not cf.invest.off and cf.invest._alpha == 1 and cf.rows[1].can._text == "2", "Market again: the box on, 10s buys 2", cf.rows[1].can._text)
   -- 3. Harvest: the Invest Amount greyed and off; Count works (no reagents there)
   I.S.craftOwned = "market"
   Mk.craftProf, Mk.craftMode = 182, "harvest"
@@ -3041,6 +3038,56 @@ print("== 38. v0.4.2.9: Invest Amount uses your reagents (Owned modes) first; Ma
   C_TradeSkillUI = keepTS
   I.S.craftOwned, I.S.craftCount, I.char.bags, I.char.bank, Sc.SellPrice, Mk.house, Mk.craftMode = keep.owned, keep.count, keep.bags, keep.bank, keep.sp, keep.house, keep.mode
   Mk.craftProf = nil
+  mp:Refresh()
+  ok(#W.sizeErrors == errs0, "no handler error")
+end)()
+
+print("== 39. 1.0.1: Reagents Market | Owned (Owned: vendor moved to Market), Craft without Known, Owned greys the Invest Amount")
+;(function()
+  local Mk = I.Market
+  local errs0 = #W.sizeErrors
+  -- 1. saved settings: Owned: vendor -> Market; a Known sort -> the default; Owned (free) and Market kept
+  local keepOwned, keepSort = I.S.craftOwned, I.S.sortCraft
+  for _, c in ipairs({ { "vendor", "market" }, { "free", "free" }, { "market", "market" }, { "bogus", "market" } }) do
+    ValhallaInvestDB.settings.craftOwned = c[1]
+    I.InitDB()
+    ok(I.S.craftOwned == c[2], ("a saved Reagents %q: %q"):format(c[1], c[2]), I.S.craftOwned)
+  end
+  ValhallaInvestDB.settings.sortCraft = "known:desc" I.InitDB()
+  ok(I.S.sortCraft == "each:desc", "a saved sort by Known: Profit/item (the default)", I.S.sortCraft)
+  ValhallaInvestDB.settings.sortCraft = "can:asc" I.InitDB()
+  ok(I.S.sortCraft == "can:asc", "another sort: kept")
+  I.S.craftOwned, I.S.sortCraft = keepOwned, keepSort
+  -- 2. Craft's columns: no Known (its tooltip gone too); the Known only box still there
+  local keys = {} for _, c in ipairs(Mk.COLS.craft) do keys[#keys + 1] = c.key end
+  ok(table.concat(keys, ",") == "name,cost,sell,each,margin,listed,can,total" and Mk.HEAD_TIPS.craft.known == nil, "Craft: no Known column", table.concat(keys, ","))
+  I.S.sortCraft = "known:asc"
+  ok(Mk.SortTag("craft") == "each:desc", "a Known sort set at run time: the default too", Mk.SortTag("craft"))
+  I.S.sortCraft = keepSort
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  ok(cf.known and cf.known:IsShown() and #cf.owned.boxes == 2 and cf.owned.boxes[2].label._text == "Owned", "the Known only box kept; Reagents: Market | Owned", cf.owned.boxes[2].label and cf.owned.boxes[2].label._text)
+  ok(Mk.TIPS.free[1] == "Owned" and Mk.TIPS.free[2]:find("Invest Amount is off", 1, true) and Mk.TIPS.vendor == nil and Mk.TIPS.invest[2]:find("Greyed with Owned", 1, true)
+    and Mk.TIPS.craftCount[2]:find("Owned brings", 1, true), "tooltips: Owned, the Invest Amount (Market only), Count")
+  -- (1.0.1) a relayout that sends a title to two lines (or back) wraps it to match (was: two lines wide, one line drawn)
+  local head = cf.head.craftStrip
+  local cost
+  for _, b in ipairs(head.buttons) do if b.key == "cost" then cost = b end end
+  local keepH = head.h
+  head.h, head.sig = Mk.HEAD_H2, nil
+  local wide = {} for _, c in ipairs(Mk.COLS.craft) do wide[c.key] = "1" end
+  wide.total = ("9"):rep(70)   -- (narrow values, one very wide column: the titles must give room)
+  Mk.Relayout(cf, head, "craft", "craft", wide)
+  local twoOk = true for _, b in ipairs(head.buttons) do if (b.text._wrap and true or false) ~= (b.col.two and true or false) then twoOk = false end end
+  ok(twoOk and cost.col.two and cost.text._wrap == true, "a relayout to two lines: the title wraps (Cost to / Make)")
+  head.h, head.sig = Mk.HEAD_H, nil
+  Mk.Relayout(cf, head, "craft", "craft", wide)
+  local one = true for _, b in ipairs(head.buttons) do if b.col.two or b.text._wrap then one = false end end
+  ok(one, "a strip one line high: its titles stay on one line (the name gives way)")
+  head.h, head.sig = keepH, nil
   mp:Refresh()
   ok(#W.sizeErrors == errs0, "no handler error")
 end)()

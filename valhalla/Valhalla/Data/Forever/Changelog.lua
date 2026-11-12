@@ -4,6 +4,20 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.0.1", date = "2026-11-11", heads = { [1] = "Changed", [5] = "Fixed", [6] = "Note", }, items = {
+		"|cff6e2c0aReagents: Market | Owned|r. Owned (was Owned free): what you have (per Count) costs nothing; Can make is what your reagents make and Total follows. The Invest Amount box is greyed with Owned (what you typed is kept for Market).",
+		"|cff6e2c0aOwned: vendor is gone|r; if you had it, Reagents is now Market.",
+		"|cff6e2c0aMarket|r: the Invest Amount buys everything (Count greyed, None): Can make is what the amount buys.",
+		"Craft has no Known column (the Known only box still filters to your recipes); a saved sort by Known goes back to Profit/item.",
+		"A Craft title that needs two lines once the list loads (Cost to / Make) is drawn on two lines, not cut short.",
+		"A /reload is enough after installing (no new files).",
+	} },
+	{ version = "1.0.0", date = "2026-11-11", heads = { [1] = "New", [4] = "Note", }, items = {
+		"|cff6e2c0aValhalla 1.0.0|r: the first public release, in Odysseaus/wow-addons. The same addon as v0.4.2.9.",
+		"One seamless world map (every zone stitched together), quest objectives and flights on the map, and Investments: AH scans, Top 10 price movers and Trending, My items, Craft (with an Invest Amount) and Harvest.",
+		"Key I opens Investments (only if I is free; Key Bindings > Valhalla to change it).",
+		"Coming from v0.4.2.x: your settings carry over. Restart the game once if the I key binding doesn't show.",
+	} },
 	{ version = "v0.4.2.9", date = "2026-11-11", heads = { [1] = "Changed", [6] = "Fixed", [8] = "Note", }, items = {
 		"|cff6e2c0aInvest Amount, your reagents first|r: with Owned free or Owned: vendor, Can make counts your reagents (per Count) first and buys the rest with the amount, so Bags + bank can make more than Bags only. Total: the sale after the AH's cut x Can make, less the gold spent (Owned: vendor: and what yours used would fetch at a vendor).",
 		"|cff6e2c0aReagents: Market|r greys the Count dropdown and sets it to None (Market prices every reagent, yours too): Can make is what the amount buys, 0 without one. Owned free / Owned: vendor bring your Count back.",
