@@ -34,8 +34,8 @@ I.SETTINGS = {
 	-- AH Market (v0.4.0): read speed (smooth 4 / balanced 8 / fast 12 ms a frame), history days and cap,
 	-- the 1c-dump filter (off: the raw lowest buyout), shift-hover compare, bags + bank in My items
 	scanSpeed = "balanced", histDays = 7, histCapMB = 3, dumpFilter = false, compare = true, mineBank = true,
-	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (what you own costs nothing) | "vendor" (at its
-	-- vendor value); only the recipes this character knows
+	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (Owned: what you own costs nothing; 1.0.1: "vendor" gone,
+	-- moved to "market"); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false,
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all", topView = "movers",
@@ -102,6 +102,9 @@ function I.InitDB()
 	I.db, I.realm, I.char, I.me = db, r, c, name
 	I.MigrateLists(c)
 	I.S = db.settings
+	-- (1.0.1) Reagents: Owned: vendor is gone: Market; Craft's Known column is gone: its sort, the default
+	if I.S.craftOwned ~= "market" and I.S.craftOwned ~= "free" then I.S.craftOwned = "market" end
+	if type(I.S.sortCraft) == "string" and I.S.sortCraft:match("^known:") then I.S.sortCraft = "each:desc" end
 	return db
 end
 

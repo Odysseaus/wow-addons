@@ -306,7 +306,6 @@ function C.Price(house, sch, opts, have)
 		local buy = r.n - own
 		local unit, src = C.Unit(house, r.id)
 		local part = 0
-		if own > 0 and opts.owned == "vendor" then part = own * (S().SellPrice(r.id) or 0) end
 		if buy > 0 then
 			if unit then part = part + buy * unit else e.missing[#e.missing + 1] = r.id end
 		end
@@ -367,7 +366,7 @@ function C.Lines(e, house)
 	local function Name(id) return (I.Views and I.Views.ItemData(id)) or L["Item #%d"]:format(id) end
 	out[#out + 1] = L["Valhalla craft (%s): %s per craft (makes %s)"]:format(house, e.profit and Money(e.profit) or "-", tostring(e.qty))
 	for _, r in ipairs(e.parts) do
-		local how = r.own > 0 and (I.S.craftOwned == "vendor" and L["%d yours at vendor value"] or L["%d yours, free"]):format(r.own) or nil
+		local how = r.own > 0 and L["%d yours, free"]:format(r.own) or nil
 		local buy = r.n - r.own
 		local price = buy > 0 and (r.unit and L["%d x %s (%s)"]:format(buy, Money(r.unit), r.src == "vendor" and L["vendor"] or L["AH"]) or L["%d x no price"]:format(buy)) or nil
 		local said = {}
