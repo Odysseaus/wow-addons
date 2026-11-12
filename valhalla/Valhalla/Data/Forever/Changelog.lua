@@ -10,8 +10,8 @@ ns.MapChangelog = {
 		"An 'or' quest (one of two at a step) is indented under its step, an optional one dimmed.",
 		"The window follows your Look (Profession or Norse). Escape or X closes it.",
 		"Tracking stays as it was: by zone, with the pin, Shift-click or right-click > Track.",
-		"Chains come from Wowhead WoW Forever's quest series (each series its own chain for now); a quest without one has no button. /valhalla chain coverage lists your log's quests with and without.",
-		"The chain data covers 16 Wowhead series so far, for the quests in Vaelan's log (Alliance); more later.",
+		"Chains come from Wowhead WoW Forever's quest Series boxes, each series its own chain: 507 chains, 1,757 quests (210 Alliance, 175 Horde, 122 both; some for one class). A quest with no series data has no chain icon. /valhalla chain coverage lists your log's quests with and without.",
+		"The chain data was first read for the quests in Vaelan's log; it now comes from 925 Wowhead WoW Forever quest pages.",
 		"Restart the game after installing (new files).",
 	} },
 	{ version = "1.0.1", date = "2026-11-11", heads = { [1] = "Changed", [5] = "Fixed", [6] = "Note", }, items = {

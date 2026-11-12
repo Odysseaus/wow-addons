@@ -131,7 +131,11 @@ def parse(path, qid):
 
 FLAGS = {}   # quest id -> {'opt', 'side', 'classes'} typed in a manual file (for quests other than the page's)
 MANUAL = os.path.join(DATA, 'manual')
-ISO = re.compile(r'^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d)?([+-]\d\d:?\d\d|Z)$')
+# the series read in the box browser in batches (tools/questchains/raw_to_manual.py writes them, the same format)
+MANUAL_DIRS = [MANUAL, os.path.join(DATA, 'manual-wowhead')]
+_T = r'\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d)?([+-]\d\d:?\d\d|Z)'
+# a time, or "~<time>/<time>": read some time in that range (a batch whose per-page times were not kept)
+ISO = re.compile(r'^(%s|~%s/%s)$' % (_T, _T, _T))
 
 def parse_manual(path, qid):
     out = {'id': qid, 'ok': False, 'series': [], 'facts': [], 'side': None, 'classes': None, 'name': None, 'why': None,
@@ -183,6 +187,16 @@ def info(i, ps):
     if e: return e.get('side'), e.get('classes'), bool(e.get('opt')), ('side' in e or 'classes' in e)
     return None, None, False, False
 
+def read_pages():
+    """the pages read in the batches (chain-data/manual-wowhead/pages-read.tsv), any outcome but a failed load"""
+    p = os.path.join(DATA, 'manual-wowhead', 'pages-read.tsv')
+    out = set()
+    if os.path.exists(p):
+        for l in open(p, encoding='utf-8'):
+            f = l.rstrip('\n').split('\t')
+            if f[0].isdigit() and f[1] in ('series', 'no series', 'same series'): out.add(int(f[0]))
+    return out
+
 def fetched_index():
     idx = {}
     p = os.path.join(PAGES, 'index.tsv')
@@ -195,8 +209,7 @@ def fetched_index():
 def pages():
     idx = fetched_index()
     out = {}
-    if not os.path.isdir(PAGES): return out
-    for fn in sorted(os.listdir(PAGES)):
+    for fn in sorted(os.listdir(PAGES)) if os.path.isdir(PAGES) else []:   # (no saved pages: the typed ones only)
         m = re.match(r'quest-(\d+)\.(html?|txt)$', fn)
         if not m: continue
         qid = int(m.group(1)); path = os.path.join(PAGES, fn)
@@ -208,12 +221,13 @@ def pages():
             p['fetched'] = datetime.datetime.fromtimestamp(os.path.getmtime(path)).astimezone().isoformat(timespec='seconds')
             p['when_from'] = 'file time'
         out[qid] = p
-    if os.path.isdir(MANUAL):
-        for fn in sorted(os.listdir(MANUAL)):
+    for d in MANUAL_DIRS:
+        if not os.path.isdir(d): continue
+        for fn in sorted(os.listdir(d)):
             m = re.match(r'quest-(\d+)(?:-(\d+))?\.tsv$', fn)
             if not m: continue
             qid = int(m.group(1))
-            p = parse_manual(os.path.join(MANUAL, fn), qid)
+            p = parse_manual(os.path.join(d, fn), qid)
             if qid in out and out[qid]['ok'] and p['ok']:
                 out[qid]['series'] += p['series']   # (a second box, or the same page saved and typed: both read)
             elif qid in out and out[qid]['ok']:
@@ -303,9 +317,15 @@ def step_lua(item, ps, sside, sclass, opt):
 def build(out_lua):
     qs = questie(); ps = pages()
     paths, ser = chains(ps, qs)
+    # a series of one step (Wowhead's box with one quest) is no chain: not shipped (the loader drops it anyway), listed
+    one = [p for p in paths if sum(len(ser[k]['rows']) for k in p) < 2]
+    paths = [p for p in paths if p not in one]
     os.makedirs(os.path.join(DATA, 'report'), exist_ok=True)
+    with open(os.path.join(DATA, 'report', 'one-step.txt'), 'w') as f:
+        for p in one: f.write('%s (page %d)\n' % (' '.join('%d' % i for k in p for r in ser[k]['rows'] for i, _ in r), ser[p[0]]['pages'][0]))
     lines, nquests, qset = [], 0, set()
-    times = sorted(p['fetched'] for p in ps.values() if p['ok'])
+    # (a "~<from>/<to>" range: sorted by its start, shown whole)
+    times = sorted((p['fetched'] for p in ps.values() if p['ok']), key=lambda t: t.lstrip('~').split('/')[0])
     for path in paths:
         rows_all, breaks, src = [], [], []
         for k in path:
@@ -461,7 +481,8 @@ def main():
         nodes, _, _ = candidates(qs)
         if '--current' in sys.argv: nodes = sorted({q for c in current_chains(qs).values() for q in c})
         ps = pages()
-        seen = set(ps)
+        seen = {q for q, p in ps.items() if p['ok']}
+        seen |= read_pages()   # (pages read in the batches: a series, none, or the same series as another page)
         for p in ps.values():
             for rows in p['series']:
                 for r in rows:

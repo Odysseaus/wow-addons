@@ -120,9 +120,27 @@ do
 		end
 	end
 	ok(good, "shipped data: meta.chains matches, every chain 2+ steps with a source, every step an id and a name")
-	local n = QC.Build(shipped, "Alliance", "DRUID")
-	ok(n == #shipped.chains, "shipped data: every chain is an Alliance druid's (the pages read: all Alliance, no class)", n)
-	for _, q in ipairs(shipped.noSeries or {}) do ok(QC.Of(q) == nil, "shipped noSeries " .. q .. ": no chain") end
+	-- every chain is some character's (a faction and a class whose steps leave it 2 or more), and none is in two
+	local some, seen, twice = {}, {}, 0
+	for _, fac in ipairs({ "Alliance", "Horde" }) do
+		for _, cls in ipairs({ "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }) do
+			QC.Build(shipped, fac, cls)
+			for _, c in ipairs(QC.chains) do some[c.src and c.src[1] or c] = true end
+		end
+	end
+	local n = 0 for _ in pairs(some) do n = n + 1 end
+	ok(n == #shipped.chains, "shipped data: every chain is some faction and class's", n .. " of " .. #shipped.chains)
+	for _, c in ipairs(shipped.chains) do
+		for _, st in ipairs(c) do
+			for _, x in ipairs({ st, unpack(st.alt or {}) }) do if seen[x[1]] then twice = twice + 1 end seen[x[1]] = true end
+		end
+	end
+	ok(twice == 0, "shipped data: no quest in two chains", twice)
+	QC.Build(shipped, "Alliance", "DRUID")
+	ok(QC.Of(1265) and QC.Of(26) and QC.Of(27) == nil, "shipped data, an Alliance druid: The Missing Diplomat, the druid's Lesson to Learn; not the Horde one")
+	local inchain = {}
+	for _, q in ipairs(shipped.noSeries or {}) do if QC.Of(q) then inchain[#inchain + 1] = q end end
+	ok(#inchain == 0, "shipped noSeries (" .. #(shipped.noSeries or {}) .. " pages): none in a chain", table.concat(inchain, " "))
 	QC.Build(ns.QuestChainData, "Alliance", "PALADIN")
 end
 
