@@ -7,10 +7,14 @@
 # Only whole numbers 1-450 are taken; anything else ("?", "none", "120-130", blank) is skipped and reported. A value
 # only fills an item that is unknown (never replaces a known one: a different value is reported as a conflict). The
 # same item read twice with different values: the first kept, the other reported. Never estimated.
+# (1.2.4) A line may end in "# note" (e.g. "# timeout", "# noexist"). A "?" line never blocks a later file's value for
+# the same item (a retry fills it). "# multiple: a,b" (several recipes make the item, from more than one profession or
+# rank): which one is this profession's can't be told from the line, so it is skipped and reported (read it from the
+# recipe item instead: recipe=<id>).
 # Usage: merge_raw.py <raw.txt>... [--skills skills.json] [--out skills-merged.json] [--lua TopSkills.lua]
 import json, re, sys, os, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__))
-LINE = re.compile(r'^\s*(\d+)\s*\|\s*([^|]*?)\s*\|\s*(recipe=\d+|created-by)\s*(?:\|\s*(\d{1,2}:\d{2}))?\s*$')
+LINE = re.compile(r'^\s*(\d+)\s*\|\s*([^|#]*?)\s*\|\s*(recipe=\d+|created-by)\s*(?:\|\s*(\d{1,2}:\d{2}))?\s*(?:#\s*(.*?))?\s*$')
 HEAD = re.compile(r'^#\s*read\s+(\S+)')
 CRAFT = [171, 164, 333, 202, 165, 197, 185, 129]
 
@@ -24,9 +28,11 @@ def parse(path):
         if s.lstrip().startswith('#'): continue
         m = LINE.match(s)
         if not m: bad.append((path, n, s, 'not a raw line')); continue
-        iid, skill, src, hhmm = m.groups()
+        iid, skill, src, hhmm, note = m.groups()
         if not re.fullmatch(r'\d+', skill) or not (1 <= int(skill) <= 450):
             bad.append((path, n, s, 'skill not a whole number 1-450')); continue
+        if note and note.lower().startswith('multiple'):
+            bad.append((path, n, s, 'several recipes make it: not told which is this profession\'s')); continue
         rows.append({'item': iid, 'skill': int(skill), 'src': src, 'time': hhmm, 'read': read, 'line': n, 'file': path})
     return rows, bad
 

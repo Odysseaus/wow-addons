@@ -55,5 +55,35 @@ r = subprocess.run(['luac', '-p', lua], capture_output=True) if subprocess.run([
 ok(r is None or r.returncode == 0, 'TopSkills.lua compiles (luac)')
 # untouched input
 ok(json.load(open(skills))['professions']['171']['items']['3383']['skill'] is None, 'the input skills.json is not changed (a merged copy is written)')
+# (1.2.4) notes at the end of a line; a retry file fills what an earlier file left "?"; "multiple" skipped
+skills2 = os.path.join(tmp, 'skills2.json')
+json.dump({'professions': profs, 'coverage': cov}, open(skills2, 'w'))
+b1, b2 = os.path.join(tmp, 'b00-raw.txt'), os.path.join(tmp, 'b06-retry-raw.txt')
+open(b1, 'w').write("""# read 2026-11-12T12:53-06:00
+3383 | ? | created-by | 12:55 # timeout
+2455 | 25 | created-by | 12:56 # checked twice
+3577 | 155 | created-by | 13:01 # multiple: 155,225
+6371 | ? | created-by | 13:02 # noexist
+""")
+open(b2, 'w').write("""# read 2026-11-12T17:41-06:00
+3383 | 90 | created-by | 17:41
+6371 | ? | created-by | 17:42 # timeout
+""")
+out2 = os.path.join(tmp, 'merged2.json')
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    rep2, bad2 = merge_raw.main([b1, b2, '--skills', skills2, '--out', out2, '--lua', os.path.join(tmp, 'TopSkills2.lua')])
+t2 = buf.getvalue()
+A2 = json.load(open(out2))['professions']['171']['items']
+ok(A2['3383']['skill'] == 90 and A2['3383']['sources'][0]['date'].startswith('2026-11-12T17:41'), 'a retry file fills what an earlier file left "?" (timeout)', A2['3383'])
+ok(A2['2455']['skill'] == 25, 'a value with a note after it ("# checked twice") is taken')
+ok(A2['3577']['skill'] is None and 'several recipes make it' in t2, '"# multiple: 155,225": skipped, reported, still unknown', t2)
+ok(A2['6371']['skill'] is None and len(bad2) == 4 and len(rep2['dupes']) == 0, 'still "?" in every file: unknown; "?" lines never count as a reading', len(bad2))
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    open(os.path.join(tmp, 'b07-raw.txt'), 'w').write('# read 2026-11-12T18:00-06:00\n3383 | 95 | created-by\n')
+    rep3, _ = merge_raw.main([b1, b2, os.path.join(tmp, 'b07-raw.txt'), '--skills', skills2, '--out', out2, '--lua', os.path.join(tmp, 'TopSkills2.lua')])
+ok(rep3['dupes'] and rep3['dupes'][0][0]['skill'] == 90 and rep3['dupes'][0][1]['skill'] == 95 and json.load(open(out2))['professions']['171']['items']['3383']['skill'] == 90,
+   'two numbers for one item: the first file\'s kept, reported')
 print('\n%d passed, %d failed' % (P, F))
 sys.exit(1 if F else 0)

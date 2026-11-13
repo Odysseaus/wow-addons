@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.4", date = "2026-11-12", heads = { [1] = "Changed", [3] = "Note", }, items = {
+		"|cff6e2c0aTop 10 knows more crafting levels|r: 327 more crafted items now have their required skill (read from Wowhead Forever), so far fewer show \"?\" in a level bracket. Alchemy, Blacksmithing, Engineering, Leatherworking, Tailoring, Cooking and First Aid.",
+		"Items whose level couldn't be read stay unknown (\"?\"); none are estimated.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.3", date = "2026-11-12", heads = { [1] = "New", [4] = "Changed", [5] = "Note", }, items = {
 		"|cff6e2c0aBattleground quests in battlegrounds|r: inside Alterac Valley, Warsong Gulch or Arathi Basin the side panel lists only that battleground's quests (and your pinned ones), in Quests and Ready to Turn In, as a dungeon lists only its own.",
 		"A quest belongs to a battleground by its log header (the battleground's name or its sides' names, e.g. Silverwing Hold, Frostwolf); a \"Battlegrounds\" quest or one with the PvP tag shows where it has a pin on that battleground's map.",

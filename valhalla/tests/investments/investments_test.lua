@@ -2256,8 +2256,12 @@ print("== 34. v0.4.2.3: Top 10 filtered: All | Crafted | Harvested, a profession
   ok(sk == 0 and fi == 0, "Skinning and Fishing: none read, so all unknown (none estimated)")
   ok(Mk.TopSkill("harvest", 182, 2447) == 1 and Mk.TopSkill("harvest", 182, 785) == 50 and Mk.TopSkill("harvest", 182, 13463) == 270 and Mk.TopSkill("harvest", 182, 19726) == false,
     "Herbalism: Peacebloom 1, Mageroyal 50, Dreamfoil 270 (node skills), Bloodvine unknown")
-  ok(Mk.TopSkill("craft", 171, 2459) == 60 and Mk.TopSkill("craft", 171, 3387) == 250 and Mk.TopSkill("craft", 171, 2455) == false and Mk.TopSkill("craft", 171, 2447) == nil,
-    "Alchemy: Swiftness Potion 60, Limited Invulnerability Potion 250, Minor Mana Potion unknown; a herb isn't Alchemy's")
+  ok(Mk.TopSkill("craft", 171, 2459) == 60 and Mk.TopSkill("craft", 171, 3387) == 250 and Mk.TopSkill("craft", 171, 2455) == 25 and Mk.TopSkill("craft", 171, 7076) == false and Mk.TopSkill("craft", 171, 2447) == nil,
+    "Alchemy: Swiftness Potion 60, Limited Invulnerability Potion 250, Minor Mana Potion 25, Essence of Earth unknown; a herb isn't Alchemy's")
+  -- (1.2.4) a fixture, not the bundled data: these items as the bundled data had them before 1.2.4 (no level known),
+  -- so what's tested (a level found later) doesn't hang on which levels Data/Forever/TopSkills.lua has read
+  local m171, was = I.Craft.TopMap("craft")[171], {}
+  for _, id in ipairs({ 2455 }) do was[id] = m171[id] m171[id] = false end
   -- the defaults, saved with the settings
   ok(I.S.topKind == "all" and I.S.topProf == 0 and I.S.topBracket == "all" and ValhallaInvestDB.settings == I.S, "defaults: All, any profession, all levels (in ValhallaInvestDB's settings)")
   -- a house: 12 other items rising faster than any herb, then herbs, ore, a hide, potions
@@ -2362,6 +2366,7 @@ print("== 34. v0.4.2.3: Top 10 filtered: All | Crafted | Harvested, a profession
   Mk.house = nil
   ok(Keys(WorldMapFrame) == mapKeys and #W.sizeErrors == errs0, "v0.4.2.3 wrote nothing on the map; no handler error")
   T.Select("map")
+  for id, v in pairs(was) do m171[id] = v end
 end)()
 
 print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), Craft's Count, Harvest like Crafts, Top 10's numbers fit")
@@ -3106,6 +3111,10 @@ end)()
 print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's bars and trainers, the History graph's hover")
 ;(function()
   local Mk, Sc, V, P, R = I.Market, I.Scan, I.Views, I.Tooltip, I.Trainer
+  -- (1.2.4) a fixture, not the bundled data: these items as the bundled data had them before 1.2.4 (no level known),
+  -- so what's tested (a level found later) doesn't hang on which levels Data/Forever/TopSkills.lua has read
+  local m171, was = I.Craft.TopMap("craft")[171], {}
+  for _, id in ipairs({ 2455, 3383 }) do was[id] = m171[id] m171[id] = false end
   local errs0 = #W.sizeErrors
   local GT = GameTooltip
   local keepGT = { GT.SetOwner, GT.AddLine, GT.Show, GT.Hide, GT.GetOwner, GT.SetHyperlink }
@@ -3287,7 +3296,7 @@ print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's b
   GetTrainerServiceItemLink = function(i) local s = Visible()[i] return s and s.link end
   W.tradeskill = true
   IsTradeskillTrainer = function() return W.tradeskill end
-  ok(Mk.TopSkill("craft", 171, 2455) == false and Mk.TopSkill("craft", 171, 3383) ~= 90, "before: Minor Mana Potion unknown (bundled), Elixir of Wisdom not 90")
+  ok(Mk.TopSkill("craft", 171, 2455) == false and Mk.TopSkill("craft", 171, 3383) ~= 90, "before: Minor Mana Potion and Elixir of Wisdom unknown")
   I.db.trainer = nil
   ns.printed = {}
   W.Fire("TRAINER_SHOW")
@@ -3346,11 +3355,16 @@ print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's b
   Mk.house = nil
   GT.SetOwner, GT.AddLine, GT.Show, GT.Hide, GT.GetOwner, GT.SetHyperlink = unpack(keepGT)
   ok(#W.sizeErrors == errs0, "no handler error")
+  for id, v in pairs(was) do m171[id] = v end
 end)()
 
 print("== 41. 1.2.1: trainer reads as the list fills in, more ways to the item, what the read saw, the ? note")
 ;(function()
   local Mk, R = I.Market, I.Trainer
+  -- (1.2.4) a fixture, not the bundled data: these items as the bundled data had them before 1.2.4 (no level known),
+  -- so what's tested (a level found later) doesn't hang on which levels Data/Forever/TopSkills.lua has read
+  local m171, was = I.Craft.TopMap("craft")[171], {}
+  for _, id in ipairs({ 3383, 6371 }) do was[id] = m171[id] m171[id] = false end
   W.items[3383] = { "Elixir of Wisdom", 134711 } W.items[3385] = { "Lesser Mana Potion", 134851 } W.items[3389] = { "Elixir of Defense", 134846 }
   W.items[8949] = { "Elixir of Agility", 134873 }
   local services, filters, setLog = {}, { available = true, unavailable = false, used = false }, {}
@@ -3441,6 +3455,7 @@ print("== 41. 1.2.1: trainer reads as the list fills in, more ways to the item, 
   ok(#setLog == 0, "a class trainer: not read, its filters untouched")
   W.Fire("TRAINER_CLOSED")
   C_TradeSkillUI.GetRecipeSchematic = keepSchem
+  for id, v in pairs(was) do m171[id] = v end
 end)()
 
 print(("\n%d passed, %d failed"):format(pass, fail))
