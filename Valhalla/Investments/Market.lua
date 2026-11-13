@@ -104,10 +104,12 @@ local function Spark(parent)
 		b:SetPoint("BOTTOMLEFT", (i - 1) * M.SPARK_STEP, 0)
 		f.bars[i] = b
 	end
+	-- (1.2.0) the last SPARK values, scaled to the highest of those shown (not of every point kept)
 	function f.Set(values)
 		local max = 0
-		for _, v in ipairs(values) do if v > max then max = v end end
 		local first = #values - M.SPARK
+		for i = math.max(1, first + 1), #values do if values[i] > max then max = values[i] end end
+		f.max = max
 		for i, b in ipairs(f.bars) do
 			local v = values[first + i]
 			if v and max > 0 then b:SetHeight(math.max(1, 16 * v / max)) b:Show() else b:Hide() end
@@ -196,8 +198,28 @@ end
 function M.SortTag(list) local k, d = M.GetSort(list) return k .. ":" .. (d and "desc" or "asc") end
 -- rows sorted in place by list's column: empty values (nil) last either way; ties by the default column, then id
 function M.SortList(rows, list)
-	local cols = M.COLS[list]
 	local key, desc = M.GetSort(list)
+	return M.SortBy(rows, list, key, desc)
+end
+-- (1.2.0) the order for the other direction from a sorted one, without sorting again: the groups of equal values
+-- in reverse, each group's own order (by id) kept; empty values last either way. The same as M.SortBy's.
+function M.Flip(sorted, list, key)
+	local c = ColOf(M.COLS[list], key)
+	local out, vals = {}, {}
+	local last = 0
+	for i, e in ipairs(sorted) do vals[i] = c.value(e) if vals[i] ~= nil then last = i end end
+	local i = last
+	while i >= 1 do
+		local j = i
+		while j > 1 and vals[j - 1] == vals[i] do j = j - 1 end
+		for k = j, i do out[#out + 1] = sorted[k] end
+		i = j - 1
+	end
+	for k = last + 1, #sorted do out[#out + 1] = sorted[k] end
+	return out
+end
+function M.SortBy(rows, list, key, desc)
+	local cols = M.COLS[list]
 	local c = ColOf(cols, key)
 	local v = {}
 	for _, e in ipairs(rows) do v[e] = c.value(e) end
@@ -399,41 +421,83 @@ end
 -- are in. Until then: a note says how many are still coming; the missing ones sort last (never by a placeholder).
 M.NEEDS = { results = { name = true }, mine = { name = true, vendor = true, best = true, total = true }, craft = { name = true }, harvest = { name = true } }
 function M.NeedsData(list) return M.NEEDS[list][(M.GetSort(list))] and true or false end
-function M.Fetch(f, ids, again, y)
-	f.asked = f.asked or {}
-	f.want = {}
-	for _, id in ipairs(ids) do if not V.ItemData(id) then f.want[id] = true end end
+-- (1.2.0) the names a sort or a search needs, asked for (at most V.LOAD_MAX at a time). Each arrival checks only its
+-- own item (no pass over the whole list) and asks for the next; the list is redrawn (again) at most once a second
+-- while names arrive, and at once when the last is in. onName(id): each arrival, for a cache to take its name.
+M.FETCH_EVERY = 1
+function M.Fetch(f, ids, again, y, onName)
+	f.fetchGen = (f.fetchGen or 0) + 1
+	local gen = f.fetchGen
+	local want, queue = {}, {}
+	for _, id in ipairs(ids) do if not want[id] and not V.ItemData(id) then want[id] = true queue[#queue + 1] = id end end
+	f.want, f.wantN = want, #queue
 	if not f.loadNote then
 		f.loadNote = Text(f, 11, GREY)
 		f.loadNote:SetPoint("TOPRIGHT", -8, y or -6)
 		f.loadNote:SetJustifyH("RIGHT")
 	end
-	local function Pump()
-		local n, full = 0, false
-		for id in pairs(f.want) do
-			if V.ItemData(id) then f.want[id] = nil
-			else
-				n = n + 1
-				if not f.asked[id] then
-					if V.LoadItem(id, function() f.asked[id] = nil if f.want[id] then f.Arrived() end end) then f.asked[id] = true else full = true end
-				end
-			end
-		end
-		-- (30 already asked for: the rest asked again in a second)
-		if full and not f.retry and C_Timer and C_Timer.After then
-			f.retry = true
-			C_Timer.After(1, function() f.retry = nil if f.want and next(f.want) then f.Arrived() end end)
-		end
+	local function Note()
+		if gen ~= f.fetchGen then return end
+		local n = f.wantN
 		f.loadNote:SetText(n > 0 and L["Sorting: %d items still coming from the game..."]:format(n) or "")
 		f.loadNote:SetShown(n > 0)
-		return n
 	end
-	function f.Arrived()
-		if Pump() == 0 and f.waiting then f.waiting = nil again() end
+	local later = false
+	local function Fire()
+		later = false
+		if gen ~= f.fetchGen then return end
+		f.againAt = GetTime and GetTime() or 0
+		f.redraws = (f.redraws or 0) + 1
+		again()
 	end
-	local n = Pump()
-	f.waiting = n > 0 or nil
-	return n
+	local function Soon()
+		if f.wantN == 0 and not f.inFetch then Fire() return end
+		if later or not (C_Timer and C_Timer.After) then return end
+		later = true
+		C_Timer.After(f.wantN == 0 and 0.01 or M.FETCH_EVERY, function() if later then Fire() end end)
+	end
+	local function Done(id)
+		want[id] = nil
+		f.wantN = f.wantN - 1
+		if onName then onName(id) end
+	end
+	local Ask
+	local function Got(id)
+		if gen ~= f.fetchGen or not want[id] or not V.ItemData(id) then return end
+		f.checked = (f.checked or 0) + 1
+		Done(id) Note() Ask() Soon()
+	end
+	local pos, asking, retry = 1, false, false
+	Ask = function()
+		if asking then return end
+		asking = true
+		while pos <= #queue do
+			local id = queue[pos]
+			if not want[id] then pos = pos + 1
+			elseif V.LoadItem(id, Got) then pos = pos + 1
+			else
+				-- (LOAD_MAX already asked for: the rest in a second; any that came meanwhile taken then)
+				if not retry and C_Timer and C_Timer.After then
+					retry = true
+					C_Timer.After(1, function()
+						retry = false
+						if gen ~= f.fetchGen then return end
+						local any = false
+						for id2 in pairs(want) do if V.ItemData(id2) then Done(id2) any = true end end
+						Note() Ask()
+						if any then Soon() end
+					end)
+				end
+				break
+			end
+		end
+		asking = false
+	end
+	f.inFetch = true
+	Ask()
+	f.inFetch = nil
+	Note()
+	return f.wantN
 end
 -- a row's cells for list's columns (not the item column: the row's item cell): { [key] = font string }
 function M.Cells(r, list)
@@ -524,16 +588,23 @@ M.TOP_BRACKETS = { { "all", L["All levels"] }, { "1", "1-150", 1, 150 }, { "151"
 M.TOP_CRAFT = { 171, 164, 333, 202, 165, 197, 185, 129 }   -- (Mining: Harvested only)
 M.TOP_HARVEST = { 182, 186, 393, 356 }
 -- the item's skill for a profession: a number, false (made or gathered by it, skill unknown), nil (not its)
+-- (1.2.0) a skill recorded at a trainer of the profession (Trainer.lua) before the bundled one
 function M.TopSkill(kind, prof, id)
+	if kind == "craft" and I.Trainer then
+		local rec = I.Trainer.Skill(prof, id)
+		if rec then return rec end
+	end
 	local C = I.Craft
 	local map = C and C.TopMap and C.TopMap(kind)
 	local t = map and map[prof]
 	if not t then return nil end
 	return t[id]
 end
+-- (1.2.0) an item with no known skill level shows at every level, marked "?" (unknown[id]); returns the list, the
+-- count of those unknown, and unknown
 function M.TopFilter(list, kind, prof, bracket)
-	if kind ~= "craft" and kind ~= "harvest" then return list, 0 end
-	local out, hidden = {}, 0
+	if kind ~= "craft" and kind ~= "harvest" then return list, 0, {} end
+	local out, hidden, unknown = {}, 0, {}
 	local profs = {}
 	if prof then profs[1] = prof else for _, p in ipairs(kind == "craft" and M.TOP_CRAFT or M.TOP_HARVEST) do profs[#profs + 1] = p end end
 	local b
@@ -546,11 +617,11 @@ function M.TopFilter(list, kind, prof, bracket)
 		end
 		if member then
 			if not prof or not b or b[1] == "all" then out[#out + 1] = e
-			elseif not best then hidden = hidden + 1
+			elseif not best then hidden = hidden + 1 unknown[e.id] = true out[#out + 1] = e
 			elseif best >= b[3] and best <= b[4] then out[#out + 1] = e end
 		end
 	end
-	return out, hidden
+	return out, hidden, unknown
 end
 
 M.TOP_COLS_W = 660   -- (Rising and Falling: two columns of 330)
@@ -705,6 +776,8 @@ M.TOP_HEADS = {
 }
 M.TOP_VIEW_TIPS = { movers = "Items whose lowest price moved most over 7 days.",
 	sold = "Items selling the most, estimated from units leaving the AH between your full scans." }
+M.UNKNOWN_MARK = " |cffaaaaaa?|r"
+M.UNKNOWN_NOTE = "? %d shown with no known %s skill level yet: they show at every level. Open a %s trainer once to record the levels it teaches; a recipe you find or buy (not taught by trainers) stays ? until its level is in Valhalla's data."
 M.SOLD_NOTE = "Estimate: units that left the AH between your full scans. Bought, expired and cancelled look the same; new listings hide some. More full scans, closer together: a better estimate."
 function M.TopView() return I.S.topView == "sold" and "sold" or "movers" end
 
@@ -908,9 +981,9 @@ local function BuildTop(f, page)
 				col.heads[k].tip.title, col.heads[k].tip.text = L[H[k][1]], L[H[k][2]]
 			end
 		end
-		local hr, hf
-		rising, hr = M.TopFilter(rising, kind, prof, bracket)
-		falling, hf = M.TopFilter(falling, kind, prof, bracket)
+		local unkR, unkF, _
+		rising, _, unkR = M.TopFilter(rising, kind, prof, bracket)
+		falling, _, unkF = M.TopFilter(falling, kind, prof, bracket)
 		local shown = {}
 		local any = fulls >= 3 and (#rising > 0 or #falling > 0)
 		f.empty:SetShown(not any)
@@ -925,10 +998,16 @@ local function BuildTop(f, page)
 		else
 			f.empty:SetText(L["No %sitem moved in your scans of the last 7 days (full scans in %d different hours). Your next full scan counts from %s."]:format(what, fulls, when))
 		end
-		local hidden = (hr or 0) + (hf or 0)
+		-- (1.2.0) the rows marked "?" shown (an unknown skill level shows at every level)
+		local marked = 0
+		for c, list in ipairs({ rising, falling }) do
+			local unk = c == 1 and unkR or unkF
+			for i = 1, math.min(M.TOP, #list) do if unk[list[i].id] then marked = marked + 1 end end
+		end
 		local notes = {}
 		if view == "sold" and any then notes[#notes + 1] = L[M.SOLD_NOTE] end
-		if hidden > 0 then notes[#notes + 1] = L["%d %s items with no known skill level are hidden from this level."]:format(hidden, prof and ProfName(prof) or "") end
+		if marked > 0 and any then notes[#notes + 1] = L[M.UNKNOWN_NOTE]:format(marked, prof and ProfName(prof) or "", prof and ProfName(prof) or "") end
+		f.marked = marked
 		f.note:SetShown(#notes > 0)
 		f.note:SetText(table.concat(notes, " "))
 		if not any then f.note:ClearAllPoints() f.note:SetPoint("TOPLEFT", 8, TOPY - 50)
@@ -942,6 +1021,7 @@ local function BuildTop(f, page)
 			for i, r in ipairs(col.rows) do
 				local e = list[i]
 				if e and any then
+					r.cell.suffix = (c == 1 and unkR or unkF)[e.id] and M.UNKNOWN_MARK or nil
 					r.cell:SetItem(e.id, M.Lines)
 					if view == "sold" then
 						r.change:SetText(c == 1 and tostring(math.floor(e.perDay + 0.5)) or (S().Money(e.goldDay):gsub(" %d+c$", "")))
@@ -1090,6 +1170,49 @@ local function BuildHistory(f, page)
 	f.empty = Text(f, 12, GREY)
 	f.empty:SetPoint("CENTER", f.plot, "CENTER")
 	f.marks, f.lines = {}, {}
+	-- (1.2.0) hovering: one overlay over the plot; the nearest point's price, time, units and scan; a dot on it
+	f.hover = CreateFrame("Frame", nil, f.plot)
+	f.hover:SetAllPoints(f.plot)
+	if f.hover.SetFrameLevel and f.plot.GetFrameLevel then f.hover:SetFrameLevel((f.plot:GetFrameLevel() or 1) + 5) end
+	if f.hover.EnableMouse then f.hover:EnableMouse(true) end
+	f.dot = f.hover:CreateTexture(nil, "OVERLAY")
+	f.dot:SetSize(9, 9)
+	f.dot:SetColorTexture(1, 1, 1, 1)
+	f.dot:Hide()
+	function f.HoverAt(x)
+		local i = M.Nearest(f.xy, x)
+		if not i then f.HoverOff() return nil end
+		if i == f.hovered then return i end
+		f.hovered = i
+		local p, xy = f.pts[i], f.xy[i]
+		f.dot:ClearAllPoints()
+		f.dot:SetPoint("CENTER", f.plot, "BOTTOMLEFT", xy[1], xy[2])
+		f.dot:Show()
+		if GameTooltip then
+			GameTooltip:SetOwner(f.hover, "ANCHOR_CURSOR")
+			local lines = M.PointLines(p)
+			GameTooltip:AddLine(lines[1], 1, 1, 1)
+			for k = 2, #lines do GameTooltip:AddLine(lines[k], 0.8, 0.8, 0.8) end
+			GameTooltip:Show()
+		end
+		return i
+	end
+	function f.HoverOff()
+		f.hovered = nil
+		f.dot:Hide()
+		if GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() == f.hover then GameTooltip:Hide() end
+	end
+	local function CursorX()
+		local x = GetCursorPosition and GetCursorPosition()
+		local left = f.plot.GetLeft and f.plot:GetLeft()
+		if not (x and left) then return nil end
+		local scale = f.plot.GetEffectiveScale and f.plot:GetEffectiveScale() or 1
+		return x / (scale or 1) - left
+	end
+	f.hover:SetScript("OnEnter", function(self)
+		self:SetScript("OnUpdate", function() local x = CursorX() if x then f.HoverAt(x) end end)
+	end)
+	f.hover:SetScript("OnLeave", function(self) self:SetScript("OnUpdate", nil) f.HoverOff() end)
 	local function Mark(i)
 		local t = f.marks[i]
 		if not t then t = f.plot:CreateTexture(nil, "OVERLAY") f.marks[i] = t end
@@ -1115,6 +1238,8 @@ local function BuildHistory(f, page)
 	function f.Refresh()
 		local id = M.historyID
 		f.range.Update()
+		f.HoverOff()
+		f.pts, f.xy = {}, {}
 		for _, t in ipairs(f.marks) do t:Hide() end
 		for _, l in ipairs(f.lines) do l:Hide() end
 		f.cell:SetItem(id, M.Lines)
@@ -1135,7 +1260,7 @@ local function BuildHistory(f, page)
 		local W, H = M.PLOT_W - 8, M.PLOT_H - 8
 		local span = math.max(1, to - from)
 		local prev
-		f.xy = {}
+		f.xy, f.pts = {}, pts
 		for i, p in ipairs(pts) do
 			local x = 4 + W * (p.t - from) / span
 			local y = 4 + (max > 0 and H * p.min / max or 0)
@@ -1177,6 +1302,24 @@ local function BuildHistory(f, page)
 	end
 end
 
+-- (1.2.0) the point nearest x (the plot's own x), and what its tooltip says
+function M.Nearest(xy, x)
+	local best, bd
+	for i, p in ipairs(xy or {}) do
+		local d = math.abs(p[1] - x)
+		if not bd or d < bd then best, bd = i, d end
+	end
+	return best
+end
+function M.PointLines(p)
+	return {
+		S().Money(p.min),
+		(date and date("%a %d %b, %H:%M", p.t) or tostring(p.t)) .. " (" .. S().Age(p.t) .. ")",
+		p.quick and L["%d units listed"]:format(p.units or 0) or L["%d units in %d auctions"]:format(p.units or 0, p.auctions or 0),
+		p.quick and L["Quick scan"] or L["Full scan"],
+	}
+end
+
 function M.ShowHistory(page, id)
 	M.historyID = id
 	page:ShowSub("history")
@@ -1185,6 +1328,57 @@ end
 --------------------------------------------------------------------------------
 -- Scan results: every item of the last full scan, searchable and sortable
 --------------------------------------------------------------------------------
+
+-- (1.2.0) a house's last scan read once: { key, house, all, byId, orders, desc } (a new scan: read again)
+function M.ResultsCache(f, house)
+	local m = S().Market(house)
+	local _, at = S().LastScan(house, "full")
+	local key = ("%s:%d:%s"):format(house, m and m.scans and #m.scans or 0, tostring(at or ""))
+	local C = f.cache
+	if C and C.key == key then return C end
+	C = { key = key, house = house, all = {}, byId = {}, orders = {}, desc = {} }
+	for id in pairs(m and m.cur or {}) do
+		local c = S().Cur(house, id)
+		if c and not c.quick then
+			local name = V.ItemData(id)
+			local e = { id = id, name = name, lname = name and name:lower(), min = c.min, units = c.units, auctions = c.auctions or 0 }
+			C.all[#C.all + 1] = e
+			C.byId[id] = e
+		end
+	end
+	f.cache = C
+	f.cacheBuilds = (f.cacheBuilds or 0) + 1
+	return C
+end
+-- a row's 7-day change, worked out once a scan (nil: none)
+function M.ResultChange(C, e)
+	if not e then return nil end
+	if not e.changed then e.change, e.changed = M.Change(C and C.house or M.House(), e.id), true end
+	return e.change
+end
+-- a column's order: sorted once (low to high), flipped for high to low
+function M.ResultsOrder(C, key, desc)
+	local asc = C.orders[key]
+	if not asc then
+		if key == "change" then for _, e in ipairs(C.all) do M.ResultChange(C, e) end end
+		asc = {}
+		for i, e in ipairs(C.all) do asc[i] = e end
+		M.SortBy(asc, "results", key, false)
+		C.orders[key], C.desc[key] = asc, nil
+		C.sorts = (C.sorts or 0) + 1
+	end
+	if not desc then return asc end
+	if not C.desc[key] then C.desc[key] = M.Flip(asc, "results", key) end
+	return C.desc[key]
+end
+-- a name arrived: on its row; the name order made again when next asked
+function M.ResultsName(C, id)
+	local e = C.byId[id]
+	if not e then return end
+	local name = V.ItemData(id)
+	e.name, e.lname = name, name and name:lower()
+	C.orders.name, C.desc.name = nil, nil
+end
 
 local function BuildResults(f, page)
 	f.search = V.EditBox(f, 200)
@@ -1214,26 +1408,26 @@ local function BuildResults(f, page)
 	end)
 	f.count = Text(f, 11, GREY)
 	f.count:SetPoint("BOTTOMLEFT", 8, 6)
+	-- (1.2.0) one scan read once (M.ResultsCache), each column's order sorted once, the other way flipped from it;
+	-- a search filters that order; names asked for once a scan, each arrival taken into the cache alone
 	function f.Build()
 		local house = M.House()
-		local m = S().Market(house)
+		local C = M.ResultsCache(f, house)
+		local key, desc = M.GetSort("results")
+		local order = M.ResultsOrder(C, key, desc)
 		local q = (f.search:GetText() or ""):lower()
-		local list = {}
-		for id in pairs(m and m.cur or {}) do
-			local c = S().Cur(house, id)
-			if c and not c.quick then
-				local name = V.ItemData(id)
-				if q == "" or (name and name:lower():find(q, 1, true)) then
-					list[#list + 1] = { id = id, name = name, min = c.min, units = c.units, auctions = c.auctions or 0 }
-				end
-			end
+		local list
+		if q == "" then list = order
+		else
+			list = {}
+			for _, e in ipairs(order) do if e.lname and e.lname:find(q, 1, true) then list[#list + 1] = e end end
 		end
-		-- (v0.4.2.6: no change worked out sorts last, not as 0)
-		if M.GetSort("results") == "change" then for _, e in ipairs(list) do e.change = M.Change(house, e.id) end end
-		M.SortList(list, "results")
-		local ids = {}
-		if M.NeedsData("results") then for _, e in ipairs(list) do if not e.name then ids[#ids + 1] = e.id end end end
-		M.Fetch(f, ids, function() f.dirty = true f.Refresh(true) end, -6)
+		if (M.NeedsData("results") or q ~= "") and not C.fetched then
+			C.fetched = true
+			local ids = {}
+			for _, e in ipairs(C.all) do if not e.name then ids[#ids + 1] = e.id end end
+			M.Fetch(f, ids, function() f.dirty = true f.Refresh(true) end, -6, function(id) M.ResultsName(C, id) end)
+		end
 		f.list, f.house = list, house
 	end
 	function f.Refresh(keep)
@@ -1255,7 +1449,7 @@ local function BuildResults(f, page)
 				r.min:SetText(e.min > 0 and S().Money(e.min) or L["bid only"])
 				r.units:SetText(tostring(e.units))
 				r.auctions:SetText(tostring(e.auctions))
-				local ch = e.change or M.Change(f.house, e.id)
+				local ch = M.ResultChange(f.cache, e)
 				r.change:SetText(Pct(ch))
 				r.change:SetTextColor(unpack(not ch and GREY or ch > 0 and GREEN or ch < 0 and RED or GREY))
 				shown[#shown + 1] = e.id

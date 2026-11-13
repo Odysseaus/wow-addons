@@ -4,6 +4,44 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.4", date = "2026-11-12", heads = { [1] = "Changed", [3] = "Note", }, items = {
+		"|cff6e2c0aTop 10 knows more crafting levels|r: 327 more crafted items now have their required skill (read from Wowhead Forever), so far fewer show \"?\" in a level bracket. Alchemy, Blacksmithing, Engineering, Leatherworking, Tailoring, Cooking and First Aid.",
+		"Items whose level couldn't be read stay unknown (\"?\"); none are estimated.",
+		"A /reload is enough after installing (no new files).",
+	} },
+	{ version = "1.2.3", date = "2026-11-12", heads = { [1] = "New", [4] = "Changed", [5] = "Note", }, items = {
+		"|cff6e2c0aBattleground quests in battlegrounds|r: inside Alterac Valley, Warsong Gulch or Arathi Basin the side panel lists only that battleground's quests (and your pinned ones), in Quests and Ready to Turn In, as a dungeon lists only its own.",
+		"A quest belongs to a battleground by its log header (the battleground's name or its sides' names, e.g. Silverwing Hold, Frostwolf); a \"Battlegrounds\" quest or one with the PvP tag shows where it has a pin on that battleground's map.",
+		"/valhalla objectives why says when you're in a battleground and why each quest is or isn't listed there.",
+		"Outdoors and in dungeons, battleground quests are hidden as dungeon quests are (pin one to keep it listed). A PvP quest under a zone's header stays that zone's.",
+		"A /reload is enough after installing (no new files).",
+	} },
+	{ version = "1.2.2", date = "2026-11-12", heads = { [1] = "Fixed", [5] = "Note", }, items = {
+		"|cff6e2c0aNew quests go to the right section|r: a quest you pick up is placed once the game has its data (its Dungeon tag), so a dungeon quest no longer lands in this zone's Quests until you change zones.",
+		"A quest whose log header or tag changes is placed again at once, not only at the next zone change.",
+		"|cff6e2c0aNo more blank pinned rows|r: a tracker row whose title hasn't loaded gets no pin, and the tracker is made to read it again once the quest's data is in.",
+		"The game's Quest Timers box no longer covers the All Objectives header: the tracker lays out again when the box shows, hides or grows.",
+		"A /reload is enough after installing (no new files).",
+	} },
+	{ version = "1.2.1", date = "2026-11-12", heads = { [1] = "Fixed", [4] = "New", [5] = "Changed", [6] = "Note", }, items = {
+		"|cff6e2c0aTop 10's trainer levels|r: the trainer's list is read again as it fills in (recipe names arrive after the window opens), so its skill levels are recorded; your trainer filters are put back each time.",
+		"A recipe is matched to the item it makes by its link, by what the recipe makes, or by its name (names the game hasn't loaded yet are asked for, then read).",
+		"The chat line says how many were recorded and how many couldn't be matched to an item.",
+		"/valhalla invest trainer: what each profession's trainers gave (recorded, matched, and the names not matched).",
+		"Top 10's ? note: a recipe you find or buy (not taught by trainers) stays ? until its level is in Valhalla's data.",
+		"A /reload is enough after installing (no new files).",
+	} },
+	{ version = "1.2.0", date = "2026-11-12", heads = { [1] = "New", [5] = "Changed", [8] = "Fixed", [9] = "Note", }, items = {
+		"|cff6e2c0aAH price on item tooltips|r: every item tooltip ends with the AH's lowest price from your last scan (the house shown in AH Market) and how old it is; holding 2 or more (bags + bank), what they're worth at it. Nothing for an item with no scan data or a soulbound one. Settings > AH Market to turn it off.",
+		"|cff6e2c0aHistory: hover the graph|r for the nearest point's price, scan time, units listed and full or quick scan (lines and bars).",
+		"|cff6e2c0aTop 10 learns skill levels from trainers|r: open a profession trainer and Valhalla reads the skill every recipe it teaches needs (your trainer filters are put back as they were); the level filter uses these first.",
+		"Top 10: an item with no known skill level now shows at every level, marked ?, instead of being hidden.",
+		"|cff6e2c0aScan results is faster|r: a scan is read once, each column sorted once (the other direction flipped), and arriving item names re-sort the list at most once a second. Your sort stays as you page.",
+		"Top 10's Listed bars: the last 8 full scans, scaled to those 8.",
+		"Valhalla's own item rows no longer repeat the AH lines under their tooltips.",
+		"The quest chain window closes when the map window closes.",
+		"Restart the game after installing (new files).",
+	} },
 	{ version = "1.1.0", date = "2026-11-11", heads = { [1] = "New", [5] = "Note", }, items = {
 		"|cff6e2c0aChain quest view|r (the quest log's gear menu, or Valhalla's menu > More > Quest log; off at first): the Track tick beside each quest is hidden, and a quest that's part of a chain gets a chain button in its place.",
 		"Click a chain button: a window to the right of the map lists the chain's quests in order, first at the top. Done ones are grey; the quest you clicked is highlighted (In your log on the ones you have).",
