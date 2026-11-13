@@ -118,6 +118,8 @@ function V.ItemTooltip(owner, id, extra)
 	local _, link = V.ItemData(id)
 	if link and GameTooltip.SetHyperlink then GameTooltip:SetHyperlink(link)
 	elseif GameTooltip.SetItemByID then GameTooltip:SetItemByID(id) end
+	-- (1.2.0) the AH lines already under every item tooltip: AH Market's own lines not added again
+	if extra and I.Market and extra == I.Market.Lines and I.Tooltip and I.Tooltip.hooked == "processor" and I.Tooltip.On() then extra = nil end
 	if extra then
 		for _, line in ipairs(extra(id) or {}) do GameTooltip:AddLine(line, 0.7, 0.7, 0.7, true) end
 	end
@@ -165,7 +167,7 @@ function V.ItemCell(parent, w)
 		self.icon:SetTexture(I.ItemIcon(id))
 		local name, _, q = V.ItemData(id)
 		if name then
-			self.name:SetText(name)
+			self.name:SetText(name .. (self.suffix or ""))   -- (1.2.0: Top 10's " ?", an unknown skill level)
 			self.name:SetTextColor(V.QualityColor(q))
 			self.loaded = true
 		else
@@ -1048,6 +1050,7 @@ local function BuildSettings(page)
 	page.size = Note("", { 1, 1, 1 })
 	page.dump = Opt(L["Ignore a 1c dump (a lowest price under 30% of its 7-day median)"], "dumpFilter")
 	page.compare = Opt(L["Shift-hover: compare with what I wear"], "compare")
+	page.ahTooltip = Opt(L["AH price on item tooltips"], "ahTooltip")   -- (1.2.0)
 	local forgetAH = V.Button(body, L["Forget this house's market"], 220, 22, function()
 		if I.Scan and I.Market then I.Scan.Forget((I.Market.House())) end
 	end)

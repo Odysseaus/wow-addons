@@ -34,6 +34,7 @@ I.SETTINGS = {
 	-- AH Market (v0.4.0): read speed (smooth 4 / balanced 8 / fast 12 ms a frame), history days and cap,
 	-- the 1c-dump filter (off: the raw lowest buyout), shift-hover compare, bags + bank in My items
 	scanSpeed = "balanced", histDays = 7, histCapMB = 3, dumpFilter = false, compare = true, mineBank = true,
+	ahTooltip = true,                                           -- (1.2.0: the AH lines under every item tooltip)
 	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (Owned: what you own costs nothing; 1.0.1: "vendor" gone,
 	-- moved to "market"); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false,
@@ -731,7 +732,8 @@ I.EVENTS = { "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "PLAY
 	"MERCHANT_SHOW", "MERCHANT_UPDATE", "MERCHANT_CLOSED", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
 	"ITEM_PURCHASED", "COMMODITY_PURCHASED", "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_FAILURE",
 	"MAIL_SHOW", "MAIL_INBOX_UPDATE", "MAIL_CLOSED", "PLAYER_REGEN_ENABLED",
-	"GET_ITEM_INFO_RECEIVED", "REPLICATE_ITEM_LIST_UPDATE",
+	"GET_ITEM_INFO_RECEIVED", "REPLICATE_ITEM_LIST_UPDATE", "TRAINER_SHOW", "TRAINER_CLOSED", "TRAINER_UPDATE",
+	"TRAINER_SERVICE_INFO_NAME_UPDATE",
 	-- (v0.3.4: the AH check's: searches and the AH's throttle)
 	"COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED", "AUCTION_HOUSE_THROTTLED_MESSAGE_SENT",
 	"AUCTION_HOUSE_THROTTLED_MESSAGE_QUEUED", "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED",
@@ -790,6 +792,7 @@ function I.OnEvent(event, a1, a2)
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if I.AH and I.AH.waiting and I.ahOpen then I.AH.Show() end
 	elseif event == "GET_ITEM_INFO_RECEIVED" then
+		if I.Trainer then pcall(I.Trainer.OnEvent, event, a1) end
 		-- (a name arrived: kept on its lines, for when the game's cache is cold)
 		if I.char and a1 then
 			local name, hit = Call(GetItemInfo, a1), false
@@ -806,6 +809,8 @@ function I.OnEvent(event, a1, a2)
 		if I.Craft and I.Craft.Learned then pcall(I.Craft.Learned) end
 	elseif event == "SKILL_LINES_CHANGED" then
 		if I.Craft then I.Craft.mine = nil end   -- (a skill-up fires it too: only your professions asked again)
+	elseif event == "TRAINER_SHOW" or event == "TRAINER_CLOSED" or event == "TRAINER_UPDATE" or event == "TRAINER_SERVICE_INFO_NAME_UPDATE" then
+		if I.Trainer then pcall(I.Trainer.OnEvent, event, a1) end   -- (1.2.0, 1.2.1: a profession trainer's skill levels, for Top 10)
 	elseif event == "REPLICATE_ITEM_LIST_UPDATE" then
 		if I.diagReplicate then I.DiagReplicateDone() end
 	end
@@ -824,6 +829,7 @@ function mod:OnEnable()
 	if I.Tabs then I.Tabs.Enable() end
 	if I.Merchant then I.Merchant.Enable() end
 	if I.AH then I.AH.Enable() end
+	if I.Tooltip then pcall(I.Tooltip.Hook) end
 	if C_Timer and C_Timer.After then C_Timer.After(2, I.ClaimKey) end   -- (v0.4.2.8: the I key, once)
 end
 
@@ -1577,6 +1583,10 @@ function mod:Slash(word, arg)
 			local d = I.Diag(rest)
 			for _, line in ipairs(I.DiagLines(d)) do Say("%s", line) end
 			I.Changed()
+			return
+		end
+		if sub == "trainer" then   -- (1.2.1) what the trainers gave Top 10
+			for _, line in ipairs(I.Trainer and I.Trainer.Report() or {}) do Say("%s", line) end
 			return
 		end
 		if sub == "settings" then if I.Tabs then I.Tabs.Open("settings") end return end   -- (v0.3.5: its own tab)

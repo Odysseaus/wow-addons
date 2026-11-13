@@ -208,6 +208,9 @@ local function Make()
 	win.foot:SetText(L["Grey: done. Order: Wowhead (WoW Forever)."])
 	win:Hide()
 	if type(rawget(_G, "UISpecialFrames")) == "table" then tinsert(UISpecialFrames, "ValhallaQuestChain") end   -- (Escape closes it)
+	-- (1.2.0) the map window (Valhalla's main window) closed: the chain closes with it
+	local map = MapFrame()
+	if map and map.HookScript then map:HookScript("OnHide", function() QC.Close() end) end
 	return win
 end
 
