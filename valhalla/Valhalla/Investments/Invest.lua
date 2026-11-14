@@ -35,6 +35,7 @@ I.SETTINGS = {
 	-- the 1c-dump filter (off: the raw lowest buyout), shift-hover compare, bags + bank in My items
 	scanSpeed = "balanced", histDays = 7, histCapMB = 3, dumpFilter = false, compare = true, mineBank = true,
 	ahTooltip = true,                                           -- (1.2.0: the AH lines under every item tooltip)
+	ahTotal = "stack",                                          -- (1.2.5: AH total on tooltips: "stack" hovered, "full" one full stack, "held" all held)
 	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (Owned: what you own costs nothing; 1.0.1: "vendor" gone,
 	-- moved to "market"); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false,

@@ -3148,16 +3148,90 @@ print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's b
   Mk.house = "Tip"
   local keepBags, keepBank, keepSeen, keepAcc, keepAccSeen = I.char.bags, I.char.bank, I.char.bankSeen, I.db.account.bank, I.db.account.bankSeen
   I.char.bags, I.char.bank, I.char.bankSeen, I.db.account.bank, I.db.account.bankSeen = { [2589] = 5 }, {}, nil, {}, nil
+  -- (1.2.5) coins: the game's tooltip money format first, then GetCoinTextureString, GetMoneyString, coin textures
+  local keepMF, keepCfg, keepCT, keepMS = MoneyFormatterUtil, GameTooltipMoneyFormat, GetCoinTextureString, GetMoneyString
+  MoneyFormatterUtil, GameTooltipMoneyFormat = { FormatMoney = function(c, cfg) return cfg.tag .. c end }, { tag = "MF" }
+  GetCoinTextureString = function(c) return "CT" .. c end
+  GetMoneyString = function(c) return "MS" .. c end
+  ok(P.Coins(12898) == "MF12898", "coins: MoneyFormatterUtil.FormatMoney with GameTooltipMoneyFormat (as the game's Sell Price line)")
+  MoneyFormatterUtil.FormatMoney = function() error("no") end
+  ok(P.Coins(12898) == "CT12898", "its error: GetCoinTextureString")
+  GameTooltipMoneyFormat = nil
+  ok(P.Coins(5) == "CT5", "no tooltip money format: GetCoinTextureString")
+  GetCoinTextureString = nil
+  ok(P.Coins(5) == "MS5", "then GetMoneyString")
+  GetMoneyString = function() return "" end
+  local G, Sv, C = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t", "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t", "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t"
+  ok(P.Coins(12898) == "1" .. G .. " 28" .. Sv .. " 98" .. C, "then the coin textures: 1 [gold] 28 [silver] 98 [copper]", P.Coins(12898))
+  ok(P.Coins(1500) == "15" .. Sv and P.Coins(10005) == "1" .. G .. " 5" .. C and P.Coins(7) == "7" .. C, "zero coins left out (15s; 1g 5c; 7c)")
+  -- the rest read with a stand-in for the game's format (zero coins left out)
+  MoneyFormatterUtil, GameTooltipMoneyFormat = { FormatMoney = function(c)
+    local t = {}
+    for i, n in ipairs({ math.floor(c / 10000), math.floor(c / 100) % 100, c % 100 }) do if n > 0 then t[#t + 1] = n .. ({ "g", "s", "c" })[i] end end
+    return table.concat(t, " ")
+  end }, {}
+  local function Txt(l) local t = {} for _, x in ipairs(l) do t[#t + 1] = x[1] .. " = " .. x[2] end return table.concat(t, " | ") end
+  W.sell = { [2589] = 13 }
+  ok(I.SETTINGS.ahTotal == "stack" and I.S.ahTotal == "stack", "setting 'AH total on item tooltips': Hovered stack by default")
   local l = P.Lines(2589)
-  ok(#l == 2 and l[1] == "AH lowest: 12s 34c each (just now)" and l[2] == "You have 5: 61s 70c", "bags only (bank never seen): lowest each and 5 x lowest", table.concat(l, " | "))
+  ok(#l == 2 and l[1][1] == "Vendor" and l[1][2] == "13c" and l[2][1] == "AH (just now)" and l[2][2] == "12s 34c", "Vendor then AH (its age in the label); no slot hovered: no total (not held instead)", Txt(l))
+  -- Hovered stack: the bag or bank slot the tooltip is for
+  local keepBagsW = W.bags
+  W.bags = { [0] = { { 2589, 1 }, { 2589, 7 }, { 2320, 9 } }, [6] = { { 2589, 4 } } }
+  local slotTip = { owner = { GetSlotAndBagID = function() return 2, 0 end } }
+  function slotTip:GetOwner() return self.owner end
+  l = P.Lines(2589, nil, slotTip)
+  ok(#l == 3 and l[3][1] == "AH total (7)" and l[3][2] == "86s 38c", "a bag slot of 7: 'AH total (7)', 7 x lowest, third", Txt(l))
+  slotTip.owner = { GetBankTabID = function() return 6 end, GetContainerSlotID = function() return 1 end }
+  l = P.Lines(2589, nil, slotTip)
+  ok(#l == 3 and l[3][1] == "AH total (4)" and l[3][2] == "49s 36c", "a bank slot of 4: 'AH total (4)'", Txt(l))
+  slotTip.owner = { GetSlotAndBagID = function() return 1, 0 end }
+  ok(#P.Lines(2589, nil, slotTip) == 2, "a stack of 1: no total")
+  slotTip.owner = { GetSlotAndBagID = function() return 3, 0 end }
+  ok(#P.Lines(2589, nil, slotTip) == 2, "the slot holds another item: no total")
+  slotTip.owner = { GetName = function() return "MerchantItem1" end }
+  ok(#P.Lines(2589, nil, slotTip) == 2, "not a bag slot (a merchant's item): no total")
+  slotTip.owner = { GetSlotAndBagID = function() return 2, 0 end }
+  -- Single stack: one full stack (GetItemInfo's max stack size)
+  I.S.ahTotal = "full"
+  l = P.Lines(2589, nil, slotTip)
+  ok(#l == 3 and l[3][1] == "AH total (stack of 20)" and l[3][2] == "2g 46s 80c", "Single stack: 'AH total (stack of 20)', a full stack x lowest (hovered or not)", Txt(l))
+  W.stack = { [2589] = 1 }
+  ok(#P.Lines(2589) == 2, "Single stack of an item that doesn't stack: no total")
+  W.stack = nil
+  -- Everything held: bags + bank (per Count bank items)
+  I.S.ahTotal = "held"
+  I.char.bags, I.char.bank, I.char.bankSeen, I.db.account.bank, I.db.account.bankSeen = { [2589] = 5 }, {}, nil, {}, nil
+  l = P.Lines(2589, nil, slotTip)
+  ok(#l == 3 and l[3][1] == "AH total (5 held)" and l[3][2] == "61s 70c", "Everything held, bags only (bank never seen): 'AH total (5 held)'", Txt(l))
   I.char.bankSeen, I.char.bank[2589] = W.now, 3
   l = P.Lines(2589)
-  ok(#l == 2 and l[2] == "You have 8 (bags 5, bank 3): 98s 72c", "the bank seen: bags + bank, split shown", l[2])
+  ok(#l == 3 and l[3][1] == "AH total (8 held)" and l[3][2] == "98s 72c", "the bank seen: bags + bank", Txt(l))
+  I.S.countBank = false
+  ok(P.Lines(2589)[3][1] == "AH total (5 held)", "Count bank items off: bags only")
+  I.S.countBank = true
   I.char.bags[2589], I.char.bank[2589] = 1, nil
-  l = P.Lines(2589)
-  ok(#l == 1 and l[1]:find("^AH lowest"), "holding 1: the price only")
+  ok(#P.Lines(2589) == 2, "holding 1: no total")
   I.char.bags[2589] = 5
-  ok(#P.Lines(2320) == 0, "an item not in your scans: no line")
+  I.S.ahTotal = "bogus"
+  ok(#P.Lines(2589, nil, slotTip) == 3 and P.Lines(2589, nil, slotTip)[3][1] == "AH total (7)", "an unknown setting value: Hovered stack")
+  I.S.ahTotal = "stack"
+  -- Vendor: none at 0, none while not loaded, none beside the game's own Sell Price line
+  W.sell[2589] = 0
+  l = P.Lines(2589)
+  ok(#l == 1 and l[1][1] == "AH (just now)", "sell price 0 (vendors won't buy it): no Vendor line", Txt(l))
+  W.sell[2589] = 13
+  W.uncached[2589] = true
+  l = P.Lines(2589)
+  ok(#l == 1 and l[1][1] == "AH (just now)", "not loaded yet (no sell price): no Vendor line, AH still", Txt(l))
+  W.uncached[2589] = nil
+  l = P.Lines(2589, { id = 2589, lines = { { leftText = "Linen Cloth", type = 0 }, { type = 11, price = 13 } } })
+  ok(#l == 1 and l[1][1] == "AH (just now)", "the tooltip has the game's Sell Price line (type 11): ours left out", Txt(l))
+  Enum.TooltipDataLineType = { SellPrice = 11 }
+  ok(#P.Lines(2589, { id = 2589, lines = { { type = 11 } } }) == 1 and #P.Lines(2589, { id = 2589, lines = { { type = 2 } } }) == 2, "the same through Enum.TooltipDataLineType.SellPrice; another line type: ours kept")
+  Enum.TooltipDataLineType = nil
+  -- nothing at all
+  ok(#P.Lines(2320) == 0, "an item not in your scans: no line (not even Vendor)")
   ok(#P.Lines(2770) == 0, "none listed in the last scan: no line")
   Mk.house = "NoSuchHouse"
   ok(#P.Lines(2589) == 0, "no scan data for the house: no line")
@@ -3168,22 +3242,42 @@ print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's b
   ITEM_SOULBOUND = "Soulbound"
   ok(#P.Lines(2589, { id = 2589, lines = { { leftText = "Linen Cloth" }, { leftText = "Soulbound" } } }) == 0, "a soulbound one (its tooltip says so): no line")
   W.Click(sp.ahTooltip)
-  ok(I.S.ahTooltip == false and #P.Lines(2589) == 0, "setting off: no line")
+  ok(I.S.ahTooltip == false and #P.Lines(2589) == 0 and #P.Lines(2589, nil, slotTip) == 0, "setting off: no line")
   W.Click(sp.ahTooltip)
   ok(I.S.ahTooltip == true, "setting on again")
-  -- the post-call on the game's tooltips
-  tip.lines = {}
+  -- the setting's three choices, beside 'AH price on item tooltips'
+  local rt = sp.ahTotal
+  ok(rt and rt.title._text == "AH total on item tooltips:" and #rt.boxes == 3 and rt.boxes[1].value == "stack" and rt.boxes[2].value == "full" and rt.boxes[3].value == "held"
+    and rt.boxes[1].label._text == "Hovered stack" and rt.boxes[2].label._text == "Single stack" and rt.boxes[3].label._text == "Everything held" and rt.boxes[1].tick:IsShown(),
+    "Settings > AH Market: 'AH total on item tooltips:' Hovered stack (ticked) | Single stack | Everything held")
+  W.Click(rt.boxes[3])
+  ok(I.S.ahTotal == "held" and rt.boxes[3].tick:IsShown() and not rt.boxes[1].tick:IsShown(), "Everything held picked: saved")
+  W.Click(rt.boxes[2])
+  ok(I.S.ahTotal == "full", "Single stack picked: saved")
+  W.Click(rt.boxes[1])
+  ok(I.S.ahTotal == "stack", "Hovered stack again")
+  -- the post-call on the game's tooltips: label left (Valhalla's gold), coins right (white)
+  local dl = {}
+  GT.AddDoubleLine = function(self, a, b, r1, g1, b1, r2, g2, b2) dl[#dl + 1] = { a, b, r1, g1, b1, r2, g2, b2 } end
+  tip.owner = slotTip.owner
   P.OnItem(GT, { id = 2589 })
-  ok(#tip.lines == 2 and tip.lines[1][1]:find("^AH lowest") and tip.lines[1][2] == P.R, "GameTooltip: two lines added (Valhalla's gold)")
+  ok(#dl == 3 and dl[1][1] == "Vendor" and dl[2][1] == "AH (just now)" and dl[3][1] == "AH total (7)" and dl[3][2] == "86s 38c"
+    and dl[1][3] == P.R and dl[1][4] == P.G and dl[1][5] == P.B and dl[1][6] == 1 and dl[1][7] == 1 and dl[1][8] == 1,
+    "GameTooltip: Vendor, AH, AH total (the hovered slot's 7); label gold on the left, coins white on the right")
+  tip.owner = nil
   ItemRefTooltip = W.NewFrame("GameTooltip")
   local ref = {}
-  ItemRefTooltip.AddLine = function(self, t) ref[#ref + 1] = t end
+  ItemRefTooltip.AddDoubleLine = function(self, a, b) ref[#ref + 1] = a end
   P.OnItem(ItemRefTooltip, { id = 2589 })
-  ok(#ref == 2, "ItemRefTooltip (a clicked link): the same two lines")
+  ok(#ref == 2 and ref[1] == "Vendor" and ref[2] == "AH (just now)", "ItemRefTooltip (a clicked link): Vendor and AH (no slot: no total)")
   local other, n = W.NewFrame("GameTooltip"), 0
+  other.AddDoubleLine = function() n = n + 1 end
   other.AddLine = function() n = n + 1 end
   P.OnItem(other, { id = 2589 })
   ok(n == 0, "other tooltips (compare, addons'): nothing")
+  GT.AddDoubleLine = nil
+  W.bags, W.sell = keepBagsW, nil
+  MoneyFormatterUtil, GameTooltipMoneyFormat, GetCoinTextureString, GetMoneyString = keepMF, keepCfg, keepCT, keepMS
   -- Valhalla's own rows: the post-call's lines, not AH Market's again
   V.ItemTooltip(UIParent, 2589, Mk.Lines)
   ok(not Has("^Valhalla AH"), "a Valhalla row's tooltip: AH Market's own lines not added (the tooltip already has them)")

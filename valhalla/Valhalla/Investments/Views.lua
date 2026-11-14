@@ -1051,6 +1051,9 @@ local function BuildSettings(page)
 	page.dump = Opt(L["Ignore a 1c dump (a lowest price under 30% of its 7-day median)"], "dumpFilter")
 	page.compare = Opt(L["Shift-hover: compare with what I wear"], "compare")
 	page.ahTooltip = Opt(L["AH price on item tooltips"], "ahTooltip")   -- (1.2.0)
+	page.ahTotal = Place(V.Radio(body, L["AH total on item tooltips:"], { { "stack", L["Hovered stack"] }, { "full", L["Single stack"] }, { "held", L["Everything held"] } },
+		function() return S.ahTotal end, function(v) S.ahTotal = v I.Changed() end))   -- (1.2.5)
+	page.ahTotalNote = Note(L["Hovered stack: the stack in the bag or bank slot you point at (none for a link or a merchant's item). Single stack: one full stack. Everything held: bags and bank."])
 	local forgetAH = V.Button(body, L["Forget this house's market"], 220, 22, function()
 		if I.Scan and I.Market then I.Scan.Forget((I.Market.House())) end
 	end)

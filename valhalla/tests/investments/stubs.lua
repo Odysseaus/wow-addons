@@ -186,7 +186,7 @@ C_Item = {
     if not id and type(x) == "string" then for i, v in pairs(W.items) do if v[1] == x then id = i end end end
     local v = id and W.items[id]
     if not v or W.uncached[id] then return nil end
-    return v[1], ("|cffffffff|Hitem:%d::::::::|h[%s]|h|r"):format(id, v[1]), 1, 1, 1, "Trade Goods", "Cloth", 20, "", v[2], 10, 7, 5, (W.bind or {})[id]   -- (classID, subclassID, bindType: W.bind[id], 1 = bind on pickup)
+    return v[1], ("|cffffffff|Hitem:%d::::::::|h[%s]|h|r"):format(id, v[1]), 1, 1, 1, "Trade Goods", "Cloth", (W.stack or {})[id] or 20, "", v[2], (W.sell or {})[id] or 10, 7, 5, (W.bind or {})[id]   -- (max stack: W.stack[id]; sell price: W.sell[id]; classID, subclassID, bindType: W.bind[id], 1 = bind on pickup)
   end,
   GetItemIconByID = function(id) return W.items[id] and W.items[id][2] end,
   RequestLoadItemDataByID = function(id) Count("requestLoad") end,
