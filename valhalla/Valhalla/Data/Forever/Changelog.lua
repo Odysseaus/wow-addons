@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.9", date = "2026-11-14", heads = { [1] = "Fixed", [4] = "Changed", [7] = "New", [8] = "Note", }, items = {
+		"|cff6e2c0aBuying stackable goods from the cart works as the Auction House's own Buy does|r: Yes (or Buy next) asks the game's price; when it comes, the button shows \"Confirm: <item> xN for <price>\" and your click on it buys, while the game's price holds (if it runs out first, Buy next asks again). Other items are still bought at their buyout on your click. Before, nothing was bought (\"no answer from the Auction House\").",
+		"The Auction House busy: nothing is sent; the cart says \"Auction House busy: press Buy next again in a moment\", and Buy next comes back when it's ready.",
+		"Each step says what didn't answer: no price from the Auction House, or confirmed but no purchase answer. A purchase counts as bought on the game's success, the item arriving, or your gold going down. A price addons can't read, or an error, stops the buying and says so in chat.",
+		"|cff6e2c0aDave's Sack's own Auction House scans are off|r, so only Valhalla scans the AH (it searched all your bag items, and every 2 hours the whole AH, each time the AH opened, while you were buying). Its bags and AH price tooltips work as before. Said once a session in chat; Settings > Auction House: \"Turn off Dave's Sack's own Auction House scans\" (on by default).",
+		"The AH list's rows all look the same, in the list's own order: a vendor's price is only in the item's tooltip (no dimming, no line under the name).",
+		"Each Auction House visit opens the side panel on the list, never the cart (the cart's items are kept). Minimized or not stays as you left it, across visits and /reload.",
+		"|cff6e2c0a/valhalla invest buydebug on|off|r: every buying step and the game's answers (blocked actions and AH errors too) in chat and the saved log; /valhalla invest buydebug shows the last lines.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.8", date = "2026-11-14", heads = { [1] = "Fixed", [6] = "Changed", [8] = "Note", }, items = {
 		"|cff6e2c0aThe Auction House list shows every item on the list|r: what only the AH has first, then items a vendor you've visited also sells, dimmed, with \"Vendor: <price> (<vendor>)\" under the name. Each row has the cart's +. Before, a list of such items (many herbs, leather, thread) looked empty there.",
 		"|cff6e2c0aThe item search is smooth again|r: it runs 0.3 s after you stop typing, its index of names is built once a session, and names the game hasn't sent yet are asked for a few at a time (at most 20 a second, 30 waiting) only while the dropdown is open.",

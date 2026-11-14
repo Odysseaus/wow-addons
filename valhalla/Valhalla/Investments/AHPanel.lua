@@ -26,6 +26,8 @@
 -- the price guard (+5%: Settings) of the price shown, else skipped; other items: the cheapest auctions, at
 -- their buyout. It stops on a failure, not enough gold, or the AH closing (what's pending is cancelled).
 -- Every purchase is logged (/valhalla invest buys).
+-- 1.2.9: stackable goods as the AH's own Buy does it: Buy next asks the price, Confirm (your click) buys; the AH
+-- busy: nothing sent; /valhalla invest buydebug on logs each step. The list's rows all look the same.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -173,7 +175,15 @@ end
 -- (1.2.7) The checkout cart: its bar on the list, its view, the Yes / No ask, and the buying
 --------------------------------------------------------------------------------
 local function Now() return time and time() or 0 end
-local function Num(v) local x = ns.Safe and ns.Safe.Value and ns.Safe.Value(v) or v return tonumber(x) or x end
+-- (1.2.9) a number the game gave, or nil: a secret value (or anything not a number) is never used as one
+-- (1.2.7's fell back to the secret itself, and comparing it would have been an error)
+local function Num(v)
+	if v == nil then return nil end
+	if issecretvalue and issecretvalue(v) then return nil end
+	if ns.Safe and ns.Safe.IsSecret and ns.Safe.IsSecret(v) then return nil end
+	return tonumber(v)
+end
+A.Num = Num
 local function Money(c) return I.Scan.Money(math.floor((c or 0) + 0.5)) end
 local function Gold() return (GetMoney and GetMoney()) or 0 end
 function A.Guard() return math.max(0, tonumber(I.S.buyGuard) or 5) end
@@ -257,7 +267,7 @@ end
 
 -- Buy: asks first (Yes / No), saying what, the total, your gold, and that each purchase is its own click
 function A.AskBuy()
-	if A.buy and (A.buy.state == "waiting" or A.buy.state == "ready") then return end   -- (buying: Buy next)
+	if A.buy and (A.buy.state == "waiting" or A.buy.state == "ready" or A.buy.state == "quoted") then return end   -- (buying: Buy next / Confirm)
 	if I.Scan.Running() then ns:Print("%s", L["Wait for the scan to finish (or stop it), then Buy."]) return end
 	local steps, total, notes, unpriced = A.Plan()
 	if unpriced > 0 then
@@ -271,7 +281,7 @@ function A.AskBuy()
 	local lines = {
 		L["Buy the cart: %d purchase(s), total %s?"]:format(#steps, Money(total)),
 		L["You have %s."]:format(Money(Gold())),
-		L["Each purchase needs its own click: Yes buys the first (%s), then press Buy next for each of the rest."]:format(StepText(steps[1])),
+		L["Each purchase needs your own clicks, as on the Auction House's own Buy: Yes starts the first (%s), then press Buy next for each of the rest. Stackable goods: the game's price is asked first, then Confirm buys it."]:format(StepText(steps[1])),
 		L["Stackable goods are bought only if the game's price is at most +%d%% over the price shown; else skipped."]:format(A.Guard()),
 	}
 	if total > Gold() then lines[#lines + 1] = L["Not enough gold for all of it: it stops when the gold runs out."] end
@@ -280,32 +290,91 @@ function A.AskBuy()
 	c:Show()
 end
 
--- the buying: one step per click of yours (Yes, then Buy next)
+-- the buying (1.2.9: Blizzard's own way, as its Auction House does it). Stackable goods take two clicks of yours:
+-- Yes / Buy next asks the game's price (StartCommoditiesPurchase(id, n, unit price), in your click); when the
+-- price comes (COMMODITY_PRICE_UPDATED) and is within the guard, "Confirm: <item> xN for <price>" shows, and your
+-- click on it buys (ConfirmCommoditiesPurchase) while the game's quote is good (it runs out: cancelled, Buy next
+-- asks again). Other items: your click bids the auction's buyout (PlaceBid). The Auction House busy (its
+-- throttle): nothing is sent, it's said, and Buy next comes back when the AH is ready. Each step its own
+-- timeout and words. Bought: the game's purchase events, the item arriving (COMMODITY_PURCHASED) or your gold
+-- going down. /valhalla invest buydebug on: every step and the game's answers in chat and the saved log.
 local buyer
 local BUY_EVENTS = { "COMMODITY_PRICE_UPDATED", "COMMODITY_PRICE_UNAVAILABLE", "COMMODITY_PURCHASE_SUCCEEDED",
-	"COMMODITY_PURCHASE_FAILED", "AUCTION_HOUSE_PURCHASE_COMPLETED", "AUCTION_HOUSE_SHOW_ERROR" }
+	"COMMODITY_PURCHASE_FAILED", "COMMODITY_PURCHASED", "AUCTION_HOUSE_PURCHASE_COMPLETED", "ITEM_PURCHASED",
+	"AUCTION_HOUSE_SHOW_ERROR", "PLAYER_MONEY" }
 A.BUY_EVENTS = BUY_EVENTS
+A.QUOTE = 30                                -- (1.2.9: a quote's seconds when the game doesn't say)
+A.DEBUG_KEEP = 300
+-- (1.2.9) the buy log for /valhalla invest buydebug: chat and the character's saved log (buyDebug)
+function A.Dbg(fmt, ...)
+	if not (I.S and I.S.buyDebug) then return end
+	local ok, msg = pcall(string.format, fmt, ...)
+	if not ok then msg = tostring(fmt) end
+	local gt = GetTime and GetTime() or 0
+	local line = ("%s %.2f %s"):format(date and date("%H:%M:%S") or "", tonumber(gt) or 0, msg)
+	ns:Print("buydebug: %s", msg)
+	local c = I.char
+	if c then
+		if type(c.buyDebug) ~= "table" then c.buyDebug = {} end
+		c.buyDebug[#c.buyDebug + 1] = line
+		while #c.buyDebug > A.DEBUG_KEEP do table.remove(c.buyDebug, 1) end
+	end
+end
+local Dbg = A.Dbg
+local function Show(v)
+	if v == nil then return "nil" end
+	if issecretvalue and issecretvalue(v) then return "<secret>" end
+	return tostring(v)
+end
+A.Show = Show
+
 local function BuyEvents(listen)
 	if not buyer then
 		buyer = CreateFrame("Frame")
-		buyer:SetScript("OnEvent", function(_, event, ...) A.OnBuyEvent(event, ...) end)
+		buyer:SetScript("OnEvent", function(_, event, ...)
+			local ok, err = pcall(A.OnBuyEvent, event, ...)
+			if not ok then A.HandlerError(event, err) end
+		end)
 	end
 	buyer:UnregisterAllEvents()
 	if listen then for _, e in ipairs(BUY_EVENTS) do pcall(buyer.RegisterEvent, buyer, e) end end
 end
 function A.Buyer() return buyer end
 
+-- the game's quote: seconds left (nil: the game doesn't say)
+local function QuoteLeft()
+	local f = C_AuctionHouse and C_AuctionHouse.GetQuoteDurationRemaining
+	if not f then return nil end
+	local ok, s = pcall(f)
+	if not ok then return nil end
+	return Num(s)
+end
+-- the Auction House's throttle: busy (it would drop what's sent)
+local function Busy()
+	local f = C_AuctionHouse and C_AuctionHouse.IsThrottledMessageSystemReady
+	if not f then return false end
+	local ok, ready = pcall(f)
+	return ok and ready == false
+end
+A.Busy = Busy
+
 local function Log(st, result, total, note)
 	I.LogBuy({ house = A.buy and A.buy.house, id = st.id, n = st.n, total = total or st.expected, kind = st.kind, result = result, note = note })
+end
+
+local function Cancel()
+	local ok, err = pcall(C_AuctionHouse.CancelCommoditiesPurchase)
+	Dbg("CancelCommoditiesPurchase()%s", ok and "" or (": error " .. tostring(err)))
 end
 
 local function Stop(reason)
 	local b = A.buy
 	if not b then return end
 	BuyEvents(false)
-	b.state = "stopped"
+	b.state, b.busy = "stopped", nil
 	b.note = L["Stopped: %s. Bought %d of %d purchases, spent %s; the rest is still in the cart."]:format(reason, b.bought, #b.steps, Money(b.spent))
 	ns:Print("%s", b.note)
+	Dbg("stopped: %s", reason)
 	A.Refresh()
 end
 
@@ -313,6 +382,7 @@ local function Advance(note)
 	local b = A.buy
 	BuyEvents(false)
 	b.i = b.i + 1
+	b.phase, b.busy = nil, nil
 	if b.i > #b.steps then
 		b.state = "done"
 		b.note = (note and (note .. " ") or "") .. L["Done: bought %d of %d purchases, spent %s."]:format(b.bought, #b.steps, Money(b.spent))
@@ -324,53 +394,31 @@ local function Advance(note)
 	A.Refresh()
 end
 
+-- an error in the handler: said (not swallowed), the buying stopped, what's pending cancelled
+function A.HandlerError(event, err)
+	local b = A.buy
+	Dbg("handler error on %s: %s", tostring(event), tostring(err))
+	ns:Print("%s", L["Valhalla: an error while buying (%s): %s"]:format(tostring(event), tostring(err)))
+	if b and (b.state == "waiting" or b.state == "quoted") then
+		local st = b.steps[b.i]
+		if st and st.kind == "commodity" and b.phase ~= "confirm" then Cancel() end
+		if st then Log(st, "failed", nil, "error") end
+		Stop(L["an error in Valhalla"])
+	end
+end
+
 function A.BuyStart(steps, total)
 	A.buy = { steps = steps, i = 1, total = total, spent = 0, bought = 0, house = I.Scan.House(), state = "ready", gen = 0 }
+	Dbg("buy started: %d purchase(s), total %s, gold %s", #steps, Money(total), Money(Gold()))
 	return A.BuyNext()
 end
 
--- the next purchase; only ever on your click (Yes, or Buy next): the game's purchase calls need one each
-function A.BuyNext()
+local function Bought(st, paid, how)
 	local b = A.buy
-	if not b or b.state ~= "ready" then return false end
-	local st = b.steps[b.i]
-	if not st then return false end
-	if not I.ahOpen then Stop(L["the Auction House is closed"]) return false end
-	local AHA = C_AuctionHouse
-	if Gold() < st.expected then
-		Log(st, "gold")
-		Stop(L["not enough gold for %s (it costs %s, you have %s)"]:format(StepText(st), Money(st.expected), Money(Gold())))
-		return false
-	end
-	b.state, b.gen = "waiting", b.gen + 1
-	local gen = b.gen
-	BuyEvents(true)
-	local ok
-	if st.kind == "commodity" then
-		b.phase = "quote"
-		ok = pcall(AHA.StartCommoditiesPurchase, st.id, st.n)
-	else
-		b.phase = "bid"
-		ok = pcall(AHA.PlaceBid, st.auction, st.expected)
-	end
-	if not ok then Log(st, "failed") Stop(L["the game refused to buy %s"]:format(StepText(st))) return false end
-	if C_Timer and C_Timer.After then
-		C_Timer.After(A.TIMEOUT, function()
-			if A.buy == b and b.gen == gen and b.state == "waiting" then
-				if st.kind == "commodity" then pcall(AHA.CancelCommoditiesPurchase) end
-				Log(st, "noanswer")
-				Stop(L["no answer from the Auction House for %s"]:format(StepText(st)))
-			end
-		end)
-	end
-	A.Refresh()
-	return true
-end
-
-local function Bought(st, paid)
-	local b = A.buy
+	paid = paid or st.quoted or st.expected
 	b.spent, b.bought = b.spent + paid, b.bought + 1
-	Log(st, "bought", paid)
+	Dbg("bought %s for %s (%s)", StepText(st), Money(paid), how or "?")
+	Log(st, "bought", paid, how)
 	-- (its listings are spent: priced again before buying more of it)
 	local q = I.Scan.quotes[b.house]
 	if q and st.kind == "commodity" then q[st.id] = nil end
@@ -380,48 +428,194 @@ local function Bought(st, paid)
 	Advance(L["Bought %s for %s."]:format(StepText(st), Money(paid)))
 end
 
+-- each step's own wait: no answer in A.TIMEOUT seconds, said for that step (your gold gone down: bought)
+local function Watch(b, st, phase)
+	local gen = b.gen
+	if not (C_Timer and C_Timer.After) then return end
+	C_Timer.After(A.TIMEOUT, function()
+		if A.buy ~= b or b.gen ~= gen or b.state ~= "waiting" or b.phase ~= phase then return end
+		if phase ~= "quote" and b.money0 and Gold() < b.money0 then Bought(st, b.money0 - Gold(), "gold went down") return end
+		Dbg("timeout (%ds) in step %s", A.TIMEOUT, phase)
+		if phase == "quote" then
+			Cancel()
+			Log(st, "noquote")
+			Stop(L["no price from the Auction House for %s in %d seconds (nothing bought)"]:format(StepText(st), A.TIMEOUT))
+		elseif phase == "confirm" then
+			Log(st, "noconfirm", st.quoted)
+			Stop(L["the Auction House didn't finish buying %s in %d seconds (no purchase answer, your gold unchanged)"]:format(StepText(st), A.TIMEOUT))
+		else
+			Log(st, "noanswer")
+			Stop(L["no answer from the Auction House to the bid on %s in %d seconds (nothing bought)"]:format(StepText(st), A.TIMEOUT))
+		end
+	end)
+end
+
+-- the quote ran out before your Confirm: cancelled; Buy next asks again
+local function Expire(b, st)
+	Cancel()
+	Log(st, "expired", st.quoted)
+	BuyEvents(false)
+	b.state, b.phase, b.gen = "ready", nil, b.gen + 1
+	b.note = L["The price for %s ran out before Confirm (nothing bought): press Buy next to ask again."]:format(StepText(st))
+	Dbg("quote ran out")
+	A.Refresh()
+end
+
+-- the next purchase; only ever on your click (Yes, or Buy next): the game's purchase calls need one each
+function A.BuyNext()
+	local b = A.buy
+	if not b or b.state ~= "ready" then return false end
+	local st = b.steps[b.i]
+	if not st then return false end
+	Dbg("step %d/%d: %s, %s, expected %s", b.i, #b.steps, StepText(st), st.kind, Money(st.expected))
+	if not I.ahOpen then Stop(L["the Auction House is closed"]) return false end
+	local AHA = C_AuctionHouse
+	if Gold() < st.expected then
+		Log(st, "gold")
+		Stop(L["not enough gold for %s (it costs %s, you have %s)"]:format(StepText(st), Money(st.expected), Money(Gold())))
+		return false
+	end
+	-- the AH busy: nothing sent (it would be dropped, unanswered); Buy next comes back when it's ready
+	if Busy() then
+		b.busy = true
+		b.note = L["Auction House busy: press Buy next again in a moment (nothing was sent)."]
+		Dbg("the AH is busy (throttled): nothing sent")
+		A.WaitReady(b)
+		A.Refresh()
+		return false
+	end
+	b.busy = nil
+	b.state, b.gen, b.money0 = "waiting", b.gen + 1, Gold()
+	BuyEvents(true)
+	local ok, err
+	if st.kind == "commodity" then
+		b.phase = "quote"
+		st.unit = math.ceil(st.expected / math.max(1, st.n))
+		Dbg("StartCommoditiesPurchase(%d, %d, %d)", st.id, st.n, st.unit)
+		ok, err = pcall(AHA.StartCommoditiesPurchase, st.id, st.n, st.unit)
+	else
+		b.phase = "bid"
+		Dbg("PlaceBid(%s, %d)", tostring(st.auction), st.expected)
+		ok, err = pcall(AHA.PlaceBid, st.auction, st.expected)
+	end
+	Dbg(ok and "the call returned" or "the call failed: %s", tostring(err))
+	if not ok then Log(st, "failed", nil, tostring(err)) Stop(L["the game refused to buy %s"]:format(StepText(st))) return false end
+	if b.state == "waiting" and b.phase ~= "quoted" then Watch(b, st, b.phase) end
+	A.Refresh()
+	return true
+end
+
+-- Confirm (your click): buys at the game's quoted price
+function A.Confirm()
+	local b = A.buy
+	if not b or b.state ~= "quoted" then return false end
+	local st = b.steps[b.i]
+	if not I.ahOpen then Stop(L["the Auction House is closed"]) return false end
+	local left = QuoteLeft()
+	Dbg("Confirm clicked: quote left %s s", Show(left))
+	if left and left <= 0 then Expire(b, st) return false end
+	b.state, b.phase, b.gen, b.money0 = "waiting", "confirm", b.gen + 1, Gold()
+	Dbg("ConfirmCommoditiesPurchase(%d, %d)", st.id, st.n)
+	local ok, err = pcall(C_AuctionHouse.ConfirmCommoditiesPurchase, st.id, st.n)
+	Dbg(ok and "the call returned" or "the call failed: %s", tostring(err))
+	if not ok then Log(st, "failed", st.quoted, tostring(err)) Stop(L["the game refused to buy %s"]:format(StepText(st))) return false end
+	if b.state == "waiting" and b.phase == "confirm" then Watch(b, st, "confirm") end
+	A.Refresh()
+	return true
+end
+
+-- Buy next's button: Confirm when a price is shown, else the next purchase
+function A.NextClick()
+	local b = A.buy
+	if b and b.state == "quoted" then return A.Confirm() end
+	return A.BuyNext()
+end
+
+-- the AH busy: Buy next back when it's ready (its event, or a look each second)
+function A.WaitReady(b)
+	if b.waitingReady or not (C_Timer and C_Timer.After) then return end
+	b.waitingReady = true
+	local tries = 0
+	local function Look()
+		if A.buy ~= b or not b.busy then b.waitingReady = nil return end
+		tries = tries + 1
+		if not Busy() then b.waitingReady = nil A.OnThrottleReady() return end
+		if tries < 60 then C_Timer.After(1, Look) else b.waitingReady = nil end
+	end
+	C_Timer.After(1, Look)
+end
+function A.OnThrottleReady()
+	local b = A.buy
+	if not (b and b.busy and b.state == "ready") then return end
+	b.busy = nil
+	b.note = L["The Auction House is ready: press Buy next."]
+	Dbg("the AH is ready again")
+	A.Refresh()
+end
+
 function A.OnBuyEvent(event, a1, a2)
 	local b = A.buy
-	if not b or b.state ~= "waiting" then return end
+	if not b or (b.state ~= "waiting" and b.state ~= "quoted") then return end
 	local st = b.steps[b.i]
-	local AHA = C_AuctionHouse
+	if event ~= "PLAYER_MONEY" then Dbg("event %s (%s, %s), step %s", event, Show(a1), Show(a2), tostring(b.phase)) end
+	if event == "PLAYER_MONEY" then
+		if b.state == "waiting" and (b.phase == "confirm" or b.phase == "bid") and b.money0 and Gold() < b.money0 then
+			Bought(st, b.money0 - Gold(), "gold went down")
+		end
+		return
+	end
 	if st.kind == "commodity" then
 		if event == "COMMODITY_PRICE_UPDATED" and b.phase == "quote" then
 			local unit, total = Num(a1), Num(a2)
-			total = type(total) == "number" and total or (type(unit) == "number" and unit * st.n or math.huge)
+			if not total and unit then total = unit * st.n end
+			if not total then
+				Cancel()
+				Log(st, "unreadable")
+				Stop(L["the game's price for %s can't be read by addons (nothing bought)"]:format(StepText(st)))
+				return
+			end
 			local limit = math.floor(st.expected * (1 + A.Guard() / 100))
 			if total > limit then
-				pcall(AHA.CancelCommoditiesPurchase)
+				Cancel()
 				local pct = st.expected > 0 and math.floor((total / st.expected - 1) * 100 + 0.5) or 0
 				Log(st, "rose", total, ("+%d%%"):format(pct))
 				Advance(L["%s skipped: its price rose %d%% (%s; guard +%d%%)."]:format(StepText(st), pct, Money(total), A.Guard()))
 				return
 			end
 			if Gold() < total then
-				pcall(AHA.CancelCommoditiesPurchase)
+				Cancel()
 				Log(st, "gold", total)
 				Stop(L["not enough gold for %s (it costs %s, you have %s)"]:format(StepText(st), Money(total), Money(Gold())))
 				return
 			end
-			st.quoted, b.phase = total, "confirm"
-			if not pcall(AHA.ConfirmCommoditiesPurchase, st.id, st.n) then
-				Log(st, "failed", total)
-				Stop(L["the game refused to buy %s"]:format(StepText(st)))
+			-- the price: shown on Confirm; your click buys while the quote is good
+			st.quoted = total
+			b.state, b.phase, b.gen = "quoted", "quoted", b.gen + 1
+			local left = QuoteLeft()
+			if not left or left <= 0 then left = A.QUOTE end
+			b.note = nil
+			Dbg("quoted %s (guard %s): Confirm shown, %s s", Money(total), Money(limit), tostring(left))
+			local gen = b.gen
+			if C_Timer and C_Timer.After then
+				C_Timer.After(left, function() if A.buy == b and b.gen == gen and b.state == "quoted" then Expire(b, st) end end)
 			end
-		elseif event == "COMMODITY_PRICE_UNAVAILABLE" then
-			pcall(AHA.CancelCommoditiesPurchase)
+			A.Refresh()
+		elseif event == "COMMODITY_PRICE_UNAVAILABLE" and b.phase ~= "confirm" then
+			Cancel()
 			Log(st, "unavailable")
 			Stop(L["%s: its price isn't available (sold out or changed): Scan again"]:format(StepText(st)))
 		elseif event == "COMMODITY_PURCHASE_SUCCEEDED" and b.phase == "confirm" then
-			Bought(st, st.quoted or st.expected)
+			Bought(st, (b.money0 and Gold() < b.money0) and (b.money0 - Gold()) or st.quoted, "purchase succeeded")
+		elseif event == "COMMODITY_PURCHASED" and b.phase == "confirm" and Num(a1) == st.id then
+			Bought(st, (b.money0 and Gold() < b.money0) and (b.money0 - Gold()) or st.quoted, "item arrived")
 		elseif event == "COMMODITY_PURCHASE_FAILED" or event == "AUCTION_HOUSE_SHOW_ERROR" then
-			if b.phase == "quote" then pcall(AHA.CancelCommoditiesPurchase) end
+			if b.phase ~= "confirm" then Cancel() end
 			Log(st, "failed", st.quoted)
 			Stop(L["buying %s failed"]:format(StepText(st)))
 		end
 	else
-		if event == "AUCTION_HOUSE_PURCHASE_COMPLETED" and Num(a1) == st.auction then
-			Bought(st, st.expected)
+		if (event == "AUCTION_HOUSE_PURCHASE_COMPLETED" and Num(a1) == st.auction) or (event == "ITEM_PURCHASED" and Num(a1) == st.id) then
+			Bought(st, st.expected, event == "ITEM_PURCHASED" and "item arrived" or "purchase completed")
 		elseif event == "AUCTION_HOUSE_SHOW_ERROR" then
 			Log(st, "failed")
 			Stop(L["buying %s failed (sold already, or not enough gold)"]:format(StepText(st)))
@@ -429,17 +623,38 @@ function A.OnBuyEvent(event, a1, a2)
 	end
 end
 
--- the AH closed: a purchase waiting is cancelled, the buying stopped
+-- the AH closed: a purchase waiting (or its price shown) is cancelled, the buying stopped
 function A.CancelBuy(reason)
 	local b = A.buy
-	if not b or (b.state ~= "waiting" and b.state ~= "ready") then return end
+	if not b or (b.state ~= "waiting" and b.state ~= "ready" and b.state ~= "quoted") then return end
 	local st = b.steps[b.i]
-	if b.state == "waiting" and st then
-		if st.kind == "commodity" then pcall(C_AuctionHouse.CancelCommoditiesPurchase) end
+	if (b.state == "waiting" or b.state == "quoted") and st then
+		if st.kind == "commodity" and b.phase ~= "confirm" then Cancel() end
 		Log(st, "cancelled")
 	end
 	Stop(reason or L["the Auction House closed"])
 end
+
+-- (1.2.9) the debug log's own listener: what the game says while buying (and any blocked action)
+A.DEBUG_EVENTS = { "AUCTION_HOUSE_THROTTLED_SYSTEM_READY", "AUCTION_HOUSE_THROTTLED_MESSAGE_SENT", "AUCTION_HOUSE_THROTTLED_MESSAGE_QUEUED",
+	"AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED", "AUCTION_HOUSE_THROTTLED_MESSAGE_RESPONSE_RECEIVED", "UI_ERROR_MESSAGE",
+	"ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "PLAYER_MONEY" }
+local debugFrame
+function A.DebugListen(on)
+	if not debugFrame then
+		debugFrame = CreateFrame("Frame")
+		debugFrame:SetScript("OnEvent", function(_, event, a1, a2)
+			local b = A.buy
+			local buying = b and (b.state == "ready" or b.state == "waiting" or b.state == "quoted")
+			if not (buying or event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN") then return end
+			if event == "PLAYER_MONEY" then Dbg("event PLAYER_MONEY: gold %s", Money(Gold())) return end
+			Dbg("event %s (%s, %s)", event, Show(a1), Show(a2))
+		end)
+	end
+	debugFrame:UnregisterAllEvents()
+	if on then for _, e in ipairs(A.DEBUG_EVENTS) do pcall(debugFrame.RegisterEvent, debugFrame, e) end end
+end
+function A.DebugFrame() return debugFrame end
 
 -- the cart's bar (on the list) and view
 function A.BuildCart(panel, T, V)
@@ -533,9 +748,9 @@ function A.BuildCart(panel, T, V)
 	cv.status:SetJustifyH("LEFT")
 	cv.status:SetJustifyV("BOTTOM")
 	Lines(cv.status, 2)
-	cv.next = V.Button(cv, L["Buy next"], A.W - 16, 22, function() A.BuyNext() end)
+	cv.next = V.Button(cv, L["Buy next"], A.W - 16, 22, function() A.NextClick() end)   -- (1.2.9: Confirm too)
 	cv.next:SetPoint("BOTTOMLEFT", 8, A.Y.next)
-	V.Tip(cv.next, L["Buy next"], L["Buys the next purchase in the cart (each needs its own click: the game's rule)."])
+	V.Tip(cv.next, L["Buy next"], L["Buy next: asks the game's price for the next purchase (stackable goods) or bids its auction's buyout. Confirm: buys at the price shown (each needs its own click: the game's rule)."])
 	cv.next:Hide()
 	cv.back = V.Button(cv, L["Back"], 60, 22, function() A.SetView("list") end)
 	cv.back:SetPoint("BOTTOMLEFT", 8, A.Y.cartButtons)
@@ -612,13 +827,22 @@ function A.RefreshCart()
 	if total > gold then cv.gold:SetTextColor(RED[1], RED[2], RED[3]) else cv.gold:SetTextColor(GREY[1], GREY[2], GREY[3]) end
 	local b = A.buy
 	local status
-	if b and (b.state == "ready" or b.state == "waiting") then
+	if b and (b.state == "ready" or b.state == "waiting" or b.state == "quoted") then
 		local st = b.steps[b.i]
 		if b.state == "waiting" then
-			status = L["Buying %s (%d/%d)..."]:format(StepText(st), b.i, #b.steps)
+			status = b.phase == "quote" and L["Asking the Auction House's price for %s (%d/%d)..."]:format(StepText(st), b.i, #b.steps)
+				or b.phase == "confirm" and L["Buying %s (%d/%d): waiting for the Auction House..."]:format(StepText(st), b.i, #b.steps)
+				or L["Buying %s (%d/%d)..."]:format(StepText(st), b.i, #b.steps)
 			cv.next:Hide()
+		elseif b.state == "quoted" then
+			-- (1.2.9) the game's price: your click on Confirm buys it
+			cv.next.text:SetText(L["Confirm: %s for %s"]:format(StepText(st), Money(st.quoted)))
+			I.Views.Off(cv.next, false)
+			cv.next:Show()
+			status = L["The Auction House's price for %s (%d/%d): %s. Click Confirm to buy it."]:format(StepText(st), b.i, #b.steps, Money(st.quoted))
 		else
 			cv.next.text:SetText(L["Buy next: %s (%d/%d) - %s"]:format(StepText(st), b.i, #b.steps, Money(st.expected)))
+			I.Views.Off(cv.next, b.busy)   -- (1.2.9: the AH busy: greyed until it's ready; a click looks again)
 			cv.next:Show()
 			status = b.note or ""
 		end
@@ -640,7 +864,7 @@ function A.RefreshCart()
 	cv.gold:SetShown(not empty)
 	if empty then cv.next:Hide() end
 	local busy = (b and b.state == "waiting") or I.Scan.Running()
-	I.Views.Off(cv.buyBtn, #cart == 0 or busy or (b and b.state == "ready"))
+	I.Views.Off(cv.buyBtn, #cart == 0 or busy or (b and (b.state == "ready" or b.state == "quoted")))
 	cv.scan.text:SetText(I.Scan.Running() and L["Stop"] or L["Scan"])
 	I.Views.Off(cv.scan, #cart == 0 and not I.Scan.Running())
 end
@@ -681,13 +905,8 @@ local function Build()
 		r.name:SetPoint("LEFT", 26, 0)
 		r.name:SetWidth(104)   -- (1.2.7: 120; the cart's + after need)
 		if r.name.SetWordWrap then r.name:SetWordWrap(false) end
-		-- (1.2.8) a vendor sells it: "Vendor: <price> (<vendor>)" under the name, the row dimmed
-		r.vendor = T.Font(r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 9, { 0.6, 0.6, 0.6 })
-		r.vendor:SetPoint("TOPLEFT", r, "LEFT", 26, -2)
-		r.vendor:SetWidth(146)
-		r.vendor:SetJustifyH("LEFT")
-		if r.vendor.SetWordWrap then r.vendor:SetWordWrap(false) end
-		r.vendor:Hide()
+		-- (1.2.9) a vendor sells it: "Vendor: <price> (<vendor>)" in its tooltip only (1.2.8 dimmed the row and put
+		-- it under the name: the rows look the same now, all bought at the AH)
 		r.name:SetJustifyH("LEFT")
 		r.hover = CreateFrame("Button", nil, r)
 		r.hover:SetPoint("LEFT", 0, 0)
@@ -881,17 +1100,16 @@ end
 
 -- the active list's Auction House items (what no vendor you've visited sells), whatever their state;
 -- needed: how many are still to buy
--- (1.2.8) every item of the list: the Auction House's first, then what a vendor you've visited sells (dimmed,
--- "Vendor: <price> (<vendor>)"), each in the list's order. (Before 1.2.8 vendor-sold items weren't shown here at
--- all: a list of herbs some vendor sells looked empty.)
+-- (1.2.8) every item of the list (before 1.2.8 vendor-sold items weren't shown here at all: a list of herbs some
+-- vendor sells looked empty). (1.2.9) in the list's own order, every row the same (a vendor's price only in the
+-- tooltip; 1.2.8 put them last, dimmed)
 function A.Rows()
 	local list = I.ShoppingList()
-	local rows, vendor, needed = {}, {}, 0
+	local rows, needed = {}, 0
 	for _, r in ipairs(I.ListRows(list.list)) do
-		if r.source == "ah" then rows[#rows + 1] = r else vendor[#vendor + 1] = r end
+		rows[#rows + 1] = r
 		if r.need > 0 then needed = needed + 1 end
 	end
-	for _, r in ipairs(vendor) do rows[#rows + 1] = r end
 	return rows, list, needed
 end
 
@@ -957,15 +1175,6 @@ function A.Refresh()
 			r.name:SetText(d.name)
 			local sold = d.source == "vendor"
 			r.vendorLine = sold and L["Vendor: %s (%s)"]:format(I.Scan.Money(d.price or 0), d.vendor or "?") or nil
-			r.vendor:SetText(r.vendorLine or "")
-			r.vendor:SetShown(sold)
-			r.name:ClearAllPoints()
-			r.name:SetPoint("LEFT", 26, sold and 5 or 0)
-			r.need:ClearAllPoints()
-			r.need:SetPoint("LEFT", 132, sold and 5 or 0)   -- (up with the name: the vendor line under both)
-			r.icon:SetAlpha(sold and 0.5 or 1)
-			r.name:SetAlpha(sold and 0.55 or 1)
-			r.need:SetAlpha(sold and 0.55 or 1)
 			if d.need > 0 then
 				r.need:SetText("x" .. d.need)
 				r.need:SetTextColor(1, 0.82, 0)
@@ -995,7 +1204,10 @@ end
 
 function A.Show()
 	if not on then return end
-	if not A.visitAt or not A.visiting then A.visitAt, A.visiting = Now(), true end   -- (1.2.7: cart prices are this visit's)
+	if not A.visitAt or not A.visiting then
+		A.visitAt, A.visiting = Now(), true   -- (1.2.7: cart prices are this visit's)
+		A.view = "list"   -- (1.2.9: each visit opens on the list, never the cart (its items kept); minimized or not as you left it)
+	end
 	A.waiting = nil
 	Build()
 	-- (v0.4.2.1: the look painted again on this window each visit, the secure Search buttons refused as ever)
@@ -1024,6 +1236,7 @@ function A.Hide()
 	-- (1.2.7) the AH closed: buying stops, a purchase waiting cancelled; the cart's prices are for that visit only
 	A.CancelBuy(L["the Auction House closed"])
 	A.visiting, A.visitAt = nil, nil
+	A.view = "list"   -- (1.2.9: the next visit starts on the list)
 	A.pendingSteps = nil
 	if panel and panel.confirm then panel.confirm:Hide() end
 	if panel then panel.picker.menu:Hide() panel:Hide() end

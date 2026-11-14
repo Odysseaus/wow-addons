@@ -77,6 +77,14 @@ function Frame.SetBackdropBorderColor(self, r, g, b, a) self._edge = { r, g, b, 
 function Frame.RegisterEvent(self, e) local t = rawget(self, "_events") or {} self._events = t t[e] = true return true end
 function Frame.UnregisterEvent(self, e) if self._events then self._events[e] = nil end end
 function Frame.UnregisterAllEvents(self) self._events = {} end
+function Frame.IsEventRegistered(self, e) return rawget(self, "_events") and self._events[e] and true or false end
+function Frame.GetName(self) return self._name end
+-- the game's frame walk (1.2.9: Dave's Sack's scanner found by its events)
+function EnumerateFrames(f)
+  local i = 0
+  if f then for k, x in ipairs(W.frames) do if x == f then i = k break end end end
+  return W.frames[i + 1]
+end
 function Frame.CreateTexture(self, _, layer) local t = NewFrame("Texture", nil, self) t._layer = layer return t end
 function Frame.CreateLine(self, _, layer) local l = NewFrame("Line", nil, self) l._layer = layer return l end   -- (SetStartPoint, SetEndPoint, SetThickness: no-ops)
 function Frame.CreateFontString(self) local f = NewFrame("FontString", nil, self) f._text = "" return f end

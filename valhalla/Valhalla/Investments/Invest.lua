@@ -40,6 +40,8 @@ I.SETTINGS = {
 	-- moved to "market"); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false, craftPerStack = false,   -- (1.2.6: Craft Show: Per stack)
 	buyGuard = 5,                                               -- (1.2.7: the cart's price guard: skip an item whose price rose more than this %)
+	buyDebug = false,                                           -- (1.2.9: /valhalla invest buydebug on|off: each buying step in chat and buyDebug)
+	quietDavesSack = true,                                      -- (1.2.9: Dave's Sack's own AH scans turned off: only Valhalla scans the AH)
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all", topView = "movers",
 	marketHouse = "Alliance",   -- (v0.4.2.7: AH Market's house buttons)
@@ -665,7 +667,9 @@ function I.LogBuy(e)
 end
 
 I.BUY_RESULTS = { bought = "bought", rose = "skipped: price rose", gold = "not enough gold", failed = "failed",
-	cancelled = "cancelled", noanswer = "no answer", unavailable = "price unavailable" }
+	cancelled = "cancelled", noanswer = "no answer", unavailable = "price unavailable",
+	noquote = "no price from the AH", noconfirm = "confirmed, no purchase answer", expired = "price ran out before Confirm",
+	unreadable = "price unreadable" }
 function I.BuyLines(max)
 	local out, buys = {}, (I.char and I.char.buys) or {}
 	max = max or 20
@@ -1128,6 +1132,7 @@ function I.OnEvent(event, a1, a2)
 		if I.Merchant then I.Merchant.HideAll() end
 	elseif event == "AUCTION_HOUSE_SHOW" then
 		I.ahOpen = true
+		if I.DavesSack and I.S.quietDavesSack ~= false and I.DavesSack.state ~= "off" then pcall(I.DavesSack.Apply) end   -- (1.2.9: from the next visit)
 		if I.Scan then I.realm.ahLast = I.Scan.House() end   -- (AH Market shows the house you last visited)
 		if I.AH then I.AH.Show() end
 		I.Changed()
@@ -1175,6 +1180,8 @@ function I.OnEvent(event, a1, a2)
 		if I.Trainer then pcall(I.Trainer.OnEvent, event, a1) end   -- (1.2.0, 1.2.1: a profession trainer's skill levels, for Top 10)
 	elseif event == "REPLICATE_ITEM_LIST_UPDATE" then
 		if I.diagReplicate then I.DiagReplicateDone() end
+	elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then
+		if I.AH and I.AH.OnThrottleReady then I.AH.OnThrottleReady() end   -- (1.2.9: Buy next back after "AH busy")
 	end
 end
 
@@ -1193,6 +1200,8 @@ function mod:OnEnable()
 	if I.AH then I.AH.Enable() end
 	if I.Tooltip then pcall(I.Tooltip.Hook) end
 	if C_Timer and C_Timer.After then C_Timer.After(2, I.ClaimKey) end   -- (v0.4.2.8: the I key, once)
+	if I.AH and I.AH.DebugListen then I.AH.DebugListen(I.S.buyDebug) end   -- (1.2.9)
+	pcall(I.DavesSack.Apply)   -- (1.2.9: Dave's Sack's own AH scans off, when it's loaded)
 end
 
 function mod:OnDisable()
@@ -1202,6 +1211,8 @@ function mod:OnDisable()
 	if I.Tabs then I.Tabs.Disable() end
 	if I.Merchant then I.Merchant.Disable() end
 	if I.AH then I.AH.Disable() end
+	if I.AH and I.AH.DebugListen then I.AH.DebugListen(false) end
+	pcall(I.DavesSack.Apply, false)   -- (Investments off: Dave's Sack scans as it did)
 end
 
 function I.SetOn(on)
@@ -1865,11 +1876,95 @@ function AC.Summary(o)
 end
 
 --------------------------------------------------------------------------------
+-- (1.2.9) Dave's Sack (daves_sack, another addon): its own Auction House scans off, so only Valhalla scans the AH.
+-- On AUCTION_HOUSE_SHOW it searched every bag item (SearchForItemKeys, in batches of 50, one each time the AH's
+-- throttle was ready: AUCTION_HOUSE_THROTTLED_SYSTEM_READY) and every 2 hours read the whole AH (ReplicateItems):
+-- all while you were buying. Nothing of its files or saved settings is touched: its event frame (made in its
+-- ADDON_LOADED, so there at PLAYER_LOGIN; found by the events only it registers) stops getting those two events,
+-- so its scan never starts. Everything else stays: its bags, its AH price tooltips and Market (it still reads
+-- the results of searches Valhalla or you make: AUCTION_HOUSE_BROWSE_RESULTS_*, *_SEARCH_RESULTS_UPDATED), its
+-- profession recipes (TRADE_SKILL_*). Setting quietDavesSack (default on); off: the two events back.
+--------------------------------------------------------------------------------
+local DS = { ADDON = "daves_sack", OFF = { "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" } }
+DS.SIGN = { "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
+	"COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
+	"TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE" }
+DS.removed = {}
+I.DavesSack = DS
+
+function DS.Loaded()
+	local f = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
+	if not f then return false end
+	local ok, loaded = pcall(f, DS.ADDON)
+	return ok and loaded and true or false
+end
+
+local function Registered(f, e)
+	local ok, r = pcall(f.IsEventRegistered, f, e)
+	return ok and r and true or false
+end
+-- its frame: unnamed, not Valhalla's, registered for all of DS.SIGN (exactly one such frame, else none)
+function DS.Find()
+	if DS.frame then return DS.frame end
+	if not EnumerateFrames then return nil, "no EnumerateFrames" end
+	local found, f = {}, EnumerateFrames()
+	local n = 0
+	while f and n < 200000 do
+		n = n + 1
+		local okF, forbidden = pcall(function() return f.IsForbidden and f:IsForbidden() end)
+		if okF and not forbidden and f ~= events and f.IsEventRegistered and not (f.GetName and f:GetName()) then
+			local all = true
+			for _, e in ipairs(DS.SIGN) do if not Registered(f, e) then all = false break end end
+			if all then found[#found + 1] = f end
+		end
+		f = EnumerateFrames(f)
+	end
+	if #found ~= 1 then return nil, ("%d frames matched"):format(#found) end
+	DS.frame = found[1]
+	return DS.frame
+end
+
+-- on (the setting, unless on is given false): its two events off; off: back as they were
+function DS.Apply(on)
+	if on == nil then on = I.S and I.S.quietDavesSack ~= false end
+	if not DS.Loaded() then DS.state = "not loaded" return false end
+	if on then
+		local f, why = DS.Find()
+		if not f then
+			DS.state = "not found (" .. tostring(why) .. ")"
+			if not DS.saidMissing then
+				DS.saidMissing = true
+				ns:Print("%s", L["Dave's Sack is loaded, but Valhalla couldn't find its Auction House scanner (%s): its AH scans still run."]:format(tostring(why)))
+			end
+			return false
+		end
+		for _, e in ipairs(DS.OFF) do
+			if Registered(f, e) then pcall(f.UnregisterEvent, f, e) DS.removed[e] = true end
+		end
+		DS.state = "off"
+		if not DS.said then
+			DS.said = true
+			ns:Print("%s", L["Dave's Sack's own Auction House scans are disabled by Valhalla (only Valhalla scans the AH; its bags and price tooltips work as before). Settings > Auction House to turn this off."])
+		end
+		return true
+	end
+	local f = DS.frame
+	if f then
+		for e in pairs(DS.removed) do pcall(f.RegisterEvent, f, e) end
+		DS.removed = {}
+	end
+	DS.state = "on"
+	return true
+end
+
+--------------------------------------------------------------------------------
 -- Slash commands (Init.lua sends them here)
 --   /valhalla invest [vendor|list|market|settings]   open Investments (at that page; settings: the Settings tab)
 --   /valhalla invest on|off                          the whole tabbed window and Investments (off: the map as before)
 --   /valhalla invest diag [ah|replicate|stop]        what this client has, saved to the saved log (ah: the AH check)
 --   /valhalla invest scan [stop]                     at the Auction House: Scan (full when ready, else quick), or stop
+--   /valhalla invest buys                            the checkout cart's purchase log
+--   /valhalla invest buydebug [on|off]               (1.2.9) each buying step and the AH's answers (chat and saved)
 --   /valhalla undo                                   put back the last deleted list (or a list as it was before an edit)
 --   /valhalla tab map|invest|talents|professions|settings   switch the window's tab
 --   /valhalla want <item> [count], /valhalla unwant <item>   into / out of the Shopping List's builder
@@ -1945,6 +2040,21 @@ function mod:Slash(word, arg)
 			local d = I.Diag(rest)
 			for _, line in ipairs(I.DiagLines(d)) do Say("%s", line) end
 			I.Changed()
+			return
+		end
+		if sub == "buydebug" then   -- (1.2.9) each buying step and the game's answers, in chat and the saved log
+			if rest == "on" or rest == "off" then
+				I.S.buyDebug = rest == "on"
+				if I.AH and I.AH.DebugListen then I.AH.DebugListen(I.S.buyDebug) end
+				Say("%s", I.S.buyDebug and L["Buy debug: on. Each buying step and the Auction House's answers go to chat and the saved log (/reload writes it: ValhallaInvestDB, this character's buyDebug)."]
+					or L["Buy debug: off."])
+				I.Changed()
+			else
+				local log = I.char and I.char.buyDebug or {}
+				Say("%s", L["Buy debug is %s (/valhalla invest buydebug on|off). Its last lines:"]:format(I.S.buyDebug and L["on"] or L["off"]))
+				if #log == 0 then Say("%s", L["(nothing logged yet)"]) end
+				for i = math.max(1, #log - 19), #log do Say("%s", log[i]) end
+			end
 			return
 		end
 		if sub == "buys" then   -- (1.2.7) the checkout cart's purchase log

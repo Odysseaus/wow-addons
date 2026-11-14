@@ -1198,7 +1198,10 @@ local function BuildSettings(page)
 	GuardText()
 	page.guard = { frame = guard, minus = gminus, plus = gplus, label = gdl }
 	Place(guard)
-	Note(L["Checkout cart: a stackable item whose price rose more than this since the cart's Scan is skipped (not bought). Each purchase is your own click: Yes buys the first, Buy next each of the rest."])
+	Note(L["Checkout cart: a stackable item whose price rose more than this since the cart's Scan is skipped (not bought). Each purchase is your own click: Yes starts the first, Buy next each of the rest; stackable goods show the game's price first, and Confirm buys."])
+	-- (1.2.9) Dave's Sack's own AH scans off (only Valhalla scans the AH)
+	page.quietDS = Opt(L["Turn off Dave's Sack's own Auction House scans (only Valhalla scans)"], "quietDavesSack", function() if I.DavesSack then pcall(I.DavesSack.Apply) end end)
+	Note(L["Dave's Sack searched all your bag items (and every 2 hours the whole AH) each time the Auction House opened, while you were buying. Off here: its scans as before (from the next AH visit). Its bags and price tooltips work either way."])
 	Section(L["AH Market"])
 	page.speed = Place(V.Radio(body, L["Scan speed:"], { { "smooth", L["Smooth"] }, { "balanced", L["Balanced"] }, { "fast", L["Fast"] } },
 		function() return S.scanSpeed end, function(v) S.scanSpeed = v end))
