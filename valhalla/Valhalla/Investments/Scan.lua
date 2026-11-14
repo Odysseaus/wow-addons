@@ -296,7 +296,8 @@ local function Full(r)
 	-- now: what this scan saw (an item not in it isn't listed any more)
 	m.cur = cur
 	for id, name in pairs(names) do I.RememberName(id, name) end
-	I.nameIndex = nil
+	I.IndexAddMarket(m)   -- (1.2.8: the new items into the search's index; 1.2.7 threw it away)
+	r.fillNames = true
 	m.scans[#m.scans + 1] = { t = tmin, kind = "full", n = n, items = items, secs = math.floor((T() - r.t0) * 10 + 0.5) / 10, ms = math.floor(r.maxMs * 10 + 0.5) / 10 }
 	S.Prune(m)
 	-- Top 10 worked out here too, a little each frame (reading 7 days of every item is the costly part)
@@ -496,6 +497,8 @@ local function Finish(r, state, text)
 	r.state = state
 	S.last = { kind = r.kind, state = state, text = text, at = Now() }
 	if text then ns:Print("%s", text) end
+	-- (1.2.8) after a full scan: the names the game hasn't sent, filled slowly in the background (only if any)
+	if state == "done" and r.fillNames and I.NameLoader and I.ahOpen then I.NameLoader.Start("background") end
 	I.Changed()
 end
 

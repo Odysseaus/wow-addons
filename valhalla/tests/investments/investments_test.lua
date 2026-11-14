@@ -330,12 +330,14 @@ local p = A.Panel()
 ok(p and p:IsShown() and p._parent == AuctionHouseFrame, "beside the AH")
 ok(p.picker and p.picker.text._text == "List: List 1", "under its title: which list")
 local function Shown() local t = {} for _, r in ipairs(p.rows) do if r:IsShown() then t[#t + 1] = r.name._text end end return table.concat(t, ",") end
-ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf,Copper Ore", "the list's AH items, Copper Ore (enough) too", Shown())
+ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf,Copper Ore,Simple Wood,Coarse Thread", "every item of the list (1.2.8): the AH's first, Copper Ore (enough) too, then the vendor-sold ones", Shown())
+ok(not p.rows[1].vendor:IsShown() and p.rows[1].name._alpha ~= 0.55 and p.rows[5].vendor:IsShown() and p.rows[5].vendor._text:find("^Vendor: .+ %(.+%)$") and p.rows[5].name._alpha == 0.55 and p.rows[5].cart:IsShown(),
+  "a vendor-sold item: dimmed, 'Vendor: <price> (<vendor>)' under it, and its cart + too", p.rows[5].vendor._text)
 ok(p.rows[1].need._text == "x4" and p.rows[4].need._text == "Done", "still needed, or Done")
 W.Click(p.picker) W.Click(p.picker.menu.items[3])
-ok(Shown() == "" and p.empty:IsShown() and p.empty._text == "Nothing on this list from the Auction House.", "Other chosen here: its list at once (nothing from the AH)")
+ok(Shown() == "Simple Wood" and not p.empty:IsShown() and p.rows[1].vendor:IsShown(), "Other chosen here: its list at once (1.2.8: its vendor-sold item shown, dimmed; 1.2.7 showed nothing)", Shown())
 W.Click(p.picker) W.Click(p.picker.menu.items[2])
-ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf,Copper Ore" and I.ActiveList() == L1, "List 1 again")
+ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf,Copper Ore,Simple Wood,Coarse Thread" and I.ActiveList() == L1 and not p.rows[1].vendor:IsShown(), "List 1 again (redrawn: no vendor line left on a reused row)")
 local sb = p.rows[1].search
 ok(sb._template:find("SecureActionButtonTemplate", 1, true) and sb:GetAttribute("type") == "click" and sb:GetAttribute("clickbutton") == AuctionHouseFrame.SearchBar.SearchButton,
 	"Search: a secure click whose target is the AH's own Search button")
@@ -368,7 +370,7 @@ ok(not p:IsShown() and not A.Mini():IsShown(), "AH list off: hidden, its button 
 I.S.ahPanel = true A.Refresh()
 ok(p.minimize.text._text == "-" and #Find(function(f) return f._parent == p and f.text and f.text._text == "x" end) == 0, "no close X: a minimize -")
 W.Click(p.minimize)
-ok(not p:IsShown() and A.Mini():IsShown() and A.Mini().count._text == "3" and I.S.ahPanelMin == true, "-: minimized to a small button with how many are needed")
+ok(not p:IsShown() and A.Mini():IsShown() and A.Mini().count._text == tostring(select(3, A.Rows())) and select(3, A.Rows()) > 3 and I.S.ahPanelMin == true, "-: minimized to a small button with how many are needed (1.2.8: vendor-sold ones too)", A.Mini().count._text)
 local mpt = A.Mini()._points[1]
 ok(A.Mini()._parent == AuctionHouseFrame and mpt[1] == "TOPLEFT" and mpt[2] == AuctionHouseFrame and mpt[3] == "TOPRIGHT", "at the AH's top right")
 I.Changed()
@@ -409,7 +411,7 @@ ok(root.current == "vendor" and root.pages.vendor.title._text == "Under construc
 root:ShowPage("list")
 local lp = root.pages.list
 ok(lp:IsShown() and lp.build.text._text == "Build Shopping List" and lp.builderHead._text == "New list" and lp.nameHint._text == "Empty: it's named List 2", "the builder: New list, Build Shopping List; an empty name will be List 2", lp.nameHint._text)
-lp.search:SetText("vial")
+lp.search:SetText("vial") W.RunTimers()
 ok(lp.results:IsShown() and lp.results.rows[1].name._text == "Empty Vial" and lp.results.rows[1].act.text._text == "Add" and not lp.results.rows[2]:IsShown(), "part of a name: what matches (from the vendor's wares), with Add")
 W.Click(lp.results.rows[1].act)
 ok(I.LineOf(I.Draft(), 3371) and I.LineOf(I.Draft(), 3371).n == 1 and lp.results.rows[1].act.text._text == "Remove", "Add: into the list (1.2.7: as 1); the match now says Remove")
@@ -1078,6 +1080,8 @@ do
   local items = 0 for _ in pairs(m.cur) do items = items + 1 end
   ok(items == 51 and #m.scans == 1 and m.scans[1].kind == "full" and m.scans[1].n == 3000 and m.scans[1].items == 51, "51 items from 3,000 auctions, one full scan saved")
   ok(Printed("Full scan done: 3000 auctions of 51 items %(Alliance%)") and Printed("Next full scan in 15:00"), "said in chat, with the cooldown", table.concat(ns.printed, " || "))
+  ok(I.NameLoader.mode == "background" and #I.SearchMissing() > 0, "(1.2.8) the names the game hasn't sent: filled in the background after it")
+  I.NameLoader.Stop("background")
   ok(Sc.CooldownText() == "Next full scan in 15:00." and ck.status._text:find("Next full scan in 15:00"), "the AH list: next full scan in mm:ss", ck.status._text)
   W.now = W.now + 61
   ok(Sc.CooldownText() == "Next full scan in 13:59.", "the timer counts down", Sc.CooldownText())
@@ -3793,42 +3797,134 @@ print("== 43. 1.2.7: the item search (scans' names, any order, 10), Add to a sho
     send = CA.SendSearchQuery, ncs = CA.GetNumCommoditySearchResults, cs = CA.GetCommoditySearchResultInfo, full = CA.HasFullCommoditySearchResults,
     nis = CA.GetNumItemSearchResults, is = CA.GetItemSearchResultInfo, bid = CA.PlaceBid, start = CA.StartCommoditiesPurchase, conf = CA.ConfirmCommoditiesPurchase, cancel = CA.CancelCommoditiesPurchase }
 
-  print("-- the search: names from the scans (loaded as asked), any word order, up to 10")
+  print("-- the search (1.2.8): one search 0.3 s after the last key, the index built once, names asked at a capped rate, rows that stay, closing")
+  local NL = I.NameLoader
   local sm = Sc.Market("Srch", true)
   local stm = math.floor(W.now / 60) - sm.base
   W.items[969001] = { "Silky Spider Thread", 132912 }
   W.uncached[969001] = true
   sm.cur[969001] = ("%d,%d,%d,%d"):format(100, 5, 1, stm)
   I.nameIndex = nil
-  local loads = {}
-  Item = { CreateFromItemID = function(_, id) return { ContinueOnItemLoad = function(_, fn) loads[#loads + 1] = { id = id, fn = fn } end } end }
+  local reqs = {}
+  local keepReq = C_Item.RequestLoadItemDataByID
+  C_Item.RequestLoadItemDataByID = function(id) reqs[#reqs + 1] = id end
   ok(#I.SearchItems("spider") == 0 and I.NameIndex().missingSet[969001], "an item only in a scan, its name not sent yet: not found, listed as missing")
-  -- (the earlier sections' made-up items: thousands the game never names; asked already, the slots free)
-  for _, id in ipairs(I.SearchMissing()) do if id ~= 969001 then lp.askedNames[id] = true end end
-  V.loading, V.loadingCount = {}, 0
-  lp.search:SetText("spider")
-  local asked = false
-  for _, l in ipairs(loads) do if l.id == 969001 then asked = l end end
-  ok(asked and I.nameWanted[969001] and not lp.results:IsShown(), "typing: its name asked for (no match yet)")
-  W.uncached[969001] = nil
-  asked.fn()
+  local builds = I.indexBuilds
+  -- (the earlier sections' made-up items: thousands the game never names; taken as asked already)
+  for _, id in ipairs(I.SearchMissing()) do if id ~= 969001 then NL.asked[id] = true end end
+  local s0 = lp.searches or 0
+  lp.search:SetText("s") lp.search:SetText("sp") lp.search:SetText("spider")
+  ok((lp.searches or 0) == s0 and not lp.results:IsShown() and #reqs == 0, "typing: nothing searched or asked yet")
   W.RunTimers()
-  ok(I.KnownName(969001) == "Silky Spider Thread" and lp.results:IsShown() and lp.results.rows[1].name._text == "Silky Spider Thread", "its name came: remembered, and the search ran again: found", lp.results.rows[1].name._text)
+  ok(lp.searches == s0 + 1 and lp.searchOpen and NL.mode == "search" and V.SEARCH_DELAY == 0.3, "0.3 s after the last key: one search (not three); the box open; names to be asked for")
+  NL.Tick(1)
+  ok(#reqs == 1 and reqs[1] == 969001 and NL.npending == 1, "its name asked for, once")
+  NL.Tick(1)
+  ok(#reqs == 1, "not asked again")
+  W.uncached[969001] = nil
+  W.Fire("GET_ITEM_INFO_RECEIVED", 969001, true)
+  local timers = #W.timers
+  W.RunTimers()
+  ok(I.KnownName(969001) == "Silky Spider Thread" and NL.npending == 0 and timers >= 1 and lp.results:IsShown() and lp.results.rows[1].name._text == "Silky Spider Thread",
+    "its name came: remembered, and the rows filled (a second later)", lp.results.rows[1].name._text)
+  ok(I.indexBuilds == builds and I.NameIndex().builds == builds and not I.NameIndex().missingSet[969001], "the index not built again: the name added to it (1.2.7 rebuilt it for every name)")
+  I.OnSearchName() I.OnSearchName() I.OnSearchName()
+  ok(#W.timers == 1, "names coming fast: the rows filled at most once a second")
+  W.RunTimers()
   W.uncached[969001] = true
-  lp.search:SetText("thread silky")
+  lp.search:SetText("thread silky") W.RunTimers()
   ok(lp.results:IsShown() and lp.results.rows[1].id == 969001 and lp.results.rows[1].name._text == "Silky Spider Thread", "words in any order; remembered (the game's cache cold again)")
   W.uncached[969001] = nil
+  print("-- rows that stay put")
+  W.items[969201] = { "Silky Cord", 132912 }
+  I.char.bags[969201] = 1
+  lp.search:SetText("silky") W.RunTimers()
+  local function Ids() local t = {} for _, r in ipairs(lp.results.rows) do if r:IsShown() then t[#t + 1] = r.id end end return table.concat(t, ",") end
+  local first = Ids()
+  ok(first == "969201,969001", "silky: Silky Cord, Silky Spider Thread (by name)", first)
+  W.uncached[969201] = true
+  lp.Results()
+  ok(Ids() == first, "the game's cache drops a name: same rows, same order (1.2.7: they swapped or went)")
+  W.uncached[969201] = nil
+  I.RememberName(969202, "Silky Bolt")
+  lp.Results()
+  ok(Ids() == first .. ",969202", "a name coming in later: added after the rows already there, not shuffled in", Ids())
+  lp.search:SetText("silky ") W.RunTimers()
+  ok(lp.frozen.text == "silky" and Ids() == first .. ",969202", "the same text (a space typed): the rows stay")
+  lp.search:SetText("bolt silky") W.RunTimers()
+  ok(Ids() == "969202", "new text: searched again")
   for k = 1, 12 do I.RememberName(969100 + k, "Zork Gem " .. k) end
   local z = I.SearchItems("gem zork")
+  lp.search:SetText("zork") W.RunTimers()
   local shown = 0 for _, r in ipairs(lp.results.rows) do if r:IsShown() then shown = shown + 1 end end
-  lp.search:SetText("zork")
-  shown = 0 for _, r in ipairs(lp.results.rows) do if r:IsShown() then shown = shown + 1 end end
-  ok(#z == 10 and I.SEARCH_MAX == 10 and V.RESULTS == 10 and #lp.results.rows == 10 and shown == 10, "up to 10 matches (was 6)", #z .. " " .. shown)
+  ok(#z == 10 and I.SEARCH_MAX == 10 and V.RESULTS == 10 and #lp.results.rows == 10 and shown == 10, "up to 10 matches", #z .. " " .. shown)
+  local zfirst = Ids()
+  I.RememberName(969150, "Aaa Zork")
+  lp.Results()
+  ok(Ids() == zfirst, "10 shown: a better match arriving doesn't shuffle them")
   W.Click(lp.results.rows[1].act)
-  ok(I.LineOf(I.Draft(), lp.results.rows[1].id).n == 1, "Add: as 1")
+  ok(I.LineOf(I.Draft(), lp.results.rows[1].id).n == 1 and Ids() == zfirst, "Add: as 1; the rows stay")
   I.DraftRemove(lp.results.rows[1].id)
-  lp.search:SetText("")
-  Item = keep.item
+  print("-- the name queue: capped")
+  for k = 1, 100 do sm.cur[970000 + k] = ("%d,%d,%d,%d"):format(100, 5, 1, stm) end
+  I.IndexAddMarket(sm)
+  reqs = {}
+  ok(NL.mode == "search", "the box open: names asked for")
+  NL.tokens = 0
+  for _ = 1, 20 do NL.Tick(0.05) end
+  ok(#reqs == 20, "20 a second (frames of 50 ms)", #reqs)
+  NL.tokens = 0
+  NL.Tick(1)
+  ok(#reqs == 25, "a long frame: a quarter second's worth at most (no burst)", #reqs)
+  for _ = 1, 40 do NL.Tick(0.05) end
+  ok(#reqs == 30 and NL.npending == 30 and NL.CAP.search == 30, "never more than 30 waiting", #reqs)
+  W.now = W.now + 11
+  NL.Tick(0.25)
+  ok(#reqs == 35 and NL.npending == 5, "not answered in 10 s: let go, the next ones asked", #reqs .. " " .. NL.npending)
+  print("-- closing")
+  W.Run(lp.search, "OnEscapePressed")
+  ok(not lp.results:IsShown() and not lp.searchOpen and lp.search._text == "zork" and NL.mode == nil, "Escape: closed, the text kept, no more names asked")
+  local n0 = #reqs
+  NL.Tick(1)
+  ok(#reqs == n0, "closed: nothing asked")
+  lp.search:SetFocus() W.Run(lp.search, "OnEditFocusGained")
+  ok(lp.results:IsShown() and lp.searchOpen and NL.mode == "search", "back in the box: open again")
+  lp.results.IsMouseOver = function() return true end
+  lp.search:ClearFocus() W.Run(lp.search, "OnEditFocusLost") W.RunTimers()
+  ok(lp.results:IsShown(), "focus lost while the pointer is on the dropdown (clicking Add): stays open")
+  lp.results.IsMouseOver = nil
+  W.Fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+  ok(not lp.results:IsShown() and not lp.searchOpen and NL.mode == nil, "a click outside it: closed")
+  W.Run(lp.search, "OnEditFocusGained")
+  W.Run(lp.search, "OnEditFocusLost") W.RunTimers()
+  ok(not lp.results:IsShown(), "focus lost (pointer elsewhere): closed")
+  lp:Show()
+  W.Run(lp.search, "OnEditFocusGained")
+  ok(lp.results:IsShown(), "(open)")
+  lp:Hide() lp:Show()
+  ok(not lp.results:IsShown() and NL.mode == nil, "the page hidden: closed")
+  lp.search:SetText("") W.RunTimers()
+  print("-- names in the background after a full scan")
+  NL.pos = 1
+  I.ahOpen = true
+  ok(NL.Start("background") and NL.mode == "background", "after a full scan: the missing names, in the background")
+  reqs = {}
+  NL.pending, NL.npending = {}, 0
+  NL.tokens = 0
+  for _ = 1, 20 do NL.Tick(0.05) end
+  ok(#reqs == 4 and NL.RATE.background == 4, "slowly: 4 a second", #reqs)
+  W.combat = true
+  for _ = 1, 20 do NL.Tick(0.05) end
+  ok(#reqs == 4, "in combat: paused")
+  W.combat = false
+  W.Run(lp.search, "OnEditFocusGained") lp.search:SetText("zork") W.RunTimers()
+  ok(NL.mode == "search", "the search box opened: it takes over")
+  W.Run(lp.search, "OnEscapePressed")
+  ok(NL.mode == "background", "closed: the background fill goes on")
+  W.Fire("AUCTION_HOUSE_CLOSED")
+  ok(NL.mode == nil and not NL.bgWanted, "the AH closed: stopped")
+  lp.search:SetText("") W.RunTimers()
+  C_Item.RequestLoadItemDataByID = keepReq
 
   print("-- Add to a shopping list: ListAdd, a new list, Undo; the chooser")
   I.char.lists, I.char.activeList, I.undo = {}, nil, {}
@@ -4023,6 +4119,34 @@ print("== 43. 1.2.7: the item search (scans' names, any order, 10), Add to a sho
   ok(A.buy.state == "stopped" and I.char.buys[#I.char.buys].result == "noanswer", "no answer in 10 seconds: cancelled, stopped")
   ok(#A.BUY_EVENTS == 6 and not next(rawget(A.Buyer(), "_events") or {}), "the purchase events: listened to only while buying")
 
+  print("-- the panel's bottom (1.2.8): each thing in its own space, inside the panel")
+  local function Y(f) for _, pt in ipairs(f._points) do if pt[1] == "BOTTOMLEFT" or pt[1] == "BOTTOMRIGHT" then return pt[#pt] end end end
+  local function Span(f, h) local b = Y(f) return b, b + (rawget(f, "_h") or h or 0) end
+  local ck = p.check
+  A.SetView("list")
+  local sb, st = Span(ck.status)
+  local _, ct = Span(ck)
+  local bb, bt = Span(p.cartBar)
+  local pagerBottom = A.H - (84 + A.ROWS * 26 + 2 + 20)
+  ok(ck.status:IsShown() and ck.status._points[1][2] == p and ck.status._points[2][1] == "RIGHT" and ck.status._h == A.Y.statusH and sb >= ct and st <= bb and bt <= pagerBottom and Y(p.mail) + 14 <= Y(ck),
+    "list: the status on its own full-width line (2 lines high) between the Scan button and Checkout; Checkout under the pager", ("%d-%d / %d / %d-%d / %d"):format(sb, st, ct, bb, bt, pagerBottom))
+  A.SetView("cart")
+  local cvw = p.cv
+  local b1, t1 = Span(cvw.back)
+  local n1, n2 = Span(cvw.next)
+  local s1, s2 = Span(cvw.status)
+  local g1, g2 = Span(cvw.gold, 12)
+  local tt1, tt2 = Span(cvw.total, 15)
+  local cartPager = A.H - (56 + A.CART_ROWS * A.CART_ROW_H + 2 + 20)
+  ok(not ck.status:IsShown() and not ck.button:IsShown() and b1 >= Y(ck) and Y(cvw.scan) == b1 and Y(cvw.buyBtn) == b1 and t1 <= n1 and n2 <= s1 and s2 <= g1 and g2 <= tt1 and tt2 <= cartPager and cvw.status._h == A.Y.cartStatusH,
+    "cart: the old status hidden; Back / Scan / Buy, Buy next, the status line, gold, Total: each in its own space, under the items", ("%d-%d %d-%d %d-%d %d-%d %d-%d / %d"):format(b1, t1, n1, n2, s1, s2, g1, g2, tt1, tt2, cartPager))
+  local keepC = I.char.cart
+  I.char.cart = {}
+  A.Refresh()
+  ok(cvw.empty:IsShown() and cvw.empty._points[1][1] == "CENTER" and cvw.empty._justifyH ~= "LEFT" and not cvw.total:IsShown() and not cvw.gold:IsShown() and not cvw.next:IsShown(),
+    "an empty cart: its message in the middle; no Total, gold or Buy next")
+  I.char.cart = keepC
+  A.SetView("cart")
   print("-- the purchase log, the setting")
   ns.printed = {}
   Slash("invest", "buys")

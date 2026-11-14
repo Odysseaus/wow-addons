@@ -44,6 +44,17 @@ A.CART_ROW_H = 46
 A.TIMEOUT = 10                              -- (1.2.7: seconds to wait for the AH's answer to a purchase)
 A.FRESH = 600                               -- (1.2.7: a cart price is good for 10 minutes, this visit only)
 A.view = "list"
+-- (1.2.8) the bottom, from the panel's bottom edge, fixed: nothing grows into anything else (1.2.7's Scan status
+-- wrapped up over the buttons and out of the panel). List: mail line, Scan button (+ bar), the status (its own
+-- line, 2 lines at most), the Checkout bar. Cart: mail line, Back / Scan / Buy (where Scan's button was), Buy
+-- next, one status line (2 at most), your gold, the Total.
+A.Y = { mail = 10, check = 26, status = 62, statusH = 24, bar = 88,
+	cartButtons = 38, next = 64, cartStatus = 90, cartStatusH = 26, gold = 120, total = 136 }
+local function Lines(fs, n)
+	if fs.SetWordWrap then fs:SetWordWrap(n > 1) end
+	if fs.SetMaxLines then fs:SetMaxLines(n) end
+end
+A.Lines = Lines
 A.cartOffset = 0
 A.WATCH = 3                                 -- (seconds to wait for the AH's answer to a search)
 local panel, mini
@@ -433,7 +444,7 @@ end
 -- the cart's bar (on the list) and view
 function A.BuildCart(panel, T, V)
 	local bar = CreateFrame("Frame", nil, panel)
-	bar:SetPoint("BOTTOMLEFT", 8, 64)
+	bar:SetPoint("BOTTOMLEFT", 8, A.Y.bar)
 	bar:SetPoint("RIGHT", panel, "RIGHT", -8, 0)
 	bar:SetHeight(24)
 	bar.checkout = V.Button(bar, L["Checkout (%d)"]:format(0), 130, 22, function() A.SetView("cart") end)
@@ -500,35 +511,39 @@ function A.BuildCart(panel, T, V)
 	end, A.W - 16 - 4 * 30 - 18)
 	cv.pager:SetPoint("TOPLEFT", 8, -56 - A.CART_ROWS * A.CART_ROW_H - 2)
 	cv.empty = T.Font(cv:CreateFontString(nil, "OVERLAY", "GameFontHighlight"), 12, { 0.6, 0.6, 0.6 })
-	cv.empty:SetPoint("TOPLEFT", 14, -60)
-	cv.empty:SetPoint("RIGHT", cv, "RIGHT", -10, 0)
-	cv.empty:SetJustifyH("LEFT")
+	-- (1.2.8: in the middle of where the items go)
+	cv.empty:SetPoint("CENTER", cv, "TOP", 0, -56 - math.floor(A.CART_ROWS * A.CART_ROW_H / 2))
+	cv.empty:SetWidth(A.W - 40)
+	cv.empty:SetJustifyH("CENTER")
 	cv.empty:SetText(L["The cart is empty: Back, then + on the items to buy."])
 	cv.total = T.Font(cv:CreateFontString(nil, "OVERLAY", "GameFontNormal"), 13, T.GOLD)
-	cv.total:SetPoint("BOTTOMLEFT", 12, 166)
+	cv.total:SetPoint("BOTTOMLEFT", 12, A.Y.total)
 	cv.total:SetPoint("RIGHT", cv, "RIGHT", -10, 0)
 	cv.total:SetJustifyH("LEFT")
+	Lines(cv.total, 1)
 	cv.gold = T.Font(cv:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 11, GREY)
-	cv.gold:SetPoint("BOTTOMLEFT", 12, 150)
+	cv.gold:SetPoint("BOTTOMLEFT", 12, A.Y.gold)
 	cv.gold:SetPoint("RIGHT", cv, "RIGHT", -10, 0)
 	cv.gold:SetJustifyH("LEFT")
+	Lines(cv.gold, 1)
 	cv.status = T.Font(cv:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 10, { 0.8, 0.8, 0.8 })
-	cv.status:SetPoint("BOTTOMLEFT", 12, 116)
+	cv.status:SetPoint("BOTTOMLEFT", 12, A.Y.cartStatus)
 	cv.status:SetPoint("RIGHT", cv, "RIGHT", -10, 0)
-	cv.status:SetHeight(32)
+	cv.status:SetHeight(A.Y.cartStatusH)
 	cv.status:SetJustifyH("LEFT")
 	cv.status:SetJustifyV("BOTTOM")
+	Lines(cv.status, 2)
 	cv.next = V.Button(cv, L["Buy next"], A.W - 16, 22, function() A.BuyNext() end)
-	cv.next:SetPoint("BOTTOMLEFT", 8, 90)
+	cv.next:SetPoint("BOTTOMLEFT", 8, A.Y.next)
 	V.Tip(cv.next, L["Buy next"], L["Buys the next purchase in the cart (each needs its own click: the game's rule)."])
 	cv.next:Hide()
 	cv.back = V.Button(cv, L["Back"], 60, 22, function() A.SetView("list") end)
-	cv.back:SetPoint("BOTTOMLEFT", 8, 64)
+	cv.back:SetPoint("BOTTOMLEFT", 8, A.Y.cartButtons)
 	cv.scan = V.Button(cv, L["Scan"], 70, 22, function() A.CartScan() end)
-	cv.scan:SetPoint("BOTTOMLEFT", 72, 64)
+	cv.scan:SetPoint("BOTTOMLEFT", 72, A.Y.cartButtons)
 	V.Tip(cv.scan, L["Scan"], L["Prices each cart item exactly: its cheapest listings now (enough for the quantity), and says when there aren't enough. Only reads: nothing is bought. Buy needs it (this visit)."])
 	cv.buyBtn = V.Button(cv, L["Buy"], 110, 22, function() A.AskBuy() end)
-	cv.buyBtn:SetPoint("BOTTOMRIGHT", -8, 64)
+	cv.buyBtn:SetPoint("BOTTOMRIGHT", -8, A.Y.cartButtons)
 	V.Tip(cv.buyBtn, L["Buy"], function() return L["Asks first. Then each purchase is its own click (Yes, then Buy next). Price guard: +%d%% (Settings)."]:format(A.Guard()) end)
 	cv:Hide()
 	panel.cv = cv
@@ -612,11 +627,18 @@ function A.RefreshCart()
 		if b and b.note then status = b.note end
 	end
 	if A.status then status = A.status A.status = nil end
+	-- (1.2.8) a scan running: its progress, one line, in the cart's status line
+	if not status and I.Scan.Running() then status = (A.CheckStatus()) end
 	if not status then
 		status = #cart == 0 and "" or I.Scan.Running() and "" or not allPriced and L["Press Scan to price the cart exactly, then Buy."]
 			or short > 0 and L["%d item(s) short: buys what's listed."]:format(short) or L["Priced: press Buy (it asks first)."]
 	end
 	cv.status:SetText(status)
+	-- (1.2.8) an empty cart: its message in the middle; no Total, gold or Buy next under it
+	local empty = #cart == 0
+	cv.total:SetShown(not empty)
+	cv.gold:SetShown(not empty)
+	if empty then cv.next:Hide() end
 	local busy = (b and b.state == "waiting") or I.Scan.Running()
 	I.Views.Off(cv.buyBtn, #cart == 0 or busy or (b and b.state == "ready"))
 	cv.scan.text:SetText(I.Scan.Running() and L["Stop"] or L["Scan"])
@@ -658,11 +680,23 @@ local function Build()
 		r.name = T.Font(r:CreateFontString(nil, "OVERLAY", "GameFontHighlight"), 12)
 		r.name:SetPoint("LEFT", 26, 0)
 		r.name:SetWidth(104)   -- (1.2.7: 120; the cart's + after need)
+		if r.name.SetWordWrap then r.name:SetWordWrap(false) end
+		-- (1.2.8) a vendor sells it: "Vendor: <price> (<vendor>)" under the name, the row dimmed
+		r.vendor = T.Font(r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 9, { 0.6, 0.6, 0.6 })
+		r.vendor:SetPoint("TOPLEFT", r, "LEFT", 26, -2)
+		r.vendor:SetWidth(146)
+		r.vendor:SetJustifyH("LEFT")
+		if r.vendor.SetWordWrap then r.vendor:SetWordWrap(false) end
+		r.vendor:Hide()
 		r.name:SetJustifyH("LEFT")
 		r.hover = CreateFrame("Button", nil, r)
 		r.hover:SetPoint("LEFT", 0, 0)
 		r.hover:SetSize(130, 22)
-		r.hover:SetScript("OnEnter", function(self) if r.id then V.ItemTooltip(self, r.id, I.Market and I.Market.Lines) end end)
+		r.hover:SetScript("OnEnter", function(self)
+			if not r.id then return end
+			V.ItemTooltip(self, r.id, I.Market and I.Market.Lines)
+			if r.vendorLine and GameTooltip then GameTooltip:AddLine(r.vendorLine, 0.6, 0.6, 0.6, true) GameTooltip:Show() end
+		end)
 		r.hover:SetScript("OnLeave", function() V.HideItemTooltip() end)
 		r.need = T.Font(r:CreateFontString(nil, "OVERLAY", "GameFontNormal"), 12, T.GOLD)
 		r.need:SetPoint("LEFT", 132, 0)
@@ -692,12 +726,13 @@ local function Build()
 	panel.pager:SetPoint("TOPLEFT", 8, -84 - A.ROWS * 26 - 2)
 	panel.pager:Hide()
 	panel.mail = T.Font(panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 11, T.GOLD)
-	panel.mail:SetPoint("BOTTOMLEFT", 12, 10)
+	panel.mail:SetPoint("BOTTOMLEFT", 12, A.Y.mail)
 	panel.mail:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
 	panel.mail:SetJustifyH("LEFT")
+	Lines(panel.mail, 1)
 	-- the AH check (v0.3.5): its button, what it's doing and a bar
 	local check = CreateFrame("Frame", nil, panel)
-	check:SetPoint("BOTTOMLEFT", 8, 26)
+	check:SetPoint("BOTTOMLEFT", 8, A.Y.check)
 	check:SetPoint("RIGHT", panel, "RIGHT", -8, 0)
 	check:SetHeight(34)
 	check.button = V.Button(check, L["Scan"], 110, 22, function() A.CheckClick() end)
@@ -711,10 +746,15 @@ local function Build()
 		GameTooltip:Show()
 	end)
 	check.button:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	-- (1.2.8) the status: its own full-width line above the Scan button, 2 lines at most (1.2.7: beside the
+	-- button, 124 px wide, wrapping up over the cart's buttons)
 	check.status = T.Font(check:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 10, { 0.75, 0.75, 0.75 })
-	check.status:SetPoint("LEFT", check.button, "RIGHT", 8, 0)
-	check.status:SetPoint("RIGHT", check, "RIGHT", -2, 0)
+	check.status:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, A.Y.status)
+	check.status:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
+	check.status:SetHeight(A.Y.statusH)
 	check.status:SetJustifyH("LEFT")
+	check.status:SetJustifyV("BOTTOM")
+	Lines(check.status, 2)
 	check.track = check:CreateTexture(nil, "BACKGROUND")
 	check.track:SetColorTexture(0, 0, 0, 0.6)
 	check.track:SetPoint("BOTTOMLEFT", 2, 0)
@@ -841,15 +881,17 @@ end
 
 -- the active list's Auction House items (what no vendor you've visited sells), whatever their state;
 -- needed: how many are still to buy
+-- (1.2.8) every item of the list: the Auction House's first, then what a vendor you've visited sells (dimmed,
+-- "Vendor: <price> (<vendor>)"), each in the list's order. (Before 1.2.8 vendor-sold items weren't shown here at
+-- all: a list of herbs some vendor sells looked empty.)
 function A.Rows()
 	local list = I.ShoppingList()
-	local rows, needed = {}, 0
+	local rows, vendor, needed = {}, {}, 0
 	for _, r in ipairs(I.ListRows(list.list)) do
-		if r.source == "ah" then
-			rows[#rows + 1] = r
-			if r.need > 0 then needed = needed + 1 end
-		end
+		if r.source == "ah" then rows[#rows + 1] = r else vendor[#vendor + 1] = r end
+		if r.need > 0 then needed = needed + 1 end
 	end
+	for _, r in ipairs(vendor) do rows[#rows + 1] = r end
 	return rows, list, needed
 end
 
@@ -873,6 +915,7 @@ function A.Refresh()
 	panel.sub:SetShown(not cart)
 	panel.cartBar:SetShown(not cart)
 	panel.check.button:SetShown(not cart)
+	panel.check.status:SetShown(not cart)   -- (1.2.8: the cart shows its own one line)
 	if cart then
 		panel.picker.menu:Hide()
 		panel.empty:Hide()
@@ -893,7 +936,7 @@ function A.Refresh()
 	panel.picker.Update()
 	if list.list then
 		panel.sub:SetText(L["Still needed: %d. Done %d / %d. Search, then buy with the AH's own button."]:format(needed, list.done, list.total))
-		panel.empty:SetText(L["Nothing on this list from the Auction House."])
+		panel.empty:SetText(L["This list is empty."])
 	else
 		panel.sub:SetText("")
 		panel.empty:SetText(#I.Lists() == 0 and L["No shopping list yet: build one in Investments > Shopping List (click the button above)."]
@@ -912,6 +955,17 @@ function A.Refresh()
 		if d then
 			r.icon:SetTexture(I.ItemIcon(d.id))
 			r.name:SetText(d.name)
+			local sold = d.source == "vendor"
+			r.vendorLine = sold and L["Vendor: %s (%s)"]:format(I.Scan.Money(d.price or 0), d.vendor or "?") or nil
+			r.vendor:SetText(r.vendorLine or "")
+			r.vendor:SetShown(sold)
+			r.name:ClearAllPoints()
+			r.name:SetPoint("LEFT", 26, sold and 5 or 0)
+			r.need:ClearAllPoints()
+			r.need:SetPoint("LEFT", 132, sold and 5 or 0)   -- (up with the name: the vendor line under both)
+			r.icon:SetAlpha(sold and 0.5 or 1)
+			r.name:SetAlpha(sold and 0.55 or 1)
+			r.need:SetAlpha(sold and 0.55 or 1)
 			if d.need > 0 then
 				r.need:SetText("x" .. d.need)
 				r.need:SetTextColor(1, 0.82, 0)

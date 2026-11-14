@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.8", date = "2026-11-14", heads = { [1] = "Fixed", [6] = "Changed", [8] = "Note", }, items = {
+		"|cff6e2c0aThe Auction House list shows every item on the list|r: what only the AH has first, then items a vendor you've visited also sells, dimmed, with \"Vendor: <price> (<vendor>)\" under the name. Each row has the cart's +. Before, a list of such items (many herbs, leather, thread) looked empty there.",
+		"|cff6e2c0aThe item search is smooth again|r: it runs 0.3 s after you stop typing, its index of names is built once a session, and names the game hasn't sent yet are asked for a few at a time (at most 20 a second, 30 waiting) only while the dropdown is open.",
+		"The results stay put: for the same text the rows keep their order; names that arrive later only fill empty rows below (at most once a second). Items sort the same way every time (case-insensitive name, then item number).",
+		"The dropdown closes, and stops asking for names, on Escape (the text is kept), when the box loses focus, when you click outside it, or when the page closes. Clicking Add in it still works.",
+		"The AH side panel's status no longer runs over the buttons: on the list it has its own line (two lines at most) above the Scan button; in the cart, its own line above Buy next. An empty cart shows its message in the middle.",
+		"After a full scan, the names of scanned items the game hasn't sent yet are filled in slowly in the background (4 a second, paused in combat, stopped when the AH closes), so later searches find them at once.",
+		"The cart's Back, Scan and Buy buttons moved down to where the Scan button is on the list; the Checkout button moved up a little.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.7", date = "2026-11-14", heads = { [1] = "New", [6] = "Changed", [8] = "Note", }, items = {
 		"|cff6e2c0aCheckout cart at the Auction House|r (one per character): + on a row of the AH list puts what's still needed in the cart; Checkout (N) opens it. Each item has a quantity stepper, its price each and line total, then the Total and your gold. Back, Scan and Buy.",
 		"The cart's Scan prices each item exactly (its cheapest listings, enough for the quantity) and says when fewer are listed than you want. Buy asks first (Yes / No). Yes buys the first item; then \"Buy next\" buys each of the rest: one click per purchase, as the game requires. Stackable goods are bought only if the game's price is at most +5% over the price shown (Settings > Auction House: Cart price guard), else skipped. It stops on a failure, not enough gold, or the AH closing.",

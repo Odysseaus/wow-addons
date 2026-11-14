@@ -65,6 +65,8 @@ end
 --------------------------------------------------------------------------------
 
 V.LOAD_MAX = 30
+V.SEARCH_DELAY = 0.3                        -- (1.2.8: the search runs this long after the last key)
+V.NAMES_EVERY = 1                           -- (1.2.8: names coming in fill the dropdown at most once a second)
 V.loading = {}
 V.loadingCount = 0
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
@@ -658,9 +660,47 @@ local function BuildList(page)
 	end
 	res:Hide()
 	page.results = res
+	-- (1.2.8) the search box: the search runs 0.3 s after the last key; for the same text the rows stay as they
+	-- are (names that come in later only fill rows below, at most once a second); the dropdown closes (the
+	-- names it asked for stop) on Escape (the text kept), when the box loses focus, a click outside it, or the
+	-- page hiding. 1.2.7 searched on every key, rebuilt its index on every name that came, and asked for every
+	-- missing name at once: slow, and the rows kept moving.
+	local frozen = { text = nil, ids = {} }
+	local function Compute(text)
+		if text == "" then frozen.text, frozen.ids = nil, {} return {} end
+		local fresh = I.SearchItems(text, V.RESULTS)
+		if frozen.text ~= text then frozen.text, frozen.ids = text, fresh return fresh end
+		local ids, have = {}, {}
+		for _, id in ipairs(frozen.ids) do ids[#ids + 1] = id have[id] = true end
+		for _, id in ipairs(fresh) do
+			if #ids >= V.RESULTS then break end
+			if not have[id] then ids[#ids + 1] = id have[id] = true end
+		end
+		frozen.ids = ids
+		return ids
+	end
+	page.frozen = frozen
+	local closer
+	local function Close()
+		page.searchOpen = false
+		res:Hide()
+		if closer then closer:UnregisterAllEvents() end
+		if I.NameLoader then I.NameLoader.Stop("search") end
+	end
+	local function Open()
+		if not page.searchOpen then
+			page.searchOpen = true
+			if closer then pcall(closer.RegisterEvent, closer, "GLOBAL_MOUSE_DOWN") end
+		end
+		if I.NameLoader then I.NameLoader.Start("search") end
+	end
+	page.CloseSearch, page.OpenSearch = Close, Open
 	local function Results()
-		local ids = I.SearchItems(search:GetText(), V.RESULTS)
+		local text = Trim(search:GetText())
+		if text == "" then frozen.text, frozen.ids = nil, {} page.found = {} Close() return end
+		local ids = Compute(text)
 		page.found = ids
+		page.searches = (page.searches or 0) + 1
 		for i, r in ipairs(res.rows) do
 			local id = ids[i]
 			if id then
@@ -680,60 +720,53 @@ local function BuildList(page)
 			end
 		end
 		res:SetHeight(8 + math.max(1, #ids) * 22)
-		res:SetShown(#ids > 0)
-		if Trim(search:GetText()) ~= "" then page.LoadNames() end
+		res:SetShown(page.searchOpen and #ids > 0 or false)
 	end
 	page.Results = Results
-	-- (1.2.7) the names the search can't match yet (items of your scans, recipes, Top 10 the game hasn't sent):
-	-- asked for once each (V.LOAD_MAX at a time), remembered as they come, and the search run again
-	page.askedNames = {}
-	local soon = false
-	function page.SearchSoon()
-		if soon then return end
-		soon = true
-		local function Again()
-			soon = false
-			if Trim(search:GetText()) ~= "" then Results() end
+	-- typing: one search 0.3 s after the last key
+	local typeGen = 0
+	function page.Typed()
+		typeGen = typeGen + 1
+		local g = typeGen
+		local function Go()
+			if g ~= typeGen then return end
+			if Trim(search:GetText()) ~= "" then Open() end
+			Results()
 		end
-		if C_Timer and C_Timer.After then C_Timer.After(0.3, Again) else Again() end
+		if C_Timer and C_Timer.After then C_Timer.After(V.SEARCH_DELAY, Go) else Go() end
 	end
-	I.OnSearchName = function() page.SearchSoon() end
-	local loading, retry = false, false
-	local function Got(id)
-		local n = V.ItemData(id)
-		if n then
-			if I.nameWanted then I.nameWanted[id] = nil end
-			I.RememberName(id, n)
-			page.SearchSoon()
+	-- names coming in (asked for by the open box): the rows filled in at most once a second
+	local namesSoon = false
+	function page.NamesSoon()
+		if namesSoon or not page.searchOpen then return end
+		namesSoon = true
+		local function Again() namesSoon = false if page.searchOpen then Results() end end
+		if C_Timer and C_Timer.After then C_Timer.After(V.NAMES_EVERY, Again) else Again() end
+	end
+	I.OnSearchName = function() page.NamesSoon() end
+	closer = CreateFrame("Frame")
+	closer:SetScript("OnEvent", function()
+		if not page.searchOpen then return end
+		local over = (search.IsMouseOver and search:IsMouseOver()) or (res:IsShown() and res.IsMouseOver and res:IsMouseOver())
+		if not over then search:ClearFocus() Close() end
+	end)
+	page.closer = closer
+	search:SetScript("OnTextChanged", function() page.Typed() end)
+	search:HookScript("OnEditFocusGained", function() if Trim(search:GetText()) ~= "" then Open() Results() end end)
+	-- (focus lost: closed a moment later, unless the pointer is on the dropdown: its Add buttons still work)
+	search:HookScript("OnEditFocusLost", function()   -- (hooked: the look's own focus handlers kept)
+		local function Check()
+			if search:HasFocus() then return end
+			if res:IsShown() and res.IsMouseOver and res:IsMouseOver() then return end
+			Close()
 		end
-		if not loading then page.LoadNames() end
-	end
-	function page.LoadNames()
-		if loading then return end
-		loading = true
-		I.nameWanted = I.nameWanted or {}
-		local canLoad = _G.Item and _G.Item.CreateFromItemID
-		for _, id in ipairs(I.SearchMissing()) do
-			if not page.askedNames[id] then
-				local asked = V.LoadItem(id, Got)
-				if asked or not canLoad then
-					-- (asked: its answer comes to Got; no Item API: asked with RequestLoadItemDataByID, the answer its event)
-					page.askedNames[id] = true
-					I.nameWanted[id] = true
-				else
-					-- (V.LOAD_MAX asked already: the rest in a second, or as answers come)
-					if not retry and C_Timer and C_Timer.After then
-						retry = true
-						C_Timer.After(1, function() retry = false page.LoadNames() end)
-					end
-					break
-				end
-			end
-		end
-		loading = false
-	end
-	search:SetScript("OnTextChanged", Results)
+		if C_Timer and C_Timer.After then C_Timer.After(0.2, Check) else Check() end
+	end)
+	page:HookScript("OnHide", Close)
 	local function AddTop()
+		-- (Enter before the search ran: it runs now)
+		local text = Trim(search:GetText())
+		if text ~= "" and frozen.text ~= text then page.found = Compute(text) end
 		local id = (page.found and page.found[1]) or I.ParseItem(search:GetText())
 		if not id then
 			if Trim(search:GetText()) ~= "" then ns:Print("%s", L["No item by that name seen yet: shift-click it from your bags, drop it here, or type its item ID."]) end
@@ -745,7 +778,7 @@ local function BuildList(page)
 	end
 	page.AddTop = AddTop
 	search:SetScript("OnEnterPressed", AddTop)
-	search:SetScript("OnEscapePressed", function(self) self:SetText("") self:ClearFocus() Results() end)
+	search:SetScript("OnEscapePressed", function(self) Close() self:ClearFocus() end)   -- (1.2.8: the text kept)
 	-- shift-click while the search box (or a quantity box) has the cursor: that item, into the list (no split box)
 	local function TakeItem(_, link)
 		if type(link) ~= "string" or not link:find("|Hitem:", 1, true) then return false end

@@ -127,7 +127,7 @@ function I.RememberName(id, name)
 	if type(t) ~= "table" then t = {} I.db.account.names = t end
 	if t[id] == name then return false end
 	t[id] = name
-	I.nameIndex = nil
+	if I.IndexName then I.IndexName(id, name) end   -- (1.2.8: into the index as it is; 1.2.7 threw the index away)
 	return true
 end
 function I.KnownName(id) return I.db and I.db.account and type(I.db.account.names) == "table" and I.db.account.names[id] or nil end
@@ -815,49 +815,173 @@ local function MatchAll(low, words)
 	for _, w in ipairs(words) do if not low:find(w, 1, true) then return false end end
 	return true
 end
--- the big pool's ids (scans, recipes, Top 10, names), built once; again after a new name or a scan
+-- the big pool's ids (scans, recipes, Top 10, names): built once a session (1.2.8); a name that comes in is added
+-- (I.IndexName), and the ids a scan finds (I.IndexAddMarket). Each item's sort key is fixed once (I.SortKey).
+local function IndexPut(x, id, n)
+	x.ids[#x.ids + 1] = id
+	x.lows[#x.lows + 1] = n:lower()
+	x.version = (x.version or 0) + 1
+end
+local function IndexAdd(x, id)
+	id = tonumber(id)
+	if not id or x.seen[id] then return end
+	x.seen[id] = true
+	local n = I.KnownName(id) or Call(GetItemInfo, id)
+	if n then IndexPut(x, id, n)
+	else
+		x.missing[#x.missing + 1] = id
+		x.missingSet[id] = true
+	end
+end
 function I.NameIndex()
 	local x = I.nameIndex
 	if x then return x end
-	x = { ids = {}, lows = {}, missing = {}, missingSet = {} }
-	local seen = {}
+	x = { ids = {}, lows = {}, missing = {}, missingSet = {}, seen = {}, version = 0, builds = (I.indexBuilds or 0) + 1 }
+	I.indexBuilds = x.builds
+	I.nameIndex = x
 	local names = (I.db and I.db.account and I.db.account.names) or {}
-	local function Add(id)
-		id = tonumber(id)
-		if not id or seen[id] then return end
-		seen[id] = true
-		local n = names[id] or Call(GetItemInfo, id)
-		if n then
-			x.ids[#x.ids + 1] = id
-			x.lows[#x.lows + 1] = n:lower()
-		else
-			x.missing[#x.missing + 1] = id
-			x.missingSet[id] = true
-		end
-	end
-	for id in pairs(names) do Add(id) end
+	for id in pairs(names) do IndexAdd(x, id) end
 	for _, m in pairs(I.realm and type(I.realm.ah) == "table" and I.realm.ah or {}) do
-		if type(m) == "table" then for id in pairs(m.cur or {}) do Add(id) end end
+		if type(m) == "table" then for id in pairs(m.cur or {}) do IndexAdd(x, id) end end
 	end
 	local C = I.Craft
 	if C then
 		for _, kind in ipairs({ "craft", "harvest" }) do
 			local top = C.TopMap and C.TopMap(kind)
-			for _, t in pairs(top or {}) do for id in pairs(t) do Add(id) end end
+			for _, t in pairs(top or {}) do for id in pairs(t) do IndexAdd(x, id) end end
 		end
 		for _, r in pairs(C.schem or {}) do
 			if type(r) == "table" then
-				Add(r.out)
-				for _, g in ipairs(r.reagents or {}) do Add(g.id) end
+				IndexAdd(x, r.out)
+				for _, g in ipairs(r.reagents or {}) do IndexAdd(x, g.id) end
 			end
 		end
 	end
-	for _, g in pairs(ns.Recipes and ns.Recipes.gather or {}) do for id in tostring(g.ids or ""):gmatch("%d+") do Add(id) end end
+	for _, g in pairs(ns.Recipes and ns.Recipes.gather or {}) do for id in tostring(g.ids or ""):gmatch("%d+") do IndexAdd(x, id) end end
 	table.sort(x.missing)
-	I.nameIndex = x
 	return x
 end
-function I.SearchMissing() return I.NameIndex().missing end
+-- a name came: into the index (once), off the missing
+function I.IndexName(id, name)
+	local x = I.nameIndex
+	if not (x and id and name) then return end
+	if x.missingSet[id] then
+		x.missingSet[id] = nil
+		IndexPut(x, id, name)
+	elseif not x.seen[id] then
+		x.seen[id] = true
+		IndexPut(x, id, name)
+	end
+end
+-- a scan's items: the new ones into the index (only when it's built: else it's built with them)
+function I.IndexAddMarket(m)
+	local x = I.nameIndex
+	if not (x and type(m) == "table") then return end
+	for id in pairs(m.cur or {}) do IndexAdd(x, id) end
+end
+-- the names still to come (in the index's order; some may have come by now: see missingSet)
+function I.SearchMissing()
+	local x, out = I.NameIndex(), {}
+	for _, id in ipairs(x.missing) do if x.missingSet[id] then out[#out + 1] = id end end
+	return out
+end
+-- (1.2.8) an item's sort key, fixed for the session: its remembered name, else the game's, case-insensitive
+-- (1.2.7 sorted by whichever name was at hand, the game's or the lowercase index's: rows swapped as the cache did)
+I.sortKeys = {}
+function I.SortKey(id, n)
+	local k = I.sortKeys[id]
+	if k then return k end
+	n = I.KnownName(id) or n or Call(GetItemInfo, id)
+	if not n then return nil end
+	k = n:lower()
+	I.sortKeys[id] = k
+	return k
+end
+
+--------------------------------------------------------------------------------
+-- (1.2.8) Names the game hasn't sent: asked for at a capped rate (the search box: 20 a second, at most 30
+-- waiting, while it's open; after a full scan, in the background: 4 a second, at most 8 waiting, not in combat,
+-- until the AH closes). Each is asked once a session; one not answered in 10 seconds is let go.
+--------------------------------------------------------------------------------
+local NL = { asked = {}, pending = {}, npending = 0, tokens = 0, pos = 1 }
+I.NameLoader = NL
+NL.RATE = { search = 20, background = 4 }
+NL.CAP = { search = 30, background = 8 }
+NL.TIMEOUT = 10
+local function NLTime() return (GetTime and GetTime()) or Now() end
+function NL.Start(mode)
+	if mode == "background" then
+		NL.bgWanted = true
+		if NL.mode == "search" then return false end
+	end
+	local x = I.NameIndex()
+	if #I.SearchMissing() == 0 then
+		if mode == "background" then NL.bgWanted = nil end
+		return false
+	end
+	if NL.mode ~= mode then NL.tokens = 0 end
+	NL.mode = mode
+	if not NL.driver then NL.driver = CreateFrame("Frame") end
+	NL.driver:SetScript("OnUpdate", function(_, e) NL.Tick(e) end)
+	return true
+end
+function NL.Stop(mode)
+	if mode and NL.mode ~= mode then
+		if mode == "background" then NL.bgWanted = nil end
+		return
+	end
+	if mode == "background" then NL.bgWanted = nil end
+	NL.mode = nil
+	if NL.driver then NL.driver:SetScript("OnUpdate", nil) end
+	-- (the search box closed: the background fill goes on, if it was going)
+	if mode == "search" and NL.bgWanted and I.ahOpen then NL.Start("background") end
+end
+function NL.Running() return NL.mode end
+local function NextMissing(x)
+	while NL.pos <= #x.missing do
+		local id = x.missing[NL.pos]
+		NL.pos = NL.pos + 1
+		if x.missingSet[id] and not NL.asked[id] then return id end
+	end
+end
+function NL.Tick(elapsed)
+	local mode = NL.mode
+	if not mode then return end
+	if mode == "background" and ((InCombatLockdown and InCombatLockdown()) or not I.ahOpen) then
+		if not I.ahOpen then NL.Stop("background") end
+		return
+	end
+	local now = NLTime()
+	for id, t in pairs(NL.pending) do
+		if now - t > NL.TIMEOUT then NL.pending[id] = nil NL.npending = math.max(0, NL.npending - 1) end
+	end
+	local rate = NL.RATE[mode]
+	NL.tokens = math.min(math.max(1, rate / 4), NL.tokens + (elapsed or 0) * rate)   -- (bursts of a quarter second at most)
+	local x = I.NameIndex()
+	while NL.tokens >= 1 and NL.npending < NL.CAP[mode] do
+		local id = NextMissing(x)
+		if not id then
+			if NL.npending == 0 then NL.Stop(mode) end
+			return
+		end
+		NL.tokens = NL.tokens - 1
+		NL.asked[id] = true
+		NL.pending[id] = now
+		NL.npending = NL.npending + 1
+		NL.requests = (NL.requests or 0) + 1
+		if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
+	end
+end
+-- the game answered for an item (GET_ITEM_INFO_RECEIVED): off the waiting; its name remembered if asked for
+function NL.Got(id, name)
+	local was = NL.pending[id] ~= nil
+	if was then NL.pending[id] = nil NL.npending = math.max(0, NL.npending - 1) end
+	if name and (was or NL.asked[id] or (I.nameIndex and I.nameIndex.missingSet[id])) then
+		I.RememberName(id, name)
+		return true
+	end
+	return false
+end
 
 function I.SearchItems(text, max)
 	max = max or I.SEARCH_MAX
@@ -868,15 +992,20 @@ function I.SearchItems(text, max)
 	local low = text:lower()
 	local words = I.SearchWords(text)
 	local found, seen = {}, {}
-	local function Hit(i, n)
-		local nl = n:lower()
-		if MatchAll(nl, words) then found[#found + 1] = { id = i, name = n, exact = nl == low, prefix = nl:sub(1, #low) == low } end
+	local function Hit(i, key)
+		if MatchAll(key, words) then found[#found + 1] = { id = i, key = key, exact = key == low, prefix = key:sub(1, #low) == low } end
 	end
+	-- (1.2.8) a name the game has: remembered, so the item stays findable (and keeps its place) when the game's
+	-- cache drops it; matched and sorted by its fixed key
 	local function Try(i)
 		if seen[i] then return end
 		seen[i] = true
-		local n = Call(GetItemInfo, i) or I.KnownName(i)
-		if n then Hit(i, n) end
+		local n = I.KnownName(i)
+		if not n then
+			n = Call(GetItemInfo, i)
+			if n then I.RememberName(i, n) end
+		end
+		if n then Hit(i, I.SortKey(i, n)) end
 	end
 	local _, link = Call(GetItemInfo, text)
 	local exact = link and tonumber(link:match("item:(%d+)"))
@@ -893,15 +1022,13 @@ function I.SearchItems(text, max)
 		if not seen[i] then
 			seen[i] = true
 			local nl = x.lows[k]
-			if MatchAll(nl, words) then
-				found[#found + 1] = { id = i, name = Call(GetItemInfo, i) or I.KnownName(i) or nl, exact = nl == low, prefix = nl:sub(1, #low) == low }
-			end
+			if MatchAll(nl, words) then Hit(i, I.SortKey(i) or nl) end
 		end
 	end
 	table.sort(found, function(a, b)
 		if a.exact ~= b.exact then return a.exact end
 		if a.prefix ~= b.prefix then return a.prefix end
-		if a.name ~= b.name then return a.name < b.name end
+		if a.key ~= b.key then return a.key < b.key end
 		return a.id < b.id
 	end)
 	local out = {}
@@ -1006,6 +1133,7 @@ function I.OnEvent(event, a1, a2)
 		I.Changed()
 	elseif event == "AUCTION_HOUSE_CLOSED" then
 		I.ahOpen = false
+		NL.Stop("background")   -- (1.2.8: the background name fill is for while you're at the AH)
 		if I.Scan then I.Scan.OnAHClosed() end
 		if I.AH then I.AH.Hide() end
 		I.Changed()
@@ -1027,12 +1155,9 @@ function I.OnEvent(event, a1, a2)
 		-- (a name arrived: kept on its lines, for when the game's cache is cold)
 		if I.char and a1 then
 			local name, hit = Call(GetItemInfo, a1), false
-			-- (1.2.7) a name the search asked for: remembered, and the search box looks again
-			if name and I.nameWanted and I.nameWanted[a1] then
-				I.nameWanted[a1] = nil
-				I.RememberName(a1, name)
-				if I.OnSearchName then pcall(I.OnSearchName, a1) end
-			end
+			-- (1.2.8) a name asked for (or still missing): remembered, into the index; the open search box looks
+			-- again (at most once a second)
+			if NL.Got(a1, name) and NL.mode == "search" and I.OnSearchName then pcall(I.OnSearchName, a1) end
 			for _, l in ipairs(I.char.lists or {}) do
 				for _, e in ipairs(l.items) do if e.id == a1 then e.name = name or e.name hit = true end end
 			end
