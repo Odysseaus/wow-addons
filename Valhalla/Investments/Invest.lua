@@ -38,7 +38,7 @@ I.SETTINGS = {
 	ahTotal = "stack",                                          -- (1.2.5: AH total on tooltips: "stack" the hovered quantity, "held" all held)
 	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (Owned: what you own costs nothing; 1.0.1: "vendor" gone,
 	-- moved to "market"); only the recipes this character knows
-	craftOwned = "market", craftKnownOnly = false,
+	craftOwned = "market", craftKnownOnly = false, craftPerStack = false,   -- (1.2.6: Craft Show: Per stack)
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all", topView = "movers",
 	marketHouse = "Alliance",   -- (v0.4.2.7: AH Market's house buttons)
