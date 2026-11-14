@@ -14,8 +14,8 @@
 -- variable needs a full restart of the game, not /reload). On/off: ValhallaDB.invest.enabled
 -- (/valhalla invest on|off), like the other modules.
 --
--- What it never does: buy, sell, post or bid for you; write on the game's frames; call anything
--- protected. Every purchase is your own click on the game's own button.
+-- What it never does: sell, post or bid for you; write on the game's frames. (1.2.7) It buys only from the AH
+-- list's checkout cart, one purchase per click of yours (Yes, then Buy next): the game requires a click for each.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -39,6 +39,7 @@ I.SETTINGS = {
 	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (Owned: what you own costs nothing; 1.0.1: "vendor" gone,
 	-- moved to "market"); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false, craftPerStack = false,   -- (1.2.6: Craft Show: Per stack)
+	buyGuard = 5,                                               -- (1.2.7: the cart's price guard: skip an item whose price rose more than this %)
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all", topView = "movers",
 	marketHouse = "Alliance",   -- (v0.4.2.7: AH Market's house buttons)
@@ -97,6 +98,9 @@ function I.InitDB()
 	r.merchants = r.merchants or {}
 	local c = r.chars[name] or {}
 	r.chars[name] = c
+	db.account.names = type(db.account.names) == "table" and db.account.names or {}   -- (1.2.7: item names seen, for the search)
+	c.cart = type(c.cart) == "table" and c.cart or {}       -- (1.2.7: the AH checkout cart: { { id, n, list } })
+	c.buys = type(c.buys) == "table" and c.buys or {}       -- (1.2.7: the purchase log)
 	c.bags = c.bags or {}
 	c.bank = c.bank or {}
 	c.want = c.want or {}
@@ -115,9 +119,24 @@ end
 --------------------------------------------------------------------------------
 
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
+-- (1.2.7) names remembered account-wide (the full scan reads them; the search finds items by them)
+function I.RememberName(id, name)
+	id = tonumber(id)
+	if not (id and type(name) == "string" and name ~= "" and I.db and I.db.account) then return false end
+	local t = I.db.account.names
+	if type(t) ~= "table" then t = {} I.db.account.names = t end
+	if t[id] == name then return false end
+	t[id] = name
+	I.nameIndex = nil
+	return true
+end
+function I.KnownName(id) return I.db and I.db.account and type(I.db.account.names) == "table" and I.db.account.names[id] or nil end
+
 function I.ItemName(id)
 	local name = Call(GetItemInfo, id)
 	if name then return name, true end
+	local kn = I.KnownName(id)
+	if kn then return kn, false end
 	if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
 	local c = I.char
 	local w = c and c.want[id]
@@ -295,7 +314,9 @@ end
 
 function I.AddMail(id, n)
 	id, n = tonumber(id), tonumber(n) or 1
-	if not (id and I.char and I.Listed(id)) or n <= 0 then return false end
+	-- (1.2.7: or in the cart, or just bought from it: the game's events can come either way round)
+	local justBought = I.cartBoughtAt and I.cartBoughtAt[id] and Now() - I.cartBoughtAt[id] < 120
+	if not (id and I.char and (I.Listed(id) or I.CartLine(id) or justBought)) or n <= 0 then return false end
 	local m = I.char.mail[id] or { n = 0 }
 	m.n = m.n + n
 	m.t = Now()
@@ -501,6 +522,7 @@ function I.UndoLabel(u)
 	u = u or I.LastUndo()
 	if not u then return nil end
 	if u.kind == "list" then return L["the list '%s'"]:format(u.l.name) end
+	if u.kind == "new" then return L["the new list '%s'"]:format(u.name) end
 	return L["the edit of '%s'"]:format(u.name)
 end
 
@@ -513,6 +535,10 @@ function I.Undo()
 		local lists = I.char.lists
 		table.insert(lists, math.min(u.index, #lists + 1), u.l)
 		if u.active then I.char.activeList = u.l.id end
+	elseif u.kind == "new" then   -- (1.2.7: a list made by Add SL's New list: taken away)
+		local _, i = I.ListByID(u.list)
+		if i then table.remove(I.char.lists, i) end
+		if I.char.activeList == u.list then I.char.activeList = nil end
 	else
 		local l = I.ListByID(u.list)
 		if not l then return I.Undo() end      -- (its list is gone: the one before)
@@ -520,6 +546,138 @@ function I.Undo()
 	end
 	I.Changed()
 	return label
+end
+
+--------------------------------------------------------------------------------
+-- (1.2.7) Add to a shopping list from AH Market (History's button, Craft's Add SL): one more of the item on a
+-- saved list (a line of 1 if it isn't there), or a new list with it. Undo puts the list back as it was.
+--------------------------------------------------------------------------------
+
+local function CopyItems(items)
+	local t = {}
+	for i, e in ipairs(items or {}) do t[i] = { id = e.id, n = e.n, name = e.name } end
+	return t
+end
+
+function I.ListCount(lid, id)
+	local e = LineOf(I.ListByID(lid), id)
+	return e and e.n or 0
+end
+
+function I.ListAdd(lid, id, n)
+	id, n = tonumber(id), math.max(1, math.floor(tonumber(n) or 1))
+	local l = I.ListByID(lid)
+	if not (l and id and I.char) then return nil end
+	PushUndo({ kind = "edit", list = l.id, name = l.name, items = CopyItems(l.items) })
+	local e = LineOf(l, id)
+	if e then e.n = (e.n or 0) + n
+	else
+		e = { id = id, n = n, name = (Call(GetItemInfo, id)) or I.KnownName(id) }
+		l.items[#l.items + 1] = e
+	end
+	ns:Print("%s", L["Added %s to '%s' (now %d). Undo: the Undo button, or /valhalla undo."]:format(I.ItemName(id), l.name, e.n))
+	I.Changed()
+	return l, e.n
+end
+
+function I.ListAddNew(id, n)
+	id, n = tonumber(id), math.max(1, math.floor(tonumber(n) or 1))
+	local c = I.char
+	if not (id and c) then return nil end
+	c.nextList = c.nextList or 1
+	local l = { id = c.nextList, name = I.AutoName(), created = Now(), items = { { id = id, n = n, name = (Call(GetItemInfo, id)) or I.KnownName(id) } } }
+	c.nextList = c.nextList + 1
+	c.lists[#c.lists + 1] = l
+	if not I.ActiveList() and c.activeList ~= I.NONE then c.activeList = l.id end
+	PushUndo({ kind = "new", list = l.id, name = l.name })
+	ns:Print("%s", L["New list '%s' with %s (%d). Undo: the Undo button, or /valhalla undo."]:format(l.name, I.ItemName(id), n))
+	I.Changed()
+	return l
+end
+
+--------------------------------------------------------------------------------
+-- (1.2.7) The checkout cart (the AH list's): what to buy and how many, per character, saved. Bought lines come
+-- off it (AHPanel.lua's buying); the purchase log keeps what happened.
+--------------------------------------------------------------------------------
+
+function I.Cart()
+	local c = I.char
+	if not c then return {} end
+	if type(c.cart) ~= "table" then c.cart = {} end
+	return c.cart
+end
+
+function I.CartLine(id)
+	for i, e in ipairs(I.Cart()) do if e.id == id then return e, i end end
+end
+
+function I.CartAdd(id, n, lid)
+	id, n = tonumber(id), math.max(1, math.floor(tonumber(n) or 1))
+	if not (id and I.char) then return nil end
+	local e = I.CartLine(id)
+	if e then e.n = e.n + n
+	else
+		e = { id = id, n = n, list = lid }
+		local cart = I.Cart()
+		cart[#cart + 1] = e
+	end
+	I.Changed()
+	return e
+end
+
+function I.CartSet(id, n)
+	local e = I.CartLine(id)
+	if not e then return nil end
+	e.n = math.max(1, math.floor(tonumber(n) or e.n))
+	I.Changed()
+	return e
+end
+
+function I.CartRemove(id)
+	local _, i = I.CartLine(id)
+	if not i then return false end
+	table.remove(I.Cart(), i)
+	I.Changed()
+	return true
+end
+
+-- n bought: off its line (the line goes at 0)
+function I.CartBought(id, n)
+	local e, i = I.CartLine(id)
+	if not e then return end
+	e.n = e.n - (n or e.n)
+	if e.n <= 0 then table.remove(I.Cart(), i) end
+	I.Changed()
+end
+
+function I.CartCount() return #I.Cart() end
+
+-- the purchase log: { t, house, id, name, n, total, kind, result, note }
+I.BUYS_KEEP = 200
+function I.LogBuy(e)
+	local c = I.char
+	if not c then return end
+	if type(c.buys) ~= "table" then c.buys = {} end
+	e.t = e.t or Now()
+	e.name = e.name or I.ItemName(e.id)
+	c.buys[#c.buys + 1] = e
+	while #c.buys > I.BUYS_KEEP do table.remove(c.buys, 1) end
+end
+
+I.BUY_RESULTS = { bought = "bought", rose = "skipped: price rose", gold = "not enough gold", failed = "failed",
+	cancelled = "cancelled", noanswer = "no answer", unavailable = "price unavailable" }
+function I.BuyLines(max)
+	local out, buys = {}, (I.char and I.char.buys) or {}
+	max = max or 20
+	for i = #buys, math.max(1, #buys - max + 1), -1 do
+		local b = buys[i]
+		local when = date and date("%m-%d %H:%M", b.t) or tostring(b.t)
+		local money = I.Scan and b.total and I.Scan.Money(b.total) or tostring(b.total or "-")
+		out[#out + 1] = L["%s  %s x%d: %s (%s)%s"]:format(when, b.name or ("item:" .. tostring(b.id)), b.n or 0, money,
+			L[I.BUY_RESULTS[b.result] or b.result or "?"], b.house and (", " .. b.house) or "")
+	end
+	if #out == 0 then out[1] = L["No purchases logged yet (the AH list's checkout cart logs each one)."] end
+	return out
 end
 
 -- the builder's draft
@@ -641,22 +799,84 @@ function I.DeleteList(lid)
 	return true
 end
 
--- the item search box: up to max items whose names hold what's typed, from what Valhalla has seen (bags,
--- bank, merchants, your lists, the draft, the old wants, the mail), the game's own cache for an exact name;
--- a link or an ID: that item
+-- the item search box (1.2.7): up to max items (10) whose names hold every word typed, in any order. Searched:
+-- what Valhalla has seen (bags, bank, merchants, your lists, the draft, the old wants, the mail) and the name
+-- index: every item of your AH scans (all houses), the professions' recipes and gathered items, Top 10's data,
+-- and the names remembered (I.RememberName: the full scan reads them). An item the game hasn't sent a name for
+-- yet is listed in I.SearchMissing() (the search box asks for them and searches again as they come).
+-- A link or an ID: that item.
+I.SEARCH_MAX = 10
+function I.SearchWords(text)
+	local w = {}
+	for x in tostring(text or ""):lower():gmatch("%S+") do w[#w + 1] = x end
+	return w
+end
+local function MatchAll(low, words)
+	for _, w in ipairs(words) do if not low:find(w, 1, true) then return false end end
+	return true
+end
+-- the big pool's ids (scans, recipes, Top 10, names), built once; again after a new name or a scan
+function I.NameIndex()
+	local x = I.nameIndex
+	if x then return x end
+	x = { ids = {}, lows = {}, missing = {}, missingSet = {} }
+	local seen = {}
+	local names = (I.db and I.db.account and I.db.account.names) or {}
+	local function Add(id)
+		id = tonumber(id)
+		if not id or seen[id] then return end
+		seen[id] = true
+		local n = names[id] or Call(GetItemInfo, id)
+		if n then
+			x.ids[#x.ids + 1] = id
+			x.lows[#x.lows + 1] = n:lower()
+		else
+			x.missing[#x.missing + 1] = id
+			x.missingSet[id] = true
+		end
+	end
+	for id in pairs(names) do Add(id) end
+	for _, m in pairs(I.realm and type(I.realm.ah) == "table" and I.realm.ah or {}) do
+		if type(m) == "table" then for id in pairs(m.cur or {}) do Add(id) end end
+	end
+	local C = I.Craft
+	if C then
+		for _, kind in ipairs({ "craft", "harvest" }) do
+			local top = C.TopMap and C.TopMap(kind)
+			for _, t in pairs(top or {}) do for id in pairs(t) do Add(id) end end
+		end
+		for _, r in pairs(C.schem or {}) do
+			if type(r) == "table" then
+				Add(r.out)
+				for _, g in ipairs(r.reagents or {}) do Add(g.id) end
+			end
+		end
+	end
+	for _, g in pairs(ns.Recipes and ns.Recipes.gather or {}) do for id in tostring(g.ids or ""):gmatch("%d+") do Add(id) end end
+	table.sort(x.missing)
+	I.nameIndex = x
+	return x
+end
+function I.SearchMissing() return I.NameIndex().missing end
+
 function I.SearchItems(text, max)
-	max = max or 6
+	max = max or I.SEARCH_MAX
 	text = Trim(text)
 	if text == "" then return {} end
 	local id = text:match("item:(%d+)") or text:match("^(%d+)$")
 	if id then return { tonumber(id) } end
 	local low = text:lower()
+	local words = I.SearchWords(text)
 	local found, seen = {}, {}
+	local function Hit(i, n)
+		local nl = n:lower()
+		if MatchAll(nl, words) then found[#found + 1] = { id = i, name = n, exact = nl == low, prefix = nl:sub(1, #low) == low } end
+	end
 	local function Try(i)
 		if seen[i] then return end
 		seen[i] = true
-		local n = Call(GetItemInfo, i)
-		if n and n:lower():find(low, 1, true) then found[#found + 1] = { id = i, name = n, exact = n:lower() == low, prefix = n:lower():sub(1, #low) == low } end
+		local n = Call(GetItemInfo, i) or I.KnownName(i)
+		if n then Hit(i, n) end
 	end
 	local _, link = Call(GetItemInfo, text)
 	local exact = link and tonumber(link:match("item:(%d+)"))
@@ -668,6 +888,16 @@ function I.SearchItems(text, max)
 		for _, e in ipairs(I.Draft().items) do Try(e.id) end
 	end
 	for _, m in pairs(I.realm and I.realm.merchants or {}) do for i in pairs(m.items or {}) do Try(i) end end
+	local x = I.NameIndex()
+	for k, i in ipairs(x.ids) do
+		if not seen[i] then
+			seen[i] = true
+			local nl = x.lows[k]
+			if MatchAll(nl, words) then
+				found[#found + 1] = { id = i, name = Call(GetItemInfo, i) or I.KnownName(i) or nl, exact = nl == low, prefix = nl:sub(1, #low) == low }
+			end
+		end
+	end
 	table.sort(found, function(a, b)
 		if a.exact ~= b.exact then return a.exact end
 		if a.prefix ~= b.prefix then return a.prefix end
@@ -797,6 +1027,12 @@ function I.OnEvent(event, a1, a2)
 		-- (a name arrived: kept on its lines, for when the game's cache is cold)
 		if I.char and a1 then
 			local name, hit = Call(GetItemInfo, a1), false
+			-- (1.2.7) a name the search asked for: remembered, and the search box looks again
+			if name and I.nameWanted and I.nameWanted[a1] then
+				I.nameWanted[a1] = nil
+				I.RememberName(a1, name)
+				if I.OnSearchName then pcall(I.OnSearchName, a1) end
+			end
 			for _, l in ipairs(I.char.lists or {}) do
 				for _, e in ipairs(l.items) do if e.id == a1 then e.name = name or e.name hit = true end end
 			end
@@ -1584,6 +1820,10 @@ function mod:Slash(word, arg)
 			local d = I.Diag(rest)
 			for _, line in ipairs(I.DiagLines(d)) do Say("%s", line) end
 			I.Changed()
+			return
+		end
+		if sub == "buys" then   -- (1.2.7) the checkout cart's purchase log
+			for _, line in ipairs(I.BuyLines(20)) do Say("%s", line) end
 			return
 		end
 		if sub == "trainer" then   -- (1.2.1) what the trainers gave Top 10

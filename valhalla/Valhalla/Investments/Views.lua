@@ -491,6 +491,78 @@ function V.Picker(parent, w)
 	return b
 end
 
+-- (1.2.7) Add to a shopping list (AH Market's History button, Craft's Add SL): a menu under the button. Your
+-- lists, the active one first (ticked: "> "), each with "(in list: N)" when the item is on it, then "New list...".
+-- A pick adds 1 (I.ListAdd / I.ListAddNew: a chat line says so, Undo takes it back).
+function V.ListChooser()
+	local m = V.chooser
+	if m then return m end
+	m = CreateFrame("Frame", "ValhallaListChooser", UIParent, "BackdropTemplate")
+	m:SetWidth(240)
+	m:SetFrameStrata("DIALOG")
+	T.SkinFlat(m, 0.98)
+	m:EnableMouse(true)
+	m.head = Text(m, 11, GREY)
+	m.head:SetPoint("TOPLEFT", 8, -6)
+	m.head:SetPoint("RIGHT", m, "RIGHT", -8, 0)
+	m.head:SetJustifyH("LEFT")
+	m.items = {}
+	for i = 1, V.PICK_MAX + 1 do
+		local it = V.Button(m, "", 232, 20, nil, "item")
+		it:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 22)
+		it:Hide()
+		m.items[i] = it
+	end
+	m:Hide()
+	V.chooser = m
+	return m
+end
+
+-- the lists in the menu's order: the active one first, then the rest as saved
+function V.ChooserEntries(id)
+	local out, active = {}, I.ActiveList()
+	if active then out[#out + 1] = active end
+	for _, l in ipairs(I.Lists()) do if not active or l.id ~= active.id then out[#out + 1] = l end end
+	local entries = {}
+	for _, l in ipairs(out) do
+		if #entries >= V.PICK_MAX then break end
+		local n = I.ListCount(l.id, id)
+		local text = ((active and l.id == active.id) and "> " or "") .. l.name .. (n > 0 and (" " .. L["(in list: %d)"]:format(n)) or "")
+		entries[#entries + 1] = { lid = l.id, text = text }
+	end
+	entries[#entries + 1] = { new = true, text = L["New list..."] }
+	return entries
+end
+
+function V.ChooseList(anchor, id, onDone)
+	local m = V.ListChooser()
+	if m:IsShown() and m.anchor == anchor and m.id == id then m:Hide() return m end
+	m.anchor, m.id = anchor, id
+	m.head:SetText(L["Add %s to:"]:format(I.ItemName(id)))
+	local entries = V.ChooserEntries(id)
+	for i, it in ipairs(m.items) do
+		local e = entries[i]
+		if e then
+			it.text:SetText(e.text)
+			it.entry = e
+			it:SetScript("OnClick", function()
+				m:Hide()
+				if e.new then I.ListAddNew(id, 1) else I.ListAdd(e.lid, id, 1) end
+				if onDone then onDone(e) end
+			end)
+			it:Show()
+		else
+			it.entry = nil
+			it:Hide()
+		end
+	end
+	m:SetHeight(26 + #entries * 22 + 4)
+	m:ClearAllPoints()
+	m:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+	m:Show()
+	return m
+end
+
 --------------------------------------------------------------------------------
 -- Smart Vendor (v0.3.2: under construction; what it did is on the Shopping List page)
 --------------------------------------------------------------------------------
@@ -523,7 +595,7 @@ end
 -- Build Shopping List saves it), your saved lists below (each with what's still needed, live)
 --------------------------------------------------------------------------------
 
-V.RESULTS = 6
+V.RESULTS = 10   -- (1.2.7: 10, was 6)
 V.DRAFT_ROWS = 6
 V.LINES = 12
 
@@ -598,7 +670,7 @@ local function BuildList(page)
 				local inDraft = I.LineOf(I.Draft(), id) ~= nil
 				r.act.text:SetText(inDraft and L["Remove"] or L["Add"])
 				r.act:SetScript("OnClick", function()
-					if I.LineOf(I.Draft(), id) then I.DraftRemove(id) else I.DraftAdd(id) end
+					if I.LineOf(I.Draft(), id) then I.DraftRemove(id) else I.DraftAdd(id, 1) end   -- (1.2.7: added as 1)
 					Results()
 				end)
 				r:Show()
@@ -609,8 +681,57 @@ local function BuildList(page)
 		end
 		res:SetHeight(8 + math.max(1, #ids) * 22)
 		res:SetShown(#ids > 0)
+		if Trim(search:GetText()) ~= "" then page.LoadNames() end
 	end
 	page.Results = Results
+	-- (1.2.7) the names the search can't match yet (items of your scans, recipes, Top 10 the game hasn't sent):
+	-- asked for once each (V.LOAD_MAX at a time), remembered as they come, and the search run again
+	page.askedNames = {}
+	local soon = false
+	function page.SearchSoon()
+		if soon then return end
+		soon = true
+		local function Again()
+			soon = false
+			if Trim(search:GetText()) ~= "" then Results() end
+		end
+		if C_Timer and C_Timer.After then C_Timer.After(0.3, Again) else Again() end
+	end
+	I.OnSearchName = function() page.SearchSoon() end
+	local loading, retry = false, false
+	local function Got(id)
+		local n = V.ItemData(id)
+		if n then
+			if I.nameWanted then I.nameWanted[id] = nil end
+			I.RememberName(id, n)
+			page.SearchSoon()
+		end
+		if not loading then page.LoadNames() end
+	end
+	function page.LoadNames()
+		if loading then return end
+		loading = true
+		I.nameWanted = I.nameWanted or {}
+		local canLoad = _G.Item and _G.Item.CreateFromItemID
+		for _, id in ipairs(I.SearchMissing()) do
+			if not page.askedNames[id] then
+				local asked = V.LoadItem(id, Got)
+				if asked or not canLoad then
+					-- (asked: its answer comes to Got; no Item API: asked with RequestLoadItemDataByID, the answer its event)
+					page.askedNames[id] = true
+					I.nameWanted[id] = true
+				else
+					-- (V.LOAD_MAX asked already: the rest in a second, or as answers come)
+					if not retry and C_Timer and C_Timer.After then
+						retry = true
+						C_Timer.After(1, function() retry = false page.LoadNames() end)
+					end
+					break
+				end
+			end
+		end
+		loading = false
+	end
 	search:SetScript("OnTextChanged", Results)
 	local function AddTop()
 		local id = (page.found and page.found[1]) or I.ParseItem(search:GetText())
@@ -618,7 +739,7 @@ local function BuildList(page)
 			if Trim(search:GetText()) ~= "" then ns:Print("%s", L["No item by that name seen yet: shift-click it from your bags, drop it here, or type its item ID."]) end
 			return
 		end
-		I.DraftAdd(id)
+		I.DraftAdd(id, 1)
 		search:SetText("")
 		Results()
 	end
@@ -630,7 +751,7 @@ local function BuildList(page)
 		if type(link) ~= "string" or not link:find("|Hitem:", 1, true) then return false end
 		local id = I.ParseItem(link)
 		if not id then return false end
-		I.DraftAdd(id)
+		I.DraftAdd(id, 1)
 		search:SetText("")
 		Results()
 		return true
@@ -642,7 +763,7 @@ local function BuildList(page)
 		local kind, id = GetCursorInfo()
 		if kind == "item" and id then
 			if ClearCursor then ClearCursor() end
-			I.DraftAdd(id)
+			I.DraftAdd(id, 1)
 			search:SetText("")
 			Results()
 		end
@@ -1030,6 +1151,21 @@ local function BuildSettings(page)
 	Section(L["Auction House"])
 	Opt(L["Show my Shopping List beside the Auction House"], "ahPanel", function() if I.AH then I.AH.Refresh() end end)
 	Note(L["Search runs the Auction House's own search, on your click. The list's - minimizes it to a small button. Scan (AH Market's prices) is on that list too."])
+	-- (1.2.7) the checkout cart's price guard
+	local guard = CreateFrame("Frame", nil, body)
+	guard:SetSize(400, 22)
+	local gdl = Text(guard, 12)
+	gdl:SetPoint("LEFT")
+	local function GuardText() gdl:SetText(L["Cart price guard: +%d%%"]:format(S.buyGuard or 5)) end
+	local gminus = V.Button(guard, "-", 22, 20, function() S.buyGuard = math.max(0, (S.buyGuard or 5) - 1) GuardText() I.Changed() end)
+	gminus:SetPoint("LEFT", 200, 0)
+	local gplus = V.Button(guard, "+", 22, 20, function() S.buyGuard = math.min(50, (S.buyGuard or 5) + 1) GuardText() I.Changed() end)
+	gplus:SetPoint("LEFT", 226, 0)
+	if ns.Style then ns.Style.Stepper(gminus, gplus) end
+	GuardText()
+	page.guard = { frame = guard, minus = gminus, plus = gplus, label = gdl }
+	Place(guard)
+	Note(L["Checkout cart: a stackable item whose price rose more than this since the cart's Scan is skipped (not bought). Each purchase is your own click: Yes buys the first, Buy next each of the rest."])
 	Section(L["AH Market"])
 	page.speed = Place(V.Radio(body, L["Scan speed:"], { { "smooth", L["Smooth"] }, { "balanced", L["Balanced"] }, { "fast", L["Fast"] } },
 		function() return S.scanSpeed end, function(v) S.scanSpeed = v end))

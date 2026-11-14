@@ -163,6 +163,7 @@ M.COLS = {
 		{ key = "listed", label = L["Listed"], x = 468, w = 42, value = function(e) return e.listed end },
 		{ key = "can", label = L["Can Make/Own"], x = 554, w = 56, value = function(e) return M.CanOwn(e) end },   -- (1.2.6: Own + Can make)
 		{ key = "total", label = L["Total"], alt = L["Total (stack)"], x = 614, w = 90, value = function(e) if M.PerStack() then return M.StackTotal(e.each, e.out) end return select(2, M.Shown(e)) end },
+		{ key = "addsl", label = L["Add SL"], x = 708, w = 34, button = true },   -- (1.2.7: a + per row, no sort)
 	},
 	-- (Crafts' columns for a gathered item, no Cost: Sell at the AH's lowest, Profit/item after the cut, Have, Total)
 	harvest = {
@@ -172,6 +173,7 @@ M.COLS = {
 		{ key = "listed", label = L["Listed"], x = 468, w = 42, value = function(e) return e.low and e.units or nil end },
 		{ key = "have", label = L["Have"], x = 554, w = 56, value = function(e) return e.have end },
 		{ key = "total", label = L["Total"], alt = L["Total (stack)"], x = 614, w = 90, value = function(e) if M.PerStack() then return M.StackTotal(e.each, e.id) end return e.total end },
+		{ key = "addsl", label = L["Add SL"], x = 708, w = 34, button = true },   -- (1.2.7)
 	},
 }
 M.SORT_DEFAULT = { results = "name:asc", mine = "total:desc", craft = "each:desc", harvest = "sell:desc" }
@@ -256,6 +258,7 @@ end
 M.ROW_W = { results = 700, mine = 700, craft = 800, harvest = 800 }
 M.NAME_MIN = 190
 M.ARROW_W, M.HEAD_PAD, M.CELL_PAD, M.COL_GAP = 12, 9, 8, 4
+M.ADD_W = 20   -- (1.2.7: Add SL's + button)
 local MONEY, SMONEY, BIG = "99g 99s 99c", "-99g 99s 99c", "999g 99s 99c"
 M.SAMPLE = { cost = MONEY, sell = MONEY, each = SMONEY, total = SMONEY, min = BIG, vendor = MONEY, ah = MONEY, margin = "9999%",
 	listed = "9999", units = "99999", auctions = "9999", can = "9999", have = "9999", n = "9999", known = "*", best = "Vendor", change = "+1234%" }
@@ -275,7 +278,14 @@ function M.FitCols(list, parent, samples, oneLine)
 	local function W(t, size) T.Font(fs, size) fs:SetText(t) return V.TextWidth(fs, t) end
 	local need, two = {}, {}
 	for i, c in ipairs(cols) do
-		if not c.item then
+		if c.button then
+			-- (1.2.7) a button column (Add SL): the button's width, its title without a sort arrow
+			local v = M.ADD_W + M.CELL_PAD
+			local one = W(c.label, M.HEAD_FONT) + M.HEAD_PAD
+			local h = Halves(c.label)
+			local t = h and math.max(W(h[1], M.HEAD_FONT), W(h[2], M.HEAD_FONT)) + M.HEAD_PAD
+			need[i] = { one = math.ceil(math.max(v, one)), two = t and math.ceil(math.max(v, t)) }
+		elseif not c.item then
 			local sample = (samples and samples[c.key]) or (M.SAMPLE_LIST[list] or {})[c.key] or M.SAMPLE[c.key] or "9999"
 			local v = W(sample, 11) + M.CELL_PAD
 			-- (1.2.6) a title that changes (alt: Total (stack)): room for the longer one
@@ -335,12 +345,12 @@ function M.Headers(f, y, list, onSort)
 	head:SetSize(last.x + last.w, hh)
 	head.list, head.buttons, head.h = list, {}, hh
 	for i, c in ipairs(cols) do
-		local b = V.Button(head, c.label, c.w, hh, function() M.SetSort(list, c.key) if onSort then onSort(c.key) end end)
+		local b = V.Button(head, c.label, c.w, hh, function() if c.button then return end M.SetSort(list, c.key) if onSort then onSort(c.key) end end)
 		b:SetPoint("TOPLEFT", c.x, 0)
 		b.key, b.col = c.key, c
 		T.Font(b.text, M.HEAD_FONT)
 		b.text:ClearAllPoints()
-		b.text:SetWidth(c.w - M.ARROW_W - M.HEAD_PAD + 2)
+		b.text:SetWidth(c.w - (c.button and 0 or M.ARROW_W) - M.HEAD_PAD + 2)
 		if b.text.SetWordWrap then b.text:SetWordWrap(c.two and true or false) end
 		if b.text.SetMaxLines then b.text:SetMaxLines(c.two and 2 or 1) end
 		b.arrow = b:CreateTexture(nil, "OVERLAY")
@@ -350,6 +360,7 @@ function M.Headers(f, y, list, onSort)
 		if j == "LEFT" then b.text:SetPoint("LEFT", 6, 0) b.arrow:SetPoint("RIGHT", -5, 0)
 		else b.text:SetPoint("RIGHT", -5, 0) b.arrow:SetPoint("LEFT", 4, 0) end
 		b.text:SetJustifyH(j == "CENTER" and "RIGHT" or j)
+		if c.button then b.text:ClearAllPoints() b.text:SetPoint("CENTER", 0, 0) b.text:SetJustifyH("CENTER") end
 		if b.vh then b.vh.keepText = true end   -- (the title's colour is the sort's alone: hovering doesn't light it)
 		V.Tip(b, c.label, function() return M.HeadTip(list, c.key) end)   -- (v0.4.2.8: what the column means)
 		b.arrow:Hide()
@@ -377,7 +388,7 @@ M.MONEY_KEYS = { cost = true, sell = true, each = true, total = true, min = true
 function M.Samples(rows, list)
 	local out = {}
 	for _, c in ipairs(M.COLS[list]) do
-		if not c.item then
+		if not c.item and not c.button then
 			local max, neg = nil, false
 			for _, e in ipairs(rows) do
 				local v = c.value(e)
@@ -408,7 +419,7 @@ function M.Relayout(f, head, list, rowsKey, samples)
 		b:ClearAllPoints()
 		b:SetPoint("TOPLEFT", c.x, 0)
 		b:SetSize(c.w, head.h)
-		b.text:SetWidth(c.w - M.ARROW_W - M.HEAD_PAD + 2)
+		b.text:SetWidth(c.w - (c.button and 0 or M.ARROW_W) - M.HEAD_PAD + 2)
 		if b.text.SetWordWrap then b.text:SetWordWrap(c.two and true or false) end
 		if b.text.SetMaxLines then b.text:SetMaxLines(c.two and 2 or 1) end
 	end
@@ -507,10 +518,18 @@ function M.Fetch(f, ids, again, y, onName)
 	return f.wantN
 end
 -- a row's cells for list's columns (not the item column: the row's item cell): { [key] = font string }
+-- (1.2.7) a row's Add SL button, centred in list's Add SL column (wherever the columns were fitted)
+function M.PlaceAdd(r, list)
+	local c = ColOf(M.COLS[list], "addsl")
+	if not (c and r.addsl) then return end
+	r.addsl:ClearAllPoints()
+	r.addsl:SetPoint("LEFT", r, "LEFT", c.x + math.floor((c.w - M.ADD_W) / 2), 0)
+	r.addsl.col = c
+end
 function M.Cells(r, list)
 	local cells = {}
 	for _, c in ipairs(M.COLS[list]) do
-		if not c.item then cells[c.key] = Column(r, "", c.x, c.w, c.justify) cells[c.key].col = c end
+		if not c.item and not c.button then cells[c.key] = Column(r, "", c.x, c.w, c.justify) cells[c.key].col = c end
 	end
 	return cells
 end
@@ -742,6 +761,7 @@ M.HEAD_TIPS = {
 		listed = "Units of it on the AH now.",
 		can = "Own + Can make. Own: how many of the item you already have (per Count: None 0, Bags only, Bags + bank). Can make: with Owned, how many crafts your reagents make; with Market, how many the Invest Amount buys (0 without one). Hover a number for its split: Own N + Can make M. Total counts Can make only.",
 		total = function() return "Owned: Profit per craft x Can make (yours cost nothing). Market with an Invest Amount: the sale after the AH's " .. CutPct() .. " cut x Can make, less the gold spent." end,
+		addsl = "Add SL: the + adds the item this craft makes to a shopping list. Pick which list (the active one is first), or New list... It adds 1; the chat says so, and Undo takes it back.",
 	},
 	harvest = {
 		name = "What this profession gathers.",
@@ -750,6 +770,7 @@ M.HEAD_TIPS = {
 		listed = "Units of it on the AH now.",
 		have = "How many you have: bags, or bags + bank, per Count (None: 0).",
 		total = "Have x Profit/item.",
+		addsl = "Add SL: the + adds this item to a shopping list. Pick which list (the active one is first), or New list... It adds 1; the chat says so, and Undo takes it back.",
 	},
 }
 function M.HeadTip(list, key)
@@ -1211,6 +1232,12 @@ M.POINTS = 200   -- (7 days of hourly points: 168)
 local function BuildHistory(f, page)
 	f.cell = V.ItemCell(f, 300)
 	f.cell:SetPoint("TOPLEFT", 8, -4)
+	-- (1.2.7) the item shown, onto a shopping list: the list chooser under the button
+	f.addsl = V.Button(f, L["Add to shopping list"], 160, 20, function(self) if M.historyID then V.ChooseList(self, M.historyID) end end)
+	f.addsl:SetPoint("TOPLEFT", 316, -4)
+	V.Tip(f.addsl, L["Add to shopping list"], function()
+		return M.historyID and L["Add %s to a shopping list: choose which (or New list...). Adds 1."]:format(I.ItemName(M.historyID)) or L["Click an item on any other tab first."]
+	end)
 	f.range = V.Radio(f, L["Range:"], M.RANGES, function() return M.range or "week" end, function(v) M.range = v f.Refresh() end)
 	f.range:SetPoint("TOPLEFT", 8, -30)
 	f.plot = CreateFrame("Frame", nil, f, "BackdropTemplate")
@@ -1301,6 +1328,8 @@ local function BuildHistory(f, page)
 		for _, t in ipairs(f.marks) do t:Hide() end
 		for _, l in ipairs(f.lines) do l:Hide() end
 		f.cell:SetItem(id, M.Lines)
+		f.addsl:SetAlpha(id and 1 or 0.45)
+		if f.addsl.EnableMouse then f.addsl:EnableMouse(id and true or false) end
 		if not id then
 			f.empty:SetText(L["Click any item in AH Market to see its history here."])
 			f.empty:Show() f.top:SetText("") f.bottom:SetText("") f.note:SetText("")
@@ -1645,7 +1674,7 @@ local function BuildCraft(f, page)
 	f.investTitle:SetText(L["Invest Amount:"])
 	f.invest = V.EditBox(f, M.INVEST_W)
 	function f.PlaceInvest()
-		local tc = M.COLS.craft[#M.COLS.craft]
+		local tc = ColOf(M.COLS.craft, "total")   -- (1.2.7: Total's, not the last column's: Add SL is after it)
 		local right = M.LIST_X + tc.x + tc.w
 		f.investRight = right
 		f.invest:ClearAllPoints()
@@ -1716,6 +1745,9 @@ local function BuildCraft(f, page)
 		if r.canHit.EnableMouse then r.canHit:EnableMouse(true) end
 		V.Tip(r.canHit, L["Can Make/Own"], function() return r.e and M.CanOwnLine(r.e) or "" end)
 		r.harvest = M.Cells(r, "harvest")
+		-- (1.2.7) Add SL: a + that adds this row's item to a shopping list (the list chooser)
+		r.addsl = V.Button(r, "+", M.ADD_W, 18, function(self) if r.addID then V.ChooseList(self, r.addID) end end)
+		V.Tip(r.addsl, L["Add SL"], function() return r.addID and L["Add %s to a shopping list: choose which (or New list...). Adds 1."]:format(I.ItemName(r.addID)) or "" end)
 		r:Hide()
 		return r
 	end)
@@ -1749,6 +1781,7 @@ local function BuildCraft(f, page)
 			for _, fs in pairs(r.craft) do fs:SetShown(crafts) end
 			for _, fs in pairs(r.harvest) do fs:SetShown(not crafts) end
 			r.cell:SetWidth(item.w)
+			M.PlaceAdd(r, crafts and "craft" or "harvest")
 		end
 		-- (v0.4.2.6) the same filters in Harvest: Reagents greyed there (crafts only); Known only and Count work
 		f.owned:SetAlpha(crafts and 1 or 0.45)
@@ -1849,6 +1882,7 @@ local function BuildCraft(f, page)
 				r.e = nil
 				if e then
 					local c = r.harvest
+					r.addID = e.id M.PlaceAdd(r, "harvest")   -- (1.2.7)
 					r.cell:SetItem(e.id, M.PerStack() and function(id) local t = M.Lines(id) or {} t[#t + 1] = M.StackLine(id, e.each) return t end or M.Lines)
 					c.sell:SetText(Money(e.low))
 					Signed(c.each, e.each)
@@ -1883,6 +1917,7 @@ local function BuildCraft(f, page)
 			r.e, r.house = e or nil, house
 			if e then
 				r.cell:SetItem(e.out, r.Lines)
+				r.addID = e.out M.PlaceAdd(r, "craft")   -- (1.2.7)
 				r.cost:SetText(S().Money(e.cost))
 				r.sell:SetText(S().Money(e.sell))
 				Signed(r.each, e.each)

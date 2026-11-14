@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.7", date = "2026-11-14", heads = { [1] = "New", [6] = "Changed", [8] = "Note", }, items = {
+		"|cff6e2c0aCheckout cart at the Auction House|r (one per character): + on a row of the AH list puts what's still needed in the cart; Checkout (N) opens it. Each item has a quantity stepper, its price each and line total, then the Total and your gold. Back, Scan and Buy.",
+		"The cart's Scan prices each item exactly (its cheapest listings, enough for the quantity) and says when fewer are listed than you want. Buy asks first (Yes / No). Yes buys the first item; then \"Buy next\" buys each of the rest: one click per purchase, as the game requires. Stackable goods are bought only if the game's price is at most +5% over the price shown (Settings > Auction House: Cart price guard), else skipped. It stops on a failure, not enough gold, or the AH closing.",
+		"Every cart purchase is logged: /valhalla invest buys. What you buy is tracked in the mail as before.",
+		"|cff6e2c0aAdd to a shopping list from AH Market|r: History has an Add to shopping list button, and Craft and Harvest have an Add SL column with a + on each row. Choose the list (the active one first, \"(in list: N)\" beside each) or New list...; it adds 1, the chat says so, and Undo takes it back.",
+		"|cff6e2c0aThe item search finds more|r: every item your AH scans have seen, the professions' recipes and Top 10's items, by name (names the game hasn't sent yet are loaded and the search runs again). Words match in any order (\"thread silky\"), up to 10 results.",
+		"Add in the search (and the Add buttons) puts in a quantity of 1.",
+		"The Shopping List's Search buttons are a little narrower to fit the cart's +.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.6", date = "2026-11-13", heads = { [1] = "New", [3] = "Changed", [5] = "Note", }, items = {
 		"|cff6e2c0aAH Market tab tooltips|r: hover Top 10, My items, History, Scan results or Craft for a short note on what that tab shows.",
 		"|cff6e2c0aCraft: Show: Per stack|r (between Known only and the Count dropdown, off by default, also in Harvest): the Total column becomes \"Total (stack)\", Profit/item times the item's real max stack (e.g. 20; an item that doesn't stack counts as 1). An item the game hasn't loaded yet stays blank until it arrives. Sorting uses the shown value; Have and Can Make/Own are unchanged.",

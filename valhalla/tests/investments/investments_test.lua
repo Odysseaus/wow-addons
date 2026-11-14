@@ -412,7 +412,7 @@ ok(lp:IsShown() and lp.build.text._text == "Build Shopping List" and lp.builderH
 lp.search:SetText("vial")
 ok(lp.results:IsShown() and lp.results.rows[1].name._text == "Empty Vial" and lp.results.rows[1].act.text._text == "Add" and not lp.results.rows[2]:IsShown(), "part of a name: what matches (from the vendor's wares), with Add")
 W.Click(lp.results.rows[1].act)
-ok(I.LineOf(I.Draft(), 3371) and I.LineOf(I.Draft(), 3371).n == 0 and lp.results.rows[1].act.text._text == "Remove", "Add: into the list (0); the match now says Remove")
+ok(I.LineOf(I.Draft(), 3371) and I.LineOf(I.Draft(), 3371).n == 1 and lp.results.rows[1].act.text._text == "Remove", "Add: into the list (1.2.7: as 1); the match now says Remove")
 W.Click(lp.results.rows[1].act)
 ok(not I.LineOf(I.Draft(), 3371) and lp.results.rows[1].act.text._text == "Add", "Remove: out again")
 W.Click(lp.results.rows[1].act)
@@ -446,11 +446,11 @@ W.ShiftClickBag("|cffffffff|Hitem:2589::::::::|h[Linen Cloth]|h|r", 20)
 ok(note._text == "Linen Cloth" and not StackSplitFrame:IsShown(), "a Valhalla note box (map pin): the item's name, no split box")
 note:ClearFocus()
 local r1 = DRow(2589)
-ok(r1.bags._text == "28" and r1.bank._text == "8" and r1.qty._text == "0", "a row: Bags, Bank, how many (0)", r1.bags._text .. "/" .. r1.bank._text)
+ok(r1.bags._text == "28" and r1.bank._text == "8" and r1.qty._text == "1", "a row: Bags, Bank, how many (1.2.7: 1)", r1.bags._text .. "/" .. r1.bank._text)
 W.Click(r1.plus) W.Click(r1.plus)
-ok(I.LineOf(I.Draft(), 2589).n == 2 and DRow(2589).qty._text == "2", "+ raises it")
+ok(I.LineOf(I.Draft(), 2589).n == 3 and DRow(2589).qty._text == "3", "+ raises it")
 W.Click(DRow(2589).minus)
-ok(I.LineOf(I.Draft(), 2589).n == 1, "- lowers it")
+ok(I.LineOf(I.Draft(), 2589).n == 2, "- lowers it")
 W.Click(DRow(2589).minus) W.Click(DRow(2589).minus)
 ok(I.LineOf(I.Draft(), 2589).n == 0, "never below 0")
 local q = DRow(3371).qty
@@ -2392,10 +2392,16 @@ print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), 
     local hx, rx = head._points[1][2], row._points[1][2]
     for _, b in ipairs(head.buttons) do
       local c = b.col
-      local cell = c.item and row.cell or cells[c.key]
-      if not cell then return false, c.key .. ": no cell" end
-      if hx + b._points[1][2] ~= rx + cell._points[1][2] then return false, c.key .. ": x" end
-      if b._w ~= c.w or cell._w ~= c.w then return false, c.key .. ": width" end
+      if c.button then
+        -- (1.2.7) Add SL: the row's + centred under its header
+        local p = row.addsl and row.addsl._points[1]
+        if not (p and p[4] == c.x + math.floor((c.w - I.Market.ADD_W) / 2) and b._w == c.w and hx + b._points[1][2] == rx + c.x) then return false, c.key .. ": the + not under its header" end
+      else
+        local cell = c.item and row.cell or cells[c.key]
+        if not cell then return false, c.key .. ": no cell" end
+        if hx + b._points[1][2] ~= rx + cell._points[1][2] then return false, c.key .. ": x" end
+        if b._w ~= c.w or cell._w ~= c.w then return false, c.key .. ": width" end
+      end
     end
     return true, ""
   end
@@ -2440,7 +2446,7 @@ print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), 
   mp:ShowSub("craft")
   local cf = mp.subs.craft
   local cl = {} for _, b in ipairs(cf.head.craft) do cl[#cl + 1] = b.text._text end
-  ok(table.concat(cl, "|") == "Craft (makes)|Cost to Make|Sell at|Profit/item|Margin|Listed|Can Make/Own|Total", "Crafts' headers: Cost to Make (1.0.1: no Known; 1.2.6: Can Make/Own)", table.concat(cl, "|"))
+  ok(table.concat(cl, "|") == "Craft (makes)|Cost to Make|Sell at|Profit/item|Margin|Listed|Can Make/Own|Total|Add SL", "Crafts' headers: Cost to Make (1.0.1: no Known; 1.2.6: Can Make/Own)", table.concat(cl, "|"))
   al, why = Aligned(cf.head.craftStrip, cf.rows[1], cf.rows[1].craft)
   ok(al, "Crafts: every header over its own column", why)
   local keepGP, keepGPI = GetProfessions, GetProfessionInfo
@@ -2452,7 +2458,7 @@ print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), 
   I.S.craftKnownOnly = false
   Mk.craftProf, Mk.craftMode = 182, "harvest" mp:Refresh()
   local hl = {} for _, b in ipairs(cf.head.harvest) do hl[#hl + 1] = b.text._text end
-  ok(table.concat(hl, "|") == "Item|Sell at|Profit/item|Listed|Have|Total" and cf.head.harvestStrip:IsShown() and not cf.head.craftStrip:IsShown(),
+  ok(table.concat(hl, "|") == "Item|Sell at|Profit/item|Listed|Have|Total|Add SL" and cf.head.harvestStrip:IsShown() and not cf.head.craftStrip:IsShown(),
     "Harvest's headers: Crafts' less Cost, Margin (v0.4.2.8) and Known (Have for Can make)", table.concat(hl, "|"))
   al, why = Aligned(cf.head.harvestStrip, cf.rows[1], cf.rows[1].harvest)
   ok(al, "Harvest: every header over its own column (the item wider: no Cost)", why)
@@ -2622,9 +2628,11 @@ print("== 36. v0.4.2.7: Harvest's Known only, titles that fit, one lit header, o
           -- (the two lines: split where Halves splits; each word at most as wide as the line)
           for _, part in ipairs(lines) do need = math.max(need, Wd(part, Mk.HEAD_FONT)) end
         else need = Wd(c.label, Mk.HEAD_FONT) end
-        if need + Mk.ARROW_W + Mk.HEAD_PAD > c.w + 0.5 then good, why = false, c.key .. ": title" end
+        if need + (c.button and 0 or Mk.ARROW_W) + Mk.HEAD_PAD > c.w + 0.5 then good, why = false, c.key .. ": title" end
         local sample = (Mk.SAMPLE_LIST[list] or {})[c.key] or Mk.SAMPLE[c.key] or "9999"
-        if Wd(sample) + Mk.CELL_PAD > c.w + 0.5 then good, why = false, c.key .. ": value" end
+        if c.button then
+          if Mk.ADD_W + Mk.CELL_PAD > c.w + 0.5 then good, why = false, c.key .. ": button" end
+        elseif Wd(sample) + Mk.CELL_PAD > c.w + 0.5 then good, why = false, c.key .. ": value" end
       end
       if prev and c.x < prev.x + prev.w then good, why = false, c.key .. ": overlap" end
       prev = c
@@ -3077,7 +3085,7 @@ print("== 39. 1.0.1: Reagents Market | Owned (Owned: vendor moved to Market), Cr
   I.S.craftOwned, I.S.sortCraft = keepOwned, keepSort
   -- 2. Craft's columns: no Known (its tooltip gone too); the Known only box still there
   local keys = {} for _, c in ipairs(Mk.COLS.craft) do keys[#keys + 1] = c.key end
-  ok(table.concat(keys, ",") == "name,cost,sell,each,margin,listed,can,total" and Mk.HEAD_TIPS.craft.known == nil, "Craft: no Known column", table.concat(keys, ","))
+  ok(table.concat(keys, ",") == "name,cost,sell,each,margin,listed,can,total,addsl" and Mk.HEAD_TIPS.craft.known == nil, "Craft: no Known column", table.concat(keys, ","))
   I.S.sortCraft = "known:asc"
   ok(Mk.SortTag("craft") == "each:desc", "a Known sort set at run time: the default too", Mk.SortTag("craft"))
   I.S.sortCraft = keepSort
@@ -3611,7 +3619,7 @@ print("== 42. 1.2.6: the AH Market tabs' tooltips; Craft's Per stack (Total = Pr
   ok(cf.countX >= cf.perStack.col + 16 + 6 + cf.perStack.labelW + 8, "then the Count dropdown, clear of Per stack's label", cf.countX)
   -- the Invest Amount: on the Reagents row, its right edge at the Total column's, clear of Reagents and its note
   local function InvestClear()
-    local tc = Mk.COLS.craft[#Mk.COLS.craft]
+    local tc = Mk.ColOf(Mk.COLS.craft, "total")
     local right = Mk.LIST_X + tc.x + tc.w
     local p = cf.invest._points[1]
     local boxLeft = p[4]
@@ -3773,6 +3781,261 @@ print("== 42. 1.2.6: the AH Market tabs' tooltips; Craft's Per stack (Total = Pr
   I.S.craftOwned, I.S.craftCount, I.char.bags, I.char.bank, Mk.house, Mk.craftMode, I.S.craftPerStack = keep.owned, keep.count, keep.bags, keep.bank, keep.house, keep.mode, keep.ps
   Mk.craftProf = nil
   mp:Refresh()
+  ok(#W.sizeErrors == errs0, "no handler error")
+end)()
+
+print("== 43. 1.2.7: the item search (scans' names, any order, 10), Add to a shopping list (History, Add SL), the checkout cart and its buying")
+;(function()
+  local Mk, Sc, V, A = I.Market, I.Scan, I.Views, I.AH
+  local CA = C_AuctionHouse
+  local errs0 = #W.sizeErrors
+  local keep = { lists = I.char.lists, active = I.char.activeList, undo = I.undo, cart = I.char.cart, buys = I.char.buys, names = I.db.account.names, item = Item, money = GetMoney,
+    send = CA.SendSearchQuery, ncs = CA.GetNumCommoditySearchResults, cs = CA.GetCommoditySearchResultInfo, full = CA.HasFullCommoditySearchResults,
+    nis = CA.GetNumItemSearchResults, is = CA.GetItemSearchResultInfo, bid = CA.PlaceBid, start = CA.StartCommoditiesPurchase, conf = CA.ConfirmCommoditiesPurchase, cancel = CA.CancelCommoditiesPurchase }
+
+  print("-- the search: names from the scans (loaded as asked), any word order, up to 10")
+  local sm = Sc.Market("Srch", true)
+  local stm = math.floor(W.now / 60) - sm.base
+  W.items[969001] = { "Silky Spider Thread", 132912 }
+  W.uncached[969001] = true
+  sm.cur[969001] = ("%d,%d,%d,%d"):format(100, 5, 1, stm)
+  I.nameIndex = nil
+  local loads = {}
+  Item = { CreateFromItemID = function(_, id) return { ContinueOnItemLoad = function(_, fn) loads[#loads + 1] = { id = id, fn = fn } end } end }
+  ok(#I.SearchItems("spider") == 0 and I.NameIndex().missingSet[969001], "an item only in a scan, its name not sent yet: not found, listed as missing")
+  -- (the earlier sections' made-up items: thousands the game never names; asked already, the slots free)
+  for _, id in ipairs(I.SearchMissing()) do if id ~= 969001 then lp.askedNames[id] = true end end
+  V.loading, V.loadingCount = {}, 0
+  lp.search:SetText("spider")
+  local asked = false
+  for _, l in ipairs(loads) do if l.id == 969001 then asked = l end end
+  ok(asked and I.nameWanted[969001] and not lp.results:IsShown(), "typing: its name asked for (no match yet)")
+  W.uncached[969001] = nil
+  asked.fn()
+  W.RunTimers()
+  ok(I.KnownName(969001) == "Silky Spider Thread" and lp.results:IsShown() and lp.results.rows[1].name._text == "Silky Spider Thread", "its name came: remembered, and the search ran again: found", lp.results.rows[1].name._text)
+  W.uncached[969001] = true
+  lp.search:SetText("thread silky")
+  ok(lp.results:IsShown() and lp.results.rows[1].id == 969001 and lp.results.rows[1].name._text == "Silky Spider Thread", "words in any order; remembered (the game's cache cold again)")
+  W.uncached[969001] = nil
+  for k = 1, 12 do I.RememberName(969100 + k, "Zork Gem " .. k) end
+  local z = I.SearchItems("gem zork")
+  local shown = 0 for _, r in ipairs(lp.results.rows) do if r:IsShown() then shown = shown + 1 end end
+  lp.search:SetText("zork")
+  shown = 0 for _, r in ipairs(lp.results.rows) do if r:IsShown() then shown = shown + 1 end end
+  ok(#z == 10 and I.SEARCH_MAX == 10 and V.RESULTS == 10 and #lp.results.rows == 10 and shown == 10, "up to 10 matches (was 6)", #z .. " " .. shown)
+  W.Click(lp.results.rows[1].act)
+  ok(I.LineOf(I.Draft(), lp.results.rows[1].id).n == 1, "Add: as 1")
+  I.DraftRemove(lp.results.rows[1].id)
+  lp.search:SetText("")
+  Item = keep.item
+
+  print("-- Add to a shopping list: ListAdd, a new list, Undo; the chooser")
+  I.char.lists, I.char.activeList, I.undo = {}, nil, {}
+  ns.printed = {}
+  local l1 = I.ListAddNew(2589, 1)
+  ok(l1 and #I.char.lists == 1 and I.ActiveList() == l1 and l1.items[1].id == 2589 and l1.items[1].n == 1 and Printed("New list"), "New list...: a list with it (1), active (none was), said")
+  ns.printed = {}
+  local _, now = I.ListAdd(l1.id, 2589, 1)
+  ok(now == 2 and I.ListCount(l1.id, 2589) == 2 and Printed("Added Linen Cloth to '" .. l1.name .. "' %(now 2%)") and Printed("Undo"), "a list picked: one more (now 2), said, with Undo", table.concat(ns.printed, " | "))
+  I.ListAdd(l1.id, 2447, 1)
+  ok(I.ListCount(l1.id, 2447) == 1, "an item not on it: a line of 1")
+  ok(I.UndoLabel() == "the edit of '" .. l1.name .. "'" and I.Undo() and I.ListCount(l1.id, 2447) == 0 and I.Undo() and I.ListCount(l1.id, 2589) == 1, "Undo: each add taken back")
+  ok(I.UndoLabel() == "the new list '" .. l1.name .. "'" and I.Undo() and #I.char.lists == 0 and I.ActiveList() == nil, "and the new list: gone again")
+  local la = I.ListAddNew(2589, 1)
+  local lb = I.ListAddNew(2447, 1)
+  I.char.activeList = lb.id
+  local en = V.ChooserEntries(2589)
+  ok(#en == 3 and en[1].lid == lb.id and en[1].text == "> " .. lb.name and en[2].text == la.name .. " (in list: 1)" and en[3].new and en[3].text == "New list...",
+    "the chooser: the active list first (ticked), (in list: N), New list... last", en[1].text .. " | " .. en[2].text .. " | " .. en[3].text)
+  local anchor = V.Button(UIParent, "x", 10, 10)
+  local m = V.ChooseList(anchor, 2589)
+  ok(m:IsShown() and m == V.chooser and m.items[1]:IsShown() and m.items[3]:IsShown() and not m.items[4]:IsShown(), "shown under the button: 2 lists and New list...")
+  W.Click(m.items[2])
+  ok(not m:IsShown() and I.ListCount(la.id, 2589) == 2, "a pick: adds 1 to that list, the menu closes")
+  V.ChooseList(anchor, 2589)
+  W.Click(m.items[3])
+  ok(#I.char.lists == 3 and I.char.lists[3].items[1].id == 2589, "New list...: a new list with it")
+
+  print("-- History's button; Add SL's +")
+  Slash("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  Mk.historyID = 2589
+  mp:ShowSub("history")
+  local hf = mp.subs.history
+  hf.Refresh()
+  ok(hf.addsl and hf.addsl.text._text == "Add to shopping list", "History: an Add to shopping list button")
+  W.Click(hf.addsl)
+  ok(m:IsShown() and m.id == 2589 and m.anchor == hf.addsl and m.head._text == "Add Linen Cloth to:", "it opens the chooser for the item shown")
+  m:Hide()
+  local hm = Sc.Market("StkH", true)
+  local htm = math.floor(W.now / 60) - hm.base
+  hm.cur[2447] = ("%d,%d,%d,%d"):format(200, 40, 4, htm)
+  local keepK = { house = Mk.house, prof = Mk.craftProf, mode = Mk.craftMode }
+  Mk.house, Mk.craftProf, Mk.craftMode = "StkH", 182, "harvest"
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  mp:Refresh()
+  local hr for _, r in ipairs(cf.rows) do if r:IsShown() and r.addID == 2447 then hr = r end end
+  local hb for _, b in ipairs(cf.head.harvest) do if b.key == "addsl" then hb = b end end
+  ok(hr and hr.addsl.text._text == "+" and hb and hb.text._text == "Add SL" and Mk.HeadTip("harvest", "addsl"):find("shopping list", 1, true) and Mk.HeadTip("craft", "addsl"):find("shopping list", 1, true),
+    "Harvest (and Craft): an Add SL column, its tip; a + on each row")
+  W.Click(hr.addsl)
+  ok(m:IsShown() and m.id == 2447, "the +: the chooser for that row's item")
+  W.Click(m.items[1])
+  ok(I.ListCount(lb.id, 2447) == 2, "picked: one more on the active list")
+  Mk.house, Mk.craftProf, Mk.craftMode = keepK.house, keepK.prof, keepK.mode
+
+  print("-- the cart: per character, add / set / remove / bought")
+  I.char.cart, I.char.buys = {}, {}
+  I.CartAdd(2589, 2) I.CartAdd(2589, 1) I.CartAdd(969050, 1)
+  ok(I.CartCount() == 2 and I.CartLine(2589).n == 3, "added twice: one line of 3")
+  I.CartSet(2589, 0)
+  ok(I.CartLine(2589).n == 1, "at least 1")
+  I.CartSet(2589, 3) I.CartRemove(969050)
+  ok(I.CartCount() == 1 and not I.CartLine(969050), "removed")
+  I.CartBought(2589, 1)
+  ok(I.CartLine(2589).n == 2, "bought 1 of 3: 2 left")
+  I.CartBought(2589, 2)
+  ok(I.CartCount() == 0, "all bought: off the cart")
+
+  print("-- the AH list: + into the cart, Checkout (N), the cart view")
+  W.items[969050] = { "Fine Sword", 135274 }
+  W.gold = 100000
+  GetMoney = function() return W.gold end
+  I.char.lists, I.undo = { { id = 90, name = "Cart Test", items = { { id = 2589, n = 3 } } } }, {}
+  I.char.activeList = 90
+  I.S.ahPanel, I.S.ahPanelMin = true, false
+  local keepBB = { I.char.bags, I.char.bank, I.char.mail }
+  I.char.bags, I.char.bank, I.char.mail = {}, {}, {}
+  W.now = W.now + 5
+  W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW")
+  local p = A.Panel()
+  local r1 = p.rows[1]
+  ok(p:IsShown() and p._h == 560 and r1:IsShown() and r1.id == 2589 and r1.cart.text._text == "+" and p.cartBar:IsShown() and p.cartBar.checkout.text._text == "Checkout (0)",
+    "each row: a + for the cart; Checkout (0) under the list")
+  W.Click(r1.cart)
+  ok(I.CartLine(2589) and I.CartLine(2589).n == 3 and r1.cart.text._text == "-" and p.cartBar.checkout.text._text == "Checkout (1)", "+: what's still needed (3) into the cart; Checkout (1)")
+  W.Click(r1.cart)
+  ok(not I.CartLine(2589) and r1.cart.text._text == "+", "-: out again")
+  W.Click(r1.cart)
+  I.CartAdd(969050, 1)
+  W.Click(p.cartBar.checkout)
+  local cv = p.cv
+  ok(A.view == "cart" and cv:IsShown() and not p.rows[1]:IsShown() and not p.cartBar:IsShown() and p.title._text == "Valhalla: Checkout cart" and cv.rows[1]:IsShown() and cv.rows[2]:IsShown(),
+    "Checkout: the cart's view (its items)")
+  ok(cv.rows[1].qty._text == "3" and cv.rows[1].name._text == "Linen Cloth" and cv.back:IsShown() and cv.scan:IsShown() and cv.buyBtn:IsShown() and cv.gold._text:find("Your gold", 1, true), "a stepper, Back, Scan, Buy, your gold")
+  W.Click(cv.rows[1].plus)
+  ok(I.CartLine(2589).n == 4 and cv.rows[1].qty._text == "4", "+: one more")
+  W.Click(cv.rows[1].minus)
+  ok(I.CartLine(2589).n == 3, "-: one less")
+  ns.printed = {}
+  W.Click(cv.buyBtn)
+  ok(not p.confirm:IsShown() and cv.status._text:find("Press Scan first", 1, true) and (W.calls.StartCommoditiesPurchase or 0) == 0, "Buy before Scan: says to Scan first; nothing bought", cv.status._text)
+
+  print("-- the cart's Scan: each item's listings (exact prices, short supply)")
+  local comm = { [2589] = { { unitPrice = 21, quantity = 2 }, { unitPrice = 25, quantity = 10 }, { unitPrice = 1, quantity = 50, containsOwnerItem = true } } }
+  local items = { [969050] = { { auctionID = 501, quantity = 1, buyoutAmount = 5000 }, { auctionID = 502, quantity = 1, buyoutAmount = 4000 }, { auctionID = 503, quantity = 1, buyoutAmount = 100, containsOwnerItem = true } } }
+  CA.SendSearchQuery = function(key)
+    W.Count("SendSearchQuery")
+    if comm[key.itemID] then Later(2, "COMMODITY_SEARCH_RESULTS_UPDATED", key.itemID) else Later(2, "ITEM_SEARCH_RESULTS_UPDATED", key) end
+  end
+  CA.GetNumCommoditySearchResults = function(id) return #(comm[id] or {}) end
+  CA.GetCommoditySearchResultInfo = function(id, i) return (comm[id] or {})[i] end
+  CA.HasFullCommoditySearchResults = function() return true end
+  CA.GetNumItemSearchResults = function(key) return #(items[key.itemID] or {}) end
+  CA.GetItemSearchResultInfo = function(key, i) return (items[key.itemID] or {})[i] end
+  local bids = {}
+  W.calls.PlaceBid, W.calls.StartCommoditiesPurchase, W.calls.ConfirmCommoditiesPurchase, W.calls.CancelCommoditiesPurchase = nil, nil, nil, nil
+  CA.PlaceBid = function(aid, amount) W.Count("PlaceBid") bids[#bids + 1] = { aid, amount } end
+  CA.StartCommoditiesPurchase = function(id, n) W.Count("StartCommoditiesPurchase") W.started = { id, n } end
+  CA.ConfirmCommoditiesPurchase = function(id, n) W.Count("ConfirmCommoditiesPurchase") end
+  CA.CancelCommoditiesPurchase = function() W.Count("CancelCommoditiesPurchase") end
+  local function STick(n) for _ = 1, n or 1 do Tick() Sc.Tick() end end
+  local function SUntil(cond, max) for _ = 1, max or 3000 do if cond() then return true end STick() end return cond() end
+  local function Priced() W.Click(cv.scan) return SUntil(function() return not Sc.Running() end) end
+  ok(Priced() and Sc.last.kind == "cart" and Sc.last.state == "done", "Scan: the cart priced", Sc.last and Sc.last.text)
+  local house = Sc.House()
+  local cost, got = Sc.QuoteCost(house, 2589, 3)
+  local c2, g2, picks = Sc.QuoteCost(house, 969050, 1)
+  ok(cost == 67 and got == 3 and c2 == 4000 and g2 == 1 and picks[1].auction == 502, "exact: 2 at 21c + 1 at 25c (your own listing left out); the sword's cheapest auction (4000)", tostring(cost) .. " " .. tostring(c2))
+  ok(cv.rows[1].line._text == Sc.Money(67) and cv.rows[1].each._text == Sc.Money(22) .. " each" and cv.rows[2].line._text == Sc.Money(4000) and cv.total._text == "Total: " .. Sc.Money(4067),
+    "each row: price each and line total; the Total", cv.total._text .. " | " .. cv.rows[1].line._text .. " | " .. cv.rows[1].each._text .. " | " .. cv.rows[2].line._text)
+  ok((W.calls.PlaceBid or 0) + (W.calls.StartCommoditiesPurchase or 0) + (W.calls.ConfirmCommoditiesPurchase or 0) == 0, "Scan only reads: nothing bought")
+  I.CartSet(2589, 20)
+  ok(cv.rows[1].note._text == "Only 12 listed (of 20)", "more than listed: said (short supply)", cv.rows[1].note._text)
+  I.CartSet(2589, 3)
+
+  print("-- Buy: asks first; Yes buys the first, Buy next each of the rest (one click each)")
+  W.Click(cv.buyBtn)
+  local ct = p.confirm.text._text
+  ok(p.confirm:IsShown() and ct:find(Sc.Money(4067), 1, true) and ct:find("2 purchase", 1, true) and ct:find("Each purchase needs its own click", 1, true) and ct:find("You have", 1, true) and ct:find("+5%", 1, true),
+    "the ask: the total, your gold, each purchase its own click, the guard", ct)
+  ok((W.calls.StartCommoditiesPurchase or 0) == 0, "nothing bought until Yes")
+  W.Click(p.confirm.no)
+  ok(not p.confirm:IsShown() and not A.pendingSteps and (W.calls.StartCommoditiesPurchase or 0) == 0, "No: nothing")
+  W.Click(cv.buyBtn) W.Click(p.confirm.yes)
+  ok(W.calls.StartCommoditiesPurchase == 1 and W.started[1] == 2589 and W.started[2] == 3 and A.buy.state == "waiting" and not cv.next:IsShown(), "Yes: the stackable line started (Linen x3)")
+  W.Fire("COMMODITY_PRICE_UPDATED", 22, 68)
+  ok(W.calls.ConfirmCommoditiesPurchase == 1, "the game's price within the guard (68 <= 67 +5%): confirmed at once")
+  W.Fire("COMMODITY_PURCHASE_SUCCEEDED")
+  local b1 = I.char.buys[#I.char.buys]
+  ok(b1 and b1.id == 2589 and b1.n == 3 and b1.total == 68 and b1.result == "bought" and not I.CartLine(2589), "bought: logged (68), off the cart")
+  I.char.mail[969050] = nil
+  W.Fire("COMMODITY_PURCHASED", 2589, 3)
+  ok(I.MailOf(2589) == 3, "its mail tracked (the game's purchase event after the line came off the cart)")
+  ok(A.buy.state == "ready" and cv.next:IsShown() and cv.next.text._text == "Buy next: Fine Sword x1 (2/2) - " .. Sc.Money(4000) and (W.calls.PlaceBid or 0) == 0, "then: Buy next for the sword (not bought on its own)", cv.next.text._text)
+  W.Click(cv.buyBtn)
+  ok(not p.confirm:IsShown(), "Buy again while buying: nothing (Buy next)")
+  W.Click(cv.next)
+  ok(W.calls.PlaceBid == 1 and bids[1][1] == 502 and bids[1][2] == 4000, "Buy next: its auction at its buyout")
+  W.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 502)
+  ok(A.buy.state == "done" and I.CartCount() == 0 and I.char.buys[#I.char.buys].result == "bought" and I.char.buys[#I.char.buys].total == 4000 and not cv.next:IsShown(), "bought: the cart empty, done")
+  ok(cv.status._text:find("bought 2 of 2", 1, true) and Printed("Done: bought 2 of 2"), "said: bought 2 of 2, what it cost", cv.status._text)
+
+  print("-- the guards: price rose, not enough gold, a failure, the AH closing, no answer")
+  local function Again(n) I.CartAdd(2589, n or 3) A.buy = nil Priced() W.Click(cv.buyBtn) W.Click(p.confirm.yes) end
+  Again()
+  W.Fire("COMMODITY_PRICE_UPDATED", 30, 90)
+  ok(W.calls.ConfirmCommoditiesPurchase == 1 and W.calls.CancelCommoditiesPurchase == 1 and I.char.buys[#I.char.buys].result == "rose" and I.CartLine(2589) and A.buy.state == "done",
+    "over the guard (90 > 70): cancelled, not bought, logged; it stays in the cart")
+  W.gold = 10
+  local starts = W.calls.StartCommoditiesPurchase
+  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
+  ok(W.calls.StartCommoditiesPurchase == starts and A.buy.state == "stopped" and I.char.buys[#I.char.buys].result == "gold" and cv.gold._text:find("not enough", 1, true), "not enough gold: not started, stopped, said")
+  W.gold = 100000
+  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
+  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
+  W.Fire("COMMODITY_PURCHASE_FAILED")
+  ok(A.buy.state == "stopped" and I.char.buys[#I.char.buys].result == "failed" and I.CartLine(2589), "the purchase failed: stopped, logged, still in the cart")
+  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
+  local cancels = W.calls.CancelCommoditiesPurchase
+  W.Fire("AUCTION_HOUSE_CLOSED")
+  ok(A.buy.state == "stopped" and W.calls.CancelCommoditiesPurchase == cancels + 1 and I.char.buys[#I.char.buys].result == "cancelled", "the AH closed mid-purchase: cancelled, stopped")
+  W.Fire("COMMODITY_PURCHASE_SUCCEEDED")
+  ok(I.char.buys[#I.char.buys].result == "cancelled", "a late answer after that: ignored")
+  W.now = W.now + 5
+  W.Fire("AUCTION_HOUSE_SHOW")
+  A.buy = nil W.Click(cv.buyBtn)
+  ok(not p.confirm:IsShown() and cv.status._text:find("Press Scan first", 1, true), "the next visit: the prices are old, Scan first")
+  Priced() W.Click(cv.buyBtn) W.Click(p.confirm.yes)
+  W.RunTimers()
+  ok(A.buy.state == "stopped" and I.char.buys[#I.char.buys].result == "noanswer", "no answer in 10 seconds: cancelled, stopped")
+  ok(#A.BUY_EVENTS == 6 and not next(rawget(A.Buyer(), "_events") or {}), "the purchase events: listened to only while buying")
+
+  print("-- the purchase log, the setting")
+  ns.printed = {}
+  Slash("invest", "buys")
+  ok(Printed("Linen Cloth x3: .*%(bought%)") and Printed("Fine Sword x1") and Printed("skipped: price rose") and Printed("no answer"), "/valhalla invest buys: each purchase, newest first", table.concat(ns.printed, " | "))
+  ok(I.SETTINGS.buyGuard == 5 and A.Guard() == 5, "the price guard: +5% by default (a setting)")
+  W.Click(cv.back)
+  ok(A.view == "list" and p.rows[1]:IsShown() and p.cartBar:IsShown() and not cv:IsShown(), "Back: the list")
+
+  CA.SendSearchQuery, CA.GetNumCommoditySearchResults, CA.GetCommoditySearchResultInfo, CA.HasFullCommoditySearchResults = keep.send, keep.ncs, keep.cs, keep.full
+  CA.GetNumItemSearchResults, CA.GetItemSearchResultInfo, CA.PlaceBid, CA.StartCommoditiesPurchase, CA.ConfirmCommoditiesPurchase, CA.CancelCommoditiesPurchase = keep.nis, keep.is, keep.bid, keep.start, keep.conf, keep.cancel
+  I.char.bags, I.char.bank, I.char.mail = keepBB[1], keepBB[2], keepBB[3]
+  I.char.lists, I.char.activeList, I.undo, I.char.cart, I.char.buys, GetMoney = keep.lists, keep.active, keep.undo, keep.cart, keep.buys, keep.money
+  A.buy = nil
   ok(#W.sizeErrors == errs0, "no handler error")
 end)()
 
