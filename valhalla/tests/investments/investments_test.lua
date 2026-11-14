@@ -2096,7 +2096,8 @@ print("== 33. v0.4.2.1: pages not scrolling, |< >| pager ends, Craft's grid and 
   ok(clear, "each label ends 8 px or more before the next box's art (3 px over its edge)")
   ok(cf.known.col == cf.owned.boxes[1].col, "Show:'s box in Reagents' first column")
   local dp = cf.countDrop._points
-  ok(dp[1][2] == cf.owned.boxes[2] and dp[1][1] == "LEFT" and dp[2][2] == cf.showRow, "the Count dropdown under Owned free (Reagents' 2nd column), on the Show row")
+  ok(dp[1][2] == cf.showRow and dp[1][1] == "LEFT" and dp[1][4] == cf.countX and cf.countX >= cf.perStack.col + 16 + 6 + cf.perStack.labelW + 8 and dp[2][2] == cf.showRow,
+    "the Count dropdown on the Show row after Per stack (1.2.6: its label measured)", cf.countX)
   local mf0 = mp:Sub("mine")
   ok(mf0.scope.boxes[1].col == cf.owned.boxes[1].col, "My items' Count boxes start where Craft's do", mf0.scope.boxes[1].col .. " " .. cf.owned.boxes[1].col)
   ok(cf.owned.boxes[1].col >= V.TextWidth(cf.owned.title) + 16 and cf.owned.boxes[1].col >= V.TextWidth(cf.showTitle) + 16, "the boxes start after the wider title", cf.owned.boxes[1].col)
@@ -2852,8 +2853,8 @@ print("== 37. v0.4.2.8: tooltips say what a column means (2 s), Harvest without 
   local cf = mp.subs.craft
   for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
   mp:Refresh()
-  ok(cf.invest and cf.invest:IsShown() and cf.investTitle._text == "Invest Amount:" and cf.investHint:IsShown() and cf.invest._points[1][2] == cf.countDrop and cf.invest._points[1][4] > 12 + (cf.investTitle:GetStringWidth() or 0)
-    and cf.investTitle._points[1][2] == cf.countDrop, "one Invest Amount box above the table, after the Count dropdown, its hint while empty")
+  ok(cf.invest and cf.invest:IsShown() and cf.investTitle._text == "Invest Amount:" and cf.investHint:IsShown() and cf.invest._points[1][2] == cf and cf.invest._points[1][5] == Mk.INVEST_Y
+    and cf.investTitle._points[1][2] == cf.invest, "one Invest Amount box above the table (1.2.6: on the Reagents row, toward Total), its hint while empty")
   local r1e = cf.list[1]
   local before = r1e and cf.rows[1].can._text
   cf.invest:SetText("50g") W.Run(cf.invest, "OnTextChanged")
@@ -3541,6 +3542,187 @@ print("== 41. 1.2.1: trainer reads as the list fills in, more ways to the item, 
   W.Fire("TRAINER_CLOSED")
   C_TradeSkillUI.GetRecipeSchematic = keepSchem
   for id, v in pairs(was) do m171[id] = v end
+end)()
+
+print("== 42. 1.2.6: the AH Market tabs' tooltips; Craft's Per stack (Total = Profit/item x one full stack); the Invest Amount toward Total")
+;(function()
+  local Mk, Sc, Cr, V = I.Market, I.Scan, I.Craft, I.Views
+  local errs0 = #W.sizeErrors
+  WorldMapFrame:Show()
+  Slash("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  local keep = { owned = I.S.craftOwned, count = I.S.craftCount, bags = I.char.bags, bank = I.char.bank, house = Mk.house, mode = Mk.craftMode, ps = I.S.craftPerStack }
+  print("-- the tabs' tooltips")
+  local want = { top = { "Price movers", "Trending", "7 days" }, mine = { "bags", "vendor price", "after the cut" }, history = { "lowest AH price", "Day or a Week", "Hover a point" },
+    results = { "last full scan", "sort", "search by name" }, craft = { "profession makes", "Harvest", "profit per item" } }
+  local good, why = #mp.subButtons == 5, ""
+  for _, b in ipairs(mp.subButtons) do
+    local t = b.tip
+    local s = Mk.SUBS[_]
+    if not (t and t.title == s.label and type(t.text) == "string") then good, why = false, b.key .. ": no tip" break end
+    for _, w in ipairs(want[b.key]) do if not t.text:find(w, 1, true) then good, why = false, b.key .. " lacks " .. w end end
+    if #t.text > 330 then good, why = false, b.key .. " too long" end
+  end
+  ok(good, "each tab (Top 10, My items, History, Scan results, Craft): a tooltip saying what it shows, short", why)
+  local Frame = getmetatable(UIParent)
+  local keepOver, keepAdd = Frame.IsMouseOver, GameTooltip.AddLine
+  Frame.IsMouseOver = function() return true end
+  local tl = {}
+  GameTooltip.AddLine = function(_, t) tl[#tl + 1] = t end
+  W.Run(mp.subButtons[3], "OnEnter") W.RunTimers()
+  GameTooltip.AddLine, Frame.IsMouseOver = keepAdd, keepOver
+  ok(tl[1] == "History" and tl[2] and tl[2]:find("Day or a Week", 1, true), "hovering History: its title and what it shows", table.concat(tl, " | "))
+  W.Run(mp.subButtons[3], "OnLeave")
+
+  print("-- Per stack: the setting, the Show row, the Invest Amount")
+  ok(I.SETTINGS.craftPerStack == false, "Per stack: off by default (saved with the settings)")
+  local SCH = {}
+  local keepTS = C_TradeSkillUI
+  -- 4 crafts: stacks of 20, 10, 1 (doesn't stack) and one the game hasn't sent yet (20 when it comes)
+  for k = 1, 4 do SCH[966000 + k] = { 967000 + k, { { 968001, 1 } } } W.items[967000 + k] = { "Stack Test " .. k, 132912 } end
+  W.items[968001] = { "Stack Reagent", 132912 }
+  W.stack = { [967001] = 20, [967002] = 10, [967003] = 1, [967004] = 20 }
+  C_TradeSkillUI = { GetRecipeSchematic = function(id)
+    local r = SCH[id] if not r then return nil end
+    local slots = {} for _, g in ipairs(r[2]) do slots[#slots + 1] = { quantityRequired = g[2], reagents = { { itemID = g[1] } } } end
+    return { recipeID = id, outputItemID = r[1], quantityMin = 1, quantityMax = 1, reagentSlotSchematics = slots }
+  end }
+  local im = Sc.Market("Stk", true)
+  local itm = math.floor(W.now / 60) - im.base
+  im.scans = { { t = itm, kind = "full", n = 100, items = 5 } }
+  im.cur[968001] = ("%d,%d,%d,%d"):format(100, 50, 5, itm)
+  im.cur[967001] = ("%d,%d,%d,%d"):format(1100, 10, 2, itm)   -- each: 1100 x 0.95 - 100 = 945
+  im.cur[967002] = ("%d,%d,%d,%d"):format(3100, 10, 2, itm)   -- each: 2845
+  im.cur[967003] = ("%d,%d,%d,%d"):format(20100, 10, 2, itm)  -- each: 18995
+  im.cur[967004] = ("%d,%d,%d,%d"):format(500, 10, 2, itm)    -- each: 375
+  I.db.account.recipes[996] = { name = "Stack Test", ids = "966001,966002,966003,966004", t = W.now }
+  I.char.bags, I.char.bank = { [968001] = 3 }, {}
+  Mk.house, Mk.craftProf, Mk.craftMode = "Stk", 996, "crafts"
+  I.S.craftOwned, I.S.craftCount, I.S.craftPerStack = "free", "bags", false
+  I.S.sortCraft = "each:desc"
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  local function Settle() for _ = 1, 400 do mp:Refresh() if not Cr.Running() then break end Cr.Tick() end mp:Refresh() end
+  Settle()
+  -- the Show row: Known only | Per stack | the Count dropdown
+  ok(cf.perStack and cf.perStack:GetParent() == cf.showRow and cf.perStack.label._text == "Per stack" and cf.perStack.col == cf.owned.boxes[2].col
+    and cf.perStack.col > cf.known.col + 16 + 6 + cf.known.labelW + 4 and not cf.perStack.tick:IsShown(),
+    "Show: Known only | Per stack (Reagents' 2nd column; unticked)")
+  ok(cf.countX >= cf.perStack.col + 16 + 6 + cf.perStack.labelW + 8, "then the Count dropdown, clear of Per stack's label", cf.countX)
+  -- the Invest Amount: on the Reagents row, its right edge at the Total column's, clear of Reagents and its note
+  local function InvestClear()
+    local tc = Mk.COLS.craft[#Mk.COLS.craft]
+    local right = Mk.LIST_X + tc.x + tc.w
+    local p = cf.invest._points[1]
+    local boxLeft = p[4]
+    local titleLeft = boxLeft - 6 - V.TextWidth(cf.investTitle)
+    local reagEnd = math.max(cf.owned.right or 0, (cf.owned.right or 380) + 8 + V.TextWidth(cf.ownedNote))
+    if not (p[1] == "TOPLEFT" and boxLeft + Mk.INVEST_W == right and cf.investRight == right) then return false, "not at Total's right edge " .. tostring(boxLeft) .. " " .. right end
+    if not (titleLeft >= reagEnd + 8) then return false, ("title at %d, Reagents end %d"):format(titleLeft, reagEnd) end
+    if not (right <= Mk.LIST_X + Mk.CRAFT_W) then return false, "past the rows" end
+    if not (p[5] == Mk.INVEST_Y and Mk.INVEST_Y < -30 - 20 and Mk.INVEST_Y > -76) then return false, "not on the Reagents row" end
+    local boxBottom = Mk.INVEST_Y - (cf.invest:GetHeight() or 20)
+    if not (boxBottom >= -76) then return false, ("box bottom %d over the Show row (-76)"):format(boxBottom) end
+    local psEnd = cf.perStack.col + 16 + 6 + V.TextWidth(cf.perStack.label or cf.perStack.text, "Per stack")
+    if not (cf.countX >= psEnd + 8) then return false, ("Count at %d, Per stack ends %d"):format(cf.countX, psEnd) end
+    return true
+  end
+  local sizes = {}
+  for _, w in ipairs({ 1000, 480 }) do   -- (the default window, the smallest it goes)
+    cf:SetWidth(w) if cf:GetScript("OnSizeChanged") then W.Run(cf, "OnSizeChanged") end
+    Settle()
+    local g, why = InvestClear()
+    ok(g, ("%d px: the Invest Amount toward Total, nothing over Reagents or the Show row"):format(w), why)
+    sizes[w] = cf.invest._points[1][4]
+  end
+  ok(sizes[1000] == sizes[480], "the controls keep their places at any width (the table's own columns)")
+  Mk.craftMode = "harvest" Mk.craftProf = 182 Settle()
+  ok(InvestClear(), "Harvest's columns: the Invest Amount where it was (greyed)")
+  Mk.craftMode, Mk.craftProf = "crafts", 996 Settle()
+
+  print("-- Per stack: Total = Profit/item x the stack")
+  local function Row(id) for i, e in ipairs(cf.list) do if e.out == id then return cf.rows[i], e end end end
+  local canBefore = {} for i, e in ipairs(cf.list) do canBefore[e.out] = cf.rows[i].can._text end
+  local r1 = Row(967001)
+  local totalBefore = r1.total._text
+  W.Click(cf.perStack)
+  Settle()
+  ok(I.S.craftPerStack == true and cf.perStack.tick:IsShown(), "ticked: saved (craftPerStack)")
+  local hb for _, b in ipairs(cf.head.craft) do if b.key == "total" then hb = b end end
+  ok(hb.text._text == "Total (stack)" and hb.tip.title == "Total (stack)" and Mk.HeadTip("craft", "total"):find("doesn't stack (1)", 1, true)
+    and Mk.HeadTip("craft", "total"):find("e.g. 20", 1, true), "the header: Total (stack), its tip says how (and doesn't stack (1))")
+  ok(hb.col.w >= V.TextWidth(hb.text) + Mk.ARROW_W, "Total (stack) fits its column (room made for the longer title)", hb.col.w)
+  local bad = {}
+  for id, n in pairs({ [967001] = 20, [967002] = 10, [967003] = 1 }) do
+    local r, e = Row(id)
+    local want = Sc.Money(e.each * n)
+    if r.total._text ~= want then bad[#bad + 1] = id .. ": " .. tostring(r.total._text) .. " want " .. want end
+  end
+  ok(#bad == 0, "stacks of 20, 10 and 1: Profit/item x 20, x 10, x 1", table.concat(bad, "; "))
+  local _, e1 = Row(967001)
+  ok(math.abs(e1.each - 1045) < 0.01 and Row(967001).total._text == Sc.Money(1045 * 20), "e.g. Owned (your reagent free): 10s 45c an item x 20 = 2g 09s", Row(967001).total._text)
+  local same = true for i, e in ipairs(cf.list) do if cf.rows[i].can._text ~= canBefore[e.out] then same = false end end
+  ok(same, "Can make unchanged")
+  -- the row's tooltip says it
+  local l20, l1 = Row(967001).Lines(), Row(967003).Lines()
+  ok(l20[#l20] == "Per stack: 20 x Profit/item = " .. Sc.Money(1045 * 20) and l1[#l1]:find("doesn't stack %(1%)"), "a row's tooltip: Per stack: 20 x Profit/item; doesn't stack (1)", l20[#l20] .. " | " .. l1[#l1])
+  -- sorted by the shown value
+  W.Click(hb)
+  Settle()
+  local order = {} for _, e in ipairs(cf.list) do order[#order + 1] = e.out end
+  ok(I.S.sortCraft == "total:desc" and order[1] == 967002 and order[2] == 967001 and order[3] == 967003 and order[4] == 967004, "sorted by Total (stack): 10 x 29s 45c, 20 x 10s 45c, 1 x 1g 90s 95c, 20 x 4s 75c (not by Profit/item)", table.concat(order, ","))
+  -- an item the game hasn't sent: blank, asked for, filled when it comes
+  local keepItem, loads = Item, {}
+  Item = { CreateFromItemID = function(_, id) return { ContinueOnItemLoad = function(_, fn) loads[#loads + 1] = { id = id, fn = fn } end } end }
+  W.uncached[967004] = true
+  mp:Refresh()
+  local r4 = Row(967004)
+  ok(r4 and r4.total._text == "" and Mk.Stack(967004) == nil and Mk.StackTotal(475, 967004) == nil, "not sent yet: Total blank (no guessed 20)", r4 and r4.total._text)
+  ok(cf.want and cf.want[967004], "and asked for")
+  local asked = false for _, l in ipairs(loads) do if l.id == 967004 then asked = l end end
+  W.uncached[967004] = nil
+  if asked then asked.fn() end
+  W.RunTimers()
+  Item = keepItem
+  r4 = Row(967004)
+  ok(r4 and r4.total._text == Sc.Money(475 * 20), "it comes: filled (20 x 4s 75c)", r4 and r4.total._text)
+  -- the Invest Amount: Can make shows what it buys; Total stays per stack
+  I.S.craftOwned = "market" Settle()
+  cf.invest:SetText("10s") W.Run(cf.invest, "OnTextChanged") W.RunTimers() Settle()
+  local ri = Row(967001)
+  ok(ri.can._text ~= "0" and ri.total._text == Sc.Money(945 * 20), "with an Invest Amount: Can make what it buys, Total per stack", ri.can._text .. " " .. ri.total._text)
+  cf.invest:SetText("") W.Run(cf.invest, "OnTextChanged") W.RunTimers()
+  I.S.craftOwned = "free"
+  -- off again: as before
+  W.Click(cf.perStack) Settle()
+  ok(I.S.craftPerStack == false and hb.text._text == "Total" and hb.tip.title == "Total" and Row(967001).total._text == totalBefore, "unticked: Total as before")
+  I.S.sortCraft = "each:desc"
+
+  print("-- Per stack in Harvest: Have unchanged")
+  local hm = Sc.Market("StkH", true)
+  local htm = math.floor(W.now / 60) - hm.base
+  hm.scans = { { t = htm, kind = "full", n = 10, items = 2 } }
+  hm.cur[2447] = ("%d,%d,%d,%d"):format(200, 40, 4, htm)
+  W.items[2447] = W.items[2447] or { "Peacebloom", 133939 }
+  I.char.bags = { [2447] = 7 }
+  Mk.house, Mk.craftProf, Mk.craftMode = "StkH", 182, "harvest"
+  I.S.craftCount = "bags"
+  W.stack[2447] = 20
+  W.Click(cf.perStack) Settle()
+  local hr
+  for i, e in ipairs(cf.list) do if e.id == 2447 then hr = cf.rows[i] end end
+  local hbh for _, b in ipairs(cf.head.harvest) do if b.key == "total" then hbh = b end end
+  ok(hr and hr.harvest.have._text == "7" and hr.harvest.total._text == Sc.Money(190 * 20) and hbh.text._text == "Total (stack)",
+    "Harvest: Have 7 (unchanged), Total = 20 x 1s 90c", hr and (hr.harvest.have._text .. " " .. hr.harvest.total._text))
+  W.Click(cf.perStack) Settle()
+  ok(hr.harvest.total._text == Sc.Money(190 * 7), "off: Have x Profit/item again")
+
+  W.stack = nil
+  C_TradeSkillUI = keepTS
+  I.S.craftOwned, I.S.craftCount, I.char.bags, I.char.bank, Mk.house, Mk.craftMode, I.S.craftPerStack = keep.owned, keep.count, keep.bags, keep.bank, keep.house, keep.mode, keep.ps
+  Mk.craftProf = nil
+  mp:Refresh()
+  ok(#W.sizeErrors == errs0, "no handler error")
 end)()
 
 print(("\n%d passed, %d failed"):format(pass, fail))

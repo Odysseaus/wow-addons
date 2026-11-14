@@ -19,12 +19,13 @@ local V, T = I.Views, I.Tabs
 local M = {}
 I.Market = M
 
+-- (1.2.6) tip: what the tab shows, on its button's hover
 M.SUBS = {
-	{ key = "top", label = L["Top 10"] },
-	{ key = "mine", label = L["My items"] },
-	{ key = "history", label = L["History"] },
-	{ key = "results", label = L["Scan results"] },
-	{ key = "craft", label = L["Craft"] },
+	{ key = "top", label = L["Top 10"], tip = "The ten items moving most at this Auction House over 7 days of your full scans. Price movers: lowest price rising and falling. Trending: most units and most gold sold per day (estimated from listings leaving the AH). Filter by Crafted or Harvested, profession and skill level. Click an item for its history." },
+	{ key = "mine", label = L["My items"], tip = "What you have in your bags (and bank, as last seen): each item's vendor price, its AH price after the cut, which is better, and what they're all worth. Click a row for its history." },
+	{ key = "history", label = L["History"], tip = "One item's lowest AH price at each of your scans (one point an hour at most), over a Day or a Week, as lines or bars. Hover a point for its price, time, units listed and scan type. Click an item on any other tab to show it here." },
+	{ key = "results", label = L["Scan results"], tip = "Every item in your last full scan of this Auction House: lowest price, quantity, auctions and 7-day change. Click a column to sort, search by name, click a row for its history." },
+	{ key = "craft", label = L["Craft"], tip = "What a profession makes (or gathers, with Harvest), priced from your last full scan: cost to make, sell price, profit per item, margin, units listed, and how many you can make with the total profit. Hover a row for its reagents." },
 }
 M.TOP = 10
 M.ROWS = 12   -- (Top 10's columns; My items and Scan results fit their rows to the window: M.FitRows)
@@ -161,7 +162,7 @@ M.COLS = {
 		{ key = "margin", label = L["Margin"], x = 418, w = 46, value = function(e) return e.margin end },
 		{ key = "listed", label = L["Listed"], x = 468, w = 42, value = function(e) return e.listed end },
 		{ key = "can", label = L["Can make"], x = 554, w = 56, value = function(e) return (M.Shown(e)) end },
-		{ key = "total", label = L["Total"], x = 614, w = 90, value = function(e) return select(2, M.Shown(e)) end },
+		{ key = "total", label = L["Total"], alt = L["Total (stack)"], x = 614, w = 90, value = function(e) if M.PerStack() then return M.StackTotal(e.each, e.out) end return select(2, M.Shown(e)) end },
 	},
 	-- (Crafts' columns for a gathered item, no Cost: Sell at the AH's lowest, Profit/item after the cut, Have, Total)
 	harvest = {
@@ -170,7 +171,7 @@ M.COLS = {
 		{ key = "each", label = L["Profit/item"], x = 334, w = 80, value = function(e) return e.each end },
 		{ key = "listed", label = L["Listed"], x = 468, w = 42, value = function(e) return e.low and e.units or nil end },
 		{ key = "have", label = L["Have"], x = 554, w = 56, value = function(e) return e.have end },
-		{ key = "total", label = L["Total"], x = 614, w = 90, value = function(e) return e.total end },
+		{ key = "total", label = L["Total"], alt = L["Total (stack)"], x = 614, w = 90, value = function(e) if M.PerStack() then return M.StackTotal(e.each, e.id) end return e.total end },
 	},
 }
 M.SORT_DEFAULT = { results = "name:asc", mine = "total:desc", craft = "each:desc", harvest = "sell:desc" }
@@ -277,9 +278,14 @@ function M.FitCols(list, parent, samples, oneLine)
 		if not c.item then
 			local sample = (samples and samples[c.key]) or (M.SAMPLE_LIST[list] or {})[c.key] or M.SAMPLE[c.key] or "9999"
 			local v = W(sample, 11) + M.CELL_PAD
-			local one = W(c.label, M.HEAD_FONT) + M.ARROW_W + M.HEAD_PAD
-			local h = Halves(c.label)
-			local t = h and math.max(W(h[1], M.HEAD_FONT), W(h[2], M.HEAD_FONT)) + M.ARROW_W + M.HEAD_PAD
+			-- (1.2.6) a title that changes (alt: Total (stack)): room for the longer one
+			local one, t = 0, nil
+			for _, lab in ipairs({ c.label, c.alt }) do
+				one = math.max(one, W(lab, M.HEAD_FONT) + M.ARROW_W + M.HEAD_PAD)
+				local h = Halves(lab)
+				local th = h and math.max(W(h[1], M.HEAD_FONT), W(h[2], M.HEAD_FONT)) + M.ARROW_W + M.HEAD_PAD
+				if th then t = math.max(t or 0, th) end
+			end
 			need[i] = { one = math.ceil(math.max(v, one)), two = t and math.ceil(math.max(v, t)) }
 		end
 	end
@@ -355,6 +361,7 @@ function M.Headers(f, y, list, onSort)
 		for _, b in ipairs(head.buttons) do
 			local on = b.key == key
 			b.text:SetText(labels and labels[b.key] or b.col.label)
+			if b.tip then b.tip.title = labels and labels[b.key] or b.col.label end   -- (1.2.6: Total (stack))
 			T.Skin(b, 0.9, on and GOLD or T.BRONZE)
 			local c = on and ((ns.Style and ns.Style.WHITE) or { 1, 1, 1 }) or DIM
 			b.text:SetTextColor(c[1], c[2], c[3])
@@ -746,6 +753,7 @@ M.HEAD_TIPS = {
 	},
 }
 function M.HeadTip(list, key)
+	if key == "total" and (list == "craft" or list == "harvest") and M.PerStack() then return L[M.STACK_TIP] end
 	local t = (M.HEAD_TIPS[list] or {})[key]
 	if type(t) == "function" then t = t() end
 	return t and L[t] or ""
@@ -844,6 +852,37 @@ function M.Afford(e, amount, have, owned)
 	return Out(lo)
 end
 -- a craft row's Can make and Total as shown (and sorted): from the Invest Amount when there is one
+-- (1.2.6) Per stack (Craft's Show: row, craftPerStack): Total = Profit/item x one full stack of the item, the
+-- game's own stack size (GetItemInfo's max stack: 20 for most herbs and cloth, 5 or 10 for some, 1 for what doesn't
+-- stack). An item the game hasn't sent yet: no size (a blank cell), asked for, the list redrawn when it comes (M.Fetch).
+M.STACK_TIP = "Per stack: Profit/item x one full stack of the item (the game's stack size, e.g. 20). An item that doesn't stack counts 1 (doesn't stack (1)). Blank until the game has sent the item. Have and Can make stay as they are."
+function M.PerStack() return I.S and I.S.craftPerStack and true or false end
+function M.Stack(id)
+	if not id then return nil end
+	local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
+	local ok, name, _, _, _, _, _, _, max = pcall(GetItemInfo, id)
+	if not (ok and name) then
+		if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
+		return nil
+	end
+	max = tonumber(max)
+	return (max and max >= 1) and math.floor(max) or 1
+end
+function M.StackTotal(each, id)
+	if not each then return nil end
+	local n = M.Stack(id)
+	return n and each * n or nil
+end
+-- the row tooltip's line for it
+function M.StackLine(id, each)
+	local n = M.Stack(id)
+	if not n then return L["Stack size: still coming from the game."] end
+	local v = each and S().Money(math.abs(each * n)) or "-"
+	if each and each < 0 then v = "-" .. v end
+	if n == 1 then return L["Per stack: doesn't stack (1): %s"]:format(v) end
+	return L["Per stack: %d x Profit/item = %s"]:format(n, v)
+end
+
 function M.Shown(e)
 	local amount = M.investAmount
 	local cnt = M.CountNow()
@@ -1487,6 +1526,7 @@ function M.CraftStatus(name, recipes, live, priced, cut, age, unknown, skipped)
 	return t .. "."
 end
 M.CRAFT_W = 800            -- (v0.4.2.7: the rows' width, M.ROW_W.craft; was 706)
+M.COUNT_GAP, M.INVEST_W, M.INVEST_Y = 14, 100, -53   -- (1.2.6: the Count dropdown after Per stack; the Invest Amount box on the Reagents row)
 local STAR = "|cffffd100*|r"
 
 local function BuildCraft(f, page)
@@ -1555,13 +1595,17 @@ local function BuildCraft(f, page)
 	f.showTitle:SetPoint("LEFT")
 	f.showTitle:SetText(L["Show:"])
 	f.known = V.Check(f.showRow, L["Known only"], function() return I.S.craftKnownOnly end, function(v) I.S.craftKnownOnly = v page:Refresh() end)
+	-- (1.2.6) Per stack: Total = Profit/item x one full stack (Have and Can make as they are)
+	f.perStack = V.Check(f.showRow, L["Per stack"], function() return I.S.craftPerStack end, function(v) I.S.craftPerStack = v and true or false f.offset = 0 page:Refresh() end)
 	V.Grid({
 		{ frame = f.owned, title = f.owned.title, boxes = f.owned.boxes },
-		{ frame = f.showRow, title = f.showTitle, boxes = { f.known } },
+		{ frame = f.showRow, title = f.showTitle, boxes = { f.known, f.perStack } },
 	}, M.FilterStart(f))
-	-- (v0.4.2.8) Count: None | Bags only | Bags + bank, a dropdown in Reagents' 2nd column (Craft's own setting)
+	-- (v0.4.2.8) Count: None | Bags only | Bags + bank, a dropdown (Craft's own setting); (1.2.6) on the Show row after
+	-- Per stack (its label measured)
 	f.countDrop = DropMenu(f, 200, #M.COUNTS, function(v) I.S.craftCount = v f.offset = 0 page:Refresh() end)
-	f.countDrop:SetPoint("LEFT", f.owned.boxes[2], "LEFT", 0, 0)
+	f.countX = math.ceil(f.perStack.col + 16 + 6 + (f.perStack.labelW or 0) + M.COUNT_GAP)
+	f.countDrop:SetPoint("LEFT", f.showRow, "LEFT", f.countX, 0)
 	f.countDrop:SetPoint("TOP", f.showRow, "TOP", 0, 1)
 	local function CountEntries() local out = {} for i, x in ipairs(M.COUNTS) do out[i] = { x[1], L[x[2]] } end return out end
 	function f.countDrop.Open() if f.countDrop.locked then return end f.countDrop.Fill(CountEntries(), M.CraftCount()) f.countDrop.menu:Show() end
@@ -1576,12 +1620,21 @@ local function BuildCraft(f, page)
 		local c = M.CountNow()
 		for _, x in ipairs(M.COUNTS) do if x[1] == c then f.countDrop.text:SetText(L["Count: %s"]:format(L[x[2]])) end end
 	end
-	-- (v0.4.2.8) Invest Amount: one box for every row, live as you type (this session only)
+	-- (v0.4.2.8) Invest Amount: one box for every row, live as you type (this session only); (1.2.6) on the Reagents
+	-- row, its right edge at the Total column's (what it changes), its title before it: f.PlaceInvest after a relayout
 	f.investTitle = Text(f, 12)
-	f.investTitle:SetPoint("LEFT", f.countDrop, "RIGHT", 12, 0)
 	f.investTitle:SetText(L["Invest Amount:"])
-	f.invest = V.EditBox(f, 100)
-	f.invest:SetPoint("LEFT", f.countDrop, "RIGHT", 12 + math.ceil(f.investTitle:GetStringWidth() or 90) + 6, 0)   -- (after its title; on a frame, as the other filters)
+	f.invest = V.EditBox(f, M.INVEST_W)
+	function f.PlaceInvest()
+		local tc = M.COLS.craft[#M.COLS.craft]
+		local right = M.LIST_X + tc.x + tc.w
+		f.investRight = right
+		f.invest:ClearAllPoints()
+		f.invest:SetPoint("TOPLEFT", f, "TOPLEFT", right - M.INVEST_W, M.INVEST_Y)
+		f.investTitle:ClearAllPoints()
+		f.investTitle:SetPoint("RIGHT", f.invest, "LEFT", -6, 0)
+	end
+	f.PlaceInvest()
 	f.investHint = Text(f.invest, 10, GREY)
 	f.investHint:SetPoint("LEFT", 8, 0)
 	f.investHint:SetText(L["e.g. 50g"])
@@ -1621,6 +1674,7 @@ local function BuildCraft(f, page)
 	f.head = { craftStrip = M.Headers(f, -98, "craft", Resort), harvestStrip = M.Headers(f, -98, "harvest", Resort) }
 	M.CRAFT_TOP = 98 + math.max(f.head.craftStrip.h, f.head.harvestStrip.h) + 2
 	f.head.craft, f.head.harvest = f.head.craftStrip.buttons, f.head.harvestStrip.buttons
+	f.PlaceInvest()   -- (the columns as fitted)
 	Paged(f, page, M.CRAFT_TOP + M.CRAFT_STRIPS, function(i)
 		local r = CreateFrame("Frame", nil, f)
 		r:SetSize(M.CRAFT_W, 24)
@@ -1628,7 +1682,12 @@ local function BuildCraft(f, page)
 		r.cell = V.ItemCell(r, M.COLS.craft[1].w)
 		r.cell:SetPoint("LEFT", M.COLS.craft[1].x, 0)
 		r.cell.onClick = function(id) M.ShowHistory(page, id) end
-		r.Lines = function() return r.e and C.Lines(r.e, r.house) or {} end
+		r.Lines = function()
+			if not r.e then return {} end
+			local out = C.Lines(r.e, r.house) or {}
+			if M.PerStack() then out[#out + 1] = M.StackLine(r.e.out, r.e.each) end   -- (1.2.6)
+			return out
+		end
 		r.craft = M.Cells(r, "craft")
 		for k, fs in pairs(r.craft) do r[k] = fs end   -- (r.cost, r.sell, r.each, r.margin, r.listed, r.can, r.total)
 		r.harvest = M.Cells(r, "harvest")
@@ -1690,7 +1749,8 @@ local function BuildCraft(f, page)
 		f.filterCount:SetText(q ~= "" and L["%d of %d"]:format(#list, #all) or "")
 		M.SortList(list, sortList)
 		local ids = {}
-		if M.NeedsData(sortList) then for _, e in ipairs(list) do ids[#ids + 1] = e[field] end end
+		-- (1.2.6) Per stack: every item's stack size (the game's item data), asked for; redrawn as they come
+		if M.NeedsData(sortList) or M.PerStack() then for _, e in ipairs(list) do ids[#ids + 1] = e[field] end end
 		M.Fetch(f, ids, function() page:Refresh(true) end, -34)
 		key = key .. "|" .. q .. "|" .. M.SortTag(sortList)
 		if key ~= f.listKey then f.offset, f.listKey = 0, key end
@@ -1710,10 +1770,20 @@ local function BuildCraft(f, page)
 		fs._loss = v < 0 or nil
 		fs:SetTextColor(unpack(v >= 0 and GREEN or RED))
 	end
+	-- (1.2.6) Total: per stack (blank while the item's size isn't in), else as before
+	local function StackCell(fs, each, id, total)
+		if not M.PerStack() then return Signed(fs, total) end
+		if not each then return Signed(fs, nil) end
+		local n = M.Stack(id)
+		if not n then fs:SetText("") fs._loss = nil return end
+		Signed(fs, each * n)
+	end
 	function f.Refresh(keep)
 		local house = M.House()
 		f.owned.Update() f.known.Update() f.count.Update()
-		f.head.craftStrip.Update() f.head.harvestStrip.Update()
+		local labels = M.PerStack() and { total = L["Total (stack)"] } or nil   -- (1.2.6)
+		f.head.craftStrip.Update(labels) f.head.harvestStrip.Update(labels)
+		if f.perStack then f.perStack.Update() end
 		local profs = C.Professions()
 		f.profs = profs
 		if #profs == 0 then
@@ -1754,12 +1824,12 @@ local function BuildCraft(f, page)
 				r.e = nil
 				if e then
 					local c = r.harvest
-					r.cell:SetItem(e.id, M.Lines)
+					r.cell:SetItem(e.id, M.PerStack() and function(id) local t = M.Lines(id) or {} t[#t + 1] = M.StackLine(id, e.each) return t end or M.Lines)
 					c.sell:SetText(Money(e.low))
 					Signed(c.each, e.each)
 					c.listed:SetText(e.low and tostring(e.units) or "-")
 					c.have:SetText(tostring(e.have))
-					Signed(c.total, e.total)
+					StackCell(c.total, e.each, e.id, e.total)
 					shown[#shown + 1] = e.id
 					r:Show()
 				else
@@ -1782,7 +1852,7 @@ local function BuildCraft(f, page)
 			return {}
 		end
 		SetList(res.list or res.rows, C.CacheKey(house, p.key, opts), "out", "craft")
-		M.Relayout(f, f.head.craftStrip, "craft", "craft", M.Samples(f.list, "craft"))
+		if M.Relayout(f, f.head.craftStrip, "craft", "craft", M.Samples(f.list, "craft")) ~= false then f.PlaceInvest() end
 		for i, r in ipairs(f.rows) do
 			local e = i <= f.per and f.list[f.offset + i]
 			r.e, r.house = e or nil, house
@@ -1795,7 +1865,7 @@ local function BuildCraft(f, page)
 				r.listed:SetText(tostring(e.listed))
 				local n, total = M.Shown(e)   -- (v0.4.2.8: from the Invest Amount when one is typed)
 				r.can:SetText(tostring(n or 0))
-				Signed(r.total, total)
+				StackCell(r.total, e.each, e.out, total)
 				shown[#shown + 1] = e.out
 				for _, part in ipairs(e.parts) do shown[#shown + 1] = part.id end
 				r:Show()
@@ -1834,6 +1904,7 @@ M.TIPS = {
 	market = { L["Market"], L["Price every reagent at the AH's lowest, or a vendor's if cheaper."] },
 	free = { L["Owned"], L["Reagents you have (per Count) cost nothing; the rest at market price. Can make: what yours make. The Invest Amount is off (greyed)."] },
 	knownCrafts = { L["Known only"], L["Only recipes you have learned."] },
+	perStack = { L["Per stack"], L["Total shows Profit/item x one full stack of the item (the game's stack size, e.g. 20; an item that doesn't stack: 1). Have and Can make stay as they are. Crafts and Harvest."] },
 	knownHarvest = { L["Known only"], L["Hide what's above your skill. Items with no level data stay."] },
 	craftCount = { L["Count"], L["What Can make, Have and owned reagents count: None (buy everything), your bags, or bags and bank (as last seen). With Reagents: Market it's greyed and None (Owned brings your choice back)."] },
 	invest = { L["Invest Amount"], L["Gold to invest in each craft, with Reagents: Market: 50g, 1g 20s, or a number (gold). Can make and Total then show what it buys, on every row. Greyed with Owned and in Harvest (what you typed is kept). Not saved."] },
@@ -1854,7 +1925,7 @@ M.TIP_ON = {
 		Tip(f.drop, "craftProf") Tip(f.modeCrafts, "crafts") Tip(f.modeHarvest, "harvest") Tip(f.filter, "filter")
 		for _, b in ipairs(f.owned.boxes) do Tip(b, b.value) end
 		V.Tip(f.known, L["Known only"], function() local t = M.TIPS[M.craftMode == "harvest" and "knownHarvest" or "knownCrafts"] return t[2] end)
-		Tip(f.countDrop, "craftCount") Tip(f.invest, "invest")
+		Tip(f.countDrop, "craftCount") Tip(f.invest, "invest") Tip(f.perStack, "perStack")
 	end,
 }
 
@@ -1891,6 +1962,7 @@ function V.BuildMarket(page)
 		b:SetPoint("TOPLEFT", x, -72)
 		b.key, b.soon = s.key, s.soon
 		if s.soon then b:SetAlpha(0.5) b.text:SetText(s.label .. " " .. L["(soon)"]) end
+		if s.tip then V.Tip(b, s.label, L[s.tip]) end   -- (1.2.6)
 		page.subButtons[#page.subButtons + 1] = b
 		x = x + 108
 	end

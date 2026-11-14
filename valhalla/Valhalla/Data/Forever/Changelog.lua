@@ -4,6 +4,12 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.6", date = "2026-11-13", heads = { [1] = "New", [3] = "Changed", [4] = "Note", }, items = {
+		"|cff6e2c0aAH Market tab tooltips|r: hover Top 10, My items, History, Scan results or Craft for a short note on what that tab shows.",
+		"|cff6e2c0aCraft: Show: Per stack|r (between Known only and the Count dropdown, off by default, also in Harvest): the Total column becomes \"Total (stack)\", Profit/item times the item's real max stack (e.g. 20; an item that doesn't stack counts as 1). An item the game hasn't loaded yet stays blank until it arrives. Sorting uses the shown value; Have and Can make are unchanged.",
+		"The Invest Amount box moved up to the Reagents row, right-aligned over the Total column, so the Show row has room.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.5", date = "2026-11-13", heads = { [1] = "Changed", [4] = "New", [5] = "Note", }, items = {
 		"|cff6e2c0aItem tooltip prices, as the game shows money|r: three lines, label on the left, coins on the right with the game's gold, silver and copper icons: Vendor, AH (with the scan's age) and AH total.",
 		"Vendor: what a vendor pays for it. None for an item vendors won't buy, and none when the tooltip already shows the game's own Sell Price.",
