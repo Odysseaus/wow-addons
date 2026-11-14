@@ -8,10 +8,9 @@ local L = ns.L
 --                  item isn't loaded, none when the tooltip already has the game's own "Sell Price" line (type 11)
 --   AH (2 h ago)   the AH's lowest price from your last scan of the house shown in AH Market, and how old it is
 --   AH total (N)   N x that price; N per the setting "AH total on item tooltips" (ahTotal):
---                    "stack" (default): the stack in the bag or bank slot you're hovering; no slot (a link, a
---                                       merchant, ...): no line
---                    "full": one full stack (GetItemInfo's max stack size), "AH total (stack of N)"
---                    "held": all you hold (bags + bank per "Count bank items"), "AH total (N held)"
+--                    "stack" (default, Hovered quantity): the stack in the bag or bank slot you're hovering;
+--                                       no slot (a link, a merchant, ...): no line
+--                    "held" (Everything held): all you hold (bags + bank per "Count bank items"), "AH total (N held)"
 --                  only for N of 2 or more
 -- Nothing with no scan data, nothing listed, or a soulbound item. Setting: "AH price on item tooltips" (ahTooltip,
 -- on by default). Coins: the game's own tooltip money format (MoneyFormatterUtil.FormatMoney with
@@ -85,12 +84,12 @@ function P.GameSellLine(data)
 	return false
 end
 
--- the item's max stack size and vendor price (nil: not loaded)
-function P.Info(id)
+-- the item's vendor price (nil: not loaded)
+function P.Sell(id)
 	local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
-	local ok, name, _, _, _, _, _, _, maxStack, _, _, sell = pcall(GetItemInfo, id)
-	if not (ok and name) then return nil, nil end
-	return tonumber(maxStack), tonumber(sell)
+	local ok, name, _, _, _, _, _, _, _, _, _, sell = pcall(GetItemInfo, id)
+	if not (ok and name) then return nil end
+	return tonumber(sell)
 end
 
 -- the stack in the bag or bank slot the tooltip is for (nil: not a slot, or not this item)
@@ -106,7 +105,7 @@ function P.Hovered(tip, id)
 	if ok2 and type(info) == "table" and info.itemID == id then return info.stackCount end
 end
 
-P.TOTALS = { stack = true, full = true, held = true }
+P.TOTALS = { stack = true, held = true }
 -- the lines for an item: { { label, coins }, ... } (empty: none to add); tip: the tooltip (its slot, for "stack")
 function P.Lines(id, data, tip)
 	if not (id and On()) then return {} end
@@ -115,7 +114,7 @@ function P.Lines(id, data, tip)
 	local low, c = S().Lowest(house, id)
 	if not (low and c) then return {} end
 	local out = {}
-	local maxStack, sell = P.Info(id)
+	local sell = P.Sell(id)
 	if sell and sell > 0 and not P.GameSellLine(data) then out[#out + 1] = { L["Vendor"], P.Coins(sell) } end
 	out[#out + 1] = { L["AH (%s)"]:format(S().Age(c.t)), P.Coins(low) }
 	local mode = P.TOTALS[I.S.ahTotal] and I.S.ahTotal or "stack"
@@ -123,9 +122,6 @@ function P.Lines(id, data, tip)
 	if mode == "stack" then
 		n = P.Hovered(tip, id)
 		label = n and L["AH total (%d)"]:format(n)
-	elseif mode == "full" then
-		n = maxStack
-		label = n and L["AH total (stack of %d)"]:format(n)
 	else
 		n = P.Held(id)
 		label = L["AH total (%d held)"]:format(n)

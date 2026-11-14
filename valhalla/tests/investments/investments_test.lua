@@ -3172,7 +3172,7 @@ print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's b
   end }, {}
   local function Txt(l) local t = {} for _, x in ipairs(l) do t[#t + 1] = x[1] .. " = " .. x[2] end return table.concat(t, " | ") end
   W.sell = { [2589] = 13 }
-  ok(I.SETTINGS.ahTotal == "stack" and I.S.ahTotal == "stack", "setting 'AH total on item tooltips': Hovered stack by default")
+  ok(I.SETTINGS.ahTotal == "stack" and I.S.ahTotal == "stack", "setting 'AH total on item tooltips': Hovered quantity by default")
   local l = P.Lines(2589)
   ok(#l == 2 and l[1][1] == "Vendor" and l[1][2] == "13c" and l[2][1] == "AH (just now)" and l[2][2] == "12s 34c", "Vendor then AH (its age in the label); no slot hovered: no total (not held instead)", Txt(l))
   -- Hovered stack: the bag or bank slot the tooltip is for
@@ -3192,13 +3192,6 @@ print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's b
   slotTip.owner = { GetName = function() return "MerchantItem1" end }
   ok(#P.Lines(2589, nil, slotTip) == 2, "not a bag slot (a merchant's item): no total")
   slotTip.owner = { GetSlotAndBagID = function() return 2, 0 end }
-  -- Single stack: one full stack (GetItemInfo's max stack size)
-  I.S.ahTotal = "full"
-  l = P.Lines(2589, nil, slotTip)
-  ok(#l == 3 and l[3][1] == "AH total (stack of 20)" and l[3][2] == "2g 46s 80c", "Single stack: 'AH total (stack of 20)', a full stack x lowest (hovered or not)", Txt(l))
-  W.stack = { [2589] = 1 }
-  ok(#P.Lines(2589) == 2, "Single stack of an item that doesn't stack: no total")
-  W.stack = nil
   -- Everything held: bags + bank (per Count bank items)
   I.S.ahTotal = "held"
   I.char.bags, I.char.bank, I.char.bankSeen, I.db.account.bank, I.db.account.bankSeen = { [2589] = 5 }, {}, nil, {}, nil
@@ -3213,8 +3206,8 @@ print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's b
   I.char.bags[2589], I.char.bank[2589] = 1, nil
   ok(#P.Lines(2589) == 2, "holding 1: no total")
   I.char.bags[2589] = 5
-  I.S.ahTotal = "bogus"
-  ok(#P.Lines(2589, nil, slotTip) == 3 and P.Lines(2589, nil, slotTip)[3][1] == "AH total (7)", "an unknown setting value: Hovered stack")
+  I.S.ahTotal = "full"   -- (a choice that never shipped)
+  ok(#P.Lines(2589, nil, slotTip) == 3 and P.Lines(2589, nil, slotTip)[3][1] == "AH total (7)", "an unknown setting value (e.g. a dropped one): Hovered quantity")
   I.S.ahTotal = "stack"
   -- Vendor: none at 0, none while not loaded, none beside the game's own Sell Price line
   W.sell[2589] = 0
@@ -3247,15 +3240,13 @@ print("== 40. 1.2.0: AH price on item tooltips, Scan results' caches, Top 10's b
   ok(I.S.ahTooltip == true, "setting on again")
   -- the setting's three choices, beside 'AH price on item tooltips'
   local rt = sp.ahTotal
-  ok(rt and rt.title._text == "AH total on item tooltips:" and #rt.boxes == 3 and rt.boxes[1].value == "stack" and rt.boxes[2].value == "full" and rt.boxes[3].value == "held"
-    and rt.boxes[1].label._text == "Hovered stack" and rt.boxes[2].label._text == "Single stack" and rt.boxes[3].label._text == "Everything held" and rt.boxes[1].tick:IsShown(),
-    "Settings > AH Market: 'AH total on item tooltips:' Hovered stack (ticked) | Single stack | Everything held")
-  W.Click(rt.boxes[3])
-  ok(I.S.ahTotal == "held" and rt.boxes[3].tick:IsShown() and not rt.boxes[1].tick:IsShown(), "Everything held picked: saved")
+  ok(rt and rt.title._text == "AH total on item tooltips:" and #rt.boxes == 2 and rt.boxes[1].value == "stack" and rt.boxes[2].value == "held"
+    and rt.boxes[1].label._text == "Hovered quantity" and rt.boxes[2].label._text == "Everything held" and rt.boxes[1].tick:IsShown(),
+    "Settings > AH Market: 'AH total on item tooltips:' Hovered quantity (ticked) | Everything held (two choices)")
   W.Click(rt.boxes[2])
-  ok(I.S.ahTotal == "full", "Single stack picked: saved")
+  ok(I.S.ahTotal == "held" and rt.boxes[2].tick:IsShown() and not rt.boxes[1].tick:IsShown(), "Everything held picked: saved")
   W.Click(rt.boxes[1])
-  ok(I.S.ahTotal == "stack", "Hovered stack again")
+  ok(I.S.ahTotal == "stack", "Hovered quantity again")
   -- the post-call on the game's tooltips: label left (Valhalla's gold), coins right (white)
   local dl = {}
   GT.AddDoubleLine = function(self, a, b, r1, g1, b1, r2, g2, b2) dl[#dl + 1] = { a, b, r1, g1, b1, r2, g2, b2 } end

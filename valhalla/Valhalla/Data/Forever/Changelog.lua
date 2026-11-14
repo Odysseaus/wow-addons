@@ -7,8 +7,8 @@ ns.MapChangelog = {
 	{ version = "1.2.5", date = "2026-11-13", heads = { [1] = "Changed", [4] = "New", [5] = "Note", }, items = {
 		"|cff6e2c0aItem tooltip prices, as the game shows money|r: three lines, label on the left, coins on the right with the game's gold, silver and copper icons: Vendor, AH (with the scan's age) and AH total.",
 		"Vendor: what a vendor pays for it. None for an item vendors won't buy, and none when the tooltip already shows the game's own Sell Price.",
-		"AH total: the stack you're pointing at in your bags or bank, \"AH total (7)\"; none for a link or a merchant's item.",
-		"Settings > AH Market > AH total on item tooltips: Hovered stack (the default), Single stack (one full stack, \"AH total (stack of 20)\") or Everything held (bags and bank, \"AH total (12 held)\").",
+		"AH total: the AH price times the quantity you're pointing at in your bags or bank, \"AH total (7)\"; none for a link or a merchant's item.",
+		"Settings > AH Market > AH total on item tooltips: Hovered quantity (the default) or Everything held (bags and bank, \"AH total (12 held)\").",
 		"A /reload is enough after installing (no new files).",
 	} },
 	{ version = "1.2.4", date = "2026-11-12", heads = { [1] = "Changed", [3] = "Note", }, items = {
