@@ -11,8 +11,6 @@
 -- ready. It gives the lowest price and units (no auction count).
 -- One request at a time, and only it listens: its events are registered while it runs and dropped the
 -- moment they're answered (the full scan's update event also fires once per item loaded afterwards).
--- Cart prices (1.2.7): the AH list's checkout cart, each item searched on its own (SendSearchQuery): every
--- listing's price and quantity (stackable goods) or every auction's buyout (other items), kept as its quote.
 -- Each house (Alliance, Horde, Neutral) is its own market. History: one point per item per hour (the
 -- latest wins), 7 days, at most 3 MB (the oldest scans dropped first).
 --------------------------------------------------------------------------------
@@ -381,114 +379,6 @@ local function Quick(r)
 	r.done = L["Quick scan done: %d of your %d items listed (%s). %s"]:format(priced, #ids, r.house, S.CooldownText())
 end
 
--- (1.2.7) Cart prices: each cart item searched on its own; its listings kept (S.quotes[house][id]) and its lowest
--- price stored as a quick point. Stackable goods (commodities): price levels { unit, n } (more asked for while
--- the cart wants more than shown); other items: auctions { auction, buyout, n, unit }, cheapest first. Your own
--- listings are left out (they can't be bought).
-S.quotes = {}
-function S.Quote(house, id) return S.quotes[house] and S.quotes[house][id] end
-local function ReadCommodity(id)
-	local A = C_AuctionHouse
-	local e = { kind = "commodity", rows = {}, units = 0 }
-	local n = Call(A.GetNumCommoditySearchResults, id) or 0
-	for i = 1, n do
-		local x = Call(A.GetCommoditySearchResultInfo, id, i)
-		if type(x) == "table" and not Value(x.containsOwnerItem) then
-			local u, q = Value(x.unitPrice), Value(x.quantity)
-			if u and q and u > 0 and q > 0 then e.rows[#e.rows + 1] = { unit = u, n = q } e.units = e.units + q end
-		end
-	end
-	table.sort(e.rows, function(a, b) return a.unit < b.unit end)
-	return e
-end
-local function ReadItems(id)
-	local A = C_AuctionHouse
-	local e = { kind = "item", rows = {}, units = 0 }
-	local key = Key(id)
-	local n = Call(A.GetNumItemSearchResults, key) or 0
-	for i = 1, n do
-		local x = Call(A.GetItemSearchResultInfo, key, i)
-		if type(x) == "table" and not Value(x.containsOwnerItem) then
-			local b, q, aid = Value(x.buyoutAmount), Value(x.quantity) or 1, Value(x.auctionID)
-			if b and b > 0 and aid and q > 0 then e.rows[#e.rows + 1] = { auction = aid, buyout = b, n = q, unit = b / q } e.units = e.units + q end
-		end
-	end
-	table.sort(e.rows, function(a, b) if a.unit ~= b.unit then return a.unit < b.unit end return a.auction < b.auction end)
-	return e
-end
-local function CartPrices(r)
-	local A = C_AuctionHouse
-	local ids = r.ids or {}
-	r.phase, r.total, r.batch = "cart", #ids, 0
-	if #ids == 0 then r.fail = L["The cart is empty: add items with the + on the list's rows."] return end
-	local q = S.quotes[r.house] or {}
-	S.quotes[r.house] = q
-	local m = S.Market(r.house, true)
-	local tmin = Min(m, Now())
-	local priced = 0
-	for k, id in ipairs(ids) do
-		r.batch = k
-		if not Ready(r) then Unlisten() r.fail = L["Cart prices stopped: the Auction House stayed busy."] return end
-		local kind, more = nil, 0
-		Listen({ "COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_FAILURE" })
-		r.OnEvent = function(event, a)
-			if event == "COMMODITY_SEARCH_RESULTS_UPDATED" and Value(a) == id then kind = "commodity"
-			elseif event == "ITEM_SEARCH_RESULTS_UPDATED" and type(a) == "table" and Value(a.itemID) == id then kind = "item"
-			elseif event == "AUCTION_HOUSE_BROWSE_FAILURE" then kind = "failed" end
-		end
-		r.sent = (r.sent or 0) + 1
-		Call(A.SendSearchQuery, Key(id), SORTS, true)
-		if not Wait(r, function() return kind ~= nil end, S.TIMEOUT.browse) then kind = "none" end
-		local e
-		if kind == "commodity" then
-			e = ReadCommodity(id)
-			-- (more listings while the cart wants more than shown)
-			while e.units < (r.need and r.need[id] or 0) and Call(A.HasFullCommoditySearchResults, id) == false and more < S.MORE do
-				more = more + 1
-				kind = nil
-				Call(A.RequestMoreCommoditySearchResults, id)
-				if not Wait(r, function() return kind ~= nil end, S.TIMEOUT.browse) then break end
-				e = ReadCommodity(id)
-			end
-		elseif kind == "item" then
-			e = ReadItems(id)
-		else
-			e = { kind = kind == "failed" and "failed" or "none", rows = {}, units = 0 }
-		end
-		Unlisten()
-		e.t = Now()
-		q[id] = e
-		if e.kind == "commodity" or e.kind == "item" then
-			local low = e.rows[1] and math.floor(e.rows[1].unit) or 0
-			if low > 0 then priced = priced + 1 end
-			m.cur[id] = ("%d,%d,q,%d"):format(low, e.units, tmin)
-			AddPoint(m, id, tmin, low, e.units, "q")
-		end
-	end
-	m.scans[#m.scans + 1] = { t = tmin, kind = "quick", n = #ids, items = priced, secs = math.floor((T() - r.t0) * 10 + 0.5) / 10 }
-	S.Prune(m)
-	r.done = L["Cart prices: %d of %d items listed (%s)."]:format(priced, #ids, r.house)
-end
-
--- what n of an item costs from its quote: cost, how many can be had (n or fewer), and for other items the
--- auctions to buy (whole auctions, cheapest per unit first: may come to more than n)
-function S.QuoteCost(house, id, n)
-	local e = S.Quote(house, id)
-	if not e or (e.kind ~= "commodity" and e.kind ~= "item") then return nil, 0, nil, e and e.kind end
-	local cost, got, picks = 0, 0, {}
-	for _, row in ipairs(e.rows) do
-		if got >= n then break end
-		if e.kind == "commodity" then
-			local take = math.min(row.n, n - got)
-			cost, got = cost + take * row.unit, got + take
-		else
-			cost, got = cost + row.buyout, got + row.n
-			picks[#picks + 1] = row
-		end
-	end
-	return cost, got, e.kind == "item" and picks or nil, e.kind
-end
-
 local function Finish(r, state, text)
 	if S.run ~= r then return end
 	S.run = nil
@@ -513,7 +403,6 @@ local function Tick()
 	if not ok then
 		if err == ABORT then
 			Finish(r, "closed", r.kind == "full" and L["Full scan stopped: the Auction House closed. Nothing saved. %s"]:format(S.CooldownText())
-				or r.kind == "cart" and L["Cart prices stopped: the Auction House closed."]
 				or L["Quick scan stopped: the Auction House closed. Nothing saved."])
 		else
 			Finish(r, "error", L["Scan stopped by an error: %s. Nothing saved."]:format(tostring(err)))
@@ -527,19 +416,18 @@ S.Tick = Tick   -- (the tests drive it)
 function S.Running() return S.run ~= nil end
 
 -- Scan: a full scan when its 15 minutes are up, else a quick scan (kind forces one)
-function S.Start(kind, ids, need)
+function S.Start(kind)
 	if S.run then return false end
 	if not I.ahOpen then ns:Print("%s", L["Scan: open the Auction House first (the Scan button is on Valhalla's list beside it)."]) return false end
 	if I.AHCheck and I.AHCheck.Running() then ns:Print("%s", L["The AH check is running: wait for it (or /valhalla invest diag stop)."]) return false end
 	kind = kind or (S.NextFull() <= 0 and "full" or "quick")
 	local house = S.House()
-	local r = { kind = kind, house = house, t0 = T(), maxMs = 0, frameStart = MS(), ids = ids, need = need }
-	r.co = coroutine.create(kind == "full" and Full or kind == "cart" and CartPrices or Quick)
+	local r = { kind = kind, house = house, t0 = T(), maxMs = 0, frameStart = MS() }
+	r.co = coroutine.create(kind == "full" and Full or Quick)
 	S.run = r
 	if not driver then driver = CreateFrame("Frame") end
 	driver:SetScript("OnUpdate", Tick)
 	ns:Print("%s", kind == "full" and L["Full scan started (%s): keep the Auction House open, about 15 seconds."]:format(house)
-		or kind == "cart" and L["Pricing the cart (%s): %d items, one search each."]:format(house, #(ids or {}))
 		or L["Quick scan started (%s): your items, %s"]:format(house, S.CooldownText()))
 	I.Changed()
 	return true
@@ -547,8 +435,7 @@ end
 
 function S.Stop()
 	local r = S.run
-	if r then Finish(r, "stopped", r.kind == "full" and L["Full scan stopped. Nothing saved. %s"]:format(S.CooldownText())
-		or r.kind == "cart" and L["Cart prices stopped."] or L["Quick scan stopped. Nothing saved."]) end
+	if r then Finish(r, "stopped", r.kind == "full" and L["Full scan stopped. Nothing saved. %s"]:format(S.CooldownText()) or L["Quick scan stopped. Nothing saved."]) end
 end
 
 function S.Toggle() if S.run then S.Stop() else S.Start() end end
@@ -570,10 +457,6 @@ function S.Progress()
 			local f = (r.items or 0) > 0 and (r.storedAt or 0) / r.items or 1
 			return 0.9 + 0.08 * f, L["Saving %d items..."]:format(r.items or 0)
 		end
-	end
-	if r.kind == "cart" then
-		local f = (r.total or 0) > 0 and math.max(0, (r.batch or 1) - 1) / r.total or 0
-		return f, L["Cart prices: item %d of %d"]:format(r.batch or 0, r.total or 0)
 	end
 	local f = (r.batches or 0) > 0 and math.max(0, (r.batch or 1) - 1) / r.batches or 0
 	return f, L["Quick scan: search %d of %d"]:format(r.batch or 0, r.batches or 0)

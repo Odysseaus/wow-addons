@@ -4,6 +4,16 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.10", date = "2026-11-14", heads = { [1] = "Removed", [5] = "Changed", [8] = "Kept", }, items = {
+		"|cff6e2c0aThe Auction House checkout cart and its buying are gone|r: the + on the AH list's rows, Checkout (N), the cart view (its quantity steppers, Back, Scan and Buy), the Buy Yes / No question, Buy next and Confirm. WoW Forever blocks an addon's Auction House purchases (even on your own click the game refuses them), so they could never work: buy with the Auction House's own Buy button, as before 1.2.7.",
+		"The cart's price-guard setting is gone from Settings.",
+		"/valhalla invest buys (the purchase log) and /valhalla invest buydebug are gone.",
+		"A saved cart, purchase log and buy debug log are cleared when you log in (the game saves that as usual; your shopping lists are untouched).",
+		"|cff6e2c0aThe AH list's Search buttons are their full width again|r (as before 1.2.7) and work as they always did: your click puts the item's name in the Auction House's search and runs its own search.",
+		"The AH side panel is its old height again; the Scan status keeps its own line above the Scan button, inside the panel, under the list's pages.",
+		"The AH side panel always shows the list; minimized or not is still remembered across visits and /reload.",
+		"Still here: the faster search (1.2.8), History's Add to shopping list and Craft / Harvest's Add SL column, the AH list's plain rows (no vendor dimming), Dave's Sack's AH scans kept off (its setting), and what you buy at the Auction House shown \"In the mail\" until it reaches your bags.",
+	} },
 	{ version = "1.2.9", date = "2026-11-14", heads = { [1] = "Fixed", [4] = "Changed", [7] = "New", [8] = "Note", }, items = {
 		"|cff6e2c0aBuying stackable goods from the cart works as the Auction House's own Buy does|r: Yes (or Buy next) asks the game's price; when it comes, the button shows \"Confirm: <item> xN for <price>\" and your click on it buys, while the game's price holds (if it runs out first, Buy next asks again). Other items are still bought at their buyout on your click. Before, nothing was bought (\"no answer from the Auction House\").",
 		"The Auction House busy: nothing is sent; the cart says \"Auction House busy: press Buy next again in a moment\", and Buy next comes back when it's ready.",

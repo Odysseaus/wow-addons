@@ -332,8 +332,8 @@ ok(p.picker and p.picker.text._text == "List: List 1", "under its title: which l
 local function Shown() local t = {} for _, r in ipairs(p.rows) do if r:IsShown() then t[#t + 1] = r.name._text end end return table.concat(t, ",") end
 ok(Shown() == "Linen Cloth,Peacebloom,Silverleaf,Simple Wood,Copper Ore,Coarse Thread", "every item of the list, in the list's own order (1.2.9; 1.2.8 put vendor-sold ones last)", Shown())
 local function Plain(r) return r.vendor == nil and r.name._alpha == nil and r.need._alpha == nil and r.icon._alpha == nil and r.name._points[1][3] == 0 and #r.name._points == 1 end
-ok(Plain(p.rows[1]) and Plain(p.rows[4]) and p.rows[4].vendorLine and p.rows[4].vendorLine:find("^Vendor: .+ %(.+%)$") and p.rows[4].cart:IsShown() and not p.rows[1].vendorLine,
-  "a vendor-sold item (1.2.9): looks like every row (not dimmed, no line under it), its cart +; the vendor only in its tooltip", p.rows[4].vendorLine)
+ok(Plain(p.rows[1]) and Plain(p.rows[4]) and p.rows[4].vendorLine and p.rows[4].vendorLine:find("^Vendor: .+ %(.+%)$") and rawget(p.rows[4], "cart") == nil and not p.rows[1].vendorLine,
+  "a vendor-sold item (1.2.9): looks like every row (not dimmed, no line under it; 1.2.10: no cart +); the vendor only in its tooltip", p.rows[4].vendorLine)
 p.rows[4].hover._scripts.OnEnter(p.rows[4].hover)
 ok(true, "its tooltip: built without an error")
 ok(p.rows[1].need._text == "x4" and p.rows[5].need._text == "Done", "still needed, or Done")
@@ -3791,7 +3791,7 @@ print("== 42. 1.2.6: the AH Market tabs' tooltips; Craft's Per stack (Total = Pr
   ok(#W.sizeErrors == errs0, "no handler error")
 end)()
 
-print("== 43. 1.2.7: the item search (scans' names, any order, 10), Add to a shopping list (History, Add SL), the checkout cart and its buying")
+print("== 43. 1.2.7: the item search (scans' names, any order, 10), Add to a shopping list (History, Add SL); 1.2.10: the checkout cart gone, Search as before")
 ;(function()
   local Mk, Sc, V, A = I.Market, I.Scan, I.Views, I.AH
   local CA = C_AuctionHouse
@@ -3985,24 +3985,11 @@ print("== 43. 1.2.7: the item search (scans' names, any order, 10), Add to a sho
   ok(I.ListCount(lb.id, 2447) == 2, "picked: one more on the active list")
   Mk.house, Mk.craftProf, Mk.craftMode = keepK.house, keepK.prof, keepK.mode
 
-  print("-- the cart: per character, add / set / remove / bought")
-  I.char.cart, I.char.buys = {}, {}
-  I.CartAdd(2589, 2) I.CartAdd(2589, 1) I.CartAdd(969050, 1)
-  ok(I.CartCount() == 2 and I.CartLine(2589).n == 3, "added twice: one line of 3")
-  I.CartSet(2589, 0)
-  ok(I.CartLine(2589).n == 1, "at least 1")
-  I.CartSet(2589, 3) I.CartRemove(969050)
-  ok(I.CartCount() == 1 and not I.CartLine(969050), "removed")
-  I.CartBought(2589, 1)
-  ok(I.CartLine(2589).n == 2, "bought 1 of 3: 2 left")
-  I.CartBought(2589, 2)
-  ok(I.CartCount() == 0, "all bought: off the cart")
-
-  print("-- the AH list: + into the cart, Checkout (N), the cart view")
+  print("-- (1.2.10) the checkout cart and its buying: gone (WoW Forever blocks an addon's AH purchase calls)")
   W.items[969050] = { "Fine Sword", 135274 }
   W.gold = 100000
   GetMoney = function() return W.gold end
-  I.char.lists, I.undo = { { id = 90, name = "Cart Test", items = { { id = 2589, n = 3 } } } }, {}
+  I.char.lists, I.undo = { { id = 90, name = "Search Test", items = { { id = 2589, n = 3 }, { id = 969050, n = 1 } } } }, {}
   I.char.activeList = 90
   I.S.ahPanel, I.S.ahPanelMin = true, false
   local keepBB = { I.char.bags, I.char.bank, I.char.mail }
@@ -4010,295 +3997,113 @@ print("== 43. 1.2.7: the item search (scans' names, any order, 10), Add to a sho
   W.now = W.now + 5
   W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW")
   local p = A.Panel()
-  local r1 = p.rows[1]
-  ok(p:IsShown() and p._h == 560 and r1:IsShown() and r1.id == 2589 and r1.cart.text._text == "+" and p.cartBar:IsShown() and p.cartBar.checkout.text._text == "Checkout (0)",
-    "each row: a + for the cart; Checkout (0) under the list")
-  W.Click(r1.cart)
-  ok(I.CartLine(2589) and I.CartLine(2589).n == 3 and r1.cart.text._text == "-" and p.cartBar.checkout.text._text == "Checkout (1)", "+: what's still needed (3) into the cart; Checkout (1)")
-  W.Click(r1.cart)
-  ok(not I.CartLine(2589) and r1.cart.text._text == "+", "-: out again")
-  W.Click(r1.cart)
-  I.CartAdd(969050, 1)
-  W.Click(p.cartBar.checkout)
-  local cv = p.cv
-  ok(A.view == "cart" and cv:IsShown() and not p.rows[1]:IsShown() and not p.cartBar:IsShown() and p.title._text == "Valhalla: Checkout cart" and cv.rows[1]:IsShown() and cv.rows[2]:IsShown(),
-    "Checkout: the cart's view (its items)")
-  ok(cv.rows[1].qty._text == "3" and cv.rows[1].name._text == "Linen Cloth" and cv.back:IsShown() and cv.scan:IsShown() and cv.buyBtn:IsShown() and cv.gold._text:find("Your gold", 1, true), "a stepper, Back, Scan, Buy, your gold")
-  W.Click(cv.rows[1].plus)
-  ok(I.CartLine(2589).n == 4 and cv.rows[1].qty._text == "4", "+: one more")
-  W.Click(cv.rows[1].minus)
-  ok(I.CartLine(2589).n == 3, "-: one less")
-  ns.printed = {}
-  W.Click(cv.buyBtn)
-  ok(not p.confirm:IsShown() and cv.status._text:find("Press Scan first", 1, true) and (W.calls.StartCommoditiesPurchase or 0) == 0, "Buy before Scan: says to Scan first; nothing bought", cv.status._text)
-
-  print("-- the cart's Scan: each item's listings (exact prices, short supply)")
-  local comm = { [2589] = { { unitPrice = 21, quantity = 2 }, { unitPrice = 25, quantity = 10 }, { unitPrice = 1, quantity = 50, containsOwnerItem = true } } }
-  local items = { [969050] = { { auctionID = 501, quantity = 1, buyoutAmount = 5000 }, { auctionID = 502, quantity = 1, buyoutAmount = 4000 }, { auctionID = 503, quantity = 1, buyoutAmount = 100, containsOwnerItem = true } } }
-  CA.SendSearchQuery = function(key)
-    W.Count("SendSearchQuery")
-    if comm[key.itemID] then Later(2, "COMMODITY_SEARCH_RESULTS_UPDATED", key.itemID) else Later(2, "ITEM_SEARCH_RESULTS_UPDATED", key) end
+  local r1, r2 = p.rows[1], p.rows[2]
+  ok(p:IsShown() and p._h == 530 and A.H == 530 and r1:IsShown() and r1.id == 2589 and r2:IsShown() and r2.id == 969050 and p.title._text == "Valhalla: Shopping List",
+    "the AH list: its rows, 530 high again (no Checkout bar)")
+  local noCartUI = true
+  for _, r in ipairs(p.rows) do if rawget(r, "cart") ~= nil then noCartUI = false end end
+  for _, k in ipairs({ "cartBar", "cv", "confirm" }) do if rawget(p, k) ~= nil then noCartUI = false end end
+  ok(noCartUI, "no cart UI: no + on the rows, no Checkout (N), no cart view, no Yes / No ask")
+  local gone = {}
+  for _, k in ipairs({ "RowCart", "SetView", "AskBuy", "BuyNext", "BuyStart", "Confirm", "NextClick", "CartScan", "Plan", "LinePrice", "Fresh", "Guard",
+    "OnBuyEvent", "CancelBuy", "OnThrottleReady", "DebugListen", "Dbg", "Buyer", "BuildCart", "RefreshCart", "HandlerError", "WaitReady", "view", "buy", "BUY_EVENTS" }) do
+    if A[k] ~= nil then gone[#gone + 1] = "AH." .. k end
   end
-  CA.GetNumCommoditySearchResults = function(id) return #(comm[id] or {}) end
-  CA.GetCommoditySearchResultInfo = function(id, i) return (comm[id] or {})[i] end
-  CA.HasFullCommoditySearchResults = function() return true end
-  CA.GetNumItemSearchResults = function(key) return #(items[key.itemID] or {}) end
-  CA.GetItemSearchResultInfo = function(key, i) return (items[key.itemID] or {})[i] end
-  local bids = {}
-  W.calls.PlaceBid, W.calls.StartCommoditiesPurchase, W.calls.ConfirmCommoditiesPurchase, W.calls.CancelCommoditiesPurchase = nil, nil, nil, nil
-  CA.PlaceBid = function(aid, amount) W.Count("PlaceBid") bids[#bids + 1] = { aid, amount } end
-  CA.StartCommoditiesPurchase = function(id, n) W.Count("StartCommoditiesPurchase") W.started = { id, n } end
-  CA.ConfirmCommoditiesPurchase = function(id, n) W.Count("ConfirmCommoditiesPurchase") end
-  CA.CancelCommoditiesPurchase = function() W.Count("CancelCommoditiesPurchase") end
-  local function STick(n) for _ = 1, n or 1 do Tick() Sc.Tick() end end
-  local function SUntil(cond, max) for _ = 1, max or 3000 do if cond() then return true end STick() end return cond() end
-  local function Priced() W.Click(cv.scan) return SUntil(function() return not Sc.Running() end) end
-  ok(Priced() and Sc.last.kind == "cart" and Sc.last.state == "done", "Scan: the cart priced", Sc.last and Sc.last.text)
-  local house = Sc.House()
-  local cost, got = Sc.QuoteCost(house, 2589, 3)
-  local c2, g2, picks = Sc.QuoteCost(house, 969050, 1)
-  ok(cost == 67 and got == 3 and c2 == 4000 and g2 == 1 and picks[1].auction == 502, "exact: 2 at 21c + 1 at 25c (your own listing left out); the sword's cheapest auction (4000)", tostring(cost) .. " " .. tostring(c2))
-  ok(cv.rows[1].line._text == Sc.Money(67) and cv.rows[1].each._text == Sc.Money(22) .. " each" and cv.rows[2].line._text == Sc.Money(4000) and cv.total._text == "Total: " .. Sc.Money(4067),
-    "each row: price each and line total; the Total", cv.total._text .. " | " .. cv.rows[1].line._text .. " | " .. cv.rows[1].each._text .. " | " .. cv.rows[2].line._text)
-  ok((W.calls.PlaceBid or 0) + (W.calls.StartCommoditiesPurchase or 0) + (W.calls.ConfirmCommoditiesPurchase or 0) == 0, "Scan only reads: nothing bought")
-  I.CartSet(2589, 20)
-  ok(cv.rows[1].note._text == "Only 12 listed (of 20)", "more than listed: said (short supply)", cv.rows[1].note._text)
-  I.CartSet(2589, 3)
+  for _, k in ipairs({ "Cart", "CartLine", "CartAdd", "CartSet", "CartRemove", "CartBought", "CartCount", "LogBuy", "BuyLines", "BUY_RESULTS", "BUYS_KEEP" }) do
+    if I[k] ~= nil then gone[#gone + 1] = "I." .. k end
+  end
+  for _, k in ipairs({ "Quote", "QuoteCost", "quotes" }) do if Sc[k] ~= nil then gone[#gone + 1] = "Scan." .. k end end
+  ok(#gone == 0, "the cart's and the buying's code: gone", table.concat(gone, ", "))
+  -- no purchase API anywhere in the addon's code (comments and the changelog aside)
+  local hits = {}
+  local addonRoot = arg[1] or (((arg[0] or ""):match("^(.*[/\\])") or "./") .. "../../Valhalla/")
+  local p2 = io.popen('find "' .. addonRoot .. '" -name "*.lua" -not -path "*/Libs/*" -not -path "*/Locales/*" -not -name "Changelog.lua"')
+  local nfiles = 0
+  for path in p2:lines() do
+    nfiles = nfiles + 1
+    local fh = io.open(path, "r")
+    local n = 0
+    for line in fh:lines() do
+      n = n + 1
+      local code = line:gsub("%-%-.*$", "")
+      for _, api in ipairs({ "StartCommoditiesPurchase", "ConfirmCommoditiesPurchase", "CancelCommoditiesPurchase", "PlaceBid", "buyDebug", "buyGuard" }) do
+        if code:find(api, 1, true) and not code:find("I.S.buyGuard, I.S.buyDebug = nil, nil", 1, true) and not code:find("c.cart, c.buys, c.buyDebug = nil, nil, nil", 1, true) then hits[#hits + 1] = path:match("[^/]+$") .. ":" .. n .. " " .. api end
+      end
+    end
+    fh:close()
+  end
+  p2:close()
+  ok(nfiles > 20 and #hits == 0, "no buy API referenced (StartCommoditiesPurchase, ConfirmCommoditiesPurchase, CancelCommoditiesPurchase, PlaceBid), no buydebug, no price guard", table.concat(hits, ", "))
+  ok(I.SETTINGS.buyGuard == nil and I.SETTINGS.buyDebug == nil and I.S.buyGuard == nil and I.S.buyDebug == nil, "the price-guard and buydebug settings: gone")
 
-  print("-- Buy (1.2.9, as the AH's own Buy): asks first; Yes asks the game's price, Confirm buys; Buy next each of the rest")
-  CA.StartCommoditiesPurchase = function(id, n, unit) W.Count("StartCommoditiesPurchase") W.started = { id, n, unit } end
-  CA.ConfirmCommoditiesPurchase = function(id, n) W.Count("ConfirmCommoditiesPurchase") W.confirmed = { id, n } end
-  W.quoteLeft = nil
-  CA.GetQuoteDurationRemaining = function() return W.quoteLeft end
-  local keepReady = CA.IsThrottledMessageSystemReady
-  W.ahReady = true
-  CA.IsThrottledMessageSystemReady = function() return W.ahReady end
-  W.Click(cv.buyBtn)
-  local ct = p.confirm.text._text
-  ok(p.confirm:IsShown() and ct:find(Sc.Money(4067), 1, true) and ct:find("2 purchase", 1, true) and ct:find("Each purchase needs your own clicks", 1, true) and ct:find("Confirm buys", 1, true) and ct:find("You have", 1, true) and ct:find("+5%", 1, true),
-    "the ask: the total, your gold, your own clicks (price first, then Confirm), the guard", ct)
-  ok((W.calls.StartCommoditiesPurchase or 0) == 0, "nothing bought until Yes")
-  W.Click(p.confirm.no)
-  ok(not p.confirm:IsShown() and not A.pendingSteps and (W.calls.StartCommoditiesPurchase or 0) == 0, "No: nothing")
-  W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  ok(W.calls.StartCommoditiesPurchase == 1 and W.started[1] == 2589 and W.started[2] == 3 and W.started[3] == 23 and A.buy.state == "waiting" and A.buy.phase == "quote" and not cv.next:IsShown()
-    and cv.status._text:find("Asking the Auction House's price for Linen Cloth x3", 1, true), "Yes: the game's price asked for the stackable line (Linen x3, its unit price 23c as the 3rd value, as Blizzard's Buy)", cv.status._text)
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 68)
-  ok((W.calls.ConfirmCommoditiesPurchase or 0) == 0 and A.buy.state == "quoted" and cv.next:IsShown() and not cv.next.off and cv.next.text._text == "Confirm: Linen Cloth x3 for " .. Sc.Money(68)
-    and cv.status._text:find("Click Confirm", 1, true), "the price within the guard (68 <= 67 +5%): not bought yet; 'Confirm: Linen Cloth x3 for 68c' shown", cv.next.text._text)
-  W.Click(cv.buyBtn)
-  ok(not p.confirm:IsShown() and (W.calls.ConfirmCommoditiesPurchase or 0) == 0, "Buy while a price is shown: nothing (Confirm)")
-  W.Click(cv.next)
-  ok(W.calls.ConfirmCommoditiesPurchase == 1 and W.confirmed[1] == 2589 and W.confirmed[2] == 3 and A.buy.state == "waiting" and A.buy.phase == "confirm" and not cv.next:IsShown(), "Confirm (your click): bought at the game's price")
-  local nb = #I.char.buys
-  W.gold = W.gold - 68
-  W.Fire("PLAYER_MONEY")
-  local b1 = I.char.buys[#I.char.buys]
-  ok(#I.char.buys == nb + 1 and b1 and b1.id == 2589 and b1.n == 3 and b1.total == 68 and b1.result == "bought" and b1.note == "gold went down" and not I.CartLine(2589), "your gold went down by 68: bought, logged (68), off the cart")
-  W.Fire("COMMODITY_PURCHASE_SUCCEEDED")
-  ok(#I.char.buys == nb + 1, "the game's success after that: not counted twice")
-  I.char.mail[969050] = nil
-  W.Fire("COMMODITY_PURCHASED", 2589, 3)
-  ok(I.MailOf(2589) == 3, "its mail tracked (the game's purchase event after the line came off the cart)")
-  ok(A.buy.state == "ready" and cv.next:IsShown() and cv.next.text._text == "Buy next: Fine Sword x1 (2/2) - " .. Sc.Money(4000) and (W.calls.PlaceBid or 0) == 0, "then: Buy next for the sword (not bought on its own)", cv.next.text._text)
-  W.Click(cv.buyBtn)
-  ok(not p.confirm:IsShown(), "Buy again while buying: nothing (Buy next)")
-  W.Click(cv.next)
-  ok(W.calls.PlaceBid == 1 and bids[1][1] == 502 and bids[1][2] == 4000 and A.buy.phase == "bid", "Buy next: its auction at its buyout (an item: bid on your click)")
-  W.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 502)
-  ok(A.buy.state == "done" and I.CartCount() == 0 and I.char.buys[#I.char.buys].result == "bought" and I.char.buys[#I.char.buys].total == 4000 and not cv.next:IsShown(), "bought: the cart empty, done")
-  ok(cv.status._text:find("bought 2 of 2", 1, true) and Printed("Done: bought 2 of 2"), "said: bought 2 of 2, what it cost", cv.status._text)
+  print("-- (1.2.10) the rows' Search buttons: 64 px again, as before 1.2.7")
+  local s64 = true
+  for _, r in ipairs(p.rows) do if not (r.search and r.search._w == 64 and r.search._h == 20) then s64 = false end end
+  ok(s64 and r1.search:IsShown() and r1.search:GetAttribute("type") == "click" and r1.name._w == 120 and r1.hover._w == 146 and r1.need._points[1][2] == 150,
+    "every row: its Search button 64 x 20 (secure click), the name 120 wide, need at 150 (pre-1.2.7)", ("%s %s %s"):format(tostring(r1.search._w), tostring(r1.name._w), tostring(r1.need._points[1][2])))
+  W.Run(r1.search, "PreClick")
+  ok(AuctionHouseFrame.SearchBar.SearchBox:GetText() == "Linen Cloth", "Search: the item's name into the AH's search box (the AH's own Search clicked by the game)", AuctionHouseFrame.SearchBar.SearchBox:GetText())
+  ok((W.calls.StartCommoditiesPurchase or 0) == 0 and (W.calls.ConfirmCommoditiesPurchase or 0) == 0 and (W.calls.PlaceBid or 0) == 0, "nothing ever bought by Valhalla")
 
-  print("-- the guards: price rose, not enough gold, a failure, the AH closing, each step's own timeout")
-  local function Again(n) I.CartAdd(2589, n or 3) A.buy = nil Priced() W.Click(cv.buyBtn) W.Click(p.confirm.yes) end
-  local function Last() return I.char.buys[#I.char.buys] end
-  local confirms = W.calls.ConfirmCommoditiesPurchase
-  Again()
-  W.Fire("COMMODITY_PRICE_UPDATED", 30, 90)
-  ok(W.calls.ConfirmCommoditiesPurchase == confirms and W.calls.CancelCommoditiesPurchase == 1 and Last().result == "rose" and I.CartLine(2589) and A.buy.state == "done",
-    "over the guard (90 > 70): cancelled, not bought, logged; it stays in the cart")
-  W.gold = 10
-  local starts = W.calls.StartCommoditiesPurchase
-  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  ok(W.calls.StartCommoditiesPurchase == starts and A.buy.state == "stopped" and Last().result == "gold" and cv.gold._text:find("not enough", 1, true), "not enough gold: not started, stopped, said")
-  W.gold = 100000
-  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
-  W.Click(cv.next)
-  W.Fire("COMMODITY_PURCHASE_FAILED")
-  ok(A.buy.state == "stopped" and Last().result == "failed" and I.CartLine(2589), "the purchase failed: stopped, logged, still in the cart")
-  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
-  local cancels = W.calls.CancelCommoditiesPurchase
-  W.Fire("AUCTION_HOUSE_CLOSED")
-  ok(A.buy.state == "stopped" and W.calls.CancelCommoditiesPurchase == cancels + 1 and Last().result == "cancelled", "the AH closed with a price shown (before Confirm): cancelled, stopped")
-  W.Fire("COMMODITY_PURCHASE_SUCCEEDED")
-  ok(Last().result == "cancelled", "a late answer after that: ignored")
-
-  print("-- (1.2.9) each visit starts on the list (the cart kept); minimized or not as you left it")
-  ok(A.view == "list", "the AH closed: back to the list for next time")
-  W.now = W.now + 5
-  W.Fire("AUCTION_HOUSE_SHOW")
-  ok(A.view == "list" and p:IsShown() and p.rows[1]:IsShown() and not cv:IsShown() and p.cartBar:IsShown() and I.CartLine(2589) and p.cartBar.checkout.text._text == "Checkout (1)",
-    "the AH opened again: the list, not the cart (its item kept: Checkout (1))")
-  A.SetView("cart")
+  print("-- (1.2.10) the slash commands buys / buydebug: gone")
+  ns.printed = {}
+  local okB = pcall(Slash, "invest", "buys")
+  local okD = pcall(Slash, "invest", "buydebug on")
+  ok(okB and okD and not Printed("No purchases logged") and not Printed("Buy debug") and not Printed("bought") and I.S.buyDebug == nil, "/valhalla invest buys, buydebug: no purchase log, no debug (no error)", table.concat(ns.printed, " | "))
   W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW")
-  ok(A.view == "list" and not cv:IsShown() and I.CartLine(2589), "left on the cart: the next visit opens on the list all the same")
+
+  print("-- (1.2.10) the saved cart, purchase log, buy debug log and settings: cleared on load")
+  local c = I.char
+  c.cart, c.buys, c.buyDebug = { { id = 2589, n = 3 } }, { { id = 2589, n = 3, result = "bought" } }, { "12:00 1.00 Start" }
+  I.db.settings.buyGuard, I.db.settings.buyDebug = 5, true
+  I.InitDB()
+  ok(I.char == c and c.cart == nil and c.buys == nil and c.buyDebug == nil and I.S.buyGuard == nil and I.S.buyDebug == nil and #c.lists == 1 and c.lists[1].name == "Search Test",
+    "on load: the 1.2.7-1.2.9 cart, purchase log, buy debug log and their settings cleared (the lists kept); the game's own save writes it")
+  Slash("invest", "settings")
+  local spg = T.Views().settings.page
+  ok(spg.guard == nil and spg.quietDS ~= nil, "Settings: no cart price guard (Dave's Sack's box kept)")
+
+  print("-- (1.2.10) each visit opens on the list; minimized or not as you left it")
+  W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW")
+  ok(p:IsShown() and r1:IsShown() and p.title._text == "Valhalla: Shopping List", "the AH opened: the list")
   A.SetMinimized(true)
   W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW")
-  ok(I.S.ahPanelMin == true and not p:IsShown() and A.Mini():IsShown(), "left minimized: still minimized on the next visit")
-  ok(ValhallaInvestDB.settings.ahPanelMin == true, "minimized is saved (a setting: kept across /reload)")
+  ok(I.S.ahPanelMin == true and not p:IsShown() and A.Mini():IsShown() and ValhallaInvestDB.settings.ahPanelMin == true, "left minimized: still minimized on the next visit (saved)")
   A.SetMinimized(false)
   W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW")
-  ok(I.S.ahPanelMin == false and p:IsShown() and not A.Mini():IsShown() and A.view == "list", "left open: open on the next visit (on the list)")
-  A.SetView("cart") A.SetMinimized(true)
-  W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW")
-  A.SetMinimized(false)
-  ok(A.view == "list" and p.rows[1]:IsShown() and not cv:IsShown(), "minimized on the cart, closed, opened, shown again: the list")
-  W.Click(p.cartBar.checkout)
-  A.buy = nil W.Click(cv.buyBtn)
-  ok(not p.confirm:IsShown() and cv.status._text:find("Press Scan first", 1, true), "the next visit: the prices are old, Scan first")
-  Priced() W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  local c0 = W.calls.CancelCommoditiesPurchase
-  W.RunTimers()
-  ok(A.buy.state == "stopped" and Last().result == "noquote" and W.calls.CancelCommoditiesPurchase == c0 + 1 and A.buy.note:find("no price from the Auction House for Linen Cloth x3 in 10 seconds", 1, true),
-    "no price in 10 seconds: its own words, cancelled, stopped", A.buy.note)
-  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
-  W.Click(cv.next)
-  W.RunTimers()
-  ok(A.buy.state == "stopped" and Last().result == "noconfirm" and A.buy.note:find("didn't finish buying Linen Cloth x3", 1, true), "Confirmed, no answer in 10 seconds (gold the same): its own words", A.buy.note)
-  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
-  W.Click(cv.next)
+  ok(I.S.ahPanelMin == false and p:IsShown() and not A.Mini():IsShown() and r1:IsShown(), "left open: open on the next visit, on the list")
+
+  print("-- In mail: what you buy with the AH's own Buy is tracked as before")
   W.Fire("COMMODITY_PURCHASED", 2589, 3)
-  ok(A.buy.state == "done" and Last().result == "bought" and Last().note == "item arrived" and not I.CartLine(2589), "Confirmed, then the item arrived (COMMODITY_PURCHASED): bought")
-  Again()
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
-  W.Click(cv.next)
-  W.gold = W.gold - 67
-  W.RunTimers()
-  ok(A.buy.state == "done" and Last().result == "bought" and Last().total == 67 and Last().note == "gold went down", "Confirmed, no event, but your gold went down: bought (at the timeout)")
-  W.gold = 100000
+  W.Fire("ITEM_PURCHASED", 969050)
+  W.Fire("COMMODITY_PURCHASED", 4306, 2)
+  ok(I.MailOf(2589) == 3 and I.MailOf(969050) == 1 and I.MailOf(4306) == 0, "listed items bought: in the mail (3, 1); an item on no list: not tracked")
+  A.Refresh()
+  ok(p.mail._text:find("In the mail: ", 1, true) and p.mail._text:find("Linen Cloth x3", 1, true) and r1.need._text == "In mail", "the panel: In the mail: Linen Cloth x3 ...; its row In mail", p.mail._text)
 
-  print("-- (1.2.9) the AH busy: nothing sent; Buy next back when it's ready")
-  local function BusyAgain() I.CartAdd(2589, 3) A.buy = nil Priced() W.ahReady = false W.Click(cv.buyBtn) W.Click(p.confirm.yes) end
-  starts = W.calls.StartCommoditiesPurchase
-  BusyAgain()
-  ok(W.calls.StartCommoditiesPurchase == starts and A.buy.state == "ready" and A.buy.busy and cv.next:IsShown() and cv.next.off and cv.status._text:find("Auction House busy: press Buy next again", 1, true),
-    "busy: not sent, said, Buy next greyed", cv.status._text)
-  W.Click(cv.next)
-  ok(W.calls.StartCommoditiesPurchase == starts, "Buy next while it's still busy: still nothing sent")
-  W.ahReady = true
-  W.Fire("AUCTION_HOUSE_THROTTLED_SYSTEM_READY")
-  ok(not A.buy.busy and not cv.next.off and cv.status._text:find("ready: press Buy next", 1, true), "the AH ready: Buy next back", cv.status._text)
-  W.Click(cv.next)
-  ok(W.calls.StartCommoditiesPurchase == starts + 1 and A.buy.phase == "quote", "then Buy next: the price asked")
-  W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW") W.Click(p.cartBar.checkout)
-  BusyAgain()
-  W.ahReady = true
-  W.RunTimers()
-  ok(not A.buy.busy and not cv.next.off, "no event, but ready when it looks again (each second): Buy next back")
-
-  print("-- (1.2.9) the quote's time, a secret price, an error while buying")
-  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  W.quoteLeft = 20
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
-  c0 = W.calls.CancelCommoditiesPurchase
-  W.RunTimers()
-  ok(A.buy.state == "ready" and W.calls.CancelCommoditiesPurchase == c0 + 1 and Last().result == "expired" and cv.next.text._text:find("^Buy next: Linen Cloth") and cv.status._text:find("ran out before Confirm", 1, true),
-    "the quote ran out before Confirm: cancelled, Buy next asks again", cv.status._text)
-  W.Click(cv.next)
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
-  W.quoteLeft = 0
-  confirms = W.calls.ConfirmCommoditiesPurchase
-  W.Click(cv.next)
-  ok(W.calls.ConfirmCommoditiesPurchase == confirms and A.buy.state == "ready" and Last().result == "expired", "Confirm after the game's quote is over: not bought, ask again")
-  W.quoteLeft = nil
-  W.Click(cv.next)
-  local keepSecret = issecretvalue
-  issecretvalue = function(v) return v == "SECRET" end
-  c0 = W.calls.CancelCommoditiesPurchase
-  W.Fire("COMMODITY_PRICE_UPDATED", "SECRET", "SECRET")
-  ok(A.buy.state == "stopped" and Last().result == "unreadable" and W.calls.CancelCommoditiesPurchase == c0 + 1 and A.Num("SECRET") == nil and A.Num(5) == 5 and A.Num(nil) == nil,
-    "a price addons can't read (a secret value): cancelled, said, no error (Num never hands back a secret)")
-  issecretvalue = keepSecret
-  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  local keepGuard = A.Guard
-  A.Guard = function() error("boom") end
-  ns.printed = {}
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
-  A.Guard = keepGuard
-  ok(A.buy.state == "stopped" and Printed("an error while buying %(COMMODITY_PRICE_UPDATED%).*boom") and Last().result == "failed", "an error in the handler: said in chat (not swallowed), stopped", table.concat(ns.printed, " | "))
-
-  print("-- (1.2.9) /valhalla invest buydebug on|off")
-  ns.printed = {}
-  Slash("invest", "buydebug on")
-  ok(I.S.buyDebug == true and Printed("Buy debug: on") and A.DebugFrame() and rawget(A.DebugFrame(), "_events").ADDON_ACTION_BLOCKED and A.DebugFrame()._events.UI_ERROR_MESSAGE, "on: said; its listener on (blocked actions, errors, the throttle)")
-  I.char.buyDebug = nil
-  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  W.Fire("AUCTION_HOUSE_THROTTLED_MESSAGE_SENT")
-  W.Fire("ADDON_ACTION_BLOCKED", "Valhalla", "StartCommoditiesPurchase()")
-  W.Fire("COMMODITY_PRICE_UPDATED", 22, 67)
-  W.Click(cv.next)
-  W.Fire("COMMODITY_PURCHASE_SUCCEEDED")
-  local dl = table.concat(I.char.buyDebug or {}, "\n")
-  ok(Printed("buydebug: StartCommoditiesPurchase%(2589, 6, 24%)") and dl:find("step 1/1: Linen Cloth x6", 1, true) and dl:find("event AUCTION_HOUSE_THROTTLED_MESSAGE_SENT", 1, true)
-    and dl:find("event ADDON_ACTION_BLOCKED (Valhalla, StartCommoditiesPurchase())", 1, true) and dl:find("event COMMODITY_PRICE_UPDATED (22, 67)", 1, true) and dl:find("ConfirmCommoditiesPurchase(2589, 6)", 1, true)
-    and dl:find("bought Linen Cloth x6", 1, true), "each step and the game's answers: in chat and the saved log", dl)
-  ns.printed = {}
-  Slash("invest", "buydebug")
-  ok(Printed("Buy debug is on") and Printed("ConfirmCommoditiesPurchase"), "/valhalla invest buydebug: on or off, and the last lines")
-  Slash("invest", "buydebug off")
-  local nlog = #I.char.buyDebug
-  ok(I.S.buyDebug == false and not next(rawget(A.DebugFrame(), "_events") or {}), "off: its listener off")
-  A.buy = nil W.Click(cv.buyBtn) W.Click(p.confirm.yes)
-  W.Fire("AUCTION_HOUSE_CLOSED") W.Fire("AUCTION_HOUSE_SHOW") W.Click(p.cartBar.checkout)
-  ok(#I.char.buyDebug == nlog, "off: nothing logged")
-  CA.IsThrottledMessageSystemReady = keepReady
-  ok(#A.BUY_EVENTS == 9 and not next(rawget(A.Buyer(), "_events") or {}), "the purchase events: listened to only while buying")
-
-  print("-- the panel's bottom (1.2.8): each thing in its own space, inside the panel")
+  print("-- the panel's bottom (1.2.8, 1.2.10): each thing in its own space, inside the panel")
   local function Y(f) for _, pt in ipairs(f._points) do if pt[1] == "BOTTOMLEFT" or pt[1] == "BOTTOMRIGHT" then return pt[#pt] end end end
   local function Span(f, h) local b = Y(f) return b, b + (rawget(f, "_h") or h or 0) end
   local ck = p.check
-  A.SetView("list")
   local sb, st = Span(ck.status)
   local _, ct = Span(ck)
-  local bb, bt = Span(p.cartBar)
   local pagerBottom = A.H - (84 + A.ROWS * 26 + 2 + 20)
-  ok(ck.status:IsShown() and ck.status._points[1][2] == p and ck.status._points[2][1] == "RIGHT" and ck.status._h == A.Y.statusH and sb >= ct and st <= bb and bt <= pagerBottom and Y(p.mail) + 14 <= Y(ck),
-    "list: the status on its own full-width line (2 lines high) between the Scan button and Checkout; Checkout under the pager", ("%d-%d / %d / %d-%d / %d"):format(sb, st, ct, bb, bt, pagerBottom))
-  A.SetView("cart")
-  local cvw = p.cv
-  local b1, t1 = Span(cvw.back)
-  local n1, n2 = Span(cvw.next)
-  local s1, s2 = Span(cvw.status)
-  local g1, g2 = Span(cvw.gold, 12)
-  local tt1, tt2 = Span(cvw.total, 15)
-  local cartPager = A.H - (56 + A.CART_ROWS * A.CART_ROW_H + 2 + 20)
-  ok(not ck.status:IsShown() and not ck.button:IsShown() and b1 >= Y(ck) and Y(cvw.scan) == b1 and Y(cvw.buyBtn) == b1 and t1 <= n1 and n2 <= s1 and s2 <= g1 and g2 <= tt1 and tt2 <= cartPager and cvw.status._h == A.Y.cartStatusH,
-    "cart: the old status hidden; Back / Scan / Buy, Buy next, the status line, gold, Total: each in its own space, under the items", ("%d-%d %d-%d %d-%d %d-%d %d-%d / %d"):format(b1, t1, n1, n2, s1, s2, g1, g2, tt1, tt2, cartPager))
-  local keepC = I.char.cart
-  I.char.cart = {}
+  ok(ck.status:IsShown() and ck.status._points[1][2] == p and ck.status._points[2][1] == "RIGHT" and ck.status._h == A.Y.statusH and sb >= ct and st <= pagerBottom and Y(p.mail) + 14 <= Y(ck) and sb >= 0 and st <= A.H,
+    "the status: its own full-width line (2 lines high) above the Scan button, under the pager, inside the panel", ("%d-%d / %d / %d"):format(sb, st, ct, pagerBottom))
+  for i = 1, 30 do I.char.lists[1].items[#I.char.lists[1].items + 1] = { id = 100000 + i, n = 1 } end
   A.Refresh()
-  ok(cvw.empty:IsShown() and cvw.empty._points[1][1] == "CENTER" and cvw.empty._justifyH ~= "LEFT" and not cvw.total:IsShown() and not cvw.gold:IsShown() and not cvw.next:IsShown(),
-    "an empty cart: its message in the middle; no Total, gold or Buy next")
-  I.char.cart = keepC
-  A.SetView("cart")
-  print("-- the purchase log, the setting")
-  ns.printed = {}
-  Slash("invest", "buys")
-  ok(Printed("Linen Cloth x3: .*%(bought%)") and Printed("skipped: price rose") and Printed("no price from the AH") and Printed("confirmed, no purchase answer") and Printed("price ran out before Confirm"), "/valhalla invest buys: each purchase, newest first (each step's own words)", table.concat(ns.printed, " | "))
-  ok(I.SETTINGS.buyGuard == 5 and A.Guard() == 5, "the price guard: +5% by default (a setting)")
-  W.Click(cv.back)
-  ok(A.view == "list" and p.rows[1]:IsShown() and p.cartBar:IsShown() and not cv:IsShown(), "Back: the list")
+  local pg = p.pager
+  local pb = Y(pg) or (A.H - (84 + A.ROWS * 26 + 2 + 20))
+  ok(pg:IsShown() and st <= pagerBottom, "a long list: the pager shown, the status still under it", ("%s %d"):format(tostring(pb), st))
+  table.remove(I.char.lists[1].items) for i = 1, 29 do table.remove(I.char.lists[1].items) end
+  ck.status:SetText("Full scan done: 12345 of your 678 items listed (Alliance). Next full scan in 15 min. A long line that wraps to two.")
+  ok(ck.status._maxLines == 2 or ck.status._wordWrap ~= false, "a long status: wraps, 2 lines at most")
+  A.Refresh()
 
   CA.SendSearchQuery, CA.GetNumCommoditySearchResults, CA.GetCommoditySearchResultInfo, CA.HasFullCommoditySearchResults = keep.send, keep.ncs, keep.cs, keep.full
   CA.GetNumItemSearchResults, CA.GetItemSearchResultInfo, CA.PlaceBid, CA.StartCommoditiesPurchase, CA.ConfirmCommoditiesPurchase, CA.CancelCommoditiesPurchase = keep.nis, keep.is, keep.bid, keep.start, keep.conf, keep.cancel
   I.char.bags, I.char.bank, I.char.mail = keepBB[1], keepBB[2], keepBB[3]
   I.char.lists, I.char.activeList, I.undo, I.char.cart, I.char.buys, GetMoney = keep.lists, keep.active, keep.undo, keep.cart, keep.buys, keep.money
-  A.buy = nil
   ok(#W.sizeErrors == errs0, "no handler error")
 end)()
 

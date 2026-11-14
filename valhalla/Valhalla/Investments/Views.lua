@@ -1184,21 +1184,6 @@ local function BuildSettings(page)
 	Section(L["Auction House"])
 	Opt(L["Show my Shopping List beside the Auction House"], "ahPanel", function() if I.AH then I.AH.Refresh() end end)
 	Note(L["Search runs the Auction House's own search, on your click. The list's - minimizes it to a small button. Scan (AH Market's prices) is on that list too."])
-	-- (1.2.7) the checkout cart's price guard
-	local guard = CreateFrame("Frame", nil, body)
-	guard:SetSize(400, 22)
-	local gdl = Text(guard, 12)
-	gdl:SetPoint("LEFT")
-	local function GuardText() gdl:SetText(L["Cart price guard: +%d%%"]:format(S.buyGuard or 5)) end
-	local gminus = V.Button(guard, "-", 22, 20, function() S.buyGuard = math.max(0, (S.buyGuard or 5) - 1) GuardText() I.Changed() end)
-	gminus:SetPoint("LEFT", 200, 0)
-	local gplus = V.Button(guard, "+", 22, 20, function() S.buyGuard = math.min(50, (S.buyGuard or 5) + 1) GuardText() I.Changed() end)
-	gplus:SetPoint("LEFT", 226, 0)
-	if ns.Style then ns.Style.Stepper(gminus, gplus) end
-	GuardText()
-	page.guard = { frame = guard, minus = gminus, plus = gplus, label = gdl }
-	Place(guard)
-	Note(L["Checkout cart: a stackable item whose price rose more than this since the cart's Scan is skipped (not bought). Each purchase is your own click: Yes starts the first, Buy next each of the rest; stackable goods show the game's price first, and Confirm buys."])
 	-- (1.2.9) Dave's Sack's own AH scans off (only Valhalla scans the AH)
 	page.quietDS = Opt(L["Turn off Dave's Sack's own Auction House scans (only Valhalla scans)"], "quietDavesSack", function() if I.DavesSack then pcall(I.DavesSack.Apply) end end)
 	Note(L["Dave's Sack searched all your bag items (and every 2 hours the whole AH) each time the Auction House opened, while you were buying. Off here: its scans as before (from the next AH visit). Its bags and price tooltips work either way."])

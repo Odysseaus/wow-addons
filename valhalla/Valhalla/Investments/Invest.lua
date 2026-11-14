@@ -14,8 +14,8 @@
 -- variable needs a full restart of the game, not /reload). On/off: ValhallaDB.invest.enabled
 -- (/valhalla invest on|off), like the other modules.
 --
--- What it never does: sell, post or bid for you; write on the game's frames. (1.2.7) It buys only from the AH
--- list's checkout cart, one purchase per click of yours (Yes, then Buy next): the game requires a click for each.
+-- What it never does: sell, post, bid or buy for you; write on the game's frames. (1.2.10: the 1.2.7-1.2.9 checkout
+-- cart, which bought on your clicks, is gone: WoW Forever blocks an addon's Auction House purchase calls.)
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -39,8 +39,6 @@ I.SETTINGS = {
 	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (Owned: what you own costs nothing; 1.0.1: "vendor" gone,
 	-- moved to "market"); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false, craftPerStack = false,   -- (1.2.6: Craft Show: Per stack)
-	buyGuard = 5,                                               -- (1.2.7: the cart's price guard: skip an item whose price rose more than this %)
-	buyDebug = false,                                           -- (1.2.9: /valhalla invest buydebug on|off: each buying step in chat and buyDebug)
 	quietDavesSack = true,                                      -- (1.2.9: Dave's Sack's own AH scans turned off: only Valhalla scans the AH)
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all", topView = "movers",
@@ -101,8 +99,9 @@ function I.InitDB()
 	local c = r.chars[name] or {}
 	r.chars[name] = c
 	db.account.names = type(db.account.names) == "table" and db.account.names or {}   -- (1.2.7: item names seen, for the search)
-	c.cart = type(c.cart) == "table" and c.cart or {}       -- (1.2.7: the AH checkout cart: { { id, n, list } })
-	c.buys = type(c.buys) == "table" and c.buys or {}       -- (1.2.7: the purchase log)
+	-- (1.2.10) the 1.2.7-1.2.9 checkout cart, its purchase log and buy debug log: cleared on load (the game's own
+	-- save then writes them gone; nothing else in WTF touched)
+	c.cart, c.buys, c.buyDebug = nil, nil, nil
 	c.bags = c.bags or {}
 	c.bank = c.bank or {}
 	c.want = c.want or {}
@@ -110,6 +109,7 @@ function I.InitDB()
 	I.db, I.realm, I.char, I.me = db, r, c, name
 	I.MigrateLists(c)
 	I.S = db.settings
+	I.S.buyGuard, I.S.buyDebug = nil, nil   -- (1.2.10: the cart's price guard and buy debug are gone)
 	-- (1.0.1) Reagents: Owned: vendor is gone: Market; Craft's Known column is gone: its sort, the default
 	if I.S.craftOwned ~= "market" and I.S.craftOwned ~= "free" then I.S.craftOwned = "market" end
 	if type(I.S.sortCraft) == "string" and I.S.sortCraft:match("^known:") then I.S.sortCraft = "each:desc" end
@@ -316,9 +316,7 @@ end
 
 function I.AddMail(id, n)
 	id, n = tonumber(id), tonumber(n) or 1
-	-- (1.2.7: or in the cart, or just bought from it: the game's events can come either way round)
-	local justBought = I.cartBoughtAt and I.cartBoughtAt[id] and Now() - I.cartBoughtAt[id] < 120
-	if not (id and I.char and (I.Listed(id) or I.CartLine(id) or justBought)) or n <= 0 then return false end
+	if not (id and I.char and I.Listed(id)) or n <= 0 then return false end
 	local m = I.char.mail[id] or { n = 0 }
 	m.n = m.n + n
 	m.t = Now()
@@ -595,93 +593,6 @@ function I.ListAddNew(id, n)
 	ns:Print("%s", L["New list '%s' with %s (%d). Undo: the Undo button, or /valhalla undo."]:format(l.name, I.ItemName(id), n))
 	I.Changed()
 	return l
-end
-
---------------------------------------------------------------------------------
--- (1.2.7) The checkout cart (the AH list's): what to buy and how many, per character, saved. Bought lines come
--- off it (AHPanel.lua's buying); the purchase log keeps what happened.
---------------------------------------------------------------------------------
-
-function I.Cart()
-	local c = I.char
-	if not c then return {} end
-	if type(c.cart) ~= "table" then c.cart = {} end
-	return c.cart
-end
-
-function I.CartLine(id)
-	for i, e in ipairs(I.Cart()) do if e.id == id then return e, i end end
-end
-
-function I.CartAdd(id, n, lid)
-	id, n = tonumber(id), math.max(1, math.floor(tonumber(n) or 1))
-	if not (id and I.char) then return nil end
-	local e = I.CartLine(id)
-	if e then e.n = e.n + n
-	else
-		e = { id = id, n = n, list = lid }
-		local cart = I.Cart()
-		cart[#cart + 1] = e
-	end
-	I.Changed()
-	return e
-end
-
-function I.CartSet(id, n)
-	local e = I.CartLine(id)
-	if not e then return nil end
-	e.n = math.max(1, math.floor(tonumber(n) or e.n))
-	I.Changed()
-	return e
-end
-
-function I.CartRemove(id)
-	local _, i = I.CartLine(id)
-	if not i then return false end
-	table.remove(I.Cart(), i)
-	I.Changed()
-	return true
-end
-
--- n bought: off its line (the line goes at 0)
-function I.CartBought(id, n)
-	local e, i = I.CartLine(id)
-	if not e then return end
-	e.n = e.n - (n or e.n)
-	if e.n <= 0 then table.remove(I.Cart(), i) end
-	I.Changed()
-end
-
-function I.CartCount() return #I.Cart() end
-
--- the purchase log: { t, house, id, name, n, total, kind, result, note }
-I.BUYS_KEEP = 200
-function I.LogBuy(e)
-	local c = I.char
-	if not c then return end
-	if type(c.buys) ~= "table" then c.buys = {} end
-	e.t = e.t or Now()
-	e.name = e.name or I.ItemName(e.id)
-	c.buys[#c.buys + 1] = e
-	while #c.buys > I.BUYS_KEEP do table.remove(c.buys, 1) end
-end
-
-I.BUY_RESULTS = { bought = "bought", rose = "skipped: price rose", gold = "not enough gold", failed = "failed",
-	cancelled = "cancelled", noanswer = "no answer", unavailable = "price unavailable",
-	noquote = "no price from the AH", noconfirm = "confirmed, no purchase answer", expired = "price ran out before Confirm",
-	unreadable = "price unreadable" }
-function I.BuyLines(max)
-	local out, buys = {}, (I.char and I.char.buys) or {}
-	max = max or 20
-	for i = #buys, math.max(1, #buys - max + 1), -1 do
-		local b = buys[i]
-		local when = date and date("%m-%d %H:%M", b.t) or tostring(b.t)
-		local money = I.Scan and b.total and I.Scan.Money(b.total) or tostring(b.total or "-")
-		out[#out + 1] = L["%s  %s x%d: %s (%s)%s"]:format(when, b.name or ("item:" .. tostring(b.id)), b.n or 0, money,
-			L[I.BUY_RESULTS[b.result] or b.result or "?"], b.house and (", " .. b.house) or "")
-	end
-	if #out == 0 then out[1] = L["No purchases logged yet (the AH list's checkout cart logs each one)."] end
-	return out
 end
 
 -- the builder's draft
@@ -1180,8 +1091,6 @@ function I.OnEvent(event, a1, a2)
 		if I.Trainer then pcall(I.Trainer.OnEvent, event, a1) end   -- (1.2.0, 1.2.1: a profession trainer's skill levels, for Top 10)
 	elseif event == "REPLICATE_ITEM_LIST_UPDATE" then
 		if I.diagReplicate then I.DiagReplicateDone() end
-	elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then
-		if I.AH and I.AH.OnThrottleReady then I.AH.OnThrottleReady() end   -- (1.2.9: Buy next back after "AH busy")
 	end
 end
 
@@ -1200,7 +1109,6 @@ function mod:OnEnable()
 	if I.AH then I.AH.Enable() end
 	if I.Tooltip then pcall(I.Tooltip.Hook) end
 	if C_Timer and C_Timer.After then C_Timer.After(2, I.ClaimKey) end   -- (v0.4.2.8: the I key, once)
-	if I.AH and I.AH.DebugListen then I.AH.DebugListen(I.S.buyDebug) end   -- (1.2.9)
 	pcall(I.DavesSack.Apply)   -- (1.2.9: Dave's Sack's own AH scans off, when it's loaded)
 end
 
@@ -1211,7 +1119,6 @@ function mod:OnDisable()
 	if I.Tabs then I.Tabs.Disable() end
 	if I.Merchant then I.Merchant.Disable() end
 	if I.AH then I.AH.Disable() end
-	if I.AH and I.AH.DebugListen then I.AH.DebugListen(false) end
 	pcall(I.DavesSack.Apply, false)   -- (Investments off: Dave's Sack scans as it did)
 end
 
@@ -1963,8 +1870,6 @@ end
 --   /valhalla invest on|off                          the whole tabbed window and Investments (off: the map as before)
 --   /valhalla invest diag [ah|replicate|stop]        what this client has, saved to the saved log (ah: the AH check)
 --   /valhalla invest scan [stop]                     at the Auction House: Scan (full when ready, else quick), or stop
---   /valhalla invest buys                            the checkout cart's purchase log
---   /valhalla invest buydebug [on|off]               (1.2.9) each buying step and the AH's answers (chat and saved)
 --   /valhalla undo                                   put back the last deleted list (or a list as it was before an edit)
 --   /valhalla tab map|invest|talents|professions|settings   switch the window's tab
 --   /valhalla want <item> [count], /valhalla unwant <item>   into / out of the Shopping List's builder
@@ -2040,25 +1945,6 @@ function mod:Slash(word, arg)
 			local d = I.Diag(rest)
 			for _, line in ipairs(I.DiagLines(d)) do Say("%s", line) end
 			I.Changed()
-			return
-		end
-		if sub == "buydebug" then   -- (1.2.9) each buying step and the game's answers, in chat and the saved log
-			if rest == "on" or rest == "off" then
-				I.S.buyDebug = rest == "on"
-				if I.AH and I.AH.DebugListen then I.AH.DebugListen(I.S.buyDebug) end
-				Say("%s", I.S.buyDebug and L["Buy debug: on. Each buying step and the Auction House's answers go to chat and the saved log (/reload writes it: ValhallaInvestDB, this character's buyDebug)."]
-					or L["Buy debug: off."])
-				I.Changed()
-			else
-				local log = I.char and I.char.buyDebug or {}
-				Say("%s", L["Buy debug is %s (/valhalla invest buydebug on|off). Its last lines:"]:format(I.S.buyDebug and L["on"] or L["off"]))
-				if #log == 0 then Say("%s", L["(nothing logged yet)"]) end
-				for i = math.max(1, #log - 19), #log do Say("%s", log[i]) end
-			end
-			return
-		end
-		if sub == "buys" then   -- (1.2.7) the checkout cart's purchase log
-			for _, line in ipairs(I.BuyLines(20)) do Say("%s", line) end
 			return
 		end
 		if sub == "trainer" then   -- (1.2.1) what the trainers gave Top 10
