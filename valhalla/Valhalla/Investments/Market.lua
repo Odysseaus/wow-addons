@@ -161,7 +161,7 @@ M.COLS = {
 		{ key = "each", label = L["Profit/item"], x = 334, w = 80, value = function(e) return e.each end },
 		{ key = "margin", label = L["Margin"], x = 418, w = 46, value = function(e) return e.margin end },
 		{ key = "listed", label = L["Listed"], x = 468, w = 42, value = function(e) return e.listed end },
-		{ key = "can", label = L["Can make"], x = 554, w = 56, value = function(e) return (M.Shown(e)) end },
+		{ key = "can", label = L["Can Make/Own"], x = 554, w = 56, value = function(e) return M.CanOwn(e) end },   -- (1.2.6: Own + Can make)
 		{ key = "total", label = L["Total"], alt = L["Total (stack)"], x = 614, w = 90, value = function(e) if M.PerStack() then return M.StackTotal(e.each, e.out) end return select(2, M.Shown(e)) end },
 	},
 	-- (Crafts' columns for a gathered item, no Cost: Sell at the AH's lowest, Profit/item after the cut, Have, Total)
@@ -740,7 +740,7 @@ M.HEAD_TIPS = {
 		each = function() return "Per item made: the sale less the AH's " .. CutPct() .. " cut, less the cost to make." end,
 		margin = "Profit as a share of the cost to make. \"-\": the reagents cost nothing.",
 		listed = "Units of it on the AH now.",
-		can = "Owned: how many crafts your reagents make (per Count). Market: how many the Invest Amount buys (0 without one).",
+		can = "Own + Can make. Own: how many of the item you already have (per Count: None 0, Bags only, Bags + bank). Can make: with Owned, how many crafts your reagents make; with Market, how many the Invest Amount buys (0 without one). Hover a number for its split: Own N + Can make M. Total counts Can make only.",
 		total = function() return "Owned: Profit per craft x Can make (yours cost nothing). Market with an Invest Amount: the sale after the AH's " .. CutPct() .. " cut x Can make, less the gold spent." end,
 	},
 	harvest = {
@@ -855,7 +855,7 @@ end
 -- (1.2.6) Per stack (Craft's Show: row, craftPerStack): Total = Profit/item x one full stack of the item, the
 -- game's own stack size (GetItemInfo's max stack: 20 for most herbs and cloth, 5 or 10 for some, 1 for what doesn't
 -- stack). An item the game hasn't sent yet: no size (a blank cell), asked for, the list redrawn when it comes (M.Fetch).
-M.STACK_TIP = "Per stack: Profit/item x one full stack of the item (the game's stack size, e.g. 20). An item that doesn't stack counts 1 (doesn't stack (1)). Blank until the game has sent the item. Have and Can make stay as they are."
+M.STACK_TIP = "Per stack: Profit/item x one full stack of the item (the game's stack size, e.g. 20). An item that doesn't stack counts 1 (doesn't stack (1)). Blank until the game has sent the item. Have and Can Make/Own stay as they are."
 function M.PerStack() return I.S and I.S.craftPerStack and true or false end
 function M.Stack(id)
 	if not id then return nil end
@@ -881,6 +881,25 @@ function M.StackLine(id, each)
 	if each and each < 0 then v = "-" .. v end
 	if n == 1 then return L["Per stack: doesn't stack (1): %s"]:format(v) end
 	return L["Per stack: %d x Profit/item = %s"]:format(n, v)
+end
+
+-- (1.2.6) Can Make/Own: how many of the crafted item you have (per Count as shown: None, or Reagents: Market, 0;
+-- Bags only; Bags + bank) plus Can make (M.Shown's, the Invest Amount's with one). Sorted by the sum. Total stays
+-- Can make's (the profit of crafting them; what you own is already made), and Per stack stays one full stack.
+function M.Own(id)
+	local c = M.CountNow()
+	if c == "none" or not id or not I.char then return 0 end
+	local n = (I.char.bags or {})[id] or 0
+	if c == "bank" then n = n + ((I.char.bank or {})[id] or 0) end
+	return n
+end
+function M.CanOwn(e)
+	local own, can = M.Own(e.out), (M.Shown(e)) or 0
+	return own + can, own, can
+end
+function M.CanOwnLine(e)
+	local _, own, can = M.CanOwn(e)
+	return L["Own %d + Can make %d"]:format(own, can)
 end
 
 function M.Shown(e)
@@ -1595,7 +1614,7 @@ local function BuildCraft(f, page)
 	f.showTitle:SetPoint("LEFT")
 	f.showTitle:SetText(L["Show:"])
 	f.known = V.Check(f.showRow, L["Known only"], function() return I.S.craftKnownOnly end, function(v) I.S.craftKnownOnly = v page:Refresh() end)
-	-- (1.2.6) Per stack: Total = Profit/item x one full stack (Have and Can make as they are)
+	-- (1.2.6) Per stack: Total = Profit/item x one full stack (Have and Can Make/Own as they are)
 	f.perStack = V.Check(f.showRow, L["Per stack"], function() return I.S.craftPerStack end, function(v) I.S.craftPerStack = v and true or false f.offset = 0 page:Refresh() end)
 	V.Grid({
 		{ frame = f.owned, title = f.owned.title, boxes = f.owned.boxes },
@@ -1686,10 +1705,16 @@ local function BuildCraft(f, page)
 			if not r.e then return {} end
 			local out = C.Lines(r.e, r.house) or {}
 			if M.PerStack() then out[#out + 1] = M.StackLine(r.e.out, r.e.each) end   -- (1.2.6)
+			out[#out + 1] = L["Can Make/Own: "] .. M.CanOwnLine(r.e)   -- (1.2.6)
 			return out
 		end
 		r.craft = M.Cells(r, "craft")
 		for k, fs in pairs(r.craft) do r[k] = fs end   -- (r.cost, r.sell, r.each, r.margin, r.listed, r.can, r.total)
+		-- (1.2.6) Can Make/Own's number: hover for Own N + Can make M
+		r.canHit = CreateFrame("Frame", nil, r)
+		r.canHit:SetAllPoints(r.can)
+		if r.canHit.EnableMouse then r.canHit:EnableMouse(true) end
+		V.Tip(r.canHit, L["Can Make/Own"], function() return r.e and M.CanOwnLine(r.e) or "" end)
 		r.harvest = M.Cells(r, "harvest")
 		r:Hide()
 		return r
@@ -1863,8 +1888,8 @@ local function BuildCraft(f, page)
 				Signed(r.each, e.each)
 				r.margin:SetText(e.margin and ("%d%%"):format(math.floor(e.margin * 100 + 0.5)) or "-")
 				r.listed:SetText(tostring(e.listed))
-				local n, total = M.Shown(e)   -- (v0.4.2.8: from the Invest Amount when one is typed)
-				r.can:SetText(tostring(n or 0))
+				local _, total = M.Shown(e)   -- (v0.4.2.8: from the Invest Amount when one is typed)
+				r.can:SetText(tostring((M.CanOwn(e))))   -- (1.2.6: Own + Can make)
 				StackCell(r.total, e.each, e.out, total)
 				shown[#shown + 1] = e.out
 				for _, part in ipairs(e.parts) do shown[#shown + 1] = part.id end
@@ -1904,9 +1929,9 @@ M.TIPS = {
 	market = { L["Market"], L["Price every reagent at the AH's lowest, or a vendor's if cheaper."] },
 	free = { L["Owned"], L["Reagents you have (per Count) cost nothing; the rest at market price. Can make: what yours make. The Invest Amount is off (greyed)."] },
 	knownCrafts = { L["Known only"], L["Only recipes you have learned."] },
-	perStack = { L["Per stack"], L["Total shows Profit/item x one full stack of the item (the game's stack size, e.g. 20; an item that doesn't stack: 1). Have and Can make stay as they are. Crafts and Harvest."] },
+	perStack = { L["Per stack"], L["Total shows Profit/item x one full stack of the item (the game's stack size, e.g. 20; an item that doesn't stack: 1). Have and Can Make/Own stay as they are. Crafts and Harvest."] },
 	knownHarvest = { L["Known only"], L["Hide what's above your skill. Items with no level data stay."] },
-	craftCount = { L["Count"], L["What Can make, Have and owned reagents count: None (buy everything), your bags, or bags and bank (as last seen). With Reagents: Market it's greyed and None (Owned brings your choice back)."] },
+	craftCount = { L["Count"], L["What Can Make/Own, Have and owned reagents count: None (buy everything), your bags, or bags and bank (as last seen). With Reagents: Market it's greyed and None (Owned brings your choice back)."] },
 	invest = { L["Invest Amount"], L["Gold to invest in each craft, with Reagents: Market: 50g, 1g 20s, or a number (gold). Can make and Total then show what it buys, on every row. Greyed with Owned and in Harvest (what you typed is kept). Not saved."] },
 	Alliance = { L["Alliance"], L["Prices from the Alliance Auction House (your scans there)."] },
 	Horde = { L["Horde"], L["Prices from the Horde Auction House (your scans there)."] },

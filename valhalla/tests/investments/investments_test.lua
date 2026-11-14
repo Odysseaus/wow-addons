@@ -2440,7 +2440,7 @@ print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), 
   mp:ShowSub("craft")
   local cf = mp.subs.craft
   local cl = {} for _, b in ipairs(cf.head.craft) do cl[#cl + 1] = b.text._text end
-  ok(table.concat(cl, "|") == "Craft (makes)|Cost to Make|Sell at|Profit/item|Margin|Listed|Can make|Total", "Crafts' headers: Cost to Make (1.0.1: no Known)", table.concat(cl, "|"))
+  ok(table.concat(cl, "|") == "Craft (makes)|Cost to Make|Sell at|Profit/item|Margin|Listed|Can Make/Own|Total", "Crafts' headers: Cost to Make (1.0.1: no Known; 1.2.6: Can Make/Own)", table.concat(cl, "|"))
   al, why = Aligned(cf.head.craftStrip, cf.rows[1], cf.rows[1].craft)
   ok(al, "Crafts: every header over its own column", why)
   local keepGP, keepGPI = GetProfessions, GetProfessionInfo
@@ -3651,7 +3651,9 @@ print("== 42. 1.2.6: the AH Market tabs' tooltips; Craft's Per stack (Total = Pr
   local hb for _, b in ipairs(cf.head.craft) do if b.key == "total" then hb = b end end
   ok(hb.text._text == "Total (stack)" and hb.tip.title == "Total (stack)" and Mk.HeadTip("craft", "total"):find("doesn't stack (1)", 1, true)
     and Mk.HeadTip("craft", "total"):find("e.g. 20", 1, true), "the header: Total (stack), its tip says how (and doesn't stack (1))")
-  ok(hb.col.w >= V.TextWidth(hb.text) + Mk.ARROW_W, "Total (stack) fits its column (room made for the longer title)", hb.col.w)
+  local fitW = V.TextWidth(hb.text) + Mk.ARROW_W
+  if hb.col.two then fitW = math.max(#"(stack)", #"Total") * 5 + Mk.ARROW_W end   -- (on two lines: Total / (stack))
+  ok(hb.col.w >= fitW, "Total (stack) fits its column (room made for the longer title)", hb.col.w .. " " .. tostring(hb.col.two))
   local bad = {}
   for id, n in pairs({ [967001] = 20, [967002] = 10, [967003] = 1 }) do
     local r, e = Row(id)
@@ -3665,6 +3667,7 @@ print("== 42. 1.2.6: the AH Market tabs' tooltips; Craft's Per stack (Total = Pr
   ok(same, "Can make unchanged")
   -- the row's tooltip says it
   local l20, l1 = Row(967001).Lines(), Row(967003).Lines()
+  l20[#l20], l1[#l1] = nil, nil   -- (the last line: Can Make/Own's split)
   ok(l20[#l20] == "Per stack: 20 x Profit/item = " .. Sc.Money(1045 * 20) and l1[#l1]:find("doesn't stack %(1%)"), "a row's tooltip: Per stack: 20 x Profit/item; doesn't stack (1)", l20[#l20] .. " | " .. l1[#l1])
   -- sorted by the shown value
   W.Click(hb)
@@ -3697,6 +3700,54 @@ print("== 42. 1.2.6: the AH Market tabs' tooltips; Craft's Per stack (Total = Pr
   W.Click(cf.perStack) Settle()
   ok(I.S.craftPerStack == false and hb.text._text == "Total" and hb.tip.title == "Total" and Row(967001).total._text == totalBefore, "unticked: Total as before")
   I.S.sortCraft = "each:desc"
+
+  print("-- Can Make/Own: Own (per Count) + Can make; sorted by the sum; Total from Can make")
+  local function Txt(id) local r = Row(id) return r and r.can._text end
+  local tot2 = Row(967002).total._text
+  ok(Txt(967001) == "3" and Txt(967002) == "3" and Mk.CanOwnLine(select(2, Row(967002))) == "Own 0 + Can make 3", "nothing of the item owned: Own 0 + Can make 3 = 3")
+  I.char.bags = { [968001] = 3, [967002] = 5 }
+  I.char.bank = { [967002] = 4, [967001] = 2 }
+  I.char.bagsSeen, I.char.bankSeen = (I.char.bagsSeen or 0) + 1, (I.char.bankSeen or 0) + 1
+  Settle()
+  ok(Txt(967002) == "8" and Txt(967001) == "3", "Count: Bags only: 5 in bags + 3 = 8 (the bank's not counted)", Txt(967002) .. " " .. Txt(967001))
+  local _, e2 = Row(967002)
+  ok(Mk.CanOwnLine(e2) == "Own 5 + Can make 3" and select(2, Mk.CanOwn(e2)) == 5 and select(3, Mk.CanOwn(e2)) == 3, "its split: Own 5 + Can make 3", Mk.CanOwnLine(e2))
+  ok(Row(967002).total._text == tot2, "Total unchanged: Profit/item x Can make (what you own is already made)", Row(967002).total._text .. " " .. tot2)
+  -- hovering the number: Own N + Can make M
+  do
+    local Frame = getmetatable(UIParent)
+    local ko, ka = Frame.IsMouseOver, GameTooltip.AddLine
+    Frame.IsMouseOver = function() return true end
+    local got = {}
+    GameTooltip.AddLine = function(_, t) got[#got + 1] = t end
+    local rc = Row(967002)
+    W.Run(rc.canHit, "OnEnter") W.RunTimers()
+    GameTooltip.AddLine, Frame.IsMouseOver = ka, ko
+    W.Run(rc.canHit, "OnLeave")
+    ok(got[1] == "Can Make/Own" and got[2] == "Own 5 + Can make 3", "hovering the number: Can Make/Own, Own 5 + Can make 3", table.concat(got, " | "))
+    local lines = rc.Lines()
+    ok(lines[#lines] == "Can Make/Own: Own 5 + Can make 3", "and the row's tooltip says it", lines[#lines])
+  end
+  I.S.craftCount = "bank" Settle()
+  ok(Txt(967002) == "12" and Txt(967001) == "5", "Count: Bags + bank: 5 + 4 + 3 = 12; 2 + 3 = 5", Txt(967002) .. " " .. Txt(967001))
+  -- sorted by the sum
+  local cb for _, b in ipairs(cf.head.craft) do if b.key == "can" then cb = b end end
+  ok(cb.text._text == "Can Make/Own" and Mk.HeadTip("craft", "can"):find("Own + Can make", 1, true) and Mk.HeadTip("craft", "can"):find("Total counts Can make only", 1, true),
+    "the header: Can Make/Own, its tip says Own + Can make (and Total counts Can make only)")
+  W.Click(cb) Settle()
+  local so = {} for _, e in ipairs(cf.list) do so[#so + 1] = e.out end
+  ok(I.S.sortCraft == "can:desc" and so[1] == 967002 and so[2] == 967001, "sorted by Can Make/Own: 12, then 5, then the 3s", table.concat(so, ","))
+  -- Per stack: Total still one full stack; the column as it is
+  W.Click(cf.perStack) Settle()
+  ok(Txt(967002) == "12" and Row(967002).total._text == Sc.Money(select(2, Row(967002)).each * 10), "Per stack: Total = one stack of 10; Can Make/Own still 12", Row(967002).total._text)
+  W.Click(cf.perStack) Settle()
+  I.S.craftCount = "none" Settle()
+  ok(Txt(967002) == tostring(select(3, Mk.CanOwn(select(2, Row(967002))))) and select(2, Mk.CanOwn(select(2, Row(967002)))) == 0, "Count: None: Own 0", Txt(967002))
+  I.S.craftCount = "bank" I.S.craftOwned = "market" Settle()
+  ok(Mk.Own(967002) == 0 and Txt(967002) == "0", "Reagents: Market (Count greyed, None): Own 0, Can make 0 without an Invest Amount", Txt(967002))
+  I.S.craftOwned, I.S.craftCount, I.S.sortCraft = "free", "bags", "each:desc"
+  I.char.bags, I.char.bank = { [968001] = 3 }, {}
+  Settle()
 
   print("-- Per stack in Harvest: Have unchanged")
   local hm = Sc.Market("StkH", true)
