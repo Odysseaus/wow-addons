@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.5", date = "2026-11-13", heads = { [1] = "Changed", [4] = "New", [5] = "Note", }, items = {
+		"|cff6e2c0aItem tooltip prices, as the game shows money|r: three lines, label on the left, coins on the right with the game's gold, silver and copper icons: Vendor, AH (with the scan's age) and AH total.",
+		"Vendor: what a vendor pays for it. None for an item vendors won't buy, and none when the tooltip already shows the game's own Sell Price.",
+		"AH total: the AH price times the quantity you're pointing at in your bags or bank, \"AH total (7)\"; none for a link or a merchant's item.",
+		"Settings > AH Market > AH total on item tooltips: Hovered quantity (the default) or Everything held (bags and bank, \"AH total (12 held)\").",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.4", date = "2026-11-12", heads = { [1] = "Changed", [3] = "Note", }, items = {
 		"|cff6e2c0aTop 10 knows more crafting levels|r: 327 more crafted items now have their required skill (read from Wowhead Forever), so far fewer show \"?\" in a level bracket. Alchemy, Blacksmithing, Engineering, Leatherworking, Tailoring, Cooking and First Aid.",
 		"Items whose level couldn't be read stay unknown (\"?\"); none are estimated.",
