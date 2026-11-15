@@ -22,9 +22,9 @@ for line in toc:gmatch("[^\r\n]+") do
 end
 local order = table.concat(files, ",")
 ok(order == "Invest,Scan,Tabs,Views,Market,Watch,Tooltip,Data/Forever/Recipes,Data/Forever/TopSkills,Craft,Trainer,Merchant,AHPanel", "TOC: Watch.lua right after Market.lua, before Tooltip.lua", order)
-ok(toc:find("## Version: 1.2.14", 1, true) ~= nil, "TOC: version 1.2.14")
+ok(toc:find("## Version: 1.2.15", 1, true) ~= nil, "TOC: version 1.2.15")
 
-local ns = { modules = {}, version = "v1.2.14", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
+local ns = { modules = {}, version = "v1.2.15", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
 ns.L = setmetatable({}, { __index = function(_, k) return k end })
 ns.Safe = { Value = function(v) return v end }
 ns.Look = { Font = function(_, fs, size) fs._size = size return fs end }
@@ -56,14 +56,23 @@ print("== 2. money: g/s/c (M.ParseMoney), a blank box is no target")
 local PM = Mk.ParseMoney
 ok(PM("1g 50s") == 15000 and PM("75s") == 7500 and PM("20c") == 20 and PM("1.5") == 15000 and PM("1g50s3c") == 15003 and PM("2g 5c") == 20005, "1g 50s, 75s, 20c, 1.5 (gold), 1g50s3c, 2g 5c")
 ok(PM("abc") == nil and PM("0") == nil and PM("") == nil and PM("5x") == nil, "not prices: abc, 0, blank, 5x")
-local v, good = Wt.Parse("   ")
-local v2, good2 = Wt.Parse("12z")
-local v3, good3 = Wt.Parse(" 3s 4c ")
-local v4, good4 = Wt.Parse("8s 50s")
-local v5, good5 = Wt.Parse("1g 50s 3c")
-local v6, good6 = Wt.Parse("50c 1g")
-ok(v == nil and good and v2 == nil and not good2 and v3 == 304 and good3, "the editor's boxes: blank = none, 12z refused, 3s 4c = 304")
-ok(v4 == nil and not good4 and v5 == 15003 and good5 and v6 == nil and not good6, "the editor's boxes: 8s 50s and 50c 1g refused (typos), 1g 50s 3c = 15003")
+local FC, CT = Wt.FromCoins, Wt.CoinTexts
+local v, good = FC("", " ", "")
+local v2, good2 = FC("1", "", "")
+local v3, good3 = FC("", "3", "4")
+local v4, good4 = FC("", "150", "")
+local v5, good5 = FC("1", "50", "3")
+local v6, good6 = FC("", "", "250")
+local v7, good7 = FC("2", "x", "")
+ok(v == nil and good and v2 == 10000 and good2 and v3 == 304 and good3, "(1.2.15) the coin boxes: all blank = none; 1 gold (blanks are 0); 3s 4c = 304")
+ok(v4 == 15000 and good4 and v5 == 15003 and good5 and v6 == 250 and good6 and v7 == nil and not good7, "150s carries to 1g 50s; 1g 50s 3c; 250c = 2s 50c; not a number refused")
+local a1, b1, c1 = CT(15000)
+local a2, b2, c2 = CT(1000)
+local a3, b3, c3 = CT(nil)
+local a4, b4, c4 = CT(1234567)
+ok(a1 == "1" and b1 == "50" and c1 == "0" and a2 == "" and b2 == "10" and c2 == "0" and a3 == "" and b3 == "" and c3 == "" and a4 == "123" and b4 == "45" and c4 == "67",
+  "a target split into the boxes (no gold: its box blank; none: all blank)")
+ok(FC(CT(15003)) == 15003 and FC(CT(7)) == 7, "split and read back: itself")
 ok(Sc.Money(15000) == "1g 50s 00c" and PM(Sc.Money(15000)) == 15000 and PM(Sc.Money(304)) == 304, "a saved target shown in the box parses back to itself")
 
 print("== 3. signals: BUY at or below, SELL at or above (the listed price), Near x%")
@@ -298,13 +307,49 @@ I.S.watchNear = 5
 -- Edit: the editor on that item
 W.Click(Row(2770).edit)
 local ed = Wt.editor
-ok(ed and ed:IsShown() and ed.id == 2770 and ed.buy._text == "" and ed.sell._text == "10s 00c" and ed.house == "Alliance" and ed.remove:IsShown(), "Edit: the editor, its targets filled in (g/s/c), its house")
+local function Boxes(row) return row[1]._text .. "|" .. row[2]._text .. "|" .. row[3]._text end
+local function Type(row, g, sv, c) row[1]:SetText(g) row[2]:SetText(sv) row[3]:SetText(c) end
+ok(ed and ed:IsShown() and ed.id == 2770 and Boxes(ed.buy) == "||" and Boxes(ed.sell) == "|10|0" and ed.house == "Alliance" and ed.remove:IsShown(), "Edit: the editor, its targets split into the boxes, its house", Boxes(ed.sell))
 ok(ed.vh and ed.vh.kind == "popup", "the editor in the Look's popup frame")
-ed.buy:SetText("8s 50s")
-ok(not Wt.Save() and ed.err._text:find("^Buy: not a price") and ed:IsShown() and Wt.Get(2770).buy == nil, "a bad price: said, nothing saved")
-ed.buy:SetText("8s 50c")
-ed.sell:SetText("")
-W.Run(ed.buy, "OnEnterPressed")
+function IsShiftKeyDown() return W.shift end
+-- (1.2.15) the coin boxes: number only, the coin icons, Tab order
+ok(#ed.boxes == 6 and ed.boxes[1] == ed.buy[1] and ed.boxes[4] == ed.sell[1] and ed.buy[1]._numeric and ed.buy[2]._maxLetters == 3 and ed.buy[1]._maxLetters == 6,
+  "six number boxes (gold 6 digits, silver / copper 3), Buy then Sell")
+ok(ed.buy.icons[1]._tex:find("UI%-GoldIcon") and ed.buy.icons[2]._tex:find("UI%-SilverIcon") and ed.sell.icons[3]._tex:find("UI%-CopperIcon"), "each box with its coin icon")
+ok(W.focus == ed.buy[1], "the Buy gold box has the focus")
+-- (1.2.15) the layout: 500 wide, "Lowest now" its own full-width line under the title, every text line a fixed width inside
+local EW, PAD = ed:GetWidth(), Wt.EDIT_PAD
+ok(EW == 500 and ed.low._text:find("^Lowest now: ") and ed.low._text:find(", Alliance$") and ed.buy.cur == nil, "\"Lowest now: ..., Alliance\" on its own line (not beside the Buy box)", ed.low._text)
+local unfixed, past = {}, {}
+for _, f in ipairs(W.frames) do
+  if f._kind == "FontString" and f._parent == ed and f ~= ed.title then
+    if not rawget(f, "_w") then unfixed[#unfixed + 1] = tostring(f._text) end
+    local p = f._points[1]
+    local x = p and (type(p[2]) == "number" and p[2] or type(p[4]) == "number" and p[4]) or 0
+    if rawget(f, "_w") and x + f._w > EW - PAD then past[#past + 1] = tostring(f._text) end
+  end
+end
+ok(#unfixed == 0 and #past == 0, "every text line has a fixed width, all inside the frame's margin", table.concat(unfixed, " | ") .. " / " .. table.concat(past, " | "))
+ok(ed.low._w == EW - 2 * PAD and ed.hint._w == EW - 2 * PAD and ed.err._w == EW - 2 * PAD and ed.hint._wrap == true and ed.low._wrap == false, "Lowest, help and error lines: the full width less 18 px each side; the help text wraps")
+ok(156 + ed.hint:GetStringHeight() <= 194 and 194 + 13 <= ed:GetHeight() - 14 - 22, "the help text ends above the error line, the error line above the buttons", ed.hint:GetStringHeight())
+ok(ed.buy.right <= EW - PAD and ed.sell.right <= EW - PAD and ed.buy.label._w == 170, "the coin boxes and icons end inside the margin", ed.buy.right)
+local order = {}
+for _ = 1, 6 do W.Run(W.focus, "OnTabPressed") order[#order + 1] = W.focus.tab end
+ok(table.concat(order, ",") == "2,3,4,5,6,1", "Tab: gold, silver, copper, then Sell's, round again", table.concat(order, ","))
+W.shift = true W.Run(W.focus, "OnTabPressed") W.shift = false
+ok(W.focus == ed.sell[3], "shift-Tab: back")
+-- carry over when a box is left (150s -> 1g 50s)
+Type(ed.buy, "", "150", "")
+W.Run(ed.buy[2], "OnEditFocusLost")
+ok(Boxes(ed.buy) == "1|50|0", "150 silver shown as 1g 50s 0c when the box is left", Boxes(ed.buy))
+Type(ed.buy, "", "", "")
+W.Run(ed.buy[2], "OnEditFocusLost")
+ok(Boxes(ed.buy) == "||", "all blank stays blank")
+Type(ed.buy, "", "8x", "")
+ok(not Wt.Save() and ed.err._text:find("^Buy: whole numbers") and ed:IsShown() and Wt.Get(2770).buy == nil, "not a number (a paste): said, nothing saved")
+Type(ed.buy, "", "8", "50")
+Type(ed.sell, "", "", "")
+W.Run(ed.buy[3], "OnEnterPressed")
 ok(not ed:IsShown() and Wt.Get(2770).buy == 850 and Wt.Get(2770).sell == nil, "Enter saves: buy 8s 50c, sell blank (none)")
 ok(table.concat(ns.printed, " "):find("Watchlist: Copper Ore (Alliance): buy <= 8s 50c, sell >= none.", 1, true), "chat says what was saved")
 W.Click(Row(2770).edit)
@@ -316,7 +361,7 @@ W.RunTimers()
 ok(f.results:IsShown() and f.results.rows[1].id == 765 and f.results.rows[1].act.text._text == "Add", "type a name: found (Add)", f.results.rows[1].id)
 W.Click(f.results.rows[1].act)
 ok(Wt.Has(765) and ed:IsShown() and ed.id == 765 and not ed.remove:IsShown() == false and f.search._text == "", "Add: on the Watchlist, its targets open")
-ed.sell:SetText("1g")
+Type(ed.sell, "1", "", "")
 Wt.Save()
 ok(Wt.Get(765).sell == 10000 and Row(765), "saved: 1g sell target, a row")
 f.search:SetText("copper")
@@ -343,9 +388,9 @@ ok(menu:IsShown() and #menu.entries == 2 and menu.items[1].text._text == "Add to
 ok(menu._events and menu._events.GLOBAL_MOUSE_DOWN, "a click elsewhere will close it")
 W.Click(menu.items[2])
 ok(not menu:IsShown() and ed:IsShown() and ed.id == 3371 and not Wt.Has(3371), "Set target...: the editor (on the list when saved)")
-ed.buy:SetText("2.5")
+Type(ed.buy, "2", "150", "")
 Wt.Save()
-ok(Wt.Get(3371).buy == 25000, "saved 2.5 gold")
+ok(Wt.Get(3371).buy == 35000, "saved 2g + 150s = 3g 50s (carried)")
 W.Click(cell, "RightButton")
 ok(#menu.entries == 3 and menu.items[2].text._text == "Edit target..." and menu.items[3].text._text == "Remove from Watchlist", "watched: Edit target..., Remove from Watchlist")
 W.Click(menu.items[3])

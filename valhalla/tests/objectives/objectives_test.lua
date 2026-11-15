@@ -13,6 +13,7 @@ ns.MapPlaces = { instances = {
   { 0, 0, 0, { { 36, "Deadmines", false, 16, 21 } } },
   { nil, 0.478, 0.562, { { 2998, "Excavation Site: Wetlands", false, 24, 29 } }, map = 1437 },
   { 0, 0, 0, { { 189, "Scarlet Monastery - Armory", false, 30, 35 } } },
+  { nil, 0.085, 0.593, { { 2959, "City of Dalaran", false, 28, 33 } }, map = 1416 },
 }, unplaced = { { 0, "Krol'dok Stronghold", false, 40, 45 } } }
 ns.printed = {}
 function ns:Print(fmt, ...) ns.printed[#ns.printed + 1] = select("#", ...) > 0 and fmt:format(...) or fmt end
@@ -466,7 +467,7 @@ mod:Slash("why")
 text = table.concat(ns.printed, "\n", n0 + 1)
 ok(text:find("305") and text:find("listed in Ready") and text:find("not listed"), "why: every quest", text)
 mod:Slash("WHY 99999")
-ok(ns.printed[#ns.printed]:find("not in your quest log"), "why <unknown id>")
+ok(ns.printed[#ns.printed - 1]:find("not in your quest log") and ns.printed[#ns.printed]:find("lastWhy"), "why <unknown id> (and where it's saved)")
 ok(mod.enabled, "why changes nothing (still on)")
 
 ---------------------------------------------------------------------------
@@ -1067,6 +1068,83 @@ ok(eq(W.watches, { 95 }) and not O.S.here.bg, "an arena: as before (no battlegro
 ok(O.BGOf("The Defilers") == "arathi basin" and O.BGOf("Frostwolf Keep") == "alterac valley" and O.BGOf("Battlegrounds") == "*"
   and O.BGOf("Alterac Mountains") == nil and O.BGOf("Hillsbrad Foothills") == nil, "battleground names: aliases, the general header; zones aren't")
 W.MAPS[1416], W.MAPS[1459], W.MAPS[1460], W.MAPS[1461] = nil, nil, nil, nil
+O.ForgetNames()
+
+print("== 53. (1.2.15) a WoW Forever dungeon with no map of its own (City of Dalaran, 2959): its quests only")
+W.Reset()
+Restart()
+W.MAPS[1416] = { name = "Alterac Mountains", mapType = 3, parentMapID = 1415 }
+O.ForgetNames()
+W.AddQuest(101, "City of Dalaran", "Heart of Disruption", 33, false, false, 81)
+W.AddQuest(102, "Alterac Mountains", "Power Overwhelming", 33, false, false, 81)   -- (Dungeon tag, the entrance zone's header)
+W.AddQuest(103, "Alterac Mountains", "Crushridge Bounty", 36, false, false)
+W.AddQuest(104, "Alterac Mountains", "Noble Deaths", 36, false, false)
+W.AddQuest(105, "Tailoring", "Craftsman's Writ: Crimson Silk Robe", 60, false, false)
+W.AddQuest(106, "Hillsbrad Foothills", "Bounty on Murlocs", 30, false, false)
+W.AddQuest(107, "Old Dalaran: Alterac Mountains", "Ruins of Dalaran", 34, false, false)
+W.AddQuest(108, "Deadmines", "Red Silk Bandanas", 18, false, false, 81)
+W.AddQuest(109, "Alterac Mountains", "Dark Council", 40, true, false)
+W.AddQuest(110, "City of Dalaran", "Starving Arcane", 33, true, false, 81)
+W.onMap[1416] = { 103, 105, 102, 104 }
+local OUTDOOR = { 103, 104, 105, 106, 107, 108, 109 }
+local function noneOf(t) for _, id in ipairs(OUTDOOR) do if has(t, id) then return false end end return true end
+local function sorted(t) local c = {} for i, v in ipairs(t) do c[i] = v end table.sort(c) return c end
+Arrive(1416)
+ok(has(W.watches, 103) and has(W.watches, 104) and has(W.watches, 107) and not has(W.watches, 101), "outdoors in Alterac Mountains: its quests (as before)", list(W.watches))
+-- map nil inside (the game has no map there)
+Arrive(nil, { name = "City of Dalaran", kind = "party", id = 2959 })
+ok(eq(sorted(W.watches), { 101, 102 }), "inside City of Dalaran (no map): only its quests (header, and Dungeon-tagged under its entrance zone)", list(W.watches))
+ok(eq(ReadyIds(), { 110 }), "Ready to Turn In inside: the dungeon's only (Dark Council isn't)", list(ReadyIds()))
+ok(O.S.here.instID == 2959 and O.S.here.place and O.S.here.place.names[1] == "City of Dalaran", "the dungeon is found by its instance ID in Places.lua")
+ok(not O.S.here.names["alterac mountains"], "no outdoor zone among the names")
+-- map 1416 inside (the game puts you on the outdoor zone's map), and the zone texts saying the outdoor zone
+Arrive(1416, { name = "City of Dalaran", kind = "party", id = 2959, zone = "Alterac Mountains", realZone = "Alterac Mountains" })
+ok(eq(sorted(W.watches), { 101, 102 }) and noneOf(W.watches), "inside (best map 1416, zone texts Alterac Mountains): still only its quests", list(W.watches))
+ok(eq(ReadyIds(), { 110 }), "Ready inside (map 1416): the dungeon's only", list(ReadyIds()))
+ok(not O.S.here.maps[1416] and not O.S.here.onMap[103] and not O.S.here.names["alterac mountains"], "the outdoor map and its pins aren't used inside")
+local why = table.concat(O.Why(), "\n")
+ok(why:find("instance: ID 2959 %(City of Dalaran, party%) %-> Places.lua: City of Dalaran") and why:find("map: 1416 Alterac Mountains, Zone type, not used")
+  and why:find("city of dalaran %(instance name, Places.lua 2959") and why:find("left out: zone text \"Alterac Mountains\": an outdoor zone")
+  and why:find("entrance zone: Alterac Mountains"), "why: instance ID / type, map ID / type, name sources, what was left out", why)
+ok(why:find("103 %[36%] Crushridge Bounty %(Alterac Mountains%): not listed, in a dungeon: header \"Alterac Mountains\" is the outdoor zone around it")
+  and why:find("107 .-not listed, in a dungeon: only its own quests") and why:find("102 .-listed in Quests, a dungeon quest under \"Alterac Mountains\""), "why: each quest's reason inside", why)
+ok(type(mod.db.lastWhy) == "table" and #mod.db.lastWhy.lines > 5 and mod.db.lastWhy.lines[1]:find("^Here: in a dungeon") and mod.db.lastWhy.at,
+  "the last why is kept (ValhallaDB.objectives.lastWhy)")
+O.Why(103)
+ok(mod.db.lastWhy.quest == 103 and table.concat(mod.db.lastWhy.lines, "\n"):find("no map pins here"), "...replaced by the next one (one quest: no pins inside)")
+-- (D1) pinned still shows inside
+O.SetPinned(105, true) Run(1)
+ok(has(W.watches, 105), "a pinned quest still shows inside the dungeon", list(W.watches))
+O.SetPinned(105, false) Run(1)
+ok(not has(W.watches, 105), "unpinned: gone again", list(W.watches))
+-- a quest picked up inside that isn't the dungeon's
+W.AddQuest(111, "Alterac Mountains", "Elixir of Agony", 37, false, false)
+Fire("QUEST_ACCEPTED", 111) Run(1.5)
+ok(not has(W.watches, 111) and mod.char.hidden[111], "an outdoor quest accepted inside: untracked", list(W.watches))
+-- a real dungeon map named as the dungeon is used (its pins too)
+W.MAPS[9103] = { name = "City of Dalaran", mapType = 6, parentMapID = 1416 }
+W.onMap[9103] = { 108 }
+Arrive(9103, { name = "City of Dalaran", kind = "party", id = 2959 })
+ok(O.S.here.maps[9103] and has(W.watches, 108) and not has(W.watches, 103), "a map named as the dungeon is used: a Dungeon-tagged quest with a pin on it is listed (as in 1.2.3)", list(W.watches))
+W.onMap[9103] = nil W.MAPS[9103] = nil
+Arrive(nil, { name = "City of Dalaran", kind = "party", id = 2959 })
+-- leaving: the outdoor list back (never in combat)
+W.combat = true W.combatChanges = 0
+Arrive(1416)
+ok(W.combatChanges == 0 and eq(sorted(W.watches), { 101, 102 }), "left in combat: nothing changes yet", list(W.watches))
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(2)
+ok(has(W.watches, 103) and has(W.watches, 104) and has(W.watches, 111) and not has(W.watches, 101) and not has(W.watches, 102),
+  "back outdoors: Alterac Mountains' quests again, the dungeon's hidden", list(W.watches))
+-- an instance not in Places.lua: its name only, still no outdoor zone
+Arrive(1416, { name = "Unknown Halls", kind = "party", id = 4242, zone = "Alterac Mountains" })
+ok(noneOf(W.watches) and not O.S.here.names["alterac mountains"], "a dungeon Places.lua doesn't list: no outdoor zone either", list(W.watches))
+ok(table.concat(O.Why(), "\n"):find("Places.lua: not listed"), "why: says it isn't in Places.lua")
+-- Gnomeregan (a real dungeon map) as before
+W.AddQuest(112, "Gnomeregan", "Gnogaine", 27, false, false, 81)
+Arrive(9100, { name = "Gnomeregan", kind = "party", id = 90 })
+ok(has(W.watches, 112) and O.S.here.maps[9100] and noneOf(W.watches), "Gnomeregan (its own Dungeon-type map): its quest, as before", list(W.watches))
+W.MAPS[1416] = nil
+W.onMap[1416] = nil
 O.ForgetNames()
 
 print(("\n%d passed, %d failed"):format(pass, fail))

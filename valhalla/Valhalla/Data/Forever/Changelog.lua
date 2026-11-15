@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.15", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
+		"|cff6e2c0aDungeon quests only, inside a dungeon|r: in WoW Forever's own dungeons (City of Dalaran and the others the game has no map of) the tracker showed the outdoor zone's quests too (Alterac Mountains' in City of Dalaran). Valhalla now knows the dungeon by the game's instance ID and lists only its quests (and the Dungeon-tagged quests of its entrance zone), plus your pinned ones; Ready to Turn In too. Outside again, the zone's list comes back.",
+		"Inside a dungeon an outdoor zone's name, map and map pins no longer count, and a \"Place: Zone\" quest header only counts outdoors.",
+		"/valhalla objectives why also shows the instance ID and kind, the map and its type, and where each name came from; the last one is kept in the saved variables (ValhallaDB.objectives.lastWhy).",
+		"|cff6e2c0aWatchlist target editor|r: Buy and Sell each have gold, silver and copper boxes with the coin icons (Tab moves through them, Enter saves). All three blank: no target; a blank box is 0; 150 silver becomes 1g 50s.",
+		"The editor is wider, with \"Lowest now\" on its own line under the item's name, so nothing runs past its edge in either Look.",
+	} },
 	{ version = "1.2.14", date = "2026-11-15", heads = { [1] = "New", }, items = {
 		"|cff6e2c0aWatchlist|r (AH Market > Watchlist): your own buy and sell target for any item, like a limit order, kept until you change it. Add an item by name there, alt-click any item, or right-click one > Set target... (the right-click menu still adds to the Shopping List's builder).",
 		"Columns: Item, Lowest, Buy <= target, Sell >= target, Signal, Last met. Signal says BUY when the AH's lowest is at or below your buy target, SELL when it is at or above your sell target (the listed price, before the AH's cut), or Near x% when it's close (Settings: Off, 5% or 10%).",

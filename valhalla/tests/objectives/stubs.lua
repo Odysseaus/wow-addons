@@ -115,9 +115,10 @@ C_Map = {
 }
 -- instances: W.inst = { name, kind } while inside one
 function IsInInstance() if W.inst then return true, W.inst.kind or "party" end return false, "none" end
-function GetInstanceInfo() if W.inst then return W.inst.name, W.inst.kind or "party" end return GetZoneText(), "none" end
-function GetZoneText() if W.inst then return W.inst.name end local m = W.MAPS[W.map] return m and m.name or "" end
-function GetRealZoneText() return GetZoneText() end
+-- (1.2.15: W.inst.id, the instance ID, as GetInstanceInfo's 8th value; W.inst.zone / realZone: the zone texts inside)
+function GetInstanceInfo() if W.inst then return W.inst.name, W.inst.kind or "party", 1, "Normal", 5, 0, false, W.inst.id end return GetZoneText(), "none", 0, "", 0, 0, false, 0 end
+function GetZoneText() if W.inst then return W.inst.zone or W.inst.name end local m = W.MAPS[W.map] return m and m.name or "" end
+function GetRealZoneText() if W.inst and W.inst.realZone then return W.inst.realZone end return GetZoneText() end
 
 -- the quest log: W.quests = { [id] = { header, title, level, ready } }; headers in log order of first appearance
 W.quests = {}

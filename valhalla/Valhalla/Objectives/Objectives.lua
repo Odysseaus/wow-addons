@@ -48,6 +48,12 @@
 --  * outdoors and in dungeons battleground quests are hidden, as dungeon quests are (no marker exception);
 --  * a quest with the PvP tag under a zone's header (world PvP) stays that zone's quest;
 --  * arenas are left as they were (the game's tracker shows no quests there).
+--
+-- 1.2.15, dungeons by instance ID: inside one, "here" is the game's instance ID -> its Places.lua entry
+-- (WoW Forever's own dungeons have no map: City of Dalaran's "best map" can be Alterac Mountains). No outdoor
+-- zone's name, map or pins count there; "X: Zone" headers are outdoors only; the entrance zone's Dungeon-tagged
+-- quests are this dungeon's; pinned quests still show. /vh objectives why says where each name came from and
+-- is kept in ValhallaDB.objectives.lastWhy.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -365,7 +371,45 @@ function O.IsBGQuest(e) return e ~= nil and e.header ~= nil and O.BGOf(e.header)
 
 -- { maps, names (canonical), onMap = { [questID] = true } (the kept pins), pins = { [questID] = { raw pins } },
 --   marker = { [questID] = true } (a real marker here that passes every guard: see O.Marker), inst (in a
---   dungeon), instName, key }
+--   dungeon), instName, instID, instKind, place (Places.lua's entry), entry (the dungeon's entrance zone:
+--   canonical name -> name), src (canonical name -> where it came from), skipped (what was left out), key }
+--
+-- 1.2.15, inside a dungeon: the dungeon is the game's instance ID (GetInstanceInfo's 8th value) -> its
+-- Places.lua entry. WoW Forever has no maps of its own dungeons (City of Dalaran, 2959): there the game's
+-- "best map" can be the outdoor zone or none, so inside a dungeon
+--   * the names are the instance's name and its Places.lua name(s) only; a zone text that names a zone is
+--     left out (never an outdoor zone's name);
+--   * the map (and its pins) only when it is a real dungeon map (Dungeon type, or named as this dungeon);
+--   * the entrance's zone (the Places.lua entry's map) is kept apart: a Dungeon-tagged quest under its header
+--     belongs to this dungeon, nothing else of that zone does.
+local DUNGEON_MAP = Enum and Enum.UIMapType and Enum.UIMapType.Dungeon or 4
+O.MAP_TYPES = { [0] = "Cosmic", [1] = "World", [2] = "Continent", [3] = "Zone", [4] = "Dungeon", [5] = "Micro", [6] = "Orphan" }
+
+-- GetInstanceInfo: name, kind, instance ID (Call keeps only two values)
+function O.InstanceInfo()
+	if type(GetInstanceInfo) ~= "function" then return nil end
+	local r = { pcall(GetInstanceInfo) }
+	if not r[1] then return nil end
+	return Plain(r[2]), Plain(r[3]), tonumber(Plain(r[9]))
+end
+
+-- Places.lua's entry for an instance ID: { names = { ... }, map = the entrance zone's uiMapID or nil }
+function O.PlaceOf(instID)
+	local P = ns.MapPlaces
+	if not instID or instID == 0 or type(P) ~= "table" then return nil end
+	local out
+	for _, it in ipairs(P.instances or {}) do
+		for _, d in ipairs(it[4] or {}) do
+			if d[1] == instID then
+				out = out or { id = instID, names = {}, map = it.map }
+				out.names[#out.names + 1] = d[2]
+				if it.map and not out.map then out.map = it.map end
+			end
+		end
+	end
+	return out
+end
+
 function O.Here()
 	local best = C_Map and C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player")
 	local inInst, kind = nil, nil
@@ -373,40 +417,75 @@ function O.Here()
 	local inst = inInst and INSTANCE_KINDS[kind] and true or false
 	local bg = inInst and kind == "pvp" or false   -- (1.2.3: a battleground, its own kind)
 	local zone = (inst or bg) and best or O.ZoneOf(best)
-	local here = { maps = {}, names = {}, onMap = {}, pins = {}, marker = {}, guard = {}, best = best, zone = zone, inst = inst, shown = {} }
-	local function AddName(s)
+	local here = { maps = {}, names = {}, onMap = {}, pins = {}, marker = {}, guard = {}, best = best, zone = zone, inst = inst, shown = {},
+		src = {}, skipped = {}, entry = {}, kind = kind }
+	local function AddName(s, from)
 		if type(s) ~= "string" or s == "" then return end
 		here.shown[s] = true
 		local z, d = ZCanon(s), DCanon(s)
-		if z then here.names[z] = true end
-		if d then here.names[d] = true end
+		for _, k in ipairs({ z, d }) do
+			if k then
+				here.names[k] = true
+				local list = here.src[k] or {}
+				here.src[k] = list
+				local seen = false
+				for _, f in ipairs(list) do if f == from then seen = true end end
+				if not seen then list[#list + 1] = from end
+			end
+		end
 	end
-	local function AddMap(m)
+	local function AddMap(m, from)
 		if not m or here.maps[m] then return end
 		here.maps[m] = true
 		local info = MapInfo(m)
-		AddName(info and info.name)
+		AddName(info and info.name, from or ("map " .. tostring(m)))
 	end
 	if inst then
-		local name = GetInstanceInfo and Call(GetInstanceInfo)
-		here.instName = name
-		AddName(name)
+		local name, _, id = O.InstanceInfo()
+		if type(name) ~= "string" or name == "" then name = nil end
+		here.instName, here.instID, here.instKind = name, id, kind
+		AddName(name, "instance name")
 		O.LearnDungeon(name)
-		AddMap(best)
+		local place = O.PlaceOf(id)
+		here.place = place
+		if place then
+			for _, n in ipairs(place.names) do AddName(n, "Places.lua " .. tostring(id)) O.LearnDungeon(n) end
+			local zi = place.map and MapInfo(place.map)
+			local zk = zi and ZCanon(zi.name)
+			if zk and not here.names[zk] then here.entry[zk] = zi.name end
+		end
+		local info = best and MapInfo(best)
+		local dk = info and DCanon(info.name)
+		if best and info and (info.mapType == DUNGEON_MAP or (dk and here.names[dk])) then
+			AddMap(best, "dungeon map " .. tostring(best))
+		elseif best then
+			here.skipped[#here.skipped + 1] = ("map %s (%s, %s type): not this dungeon's map"):format(tostring(best),
+				tostring(info and info.name or "?"), tostring(info and (O.MAP_TYPES[info.mapType] or info.mapType) or "?"))
+		end
+		for _, t in ipairs({ { GetZoneText, "zone text" }, { GetRealZoneText, "real zone text" } }) do
+			local s = t[1] and Call(t[1])
+			if type(s) == "string" and s ~= "" then
+				local k = ZCanon(s)
+				if here.names[k or ""] or here.names[DCanon(s) or ""] or not O.IsZoneName(s) then AddName(s, t[2])
+				else here.skipped[#here.skipped + 1] = ("%s \"%s\": an outdoor zone"):format(t[2], s) end
+			end
+		end
 	elseif bg then
 		local name = GetInstanceInfo and Call(GetInstanceInfo)
 		if type(name) ~= "string" or name == "" then name = GetRealZoneText and Call(GetRealZoneText) end
 		O.LearnBG(name)
 		here.bg = name or "?"
 		here.bgKey = O.BGOf(name) or ZCanon(name) or "?"
-		AddName(name)
+		AddName(name, "battleground")
 		AddMap(best)
+		AddName(GetZoneText and Call(GetZoneText), "zone text")
+		AddName(GetRealZoneText and Call(GetRealZoneText), "real zone text")
 	else
 		AddMap(zone)
-		if zone and O.CITY[zone] then AddMap(O.CITY[zone]) end
+		if zone and O.CITY[zone] then AddMap(O.CITY[zone], "the capital's zone") end
+		AddName(GetZoneText and Call(GetZoneText), "zone text")
+		AddName(GetRealZoneText and Call(GetRealZoneText), "real zone text")
 	end
-	AddName(GetZoneText and Call(GetZoneText))
-	AddName(GetRealZoneText and Call(GetRealZoneText))
 	if C_QuestLog and C_QuestLog.GetQuestsOnMap then
 		local wayFn = C_QuestLog.GetNextWaypointForMap
 		for m in pairs(here.maps) do
@@ -433,7 +512,7 @@ function O.Here()
 	local names = {}
 	for k in pairs(here.names) do names[#names + 1] = k end
 	table.sort(names)
-	here.key = tostring(zone) .. (inst and ":inst:" or bg and ":bg:" or ":") .. table.concat(names, "|")
+	here.key = tostring(zone) .. (inst and (":inst" .. tostring(here.instID or "") .. ":") or bg and ":bg:" or ":") .. table.concat(names, "|")
 	return here
 end
 
@@ -492,6 +571,19 @@ function O.Classify(e, here, placeOnly)
 	end
 	if bgOf then return false, ("header \"%s\": a battleground quest, listed inside its battleground"):format(h) end
 	local function Here(s) return s and (here.names[ZCanon(s) or ""] or here.names[DCanon(s) or ""]) or false end
+	-- inside a dungeon (1.2.15: before the "X: Zone" rule, which is outdoors only): its own quests only
+	if here.inst then
+		if h and Here(h) then return true, ("header \"%s\" is this dungeon"):format(h) end
+		local dungeon = O.IsDungeonQuest(e)
+		if dungeon and h and here.entry and here.entry[ZCanon(h) or ""] then
+			return true, ("a dungeon quest under \"%s\", this dungeon's entrance zone"):format(h)
+		end
+		if dungeon and here.onMap[e.id] then return true, "a dungeon quest with a pin on this dungeon's map" end
+		if h and here.entry and here.entry[ZCanon(h) or ""] then
+			return false, ("in a dungeon: header \"%s\" is the outdoor zone around it"):format(h)
+		end
+		return false, "in a dungeon: only its own quests are listed"
+	end
 	-- "X: Zone" counts as that zone
 	local suffix = h and h:match("^[^:]+:%s*(.+)$")
 	local function Marked(text)
@@ -506,11 +598,6 @@ function O.Classify(e, here, placeOnly)
 		return false, text
 	end
 	local dungeon = O.IsDungeonQuest(e)
-	if here.inst then
-		if Here(h) then return true, ("header \"%s\" is this dungeon"):format(h) end
-		if dungeon and here.onMap[e.id] then return true, "a dungeon quest with a pin on this dungeon's map" end
-		return false, "in a dungeon: only its own quests are listed"
-	end
 	if dungeon then return false, "a dungeon quest: listed inside its dungeon" end
 	if h and Here(h) then return true, ("header \"%s\" is this zone"):format(h) end
 	if h and O.IsZoneName(h) then
@@ -1617,6 +1704,28 @@ function O.Why(id)
 	for k in pairs(here.shown) do shown[#shown + 1] = k end
 	table.sort(shown)
 	out[#out + 1] = ("Here: %s%s (map %s)"):format(here.inst and "in a dungeon: " or here.bg and "in a battleground: " or "", table.concat(shown, ", "), tostring(here.best))
+	-- (1.2.15) where that came from: the instance, the map and each name's source
+	local inInst, kind = nil, nil
+	if IsInInstance then inInst, kind = Call(IsInInstance) end
+	if inInst then
+		local name, _, id = O.InstanceInfo()
+		local place = O.PlaceOf(id)
+		out[#out + 1] = ("  instance: ID %s (%s, %s) -> Places.lua: %s"):format(tostring(id), tostring(name), tostring(kind),
+			place and (table.concat(place.names, " / ") .. (place.map and (" (entrance on map " .. place.map .. ")") or "")) or "not listed")
+	else
+		out[#out + 1] = ("  instance: none (%s)"):format(tostring(kind))
+	end
+	local info = here.best and MapInfo(here.best)
+	out[#out + 1] = ("  map: %s%s"):format(tostring(here.best), info and (" " .. tostring(info.name) .. ", " ..
+		tostring(O.MAP_TYPES[info.mapType] or info.mapType) .. " type" .. (here.maps[here.best] and ", used" or ", not used")) or "")
+	local keys = {}
+	for k in pairs(here.src or {}) do keys[#keys + 1] = k end
+	table.sort(keys)
+	local parts = {}
+	for _, k in ipairs(keys) do parts[#parts + 1] = ("%s (%s)"):format(k, table.concat(here.src[k], ", ")) end
+	out[#out + 1] = "  names: " .. (#parts > 0 and table.concat(parts, "; ") or "none")
+	for k, n in pairs(here.entry or {}) do out[#out + 1] = ("  entrance zone: %s (only its Dungeon-tagged quests count here)"):format(n) end
+	for _, t in ipairs(here.skipped or {}) do out[#out + 1] = "  left out: " .. t end
 	local function Line(e)
 		local listed, why = O.Classify(e, here)
 		local where = e.ready and "Ready" or "Quests"
@@ -1626,7 +1735,7 @@ function O.Why(id)
 	end
 	if id then
 		local e = log[id]
-		if not e then out[#out + 1] = ("%d: not in your quest log"):format(id) return out end
+		if not e then out[#out + 1] = ("%d: not in your quest log"):format(id) O.SaveWhy(out, id) return out end
 		Line(e)
 		for _, p in ipairs(here.pins[id] or {}) do
 			out[#out + 1] = ("  map pin on %d: mapID %s at %.3f, %.3f%s%s%s -> %s"):format(p.map, tostring(p.mapID),
@@ -1646,7 +1755,19 @@ function O.Why(id)
 		table.sort(list, O.Before)
 		for _, e in ipairs(list) do Line(e) end
 	end
+	O.SaveWhy(out, id)
 	return out
+end
+
+-- (1.2.15) the last /valhalla objectives why, kept in ValhallaDB.objectives.lastWhy (read back from the saved file)
+O.WHY_MAX = 150
+function O.SaveWhy(lines, id)
+	local d = mod.db
+	if type(d) ~= "table" then return end
+	local keep = {}
+	for i = 1, math.min(#lines, O.WHY_MAX) do keep[i] = lines[i] end
+	if #lines > O.WHY_MAX then keep[#keep + 1] = ("(%d more lines left out)"):format(#lines - O.WHY_MAX) end
+	d.lastWhy = { at = date and date("%Y-%m-%d %H:%M:%S") or nil, quest = id, version = ns.version, lines = keep }
 end
 
 --------------------------------------------------------------------------------
@@ -1790,6 +1911,7 @@ function mod:Slash(arg)
 	if word == "why" then
 		local id = tonumber(rest and rest:match("%d+"))
 		for _, line in ipairs(O.Why(id)) do ns:Print("%s", line) end
+		ns:Print("%s", "(saved in ValhallaDB.objectives.lastWhy once you /reload or log out)")
 		return
 	end
 	if arg == "on" then O.SetOn(true)

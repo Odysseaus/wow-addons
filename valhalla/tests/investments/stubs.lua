@@ -112,6 +112,8 @@ function Frame.SetRotation(self, r) self._rot = r end
 function Frame.SetBlendMode(self, m) self._blend = m end
 function Frame.SetAlpha(self, a) self._alpha = a end
 function Frame.SetWordWrap(self, v) self._wrap = v end
+function Frame.SetNumeric(self, v) self._numeric = v end
+function Frame.SetMaxLetters(self, n) self._maxLetters = n end
 function Frame.GetAlpha(self) return self._alpha or 1 end
 function Frame.SetFont(self, file, size, flags) self._font = { file, size, flags } return true end
 function Frame.GetFont(self) if self._font then return unpack(self._font) end end

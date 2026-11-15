@@ -400,13 +400,57 @@ function W.OpenHistory(id)
 end
 
 --------------------------------------------------------------------------------
--- The target editor: Buy and Sell (gold, silver, copper: 1g 50s, 75s, 20c, or 1.5 for gold), the house
+-- The target editor (1.2.15): Buy and Sell, each three number boxes (gold, silver, copper) with the coin
+-- icons; the house. All three blank: no target; a blank box is 0 when another is filled; silver or copper
+-- over 99 carries over (150s: 1g 50s), shown so when the box is left. 500 wide; "Lowest now" its own line
+-- under the title; every text line a fixed width (nothing runs past the frame in either Look).
 --------------------------------------------------------------------------------
+
+W.EDIT_W, W.EDIT_H, W.EDIT_PAD = 500, 248, 18
+W.COIN_W = { 64, 40, 40 }        -- the gold, silver, copper boxes
+W.COIN_MAX = { 6, 3, 3 }         -- digits each (silver / copper: 3, so 150 can be typed and carried)
+W.COIN_ICONS = { "Interface\\MoneyFrame\\UI-GoldIcon", "Interface\\MoneyFrame\\UI-SilverIcon", "Interface\\MoneyFrame\\UI-CopperIcon" }
+
+-- copper -> the three boxes' texts (nil: all blank; no gold: its box blank)
+function W.CoinTexts(v)
+	v = Money(v)
+	if not v then return "", "", "" end
+	local g, s, c = math.floor(v / 10000), math.floor(v / 100) % 100, v % 100
+	return g > 0 and tostring(g) or "", tostring(s), tostring(c)
+end
+
+-- the three texts -> copper (nil: no target), ok
+function W.FromCoins(g, s, c)
+	local t = { Trim(g), Trim(s), Trim(c) }
+	if t[1] == "" and t[2] == "" and t[3] == "" then return nil, true end
+	local v = 0
+	for i, x in ipairs(t) do
+		if x ~= "" then
+			if not x:match("^%d+$") then return nil, false end
+			v = v + tonumber(x) * ({ 10000, 100, 1 })[i]
+		end
+	end
+	return Money(v), true
+end
+
+local function RowRead(row) return W.FromCoins(row[1]:GetText(), row[2]:GetText(), row[3]:GetText()) end
+local function RowFill(row, v)
+	local a, b, c = W.CoinTexts(v)
+	row[1]:SetText(a) row[2]:SetText(b) row[3]:SetText(c)
+end
+-- a box left: the row shown carried over (150s -> 1g 50s); a bad or blank row left as typed
+local function RowNormalize(row)
+	local v, ok = RowRead(row)
+	if ok and v then RowFill(row, v) end
+end
+W.RowRead, W.RowFill, W.RowNormalize = RowRead, RowFill, RowNormalize
 
 function W.Editor()
 	if W.editor then return W.editor end
+	local PAD, EW = W.EDIT_PAD, W.EDIT_W
+	local TW = EW - 2 * PAD          -- every full-width text line
 	local e = CreateFrame("Frame", "ValhallaWatchEdit", UIParent, "BackdropTemplate")
-	e:SetSize(470, 214)
+	e:SetSize(EW, W.EDIT_H)
 	e:SetFrameStrata("DIALOG")
 	if e.SetClampedToScreen then e:SetClampedToScreen(true) end
 	e:SetMovable(true)
@@ -417,54 +461,88 @@ function W.Editor()
 	e:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
 	e.icon = e:CreateTexture(nil, "ARTWORK")
 	e.icon:SetSize(22, 22)
-	e.icon:SetPoint("TOPLEFT", 12, -10)
+	e.icon:SetPoint("TOPLEFT", PAD, -12)
 	e.title = V.Text(e, 13)
 	e.title:SetPoint("LEFT", e.icon, "RIGHT", 6, 0)
-	e.title:SetPoint("RIGHT", e, "RIGHT", -36, 0)
+	e.title:SetWidth(TW - 28 - 30)
 	e.title:SetJustifyH("LEFT")
+	if e.title.SetWordWrap then e.title:SetWordWrap(false) end
 	e.close = V.Button(e, "x", 20, 20, function() e:Hide() end)
-	e.close:SetPoint("TOPRIGHT", -8, -8)
-	local function Field(label, y)
+	e.close:SetPoint("TOPRIGHT", -10, -10)
+	-- "Lowest now: ..." under the title, the full width
+	e.low = V.Text(e, 12, W.GREY)
+	e.low:SetPoint("TOPLEFT", PAD, -42)
+	e.low:SetWidth(TW)
+	e.low:SetJustifyH("LEFT")
+	if e.low.SetWordWrap then e.low:SetWordWrap(false) end
+	e.boxes = {}                     -- the six boxes, in Tab order
+	local LABEL_W, X0 = 170, PAD + 176
+	local function Row(label, y)
 		local fs = V.Text(e, 12)
-		fs:SetPoint("TOPLEFT", 14, y - 4)
+		fs:SetPoint("TOPLEFT", PAD, y - 4)
+		fs:SetWidth(LABEL_W)
+		fs:SetJustifyH("LEFT")
+		if fs.SetWordWrap then fs:SetWordWrap(false) end
 		fs:SetText(label)
-		local box = V.EditBox(e, 140)
-		box:SetPoint("TOPLEFT", 190, y)
-		box:SetScript("OnEnterPressed", function() W.Save() end)
-		box:SetScript("OnEscapePressed", function() e:Hide() end)
-		box:SetScript("OnTextChanged", function() e.err:SetText("") end)
-		box.cur = V.Text(e, 11, W.GREY)
-		box.cur:SetPoint("LEFT", box, "RIGHT", 8, 0)
-		return box, fs
+		local row, x = { label = fs, icons = {} }, X0
+		for i = 1, 3 do
+			local box = V.EditBox(e, W.COIN_W[i])
+			box:SetPoint("TOPLEFT", x, y)
+			if box.SetNumeric then box:SetNumeric(true) end
+			if box.SetMaxLetters then box:SetMaxLetters(W.COIN_MAX[i]) end
+			if box.SetJustifyH then box:SetJustifyH("RIGHT") end
+			box:SetScript("OnEnterPressed", function() W.Save() end)
+			box:SetScript("OnEscapePressed", function() e:Hide() end)
+			box:SetScript("OnTextChanged", function() e.err:SetText("") end)
+			box:HookScript("OnEditFocusLost", function() RowNormalize(row) end)   -- (hooked: the Look's own focus art stays)
+			box:SetScript("OnTabPressed", function(self)
+				local k = self.tab
+				local n = #e.boxes
+				local back = IsShiftKeyDown and IsShiftKeyDown()
+				local nextBox = e.boxes[back and ((k - 2) % n + 1) or (k % n + 1)]
+				RowNormalize(row)
+				nextBox:SetFocus()
+				if nextBox.HighlightText then nextBox:HighlightText() end
+			end)
+			local icon = e:CreateTexture(nil, "ARTWORK")
+			icon:SetSize(14, 14)
+			icon:SetPoint("LEFT", box, "RIGHT", 3, 0)
+			icon:SetTexture(W.COIN_ICONS[i])
+			row[i], row.icons[i] = box, icon
+			e.boxes[#e.boxes + 1] = box
+			box.tab = #e.boxes
+			x = x + W.COIN_W[i] + 3 + 14 + 10
+		end
+		row.right = x - 10           -- (where the copper icon ends)
+		return row
 	end
-	e.buy, e.buyLabel = Field(L["Buy when lowest is <="], -42)
-	e.sell, e.sellLabel = Field(L["Sell when lowest is >="], -70)
-	e.buy:SetScript("OnTabPressed", function() e.sell:SetFocus() end)
-	e.sell:SetScript("OnTabPressed", function() e.buy:SetFocus() end)
+	e.buy = Row(L["Buy when lowest is <="], -66)
+	e.sell = Row(L["Sell when lowest is >="], -96)
 	e.houses = V.Radio(e, L["House:"], { { "Alliance", L["Alliance"] }, { "Horde", L["Horde"] }, { "Neutral", L["Neutral"] } },
 		function() return e.house end, function(v) e.house = v e.Lowest() end)
-	e.houses:SetPoint("TOPLEFT", 14, -102)
+	e.houses:SetPoint("TOPLEFT", PAD, -128)
 	e.hint = V.Text(e, 11, W.GREY)
-	e.hint:SetPoint("TOPLEFT", 14, -128)
-	e.hint:SetPoint("RIGHT", e, "RIGHT", -14, 0)
+	e.hint:SetPoint("TOPLEFT", PAD, -156)
+	e.hint:SetWidth(TW)
 	e.hint:SetJustifyH("LEFT")
-	e.hint:SetText(L["Gold, silver, copper: 1g 50s, 75s, 20c, or 1.5 (gold). Blank: no target. The AH's lowest listed price is compared (before its cut)."])
+	if e.hint.SetWordWrap then e.hint:SetWordWrap(true) end
+	e.hint:SetText(L["Leave all three boxes blank for no target; a blank box is 0. 150 silver becomes 1g 50s. The AH's lowest listed price is compared (before its cut)."])
 	e.err = V.Text(e, 11, { 1, 0.35, 0.3 })
-	e.err:SetPoint("TOPLEFT", 14, -160)
-	e.err:SetPoint("RIGHT", e, "RIGHT", -14, 0)
+	e.err:SetPoint("TOPLEFT", PAD, -194)
+	e.err:SetWidth(TW)
 	e.err:SetJustifyH("LEFT")
+	if e.err.SetWordWrap then e.err:SetWordWrap(false) end
 	e.save = V.Button(e, L["Save"], 100, 22, function() W.Save() end)
-	e.save:SetPoint("BOTTOMLEFT", 14, 12)
+	e.save:SetPoint("BOTTOMLEFT", PAD, 14)
 	e.remove = V.Button(e, L["Remove from Watchlist"], 170, 22, function() if e.id then W.Remove(e.id) end e:Hide() end)
 	e.remove:SetPoint("LEFT", e.save, "RIGHT", 8, 0)
 	e.cancel = V.Button(e, L["Cancel"], 90, 22, function() e:Hide() end)
-	e.cancel:SetPoint("BOTTOMRIGHT", -14, 12)
+	e.cancel:SetPoint("BOTTOMRIGHT", -PAD, 14)
 	function e.Lowest()
 		local low, c
 		if e.id then low, c = S().Lowest(e.house, e.id) end
-		local text = low and L["lowest now %s (%s)"]:format(S().Money(low), S().Age(c and c.t)) or (c and L["none listed"]) or L["not in your scans yet"]
-		e.buy.cur:SetText(text)
-		e.sell.cur:SetText("")
+		local what = low and L["%s (%s)"]:format(S().Money(low), S().Age(c and c.t)) or (c and L["none listed"]) or L["not in your scans yet"]
+		e.low:SetText(L["Lowest now: %s, %s"]:format(what, L[e.house or W.DefaultHouse()] or tostring(e.house)))
 	end
 	if ns.Style and ns.Style.Popup then ns.Style.Popup(e) else T.SkinFlat(e, 0.98) end
 	e:Hide()
@@ -484,44 +562,26 @@ function W.Edit(id)
 	local name, _, q = V.ItemData(id)
 	e.title:SetText(name or I.ItemName(id))
 	e.title:SetTextColor(V.QualityColor(q))
-	e.buy:SetText(t and t.buy and S().Money(t.buy) or "")
-	e.sell:SetText(t and t.sell and S().Money(t.sell) or "")
+	RowFill(e.buy, t and t.buy)
+	RowFill(e.sell, t and t.sell)
 	e.err:SetText("")
 	e.houses.Update()
 	e.Lowest()
 	e.remove:SetShown(t ~= nil)
 	e:Show()
 	if e.Raise then e:Raise() end
-	e.buy:SetFocus()
+	e.buy[1]:SetFocus()
 	return e
-end
-
--- the boxes read: a blank one is no target; anything else must be a price
-function W.Parse(text)
-	text = Trim(text)
-	if text == "" then return nil, true end
-	-- (gold, silver, copper each at most once, in that order: "8s 50s" is a typo, not 8s)
-	local t = text:lower():gsub("%s+", "")
-	if not (t:match("^%d+%.?%d*$") or t:match("^%.%d+$")) then
-		local rest = t
-		for _, u in ipairs({ "g", "s", "c" }) do
-			local n = rest:match("^(%d+)" .. u)
-			if n then rest = rest:sub(#n + 2) end
-		end
-		if rest ~= "" then return nil, false end
-	end
-	local v = M.ParseMoney(text)
-	if v then return v, true end
-	return nil, false
 end
 
 function W.Save()
 	local e = W.editor
 	if not (e and e.id) then return false end
-	local buy, okB = W.Parse(e.buy:GetText())
-	local sell, okS = W.Parse(e.sell:GetText())
-	if not okB then e.err:SetText(L["Buy: not a price. Try 1g 50s, 75s, 20c or 1.5 (gold)."]) return false end
-	if not okS then e.err:SetText(L["Sell: not a price. Try 1g 50s, 75s, 20c or 1.5 (gold)."]) return false end
+	local buy, okB = RowRead(e.buy)
+	local sell, okS = RowRead(e.sell)
+	if not okB then e.err:SetText(L["Buy: whole numbers only in the gold, silver and copper boxes."]) return false end
+	if not okS then e.err:SetText(L["Sell: whole numbers only in the gold, silver and copper boxes."]) return false end
+	RowFill(e.buy, buy) RowFill(e.sell, sell)
 	local t = W.Set(e.id, buy, sell, e.house)
 	local Money = S().Money
 	ns:Print("%s", L["Watchlist: %s (%s): buy <= %s, sell >= %s."]:format(I.ItemName(e.id), t.house,
