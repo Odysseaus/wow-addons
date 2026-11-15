@@ -4,6 +4,20 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.13", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "New", }, items = {
+		"|cff6e2c0aThe flight timer starts with the game|r: it is set up at login on its own, whatever the map does (on, off, or left to Blizzard with the Gamepad UI); no need to switch the setting off and on.",
+		"A flight Valhalla didn't see start (in the air at a /reload with nothing saved, or begun by a click it didn't hear) shows \"In flight\" or \"In flight (reloaded)\" with the time since, Learning; it isn't saved, so no wrong times.",
+		"|cff6e2c0aThe popup in Valhalla's Look|r: Norse in heavy bronze with corner brackets, a Morpheus title and a bronze bar; Profession on the profession window's background in a metal and gold edge, with a gold bar. It changes with the Look.",
+		"/valhalla flight: the timer's state (set up, the setting, the flight in the air, the popup), for a report.",
+	} },
+	{ version = "1.2.12", date = "2026-11-15", heads = { [1] = "New", [6] = "Note", }, items = {
+		"|cff6e2c0aFlight timer popup|r (on at first; Valhalla's menu and Settings, under Flight masters): a popup from takeoff to landing on every flight, with where you're going.",
+		"A route you've flown before counts down (M:SS) with a bar; past its time it says \"Landing soon (+0:12)\". A route you've never flown shows the time so far and \"Learning\", and is timed as you land: nothing is guessed from distances.",
+		"A route with stops counts down once the whole route, or every leg of it, has been timed. Whole routes are remembered by the game's own flight master IDs; landing early isn't saved.",
+		"It goes on after a /reload in the air, fades out as you land, and follows Valhalla's Look (Profession or Norse).",
+		"Move it while Edit Mode is open (drag it; right-click puts it back); Settings > Reset flight timer position. It starts below the top centre of the screen.",
+		"Only Valhalla's own frames: it works in combat, and Blizzard's Edit Mode is only listened to, never changed.",
+	} },
 	{ version = "1.2.11", date = "2026-11-14", heads = { [1] = "Fixed", [2] = "New", [6] = "Note", }, items = {
 		"|cff6e2c0aThe quest log's zones stay in alphabetical order|r: the game sorted them again for the map shown on every map change, and a quest's click moves the map to its zone, so they jumped about (Valhalla's seamless map changing maps as you pan made it happen more). Campaign headers, if any, stay first.",
 		"|cff6e2c0aShow Ready to Turn In section|r (the quest log's gear menu, after Chain quest view; also Valhalla's menu > More > Quest log; off at first): every quest ready to turn in is listed in a \"Ready to Turn In (N)\" section at the very bottom of the log, out of its zone, even from a collapsed zone.",

@@ -72,6 +72,12 @@ local function Slash(msg)
 		if objectives then objectives:Slash(objArg) end
 		return
 	end
+	-- /valhalla flight (1.2.13): the flight timer's state, for a report (Map/Flights.lua)
+	if objWord == "flight" or objWord == "flights" then
+		local T = ns.MapFlights and ns.MapFlights.Timer
+		if T and T.Debug then T.Debug() else ns:Print("%s", ns.L["Flight timer: not loaded."]) end
+		return
+	end
 	-- /valhalla chain [coverage|on|off] (1.1.0): the quest log's Chain quest view (Objectives/QuestChains.lua)
 	if objWord == "chain" or objWord == "chains" then
 		local chains = ns:GetModule("chains")

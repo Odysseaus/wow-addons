@@ -914,6 +914,38 @@ function Bronze(w, vh, th)
 	end
 end
 
+-- (1.2.13) a small popup's frame (the flight timer): Norse heavy bronze with corner brackets over its dark
+-- background, a bronze bar; Profession the profession window's background in a dark metal edge with a gold
+-- line inside it, a gold bar. vh.bar: its StatusBar
+Style.POPUP_BAR = { profession = { 1, 0.78, 0.18 }, norse = { 0.8, 0.56, 0.24 } }
+APPLY.popup = function(w, vh, th)
+	if th.key == "profession" then
+		Background(w, vh, th.frame.bg, th.frame.shade)
+		local metal = { 0.3, 0.27, 0.24, 1 }
+		for _, k in ipairs({ "mT", "mB", "mL", "mR" }) do
+			local t = Part(w, k, "BORDER", 0)
+			if k == "mT" then t:SetPoint("TOPLEFT", -2, 2) t:SetPoint("TOPRIGHT", 2, 2) t:SetHeight(3)
+			elseif k == "mB" then t:SetPoint("BOTTOMLEFT", -2, -2) t:SetPoint("BOTTOMRIGHT", 2, -2) t:SetHeight(3)
+			elseif k == "mL" then t:SetPoint("TOPLEFT", -2, 2) t:SetPoint("BOTTOMLEFT", -2, -2) t:SetWidth(3)
+			else t:SetPoint("TOPRIGHT", 2, 2) t:SetPoint("BOTTOMRIGHT", 2, -2) t:SetWidth(3) end
+			Color(t, metal)
+		end
+		Edge(w, { 0.85, 0.66, 0.3, 1 }, 1, 1)
+	else
+		Background(w, vh, th.frame.bg, th.frame.shade, { 2, -2, -2, 2 })
+		Bronze(w, vh, th)
+	end
+	local bar = vh.bar
+	if bar and bar.SetStatusBarColor then
+		local c = Style.POPUP_BAR[th.key] or Style.POPUP_BAR.profession
+		bar:SetStatusBarColor(c[1], c[2], c[3], 1)
+	end
+end
+
+function Style.Popup(f, bar)
+	return Track(f, "popup", { bar = bar }, false)
+end
+
 APPLY.frame = function(w, vh, th)
 	local prof = th.key == "profession"
 	if vh.nine then vh.nine:SetShown(prof) end
