@@ -4,6 +4,12 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.17", date = "2026-11-15", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aA ready dungeon quest shows where you turn it in|r: outside dungeons, a dungeon quest that's ready to turn in now shows in the side panel's Ready to Turn In when you're in the zone of its turn-in (e.g. Past Due, from Scarlet Monastery, in Alterac Mountains at Dalaran). Its turn-in is found from the game's marker for it on your map, else the game's map for the quest; when neither knows, it stays hidden outside as before.",
+		"Dungeon quests still in progress stay hidden outside their dungeon; inside a dungeon nothing changed.",
+		"A ready quest tracked again (a click on its marker, or the game) leaves the Quests list at once for Ready to Turn In (after combat, a flight or a loading screen if it's during one).",
+		"/valhalla objectives why <quest ID> also says where its turn-in is and how that was found, whether it's tracked (and how), and whether Valhalla's changes are on hold.",
+	} },
 	{ version = "1.2.16", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
 		"|cff6e2c0aA quest's description stays open|r: clicking a quest in the quest log or the tracker (In progress or Ready to Turn In, complete or not) opened its description for a moment, then went back to the list. While a quest's description is open, Valhalla no longer changes the map underneath (the zone-in-view switch, a dungeon quest's entrance zone, the map opened inside a dungeon); the map still glides to the quest.",
 		"After Back (or with the map closed), the map follows what you're looking at again, as before.",

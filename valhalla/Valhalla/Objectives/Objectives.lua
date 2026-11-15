@@ -54,6 +54,12 @@
 -- zone's name, map or pins count there; "X: Zone" headers are outdoors only; the entrance zone's Dungeon-tagged
 -- quests are this dungeon's; pinned quests still show. /vh objectives why says where each name came from and
 -- is kept in ValhallaDB.objectives.lastWhy.
+--
+-- 1.2.17, a ready dungeon quest outdoors is in Ready to Turn In in the zone of its turn-in (O.TurnIn: the
+-- game's marker here, else Valhalla's turn-in data, else the game's map for the quest; unknown: hidden as
+-- before); in progress it stays hidden outdoors; inside a dungeon nothing changes. A ready quest tracked
+-- again (QUEST_WATCH_LIST_CHANGED) leaves Quests on the quick pass (held in combat, flight, loading).
+-- /vh objectives why <id> says the turn-in and its source, the watch type and whether changes are on hold.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -547,6 +553,39 @@ function O.Marker(id, here)
 	return false
 end
 
+-- 1.2.17, a ready dungeon quest outdoors: listed in Ready to Turn In in the zone of its turn-in. Where that is:
+--   1. "marker": the game's marker for it (its turn-in, once ready) on a map of this zone (the zone's own map or
+--      one inside it, a city's), not a map indicator or a route's waypoint;
+--   2. "data": Valhalla's own turn-in data (ns.QuestTurnIns: [questID] = uiMapID), when it has the quest
+--      (none shipped yet: nothing is guessed);
+--   3. "game quest map": the game's map for the quest (GetQuestUiMapID, waypoints off: its turn-in marker's
+--      map), never a dungeon's map;
+--   else "unknown": hidden outdoors as before (/valhalla objectives why says so).
+-- Returns the turn-in's map, the source, and whether that's this zone
+function O.HereMap(m, here)
+	if not m or m == 0 or not here then return false end
+	if here.maps[m] then return true end
+	local z = O.ZoneOf(m)
+	return z ~= nil and (z == here.zone or here.maps[z] == true) or false
+end
+function O.TurnIn(e, here)
+	if not (e and here) then return nil, "unknown", false end
+	for _, p in ipairs(here.pins[e.id] or {}) do
+		if not p.indicator and not p.waypoint then
+			local m = (p.otherMap and p.mapID) or p.map
+			if O.HereMap(m, here) then return m, "marker", true end
+		end
+	end
+	local data = type(ns.QuestTurnIns) == "table" and tonumber(ns.QuestTurnIns[e.id]) or nil
+	if data then return data, "data", O.HereMap(data, here) end
+	local gm = GetQuestUiMapID and tonumber((Call(GetQuestUiMapID, e.id, true)))
+	if gm and gm ~= 0 then
+		local info = MapInfo(gm)
+		if not (info and info.mapType == DUNGEON_MAP) then return gm, "game quest map", O.HereMap(gm, here) end
+	end
+	return nil, "unknown", false
+end
+
 local DUNGEON_TAGS = { [81] = true, [62] = true }   -- Constants.QuestConsts QUEST_INFO_DUNGEON_ID / QUEST_INFO_RAID_ID
 function O.IsDungeonQuest(e)
 	return (e.tag and DUNGEON_TAGS[e.tag]) or (e.header and O.IsDungeonName(e.header)) or false
@@ -584,6 +623,13 @@ function O.Classify(e, here, placeOnly)
 		end
 		return false, "in a dungeon: only its own quests are listed"
 	end
+	local dungeon = O.IsDungeonQuest(e)
+	if dungeon and e.ready then   -- (1.2.17) ready: in its turn-in's zone too
+		local m, src, yes = O.TurnIn(e, here)
+		if yes then return true, ("a ready dungeon quest: its turn-in is in this zone (map %s, from the %s)"):format(tostring(m), src) end
+		if m then return false, ("a ready dungeon quest: its turn-in is on map %s (from the %s), not this zone"):format(tostring(m), src) end
+		return false, "a ready dungeon quest: its turn-in zone is unknown (no marker here, no data): listed inside its dungeon"
+	end
 	-- "X: Zone" counts as that zone
 	local suffix = h and h:match("^[^:]+:%s*(.+)$")
 	local function Marked(text)
@@ -597,7 +643,6 @@ function O.Classify(e, here, placeOnly)
 		if yes then return true, why end
 		return false, text
 	end
-	local dungeon = O.IsDungeonQuest(e)
 	if dungeon then return false, "a dungeon quest: listed inside its dungeon" end
 	if h and Here(h) then return true, ("header \"%s\" is this zone"):format(h) end
 	if h and O.IsZoneName(h) then
@@ -1181,7 +1226,9 @@ function O.OnEvent(event, a1, a2, ...)
 			if was then O.NotifyPins(a1) end
 		end
 		S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE
-	elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE" then
+	elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE" or event == "QUEST_WATCH_LIST_CHANGED" then
+		-- (1.2.17: a ready quest tracked again, by a click on its marker or by the game, leaves Quests on the
+		-- quick pass; held in combat, on a flight or a loading screen and made after)
 		S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE
 		if event == "QUEST_LOG_UPDATE" then O.ProgressDue(now) end
 	elseif event == "PLAYER_REGEN_ENABLED" then
@@ -1743,6 +1790,20 @@ function O.Why(id)
 				p.otherMap and ", another map's" or "", p.kept and "kept" or "dropped")
 		end
 		if not here.pins[id] then out[#out + 1] = "  no map pins here" end
+		-- (1.2.17) its turn-in (ready dungeon quests outdoors), its watch, and whether watch changes wait
+		local m, src = O.TurnIn(e, here)
+		out[#out + 1] = ("  turn-in: %s (from the %s)%s"):format(m and ("map " .. tostring(m) .. (MapInfo(m) and (" " .. tostring(MapInfo(m).name)) or "")) or "unknown",
+			src, (m and O.HereMap(m, here)) and ", this zone" or "")
+		local wt = C_QuestLog and C_QuestLog.GetQuestWatchType and Call(C_QuestLog.GetQuestWatchType, id)
+		local _, watched = O.WatchOrder()
+		out[#out + 1] = ("  watch: %s%s"):format(watched[id] and "tracked" or "not tracked",
+			wt ~= nil and (" (watch type " .. tostring(wt) .. (wt == 0 and ", automatic" or wt == 1 and ", manual" or "") .. ")") or "")
+		local hold = {}
+		if InCombat() then hold[#hold + 1] = "combat" end
+		if OnTaxi() then hold[#hold + 1] = "flight" end
+		if S.loading then hold[#hold + 1] = "loading screen" end
+		out[#out + 1] = ("  watch changes: %s; queued %d%s"):format(#hold > 0 and ("on hold (" .. table.concat(hold, ", ") .. ")") or "not on hold",
+			#(S.ops or {}), (S.partialDue or S.fullDue) and ", a pass is due" or "")
 		local g = here.guard[id]
 		if g then
 			out[#out + 1] = ("  next waypoint: %s; local marker: %s; counts as a marker here: %s%s"):format(

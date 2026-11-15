@@ -549,7 +549,7 @@ ok(not has(ReadyIds(), 5), "the same as a waypoint: not in Ready", list(ReadyIds
 W.AddQuest(23, "Gnomeregan", "The Grand Betrayal", 35, true, false)
 W.onMap[1426] = { { questID = 23, mapID = 1426 } }
 Arrive(1455)
-ok(not has(ReadyIds(), 23), "a ready dungeon quest with a real marker outdoors: not in Ready", list(ReadyIds()))
+ok(has(ReadyIds(), 23) and not has(W.watches, 23), "1.2.17: a ready dungeon quest with its turn-in marker in this zone (Dun Morogh, around Ironforge): in Ready, not Quests", list(ReadyIds()))
 
 print("== 28. inside a dungeon: no exception")
 W.onMap[9100] = { { questID = 22, mapID = 9100 }, { questID = 21, mapID = 9100 } }
@@ -1144,6 +1144,95 @@ W.AddQuest(112, "Gnomeregan", "Gnogaine", 27, false, false, 81)
 Arrive(9100, { name = "Gnomeregan", kind = "party", id = 90 })
 ok(has(W.watches, 112) and O.S.here.maps[9100] and noneOf(W.watches), "Gnomeregan (its own Dungeon-type map): its quest, as before", list(W.watches))
 W.MAPS[1416] = nil
+W.onMap[1416] = nil
+O.ForgetNames()
+
+print("== 54. (1.2.17) a ready dungeon quest outdoors: Ready to Turn In in its turn-in's zone")
+W.Reset()
+Restart()
+W.MAPS[1416] = { name = "Alterac Mountains", mapType = 3, parentMapID = 1415 }
+local hadTirisfal = W.MAPS[1420] ~= nil
+W.MAPS[1420] = W.MAPS[1420] or { name = "Tirisfal Glades", mapType = 3, parentMapID = 1415 }
+W.MAPS[9104] = { name = "Dalaran", mapType = 5, parentMapID = 1416 }   -- (a spot inside Alterac Mountains)
+O.ForgetNames()
+W.AddQuest(96800, "Scarlet Monastery", "Past Due", 30, true, false, 81)
+W.AddQuest(96801, "Scarlet Monastery", "Mythology of the Titans", 38, false, false, 81)   -- (in progress)
+W.AddQuest(103, "Alterac Mountains", "Crushridge Bounty", 36, false, false)
+local gameMap = {}
+_G.GetQuestUiMapID = function(q, ignoreWaypoints) W.lastIgnore = ignoreWaypoints return gameMap[q] or 0 end
+local wtype = {}
+C_QuestLog.GetQuestWatchType = function(q) for _, x in ipairs(W.watches) do if x == q then return wtype[q] or 1 end end return nil end
+-- 1. its turn-in marker on this zone's map (on the Dalaran spot inside it)
+W.onMap[1416] = { 103, { questID = 96800, mapID = 9104 } }
+Arrive(1416)
+ok(has(ReadyIds(), 96800) and not has(W.watches, 96800), "Alterac Mountains, its turn-in marker here: Past Due in Ready, not in Quests", list(ReadyIds()))
+ok(has(W.watches, 103), "  the zone's own quests as before", list(W.watches))
+local why = Why(96800)
+ok(why:find("listed in Ready, a ready dungeon quest: its turn%-in is in this zone %(map 9104, from the marker%)")
+  and why:find("turn%-in: map 9104 Dalaran %(from the marker%), this zone"), "why: the turn-in, from the marker", why)
+ok(why:find("watch: not tracked") and why:find("watch changes: not on hold"), "why: its watch and the hold", why)
+-- 2. no marker; Valhalla's turn-in data says this zone
+W.onMap[1416] = { 103 }
+ns.QuestTurnIns = { [96800] = 9104 }
+Arrive(1416)
+ok(has(ReadyIds(), 96800), "no marker, turn-in data in this zone: in Ready", list(ReadyIds()))
+ok(Why(96800):find("from the data%), this zone"), "why: from the data")
+-- 3. data saying another zone
+ns.QuestTurnIns = { [96800] = 1420 }
+Arrive(1416)
+ok(not has(ReadyIds(), 96800), "the turn-in in another zone (Tirisfal): hidden here", list(ReadyIds()))
+ok(Why(96800):find("its turn%-in is on map 1420 %(from the data%), not this zone"), "why: another zone")
+Arrive(1420)
+ok(has(ReadyIds(), 96800), "...and in Ready in Tirisfal", list(ReadyIds()))
+ns.QuestTurnIns = nil
+-- 4. no marker, no data: the game's own map for it (waypoints off); a dungeon map never counts
+gameMap[96800] = 9104
+Arrive(1416)
+ok(has(ReadyIds(), 96800) and W.lastIgnore == true, "the game's map for it (Dalaran, waypoints off): in Ready", list(ReadyIds()))
+W.MAPS[9105] = { name = "Scarlet Monastery", mapType = 4, parentMapID = 1420 }
+gameMap[96800] = 9105
+Arrive(1420)
+ok(not has(ReadyIds(), 96800), "the game's map a dungeon's map: not counted (no Tirisfal turn-in guessed)", list(ReadyIds()))
+gameMap[96800] = nil
+-- 5. unknown: as before
+Arrive(1416)
+ok(not has(ReadyIds(), 96800), "turn-in unknown: hidden outdoors, as before", list(ReadyIds()))
+why = Why(96800)
+ok(why:find("its turn%-in zone is unknown") and why:find("turn%-in: unknown %(from the unknown%)"), "why: unknown", why)
+-- 6. in progress: hidden outdoors, marker or not
+W.onMap[1416] = { 103, { questID = 96801, mapID = 1416 } }
+Arrive(1416)
+ok(not has(W.watches, 96801) and not has(ReadyIds(), 96801), "an in-progress dungeon quest with a marker outdoors: hidden", list(W.watches))
+-- 7. tracked again (a click on its marker, the game): leaves Quests on the quick pass after QUEST_WATCH_LIST_CHANGED
+W.onMap[1416] = { 103, { questID = 96800, mapID = 9104 } }
+Arrive(1416)
+C_QuestLog.AddQuestWatch(96800) Fire("QUEST_WATCH_LIST_CHANGED")
+ok(has(W.watches, 96800), "  (tracked again)")
+why = Why(96800)
+ok(why:find("watch: tracked %(watch type 1, manual%)") and why:find("a pass is due"), "why: tracked, manual, a pass due", why)
+Run(1)
+ok(not has(W.watches, 96800) and has(ReadyIds(), 96800), "after QUEST_WATCH_LIST_CHANGED: out of Quests, still in Ready", list(W.watches))
+W.combat = true W.combatChanges = 0
+C_QuestLog.AddQuestWatch(96800) W.combatChanges = 0 Fire("QUEST_WATCH_LIST_CHANGED") Run(1)
+ok(has(W.watches, 96800) and W.combatChanges == 0, "in combat: held", list(W.watches))
+ok(Why(96800):find("on hold %(combat%)"), "why: on hold (combat)")
+W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(1)
+ok(not has(W.watches, 96800), "combat over: removed then", list(W.watches))
+W.taxi = true
+C_QuestLog.AddQuestWatch(96800) Fire("QUEST_WATCH_LIST_CHANGED") Run(1)
+ok(has(W.watches, 96800), "on a flight: held", list(W.watches))
+W.taxi = false Fire("PLAYER_CONTROL_GAINED") Run(3)
+ok(not has(W.watches, 96800), "landed: removed then", list(W.watches))
+-- 8. inside City of Dalaran (2959): Alterac quests still hidden, its own ready quest listed
+W.AddQuest(110, "City of Dalaran", "Starving Arcane", 33, true, false, 81)
+Arrive(nil, { name = "City of Dalaran", kind = "party", id = 2959 })
+ok(not has(W.watches, 103) and not has(ReadyIds(), 96800) and has(ReadyIds(), 110), "inside City of Dalaran: no Alterac quests, its own ready quest in Ready; Past Due not", list(ReadyIds()))
+-- 9. inside Scarlet Monastery: its ready quests listed (as before)
+Arrive(nil, { name = "Scarlet Monastery", kind = "party", id = 189 })
+ok(has(ReadyIds(), 96800) and has(W.watches, 96801), "inside Scarlet Monastery: Past Due in Ready, its in-progress quest in Quests", list(ReadyIds()) .. " " .. list(W.watches))
+_G.GetQuestUiMapID = nil C_QuestLog.GetQuestWatchType = nil
+W.MAPS[1416], W.MAPS[9104], W.MAPS[9105] = nil, nil, nil
+if not hadTirisfal then W.MAPS[1420] = nil end
 W.onMap[1416] = nil
 O.ForgetNames()
 
