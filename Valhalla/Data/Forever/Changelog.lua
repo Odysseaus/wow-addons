@@ -4,6 +4,46 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.10", date = "2026-11-14", heads = { [1] = "Removed", [5] = "Changed", [8] = "Kept", }, items = {
+		"|cff6e2c0aThe Auction House checkout cart and its buying are gone|r: the + on the AH list's rows, Checkout (N), the cart view (its quantity steppers, Back, Scan and Buy), the Buy Yes / No question, Buy next and Confirm. WoW Forever blocks an addon's Auction House purchases (even on your own click the game refuses them), so they could never work: buy with the Auction House's own Buy button, as before 1.2.7.",
+		"The cart's price-guard setting is gone from Settings.",
+		"/valhalla invest buys (the purchase log) and /valhalla invest buydebug are gone.",
+		"A saved cart, purchase log and buy debug log are cleared when you log in (the game saves that as usual; your shopping lists are untouched).",
+		"|cff6e2c0aThe AH list's Search buttons are their full width again|r (as before 1.2.7) and work as they always did: your click puts the item's name in the Auction House's search and runs its own search.",
+		"The AH side panel is its old height again; the Scan status keeps its own line above the Scan button, inside the panel, under the list's pages.",
+		"The AH side panel always shows the list; minimized or not is still remembered across visits and /reload.",
+		"Still here: the faster search (1.2.8), History's Add to shopping list and Craft / Harvest's Add SL column, the AH list's plain rows (no vendor dimming), Dave's Sack's AH scans kept off (its setting), and what you buy at the Auction House shown \"In the mail\" until it reaches your bags.",
+	} },
+	{ version = "1.2.9", date = "2026-11-14", heads = { [1] = "Fixed", [4] = "Changed", [7] = "New", [8] = "Note", }, items = {
+		"|cff6e2c0aBuying stackable goods from the cart works as the Auction House's own Buy does|r: Yes (or Buy next) asks the game's price; when it comes, the button shows \"Confirm: <item> xN for <price>\" and your click on it buys, while the game's price holds (if it runs out first, Buy next asks again). Other items are still bought at their buyout on your click. Before, nothing was bought (\"no answer from the Auction House\").",
+		"The Auction House busy: nothing is sent; the cart says \"Auction House busy: press Buy next again in a moment\", and Buy next comes back when it's ready.",
+		"Each step says what didn't answer: no price from the Auction House, or confirmed but no purchase answer. A purchase counts as bought on the game's success, the item arriving, or your gold going down. A price addons can't read, or an error, stops the buying and says so in chat.",
+		"|cff6e2c0aDave's Sack's own Auction House scans are off|r, so only Valhalla scans the AH (it searched all your bag items, and every 2 hours the whole AH, each time the AH opened, while you were buying). Its bags and AH price tooltips work as before. Said once a session in chat; Settings > Auction House: \"Turn off Dave's Sack's own Auction House scans\" (on by default).",
+		"The AH list's rows all look the same, in the list's own order: a vendor's price is only in the item's tooltip (no dimming, no line under the name).",
+		"Each Auction House visit opens the side panel on the list, never the cart (the cart's items are kept). Minimized or not stays as you left it, across visits and /reload.",
+		"|cff6e2c0a/valhalla invest buydebug on|off|r: every buying step and the game's answers (blocked actions and AH errors too) in chat and the saved log; /valhalla invest buydebug shows the last lines.",
+		"A /reload is enough after installing (no new files).",
+	} },
+	{ version = "1.2.8", date = "2026-11-14", heads = { [1] = "Fixed", [6] = "Changed", [8] = "Note", }, items = {
+		"|cff6e2c0aThe Auction House list shows every item on the list|r: what only the AH has first, then items a vendor you've visited also sells, dimmed, with \"Vendor: <price> (<vendor>)\" under the name. Each row has the cart's +. Before, a list of such items (many herbs, leather, thread) looked empty there.",
+		"|cff6e2c0aThe item search is smooth again|r: it runs 0.3 s after you stop typing, its index of names is built once a session, and names the game hasn't sent yet are asked for a few at a time (at most 20 a second, 30 waiting) only while the dropdown is open.",
+		"The results stay put: for the same text the rows keep their order; names that arrive later only fill empty rows below (at most once a second). Items sort the same way every time (case-insensitive name, then item number).",
+		"The dropdown closes, and stops asking for names, on Escape (the text is kept), when the box loses focus, when you click outside it, or when the page closes. Clicking Add in it still works.",
+		"The AH side panel's status no longer runs over the buttons: on the list it has its own line (two lines at most) above the Scan button; in the cart, its own line above Buy next. An empty cart shows its message in the middle.",
+		"After a full scan, the names of scanned items the game hasn't sent yet are filled in slowly in the background (4 a second, paused in combat, stopped when the AH closes), so later searches find them at once.",
+		"The cart's Back, Scan and Buy buttons moved down to where the Scan button is on the list; the Checkout button moved up a little.",
+		"A /reload is enough after installing (no new files).",
+	} },
+	{ version = "1.2.7", date = "2026-11-14", heads = { [1] = "New", [6] = "Changed", [8] = "Note", }, items = {
+		"|cff6e2c0aCheckout cart at the Auction House|r (one per character): + on a row of the AH list puts what's still needed in the cart; Checkout (N) opens it. Each item has a quantity stepper, its price each and line total, then the Total and your gold. Back, Scan and Buy.",
+		"The cart's Scan prices each item exactly (its cheapest listings, enough for the quantity) and says when fewer are listed than you want. Buy asks first (Yes / No). Yes buys the first item; then \"Buy next\" buys each of the rest: one click per purchase, as the game requires. Stackable goods are bought only if the game's price is at most +5% over the price shown (Settings > Auction House: Cart price guard), else skipped. It stops on a failure, not enough gold, or the AH closing.",
+		"Every cart purchase is logged: /valhalla invest buys. What you buy is tracked in the mail as before.",
+		"|cff6e2c0aAdd to a shopping list from AH Market|r: History has an Add to shopping list button, and Craft and Harvest have an Add SL column with a + on each row. Choose the list (the active one first, \"(in list: N)\" beside each) or New list...; it adds 1, the chat says so, and Undo takes it back.",
+		"|cff6e2c0aThe item search finds more|r: every item your AH scans have seen, the professions' recipes and Top 10's items, by name (names the game hasn't sent yet are loaded and the search runs again). Words match in any order (\"thread silky\"), up to 10 results.",
+		"Add in the search (and the Add buttons) puts in a quantity of 1.",
+		"The Shopping List's Search buttons are a little narrower to fit the cart's +.",
+		"A /reload is enough after installing (no new files).",
+	} },
 	{ version = "1.2.6", date = "2026-11-13", heads = { [1] = "New", [3] = "Changed", [5] = "Note", }, items = {
 		"|cff6e2c0aAH Market tab tooltips|r: hover Top 10, My items, History, Scan results or Craft for a short note on what that tab shows.",
 		"|cff6e2c0aCraft: Show: Per stack|r (between Known only and the Count dropdown, off by default, also in Harvest): the Total column becomes \"Total (stack)\", Profit/item times the item's real max stack (e.g. 20; an item that doesn't stack counts as 1). An item the game hasn't loaded yet stays blank until it arrives. Sorting uses the shown value; Have and Can Make/Own are unchanged.",

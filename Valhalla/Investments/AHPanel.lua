@@ -13,10 +13,12 @@
 -- v0.3.2: the active shopping list only; a "List: <name>" picker under the title chooses which.
 -- v0.3.3: the list's Auction House items stay listed once you have enough (Done) or bought them (In mail);
 -- "None" chosen: no list here.
--- Buying is always your own click on the game's own Buy button: Valhalla buys nothing.
+-- Buying: always your own click on the game's own Buy button (1.2.10: the 1.2.7 to 1.2.9 checkout cart is gone:
+-- WoW Forever blocks an addon's Auction House purchase calls, ADDON_ACTION_BLOCKED, even on your click).
 -- v0.3.5: the AH check's button was here. v0.4.0: Scan instead (the AH check: /valhalla invest diag ah):
 -- a full scan when its 15 minutes are up, else a quick scan of your items; Stop, what it's doing and a bar;
 -- minimized, the small button's right-click scans or stops. The rows' items show the game's tooltip.
+-- 1.2.9: the list's rows all look the same (a vendor's price only in the tooltip).
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -29,7 +31,16 @@ I.AH = A
 A.ROWS = 13                                 -- (v0.4.2.1: a page of 13, its pager under them)
 A.offset = 0
 A.W = 270
-A.H = 530
+A.H = 530                                   -- (1.2.10: 530 again, the cart's Checkout bar gone; 1.2.7-1.2.9: 560)
+-- (1.2.8) the bottom, from the panel's bottom edge, fixed: nothing grows into anything else (1.2.7's Scan status
+-- wrapped up over the buttons and out of the panel): the mail line, the Scan button (+ its bar), the status (its
+-- own full-width line, 2 lines at most) up to the pager.
+A.Y = { mail = 10, check = 26, status = 62, statusH = 24 }
+local function Lines(fs, n)
+	if fs.SetWordWrap then fs:SetWordWrap(n > 1) end
+	if fs.SetMaxLines then fs:SetMaxLines(n) end
+end
+A.Lines = Lines
 A.WATCH = 3                                 -- (seconds to wait for the AH's answer to a search)
 local panel, mini
 local on = false
@@ -111,7 +122,7 @@ end
 -- a Search button: secure, its click the AH's own Search button's (set up once, out of combat)
 local function SearchButton(r, T, V)
 	local b = CreateFrame("Button", nil, r, "SecureActionButtonTemplate,BackdropTemplate")
-	b:SetSize(64, 20)
+	b:SetSize(64, 20)   -- (1.2.10: 64 again; 1.2.7-1.2.9: 54, beside the cart's +)
 	T.SkinFlat(b, 0.9)   -- (v0.4.2: a secure button keeps the flat look; the looks never touch one)
 	b.text = T.Font(b:CreateFontString(nil, "OVERLAY", "GameFontHighlight"), 12, T.GOLD)
 	b.text:SetPoint("CENTER")
@@ -177,15 +188,24 @@ local function Build()
 		r.icon:SetPoint("LEFT", 2, 0)
 		r.name = T.Font(r:CreateFontString(nil, "OVERLAY", "GameFontHighlight"), 12)
 		r.name:SetPoint("LEFT", 26, 0)
-		r.name:SetWidth(120)
+		r.name:SetWidth(120)   -- (1.2.10: 120 again; 1.2.7-1.2.9: 104, for the cart's +)
+		if r.name.SetWordWrap then r.name:SetWordWrap(false) end
+		-- (1.2.9) a vendor sells it: "Vendor: <price> (<vendor>)" in its tooltip only (1.2.8 dimmed the row and put
+		-- it under the name: the rows look the same now, all bought at the AH)
 		r.name:SetJustifyH("LEFT")
 		r.hover = CreateFrame("Button", nil, r)
 		r.hover:SetPoint("LEFT", 0, 0)
 		r.hover:SetSize(146, 22)
-		r.hover:SetScript("OnEnter", function(self) if r.id then V.ItemTooltip(self, r.id, I.Market and I.Market.Lines) end end)
+		r.hover:SetScript("OnEnter", function(self)
+			if not r.id then return end
+			V.ItemTooltip(self, r.id, I.Market and I.Market.Lines)
+			if r.vendorLine and GameTooltip then GameTooltip:AddLine(r.vendorLine, 0.6, 0.6, 0.6, true) GameTooltip:Show() end
+		end)
 		r.hover:SetScript("OnLeave", function() V.HideItemTooltip() end)
 		r.need = T.Font(r:CreateFontString(nil, "OVERLAY", "GameFontNormal"), 12, T.GOLD)
 		r.need:SetPoint("LEFT", 150, 0)
+		r.need:SetWidth(40)
+		r.need:SetJustifyH("LEFT")
 		r.search = SearchButton(r, T, V)
 		r.search:SetPoint("RIGHT", 0, 0)
 		r:Hide()
@@ -201,12 +221,13 @@ local function Build()
 	panel.pager:SetPoint("TOPLEFT", 8, -84 - A.ROWS * 26 - 2)
 	panel.pager:Hide()
 	panel.mail = T.Font(panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 11, T.GOLD)
-	panel.mail:SetPoint("BOTTOMLEFT", 12, 10)
+	panel.mail:SetPoint("BOTTOMLEFT", 12, A.Y.mail)
 	panel.mail:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
 	panel.mail:SetJustifyH("LEFT")
+	Lines(panel.mail, 1)
 	-- the AH check (v0.3.5): its button, what it's doing and a bar
 	local check = CreateFrame("Frame", nil, panel)
-	check:SetPoint("BOTTOMLEFT", 8, 26)
+	check:SetPoint("BOTTOMLEFT", 8, A.Y.check)
 	check:SetPoint("RIGHT", panel, "RIGHT", -8, 0)
 	check:SetHeight(34)
 	check.button = V.Button(check, L["Scan"], 110, 22, function() A.CheckClick() end)
@@ -220,10 +241,15 @@ local function Build()
 		GameTooltip:Show()
 	end)
 	check.button:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	-- (1.2.8) the status: its own full-width line above the Scan button, 2 lines at most (1.2.7: beside the
+	-- button, 124 px wide, wrapping up over the 1.2.7 cart's buttons)
 	check.status = T.Font(check:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), 10, { 0.75, 0.75, 0.75 })
-	check.status:SetPoint("LEFT", check.button, "RIGHT", 8, 0)
-	check.status:SetPoint("RIGHT", check, "RIGHT", -2, 0)
+	check.status:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, A.Y.status)
+	check.status:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
+	check.status:SetHeight(A.Y.statusH)
 	check.status:SetJustifyH("LEFT")
+	check.status:SetJustifyV("BOTTOM")
+	Lines(check.status, 2)
 	check.track = check:CreateTexture(nil, "BACKGROUND")
 	check.track:SetColorTexture(0, 0, 0, 0.6)
 	check.track:SetPoint("BOTTOMLEFT", 2, 0)
@@ -235,6 +261,7 @@ local function Build()
 	check.bar:SetPoint("BOTTOMLEFT", check.track, "BOTTOMLEFT", 0, 0)
 	check.bar:SetWidth(1)
 	panel.check = check
+	panel.title = title
 	panel.empty = T.Font(panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight"), 12, { 0.6, 0.6, 0.6 })
 	panel.empty:SetPoint("TOPLEFT", 14, -88)
 	panel.empty:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
@@ -348,14 +375,15 @@ end
 
 -- the active list's Auction House items (what no vendor you've visited sells), whatever their state;
 -- needed: how many are still to buy
+-- (1.2.8) every item of the list (before 1.2.8 vendor-sold items weren't shown here at all: a list of herbs some
+-- vendor sells looked empty). (1.2.9) in the list's own order, every row the same (a vendor's price only in the
+-- tooltip; 1.2.8 put them last, dimmed)
 function A.Rows()
 	local list = I.ShoppingList()
 	local rows, needed = {}, 0
 	for _, r in ipairs(I.ListRows(list.list)) do
-		if r.source == "ah" then
-			rows[#rows + 1] = r
-			if r.need > 0 then needed = needed + 1 end
-		end
+		rows[#rows + 1] = r
+		if r.need > 0 then needed = needed + 1 end
 	end
 	return rows, list, needed
 end
@@ -372,10 +400,12 @@ function A.Refresh()
 		return
 	end
 	mini:Hide()
+	-- (1.2.10) always the list (the 1.2.7-1.2.9 cart view is gone)
+	panel.title:SetText(L["Valhalla: Shopping List"])
 	panel.picker.Update()
 	if list.list then
 		panel.sub:SetText(L["Still needed: %d. Done %d / %d. Search, then buy with the AH's own button."]:format(needed, list.done, list.total))
-		panel.empty:SetText(L["Nothing on this list from the Auction House."])
+		panel.empty:SetText(L["This list is empty."])
 	else
 		panel.sub:SetText("")
 		panel.empty:SetText(#I.Lists() == 0 and L["No shopping list yet: build one in Investments > Shopping List (click the button above)."]
@@ -394,6 +424,8 @@ function A.Refresh()
 		if d then
 			r.icon:SetTexture(I.ItemIcon(d.id))
 			r.name:SetText(d.name)
+			local sold = d.source == "vendor"
+			r.vendorLine = sold and L["Vendor: %s (%s)"]:format(I.Scan.Money(d.price or 0), d.vendor or "?") or nil
 			if d.need > 0 then
 				r.need:SetText("x" .. d.need)
 				r.need:SetTextColor(1, 0.82, 0)
@@ -405,6 +437,7 @@ function A.Refresh()
 				r.need:SetTextColor(0.3, 0.9, 0.3)
 			end
 			r.id = d.id
+			r.needN = d.need
 			r:Show()
 		else
 			r.id = nil
