@@ -45,6 +45,9 @@ I.SETTINGS = {
 	marketHouse = "Alliance",   -- (v0.4.2.7: AH Market's house buttons)
 	-- AH Market's sorts (v0.4.2.6): "column:asc|desc" per list (Market.lua's M.COLS); these are the defaults
 	sortResults = "name:asc", sortMine = "total:desc", sortCraft = "each:desc", sortHarvest = "sell:desc",
+	-- Watchlist (1.2.14, Watch.lua): a sound with the popup; alerts "every" scan while met | "once" until the target
+	-- changes; Near (Signal column only): 0 (off) | 5 | 10 per cent from a target; its sort
+	watchSound = true, watchAlerts = "every", watchNear = 5, sortWatch = "signal:asc",
 }
 I.CATS = { "mat", "reagent", "gear" }
 I.CAT_NAME = { mat = L["Profession Mat"], reagent = L["Reagent"], gear = L["Gear Upgrade"] }
@@ -77,6 +80,8 @@ local function Fill(t, d)
 	return t
 end
 
+-- (1.2.14) realms[realm].targets = { [itemID] = { house, buy, sell, set, added, lastMet, lastSig, lastPrice, alerted } }: the
+-- Watchlist (Watch.lua), kept until changed
 -- ValhallaInvestDB: { v, settings, diag = { ... }, account = { bank, bankSeen, bankInfo },
 --   realms = { [realm] = { chars = { [name] = { bags, bank, bankSeen, bankInfo, want (v0.3.1's, kept, unused),
 --     lists = { { id, name, created, items = { { id, n, name } } } }, activeList (an id or "none"), nextList, draft,

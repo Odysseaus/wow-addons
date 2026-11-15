@@ -12,7 +12,9 @@ local L = ns.L
 --                                       no slot (a link, a merchant, ...): no line
 --                    "held" (Everything held): all you hold (bags + bank per "Count bank items"), "AH total (N held)"
 --                  only for N of 2 or more
--- Nothing with no scan data, nothing listed, or a soulbound item. Setting: "AH price on item tooltips" (ahTooltip,
+--   Target buy <= / Target sell >=   (1.2.14) the Watchlist's targets for the item (Watch.lua), green when the
+--                  lowest price meets one ("(met)"); shown with or without scan data
+-- No AH lines with no scan data or nothing listed; nothing for a soulbound item. Setting: "AH price on item tooltips" (ahTooltip,
 -- on by default). Coins: the game's own tooltip money format (MoneyFormatterUtil.FormatMoney with
 -- GameTooltipMoneyFormat, as its Sell Price line), else GetCoinTextureString, GetMoneyString, else coin textures;
 -- zero coins left out.
@@ -106,10 +108,18 @@ function P.Hovered(tip, id)
 end
 
 P.TOTALS = { stack = true, held = true }
--- the lines for an item: { { label, coins }, ... } (empty: none to add); tip: the tooltip (its slot, for "stack")
+-- the lines for an item: { { label, coins[, r, g, b] }, ... } (empty: none to add); tip: the tooltip (its slot, for "stack")
 function P.Lines(id, data, tip)
 	if not (id and On()) then return {} end
 	if Soulbound(id, data) then return {} end
+	local out = P.AHLines(id, data, tip)
+	-- (1.2.14) the Watchlist's targets
+	if I.Watch and I.Watch.TooltipLines then
+		for _, l in ipairs(I.Watch.TooltipLines(id)) do out[#out + 1] = l end
+	end
+	return out
+end
+function P.AHLines(id, data, tip)
 	local house = I.Market.House()
 	local low, c = S().Lowest(house, id)
 	if not (low and c) then return {} end
@@ -142,8 +152,11 @@ function P.OnItem(tip, data)
 	local ok, lines = pcall(P.Lines, id, data, tip)
 	if not ok or #lines == 0 then return end
 	for _, l in ipairs(lines) do
-		if tip.AddDoubleLine then tip:AddDoubleLine(l[1], l[2], P.R, P.G, P.B, 1, 1, 1)
-		else tip:AddLine(l[1] .. "  " .. l[2], P.R, P.G, P.B) end
+		-- (1.2.14) a line's own colour (a Watchlist target met: green, both sides)
+		local r, g, b = l[3] or P.R, l[4] or P.G, l[5] or P.B
+		local r2, g2, b2 = l[3] or 1, l[4] or 1, l[5] or 1
+		if tip.AddDoubleLine then tip:AddDoubleLine(l[1], l[2], r, g, b, r2, g2, b2)
+		else tip:AddLine(l[1] .. "  " .. l[2], r, g, b) end
 	end
 	P.added = (P.added or 0) + #lines
 end

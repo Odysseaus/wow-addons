@@ -15,7 +15,7 @@ ns.modules.worldmap = { key = "worldmap", enabled = true }
 function ns.modules.worldmap.TabAway(away) ns.modules.worldmap.away = away end   -- (Map/Panel.lua: its menu put away on the other tabs)
 assert(loadfile(root .. "UI/Style.lua"))("Valhalla", ns)   -- (v0.4.2: the look, loaded after Core.lua)
 assert(loadfile(root .. "Links.lua"))("Valhalla", ns)
-for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Tooltip", "Data/Forever/Recipes", "Data/Forever/TopSkills", "Craft", "Trainer", "Merchant", "AHPanel" }) do
+for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Watch", "Tooltip", "Data/Forever/Recipes", "Data/Forever/TopSkills", "Craft", "Trainer", "Merchant", "AHPanel" }) do
   assert(loadfile(root .. (f:find("/") and f or ("Investments/" .. f)) .. ".lua"))("Valhalla", ns)   -- (the TOC's order)
 end
 local mod = ns:GetModule("invest")
@@ -1243,8 +1243,14 @@ do
   W.Click(cell)
   ok(clicked == 2447, "click: its History")
   W.Click(cell, "RightButton")
+  do
+  local menu = V.itemMenu
+  ok(menu and menu:IsShown() and menu.entries[1].key == "builder" and menu.items[1].text._text == "Add to the Shopping List's builder"
+    and menu.entries[2].key == "target" and menu.items[2].text._text == "Set target...", "(1.2.14) right-click: a menu, the builder first, then Set target...")
+  W.Click(menu.items[1])
   local inDraft = false for _, e in ipairs(I.Draft().items) do if e.id == 2447 then inDraft = true end end
-  ok(inDraft, "right-click: into the Shopping List's builder")
+  ok(inDraft and not menu:IsShown(), "right-click > Add to the Shopping List's builder: into the builder (as right-click did before)")
+  end
   local gtKeys2 = {}
   for k in pairs(GT) do if not tostring(k):find("^_") then gtKeys2[#gtKeys2 + 1] = tostring(k) end end
   table.sort(gtKeys2)
@@ -1260,7 +1266,7 @@ do
   Slash("invest", "market")
   local root = T.Views().invest.page
   local mp = root.pages.market
-  ok(mp and mp:IsShown() and #mp.subButtons == 5 and not mp.subButtons[5].soon and mp.current == "top", "AH Market: Top 10, My items, History, Scan results, Craft")
+  ok(mp and mp:IsShown() and #mp.subButtons == 6 and not mp.subButtons[5].soon and mp.subButtons[6].key == "watch" and mp.current == "top", "AH Market: Top 10, My items, History, Scan results, Craft, Watchlist (1.2.14)")
   ok(mp.hint._text:find("Scan at the Auction House: the Scan button is on Valhalla's list beside it"), "the AH closed: where to scan")
   ok(mp.status._text:find("^Horde Auction House") and #mp.houseButtons == 3 and mp.houseButtons[2].house == "Horde" and mp.houseButtons[2].vh.selected
     and not mp.houseButtons[1].vh.selected and not mp.houseButtons[3].vh.selected, "the house picked, lit among Alliance | Horde | Neutral", mp.status._text)
@@ -3569,8 +3575,9 @@ print("== 42. 1.2.6: the AH Market tabs' tooltips; Craft's Per stack (Total = Pr
   local keep = { owned = I.S.craftOwned, count = I.S.craftCount, bags = I.char.bags, bank = I.char.bank, house = Mk.house, mode = Mk.craftMode, ps = I.S.craftPerStack }
   print("-- the tabs' tooltips")
   local want = { top = { "Price movers", "Trending", "7 days" }, mine = { "bags", "vendor price", "after the cut" }, history = { "lowest AH price", "Day or a Week", "Hover a point" },
-    results = { "last full scan", "sort", "search by name" }, craft = { "profession makes", "Harvest", "profit per item" } }
-  local good, why = #mp.subButtons == 5, ""
+    results = { "last full scan", "sort", "search by name" }, craft = { "profession makes", "Harvest", "profit per item" },
+    watch = { "buy target", "sell target", "after every scan" } }
+  local good, why = #mp.subButtons == 6, ""
   for _, b in ipairs(mp.subButtons) do
     local t = b.tip
     local s = Mk.SUBS[_]
@@ -3578,7 +3585,7 @@ print("== 42. 1.2.6: the AH Market tabs' tooltips; Craft's Per stack (Total = Pr
     for _, w in ipairs(want[b.key]) do if not t.text:find(w, 1, true) then good, why = false, b.key .. " lacks " .. w end end
     if #t.text > 330 then good, why = false, b.key .. " too long" end
   end
-  ok(good, "each tab (Top 10, My items, History, Scan results, Craft): a tooltip saying what it shows, short", why)
+  ok(good, "each tab (Top 10, My items, History, Scan results, Craft, Watchlist): a tooltip saying what it shows, short", why)
   local Frame = getmetatable(UIParent)
   local keepOver, keepAdd = Frame.IsMouseOver, GameTooltip.AddLine
   Frame.IsMouseOver = function() return true end

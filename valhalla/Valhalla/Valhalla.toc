@@ -16,7 +16,7 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: 1.2.13
+## Version: 1.2.14
 ## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
@@ -118,6 +118,8 @@ Investments\Scan.lua
 Investments\Tabs.lua
 Investments\Views.lua
 Investments\Market.lua
+# The Watchlist (1.2.14): your buy and sell targets per item, checked after every AH scan
+Investments\Watch.lua
 Investments\Tooltip.lua
 Data\Forever\Recipes.lua
 Data\Forever\TopSkills.lua

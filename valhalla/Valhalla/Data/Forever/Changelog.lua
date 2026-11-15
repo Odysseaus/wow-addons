@@ -4,6 +4,12 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.14", date = "2026-11-15", heads = { [1] = "New", }, items = {
+		"|cff6e2c0aWatchlist|r (AH Market > Watchlist): your own buy and sell target for any item, like a limit order, kept until you change it. Add an item by name there, alt-click any item, or right-click one > Set target... (the right-click menu still adds to the Shopping List's builder).",
+		"Columns: Item, Lowest, Buy <= target, Sell >= target, Signal, Last met. Signal says BUY when the AH's lowest is at or below your buy target, SELL when it is at or above your sell target (the listed price, before the AH's cut), or Near x% when it's close (Settings: Off, 5% or 10%).",
+		"After every scan at the Auction House (full or quick), met targets pop up in Valhalla's Look (click an item for its history), each with a line in chat and a sound (Settings > Watchlist). Alert frequency: every scan while met, or once until the target changes. Quick scans include your Watchlist's items.",
+		"Item tooltips show your targets (Target buy <= / Target sell >=), green when met.",
+	} },
 	{ version = "1.2.13", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "New", }, items = {
 		"|cff6e2c0aThe flight timer starts with the game|r: it is set up at login on its own, whatever the map does (on, off, or left to Blizzard with the Gamepad UI); no need to switch the setting off and on.",
 		"A flight Valhalla didn't see start (in the air at a /reload with nothing saved, or begun by a click it didn't hear) shows \"In flight\" or \"In flight (reloaded)\" with the time since, Learning; it isn't saved, so no wrong times.",

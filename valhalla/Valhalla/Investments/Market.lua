@@ -26,6 +26,8 @@ M.SUBS = {
 	{ key = "history", label = L["History"], tip = "One item's lowest AH price at each of your scans (one point an hour at most), over a Day or a Week, as lines or bars. Hover a point for its price, time, units listed and scan type. Click an item on any other tab to show it here." },
 	{ key = "results", label = L["Scan results"], tip = "Every item in your last full scan of this Auction House: lowest price, quantity, auctions and 7-day change. Click a column to sort, search by name, click a row for its history." },
 	{ key = "craft", label = L["Craft"], tip = "What a profession makes (or gathers, with Harvest), priced from your last full scan: cost to make, sell price, profit per item, margin, units listed, and how many you can make with the total profit. Hover a row for its reagents." },
+	-- (1.2.14) Watch.lua builds it: your own buy and sell targets, like limit orders, checked after every scan
+	{ key = "watch", label = L["Watchlist"], tip = "Items you watch, each with a buy target (BUY when the AH's lowest is at or below it) and a sell target (SELL when the lowest is at or above it). Checked after every scan at the Auction House; a popup lists what's met. Add an item by name here, alt-click any item, or right-click one > Set target..." },
 }
 M.TOP = 10
 M.ROWS = 12   -- (Top 10's columns; My items and Scan results fit their rows to the window: M.FitRows)
@@ -280,7 +282,7 @@ function M.FitCols(list, parent, samples, oneLine)
 	for i, c in ipairs(cols) do
 		if c.button then
 			-- (1.2.7) a button column (Add SL): the button's width, its title without a sort arrow
-			local v = M.ADD_W + M.CELL_PAD
+			local v = (c.bw or M.ADD_W) + M.CELL_PAD   -- (1.2.14: c.bw, a wider button: Watchlist's Edit)
 			local one = W(c.label, M.HEAD_FONT) + M.HEAD_PAD
 			local h = Halves(c.label)
 			local t = h and math.max(W(h[1], M.HEAD_FONT), W(h[2], M.HEAD_FONT)) + M.HEAD_PAD
@@ -1990,6 +1992,8 @@ M.TIP_ON = {
 }
 
 local BUILD = { top = BuildTop, mine = BuildMine, history = BuildHistory, results = BuildResults, craft = BuildCraft }
+-- (1.2.14) for Watch.lua (loaded after this file): its view's builder, its tips, the paged rows
+M.BUILD, M.Paged, M.Tip = BUILD, Paged, Tip
 
 --------------------------------------------------------------------------------
 -- The page

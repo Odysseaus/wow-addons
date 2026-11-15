@@ -6,8 +6,8 @@
 -- wide). Read 50 auctions at a time, a few ms per frame (8 by default), so the game never stalls. For each
 -- item it keeps the lowest buyout per unit, the units and the auctions listed. If the Auction House closes
 -- while it's read, nothing is kept (a partial market would look like prices vanished).
--- Quick scan (while the full scan's 15 minutes run): your own items only (the active list, bags and bank,
--- what AH Market shows), 100 per search (SearchForItemKeys), each search sent when the game says it's
+-- Quick scan (while the full scan's 15 minutes run): your own items only (the active list, the Watchlist (1.2.14),
+-- bags and bank, what AH Market shows), 100 per search (SearchForItemKeys), each search sent when the game says it's
 -- ready. It gives the lowest price and units (no auction count).
 -- One request at a time, and only it listens: its events are registered while it runs and dropped the
 -- moment they're answered (the full scan's update event also fires once per item loaded afterwards).
@@ -282,6 +282,7 @@ local function Full(r)
 	local m = S.Market(r.house, true)
 	local now = Now()
 	local tmin = Min(m, now)
+	r.tmin = tmin   -- (1.2.14: this scan's minute, for the Watchlist's check after it)
 	local cur, stored = {}, 0
 	for id, e in pairs(per) do
 		cur[id] = ("%d,%d,%d,%d"):format(e[1], e[2], e[3], tmin)
@@ -310,6 +311,8 @@ function S.Interest(house)
 	local function Add(id) id = tonumber(id) if id and not seen[id] and #out < S.MAX_INTEREST then seen[id] = true out[#out + 1] = id end end
 	local l = I.ActiveList and I.ActiveList()
 	for _, e in ipairs(l and l.items or {}) do Add(e.id) end
+	-- (1.2.14) the Watchlist's items for this house: a quick scan checks their targets too
+	if I.Watch and I.Watch.InterestIDs then for _, id in ipairs(I.Watch.InterestIDs(house)) do Add(id) end end
 	for id in pairs(I.char.bags or {}) do Add(id) end
 	if I.S.countBank ~= false then for id in pairs(I.char.bank or {}) do Add(id) end end
 	for _, id in ipairs(S.shown or {}) do Add(id) end
@@ -367,6 +370,7 @@ local function Quick(r)
 	r.phase = "store"
 	local m = S.Market(r.house, true)
 	local tmin = Min(m, Now())
+	r.tmin = tmin   -- (1.2.14)
 	local priced = 0
 	for _, id in ipairs(ids) do
 		local e = got[id] or { 0, 0 }
@@ -387,6 +391,11 @@ local function Finish(r, state, text)
 	r.state = state
 	S.last = { kind = r.kind, state = state, text = text, at = Now() }
 	if text then ns:Print("%s", text) end
+	-- (1.2.14) a scan done (full or quick): the Watchlist's targets checked against what it saw
+	if state == "done" and I.Watch and I.Watch.OnScanDone then
+		local ok, err = pcall(I.Watch.OnScanDone, r)
+		if not ok then ns:Print("%s", L["Watchlist check failed: %s"]:format(tostring(err))) end
+	end
 	-- (1.2.8) after a full scan: the names the game hasn't sent, filled slowly in the background (only if any)
 	if state == "done" and r.fillNames and I.NameLoader and I.ahOpen then I.NameLoader.Start("background") end
 	I.Changed()
