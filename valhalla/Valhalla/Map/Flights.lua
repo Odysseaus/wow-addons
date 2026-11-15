@@ -202,7 +202,6 @@ local function Popup()
 	f:SetMovable(true)
 	f:EnableMouse(false)
 	Place(f)
-	ns.Look:Panel(f, { alpha = 0.88 })
 	f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	f.title:SetPoint("TOPLEFT", 10, -8)
 	f.title:SetPoint("TOPRIGHT", -10, -8)
@@ -225,6 +224,9 @@ local function Popup()
 	f.bar.bg = f.bar:CreateTexture(nil, "BACKGROUND")
 	f.bar.bg:SetAllPoints()
 	f.bar.bg:SetColorTexture(0, 0, 0, 0.55)
+	-- (1.2.13) the look's own popup: Norse heavy bronze with corner brackets, Profession the profession
+	-- window's background in a metal and gold edge; the bar bronze or gold (UI/Style.lua's popup)
+	if ns.Style and ns.Style.Popup then ns.Style.Popup(f, f.bar) else ns.Look:Panel(f, { alpha = 0.88 }) end
 	-- Edit Mode: a blue box over it, as Edit Mode marks what can move
 	f.edit = f:CreateTexture(nil, "OVERLAY", nil, 7)
 	f.edit:SetAllPoints()
@@ -253,7 +255,7 @@ local function Paint()
 	if not f then return end
 	local c = Colour()
 	f.title:SetTextColor(c[1], c[2], c[3])
-	f.bar:SetStatusBarColor(c[1], c[2] * 0.85, c[3] + 0.1)
+	if not (ns.Style and ns.Style.Popup) then f.bar:SetStatusBarColor(c[1], c[2] * 0.85, c[3] + 0.1) end
 end
 
 -- what the popup says now: the destination, the time, the bar
@@ -273,7 +275,7 @@ function T.Show(now)
 	end
 	if not flight or not mod.db.flightTimer then if not editing then f:Hide() end return end
 	local elapsed = math.max(0, now - flight.start)
-	f.title:SetText(flight.dest and ShortName(flight.dest) or L["In flight"])
+	f.title:SetText(flight.dest and ShortName(flight.dest) or (flight.reloaded and L["In flight (reloaded)"]) or L["In flight"])
 	local e = flight.expect
 	if e and e > 0 then
 		if elapsed <= e then
@@ -337,7 +339,7 @@ local function Save()
 	if flight and flight.start then
 		mod.char.flightNow = { key = flight.key, from = flight.from, to = flight.to, dest = flight.dest, legs = flight.legs,
 			epoch = flight.epoch, seen = time(), noSave = flight.noSave, early = flight.early,
-			direct = flight.direct, fromName = flight.fromName }
+			direct = flight.direct, fromName = flight.fromName, unknown = flight.unknown, reloaded = flight.reloaded }
 	else
 		mod.char.flightNow = nil
 	end
@@ -407,15 +409,32 @@ local function OnTakeTaxi(index)
 	Watch()
 end
 
--- after a /reload in the air: the flight goes on from its start (a log-in later: shown, not measured)
-local function Resume()
+-- (1.2.13) a flight Valhalla didn't see start (begun before it loaded, or by a click it didn't hear): shown as
+-- "In flight" (after a /reload "In flight (reloaded)") with the time since it was seen, Learning; never saved
+local function StartUnknown(reloaded)
+	local now = GetTime()
+	flight = { legs = {}, unknown = true, reloaded = reloaded and true or nil, noSave = true, asked = now,
+		start = now, epoch = time() }
+	Save()
+	Watch()
+	T.Show(now)
+end
+
+-- after a /reload in the air: the flight goes on from its start (a log-in later: shown, not measured).
+-- `final`: the last look (the world entered): on the ground, a flight saved is forgotten; in the air with
+-- none saved, an unknown flight
+local function Resume(final)
+	if flight then return end
 	local c = mod.char.flightNow
-	if not UnitOnTaxi("player") then mod.char.flightNow = nil return end
-	if type(c) ~= "table" or not c.epoch then return end
+	if not UnitOnTaxi("player") then
+		if final then mod.char.flightNow = nil end
+		return
+	end
+	if type(c) ~= "table" or not c.epoch then StartUnknown(true) return end
 	local now, wall = GetTime(), time()
 	flight = { key = c.key, from = c.from, to = c.to, dest = c.dest, legs = c.legs or {}, direct = c.direct,
-		fromName = c.fromName, early = c.early, epoch = c.epoch, asked = now,
-		noSave = c.noSave or not c.seen or (wall - c.seen) > T.RELOAD_GAP }
+		fromName = c.fromName, early = c.early, epoch = c.epoch, asked = now, unknown = c.unknown, reloaded = c.reloaded,
+		noSave = c.noSave or c.unknown or not c.seen or (wall - c.seen) > T.RELOAD_GAP }
 	flight.start = now - math.max(0, wall - c.epoch)
 	flight.expect = T.Expected(flight)
 	Watch()
@@ -423,18 +442,78 @@ local function Resume()
 end
 T.Resume = Resume
 
+-- (1.2.13) control lost: a flight if the player is on a taxi within a moment (a stun or a fear isn't)
+local controlToken = 0
+local function OnControlLost()
+	if flight and flight.start then return end
+	controlToken = controlToken + 1
+	local token, t0 = controlToken, GetTime()
+	local function check()
+		if token ~= controlToken or (flight and flight.start) then return end
+		if UnitOnTaxi("player") then
+			if not flight then StartUnknown(false) end   -- (a click heard: Tick starts it)
+			return
+		end
+		if GetTime() - t0 < 3 then C_Timer.After(0.2, check) end
+	end
+	check()
+end
+
+-- where the flight master is (its list's CURRENT), for the direct legs' names: the timer's own, the map off too
+local function OnTaxiOpened()
+	for i = 1, (NumTaxiNodes and NumTaxiNodes() or 0) do
+		if TaxiNodeGetType(i) == "CURRENT" then taxi.here = TaxiNodeName(i) end
+	end
+end
+
+-- (1.2.13) set up at PLAYER_LOGIN, whatever the map does (off, waiting for the Gamepad UI, Blizzard's map
+-- not the kind expected): once; SetupFlights calls it too and finds it done
 local function SetupTimer()
-	if TakeTaxiNode then hooksecurefunc("TakeTaxiNode", OnTakeTaxi) end
+	if T.setup then return end
+	T.setup = true
+	if TakeTaxiNode then hooksecurefunc("TakeTaxiNode", OnTakeTaxi) T.hooked = true T.hooks = (T.hooks or 0) + 1 end
 	if TaxiRequestEarlyLanding then
 		hooksecurefunc("TaxiRequestEarlyLanding", function() if flight then flight.early = true Save() end end)
 	end
+	ns.RegisterEvent(T, "TAXIMAP_OPENED", OnTaxiOpened)
+	ns.RegisterEvent(T, "PLAYER_CONTROL_LOST", OnControlLost)
+	ns.RegisterEvent(T, "PLAYER_ENTERING_WORLD", function() C_Timer.After(1, function() Resume(true) end) end)
 	local ER = rawget(_G, "EventRegistry")
 	if ER and ER.RegisterCallback then
 		ER:RegisterCallback("EditMode.Enter", function() T.SetEditing(true) end, T)
 		ER:RegisterCallback("EditMode.Exit", function() T.SetEditing(false) end, T)
 	end
 	if ns.Style and ns.Style.OnLook then ns.Style.OnLook(function() Paint() end) end
-	Resume()
+	Resume(false)
+end
+T.Setup = SetupTimer
+ns.RegisterEvent(T, "PLAYER_LOGIN", function()
+	ns.UnregisterEvent(T, "PLAYER_LOGIN")
+	if mod.db and mod.char then SetupTimer() end
+end)
+
+-- /valhalla flight: the timer's state, for a report
+function T.Debug()
+	local L, db = ns.L, mod.db or {}
+	local n = 0
+	for _ in pairs(db.flightRoutes or {}) do n = n + 1 end
+	local look = ns.Style and ns.Style.Look and ns.Style.Look() or "?"
+	ns:Print(L["Flight timer: set up %s, TakeTaxiNode heard %s, setting %s, look %s"],
+		tostring(T.setup and true or false), tostring(T.hooked and true or false), tostring(db.flightTimer), look)
+	local now = GetTime()
+	if flight then
+		ns:Print(L["In the air: %s, route %s, %s, elapsed %s, %s%s%s"],
+			tostring(flight.dest or (flight.reloaded and "In flight (reloaded)") or "In flight"), tostring(flight.key),
+			flight.expect and ("expected " .. T.Clock(flight.expect)) or "Learning",
+			flight.start and T.Clock(now - flight.start) or "not off yet",
+			flight.unknown and "unknown, " or "", flight.noSave and "not saved" or "saved on landing", flight.early and ", landing early" or "")
+	else
+		ns:Print(L["Not flying (on a taxi: %s); saved flight: %s"], tostring(UnitOnTaxi("player") and true or false),
+			tostring(mod.char and mod.char.flightNow ~= nil))
+	end
+	local p = db.flightTimerPos
+	ns:Print(L["Popup: %s, at %s; routes timed: %d"], popup and (popup:IsShown() and "shown" or "hidden") or "not made yet",
+		type(p) == "table" and table.concat({ tostring(p[1]), tostring(p[2]), tostring(p[3]), tostring(p[4]) }, " ") or "TOP 0 -110", n)
 end
 
 --------------------------------------------------------------------------------

@@ -4,6 +4,12 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.13", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "New", }, items = {
+		"|cff6e2c0aThe flight timer starts with the game|r: it is set up at login on its own, whatever the map does (on, off, or left to Blizzard with the Gamepad UI); no need to switch the setting off and on.",
+		"A flight Valhalla didn't see start (in the air at a /reload with nothing saved, or begun by a click it didn't hear) shows \"In flight\" or \"In flight (reloaded)\" with the time since, Learning; it isn't saved, so no wrong times.",
+		"|cff6e2c0aThe popup in Valhalla's Look|r: Norse in heavy bronze with corner brackets, a Morpheus title and a bronze bar; Profession on the profession window's background in a metal and gold edge, with a gold bar. It changes with the Look.",
+		"/valhalla flight: the timer's state (set up, the setting, the flight in the air, the popup), for a report.",
+	} },
 	{ version = "1.2.12", date = "2026-11-15", heads = { [1] = "New", [6] = "Note", }, items = {
 		"|cff6e2c0aFlight timer popup|r (on at first; Valhalla's menu and Settings, under Flight masters): a popup from takeoff to landing on every flight, with where you're going.",
 		"A route you've flown before counts down (M:SS) with a bar; past its time it says \"Landing soon (+0:12)\". A route you've never flown shows the time so far and \"Learning\", and is timed as you land: nothing is guessed from distances.",

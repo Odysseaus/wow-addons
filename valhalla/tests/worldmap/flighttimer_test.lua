@@ -260,7 +260,10 @@ Run(3)
 W.taxi = false
 CHAR.flightNow = { key = "2>4", epoch = W.wall - 10, seen = W.wall }
 T = Load()
-ok(CHAR.flightNow == nil and not (P() and P():IsShown()), "a saved flight but on the ground: forgotten, no popup")
+ok(CHAR.flightNow ~= nil and not (P() and P():IsShown()), "a saved flight, on the ground at login: kept till the world is entered (the taxi may not be known yet), no popup")
+ns.events.PLAYER_ENTERING_WORLD()
+Run(1.1)
+ok(CHAR.flightNow == nil and not (P() and P():IsShown()), "in the world, still on the ground: forgotten, no popup")
 
 print("== 8. Edit Mode: moved only while it's open; Reset position")
 ok(W.callbacks["EditMode.Enter"] and W.callbacks["EditMode.Exit"], "listens to Edit Mode's own Enter / Exit")
