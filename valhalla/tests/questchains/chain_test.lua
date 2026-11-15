@@ -160,10 +160,12 @@ W.faction, W.class = "Alliance", "WARRIOR"
 Start()
 ok(mod.db.chainView == false and mod.defaults.chainView == false, "Chain quest view off by default")
 ok(#W.menus == 1 and W.menus[1].tag == "MENU_QUEST_MAP_FRAME_SETTINGS", "the quest log's gear menu gets an entry (Menu.ModifyMenu, its tag)")
-local made = {}
-local fakeRoot = { CreateCheckbox = function(_, label, get, set) made = { label = label, get = get, set = set } end }
+local made, boxes = {}, {}
+local fakeRoot = { CreateCheckbox = function(_, label, get, set) boxes[#boxes + 1] = { label = label, get = get, set = set } end }
 W.menus[1].fn(nil, fakeRoot)
+made = boxes[1] or {}
 ok(made.label == "Chain quest view" and made.get() == false, "the entry: a checkbox 'Chain quest view', unticked")
+ok(#boxes == 2 and boxes[2].label == "Show Ready to Turn In section" and boxes[2].get() == false, "(1.2.11) then 'Show Ready to Turn In section', unticked (off by default)")
 QuestLogQuests_Update()
 local allShown = true
 for _, r in ipairs(W.log.rows) do if not r.Checkbox._shown then allShown = false end end
@@ -284,6 +286,186 @@ W.combat = false
 mod:OnDisable()
 back = true for _, r in ipairs(W.log.rows) do if not r.Checkbox._shown then back = false end end
 ok(back and not Shown(ButtonOf(RowOf(45))), "module off: the ticks back, no buttons")
+
+---------------------------------------------------------------------------
+print("== 8. (1.2.11) the zones in alphabetical order; the Ready to Turn In section")
+-- the game's log as QuestMapFrame.lua builds it: headers (questLogIndex, layoutIndex, topPadding), rows,
+-- objective lines (anchored to their row, no layoutIndex), quest icons; Contents:Layout() counted
+mod.enabled = true mod:OnEnable()
+W.Reset()
+W.collapsed = {}
+local baseInfo = C_QuestLog.GetInfo
+C_QuestLog.GetInfo = function(i)
+  local e = baseInfo(i)
+  if e then e = setmetatable({ questLogIndex = i, isCollapsed = e.isHeader and W.collapsed[e.title] or false }, { __index = e }) end
+  return e
+end
+W.AddQuest(101, "Westfall", "The Defias Brotherhood", 14)
+W.AddQuest(102, "Westfall", "Patrolling Westfall", 12, true)
+W.AddQuest(201, "Elwynn Forest", "A Fishy Peril", 8, true)
+W.AddQuest(45, "Elwynn Forest", "Discover Rolf's Fate", 10, true)
+W.AddQuest(301, "Darkshore", "Buzzbox 827", 12)
+W.AddQuest(401, "Redridge Mountains", "Murloc Poachers", 18, true)
+local SF8 = W.NewQuestLog()
+local contents = SF8.Contents
+contents.layouts = 0
+function contents:Layout() self.layouts = self.layouts + 1 end
+local objPool = { active = {} }
+function objPool:EnumerateActive() return next, self.active end
+SF8.objectiveFramePool = objPool
+W.blizzardCalls = {}
+local gameUpdate = QuestLogQuests_Update
+_G.QuestLogQuests_Update = function()
+  objPool.active = {}
+  local li = 3   -- (a separator / story header before it, as the game's)
+  local idx = 0
+  local last
+  local seen, collapsedNow = {}, false
+  for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+    local e = C_QuestLog.GetInfo(i)
+    if e.isHeader then last, collapsedNow = e, e.isCollapsed end
+  end
+  gameUpdate()
+  -- the game's indices: in log order, headers and the shown rows; a collapsed zone shows its header only
+  local headersByTitle = {}
+  for _, h in ipairs(W.log.headers) do headersByTitle[h._title] = h end
+  local prevKind
+  for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+    local e = C_QuestLog.GetInfo(i)
+    if e.isHeader then
+      local h = headersByTitle[e.title]
+      h.questLogIndex, h.layoutIndex = i, li li = li + 1
+      h.ButtonText = rawget(h, "ButtonText") or W.NewFrame("FontString") h.ButtonText._text = e.title
+      h.topPadding = prevKind == nil and 8 or prevKind == "Q" and 4 or 6
+      prevKind = "H"
+      collapsedNow = e.isCollapsed
+    else
+      local row = RowOf(e.questID)
+      if collapsedNow then row:Hide() rawset(row, "layoutIndex", nil)
+      else
+        row.questLogIndex, row.layoutIndex = i, li li = li + 1
+        row.topPadding = prevKind == "H" and 2 or -3
+        prevKind = "Q"
+        local o = W.NewFrame("Frame") o.questID = e.questID objPool.active[o] = true
+      end
+    end
+  end
+  for _, r in ipairs(W.log.rows) do if not rawget(r, "layoutIndex") then r:Hide() end end
+end
+hooksecurefunc("QuestLogQuests_Update", QC.OnUpdate)   -- (the module's hook, as on the game's function: this log was made after it hooked)
+local function Order()
+  local t = {}
+  for _, f in pairs(W.frames) do end
+  local all = {}
+  for h in SF8.headerFramePool:EnumerateActive() do if h:IsShown() then all[#all + 1] = { li = h.layoutIndex, s = "H:" .. h._title } end end
+  for r in SF8.titleFramePool:EnumerateActive() do if r:IsShown() and r.layoutIndex then all[#all + 1] = { li = r.layoutIndex, s = "Q:" .. r.questID } end end
+  local O = QC.ours
+  if O.header and O.header:IsShown() then all[#all + 1] = { li = O.header.layoutIndex, s = "READY" } end
+  for _, r in ipairs(O.rows) do if r:IsShown() then all[#all + 1] = { li = r.layoutIndex, s = "R:" .. r.questID } end end
+  for _, n in pairs(O.notes) do if n:IsShown() then all[#all + 1] = { li = n.layoutIndex, s = "NOTE" } end end
+  table.sort(all, function(a, b) return a.li < b.li end)
+  for _, x in ipairs(all) do t[#t + 1] = x.s end
+  return table.concat(t, " ")
+end
+local function Dups()
+  local seen = {}
+  for _, s in ipairs(QC.lastSeq or {}) do if seen[s.f.layoutIndex] then return true end seen[s.f.layoutIndex] = true end
+  return false
+end
+QC.SetView(false)
+QuestLogQuests_Update()
+ok(Order() == "H:Darkshore Q:301 H:Elwynn Forest Q:201 Q:45 H:Redridge Mountains Q:401 H:Westfall Q:101 Q:102", "zones in alphabetical order (the game gave Westfall first)", Order())
+ok(not Dups() and QC.lastSeq[1].f.layoutIndex == 3 and contents.layouts >= 1, "indices from where the game's section starts (3), none twice; the layout run again")
+local function Pad(title) for h in SF8.headerFramePool:EnumerateActive() do if h._title == title then return h.topPadding end end end
+ok(Pad("Darkshore") == 8 and Pad("Elwynn Forest") == 4 and RowOf(201).topPadding == 2 and RowOf(45).topPadding == -3, "the game's spacing: first header 8, header after a quest 4, first quest 2, next -3")
+-- a map change: the game sorts the zone of the map first, a quest's click the same
+W.order = { 401, 301, 101, 102, 201, 45 }
+QuestLogQuests_Update()
+ok(Order() == "H:Darkshore Q:301 H:Elwynn Forest Q:201 Q:45 H:Redridge Mountains Q:401 H:Westfall Q:101 Q:102", "the game re-sorted (Redridge first, as on a map change / quest click): still alphabetical", Order())
+W.order = { 45, 201, 101, 102, 401, 301 }
+QuestLogQuests_Update()
+ok(Order() == "H:Darkshore Q:301 H:Elwynn Forest Q:45 Q:201 H:Redridge Mountains Q:401 H:Westfall Q:101 Q:102", "and again (Elwynn first): zones the same; a zone's quests as the game lists them", Order())
+W.order = { 101, 102, 201, 45, 301, 401 }
+W.collapsed["Elwynn Forest"] = true
+QuestLogQuests_Update()
+ok(Order() == "H:Darkshore Q:301 H:Elwynn Forest H:Redridge Mountains Q:401 H:Westfall Q:101 Q:102" and Pad("Redridge Mountains") == 6, "a collapsed zone: its header only, in place; header after header 6", Order())
+ok(QC.ours.header == nil or not QC.ours.header:IsShown(), "Ready section off by default: not shown")
+-- the game's Separator (after the campaigns / zone story): the zones start right after it
+contents.Separator = { layoutIndex = 2 }
+QuestLogQuests_Update()
+ok(QC.lastSeq[1].f.layoutIndex == 3 and not Dups(), "after the game's Separator (2): from 3")
+contents.Separator = nil
+
+print("-- Ready to Turn In: on")
+local db = mod.db
+ok(not db.readyInLog and mod.defaults.readyInLog == false and mod.defaults.readyLogCollapsed == false, "the setting: readyInLog off at first; the section expanded at first")
+QC.SetReady(true)
+QuestLogQuests_Update()
+ok(Order() == "H:Darkshore Q:301 H:Elwynn Forest H:Redridge Mountains NOTE H:Westfall Q:101 READY R:201 R:45 R:401 R:102", "ready quests leave their zones for the section at the very bottom (a collapsed zone's too)", Order())
+ok(QC.ours.header.ButtonText._text == "Ready to Turn In (4)", "its header: Ready to Turn In (4)", QC.ours.header.ButtonText._text)
+local nRR
+for h, n in pairs(QC.ours.notes) do if n:IsShown() then nRR = n end end
+ok(nRR and nRR.Text._text == "Quests are in the Ready to Turn In section" and QC.ours.notes[(function() for h in SF8.headerFramePool:EnumerateActive() do if h._title == "Redridge Mountains" then return h end end end)()] == nRR,
+  "a zone whose quests all moved: header kept, 'Quests are in the Ready to Turn In section' under it")
+ok(not RowOf(102):IsShown() and RowOf(101):IsShown(), "a zone with some left: only the rest shown (Westfall: The Defias Brotherhood)")
+local hiddenObj = true
+for o in objPool:EnumerateActive() do if o.questID == 102 and o:IsShown() then hiddenObj = false end end
+local poi = contents:FindButtonByQuestID(102)
+ok(hiddenObj and poi and not poi:IsShown(), "its objective lines and quest icon hidden with it")
+ok(not Dups() and QC.ours.header.topPadding == 4 and QC.ours.rows[1].topPadding == 2 and QC.ours.rows[2].topPadding == -3, "the section's spacing as the game's (4, 2, -3); no index twice")
+ok(QC.ours.rows[1].Text._text == "A Fishy Peril" and QC.ours.rows[4].Text._text == "Patrolling Westfall", "its rows: by zone name, then log order")
+-- the collapsed zone: Elwynn's ready quests listed though its rows aren't there
+ok(Order():find("R:201 R:45", 1, true) ~= nil, "a collapsed zone's ready quests listed all the same")
+print("-- clicks")
+local opened, tracked
+_G.QuestMapFrame_ShowQuestDetails = function(q) opened = q end
+_G.QuestMapQuestOptions_TrackQuest = function(q) tracked = q end
+local r1 = QC.ours.rows[1]
+r1._scripts.OnClick(r1, "LeftButton")
+ok(opened == 201 and tracked == nil, "left-click: the quest opens (as the game's row)")
+_G.IsShiftKeyDown = function() return true end
+r1._scripts.OnClick(r1, "LeftButton")
+ok(tracked == 201, "Shift-click: tracked (as the game's row)")
+_G.IsShiftKeyDown = function() return false end
+print("-- chain buttons on Ready rows (Chain quest view on)")
+QC.SetView(true)
+QuestLogQuests_Update()
+local rb = ButtonOf(QC.ours.rows[2])
+ok(rb and Shown(rb) and rb.questID == 45, "Chain quest view on: Discover Rolf's Fate's chain button on its Ready row")
+ok(not (ButtonOf(QC.ours.rows[1]) and Shown(ButtonOf(QC.ours.rows[1]))), "a quest without chain data: none")
+QC.SetView(false)
+ok(not Shown(ButtonOf(QC.ours.rows[2])), "view off: gone")
+print("-- collapse, remembered")
+local hdr = QC.ours.header
+hdr._scripts.OnClick(hdr, "LeftButton")
+ok(db.readyLogCollapsed == true and Order():find("READY$") ~= nil and not QC.ours.rows[1]:IsShown(), "its header: collapsed (rows hidden), saved", Order())
+QuestLogQuests_Update()
+ok(Order():find("READY$") ~= nil and hdr.ButtonText._text == "Ready to Turn In (4)", "after the game's next update: still collapsed, the count kept")
+hdr._scripts.OnClick(hdr, "LeftButton")
+ok(db.readyLogCollapsed == false and QC.ours.rows[1]:IsShown(), "again: expanded")
+print("-- a quest turned in / completed; off again")
+W.quests[101].ready = true
+QuestLogQuests_Update()
+ok(Order():find("H:Westfall NOTE READY", 1, true) and hdr.ButtonText._text == "Ready to Turn In (5)", "Westfall's last quest ready: Westfall's note, Ready (5)", Order())
+W.Drop(201) W.Drop(45)
+QuestLogQuests_Update()
+ok(hdr.ButtonText._text == "Ready to Turn In (3)" and not Order():find("Elwynn", 1, true), "turned in: gone from the section (and its zone with them)", Order())
+QC.SetReady(false)
+ok(Order() == "H:Darkshore Q:301 H:Redridge Mountains Q:401 H:Westfall Q:101 Q:102" and not hdr:IsShown(), "off: every quest back in its zone, the section and notes gone (at once, no game update)", Order())
+local back8 = true
+for o in objPool:EnumerateActive() do if not o:IsShown() then back8 = false end end
+ok(back8 and contents:FindButtonByQuestID(102):IsShown(), "their objective lines and quest icons shown again")
+print("-- combat, module off")
+QC.SetReady(true)
+W.combat = true
+QuestLogQuests_Update() QC.SetReady(false) QC.SetReady(true)
+ok(W.blockedSetters == 0 and Frame.protectedCalls == 0, "in combat: only show / hide / place (no blocked setters, nothing protected)")
+W.combat = false
+mod:OnDisable()
+ok(not hdr:IsShown() and RowOf(102):IsShown(), "module off: our section gone, the rows back")
+mod.enabled = true
+C_QuestLog.GetInfo = baseInfo
+_G.QuestLogQuests_Update = gameUpdate
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

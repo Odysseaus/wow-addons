@@ -15,6 +15,9 @@
 -- itself), our button (a child of the row, kept in our own table) put on it. No fields written on the game's
 -- frames, no Blizzard function called, nothing protected (fine in combat).
 -- /valhalla chain coverage: the log's quests with and without chain data.
+-- 1.2.11: the log's zones always in alphabetical order (the game re-sorted them on every map change, a quest's
+-- click too); setting "Show Ready to Turn In section" (after Chain quest view, off at first): ready quests
+-- listed in their own section at the bottom (see QC.Arrange).
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -22,6 +25,8 @@ local L = ns.L
 
 local mod = ns:NewModule("chains", { defaults = {
 	chainView = false,          -- Chain quest view (the quest log's gear menu, Valhalla's menu)
+	readyInLog = false,         -- (1.2.11) Show Ready to Turn In section (the gear menu, after Chain quest view)
+	readyLogCollapsed = false,  -- (1.2.11) that section folded to its header (its header saves it)
 } })
 
 local QC = {}
@@ -384,6 +389,14 @@ function QC.OnUpdate()
 			buttons[row]:Hide()
 		end
 	end
+	-- (1.2.11: the zones in order, the Ready section; an error said once, never breaking the game's log)
+	if QC.Arrange then
+		local ok, err = pcall(QC.Arrange)
+		if not ok then
+			QC.lastError = tostring(err)
+			if not QC.errorSaid then QC.errorSaid = true ns:Print("%s", L["Quest log order: an error (%s). The game's own order is kept."]:format(QC.lastError)) end
+		end
+	end
 end
 
 function QC.Hook()
@@ -395,6 +408,378 @@ function QC.Hook()
 	return true
 end
 function QC.Hooked() return hooked end
+
+--------------------------------------------------------------------------------
+-- (1.2.11) The quest log's zones in alphabetical order, and the Ready to Turn In section
+-- Why: the game sorts its quest log (SortQuests, in C) for the map shown, on every map change
+-- (WorldMapMixin:OnMapChanged -> QuestLogMixin:Refresh), and a quest's click moves the map to the quest's
+-- zone (QuestMapFrame_ShowQuestDetails -> SetMapID); Valhalla's seamless map switches maps as it pans: the
+-- zones jumped about. Now, after each QuestLogQuests_Update (and Layout), the zone headers of the normal
+-- section (QuestScrollFrame.headerFramePool; campaign headers have their own pools, left first) and their
+-- quest rows are put in order by the zone's name: only their layoutIndex / topPadding (the spacing the game
+-- would give: QuestMapFrame.lua's spacing pairs) are set, then Contents:Layout() again.
+-- Ready to Turn In (setting readyInLog, off at first: the gear menu and Valhalla's menu): every quest ready to
+-- turn in (ReadyForTurnIn, else IsComplete, as Objectives.lua) leaves its zone (its row, objectives and quest
+-- icon hidden) and is listed in our own section at the very bottom, "Ready to Turn In (N)": the game's header
+-- look (ListHeaderVisualTemplate), its collapse state saved (readyLogCollapsed). A zone whose every quest is
+-- there keeps its header, with "Quests are in the Ready to Turn In section" under it (when expanded). Our rows:
+-- left-click opens the quest (QuestMapFrame_ShowQuestDetails, as the game's row), Shift-click tracks it
+-- (QuestMapQuestOptions_TrackQuest, as the game's row; a quest link into an open chat first), the chain button
+-- on them with Chain quest view. Off: the rows we hid shown again; nothing of ours shown.
+--------------------------------------------------------------------------------
+
+QC.READY_W = 290
+-- the game's spacing pairs (QuestMapFrame.lua QuestLogQuests_UpdateButtonSpacing) for what we move
+local SPACE = { HeaderHeader = 6, QuestHeader = 4, NoneHeader = 8, HeaderQuest = 2, QuestQuest = -3 }
+QC.SPACE = SPACE
+
+local ours = { rows = {}, notes = {} }   -- our header, rows (by position) and notes (by zone header button)
+local hiddenByUs = setmetatable({}, { __mode = "k" })   -- the game's frames we hid (shown again when not ready / off)
+QC.ours = ours
+
+function QC.IsReadyOn() return mod.db and mod.db.readyInLog and true or false end
+local function ReadyOn() return QC.IsReadyOn() and mod.enabled and true or false end
+
+function QC.SetReady(v)
+	if not mod.db then return end
+	mod.db.readyInLog = v and true or false
+	QC.Refresh()
+	if ns.NotifyOptions then pcall(ns.NotifyOptions) end
+end
+
+local function Contents()
+	local q = rawget(_G, "QuestScrollFrame")
+	return type(q) == "table" and q.Contents or nil
+end
+
+-- ready to turn in, as the tracker says it
+function QC.IsReady(id)
+	local C = rawget(_G, "C_QuestLog")
+	if not (C and id) then return false end
+	local r = Call(C.ReadyForTurnIn, id)
+	if not r then r = Call(C.IsComplete, id) end
+	return r and true or false
+end
+
+-- the log's quests by zone: { [headerLogIndex] = { name, quests = { { id, idx, title, ready }, ... } } }, ready list
+function QC.ReadLog()
+	local C = rawget(_G, "C_QuestLog")
+	local zones, ready, cur = {}, {}, nil
+	local n = C and C.GetNumQuestLogEntries and Call(C.GetNumQuestLogEntries) or 0
+	for i = 1, n do
+		local info = Call(C.GetInfo, i)
+		if type(info) == "table" then
+			if info.isHeader then
+				cur = { name = info.title or "", idx = i, quests = {} }
+				zones[i] = cur
+			elseif info.questID and not info.isHidden and not info.isTask and not info.isBounty then
+				local e = { id = info.questID, idx = i, title = info.title or ("Quest " .. info.questID), info = info, zone = cur }
+				e.ready = QC.IsReady(info.questID)
+				if cur then cur.quests[#cur.quests + 1] = e end
+				if e.ready then ready[#ready + 1] = e end
+			end
+		end
+	end
+	return zones, ready
+end
+
+local function Lower(s) return tostring(s or ""):lower() end
+local function Before(a, b)
+	local x, y = Lower(a.name), Lower(b.name)
+	local cmp = rawget(_G, "strcmputf8i")
+	if type(cmp) == "function" then
+		local ok, r = pcall(cmp, a.name or "", b.name or "")
+		if ok and type(r) == "number" and r ~= 0 then return r < 0 end
+	elseif x ~= y then return x < y end
+	return (a.order or 0) < (b.order or 0)
+end
+QC.ZoneBefore = Before
+
+local function HeaderName(h)
+	local C = rawget(_G, "C_QuestLog")
+	local info = rawget(h, "questLogIndex") and C and Call(C.GetInfo, rawget(h, "questLogIndex"))
+	if type(info) == "table" and info.title then return info.title end
+	local t = rawget(h, "ButtonText") or rawget(h, "Text")
+	return type(t) == "table" and t:GetText() or (h.GetText and h:GetText()) or ""
+end
+
+-- our header: the game's list header look; a plain button where the template isn't there
+local function ReadyHeader(parent)
+	local h = ours.header
+	if h then return h end
+	local ok, f = pcall(CreateFrame, "Button", nil, parent, "ListHeaderVisualTemplate, ListHeaderCodeTemplate")
+	if not ok or not f then f = CreateFrame("Button", nil, parent) end
+	local native = type(rawget(f, "CollapseButton")) == "table" and type(rawget(f, "ButtonText")) == "table"   -- (the template took)
+	f.valhallaNative = native
+	f:SetSize(QC.READY_W - 1, 22)
+	f.leftPadding = 9
+	f.valhallaReady = true
+	if type(rawget(f, "ButtonText")) ~= "table" then
+		f.ButtonText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		f.ButtonText:SetPoint("LEFT", 8, 0)
+	end
+	local function Toggle()
+		if mod.db then mod.db.readyLogCollapsed = not mod.db.readyLogCollapsed end
+		QC.Arrange()
+	end
+	if native and f.SetClickHandler then f:SetClickHandler(function(_, button) if button == "LeftButton" then Toggle() end end)
+	else f:SetScript("OnClick", Toggle) end
+	if f.RegisterForClicks then f:RegisterForClicks("LeftButtonUp") end
+	ours.header = f
+	return f
+end
+
+local function ShowTitle(f, s) local t = rawget(f, "ButtonText") if type(t) == "table" then t:SetText(s) else f:SetText(s) end end
+
+local function TitleOf(e)
+	local title = e.title
+	local U = rawget(_G, "QuestUtilsOverrides")
+	if type(U) == "table" and type(U.GetQuestTitlePrefix) == "function" then
+		local ok, p = pcall(U.GetQuestTitlePrefix, e.info)
+		if ok and type(p) == "string" then title = p .. title end
+	end
+	return title
+end
+
+function QC.RowClick(row, button)
+	local q = rawget(row, "questID")
+	if not q then return end
+	if IsShiftKeyDown and IsShiftKeyDown() then
+		local CF = rawget(_G, "ChatFrameUtil")
+		if type(CF) == "table" and type(CF.TryInsertQuestLinkForQuestID) == "function" then
+			local ok, did = pcall(CF.TryInsertQuestLinkForQuestID, q)
+			if ok and did then return end
+		end
+		local track = rawget(_G, "QuestMapQuestOptions_TrackQuest")
+		if type(track) == "function" then track(q)
+		else
+			local C = rawget(_G, "C_QuestLog")
+			if C and C.GetQuestWatchType and Call(C.GetQuestWatchType, q) ~= nil then Call(C.RemoveQuestWatch, q) elseif C then Call(C.AddQuestWatch, q) end
+		end
+	elseif button == "LeftButton" or button == nil then
+		local show = rawget(_G, "QuestMapFrame_ShowQuestDetails")
+		if type(show) == "function" then show(q) end
+	end
+end
+
+local function ReadyRow(parent, i)
+	local r = ours.rows[i]
+	if r then return r end
+	r = CreateFrame("Button", nil, parent)
+	r:SetSize(QC.READY_W, 16)
+	r.leftPadding = 4
+	r.valhallaReady = true
+	r.Icon = r:CreateTexture(nil, "ARTWORK")
+	r.Icon:SetSize(18, 18)
+	r.Icon:SetPoint("TOPLEFT", 6, -4)
+	r.Icon:SetAtlas("QuestTurnin")
+	r.Text = r:CreateFontString(nil, "OVERLAY", "GameFontNormalLeft")
+	r.Text:SetPoint("TOPLEFT", 31, -8)
+	r.Text:SetPoint("RIGHT", r, "RIGHT", -26, 0)
+	r.Text:SetTextColor(0.75, 0.61, 0)
+	if r.Text.SetJustifyH then r.Text:SetJustifyH("LEFT") end
+	r.Sub = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	r.Sub:SetPoint("TOPLEFT", r.Text, "BOTTOMLEFT", 0, -3)
+	r.Sub:SetPoint("RIGHT", r, "RIGHT", -26, 0)
+	r.Sub:SetTextColor(0.8, 0.8, 0.8)
+	if r.Sub.SetJustifyH then r.Sub:SetJustifyH("LEFT") end
+	r.Glow = r:CreateTexture(nil, "HIGHLIGHT")
+	r.Glow:SetAtlas("questlog-quest-glow-yellow")
+	r.Glow:SetPoint("TOPLEFT", r.Text, "TOPLEFT", -8, 4)
+	r.Glow:SetPoint("BOTTOMRIGHT", r.Text, "BOTTOMRIGHT", 8, -4)
+	r:RegisterForClicks("LeftButtonUp")
+	r:SetScript("OnClick", function(self, button) QC.RowClick(self, button) end)
+	r:SetScript("OnEnter", function(self) self.Text:SetTextColor(1, 0.82, 0) end)
+	r:SetScript("OnLeave", function(self) self.Text:SetTextColor(0.75, 0.61, 0) end)
+	ours.rows[i] = r
+	return r
+end
+
+local function Note(parent, h)
+	local n = ours.notes[h]
+	if n then return n end
+	n = CreateFrame("Frame", nil, parent)
+	n:SetSize(QC.READY_W, 20)
+	n.leftPadding = 31
+	n.valhallaReady = true
+	n.Text = n:CreateFontString(nil, "OVERLAY", "GameFontDisableSmallLeft")
+	n.Text:SetPoint("TOPLEFT", 0, -4)
+	n.Text:SetPoint("RIGHT", n, "RIGHT", -10, 0)
+	if n.Text.SetJustifyH then n.Text:SetJustifyH("LEFT") end
+	n.Text:SetText(L["Quests are in the Ready to Turn In section"])
+	ours.notes[h] = n
+	return n
+end
+
+local function HideOurs()
+	if ours.header then ours.header:Hide() end
+	for _, r in ipairs(ours.rows) do r:Hide() end
+	for _, n in pairs(ours.notes) do n:Hide() end
+end
+
+-- a ready quest's row: hidden with its objective lines and its quest icon (shown again when no longer)
+local function SetRowShown(row, show)
+	local q = rawget(row, "questID")
+	local SF = rawget(_G, "QuestScrollFrame")
+	local function Each(fn)
+		local op = SF and SF.objectiveFramePool
+		if op and op.EnumerateActive then for o in op:EnumerateActive() do if rawget(o, "questID") == q then fn(o) end end end
+		local c = SF and SF.Contents
+		local poi = c and type(c.FindButtonByQuestID) == "function" and Call(c.FindButtonByQuestID, c, q)
+		if type(poi) ~= "table" then poi = nil end
+		if poi and rawget(poi, "parent") == row then fn(poi) end
+	end
+	if show then
+		if hiddenByUs[row] then
+			hiddenByUs[row] = nil
+			row:Show()
+			Each(function(f) if hiddenByUs[f] then hiddenByUs[f] = nil f:Show() end end)
+		end
+	elseif row:IsShown() then
+		hiddenByUs[row] = true
+		row:Hide()
+		Each(function(f) if f:IsShown() then hiddenByUs[f] = true f:Hide() end end)
+	end
+end
+
+-- after the game's update (and on our setting / collapse changes): the order, the Ready section
+function QC.Arrange()
+	local SF = rawget(_G, "QuestScrollFrame")
+	local contents = Contents()
+	if not (SF and contents and SF.headerFramePool and SF.titleFramePool and SF.headerFramePool.EnumerateActive) then return false end
+	local readyOn = ReadyOn()
+	-- (switched off, or Valhalla's quest log parts off: every row back, nothing of ours)
+	for row in SF.titleFramePool:EnumerateActive() do
+		if not (readyOn and rawget(row, "questID") and QC.IsReady(rawget(row, "questID"))) then SetRowShown(row, true) end
+	end
+	if not mod.enabled then HideOurs() return false end
+	local zones, ready = QC.ReadLog()
+	-- the game's zone headers and rows now (by log index), and where the normal section starts
+	local heads, rows, base, firstPad, firstAt = {}, {}, nil, nil, nil
+	for h in SF.headerFramePool:EnumerateActive() do
+		if h:IsShown() and rawget(h, "layoutIndex") then
+			heads[#heads + 1] = h
+			if not base or rawget(h, "layoutIndex") < base then base = rawget(h, "layoutIndex") end
+			if not firstAt or rawget(h, "layoutIndex") < firstAt then firstAt, firstPad = rawget(h, "layoutIndex"), rawget(h, "topPadding") end
+		end
+	end
+	for r in SF.titleFramePool:EnumerateActive() do
+		if rawget(r, "layoutIndex") and (r:IsShown() or hiddenByUs[r]) then
+			-- (a campaign's quests sit above the normal section: only rows under a zone header move)
+			rows[#rows + 1] = r
+		end
+	end
+	-- (the normal section starts after the game's Separator, which comes after the campaigns and the zone story)
+	local sep = rawget(contents, "Separator")
+	local sepAt = type(sep) == "table" and rawget(sep, "layoutIndex")
+	if type(sepAt) == "number" and (not base or sepAt + 1 > base) then base = sepAt + 1 end
+	if not base then HideOurs() return false end   -- (nothing to place it after: the game's order, untouched)
+	local groups = {}
+	for i, h in ipairs(heads) do groups[i] = { head = h, name = HeaderName(h), idx = rawget(h, "questLogIndex") or 0, rows = {}, order = rawget(h, "layoutIndex") } end
+	table.sort(groups, function(a, b) return a.idx < b.idx end)
+	local loose = {}
+	for _, r in ipairs(rows) do
+		local info0 = rawget(r, "info")
+		local idx = rawget(r, "questLogIndex") or (type(info0) == "table" and info0.questLogIndex)
+		local g
+		if idx then for _, x in ipairs(groups) do if x.idx < idx then g = x end end end
+		if not g then   -- (no index: the header just above it by position)
+			for _, x in ipairs(groups) do if (x.order or 0) < (rawget(r, "layoutIndex") or 0) and (not g or x.order > g.order) then g = x end end
+		end
+		if g then g.rows[#g.rows + 1] = r elseif rawget(r, "layoutIndex") >= base then loose[#loose + 1] = r end
+	end
+	table.sort(groups, Before)
+	-- the sequence: each zone (header, its note, its rows still shown), then the Ready section
+	local seq = {}
+	local function Add(f, kind) seq[#seq + 1] = { f = f, kind = kind } end
+	for _, r in ipairs(loose) do Add(r, "Quest") end
+	local used = {}
+	for _, g in ipairs(groups) do
+		Add(g.head, "Header")
+		table.sort(g.rows, function(a, b) return (rawget(a, "questLogIndex") or rawget(a, "layoutIndex") or 0) < (rawget(b, "questLogIndex") or rawget(b, "layoutIndex") or 0) end)
+		local left = 0
+		for _, r in ipairs(g.rows) do
+			if readyOn and rawget(r, "questID") and QC.IsReady(rawget(r, "questID")) then SetRowShown(r, false) else left = left + 1 end
+		end
+		local z = zones[rawget(g.head, "questLogIndex") or -1]
+		local info = z and Call(rawget(_G, "C_QuestLog").GetInfo, z.idx)
+		local collapsed = type(info) == "table" and info.isCollapsed
+		local allReady = false
+		if readyOn and z and #z.quests > 0 then
+			allReady = true
+			for _, e in ipairs(z.quests) do if not e.ready then allReady = false break end end
+		end
+		if allReady and not collapsed and left == 0 then
+			local n = Note(contents, g.head)
+			n:Show()
+			used[n] = true
+			Add(n, "Quest")
+		end
+		for _, r in ipairs(g.rows) do if r:IsShown() then Add(r, "Quest") end end
+	end
+	for h, n in pairs(ours.notes) do if not used[n] then n:Hide() end end
+	-- the Ready section
+	local nShown = 0
+	if readyOn then
+		local hdr = ReadyHeader(contents)
+		local collapsed = mod.db and mod.db.readyLogCollapsed and true or false
+		ShowTitle(hdr, L["Ready to Turn In (%d)"]:format(#ready))
+		if rawget(hdr, "valhallaNative") then pcall(hdr.UpdateCollapsedState, hdr, collapsed) end
+		hdr.collapsed = collapsed
+		hdr:Show()
+		Add(hdr, "Header")
+		if not collapsed then
+			-- (by zone name, then as in the log)
+			table.sort(ready, function(a, b)
+				local za, zb = a.zone and a.zone.name or "", b.zone and b.zone.name or ""
+				if za ~= zb then return Before({ name = za }, { name = zb }) end
+				return a.idx < b.idx
+			end)
+			local showObj = true
+			if GetCVarBool then local ok, v = pcall(GetCVarBool, "showQuestObjectivesInLog") if ok then showObj = v and true or false end end
+			for i, e in ipairs(ready) do
+				local r = ReadyRow(contents, i)
+				r.questID, r.questLogIndex = e.id, e.idx
+				r.Text:SetText(TitleOf(e))
+				local sub = showObj and (Call(rawget(_G, "GetQuestLogCompletionText"), e.idx) or rawget(_G, "QUEST_WATCH_QUEST_READY") or L["Ready for turn-in"]) or ""
+				r.Sub:SetText(sub)
+				r.Sub:SetShown(sub ~= "")
+				local th = (r.Text.GetStringHeight and r.Text:GetStringHeight()) or 12
+				local sh = sub ~= "" and (((r.Sub.GetStringHeight and r.Sub:GetStringHeight()) or 12) + 3) or 4
+				r:SetHeight(8 + (tonumber(th) or 12) + sh + 6)
+				r:Show()
+				Add(r, "Quest")
+				nShown = i
+				-- the chain button, as on the game's rows (Chain quest view on)
+				if QC.On() and QC.Of(e.id) then
+					local b = ButtonFor(r)
+					b.questID = e.id
+					b:ClearAllPoints()
+					b:SetPoint("TOPRIGHT", r, "TOPRIGHT", -2, -6)
+					b:SetFrameLevel((r:GetFrameLevel() or 1) + 2)
+					b:Show()
+				elseif buttons[r] then buttons[r]:Hide() end
+			end
+		end
+	elseif ours.header then ours.header:Hide() end
+	for i = nShown + 1, #ours.rows do ours.rows[i]:Hide() end
+	-- layoutIndex / topPadding (the game's own spacing for each pair), then the layout again
+	local changed = false
+	local prev = nil
+	for i, s in ipairs(seq) do
+		local f = s.f
+		local li = base + i - 1
+		local pad
+		if i == 1 then pad = (s.kind == "Header" and firstPad) or SPACE["None" .. s.kind] or 0
+		else pad = SPACE[prev .. s.kind] or 0 end
+		if rawget(f, "layoutIndex") ~= li then f.layoutIndex = li changed = true end
+		if rawget(f, "topPadding") ~= pad then f.topPadding = pad changed = true end
+		prev = s.kind
+	end
+	QC.lastSeq = seq
+	if changed and type(contents.Layout) == "function" then pcall(contents.Layout, contents) end
+	return true
+end
 
 -- the rows as they are now (no log update needed: ours only)
 function QC.Refresh()
@@ -425,6 +810,7 @@ function QC.AddToMenu()
 	local ok = pcall(M.ModifyMenu, "MENU_QUEST_MAP_FRAME_SETTINGS", function(_, root)
 		if root and root.CreateCheckbox then
 			root:CreateCheckbox(L["Chain quest view"], function() return QC.IsViewOn() end, function() QC.SetView(not QC.IsViewOn()) end)
+			root:CreateCheckbox(L["Show Ready to Turn In section"], function() return QC.IsReadyOn() end, function() QC.SetReady(not QC.IsReadyOn()) end)
 		end
 	end)
 	menuAdded = ok and true or false

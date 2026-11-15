@@ -363,6 +363,9 @@ local function Rows()
 		rows[#rows + 1] = row(L["Chain quest view"], "chainView", Icon("INV_Misc_Book_08"), function() return QC.IsViewOn() end,
 			function(v) QC.SetView(v) end)
 		rows[#rows].note = L["Chain buttons instead of the Track ticks"]
+		rows[#rows + 1] = row(L["Show Ready to Turn In section"], "readyInLog", Icon("INV_Misc_Note_01"), function() return QC.IsReadyOn() end,
+			function(v) QC.SetReady(v) end)
+		rows[#rows].note = L["Ready quests at the bottom of the log"]
 	end
 	rows[#rows + 1] = { L["Sharing"] }
 	fromOptions(L["Pins others share with you"], "pinsShared", Icon("INV_Misc_Map_01"))
