@@ -1391,8 +1391,8 @@ function V.BuildInvest(parent)
 	root.Page = Page
 	function root:ShowPage(key)
 		if key == "settings" then return T.Select("settings") end   -- (v0.3.5: its own tab)
-		key = key or self.current or "list"
-		if not BUILD[key] then key = "list" end
+		key = key or self.current or "market"   -- (1.2.16: AH Market first)
+		if not BUILD[key] then key = BUILD.market and "market" or "list" end
 		self.current = key
 		for k, p in pairs(self.pages) do if k ~= key then p:Hide() end end
 		local page = Page(key)

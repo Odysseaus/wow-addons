@@ -344,8 +344,14 @@ do
   W.quests[q7] = { map = 9999 }
   QuestMapFrame_ShowQuestDetails(q7)
   ok(not mod.IsStitched() and map:GetMapID() == 9999, "a dungeon's quest: Blizzard puts the dungeon's map up first")
-  W.Tick()
-  ok(mod.IsStitched() and map:GetMapID() == 1436 and mod.Flying() == q7, "a frame later: the stitched map (Westfall) back, flying")
+  W.Ticks(60)
+  -- (1.2.16) its description open: the dungeon's map stays (Westfall put up under it would close it)
+  ok(map:GetMapID() == 9999 and QuestMapFrame_GetDetailQuestID() == q7, "1.2.16: its description open, the dungeon's map stays and the description too")
+  QuestMapFrame_ReturnFromQuestDetails() W.Ticks(2)
+  -- the stitched map up (a Ready row, a quest icon): glides to the entrance, no map change
+  mod.ShowNow(eu, ev, Fit(1429)) W.Ticks(2)
+  local before = map:GetMapID()
+  ok(mod.FlyToQuest(q7) and mod.Flying() == q7 and map:GetMapID() == before, "from the stitched map: a flight to its entrance, the map not changed")
   Land()
   u, v, z = View()
   ok(near(u, 0.672, 1e-6) and near(v, 0.712, 1e-6), "to the dungeon's entrance")
@@ -441,6 +447,96 @@ do
   W.combat = false
   W.CloseMap()
   ok(mod.FlyToQuest(q2) == false, "the map closed: nothing (Valhalla doesn't open it in combat)")
+end
+
+print("== 15. (1.2.16) a quest's description stays open: the map underneath never changed while it's open")
+do
+  Defaults()
+  W.OpenMap() W.Ticks(3)
+  -- an Ironforge-style city edge: an Elwynn quest whose marker is inside Stormwind City's map; Close-up
+  -- lands at Stormwind's own zoom, so the zone-in-view switch would put Stormwind up after 0.6 s still
+  local q8 = 108
+  local su, sv = 0.715, 0.62
+  W.quests[q8] = { map = 1429, x = (su - 0.69516) / (0.77283 - 0.69516), y = (sv - 0.59857) / (0.67626 - 0.59857) }
+  local function Start() local wu, wv = ToWorld(1436, 0.5, 0.5) mod.ShowNow(wu, wv, Fit(1436)) W.Ticks(2) end
+  local function Click(how)
+    if how == "closed" then W.CloseMap() W.Tick() QuestMapFrame_OpenToQuestDetails(q8)
+    elseif how == "tracker" then QuestMapFrame_OpenToQuestDetails(q8)
+    else QuestMapFrame_ShowQuestDetails(q8) end
+    Land()
+    W.Ticks(120)   -- (2 s still after landing: well past the switch's 0.6 s)
+  end
+  mod.db.questFlyLanding = "close"
+  -- the bug as it was (the guard off): the switch puts Stormwind up and Blizzard closes the description
+  local guard = mod.DetailsOpen
+  mod.DetailsOpen = function() return false end
+  Start()
+  local closes = W.detailCloses or 0
+  Click("log")
+  ok(map:GetMapID() == 1453 and QuestMapFrame_GetDetailQuestID() == nil and (W.detailCloses or 0) == closes + 1,
+    "control (guard off): the switch puts Stormwind up and the description closes (the bug)", map:GetMapID())
+  local e = mod.db.detailsLog and mod.db.detailsLog[1]
+  ok(e and e.quest == q8 and e.questMap == 1429 and e.newMap == 1453, "detailsLog: the close logged (quest, its map, the new map)")
+  ok(e and e.flags:find("valhalla switch", 1, true) and e.flags:find("auto-switch on", 1, true), "its flags: Valhalla's switch, auto-switch on", e and e.flags)
+  ok(e and e.stack:find("WorldMap:", 1, true) ~= nil, "a short stack naming WorldMap.lua", e and e.stack)
+  mod.DetailsOpen = guard
+  QuestMapFrame_ReturnFromQuestDetails() W.Ticks(2)
+  for _, how in ipairs({ "log", "tracker", "closed" }) do
+    Start()
+    Click(how)
+    ok(map:GetMapID() == 1429 and QuestMapFrame_GetDetailQuestID() == q8, "1.2.16 " .. how .. ": landed, 2 s still: the map stays the quest's, its description open", map:GetMapID())
+    local u, v = View()
+    ok(near(u, su, 1e-6) and near(v, sv, 1e-6), "  and the view glided to the quest")
+    QuestMapFrame_ReturnFromQuestDetails() W.Ticks(2)
+  end
+  -- a complete quest (Ready to Turn In: the same Blizzard call, its turn-in marker)
+  W.quests[q8].done = true
+  Start() Click("tracker")
+  ok(map:GetMapID() == 1429 and QuestMapFrame_GetDetailQuestID() == q8, "a Ready to Turn In row: the same, description kept")
+  -- Back: the switch goes on again
+  QuestMapFrame_ReturnFromQuestDetails()
+  ok(QuestMapFrame_GetDetailQuestID() == nil and map:GetMapID() == 1429, "Back: the description closed, Blizzard's map back")
+  e = mod.db.detailsLog[1]
+  ok(e.quest == q8 and e.flags:find("back", 1, true), "detailsLog: Back logged with its flag", e.flags)
+  W.Ticks(60)
+  ok(map:GetMapID() == 1453, "after Back the zone-in-view switch goes on (Stormwind put up)", map:GetMapID())
+  -- Jump mode
+  mod.db.questFly = "jump"
+  Start() Click("log")
+  ok(map:GetMapID() == 1429 and QuestMapFrame_GetDetailQuestID() == q8, "Jump to it: there at once, map and description kept")
+  QuestMapFrame_ReturnFromQuestDetails() W.Ticks(2)
+  Defaults()
+  -- the log: 10 at most, newest first; a close with nothing open isn't logged
+  for _ = 1, 12 do Start() QuestMapFrame_ShowQuestDetails(q8) W.Tick() QuestMapFrame_ReturnFromQuestDetails() end
+  local n = #mod.db.detailsLog
+  _G.QuestMapFrame_CloseQuestDetails()
+  ok(n == 10 and #mod.db.detailsLog == 10, "detailsLog keeps the last 10", n)
+  ok(type(mod.db.detailsLog[1].at) == "string" and mod.db.detailsLog[1].quest == q8, "each with its time and quest")
+
+  -- C: the map opened inside a dungeon (Dungeons.lua's handler: the dungeon's own map)
+  local entrance = mod.DungeonEntrance
+  assert(loadfile(root .. "Map/Dungeons.lua"))("Valhalla", ns)
+  mod.DungeonEntrance = entrance
+  S.InstanceMap = function(name) if name == "The Deadmines" then return 9999 end end
+  ns.MapPlaces = { instances = { { "Westfall", 1436, {}, { { 36, "The Deadmines" } } } } }
+  _G.IsInInstance = function() return true end
+  _G.GetInstanceInfo = function() return "The Deadmines", "party", 1, "", 5, 0, false, 36 end
+  _G.GetRealZoneText = function() return "The Deadmines" end
+  if type(rawget(map, "QuestLog")) ~= "table" then map.QuestLog = CreateFrame("Frame") end
+  local okSetup, err = pcall(mod.SetupDungeons, mod, map)
+  ok(okSetup, "Dungeons.lua set up on the box map", err)
+  local function OpenIn(click)
+    W.CloseMap() W.Tick()
+    if click then QuestMapFrame_OpenToQuestDetails(q1) else W.OpenMap() end
+    W.Run(map, "OnShow")
+    W.Ticks(30)
+  end
+  OpenIn(false)
+  ok(map:GetMapID() == 9999, "opened in the Deadmines (M): its own map, as before", map:GetMapID())
+  OpenIn(true)
+  ok(map:GetMapID() == 1436 and QuestMapFrame_GetDetailQuestID() == q1, "opened by a tracker click in the Deadmines: the quest's map and description stay", map:GetMapID())
+  QuestMapFrame_ReturnFromQuestDetails() W.Ticks(2)
+  _G.IsInInstance = function() return false end
 end
 
 print("== 14. nothing broken")

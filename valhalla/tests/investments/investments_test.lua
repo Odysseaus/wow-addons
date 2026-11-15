@@ -72,7 +72,7 @@ print("== 3. switching tabs")
 WorldMapFrame:Show()
 W.Click(T.Buttons()[2])
 ok(T.Current() == "invest" and T.Host():IsShown() and T.Views().invest:IsShown(), "Investments: the host and its view")
-ok(T.Views().invest.page.current == "list" and T.Views().invest.page.pages.list:IsShown(), "opens on the Shopping List (Smart Vendor is under construction)")
+ok(T.Views().invest.page.current == "market" and T.Views().invest.page.pages.market:IsShown(), "1.2.16: opens on AH Market")
 W.Click(T.Buttons()[3])
 local tal = T.Views().talents
 ok(tal:IsShown() and not T.Views().invest:IsShown() and tal.page.text._text == "Under construction: coming soon", "Talents: under construction, coming soon")
@@ -1480,6 +1480,7 @@ do
     if parent == host then views[#views + 1] = fr end
     return fr
   end
+  I.S.marketSub = "top"   -- (1.2.16: built on the inner tab last used: Top 10 here)
   local ok1, e1 = pcall(V.BuildMarket, host)
   local function Count(key) local n = 0 for _, v in ipairs(views) do if v.view == key then n = n + 1 end end return n end
   local function ShownLists() local n = 0 for _, v in ipairs(views) do if rawget(v, "pager") and v:IsShown() then n = n + 1 end end return n end
@@ -1998,6 +1999,7 @@ print("== 32. v0.4.2: the look (UI/Style.lua): Profession by default, Norse from
   ok(sp.look and #sp.look.boxes == 2 and sp.look.boxes[1].value == "profession" and sp.look.boxes[2].value == "norse" and sp.look.boxes[1].tick._shown and not sp.look.boxes[2].tick._shown,
     "Settings > Look: Profession (ticked) / Norse")
   ok(sp.grey.minus.vh.as == "dec" and sp.days.plus.vh.as == "inc", "Settings' steppers: arrows")
+  collectgarbage("collect")   -- (Style.all is weak: a widget no longer used isn't counted by chance)
   local n0 = 0 for _ in pairs(St.all) do n0 = n0 + 1 end
   local laid0 = W.sizeFired
   W.Click(sp.look.boxes[2])
@@ -4196,6 +4198,65 @@ print("== 44. 1.2.9: Dave's Sack's own AH scans off (only Valhalla scans); every
   ok(I.S.quietDavesSack == true and not ds._events.AUCTION_HOUSE_SHOW, "ticked: off again")
   ds:UnregisterAllEvents() named:UnregisterAllEvents()
   C_AddOns, DS.frame, DS.removed = nil, nil, {}
+end)()
+
+print("== 1.2.16: Investments opens on AH Market; AH Market's inner tab kept across a reload")
+;(function()
+  WorldMapFrame:Show()
+  T.Select("map")
+  local V = I.Views
+  local root = T.Views().invest.page
+  local function Page() return T.Current() == "invest" and root.current end
+  local function Away() T.Select("invest", "list") ok(Page() == "list", "  (on the Shopping List first)") T.Select("map") end
+  Away()
+  W.Click(T.Buttons()[2])
+  ok(Page() == "market" and root.pages.market:IsShown(), "the bottom tab: AH Market (not the page last used)")
+  Away()
+  Valhalla_ToggleInvest()
+  ok(Page() == "market", "I key / Valhalla_ToggleInvest: AH Market")
+  Valhalla_ToggleInvest()
+  ok(T.Current() == "map" or not WorldMapFrame:IsShown(), "  again: closed, as before")
+  WorldMapFrame:Show()
+  Away()
+  ns.InvestAction().run()
+  ok(Page() == "market", "the map's menu: AH Market")
+  Away()
+  Slash("invest", "")
+  ok(Page() == "market", "/valhalla invest: AH Market")
+  Away()
+  Slash("tab", "invest")
+  ok(Page() == "market", "/valhalla tab invest: AH Market")
+  Slash("invest", "list")
+  ok(Page() == "list", "/valhalla invest list: the Shopping List (an explicit page kept)")
+  Slash("invest", "vendor")
+  ok(Page() == "vendor", "/valhalla invest vendor: Smart Vendor")
+  T.Refresh()
+  ok(Page() == "vendor", "a resize / layout (T.Refresh): the page kept")
+  root:ShowPage("list")
+  T.Refresh()
+  ok(Page() == "list", "  the Shopping List kept too")
+  T.Select("invest")
+  ok(Page() == "list", "Select with no page (the views' own calls): the page kept")
+  -- AH Market's inner tab: saved, and reopened after a reload (a new page built)
+  T.Select("invest", "market")
+  local mp = root.pages.market
+  mp:ShowSub("watch")
+  ok(I.S.marketSub == "watch", "AH Market's inner tab saved (Watchlist)")
+  T.Select("map") W.Click(T.Buttons()[2])
+  ok(Page() == "market" and mp.current == "watch", "Investments again: AH Market, still on Watchlist")
+  local host = CreateFrame("Frame", nil, nil)
+  V.BuildMarket(host) local p2 = host
+  ok(p2 and p2.current == "watch", "after a /reload (built again from the saved setting): Watchlist", p2 and p2.current)
+  mp:ShowSub("craft")
+  local p3 = CreateFrame("Frame", nil, nil) V.BuildMarket(p3)
+  ok(p3.current == "craft" and I.S.marketSub == "craft", "  Craft the same")
+  I.S.marketSub = "bogus"
+  local p4 = CreateFrame("Frame", nil, nil) V.BuildMarket(p4)
+  ok(p4.current == "top", "a saved tab that's gone: Top 10")
+  I.S.marketSub = nil
+  local p5 = CreateFrame("Frame", nil, nil) V.BuildMarket(p5)
+  ok(p5.current == "top", "none saved: Top 10")
+  T.Select("map")
 end)()
 
 print(("\n%d passed, %d failed"):format(pass, fail))

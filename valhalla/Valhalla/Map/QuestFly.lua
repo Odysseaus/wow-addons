@@ -201,9 +201,12 @@ function Q.Go(q, mapID, how)
 	if mod.IsStitched() then return Start() end
 	-- a dungeon's quest (D5): the stitched map put up again round its entrance, then the flight (a frame
 	-- later, out of Blizzard's click: the map's change isn't made inside it)
+	-- (1.2.16) not with a quest's description open: Blizzard would close it (the map isn't the quest's)
 	if kind ~= "entrance" or not zoneMap or not S.Valhalla or (mod.PadWaits and mod.PadWaits()) then return false end
+	if mod.DetailsOpen and mod.DetailsOpen() then return false end
 	C_Timer.After(0, function()
 		if not map:IsShown() or (mod.PadWaits and mod.PadWaits()) then return end
+		if mod.DetailsOpen and mod.DetailsOpen() then return end
 		S.Valhalla(zoneMap)
 		Start()
 	end)

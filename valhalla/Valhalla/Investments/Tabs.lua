@@ -211,7 +211,7 @@ local function MakeButton(entry)
 		b.tag = T.Font(b:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"), 9, { 0.6, 0.6, 0.6 })
 		b.tag:SetText(L["soon"])
 	end
-	b:SetScript("OnClick", function(self) T.Select(self.key) end)
+	b:SetScript("OnClick", function(self) T.Select(self.key, self.key == "invest" and "market" or nil) end)   -- (1.2.16: Investments opens on AH Market)
 	b:SetScript("OnEnter", function(self)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -431,6 +431,6 @@ function ns.InvestAction(Icon)
 		tip = L["Your shopping lists (and soon Smart Vendor and the Auction House market): the Investments tab."],
 		run = function()
 			if not mod.enabled then ns:Print(L["Investments is off. /valhalla invest on"]) return end
-			T.Open("invest")
+			T.Open("invest", "market")   -- (1.2.16)
 		end, lit = function() return attached and current == "invest" end }
 end

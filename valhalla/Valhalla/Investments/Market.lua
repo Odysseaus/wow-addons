@@ -2049,6 +2049,7 @@ function V.BuildMarket(page)
 	function page:ShowSub(key)
 		if not BUILD[key] then key = "top" end
 		self.current = key
+		if I.S then I.S.marketSub = key end   -- (1.2.16: the inner tab last used, reopened after a /reload)
 		local f = self:Sub(key)
 		for _, g in ipairs(self.allSubs) do if g ~= f then g:Hide() end end   -- (every view ever made, not only the listed ones)
 		f:Show()
@@ -2078,5 +2079,9 @@ function V.BuildMarket(page)
 		f:Show()
 		S().shown = f.Refresh(keep) or {}
 	end
-	page:ShowSub("top")
+	-- (1.2.16) the inner tab last used (a saved one that's gone or still "soon": Top 10)
+	local last = I.S and I.S.marketSub
+	local listed = false
+	for _, s in ipairs(M.SUBS) do if s.key == last and not s.soon then listed = true end end
+	page:ShowSub(listed and BUILD[last] and last or "top")
 end

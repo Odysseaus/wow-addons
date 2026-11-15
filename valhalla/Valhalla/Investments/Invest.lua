@@ -48,6 +48,8 @@ I.SETTINGS = {
 	-- Watchlist (1.2.14, Watch.lua): a sound with the popup; alerts "every" scan while met | "once" until the target
 	-- changes; Near (Signal column only): 0 (off) | 5 | 10 per cent from a target; its sort
 	watchSound = true, watchAlerts = "every", watchNear = 5, sortWatch = "signal:asc",
+	-- (1.2.16) AH Market's inner tab last used (Top 10, My items, History, Scan results, Craft, Watchlist): reopened on it
+	marketSub = "top",
 }
 I.CATS = { "mat", "reagent", "gear" }
 I.CAT_NAME = { mat = L["Profession Mat"], reagent = L["Reagent"], gear = L["Gear Upgrade"] }
@@ -1898,7 +1900,7 @@ function _G.Valhalla_ToggleInvest()
 	if not T then return end
 	local map = _G.WorldMapFrame
 	if T.Attached() and map and map:IsShown() and T.Current() == "invest" then T.Close() return end
-	T.Open("invest")
+	T.Open("invest", "market")   -- (1.2.16: Investments opens on AH Market)
 end
 
 local function KeyName(action) return (action and _G["BINDING_NAME_" .. action]) or action or "?" end
@@ -1966,6 +1968,7 @@ function mod:Slash(word, arg)
 			return
 		end
 		local page = ({ vendor = "vendor", list = "list", shopping = "list", market = "market", ah = "market" })[sub]
+		if sub == "" then page = "market" end   -- (1.2.16: plain /valhalla invest opens on AH Market)
 		if I.Tabs then I.Tabs.Open("invest", page) end
 		return
 	end
@@ -1976,7 +1979,7 @@ function mod:Slash(word, arg)
 	elseif word == "tab" then
 		local key = ({ map = "map", invest = "invest", investments = "invest", talents = "talents", professions = "professions", settings = "settings" })[low]
 		if not key then Say(L["/valhalla tab map|invest|talents|professions|settings"]) return end
-		if I.Tabs then I.Tabs.Open(key) end
+		if I.Tabs then I.Tabs.Open(key, key == "invest" and "market" or nil) end   -- (1.2.16)
 	elseif word == "want" then
 		-- into the Shopping List's builder (the draft): the item may be a link (with spaces), then a count
 		-- (an old category word after it is ignored)

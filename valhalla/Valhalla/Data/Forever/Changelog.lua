@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.16", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
+		"|cff6e2c0aA quest's description stays open|r: clicking a quest in the quest log or the tracker (In progress or Ready to Turn In, complete or not) opened its description for a moment, then went back to the list. While a quest's description is open, Valhalla no longer changes the map underneath (the zone-in-view switch, a dungeon quest's entrance zone, the map opened inside a dungeon); the map still glides to the quest.",
+		"After Back (or with the map closed), the map follows what you're looking at again, as before.",
+		"For a report: the last 10 times a quest's description closed are kept in the saved variables (ValhallaDB.worldmap.detailsLog), with the quest, its map, the map then, and what was going on.",
+		"|cff6e2c0aInvestments opens on AH Market|r: the bottom tab, the I key, Valhalla's map menu and /valhalla invest always open AH Market (/valhalla invest list or vendor still open those pages).",
+		"AH Market remembers its tab (Top 10, My items, History, Scan results, Craft or Watchlist), also after a /reload.",
+	} },
 	{ version = "1.2.15", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
 		"|cff6e2c0aDungeon quests only, inside a dungeon|r: in WoW Forever's own dungeons (City of Dalaran and the others the game has no map of) the tracker showed the outdoor zone's quests too (Alterac Mountains' in City of Dalaran). Valhalla now knows the dungeon by the game's instance ID and lists only its quests (and the Dungeon-tagged quests of its entrance zone), plus your pinned ones; Ready to Turn In too. Outside again, the zone's list comes back.",
 		"Inside a dungeon an outdoor zone's name, map and map pins no longer count, and a \"Place: Zone\" quest header only counts outdoors.",

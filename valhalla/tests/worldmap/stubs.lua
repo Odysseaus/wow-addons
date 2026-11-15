@@ -177,6 +177,12 @@ function map:SetMapID(id)
   W.mapChanges = (W.mapChanges or 0) + 1
   sc:OnCanvasSizeChanged()                     -- (Blizzard: the new map's zoom levels, its view reset)
   if W.dp and W.dp.OnMapChanged then W.dp.OnMapChanged() end
+  -- (Blizzard's QuestLogMixin:Refresh on the map's change: a quest's description on another map is closed)
+  local df = QuestMapFrame and QuestMapFrame.DetailsFrame
+  if W.closeRule ~= false and df and df._shown and rawget(df, "questMapID") and df.questMapID ~= id then
+    W.detailCloses = (W.detailCloses or 0) + 1
+    _G.QuestMapFrame_CloseQuestDetails()
+  end
 end
 function W.OpenMap()
   if map._shown then return end
@@ -187,6 +193,7 @@ function W.OpenMap()
 end
 function W.CloseMap()
   map._shown = false
+  if QuestMapFrame_CloseQuestDetails then _G.QuestMapFrame_CloseQuestDetails() end   -- (QuestMapFrame_OnHide)
   if W.dp then W.dp.OnHide() end
 end
 
@@ -234,10 +241,13 @@ function QuestMapFrame_OpenToQuestDetails(q)
   W.OpenMap()
   QuestMapFrame_ShowQuestDetails(q)
 end
+function QuestMapFrame_CloseQuestDetails()
+  details:Hide()
+  details.questID, details.returnMapID, details.questMapID = nil, nil, nil
+end
 function QuestMapFrame_ReturnFromQuestDetails()
   if rawget(details, "returnMapID") then map:SetMapID(details.returnMapID) end
-  details:Hide()
-  details.questID, details.returnMapID = nil, nil
+  _G.QuestMapFrame_CloseQuestDetails()
 end
 function QuestMapFrame_GetDetailQuestID() return rawget(details, "questID") end
 
