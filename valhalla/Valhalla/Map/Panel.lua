@@ -202,6 +202,7 @@ local function Rows()
 		optRow(L["Zeppelins"], "zeppelins", { atlas = "vehicle-air-horde", texture = "Interface\\Vehicles\\SeatIndicator\\Vehicle-HordeZeppelin", icon = true }),
 		optRow(L["Flight masters"], "flight", { atlas = faction == "Horde" and "TaxiNode_Horde" or "TaxiNode_Alliance",
 			texture = "Interface\\Icons\\Ability_Mount_Wyvern_01", icon = true }),
+		optRow(L["Flight timer popup"], "flightTimer", Icon("INV_Misc_PocketWatch_02")),   -- (1.2.12)
 		optRow(L["Only places you've found"], "foundOnly", Icon("INV_Misc_Spyglass_03")),
 		optRow(L["Boat and zeppelin routes"], "routes", { atlas = "Ships_CargoShip-Map", texture = "Interface\\Icons\\INV_Misc_Spyglass_02", icon = true }),
 		optRow(L["Your arrow"], "playerArrow", { texture = "Interface\\Minimap\\MinimapArrow" }),
