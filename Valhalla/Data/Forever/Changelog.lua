@@ -4,6 +4,14 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.11", date = "2026-11-14", heads = { [1] = "Fixed", [2] = "New", [6] = "Note", }, items = {
+		"|cff6e2c0aThe quest log's zones stay in alphabetical order|r: the game sorted them again for the map shown on every map change, and a quest's click moves the map to its zone, so they jumped about (Valhalla's seamless map changing maps as you pan made it happen more). Campaign headers, if any, stay first.",
+		"|cff6e2c0aShow Ready to Turn In section|r (the quest log's gear menu, after Chain quest view; also Valhalla's menu > More > Quest log; off at first): every quest ready to turn in is listed in a \"Ready to Turn In (N)\" section at the very bottom of the log, out of its zone, even from a collapsed zone.",
+		"Its header folds and unfolds the section, and the log remembers which (also after /reload).",
+		"A zone whose quests have all moved there keeps its header, with \"Quests are in the Ready to Turn In section\" under it; a zone with some left shows the rest.",
+		"Its quests: left-click opens the quest, Shift-click tracks it, as in the zones; with Chain quest view on they have their chain button. Unticked, every quest is back in its zone.",
+		"Only the order and the spacing of the game's own rows are changed; nothing is protected, so it works in combat too.",
+	} },
 	{ version = "1.2.10", date = "2026-11-14", heads = { [1] = "Removed", [5] = "Changed", [8] = "Kept", }, items = {
 		"|cff6e2c0aThe Auction House checkout cart and its buying are gone|r: the + on the AH list's rows, Checkout (N), the cart view (its quantity steppers, Back, Scan and Buy), the Buy Yes / No question, Buy next and Confirm. WoW Forever blocks an addon's Auction House purchases (even on your own click the game refuses them), so they could never work: buy with the Auction House's own Buy button, as before 1.2.7.",
 		"The cart's price-guard setting is gone from Settings.",
