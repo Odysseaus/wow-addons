@@ -65,6 +65,8 @@ end
 --------------------------------------------------------------------------------
 
 V.LOAD_MAX = 30
+V.SEARCH_DELAY = 0.3                        -- (1.2.8: the search runs this long after the last key)
+V.NAMES_EVERY = 1                           -- (1.2.8: names coming in fill the dropdown at most once a second)
 V.loading = {}
 V.loadingCount = 0
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
@@ -491,6 +493,78 @@ function V.Picker(parent, w)
 	return b
 end
 
+-- (1.2.7) Add to a shopping list (AH Market's History button, Craft's Add SL): a menu under the button. Your
+-- lists, the active one first (ticked: "> "), each with "(in list: N)" when the item is on it, then "New list...".
+-- A pick adds 1 (I.ListAdd / I.ListAddNew: a chat line says so, Undo takes it back).
+function V.ListChooser()
+	local m = V.chooser
+	if m then return m end
+	m = CreateFrame("Frame", "ValhallaListChooser", UIParent, "BackdropTemplate")
+	m:SetWidth(240)
+	m:SetFrameStrata("DIALOG")
+	T.SkinFlat(m, 0.98)
+	m:EnableMouse(true)
+	m.head = Text(m, 11, GREY)
+	m.head:SetPoint("TOPLEFT", 8, -6)
+	m.head:SetPoint("RIGHT", m, "RIGHT", -8, 0)
+	m.head:SetJustifyH("LEFT")
+	m.items = {}
+	for i = 1, V.PICK_MAX + 1 do
+		local it = V.Button(m, "", 232, 20, nil, "item")
+		it:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 22)
+		it:Hide()
+		m.items[i] = it
+	end
+	m:Hide()
+	V.chooser = m
+	return m
+end
+
+-- the lists in the menu's order: the active one first, then the rest as saved
+function V.ChooserEntries(id)
+	local out, active = {}, I.ActiveList()
+	if active then out[#out + 1] = active end
+	for _, l in ipairs(I.Lists()) do if not active or l.id ~= active.id then out[#out + 1] = l end end
+	local entries = {}
+	for _, l in ipairs(out) do
+		if #entries >= V.PICK_MAX then break end
+		local n = I.ListCount(l.id, id)
+		local text = ((active and l.id == active.id) and "> " or "") .. l.name .. (n > 0 and (" " .. L["(in list: %d)"]:format(n)) or "")
+		entries[#entries + 1] = { lid = l.id, text = text }
+	end
+	entries[#entries + 1] = { new = true, text = L["New list..."] }
+	return entries
+end
+
+function V.ChooseList(anchor, id, onDone)
+	local m = V.ListChooser()
+	if m:IsShown() and m.anchor == anchor and m.id == id then m:Hide() return m end
+	m.anchor, m.id = anchor, id
+	m.head:SetText(L["Add %s to:"]:format(I.ItemName(id)))
+	local entries = V.ChooserEntries(id)
+	for i, it in ipairs(m.items) do
+		local e = entries[i]
+		if e then
+			it.text:SetText(e.text)
+			it.entry = e
+			it:SetScript("OnClick", function()
+				m:Hide()
+				if e.new then I.ListAddNew(id, 1) else I.ListAdd(e.lid, id, 1) end
+				if onDone then onDone(e) end
+			end)
+			it:Show()
+		else
+			it.entry = nil
+			it:Hide()
+		end
+	end
+	m:SetHeight(26 + #entries * 22 + 4)
+	m:ClearAllPoints()
+	m:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+	m:Show()
+	return m
+end
+
 --------------------------------------------------------------------------------
 -- Smart Vendor (v0.3.2: under construction; what it did is on the Shopping List page)
 --------------------------------------------------------------------------------
@@ -523,7 +597,7 @@ end
 -- Build Shopping List saves it), your saved lists below (each with what's still needed, live)
 --------------------------------------------------------------------------------
 
-V.RESULTS = 6
+V.RESULTS = 10   -- (1.2.7: 10, was 6)
 V.DRAFT_ROWS = 6
 V.LINES = 12
 
@@ -586,9 +660,47 @@ local function BuildList(page)
 	end
 	res:Hide()
 	page.results = res
+	-- (1.2.8) the search box: the search runs 0.3 s after the last key; for the same text the rows stay as they
+	-- are (names that come in later only fill rows below, at most once a second); the dropdown closes (the
+	-- names it asked for stop) on Escape (the text kept), when the box loses focus, a click outside it, or the
+	-- page hiding. 1.2.7 searched on every key, rebuilt its index on every name that came, and asked for every
+	-- missing name at once: slow, and the rows kept moving.
+	local frozen = { text = nil, ids = {} }
+	local function Compute(text)
+		if text == "" then frozen.text, frozen.ids = nil, {} return {} end
+		local fresh = I.SearchItems(text, V.RESULTS)
+		if frozen.text ~= text then frozen.text, frozen.ids = text, fresh return fresh end
+		local ids, have = {}, {}
+		for _, id in ipairs(frozen.ids) do ids[#ids + 1] = id have[id] = true end
+		for _, id in ipairs(fresh) do
+			if #ids >= V.RESULTS then break end
+			if not have[id] then ids[#ids + 1] = id have[id] = true end
+		end
+		frozen.ids = ids
+		return ids
+	end
+	page.frozen = frozen
+	local closer
+	local function Close()
+		page.searchOpen = false
+		res:Hide()
+		if closer then closer:UnregisterAllEvents() end
+		if I.NameLoader then I.NameLoader.Stop("search") end
+	end
+	local function Open()
+		if not page.searchOpen then
+			page.searchOpen = true
+			if closer then pcall(closer.RegisterEvent, closer, "GLOBAL_MOUSE_DOWN") end
+		end
+		if I.NameLoader then I.NameLoader.Start("search") end
+	end
+	page.CloseSearch, page.OpenSearch = Close, Open
 	local function Results()
-		local ids = I.SearchItems(search:GetText(), V.RESULTS)
+		local text = Trim(search:GetText())
+		if text == "" then frozen.text, frozen.ids = nil, {} page.found = {} Close() return end
+		local ids = Compute(text)
 		page.found = ids
+		page.searches = (page.searches or 0) + 1
 		for i, r in ipairs(res.rows) do
 			local id = ids[i]
 			if id then
@@ -598,7 +710,7 @@ local function BuildList(page)
 				local inDraft = I.LineOf(I.Draft(), id) ~= nil
 				r.act.text:SetText(inDraft and L["Remove"] or L["Add"])
 				r.act:SetScript("OnClick", function()
-					if I.LineOf(I.Draft(), id) then I.DraftRemove(id) else I.DraftAdd(id) end
+					if I.LineOf(I.Draft(), id) then I.DraftRemove(id) else I.DraftAdd(id, 1) end   -- (1.2.7: added as 1)
 					Results()
 				end)
 				r:Show()
@@ -608,29 +720,71 @@ local function BuildList(page)
 			end
 		end
 		res:SetHeight(8 + math.max(1, #ids) * 22)
-		res:SetShown(#ids > 0)
+		res:SetShown(page.searchOpen and #ids > 0 or false)
 	end
 	page.Results = Results
-	search:SetScript("OnTextChanged", Results)
+	-- typing: one search 0.3 s after the last key
+	local typeGen = 0
+	function page.Typed()
+		typeGen = typeGen + 1
+		local g = typeGen
+		local function Go()
+			if g ~= typeGen then return end
+			if Trim(search:GetText()) ~= "" then Open() end
+			Results()
+		end
+		if C_Timer and C_Timer.After then C_Timer.After(V.SEARCH_DELAY, Go) else Go() end
+	end
+	-- names coming in (asked for by the open box): the rows filled in at most once a second
+	local namesSoon = false
+	function page.NamesSoon()
+		if namesSoon or not page.searchOpen then return end
+		namesSoon = true
+		local function Again() namesSoon = false if page.searchOpen then Results() end end
+		if C_Timer and C_Timer.After then C_Timer.After(V.NAMES_EVERY, Again) else Again() end
+	end
+	I.OnSearchName = function() page.NamesSoon() end
+	closer = CreateFrame("Frame")
+	closer:SetScript("OnEvent", function()
+		if not page.searchOpen then return end
+		local over = (search.IsMouseOver and search:IsMouseOver()) or (res:IsShown() and res.IsMouseOver and res:IsMouseOver())
+		if not over then search:ClearFocus() Close() end
+	end)
+	page.closer = closer
+	search:SetScript("OnTextChanged", function() page.Typed() end)
+	search:HookScript("OnEditFocusGained", function() if Trim(search:GetText()) ~= "" then Open() Results() end end)
+	-- (focus lost: closed a moment later, unless the pointer is on the dropdown: its Add buttons still work)
+	search:HookScript("OnEditFocusLost", function()   -- (hooked: the look's own focus handlers kept)
+		local function Check()
+			if search:HasFocus() then return end
+			if res:IsShown() and res.IsMouseOver and res:IsMouseOver() then return end
+			Close()
+		end
+		if C_Timer and C_Timer.After then C_Timer.After(0.2, Check) else Check() end
+	end)
+	page:HookScript("OnHide", Close)
 	local function AddTop()
+		-- (Enter before the search ran: it runs now)
+		local text = Trim(search:GetText())
+		if text ~= "" and frozen.text ~= text then page.found = Compute(text) end
 		local id = (page.found and page.found[1]) or I.ParseItem(search:GetText())
 		if not id then
 			if Trim(search:GetText()) ~= "" then ns:Print("%s", L["No item by that name seen yet: shift-click it from your bags, drop it here, or type its item ID."]) end
 			return
 		end
-		I.DraftAdd(id)
+		I.DraftAdd(id, 1)
 		search:SetText("")
 		Results()
 	end
 	page.AddTop = AddTop
 	search:SetScript("OnEnterPressed", AddTop)
-	search:SetScript("OnEscapePressed", function(self) self:SetText("") self:ClearFocus() Results() end)
+	search:SetScript("OnEscapePressed", function(self) Close() self:ClearFocus() end)   -- (1.2.8: the text kept)
 	-- shift-click while the search box (or a quantity box) has the cursor: that item, into the list (no split box)
 	local function TakeItem(_, link)
 		if type(link) ~= "string" or not link:find("|Hitem:", 1, true) then return false end
 		local id = I.ParseItem(link)
 		if not id then return false end
-		I.DraftAdd(id)
+		I.DraftAdd(id, 1)
 		search:SetText("")
 		Results()
 		return true
@@ -642,7 +796,7 @@ local function BuildList(page)
 		local kind, id = GetCursorInfo()
 		if kind == "item" and id then
 			if ClearCursor then ClearCursor() end
-			I.DraftAdd(id)
+			I.DraftAdd(id, 1)
 			search:SetText("")
 			Results()
 		end
@@ -1030,6 +1184,9 @@ local function BuildSettings(page)
 	Section(L["Auction House"])
 	Opt(L["Show my Shopping List beside the Auction House"], "ahPanel", function() if I.AH then I.AH.Refresh() end end)
 	Note(L["Search runs the Auction House's own search, on your click. The list's - minimizes it to a small button. Scan (AH Market's prices) is on that list too."])
+	-- (1.2.9) Dave's Sack's own AH scans off (only Valhalla scans the AH)
+	page.quietDS = Opt(L["Turn off Dave's Sack's own Auction House scans (only Valhalla scans)"], "quietDavesSack", function() if I.DavesSack then pcall(I.DavesSack.Apply) end end)
+	Note(L["Dave's Sack searched all your bag items (and every 2 hours the whole AH) each time the Auction House opened, while you were buying. Off here: its scans as before (from the next AH visit). Its bags and price tooltips work either way."])
 	Section(L["AH Market"])
 	page.speed = Place(V.Radio(body, L["Scan speed:"], { { "smooth", L["Smooth"] }, { "balanced", L["Balanced"] }, { "fast", L["Fast"] } },
 		function() return S.scanSpeed end, function(v) S.scanSpeed = v end))

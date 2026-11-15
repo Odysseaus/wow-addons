@@ -248,14 +248,17 @@ local function Full(r)
 	r.count, r.readAt = n, 0
 	local Get = A.GetReplicateItemInfo
 	local per, items = {}, 0
+	local names = {}   -- (1.2.7: each item's name, as the scan reads it: remembered for the search)
 	local i = 0
 	while i < n do
 		local last = math.min(n - 1, i + S.CHUNK - 1)
 		for k = i, last do
-			local ok, _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = pcall(Get, k)
+			local ok, name, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = pcall(Get, k)
 			if ok then
 				itemID, count, buyout = Value(itemID), Value(count) or 0, Value(buyout) or 0
 				if itemID then
+					name = Value(name)
+					if type(name) == "string" and name ~= "" and not names[itemID] then names[itemID] = name end
 					local e = per[itemID]
 					if not e then e = { 0, 0, 0 } per[itemID] = e items = items + 1 end   -- min, units, auctions
 					e[3] = e[3] + 1
@@ -290,6 +293,9 @@ local function Full(r)
 	r.storing = nil
 	-- now: what this scan saw (an item not in it isn't listed any more)
 	m.cur = cur
+	for id, name in pairs(names) do I.RememberName(id, name) end
+	I.IndexAddMarket(m)   -- (1.2.8: the new items into the search's index; 1.2.7 threw it away)
+	r.fillNames = true
 	m.scans[#m.scans + 1] = { t = tmin, kind = "full", n = n, items = items, secs = math.floor((T() - r.t0) * 10 + 0.5) / 10, ms = math.floor(r.maxMs * 10 + 0.5) / 10 }
 	S.Prune(m)
 	-- Top 10 worked out here too, a little each frame (reading 7 days of every item is the costly part)
@@ -381,6 +387,8 @@ local function Finish(r, state, text)
 	r.state = state
 	S.last = { kind = r.kind, state = state, text = text, at = Now() }
 	if text then ns:Print("%s", text) end
+	-- (1.2.8) after a full scan: the names the game hasn't sent, filled slowly in the background (only if any)
+	if state == "done" and r.fillNames and I.NameLoader and I.ahOpen then I.NameLoader.Start("background") end
 	I.Changed()
 end
 

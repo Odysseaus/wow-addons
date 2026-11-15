@@ -14,8 +14,8 @@
 -- variable needs a full restart of the game, not /reload). On/off: ValhallaDB.invest.enabled
 -- (/valhalla invest on|off), like the other modules.
 --
--- What it never does: buy, sell, post or bid for you; write on the game's frames; call anything
--- protected. Every purchase is your own click on the game's own button.
+-- What it never does: sell, post, bid or buy for you; write on the game's frames. (1.2.10: the 1.2.7-1.2.9 checkout
+-- cart, which bought on your clicks, is gone: WoW Forever blocks an addon's Auction House purchase calls.)
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -39,6 +39,7 @@ I.SETTINGS = {
 	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (Owned: what you own costs nothing; 1.0.1: "vendor" gone,
 	-- moved to "market"); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false, craftPerStack = false,   -- (1.2.6: Craft Show: Per stack)
+	quietDavesSack = true,                                      -- (1.2.9: Dave's Sack's own AH scans turned off: only Valhalla scans the AH)
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all", topView = "movers",
 	marketHouse = "Alliance",   -- (v0.4.2.7: AH Market's house buttons)
@@ -97,6 +98,10 @@ function I.InitDB()
 	r.merchants = r.merchants or {}
 	local c = r.chars[name] or {}
 	r.chars[name] = c
+	db.account.names = type(db.account.names) == "table" and db.account.names or {}   -- (1.2.7: item names seen, for the search)
+	-- (1.2.10) the 1.2.7-1.2.9 checkout cart, its purchase log and buy debug log: cleared on load (the game's own
+	-- save then writes them gone; nothing else in WTF touched)
+	c.cart, c.buys, c.buyDebug = nil, nil, nil
 	c.bags = c.bags or {}
 	c.bank = c.bank or {}
 	c.want = c.want or {}
@@ -104,6 +109,7 @@ function I.InitDB()
 	I.db, I.realm, I.char, I.me = db, r, c, name
 	I.MigrateLists(c)
 	I.S = db.settings
+	I.S.buyGuard, I.S.buyDebug = nil, nil   -- (1.2.10: the cart's price guard and buy debug are gone)
 	-- (1.0.1) Reagents: Owned: vendor is gone: Market; Craft's Known column is gone: its sort, the default
 	if I.S.craftOwned ~= "market" and I.S.craftOwned ~= "free" then I.S.craftOwned = "market" end
 	if type(I.S.sortCraft) == "string" and I.S.sortCraft:match("^known:") then I.S.sortCraft = "each:desc" end
@@ -115,9 +121,24 @@ end
 --------------------------------------------------------------------------------
 
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
+-- (1.2.7) names remembered account-wide (the full scan reads them; the search finds items by them)
+function I.RememberName(id, name)
+	id = tonumber(id)
+	if not (id and type(name) == "string" and name ~= "" and I.db and I.db.account) then return false end
+	local t = I.db.account.names
+	if type(t) ~= "table" then t = {} I.db.account.names = t end
+	if t[id] == name then return false end
+	t[id] = name
+	if I.IndexName then I.IndexName(id, name) end   -- (1.2.8: into the index as it is; 1.2.7 threw the index away)
+	return true
+end
+function I.KnownName(id) return I.db and I.db.account and type(I.db.account.names) == "table" and I.db.account.names[id] or nil end
+
 function I.ItemName(id)
 	local name = Call(GetItemInfo, id)
 	if name then return name, true end
+	local kn = I.KnownName(id)
+	if kn then return kn, false end
 	if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
 	local c = I.char
 	local w = c and c.want[id]
@@ -501,6 +522,7 @@ function I.UndoLabel(u)
 	u = u or I.LastUndo()
 	if not u then return nil end
 	if u.kind == "list" then return L["the list '%s'"]:format(u.l.name) end
+	if u.kind == "new" then return L["the new list '%s'"]:format(u.name) end
 	return L["the edit of '%s'"]:format(u.name)
 end
 
@@ -513,6 +535,10 @@ function I.Undo()
 		local lists = I.char.lists
 		table.insert(lists, math.min(u.index, #lists + 1), u.l)
 		if u.active then I.char.activeList = u.l.id end
+	elseif u.kind == "new" then   -- (1.2.7: a list made by Add SL's New list: taken away)
+		local _, i = I.ListByID(u.list)
+		if i then table.remove(I.char.lists, i) end
+		if I.char.activeList == u.list then I.char.activeList = nil end
 	else
 		local l = I.ListByID(u.list)
 		if not l then return I.Undo() end      -- (its list is gone: the one before)
@@ -520,6 +546,53 @@ function I.Undo()
 	end
 	I.Changed()
 	return label
+end
+
+--------------------------------------------------------------------------------
+-- (1.2.7) Add to a shopping list from AH Market (History's button, Craft's Add SL): one more of the item on a
+-- saved list (a line of 1 if it isn't there), or a new list with it. Undo puts the list back as it was.
+--------------------------------------------------------------------------------
+
+local function CopyItems(items)
+	local t = {}
+	for i, e in ipairs(items or {}) do t[i] = { id = e.id, n = e.n, name = e.name } end
+	return t
+end
+
+function I.ListCount(lid, id)
+	local e = LineOf(I.ListByID(lid), id)
+	return e and e.n or 0
+end
+
+function I.ListAdd(lid, id, n)
+	id, n = tonumber(id), math.max(1, math.floor(tonumber(n) or 1))
+	local l = I.ListByID(lid)
+	if not (l and id and I.char) then return nil end
+	PushUndo({ kind = "edit", list = l.id, name = l.name, items = CopyItems(l.items) })
+	local e = LineOf(l, id)
+	if e then e.n = (e.n or 0) + n
+	else
+		e = { id = id, n = n, name = (Call(GetItemInfo, id)) or I.KnownName(id) }
+		l.items[#l.items + 1] = e
+	end
+	ns:Print("%s", L["Added %s to '%s' (now %d). Undo: the Undo button, or /valhalla undo."]:format(I.ItemName(id), l.name, e.n))
+	I.Changed()
+	return l, e.n
+end
+
+function I.ListAddNew(id, n)
+	id, n = tonumber(id), math.max(1, math.floor(tonumber(n) or 1))
+	local c = I.char
+	if not (id and c) then return nil end
+	c.nextList = c.nextList or 1
+	local l = { id = c.nextList, name = I.AutoName(), created = Now(), items = { { id = id, n = n, name = (Call(GetItemInfo, id)) or I.KnownName(id) } } }
+	c.nextList = c.nextList + 1
+	c.lists[#c.lists + 1] = l
+	if not I.ActiveList() and c.activeList ~= I.NONE then c.activeList = l.id end
+	PushUndo({ kind = "new", list = l.id, name = l.name })
+	ns:Print("%s", L["New list '%s' with %s (%d). Undo: the Undo button, or /valhalla undo."]:format(l.name, I.ItemName(id), n))
+	I.Changed()
+	return l
 end
 
 -- the builder's draft
@@ -641,22 +714,213 @@ function I.DeleteList(lid)
 	return true
 end
 
--- the item search box: up to max items whose names hold what's typed, from what Valhalla has seen (bags,
--- bank, merchants, your lists, the draft, the old wants, the mail), the game's own cache for an exact name;
--- a link or an ID: that item
+-- the item search box (1.2.7): up to max items (10) whose names hold every word typed, in any order. Searched:
+-- what Valhalla has seen (bags, bank, merchants, your lists, the draft, the old wants, the mail) and the name
+-- index: every item of your AH scans (all houses), the professions' recipes and gathered items, Top 10's data,
+-- and the names remembered (I.RememberName: the full scan reads them). An item the game hasn't sent a name for
+-- yet is listed in I.SearchMissing() (the search box asks for them and searches again as they come).
+-- A link or an ID: that item.
+I.SEARCH_MAX = 10
+function I.SearchWords(text)
+	local w = {}
+	for x in tostring(text or ""):lower():gmatch("%S+") do w[#w + 1] = x end
+	return w
+end
+local function MatchAll(low, words)
+	for _, w in ipairs(words) do if not low:find(w, 1, true) then return false end end
+	return true
+end
+-- the big pool's ids (scans, recipes, Top 10, names): built once a session (1.2.8); a name that comes in is added
+-- (I.IndexName), and the ids a scan finds (I.IndexAddMarket). Each item's sort key is fixed once (I.SortKey).
+local function IndexPut(x, id, n)
+	x.ids[#x.ids + 1] = id
+	x.lows[#x.lows + 1] = n:lower()
+	x.version = (x.version or 0) + 1
+end
+local function IndexAdd(x, id)
+	id = tonumber(id)
+	if not id or x.seen[id] then return end
+	x.seen[id] = true
+	local n = I.KnownName(id) or Call(GetItemInfo, id)
+	if n then IndexPut(x, id, n)
+	else
+		x.missing[#x.missing + 1] = id
+		x.missingSet[id] = true
+	end
+end
+function I.NameIndex()
+	local x = I.nameIndex
+	if x then return x end
+	x = { ids = {}, lows = {}, missing = {}, missingSet = {}, seen = {}, version = 0, builds = (I.indexBuilds or 0) + 1 }
+	I.indexBuilds = x.builds
+	I.nameIndex = x
+	local names = (I.db and I.db.account and I.db.account.names) or {}
+	for id in pairs(names) do IndexAdd(x, id) end
+	for _, m in pairs(I.realm and type(I.realm.ah) == "table" and I.realm.ah or {}) do
+		if type(m) == "table" then for id in pairs(m.cur or {}) do IndexAdd(x, id) end end
+	end
+	local C = I.Craft
+	if C then
+		for _, kind in ipairs({ "craft", "harvest" }) do
+			local top = C.TopMap and C.TopMap(kind)
+			for _, t in pairs(top or {}) do for id in pairs(t) do IndexAdd(x, id) end end
+		end
+		for _, r in pairs(C.schem or {}) do
+			if type(r) == "table" then
+				IndexAdd(x, r.out)
+				for _, g in ipairs(r.reagents or {}) do IndexAdd(x, g.id) end
+			end
+		end
+	end
+	for _, g in pairs(ns.Recipes and ns.Recipes.gather or {}) do for id in tostring(g.ids or ""):gmatch("%d+") do IndexAdd(x, id) end end
+	table.sort(x.missing)
+	return x
+end
+-- a name came: into the index (once), off the missing
+function I.IndexName(id, name)
+	local x = I.nameIndex
+	if not (x and id and name) then return end
+	if x.missingSet[id] then
+		x.missingSet[id] = nil
+		IndexPut(x, id, name)
+	elseif not x.seen[id] then
+		x.seen[id] = true
+		IndexPut(x, id, name)
+	end
+end
+-- a scan's items: the new ones into the index (only when it's built: else it's built with them)
+function I.IndexAddMarket(m)
+	local x = I.nameIndex
+	if not (x and type(m) == "table") then return end
+	for id in pairs(m.cur or {}) do IndexAdd(x, id) end
+end
+-- the names still to come (in the index's order; some may have come by now: see missingSet)
+function I.SearchMissing()
+	local x, out = I.NameIndex(), {}
+	for _, id in ipairs(x.missing) do if x.missingSet[id] then out[#out + 1] = id end end
+	return out
+end
+-- (1.2.8) an item's sort key, fixed for the session: its remembered name, else the game's, case-insensitive
+-- (1.2.7 sorted by whichever name was at hand, the game's or the lowercase index's: rows swapped as the cache did)
+I.sortKeys = {}
+function I.SortKey(id, n)
+	local k = I.sortKeys[id]
+	if k then return k end
+	n = I.KnownName(id) or n or Call(GetItemInfo, id)
+	if not n then return nil end
+	k = n:lower()
+	I.sortKeys[id] = k
+	return k
+end
+
+--------------------------------------------------------------------------------
+-- (1.2.8) Names the game hasn't sent: asked for at a capped rate (the search box: 20 a second, at most 30
+-- waiting, while it's open; after a full scan, in the background: 4 a second, at most 8 waiting, not in combat,
+-- until the AH closes). Each is asked once a session; one not answered in 10 seconds is let go.
+--------------------------------------------------------------------------------
+local NL = { asked = {}, pending = {}, npending = 0, tokens = 0, pos = 1 }
+I.NameLoader = NL
+NL.RATE = { search = 20, background = 4 }
+NL.CAP = { search = 30, background = 8 }
+NL.TIMEOUT = 10
+local function NLTime() return (GetTime and GetTime()) or Now() end
+function NL.Start(mode)
+	if mode == "background" then
+		NL.bgWanted = true
+		if NL.mode == "search" then return false end
+	end
+	local x = I.NameIndex()
+	if #I.SearchMissing() == 0 then
+		if mode == "background" then NL.bgWanted = nil end
+		return false
+	end
+	if NL.mode ~= mode then NL.tokens = 0 end
+	NL.mode = mode
+	if not NL.driver then NL.driver = CreateFrame("Frame") end
+	NL.driver:SetScript("OnUpdate", function(_, e) NL.Tick(e) end)
+	return true
+end
+function NL.Stop(mode)
+	if mode and NL.mode ~= mode then
+		if mode == "background" then NL.bgWanted = nil end
+		return
+	end
+	if mode == "background" then NL.bgWanted = nil end
+	NL.mode = nil
+	if NL.driver then NL.driver:SetScript("OnUpdate", nil) end
+	-- (the search box closed: the background fill goes on, if it was going)
+	if mode == "search" and NL.bgWanted and I.ahOpen then NL.Start("background") end
+end
+function NL.Running() return NL.mode end
+local function NextMissing(x)
+	while NL.pos <= #x.missing do
+		local id = x.missing[NL.pos]
+		NL.pos = NL.pos + 1
+		if x.missingSet[id] and not NL.asked[id] then return id end
+	end
+end
+function NL.Tick(elapsed)
+	local mode = NL.mode
+	if not mode then return end
+	if mode == "background" and ((InCombatLockdown and InCombatLockdown()) or not I.ahOpen) then
+		if not I.ahOpen then NL.Stop("background") end
+		return
+	end
+	local now = NLTime()
+	for id, t in pairs(NL.pending) do
+		if now - t > NL.TIMEOUT then NL.pending[id] = nil NL.npending = math.max(0, NL.npending - 1) end
+	end
+	local rate = NL.RATE[mode]
+	NL.tokens = math.min(math.max(1, rate / 4), NL.tokens + (elapsed or 0) * rate)   -- (bursts of a quarter second at most)
+	local x = I.NameIndex()
+	while NL.tokens >= 1 and NL.npending < NL.CAP[mode] do
+		local id = NextMissing(x)
+		if not id then
+			if NL.npending == 0 then NL.Stop(mode) end
+			return
+		end
+		NL.tokens = NL.tokens - 1
+		NL.asked[id] = true
+		NL.pending[id] = now
+		NL.npending = NL.npending + 1
+		NL.requests = (NL.requests or 0) + 1
+		if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
+	end
+end
+-- the game answered for an item (GET_ITEM_INFO_RECEIVED): off the waiting; its name remembered if asked for
+function NL.Got(id, name)
+	local was = NL.pending[id] ~= nil
+	if was then NL.pending[id] = nil NL.npending = math.max(0, NL.npending - 1) end
+	if name and (was or NL.asked[id] or (I.nameIndex and I.nameIndex.missingSet[id])) then
+		I.RememberName(id, name)
+		return true
+	end
+	return false
+end
+
 function I.SearchItems(text, max)
-	max = max or 6
+	max = max or I.SEARCH_MAX
 	text = Trim(text)
 	if text == "" then return {} end
 	local id = text:match("item:(%d+)") or text:match("^(%d+)$")
 	if id then return { tonumber(id) } end
 	local low = text:lower()
+	local words = I.SearchWords(text)
 	local found, seen = {}, {}
+	local function Hit(i, key)
+		if MatchAll(key, words) then found[#found + 1] = { id = i, key = key, exact = key == low, prefix = key:sub(1, #low) == low } end
+	end
+	-- (1.2.8) a name the game has: remembered, so the item stays findable (and keeps its place) when the game's
+	-- cache drops it; matched and sorted by its fixed key
 	local function Try(i)
 		if seen[i] then return end
 		seen[i] = true
-		local n = Call(GetItemInfo, i)
-		if n and n:lower():find(low, 1, true) then found[#found + 1] = { id = i, name = n, exact = n:lower() == low, prefix = n:lower():sub(1, #low) == low } end
+		local n = I.KnownName(i)
+		if not n then
+			n = Call(GetItemInfo, i)
+			if n then I.RememberName(i, n) end
+		end
+		if n then Hit(i, I.SortKey(i, n)) end
 	end
 	local _, link = Call(GetItemInfo, text)
 	local exact = link and tonumber(link:match("item:(%d+)"))
@@ -668,10 +932,18 @@ function I.SearchItems(text, max)
 		for _, e in ipairs(I.Draft().items) do Try(e.id) end
 	end
 	for _, m in pairs(I.realm and I.realm.merchants or {}) do for i in pairs(m.items or {}) do Try(i) end end
+	local x = I.NameIndex()
+	for k, i in ipairs(x.ids) do
+		if not seen[i] then
+			seen[i] = true
+			local nl = x.lows[k]
+			if MatchAll(nl, words) then Hit(i, I.SortKey(i) or nl) end
+		end
+	end
 	table.sort(found, function(a, b)
 		if a.exact ~= b.exact then return a.exact end
 		if a.prefix ~= b.prefix then return a.prefix end
-		if a.name ~= b.name then return a.name < b.name end
+		if a.key ~= b.key then return a.key < b.key end
 		return a.id < b.id
 	end)
 	local out = {}
@@ -771,11 +1043,13 @@ function I.OnEvent(event, a1, a2)
 		if I.Merchant then I.Merchant.HideAll() end
 	elseif event == "AUCTION_HOUSE_SHOW" then
 		I.ahOpen = true
+		if I.DavesSack and I.S.quietDavesSack ~= false and I.DavesSack.state ~= "off" then pcall(I.DavesSack.Apply) end   -- (1.2.9: from the next visit)
 		if I.Scan then I.realm.ahLast = I.Scan.House() end   -- (AH Market shows the house you last visited)
 		if I.AH then I.AH.Show() end
 		I.Changed()
 	elseif event == "AUCTION_HOUSE_CLOSED" then
 		I.ahOpen = false
+		NL.Stop("background")   -- (1.2.8: the background name fill is for while you're at the AH)
 		if I.Scan then I.Scan.OnAHClosed() end
 		if I.AH then I.AH.Hide() end
 		I.Changed()
@@ -797,6 +1071,9 @@ function I.OnEvent(event, a1, a2)
 		-- (a name arrived: kept on its lines, for when the game's cache is cold)
 		if I.char and a1 then
 			local name, hit = Call(GetItemInfo, a1), false
+			-- (1.2.8) a name asked for (or still missing): remembered, into the index; the open search box looks
+			-- again (at most once a second)
+			if NL.Got(a1, name) and NL.mode == "search" and I.OnSearchName then pcall(I.OnSearchName, a1) end
 			for _, l in ipairs(I.char.lists or {}) do
 				for _, e in ipairs(l.items) do if e.id == a1 then e.name = name or e.name hit = true end end
 			end
@@ -832,6 +1109,7 @@ function mod:OnEnable()
 	if I.AH then I.AH.Enable() end
 	if I.Tooltip then pcall(I.Tooltip.Hook) end
 	if C_Timer and C_Timer.After then C_Timer.After(2, I.ClaimKey) end   -- (v0.4.2.8: the I key, once)
+	pcall(I.DavesSack.Apply)   -- (1.2.9: Dave's Sack's own AH scans off, when it's loaded)
 end
 
 function mod:OnDisable()
@@ -841,6 +1119,7 @@ function mod:OnDisable()
 	if I.Tabs then I.Tabs.Disable() end
 	if I.Merchant then I.Merchant.Disable() end
 	if I.AH then I.AH.Disable() end
+	pcall(I.DavesSack.Apply, false)   -- (Investments off: Dave's Sack scans as it did)
 end
 
 function I.SetOn(on)
@@ -1501,6 +1780,88 @@ function AC.Summary(o)
 	end
 	out[#out + 1] = "Saved in ValhallaInvestDB.diag: /reload (or log out) writes it to disk."
 	return out
+end
+
+--------------------------------------------------------------------------------
+-- (1.2.9) Dave's Sack (daves_sack, another addon): its own Auction House scans off, so only Valhalla scans the AH.
+-- On AUCTION_HOUSE_SHOW it searched every bag item (SearchForItemKeys, in batches of 50, one each time the AH's
+-- throttle was ready: AUCTION_HOUSE_THROTTLED_SYSTEM_READY) and every 2 hours read the whole AH (ReplicateItems):
+-- all while you were buying. Nothing of its files or saved settings is touched: its event frame (made in its
+-- ADDON_LOADED, so there at PLAYER_LOGIN; found by the events only it registers) stops getting those two events,
+-- so its scan never starts. Everything else stays: its bags, its AH price tooltips and Market (it still reads
+-- the results of searches Valhalla or you make: AUCTION_HOUSE_BROWSE_RESULTS_*, *_SEARCH_RESULTS_UPDATED), its
+-- profession recipes (TRADE_SKILL_*). Setting quietDavesSack (default on); off: the two events back.
+--------------------------------------------------------------------------------
+local DS = { ADDON = "daves_sack", OFF = { "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" } }
+DS.SIGN = { "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
+	"COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
+	"TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE" }
+DS.removed = {}
+I.DavesSack = DS
+
+function DS.Loaded()
+	local f = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
+	if not f then return false end
+	local ok, loaded = pcall(f, DS.ADDON)
+	return ok and loaded and true or false
+end
+
+local function Registered(f, e)
+	local ok, r = pcall(f.IsEventRegistered, f, e)
+	return ok and r and true or false
+end
+-- its frame: unnamed, not Valhalla's, registered for all of DS.SIGN (exactly one such frame, else none)
+function DS.Find()
+	if DS.frame then return DS.frame end
+	if not EnumerateFrames then return nil, "no EnumerateFrames" end
+	local found, f = {}, EnumerateFrames()
+	local n = 0
+	while f and n < 200000 do
+		n = n + 1
+		local okF, forbidden = pcall(function() return f.IsForbidden and f:IsForbidden() end)
+		if okF and not forbidden and f ~= events and f.IsEventRegistered and not (f.GetName and f:GetName()) then
+			local all = true
+			for _, e in ipairs(DS.SIGN) do if not Registered(f, e) then all = false break end end
+			if all then found[#found + 1] = f end
+		end
+		f = EnumerateFrames(f)
+	end
+	if #found ~= 1 then return nil, ("%d frames matched"):format(#found) end
+	DS.frame = found[1]
+	return DS.frame
+end
+
+-- on (the setting, unless on is given false): its two events off; off: back as they were
+function DS.Apply(on)
+	if on == nil then on = I.S and I.S.quietDavesSack ~= false end
+	if not DS.Loaded() then DS.state = "not loaded" return false end
+	if on then
+		local f, why = DS.Find()
+		if not f then
+			DS.state = "not found (" .. tostring(why) .. ")"
+			if not DS.saidMissing then
+				DS.saidMissing = true
+				ns:Print("%s", L["Dave's Sack is loaded, but Valhalla couldn't find its Auction House scanner (%s): its AH scans still run."]:format(tostring(why)))
+			end
+			return false
+		end
+		for _, e in ipairs(DS.OFF) do
+			if Registered(f, e) then pcall(f.UnregisterEvent, f, e) DS.removed[e] = true end
+		end
+		DS.state = "off"
+		if not DS.said then
+			DS.said = true
+			ns:Print("%s", L["Dave's Sack's own Auction House scans are disabled by Valhalla (only Valhalla scans the AH; its bags and price tooltips work as before). Settings > Auction House to turn this off."])
+		end
+		return true
+	end
+	local f = DS.frame
+	if f then
+		for e in pairs(DS.removed) do pcall(f.RegisterEvent, f, e) end
+		DS.removed = {}
+	end
+	DS.state = "on"
+	return true
 end
 
 --------------------------------------------------------------------------------
