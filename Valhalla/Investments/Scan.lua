@@ -13,6 +13,11 @@
 -- moment they're answered (the full scan's update event also fires once per item loaded afterwards).
 -- Each house (Alliance, Horde, Neutral) is its own market. History: one point per item per hour (the
 -- latest wins), 7 days, at most 3 MB (the oldest scans dropped first).
+-- (1.2.20) A unit price over S.PRICE_MAX (2,147,483,647 copper, about 214,748g) is no price: its units and auctions
+-- still count, the done line names the item. Numbers are written with %.0f, never %d (the game's %d stops at
+-- 2^31: one 999,999g listing stopped every full scan with "integer overflow attempting to store"). A scan's
+-- prices are built aside and saved in one go (an error saves nothing); one item that can't be stored is skipped
+-- and named, the rest saved.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -33,6 +38,9 @@ S.SPEEDS = { smooth = 4, balanced = 8, fast = 12 }
 S.SLOT = 60                                       -- history: one point per item per this many minutes
 S.CUT = { Neutral = 0.15 }                        -- the AH's cut (faction houses 5 %)
 S.CUT_DEFAULT = 0.05
+S.PRICE_MAX = 2147483647                          -- (1.2.20) a unit price over this: no price (ignored, named)
+S.STOP_CONFIRM = 3                                -- (1.2.20) Stop: a second press within this many seconds
+S.TRIM_CHUNK = 500                                -- (1.2.20) history lines trimmed between clock checks
 
 local Call = I.Call
 local Value = ns.Safe and ns.Safe.Value or function(v) return v end
@@ -40,6 +48,9 @@ local function Now() return time and time() or 0 end
 local function T() return (GetTimePreciseSec and GetTimePreciseSec()) or (debugprofilestop and debugprofilestop() / 1000) or Now() end
 local function MS() return (debugprofilestop and debugprofilestop()) or T() * 1000 end
 local ABORT = {}
+-- (1.2.20) a whole number as text, any size (the game's %d stops at 2^31)
+local function N(x) return ("%.0f"):format(math.floor(tonumber(x) or 0)) end
+S.N = N
 
 --------------------------------------------------------------------------------
 -- Markets: ValhallaInvestDB.realms[realm].ah[house] = { base, scans = { {t, kind, n, items, secs, ms} },
@@ -102,23 +113,31 @@ function S.Points(house, id)
 	return out
 end
 
--- one point into an item's history: a point in the same hour replaces the last one (the latest wins)
-local function AddPoint(m, id, tmin, min, units, auctions)
-	local p = ("%d:%d:%d:%s"):format(tmin, min, units, tostring(auctions))
-	local s = m.hist[id]
-	if not s or s == "" then m.hist[id] = p return end
+-- one point into an item's history line s: a point in the same hour replaces the last one (the latest wins).
+-- (1.2.20) returns the new line, changes nothing (a scan builds its lines aside, then saves them in one go)
+local function WithPoint(s, tmin, min, units, auctions)
+	local p = N(tmin) .. ":" .. N(min) .. ":" .. N(units) .. ":" .. (auctions == "q" and "q" or N(auctions))
+	if not s or s == "" then return p end
 	local head, last = s:match("^(.*);([^;]+)$")
 	if not last then head, last = nil, s end
 	local lt = tonumber(last:match("^(%-?%d+):"))
 	if lt and math.floor(lt / S.SLOT) == math.floor(tmin / S.SLOT) then
 		-- (v0.4.2.8) a quick scan never replaces the hour's full-scan point (Top 10 reads full points only)
-		if auctions == "q" and not last:find(":q$") then return end
-		m.hist[id] = head and (head .. ";" .. p) or p
-	else
-		m.hist[id] = s .. ";" .. p
+		if auctions == "q" and not last:find(":q$") then return s end
+		return head and (head .. ";" .. p) or p
 	end
+	return s .. ";" .. p
+end
+S.WithPoint = WithPoint
+local function AddPoint(m, id, tmin, min, units, auctions)
+	m.hist[id] = WithPoint(m.hist[id], tmin, min, units, auctions)
 end
 S.AddPoint = AddPoint
+-- (1.2.20) an item's "now" line
+local function CurLine(min, units, auctions, tmin)
+	return N(min) .. "," .. N(units) .. "," .. (auctions == "q" and "q" or N(auctions)) .. "," .. N(tmin)
+end
+S.CurLine = CurLine
 
 -- the size of a house's saved market (bytes, about what SavedVariables writes)
 function S.Size(m)
@@ -136,35 +155,60 @@ function S.TotalSize()
 	return n
 end
 
--- drop the points older than t (minutes since base) from every item
-local function DropBefore(m, tmin)
+-- drop the points older than t (minutes since base) from every item; (1.2.20) returns the bytes freed (as
+-- S.Size counts them); step: called every S.TRIM_CHUNK lines (a scan's coroutine yields there)
+local function DropBefore(m, tmin, step)
 	-- (points are in time order: only the front of each line is cut)
+	local freed, k = 0, 0
 	for id, s in pairs(m.hist) do
 		local pt = tonumber(s:match("^(%-?%d+):"))
-		while pt and pt < tmin do
-			local k = s:find(";", 1, true)
-			if not k then s = nil break end
-			s = s:sub(k + 1)
-			pt = tonumber(s:match("^(%-?%d+):"))
+		if pt and pt < tmin then
+			local old = #s
+			while pt and pt < tmin do
+				local c = s:find(";", 1, true)
+				if not c then s = nil break end
+				s = s:sub(c + 1)
+				pt = tonumber(s:match("^(%-?%d+):"))
+			end
+			freed = freed + (s and (old - #s) or (old + 14))
+			m.hist[id] = s
 		end
-		m.hist[id] = s
+		k = k + 1
+		if step and k % S.TRIM_CHUNK == 0 then step() end
 	end
 	local scans = {}
 	for _, sc in ipairs(m.scans) do if sc.t >= tmin then scans[#scans + 1] = sc end end
+	freed = freed + (#m.scans - #scans) * 60
 	m.scans = scans
+	return freed
 end
 
--- 7 days (Settings: 1-7), then the size cap (3 MB over all houses: the oldest scans go first)
-function S.Prune(m)
+-- the first scan time after the oldest one (scans with the same time go together); nil: all one time
+local function NextTime(m)
+	local first = m.scans[1] and m.scans[1].t
+	for k = 2, #m.scans do if m.scans[k].t > first then return m.scans[k].t end end
+end
+S.NextTime = NextTime
+
+-- 7 days (Settings: 1-7), then the size cap (3 MB over all houses: the oldest scans go first).
+-- (1.2.20) Each pass drops up to the next distinct scan time (1.2.19 and before cut at the second scan's time,
+-- which dropped nothing when the oldest scans shared a time, and went round 500 times: a second's freeze each
+-- scan, and the cap never held). The size is counted once and kept as a running total. step: as DropBefore's.
+function S.Prune(m, step)
 	local days = math.max(1, math.min(7, tonumber(I.S.histDays) or 7))
 	local cutoff = Min(m, Now() - days * 86400)
-	if m.scans[1] and m.scans[1].t < cutoff then DropBefore(m, cutoff) end
+	if m.scans[1] and m.scans[1].t < cutoff then DropBefore(m, cutoff, step) end
 	local cap = (tonumber(I.S.histCapMB) or 3) * 1024 * 1024
-	local guard = 0
-	while S.TotalSize() > cap and #m.scans > 1 and guard < 500 do
-		guard = guard + 1
-		DropBefore(m, m.scans[2].t)
+	local total = S.TotalSize()
+	local passes = 0
+	while total > cap and #m.scans > 1 do
+		local t = NextTime(m)
+		if not t then break end
+		total = total - DropBefore(m, t, step)
+		passes = passes + 1
 	end
+	S.lastTrim = { passes = passes, size = total }
+	return passes, total
 end
 
 function S.PruneAll()
@@ -249,6 +293,7 @@ local function Full(r)
 	local Get = A.GetReplicateItemInfo
 	local per, items = {}, 0
 	local names = {}   -- (1.2.7: each item's name, as the scan reads it: remembered for the search)
+	local over = {}    -- (1.2.20: items with a unit price over S.PRICE_MAX: the highest seen)
 	local i = 0
 	while i < n do
 		local last = math.min(n - 1, i + S.CHUNK - 1)
@@ -265,7 +310,9 @@ local function Full(r)
 					e[2] = e[2] + count
 					if buyout > 0 and count > 0 then
 						local unit = math.floor(buyout / count)
-						if e[1] == 0 or unit < e[1] then e[1] = unit end
+						if unit > S.PRICE_MAX then   -- (1.2.20) no price: its units and auctions still count
+							if not over[itemID] or unit > over[itemID] then over[itemID] = unit end
+						elseif e[1] == 0 or unit < e[1] then e[1] = unit end
 					end
 				end
 			end
@@ -277,32 +324,75 @@ local function Full(r)
 			if not I.ahOpen then error(ABORT) end
 		end
 	end
-	-- store (the AH may close now: what was read is whole)
+	-- store (the AH may close now: what was read is whole). (1.2.20) Built aside: the market changes only at the
+	-- end, in one go (an error before it saves nothing); an item that can't be stored is skipped and named.
 	r.phase, r.items = "store", items
 	local m = S.Market(r.house, true)
 	local now = Now()
 	local tmin = Min(m, now)
 	r.tmin = tmin   -- (1.2.14: this scan's minute, for the Watchlist's check after it)
-	local cur, stored = {}, 0
+	local cur, hist, stored, skipped = {}, {}, 0, {}
 	for id, e in pairs(per) do
-		cur[id] = ("%d,%d,%d,%d"):format(e[1], e[2], e[3], tmin)
-		AddPoint(m, id, tmin, e[1], e[2], e[3])
+		local ok, c, h = pcall(function() return S.Store(id, e[1], e[2], e[3], tmin), WithPoint(m.hist[id], tmin, e[1], e[2], e[3]) end)
+		if ok then cur[id], hist[id] = c, h else skipped[#skipped + 1] = { id = id, err = tostring(c) } end
 		stored = stored + 1
 		r.storedAt = stored
 		if stored % S.STORE_CHUNK == 0 and Spent(r) then r.storing = true Yield() end
 	end
 	r.storing = nil
-	-- now: what this scan saw (an item not in it isn't listed any more)
+	for id in pairs(over) do if per[id] and per[id][1] > 0 then over[id] = nil end end   -- (named: only items left with no price)
+	if S.CommitHook then S.CommitHook(r) end   -- (the tests: an error before the save)
+	-- saved, in one go (plain assignments: nothing here can fail). Now: what this scan saw (an item not in it
+	-- isn't listed any more)
+	for id, h in pairs(hist) do m.hist[id] = h end
 	m.cur = cur
+	m.scans[#m.scans + 1] = { t = tmin, kind = "full", n = n, items = items, secs = math.floor((T() - r.t0) * 10 + 0.5) / 10, ms = math.floor(r.maxMs * 10 + 0.5) / 10 }
+	r.saved = true
+	r.over, r.skipped = over, skipped
 	for id, name in pairs(names) do I.RememberName(id, name) end
 	I.IndexAddMarket(m)   -- (1.2.8: the new items into the search's index; 1.2.7 threw it away)
 	r.fillNames = true
-	m.scans[#m.scans + 1] = { t = tmin, kind = "full", n = n, items = items, secs = math.floor((T() - r.t0) * 10 + 0.5) / 10, ms = math.floor(r.maxMs * 10 + 0.5) / 10 }
-	S.Prune(m)
+	-- (1.2.20) the history's 7 days and 3 MB, a little each frame
+	r.phase = "trim"
+	S.Prune(m, function() if Spent(r) then Yield() end end)
 	-- Top 10 worked out here too, a little each frame (reading 7 days of every item is the costly part)
 	r.phase = "trend"
 	S.TrendingAll(r.house, function() if Spent(r) then Yield() end end)
-	r.done = L["Full scan done: %d auctions of %d items (%s). %s"]:format(n, items, r.house, S.CooldownText())
+	r.done = L["Full scan done: %s auctions of %s items (%s).%s %s"]:format(N(n), N(items), r.house, S.Notes(over, skipped, names), S.CooldownText())
+end
+
+-- (1.2.20) one item's "now" line (S.StoreHook: the tests make one item fail here)
+function S.Store(id, min, units, auctions, tmin)
+	if S.StoreHook then S.StoreHook(id) end
+	return CurLine(min, units, auctions, tmin)
+end
+
+-- (1.2.20) what a scan left out, for its done line: prices over the ceiling, items that couldn't be stored
+local function ItemName(id, names)
+	local n = names and names[id] or (I.ItemName and I.ItemName(id))
+	return (type(n) == "string" and n ~= "") and n or L["item #%s"]:format(N(id))
+end
+local function List(ids, Say, max)
+	table.sort(ids, function(a, b) return a.id < b.id end)
+	local out = {}
+	for k = 1, math.min(#ids, max) do out[k] = Say(ids[k]) end
+	local s = table.concat(out, ", ")
+	if #ids > max then s = s .. " " .. L["and %s more"]:format(N(#ids - max)) end
+	return s
+end
+function S.Notes(over, skipped, names)
+	local s = ""
+	local o = {}
+	for id, unit in pairs(over or {}) do o[#o + 1] = { id = id, unit = unit } end
+	if #o > 0 then
+		s = s .. " " .. L["%s over 214,748g ignored (no price): %s."]:format(#o == 1 and L["1 price"] or L["%s prices"]:format(N(#o)),
+			List(o, function(x) return ("%s (%s)"):format(ItemName(x.id, names), S.Money(x.unit)) end, 3))
+	end
+	if skipped and #skipped > 0 then
+		s = s .. " " .. L["%s skipped (couldn't be stored): %s."]:format(#skipped == 1 and L["1 item"] or L["%s items"]:format(N(#skipped)),
+			List(skipped, function(x) return ItemName(x.id, names) end, 3))
+	end
+	return s
 end
 
 -- quick scan: the items you care about, 100 per search, paced by the AH's throttle
@@ -332,7 +422,7 @@ local function Quick(r)
 	r.phase, r.total, r.batch = "quick", #ids, 0
 	r.batches = math.ceil(#ids / S.BATCH)
 	if #ids == 0 then r.fail = L["Quick scan: nothing to look up (no shopping list, nothing in your bags or bank)."] return end
-	local got = {}
+	local got, over = {}, {}
 	for b = 1, r.batches do
 		r.batch = b
 		if not Ready(r) then r.fail = L["Quick scan stopped: the Auction House stayed busy. Nothing saved."] Unlisten() return end
@@ -363,7 +453,11 @@ local function Quick(r)
 		local res = Call(A.GetBrowseResults)
 		for _, x in ipairs(type(res) == "table" and res or {}) do
 			local id = type(x.itemKey) == "table" and Value(x.itemKey.itemID)
-			if id then got[id] = { Value(x.minPrice) or 0, Value(x.totalQuantity) or 0 } end
+			if id then
+				local min = tonumber(Value(x.minPrice)) or 0
+				if min > S.PRICE_MAX then over[id] = min min = 0 end   -- (1.2.20) no price; its units still count
+				got[id] = { min, tonumber(Value(x.totalQuantity)) or 0 }
+			end
 		end
 	end
 	-- store: what answered, and "none listed" for the rest
@@ -372,24 +466,36 @@ local function Quick(r)
 	local tmin = Min(m, Now())
 	r.tmin = tmin   -- (1.2.14)
 	local priced = 0
+	local cur, hist, skipped = {}, {}, {}   -- (1.2.20: built aside, saved in one go)
 	for _, id in ipairs(ids) do
 		local e = got[id] or { 0, 0 }
-		if e[1] > 0 then priced = priced + 1 end
-		m.cur[id] = ("%d,%d,q,%d"):format(e[1], e[2], tmin)
-		AddPoint(m, id, tmin, e[1], e[2], "q")
+		local ok, c, h = pcall(function() return S.Store(id, e[1], e[2], "q", tmin), WithPoint(m.hist[id], tmin, e[1], e[2], "q") end)
+		if ok then
+			cur[id], hist[id] = c, h
+			if e[1] > 0 then priced = priced + 1 end
+		else skipped[#skipped + 1] = { id = id, err = tostring(c) } end
 	end
+	if S.CommitHook then S.CommitHook(r) end
+	for id, c in pairs(cur) do m.cur[id], m.hist[id] = c, hist[id] end
 	m.scans[#m.scans + 1] = { t = tmin, kind = "quick", n = #ids, items = priced, secs = math.floor((T() - r.t0) * 10 + 0.5) / 10 }
-	S.Prune(m)
-	r.done = L["Quick scan done: %d of your %d items listed (%s). %s"]:format(priced, #ids, r.house, S.CooldownText())
+	r.saved = true
+	r.over, r.skipped = over, skipped
+	r.phase = "trim"
+	S.Prune(m, function() if Spent(r) then Yield() end end)
+	r.done = L["Quick scan done: %s of your %s items listed (%s).%s %s"]:format(N(priced), N(#ids), r.house, S.Notes(over, skipped), S.CooldownText())
 end
 
-local function Finish(r, state, text)
+local function Finish(r, state, text, reason)
 	if S.run ~= r then return end
 	S.run = nil
 	Unlisten()
 	if driver then driver:SetScript("OnUpdate", nil) end
 	r.state = state
-	S.last = { kind = r.kind, state = state, text = text, at = Now() }
+	-- (1.2.20) kept for this realm (AH Market's status shows a scan that didn't finish, and why, also after a /reload)
+	S.last = { kind = r.kind, state = state, text = text, reason = reason, at = Now(), house = r.house, saved = r.saved or nil }
+	if I.realm then I.realm.scanLast = S.last end
+	-- (1.2.20) AH Market follows the house you scanned at
+	if r.saved and S.IsHouse(r.house) then S.Follow(r.house) end
 	if text then ns:Print("%s", text) end
 	-- (1.2.14) a scan done (full or quick): the Watchlist's targets checked against what it saw
 	if state == "done" and I.Watch and I.Watch.OnScanDone then
@@ -412,12 +518,14 @@ local function Tick()
 	if not ok then
 		if err == ABORT then
 			Finish(r, "closed", r.kind == "full" and L["Full scan stopped: the Auction House closed. Nothing saved. %s"]:format(S.CooldownText())
-				or L["Quick scan stopped: the Auction House closed. Nothing saved."])
+				or L["Quick scan stopped: the Auction House closed. Nothing saved."], L["the Auction House closed"])
+		elseif r.saved then   -- (1.2.20: after the save, e.g. the Top 10: the scan itself is kept)
+			Finish(r, "done", L["Scan saved, then an error: %s."]:format(tostring(err)), S.Short(err))
 		else
-			Finish(r, "error", L["Scan stopped by an error: %s. Nothing saved."]:format(tostring(err)))
+			Finish(r, "error", L["Scan stopped by an error: %s. Nothing saved."]:format(tostring(err)), S.Short(err))
 		end
 	elseif coroutine.status(r.co) == "dead" then
-		if r.fail then Finish(r, "failed", r.fail) else Finish(r, "done", r.done) end
+		if r.fail then Finish(r, "failed", r.fail, r.fail) else Finish(r, "done", r.done) end
 	end
 end
 S.Tick = Tick   -- (the tests drive it)
@@ -436,7 +544,7 @@ function S.Start(kind)
 	S.run = r
 	if not driver then driver = CreateFrame("Frame") end
 	driver:SetScript("OnUpdate", Tick)
-	ns:Print("%s", kind == "full" and L["Full scan started (%s): keep the Auction House open, about 15 seconds."]:format(house)
+	ns:Print("%s", kind == "full" and L["Full scan started (%s): keep the Auction House open until \"Full scan done\" (about 15 seconds)."]:format(house)
 		or L["Quick scan started (%s): your items, %s"]:format(house, S.CooldownText()))
 	I.Changed()
 	return true
@@ -444,10 +552,48 @@ end
 
 function S.Stop()
 	local r = S.run
-	if r then Finish(r, "stopped", r.kind == "full" and L["Full scan stopped. Nothing saved. %s"]:format(S.CooldownText()) or L["Quick scan stopped. Nothing saved."]) end
+	if r then Finish(r, "stopped", r.kind == "full" and L["Full scan stopped. Nothing saved. %s"]:format(S.CooldownText()) or L["Quick scan stopped. Nothing saved."], L["you stopped it"]) end
 end
 
-function S.Toggle() if S.run then S.Stop() else S.Start() end end
+-- (1.2.20) the Scan button (and /valhalla invest scan): while a scan runs, the first press only asks; a second
+-- within S.STOP_CONFIRM seconds stops it (one stray click no longer throws a scan away). /valhalla invest scan stop:
+-- at once.
+function S.StopArmed()
+	local r = S.run
+	return r ~= nil and r.stopAsk ~= nil and T() - r.stopAsk <= S.STOP_CONFIRM
+end
+function S.Toggle()
+	local r = S.run
+	if not r then return S.Start() end
+	if S.StopArmed() then S.Stop() return end
+	r.stopAsk = T()
+	ns:Print("%s", L["Press Stop again within 3 seconds to stop the scan (nothing would be saved)."])
+	I.Changed()
+end
+
+-- (1.2.20) AH Market's house: the one you scanned at, or visited (a pick with its buttons holds until then)
+local HOUSES = { Alliance = true, Horde = true, Neutral = true }
+function S.IsHouse(h) return HOUSES[h] or false end
+function S.Follow(h)
+	if not HOUSES[h] then return end
+	I.S.marketHouse = h
+	if I.Market then I.Market.house = nil end
+end
+
+-- (1.2.20) an error without its file and line, for a status line
+function S.Short(err)
+	local e = tostring(err)
+	return e:match("^.*%.lua:%d+: (.*)$") or e
+end
+
+-- (1.2.20) a scan that didn't finish (this realm, kept over a /reload), for AH Market's status: nil once one finished
+function S.LastAttemptText()
+	local l = S.last or (I.realm and I.realm.scanLast)
+	if type(l) ~= "table" or l.state == "done" or not l.at then return nil end
+	local what = l.kind == "full" and L["full scan"] or L["quick scan"]
+	local how = l.state == "error" and L["stopped by an error"] or l.state == "closed" and L["stopped"] or l.state == "stopped" and L["stopped"] or L["failed"]
+	return L["Last attempt: %s %s %s (%s): %s. Nothing saved."]:format(what, how, S.Age(l.at), tostring(l.house or "?"), tostring(l.reason or "-"))
+end
 
 -- how far: fraction 0-1 and a line for the button's status
 function S.Progress()
@@ -459,16 +605,18 @@ function S.Progress()
 			return 0.02 + f * 0.1 / 0.6, L["Waiting for the Auction House..."]
 		elseif r.phase == "read" then
 			local f = (r.count or 0) > 0 and r.readAt / r.count or 0
-			return 0.1 + 0.8 * f, L["Reading %d / %d"]:format(r.readAt or 0, r.count or 0)
+			return 0.1 + 0.8 * f, L["Reading %s / %s"]:format(N(r.readAt or 0), N(r.count or 0))
 		elseif r.phase == "trend" then
 			return 0.98, L["Working out the Top 10..."]
+		elseif r.phase == "trim" then
+			return 0.97, L["Trimming the history..."]
 		else
 			local f = (r.items or 0) > 0 and (r.storedAt or 0) / r.items or 1
-			return 0.9 + 0.08 * f, L["Saving %d items..."]:format(r.items or 0)
+			return 0.9 + 0.08 * f, L["Saving %s items..."]:format(N(r.items or 0))
 		end
 	end
 	local f = (r.batches or 0) > 0 and math.max(0, (r.batch or 1) - 1) / r.batches or 0
-	return f, L["Quick scan: search %d of %d"]:format(r.batch or 0, r.batches or 0)
+	return f, L["Quick scan: search %s of %s"]:format(N(r.batch or 0), N(r.batches or 0))
 end
 
 -- the AH closing: the coroutine notices on its next step; the listener stops at once
@@ -683,7 +831,7 @@ function S.Money(c)
 	if not c then return "-" end
 	c = math.floor(c + 0.5)
 	local g, s, k = math.floor(c / 10000), math.floor(c / 100) % 100, c % 100
-	if g > 0 then return ("%dg %02ds %02dc"):format(g, s, k) end
+	if g > 0 then return ("%sg %02ds %02dc"):format(N(g), s, k) end   -- (1.2.20: gold of any size)
 	if s > 0 then return ("%ds %02dc"):format(s, k) end
 	return ("%dc"):format(k)
 end
