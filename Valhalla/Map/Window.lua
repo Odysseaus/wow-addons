@@ -148,7 +148,10 @@ local function Grip(corner)
 	g:SetScript("OnMouseDown", function()
 		if Maximized() then return end
 		local x, y = GetCursorPosition()
-		start = { x = x, y = y, w = map:GetWidth(), h = map:GetHeight(), left = map:GetLeft(), right = map:GetRight(), top = map:GetTop() }
+		-- (where the window is, now: not known yet, or the drag would anchor it at 0, 0, bottom left: #241)
+		local l, r, t = map:GetLeft(), map:GetRight(), map:GetTop()
+		if not (l and r and t) then return end
+		start = { x = x, y = y, w = map:GetWidth(), h = map:GetHeight(), left = l, right = r, top = t, scale = map:GetScale() }
 		sizing = true
 		if mod.BeginResize then mod.BeginResize() end
 	end)
@@ -174,6 +177,8 @@ local function Grip(corner)
 	g:SetScript("OnUpdate", function()
 		if not start then return end
 		if not IsMouseButtonDown("LeftButton") then Finish() return end
+		-- (another addon rescaled the map mid-drag: its place in the old scale's units no longer holds)
+		if math.abs(map:GetScale() - start.scale) > 0.001 then Finish() return end
 		local x, y = GetCursorPosition()
 		local s = map:GetEffectiveScale()
 		local dx = (x - start.x) / s

@@ -1010,6 +1010,24 @@ function mod.PlaceDungeonTabs()
 	end
 end
 
+-- the floor a dungeon's map opens on: its wing's, else the first; inside it, the floor of the sub-zone
+-- you're in where a drawn floor names one (Dalaran's Underbelly: 1.2.18, from OpenMap v0.8.9)
+local function FirstFloor(inst, floors)
+	local first = 1
+	for i, f in ipairs(floors) do
+		if f.wing == inst[2] or (f.name and f.name == WING_FLOORS[inst[2]]) then first = i break end
+	end
+	if IsInInstance and IsInInstance() and inst[1] ~= 0 and select(8, GetInstanceInfo()) == inst[1] then
+		local sub = GetSubZoneText and Safe.Call(GetSubZoneText)
+		for i, f in ipairs(floors) do
+			for _, s in ipairs(f.subzones or {}) do
+				if sub and s == sub then first = i break end
+			end
+		end
+	end
+	return first
+end
+
 -- a dungeon's map in the view: its wing's first floor, else its first; grown out of `pin` (the entrance)
 local function OpenView(inst, pin)
 	local t0 = debugprofilestop and debugprofilestop()
@@ -1019,10 +1037,7 @@ local function OpenView(inst, pin)
 	if not view then BuildView() end
 	portalCard = nil
 	view.inst, view.floors = inst, floors
-	local first = 1
-	for i, f in ipairs(floors) do
-		if f.wing == inst[2] or (f.name and f.name == WING_FLOORS[inst[2]]) then first = i break end
-	end
+	local first = FirstFloor(inst, floors)
 	-- back to: the zone the entrance is in
 	EndMarkup(false)
 	view.heldMarks = nil
@@ -1957,15 +1972,29 @@ function mod:DungeonOptions(opts, get, set, off)
 end
 
 -- the dungeon you're in, as Places.lua has it (nil: not in one, or one it doesn't list)
+-- (1.2.18, from OpenMap v0.8.5) WoW Forever's own the tables have no mapID for yet (0) by their live one
+-- (Places.lua's sixth field, where it has one); one with no entrance yet (unplaced) too
 local function InstanceHere()
 	if not IsInInstance or not IsInInstance() then return end
 	local instID = select(8, GetInstanceInfo())
-	if not instID then return end
-	for _, g in ipairs(Places().instances or {}) do
+	if not instID or instID == 0 then return end   -- (0: no instance, never one of the name-keyed)
+	local places = Places()
+	for _, g in ipairs(places.instances or {}) do
 		for _, inst in ipairs(g[4]) do
-			if inst[1] == instID then return inst end
+			if inst[1] == instID or (inst[1] == 0 and inst[6] == instID) then return inst end
 		end
 	end
+	for _, inst in ipairs(places.unplaced or {}) do
+		if inst[1] == instID or (inst[1] == 0 and inst[6] == instID) then return inst end
+	end
+end
+-- (1.2.18) the dungeon you're in, its floors (Blizzard's or drawn) and the one its map opens on: what the map
+-- opened inside it shows (/valhalla status, tests)
+function mod.DungeonHere()
+	local inst = InstanceHere()
+	if not inst then return end
+	local floors = FloorsOf(inst)
+	return inst, floors, floors and #floors > 0 and FirstFloor(inst, floors) or nil
 end
 
 -- The dungeon you're in, kept warm: the game lets go of a closed map's files, so every opening of its
