@@ -1298,5 +1298,76 @@ do
   ns.MapPlaces = oldPlaces
 end
 
+print("== 56. (1.2.19) after a flight the panel follows the new zone, with no PLAYER_CONTROL_GAINED")
+do
+  local function Setup()
+    W.Reset()
+    W.AddQuest(301, "Elwynn Forest", "Elwynn's", 10, false, false)
+    W.AddQuest(302, "Duskwood", "Duskwood's", 20, false, false)
+    W.AddQuest(303, "Duskwood", "Duskwood's ready", 20, true, false)
+    Restart()
+    Arrive(1429)
+  end
+  -- 1. a zone event in flight; landing heard only as the taxi ending: the plan after a settle, for the new zone
+  Setup()
+  ok(has(W.watches, 301) and not has(W.watches, 302), "1: before: Elwynn's quests", list(W.watches))
+  W.taxi = true Run(1)
+  W.map = 1431 Fire("ZONE_CHANGED_NEW_AREA")
+  Run(90)   -- (a long flight: the zone's plan would have come due long ago)
+  ok(has(W.watches, 301) and not has(W.watches, 302), "1: in flight: nothing changes", list(W.watches))
+  W.taxi = false
+  Run(0.2)
+  ok(has(W.watches, 301) and not has(W.watches, 302), "1: just landed: not planned yet (it settles first)", list(W.watches))
+  Run(2.5)
+  ok(has(W.watches, 302) and not has(W.watches, 301) and has(ReadyIds(), 303), "1: after the settle: Duskwood's quests and Ready", list(W.watches) .. list(ReadyIds()))
+  -- 2. no zone event at all in flight: the taxi ending alone re-plans
+  Setup()
+  W.taxi = true Run(1)
+  W.map = 1431
+  Run(60)
+  W.taxi = false
+  Run(2.5)
+  ok(has(W.watches, 302) and not has(W.watches, 301) and has(ReadyIds(), 303), "2: no zone event, no PLAYER_CONTROL_GAINED: Duskwood's after landing", list(W.watches) .. list(ReadyIds()))
+  ok(O.S.waitingTaxi == false and O.S.here and O.S.here.zone == 1431, "2: no longer waiting on the taxi; here is Duskwood", tostring(O.S.here and O.S.here.zone))
+  -- 3. the zone's plan read the old map; the map changes after with no event: the panel catches up
+  Setup()
+  Fire("ZONE_CHANGED_NEW_AREA")   -- (heard while the game still says Elwynn)
+  Run(1.2)                        -- (the plan ran: still Elwynn)
+  ok(has(W.watches, 301), "3: the plan read the old map (Elwynn)", list(W.watches))
+  W.map = 1431                    -- (the map catches up; no event)
+  Run(3)
+  ok(has(W.watches, 302) and not has(W.watches, 301), "3: the map updated with no event: Duskwood's quests", list(W.watches))
+  -- (bounded: still, nothing more to do)
+  local calls = W.calls.add + W.calls.remove
+  Run(10)
+  ok(W.calls.add + W.calls.remove == calls and not O.S.fullDue, "3: then still: no more plans, no more watch calls")
+  -- RefreshMarkers somewhere else with no plan coming: one is scheduled
+  Setup()
+  Run(10)
+  O.S.fullDue, O.S.recheckUntil = nil, nil
+  W.map = 1431
+  O.RefreshMarkers(W.clock)
+  ok(O.S.fullDue ~= nil, "RefreshMarkers somewhere else, no plan due: a zone plan scheduled")
+  Run(2.5)
+  ok(has(W.watches, 302), "  ...and Duskwood's quests then", list(W.watches))
+  -- a map that keeps flipping (never settles): the rechecks stop after a few plans
+  Setup()
+  local flips, plans = 0, 0
+  local realPlan = O.PlanFull
+  O.PlanFull = function(...) plans = plans + 1 return realPlan(...) end
+  local origBest = C_Map.GetBestMapForUnit
+  C_Map.GetBestMapForUnit = function(u) flips = flips + 1 return flips % 2 == 0 and 1431 or 1429 end
+  Fire("ZONE_CHANGED_NEW_AREA")
+  Run(60)
+  C_Map.GetBestMapForUnit = origBest
+  O.PlanFull = realPlan
+  ok(plans >= 2 and plans <= 1 + O.RECHECK_CHAIN, "a map that keeps flipping: bounded re-plans (" .. plans .. ")", plans)
+  -- PLAYER_CONTROL_GAINED as before (landing heard both ways: one plan)
+  Setup()
+  W.taxi = true Run(1) W.map = 1431 Run(20)
+  W.taxi = false Fire("PLAYER_CONTROL_GAINED") Run(2.5)
+  ok(has(W.watches, 302) and not has(W.watches, 301), "PLAYER_CONTROL_GAINED too: Duskwood's, as before", list(W.watches))
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

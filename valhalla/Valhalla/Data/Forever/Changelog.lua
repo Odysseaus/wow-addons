@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.19", date = "2026-11-15", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aThe side panel follows you after a flight|r: landing in another zone (Riverglades to Stormwind) could leave the side panel and tracker on the old zone's quests. Valhalla now plans the new zone a moment after the flight ends, whether or not the game says you've landed.",
+		"After arriving somewhere, Valhalla looks again for a few seconds: if the game's map catches up late (with no event), the panel catches up too.",
+	} },
 	{ version = "1.2.18", date = "2026-11-15", heads = { [1] = "New", [5] = "Fixed", [6] = "Note", }, items = {
 		"|cff6e2c0aWoW Forever's newest dungeons on the map|r (from OpenMap v0.8.9): entrances for Krol'dok Stronghold, Alcaz Prison, Blackmaw Hold and Shaper's Terrace, with their bosses; The Drowned City and the four new ones are known by the game's instance ID, so inside them the map opens on their own map and the tracker lists their quests (and their entrance zone's Dungeon-tagged ones).",
 		"Dungeon level ranges from the game's Group Finder (each Scarlet Monastery and Dire Maul wing its own).",
