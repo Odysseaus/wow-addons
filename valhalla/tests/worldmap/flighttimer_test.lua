@@ -310,5 +310,77 @@ TakeTaxiNode(2) Run(1) W.taxi = true Run(0.2)
 ok(P().title._color[1] == 0.9 and P().title._title and P()._panel, "Norse: its colour, the look's title font and panel")
 W.taxi = false Run(3.5)
 
+print("== 10. (1.2.18) OpenMap v0.8.9's flight data: Powderfuse Port's nodes gone, Nighthaven's for druids only")
+do
+  local FD = ns.MapFlights
+  ok(FD.nodes[3274] == nil and FD.nodes[3275] == nil, "FlightData: Powderfuse Port's two nodes gone (no flight master there in game)")
+  local dangling, toPowder = 0, 0
+  for _, path in ipairs(FD.paths) do
+    if not FD.nodes[path[1]] or not FD.nodes[path[2]] then dangling = dangling + 1 end
+    if path[1] == 3274 or path[1] == 3275 or path[2] == 3274 or path[2] == 3275 then toPowder = toPowder + 1 end
+  end
+  ok(dangling == 0 and toPowder == 0, "every flight path's ends are nodes; none to or from Powderfuse Port", dangling .. " " .. toPowder)
+  ok(FD.nodes[62][6] == "DRUID" and FD.nodes[63][6] == "DRUID" and FD.nodes[62][1]:find("Nighthaven"), "Nighthaven's two nodes: druids only")
+  local others = 0
+  for id, n in pairs(FD.nodes) do if n[6] and id ~= 62 and id ~= 63 then others = others + 1 end end
+  ok(others == 0, "no other node is a class's own", others)
+  ok(FD.nodes[3276] and FD.nodes[3203], "Riverglades' other flight masters stay (Farholde Keep, Rog'mar)")
+  -- the map's flight masters, built for a druid and for a warrior
+  tinsert = tinsert or table.insert
+  GameTooltip_Hide = GameTooltip_Hide or function() end
+  local function BuildAs(class, faction)
+    local built = {}
+    local ns2, mod2 = NewNS()
+    local S2 = ns2.MapStitch
+    S2.IsBuilt = function() return true end
+    S2.PinSet = function() return {} end
+    S2.FromYards = function() return 0.5, 0.5 end
+    S2.AddPin = function() local pin = NewFrame("Button") pin.Icon, pin.shadow = NewFrame("Texture"), false built[#built + 1] = pin return pin end
+    S2.Look = function() end
+    local oldClass, oldFaction = _G.UnitClass, _G.UnitFactionGroup
+    _G.UnitClass = function() return class:lower(), class end
+    _G.UnitFactionGroup = function() return faction end
+    assert(loadfile(root .. "Map/Flights.lua"))("Valhalla", ns2)
+    mod2.db, mod2.char = Fill({}, mod2.defaults), {}
+    local okBuild, err = pcall(mod2.BuildFlights, mod2)
+    _G.UnitClass, _G.UnitFactionGroup = oldClass, oldFaction
+    local by = {}
+    for _, pin in ipairs(built) do by[pin.node] = true end
+    return by, okBuild, err
+  end
+  local druid, ok1, e1 = BuildAs("DRUID", "Alliance")
+  local warrior, ok2, e2 = BuildAs("WARRIOR", "Alliance")
+  local hdruid, ok3, e3 = BuildAs("DRUID", "Horde")
+  local hwarrior = BuildAs("WARRIOR", "Horde")
+  ok(ok1 and ok2 and ok3, "the map's flight masters built, no error", tostring(e1 or e2 or e3))
+  ok(druid[62] and not druid[63] and hdruid[63] and not hdruid[62], "a druid: Nighthaven's flight master on the map (their faction's)")
+  ok(not warrior[62] and not warrior[63] and not hwarrior[62] and not hwarrior[63], "a warrior: no Nighthaven flight master")
+  ok(warrior[2] and druid[2] and hwarrior[3203] and not warrior[3274] and not hwarrior[3275], "the rest as before (Stormwind; Rog'mar for the Horde); no Powderfuse Port")
+  -- the timer next to where Powderfuse Port's was: Farholde Keep to Lakeshire, measured as any other
+  Nodes({ { id = 3276, name = "Farholde Keep, Riverglades", kind = "CURRENT" }, { id = 5, name = LS } })
+  W.routes = { [2] = { { 1, 2 } } }
+  ns.events.TAXIMAP_OPENED()
+  Fly(2, 64)
+  ok(DB.flightRoutes["3276>5"] == 64, "Farholde Keep to Lakeshire: timed and saved by node IDs (3276>5)", DB.flightRoutes["3276>5"])
+  Run(3)
+  -- a flight master the game still lists there (an old save, a client's own list): by name, no error
+  local errs = #W.errors
+  Nodes({ { id = 3275, name = "Powderfuse Port, Riverglades", kind = "CURRENT" }, { id = 3276, name = "Farholde Keep, Riverglades" } })
+  W.routes = { [2] = { { 1, 2 } } }
+  ns.events.TAXIMAP_OPENED()
+  Fly(2, 40)
+  ok(#W.errors == errs and P().title._text == "Farholde Keep", "from a node FlightData no longer has: the timer still runs, no error", tostring(P().title._text))
+  Run(3)
+  -- the boat stays: Places.lua's transports and sailings, Routes.lua's neutral port
+  local real = { Media = { tex = "" } }
+  assert(loadfile(root .. "Data/Forever/Places.lua"))("Valhalla", real)
+  local boats, sails = 0, 0
+  for _, t in ipairs(real.MapPlaces.transports or {}) do if t[1] == "boat" and t[2] == "Steamwheedle Port - Powderfuse Port" then boats = boats + 1 end end
+  for _, t in ipairs(real.MapPlaces.sailings or {}) do if t[2] == "Steamwheedle Port - Powderfuse Port" then sails = sails + 1 end end
+  ok(boats == 2 and sails == 1, "Powderfuse Port's boat stays (both ways, its sailing)", boats .. " " .. sails)
+  local routes = io.open(root .. "Map/Routes.lua"):read("*a")
+  ok(routes:find('["Steamwheedle Port - Powderfuse Port"] = true', 1, true), "Routes.lua: its boat still drawn as a neutral goblin port's")
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

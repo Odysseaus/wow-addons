@@ -4,6 +4,14 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.18", date = "2026-11-15", heads = { [1] = "New", [5] = "Fixed", [6] = "Note", }, items = {
+		"|cff6e2c0aWoW Forever's newest dungeons on the map|r (from OpenMap v0.8.9): entrances for Krol'dok Stronghold, Alcaz Prison, Blackmaw Hold and Shaper's Terrace, with their bosses; The Drowned City and the four new ones are known by the game's instance ID, so inside them the map opens on their own map and the tracker lists their quests (and their entrance zone's Dungeon-tagged ones).",
+		"Dungeon level ranges from the game's Group Finder (each Scarlet Monastery and Dire Maul wing its own).",
+		"Santiago Reyes's dungeon maps: Blackmaw Hold's six floors, City of Dalaran redrawn with the Underbelly as a second floor (inside, the map opens on the floor you're in), Shaper's Terrace's final map with the Prismatic Talus.",
+		"Flight masters: none at Powderfuse Port (it has none in game; its boat stays), and Nighthaven's shown to druids only.",
+		"|cff6e2c0aFrom OpenMap's fixes|r: cave maps whole and no white diamond at some cave mouths; one player arrow, not two; Ragefire Chasm found with Orgrimmar under \"Only places you've found\"; a drag that comes back near its start no longer zooms into a zone; resizing the window never jumps it to the bottom left; a quest's description open keeps the map's view where it is.",
+		"Thanks to Santiago Reyes for the maps and to OpenMap's contributors (jigrobbulus, puschie286 and others) for the data and fixes, used under OpenMap's MIT licence.",
+	} },
 	{ version = "1.2.17", date = "2026-11-15", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aA ready dungeon quest shows where you turn it in|r: outside dungeons, a dungeon quest that's ready to turn in now shows in the side panel's Ready to Turn In when you're in the zone of its turn-in (e.g. Past Due, from Scarlet Monastery, in Alterac Mountains at Dalaran). Its turn-in is found from the game's marker for it on your map, else the game's map for the quest; when neither knows, it stays hidden outside as before.",
 		"Dungeon quests still in progress stay hidden outside their dungeon; inside a dungeon nothing changed.",
@@ -424,7 +432,7 @@ ns.MapChangelog = {
 		"|cff6e2c0aThe zones' detail comes in sooner|r when the map first opens up close: it took a couple of seconds after a login or reload.",
 		"|cff6e2c0a/openmap status says what loading costs|r: OpenMap's files, the login, the map's setup and building the map (a player found it added load time: this shows where).",
 	} },
-	{ version = "v0.7.3-beta", date = "2026-10-22", heads = { [1] = "New", [5] = "Fixed", }, items = {
+	{ version = "v0.7.3-beta", date = "2026-10-22", heads = { [1] = "New", [5] = "Fixed", [6] = "Note", }, items = {
 		"|cff6e2c0aKey bindings|r (the game's Keybindings > OpenMap): Find me, Drop a pin, Pins, Quill, Quest log and the map's menu, each opening the map first if it's closed (players' requests).",
 		"|cff6e2c0aThe quill draws on dungeons' maps|r: with a dungeon's map up, what you draw goes on its picture and is kept with that dungeon, not on the world map behind it (a player's request).",
 		"|cff6e2c0aOnly places you've found|r (the menu's On the map tab, under Places): dungeon entrances, docks and zeppelin towers once you've explored where they are, flight masters once you've learned them. Off unless you turn it on (a player's request).",

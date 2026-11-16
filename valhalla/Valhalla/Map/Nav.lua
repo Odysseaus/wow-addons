@@ -116,6 +116,9 @@ function mod:OnMapShown()
 	-- again would have the map underneath follow it, away from a quest's zone the quest log put up)
 	if not mod.SavedView(nil, true) then return end
 	C_Timer.After(0, function()
+		-- (1.2.18, OpenMap #224) a quest's description up: it stays on its map, so the kept view waits
+		-- (with 1.2.16's guard, which keeps the map underneath the quest's)
+		if mod.DetailsOpen and mod.DetailsOpen() then return end
 		local u, v, zoom = mod.SavedView(mod.HostMap(), true)
 		if not u or not mod.IsStitched() then return end
 		local nu, nv, nz = mod.ViewNow()

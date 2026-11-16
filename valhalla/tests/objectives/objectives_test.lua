@@ -1236,5 +1236,67 @@ if not hadTirisfal then W.MAPS[1420] = nil end
 W.onMap[1416] = nil
 O.ForgetNames()
 
+print("== 55. (1.2.18) the real Places.lua (OpenMap v0.8.9's): WoW Forever's newest dungeons by instance ID")
+do
+  local real = { Media = { tex = "" } }
+  assert(loadfile(root .. "Data/Forever/Places.lua"))("Valhalla", real)
+  local P = real.MapPlaces
+  local oldPlaces = ns.MapPlaces
+  ns.MapPlaces = P
+  local function entry(id) for _, g in ipairs(P.instances) do for _, d in ipairs(g[4]) do if d[1] == id then return g, d end end end end
+  ok(#(P.unplaced or {}) == 0, "Places.lua: no dungeon left unplaced")
+  local want = { [2970] = { "The Drowned City", 1434 }, [3039] = { "Krol'dok Stronghold", 2548 }, [2974] = { "Blackmaw Hold", 1447 },
+    [2994] = { "Alcaz Prison", 1445 }, [3001] = { "Shaper's Terrace", 1449 }, [2959] = { "City of Dalaran", 1416 } }
+  for id, w in pairs(want) do
+    local g, d = entry(id)
+    ok(d and d[2] == w[1] and g.map == w[2] and type(g[2]) == "number" and type(g[3]) == "number", ("Places.lua: %s by its instance ID %d, entrance on map %d"):format(w[1], id, w[2]))
+    local pl = O.PlaceOf(id)
+    ok(pl and pl.names[1] == w[1] and pl.map == w[2], ("O.PlaceOf(%d): %s, entrance zone %d"):format(id, w[1], w[2]))
+    ok(type(P.bosses[id]) == "table" and #P.bosses[id] > 0, ("Places.lua: %s's bosses"):format(w[1]))
+  end
+  local _, drowned0 = entry(0)
+  ok(drowned0 == nil, "no entry left at instance ID 0 (The Drowned City was one)")
+  local _, rfk = entry(47)
+  ok(rfk[4] == 29 and rfk[5] == 38, "Group Finder levels: Razorfen Kraul 29-38")
+  local g189 = entry(189)
+  local sm = {} for _, d in ipairs(g189[4]) do sm[d[2]] = d[4] .. "-" .. d[5] end
+  ok(sm["Scarlet Monastery - Graveyard"] == "30-38" and sm["Scarlet Monastery - Cathedral"] == "38-46", "Group Finder levels: Scarlet Monastery per wing")
+  -- (a 0 entry found by its live ID, the sixth field, as OpenMap's InstanceHere does)
+  ns.MapPlaces = { instances = { { nil, 0.5, 0.5, { { 0, "Somewhere New", false, 1, 2, 4321 } }, map = 1434 } } }
+  ok(O.PlaceOf(4321) and O.PlaceOf(4321).names[1] == "Somewhere New" and O.PlaceOf(0) == nil, "O.PlaceOf: a 0 entry by its live instance ID (sixth field); 0 itself never")
+  ns.MapPlaces = P
+  -- inside each: its own quests; the entrance zone's Dungeon-tagged ones; the outdoor zone's not
+  local zones = { [1434] = "Stranglethorn Vale", [2548] = "Riverglades", [1447] = "Azshara" }
+  local cases = { { 2970, "The Drowned City", 1434, 201 }, { 3039, "Krol'dok Stronghold", 2548, 211 }, { 2974, "Blackmaw Hold", 1447, 221 } }
+  for _, c in ipairs(cases) do
+    local id, name, zmap, q = c[1], c[2], c[3], c[4]
+    W.Reset()
+    Restart()
+    local had = W.MAPS[zmap]
+    W.MAPS[zmap] = had or { name = zones[zmap], mapType = 3, parentMapID = zmap == 1447 and 1414 or 1415 }
+    O.ForgetNames()
+    W.AddQuest(q, name, "Inside " .. name, 50, false, false, 81)              -- (its own header)
+    W.AddQuest(q + 1, zones[zmap], "Dungeon-tagged under " .. zones[zmap], 50, false, false, 81)
+    W.AddQuest(q + 2, zones[zmap], "Outdoor in " .. zones[zmap], 50, false, false)
+    W.AddQuest(q + 3, name, "Ready in " .. name, 50, true, false, 81)
+    W.onMap[zmap] = { q + 2, q + 1 }
+    Arrive(zmap)
+    ok(has(W.watches, q + 2) and not has(W.watches, q), ("outdoors in %s: its quests, not %s's"):format(zones[zmap], name), list(W.watches))
+    Arrive(nil, { name = name, kind = "party", id = id })
+    ok(O.S.here.instID == id and O.S.here.place and O.S.here.place.names[1] == name and O.S.here.place.map == zmap,
+      ("inside %s (%d): found by its instance ID, entrance zone %d"):format(name, id, zmap))
+    ok(eq(sorted(W.watches), { q, q + 1 }) and not has(W.watches, q + 2), ("inside %s: its quests and the entrance zone's Dungeon-tagged one only"):format(name), list(W.watches))
+    ok(eq(ReadyIds(), { q + 3 }), ("inside %s: Ready, its own"):format(name), list(ReadyIds()))
+    Arrive(zmap, { name = name, kind = "party", id = id, zone = zones[zmap], realZone = zones[zmap] })
+    ok(eq(sorted(W.watches), { q, q + 1 }), ("inside %s on the outdoor map (%d): still only its quests"):format(name, zmap), list(W.watches))
+    local why = table.concat(O.Why(), "\n")
+    ok(why:find(("instance: ID %d"):format(id)) and why:find("Places.lua: " .. name:gsub("%p", "%%%0")), ("why inside %s: its instance ID and Places.lua entry"):format(name), why)
+    W.onMap[zmap] = nil
+    if not had then W.MAPS[zmap] = nil end
+    O.ForgetNames()
+  end
+  ns.MapPlaces = oldPlaces
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

@@ -536,6 +536,48 @@ do
   OpenIn(true)
   ok(map:GetMapID() == 1436 and QuestMapFrame_GetDetailQuestID() == q1, "opened by a tracker click in the Deadmines: the quest's map and description stay", map:GetMapID())
   QuestMapFrame_ReturnFromQuestDetails() W.Ticks(2)
+
+  -- D (1.2.18): WoW Forever's own dungeons, Places.lua and DungeonDrawn.lua as shipped (OpenMap v0.8.9's):
+  -- the dungeon the map opened inside finds, its floors and the floor it opens on
+  local real = { Media = { tex = "" } }
+  assert(loadfile(root .. "Data/Forever/Places.lua"))("Valhalla", real)
+  assert(loadfile(root .. "Data/Forever/DungeonDrawn.lua"))("Valhalla", real)
+  ns.MapPlaces, ns.MapDungeonDrawn = real.MapPlaces, real.MapDungeonDrawn
+  local sub = ""
+  _G.GetSubZoneText = function() return sub end
+  _G.IsInInstance = function() return true end
+  local function Inside(name, id)
+    _G.GetInstanceInfo = function() return name, "party", 1, "", 5, 0, false, id end
+    local inst, floors, first = mod.DungeonHere()
+    return inst, floors, first, floors and first and floors[first].name
+  end
+  for _, c in ipairs({ { "The Drowned City", 2970, 1 }, { "Krol'dok Stronghold", 3039, 1 }, { "Blackmaw Hold", 2974, 6 }, { "Shaper's Terrace", 3001, 2 }, { "Alcaz Prison", 2994, 0 } }) do
+    local inst, floors, first = Inside(c[1], c[2])
+    ok(inst and inst[1] == c[2] and inst[2] == c[1], ("inside %s (%d): found by its instance ID"):format(c[1], c[2]), inst and tostring(inst[1]))
+    if c[3] > 0 then
+      ok(floors and #floors == c[3] and first == 1 and floors[1].tiles and #floors[1].tiles == 12, ("  its drawn map: %d floor(s), opens on the first"):format(c[3]), floors and #floors)
+    else
+      ok(floors == nil and first == nil, "  no drawn map yet: the blank page, as before")
+    end
+  end
+  local bm = ns.MapDungeonDrawn[2974]
+  ok(bm[1].name == "Blackmaw Grove" and bm[6].name == "Depths of Forbidden Magic", "Blackmaw Hold's six floors, by name")
+  local inst, floors, first, fname = Inside("City of Dalaran", 2959)
+  ok(inst and inst[1] == 2959 and #floors == 2 and first == 1 and fname == "City of Dalaran", "inside City of Dalaran, in the city: its first floor", tostring(fname))
+  sub = "The Underbelly"
+  inst, floors, first, fname = Inside("City of Dalaran", 2959)
+  ok(first == 2 and fname == "The Underbelly" and floors[2].tiles[1]:find("dalaran%-the%-underbelly_1"), "inside City of Dalaran, in the Underbelly: opens on the Underbelly floor", tostring(fname))
+  sub = "Клоака"
+  inst, floors, first = Inside("City of Dalaran", 2959)
+  ok(first == 2, "  the sub-zone's name in another client language (ruRU) too", tostring(first))
+  _G.IsInInstance = function() return false end
+  sub = "The Underbelly"
+  ok(mod.DungeonHere() == nil, "outdoors: no dungeon here")
+  _G.IsInInstance = function() return true end
+  _G.GetInstanceInfo = function() return "", "none", 0, "", 0, 0, false, 0 end
+  ok(mod.DungeonHere() == nil, "instance ID 0: never one of the dungeons")
+  sub = ""
+  _G.GetSubZoneText = nil
   _G.IsInInstance = function() return false end
 end
 

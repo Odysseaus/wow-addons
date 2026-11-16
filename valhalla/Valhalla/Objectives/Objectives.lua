@@ -406,7 +406,7 @@ function O.PlaceOf(instID)
 	local out
 	for _, it in ipairs(P.instances or {}) do
 		for _, d in ipairs(it[4] or {}) do
-			if d[1] == instID then
+			if d[1] == instID or (d[1] == 0 and d[6] == instID) then   -- (1.2.18: a 0 entry by its live ID, OpenMap's sixth field)
 				out = out or { id = instID, names = {}, map = it.map }
 				out.names[#out.names + 1] = d[2]
 				if it.map and not out.map then out.map = it.map end
