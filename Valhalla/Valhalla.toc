@@ -16,13 +16,13 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: 1.2.17
+## Version: 1.2.19
 ## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
 ## X-License: MIT (code); map art is Blizzard's
 ## X-Website: https://github.com/Odysseaus/wow-addons
-## X-Fork-Of: OpenMap v0.8.2 by OpenMap contributors (MIT)
+## X-Fork-Of: OpenMap v0.8.2 by OpenMap contributors (MIT); map data synced from OpenMap v0.8.9
 
 # WoW Forever's toc: its data and textures are the Forever folders (Data\Forever\Client.lua)
 Data\Forever\Client.lua

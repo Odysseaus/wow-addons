@@ -76,6 +76,9 @@ O.MAX_WATCHES = 25              -- Constants.QuestWatchConsts.MAX_QUEST_WATCHES 
 O.TICK = 0.2                    -- seconds: the pins and the section follow the tracker; queued work runs
 O.BATCH = 8                     -- watch changes per tick
 O.SETTLE = 1.0                  -- seconds after a zone change / landing / arrival (after the game's own re-sort)
+O.RECHECK_FOR = 4.0             -- 1.2.19: seconds after a zone's plan that "here" is read again (the map may lag)
+O.RECHECK_EVERY = 0.5           -- 1.2.19: ...this often
+O.RECHECK_CHAIN = 3             -- 1.2.19: re-plans a recheck may start in a row (bounded)
 O.LOG_DEBOUNCE = 0.5            -- quest log updates come in bursts
 O.NEW_TRIES = 10                -- a new quest's data: looked for this many times, NEW_GAP apart
 O.NEW_GAP = 0.4
@@ -406,7 +409,7 @@ function O.PlaceOf(instID)
 	local out
 	for _, it in ipairs(P.instances or {}) do
 		for _, d in ipairs(it[4] or {}) do
-			if d[1] == instID then
+			if d[1] == instID or (d[1] == 0 and d[6] == instID) then   -- (1.2.18: a 0 entry by its live ID, OpenMap's sixth field)
 				out = out or { id = instID, names = {}, map = it.map }
 				out.names[#out.names + 1] = d[2]
 				if it.map and not out.map then out.map = it.map end
@@ -722,6 +725,12 @@ function O.PlanFull()
 	for id, e in pairs(log) do S.keys[id] = KeyOfPlace(e) end
 	S.reorderDue, S.reorderTries = Now(), 0
 	S.readyDirty = true
+	-- (1.2.19) the game's map can lag the zone change: "here" read again for a few seconds (O.Step)
+	if (S.recheckChain or 0) < O.RECHECK_CHAIN then
+		S.recheckUntil, S.recheckAt = Now() + O.RECHECK_FOR, Now() + O.RECHECK_EVERY
+	else
+		S.recheckUntil, S.recheckAt, S.recheckChain = nil, nil, 0   -- (the chain's end: the next zone's plan rechecks again)
+	end
 	return true
 end
 
@@ -734,7 +743,10 @@ function O.RefreshMarkers(now)
 	local gained, lost = {}, {}
 	if not old or old.inst then return gained, lost end
 	local new = O.Here()
-	if new.key ~= old.key then return gained, lost end   -- (somewhere else: the full plan that's coming decides)
+	if new.key ~= old.key then   -- (somewhere else: the full plan that's coming decides)
+		if not S.fullDue then O.ZoneDue(now) end   -- (1.2.19: none coming, e.g. after a flight: one now)
+		return gained, lost
+	end
 	S.miss = S.miss or {}
 	for id in pairs(old.marker) do
 		if new.marker[id] then
@@ -1103,9 +1115,29 @@ function O.Step(now)
 	-- v0.4.2.2: progress reads are never held (only watch changes are)
 	if S.progressDue and now >= S.progressDue then S.progressDue = nil O.Progress(now) end
 	if S.settleDue and now >= S.settleDue then S.settleDue = nil O.Progress(now) end
+	-- (1.2.19) the taxi just ended: the new zone planned once settled, whether or not PLAYER_CONTROL_GAINED
+	-- comes (a zone's plan due from the flight, long past, settles again first). Once per landing
+	if S.waitingTaxi and not OnTaxi() then
+		S.waitingTaxi = false
+		O.ZoneDue(now)
+	end
 	if O.Blocked() then
 		if OnTaxi() then S.waitingTaxi = true end
 		return "blocked"
+	end
+	-- (1.2.19) after a zone's plan: "here" read again a few times; somewhere else now (the map caught up
+	-- with no event): planned again, a bounded number of times in a row
+	if S.recheckUntil and not S.fullDue and now >= (S.recheckAt or 0) then
+		if now > S.recheckUntil or not S.here then
+			S.recheckUntil, S.recheckAt, S.recheckChain = nil, nil, 0
+		else
+			S.recheckAt = now + O.RECHECK_EVERY
+			if O.Here().key ~= S.here.key then
+				S.recheckUntil, S.recheckAt = nil, nil
+				S.recheckChain = (S.recheckChain or 0) + 1
+				O.ZoneDue(now)
+			end
+		end
 	end
 	if S.fullDue and now >= S.fullDue then
 		S.fullDue = nil

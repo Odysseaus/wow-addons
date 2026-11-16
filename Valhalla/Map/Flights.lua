@@ -520,9 +520,11 @@ end
 -- Routes
 --------------------------------------------------------------------------------
 
+-- your faction's, and a class's own only for that class (Nighthaven's, druids': OpenMap #222, 1.2.18)
 local function Usable(id)
 	local n = F.nodes[id]
-	return n and bit.band(n[5], factionBit) ~= 0
+	if not (n and bit.band(n[5], factionBit) ~= 0) then return false end
+	return not n[6] or n[6] == select(2, UnitClass("player"))
 end
 
 -- cheapest route by flight length; `knownOnly` keeps to learned flight masters

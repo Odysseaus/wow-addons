@@ -10,7 +10,7 @@ local P = ns.Media.tex .. "MapTile\\"
 
 local function Swap(tiles)
 	for k, fid in ipairs(tiles) do
-		if type(fid) == "number" then tiles[k] = P .. fid end
+		if type(fid) == "number" and fid ~= 0 then tiles[k] = P .. fid end   -- (0: a tile not drawn; OpenMap v0.8.9)
 	end
 end
 
