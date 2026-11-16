@@ -318,3 +318,28 @@ function W.Fire(event, ...)
     if rawget(f, "_events") and f._events[event] and f._scripts.OnEvent then f._scripts.OnEvent(f, event, ...) end
   end
 end
+
+-- (Valhalla 1.2.20) the game's string.format: %d (and %i, %u, %c, %x, %X, %o) stores into a 32-bit int and stops with
+-- "integer overflow attempting to store N" past it (a 999,999g AH listing stopped every full scan); plain Lua 5.1
+-- has no such check, so the box tests behave like the game here
+do
+  local real = string.format
+  local INT = { d = true, i = true, u = true, c = true, x = true, X = true, o = true }
+  local function GameFormat(fmt, ...)
+    local n, args = select("#", ...), { ... }
+    local i = 0
+    for spec in tostring(fmt):gmatch("%%[-+ #0]*%d*%.?%d*(.)") do
+      if spec ~= "%" then
+        i = i + 1
+        local v = args[i]
+        if INT[spec] and type(v) == "number" and (v > 2147483647 or v < -2147483648) then
+          error(("bad argument #%d to 'format' (integer overflow attempting to store %s)"):format(i + 1, real("%.0f", v)), 2)
+        end
+      end
+    end
+    return real(fmt, ...)
+  end
+  string.format = GameFormat
+  format = GameFormat
+  getmetatable("").__index.format = GameFormat
+end

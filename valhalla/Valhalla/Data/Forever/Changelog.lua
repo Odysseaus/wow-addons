@@ -4,6 +4,15 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.20", date = "2026-11-16", heads = { [1] = "Fixed", [5] = "Changed", }, items = {
+		"|cff6e2c0aAH scans finish again|r: one listing at an absurd price (999,999g) stopped every full scan with \"integer overflow attempting to store\", so AH Market and the tooltips kept showing the last scan that worked. A price per unit over 214,748g now counts as no price (its units and auctions still count), and the scan's done line names the item.",
+		"A scan's prices are saved in one go: if something goes wrong, nothing is half-saved. One item that can't be stored is skipped and named, and the rest of the scan is saved.",
+		"The history's 3 MB limit holds again, without the second-long freeze after each scan (the oldest scans shared one time, so trimming went round in circles); it now trims a little each frame.",
+		"Prices of any size are written and read back exactly.",
+		"|cff6e2c0aA scan that didn't finish says so|r: AH Market's status shows the last attempt, when, at which house, and why (the Auction House closed, you stopped it, or an error), until a scan finishes. It's kept over a /reload.",
+		"Stop asks first: while a scan runs, the button turns to Stop? after one press, and only a second press within 3 seconds stops it (/valhalla invest scan stop still stops at once).",
+		"AH Market and the item tooltips follow the Auction House you're at or scanned at (Alliance, Horde, or Neutral at Booty Bay, Gadgetzan and Everlook); a house picked with its buttons holds until your next Auction House.",
+	} },
 	{ version = "1.2.19", date = "2026-11-15", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aThe side panel follows you after a flight|r: landing in another zone (Riverglades to Stormwind) could leave the side panel and tracker on the old zone's quests. Valhalla now plans the new zone a moment after the flight ends, whether or not the game says you've landed.",
 		"After arriving somewhere, Valhalla looks again for a few seconds: if the game's map catches up late (with no event), the panel catches up too.",

@@ -1138,6 +1138,173 @@ do
   W.Fire("AUCTION_HOUSE_CLOSED")
   ok(not Sc.Running() and pr.state == "closed" and #m.scans == scansBefore and m.cur[2589] == before, "AH closed mid-read: nothing saved, the market as it was")
   ok(Printed("Full scan stopped: the Auction House closed. Nothing saved. Next full scan in 15:00"), "said, with the timer (the 15 minutes were spent)", table.concat(ns.printed, " || "))
+
+  print("-- (1.2.20) huge prices, a save in one go, Stop asks first, the last attempt, the 3 MB trim, the house followed")
+  ;(function()   -- (its own function: the main chunk is at its 200 locals)
+    local keepAlliance, keepHouse, keepLast, keepRealmLast = I.realm.ah.Alliance, I.S.marketHouse, Sc.last, I.realm.scanLast
+    local keepHordeM, keepNeutralM = I.realm.ah.Horde, I.realm.ah.Neutral
+    local keepInfo = CA.GetReplicateItemInfo
+    local keepSearch, keepFull, keepResults = CA.SearchForItemKeys, CA.HasFullBrowseResults, CA.GetBrowseResults
+    local keepNow, keepClock = W.now, W.clock
+    I.realm.ah.Alliance = nil
+    W.Fire("AUCTION_HOUSE_SHOW")   -- (the Alliance AH, open again)
+    local rows, names = {}, { [9001] = "Bad Idea Blade", [9002] = "Linen Cloth", [9003] = "Copper Ore" }
+    CA.GetReplicateItemInfo = function(i)
+      local r = rows[i + 1]
+      W.clock = W.clock + 0.01
+      return names[r.id], nil, r.count, 1, true, 1, nil, 0, 0, r.buyout, 0, nil, nil, nil, nil, 0, r.id, false
+    end
+    local function FullScan(list)
+      rows = list
+      auctions = list   -- (GetNumReplicateItems reads this)
+      W.now = W.now + 901
+      W.replicateThrottled = false
+      ns.printed = {}
+      Sc.Start("full")
+      local r = Sc.run
+      SUntil(function() return not Sc.Running() end)
+      return r
+    end
+    local MAXBUY = 9999990000   -- (999,999g 00s 00c: the buyout in the 1.2.19 overflow report)
+    -- 1. one 999,999g listing, nothing cheaper of it: the scan finishes, that item has no price, named
+    local r1 = FullScan({ { id = 9001, count = 1, buyout = MAXBUY }, { id = 9002, count = 20, buyout = 2000 }, { id = 9002, count = 5, buyout = 600 } })
+    local c1, a1 = Sc.Cur("Alliance", 9001), Sc.Market("Alliance")
+    ok(r1.state == "done" and c1 and c1.min == 0 and c1.units == 1 and c1.auctions == 1 and Sc.Cur("Alliance", 9002).min == 100,
+      "a 999,999g listing: the full scan finishes; that item: no price, its unit and auction counted", tostring(r1.state) .. " " .. table.concat(ns.printed, " || "))
+    ok(Printed("1 price over 214,748g ignored %(no price%): Bad Idea Blade %(999999g 00s 00c%)") and Printed("Full scan done: 3 auctions of 2 items"),
+      "  the done line names it, with the price ignored", table.concat(ns.printed, " || "))
+    local _, at1 = Sc.LastScan("Alliance", "full")
+    ok(Sc.Age(at1) == "just now" and a1.scans[#a1.scans].items == 2 and not Printed("integer overflow"), "  last full scan: just now (no overflow)")
+    -- 2. the same item also listed at 5g: the lowest is 5g, nothing named
+    FullScan({ { id = 9001, count = 1, buyout = MAXBUY }, { id = 9001, count = 1, buyout = 50000 } })
+    local c2 = Sc.Cur("Alliance", 9001)
+    ok(c2.min == 50000 and c2.units == 2 and c2.auctions == 2 and not Printed("ignored"), "also listed at 5g: lowest 5g, the 999,999g one left out, nothing named", table.concat(ns.printed, " || "))
+    -- 3. a stack whose price per unit fits: kept
+    FullScan({ { id = 9003, count = 20, buyout = MAXBUY } })
+    ok(Sc.Cur("Alliance", 9003).min == math.floor(MAXBUY / 20) and not Printed("ignored"), "a 20-stack at 999,999g: 49,999g 99s 50c each, kept (only the unit price counts)", Sc.Cur("Alliance", 9003).min)
+    -- 4. a quick scan's huge lowest: no price, named, no error
+    local keepBags = I.char.bags
+    I.char.bags = { [9001] = 1, [9002] = 1 }
+    local qsent = {}
+    CA.SearchForItemKeys = function(keys) qsent = {} for _, k in ipairs(keys) do qsent[#qsent + 1] = k.itemID end Later(3, "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED") end
+    CA.HasFullBrowseResults = function() return true end
+    CA.GetBrowseResults = function()
+      local t = {}
+      for _, id in ipairs(qsent) do t[#t + 1] = { itemKey = { itemID = id }, totalQuantity = 1, minPrice = id == 9001 and MAXBUY or 777 } end
+      return t
+    end
+    ns.printed = {}
+    Sc.Start("quick")
+    local rq = Sc.run
+    SUntil(function() return not Sc.Running() end)
+    local cq = Sc.Cur("Alliance", 9001)
+    ok(rq.state == "done" and cq.quick and cq.min == 0 and cq.units == 1 and Sc.Cur("Alliance", 9002).min == 777 and Printed("Bad Idea Blade"),
+      "a quick scan's 999,999g lowest: no price (units kept), named, no error", table.concat(ns.printed, " || "))
+    I.char.bags = keepBags
+    -- 5. an error before the save: nothing changed at all; one item that can't be stored: skipped, named, the rest saved
+    local am = Sc.Market("Alliance")
+    local function Snap() local t = {} for id, v in pairs(am.cur) do t[#t + 1] = "c" .. id .. "=" .. v end for id, v in pairs(am.hist) do t[#t + 1] = "h" .. id .. "=" .. v end table.sort(t) return table.concat(t, "|") .. "#" .. #am.scans end
+    local snap = Snap()
+    Sc.CommitHook = function() error("boom before the save") end
+    local r5 = FullScan({ { id = 9002, count = 1, buyout = 1 }, { id = 9003, count = 1, buyout = 1 } })
+    Sc.CommitHook = nil
+    ok(r5.state == "error" and Snap() == snap and Printed("Nothing saved"), "an error before the save: the market byte for byte as it was (no stray history points)", r5.state)
+    Sc.StoreHook = function(id) if id == 9003 then error("can't store this one") end end
+    local r5b = FullScan({ { id = 9002, count = 1, buyout = 300 }, { id = 9003, count = 1, buyout = 400 } })
+    Sc.StoreHook = nil
+    ok(r5b.state == "done" and Sc.Cur("Alliance", 9002).min == 300 and Sc.Cur("Alliance", 9003) == nil and Printed("1 item skipped %(couldn't be stored%): Copper Ore"),
+      "one item that can't be stored: skipped and named, the scan saved", table.concat(ns.printed, " || "))
+    -- 6. any size of price written and read back exactly
+    local tm = math.floor(W.now / 60) - am.base
+    Sc.AddPoint(am, 9100, tm, MAXBUY, 3, 2)
+    am.cur[9100] = Sc.CurLine(MAXBUY * 10, 4, 1, tm)
+    local p6 = Sc.Points("Alliance", 9100)
+    ok(p6[1].min == MAXBUY and Sc.Cur("Alliance", 9100).min == MAXBUY * 10 and Sc.Money(MAXBUY * 10) == "9999990g 00s 00c", "prices past 2^31 written and read back exactly (no %d)", p6[1] and p6[1].min)
+    am.cur[9100], am.hist[9100] = nil, nil
+    -- 7. the 3 MB trim: the oldest scans sharing a time (as in a real market) no longer stall it
+    local tm7 = { base = am.base, scans = {}, cur = {}, hist = {} }
+    I.realm.ah.Horde = tm7
+    for _, t in ipairs({ 0, 0, 0, 0, 16, 60, 120, 180, 240, 300 }) do tm7.scans[#tm7.scans + 1] = { t = t, kind = "full", n = 1, items = 1 } end
+    for id = 1, 1500 do
+      local h = {}
+      for _, t in ipairs({ 0, 16, 60, 120, 180, 240, 300 }) do h[#h + 1] = ("%d:%d:1:1"):format(t, 100 + id) end
+      tm7.hist[id] = table.concat(h, ";")
+    end
+    local size0 = Sc.TotalSize()
+    I.S.histCapMB = (size0 * 0.6) / 1048576
+    local steps = 0
+    local passes, after = Sc.Prune(tm7, function() steps = steps + 1 end)
+    ok(after <= size0 * 0.6 and Sc.TotalSize() == after and passes <= 4 and #tm7.scans >= 1 and tm7.scans[#tm7.scans].t == 300,
+      "over the cap, oldest scans at one time: under it in a few passes (a running total), the newest scan kept", ("%d passes, %d -> %d"):format(passes, size0, after))
+    ok(steps >= passes * 2, "  trimmed a little at a time (a scan yields there between frames)", steps)
+    I.S.histCapMB = 3
+    I.realm.ah.Horde = keepHordeM
+    -- 8. ...and the 7 days still go first
+    local tm8 = { base = am.base, scans = { { t = tm - 8 * 1440, kind = "full" }, { t = tm, kind = "full" } }, cur = {}, hist = { [1] = ("%d:5:1:1;%d:6:1:1"):format(tm - 8 * 1440, tm) } }
+    Sc.Prune(tm8)
+    ok(#tm8.scans == 1 and tm8.hist[1] == ("%d:6:1:1"):format(tm), "past 7 days: dropped first, as before", tm8.hist[1])
+    -- 9. Stop asks first: a second press within 3 seconds stops it; later, it asks again
+    W.now = W.now + 901
+    W.replicateThrottled = false
+    rows = {} for i = 1, 20000 do rows[i] = { id = 9002, count = 1, buyout = 100 } end
+    auctions = rows
+    ns.printed = {}
+    Sc.Start("full")
+    local r9 = Sc.run
+    SUntil(function() return r9.phase == "read" end)
+    Sc.Toggle()
+    ok(Sc.Running() and Sc.StopArmed() and Printed("Press Stop again within 3 seconds") and A.CheckStatus():find("Press Stop%? again"), "Stop pressed once: still running, asks for a second press")
+    A.CheckRefresh()
+    ok(A.Panel().check.button.text._text == "Stop?", "  the button says Stop?", A.Panel().check.button.text._text)
+    for _ = 1, 200 do Tick() end   -- (3.2 s on the clock, no scan steps)
+    ok(Sc.Running() and not Sc.StopArmed(), "  3 seconds later: no longer armed")
+    Sc.Toggle()
+    ok(Sc.Running(), "  so the next press asks again")
+    Sc.Toggle()
+    ok(not Sc.Running() and r9.state == "stopped" and Printed("Full scan stopped. Nothing saved."), "  and a second within 3 s stops it")
+    -- 10. the last attempt shown (and kept over a /reload) until a scan finishes
+    local la = Sc.LastAttemptText()
+    ok(la and la:find("^Last attempt: full scan stopped just now %(Alliance%): you stopped it%. Nothing saved%.") and I.realm.scanLast.state == "stopped", "the last attempt and why, saved for the realm", la)
+    Sc.last = nil
+    local nListeners, keepShown = #I.listeners, Sc.shown
+    local host = CreateFrame("Frame", nil, nil) I.Views.BuildMarket(host)
+    host:Refresh()
+    ok(host.hint._text:find("Last attempt: full scan stopped", 1, true), "  AH Market's status shows it (after a /reload too)", host.hint._text)
+    for k = #I.listeners, nListeners + 1, -1 do I.listeners[k] = nil end   -- (that page: refreshed by hand from here)
+    Sc.CommitHook = function() error("Interface/AddOns/Valhalla/Investments/Scan.lua:288: integer overflow attempting to store 9999990000") end
+    FullScan({ { id = 9002, count = 1, buyout = 1 } })
+    Sc.CommitHook = nil
+    ok((Sc.LastAttemptText() or ""):find("stopped by an error just now %(Alliance%): integer overflow attempting to store 9999990000%."), "  an error: its reason, without the file", Sc.LastAttemptText())
+    FullScan({ { id = 9002, count = 1, buyout = 1 } })
+    host:Refresh()
+    ok(Sc.LastAttemptText() == nil and not host.hint._text:find("Last attempt"), "  a finished scan clears it", host.hint._text)
+    host:Hide()
+    Sc.shown = keepShown
+    -- 11. AH Market follows the house you scan or visit at; a pick holds until then
+    I.S.marketHouse = "Horde"
+    ok(Mk.House() == "Horde", "a house picked with its button: shown")
+    FullScan({ { id = 9002, count = 1, buyout = 1 } })
+    ok(Mk.House() == "Alliance", "  a scan at the Alliance AH: AH Market (and the tooltips) on Alliance", Mk.House())
+    function GetSubZoneText() return "Booty Bay" end
+    function GetRealZoneText() return "Stranglethorn Vale" end
+    W.Fire("AUCTION_HOUSE_SHOW")
+    ok(Mk.House() == "Neutral" and Sc.House() == "Neutral", "  at Booty Bay's AH: Neutral", Mk.House())
+    FullScan({ { id = 9002, count = 1, buyout = 7 } })
+    ok(Mk.House() == "Neutral" and Sc.Cur("Neutral", 9002).min == 7 and Mk.Lines(9002)[1]:find("Neutral"), "  scanned there: Neutral's prices shown, in the tooltip too", Mk.Lines(9002)[1])
+    I.realm.ah.Neutral = keepNeutralM
+    function GetSubZoneText() return "The Commons" end
+    function GetRealZoneText() return "Ironforge" end
+    W.Fire("AUCTION_HOUSE_SHOW")
+    W.Fire("AUCTION_HOUSE_CLOSED")
+    -- put back what the tests after read
+    CA.GetReplicateItemInfo = keepInfo
+    CA.SearchForItemKeys, CA.HasFullBrowseResults, CA.GetBrowseResults = keepSearch, keepFull, keepResults
+    I.realm.ah.Alliance = keepAlliance
+    I.S.marketHouse, Sc.last, I.realm.scanLast = keepHouse, keepLast, keepRealmLast
+    W.now, I.db.account.replicateAt = keepNow, nil
+    W.clock = keepClock   -- (the stub clock as it was: the later budget tests count 0.2 ms steps, and 40 x 0.2 rounds differently past 32,768)
+    I.NameLoader.Stop("background")
+  end)()
   -- another house: Horde, its own market; four days of full scans: trending
   function UnitFactionGroup() return "Horde" end
   W.Fire("AUCTION_HOUSE_SHOW")
@@ -1175,7 +1342,7 @@ do
   function GetSubZoneText() return "The Commons" end
   function GetRealZoneText() return "Ironforge" end
   I.realm.ahLast = "Horde"
-  ok(Mk.House() == "Alliance", "(v0.4.2.7) AH Market's house: Alliance until one is picked, whatever AH was visited last")
+  ok(Mk.House() == "Neutral" and I.S.marketHouse == "Neutral", "(1.2.20) AH Market's house: the Auction House you visited last (Booty Bay: Neutral)", Mk.House())
   I.S.marketHouse = "Horde"   -- (picked with the Horde button: kept in the settings)
 
   print("-- item cells")
@@ -1341,8 +1508,11 @@ do
   W.replicateThrottled = false
   W.Click(mb, "RightButton")
   ok(Sc.Running() and mb:IsShown(), "minimized: right-click scans")
+  ns.printed = {}
   W.Click(mb, "RightButton")
-  ok(not Sc.Running() and Printed("Nothing saved"), "right-click again: stopped, nothing saved")
+  ok(Sc.Running() and Printed("Press Stop again within 3 seconds"), "(1.2.20) right-click again: asks first (a stray click doesn't stop it)")
+  W.Click(mb, "RightButton")
+  ok(not Sc.Running() and Printed("Nothing saved"), "and a third, at once: stopped, nothing saved")
   A.SetMinimized(false)
   Slash("invest", "scan")
   ok(Sc.Running(), "/valhalla invest scan")
@@ -1364,6 +1534,8 @@ do
   SUntil(function() if big.phase == "read" then bigFrames = bigFrames + 1 end return not Sc.Running() end, 100000)
   ok(big.state == "done" and big.items == 5016 and big.maxMs <= 8 + 0.6 and bigFrames >= 150, "149,583 auctions of 5,016 items: done, no frame past the budget", ("%d frames, max %.2f ms"):format(bigFrames, big.maxMs))
   W.Fire("AUCTION_HOUSE_CLOSED")
+  ok(I.S.marketHouse == "Horde", "(1.2.20) that scan (a Horde character): AH Market on Horde")
+  I.S.marketHouse = "Horde"   -- (the pages after read Horde's market, as before 1.2.20)
   ok(W.blockedSetters == 0 and Keys(WorldMapFrame) == mapKeys, "still nothing written on the map")
 
   ;(function()   -- (its own function: the main chunk is at its 200 locals)
