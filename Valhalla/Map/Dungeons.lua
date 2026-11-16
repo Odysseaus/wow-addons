@@ -2053,6 +2053,8 @@ function mod:SetupDungeons(worldMap)
 	map:HookScript("OnShow", function()
 		C_Timer.After(0.1, function()
 			if not map:IsShown() or (view and view:IsShown()) then return end
+			-- (1.2.16) opened on a quest's description (a tracker click): the quest's map stays, as Blizzard put it
+			if mod.DetailsOpen and mod.DetailsOpen() then return end
 			-- on a map off the stitched world (Zephras Isle): its own map, as its airship opens it, not
 			-- the world with no one on it
 			local here = Safe.Call(C_Map.GetBestMapForUnit, "player")
