@@ -69,6 +69,17 @@ local active = false            -- the current map is stitched
 local switching = false         -- we're changing the map ourselves
 local userMoved = false         -- the view moved since Blizzard last showed a map (only then do we follow it)
 local wheelMode, scalingMode    -- Blizzard's, to put back on other maps
+
+-- (1.2.16) a quest's description open in the quest log. Blizzard closes it when the map changes to another
+-- than the quest's (QuestLogMixin:Refresh), so while it's open Valhalla never changes the map underneath
+-- (the zone-in-view switch, a dungeon quest's entrance zone, the map opened in a dungeon): the view still
+-- glides to the quest. After Back (or the map closed) all of it goes on as before
+function mod.DetailsOpen()
+	local qm = rawget(_G, "QuestMapFrame")
+	local df = qm and qm.DetailsFrame
+	if not df or not df.IsShown or not df:IsShown() then return false end
+	return rawget(df, "questID") ~= nil
+end
 local levelCount                -- how many zoom levels are ours (other addons add steps past them: trimmed)
 
 --------------------------------------------------------------------------------
@@ -463,6 +474,7 @@ end
 
 local switchView                  -- the view a switch is for, while the new map's icons are placed (mod.PinView)
 local function Switch(target)
+	if mod.DetailsOpen() then return end   -- (1.2.16)
 	local u, v, zoom = View()
 	switching = true
 	switchView = { u, v, zoom }
@@ -571,12 +583,50 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
 	RaisePlayer()
 
 	stillFor = Settled() and stillFor + 0.1 or 0
-	if mod.db.autoSwitch and userMoved and stillFor >= SWITCH_AFTER and not InCombatLockdown() and not mod.benching then
+	if mod.db.autoSwitch and userMoved and stillFor >= SWITCH_AFTER and not InCombatLockdown() and not mod.benching
+		and not mod.DetailsOpen() then   -- (1.2.16: a quest's description open: the map stays the quest's)
 		local u, v, zoom = View()
 		local target = PickMap(u, v, zoom, mapID)
 		if target ~= mapID then Switch(target) end
 	end
 end)
+
+-- (1.2.16) the quest description's closes, newest first: quest, its map, the map now, flags, a short stack
+local DETAILS_LOG = 10
+mod.DETAILS_LOG = DETAILS_LOG
+local detailsShown                -- { q, map } of the description open (its hook), read when it closes
+local function LogDetailsClose(was)
+	if not mod.db then return end
+	local stack = ""
+	if debugstack then stack = debugstack(2, 24, 0) or "" elseif debug and debug.traceback then stack = debug.traceback("", 3) end
+	local short = {}
+	for file, line in stack:gmatch("([%w_]+)%.lua[^:\n]*:(%d+)") do
+		if file ~= "WorldMap" or #short > 0 then short[#short + 1] = file .. ":" .. line end
+		if #short >= 10 then break end
+	end
+	local flags = {}
+	local function F(on, word) if on then flags[#flags + 1] = word end end
+	F(stack:find("ReturnFromQuestDetails", 1, true), "back")
+	F(stack:find("OnHide", 1, true) or not (map and map:IsShown()), "map hidden")
+	F(stack:find("UpdateSuperTrackedQuest", 1, true), "super-track changed")
+	F(stack:find("Refresh", 1, true), "refresh in stack")
+	F(switching, "valhalla switch")
+	F(anim and anim.mode == "fly", "flying")
+	F(userMoved, "view moved")
+	F(mod.db.autoSwitch, "auto-switch on")
+	F(InCombatLockdown and InCombatLockdown(), "combat")
+	F(IsInInstance and IsInInstance(), "in instance")
+	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and ns.Safe.Call(C_SuperTrack.GetSuperTrackedQuestID)
+	local title = C_QuestLog and C_QuestLog.GetTitleForQuestID and ns.Safe.Call(C_QuestLog.GetTitleForQuestID, was.q)
+	local log = type(mod.db.detailsLog) == "table" and mod.db.detailsLog or {}
+	mod.db.detailsLog = log
+	table.insert(log, 1, {
+		at = date and date("%Y-%m-%d %H:%M:%S") or tostring(GetTime()),
+		quest = was.q, title = title, questMap = was.map, newMap = map and map:GetMapID(), super = super,
+		flags = table.concat(flags, ", "), stack = table.concat(short, " < "),
+	})
+	while #log > DETAILS_LOG do table.remove(log) end
+end
 
 --------------------------------------------------------------------------------
 -- Hooks into Blizzard's map
@@ -1141,6 +1191,21 @@ local function Setup()
 		map:AddCursorHandler(function() if active and mod.PinMode and mod.PinMode() then return "MAP_PIN_CURSOR" end end, 1000)
 	end
 	HookHighlight()
+	-- (1.2.16) read-only: the last DETAILS_LOG times a quest's description closed, and what closed it
+	-- (ValhallaDB.worldmap.detailsLog, read after a /reload)
+	if QuestMapFrame_ShowQuestDetails and QuestMapFrame_CloseQuestDetails then
+		hooksecurefunc("QuestMapFrame_ShowQuestDetails", function(q)
+			local df = QuestMapFrame and QuestMapFrame.DetailsFrame
+			detailsShown = { q = q, map = df and rawget(df, "questMapID") }
+		end)
+		hooksecurefunc("QuestMapFrame_CloseQuestDetails", function()
+			local was = detailsShown
+			detailsShown = nil
+			if not was then return end
+			local ok, err = pcall(LogDetailsClose, was)
+			if not ok then geterrorhandler()(err) end
+		end)
+	end
 	-- a quest's details, Back: the map stays where you're looking (most likely at the quest's place,
 	-- to pick another nearby). Blizzard puts back the map it was on when they opened, and a map Blizzard
 	-- puts up shows whole: the view from just before that comes back

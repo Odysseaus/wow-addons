@@ -60,7 +60,9 @@ end
 -- icon at once (client data) and "Item #id" until its name arrives (Item:ContinueOnItemLoad; at most 30
 -- asked at a time, only for rows on screen; a reused row never takes an old answer).
 -- Clicks: shift puts its link in chat (or in the Valhalla box that has the cursor), ctrl opens the
--- dressing room, a plain click opens its History, right-click adds it to the Shopping List's builder.
+-- dressing room, a plain click opens its History. Right-click (1.2.14): a small menu: Add to the Shopping
+-- List's builder (what right-click did before), Set target... (the Watchlist), Remove from Watchlist; alt-click
+-- puts it on the Watchlist and opens its targets.
 -- Only the game's tooltip API is used (SetOwner, SetItemByID / SetHyperlink, AddLine, Show, Hide).
 --------------------------------------------------------------------------------
 
@@ -206,8 +208,10 @@ function V.ItemCell(parent, w)
 		local _, link = V.ItemData(id)
 		link = link or ("item:%d"):format(id)
 		if button == "RightButton" then
-			I.DraftAdd(id)
-			ns:Print("%s", L["%s: in the Shopping List's builder."]:format(V.ItemData(id) or L["Item #%d"]:format(id)))
+			V.ItemMenu(self, id)   -- (1.2.14: the builder is its first entry)
+		elseif IsAltKeyDown and IsAltKeyDown() and I.Watch then
+			I.Watch.Add(id)
+			I.Watch.Edit(id)
 		elseif IsShiftKeyDown and IsShiftKeyDown() then
 			V.InsertLink(link)
 		elseif IsControlKeyDown and IsControlKeyDown() then
@@ -217,6 +221,78 @@ function V.ItemCell(parent, w)
 		end
 	end)
 	return cell
+end
+
+-- (1.2.14) an item's right-click menu: { text, run } entries under the item
+function V.ToBuilder(id)
+	I.DraftAdd(id)
+	ns:Print("%s", L["%s: in the Shopping List's builder."]:format(V.ItemData(id) or L["Item #%d"]:format(id)))
+end
+function V.ItemMenuEntries(id)
+	local W = I.Watch
+	local out = { { key = "builder", text = L["Add to the Shopping List's builder"], run = function() V.ToBuilder(id) end } }
+	if W then
+		out[#out + 1] = { key = "target", text = W.Has(id) and L["Edit target..."] or L["Set target..."], run = function() W.Edit(id) end }
+		if W.Has(id) then out[#out + 1] = { key = "remove", text = L["Remove from Watchlist"], run = function() W.Remove(id) end } end
+	end
+	return out
+end
+V.MENU_MAX = 4
+function V.ItemMenu(anchor, id)
+	local m = V.itemMenu
+	if not m then
+		m = CreateFrame("Frame", "ValhallaItemMenu", UIParent, "BackdropTemplate")
+		m:SetWidth(240)
+		m:SetFrameStrata("DIALOG")
+		T.SkinFlat(m, 0.98)
+		m:EnableMouse(true)
+		m.head = Text(m, 11, GREY)
+		m.head:SetPoint("TOPLEFT", 8, -6)
+		m.head:SetPoint("RIGHT", m, "RIGHT", -8, 0)
+		m.head:SetJustifyH("LEFT")
+		m.items = {}
+		for i = 1, V.MENU_MAX do
+			local it = V.Button(m, "", 232, 20, nil, "item")
+			it:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 22)
+			it:Hide()
+			m.items[i] = it
+		end
+		-- a click anywhere else closes it; so does its item going away (the window closed, the row reused)
+		m:SetScript("OnEvent", function(self)
+			if not (self.IsMouseOver and self:IsMouseOver()) then self:Hide() end
+		end)
+		m:SetScript("OnShow", function(self) pcall(self.RegisterEvent, self, "GLOBAL_MOUSE_DOWN") end)
+		m:SetScript("OnHide", function(self) if self.UnregisterEvent then self:UnregisterEvent("GLOBAL_MOUSE_DOWN") end end)
+		m:SetScript("OnUpdate", function(self)
+			local a = self.anchor
+			if not (a and a:IsVisible()) or (self.id and a.id ~= nil and a.id ~= self.id) then self:Hide() end
+		end)
+		m:Hide()
+		V.itemMenu = m
+	end
+	if m:IsShown() and m.anchor == anchor and m.id == id then m:Hide() return m end
+	m.anchor, m.id = anchor, id
+	m.head:SetText(I.ItemName(id))
+	local entries = V.ItemMenuEntries(id)
+	m.entries = entries
+	for i, it in ipairs(m.items) do
+		local e = entries[i]
+		if e then
+			it.text:SetText(e.text)
+			it.entry = e
+			it:SetScript("OnClick", function() m:Hide() e.run() end)
+			it:Show()
+		else
+			it.entry = nil
+			it:Hide()
+		end
+	end
+	m:SetHeight(26 + #entries * 22 + 4)
+	m:ClearAllPoints()
+	m:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+	m:Hide()
+	m:Show()
+	return m
 end
 
 -- a tick box and its label: get() / set(v)
@@ -1211,6 +1287,14 @@ local function BuildSettings(page)
 	page.ahTotal = Place(V.Radio(body, L["AH total on item tooltips:"], { { "stack", L["Hovered quantity"] }, { "held", L["Everything held"] } },
 		function() return S.ahTotal end, function(v) S.ahTotal = v I.Changed() end))   -- (1.2.5)
 	page.ahTotalNote = Note(L["Hovered quantity: the AH price times the stack in the bag or bank slot you point at (none for a link or a merchant's item). Everything held: bags and bank."])
+	-- (1.2.14) the Watchlist's alerts (AH Market > Watchlist)
+	Section(L["Watchlist"])
+	page.watchSound = Opt(L["Play a sound when a Watchlist target is met"], "watchSound")
+	page.watchAlerts = Place(V.Radio(body, L["Alert frequency:"], { { "every", L["Every scan while met"] }, { "once", L["Once until target changed"] } },
+		function() return S.watchAlerts == "once" and "once" or "every" end, function(v) S.watchAlerts = v I.Changed() end))
+	page.watchNear = Place(V.Radio(body, L["Near:"], { { 0, L["Off"] }, { 5, "5%" }, { 10, "10%" } },
+		function() return I.Watch and I.Watch.NearPct() or 5 end, function(v) S.watchNear = v I.Changed() end))
+	page.watchNote = Note(L["After every scan at the Auction House (full or quick), Valhalla checks your Watchlist at that house: BUY when the lowest price is at or below your buy target, SELL when it is at or above your sell target (the listed price, before the AH's cut). Met targets pop up (click an item for its history) and go to chat. Every scan while met: each scan says so again. Once until target changed: one alert, then quiet until you change that target. Near: the Signal column also shows items within that much of a target (no popup)."])
 	local forgetAH = V.Button(body, L["Forget this house's market"], 220, 22, function()
 		if I.Scan and I.Market then I.Scan.Forget((I.Market.House())) end
 	end)
@@ -1307,8 +1391,8 @@ function V.BuildInvest(parent)
 	root.Page = Page
 	function root:ShowPage(key)
 		if key == "settings" then return T.Select("settings") end   -- (v0.3.5: its own tab)
-		key = key or self.current or "list"
-		if not BUILD[key] then key = "list" end
+		key = key or self.current or "market"   -- (1.2.16: AH Market first)
+		if not BUILD[key] then key = BUILD.market and "market" or "list" end
 		self.current = key
 		for k, p in pairs(self.pages) do if k ~= key then p:Hide() end end
 		local page = Page(key)

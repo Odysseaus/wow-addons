@@ -4,6 +4,32 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.17", date = "2026-11-15", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aA ready dungeon quest shows where you turn it in|r: outside dungeons, a dungeon quest that's ready to turn in now shows in the side panel's Ready to Turn In when you're in the zone of its turn-in (e.g. Past Due, from Scarlet Monastery, in Alterac Mountains at Dalaran). Its turn-in is found from the game's marker for it on your map, else the game's map for the quest; when neither knows, it stays hidden outside as before.",
+		"Dungeon quests still in progress stay hidden outside their dungeon; inside a dungeon nothing changed.",
+		"A ready quest tracked again (a click on its marker, or the game) leaves the Quests list at once for Ready to Turn In (after combat, a flight or a loading screen if it's during one).",
+		"/valhalla objectives why <quest ID> also says where its turn-in is and how that was found, whether it's tracked (and how), and whether Valhalla's changes are on hold.",
+	} },
+	{ version = "1.2.16", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
+		"|cff6e2c0aA quest's description stays open|r: clicking a quest in the quest log or the tracker (In progress or Ready to Turn In, complete or not) opened its description for a moment, then went back to the list. While a quest's description is open, Valhalla no longer changes the map underneath (the zone-in-view switch, a dungeon quest's entrance zone, the map opened inside a dungeon); the map still glides to the quest.",
+		"After Back (or with the map closed), the map follows what you're looking at again, as before.",
+		"For a report: the last 10 times a quest's description closed are kept in the saved variables (ValhallaDB.worldmap.detailsLog), with the quest, its map, the map then, and what was going on.",
+		"|cff6e2c0aInvestments opens on AH Market|r: the bottom tab, the I key, Valhalla's map menu and /valhalla invest always open AH Market (/valhalla invest list or vendor still open those pages).",
+		"AH Market remembers its tab (Top 10, My items, History, Scan results, Craft or Watchlist), also after a /reload.",
+	} },
+	{ version = "1.2.15", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
+		"|cff6e2c0aDungeon quests only, inside a dungeon|r: in WoW Forever's own dungeons (City of Dalaran and the others the game has no map of) the tracker showed the outdoor zone's quests too (Alterac Mountains' in City of Dalaran). Valhalla now knows the dungeon by the game's instance ID and lists only its quests (and the Dungeon-tagged quests of its entrance zone), plus your pinned ones; Ready to Turn In too. Outside again, the zone's list comes back.",
+		"Inside a dungeon an outdoor zone's name, map and map pins no longer count, and a \"Place: Zone\" quest header only counts outdoors.",
+		"/valhalla objectives why also shows the instance ID and kind, the map and its type, and where each name came from; the last one is kept in the saved variables (ValhallaDB.objectives.lastWhy).",
+		"|cff6e2c0aWatchlist target editor|r: Buy and Sell each have gold, silver and copper boxes with the coin icons (Tab moves through them, Enter saves). All three blank: no target; a blank box is 0; 150 silver becomes 1g 50s.",
+		"The editor is wider, with \"Lowest now\" on its own line under the item's name, so nothing runs past its edge in either Look.",
+	} },
+	{ version = "1.2.14", date = "2026-11-15", heads = { [1] = "New", }, items = {
+		"|cff6e2c0aWatchlist|r (AH Market > Watchlist): your own buy and sell target for any item, like a limit order, kept until you change it. Add an item by name there, alt-click any item, or right-click one > Set target... (the right-click menu still adds to the Shopping List's builder).",
+		"Columns: Item, Lowest, Buy <= target, Sell >= target, Signal, Last met. Signal says BUY when the AH's lowest is at or below your buy target, SELL when it is at or above your sell target (the listed price, before the AH's cut), or Near x% when it's close (Settings: Off, 5% or 10%).",
+		"After every scan at the Auction House (full or quick), met targets pop up in Valhalla's Look (click an item for its history), each with a line in chat and a sound (Settings > Watchlist). Alert frequency: every scan while met, or once until the target changes. Quick scans include your Watchlist's items.",
+		"Item tooltips show your targets (Target buy <= / Target sell >=), green when met.",
+	} },
 	{ version = "1.2.13", date = "2026-11-15", heads = { [1] = "Fixed", [4] = "New", }, items = {
 		"|cff6e2c0aThe flight timer starts with the game|r: it is set up at login on its own, whatever the map does (on, off, or left to Blizzard with the Gamepad UI); no need to switch the setting off and on.",
 		"A flight Valhalla didn't see start (in the air at a /reload with nothing saved, or begun by a click it didn't hear) shows \"In flight\" or \"In flight (reloaded)\" with the time since, Learning; it isn't saved, so no wrong times.",
