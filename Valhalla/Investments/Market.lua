@@ -932,7 +932,7 @@ function M.Shown(e)
 	if amount and e.sell and e.parts then
 		local owned = I.S.craftOwned or "market"
 		local house = M.House()
-		local tag = ("%d|%s|%s|%s|%s|%s"):format(amount, cnt, owned, house, tostring(I.char and I.char.bagsSeen), tostring(I.char and I.char.bankSeen))
+		local tag = ("%s|%s|%s|%s|%s|%s"):format(S().N(amount), cnt, owned, house, tostring(I.char and I.char.bagsSeen), tostring(I.char and I.char.bankSeen))
 		if e._shownTag ~= tag then
 			if M._haveTag ~= tag then M._have, M._haveTag = I.Craft.Have(M.CountArg()), tag end
 			local n, _, cost = M.Afford(e, amount, M._have, owned)
@@ -1383,7 +1383,7 @@ local function BuildHistory(f, page)
 		elseif last then
 			local units = {}
 			for _, p in ipairs(pts) do units[#units + 1] = p.units end
-			f.note:SetText(L["%d points. Now %s, %d units listed. Faint points: quick scans."]:format(#pts, S().Money(last.min), last.units))
+			f.note:SetText(L["%d points. Now %s, %s units listed. Faint points: quick scans."]:format(#pts, S().Money(last.min), S().N(last.units)))
 		else
 			f.note:SetText("")
 		end
@@ -2067,7 +2067,10 @@ function V.BuildMarket(page)
 		local sc, at = S().LastScan(house, "full")
 		self.status:SetText(L["%s Auction House. Last full scan: %s%s. %s"]:format(house, S().Age(at),
 			sc and L[" (%d items)"]:format(sc.items or 0) or "", S().CooldownText()))
-		self.hint:SetText(I.ahOpen and "" or L["Scan at the Auction House: the Scan button is on Valhalla's list beside it."])
+		-- (1.2.20) a scan that didn't finish: what and why, until one does
+		local last = S().LastAttemptText and S().LastAttemptText()
+		local hint = I.ahOpen and "" or L["Scan at the Auction House: the Scan button is on Valhalla's list beside it."]
+		self.hint:SetText(last and (hint ~= "" and (last .. " " .. hint) or last) or hint)
 		local have = {}
 		for _, h in ipairs(houses) do have[h] = true end
 		for _, b in ipairs(self.houseButtons) do

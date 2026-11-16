@@ -314,6 +314,7 @@ function A.CheckStatus()
 	local Sc = I.Scan
 	if Sc.Running() then
 		local f, text = Sc.Progress()
+		if Sc.StopArmed() then return L["Press Stop? again within 3 seconds to stop (nothing would be saved)."], f end   -- (1.2.20)
 		return ("%s (%d%%)"):format(text, math.floor(f * 100)), f
 	end
 	local last = Sc.last
@@ -332,7 +333,7 @@ function A.CheckRefresh()
 	local text, f = A.CheckStatus()
 	if panel and panel.check then
 		local c = panel.check
-		c.button.text:SetText(running and L["Stop"] or L["Scan"])
+		c.button.text:SetText(running and (I.Scan.StopArmed() and L["Stop?"] or L["Stop"]) or L["Scan"])   -- (1.2.20: Stop? = press again)
 		c.status:SetText(text)
 		local w = (c.track:GetWidth() or 0)
 		if w <= 0 then w = A.W - 20 end

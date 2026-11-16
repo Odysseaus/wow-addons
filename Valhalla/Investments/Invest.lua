@@ -1051,7 +1051,10 @@ function I.OnEvent(event, a1, a2)
 	elseif event == "AUCTION_HOUSE_SHOW" then
 		I.ahOpen = true
 		if I.DavesSack and I.S.quietDavesSack ~= false and I.DavesSack.state ~= "off" then pcall(I.DavesSack.Apply) end   -- (1.2.9: from the next visit)
-		if I.Scan then I.realm.ahLast = I.Scan.House() end   -- (AH Market shows the house you last visited)
+		if I.Scan then
+			I.realm.ahLast = I.Scan.House()
+			I.Scan.Follow(I.realm.ahLast)   -- (1.2.20: AH Market and the tooltips follow the house you're at)
+		end
 		if I.AH then I.AH.Show() end
 		I.Changed()
 	elseif event == "AUCTION_HOUSE_CLOSED" then
