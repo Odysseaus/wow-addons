@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.22", date = "2026-11-17", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aQuest log zones stay as you leave them|r: the game opens the zone of the map shown and folds every other one each time the map changes (as Valhalla's map follows you, when the map opens, after a loading screen), so zones you'd folded opened again and ones you'd opened folded. A zone you click open or folded now stays that way, for each character, after a /reload and a log-in too.",
+		"Zones you've never clicked still follow the game: the zone of the map shown open, the rest folded.",
+		"The quest log's search, and a quest's icon on the map opening its zone, don't change how you left them; the Ready to Turn In section keeps its own state, and the zones stay in alphabetical order.",
+	} },
 	{ version = "1.2.21", date = "2026-11-17", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aThe druids' flight from Nighthaven is timed|r: Silva Fil'naveth's flight to Rut'theran Village (and Bunthen Plainswind's to Thunder Bluff) starts from her chat, not the flight map, so the flight timer never saw where it went: every flight showed \"In flight\", Learning, and was never saved. Taking it at Nighthaven now shows the destination, is timed and saved, and counts down the next time.",
 		"Nighthaven counts as a flight master you've learned once you've flown from it.",

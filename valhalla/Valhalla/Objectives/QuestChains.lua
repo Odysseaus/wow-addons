@@ -389,6 +389,11 @@ function QC.OnUpdate()
 			buttons[row]:Hide()
 		end
 	end
+	-- (1.2.22: the zone headers' clicks heard, their states noted)
+	if QC.Zones then
+		local ok, err = pcall(QC.Zones.Watch)
+		if not ok then QC.lastError = tostring(err) end
+	end
 	-- (1.2.11: the zones in order, the Ready section; an error said once, never breaking the game's log)
 	if QC.Arrange then
 		local ok, err = pcall(QC.Arrange)
@@ -781,6 +786,137 @@ function QC.Arrange()
 	return true
 end
 
+--------------------------------------------------------------------------------
+-- (1.2.22) The log's zones stay as you leave them
+-- Why: the game's quest log sets every zone header on each map change (WorldMapMixin:OnMapChanged ->
+-- QuestLogMixin:Refresh -> QuestMapFrame_ResetFilters: the zones on the map shown expanded, every other one
+-- collapsed), as the map opens and at every loading screen too; Valhalla's seamless map changes the map as
+-- it pans. A zone you folded opened again, one you opened folded. Now a zone header you click (left button,
+-- the header or its +/-) is remembered for the character by the zone's name (mod.char.logZones[name] =
+-- true folded / false open), and put back after each ResetFilters and at PLAYER_ENTERING_WORLD with the
+-- game's own ExpandQuestHeader / CollapseQuestHeader. Zones never clicked keep the game's way. Only clicks
+-- are saved: not ResetFilters, not the search's save / restore (QuestSearcher), not a map pin's hover
+-- (ExpandHeaderForQuest); nothing saved or put back while the search box has text. No field is written on
+-- the game's frames (our own weak tables), its click handler stays its own (HookScript after it).
+--------------------------------------------------------------------------------
+
+local Z = { applying = false, hooked = false }
+QC.Zones = Z
+local clickHooked = setmetatable({}, { __mode = "k" })   -- the game's header buttons we hooked
+local seenFolded = setmetatable({}, { __mode = "k" })    -- header -> folded when last laid out
+local preFolded = setmetatable({}, { __mode = "k" })     -- header -> folded just before a click (PreClick)
+
+local function Store()
+	if not mod.char then return nil end
+	mod.char.logZones = mod.char.logZones or {}
+	return mod.char.logZones
+end
+Z.Store = Store
+
+-- the search box has text: the game's search has the headers (its own save / restore)
+local function Searching()
+	local SF = rawget(_G, "QuestScrollFrame")
+	local box = type(SF) == "table" and rawget(SF, "SearchBox")
+	if type(box) ~= "table" or type(box.GetText) ~= "function" then return false end
+	local ok, t = pcall(box.GetText, box)
+	return ok and type(t) == "string" and t ~= ""
+end
+Z.Searching = Searching
+
+local function InfoAt(i)
+	local C = rawget(_G, "C_QuestLog")
+	local info = i and C and Call(C.GetInfo, i)
+	return type(info) == "table" and info or nil
+end
+
+-- a header clicked: after the game's own click (it expanded or collapsed it), its new state saved
+function Z.OnHeaderClick(h, button)
+	if button and button ~= "LeftButton" then return end
+	if not mod.enabled or Z.applying or Searching() then return end
+	local info = InfoAt(rawget(h, "questLogIndex"))
+	if not (info and info.isHeader and type(info.title) == "string" and info.title ~= "") then return end
+	local now = info.isCollapsed and true or false
+	local before = preFolded[h]
+	preFolded[h] = nil
+	if before == nil then before = seenFolded[h] end
+	-- (the game's state may follow a moment later: unchanged yet, it's the other one)
+	if before ~= nil and now == before then now = not before end
+	local store = Store()
+	if not store then return end
+	store[info.title] = now
+	seenFolded[h] = now
+end
+
+-- the game's zone headers laid out: each hooked once (after its own OnClick), its state noted
+function Z.Watch()
+	local SF = rawget(_G, "QuestScrollFrame")
+	local pool = type(SF) == "table" and SF.headerFramePool
+	if not (pool and pool.EnumerateActive) then return end
+	for h in pool:EnumerateActive() do
+		if not clickHooked[h] and type(h.HookScript) == "function" then
+			clickHooked[h] = true
+			-- (its state just before the click: the game may update it at once or a moment later)
+			h:HookScript("PreClick", function(self)
+				local info = InfoAt(rawget(self, "questLogIndex"))
+				if info and info.isHeader then preFolded[self] = info.isCollapsed and true or false end
+			end)
+			h:HookScript("OnClick", function(self, button)
+				local ok, err = pcall(Z.OnHeaderClick, self, button)
+				if not ok then geterrorhandler()(err) end
+			end)
+		end
+		local info = InfoAt(rawget(h, "questLogIndex"))
+		if info and info.isHeader then seenFolded[h] = info.isCollapsed and true or false end
+	end
+end
+
+-- the saved zones put back (after the game set them all); the rest left as the game set them
+function Z.Apply()
+	if Z.applying or not mod.enabled or Searching() then return 0 end
+	local store = mod.char and mod.char.logZones
+	if type(store) ~= "table" or next(store) == nil then return 0 end
+	local C = rawget(_G, "C_QuestLog")
+	local expand, collapse = rawget(_G, "ExpandQuestHeader"), rawget(_G, "CollapseQuestHeader")
+	if not (C and type(expand) == "function" and type(collapse) == "function") then return 0 end
+	local n = Call(C.GetNumQuestLogEntries) or 0
+	local todo = {}
+	for i = 1, n do
+		local info = InfoAt(i)
+		if info and info.isHeader and info.title ~= nil then
+			local want = store[info.title]
+			if want ~= nil and (info.isCollapsed and true or false) ~= want then todo[#todo + 1] = { i, want } end
+		end
+	end
+	if #todo == 0 then return 0 end
+	Z.applying = true
+	for _, t in ipairs(todo) do
+		local ok, err = pcall(t[2] and collapse or expand, t[1], true)   -- (as ResetFilters calls them)
+		if not ok then QC.lastError = tostring(err) end
+	end
+	Z.applying = false
+	-- (the headers on show: their states as now set, for a click before the next layout)
+	local SF = rawget(_G, "QuestScrollFrame")
+	local pool = type(SF) == "table" and SF.headerFramePool
+	if pool and pool.EnumerateActive then
+		for h in pool:EnumerateActive() do
+			local info = InfoAt(rawget(h, "questLogIndex"))
+			if info and info.isHeader then seenFolded[h] = info.isCollapsed and true or false end
+		end
+	end
+	return #todo
+end
+
+function Z.Hook()
+	if Z.hooked then return true end
+	if type(rawget(_G, "QuestMapFrame_ResetFilters")) ~= "function" or not hooksecurefunc then return false end
+	hooksecurefunc("QuestMapFrame_ResetFilters", function()
+		local ok, err = pcall(Z.Apply)
+		if not ok then geterrorhandler()(err) end
+	end)
+	Z.hooked = true
+	return true
+end
+
 -- the rows as they are now (no log update needed: ours only)
 function QC.Refresh()
 	QC.Hook()
@@ -864,7 +1000,13 @@ function mod:OnEnable()
 	if not events then
 		events = CreateFrame("Frame")
 		events:SetScript("OnEvent", function(_, event)
-			if event == "PLAYER_ENTERING_WORLD" then QC.Hook() QC.AddToMenu() return end
+			if event == "PLAYER_ENTERING_WORLD" then
+				QC.Hook() QC.AddToMenu() Z.Hook()
+				-- (1.2.22: the saved zones back after the game's own Refresh of this event, whichever ran first)
+				pcall(Z.Apply)
+				if C_Timer and C_Timer.After then C_Timer.After(0, function() pcall(Z.Apply) end) end
+				return
+			end
 			if QC.ShownFor() then QC.Fill() end
 		end)
 	end
@@ -872,6 +1014,7 @@ function mod:OnEnable()
 		pcall(events.RegisterEvent, events, e)
 	end
 	QC.Hook()
+	Z.Hook()
 	if not QC.lookHooked and ns.Style and ns.Style.OnLook then
 		QC.lookHooked = true
 		ns.Style.OnLook(function() if QC.ShownFor() then QC.Fill() end end)   -- (the frame itself: Style.Reskin)

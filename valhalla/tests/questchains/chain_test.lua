@@ -353,12 +353,13 @@ _G.QuestLogQuests_Update = function()
   for _, r in ipairs(W.log.rows) do if not rawget(r, "layoutIndex") then r:Hide() end end
 end
 hooksecurefunc("QuestLogQuests_Update", QC.OnUpdate)   -- (the module's hook, as on the game's function: this log was made after it hooked)
+local log8 = _G.QuestLogQuests_Update   -- (1.2.22's tests lay the same log out again)
 local function Order()
   local t = {}
   for _, f in pairs(W.frames) do end
   local all = {}
   for h in SF8.headerFramePool:EnumerateActive() do if h:IsShown() then all[#all + 1] = { li = h.layoutIndex, s = "H:" .. h._title } end end
-  for r in SF8.titleFramePool:EnumerateActive() do if r:IsShown() and r.layoutIndex then all[#all + 1] = { li = r.layoutIndex, s = "Q:" .. r.questID } end end
+  for r in SF8.titleFramePool:EnumerateActive() do if r:IsShown() and rawget(r, "layoutIndex") then all[#all + 1] = { li = r.layoutIndex, s = "Q:" .. r.questID } end end
   local O = QC.ours
   if O.header and O.header:IsShown() then all[#all + 1] = { li = O.header.layoutIndex, s = "READY" } end
   for _, r in ipairs(O.rows) do if r:IsShown() then all[#all + 1] = { li = r.layoutIndex, s = "R:" .. r.questID } end end
@@ -464,6 +465,182 @@ W.combat = false
 mod:OnDisable()
 ok(not hdr:IsShown() and RowOf(102):IsShown(), "module off: our section gone, the rows back")
 mod.enabled = true
+C_QuestLog.GetInfo = baseInfo
+_G.QuestLogQuests_Update = gameUpdate
+
+---------------------------------------------------------------------------
+print("== 9. (1.2.22) the log's zones stay as you leave them (by name, per character), whatever the game resets")
+W.Reset()
+W.collapsed = {}
+W.mapZone = nil
+W.zc = {}
+W.search = ""
+mod.db = { enabled = true, chainView = false, readyInLog = false, readyLogCollapsed = false }
+mod.char = {}
+mod.enabled = true
+mod:OnEnable()   -- (section 8 ended with the module off: its events again)
+W.AddQuest(101, "Westfall", "The Defias Brotherhood", 14)
+W.AddQuest(102, "Westfall", "Patrolling Westfall", 12)
+W.AddQuest(201, "Elwynn Forest", "A Fishy Peril", 8, true)
+W.AddQuest(45, "Elwynn Forest", "Discover Rolf's Fate", 10)
+W.AddQuest(301, "Darkshore", "Buzzbox 827", 12)
+W.AddQuest(401, "Redridge Mountains", "Murloc Poachers", 18, true)
+-- the game: isCollapsed / isOnMap by zone; its header calls; its ResetFilters (QuestMapFrame.lua 927-940)
+C_QuestLog.GetInfo = function(i)
+  local e = baseInfo(i)
+  if e then e = setmetatable({ questLogIndex = i, isCollapsed = e.isHeader and W.collapsed[e.title] or false,
+    isOnMap = e.isHeader and e.title == W.mapZone or false }, { __index = e }) end
+  return e
+end
+local function TitleAt(i) local e = baseInfo(i) return e and e.title end
+function ExpandQuestHeader(i, auto) W.zc[#W.zc + 1] = { "E", TitleAt(i), auto } W.collapsed[TitleAt(i)] = false end
+function CollapseQuestHeader(i, auto) W.zc[#W.zc + 1] = { "C", TitleAt(i), auto } W.collapsed[TitleAt(i)] = true end
+function QuestMapFrame_ResetFilters()
+  for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+    local info = C_QuestLog.GetInfo(i)
+    if info and info.isHeader then
+      if info.isOnMap then ExpandQuestHeader(i, true) else CollapseQuestHeader(i, true) end
+    end
+  end
+end
+_G.QuestLogQuests_Update = log8
+SF8.SearchBox = W.NewFrame("EditBox")
+SF8.SearchBox.GetText = function() return W.search end
+ok(QC.Zones and QC.Zones.Hook() and QC.Zones.hooked, "hooked after the game's QuestMapFrame_ResetFilters")
+QC.Zones.Hook()
+-- the game's Refresh: a map change, the map opening, a loading screen (the zone on the map shown)
+local function Refresh(zone) W.mapZone = zone QuestMapFrame_ResetFilters() QuestLogQuests_Update() end
+local function Head(title) for h in SF8.headerFramePool:EnumerateActive() do if h._title == title and h:IsShown() then return h end end end
+local function Hooks(h, k, ...) for _, fn in ipairs((rawget(h, "_hk") or {})[k] or {}) do fn(h, ...) end end
+-- a click on a zone header, as the game's (QuestLogHeaderCodeMixin's click handler, then our hooks)
+local function Click(title, button)
+  button = button or "LeftButton"
+  local h = Head(title)
+  Hooks(h, "PreClick", button)
+  if button == "LeftButton" then
+    local info = C_QuestLog.GetInfo(h.questLogIndex)
+    if info.isCollapsed then ExpandQuestHeader(h.questLogIndex) else CollapseQuestHeader(h.questLogIndex) end
+  end
+  Hooks(h, "OnClick", button)
+  QuestLogQuests_Update()
+end
+local function Folded(t) return W.collapsed[t] and true or false end
+local Z = QC.Zones
+
+Refresh("Elwynn Forest")
+ok(Folded("Darkshore") and not Folded("Elwynn Forest") and Folded("Westfall"), "nothing saved: the game's way (the map's zone open, the rest folded)")
+ok(Order() == "H:Darkshore H:Elwynn Forest Q:201 Q:45 H:Redridge Mountains H:Westfall", "alphabetical as ever", Order())
+local hk = Head("Westfall")
+ok(rawget(hk, "_hk") and #hk._hk.OnClick == 1 and #hk._hk.PreClick == 1, "each header hooked once (PreClick, OnClick)")
+QuestLogQuests_Update() QuestLogQuests_Update()
+ok(#hk._hk.OnClick == 1, "laid out again: not hooked twice")
+print("-- his clicks saved; the game's resets undone")
+Click("Elwynn Forest")      -- (folded: the map's own zone)
+Click("Westfall")           -- (opened: another zone)
+local store = mod.char.logZones
+ok(store and store["Elwynn Forest"] == true and store["Westfall"] == false, "saved by zone name: Elwynn folded, Westfall open")
+ok(store["Darkshore"] == nil and store["Redridge Mountains"] == nil, "zones not clicked: nothing saved")
+W.zc = {}
+Refresh("Elwynn Forest")    -- (a map change back to Elwynn)
+ok(Folded("Elwynn Forest") and not Folded("Westfall"), "after the game's reset (a map change): Elwynn still folded, Westfall still open")
+ok(Folded("Darkshore") and Folded("Redridge Mountains"), "the zones never clicked: the game's way (folded, not on the map)")
+local auto = true for _, c in ipairs(W.zc) do if c[3] ~= true then auto = false end end
+ok(#W.zc == 4 + 2 and auto, "the game's 4 calls, then ours 2 (as the game's: auto)", #W.zc)
+ok(Order() == "H:Darkshore H:Elwynn Forest H:Redridge Mountains H:Westfall Q:101 Q:102", "laid out: still alphabetical; Elwynn's rows hidden, Westfall's shown", Order())
+Refresh("Redridge Mountains")  -- (the map opening on another zone)
+ok(Folded("Elwynn Forest") and not Folded("Westfall") and not Folded("Redridge Mountains") and Folded("Darkshore"), "the map opening elsewhere: his two kept; Redridge (the map's, never clicked) the game's")
+W.zc = {}
+ok(Z.Apply() == 0 and #W.zc == 0, "nothing to put back: no calls at all (no loop)")
+Z.applying = true
+W.collapsed["Westfall"] = true
+ok(Z.Apply() == 0, "while putting back: not again (guard)")
+Z.applying = false
+ok(Z.Apply() == 1 and not Folded("Westfall"), "then once: Westfall open again")
+print("-- what isn't a click: not saved")
+local snap = {} for k, v in pairs(store) do snap[k] = v end
+local function Same() for k, v in pairs(snap) do if store[k] ~= v then return false end end for k in pairs(store) do if snap[k] == nil then return false end end return true end
+-- a map pin's hover (ExpandHeaderForQuest: ExpandQuestHeader, no click)
+for i = 1, C_QuestLog.GetNumQuestLogEntries() do local e = C_QuestLog.GetInfo(i) if e.isHeader and e.title == "Darkshore" then ExpandQuestHeader(i) end end
+QuestLogQuests_Update()
+ok(not Folded("Darkshore") and Same(), "a map pin's hover opened Darkshore: not saved")
+-- the search: the game saves, expands, restores (QuestSearcher); clicks while searching aren't saved
+W.search = "murloc"
+local before = {} for k, v in pairs(W.collapsed) do before[k] = v end
+for i = 1, C_QuestLog.GetNumQuestLogEntries() do local e = C_QuestLog.GetInfo(i) if e.isHeader and e.isCollapsed then ExpandQuestHeader(i) end end
+QuestLogQuests_Update()
+Click("Westfall")
+ok(Same(), "searching: the search's expanding and a click on a header: not saved")
+W.zc = {}
+QuestMapFrame_ResetFilters()
+local ours = 0 for _, c in ipairs(W.zc) do if c[3] == true then ours = ours + 1 end end
+ok(Folded("Elwynn Forest") and ours == 4, "searching: the game's reset, nothing put back by us (the search keeps the headers)", ours)
+for k, v in pairs(before) do W.collapsed[k] = v end   -- (the search cleared: the game restores)
+W.search = ""
+QuestLogQuests_Update()
+ok(Same(), "search cleared: still nothing saved from it")
+Click("Darkshore", "RightButton")
+ok(Same(), "a right-click (the header's menu): not saved")
+print("-- a /reload, a log-in: the game forgets, Valhalla puts them back")
+W.collapsed = {}                            -- (the client's own state gone: every zone open)
+W.zc = {}
+Fire("PLAYER_ENTERING_WORLD")
+ok(Folded("Elwynn Forest") and not Folded("Westfall") and not Folded("Darkshore") and #W.zc == 1, "PLAYER_ENTERING_WORLD alone: Elwynn folded again (one call)", #W.zc)
+W.collapsed = {}
+Refresh("Westfall")                          -- (the game's own Refresh at the loading screen)
+ok(Folded("Elwynn Forest") and not Folded("Westfall") and Folded("Darkshore"), "the game's Refresh at login: his zones as he left them")
+print("-- a quest accepted elsewhere: the log's indices shift, the names don't")
+W.AddQuest(501, "Ashenvale", "Bathran's Hair", 21)
+table.remove(W.order) table.insert(W.order, 1, 501)
+Refresh("Westfall")
+ok(C_QuestLog.GetInfo(1).title == "Ashenvale" and Folded("Elwynn Forest") and not Folded("Westfall"), "a new zone first in the log (every index moved): Elwynn folded, Westfall open")
+ok(Order():find("^H:Ashenvale H:Darkshore H:Elwynn Forest H:Redridge Mountains H:Westfall Q:101 Q:102$") ~= nil, "alphabetical, the new zone the game's way (folded)", Order())
+Click("Ashenvale")
+ok(store["Ashenvale"] == false and not Folded("Ashenvale"), "clicked open: saved by its name")
+Click("Elwynn Forest")
+ok(store["Elwynn Forest"] == false, "Elwynn clicked open again: saved open")
+Refresh("Darkshore")
+ok(not Folded("Elwynn Forest") and not Folded("Ashenvale") and not Folded("Westfall") and Folded("Redridge Mountains"), "the next reset: all three open; Redridge the game's")
+print("-- the Ready to Turn In section: its own state, as before")
+QC.SetReady(true)
+QuestLogQuests_Update()
+local rh = QC.ours.header
+local was = mod.db.readyLogCollapsed
+rh._scripts.OnClick(rh, "LeftButton")
+ok(mod.db.readyLogCollapsed == not was and store["Ready to Turn In (2)"] == nil, "its header: readyLogCollapsed toggled, nothing in the zones' store")
+rh._scripts.OnClick(rh, "LeftButton")
+ok(mod.db.readyLogCollapsed == was, "and back")
+Refresh("Darkshore")
+ok(Order():find("READY", 1, true) and Order():find("^H:Ashenvale") ~= nil, "after a reset: the section still at the bottom, the zones alphabetical", Order())
+QC.SetReady(false)
+print("-- the game's state a moment late (after the click's hooks): saved as it will be")
+do
+  local h = Head("Redridge Mountains")
+  local was = Folded("Redridge Mountains")
+  Hooks(h, "PreClick", "LeftButton")
+  Hooks(h, "OnClick", "LeftButton")              -- (the game hasn't changed it yet)
+  if was then ExpandQuestHeader(h.questLogIndex) else CollapseQuestHeader(h.questLogIndex) end
+  QuestLogQuests_Update()
+  ok(store["Redridge Mountains"] == not was, "Redridge clicked, the game's state late: saved as " .. tostring(not was))
+  local h2 = Head("Redridge Mountains")
+  local was2 = Folded("Redridge Mountains")
+  Hooks(h2, "OnClick", "LeftButton")             -- (no PreClick seen: the state at the last layout)
+  if was2 then ExpandQuestHeader(h2.questLogIndex) else CollapseQuestHeader(h2.questLogIndex) end
+  QuestLogQuests_Update()
+  ok(store["Redridge Mountains"] == not was2, "no PreClick, the state late: from the last layout, saved as " .. tostring(not was2))
+end
+print("-- the module off: the game's way")
+mod.enabled = false
+W.zc = {}
+Refresh("Darkshore")
+local mine = 0 for _, c in ipairs(W.zc) do if c[1] == "E" and c[2] == "Westfall" then mine = mine + 1 end end
+ok(Folded("Westfall") and mine == 0, "off: nothing put back (Westfall folded, as the game set it)")
+Click("Westfall")
+ok(store["Westfall"] == false, "off: clicks not saved either")
+mod.enabled = true
+ok(Frame.protectedCalls == 0 and W.blockedSetters == 0, "nothing protected, no blocked setters")
+local fields = 0
+for h in SF8.headerFramePool:EnumerateActive() do for _, k in ipairs({ "valhallaFolded", "valhallaHooked", "folded", "preFolded" }) do if rawget(h, k) ~= nil then fields = fields + 1 end end end
+ok(fields == 0, "no fields of ours on the game's header buttons")
 C_QuestLog.GetInfo = baseInfo
 _G.QuestLogQuests_Update = gameUpdate
 
