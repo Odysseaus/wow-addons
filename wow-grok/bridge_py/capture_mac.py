@@ -1,7 +1,9 @@
 """macOS pixel-strip capture (port of bridge/capture-mac.js).
 
-Strategy: osascript (JXA + CoreGraphics) locates the Forever / World of Warcraft
-window (including kCGWindowNumber). Live strip capture prefers in-process
+Strategy: in-process CoreGraphics (ctypes ``CGWindowListCopyWindowInfo``) locates
+the Forever / World of Warcraft window (including kCGWindowNumber); since 0.1.36
+no ``osascript`` runs per tick (JXA is only a startup fallback when CoreGraphics
+cannot be loaded in-process). Live strip capture prefers in-process
 ``CGWindowListCreateImage`` keyed by that window id; ``screencapture -l``
 (window id + Pillow crop) is preferred alongside CG for fullscreen/ultrawide;
 ``screencapture -R`` is last resort. Retina: macOS reports window bounds in points; the PNG may be in
@@ -370,57 +372,374 @@ def _run_osascript(args: list[str], timeout_ms: int = 2500) -> str:
     return (r.stdout or "").strip()
 
 
-def backing_scale_factor() -> float:
+# --- 0.1.36: in-process CoreGraphics for the per-tick work (no osascript) -------
+#
+# Before 0.1.36 the live loop spawned ``osascript`` (JXA) twice per tick: once to
+# find the WoW window and once to read the screen's backingScaleFactor. That is
+# ~8 short-lived processes a second, each attaching to WindowServer. Both are now
+# read in-process through ctypes; JXA window finding is kept only as a startup
+# fallback for a Mac where CoreGraphics cannot be loaded in-process.
+
+_SCALE_RECHECK_S = 30.0
+_JXA_RETRY_S = 10.0
+_kCFStringEncodingUTF8 = 0x08000100
+_kCFNumberSInt64Type = 4
+
+
+class _CGUnavailable(RuntimeError):
+    """CoreGraphics could not be used in-process (library or symbol missing)."""
+
+
+_cg_cache: dict[str, Any] = {}
+
+
+def _cg_api() -> tuple[Any, Any, dict[str, int]]:
+    """CoreGraphics + CoreFoundation with the window-list / display prototypes set.
+
+    Cached for the process. Raises :class:`_CGUnavailable` when the frameworks or
+    a symbol cannot be loaded (never spawns a process).
+    """
+    if "api" in _cg_cache:
+        return _cg_cache["api"]
+    import ctypes
+
     try:
-        out = _run_osascript(
-            [
-                "-l",
-                "JavaScript",
-                "-e",
-                'ObjC.import("AppKit"); $.NSScreen.mainScreen.backingScaleFactor',
-            ],
-            timeout_ms=2000,
+        cg, cf = _load_cg_cf()
+        CGPoint, _CGSize, CGRect = _cg_rect_types()
+        vp = ctypes.c_void_p
+        cg.CGWindowListCopyWindowInfo.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+        cg.CGWindowListCopyWindowInfo.restype = vp
+        cg.CGRectMakeWithDictionaryRepresentation.argtypes = [vp, ctypes.POINTER(CGRect)]
+        cg.CGRectMakeWithDictionaryRepresentation.restype = ctypes.c_bool
+        cg.CGGetDisplaysWithPoint.argtypes = [
+            CGPoint,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.POINTER(ctypes.c_uint32),
+        ]
+        cg.CGGetDisplaysWithPoint.restype = ctypes.c_int32
+        cg.CGMainDisplayID.argtypes = []
+        cg.CGMainDisplayID.restype = ctypes.c_uint32
+        cg.CGDisplayCopyDisplayMode.argtypes = [ctypes.c_uint32]
+        cg.CGDisplayCopyDisplayMode.restype = vp
+        cg.CGDisplayModeGetWidth.argtypes = [vp]
+        cg.CGDisplayModeGetWidth.restype = ctypes.c_size_t
+        cg.CGDisplayModeGetPixelWidth.argtypes = [vp]
+        cg.CGDisplayModeGetPixelWidth.restype = ctypes.c_size_t
+        cg.CGDisplayModeRelease.argtypes = [vp]
+        cg.CGDisplayModeRelease.restype = None
+        cf.CFArrayGetCount.argtypes = [vp]
+        cf.CFArrayGetCount.restype = ctypes.c_long
+        cf.CFArrayGetValueAtIndex.argtypes = [vp, ctypes.c_long]
+        cf.CFArrayGetValueAtIndex.restype = vp
+        cf.CFDictionaryGetValue.argtypes = [vp, vp]
+        cf.CFDictionaryGetValue.restype = vp
+        cf.CFGetTypeID.argtypes = [vp]
+        cf.CFGetTypeID.restype = ctypes.c_ulong
+        cf.CFStringGetTypeID.argtypes = []
+        cf.CFStringGetTypeID.restype = ctypes.c_ulong
+        cf.CFNumberGetTypeID.argtypes = []
+        cf.CFNumberGetTypeID.restype = ctypes.c_ulong
+        cf.CFDictionaryGetTypeID.argtypes = []
+        cf.CFDictionaryGetTypeID.restype = ctypes.c_ulong
+        cf.CFStringGetLength.argtypes = [vp]
+        cf.CFStringGetLength.restype = ctypes.c_long
+        cf.CFStringGetMaximumSizeForEncoding.argtypes = [ctypes.c_long, ctypes.c_uint32]
+        cf.CFStringGetMaximumSizeForEncoding.restype = ctypes.c_long
+        cf.CFStringGetCString.argtypes = [vp, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
+        cf.CFStringGetCString.restype = ctypes.c_bool
+        cf.CFNumberGetValue.argtypes = [vp, ctypes.c_long, vp]
+        cf.CFNumberGetValue.restype = ctypes.c_bool
+        cf.CFRelease.argtypes = [vp]
+        cf.CFRelease.restype = None
+        keys = {
+            name: vp.in_dll(cg, name).value
+            for name in (
+                "kCGWindowOwnerName",
+                "kCGWindowLayer",
+                "kCGWindowBounds",
+                "kCGWindowNumber",
+            )
+        }
+        types = {
+            "str": int(cf.CFStringGetTypeID()),
+            "num": int(cf.CFNumberGetTypeID()),
+            "dict": int(cf.CFDictionaryGetTypeID()),
+        }
+    except Exception as e:  # noqa: BLE001
+        raise _CGUnavailable(f"CoreGraphics unavailable in-process: {e}") from e
+    api = (cg, cf, {**keys, **{"type_" + k: v for k, v in types.items()}})
+    _cg_cache["api"] = api
+    return api
+
+
+def _cg_window_rows() -> list[dict[str, Any]]:
+    """On-screen windows (front to back) from ``CGWindowListCopyWindowInfo``.
+
+    Each row: ``owner`` (str or None), ``layer`` (int or None), ``bounds``
+    (``(x, y, w, h)`` floats or None), ``number`` (int or None) — the same four
+    fields the JXA finder read. A NULL list raises the Screen Recording message
+    the bridge has always treated as a hard permission failure.
+    """
+    import ctypes
+
+    cg, cf, k = _cg_api()
+    _CGPoint, _CGSize, CGRect = _cg_rect_types()
+    arr = cg.CGWindowListCopyWindowInfo(_kCGWindowListOptionOnScreenOnly, _kCGNullWindowID)
+    if not arr:
+        raise RuntimeError(
+            "Screen Recording blocked window list — System Settings → Privacy & Security "
+            "→ Screen Recording → enable WoWGrok.app, then Quit and reopen WoWGrok"
         )
-        n = float(out)
-        return n if n > 0 else 1.0
-    except (RuntimeError, ValueError, subprocess.TimeoutExpired, FileNotFoundError):
-        return 1.0
+
+    def typed(ref: Any, kind: str) -> Any:
+        if ref and int(cf.CFGetTypeID(ref)) == k["type_" + kind]:
+            return ref
+        return None
+
+    def as_int(ref: Any) -> int | None:
+        if not typed(ref, "num"):
+            return None
+        out = ctypes.c_int64(0)
+        if not cf.CFNumberGetValue(ref, _kCFNumberSInt64Type, ctypes.byref(out)):
+            return None
+        return int(out.value)
+
+    def as_str(ref: Any) -> str | None:
+        if not typed(ref, "str"):
+            return None
+        size = int(cf.CFStringGetMaximumSizeForEncoding(cf.CFStringGetLength(ref), _kCFStringEncodingUTF8)) + 1
+        buf = ctypes.create_string_buffer(max(size, 1))
+        if not cf.CFStringGetCString(ref, buf, len(buf), _kCFStringEncodingUTF8):
+            return None
+        return buf.value.decode("utf-8", "replace")
+
+    rows: list[dict[str, Any]] = []
+    try:
+        for i in range(int(cf.CFArrayGetCount(arr))):
+            d = cf.CFArrayGetValueAtIndex(arr, i)
+            if not typed(d, "dict"):
+                continue
+            bounds = None
+            bref = typed(cf.CFDictionaryGetValue(d, k["kCGWindowBounds"]), "dict")
+            if bref:
+                r = CGRect()
+                if cg.CGRectMakeWithDictionaryRepresentation(bref, ctypes.byref(r)):
+                    bounds = (r.origin.x, r.origin.y, r.size.width, r.size.height)
+            rows.append(
+                {
+                    "owner": as_str(cf.CFDictionaryGetValue(d, k["kCGWindowOwnerName"])),
+                    "layer": as_int(cf.CFDictionaryGetValue(d, k["kCGWindowLayer"])),
+                    "bounds": bounds,
+                    "number": as_int(cf.CFDictionaryGetValue(d, k["kCGWindowNumber"])),
+                }
+            )
+    finally:
+        cf.CFRelease(arr)
+    return rows
+
+
+def _wow_window_wants(process_name: str) -> list[str]:
+    want: list[str] = []
+
+    def add(n: str) -> None:
+        low = str(n).lower()
+        if n and low not in want:
+            want.append(low)
+
+    add(process_name)
+    add("World of Warcraft Beta")
+    add("WowB")
+    add("World of Warcraft")
+    add("WowClassic")
+    add("Wow")  # exact owner often "Wow"; wowgrok is skipped before matching
+    return want
+
+
+def _js_int(v: Any) -> int:
+    """JavaScript ``v|0`` for the numbers the JXA finder saw (truncate toward 0)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0
+    if f != f or f in (float("inf"), float("-inf")):
+        return 0
+    n = int(f) & 0xFFFFFFFF
+    return n - 0x100000000 if n >= 0x80000000 else n
+
+
+def pick_wow_window(rows: list[dict[str, Any]], process_name: str) -> dict[str, Any] | None:
+    """First window in *rows* the JXA finder would have picked (identical rules).
+
+    Rules (unchanged from <=0.1.35): normal layer (0) only; skip owners containing
+    ``wowgrok``; owner must match a wanted name (equal / contains / contained-in)
+    or be ``wow`` / contain ``warcraft`` / ``wowb``; bounds wider and taller than
+    100 points. Front-most match wins. Coordinates truncate like JS ``|0``.
+    """
+    want = _wow_window_wants(process_name)
+    for row in rows:
+        owner = row.get("owner") or ""
+        if (row.get("layer") or 0) != 0:
+            continue
+        low = str(owner).lower()
+        if "wowgrok" in low:
+            continue
+        ok = any(low == w or w in low or low in w for w in want)
+        if not ok and low != "wow" and "warcraft" not in low and "wowb" not in low:
+            continue
+        b = row.get("bounds")
+        if not b:
+            continue
+        x, y, w, h = b
+        if not (w > 100 and h > 100):
+            continue
+        return {
+            "name": str(owner),
+            "x": _js_int(x),
+            "y": _js_int(y),
+            "w": _js_int(w),
+            "h": _js_int(h),
+            "id": _js_int(row.get("number") or 0),
+        }
+    return None
+
+
+_jxa_fallback: dict[str, Any] = {"announced": False, "hit": None, "last_try": None}
+
+
+def _reset_window_finder() -> None:
+    """Forget the JXA fallback state (tests)."""
+    _jxa_fallback.update({"announced": False, "hit": None, "last_try": None})
+
+
+def find_wow_window(process_name: str) -> dict[str, Any] | None:
+    """Locate the on-screen WoW / Forever window (needs Screen Recording).
+
+    In-process ``CGWindowListCopyWindowInfo`` every call — no subprocess. Only if
+    CoreGraphics cannot be loaded in-process does it fall back to the old JXA
+    finder: logged once, retried at most every 10 s until the window is found,
+    and then that window is reused for the rest of the run (so the fallback never
+    spawns ``osascript`` per tick).
+    """
+    try:
+        rows = _cg_window_rows()
+    except _CGUnavailable as e:
+        return _find_wow_window_fallback(process_name, str(e))
+    return pick_wow_window(rows, process_name)
+
+
+def _find_wow_window_fallback(process_name: str, why: str) -> dict[str, Any] | None:
+    st = _jxa_fallback
+    if st["hit"] is not None:
+        return st["hit"]
+    if not st["announced"]:
+        st["announced"] = True
+        emit(
+            {
+                "info": (
+                    f"{why}; using one-time osascript window lookup "
+                    "(window position is fixed until WoWGrok restarts)"
+                )
+            }
+        )
+    now = time.monotonic()
+    if st["last_try"] is not None and now - st["last_try"] < _JXA_RETRY_S:
+        return None
+    st["last_try"] = now
+    hit = _find_wow_window_jxa(process_name)
+    if hit:
+        st["hit"] = hit
+    return hit
+
+
+def _cg_main_display() -> int | None:
+    try:
+        cg, _cf, _k = _cg_api()
+        return int(cg.CGMainDisplayID()) or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _cg_display_for_window(win: dict[str, Any] | None) -> int | None:
+    """CGDirectDisplayID under the window centre (global top-left points)."""
+    if not win:
+        return _cg_main_display()
+    import ctypes
+
+    try:
+        cx = float(win["x"]) + float(win["w"]) / 2.0
+        cy = float(win["y"]) + float(win["h"]) / 2.0
+        cg, _cf, _k = _cg_api()
+        CGPoint, _CGSize, _CGRect = _cg_rect_types()
+        disp = ctypes.c_uint32(0)
+        count = ctypes.c_uint32(0)
+        err = cg.CGGetDisplaysWithPoint(CGPoint(cx, cy), 1, ctypes.byref(disp), ctypes.byref(count))
+        if err == 0 and count.value >= 1 and disp.value:
+            return int(disp.value)
+    except Exception:  # noqa: BLE001
+        pass
+    return _cg_main_display()
+
+
+def _cg_display_scale(display_id: int | None) -> float | None:
+    """Backing scale of *display_id*: mode pixel width / point width (Retina = 2)."""
+    if not display_id:
+        return None
+    try:
+        cg, _cf, _k = _cg_api()
+        mode = cg.CGDisplayCopyDisplayMode(int(display_id))
+        if not mode:
+            return None
+        try:
+            pts = int(cg.CGDisplayModeGetWidth(mode))
+            px = int(cg.CGDisplayModeGetPixelWidth(mode))
+        finally:
+            cg.CGDisplayModeRelease(mode)
+        if pts <= 0 or px <= 0:
+            return None
+        return round(px / pts, 3)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def backing_scale_factor() -> float:
+    """Main display backing scale, in-process (1.0 when unknown). No subprocess."""
+    return _cg_display_scale(_cg_main_display()) or 1.0
 
 
 def backing_scale_for_window(bounds: dict[str, Any] | None) -> float:
-    """Backing scale of the NSScreen containing the window center; else mainScreen."""
-    if not bounds:
-        return backing_scale_factor()
-    try:
-        cx = float(bounds["x"]) + float(bounds["w"]) / 2.0
-        cy = float(bounds["y"]) + float(bounds["h"]) / 2.0
-    except (KeyError, TypeError, ValueError):
-        return backing_scale_factor()
-    jxa = f"""
-ObjC.import('AppKit');
-var screens = $.NSScreen.screens;
-var n = screens.count;
-var best = $.NSScreen.mainScreen.backingScaleFactor;
-for (var i = 0; i < n; i++) {{
-  var s = screens.objectAtIndex(i);
-  var f = s.frame;
-  var x = f.origin.x;
-  var y = f.origin.y;
-  var w = f.size.width;
-  var h = f.size.height;
-  if ({cx} >= x && {cx} < x + w && {cy} >= y && {cy} < y + h) {{
-    best = s.backingScaleFactor;
-    break;
-  }}
-}}
-best;
-"""
-    try:
-        out = _run_osascript(["-l", "JavaScript", "-e", jxa], timeout_ms=2000)
-        n = float(out)
-        return n if n > 0 else 1.0
-    except (RuntimeError, ValueError, subprocess.TimeoutExpired, FileNotFoundError):
-        return backing_scale_factor()
+    """Backing scale of the display under the window centre; else the main display."""
+    return _cg_display_scale(_cg_display_for_window(bounds)) or backing_scale_factor()
+
+
+class ScaleCache:
+    """Display scale for the capture window, read once and cached.
+
+    Re-read only when the display under the window changes, the window size
+    changes, or :data:`_SCALE_RECHECK_S` (30 s) has passed. A failed read keeps
+    the last good value. All reads are in-process CoreGraphics calls.
+    """
+
+    def __init__(self, recheck_s: float = _SCALE_RECHECK_S) -> None:
+        self.recheck_s = recheck_s
+        self.value: float | None = None
+        self._key: tuple[Any, ...] | None = None
+        self._read_at = 0.0
+        self.reads = 0
+
+    def get(self, win: dict[str, Any] | None, now: float | None = None) -> float | None:
+        now = time.monotonic() if now is None else now
+        size = (int((win or {}).get("w") or 0), int((win or {}).get("h") or 0))
+        key = (_cg_display_for_window(win), size)
+        if self.value is not None and key == self._key and now - self._read_at < self.recheck_s:
+            return self.value
+        self.reads += 1
+        v = _cg_display_scale(key[0])
+        if v and v > 0:
+            self.value = v
+        self._key = key
+        self._read_at = now
+        return self.value
 
 
 def parse_wow_window_hit(line: str) -> dict[str, Any] | None:
@@ -443,23 +762,13 @@ def parse_wow_window_hit(line: str) -> dict[str, Any] | None:
         return None
 
 
-def find_wow_window(process_name: str) -> dict[str, Any] | None:
-    """Locate on-screen WoW / Forever window via CoreGraphics (needs Screen Recording)."""
-    want: list[str] = []
+def _find_wow_window_jxa(process_name: str) -> dict[str, Any] | None:
+    """Pre-0.1.36 finder: JXA + CoreGraphics in a spawned ``osascript``.
 
-    def add(n: str) -> None:
-        low = str(n).lower()
-        if n and low not in want:
-            want.append(low)
-
-    add(process_name)
-    add("World of Warcraft Beta")
-    add("WowB")
-    add("World of Warcraft")
-    add("WowClassic")
-    add("Wow")  # exact owner often "Wow"; JXA skips wowgrok before matching
-
-    want_json = json.dumps(want)
+    Only used by :func:`find_wow_window` when CoreGraphics cannot be loaded
+    in-process. Same matching rules as :func:`pick_wow_window`.
+    """
+    want_json = json.dumps(_wow_window_wants(process_name))
     jxa = f"""
 ObjC.import('CoreGraphics');
 ObjC.import('Foundation');
@@ -505,7 +814,13 @@ if (!cfArr) {{
 
 
 def _cg_rect_types():
-    """CGPoint / CGSize / CGRect ctypes structures (shared by capture helpers)."""
+    """CGPoint / CGSize / CGRect ctypes structures (shared by capture helpers).
+
+    Built once: ctypes prototypes cached in :func:`_cg_api` only accept the very
+    same structure classes.
+    """
+    if "rect_types" in _cg_cache:
+        return _cg_cache["rect_types"]
     import ctypes
 
     class CGPoint(ctypes.Structure):
@@ -517,6 +832,7 @@ def _cg_rect_types():
     class CGRect(ctypes.Structure):
         _fields_ = [("origin", CGPoint), ("size", CGSize)]
 
+    _cg_cache["rect_types"] = (CGPoint, CGSize, CGRect)
     return CGPoint, CGSize, CGRect
 
 
@@ -888,6 +1204,11 @@ def live_loop(args: argparse.Namespace) -> int:
     last_warn = 0.0
     attached_name = ""
     told_scale = False
+    # 0.1.36: display scale is read in-process and cached (display / size change
+    # or 30 s re-check), and the strategy that last worked is tried first so a
+    # strategy that keeps failing is not re-spawned every tick.
+    scale_cache = ScaleCache()
+    last_via = ""
     # Consecutive strip-capture failures of the TCC/permission class (non-exact).
     # Exact "could not create image from rect" exits immediately (count unused).
     perm_fail_streak = 0
@@ -996,6 +1317,8 @@ def live_loop(args: argparse.Namespace) -> int:
                     ),
                 )
             )
+            if last_via:
+                strategies.sort(key=lambda s: s[0] != last_via)
             for name, fn in strategies:
                 try:
                     if dest.exists():
@@ -1072,7 +1395,8 @@ def live_loop(args: argparse.Namespace) -> int:
                 continue
 
             perm_fail_streak = 0
-            scale_hint = backing_scale_for_window(win) or declared_scale
+            last_via = via
+            scale_hint = scale_cache.get(win) or declared_scale
             got = _decode_captured(dest, args.cell, args.cells, args.max_rows, scale_hint)
             if not told_scale:
                 told_scale = True

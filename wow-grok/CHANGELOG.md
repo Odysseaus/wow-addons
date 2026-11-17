@@ -4,6 +4,13 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.1.36] - 2026-11-16 (Mac)
+
+### Fixed
+
+- **No more background `osascript` while you play** (Mac): the capture loop used to start two short `osascript` helper processes every tick (about 8 a second): one to find the WoW window and one to read the display's Retina scale. Heavy use of these was linked to WindowServer crashes. Both are now read directly inside WoWGrok through CoreGraphics, so nothing extra is started during play. The display scale is read once and only re-read when the WoW window moves to another display, changes size, or every 30 seconds. Window matching rules are unchanged. If CoreGraphics can't be loaded in-process, WoWGrok falls back to the old `osascript` lookup only until it finds the window, and says so once in `bridge.log`.
+- If the first capture method keeps failing and a fallback works, WoWGrok now tries the method that last worked first, so a method that keeps failing (for example `screencapture`) isn't retried every tick. Chat capture and decoding are otherwise unchanged.
+
 ## [0.1.35] - 2026-11-05 (Mac)
 
 ### Added
