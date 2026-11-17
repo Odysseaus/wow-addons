@@ -280,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
                 "cwd": default_cwd,
                 "restore": pending_restore,
                 "capturePaused": bool(cap.get("permissionPaused")),
+                "seqs": P.handled_max(state),
             },
         )
 
@@ -659,9 +660,20 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e2:  # noqa: BLE001
             log(f"[key-health] flag update failed: {e2}")
 
+    repeat_gate = P.RepeatGate()
+
     def submit(job: dict) -> None:
-        if P.already_handled(state, job):
+        now_s = time.time()
+        repeat = repeat_gate.check(state, job, now_s)
+        if repeat:
+            action, line = repeat
+            if line:
+                log(line)
+            if action == "ack-hello":
+                signal_wav("ack", job["id"], True)
+                publish_now()
             return
+        repeat_gate.note(job, now_s)
         if job.get("forget"):
             P.mark_handled(state, job)
             forget_chat(job)

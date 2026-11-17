@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.1.37] - 2026-11-16 (Mac)
+
+### Fixed
+
+- **Connect works again after WoW crashes or is killed** (bridge + add-on): the add-on numbers every message it sends, and WoW only saves that counter on `/reload` or logout. If WoW dies first (on 2026-11-16 a WindowServer crash did this), the counter comes back lower than the last message the bridge already handled. The bridge then ignored every new message and hello as "already done", with no reply and nothing in the log, so Connect ended in "no answer".
+  - The bridge now always acks a hello it has already seen and logs `seq rewind: hello #N … (bridge last #M)`.
+  - The bridge sends its last handled message number for each session along with its reply data (`seqs`). The add-on moves its counter up to it, never down, so the next message gets a fresh number. `/wow-grok diag` shows the counter.
+  - A repeated chat message is still never sent to Grok twice, but it is now logged once as `duplicate seq N ignored` instead of being dropped silently.
+- The in-game add-on is now version 0.1.37. The app copies it into AddOns on start (with a backup of the old files); type `/reload` in game to load it.
+
 ## [0.1.36] - 2026-11-16 (Mac)
 
 ### Fixed

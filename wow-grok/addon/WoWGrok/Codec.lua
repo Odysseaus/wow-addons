@@ -66,3 +66,15 @@ function C.CellColor(v)
 	local b = v % 2
 	return r, g, b
 end
+
+-- 0.1.37: the bridge sends the highest seq it has handled for each session
+-- (seqs[session]). If WoW dies before saving, the saved counter goes back and
+-- the bridge would ignore the repeated seqs, so the counter jumps past them.
+-- Returns the counter to use: never lower than lastSeq.
+function C.AdoptSeq(lastSeq, seqs, session)
+	lastSeq = tonumber(lastSeq) or 0
+	if type(seqs) ~= "table" or session == nil then return lastSeq end
+	local b = tonumber(seqs[session])
+	if b and b > lastSeq then return math.floor(b) end
+	return lastSeq
+end

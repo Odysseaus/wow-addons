@@ -705,6 +705,16 @@ local function ImportRestore(r)
 	end
 end
 
+-- Move our message counter past the bridge's last handled seq (0.1.37).
+local function AdoptBridgeSeq(data)
+	if not db or type(data) ~= "table" then return end
+	local n = Codec.AdoptSeq(db.lastSeq, data.seqs, db.session)
+	if n > (db.lastSeq or 0) then
+		run.seqAdopted = { from = db.lastSeq, to = n }
+		db.lastSeq = n
+	end
+end
+
 local function TryLoadSlot(why)
 	local name = FreeSlot()
 	if not name then
@@ -732,6 +742,7 @@ local function TryLoadSlot(why)
 		NotedBridge(GetTime() - (time() - data.now))
 	end
 	if type(data) == "table" and type(data.cwd) == "string" and data.cwd ~= "" then run.bridgeCwd = data.cwd end
+	AdoptBridgeSeq(data)
 	local matched = ApplyReplies(type(data) == "table" and data.replies or nil)
 	if type(data) == "table" and data.restore then ImportRestore(data.restore) end
 	if why == "signal" and not matched then
@@ -834,6 +845,7 @@ local function ProcessInbox()
 	local inbox = WoWGrok_Inbox
 	if type(inbox) ~= "table" then return end
 	if type(inbox.cwd) == "string" and inbox.cwd ~= "" then run.bridgeCwd = inbox.cwd end
+	AdoptBridgeSeq(inbox)
 	ApplyReplies(inbox.replies)
 	if inbox.restore then ImportRestore(inbox.restore) end
 end
@@ -2475,7 +2487,8 @@ SlashCmdList["WOWGROK"] = function(msg)
 			"slot polls this session: " .. (run.polls or 0) .. ", free slots: " .. free .. "/" .. SLOT_COUNT,
 			"presence: head at " .. tostring(run.presence and run.presence.last or "?") .. ", beats seen: " .. tostring(run.presence and run.presence.beats or 0),
 			select(5, WoWGrok.BridgeState()),
-			"mode: " .. s.mode .. ", session token: " .. tostring(db.session),
+			"mode: " .. s.mode .. ", session token: " .. tostring(db.session) .. ", last seq: " .. tostring(db.lastSeq)
+				.. (run.seqAdopted and (" (caught up from " .. run.seqAdopted.from .. ")") or ""),
 		}
 		for _, ch in ipairs(db.chats) do
 			local a = run.act and run.act[ch.id]

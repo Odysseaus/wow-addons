@@ -48,6 +48,72 @@ def already_handled(state: dict, job: dict) -> bool:
     return bool(h.get(jid) or h.get(str(jid)))
 
 
+def handled_max(state: dict) -> dict[str, int]:
+    """Highest handled seq per session token (0.1.37).
+
+    Sent to the add-on in the slot data so it can move its counter past seqs the
+    bridge already handled (the saved counter rewinds when WoW dies unsaved).
+    """
+    out: dict[str, int] = {}
+    for key, h in (state.get("handled") or {}).items():
+        if not key or not isinstance(h, dict):
+            continue
+        ids = []
+        for k in h:
+            try:
+                ids.append(int(k))
+            except (TypeError, ValueError):
+                continue
+        if ids:
+            out[str(key)] = max(ids)
+    return out
+
+
+class RepeatGate:
+    """What to do with a record whose seq was already handled (0.1.37).
+
+    ``check`` returns ``None`` for a new record. Otherwise ``(action, line)``:
+
+    * ``"ack-hello"`` — a hello is safe to ack again; the bridge re-acks and
+      republishes the slot data (bridge clock + ``seqs``) so an add-on whose
+      saved counter went back (WoW died before saving) hears it and catches up.
+    * ``"ignore"`` — a real repeated job is never sent to the model twice.
+
+    ``line`` is the log line, or ``None`` when it should stay quiet: a record
+    this run handled moments ago that is simply still on the strip, or one
+    already logged.
+    """
+
+    def __init__(self, window_s: float = 120.0) -> None:
+        self.window_s = window_s
+        self.handled_at: dict[tuple[str, int], float] = {}
+        self.logged: set[tuple[str, int]] = set()
+
+    def note(self, job: dict, now: float) -> None:
+        self.handled_at[(job.get("session") or "", int(job.get("id") or 0))] = now
+
+    def check(self, state: dict, job: dict, now: float) -> tuple[str, str | None] | None:
+        if not already_handled(state, job):
+            return None
+        sess = job.get("session") or ""
+        key = (sess, int(job.get("id") or 0))
+        seen_at = self.handled_at.get(key)
+        quiet = (seen_at is not None and now - seen_at < self.window_s) or key in self.logged
+        action = "ack-hello" if job.get("hello") else "ignore"
+        if quiet:
+            return action, None
+        self.logged.add(key)
+        if action == "ack-hello":
+            last = handled_max(state).get(sess, 0)
+            if key[1] < last:
+                return action, (
+                    f"seq rewind: hello #{key[1]}@{sess} already handled "
+                    f"(bridge last #{last}); acking so the add-on can catch up"
+                )
+            return action, f"hello #{key[1]}@{sess} already handled; acking again"
+        return action, f"duplicate seq {key[1]}{'@' + sess if sess else ''} ignored"
+
+
 def mark_handled(state: dict, job: dict, now: int | None = None) -> None:
     if now is None:
         now = int(time.time() * 1000)
@@ -319,6 +385,12 @@ def lua_table(global_name: str, records: list, opts: dict | None = None) -> str:
     lines.append("\t},")
     if opts.get("capturePaused"):
         lines.append("\tcapturePaused = true,")
+    seqs = opts.get("seqs")
+    if seqs:
+        lines.append("\tseqs = {")
+        for sess, n in sorted(seqs.items()):
+            lines.append(f"\t\t[{lua_str(sess)}] = {int(n)},")
+        lines.append("\t},")
     restore = opts.get("restore")
     if restore:
         lines.append("\trestore = {")
