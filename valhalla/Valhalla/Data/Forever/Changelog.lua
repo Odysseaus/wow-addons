@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.21", date = "2026-11-17", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aThe druids' flight from Nighthaven is timed|r: Silva Fil'naveth's flight to Rut'theran Village (and Bunthen Plainswind's to Thunder Bluff) starts from her chat, not the flight map, so the flight timer never saw where it went: every flight showed \"In flight\", Learning, and was never saved. Taking it at Nighthaven now shows the destination, is timed and saved, and counts down the next time.",
+		"Nighthaven counts as a flight master you've learned once you've flown from it.",
+		"Other flights Valhalla didn't see start still show \"In flight\", Learning, and aren't saved.",
+	} },
 	{ version = "1.2.20", date = "2026-11-16", heads = { [1] = "Fixed", [5] = "Changed", }, items = {
 		"|cff6e2c0aAH scans finish again|r: one listing at an absurd price (999,999g) stopped every full scan with \"integer overflow attempting to store\", so AH Market and the tooltips kept showing the last scan that worked. A price per unit over 214,748g now counts as no price (its units and auctions still count), and the scan's done line names the item.",
 		"A scan's prices are saved in one go: if something goes wrong, nothing is half-saved. One item that can't be stored is skipped and named, and the rest of the scan is saved.",

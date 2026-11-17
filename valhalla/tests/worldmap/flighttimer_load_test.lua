@@ -199,5 +199,103 @@ all = table.concat(W.printed, "\n")
 ok(all:find("In the air: Sentinel Hill, Westfall, route 2>4", 1, true), "in the air: the flight's state", all)
 W.taxi = false Tick(3)
 
+print("== 9. (1.2.21) a class's own flight master (Nighthaven's, a gossip flight: no TakeTaxiNode): timed and saved")
+local NH, RT, TB = "Nighthaven, Moonglade", "Rut'theran Village, Teldrassil", "Thunder Bluff, Mulgore"
+-- who you are and where you stand (UnitPosition: the taxi tables' order, the continent 4th)
+local function Who(class, faction, x, y, cont)
+  UnitClass = function() return class:lower(), class end
+  UnitFactionGroup = function() return faction end
+  if x then UnitPosition = function() return x, y, 0, cont or 1 end else UnitPosition = nil end
+end
+local function Say()
+  W.printed = {}
+  SlashCmdList.VALHALLA("flight")
+  return table.concat(W.printed, "\n")
+end
+-- the gossip's flight: no click heard, control lost, on a taxi
+local function Gossip(secs, mid)
+  W.taxi = true
+  W.Fire("PLAYER_CONTROL_LOST")
+  Tick(0.3)
+  local seen = { shown = Popup() and Popup():IsShown(), title = Popup() and Popup().title._text,
+    time = Popup() and Popup().time._text, status = Popup() and Popup().status._text, bar = Popup() and Popup().bar:IsShown() }
+  if mid then Tick(mid) seen.said = Say() Tick(secs - mid) else Tick(secs) end
+  W.taxi = false Tick(3)
+  return seen
+end
+local function Count(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end
+
+-- an Alliance druid at Silva Fil'naveth (Moonglade 44.2, 45.2: 3 yards from node 62)
+mod = Session({ db = db1, char = char1 })
+Who("DRUID", "Alliance", 7795.8, -2401.5, 1)
+local routes0, took0 = Count(db1.worldmap.flightRoutes), W.took
+local g = Gossip(70, 5)
+ok(W.took == took0, "no TakeTaxiNode (the gossip's flight)")
+ok(g.shown and g.title == "Rut'theran Village" and g.status == "Learning", "the popup: Rut'theran Village, Learning (never flown)", tostring(g.title) .. " " .. tostring(g.status))
+ok(g.said and g.said:find("In the air: " .. RT .. ", route 62>27, Learning", 1, true) and g.said:find("saved on landing", 1, true)
+  and not g.said:find("unknown", 1, true), "/valhalla flight: route 62>27, saved on landing, not unknown", g.said)
+ok(db1.worldmap.flightRoutes["62>27"] == 70, "landed: 62>27 saved (70 s)", db1.worldmap.flightRoutes["62>27"])
+ok(db1.worldmap.flightTimes[NH .. "|" .. RT] == 70, "and the direct leg by name (the map's route times)")
+ok(char1.worldmap.flightsKnown and char1.worldmap.flightsKnown[NH], "Nighthaven learned (flown from)")
+ok(char1.worldmap.flightNow == nil, "nothing left in the air")
+
+g = Gossip(72)
+ok(g.shown and g.title == "Rut'theran Village" and g.time == "1:10" and g.status == "" and g.bar, "the second flight: counts down from 1:10, the bar", tostring(g.time) .. " " .. tostring(g.status))
+ok(db1.worldmap.flightRoutes["62>27"] == 72, "and measured again (72)", db1.worldmap.flightRoutes["62>27"])
+
+-- a /reload in the air: the same flight goes on, still saved on landing
+W.taxi = true W.Fire("PLAYER_CONTROL_LOST") Tick(20.3)
+ok(char1.worldmap.flightNow and char1.worldmap.flightNow.key == "62>27" and not char1.worldmap.flightNow.noSave, "in the air: saved for the character as 62>27")
+mod = Session({ db = db1, char = char1, onTaxi = true, reload = true, wall = time() + 2 })
+Who("DRUID", "Alliance", 7795.8, -2401.5, 1)
+ok(Popup():IsShown() and Popup().title._text == "Rut'theran Village", "after the /reload: Rut'theran Village again", Popup().title._text)
+Tick(47) W.taxi = false Tick(3)
+local r62 = db1.worldmap.flightRoutes["62>27"]
+ok(r62 and r62 >= 70 and r62 <= 71, "landed: measured across the reload (20 s + 2 s away + the rest: 70-71)", r62)
+
+-- the map's own position when UnitPosition gives nothing (either order of the two)
+Who("DRUID", "Alliance")
+C_Map.GetWorldPosFromMapPos = function() return 1, { x = -2401.5, y = 7795.8 } end
+g = Gossip(71)
+ok(g.title == "Rut'theran Village" and db1.worldmap.flightRoutes["62>27"] == 71, "no UnitPosition: the map's world position (other order) finds it too", tostring(g.title))
+C_Map.GetWorldPosFromMapPos = nil
+
+-- not a druid; too far; the wrong continent; a secret position: unknown and unsaved, as 1.2.13
+local function Unknown(label)
+  local before, times = Count(db1.worldmap.flightRoutes), Count(db1.worldmap.flightTimes)
+  local r = db1.worldmap.flightRoutes["62>27"]
+  local gg = Gossip(40, 5)
+  ok(gg.title == "In flight" and gg.status == "Learning" and gg.said and gg.said:find("route nil", 1, true) and gg.said:find("unknown, not saved", 1, true)
+    and Count(db1.worldmap.flightRoutes) == before and Count(db1.worldmap.flightTimes) == times and db1.worldmap.flightRoutes["62>27"] == r,
+    label .. ": \"In flight\", Learning, unknown, nothing saved", tostring(gg.title) .. " | " .. tostring(gg.said))
+end
+Who("WARRIOR", "Alliance", 7795.8, -2401.5, 1) Unknown("a warrior at Nighthaven")
+Who("DRUID", "Alliance", 7795.8 + 120, -2401.5, 1) Unknown("a druid 120 yards away")
+Who("DRUID", "Alliance", 7795.8, -2401.5, 0) Unknown("a druid at those yards on the other continent")
+Who("DRUID", "Alliance", 7795.8, -2401.5, 1)
+issecretvalue = function(v) return v == 7795.8 end
+Unknown("a druid whose position is secret")
+issecretvalue = nil
+Who("DRUID", "Alliance") Unknown("a druid, no position at all")
+
+-- a Horde druid at Bunthen Plainswind (node 63): Thunder Bluff, 63>22
+Who("DRUID", "Horde", 7787.7, -2404.1, 1)
+g = Gossip(260)
+ok(g.title == "Thunder Bluff" and db1.worldmap.flightRoutes["63>22"] == 260 and db1.worldmap.flightTimes[NH .. "|" .. TB] == 260,
+  "a Horde druid: Thunder Bluff, 63>22 saved (260)", tostring(g.title) .. " " .. tostring(db1.worldmap.flightRoutes["63>22"]))
+ok(db1.worldmap.flightRoutes["62>27"] == 71, "the Alliance route untouched")
+Who("DRUID", "Alliance", 7787.7, -2404.1, 1)
+g = Gossip(30)
+ok(g.title == "Rut'theran Village", "an Alliance druid there: the Alliance node's flight, not the Horde's", tostring(g.title))
+db1.worldmap.flightRoutes["62>27"] = 71
+
+-- a click heard at a flight master still wins (control lost doesn't take it over)
+Who("DRUID", "Alliance", 7795.8, -2401.5, 1)
+shown, title = Fly(30)
+ok(shown and title == "Sentinel Hill" and db1.worldmap.flightRoutes["2>4"] == 30, "a heard click near Nighthaven: its own route (2>4)", tostring(title))
+W.Fire("PLAYER_CONTROL_LOST") Tick(3)
+UnitClass, UnitPosition = nil, nil
+UnitFactionGroup = function() return "Alliance" end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)
