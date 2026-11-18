@@ -420,6 +420,77 @@ local function StartUnknown(reloaded)
 	T.Show(now)
 end
 
+-- (1.2.21) a class's own flight master: Nighthaven's (druids', 62 Alliance / 63 Horde) flies from a gossip
+-- option, not the flight map, so TakeTaxiNode is never heard and every flight there was "In flight",
+-- Learning, never saved. Control lost on a taxi within CLASS_YARDS of a node your class and faction may
+-- use, with one path out in FlightData, is that flight: timed and saved as any (62>27, 63>22). Every other
+-- flight not heard stays unknown and unsaved (1.2.13).
+T.CLASS_YARDS = 50
+
+-- where you stand: continent and yards (FlightData's order), and whether the order is uncertain
+local function PlayerYards()
+	if UnitPosition then
+		local ok, a, b, _, inst = pcall(UnitPosition, "player")
+		if ok and type(a) == "number" and type(b) == "number" and type(inst) == "number"
+			and not (ns.Safe.IsSecret and (ns.Safe.IsSecret(a) or ns.Safe.IsSecret(b) or ns.Safe.IsSecret(inst))) then
+			return inst, a, b, false
+		end
+	end
+	if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition and C_Map.GetWorldPosFromMapPos) then return end
+	local mapID = ns.Safe.Call(C_Map.GetBestMapForUnit, "player")
+	local pos = mapID and ns.Safe.Call(C_Map.GetPlayerMapPosition, mapID, "player")
+	if not pos then return end
+	local ok, cont, world = pcall(C_Map.GetWorldPosFromMapPos, mapID, pos)
+	if not (ok and type(cont) == "number" and type(world) == "table") then return end
+	local wx, wy
+	if world.GetXY then wx, wy = world:GetXY() else wx, wy = world.x, world.y end
+	if type(wx) ~= "number" or type(wy) ~= "number" then return end
+	if ns.Safe.IsSecret and (ns.Safe.IsSecret(wx) or ns.Safe.IsSecret(wy) or ns.Safe.IsSecret(cont)) then return end
+	return cont, wx, wy, true
+end
+
+-- the class flight master you're at: its node, its one destination; else nil
+local function ClassFlight()
+	local class = UnitClass and select(2, UnitClass("player"))
+	if type(class) ~= "string" then return end
+	local fb = UnitFactionGroup("player") == "Horde" and 2 or 1
+	local cont, px, py, either = PlayerYards()
+	if not cont then return end
+	local r2 = T.CLASS_YARDS * T.CLASS_YARDS
+	for id, n in pairs(F.nodes) do
+		if n[6] == class and bit.band(n[5], fb) ~= 0 and n[2] == cont then
+			local d2 = (px - n[3]) ^ 2 + (py - n[4]) ^ 2
+			if either then d2 = math.min(d2, (py - n[3]) ^ 2 + (px - n[4]) ^ 2) end
+			if d2 <= r2 then
+				local to, outs = nil, 0
+				for _, path in ipairs(F.paths) do
+					if path[1] == id then outs, to = outs + 1, path[2] end
+				end
+				if outs == 1 and F.nodes[to] then return id, to end
+			end
+		end
+	end
+end
+T.ClassFlight = ClassFlight
+
+local function StartClassFlight()
+	local from, to = ClassFlight()
+	if not from then return false end
+	local now = GetTime()
+	local fromName, dest = F.nodes[from][1], F.nodes[to][1]
+	flight = { from = from, to = to, dest = dest, fromName = fromName, legs = { { from, to, fromName, dest } },
+		asked = now, start = now, epoch = time(), direct = true, classNode = true }
+	flight.key = Key(from, to, fromName, dest)
+	flight.expect = T.Expected(flight)
+	-- (you've flown from it: learned, for the map's colours)
+	mod.char.flightsKnown = mod.char.flightsKnown or {}
+	mod.char.flightsKnown[fromName] = true
+	Save()
+	Watch()
+	T.Show(now)
+	return true
+end
+
 -- after a /reload in the air: the flight goes on from its start (a log-in later: shown, not measured).
 -- `final`: the last look (the world entered): on the ground, a flight saved is forgotten; in the air with
 -- none saved, an unknown flight
@@ -451,7 +522,7 @@ local function OnControlLost()
 	local function check()
 		if token ~= controlToken or (flight and flight.start) then return end
 		if UnitOnTaxi("player") then
-			if not flight then StartUnknown(false) end   -- (a click heard: Tick starts it)
+			if not flight and not StartClassFlight() then StartUnknown(false) end   -- (a click heard: Tick starts it)
 			return
 		end
 		if GetTime() - t0 < 3 then C_Timer.After(0.2, check) end

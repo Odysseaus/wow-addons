@@ -616,6 +616,10 @@ function mod:ToggleSketch(on, pin, dock, sess)
 	if on == nil then on = not drawing end
 	if not map then return end
 	if on and not map:IsShown() then
+		if InCombatLockdown() then   -- (1.2.23: the map opened from Valhalla's code waits for combat's end)
+			if ns.Combat then ns.Combat.Run("map:quill", function() mod:ToggleSketch(true, pin, dock, sess) end, L["The map opens when combat ends."]) end
+			return
+		end
 		ToggleWorldMap()                          -- (then once it's up and built)
 		C_Timer.After(0, function() if map:IsShown() then mod:ToggleSketch(true, pin, dock, sess) end end)
 		return

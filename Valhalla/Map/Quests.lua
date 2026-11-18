@@ -63,10 +63,16 @@ local function Click(pin)
 	local q = pin.data
 	if not q then return end
 	if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then
-		if C_QuestLog.AddQuestWatch and not (C_QuestLog.GetQuestWatchType and C_QuestLog.GetQuestWatchType(q.id)) then
-			pcall(C_QuestLog.AddQuestWatch, q.id)
+		-- (1.2.23) in combat: tracked once combat ends (CombatQueue.lua); the view still goes to it
+		local function Track()
+			if C_QuestLog.AddQuestWatch and not (C_QuestLog.GetQuestWatchType and C_QuestLog.GetQuestWatchType(q.id)) then
+				pcall(C_QuestLog.AddQuestWatch, q.id)
+			end
+			pcall(C_SuperTrack.SetSuperTrackedQuestID, q.id)
 		end
-		C_SuperTrack.SetSuperTrackedQuestID(q.id)
+		local C = ns.Combat
+		if C and C.Run then C.Run("supertrack", Track, L["Tracking changed in combat: it applies when combat ends."])
+		elseif not InCombatLockdown() then Track() end
 	end
 	-- (v0.4.2.4) the quest fly-to's way there (QuestFly.lua: fly, or jump, by the setting); As Blizzard: the glide
 	if not (mod.QuestIconClick and mod.QuestIconClick(q.id, pin.u, pin.v, q.map)) and S.GlideToWorld then
