@@ -1543,6 +1543,10 @@ end
 function mod:OpenMenu()
 	if not menu then return false end
 	if not map:IsShown() then
+		if InCombatLockdown() then   -- (1.2.23: the map opened from Valhalla's code waits for combat's end)
+			if ns.Combat then ns.Combat.Run("map:menu", function() mod:OpenMenu() end, L["The map opens when combat ends."]) end
+			return true
+		end
 		ToggleWorldMap()
 		C_Timer.After(0, function() if map:IsShown() then SetOpen(true) end end)
 	else

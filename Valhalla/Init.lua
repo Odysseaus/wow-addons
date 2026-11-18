@@ -145,8 +145,13 @@ boot:SetScript("OnEvent", function(self, event, name)
 			button:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
 			button:SetText(ns.L["Open Valhalla's settings"])
 			button:SetScript("OnClick", function()
-				if SettingsPanel then HideUIPanel(SettingsPanel) end
-				OpenOptions()
+				local function Go()
+					if SettingsPanel then HideUIPanel(SettingsPanel) end
+					OpenOptions()
+				end
+				-- (1.2.23: windows closed and opened from Valhalla's code wait for combat's end)
+				if ns.Combat then ns.Combat.Run("settings:open", Go, ns.L["Valhalla's settings open when combat ends."])
+				elseif not InCombatLockdown() then Go() end
 			end)
 			Settings.RegisterAddOnCategory(Settings.RegisterCanvasLayoutCategory(panel, "Valhalla"))
 		end

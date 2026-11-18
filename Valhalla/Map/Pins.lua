@@ -760,6 +760,10 @@ function mod:TogglePins(on)
 	if not list then return end
 	if on == nil then on = not list:IsShown() end
 	if on then
+		if not map:IsShown() and InCombatLockdown() then   -- (1.2.23: the map opened from Valhalla's code waits for combat's end)
+			if ns.Combat then ns.Combat.Run("map:pins", function() mod:TogglePins(true) end, L["The map opens when combat ends."]) end
+			return
+		end
 		if not map:IsShown() then ToggleWorldMap() end
 		RefreshList()
 		local at = mod.db.pinsAt                   -- (where it was dragged to)

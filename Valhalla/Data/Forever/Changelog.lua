@@ -4,6 +4,23 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.23", date = "2026-11-17", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
+		"|cff6e2c0a\"Auras cannot be accessed when secret while tainted by 'Valhalla'\" in combat|r: a spec or talent change in combat lays out the game's quest tracker, which reads your auras, and in combat that read errored when Valhalla's own changes to the tracker had just come before. In combat Valhalla now leaves the quest tracker and quest log alone and makes its changes once combat ends.",
+		"Quest log zones you've clicked stay as you left them, as in 1.2.22; in combat the game's own way shows until combat ends, then yours come back.",
+		"Tracking a quest in combat (a Ready to Turn In row, a quest's icon on the map, Shift-click on a quest chain row) applies when combat ends, with one line in chat; only the last change for each quest counts.",
+		"While the quest log is open beside the map (or over it, full screen), Valhalla's map no longer switches to the zone you're looking at. Close the quest log and it follows the view again.",
+		"In combat, Valhalla's menu, Pins, the Quill, the first-run welcome and the Open Valhalla's settings button no longer open the map or close windows straight away: they open once combat ends, with one line in chat. The map's own keys and buttons work as before.",
+	} },
+	{ version = "1.2.22", date = "2026-11-17", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aQuest log zones stay as you leave them|r: the game opens the zone of the map shown and folds every other one each time the map changes (as Valhalla's map follows you, when the map opens, after a loading screen), so zones you'd folded opened again and ones you'd opened folded. A zone you click open or folded now stays that way, for each character, after a /reload and a log-in too.",
+		"Zones you've never clicked still follow the game: the zone of the map shown open, the rest folded.",
+		"The quest log's search, and a quest's icon on the map opening its zone, don't change how you left them; the Ready to Turn In section keeps its own state, and the zones stay in alphabetical order.",
+	} },
+	{ version = "1.2.21", date = "2026-11-17", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aThe druids' flight from Nighthaven is timed|r: Silva Fil'naveth's flight to Rut'theran Village (and Bunthen Plainswind's to Thunder Bluff) starts from her chat, not the flight map, so the flight timer never saw where it went: every flight showed \"In flight\", Learning, and was never saved. Taking it at Nighthaven now shows the destination, is timed and saved, and counts down the next time.",
+		"Nighthaven counts as a flight master you've learned once you've flown from it.",
+		"Other flights Valhalla didn't see start still show \"In flight\", Learning, and aren't saved.",
+	} },
 	{ version = "1.2.20", date = "2026-11-16", heads = { [1] = "Fixed", [5] = "Changed", }, items = {
 		"|cff6e2c0aAH scans finish again|r: one listing at an absurd price (999,999g) stopped every full scan with \"integer overflow attempting to store\", so AH Market and the tooltips kept showing the last scan that worked. A price per unit over 214,748g now counts as no price (its units and auctions still count), and the scan's done line names the item.",
 		"A scan's prices are saved in one go: if something goes wrong, nothing is half-saved. One item that can't be stored is skipped and named, and the rest of the scan is saved.",

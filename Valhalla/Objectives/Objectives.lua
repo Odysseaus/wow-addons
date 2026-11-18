@@ -118,6 +118,16 @@ local function Call(fn, ...)
 	local ok, a, b = pcall(fn, ...)
 	if ok then return Plain(a), Plain(b) end
 end
+-- (1.2.23) the game's tracker changed only out of combat (CombatQueue.lua: in combat it waits until combat
+-- ends, the same quest's or the super-track's last change kept); straight away when that isn't loaded
+local TRACK_NOTE = "Tracking changed in combat: it applies when combat ends."
+local function Defer(key, fn, note)
+	local C = ns.Combat
+	if C and C.Run then return C.Run(key, fn, note and L[note]) end
+	fn()
+	return true
+end
+O.Defer = Defer
 
 --------------------------------------------------------------------------------
 -- state
@@ -693,8 +703,8 @@ function O.ReadyList(log, here)
 	return out
 end
 
-local function Add(id) Call(C_QuestLog.AddQuestWatch, id) end
-local function Remove(id) Call(C_QuestLog.RemoveQuestWatch, id) end
+local function Add(id) Defer("watch:" .. tostring(id), function() Call(C_QuestLog.AddQuestWatch, id) end) end
+local function Remove(id) Defer("watch:" .. tostring(id), function() Call(C_QuestLog.RemoveQuestWatch, id) end) end
 
 local function Queue(id, add)
 	for _, op in ipairs(S.ops) do
@@ -936,7 +946,7 @@ function O.Retrack(any)
 	Remove(lever) Add(lever)
 	if super and super ~= 0 and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID
 		and Call(C_SuperTrack.GetSuperTrackedQuestID) ~= super then
-		Call(C_SuperTrack.SetSuperTrackedQuestID, super)
+		Defer("supertrack", function() Call(C_SuperTrack.SetSuperTrackedQuestID, super) end)
 	end
 	return lever, order
 end
@@ -1003,11 +1013,11 @@ function O.RunOps()
 			local count = 0
 			for _ in pairs(watched) do count = count + 1 end
 			if not watched[op.id] and count < O.MAX_WATCHES then
-				Call(C_QuestLog.AddQuestWatch, op.id)
+				Add(op.id)
 			end
 			c.hidden[op.id] = nil
 		else
-			Call(C_QuestLog.RemoveQuestWatch, op.id)
+			Remove(op.id)
 			c.hidden[op.id] = true
 		end
 		done = done + 1
@@ -1092,7 +1102,7 @@ function O.Reorder()
 	end
 	if super and super ~= 0 and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID
 		and Call(C_SuperTrack.GetSuperTrackedQuestID) ~= super then
-		Call(C_SuperTrack.SetSuperTrackedQuestID, super)
+		Defer("supertrack", function() Call(C_SuperTrack.SetSuperTrackedQuestID, super) end)
 	end
 	O.Snapshot()   -- (v0.4.2.2: re-tracked: the tracker reads it all again)
 	-- checked again next tick; a wrong guess of the side is unlearned
@@ -1471,11 +1481,15 @@ function O.PoiClick(self, button)
 	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
 	if super == q then
 		if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF) end
-		if C_SuperTrack.ClearAllSuperTracked then Call(C_SuperTrack.ClearAllSuperTracked)
-		else Call(C_SuperTrack.SetSuperTrackedQuestID, 0) end
+		Defer("supertrack", function()
+			if C_SuperTrack.ClearAllSuperTracked then Call(C_SuperTrack.ClearAllSuperTracked)
+			else Call(C_SuperTrack.SetSuperTrackedQuestID, 0) end
+		end, TRACK_NOTE)
 	else
 		if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
-		if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then Call(C_SuperTrack.SetSuperTrackedQuestID, q) end
+		if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then
+			Defer("supertrack", function() Call(C_SuperTrack.SetSuperTrackedQuestID, q) end, TRACK_NOTE)
+		end
 	end
 	S.readyDirty = true
 	O.PaintPoi(self)
@@ -1535,7 +1549,9 @@ end
 
 function O.ReadyClick(q)
 	if not q then return end
-	if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then Call(C_SuperTrack.SetSuperTrackedQuestID, q) end
+	if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then
+		Defer("supertrack", function() Call(C_SuperTrack.SetSuperTrackedQuestID, q) end, TRACK_NOTE)
+	end
 	if not InCombat() then
 		local open = rawget(_G, "QuestMapFrame_OpenToQuestDetails")
 		if open then pcall(open, q) end   -- (the map's quest fly-to follows Blizzard's details: Map/QuestFly.lua)
