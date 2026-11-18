@@ -641,6 +641,56 @@ ok(Frame.protectedCalls == 0 and W.blockedSetters == 0, "nothing protected, no b
 local fields = 0
 for h in SF8.headerFramePool:EnumerateActive() do for _, k in ipairs({ "valhallaFolded", "valhallaHooked", "folded", "preFolded" }) do if rawget(h, k) ~= nil then fields = fields + 1 end end end
 ok(fields == 0, "no fields of ours on the game's header buttons")
+print("== 10. (1.2.23) in combat: the zones put back once combat ends; a Shift-click's tracking waits too")
+assert(loadfile(root .. "CombatQueue.lua"))("Valhalla", ns)
+local CQ = ns.Combat
+store["Westfall"] = false
+W.collapsed["Westfall"] = true
+W.combat = true
+W.zc = {}
+ok(Z.Apply() == 0 and #W.zc == 0 and Folded("Westfall") and CQ.Pending("questlog:zones"), "in combat: no header calls of ours; one apply queued")
+local heads = 0 for i = 1, C_QuestLog.GetNumQuestLogEntries() do if C_QuestLog.GetInfo(i).isHeader then heads = heads + 1 end end
+QuestMapFrame_ResetFilters()
+ok(#W.zc == heads, "the game's reset in combat: only the game's own calls (its hook queues, doesn't call)", #W.zc .. " vs " .. heads)
+W.zc = {}
+Fire("PLAYER_ENTERING_WORLD")
+ok(#W.zc == 0, "a loading screen in combat: nothing put back yet", #W.zc)
+local queued = 0 for _, k in ipairs(CQ.order) do if k == "questlog:zones" then queued = queued + 1 end end
+ok(queued == 1, "queued once, however many asked", queued)
+local wantW = store["Westfall"]
+W.collapsed["Westfall"] = true
+W.combat = false
+CQ.Flush()
+ok(Folded("Westfall") == wantW and not CQ.Pending("questlog:zones"), "combat over: put back (Westfall open, as he left it)")
+local okAll = true
+for t, want in pairs(store) do
+  local found = false
+  for i = 1, C_QuestLog.GetNumQuestLogEntries() do local e = C_QuestLog.GetInfo(i) if e.isHeader and e.title == t then found = true end end
+  if found and Folded(t) ~= want then okAll = false end
+end
+ok(okAll, "every saved zone as he left it after the flush")
+W.zc = {}
+ok(Z.Apply() == 0 and #W.zc == 0, "out of combat, nothing different: no calls (as 1.2.22)")
+-- Shift-click on a chain row: the game's track toggle, in combat queued
+local tracked = {}
+local gameTrack, shift, cfu = rawget(_G, "QuestMapQuestOptions_TrackQuest"), rawget(_G, "IsShiftKeyDown"), rawget(_G, "ChatFrameUtil")
+_G.QuestMapQuestOptions_TrackQuest = function(q) tracked[#tracked + 1] = q end
+_G.IsShiftKeyDown = function() return true end
+_G.ChatFrameUtil = nil
+ns.printed = {}
+W.combat = true
+QC.RowClick({ questID = 101 }, "LeftButton")
+QC.RowClick({ questID = 101 }, "LeftButton")
+local said = 0 for _, p in ipairs(ns.printed) do if p:find("applies when combat ends", 1, true) then said = said + 1 end end
+ok(#tracked == 0 and CQ.Pending("watch:101") and said == 1, "Shift-click in combat: not tracked yet, queued, told once", #tracked .. " " .. said)
+W.combat = false
+CQ.Flush()
+ok(#tracked == 1 and tracked[1] == 101, "combat over: the game's track toggle once (the last click kept)", #tracked)
+QC.RowClick({ questID = 101 }, "LeftButton")
+ok(#tracked == 2 and not CQ.Pending(), "out of combat: straight away")
+_G.QuestMapQuestOptions_TrackQuest, _G.IsShiftKeyDown, _G.ChatFrameUtil = gameTrack, shift, cfu
+ok(Frame.protectedCalls == 0 and W.blockedSetters == 0, "nothing protected, no blocked setters")
+
 C_QuestLog.GetInfo = baseInfo
 _G.QuestLogQuests_Update = gameUpdate
 

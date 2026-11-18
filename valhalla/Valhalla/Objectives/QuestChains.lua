@@ -49,6 +49,16 @@ local function Call(fn, ...)
 	return nil
 end
 
+-- (1.2.23) the game's tracker and quest log changed only out of combat (CombatQueue.lua): in combat it waits
+local function InCombat() return InCombatLockdown and InCombatLockdown() and true or false end
+local function Defer(key, fn, note)
+	local C = ns.Combat
+	if C and C.Run then return C.Run(key, fn, note and L[note]) end
+	if InCombat() then return false end
+	fn()
+	return true
+end
+
 --------------------------------------------------------------------------------
 -- The data: ns.QuestChainData = { meta = {...}, chains = { chain, ... } }
 --   chain = { step, step, ..., side = "A"|"H"?, class = "DRUID"|{...}?, breaks = { i, ... } (a line after step i),
@@ -555,12 +565,14 @@ function QC.RowClick(row, button)
 			local ok, did = pcall(CF.TryInsertQuestLinkForQuestID, q)
 			if ok and did then return end
 		end
-		local track = rawget(_G, "QuestMapQuestOptions_TrackQuest")
-		if type(track) == "function" then track(q)
-		else
-			local C = rawget(_G, "C_QuestLog")
-			if C and C.GetQuestWatchType and Call(C.GetQuestWatchType, q) ~= nil then Call(C.RemoveQuestWatch, q) elseif C then Call(C.AddQuestWatch, q) end
-		end
+		Defer("watch:" .. tostring(q), function()
+			local track = rawget(_G, "QuestMapQuestOptions_TrackQuest")
+			if type(track) == "function" then track(q)
+			else
+				local C = rawget(_G, "C_QuestLog")
+				if C and C.GetQuestWatchType and Call(C.GetQuestWatchType, q) ~= nil then Call(C.RemoveQuestWatch, q) elseif C then Call(C.AddQuestWatch, q) end
+			end
+		end, "Tracking changed in combat: it applies when combat ends.")
 	elseif button == "LeftButton" or button == nil then
 		local show = rawget(_G, "QuestMapFrame_ShowQuestDetails")
 		if type(show) == "function" then show(q) end
@@ -873,6 +885,12 @@ end
 -- the saved zones put back (after the game set them all); the rest left as the game set them
 function Z.Apply()
 	if Z.applying or not mod.enabled or Searching() then return 0 end
+	-- (1.2.23) never in combat: the headers' changes lay the game's tracker out from Valhalla's code, and in
+	-- combat its aura read errors. Put back once combat ends (one queued apply, whatever asked for it)
+	if InCombat() then
+		Defer("questlog:zones", function() Z.Apply() end)
+		return 0
+	end
 	local store = mod.char and mod.char.logZones
 	if type(store) ~= "table" or next(store) == nil then return 0 end
 	local C = rawget(_G, "C_QuestLog")

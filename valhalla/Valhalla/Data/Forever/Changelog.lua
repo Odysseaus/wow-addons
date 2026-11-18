@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.23", date = "2026-11-17", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
+		"|cff6e2c0a\"Auras cannot be accessed when secret while tainted by 'Valhalla'\" in combat|r: a spec or talent change in combat lays out the game's quest tracker, which reads your auras, and in combat that read errored when Valhalla's own changes to the tracker had just come before. In combat Valhalla now leaves the quest tracker and quest log alone and makes its changes once combat ends.",
+		"Quest log zones you've clicked stay as you left them, as in 1.2.22; in combat the game's own way shows until combat ends, then yours come back.",
+		"Tracking a quest in combat (a Ready to Turn In row, a quest's icon on the map, Shift-click on a quest chain row) applies when combat ends, with one line in chat; only the last change for each quest counts.",
+		"While the quest log is open beside the map (or over it, full screen), Valhalla's map no longer switches to the zone you're looking at. Close the quest log and it follows the view again.",
+		"In combat, Valhalla's menu, Pins, the Quill, the first-run welcome and the Open Valhalla's settings button no longer open the map or close windows straight away: they open once combat ends, with one line in chat. The map's own keys and buttons work as before.",
+	} },
 	{ version = "1.2.22", date = "2026-11-17", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aQuest log zones stay as you leave them|r: the game opens the zone of the map shown and folds every other one each time the map changes (as Valhalla's map follows you, when the map opens, after a loading screen), so zones you'd folded opened again and ones you'd opened folded. A zone you click open or folded now stays that way, for each character, after a /reload and a log-in too.",
 		"Zones you've never clicked still follow the game: the zone of the map shown open, the rest folded.",

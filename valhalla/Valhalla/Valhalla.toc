@@ -16,7 +16,7 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: 1.2.22
+## Version: 1.2.23
 ## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
@@ -30,6 +30,8 @@ Data\Forever\Client.lua
 Libs\Libs.xml
 
 Core.lua
+# In combat, Valhalla's calls into the game's quest tracker, quest log and windows wait (1.2.23)
+CombatQueue.lua
 # The look (v0.4.2): every button, tick box, text box, dropdown, tab and frame, Profession or Norse
 UI\Style.lua
 # Shift-click an item into Valhalla's text boxes, no stack-split box (v0.3.1)

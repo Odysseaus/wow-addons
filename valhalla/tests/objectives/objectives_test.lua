@@ -1369,5 +1369,43 @@ do
   ok(has(W.watches, 302) and not has(W.watches, 301), "PLAYER_CONTROL_GAINED too: Duskwood's, as before", list(W.watches))
 end
 
+print("== 57. (1.2.23) in combat: watch and super-track changes wait until combat ends (CombatQueue.lua), the last kept")
+do
+  assert(loadfile(root .. "CombatQueue.lua"))("Valhalla", ns)
+  local CQ = ns.Combat
+  W.Reset()
+  W.AddQuest(301, "Elwynn Forest", "Elwynn's", 10, false, false)
+  W.AddQuest(302, "Elwynn Forest", "Elwynn's other", 11, false, false)
+  W.AddQuest(303, "Elwynn Forest", "Elwynn's ready", 12, true, false)
+  Restart()
+  Arrive(1429)
+  Run(5)
+  ok(#W.watches > 0, "out of combat: watched as ever", list(W.watches))
+  local before = list(W.watches)
+  W.combat = true
+  ns.printed = {}
+  local adds, removes = W.calls.add, W.calls.remove
+  O.ReadyClick(303)
+  O.ReadyClick(301)
+  ok(W.super == 0 and CQ.Pending("supertrack"), "1: Ready rows clicked in combat: nothing super-tracked yet; queued", tostring(W.super))
+  local n = 0 for _, k in ipairs(CQ.order) do if k == "supertrack" then n = n + 1 end end
+  ok(n == 1, "1: queued once (the later click replaces the earlier)", n)
+  local said = 0 for _, p in ipairs(ns.printed) do if p:find("applies when combat ends", 1, true) then said = said + 1 end end
+  ok(said == 1, "1: told once in chat", table.concat(ns.printed, " | "))
+  local lever = O.Retrack()
+  ok(lever and CQ.Pending("watch:" .. tostring(lever)) and W.calls.add == adds and W.calls.remove == removes, "2: a re-track in combat: no watch call; queued under its quest", tostring(lever))
+  ok(list(W.watches) == before and (W.combatChanges or 0) == 0, "2: the tracker's watches untouched in combat", list(W.watches))
+  Run(3)
+  ok((W.combatChanges or 0) == 0, "2: the scheduler held in combat, as ever")
+  ok(CQ.Flush() == 0 and W.super == 0, "3: a flush while still in combat: nothing run")
+  W.combat = false
+  local ran = CQ.Flush()
+  ok(ran == 2 and W.super == 301 and not CQ.Pending(), "3: combat over: run once each (the last row's quest super-tracked)", ran .. " " .. tostring(W.super))
+  ok(has(W.watches, lever) and W.calls.add == adds + 1 and W.calls.remove == removes, "3: the re-track's last change (watch it) made once", list(W.watches))
+  ok(CQ.Flush() == 0, "3: nothing left (a second flush runs nothing)")
+  O.ReadyClick(302)
+  ok(W.super == 302 and not CQ.Pending(), "4: out of combat: straight away, nothing queued")
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

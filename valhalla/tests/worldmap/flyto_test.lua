@@ -581,6 +581,38 @@ do
   _G.IsInInstance = function() return false end
 end
 
+print("== 16. (1.2.23) the quest log shown: no seamless switch (the game's quest log refresh never run from Valhalla's code)")
+do
+  Defaults()
+  W.OpenMap() W.Ticks(3)
+  local q9 = 109
+  local su, sv = 0.715, 0.62
+  W.quests[q9] = { map = 1429, x = (su - 0.69516) / (0.77283 - 0.69516), y = (sv - 0.59857) / (0.67626 - 0.59857) }
+  local function Start() local wu, wv = ToWorld(1436, 0.5, 0.5) mod.ShowNow(wu, wv, Fit(1436)) W.Ticks(2) end
+  ok(mod.QuestLogShown() == false, "the quest log hidden: QuestLogShown false")
+  -- the view left at the Stormwind edge (as section 15's Back), the quest log open beside the map
+  mod.db.questFlyLanding = "close"     -- (lands at Stormwind's own zoom: the switch would put Stormwind up)
+  Start() QuestMapFrame_OpenToQuestDetails(q9) Land() W.Ticks(120)
+  QuestMapFrame_ReturnFromQuestDetails()
+  local was = map:GetMapID()
+  QuestMapFrame.IsShown = function() return true end
+  ok(mod.QuestLogShown() == true, "the quest log shown: QuestLogShown true")
+  W.Ticks(120)
+  ok(map:GetMapID() == was and was == 1429, "quest log shown, 2 s still at Stormwind's edge: no switch (the map stays)", map:GetMapID())
+  QuestMapFrame.IsShown = nil
+  W.Ticks(60)
+  ok(map:GetMapID() == 1453, "the quest log closed: the zone-in-view switch goes on (Stormwind put up)", map:GetMapID())
+  -- the side panel's own answer, with the log frame's not there
+  local wm = _G.WorldMapFrame
+  local had = wm and wm.IsSidePanelShown
+  if wm then
+    wm.IsSidePanelShown = function() return true end
+    ok(mod.QuestLogShown() == true, "WorldMapFrame:IsSidePanelShown(): the quest log shown")
+    wm.IsSidePanelShown = had
+  end
+  Defaults()
+end
+
 print("== 14. nothing broken")
 ok(#W.errors == 0, "no handler errors", table.concat(W.errors, " | "))
 ok(QuestMapFrame_ShowQuestDetails ~= nil and type(QuestMapFrame_OpenToQuestDetails) == "function", "Blizzard's functions are still there (hooked after, not replaced)")

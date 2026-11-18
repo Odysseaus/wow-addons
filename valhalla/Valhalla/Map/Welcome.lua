@@ -63,6 +63,10 @@ function mod:ShowWelcome()
 	if not map then return end
 	if not frame then Build(map) end
 	if map:IsShown() then frame:Show() return end
+	if InCombatLockdown() then   -- (1.2.23: the map opened from Valhalla's code waits for combat's end)
+		if ns.Combat then ns.Combat.Run("map:welcome", function() mod:ShowWelcome() end, L["The map opens when combat ends."]) end
+		return
+	end
 	ToggleWorldMap()
 	C_Timer.After(0, function() if map:IsShown() then frame:Show() end end)
 end

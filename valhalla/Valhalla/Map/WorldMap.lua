@@ -472,9 +472,24 @@ local function PickMap(u, v, zoom, current)
 	return pick
 end
 
+-- (1.2.23) the quest log shown (beside the map, or over it full screen): no seamless switch then. A switch
+-- runs the game's quest log refresh (QuestLogMixin:Refresh -> QuestMapFrame_ResetFilters, the headers set
+-- again) from Valhalla's code, and the game's tracker then lays out from it
+function mod.QuestLogShown()
+	local qm = rawget(_G, "QuestMapFrame")
+	if type(qm) == "table" then
+		local shown = qm.IsVisible or qm.IsShown
+		if type(shown) == "function" and shown(qm) then return true end
+	end
+	local wm = rawget(_G, "WorldMapFrame")
+	if type(wm) == "table" and type(wm.IsSidePanelShown) == "function" and wm:IsSidePanelShown() then return true end
+	return false
+end
+
 local switchView                  -- the view a switch is for, while the new map's icons are placed (mod.PinView)
 local function Switch(target)
 	if mod.DetailsOpen() then return end   -- (1.2.16)
+	if mod.QuestLogShown() then return end   -- (1.2.23)
 	local u, v, zoom = View()
 	switching = true
 	switchView = { u, v, zoom }
@@ -589,7 +604,7 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
 
 	stillFor = Settled() and stillFor + 0.1 or 0
 	if mod.db.autoSwitch and userMoved and stillFor >= SWITCH_AFTER and not InCombatLockdown() and not mod.benching
-		and not mod.DetailsOpen() then   -- (1.2.16: a quest's description open: the map stays the quest's)
+		and not mod.DetailsOpen() and not mod.QuestLogShown() then   -- (1.2.16: a quest's description open: the map stays the quest's; 1.2.23: the quest log shown)
 		local u, v, zoom = View()
 		local target = PickMap(u, v, zoom, mapID)
 		if target ~= mapID then Switch(target) end
