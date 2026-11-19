@@ -138,7 +138,10 @@ end
 -- pin for the link, then put back as it was), with its note; else its note and place, as text
 local function ChatLink(p)
 	local link
-	if C_Map.GetUserWaypointHyperlink and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates
+	-- (1.2.24) the waypoint swap changes the game's super-track: not while CombatQueue.lua's gate holds (combat,
+	-- secret restrictions, the settle after combat); the note and place as text then
+	local held = ns.Combat and ns.Combat.Blocked and ns.Combat.Blocked()
+	if not held and C_Map.GetUserWaypointHyperlink and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates
 		and (not C_Map.CanSetUserWaypointOnMap or C_Map.CanSetUserWaypointOnMap(p.map)) then
 		local before = C_Map.GetUserWaypoint and C_Map.GetUserWaypoint()
 		if pcall(C_Map.SetUserWaypoint, UiMapPoint.CreateFromCoordinates(p.map, p.x, p.y)) then

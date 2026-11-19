@@ -110,7 +110,18 @@ local PIN_ON = ns.Media.path .. "Textures\\ValhallaPinOn"
 local PIN_OFF = ns.Media.path .. "Textures\\ValhallaPinOff"
 
 local function Now() return GetTime and GetTime() or 0 end
-local function InCombat() return InCombatLockdown and InCombatLockdown() and true or false end
+-- (1.2.24) "in combat" here is CombatQueue.lua's gate: combat, the player in combat, the game's secret
+-- restrictions, or the few seconds after combat; watch, super-track and re-track changes all wait on it
+local function InCombat()
+	local C = ns.Combat
+	if C and C.Blocked then return C.Blocked() end
+	return InCombatLockdown and InCombatLockdown() and true or false
+end
+local function GateWhy()
+	local C = ns.Combat
+	if C and C.Why then return C.Why() end
+	return InCombat() and { "combat" } or {}
+end
 local function OnTaxi() return UnitOnTaxi and UnitOnTaxi("player") and true or false end
 local function Plain(v) return ns.Safe and ns.Safe.Value(v) or v end
 local function Call(fn, ...)
@@ -1297,7 +1308,13 @@ end
 
 -- turned off: the quests Valhalla untracked are tracked again (the game's own tracking from then on)
 function O.Restore()
-	if InCombat() then S.restorePending = true return false end
+	if InCombat() then
+		S.restorePending = true
+		-- (1.2.24) also through the queue: a secret restriction ends with no PLAYER_REGEN_ENABLED
+		local C = ns.Combat
+		if C and C.Run then C.Run("objectives:restore", function() if S.restorePending then O.Restore() end end) end
+		return false
+	end
 	S.restorePending = nil
 	local c = Char()
 	local log = O.ReadLog()
@@ -1847,7 +1864,7 @@ function O.Why(id)
 		out[#out + 1] = ("  watch: %s%s"):format(watched[id] and "tracked" or "not tracked",
 			wt ~= nil and (" (watch type " .. tostring(wt) .. (wt == 0 and ", automatic" or wt == 1 and ", manual" or "") .. ")") or "")
 		local hold = {}
-		if InCombat() then hold[#hold + 1] = "combat" end
+		for _, w in ipairs(GateWhy()) do hold[#hold + 1] = w end
 		if OnTaxi() then hold[#hold + 1] = "flight" end
 		if S.loading then hold[#hold + 1] = "loading screen" end
 		out[#out + 1] = ("  watch changes: %s; queued %d%s"):format(#hold > 0 and ("on hold (" .. table.concat(hold, ", ") .. ")") or "not on hold",
@@ -1927,7 +1944,7 @@ end
 
 local function BlockedWhy()
 	local t = {}
-	if InCombat() then t[#t + 1] = "combat" end
+	for _, w in ipairs(GateWhy()) do t[#t + 1] = w end
 	if OnTaxi() then t[#t + 1] = "taxi" end
 	if S.loading then t[#t + 1] = "loading" end
 	if S.fullDue then t[#t + 1] = "zone plan due" end

@@ -156,8 +156,20 @@ local function ClearTomTom()
 	tomtomPoint = nil
 end
 
+-- (1.2.24) the game's waypoint (set or cleared) changes its super-track, which lays the quest tracker out from
+-- Valhalla's code: it waits on CombatQueue.lua's gate (combat, secret restrictions, the settle after combat),
+-- one queued change under "waypoint", the last kept (a clear after a set: cleared)
+local WAYPOINT_NOTE = "The waypoint is set when combat ends."
+local function Gate(fn)
+	local C = ns.Combat
+	if C and C.Run then return C.Run("waypoint", fn, L[WAYPOINT_NOTE]) end
+	if InCombatLockdown() then return false end
+	fn()
+	return true
+end
+
 local function ClearPin()
-	if C_Map.ClearUserWaypoint then pcall(C_Map.ClearUserWaypoint) end
+	Gate(function() if C_Map.ClearUserWaypoint then pcall(C_Map.ClearUserWaypoint) end end)
 	mod.char.pin = nil
 	ClearTomTom()
 	RefreshWaypoint()
@@ -223,6 +235,9 @@ end
 -- the waypoint followed to a point on a map: Blizzard's if it takes it, else ours; and TomTom's.
 -- `title`: TomTom's name for it (the map's name, else)
 function mod.TrackPoint(mapID, x, y, title)
+	Gate(function() mod.TrackPointNow(mapID, x, y, title) end)
+end
+function mod.TrackPointNow(mapID, x, y, title)
 	local info = C_Map.GetMapInfo(mapID)
 	local blizzard = false
 	if C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates

@@ -1,5 +1,5 @@
 -- Box tests for Valhalla/CombatQueue.lua (1.2.23: in combat, Valhalla's calls into the game's quest tracker,
--- quest log and windows wait until combat ends). Lua 5.1.
+-- quest log and windows wait until combat ends; 1.2.24: the gate widened, the settle after combat). Lua 5.1.
 -- Run: lua valhalla/tests/combat/combatqueue_test.lua [path to Valhalla/]
 local here = (arg[0] or ""):match("^(.*[/\\])") or "./"
 local root = arg[1] or (here .. "../../Valhalla/")
@@ -79,6 +79,123 @@ for path in p:lines() do
 end
 p:close()
 ok(seen >= 9 and #bad == 0, "every ToggleWorldMap / ShowUIPanel / HideUIPanel call guarded by combat (" .. seen .. " calls)", table.concat(bad, ", "))
+
+-- (1.2.24) the gate: the player in combat, secret restrictions, the settle after combat; timers
+print("== 6. (1.2.24) secret restrictions (out of combat): deferred, looked at again, run once clear")
+local clock = 1000
+function GetTime() return clock end
+local timers = {}
+C_Timer = { After = function(d, fn) timers[#timers + 1] = { at = clock + (d or 0), fn = fn } end }
+local function Advance(sec)
+  clock = clock + sec
+  local again = true
+  while again do
+    again = false
+    for i, t in ipairs(timers) do
+      if t.at <= clock then table.remove(timers, i) t.fn() again = true break end
+    end
+  end
+end
+local secret, unitCombat = false, false
+C_Secrets = { HasSecretRestrictions = function() return secret end }
+function UnitAffectingCombat(u) return u == "player" and unitCombat end
+combat, secret = false, true
+ns.printed, log = {}, {}
+ok(Q.Blocked() and Q.Why()[1] == "secret restrictions", "secret restrictions: the gate holds", table.concat(Q.Why(), ","))
+ok(Q.Run("supertrack", function() log[#log + 1] = "super" end, "note") == false and #log == 0 and Q.Pending("supertrack"), "deferred, not run")
+ok(#ns.printed == 1 and #timers == 1, "told once; a look scheduled (no PLAYER_REGEN_ENABLED comes)", #timers)
+Advance(Q.SETTLE)
+ok(#log == 0 and Q.Pending() and #timers == 1, "still restricted after the wait: re-deferred, looked at again")
+ok(Q.Flush() == 0 and #log == 0, "a flush while restricted: nothing run")
+secret = false
+Advance(Q.SETTLE)
+ok(#log == 1 and not Q.Pending() and #timers == 0, "clear: run once, nothing scheduled after")
+ok(Q.Run("now", function() log[#log + 1] = "now" end) == true and log[2] == "now", "clear and nothing queued: straight away")
+
+print("== 7. (1.2.24) the player in combat (UnitAffectingCombat) without lockdown, and a secret answer: held")
+unitCombat, log = true, {}
+ok(Q.Blocked() and Q.Run("watch:7", function() log[#log + 1] = "w7" end) == false and #log == 0, "UnitAffectingCombat: held")
+unitCombat = false
+local realSecret = rawget(_G, "issecretvalue")
+local SECRET = {}
+issecretvalue = function(v) return v == SECRET end
+C_Secrets.HasSecretRestrictions = function() return SECRET end
+ok(Q.Blocked(), "a secret answer from the game counts as blocked")
+C_Secrets.HasSecretRestrictions = function() return secret end
+issecretvalue = realSecret
+Advance(Q.SETTLE)
+ok(log[1] == "w7" and not Q.Pending(), "clear again: run")
+
+print("== 8. (1.2.24) combat ends: nothing for SETTLE seconds, new changes queue behind, then run in order")
+combat, log, ns.printed = true, {}, {}
+Q.Run("watch:1", function() log[#log + 1] = "watch 1" end, "note")
+Q.Run("supertrack", function() log[#log + 1] = "super A" end, "note")
+ok(#timers == 0, "in lockdown: no timer (PLAYER_REGEN_ENABLED starts it)")
+combat = false
+h.fn(h.owner, "PLAYER_REGEN_ENABLED")
+ok(#log == 0 and Q.Blocked() and Q.Why()[1] == "settling after combat", "PLAYER_REGEN_ENABLED: not run yet (settling)", table.concat(Q.Why(), ","))
+Advance(1)
+ok(Q.Run("supertrack", function() log[#log + 1] = "super B" end, "note") == false and #log == 0, "a change in the settle: queued (the last kept), not run")
+Advance(1.5)
+ok(#log == 0, "2.5 s after combat: still nothing")
+Advance(0.6)
+ok(table.concat(log, ",") == "watch 1,super B", "after SETTLE seconds, still clear: run in order, the last write only", table.concat(log, ","))
+ok(not Q.Pending() and #timers == 0, "nothing left or scheduled")
+
+print("== 9. (1.2.24) not clear when the settle ends: re-deferred; combat again in the settle: the next end starts over")
+combat, log = true, {}
+Q.Run("questlog:zones", function() log[#log + 1] = "zones" end)
+combat = false
+h.fn(h.owner, "PLAYER_REGEN_ENABLED")
+secret = true
+Advance(Q.SETTLE)
+ok(#log == 0 and Q.Pending() and #timers == 1, "secret at the settle's end: re-deferred, looked at again")
+secret = false
+combat = true
+Advance(Q.SETTLE)
+ok(#log == 0 and #timers == 0, "combat again by then: held, no timer in lockdown")
+combat = false
+h.fn(h.owner, "PLAYER_REGEN_ENABLED")
+Advance(Q.SETTLE - 0.5)
+ok(#log == 0, "the new settle: still waiting")
+Advance(0.5)
+ok(log[1] == "zones" and not Q.Pending(), "then run, once")
+
+print("== 10. (1.2.24) Cancel")
+combat = true
+Q.Run("waypoint", function() log[#log + 1] = "wp" end)
+ok(Q.Cancel("waypoint") and not Q.Pending("waypoint") and not Q.Cancel("waypoint"), "a queued key dropped (once)")
+combat = false
+
+print("== 11. (1.2.24) every call that changes the game's watch, super-track, waypoint or quest details waits on the gate (source scan)")
+do
+  local pats = { "C_Map%.SetUserWaypoint", "C_Map%.ClearUserWaypoint", "SetSuperTrackedUserWaypoint", "SetSuperTrackedQuestID",
+    "ClearAllSuperTracked", "C_QuestLog%.AddQuestWatch", "C_QuestLog%.RemoveQuestWatch", "C%.AddQuestWatch", "C%.RemoveQuestWatch",
+    "\"ExpandQuestHeader\"", "\"QuestMapFrame_ShowQuestDetails\"%)", "\"QuestMapFrame_OpenToQuestDetails\"%)", "\"QuestMapQuestOptions_TrackQuest\"%)" }
+  local guards = { "ns.Combat", "Defer(", "Gate(", "C.Run", "InCombat()", "Blocked()" }
+  local p2 = io.popen('find "' .. root .. '" -name "*.lua" -not -path "*/Libs/*" -not -path "*/Locales/*" -not -path "*/Data/*"')
+  local bad2, seen2 = {}, 0
+  for path in p2:lines() do
+    local lines = {}
+    for line in io.lines(path) do lines[#lines + 1] = line end
+    for n, line in ipairs(lines) do
+      local code = line:gsub("%-%-.*$", "")
+      for _, pat in ipairs(pats) do
+        if code:find(pat) and not code:find("hooksecurefunc", 1, true) and not code:find("^%s*if ") and not code:find("^%s*and ") then
+          seen2 = seen2 + 1
+          local guarded = false
+          for k = math.max(1, n - 12), math.min(#lines, n + 12) do
+            for _, g in ipairs(guards) do if lines[k]:find(g, 1, true) then guarded = true end end
+          end
+          if not guarded then bad2[#bad2 + 1] = path:match("[^/]+/[^/]+$") .. ":" .. n end
+          break
+        end
+      end
+    end
+  end
+  p2:close()
+  ok(seen2 >= 12 and #bad2 == 0, "every such call behind the gate (" .. seen2 .. " calls)", table.concat(bad2, ", "))
+end
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

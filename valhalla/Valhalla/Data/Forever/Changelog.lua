@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.24", date = "2026-11-18", heads = { [1] = "Fixed", [3] = "Changed", }, items = {
+		"|cff6e2c0a\"Auras cannot be accessed when secret while tainted by 'Valhalla'\" again|r: 1.2.23 held Valhalla's quest tracker changes only while the game said you were in combat. They now also wait while you're in combat by any other measure, while the game keeps auras secret, and for 3 seconds after combat ends, then run only if all of that is still clear (checked again every 3 seconds if not).",
+		"Following a map pin (setting or clearing the game's waypoint) and a quest's details opened from the map or a quest chain row now wait the same way, with one line in chat.",
+		"After combat, quest tracking you changed in combat, the zone-by-zone tracking and the quest log zones apply about 3 seconds later than before.",
+	} },
 	{ version = "1.2.23", date = "2026-11-17", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
 		"|cff6e2c0a\"Auras cannot be accessed when secret while tainted by 'Valhalla'\" in combat|r: a spec or talent change in combat lays out the game's quest tracker, which reads your auras, and in combat that read errored when Valhalla's own changes to the tracker had just come before. In combat Valhalla now leaves the quest tracker and quest log alone and makes its changes once combat ends.",
 		"Quest log zones you've clicked stay as you left them, as in 1.2.22; in combat the game's own way shows until combat ends, then yours come back.",

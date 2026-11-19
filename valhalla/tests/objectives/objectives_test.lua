@@ -1407,5 +1407,26 @@ do
   ok(W.super == 302 and not CQ.Pending(), "4: out of combat: straight away, nothing queued")
 end
 
+print("== 58. (1.2.24) secret restrictions out of combat: the scheduler and watch changes held, run once clear")
+do
+  local CQ = ns.Combat
+  local secret = true
+  C_Secrets = { HasSecretRestrictions = function() return secret end }
+  W.combat = false
+  local adds, removes = W.calls.add, W.calls.remove
+  ok(O.Blocked(), "1: O.Blocked() with secret restrictions (no combat)")
+  local lever = O.Retrack()
+  ok(lever and CQ.Pending("watch:" .. tostring(lever)) and W.calls.add == adds and W.calls.remove == removes, "1: a re-track: no watch call; queued", tostring(lever))
+  O.ReadyClick(302)
+  ok(CQ.Pending("supertrack"), "1: a Ready row's super-track queued")
+  local why = O.Why and O.Why(302) or ""
+  if type(why) == "table" then why = table.concat(why, "\n") end
+  ok(tostring(why):find("secret restrictions", 1, true) ~= nil, "1: /valhalla objectives why: the hold named", tostring(why):match("watch changes:[^\n]*"))
+  secret = false
+  ok(not O.Blocked() and CQ.Flush() == 2 and not CQ.Pending(), "2: clear: run (re-track, super-track)")
+  ok(W.super == 302, "2: the Ready row's quest super-tracked", tostring(W.super))
+  C_Secrets = nil
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

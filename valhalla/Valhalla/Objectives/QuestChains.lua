@@ -50,7 +50,12 @@ local function Call(fn, ...)
 end
 
 -- (1.2.23) the game's tracker and quest log changed only out of combat (CombatQueue.lua): in combat it waits
-local function InCombat() return InCombatLockdown and InCombatLockdown() and true or false end
+-- (1.2.24: CombatQueue.lua's gate: combat, the player in combat, secret restrictions, the settle after combat)
+local function InCombat()
+	local C = ns.Combat
+	if C and C.Blocked then return C.Blocked() end
+	return InCombatLockdown and InCombatLockdown() and true or false
+end
 local function Defer(key, fn, note)
 	local C = ns.Combat
 	if C and C.Run then return C.Run(key, fn, note and L[note]) end
@@ -574,8 +579,11 @@ function QC.RowClick(row, button)
 			end
 		end, "Tracking changed in combat: it applies when combat ends.")
 	elseif button == "LeftButton" or button == nil then
-		local show = rawget(_G, "QuestMapFrame_ShowQuestDetails")
-		if type(show) == "function" then show(q) end
+		-- (1.2.24) the game's quest details (they move the tracker's selection) wait on the gate too
+		Defer("details", function()
+			local show = rawget(_G, "QuestMapFrame_ShowQuestDetails")
+			if type(show) == "function" then show(q) end
+		end, "Quest details open when combat ends.")
 	end
 end
 
