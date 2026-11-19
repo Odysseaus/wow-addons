@@ -617,5 +617,44 @@ print("== 14. nothing broken")
 ok(#W.errors == 0, "no handler errors", table.concat(W.errors, " | "))
 ok(QuestMapFrame_ShowQuestDetails ~= nil and type(QuestMapFrame_OpenToQuestDetails) == "function", "Blizzard's functions are still there (hooked after, not replaced)")
 
+print("== (1.2.25) the waypoint out of combat with HasSecretRestrictions always true: set at once (Map/Nav.lua)")
+do
+  local okLoad, err = pcall(function()
+    assert(loadfile(root .. "CombatQueue.lua"))("Valhalla", ns)
+    assert(loadfile(root .. "Map/Nav.lua"))("Valhalla", ns)
+  end)
+  ok(okLoad, "CombatQueue.lua and Map/Nav.lua load", tostring(err))
+  local wm = ns:GetModule("worldmap")
+  local set, super, cleared = {}, 0, 0
+  local saveCM, saveST, saveSec, saveUP = C_Map, C_SuperTrack, rawget(_G, "C_Secrets"), rawget(_G, "UiMapPoint")
+  local has = false
+  C_Map = setmetatable({
+    SetUserWaypoint = function(p) set[#set + 1] = p has = true end,
+    ClearUserWaypoint = function() cleared = cleared + 1 has = false end,
+    HasUserWaypoint = function() return has end,
+    GetUserWaypoint = function() local p = set[#set] return p and { uiMapID = p.m, position = { x = p.x, y = p.y } } end,
+    CanSetUserWaypointOnMap = function() return true end,
+    GetMapInfo = function(m) return { name = "Map " .. tostring(m) } end,
+  }, { __index = saveCM })
+  UiMapPoint = { CreateFromCoordinates = function(m, x, y) return { m = m, x = x, y = y } end }
+  C_SuperTrack = setmetatable({ SetSuperTrackedUserWaypoint = function() super = super + 1 end }, { __index = saveST or {} })
+  C_Secrets = { HasSecretRestrictions = function() return true end, ShouldAurasBeSecret = function() return false end }
+  local combat0 = W.combat
+  W.combat = false
+  wm.char = wm.char or {}
+  local before = #W.printed
+  local okT, errT = pcall(wm.TrackPoint, 1429, 0.5, 0.5, "test")
+  ok(okT, "TrackPoint ran", tostring(errT))
+  ok(#set == 1 and super == 1 and not ns.Combat.Pending(), "set and super-tracked at once, nothing queued", #set .. " " .. super)
+  local said = false for i = before + 1, #W.printed do if W.printed[i]:find("waypoint is set when combat ends", 1, true) then said = true end end
+  ok(not said, "no 'when combat ends' line out of combat")
+  W.combat = true
+  pcall(wm.TrackPoint, 1429, 0.6, 0.6, "test2")
+  ok(#set == 1 and ns.Combat.Pending("waypoint"), "in combat: queued (as 1.2.24)")
+  ns.Combat.Cancel("waypoint")
+  W.combat = combat0
+  C_Map, C_SuperTrack, C_Secrets, UiMapPoint = saveCM, saveST, saveSec, saveUP
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end

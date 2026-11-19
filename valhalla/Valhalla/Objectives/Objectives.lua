@@ -215,9 +215,20 @@ function O.DataReady(id)
 	if have and Call(have, id) then return true end
 	return false
 end
+-- (1.2.25) never while CombatQueue.lua's gate holds (combat, secret auras, the settle after combat), and at
+-- most once a quest every REQUEST_GAP seconds (it was asked every tick while a tracker row's title read empty)
+O.REQUEST_GAP = 10
 function O.RequestData(id)
 	local CQ = C_QuestLog
-	if id and CQ and CQ.RequestLoadQuestByID then Call(CQ.RequestLoadQuestByID, id) end
+	if not (id and CQ and CQ.RequestLoadQuestByID) then return false end
+	if InCombat() then return false end
+	S.requested = S.requested or {}
+	local now = Now()
+	local last = S.requested[id]
+	if last and now - last < O.REQUEST_GAP then return false end
+	S.requested[id] = now
+	Call(CQ.RequestLoadQuestByID, id)
+	return true
 end
 -- what places a quest (a change: placed again)
 local function KeyOfPlace(e) return tostring(e.header) .. "|" .. tostring(e.tag) end
@@ -1310,7 +1321,7 @@ end
 function O.Restore()
 	if InCombat() then
 		S.restorePending = true
-		-- (1.2.24) also through the queue: a secret restriction ends with no PLAYER_REGEN_ENABLED
+		-- (1.2.24) also through the queue: secret auras end with no PLAYER_REGEN_ENABLED
 		local C = ns.Combat
 		if C and C.Run then C.Run("objectives:restore", function() if S.restorePending then O.Restore() end end) end
 		return false
@@ -1421,7 +1432,7 @@ function O.LayoutPins()
 		local text = type(ht) == "table" and ht.GetText and ht:GetText()
 		if type(ht) == "table" and (type(text) ~= "string" or text == "") then
 			blank[it.q] = true
-			if not S.blank[it.q] then O.RequestData(it.q) end
+			O.RequestData(it.q)   -- (1.2.25: gated, at most once a quest every REQUEST_GAP s: asked again if skipped)
 		else
 			n = n + 1
 			local p = UI.pins[n] or MakePin(UIParent)

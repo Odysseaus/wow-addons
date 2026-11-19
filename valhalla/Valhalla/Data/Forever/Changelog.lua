@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.25", date = "2026-11-19", heads = { [1] = "Fixed", [3] = "Changed", }, items = {
+		"|cff6e2c0aWaypoints, zone tracking and quest log zones stuck since 1.2.24|r: 1.2.24 asked the game whether this client has secret values at all (always yes here), so Valhalla's changes to the quest tracker waited for good, even out of combat: a dropped map pin set no waypoint arrow, and quests weren't tracked or untracked by zone. It now asks whether your auras are secret right now, so out of combat they apply at once again.",
+		"If the game keeps auras secret out of combat for more than 30 seconds, Valhalla's waiting changes go ahead anyway, with one line in chat (once a session). In combat, and for 3 seconds after, they still wait.",
+		"Valhalla asks the game for a quest's details (for a tracker row whose title hasn't loaded) only out of combat, and at most once every 10 seconds per quest. /valhalla combat shows whether Valhalla's changes are waiting, why, and the last ones made (time and what).",
+	} },
 	{ version = "1.2.24", date = "2026-11-18", heads = { [1] = "Fixed", [3] = "Changed", }, items = {
 		"|cff6e2c0a\"Auras cannot be accessed when secret while tainted by 'Valhalla'\" again|r: 1.2.23 held Valhalla's quest tracker changes only while the game said you were in combat. They now also wait while you're in combat by any other measure, while the game keeps auras secret, and for 3 seconds after combat ends, then run only if all of that is still clear (checked again every 3 seconds if not).",
 		"Following a map pin (setting or clearing the game's waypoint) and a quest's details opened from the map or a quest chain row now wait the same way, with one line in chat.",

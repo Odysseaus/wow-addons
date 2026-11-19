@@ -139,7 +139,7 @@ end
 local function ChatLink(p)
 	local link
 	-- (1.2.24) the waypoint swap changes the game's super-track: not while CombatQueue.lua's gate holds (combat,
-	-- secret restrictions, the settle after combat); the note and place as text then
+	-- secret auras, the settle after combat); the note and place as text then
 	local held = ns.Combat and ns.Combat.Blocked and ns.Combat.Blocked()
 	if not held and C_Map.GetUserWaypointHyperlink and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates
 		and (not C_Map.CanSetUserWaypointOnMap or C_Map.CanSetUserWaypointOnMap(p.map)) then

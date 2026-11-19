@@ -8,8 +8,12 @@
 -- quest-log header and window calls make the tracker lay out (on the next frame) from Valhalla's code, so they
 -- are kept out of those times.
 --
--- The gate (Q.Blocked): InCombatLockdown(), or UnitAffectingCombat("player"), or C_Secrets.HasSecretRestrictions(),
--- or the settle after combat (SETTLE seconds from PLAYER_REGEN_ENABLED). A secret answer counts as blocked.
+-- The gate (Q.Blocked): InCombatLockdown(), or UnitAffectingCombat("player"), or C_Secrets.ShouldAurasBeSecret()
+-- (1.2.25: aura reads would be secret now; 1.2.24 asked HasSecretRestrictions, which only says the client build has
+-- secrets at all - always true on Forever - and held everything for good), or the settle after combat (SETTLE
+-- seconds from PLAYER_REGEN_ENABLED). A secret answer counts as blocked.
+-- (1.2.25) the safety net: held only by "secret auras" (no combat, no settle) for SAFETY seconds, the gate opens
+-- anyway (one chat line a session), until that hold ends; so nothing waits for good out of combat.
 --
 --   ns.Combat.Run(key, fn, note)   fn() now when clear and nothing queued (true); else queued under key (false):
 --                                   a later Run with the same key replaces it (last write wins, moved to the end).
@@ -18,6 +22,8 @@
 --   ns.Combat.Pending(key)         queued? (any, with no key)
 --   ns.Combat.Blocked()            the gate now; ns.Combat.Why(): its reasons ({} when clear)
 --   ns.Combat.Cancel(key)          a queued key dropped
+--   ns.Combat.History()            (1.2.25) the last HISTORY calls run: { at = GetTime(), clock = "hh:mm:ss",
+--                                   key, how = "now" | "queued" }; /valhalla combat prints them
 -- After PLAYER_REGEN_ENABLED the queue waits SETTLE seconds, then runs only if the gate is clear; if not, it's
 -- checked again every SETTLE seconds (out of combat lockdown; in it, the next PLAYER_REGEN_ENABLED starts again).
 --------------------------------------------------------------------------------
@@ -26,6 +32,13 @@ local ADDON, ns = ...
 local Q = { order = {}, ops = {}, said = {}, settleUntil = 0, timer = false }
 ns.Combat = Q
 Q.SETTLE = 3
+Q.SAFETY = 30
+Q.HISTORY = 40
+Q.SAFETY_NOTE = "The game is keeping auras secret out of combat: Valhalla's waiting quest tracker changes go ahead after 30 seconds."
+Q.history = {}
+Q.secretSince = nil     -- (when the hold by secret auras alone began)
+Q.released = false      -- (that hold has passed SAFETY seconds: the gate is open until it ends)
+Q.warned = false
 
 local function Now() return GetTime and GetTime() or 0 end
 -- a yes/no from the game: a secret (or failing) answer counts as yes (blocked)
@@ -43,11 +56,53 @@ function Q.Why()
 	if Yes(InCombatLockdown) then t[#t + 1] = "combat" end
 	if Yes(UnitAffectingCombat, "player") and #t == 0 then t[#t + 1] = "combat (unit)" end
 	local CS = rawget(_G, "C_Secrets")
-	if type(CS) == "table" and Yes(CS.HasSecretRestrictions) then t[#t + 1] = "secret restrictions" end
+	if type(CS) == "table" and Yes(CS.ShouldAurasBeSecret) then t[#t + 1] = "secret auras" end
 	if Now() < (Q.settleUntil or 0) then t[#t + 1] = "settling after combat" end
 	return t
 end
-function Q.Blocked() return #Q.Why() > 0 end
+-- the gate, with the safety net: secret auras alone (out of combat, settled) hold for SAFETY seconds at most
+function Q.Blocked()
+	local why = Q.Why()
+	if #why == 1 and why[1] == "secret auras" then
+		local now = Now()
+		if not Q.secretSince then Q.secretSince = now end
+		if Q.released or now - Q.secretSince >= Q.SAFETY then
+			if not Q.released then
+				Q.released = true
+				if not Q.warned then
+					Q.warned = true
+					if ns.Print then ns:Print(ns.L and ns.L[Q.SAFETY_NOTE] or Q.SAFETY_NOTE) end
+				end
+			end
+			return false
+		end
+		return true
+	end
+	Q.secretSince, Q.released = nil, false
+	return #why > 0
+end
+
+local function Record(key, how)
+	local h = Q.history
+	h[#h + 1] = { at = Now(), clock = date and date("%H:%M:%S") or "", key = tostring(key), how = how }
+	while #h > Q.HISTORY do table.remove(h, 1) end
+end
+function Q.History() return Q.history end
+-- /valhalla combat: the gate now, what waits, and the last calls run
+function Q.Report()
+	local out = {}
+	local why = Q.Why()
+	out[#out + 1] = ("Combat queue: %s; %d waiting%s"):format(#why > 0 and ("held (" .. table.concat(why, ", ") .. ")") or "clear",
+		#Q.order, Q.released and "; safety net open (secret auras over " .. Q.SAFETY .. " s)" or "")
+	if #Q.order > 0 then out[#out + 1] = "  waiting: " .. table.concat(Q.order, ", ") end
+	local h = Q.history
+	if #h == 0 then out[#out + 1] = "  nothing run yet"
+	else
+		out[#out + 1] = ("  last %d run (oldest first):"):format(#h)
+		for _, e in ipairs(h) do out[#out + 1] = ("  %s  %s  (%s)"):format(e.clock, e.key, e.how) end
+	end
+	return out
+end
 
 local function Drop(key)
 	for i = #Q.order, 1, -1 do
@@ -76,7 +131,7 @@ Q.Tick = Tick
 function Q.Run(key, fn, note)
 	if type(fn) ~= "function" then return false end
 	key = key or fn
-	if not Q.Blocked() and #Q.order == 0 then fn() return true end
+	if not Q.Blocked() and #Q.order == 0 then Record(key, "now") fn() return true end
 	if Q.ops[key] then Drop(key) end
 	Q.ops[key] = fn
 	Q.order[#Q.order + 1] = key
@@ -109,6 +164,7 @@ function Q.Flush()
 		local fn = ops[key]
 		if fn then
 			n = n + 1
+			Record(key, "queued")
 			local ok, err = pcall(fn)
 			if not ok and geterrorhandler then geterrorhandler()(err) end
 		end

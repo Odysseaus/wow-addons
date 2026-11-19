@@ -81,7 +81,7 @@ local function Click(pin)
 	-- (in combat with the gamepad's UI, Blizzard's quest details would set the pad's buttons from
 	-- Valhalla's code, which combat blocks: they wait, as a dungeon's map does)
 	if mod.PadWaits and mod.PadWaits() then return end
-	-- (1.2.24) the game's quest details wait on CombatQueue.lua's gate (combat, secret restrictions, the settle
+	-- (1.2.24) the game's quest details wait on CombatQueue.lua's gate (combat, secret auras, the settle
 	-- after combat); when they run, the log beside a windowed map is looked at again
 	local function Details()
 		local log = map and map.QuestLog

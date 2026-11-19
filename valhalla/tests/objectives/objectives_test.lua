@@ -1407,24 +1407,65 @@ do
   ok(W.super == 302 and not CQ.Pending(), "4: out of combat: straight away, nothing queued")
 end
 
-print("== 58. (1.2.24) secret restrictions out of combat: the scheduler and watch changes held, run once clear")
+print("== 58. (1.2.24, 1.2.25: ShouldAurasBeSecret) secret auras out of combat: the scheduler and watch changes held, run once clear")
 do
   local CQ = ns.Combat
   local secret = true
-  C_Secrets = { HasSecretRestrictions = function() return secret end }
+  C_Secrets = { ShouldAurasBeSecret = function() return secret end }
   W.combat = false
   local adds, removes = W.calls.add, W.calls.remove
-  ok(O.Blocked(), "1: O.Blocked() with secret restrictions (no combat)")
+  ok(O.Blocked(), "1: O.Blocked() with secret auras (no combat)")
   local lever = O.Retrack()
   ok(lever and CQ.Pending("watch:" .. tostring(lever)) and W.calls.add == adds and W.calls.remove == removes, "1: a re-track: no watch call; queued", tostring(lever))
   O.ReadyClick(302)
   ok(CQ.Pending("supertrack"), "1: a Ready row's super-track queued")
   local why = O.Why and O.Why(302) or ""
   if type(why) == "table" then why = table.concat(why, "\n") end
-  ok(tostring(why):find("secret restrictions", 1, true) ~= nil, "1: /valhalla objectives why: the hold named", tostring(why):match("watch changes:[^\n]*"))
+  ok(tostring(why):find("secret auras", 1, true) ~= nil, "1: /valhalla objectives why: the hold named", tostring(why):match("watch changes:[^\n]*"))
   secret = false
   ok(not O.Blocked() and CQ.Flush() == 2 and not CQ.Pending(), "2: clear: run (re-track, super-track)")
   ok(W.super == 302, "2: the Ready row's quest super-tracked", tostring(W.super))
+  C_Secrets = nil
+end
+
+print("== 59. (1.2.25) HasSecretRestrictions always true out of combat: the scheduler and watch changes run at once")
+do
+  local CQ = ns.Combat
+  C_Secrets = { HasSecretRestrictions = function() return true end, ShouldAurasBeSecret = function() return false end }
+  W.combat = false
+  W.clock = W.clock + 10
+  W.Reset()
+  W.AddQuest(301, "Elwynn Forest", "Elwynn's", 10, false, false)
+  W.AddQuest(302, "Elwynn Forest", "Elwynn's other", 11, false, false)
+  W.AddQuest(401, "Westfall", "Westfall's", 12, false, false)
+  Restart()
+  Arrive(1429)
+  Run(5)
+  ok(not O.Blocked() and has(W.watches, 301) and not has(W.watches, 401), "1: the zone plan ran (Elwynn's tracked, Westfall's not)", list(W.watches))
+  local adds = W.calls.add
+  local lever = O.Retrack()
+  ok(lever and not CQ.Pending() and W.calls.add == adds + 1, "2: a re-track: made at once, nothing queued", tostring(lever))
+  O.ReadyClick(302)
+  ok(W.super == 302 and not CQ.Pending(), "3: a Ready row's super-track at once", tostring(W.super))
+
+  print("== 60. (1.2.25) quest data asks: never while the gate holds, at most once a quest every REQUEST_GAP s")
+  local asked = {}
+  C_QuestLog.RequestLoadQuestByID = function(id) asked[id] = (asked[id] or 0) + 1 end
+  O.S.requested = {}
+  ok(O.RequestData(777) == true and asked[777] == 1, "1: asked")
+  ok(O.RequestData(777) == false and asked[777] == 1, "2: again at once: not asked")
+  W.clock = W.clock + O.REQUEST_GAP
+  ok(O.RequestData(777) == true and asked[777] == 2, "3: after REQUEST_GAP s: asked again")
+  W.clock = W.clock + O.REQUEST_GAP
+  W.combat = true
+  ok(O.RequestData(777) == false and asked[777] == 2, "4: in combat: not asked")
+  W.combat = false
+  C_Secrets.ShouldAurasBeSecret = function() return true end
+  ok(O.RequestData(777) == false and asked[777] == 2, "5: secret auras: not asked")
+  C_Secrets.ShouldAurasBeSecret = function() return false end
+  W.clock = W.clock + 10
+  ok(O.RequestData(777) == true and asked[777] == 3, "6: clear: asked")
+  C_QuestLog.RequestLoadQuestByID = nil
   C_Secrets = nil
 end
 

@@ -50,7 +50,7 @@ local function Call(fn, ...)
 end
 
 -- (1.2.23) the game's tracker and quest log changed only out of combat (CombatQueue.lua): in combat it waits
--- (1.2.24: CombatQueue.lua's gate: combat, the player in combat, secret restrictions, the settle after combat)
+-- (1.2.24: CombatQueue.lua's gate: combat, the player in combat, secret auras, the settle after combat)
 local function InCombat()
 	local C = ns.Combat
 	if C and C.Blocked then return C.Blocked() end

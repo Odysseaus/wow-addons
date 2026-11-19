@@ -692,10 +692,10 @@ ok(#tracked == 2 and not CQ.Pending(), "out of combat: straight away")
 _G.QuestMapQuestOptions_TrackQuest, _G.IsShiftKeyDown, _G.ChatFrameUtil = gameTrack, shift, cfu
 ok(Frame.protectedCalls == 0 and W.blockedSetters == 0, "nothing protected, no blocked setters")
 
-print("== 11. (1.2.24) secret restrictions out of combat: the zones' put-back queued, run once clear")
+print("== 11. (1.2.24, 1.2.25: ShouldAurasBeSecret) secret auras out of combat: the zones' put-back queued, run once clear")
 do
   local secret = true
-  C_Secrets = { HasSecretRestrictions = function() return secret end }
+  C_Secrets = { ShouldAurasBeSecret = function() return secret end }
   W.combat = false
   local head
   for i = 1, C_QuestLog.GetNumQuestLogEntries() do local e = C_QuestLog.GetInfo(i) if e.isHeader and e.title then head = e.title break end end
@@ -703,12 +703,26 @@ do
   store[head] = false
   W.collapsed[head] = true
   W.zc = {}
-  ok(Z.Apply() == 0 and #W.zc == 0 and Folded(head) and CQ.Pending("questlog:zones"), "secret restrictions: no header calls; one apply queued", head)
+  ok(Z.Apply() == 0 and #W.zc == 0 and Folded(head) and CQ.Pending("questlog:zones"), "secret auras: no header calls; one apply queued", head)
   secret = false
   CQ.Flush()
   ok(not Folded(head) and #W.zc == 1 and not CQ.Pending(), "clear: put back (" .. tostring(head) .. " open), one call", #W.zc)
   C_Secrets = nil
 end
+print("== 12. (1.2.25) HasSecretRestrictions always true out of combat: the zones put back at once")
+do
+  C_Secrets = { HasSecretRestrictions = function() return true end, ShouldAurasBeSecret = function() return false end }
+  W.combat = false
+  local head
+  for i = 1, C_QuestLog.GetNumQuestLogEntries() do local e = C_QuestLog.GetInfo(i) if e.isHeader and e.title then head = e.title break end end
+  for k in pairs(store) do store[k] = nil end
+  store[head] = false
+  W.collapsed[head] = true
+  W.zc = {}
+  ok(Z.Apply() == 1 and not Folded(head) and not CQ.Pending(), "put back at once (" .. tostring(head) .. " open), nothing queued", #W.zc)
+  C_Secrets = nil
+end
+
 C_QuestLog.GetInfo = baseInfo
 _G.QuestLogQuests_Update = gameUpdate
 

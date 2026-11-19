@@ -157,7 +157,7 @@ local function ClearTomTom()
 end
 
 -- (1.2.24) the game's waypoint (set or cleared) changes its super-track, which lays the quest tracker out from
--- Valhalla's code: it waits on CombatQueue.lua's gate (combat, secret restrictions, the settle after combat),
+-- Valhalla's code: it waits on CombatQueue.lua's gate (combat, secret auras, the settle after combat),
 -- one queued change under "waypoint", the last kept (a clear after a set: cleared)
 local WAYPOINT_NOTE = "The waypoint is set when combat ends."
 local function Gate(fn)

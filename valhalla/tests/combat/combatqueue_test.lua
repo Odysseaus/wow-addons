@@ -80,8 +80,8 @@ end
 p:close()
 ok(seen >= 9 and #bad == 0, "every ToggleWorldMap / ShowUIPanel / HideUIPanel call guarded by combat (" .. seen .. " calls)", table.concat(bad, ", "))
 
--- (1.2.24) the gate: the player in combat, secret restrictions, the settle after combat; timers
-print("== 6. (1.2.24) secret restrictions (out of combat): deferred, looked at again, run once clear")
+-- (1.2.24) the gate: the player in combat, secret auras (1.2.25), the settle after combat; timers
+print("== 6. (1.2.24) secret auras (1.2.25: ShouldAurasBeSecret; out of combat): deferred, looked at again, run once clear")
 local clock = 1000
 function GetTime() return clock end
 local timers = {}
@@ -97,11 +97,11 @@ local function Advance(sec)
   end
 end
 local secret, unitCombat = false, false
-C_Secrets = { HasSecretRestrictions = function() return secret end }
+C_Secrets = { ShouldAurasBeSecret = function() return secret end }
 function UnitAffectingCombat(u) return u == "player" and unitCombat end
 combat, secret = false, true
 ns.printed, log = {}, {}
-ok(Q.Blocked() and Q.Why()[1] == "secret restrictions", "secret restrictions: the gate holds", table.concat(Q.Why(), ","))
+ok(Q.Blocked() and Q.Why()[1] == "secret auras", "secret auras: the gate holds", table.concat(Q.Why(), ","))
 ok(Q.Run("supertrack", function() log[#log + 1] = "super" end, "note") == false and #log == 0 and Q.Pending("supertrack"), "deferred, not run")
 ok(#ns.printed == 1 and #timers == 1, "told once; a look scheduled (no PLAYER_REGEN_ENABLED comes)", #timers)
 Advance(Q.SETTLE)
@@ -119,9 +119,9 @@ unitCombat = false
 local realSecret = rawget(_G, "issecretvalue")
 local SECRET = {}
 issecretvalue = function(v) return v == SECRET end
-C_Secrets.HasSecretRestrictions = function() return SECRET end
+C_Secrets.ShouldAurasBeSecret = function() return SECRET end
 ok(Q.Blocked(), "a secret answer from the game counts as blocked")
-C_Secrets.HasSecretRestrictions = function() return secret end
+C_Secrets.ShouldAurasBeSecret = function() return secret end
 issecretvalue = realSecret
 Advance(Q.SETTLE)
 ok(log[1] == "w7" and not Q.Pending(), "clear again: run")
@@ -196,6 +196,60 @@ do
   p2:close()
   ok(seen2 >= 12 and #bad2 == 0, "every such call behind the gate (" .. seen2 .. " calls)", table.concat(bad2, ", "))
 end
+
+print("== 12. (1.2.25) HasSecretRestrictions always true (the client build has secrets): no hold out of combat")
+combat, unitCombat, secret = false, false, false
+C_Secrets = { HasSecretRestrictions = function() return true end, ShouldAurasBeSecret = function() return secret end }
+clock = clock + 10   -- (well past any settle)
+log, ns.printed = {}, {}
+ok(not Q.Blocked() and #Q.Why() == 0, "the gate clear", table.concat(Q.Why(), ","))
+ok(Q.Run("waypoint", function() log[#log + 1] = "wp" end, "note") == true and log[1] == "wp" and #ns.printed == 0, "a waypoint runs at once, no chat line")
+
+print("== 13. (1.2.25) ShouldAurasBeSecret true out of combat: held, released at SAFETY seconds (one warning), held again next time")
+secret, log, ns.printed, timers = true, {}, {}, {}
+ok(Q.Blocked() and Q.Why()[1] == "secret auras", "secret auras: held", table.concat(Q.Why(), ","))
+Q.Run("watch:9", function() log[#log + 1] = "w9" end, "note")
+Advance(27)
+ok(#log == 0 and Q.Pending("watch:9"), "27 s: still held")
+Advance(3.5)
+local warned = 0 for _, p in ipairs(ns.printed) do if p == Q.SAFETY_NOTE then warned = warned + 1 end end
+ok(log[1] == "w9" and not Q.Pending(), "past " .. Q.SAFETY .. " s: run", table.concat(log, ","))
+ok(warned == 1, "one chat warning", table.concat(ns.printed, " | "))
+ok(Q.Run("watch:10", function() log[#log + 1] = "w10" end) == true and log[2] == "w10", "still secret, released: straight away")
+secret = false
+ok(not Q.Blocked(), "secret over: clear")
+secret = true
+ok(Q.Blocked(), "secret again: held again (a new " .. Q.SAFETY .. " s)")
+Q.Run("watch:11", function() log[#log + 1] = "w11" end)
+Advance(Q.SAFETY + 3)
+warned = 0 for _, p in ipairs(ns.printed) do if p == Q.SAFETY_NOTE then warned = warned + 1 end end
+ok(log[3] == "w11" and warned == 1, "released again; no second warning this session", warned)
+combat = true
+ok(Q.Blocked(), "in combat, secret auras: held (the safety net is out of combat only)")
+Q.Run("watch:12", function() log[#log + 1] = "w12" end)
+Advance(60)
+ok(#log == 3 and Q.Pending("watch:12"), "in combat a minute: still held")
+combat, secret = false, false
+h.fn(h.owner, "PLAYER_REGEN_ENABLED")
+Advance(Q.SETTLE + 0.1)
+ok(log[4] == "w12" and not Q.Pending(), "combat over and settled: run")
+
+print("== 14. (1.2.25) the record of calls run (time and key), /valhalla combat")
+local hist = Q.History()
+ok(#hist >= 5 and hist[#hist].key == "watch:12" and hist[#hist].how == "queued", "the last call run recorded, queued", hist[#hist] and hist[#hist].key)
+local nowSeen = false for _, e in ipairs(hist) do if e.key == "watch:10" and e.how == "now" then nowSeen = true end end
+ok(nowSeen and type(hist[1].at) == "number" and type(hist[1].clock) == "string", "straight-away runs too; time kept")
+for i = 1, Q.HISTORY + 10 do Q.Run("k" .. i, function() end) end
+ok(#Q.History() == Q.HISTORY and Q.History()[Q.HISTORY].key == "k" .. (Q.HISTORY + 10), "kept to the last " .. Q.HISTORY)
+local rep = Q.Report()
+ok(rep[1]:find("clear", 1, true) and rep[#rep]:find("k" .. (Q.HISTORY + 10), 1, true), "the report: the gate, the last run", rep[1])
+secret = true
+Q.Run("held", function() end)
+rep = Q.Report()
+ok(rep[1]:find("held (secret auras)", 1, true) and rep[2]:find("held", 1, true), "held: the reason and what waits", rep[1] .. " / " .. tostring(rep[2]))
+secret = false
+Advance(Q.SETTLE)
+C_Secrets = nil
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)
