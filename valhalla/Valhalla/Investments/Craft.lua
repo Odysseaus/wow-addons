@@ -363,8 +363,9 @@ function C.Rank(house, key, opts, step)
 	return res
 end
 
--- under a craft row's tooltip: the reagents, the cut, the sale, the deposit
-function C.Lines(e, house)
+-- under a craft row's tooltip: the reagents, the cut, the sale, the deposit. (1.2.27) hit(id): a reagent Craft's
+-- filter matched: its line gold, "(matches your search)"
+function C.Lines(e, house, hit)
 	local Money, out = S().Money, {}
 	local function Name(id) return (I.Views and I.Views.ItemData(id)) or L["Item #%d"]:format(id) end
 	out[#out + 1] = L["Valhalla craft (%s): %s per craft (makes %s)"]:format(house, e.profit and Money(e.profit) or "-", tostring(e.qty))
@@ -375,7 +376,9 @@ function C.Lines(e, house)
 		local said = {}
 		if how then said[#said + 1] = how end
 		if price then said[#said + 1] = price end
-		out[#out + 1] = ("  %s: %s = %s"):format(Name(r.id), table.concat(said, ", "), Money(r.cost))
+		local line = ("  %s: %s = %s"):format(Name(r.id), table.concat(said, ", "), Money(r.cost))
+		if hit and hit(r.id) then line = "|cffffd100" .. line .. "|r  " .. L["(matches your search)"] end
+		out[#out + 1] = line
 	end
 	if e.total then out[#out + 1] = L["Total for the %d you can make: %s"]:format(e.can, Money(e.total)) end
 	if e.sell then

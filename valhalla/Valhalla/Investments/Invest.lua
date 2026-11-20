@@ -725,10 +725,18 @@ function I.SearchWords(text)
 	for x in tostring(text or ""):lower():gmatch("%S+") do w[#w + 1] = x end
 	return w
 end
-local function MatchAll(low, words)
-	for _, w in ipairs(words) do if not low:find(w, 1, true) then return false end end
+-- every word in `low` (plain find); (1.2.27) or, word by word, in any of `more` (Craft's search: the reagents' names)
+local function MatchAll(low, words, more)
+	for _, w in ipairs(words) do
+		if not low:find(w, 1, true) then
+			local hit = false
+			for _, k in ipairs(more or {}) do if k:find(w, 1, true) then hit = true break end end
+			if not hit then return false end
+		end
+	end
 	return true
 end
+I.MatchAll = MatchAll
 -- the big pool's ids (scans, recipes, Top 10, names): built once a session (1.2.8); a name that comes in is added
 -- (I.IndexName), and the ids a scan finds (I.IndexAddMarket). Each item's sort key is fixed once (I.SortKey).
 local function IndexPut(x, id, n)

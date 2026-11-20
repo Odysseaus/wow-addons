@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.27", date = "2026-11-20", heads = { [1] = "Changed", }, items = {
+		"|cff6e2c0aCraft's search finds reagents too|r: every word you type (any order, any case) must be in the crafted item's name or in one of its reagents' names, so \"thread\" lists every craft that uses a thread, and \"bandage linen\" finds Linen Bandage. Hover a row: the reagents that matched are marked \"(matches your search)\".",
+		"The list updates 0.3 seconds after you stop typing, as the Shopping List's search does. Reagent names the game hasn't sent yet are asked for, and their crafts show once they arrive.",
+		"Harvest's search is as before: the item's name containing what you type.",
+	} },
 	{ version = "1.2.26", date = "2026-11-20", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aThe quest log is left alone in combat|r: Valhalla's quest log order (Ready to Turn In, zones) used to be laid out straight from the game's own update, even in combat and while auras are secret, a likely cause of the \"secret while tainted by 'Valhalla'\" errors. It now waits like the tracker does and is laid out once combat ends.",
 		"A pin code whose notes have spaces now shares every pin with its whole note (it stopped at the first space and dropped the pins after it). Codes from 1.2.25 still read in full.",

@@ -2301,16 +2301,16 @@ print("== 33. v0.4.2.1: pages not scrolling, |< >| pager ends, Craft's grid and 
   ok(cf.filter and cf.filter.vh.kind == "input" and cf.filterHint:IsShown(), "a name filter box (the look's), its hint while empty")
   Mk.craftProf, Mk.craftMode = 182, "harvest" mp:Refresh()   -- (Herbalism's harvest: read at once)
   for _ = 1, 400 do if not I.Craft.Running() then break end I.Craft.Tick() end
-  cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged")
+  cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged") W.RunTimers()
   local all = #(cf.list or {})
   local want
   for _, e in ipairs(cf.list or {}) do want = want or V.ItemData(e.out or e.id) end
   if want then
-    cf.filter:SetText(want) W.Run(cf.filter, "OnTextChanged")
+    cf.filter:SetText(want) W.Run(cf.filter, "OnTextChanged") W.RunTimers()
     local good = #cf.list >= 1 and #cf.list <= all
     for _, e in ipairs(cf.list) do if not (V.ItemData(e.out or e.id) or ""):lower():find(want:lower(), 1, true) then good = false end end
     ok(good and not cf.filterHint:IsShown() and cf.filterCount._text == ("%d of %d"):format(#cf.list, all) and cf.offset == 0, "filtered: only names with it, on page 1, 'n of all' beside it", cf.filterCount._text)
-    cf.filter:SetText("zzzz no such") W.Run(cf.filter, "OnTextChanged")
+    cf.filter:SetText("zzzz no such") W.Run(cf.filter, "OnTextChanged") W.RunTimers()
     ok(#cf.list == 0 and not cf.pager:IsShown(), "nothing matches: an empty page")
   else
     ok(false, "Craft had a list to filter", tostring(all) .. " " .. tostring(cf.status._text))
@@ -2319,7 +2319,7 @@ print("== 33. v0.4.2.1: pages not scrolling, |< >| pager ends, Craft's grid and 
   cf.filter:SetFocus() W.now = W.now + 1
   W.ShiftClickBag("|cffffffff|Hitem:2589::::::::|h[Linen Cloth]|h|r", 20)
   ok(cf.filter._text == "Linen Cloth" and not StackSplitFrame:IsShown(), "Craft's filter: a shift-clicked item's name (in place of what was typed), no stack-split box", cf.filter._text)
-  cf.filter:ClearFocus() cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged")
+  cf.filter:ClearFocus() cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged") W.RunTimers()
   ok(#cf.list == all, "cleared: the whole list again")
   Mk.craftMode = "crafts" mp:Refresh()
   -- 4. the dropdown closes on a click outside it
@@ -4518,6 +4518,66 @@ do
   regs.PLAYER_REGEN_ENABLED()
   ok(calls[#calls] == false, "B9: the latest asked is what's put back")
   ns.RegisterEvent, ns.UnregisterEvent = nil, nil
+end
+
+print("== 1.2.27: Craft's search: every word, in the item's name or a reagent's")
+do
+  local Mk, V, Cr = I.Market, I.Views, I.Craft
+  W.items[990001] = { "Heavy Linen Bandage", 134400 }
+  W.items[990002] = { "Copper Rod", 134400 }
+  W.items[990003] = { "Mystery 50% (Elixir) - Rare", 134400 }
+  local function P(...) local t = {} for i, id in ipairs({ ... }) do t[i] = { id = id, n = 1, own = 0, unit = 10, src = "AH", cost = 10 } end return t end
+  local rows = { { out = 990001, parts = P(2589, 2321) }, { out = 990002, parts = P(2770) }, { out = 990003, parts = P(3371) } }
+  local function Outs(q)   -- (q lower case and trimmed, as SetList hands it over)
+    local list = Mk.NameFilter(rows, "out", q:lower(), "parts")
+    local t = {} for _, e in ipairs(list) do t[#t + 1] = e.out end
+    return table.concat(t, ",")
+  end
+  ok(Outs("thread") == "990001", "a reagent only (Fine Thread): its craft listed", Outs("thread"))
+  ok(Outs("ore") == "990002" and Outs("rod") == "990002", "Copper Ore (a reagent), Copper Rod (the item)")
+  ok(Outs("THREAD") == "990001" and Outs("LiNeN") == "990001", "any case")
+  ok(Outs("bandage thread") == "990001" and Outs("thread bandage") == "990001", "two words, any order, one in the name, one in a reagent")
+  ok(Outs("bandage ore") == "", "every word must match somewhere (ore isn't in that craft)")
+  ok(Outs("wool") == "", "no match: nothing")
+  local okSym, res = pcall(function() return { Outs("50%"), Outs("(elixir)"), Outs("- rare"), Outs("%d"), Outs("["), Outs(".") } end)
+  ok(okSym and res[1] == "990003" and res[2] == "990003" and res[3] == "990003" and res[4] == "" and res[5] == "" and res[6] == "",
+    "symbols % ( - . [ taken as they are (plain find, no error)", okSym and table.concat(res, "|") or tostring(res))
+  ok(Outs("") == "990001,990002,990003", "empty: every row")
+  -- a reagent the game hasn't sent yet
+  W.items[990010] = { "Ghost Silk", 134400 } W.uncached[990010] = true
+  W.items[990011] = { "Spirit Robe", 134400 }
+  local robe = { { out = 990011, parts = P(990010) } }
+  local list, nameless = Mk.NameFilter(robe, "out", "ghost", "parts")
+  ok(#list == 0 and #nameless == 1 and nameless[1] == 990010, "a reagent's name not in yet: left out for now, its id asked for (M.Fetch)")
+  W.uncached[990010] = nil
+  list = Mk.NameFilter(robe, "out", "ghost", "parts")
+  ok(#list == 1, "once it's in: matched")
+  -- Harvest: as before (the whole text, in the item's name)
+  local hv = { { id = 2770 }, { id = 2447 } }
+  local function H(q) local l = Mk.NameFilter(hv, "id", q) local t = {} for _, e in ipairs(l) do t[#t + 1] = e.id end return table.concat(t, ",") end
+  ok(H("copper ore") == "2770" and H("ore copper") == "" and H("") == "2770,2447", "Harvest unchanged: the text as one phrase in the name")
+  -- the tooltip: the reagents matched, marked
+  local lines = Cr.Lines({ qty = 1, parts = P(2589, 2321) }, "Alliance", Mk.ReagentHit("thread"))
+  local linen, thread
+  for _, l in ipairs(lines) do if l:find("Linen Cloth", 1, true) then linen = l elseif l:find("Fine Thread", 1, true) then thread = l end end
+  ok(thread and thread:find("|cffffd100", 1, true) and thread:find("(matches your search)", 1, true) and linen and not linen:find("matches", 1, true),
+    "the row's tooltip: the matching reagent gold, '(matches your search)'; the other as before", tostring(thread))
+  ok(Mk.ReagentHit("") == nil and not Cr.Lines({ qty = 1, parts = P(2321) }, "Alliance")[2]:find("matches", 1, true), "no filter: nothing marked")
+  -- typing: one redraw 0.3 s after the last key (the Shopping List's wait, V.Debounce)
+  T.Select("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  W.RunTimers()
+  local n, orig = 0, cf.Redraw
+  cf.Redraw = function(...) n = n + 1 return orig(...) end
+  for _, t in ipairs({ "t", "th", "thr" }) do cf.filter:SetText(t) W.Run(cf.filter, "OnTextChanged") end
+  ok(n == 0, "typing: nothing redrawn yet")
+  W.RunTimers()
+  ok(n == 1, "0.3 s after the last key: one redraw (not three)", n)
+  cf.Redraw = orig
+  cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged") W.RunTimers()
+  ok(cf.filterHint:GetText() == "name or reagent" and Mk.TIPS.filter[1] == "Filter by name or reagent", "the hint and tip say name or reagent")
 end
 
 print(("\n%d passed, %d failed"):format(pass, fail))

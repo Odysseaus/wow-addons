@@ -686,6 +686,19 @@ end
 --   Row(id) -> the row's button label, its OnClick. Sets owner.results (the dropdown), .frozen, .found,
 --   .searchOpen, .searches, .closer, .Results, .CloseSearch, .OpenSearch, .Typed, .NamesSoon; returns
 --   { Results, Compute, Open, Close, frozen }
+-- (1.2.27) fn() once, `delay` seconds (a number, or a function giving it) after the last call of what this returns;
+-- at once without C_Timer. The Shopping List's 0.3 s typing wait, Craft's filter and the Invest Amount use it.
+function V.Debounce(delay, fn)
+	local gen = 0
+	return function()
+		gen = gen + 1
+		local g = gen
+		local function Go() if g == gen then fn() end end
+		local d = type(delay) == "function" and delay() or delay
+		if C_Timer and C_Timer.After then C_Timer.After(d, Go) else Go() end
+	end
+end
+
 V.searchBoxes = setmetatable({}, { __mode = "k" })   -- owner -> its NamesSoon (I.OnSearchName calls each)
 function V.ItemSearch(owner, search, level, Row)
 	local res = CreateFrame("Frame", nil, owner, "BackdropTemplate")
@@ -767,17 +780,10 @@ function V.ItemSearch(owner, search, level, Row)
 		return ids
 	end
 	-- typing: one search 0.3 s after the last key
-	local typeGen = 0
-	local function Typed()
-		typeGen = typeGen + 1
-		local g = typeGen
-		local function Go()
-			if g ~= typeGen then return end
-			if Trim(search:GetText()) ~= "" then Open() end
-			Results()
-		end
-		if C_Timer and C_Timer.After then C_Timer.After(V.SEARCH_DELAY, Go) else Go() end
-	end
+	local Typed = V.Debounce(function() return V.SEARCH_DELAY end, function()
+		if Trim(search:GetText()) ~= "" then Open() end
+		Results()
+	end)
 	-- names coming in (asked for by the open box): the rows filled in at most once a second
 	local namesSoon = false
 	local function NamesSoon()
