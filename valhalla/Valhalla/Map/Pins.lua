@@ -125,7 +125,7 @@ local function PinEnter(self)
 	if not p then return end
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(p.note ~= "" and p.note or L["Map pin"], 1, 0.82, 0, true)
-	GameTooltip:AddLine(("%s  %.1f, %.1f"):format(ZoneName(p.map), p.x * 100, p.y * 100), 1, 1, 1)
+	GameTooltip:AddLine(ns.Util.Place(p.map, p.x, p.y), 1, 1, 1)
 	if p.from then GameTooltip:AddLine(L["Shared by %s"]:format(p.from), 0.6, 0.8, 1) end
 	if Followed(p) then GameTooltip:AddLine(L["Followed (the waypoint)"], 0.5, 0.95, 0.4) end
 	GameTooltip:AddLine(L["Click to edit its note, follow, share or delete it"], 0.6, 0.6, 0.6)
@@ -195,18 +195,7 @@ end
 -- "%", "," and ";" written %XX, the pins joined by ";")
 --------------------------------------------------------------------------------
 
-local queue = {}                -- { message, channel, target }
-local sender = CreateFrame("Frame")
-sender:Hide()
-local wait = 0
-sender:SetScript("OnUpdate", function(self, elapsed)
-	wait = wait - elapsed
-	if wait > 0 then return end
-	local m = tremove(queue, 1)
-	if not m then self:Hide() return end
-	wait = SEND_GAP
-	pcall(C_ChatInfo.SendAddonMessage, PREFIX, m[1], m[2], m[3])
-end)
+local Send = ns.Parts.Sender(PREFIX, SEND_GAP).Send   -- (1.2.26: Friends' sender too, UI/Parts.lua)
 
 local function Message(p)
 	local head = ("P1\t%d\t%.4f\t%.4f\t%d\t"):format(p.map, p.x, p.y, p.color or 1)
@@ -234,8 +223,7 @@ local SHARE_TO = { group = L["your group"], guild = L["your guild"] }
 local function Share(pins, to)
 	local channel, target = Channel(to)
 	if not channel or not (C_ChatInfo and C_ChatInfo.SendAddonMessage) or #pins == 0 then return end
-	for _, p in ipairs(pins) do queue[#queue + 1] = { Message(p), channel, target } end
-	sender:Show()
+	for _, p in ipairs(pins) do Send(nil, Message(p), channel, target) end
 	ns:Print(L["Sharing %d map pin(s) with %s (players with Valhalla are asked whether to add them)."], #pins,
 		target or SHARE_TO[to] or "?")
 end
@@ -695,7 +683,7 @@ local function BuildList()
 			if not p then return end
 			GameTooltip:SetOwner(self, "ANCHOR_LEFT")
 			GameTooltip:AddLine(p.note ~= "" and p.note or L["Map pin"], 1, 0.82, 0, true)
-			GameTooltip:AddLine(("%s  %.1f, %.1f"):format(ZoneName(p.map), p.x * 100, p.y * 100), 1, 1, 1)
+			GameTooltip:AddLine(ns.Util.Place(p.map, p.x, p.y), 1, 1, 1)
 			if p.from then GameTooltip:AddLine(L["Shared by %s"]:format(p.from), 0.6, 0.8, 1) end
 			GameTooltip:AddLine(L["Click to go there, right-click to open its card"], 0.6, 0.6, 0.6)
 			GameTooltip:AddLine(L["Shift-click: share in chat"], 0.6, 0.6, 0.6)

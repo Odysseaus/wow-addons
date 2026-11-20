@@ -161,9 +161,10 @@ do
 end
 
 print("== B9. keyboard catchers: never SetPropagateKeyboardInput straight (combat)")
-for _, file in ipairs({ "Map/Paint.lua", "Map/Sketch.lua" }) do
+for _, file in ipairs({ "Map/Paint.lua", "Map/Sketch.lua", "UI/Parts.lua" }) do
   local src = Source(file)
-  ok(not src:find(":SetPropagateKeyboardInput(", 1, true) and src:find("ns.Style.KeysThrough(catcher)", 1, true), file .. ": through Style.KeysThrough")
+  ok(not src:find(":SetPropagateKeyboardInput(", 1, true) and (file ~= "UI/Parts.lua" or src:find("ns.Style.KeysThrough(catcher)", 1, true))
+    and (file == "UI/Parts.lua" or src:find("ns.Parts.MapCatcher(sc,", 1, true)), file .. ": through Style.KeysThrough")
 end
 
 print("== B15. other addons' menu toggles under their own section's heading")
@@ -234,6 +235,95 @@ do
   uns.Combat = { Run = function(k, fn, note) seen = { k, note } return false end, Blocked = function() return true end }
   ok(U.Defer("w", function() end, "Note") == false and seen[1] == "w" and seen[2] == "Note" and U.InCombat() == true, "Defer and InCombat through CombatQueue")
   _G.InCombatLockdown = nil
+end
+
+print("== D5. shared parts (UI/Parts.lua, V.ItemSearch, Util.Place, the reopen list, Flights)")
+do
+  -- a frame stand-in: scripts, shown, keyboard
+  local frames = {}
+  local function Frame()
+    local fr = { scripts = {}, shown = true, keys = nil, level = 1 }
+    function fr:SetScript(k, fn) self.scripts[k] = fn end
+    function fr:Hide() self.shown = false end function fr:Show() self.shown = true end
+    function fr:SetAllPoints() end function fr:SetFrameLevel(l) self.level = l end function fr:GetFrameLevel() return self.level end
+    function fr:EnableMouse() end function fr:EnableMouseWheel() end function fr:EnableKeyboard() end
+    frames[#frames + 1] = fr
+    return fr
+  end
+  local sent, timers, combat = {}, {}, false
+  local saved = { CreateFrame = CreateFrame, C_ChatInfo = C_ChatInfo, BNSendGameData = BNSendGameData, C_Timer = C_Timer, InCombatLockdown = InCombatLockdown, tremove = tremove }
+  CreateFrame = function() return Frame() end
+  tremove = table.remove
+  C_ChatInfo = { SendAddonMessage = function(prefix, text, channel, target) sent[#sent + 1] = table.concat({ prefix, text, channel, target or "" }, "|") end }
+  BNSendGameData = function(bn, prefix, text) sent[#sent + 1] = table.concat({ prefix, text, "BN", bn }, "|") end
+  C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+  InCombatLockdown = function() return combat end
+  local pns = { L = uns.L, Style = { KeysThrough = function(fr, on) fr.keys = on ~= false end } }
+  assert(loadfile(root .. "UI/Parts.lua"))("Valhalla", pns)
+  local P = pns.Parts
+  -- the sender: Friends' (keyed, a newer one in its place) and Pins' (every one, in turn)
+  local s = P.Sender("Pre", 0.5)
+  s.Send("Bob", "a", "WHISPER", "Bob") s.Send("GUILD", "g", "GUILD") s.Send("Bob", "b", "WHISPER", "Bob") s.Send(nil, "p1", "PARTY") s.Send(nil, "p2", "PARTY")
+  s.Send("Ann", "bn", nil, nil, 7)
+  local run = s.frame.scripts.OnUpdate
+  run(s.frame, 0) run(s.frame, 0.2)
+  ok(#sent == 1 and sent[1] == "Pre|b|WHISPER|Bob", "Sender: a keyed message replaced in its place; one a gap", sent[1])
+  for _ = 1, 10 do run(s.frame, 0.5) end
+  ok(table.concat(sent, ",") == "Pre|b|WHISPER|Bob,Pre|g|GUILD|,Pre|p1|PARTY|,Pre|p2|PARTY|,Pre|bn|BN|7" and not s.frame.shown,
+    "then the rest in turn (Pins' all kept, Battle.net too); the sender stops", table.concat(sent, ","))
+  -- the map catcher
+  local sc = Frame()
+  sc.mouseButtonInfo = { LeftButton = { down = true } }
+  function sc:OnMouseDown(b) self.panned = b end
+  local log = {}
+  local c = P.MapCatcher(sc, { down = function() log[#log + 1] = "down" end, up = function() log[#log + 1] = "up" end, update = function() end,
+    wheel = function(d) log[#log + 1] = "wheel" .. d end, key = function(k) if k == "Z" then return function() log[#log + 1] = "undo" end end end })
+  c.scripts.OnMouseDown(c, "LeftButton") c.scripts.OnMouseUp(c, "LeftButton")
+  c.scripts.OnMouseDown(c, "RightButton") c.scripts.OnMouseUp(c, "RightButton")
+  c.scripts.OnMouseWheel(c, 1)
+  ok(table.concat(log, ",") == "down,up,wheel1" and sc.panned == "LeftButton" and sc.mouseButtonInfo.LeftButton.down == false and not c.shown and c.keys == true,
+    "MapCatcher: left draws, right-drag pans (Blizzard's drag, let go), the wheel zooms; keys go through", table.concat(log, ","))
+  c.scripts.OnKeyDown(c, "Z")
+  ok(log[4] == "undo" and c.keys == false and #timers == 1, "the tool's key: run, not passed on this once")
+  timers[1]() timers = {}
+  ok(c.keys == true, "then keys go through again")
+  combat = true
+  c.scripts.OnKeyDown(c, "Z")
+  ok(#log == 4 and c.keys == true, "in combat: left alone (nothing set)")
+  c.scripts.OnKeyDown(c, "W")
+  combat = false
+  -- click twice
+  local cleared = 0
+  local b = { text = "Clear" }
+  function b:SetText(t) self.text = t end
+  local click = P.TwoClick("Clear", function() cleared = cleared + 1 end)
+  click(b)
+  ok(cleared == 0 and b.text == "Sure?" and b.armed, "TwoClick: the first click asks")
+  click(b)
+  ok(cleared == 1 and b.text == "Clear" and not b.armed, "the second clears")
+  click(b) timers[#timers]()
+  ok(b.text == "Clear" and not b.armed and cleared == 1, "3 s later: asks again from the start")
+  for k, v in pairs(saved) do _G[k] = v end
+  -- the coordinate line
+  local savedMap = C_Map
+  C_Map = { GetMapInfo = function(id) return id == 1429 and { name = "Elwynn Forest" } or nil end }
+  ok(U.Place(1429, 0.4123, 0.655) == "Elwynn Forest  41.2, 65.5" and U.Place(9, 0, 0) == "?  0.0, 0.0", "Place: the line the pins', friends' and waypoint's tooltips show")
+  C_Map = savedMap
+  -- the source: one of each left
+  local nav, panel = Source("Map/Nav.lua"), Source("Map/Panel.lua")
+  ok(nav:find("mod.REOPEN_VIEWS = {", 1, true) and panel:find("ipairs(mod.REOPEN_VIEWS)", 1, true) and not panel:find('{ "player", L["Center on player"] }', 1, true),
+    "the reopen choices: one list (Nav.lua), the menu's rows from it")
+  local slider = Chunk(panel, "local function SliderRow(")
+  ok(select(2, slider:gsub("math.floor%(v / step %+ 0.5%) %* step", "")) == 1, "the slider's Snap: once")
+  local fl = Source("Map/Flights.lua")
+  ok(not fl:find("local function Clock(", 1, true) and not fl:find("local function Short(", 1, true), "Flights: one clock, one short name")
+  for _, file in ipairs({ "Map/Friends.lua", "Map/Pins.lua" }) do
+    local src = Source(file)
+    ok(src:find("ns.Parts.Sender(PREFIX, SEND_GAP)", 1, true) and not src:find('CreateFrame("Frame")\nsender', 1, true) and not src:find("local sender", 1, true), file .. ": the shared sender")
+  end
+  local views, watch = Source("Investments/Views.lua"), Source("Investments/Watch.lua")
+  ok(watch:find("V.ItemSearch(f, f.search", 1, true) and not watch:find("I.SearchItems(", 1, true) and select(2, views:gsub("I%.SearchItems%(", "")) == 1,
+    "the item search dropdown: one (Views.lua), the Watchlist's from it")
 end
 
 print(("\n%d passed, %d failed"):format(pass, fail))

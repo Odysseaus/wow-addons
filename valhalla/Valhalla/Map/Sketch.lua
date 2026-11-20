@@ -57,7 +57,6 @@ local map, sc, set, liveSet, catcher, tray   -- (liveSet: the stroke being drawn
 local drawing = false
 local forPin                    -- the map pin what's drawn is attached to (Pins.lua's Draw)
 local stroke                    -- the stroke being drawn: { record, x, y (where it began, px) }
-local panning
 local Redraw, RefreshTray
 -- a drawing for something else (Report.lua's): its own strokes, shown with yours but never kept;
 -- the tools, inks and nibs yours (its ink starts red)
@@ -501,20 +500,12 @@ local function CreateTray()
 	x = x + 14
 	local undo = TextButton(64, L["Undo"], Undo, L["Take back the last drawing (Ctrl-Z)"])
 	undo:SetPoint("TOPLEFT", x, y - 1)
-	local clear = TextButton(64, L["Clear"], function(self)
-		if self.armed then
-			local list = DB().strokes
-			for i = #list, 1, -1 do if not forPin or list[i].pin == forPin.id then tremove(list, i) end end
-			Redraw()
-			RefreshTray()
-			self.armed = nil
-			self:SetText(L["Clear"])
-		else
-			self.armed = true
-			self:SetText(L["Sure?"])
-			C_Timer.After(3, function() self.armed = nil self:SetText(L["Clear"]) end)
-		end
-	end, L["Take off every drawing (this pin's, when drawing on one): click twice"])
+	local clear = TextButton(64, L["Clear"], ns.Parts.TwoClick(L["Clear"], function()
+		local list = DB().strokes
+		for i = #list, 1, -1 do if not forPin or list[i].pin == forPin.id then tremove(list, i) end end
+		Redraw()
+		RefreshTray()
+	end), L["Take off every drawing (this pin's, when drawing on one): click twice"])
 	clear:SetPoint("TOPLEFT", undo, "BOTTOMLEFT", 0, -2)
 	x = x + 64 + 8
 	-- done: the drawing kept (drawing on a pin: the pin's card done too, its note and colour kept)
@@ -554,41 +545,12 @@ local function CreateTray()
 end
 
 local function CreateCatcher()
-	catcher = CreateFrame("Frame", nil, sc)
-	catcher:SetAllPoints(sc)
-	catcher:SetFrameLevel(math.min(sc:GetFrameLevel() + 9200, 9940))
-	catcher:EnableMouse(true)
-	catcher:EnableMouseWheel(true)
-	catcher:Hide()
-	catcher:SetScript("OnMouseDown", function(_, button)
-		if button == "LeftButton" then
-			Start()
-		elseif button == "RightButton" then
-			panning = true
-			sc:OnMouseDown("LeftButton")   -- Blizzard's own drag-to-pan
-		end
-	end)
-	catcher:SetScript("OnMouseUp", function(_, button)
-		if button == "LeftButton" then
-			Finish()
-			RefreshTray()
-		elseif panning then
-			panning = false
-			sc.mouseButtonInfo.LeftButton.down = false
-		end
-	end)
-	catcher:SetScript("OnMouseWheel", function(_, delta) mod.WheelZoom(delta) end)
-	catcher:SetScript("OnUpdate", Move)
-	catcher:EnableKeyboard(true)
-	ns.Style.KeysThrough(catcher)   -- (1.2.26: never in combat; put back after it)
-	catcher:SetScript("OnKeyDown", function(self, key)
-		local undo = key == "Z" and IsControlKeyDown()
-		if (undo or key == "ESCAPE") and not InCombatLockdown() then
-			ns.Style.KeysThrough(self, false)
-			if undo then Undo() RefreshTray() else mod:ToggleSketch(false) end
-			C_Timer.After(0, function() ns.Style.KeysThrough(self) end)
-		end
-	end)
+	catcher = ns.Parts.MapCatcher(sc, { down = Start, up = function() Finish() RefreshTray() end, update = Move,
+		wheel = function(delta) mod.WheelZoom(delta) end,
+		key = function(key)
+			if key == "Z" and IsControlKeyDown() then return function() Undo() RefreshTray() end end
+			if key == "ESCAPE" then return function() mod:ToggleSketch(false) end end
+		end })
 end
 
 --------------------------------------------------------------------------------

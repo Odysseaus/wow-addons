@@ -319,8 +319,7 @@ local function Rows()
 	rows[#rows + 1] = optRow(L["Load the zone in view"], "autoSwitch", Icon("Ability_Hunter_Pathfinding"))
 	fromOptions(L["Ctrl-click drops a pin"], "ctrlClickPin", Icon("INV_Misc_Map_01"))
 	rows[#rows + 1] = { L["Reopen map (choose one)"] }
-	for _, choice in ipairs({ { "player", L["Center on player"] }, { "zoom", L["Center on player, keep zoom"] }, { "always", L["Always remember"] },
-		{ "visible", L["Remember while visible"] } }) do
+	for _, choice in ipairs(mod.REOPEN_VIEWS) do
 		local mode = choice[1]
 		rows[#rows + 1] = row(choice[2], "reopenView." .. mode, Icon("INV_Misc_Rune_01"),
 			function() return mod.GetReopenView() == mode end,
@@ -1203,9 +1202,8 @@ local function SliderRow(parent, width, spec)
 	if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
 	s:SetValue(spec.get())          -- (before its script: setting it up mustn't set anything)
 	s:SetScript("OnValueChanged", function(_, v)
-		v = math.floor(v / step + 0.5) * step
-		if step < 1 then v = math.floor(v * 1000 + 0.5) / 1000 end      -- (no float dust in a saved 0.85)
-		f.value:SetText((spec.fmt or "%dx"):format(spec.show and spec.show(v) or v))
+		v = Snap(v)
+		f.value:SetText(Shown(v))
 		if filling or (v == spec.get() and pending == nil) then return end
 		Set(s, v)
 	end)

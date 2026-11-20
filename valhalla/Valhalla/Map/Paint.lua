@@ -37,7 +37,6 @@ local tool = { kind = 1, size = 40 }
 local painting = false
 local map, sc, catcher, bar, notesSet, editor, list, export
 local stroke                    -- the stroke being drawn: { note, points, adding, x, y (where it began, px) }
-local panning
 local Redraw, UpdateBar, RefreshList
 
 local function DB() return mod.db.paint end
@@ -524,18 +523,10 @@ local function CreateBar()
 	exportButton:SetPoint("LEFT", listButton, "RIGHT", 4, 0)
 	local undo = Button(bar, 54, L["Undo"], Undo, L["Take back the last note (Ctrl-Z)"])
 	undo:SetPoint("LEFT", exportButton, "RIGHT", 4, 0)
-	local clear = Button(bar, 54, L["Clear"], function(self)
-		if self.armed then
-			wipe(DB().notes)
-			Redraw()
-			self.armed = nil
-			self:SetText(L["Clear"])
-		else
-			self.armed = true
-			self:SetText(L["Sure?"])
-			C_Timer.After(3, function() self.armed = nil self:SetText(L["Clear"]) end)
-		end
-	end, L["Remove every note (click twice)"])
+	local clear = Button(bar, 54, L["Clear"], ns.Parts.TwoClick(L["Clear"], function()
+		wipe(DB().notes)
+		Redraw()
+	end), L["Remove every note (click twice)"])
 	clear:SetPoint("LEFT", undo, "RIGHT", 4, 0)
 	local done = Button(bar, 54, L["Done"], function() mod:TogglePaint(false) end)
 	done:SetPoint("LEFT", clear, "RIGHT", 4, 0)
@@ -551,39 +542,9 @@ local function CreateBar()
 end
 
 local function CreateCatcher()
-	catcher = CreateFrame("Frame", nil, sc)
-	catcher:SetAllPoints(sc)
-	catcher:SetFrameLevel(math.min(sc:GetFrameLevel() + 9200, 9940))
-	catcher:EnableMouse(true)
-	catcher:EnableMouseWheel(true)
-	catcher:Hide()
-	catcher:SetScript("OnMouseDown", function(_, button)
-		if button == "LeftButton" then
-			StartStroke()
-		elseif button == "RightButton" then
-			panning = true
-			sc:OnMouseDown("LeftButton")   -- Blizzard's own drag-to-pan
-		end
-	end)
-	catcher:SetScript("OnMouseUp", function(_, button)
-		if button == "LeftButton" then
-			EndStroke()
-		elseif panning then
-			panning = false
-			sc.mouseButtonInfo.LeftButton.down = false
-		end
-	end)
-	catcher:SetScript("OnMouseWheel", function(_, delta) mod.WheelZoom(delta) end)
-	catcher:SetScript("OnUpdate", StrokeUpdate)
-	catcher:EnableKeyboard(true)
-	ns.Style.KeysThrough(catcher)   -- (1.2.26: never in combat; put back after it)
-	catcher:SetScript("OnKeyDown", function(self, key)
-		if key == "Z" and IsControlKeyDown() and not InCombatLockdown() then
-			ns.Style.KeysThrough(self, false)
-			Undo()
-			C_Timer.After(0, function() ns.Style.KeysThrough(self) end)
-		end
-	end)
+	catcher = ns.Parts.MapCatcher(sc, { down = StartStroke, up = EndStroke, update = StrokeUpdate,
+		wheel = function(delta) mod.WheelZoom(delta) end,
+		key = function(key) if key == "Z" and IsControlKeyDown() then return Undo end end })
 end
 
 --------------------------------------------------------------------------------

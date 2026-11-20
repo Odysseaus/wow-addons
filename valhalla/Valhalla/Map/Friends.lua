@@ -167,30 +167,7 @@ end
 -- Sending: one message a SEND_GAP, one waiting for each place it goes (a newer one replaces it)
 --------------------------------------------------------------------------------
 
-local outbox, order = {}, {}        -- key -> { text, channel, target, bn }; the keys in turn
-local sender = CreateFrame("Frame")
-sender:Hide()
-local wait = 0
-sender:SetScript("OnUpdate", function(self, elapsed)
-	wait = wait - elapsed
-	if wait > 0 then return end
-	local key = tremove(order, 1)
-	if not key then self:Hide() return end
-	local m = outbox[key]
-	outbox[key] = nil
-	wait = SEND_GAP
-	if m.bn then
-		if BNSendGameData then pcall(BNSendGameData, m.bn, PREFIX, m.text) end
-	elseif C_ChatInfo and C_ChatInfo.SendAddonMessage then
-		pcall(C_ChatInfo.SendAddonMessage, PREFIX, m.text, m.channel, m.target)
-	end
-end)
-
-local function Send(key, text, channel, target, bn)
-	if not outbox[key] then order[#order + 1] = key end
-	outbox[key] = { text = text, channel = channel, target = target, bn = bn }
-	sender:Show()
-end
+local Send = ns.Parts.Sender(PREFIX, SEND_GAP).Send   -- (1.2.26: Pins' sender too, UI/Parts.lua)
 
 local function ToFriend(full, text)
 	local f = friends[full]
@@ -396,7 +373,7 @@ local function DotEnter(pin)
 	GameTooltip:AddLine(Shown(d.full), ClassColor(d.p.class or (r and r.class)))
 	local level = d.p.level or (r and r.level)
 	if level and level > 0 then GameTooltip:AddLine((LEVEL or "Level") .. " " .. level, 1, 1, 1) end
-	GameTooltip:AddLine(("%s  %.1f, %.1f"):format(ZoneName(d.p.map), d.p.x * 100, d.p.y * 100), 1, 1, 1)
+	GameTooltip:AddLine(ns.Util.Place(d.p.map, d.p.x, d.p.y), 1, 1, 1)
 	GameTooltip:AddLine(Tag(d.p.guild), 0.6, 0.8, 1)
 	local ago = GetTime() - d.p.at
 	if ago >= 20 then GameTooltip:AddLine(L["Updated %d s ago"]:format(ago), 0.6, 0.6, 0.6) end

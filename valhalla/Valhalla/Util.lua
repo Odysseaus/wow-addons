@@ -12,6 +12,7 @@
 --   U.Defer(key, fn, note)  fn now when the gate is clear, else when it is (ns.Combat.Run; note: one chat line)
 --   U.Trim(s)           s as text, without the spaces around it
 --   U.ZoneName(id)      a uiMap's name ("?" when unknown)
+--   U.Place(id, x, y)   "Zone  12.3, 45.6": a point on a uiMap as the map's tooltips show it
 --   U.Round(x, k)       x rounded to 1/k (k: 1 when not given)
 --   U.Smooth(x, a, b)   smoothstep 0..1 across a..b (or a = { from, to })
 --   U.SetCVar(name, v)  a game setting, errors ignored
@@ -69,6 +70,8 @@ function U.ZoneName(id)
 	local info = id and C_Map.GetMapInfo(id)
 	return info and info.name or "?"
 end
+
+function U.Place(id, x, y) return ("%s  %.1f, %.1f"):format(U.ZoneName(id), x * 100, y * 100) end
 
 function U.Round(x, k)
 	k = k or 1

@@ -221,9 +221,8 @@ function RefreshWaypoint()
 	local pin = S.AddPin(wpSet, u, v, WAYPOINT)
 	pin:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		local info = C_Map.GetMapInfo(mapID)
 		GameTooltip:AddLine(L["Waypoint"], 1, 0.82, 0)
-		GameTooltip:AddLine(("%s  %.1f, %.1f"):format(info and info.name or "", x * 100, y * 100), 1, 1, 1)
+		GameTooltip:AddLine(ns.Util.Place(mapID, x, y), 1, 1, 1)
 		GameTooltip:AddLine(L["Click to stop following it"], 0.6, 0.6, 0.6)
 		if not own then GameTooltip:AddLine(L["Shift-click: share in chat"], 0.6, 0.6, 0.6) end
 		GameTooltip:Show()
@@ -497,11 +496,15 @@ function mod:RefreshNav()
 	RefreshGroup()
 end
 
+-- the reopen choices, in order (1.2.26: the options' select and the menu's rows, Panel.lua, both from this)
+mod.REOPEN_VIEWS = { { "player", L["Center on player"] }, { "zoom", L["Center on player, keep zoom"] }, { "always", L["Always remember"] },
+	{ "visible", L["Remember while visible"] } }
+
 function mod:NavOptions(opts, get, set, off)
+	local values, sorting = {}, {}
+	for i, c in ipairs(mod.REOPEN_VIEWS) do values[c[1]], sorting[i] = c[2], c[1] end
 	opts.reopenView = { type = "select", name = L["When reopening the map"], order = 11,
-		get = mod.GetReopenView, set = set, disabled = off,
-		values = { player = L["Center on player"], zoom = L["Center on player, keep zoom"], always = L["Always remember"],
-			visible = L["Remember while visible"] }, sorting = { "player", "zoom", "always", "visible" },
+		get = mod.GetReopenView, set = set, disabled = off, values = values, sorting = sorting,
 		desc = L["Choose one behavior. Center on player: always open on you. Center on player, keep zoom: open on you, at the zoom you closed the map at. Always remember: restore your previous position and zoom, even after changing zones. Remember while visible: restore only if your current location is inside the previous view, even across zone boundaries. Otherwise, open on you. Maps opened for a quest still show the quest's area."] }
 	opts.group = { type = "toggle", name = L["Party and raid members"], order = 35, get = get, set = set, disabled = off,
 		desc = L["Class-coloured dots for your group anywhere on the stitched map."] }

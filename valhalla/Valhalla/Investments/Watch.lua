@@ -627,39 +627,14 @@ function W.BuildView(f, page)
 	f.searchHint = V.Text(f, 10, GREY)
 	f.searchHint:SetPoint("LEFT", f.search, "RIGHT", 8, 0)
 	f.searchHint:SetText(L["add an item by name (or alt-click any item)"])
-	-- the search's dropdown: the Shopping List's search (I.SearchItems, the names Valhalla has seen); Add or Edit
-	local res = CreateFrame("Frame", nil, f, "BackdropTemplate")
-	res:SetPoint("TOPLEFT", f.search, "BOTTOMLEFT", 0, -2)
-	res:SetSize(380, 8 + V.RESULTS * 22)
-	res:SetFrameLevel((f:GetFrameLevel() or 1) + 30)
-	T.Skin(res, 0.98)
-	res:EnableMouse(true)
-	res.rows = {}
-	for i = 1, V.RESULTS do
-		local r = CreateFrame("Frame", nil, res)
-		r:SetHeight(20)
-		r:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 22)
-		r:SetPoint("RIGHT", res, "RIGHT", -4, 0)
-		r.icon = r:CreateTexture(nil, "ARTWORK")
-		r.icon:SetSize(18, 18)
-		r.icon:SetPoint("LEFT", 2, 0)
-		r.name = V.Text(r, 12)
-		r.name:SetPoint("LEFT", 24, 0)
-		r.name:SetWidth(260)
-		r.name:SetJustifyH("LEFT")
-		r.act = V.Button(r, L["Add"], 70, 18)
-		r.act:SetPoint("RIGHT", 0, 0)
-		r:Hide()
-		res.rows[i] = r
-	end
-	res:Hide()
-	f.results = res
-	local function Close()
-		f.searchOpen = false
-		res:Hide()
-		if I.NameLoader then I.NameLoader.Stop("search") end
-	end
-	local function Pick(id)
+	-- the search's dropdown: the Shopping List's (V.ItemSearch: I.SearchItems, the names Valhalla has seen; 1.2.26:
+	-- its steady rows and click-outside close too); Add, or Edit when it's on the Watchlist
+	local Pick
+	local box = V.ItemSearch(f, f.search, 30, function(id)
+		return W.Has(id) and L["Edit"] or L["Add"], function() Pick(id) end
+	end)
+	local Close = box.Close
+	function Pick(id)
 		W.Add(id)
 		f.search:SetText("")
 		Close()
@@ -667,69 +642,15 @@ function W.BuildView(f, page)
 		W.Edit(id)
 	end
 	f.Pick = Pick
-	local function Results()
-		local text = Trim(f.search:GetText())
-		if text == "" then f.found = {} Close() return {} end
-		local ids = I.SearchItems(text, V.RESULTS)
-		f.found = ids
-		for i, r in ipairs(res.rows) do
-			local id = ids[i]
-			if id then
-				r.id = id
-				r.icon:SetTexture(I.ItemIcon(id))
-				r.name:SetText(I.ItemName(id))
-				r.act.text:SetText(W.Has(id) and L["Edit"] or L["Add"])
-				r.act:SetScript("OnClick", function() Pick(id) end)
-				r:Show()
-			else
-				r.id = nil
-				r:Hide()
-			end
-		end
-		res:SetHeight(8 + math.max(1, #ids) * 22)
-		if #ids > 0 then
-			if not f.searchOpen and I.NameLoader then I.NameLoader.Start("search") end
-			f.searchOpen = true
-			res:Show()
-		else
-			Close()
-		end
-		return ids
-	end
-	f.SearchResults, f.CloseSearch = Results, Close
-	local gen = 0
-	f.search:SetScript("OnTextChanged", function()
-		gen = gen + 1
-		local g = gen
-		local function Go() if g == gen then Results() end end
-		if C_Timer and C_Timer.After then C_Timer.After(V.SEARCH_DELAY, Go) else Go() end
-	end)
+	f.SearchResults = box.Results
 	f.search:SetScript("OnEnterPressed", function(self)
-		local ids = Results()
-		local id = ids[1] or I.ParseItem(self:GetText())
+		-- (Enter before the search ran: it runs now; else the rows shown)
+		local text = Trim(self:GetText())
+		if text ~= "" and box.frozen.text ~= text then f.found = box.Compute(text) end
+		local id = (f.found and f.found[1]) or I.ParseItem(self:GetText())
 		if id then Pick(id)
-		elseif Trim(self:GetText()) ~= "" then ns:Print("%s", L["No item by that name seen yet: shift-click it from your bags, drop it here, or type its item ID."]) end
+		elseif text ~= "" then ns:Print("%s", L["No item by that name seen yet: shift-click it from your bags, drop it here, or type its item ID."]) end
 	end)
-	f.search:SetScript("OnEscapePressed", function(self) Close() self:ClearFocus() end)
-	f.search:HookScript("OnEditFocusLost", function()
-		local function Check()
-			if f.search.HasFocus and f.search:HasFocus() then return end
-			if res:IsShown() and res.IsMouseOver and res:IsMouseOver() then return end
-			Close()
-		end
-		if C_Timer and C_Timer.After then C_Timer.After(0.2, Check) else Check() end
-	end)
-	f:HookScript("OnHide", Close)
-	-- names coming in while the dropdown is open: the rows again (chained after the Shopping List's own)
-	local prev = I.OnSearchName
-	I.OnSearchName = function(...)
-		if prev then prev(...) end
-		if f.searchOpen and not f.namesSoon then
-			f.namesSoon = true
-			local function Again() f.namesSoon = false if f.searchOpen then Results() end end
-			if C_Timer and C_Timer.After then C_Timer.After(V.NAMES_EVERY, Again) else Again() end
-		end
-	end
 	if ns.LinkBox then
 		ns.LinkBox(f.search, function(_, link)
 			if type(link) ~= "string" or not link:find("|Hitem:", 1, true) then return false end

@@ -370,6 +370,19 @@ W.Run(f.search, "OnEnterPressed")
 ok(Wt.Has(2770) and ed.id == 2770, "Enter: the first found picked")
 W.Click(ed.cancel)
 ok(not ed:IsShown() and Wt.Has(2770) and not Wt.Get(2770).buy, "Cancel: on the list (added), no targets")
+-- (1.2.26) the Watchlist's dropdown is the Shopping List's (V.ItemSearch): its rows stay put, a click outside closes it
+do
+  local function Ids() local t = {} for _, r in ipairs(f.results.rows) do if r:IsShown() then t[#t + 1] = r.id end end return table.concat(t, ",") end
+  f.search:SetText("silver") W.RunTimers()
+  local first = Ids()
+  I.RememberName(969301, "Aaa Silver Ingot")
+  f.SearchResults()
+  ok(first ~= "" and f.frozen.text == "silver" and Ids() == first .. ",969301", "1.2.26: a name coming in later goes below, the rows don't move", Ids())
+  ok(f.searchOpen and f.results:IsShown(), "(open)")
+  W.Fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+  ok(not f.results:IsShown() and not f.searchOpen, "1.2.26: a click outside the Watchlist's dropdown closes it")
+  f.search:SetText("") W.RunTimers()
+end
 
 print("== 11. any item: alt-click, the right-click menu")
 local cell = V.ItemCell(UIParent, 200)

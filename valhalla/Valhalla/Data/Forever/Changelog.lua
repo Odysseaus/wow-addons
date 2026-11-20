@@ -17,6 +17,7 @@ ns.MapChangelog = {
 		"Investments: a crafted item that binds on pickup is no longer ranked while the game hasn't loaded it (checked again shortly), and recipe costs update when a vendor's price changes.",
 		"Investments: the list chooser closes when you click elsewhere, like the item menu; a Per-stack tooltip no longer shows the auction lines twice; the top-level filter's tip says what it does (items with no known level stay listed, marked \"?\").",
 		"Other addons' switches in Valhalla's menu sit under their own section's heading.",
+		"Investments: the Watchlist's item search works like the Shopping List's: its rows stay put while item names load (new ones go below), and a click outside closes it.",
 		"The map's gap minimap no longer errors at the edge of a continent; Friends, group pins and the tracker's map pins do less work when they're off or unchanged; switching Investments off at the auction house stops its name loading.",
 	} },
 	{ version = "1.2.25", date = "2026-11-19", heads = { [1] = "Fixed", [3] = "Changed", }, items = {
