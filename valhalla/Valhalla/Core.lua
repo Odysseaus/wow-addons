@@ -49,11 +49,12 @@ function Safe.Value(v)
 end
 
 -- a position's x, y: Blizzard's vectors have GetXY, but some APIs on this client hand back
--- a plain { x, y } table
+-- a plain { x, y } table. (1.2.26) each plain, nil when secret, so callers check only for nil
 function Safe.XY(vec)
 	if type(vec) ~= "table" then return end
-	if vec.GetXY then return vec:GetXY() end
-	return vec.x, vec.y
+	local x, y
+	if vec.GetXY then x, y = vec:GetXY() else x, y = vec.x, vec.y end
+	return Safe.Value(x), Safe.Value(y)
 end
 
 -- calls fn(...) and returns its first result when it is plain, else nil

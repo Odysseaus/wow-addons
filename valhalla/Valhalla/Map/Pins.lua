@@ -46,12 +46,9 @@ local RefreshList, Edit, ShowDrawing   -- (below)
 
 local function DB() return mod.db.pins end
 
-local function ZoneName(id)
-	local info = id and C_Map.GetMapInfo(id)
-	return info and info.name or "?"
-end
+local ZoneName = ns.Util.ZoneName
 
-local function Round(v) return math.floor(v * 1e4 + 0.5) / 1e4 end
+local Round = ns.Util.Round
 
 -- a note as plain text: no control characters, no escape codes ("|": links, colours), cut short
 -- (not mid-character)
@@ -82,7 +79,7 @@ end
 
 local function Add(mapID, x, y, note, color, from)
 	local db = DB()
-	local p = { id = db.nextId, map = mapID, x = Round(x), y = Round(y), note = Clean(note),
+	local p = { id = db.nextId, map = mapID, x = Round(x, 1e4), y = Round(y, 1e4), note = Clean(note),
 		color = COLORS[color or 1] and color or 1, from = from, at = time() }
 	db.nextId = db.nextId + 1
 	tinsert(db.list, p)
@@ -259,7 +256,7 @@ end
 local function Valid(m, x, y, color, note)
 	m, x, y, color = tonumber(m), tonumber(x), tonumber(y), tonumber(color)
 	if not (m and x and y) or x < 0 or x > 1 or y < 0 or y > 1 or not S.Rect(m) then return end
-	return { map = m, x = Round(x), y = Round(y), color = COLORS[color or 1] and color or 1, note = Clean(note) }
+	return { map = m, x = Round(x, 1e4), y = Round(y, 1e4), color = COLORS[color or 1] and color or 1, note = Clean(note) }
 end
 
 -- pins not already here (the same place and note): added; how many

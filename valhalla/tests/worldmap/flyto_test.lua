@@ -22,6 +22,7 @@ function ns.Bind(getdb) return function(info) return getdb()[info[#info]] end, f
 function ns.Desc() return {} end
 function ns.Header() return {} end
 
+assert(loadfile(root .. "Util.lua"))("Valhalla", ns)   -- (1.2.26: the shared helpers, after Core.lua)
 assert(loadfile(root .. "Map/FlyPath.lua"))("Valhalla", ns)
 local P = ns.FlyPath
 

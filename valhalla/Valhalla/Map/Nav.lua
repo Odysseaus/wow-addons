@@ -29,7 +29,7 @@ local function UnitWorld(unit)
 	local pos = Safe.Call(C_Map.GetPlayerMapPosition, best, unit)
 	if not pos then return end
 	local x, y = Safe.XY(pos)
-	if Safe.IsSecret(x) or Safe.IsSecret(y) or not x or not y or (x == 0 and y == 0) then return end
+	if not x or not y or (x == 0 and y == 0) then return end
 	local u, v = mod.ToWorld(best, x, y)
 	return u, v, best
 end
@@ -47,7 +47,7 @@ function mod:FindMe(keepZoom)
 		local pos = host and Safe.Call(C_Map.GetPlayerMapPosition, host, "player")
 		if pos then
 			local x, y = Safe.XY(pos)
-			if not Safe.IsSecret(x) and x and y and (x ~= 0 or y ~= 0) then u, v = mod.ToWorld(host, x, y) best = host end
+			if x and y and (x ~= 0 or y ~= 0) then u, v = mod.ToWorld(host, x, y) best = host end
 		end
 	end
 	if not u then
@@ -338,7 +338,7 @@ local function Go(p)
 end
 
 local function Results(text)
-	text = (text or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+	text = ns.Util.Trim(text):lower()
 	local out = {}
 	if #text < 2 then return out end
 	for _, p in ipairs(Places()) do

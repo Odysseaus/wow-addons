@@ -13,6 +13,7 @@ function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m
 function ns:GetModule(key) return self.modules[key] end
 ns.modules.worldmap = { key = "worldmap", enabled = true }
 function ns.modules.worldmap.TabAway(away) ns.modules.worldmap.away = away end   -- (Map/Panel.lua: its menu put away on the other tabs)
+assert(loadfile(root .. "Util.lua"))("Valhalla", ns)   -- (1.2.26: the shared helpers, after Core.lua)
 assert(loadfile(root .. "UI/Style.lua"))("Valhalla", ns)   -- (v0.4.2: the look, loaded after Core.lua)
 assert(loadfile(root .. "Links.lua"))("Valhalla", ns)
 for _, f in ipairs({ "Invest", "Scan", "Tabs", "Views", "Market", "Watch", "Tooltip", "Data/Forever/Recipes", "Data/Forever/TopSkills", "Craft", "Trainer", "Merchant", "AHPanel" }) do

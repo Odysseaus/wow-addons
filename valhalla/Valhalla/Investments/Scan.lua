@@ -43,10 +43,8 @@ S.STOP_CONFIRM = 3                                -- (1.2.20) Stop: a second pre
 S.TRIM_CHUNK = 500                                -- (1.2.20) history lines trimmed between clock checks
 
 local Call = I.Call
-local Value = ns.Safe and ns.Safe.Value or function(v) return v end
-local function Now() return time and time() or 0 end
-local function T() return (GetTimePreciseSec and GetTimePreciseSec()) or (debugprofilestop and debugprofilestop() / 1000) or Now() end
-local function MS() return (debugprofilestop and debugprofilestop()) or T() * 1000 end
+local Value = ns.Util.Value
+local Now, T, MS = ns.Util.Time, ns.Util.T, ns.Util.MS
 local ABORT = {}
 -- (1.2.20) a whole number as text, any size (the game's %d stops at 2^31)
 local function N(x) return ("%.0f"):format(math.floor(tonumber(x) or 0)) end

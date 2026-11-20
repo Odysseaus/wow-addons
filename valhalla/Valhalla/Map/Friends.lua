@@ -143,10 +143,7 @@ local function ClassColor(class)
 	return 1, 1, 1
 end
 
-local function ZoneName(id)
-	local info = id and C_Map.GetMapInfo(id)
-	return info and info.name or "?"
-end
+local ZoneName = ns.Util.ZoneName
 
 -- a zone's uiMapID from its name, as the guild roster and friends list give it (a dungeon's
 -- name, or a place not on the world map: none)
@@ -218,7 +215,7 @@ local function Here()
 	local p = Safe.Call(C_Map.GetPlayerMapPosition, best, "player")
 	if not p then return end
 	local x, y = Safe.XY(p)
-	if Safe.IsSecret(x) or Safe.IsSecret(y) or type(x) ~= "number" or type(y) ~= "number" then return end
+	if type(x) ~= "number" or type(y) ~= "number" then return end
 	if x <= 0 and y <= 0 then return end        -- (0, 0: the game doesn't know)
 	return best, x, y
 end

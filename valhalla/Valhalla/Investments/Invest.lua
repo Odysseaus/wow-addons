@@ -60,14 +60,7 @@ I.MAIL_DAYS = 30                                                -- (the game ret
 I.UNDO_KEEP = 5
 I.ITEMS = { linen = 2589, copperOre = 2770, peacebloom = 2447 }   -- (diag: Linen Cloth, Copper Ore, Peacebloom)
 
-local function Now() return time and time() or 0 end
-local Value = ns.Safe and ns.Safe.Value or function(v) return v end
-local function Call(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b, c, d = pcall(fn, ...)
-	if not ok then return nil end
-	return Value(a), Value(b), Value(c), Value(d)
-end
+local Now, Value, Call, Trim = ns.Util.Time, ns.Util.Value, ns.Util.Call, ns.Util.Trim
 I.Call = Call
 
 --------------------------------------------------------------------------------
@@ -164,7 +157,7 @@ end
 
 function I.ParseItem(text)
 	if type(text) == "number" then return text end
-	text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	text = Trim(text)
 	if text == "" then return nil end
 	local id = text:match("item:(%d+)") or text:match("^(%d+)$")
 	if id then return tonumber(id) end
@@ -399,8 +392,6 @@ end
 --   draft = { name, items = { { id, n, name } }, editing = list id }
 -- (v0.3.2's keep and short on lines, if saved, are left as they are and not used: v0.3.3 has no Keep.)
 --------------------------------------------------------------------------------
-
-local function Trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 
 -- the first time: the old wants become one list, "My List" (the wants themselves are left as they were)
 function I.MigrateLists(c)
@@ -1394,8 +1385,7 @@ AC.NEUTRAL_ZONE = { ["Tanaris"] = true, ["Stranglethorn Vale"] = true, ["Cape of
 AC.NEUTRAL_MAP = { [1446] = true, [1434] = true, [1452] = true }
 
 local ABORT = {}
-local function T() return (GetTimePreciseSec and GetTimePreciseSec()) or (debugprofilestop and debugprofilestop() / 1000) or Now() end
-local function MS() return (debugprofilestop and debugprofilestop()) or T() * 1000 end
+local T, MS = ns.Util.T, ns.Util.MS
 local function R2(x) return x and math.floor(x * 100 + 0.5) / 100 end
 local SORTS = { { sortOrder = 0, reverseSort = false } }   -- (Enum.AuctionHouseSortOrder.Price)
 
@@ -1937,7 +1927,7 @@ end
 
 function mod:Slash(word, arg)
 	arg = arg or ""
-	local low = arg:lower():gsub("^%s+", ""):gsub("%s+$", "")
+	local low = Trim(arg):lower()
 	if word == "invest" then
 		local sub, rest = low:match("^(%S*)%s*(.-)$")
 		if sub == "on" then I.SetOn(true) Say(L["Investments and the window's tabs: on."]) return end

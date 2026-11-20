@@ -109,35 +109,21 @@ O.CITY = {
 local PIN_ON = ns.Media.path .. "Textures\\ValhallaPinOn"
 local PIN_OFF = ns.Media.path .. "Textures\\ValhallaPinOff"
 
-local function Now() return GetTime and GetTime() or 0 end
+local Now = ns.Util.Clock
 -- (1.2.24) "in combat" here is CombatQueue.lua's gate: combat, the player in combat, the game's secret
 -- restrictions, or the few seconds after combat; watch, super-track and re-track changes all wait on it
-local function InCombat()
-	local C = ns.Combat
-	if C and C.Blocked then return C.Blocked() end
-	return InCombatLockdown and InCombatLockdown() and true or false
-end
+local InCombat = ns.Util.InCombat
 local function GateWhy()
 	local C = ns.Combat
 	if C and C.Why then return C.Why() end
 	return InCombat() and { "combat" } or {}
 end
 local function OnTaxi() return UnitOnTaxi and UnitOnTaxi("player") and true or false end
-local function Plain(v) return ns.Safe and ns.Safe.Value(v) or v end
-local function Call(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b = pcall(fn, ...)
-	if ok then return Plain(a), Plain(b) end
-end
+local Plain, Call = ns.Util.Value, ns.Util.Call
 -- (1.2.23) the game's tracker changed only out of combat (CombatQueue.lua: in combat it waits until combat
 -- ends, the same quest's or the super-track's last change kept); straight away when that isn't loaded
 local TRACK_NOTE = "Tracking changed in combat: it applies when combat ends."
-local function Defer(key, fn, note)
-	local C = ns.Combat
-	if C and C.Run then return C.Run(key, fn, note and L[note]) end
-	fn()
-	return true
-end
+local Defer = ns.Util.Defer
 O.Defer = Defer
 
 --------------------------------------------------------------------------------
@@ -268,7 +254,7 @@ end
 
 local function MapInfo(id) return C_Map and C_Map.GetMapInfo and Call(C_Map.GetMapInfo, id) end
 
-local function Trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+local Trim = ns.Util.Trim
 -- a zone name, compared without case and a leading "The "
 local function ZCanon(s)
 	if type(s) ~= "string" then return nil end
@@ -2038,7 +2024,7 @@ end
 
 -- /valhalla objectives [on|off|why [questID]|sync on|off|show]
 function mod:Slash(arg)
-	arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+	arg = Trim(arg):lower()
 	local word, rest = arg:match("^(%S+)%s*(.-)$")
 	if word == "sync" then
 		if rest == "on" then

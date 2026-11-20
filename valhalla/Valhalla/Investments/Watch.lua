@@ -26,8 +26,7 @@ local W = {}
 I.Watch = W
 
 local function S() return I.Scan end
-local function Now() return time and time() or 0 end
-local function Trim(t) return (tostring(t or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
+local Now, Trim = ns.Util.Time, ns.Util.Trim
 
 W.NEARS = { [0] = true, [5] = true, [10] = true }
 W.POPUP_MAX = 10                  -- (rows in the popup; the rest: "and N more")

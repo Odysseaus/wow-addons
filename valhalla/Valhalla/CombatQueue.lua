@@ -40,7 +40,7 @@ Q.secretSince = nil     -- (when the hold by secret auras alone began)
 Q.released = false      -- (that hold has passed SAFETY seconds: the gate is open until it ends)
 Q.warned = false
 
-local function Now() return GetTime and GetTime() or 0 end
+local Now = ns.Util.Clock
 -- a yes/no from the game: a secret answer counts as yes (blocked); a failing call as failed (1.2.26: the combat
 -- checks pass false, so a broken one never holds for good; the secret auras check passes true, held as secret:
 -- the safety net below still opens it after SAFETY seconds)

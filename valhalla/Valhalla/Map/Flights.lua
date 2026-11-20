@@ -126,7 +126,7 @@ local flight            -- the flight: { key, from, to, dest, legs = { { a, b, n
 local watch = 0         -- (a newer flight stops older watchers)
 local popup, editing
 
-local function Round(x) return math.floor(x + 0.5) end
+local Round = ns.Util.Round
 T.Clock = function(secs) secs = math.max(0, Round(secs)) return ("%d:%02d"):format(math.floor(secs / 60), secs % 60) end
 
 -- the game's node ID for a flight master's slot (its own list), else by name among this faction's

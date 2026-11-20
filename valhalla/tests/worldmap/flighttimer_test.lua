@@ -92,6 +92,7 @@ local function NewNS()
   local mod = { key = "worldmap", defaults = { enabled = true, flight = true } }
   ns.modules.worldmap = mod
   function ns:GetModule(k) return self.modules[k] end
+  assert(loadfile(root .. "Util.lua"))("Valhalla", ns)   -- (1.2.26: the shared helpers, after Core.lua)
   assert(loadfile(root .. "Data/Forever/FlightData.lua"))("Valhalla", ns)
   return ns, mod
 end

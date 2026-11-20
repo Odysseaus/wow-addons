@@ -476,7 +476,7 @@ local function Header(parent, text)
 	return h
 end
 
-local function Trim(t) return (tostring(t or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
+local Trim = ns.Util.Trim
 
 local function Wheel(f, scroll)
 	f:EnableMouseWheel(true)

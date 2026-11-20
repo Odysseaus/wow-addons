@@ -592,7 +592,7 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
 		local p = best and S.Rect(best) and C_Map.GetPlayerMapPosition(best, "player")
 		local x, y
 		if p then x, y = ns.Safe.XY(p) end
-		if not ns.Safe.IsSecret(x) and not ns.Safe.IsSecret(y) and x and y then
+		if x and y then
 			local u, v = ToWorld(best, x, y)
 			S.SetPlayer(u, v, ns.Safe.Call(GetPlayerFacing))
 		else

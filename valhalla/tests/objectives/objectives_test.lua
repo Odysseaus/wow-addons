@@ -19,6 +19,7 @@ ns.printed = {}
 function ns:Print(fmt, ...) ns.printed[#ns.printed + 1] = select("#", ...) > 0 and fmt:format(...) or fmt end
 function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m.defaults or {} if m.defaults.enabled == nil then m.defaults.enabled = true end self.modules[key] = m return m end
 function ns:GetModule(key) return self.modules[key] end
+assert(loadfile(root .. "Util.lua"))("Valhalla", ns)   -- (1.2.26: the shared helpers, after Core.lua)
 assert(loadfile(root .. "Objectives/Objectives.lua"))("Valhalla", ns)
 assert(loadfile(root .. "Objectives/QuestLogPins.lua"))("Valhalla", ns)
 local mod = ns:GetModule("objectives")
@@ -448,7 +449,8 @@ tb._scripts.OnClick(tb) Run(0.4)
 ok(tb._normal._atlas == "ui-questtrackerbutton-secondary-collapse" and O.UI.ready.n == 1, "unfolded again")
 W.combat = true
 poi._scripts.OnClick(poi, "LeftButton")
-ok(W.super == 0 and W.combatChanges == 0, "in combat: the toggle works, no watch changes")
+-- (1.2.26: Util.Defer, shared with QuestChains: without CombatQueue loaded it still holds in combat, as CombatQueue does in game)
+ok(W.super == 305 and W.combatChanges == 0, "in combat: the super-track change held, no watch changes")
 W.combat = false
 
 print("== 23. a watched ready quest that isn't listed here is untracked")

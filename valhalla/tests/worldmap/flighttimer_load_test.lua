@@ -71,7 +71,7 @@ local function Session(o)
   ValhallaDB, ValhallaCharDB = o.db, o.char
   -- the addon, in the TOC's order
   ns = { Client = "Forever", MapStitch = S }
-  local files = { "Libs/LibStub/LibStub.lua", "Core.lua", "UI/Style.lua", "Data/Forever/FlightData.lua", "Map/FlyPath.lua",
+  local files = { "Libs/LibStub/LibStub.lua", "Core.lua", "Util.lua", "UI/Style.lua", "Data/Forever/FlightData.lua", "Map/FlyPath.lua",
     "Map/WorldMap.lua", "Map/Flights.lua", "Init.lua" }
   for _, f in ipairs(files) do assert(loadfile(root .. f))("Valhalla", ns) end
   T = ns.MapFlights.Timer

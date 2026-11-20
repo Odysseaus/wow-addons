@@ -34,6 +34,7 @@ function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m
 function ns:GetModule(key) return self.modules[key] end
 ns.modules.worldmap = { key = "worldmap", enabled = true }
 function ns.modules.worldmap.TabAway(away) ns.modules.worldmap.away = away end
+assert(loadfile(root .. "Util.lua"))("Valhalla", ns)   -- (1.2.26: the shared helpers, after Core.lua)
 assert(loadfile(root .. "UI/Style.lua"))("Valhalla", ns)
 assert(loadfile(root .. "Links.lua"))("Valhalla", ns)
 for _, f in ipairs(files) do

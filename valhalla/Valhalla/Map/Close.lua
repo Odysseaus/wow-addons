@@ -88,10 +88,7 @@ if ns.MapWorld and ns.MapWorld.minimap then
 	end
 end
 
-local function Smooth(x, r)
-	local t = math.max(0, math.min(1, (x - r[1]) / (r[2] - r[1])))
-	return t * t * (3 - 2 * t)
-end
+local Smooth = ns.Util.Smooth
 
 -- the game maps (continent 0 / 1 ...) of the continent the view's centre is on: looked up again only once
 -- the centre has moved a little (the game's lookup makes tables, and this runs every frame of a pan or zoom)

@@ -39,7 +39,7 @@ M.RANGES = { { "day", L["1 day"] }, { "week", L["7 days"] } }
 local GOLD, GREY = T.GOLD, { 0.6, 0.6, 0.6 }
 local GREEN, RED = { 0.3, 0.9, 0.3 }, { 1, 0.45, 0.3 }
 local function S() return I.Scan end
-local function Now() return time and time() or 0 end
+local Now = ns.Util.Time
 local Text = function(...) return V.Text(...) end
 
 -- the house shown: the one chosen, else the last one visited, else any with data
@@ -1818,7 +1818,7 @@ local function BuildCraft(f, page)
 	-- the list shown: another list (profession, house, scan, setting) starts on page 1
 	-- (v0.4.2.6: a copy, sorted by sortList's column: the ranking and its cache stay as they are)
 	local function SetList(list, key, field, sortList)
-		local q = (f.filter:GetText() or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+		local q = ns.Util.Trim(f.filter:GetText()):lower()
 		local all = list
 		local nameless
 		list, nameless = M.NameFilter(all, field, q)

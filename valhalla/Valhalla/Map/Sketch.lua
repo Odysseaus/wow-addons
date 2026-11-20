@@ -65,7 +65,7 @@ local session
 local held                      -- a finished session's strokes, still shown till its owner's done with them (HoldSketch)
 
 local function DB() return session and session.db or mod.db.sketch end
-local function Round(x) return math.floor(x * 1e5 + 0.5) / 1e5 end
+local Round = ns.Util.Round
 
 --------------------------------------------------------------------------------
 -- Drawing the strokes: each line with a faint halo under it, so ink reads on dark land and light
@@ -218,7 +218,7 @@ local function Start()
 	local db = DB()
 	if db.tool == "erase" then Erase(u, v, pu, pv) return end
 	if #db.strokes >= 2000 then ns:Print(L["That's a lot of drawing: take some off (Undo, the eraser, Clear) before drawing more."]) return end
-	local st = { tool = db.tool, ink = db.ink, size = db.size, pts = { Round(u), Round(v) }, pin = forPin and forPin.id or nil }
+	local st = { tool = db.tool, ink = db.ink, size = db.size, pts = { Round(u, 1e5), Round(v, 1e5) }, pin = forPin and forPin.id or nil }
 	if db.tool == "mark" then
 		st.mark = db.mark
 		st.id = db.nextId
@@ -242,11 +242,11 @@ local function Move()
 	if stroke.record.tool == "quill" then
 		-- (the newest piece only: the stroke so far stays as drawn)
 		if #p >= MAX_POINTS * 2 or not liveSet then return end
-		p[#p + 1], p[#p + 2] = Round(u), Round(v)
+		p[#p + 1], p[#p + 2] = Round(u, 1e5), Round(v, 1e5)
 		local n = #p
 		Ink(stroke.record, liveSet, { p[n - 3], p[n - 2], p[n - 1], p[n] })
 	else
-		p[3], p[4] = Round(u), Round(v)        -- (the other end, where the cursor is)
+		p[3], p[4] = Round(u, 1e5), Round(v, 1e5)        -- (the other end, where the cursor is)
 		RedrawLive()
 	end
 end

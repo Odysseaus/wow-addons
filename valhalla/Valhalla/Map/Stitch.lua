@@ -1823,12 +1823,7 @@ end
 
 -- SetZoom's fades: 0..1 across `range` ({ from, to }, or from, to) of the zoom now. (Out here,
 -- and the names' fades a table kept, so a zoom step makes no garbage: it runs every frame of one)
-local function Smooth(range, to)
-	local from = range
-	if to == nil then from, to = range[1], range[2] end
-	local t = math.max(0, math.min(1, (zoomNow - from) / (to - from)))
-	return t * t * (3 - 2 * t)
-end
+local function Smooth(range, to) return ns.Util.Smooth(zoomNow, range, to) end
 local fades = {}
 
 function S.SetZoom(zoom, scale)

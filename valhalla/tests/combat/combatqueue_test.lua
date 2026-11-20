@@ -17,6 +17,7 @@ function geterrorhandler() return function(e) errors[#errors + 1] = tostring(e) 
 local ns = { printed = {}, handlers = {} }
 function ns:Print(fmt) self.printed[#self.printed + 1] = fmt end
 function ns.RegisterEvent(owner, event, fn) ns.handlers[event] = { owner = owner, fn = fn } return true end
+assert(loadfile(root .. "Util.lua"))("Valhalla", ns)   -- (1.2.26: the shared helpers, after Core.lua)
 assert(loadfile(root .. "CombatQueue.lua"))("Valhalla", ns)
 local Q = ns.Combat
 

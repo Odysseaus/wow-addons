@@ -26,8 +26,7 @@ local C = { ready = true }
 I.Craft = C
 local function S() return I.Scan end
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
-local function Now() return time and time() or 0 end
-local function MS() return (debugprofilestop and debugprofilestop()) or Now() * 1000 end
+local Now, MS = ns.Util.Time, ns.Util.MS
 
 C.SHOWN = 10                -- the Top 10
 C.EVERY = 5                 -- recipes between looks at the clock (a recipe's read costs an unknown few us)
@@ -46,12 +45,7 @@ C.PARENT = { [2937] = 171, [2938] = 164, [2939] = 185, [2940] = 333, [2941] = 20
 C.BYNAME = {}
 for id, name in pairs(C.SKILL) do C.BYNAME[name:lower()] = id end
 
-local function Call(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local got = { pcall(fn, ...) }
-	if not got[1] then return nil end
-	return unpack(got, 2, table.maxn(got))
-end
+local Call = ns.Util.CallAll
 
 -- "id,id,..." as numbers (v0.4.1.1: kept by string, the bundle's lists are long; read-only to callers)
 local splits, nsplits = {}, 0

@@ -30,6 +30,8 @@ Data\Forever\Client.lua
 Libs\Libs.xml
 
 Core.lua
+# The small shared helpers (1.2.26): times, safe calls, the combat gate, trim, zone names, rounding
+Util.lua
 # In combat (and while auras are secret), Valhalla's calls into the game's quest tracker, quest log, waypoint and windows wait (1.2.23-1.2.25)
 CombatQueue.lua
 # The look (v0.4.2): every button, tick box, text box, dropdown, tab and frame, Profession or Norse

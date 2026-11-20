@@ -66,6 +66,7 @@ ns.QuestChainData = { meta = { source = "test", built = "now" }, noSeries = { 87
   { { 700, "Short" }, { 701, "Short 2" } },
   { { 700, "Short" }, { 701, "Short 2" }, { 702, "Short 3" } }, -- (700 in two: the longer chain wins)
 } }
+assert(loadfile(root .. "Util.lua"))("Valhalla", ns)   -- (1.2.26: the shared helpers, after Core.lua)
 assert(loadfile(root .. "Objectives/QuestChains.lua"))("Valhalla", ns)
 local mod = ns:GetModule("chains")
 local QC = mod.QC

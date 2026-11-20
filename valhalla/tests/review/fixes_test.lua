@@ -52,6 +52,11 @@ function strsplit(sep, s, n)
   return unpack(out)
 end
 
+-- (1.2.26) the shared helpers, as the game loads them after Core.lua
+local uns = { L = setmetatable({}, { __index = function(_, k) return k end }) }
+assert(loadfile(root .. "Util.lua"))("Valhalla", uns)
+local U = uns.Util
+
 ---------------------------------------------------------------------------
 print("== B2. a pin code with spaces in a note: every pin and the whole note")
 do
@@ -61,12 +66,12 @@ do
     "NOTE_MAX, SHARE_MAX = 160, 20",
     "COLORS = { 1, 2, 3, 4, 5, 6 }",
     "S = { Rect = function(m) return m == 1429 or m == 1453 end }",
-    Chunk(src, "local function Round("), Chunk(src, "local function Clean("),
+    "local Round = _U.Round", Chunk(src, "local function Clean("),
     Chunk(src, "local function Escape("), Chunk(src, "local function Unescape("),
     Chunk(src, "local function CodeOf("), Chunk(src, "local function Valid("), Chunk(src, "local function FromCode("),
     "_CodeOf, _FromCode, _Escape = CodeOf, FromCode, Escape",
   }, "\n")
-  local env = Run(code, {})
+  local env = Run(code, { _U = U })
   local pins = { { map = 1429, x = 0.5, y = 0.25, color = 2, note = "big chest here" }, { map = 1453, x = 0.1, y = 0.9, color = 1, note = "mailbox, 50% off; ok" } }
   local c = env._CodeOf(pins)
   ok(not c:find(" ", 1, true), "the code has no spaces (they're escaped)", c)
@@ -197,6 +202,38 @@ do
   local lp = Chunk(Source("Objectives/Objectives.lua"), "function O.LayoutPins(")
   ok(not lp:find("tostring(b)", 1, true) and lp:find("S.blankSpare", 1, true) and lp:find("p.keyStrata ~= strata", 1, true),
     "tracker pins: no key strings or new tables a pass; strata and level set on a change")
+end
+
+print("== D1-D4, D6. the shared helpers (Util.lua) do what each copy did")
+do
+  ok(U.Round(0.123456, 1e4) == 0.1235 and U.Round(0.1234567, 1e5) == 0.12346 and U.Round(2.5) == 3 and U.Round(-0.4) == 0,
+    "Round: Pins (1e4), Sketch/Paint (1e5), Flights (whole)")
+  ok(U.Smooth(5, { 0, 10 }) == 0.5 and U.Smooth(5, 0, 10) == 0.5 and U.Smooth(-1, { 0, 10 }) == 0 and U.Smooth(20, 0, 10) == 1,
+    "Smooth: Routes/Close (x, { from, to }) and Stitch (from, to)")
+  ok(U.Trim("  a b \n") == "a b" and U.Trim(nil) == "" and U.Trim(12) == "12" and select("#", U.Trim(" x ")) == 1, "Trim: text, nil, a number; one result")
+  local a, b, c, d = U.Call(function() return 1, 2, 3, 4, 5 end)
+  ok(a == 1 and b == 2 and c == 3 and d == 4 and U.Call(error) == nil and U.Call(nil) == nil, "Call: four results, nil on an error")
+  ok(select("#", U.CallAll(function() return 1, nil, 3, nil, 5, 6 end)) == 6, "CallAll: every result (Craft's GetProfessionInfo)")
+  uns.Safe = { Value = function(v) if v == "SECRET" then return nil end return v end }
+  local x, y = U.Call(function() return "SECRET", 2 end)
+  ok(x == nil and y == 2 and U.Value("SECRET") == nil and U.Value(false) == false, "a secret result: nil (Objectives' Plain let it through)")
+  local core = Source("Core.lua")
+  local xy = core:match("(function Safe%.XY%(vec%).-\nend)")
+  local env = Run("local Safe = _S\n" .. xy:gsub("^function Safe%.XY", "function _S.XY"), { _S = uns.Safe })
+  local px, py = uns.Safe.XY({ GetXY = function() return "SECRET", 0.5 end })
+  local qx, qy = uns.Safe.XY({ x = 0.25, y = 0.75 })
+  ok(px == nil and py == 0.5 and qx == 0.25 and qy == 0.75 and uns.Safe.XY(nil) == nil, "Safe.XY: plain values, a secret one nil (D6)")
+  uns.Safe = nil
+  uns.Combat = nil
+  local ran = 0
+  _G.InCombatLockdown = function() return true end
+  ok(U.Defer("k", function() ran = ran + 1 end) == false and ran == 0, "Defer without CombatQueue: held in combat")
+  _G.InCombatLockdown = function() return false end
+  ok(U.Defer("k", function() ran = ran + 1 end) == true and ran == 1, "and run out of it")
+  local seen
+  uns.Combat = { Run = function(k, fn, note) seen = { k, note } return false end, Blocked = function() return true end }
+  ok(U.Defer("w", function() end, "Note") == false and seen[1] == "w" and seen[2] == "Note" and U.InCombat() == true, "Defer and InCombat through CombatQueue")
+  _G.InCombatLockdown = nil
 end
 
 print(("\n%d passed, %d failed"):format(pass, fail))

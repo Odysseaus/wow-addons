@@ -42,27 +42,11 @@ QC.GREY = { 0.5, 0.5, 0.5 }
 QC.IN_LOG = { 0.25, 1, 0.25 }
 QC.URL = "https://www.wowhead.com/forever/quest=%d"
 
-local function Call(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b, c = pcall(fn, ...)
-	if ok then return a, b, c end
-	return nil
-end
+local Call = ns.Util.Call
 
 -- (1.2.23) the game's tracker and quest log changed only out of combat (CombatQueue.lua): in combat it waits
 -- (1.2.24: CombatQueue.lua's gate: combat, the player in combat, secret auras, the settle after combat)
-local function InCombat()
-	local C = ns.Combat
-	if C and C.Blocked then return C.Blocked() end
-	return InCombatLockdown and InCombatLockdown() and true or false
-end
-local function Defer(key, fn, note)
-	local C = ns.Combat
-	if C and C.Run then return C.Run(key, fn, note and L[note]) end
-	if InCombat() then return false end
-	fn()
-	return true
-end
+local InCombat, Defer = ns.Util.InCombat, ns.Util.Defer
 
 --------------------------------------------------------------------------------
 -- The data: ns.QuestChainData = { meta = {...}, chains = { chain, ... } }
@@ -1016,7 +1000,7 @@ function QC.Coverage()
 end
 
 function mod:Slash(arg)
-	arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+	arg = ns.Util.Trim(arg):lower()
 	if arg == "on" then QC.SetView(true) elseif arg == "off" then QC.SetView(false) end
 	if arg == "coverage" or arg == "on" or arg == "off" or arg == "" then
 		for _, line in ipairs((QC.Coverage())) do ns:Print("%s", line) end
