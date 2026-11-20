@@ -4,6 +4,13 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.29", date = "2026-11-20", heads = { [1] = "Fixed", [5] = "New", }, items = {
+		"|cff6e2c0aYour Watchlist, AH history, Top 10 and lists are back|r: WoW Forever's 1.60.1.71037 update gives a blank realm name at login, and 1.2.28 then saved under an empty realm, so they looked gone (nothing was deleted). Valhalla now waits for the game to name the realm, and never saves under a blank one.",
+		"On the first load, what was saved under the blank realm is merged into your realm: today's scans and history in time order, the newer prices, any Watchlist items or lists added since (each once), the newer bag and bank counts. Then the blank realm is removed.",
+		"If the game still gives no realm name after 10 seconds, Valhalla uses the realm this character last used, or the saved realm that has this character.",
+		"Friends on the map: no \"Name-\" with a blank realm while the realm isn't known yet.",
+		"|cff6e2c0a/valhalla invest realm|r: which realm Valhalla uses and why, what the game says, the saved realms and what was merged. It is kept in the saved diagnostic (/reload writes it).",
+	} },
 	{ version = "1.2.28", date = "2026-11-20", heads = { [1] = "Changed", [3] = "Fixed", }, items = {
 		"|cff6e2c0aCraft's search: All or Item Name|r: two tick boxes right of the search box, one always ticked. Item Name (the default) looks only in the item's name, the text as you type it, as before 1.2.27. All finds every word you type in the item's name or its reagents' names, as in 1.2.27. Your choice is kept between sessions. Harvest always searches the item's name, so the boxes are hidden there.",
 		"The search box's hint says where it looks: \"item name\" or \"name or reagent\".",

@@ -16,6 +16,10 @@
 --   U.Round(x, k)       x rounded to 1/k (k: 1 when not given)
 --   U.Smooth(x, a, b)   smoothstep 0..1 across a..b (or a = { from, to })
 --   U.SetCVar(name, v)  a game setting, errors ignored
+--   U.RealmNames()      (1.2.29) the realm as the game names it now: { { name, how } }, none empty or secret,
+--                       GetRealmName's first, then GetNormalizedRealmName's, then UnitFullName's; {} while the game
+--                       hasn't said (WoW Forever 1.60.1.71037 gives "" at login)
+--   U.PlainRealm(r)     a realm as compared: no spaces, hyphens or apostrophes, lower case ("" for none)
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -83,6 +87,20 @@ function U.Smooth(x, a, b)
 	local t = math.max(0, math.min(1, (x - a) / (b - a)))
 	return t * t * (3 - 2 * t)
 end
+
+function U.RealmNames()
+	local out, seen = {}, {}
+	local function Add(how, r)
+		r = Value(r)
+		if type(r) == "string" and r ~= "" and not seen[r] then seen[r] = true out[#out + 1] = { name = r, how = how } end
+	end
+	Add("GetRealmName", U.Call(GetRealmName))
+	Add("GetNormalizedRealmName", U.Call(GetNormalizedRealmName))
+	Add("UnitFullName", select(2, U.Call(UnitFullName, "player")))
+	return out
+end
+
+function U.PlainRealm(r) return type(r) == "string" and (r:gsub("[%s%-']", "")):lower() or "" end
 
 function U.SetCVar(name, value)
 	if C_CVar and C_CVar.SetCVar then pcall(C_CVar.SetCVar, name, value) elseif SetCVar then pcall(SetCVar, name, value) end

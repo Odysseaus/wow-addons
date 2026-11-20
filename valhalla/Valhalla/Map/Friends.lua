@@ -55,32 +55,29 @@ local sharing = false               -- (a place sent since sharing began: they'r
 -- Names
 --------------------------------------------------------------------------------
 
--- your realm as UnitFullName gives it
-local function ApiRealm()
-	if not UnitFullName then return end
-	local ok, _, r = pcall(UnitFullName, "player")
-	if ok and not Safe.IsSecret(r) and type(r) == "string" and r ~= "" then return r end
-end
-
+-- your realm as names spell it (no spaces): GetNormalizedRealmName's, else UnitFullName's, else GetRealmName's without
+-- its spaces and hyphens; "" while the game hasn't said (early in a login: asked again later). (1.2.29) the names
+-- from ns.Util.RealmNames, Investments' too
+local PREFER = { GetNormalizedRealmName = 1, UnitFullName = 2, GetRealmName = 3 }
 local function Realm()
 	if not realm then
-		local r = Safe.Call(GetNormalizedRealmName)
-		if type(r) ~= "string" or r == "" then r = ApiRealm() end
-		if type(r) ~= "string" or r == "" then r = (Safe.Call(GetRealmName) or ""):gsub("[%s%-]", "") end
-		if r == "" then return "" end   -- (not known yet, early in a login: asked again later)
+		local names = ns.Util.RealmNames()
+		table.sort(names, function(a, b) return PREFER[a.how] < PREFER[b.how] end)
+		local r = names[1] and names[1].name:gsub("[%s%-]", "") or ""
+		if r == "" then return "" end
 		realm = r
 	end
 	return realm
 end
 
--- a realm as compared: no spaces, hyphens or apostrophes, any case
-local function Plain(rlm) return (rlm:gsub("[%s%-']", "")):lower() end
+local Plain = ns.Util.PlainRealm
 
 -- "Name-Realm" for a name as the game gives it (on your own realm it comes without one)
 local function Full(name, rlm)
 	if Safe.IsSecret(name) or type(name) ~= "string" or name == "" then return end
 	if name:find("-", 1, true) then return name end
 	if type(rlm) == "string" and rlm ~= "" then return name .. "-" .. rlm:gsub("[%s%-]", "") end
+	if Realm() == "" then return end   -- (1.2.29: never "Name-": your realm not known yet)
 	return name .. "-" .. Realm()
 end
 
@@ -114,9 +111,8 @@ local function IsMe(full)
 	if name ~= me then return false end
 	if rlm == "" then return true end
 	rlm = Plain(rlm)
-	for _, mine in ipairs({ Realm(), Safe.Call(GetNormalizedRealmName) or "", Safe.Call(GetRealmName) or "", ApiRealm() or "" }) do
-		if type(mine) == "string" and not Safe.IsSecret(mine) and mine ~= "" and Plain(mine) == rlm then return true end
-	end
+	if Realm() ~= "" and Plain(Realm()) == rlm then return true end
+	for _, n in ipairs(ns.Util.RealmNames()) do if Plain(n.name) == rlm then return true end end
 	return false
 end
 

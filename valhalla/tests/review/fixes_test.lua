@@ -100,11 +100,18 @@ end
 print("== B5. the other-realm mark: only on another realm's names")
 do
   local src = Source("Map/Friends.lua")
-  local env = Run(table.concat({ "local function Realm() return 'Forever' end", Chunk(src, "local function Plain("),
-    Chunk(src, "local function Short("), Chunk(src, "local function Shown("), "_Shown = Shown" }, "\n"), { FOREIGN_SERVER_LABEL = " (*)" })
+  ok(src:find("local Plain = ns.Util.PlainRealm", 1, true), "(1.2.29) Friends compares realms with the shared U.PlainRealm")
+  local env = Run(table.concat({ "local function Realm() return 'Forever' end", "local Plain = _U.PlainRealm",
+    Chunk(src, "local function Short("), Chunk(src, "local function Shown("), "_Shown = Shown" }, "\n"), { FOREIGN_SERVER_LABEL = " (*)", _U = U })
   ok(env._Shown("Thor-Forever") == "Thor", "your own realm: no mark", env._Shown("Thor-Forever"))
   ok(env._Shown("Loki-Asgard") == "Loki (*)", "another realm: marked", env._Shown("Loki-Asgard"))
   ok(env._Shown("Odin") == "Odin", "no realm given: no mark")
+  -- (1.2.29) your realm not known yet (WoW Forever 71037: blank at login): no "Name-"
+  local fe = Run(table.concat({ "local realmNow = ''", "local function Realm() return realmNow end", Chunk(src, "local function Full("),
+    "_Full = Full _Set = function(r) realmNow = r end" }, "\n"), { Safe = { IsSecret = function() return false end } })
+  ok(fe._Full("Thor") == nil and fe._Full("Thor", "Asgard") == "Thor-Asgard", "blank realm: no 'Thor-'; a given realm still used")
+  fe._Set("Forever")
+  ok(fe._Full("Thor") == "Thor-Forever", "once known: Thor-Forever")
 end
 
 print("== B4. What's new: the versions scroll")

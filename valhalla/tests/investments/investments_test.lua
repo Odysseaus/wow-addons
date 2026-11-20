@@ -4662,5 +4662,137 @@ do
   ok(right <= Mk.CRAFT_W, "the search row fits: ends at " .. math.floor(right) .. " of " .. Mk.CRAFT_W)
 end
 
+print("== 1.2.29: the realm: never blank; wait, then fall back; a blank realm's data merged in")
+do
+  local Sc = I.Scan
+  local keepDB, keepRealm, keepChar = _G.ValhallaInvestDB, _G.GetRealmName, mod.char.realm
+  local REALM = "CAMWOW US2 Realm 8 PvP"
+  local names = { GetRealmName = "", GetNormalizedRealmName = "", UnitFullName = "" }
+  _G.GetRealmName = function() return names.GetRealmName end
+  _G.GetNormalizedRealmName = function() return names.GetNormalizedRealmName end
+  _G.UnitFullName = function() return "Odysseaus", names.UnitFullName end
+  local function NoJunk(db) for k in pairs(db.realms) do if k == "" or k == "?" then return false end end return true end
+  local function Keys(db) local t = {} for k in pairs(db.realms) do t[#t + 1] = "[" .. k .. "]" end table.sort(t) return table.concat(t, ",") end
+  local function Saved() return { realms = { [REALM] = { chars = { Odysseaus = { bags = { [1] = 1 }, bagsSeen = 100 } }, targets = { [2589] = { house = "Alliance", buy = 10, added = 1, set = 1 } } } } } end
+  -- 1. blank at login: no realm, nothing made; asked again; the name arrives later
+  _G.ValhallaInvestDB = Saved() mod.char.realm = nil
+  I.InitDB()
+  local db = _G.ValhallaInvestDB
+  ok(I.realm == nil and I.char == nil and NoJunk(db) and Keys(db) == "[" .. REALM .. "]", "blank at login: no realm used, no empty or '?' key made", Keys(db))
+  local started = 0
+  I.WhenRealm(function() started = started + 1 end)
+  W.Fire("PLAYER_ENTERING_WORLD") W.RunTimers() W.RunTimers()
+  ok(started == 0 and I.RealmPending() and I.realm == nil and NoJunk(db), "still blank: waiting (PLAYER_ENTERING_WORLD, each second), nothing made")
+  ns.printed = {}
+  Slash("invest", "list") Slash("want", "2589 5") _G.Valhalla_ToggleInvest()
+  local houses = Sc.Houses()
+  ok(#ns.printed == 3 and ns.printed[1]:find("waiting for the game to name your realm", 1, true) and next(houses) == nil and NoJunk(db) and Keys(db) == "[" .. REALM .. "]",
+    "while waiting: the commands and I key say so; the markets read nothing; no key made", table.concat(ns.printed, " | "))
+  ns.printed = {}
+  Slash("invest", "realm")
+  ok(ns.printed[1] == "Realm: not known yet; waiting for the game to name it." and ns.printed[2]:find("nothing (blank)", 1, true), "/valhalla invest realm while waiting", table.concat(ns.printed, " | "))
+  names.GetRealmName = REALM
+  W.RunTimers()
+  ok(started == 1 and not I.RealmPending() and I.realm == db.realms[REALM] and I.char == db.realms[REALM].chars.Odysseaus and I.realmInfo.why == "GetRealmName"
+    and mod.char.realm == REALM and NoJunk(db), "the name arrives: that realm, started once, remembered in ValhallaCharDB", tostring(I.realmInfo and I.realmInfo.why))
+  W.RunTimers()
+  ok(started == 1, "not started twice")
+  -- 2. another spelling of a saved realm: that one
+  names.GetRealmName, names.GetNormalizedRealmName = "", "CAMWOWUS2Realm8PvP"
+  _G.ValhallaInvestDB = Saved() I.InitDB() db = _G.ValhallaInvestDB
+  ok(I.realm == db.realms[REALM] and Keys(db) == "[" .. REALM .. "]" and I.realmInfo.why:find("GetNormalizedRealmName", 1, true), "GetNormalizedRealmName's spelling: the saved realm", I.realmInfo.why)
+  names.GetNormalizedRealmName, names.UnitFullName = "", "CAMWOWUS2Realm8PvP"
+  _G.ValhallaInvestDB = Saved() I.InitDB() db = _G.ValhallaInvestDB
+  ok(I.realm == db.realms[REALM] and I.realmInfo.why:find("UnitFullName", 1, true), "UnitFullName's realm: the saved realm too")
+  names.UnitFullName = ""
+  -- 3. still blank after the wait: the saved realm with this character; the remembered one first
+  _G.ValhallaInvestDB = Saved() mod.char.realm = nil
+  _G.ValhallaInvestDB.realms["Other Realm"] = { chars = { Odysseaus = { bagsSeen = 50 } } }
+  _G.ValhallaInvestDB.realms["Third"] = { chars = { Tentri = { bagsSeen = 999 } } }
+  I.InitDB() db = _G.ValhallaInvestDB
+  started = 0
+  I.WhenRealm(function() started = started + 1 end)
+  for _ = 1, I.REALM_WAIT - 2 do W.RunTimers() end
+  ok(started == 0 and I.realm == nil, "blank for most of the wait: still asking the game")
+  for _ = 1, 3 do W.RunTimers() end
+  ok(started == 1 and I.realm == db.realms[REALM] and I.realmInfo.why == "the saved realm with this character" and NoJunk(db),
+    "blank after the wait: the saved realm with this character (its bags seen last)", tostring(I.realmInfo and I.realmInfo.why))
+  _G.ValhallaInvestDB = Saved() mod.char.realm = "Other Realm"
+  _G.ValhallaInvestDB.realms["Other Realm"] = { chars = { Odysseaus = { bagsSeen = 50 } } }
+  I.InitDB() db = _G.ValhallaInvestDB
+  I.WhenRealm(function() end)
+  for _ = 1, I.REALM_WAIT + 1 do W.RunTimers() end
+  ok(I.realm == db.realms["Other Realm"] and I.realmInfo.why:find("ValhallaCharDB", 1, true), "the realm this character last used (ValhallaCharDB) first")
+  _G.ValhallaInvestDB = {} mod.char.realm = nil
+  I.InitDB() db = _G.ValhallaInvestDB
+  I.WhenRealm(function() end)
+  for _ = 1, I.REALM_WAIT + 4 do W.RunTimers() end
+  ok(I.realm == nil and I.RealmPending() and next(db.realms) == nil, "nothing to go on (a new install, blank): keeps waiting, makes nothing")
+  names.GetRealmName = "Brand New" W.RunTimers()
+  ok(I.realm == db.realms["Brand New"] and not I.RealmPending() and Keys(db) == "[Brand New]", "then the game names it: that realm")
+  -- 4. the merge: 1.2.28's blank realm (the 17:22 save's shape) and a "?" one into the real realm
+  local shift = 29920279 - 29905762
+  _G.ValhallaInvestDB = { account = {}, realms = {
+    [REALM] = {
+      targets = { [249424] = { house = "Alliance", sell = 1500, added = 1, set = 100 }, [2589] = { house = "Alliance", buy = 10, added = 1, set = 50 } },
+      ah = { Alliance = { base = 29905762, scans = { { t = 6393, kind = "full", n = 10, items = 2 }, { t = 14224, kind = "full", n = 11, items = 2 } },
+          cur = { [15347] = "2599,6,6,14224", [7610] = "5000,1,1,14224" }, hist = { [15347] = "6393:2599:6:6;14224:2599:6:6" } },
+        Neutral = { base = 29907210, scans = {}, cur = { [1] = "1,1,1,0" }, hist = {} } },
+      chars = { Odysseaus = { bags = { [1] = 1 }, bagsSeen = 100, bank = { [2] = 2 }, bankSeen = 100, lists = { { id = 7, name = "Reagent Buy Targets", created = 1, items = { { id = 1, n = 1 } } } },
+        nextList = 8, activeList = "none", draft = { items = {} }, want = {}, mail = {}, known = { [182] = 1 } } },
+      merchants = { [6790] = { name = "Innkeeper", items = { [1] = 10 } } }, scanLast = { at = 100, house = "Alliance" }, ahLast = "Alliance" },
+    [""] = {
+      targets = { [13422] = { house = "Alliance", buy = 100, added = 200, set = 200 }, [2589] = { house = "Alliance", buy = 12, added = 1, set = 300 } },
+      ah = { Alliance = { base = 29920279, scans = { { t = 0, kind = "full", n = 199897, items = 6864 } },
+          cur = { [15347] = "2222,9,9,0", [250607] = "23800,6,6,0" }, hist = { [15347] = "0:2222:9:9", [250607] = "0:23800:6:6" } } },
+      chars = { Odysseaus = { bags = { [3] = 3 }, bagsSeen = 200, lists = { { id = 1, name = "Reagent Buy Targets", items = { { id = 1, n = 1 } } }, { id = 2, name = "New", items = { { id = 5, n = 2 } } } },
+        nextList = 3, want = {}, draft = { items = {} }, mail = {} } },
+      merchants = { [6790] = { name = "Innkeeper", items = { [1] = 12, [2] = 5 } }, [99] = { name = "New one", items = {} } }, scanLast = { at = 200, house = "Alliance" }, ahLast = "Alliance" },
+    ["?"] = { chars = { Odysseaus = {} }, targets = { [777] = { house = "Horde", sell = 5, added = 5, set = 5 } } },
+    ["Tentri's"] = { chars = { Tentri = {} } },
+  } }
+  _G.ValhallaInvestDB.realms[""].chars.Tentri = nil
+  names.GetRealmName = REALM
+  mod.char.realm = nil
+  I.InitDB() db = _G.ValhallaInvestDB
+  local r = db.realms[REALM]
+  local function N(t) local k = 0 for _ in pairs(t or {}) do k = k + 1 end return k end
+  ok(NoJunk(db) and Keys(db) == "[" .. REALM .. "],[Tentri's]", "the blank and '?' realms merged in and gone (another character's realm left alone)", Keys(db))
+  ok(N(r.targets) == 4 and r.targets[13422].buy == 100 and r.targets[2589].buy == 12 and r.targets[249424].sell == 1500 and r.targets[777],
+    "the Watchlist: every item once; the same item in both: the one set last")
+  local A = r.ah.Alliance
+  ok(#A.scans == 3 and A.scans[1].t == 6393 and A.scans[2].t == 14224 and A.scans[3].t == shift and A.scans[3].n == 199897 and A.base == 29905762,
+    "scans: all three, in time order, on the old base")
+  ok(A.hist[15347] == "6393:2599:6:6;14224:2599:6:6;" .. shift .. ":2222:9:9" and A.hist[250607] == shift .. ":23800:6:6", "history: the points in time order, moved to the old base", A.hist[15347])
+  ok(A.cur[15347] == "2222,9,9," .. shift and A.cur[7610] == "5000,1,1,14224" and A.cur[250607] == "23800,6,6," .. shift and r.ah.Neutral.cur[1] == "1,1,1,0",
+    "now prices: the newer wins; the rest kept; Neutral as it was", A.cur[15347])
+  ok(Sc.Cur("Alliance", 15347).min == 2222 and #Sc.Points("Alliance", 15347) == 3, "AH Market reads the merged market")
+  local c = r.chars.Odysseaus
+  ok(c.bags[3] == 3 and c.bags[1] == nil and c.bagsSeen == 200 and c.bank[2] == 2 and c.bankSeen == 100 and c.known[182] == 1,
+    "the character: the newer bags, the bank kept (none newer), known kept")
+  ok(#c.lists == 2 and c.lists[1].id == 7 and c.lists[2].name == "New" and c.lists[2].id == 8 and c.nextList == 9 and c.activeList == "none",
+    "lists: the same list once, the new one added with a new id")
+  ok(r.merchants[6790].items[1] == 10 and r.merchants[6790].items[2] == 5 and r.merchants[99] and r.scanLast.at == 200,
+    "merchants: added and filled in; the last scan's note the newer one")
+  local log = db.account.realmMerges
+  ok(type(log) == "table" and #log == 2 and log[1].from == "" and log[1].targets == 1 and log[1].scans == 1 and log[1].lists == 1 and log[2].from == "?" and log[2].into == REALM,
+    "what was merged: kept in the saved data")
+  ns.printed = {}
+  local before = #db.diag
+  Slash("invest", "realm")
+  local d = db.diag[#db.diag]
+  ok(#db.diag == before + 1 and d.kind == "realm" and d.realm.key == REALM and d.realm.why == "GetRealmName" and #d.realm.merges == 2,
+    "/valhalla invest realm: kept in ValhallaInvestDB.diag (a /reload writes it)")
+  local all = table.concat(ns.printed, " | ")
+  ok(all:find('Realm: "' .. REALM .. '" (GetRealmName', 1, true) and all:find('Merged "" into "' .. REALM .. '"', 1, true) and all:find("4 on the Watchlist", 1, true)
+    and all:find("Saved in ValhallaInvestDB.diag", 1, true), "its lines in chat", all)
+  I.InitDB()
+  ok(#db.account.realmMerges == 2 and NoJunk(db), "a second load: nothing merged again")
+  _G.ValhallaInvestDB, _G.GetRealmName, mod.char.realm = keepDB, keepRealm, keepChar
+  _G.GetNormalizedRealmName, _G.UnitFullName = nil, nil
+  I.InitDB()
+  ok(I.realm == keepDB.realms.Forever, "(the test's own data back)")
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end
