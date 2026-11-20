@@ -39,6 +39,7 @@ I.SETTINGS = {
 	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (Owned: what you own costs nothing; 1.0.1: "vendor" gone,
 	-- moved to "market"); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false, craftPerStack = false,   -- (1.2.6: Craft Show: Per stack)
+	craftSearch = "name",                                       -- (1.2.28: Craft's search looks in "name" (Item Name) | "all" (name or reagent))
 	quietDavesSack = true,                                      -- (1.2.9: Dave's Sack's own AH scans turned off: only Valhalla scans the AH)
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all", topView = "movers",
@@ -112,6 +113,7 @@ function I.InitDB()
 	I.S.buyGuard, I.S.buyDebug = nil, nil   -- (1.2.10: the cart's price guard and buy debug are gone)
 	-- (1.0.1) Reagents: Owned: vendor is gone: Market; Craft's Known column is gone: its sort, the default
 	if I.S.craftOwned ~= "market" and I.S.craftOwned ~= "free" then I.S.craftOwned = "market" end
+	if I.S.craftSearch ~= "all" and I.S.craftSearch ~= "name" then I.S.craftSearch = "name" end   -- (1.2.28)
 	if type(I.S.sortCraft) == "string" and I.S.sortCraft:match("^known:") then I.S.sortCraft = "each:desc" end
 	return db
 end

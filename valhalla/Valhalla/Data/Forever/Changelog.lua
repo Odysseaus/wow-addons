@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.28", date = "2026-11-20", heads = { [1] = "Changed", [3] = "Fixed", }, items = {
+		"|cff6e2c0aCraft's search: All or Item Name|r: two tick boxes right of the search box, one always ticked. Item Name (the default) looks only in the item's name, the text as you type it, as before 1.2.27. All finds every word you type in the item's name or its reagents' names, as in 1.2.27. Your choice is kept between sessions. Harvest always searches the item's name, so the boxes are hidden there.",
+		"The search box's hint says where it looks: \"item name\" or \"name or reagent\".",
+		"Fishing's Harvest list now has the catches the game files as Other: Stonescale Eel, Lightning Eel, Oily Blackmouth, Firefin Snapper, Small Barnacled Clam, Thick-shelled Clam and Big-mouth Clam (searching \"eel\" found nothing before).",
+	} },
 	{ version = "1.2.27", date = "2026-11-20", heads = { [1] = "Changed", }, items = {
 		"|cff6e2c0aCraft's search finds reagents too|r: every word you type (any order, any case) must be in the crafted item's name or in one of its reagents' names, so \"thread\" lists every craft that uses a thread, and \"bandage linen\" finds Linen Bandage. Hover a row: the reagents that matched are marked \"(matches your search)\".",
 		"The list updates 0.3 seconds after you stop typing, as the Shopping List's search does. Reagent names the game hasn't sent yet are asked for, and their crafts show once they arrive.",

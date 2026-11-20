@@ -394,7 +394,8 @@ function V.Grid(rows, x0)
 end
 
 -- choose one: { {value, label}, ... } (its boxes in measured columns: V.Grid)
-function V.Radio(parent, label, options, get, set)
+-- (1.2.28) x0: the first box's x (150 by default, the rows' columns; 0: no title before the boxes)
+function V.Radio(parent, label, options, get, set, x0)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetSize(420, 18)
 	local title = Text(f, 12)
@@ -407,7 +408,7 @@ function V.Radio(parent, label, options, get, set)
 		box.value = o[1]
 		f.boxes[#f.boxes + 1] = box
 	end
-	V.Grid({ { frame = f, boxes = f.boxes } }, 150)
+	V.Grid({ { frame = f, boxes = f.boxes } }, x0 or 150)
 	function f.Update() for _, box in ipairs(f.boxes) do box.Update() end end
 	return f
 end

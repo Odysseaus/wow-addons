@@ -4566,6 +4566,7 @@ do
   -- typing: one redraw 0.3 s after the last key (the Shopping List's wait, V.Debounce)
   T.Select("invest", "market")
   local mp = T.Views().invest.page.pages.market
+  I.S.craftSearch = "all"   -- (1.2.28: All, 1.2.27's search; Item Name is the default)
   mp:ShowSub("craft")
   local cf = mp.subs.craft
   W.RunTimers()
@@ -4577,7 +4578,88 @@ do
   ok(n == 1, "0.3 s after the last key: one redraw (not three)", n)
   cf.Redraw = orig
   cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged") W.RunTimers()
-  ok(cf.filterHint:GetText() == "name or reagent" and Mk.TIPS.filter[1] == "Filter by name or reagent", "the hint and tip say name or reagent")
+  ok(cf.filterHint:GetText() == "name or reagent" and Mk.TIPS.filter[1] == "Search", "the hint says name or reagent (All, 1.2.28); the tip, Search", cf.filterHint:GetText())
+end
+
+print("== 1.2.28: Craft's search: All | Item Name (tick boxes, one always ticked, kept); Fishing's catches filed as Other")
+do
+  local Mk, Cr = I.Market, I.Craft
+  -- the default, a fresh install: Item Name; a value not known: Item Name; a pick kept over a reload
+  local keep = _G.ValhallaInvestDB
+  _G.ValhallaInvestDB = nil I.InitDB()
+  ok(I.S.craftSearch == "name" and Mk.SearchIn() == "name", "default (fresh saved data): Item Name", tostring(I.S.craftSearch))
+  _G.ValhallaInvestDB = keep I.InitDB()
+  I.S.craftSearch = "bogus" I.InitDB()
+  ok(I.S.craftSearch == "name", "an unknown saved value: back to Item Name")
+  I.S.craftSearch = "all" I.InitDB()
+  ok(I.S.craftSearch == "all" and _G.ValhallaInvestDB.settings.craftSearch == "all", "All kept in the saved settings (over a /reload)")
+  I.S.craftSearch = "name"
+  T.Select("invest", "market")
+  local mp = T.Views().invest.page.pages.market
+  mp:ShowSub("craft")
+  local cf = mp.subs.craft
+  Mk.craftMode = "crafts" Mk.craftProf = 197 mp:Refresh()
+  for _ = 1, 200 do if not Cr.Running() then break end Cr.Tick() end
+  mp:Refresh() W.RunTimers()
+  local b = cf.searchIn.boxes
+  local function Ticks() return (b[1].tick:IsShown() and "A" or "-") .. (b[2].tick:IsShown() and "N" or "-") end
+  ok(#b == 2 and b[1].value == "all" and b[2].value == "name" and b[1].label._text == "All" and b[2].label._text == "Item Name",
+    "two tick boxes: All, Item Name (V.Radio)")
+  ok(cf.searchIn:IsShown() and Ticks() == "-N" and cf.filterHint._text == "item name", "Crafts: shown; Item Name ticked by default; the hint says item name", Ticks())
+  local x1 = select(4, cf.searchIn:GetPoint(1))
+  ok(select(2, cf.searchIn:GetPoint(1)) == cf.filter and x1 == 10, "right of the search box")
+  W.Click(b[1])
+  ok(I.S.craftSearch == "all" and Ticks() == "A-" and cf.filterHint._text == "name or reagent", "All clicked: All ticked, Item Name not; saved", Ticks())
+  W.Click(b[1])
+  ok(I.S.craftSearch == "all" and Ticks() == "A-", "the ticked box clicked again: stays ticked (one always ticked)", Ticks())
+  W.Click(b[2])
+  ok(I.S.craftSearch == "name" and Ticks() == "-N", "Item Name clicked: only it ticked", Ticks())
+  W.Click(b[2])
+  ok(Ticks() == "-N", "Item Name clicked again: stays ticked", Ticks())
+  ok(Mk.TIPS.search_all[2]:find("reagents' names", 1, true) and Mk.TIPS.search_name[2]:find("as before 1.2.27", 1, true) and b[1].tip and b[2].tip
+    and b[1].tip.title == "All" and b[2].tip.title == "Item Name", "tooltips on both boxes")
+  -- what each looks in (the list the page builds)
+  W.items[990021] = { "Heavy Linen Bandage", 134400 }
+  local function P(...) local t = {} for i, id in ipairs({ ... }) do t[i] = { id = id, n = 1, own = 0, unit = 10, src = "AH", cost = 10 } end return t end
+  local rows = { { out = 990021, parts = P(2589, 2321) } }
+  local function Outs(q, parts) local l = Mk.NameFilter(rows, "out", q, parts) return #l end
+  ok(Outs("thread", "parts") == 1 and Outs("bandage thread", "parts") == 1 and Outs("thread") == 0 and Outs("linen bandage") == 1 and Outs("bandage linen") == 0,
+    "All: name or reagent, any order (1.2.27); Item Name: the text as one phrase in the name (before 1.2.27)")
+  -- the page: Item Name passes no reagents (the old phrase); All passes them; the tooltip marks reagents in All only
+  local seen
+  local origNF = Mk.NameFilter
+  Mk.NameFilter = function(all, field, q, parts) seen = parts or "none" return origNF(all, field, q, parts) end
+  cf.filter:SetText("cloth") W.Run(cf.filter, "OnTextChanged") W.RunTimers()
+  local nameOnly = seen
+  W.Click(b[1]) W.RunTimers()
+  local allMode = seen
+  Mk.NameFilter = origNF
+  ok(nameOnly == "none" and allMode == "parts", "the page: Item Name searches the name only, All the reagents too", tostring(nameOnly) .. "/" .. tostring(allMode))
+  cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged") W.RunTimers()
+  -- switching: back to page 1
+  cf.offset = 5 W.Click(b[2]) W.RunTimers()
+  ok(cf.offset == 0, "a switch: back to page 1")
+  -- Harvest: hidden (always the item's name); the count after the search box
+  Mk.craftProf = 356 mp:Refresh() W.Click(cf.modeHarvest) W.RunTimers()
+  ok(Mk.craftMode == "harvest" and not cf.searchIn:IsShown() and cf.filterHint._text == "item name" and select(2, cf.filterCount:GetPoint(1)) == cf.filter,
+    "Harvest: the boxes hidden, the hint item name, the count after the search box")
+  -- Fishing: the catches filed as Other (Trade Goods subclass 11) in its list; "eel" finds Stonescale Eel
+  local G = ns.Recipes.gather[356].ids
+  local function Has(id) return (("," .. G .. ","):find("," .. id .. ",", 1, true)) ~= nil end
+  ok(Has(13422) and Has(13757) and Has(6358) and Has(6359) and Has(5523) and Has(5524) and Has(7973) and Has(6291) and not Has(6370) and not Has(13423),
+    "Fishing's Harvest list: eels, Oily Blackmouth, Firefin Snapper, the three clams (not their oils)")
+  W.items[13422] = W.items[13422] or { "Stonescale Eel", 134400 }
+  W.items[13757] = W.items[13757] or { "Lightning Eel", 134400 }
+  cf.filter:SetText("eel") W.Run(cf.filter, "OnTextChanged") W.RunTimers() mp:Refresh()
+  local ids = {} for _, e in ipairs(cf.list) do ids[#ids + 1] = e.id end
+  local found = false for _, id in ipairs(ids) do if id == 13422 then found = true end end
+  ok(found, "Fishing, Harvest, 'eel': Stonescale Eel listed", table.concat(ids, ","))
+  cf.filter:SetText("") W.Run(cf.filter, "OnTextChanged") W.RunTimers()
+  W.Click(cf.modeCrafts)
+  ok(cf.searchIn:IsShown() and select(2, cf.filterCount:GetPoint(1)) == b[2].label, "back to Crafts: the boxes shown, the count after them")
+  -- room: search box, boxes and "999 of 999" end inside the rows' width (the Invest box is on the row below)
+  local right = 400 + 150 + 10 + b[2].col + 16 + 6 + b[2].labelW + 10 + I.Views.TextWidth("999 of 999")
+  ok(right <= Mk.CRAFT_W, "the search row fits: ends at " .. math.floor(right) .. " of " .. Mk.CRAFT_W)
 end
 
 print(("\n%d passed, %d failed"):format(pass, fail))

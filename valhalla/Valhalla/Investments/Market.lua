@@ -921,6 +921,10 @@ function M.ReagentHit(q)
 		return false
 	end
 end
+-- (1.2.28) what Craft's search looks in: "name" (Item Name: the text as one phrase in the item's name, as before
+-- 1.2.27; Harvest's own match) | "all" (1.2.27: every word, in the name or a reagent's); the boxes right of the search box
+M.SEARCH_IN = { { "all", L["All"] }, { "name", L["Item Name"] } }
+function M.SearchIn() return I.S and I.S.craftSearch == "all" and "all" or "name" end
 function M.PerStack() return I.S and I.S.craftPerStack and true or false end
 -- (1.2.26) Harvest's tooltip with Per stack: the AH lines (unless the tooltip already has them) and the stack line
 function M.StackTip(id, each)
@@ -1752,14 +1756,25 @@ local function BuildCraft(f, page)
 	f.ownedNote:Hide()
 	-- (v0.4.2.1) a name filter: this profession's crafts (or harvest) whose item's name has it; shift-click an item: its name
 	-- (1.2.27) Crafts: every word typed, in the item's name or a required reagent's (M.NameFilter); the list redrawn
-	-- 0.3 s after the last key (the Shopping List's wait, V.Debounce)
+	-- 0.3 s after the last key (the Shopping List's wait, V.Debounce); (1.2.28) that with All ticked, the name alone
+	-- (one phrase, as before 1.2.27) with Item Name (f.searchIn)
 	f.filter = V.EditBox(f, 150)
 	f.filter:SetPoint("TOPLEFT", 400, -29)
 	f.filterHint = Text(f.filter, 10, GREY)
 	f.filterHint:SetPoint("LEFT", 8, 0)
 	f.filterHint:SetText(L["name or reagent"])
+	-- (1.2.28) All | Item Name: one always ticked (V.Radio), kept (I.S.craftSearch); Crafts only (hidden in Harvest)
+	f.searchIn = V.Radio(f, "", M.SEARCH_IN, M.SearchIn, function(v) I.S.craftSearch = v f.offset = 0 page:Refresh() end, 0)
+	f.searchIn:SetWidth(f.searchIn.right)
+	f.searchIn:SetPoint("LEFT", f.filter, "RIGHT", 10, 0)
 	f.filterCount = Text(f, 10, GREY)
-	f.filterCount:SetPoint("LEFT", f.filter, "RIGHT", 8, 0)
+	function f.PlaceCount(crafts)   -- after the boxes' last label (Crafts), after the search box (Harvest)
+		local last = f.searchIn.boxes[#f.searchIn.boxes]
+		f.filterCount:ClearAllPoints()
+		if crafts then f.filterCount:SetPoint("LEFT", last.label, "RIGHT", 10, 0)
+		else f.filterCount:SetPoint("LEFT", f.filter, "RIGHT", 8, 0) end
+	end
+	f.PlaceCount(true)
 	local FilterSoon = V.Debounce(function() return V.SEARCH_DELAY end, function() if f.Redraw then f.Redraw() end end)
 	f.filter:SetScript("OnTextChanged", function(box)
 		f.filterHint:SetShown((box:GetText() or "") == "")
@@ -1781,7 +1796,7 @@ local function BuildCraft(f, page)
 		r.cell.onClick = function(id) M.ShowHistory(page, id) end
 		r.Lines = function()
 			if not r.e then return {} end
-			local out = C.Lines(r.e, r.house, M.ReagentHit(f.filter:GetText())) or {}   -- (1.2.27: the reagents the filter matched, marked)
+			local out = C.Lines(r.e, r.house, M.SearchIn() == "all" and M.ReagentHit(f.filter:GetText()) or nil) or {}   -- (1.2.27: the reagents the filter matched, marked)
 			if M.PerStack() then out[#out + 1] = M.StackLine(r.e.out, r.e.each) end   -- (1.2.6)
 			out[#out + 1] = L["Can Make/Own: "] .. M.CanOwnLine(r.e)   -- (1.2.6)
 			return out
@@ -1836,6 +1851,9 @@ local function BuildCraft(f, page)
 		f.owned:SetAlpha(crafts and 1 or 0.45)
 		for _, box in ipairs(f.owned.boxes) do if box.EnableMouse then box:EnableMouse(crafts) end end
 		f.ownedNote:SetShown(not crafts)
+		-- (1.2.28) All | Item Name: Crafts only; the hint says where the search looks
+		f.searchIn:SetShown(crafts) f.searchIn.Update() f.PlaceCount(crafts)
+		f.filterHint:SetText((crafts and M.SearchIn() == "all") and L["name or reagent"] or L["item name"])
 		-- (v0.4.2.9) the Invest Amount is for crafts: greyed and off in Harvest; (1.0.1) and with Owned (what's typed is kept)
 		local on = M.InvestOn()
 		f.investTitle:SetAlpha(on and 1 or 0.45) f.invest:SetAlpha(on and 1 or 0.45)
@@ -1858,7 +1876,7 @@ local function BuildCraft(f, page)
 		if M.NeedsData(sortList) or M.PerStack() then for _, e in ipairs(list) do ids[#ids + 1] = e[field] end end
 		for _, id in ipairs(nameless) do ids[#ids + 1] = id end   -- (1.2.26: names not in yet, asked for: matched once in)
 		M.Fetch(f, ids, function() page:Refresh(true) end, -34)
-		key = key .. "|" .. q .. "|" .. M.SortTag(sortList)
+		key = key .. "|" .. q .. "|" .. tostring(partsField) .. "|" .. M.SortTag(sortList)
 		if key ~= f.listKey then f.offset, f.listKey = 0, key end
 		f.list = list
 		f.Clamp()
@@ -1958,7 +1976,7 @@ local function BuildCraft(f, page)
 			f.status:SetText(L["%s: reading %d recipes... %d/%d"]:format(p.name, #p.ids, done or 0, of or #p.ids))
 			return {}
 		end
-		SetList(res.list or res.rows, C.CacheKey(house, p.key, opts), "out", "craft", "parts")
+		SetList(res.list or res.rows, C.CacheKey(house, p.key, opts), "out", "craft", M.SearchIn() == "all" and "parts" or nil)
 		if M.Relayout(f, f.head.craftStrip, "craft", "craft", M.Samples(f.list, "craft")) ~= false then f.PlaceInvest() end
 		for i, r in ipairs(f.rows) do
 			local e = i <= f.per and f.list[f.offset + i]
@@ -2008,7 +2026,9 @@ M.TIPS = {
 	craftProf = { L["Profession"], L["Pick a profession. * = yours."] },
 	crafts = { L["Crafts"], L["What this profession makes, with cost and profit."] },
 	harvest = { L["Harvest"], L["What this profession gathers. Sell at: the AH's lowest; profit: that less the AH's cut (no cost)."] },
-	filter = { L["Filter by name or reagent"], L["Crafts: every word you type (any order, any case) must be in the item's name or one of its reagents' names; a reagent that matches is marked in the row's tooltip. Harvest: the item's name contains the text. Shift-click an item to fill in its name."] },
+	filter = { L["Search"], L["Crafts: where it looks is the ticked box to the right, Item Name or All. Harvest: the item's name contains the text. Shift-click an item to fill in its name."] },
+	search_all = { L["All"], L["Every word you type, in any order, in the item's name or one of its reagents' names. Hover a row: the reagents that matched are marked."] },
+	search_name = { L["Item Name"], L["Only the item's name: the text as you type it (as before 1.2.27)."] },
 	market = { L["Market"], L["Price every reagent at the AH's lowest, or a vendor's if cheaper."] },
 	free = { L["Owned"], L["Reagents you have (per Count) cost nothing; the rest at market price. Can make: what yours make. The Invest Amount is off (greyed)."] },
 	knownCrafts = { L["Known only"], L["Only recipes you have learned."] },
@@ -2032,6 +2052,7 @@ M.TIP_ON = {
 	craft = function(f)
 		Tip(f.drop, "craftProf") Tip(f.modeCrafts, "crafts") Tip(f.modeHarvest, "harvest") Tip(f.filter, "filter")
 		for _, b in ipairs(f.owned.boxes) do Tip(b, b.value) end
+		for _, b in ipairs(f.searchIn.boxes) do Tip(b, "search_" .. b.value) end
 		V.Tip(f.known, L["Known only"], function() local t = M.TIPS[M.craftMode == "harvest" and "knownHarvest" or "knownCrafts"] return t[2] end)
 		Tip(f.countDrop, "craftCount") Tip(f.invest, "invest") Tip(f.perStack, "perStack")
 	end,

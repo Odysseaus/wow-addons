@@ -31,10 +31,17 @@ for r in csv.DictReader(open('Item.csv')):
         sub.setdefault(int(r['SubclassID']), []).append(i)
 def outs(p): return set().union(*[outputs.get(s, set()) for s in ids[p]]) if ids[p] else set()
 GATHER = [(182, "Herbs", [9], None), (186, "Ores, stone and gems", [7], 186), (393, "Hides and leather", [6], 165), (356, "Raw meat and fish", [8], 185)]
+# (1.2.28) catches the client files as Trade Goods / Other (subclass 11), not Meat: hand-picked, each checked against
+# Item.csv (ClassID 7, SubclassID 11) and its ItemSparse name
+EXTRA = {356: {13422: "Stonescale Eel", 13757: "Lightning Eel", 6358: "Oily Blackmouth", 6359: "Firefin Snapper",
+               5523: "Small Barnacled Clam", 5524: "Thick-shelled Clam", 7973: "Big-mouth Clam"}}
 gather = {}
 ALLOUT = set().union(*[outs(p) for p, _ in PROFS])
 for p, label, subs, minus in GATHER:
-    items = sorted(set(i for s in subs for i in sub.get(s, [])) - ALLOUT)
+    extra = EXTRA.get(p, {})
+    for i, n in extra.items():
+        assert i in sub.get(11, []) and names.get(i) == n, (i, n, names.get(i))
+    items = sorted((set(i for s in subs for i in sub.get(s, [])) | set(extra)) - ALLOUT)
     gather[p] = (label, items)
 L = []
 L.append('-- Valhalla: every recipe and gathered item ID of the professions in this client, from the client\'s own data tables')
@@ -44,7 +51,7 @@ L.append('-- (C_TradeSkillUI.GetRecipeSchematic); an ID the game doesn\'t answer
 L.append('-- A profession\'s window, when opened, replaces its list here (the game\'s own list wins).')
 L.append('-- Format: ns.Recipes.professions[<skill line ID>] = { name = "<English name>", secondary = true|nil, ids = "<recipe spell ID>,..." }')
 L.append('--         ns.Recipes.gather[<skill line ID>] = { label = "<what>", ids = "<item ID>,..." } (Herbalism, Mining, Skinning, Fishing:')
-L.append('--         Trade Goods of the matching subclass, less every item a recipe makes: bars, leathers, cooked food).')
+L.append('--         Trade Goods of the matching subclass (Fishing: also its catches filed as Other), less every item a recipe makes).')
 L.append('-- Rebuilt by valhalla/tools/recipes/build_bundle.py from the CSVs (not shipped with the add-on).')
 L.append('local _, ns = ...')
 L.append('ns.Recipes = {')
