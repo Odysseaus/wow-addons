@@ -4,6 +4,12 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.30", date = "2026-11-20", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
+		"|cff6e2c0aYour Watchlist, AH history and Top 10 are back (again)|r: on WoW Forever 1.60.1.71037 the game now names your realm only through UnitFullName (\"Thunderbuns\"), a name none of your saved data had, and 1.2.29 started a new, empty realm under it. Nothing was deleted.",
+		"On the first load, the realm 1.2.29 made is merged into your saved realm (\"CAMWOW US2 Realm 8 PvP\"): today's scan in time order, the newer bag and bank counts, and \"List 1\" as a second list next to \"Reagent Buy Targets\". Then it is removed. This runs once, only for a realm 1.2.29 made that holds nothing older.",
+		"A character with saved data now keeps its saved realm whatever the game calls it. The game's new name is remembered for that character as an alias. A character on another realm keeps its own realm, so characters are never mixed.",
+		"/valhalla invest realm also shows and saves the game's raw answers (GetRealmName, GetNormalizedRealmName, UnitFullName, GetRealmID, realm-list info) and the alias.",
+	} },
 	{ version = "1.2.29", date = "2026-11-20", heads = { [1] = "Fixed", [5] = "New", }, items = {
 		"|cff6e2c0aYour Watchlist, AH history, Top 10 and lists are back|r: WoW Forever's 1.60.1.71037 update gives a blank realm name at login, and 1.2.28 then saved under an empty realm, so they looked gone (nothing was deleted). Valhalla now waits for the game to name the realm, and never saves under a blank one.",
 		"On the first load, what was saved under the blank realm is merged into your realm: today's scans and history in time order, the newer prices, any Watchlist items or lists added since (each once), the newer bag and bank counts. Then the blank realm is removed.",

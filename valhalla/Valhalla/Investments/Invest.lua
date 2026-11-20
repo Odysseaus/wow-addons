@@ -93,6 +93,7 @@ function I.InitDB()
 	db.realms = type(db.realms) == "table" and db.realms or {}
 	db.account.names = type(db.account.names) == "table" and db.account.names or {}   -- (1.2.7: item names seen, for the search)
 	I.db = db
+	I.RepairRealms()   -- (1.2.30)
 	I.UseRealm(I.FindRealm())   -- (1.2.29: none yet while the game hasn't named the realm: I.WhenRealm waits)
 	I.S = db.settings
 	I.S.buyGuard, I.S.buyDebug = nil, nil   -- (1.2.10: the cart's price guard and buy debug are gone)
@@ -113,36 +114,95 @@ I.JUNK_REALM = { [""] = true, ["?"] = true }
 I.REALM_WAIT, I.REALM_RETRY = 10, 5   -- (seconds asking the game, once a second; then the fallbacks, every 5 s)
 local Plain = ns.Util.PlainRealm
 
--- the realm's key and why, and your name: a saved realm under any spelling the game gives now, else that name;
--- final (the game still silent after the wait): the realm this character last used (ValhallaCharDB), else the
--- saved realm with this character (its bags seen last). nil: not known (no realm made)
+-- (1.2.30) the one-time repair of 1.2.29's mistake: WoW Forever 71037's UnitFullName gives a name ("Thunderbuns")
+-- no saved realm has, and 1.2.29 made a realm of it (merging 1.2.28's blank realm into it) beside the character's
+-- saved one. Such a realm: 1.2.29 merged into it (its record has no version), nothing in it from before that but
+-- what the merge brought (no older scans or Watchlist items than the record counts), one character, and another
+-- saved realm has that character: merged into that one (its bags seen last) and gone, whoever logs in (so another
+-- character never joins it); recorded in account.realmMerges, 1.2.29's record marked repaired (never again)
+local function OnlyMerged(r, e)
+	local scans, targets = 0, 0
+	for _, m in pairs(type(r.ah) == "table" and r.ah or {}) do
+		for _, sc in ipairs(type(m) == "table" and m.scans or {}) do if I.Scan.AbsTime(m, sc.t) < (e.at or 0) then scans = scans + 1 end end
+	end
+	for _, t in pairs(type(r.targets) == "table" and r.targets or {}) do if type(t) == "table" and (tonumber(t.added) or 0) < (e.at or 0) then targets = targets + 1 end end
+	return scans <= (e.scans or 0) and targets <= (e.targets or 0)
+end
+function I.RepairRealms()
+	local db = I.db
+	local log = type(db.account.realmMerges) == "table" and db.account.realmMerges or {}
+	local made = {}
+	for _, e in ipairs(log) do if type(e) == "table" and e.into and not e.v and not e.repaired then made[e.into] = e end end
+	local fixed = {}
+	for k, e in pairs(made) do
+		local r = db.realms[k]
+		local only = type(r) == "table" and type(r.chars) == "table" and next(r.chars)
+		if only and next(r.chars, only) == nil and not I.JUNK_REALM[k] and OnlyMerged(r, e) then
+			local into, seen
+			for key, o in pairs(db.realms) do
+				local c = key ~= k and not I.JUNK_REALM[key] and type(o) == "table" and type(o.chars) == "table" and o.chars[only]
+				if type(c) == "table" and (not into or (tonumber(c.bagsSeen) or 0) > seen) then into, seen = key, tonumber(c.bagsSeen) or 0 end
+			end
+			if into then
+				local n = I.MergeRealm(db.realms[into], r)
+				n.from, n.into, n.at, n.v, n.why = k, into, Now(), ns.version, "repair: made by 1.2.29 for " .. only
+				db.realms[k] = nil
+				fixed[#fixed + 1] = n
+			end
+		end
+	end
+	for _, e in ipairs(log) do if type(e) == "table" and not e.v and not db.realms[e.into] then e.repaired = true end end
+	I.LogMerges(fixed)
+	return fixed
+end
+
+-- the saved realms with this character, its bags seen last first
+local function Mine(me)
+	local out = {}
+	for key, r in pairs(I.db.realms) do
+		local c = not I.JUNK_REALM[key] and type(r) == "table" and type(r.chars) == "table" and r.chars[me]
+		if type(c) == "table" then out[#out + 1] = { key = key, seen = tonumber(c.bagsSeen) or 0 } end
+	end
+	table.sort(out, function(a, b) if a.seen ~= b.seen then return a.seen > b.seen end return a.key < b.key end)
+	return out
+end
+
+-- the realm's key, why, your name, and the game's name for it when that's another (kept as an alias). (1.2.30) A
+-- character with saved data keeps its realm whatever the game calls it now: 1. a saved realm with this character
+-- under a name the game gives (any spelling) or an alias of it; 2. the realm this character used before
+-- (ValhallaCharDB); 3. the saved realm with this character (its bags seen last); 4. only then the game's name (a new
+-- realm). The game silent: nil until final (after the wait: 2 and 3). Characters of other realms never mix: each
+-- has its own saved realm, aliases are per character
 function I.FindRealm(final)
 	local db = I.db
 	local me = Call(UnitName, "player")
 	if type(me) ~= "string" or me == "" or not db then return nil end
 	local names = ns.Util.RealmNames()
+	if not names[1] and not final then return nil end
+	local mine, has = Mine(me), {}
+	for _, m in ipairs(mine) do has[m.key] = true end
+	local aliases = mod.char and type(mod.char.aliases) == "table" and mod.char.aliases or {}
 	for _, n in ipairs(names) do
-		local p = Plain(n.name)
-		if type(db.realms[n.name]) == "table" then return n.name, n.how, me end
+		for _, m in ipairs(mine) do
+			if Plain(m.key) == Plain(n.name) then return m.key, n.how .. (m.key ~= n.name and (" (saved as \"" .. m.key .. "\")") or ""), me end
+		end
+		if has[aliases[n.name]] then return aliases[n.name], n.how .. " \"" .. n.name .. "\" (alias)", me, n.name end
+	end
+	local said = names[1] and names[1].name
+	local kept = mod.char and mod.char.realm
+	if has[kept] then return kept, "the realm this character last used (ValhallaCharDB)", me, said end
+	if mine[1] then return mine[1].key, "the saved realm with this character", me, said end
+	for _, n in ipairs(names) do
 		for key in pairs(db.realms) do
-			if not I.JUNK_REALM[key] and Plain(key) == p then return key, n.how .. " (saved as \"" .. key .. "\")", me end
+			if not I.JUNK_REALM[key] and Plain(key) == Plain(n.name) then return key, n.how, me end
 		end
 	end
-	if names[1] then return names[1].name, names[1].how, me end
-	if not final then return nil end
-	local kept = mod.char and mod.char.realm
-	if type(kept) == "string" and not I.JUNK_REALM[kept] then return kept, "the realm this character last used (ValhallaCharDB)", me end
-	local best, at
-	for key, r in pairs(db.realms) do
-		local c = not I.JUNK_REALM[key] and type(r) == "table" and type(r.chars) == "table" and r.chars[me]
-		if type(c) == "table" and (not best or (tonumber(c.bagsSeen) or 0) > at) then best, at = key, tonumber(c.bagsSeen) or 0 end
-	end
-	if best then return best, "the saved realm with this character", me end
+	if said then return said, names[1].how .. " (a new realm)", me end
 end
 
 -- this realm and character from now on (key nil: none yet); a realm saved under "", "?" or another spelling of
 -- this one, holding this character (or none), merged in first (I.MergeRealm) and gone
-function I.UseRealm(key, why, me)
+function I.UseRealm(key, why, me, said)
 	if not key or I.JUNK_REALM[key] then I.realm, I.char, I.realmInfo = nil, nil, nil return false end
 	local db = I.db
 	local r = type(db.realms[key]) == "table" and db.realms[key] or {}
@@ -156,7 +216,7 @@ function I.UseRealm(key, why, me)
 	table.sort(strays)
 	for _, k in ipairs(strays) do
 		local n = I.MergeRealm(r, db.realms[k])
-		n.from, n.into, n.at = k, key, Now()
+		n.from, n.into, n.at, n.v = k, key, Now(), ns.version
 		db.realms[k] = nil
 		merged[#merged + 1] = n
 	end
@@ -173,15 +233,25 @@ function I.UseRealm(key, why, me)
 	c.mail = c.mail or {}
 	I.realm, I.char, I.me = r, c, me
 	I.MigrateLists(c)
-	if mod.char then mod.char.realm = key end
-	I.realmInfo = { key = key, why = why, at = Now(), tries = I.realmTries or 0, names = ns.Util.RealmNames() }
-	if #merged > 0 then   -- (kept: /valhalla invest realm and the diagnostic show them after a /reload)
-		local log = type(db.account.realmMerges) == "table" and db.account.realmMerges or {}
-		db.account.realmMerges = log
-		for _, n in ipairs(merged) do log[#log + 1] = n end
-		while #log > I.DIAG_KEEP do table.remove(log, 1) end
+	if mod.char then
+		mod.char.realm = key
+		if said and said ~= key then   -- (1.2.30: the game's name for this character's saved realm)
+			mod.char.aliases = type(mod.char.aliases) == "table" and mod.char.aliases or {}
+			mod.char.aliases[said] = key
+		end
 	end
+	I.realmInfo = { key = key, why = why, at = Now(), tries = I.realmTries or 0, names = ns.Util.RealmNames() }
+	I.LogMerges(merged)
 	return true
+end
+
+-- merges kept: /valhalla invest realm and the diagnostic show them after a /reload
+function I.LogMerges(merged)
+	if #merged == 0 then return end
+	local log = type(I.db.account.realmMerges) == "table" and I.db.account.realmMerges or {}
+	I.db.account.realmMerges = log
+	for _, n in ipairs(merged) do log[#log + 1] = n end
+	while #log > I.DIAG_KEEP do table.remove(log, 1) end
 end
 
 -- a character's saved data from src into d: the newer bags and bank (by when seen), mail and known (src's over d's
@@ -303,12 +373,12 @@ function I.WhenRealm(start)
 	local function Try(final)
 		if not waiting then return true end
 		I.realmTries = I.realmTries + 1
-		local key, why, me = I.FindRealm(final)
+		local key, why, me, said = I.FindRealm(final)
 		if not key then return false end
 		local go = waiting.start
 		waiting = nil
 		f:UnregisterAllEvents()
-		I.UseRealm(key, why, me)
+		I.UseRealm(key, why, me, said)
 		go()
 		return true
 	end
@@ -336,7 +406,11 @@ function I.RealmReport()
 	end
 	table.sort(saved, function(a, b) return a.key < b.key end)
 	local merges = I.db and I.db.account and I.db.account.realmMerges or {}
-	return { key = info.key, why = info.why, at = info.at, tries = info.tries, waiting = I.RealmPending(), now = now, saved = saved, merges = merges }
+	local aliases = {}
+	for said, key in pairs(mod.char and type(mod.char.aliases) == "table" and mod.char.aliases or {}) do aliases[#aliases + 1] = { said = said, key = key } end
+	table.sort(aliases, function(a, b) return a.said < b.said end)
+	return { key = info.key, why = info.why, at = info.at, tries = info.tries, waiting = I.RealmPending(), now = now, saved = saved, merges = merges,
+		aliases = aliases, raw = ns.Util.RealmRaw(), me = Call(UnitName, "player") }   -- (1.2.30: aliases; the game's raw answers)
 end
 function I.RealmLines(rep)
 	local out = {}
@@ -346,6 +420,10 @@ function I.RealmLines(rep)
 		out[1] = rep.waiting and L["Realm: not known yet; waiting for the game to name it."] or L["Realm: not known."]
 	end
 	out[#out + 1] = L["The game says now: %s."]:format(#rep.now > 0 and table.concat(rep.now, ", ") or L["nothing (blank)"])
+	local raw = {}
+	for _, k in ipairs(ns.Util.REALM_RAW) do if rep.raw and rep.raw[k] then raw[#raw + 1] = k .. " = " .. rep.raw[k] end end
+	out[#out + 1] = L["Raw: %s."]:format(table.concat(raw, "; "))
+	for _, a in ipairs(rep.aliases or {}) do out[#out + 1] = L["Alias: the game's \"%s\" is the saved \"%s\"."]:format(a.said, a.key) end
 	local s = {}
 	for _, r in ipairs(rep.saved) do s[#s + 1] = L["\"%s\": %d characters, %d on the Watchlist, %d scans"]:format(r.key, r.chars, r.targets, r.scans) end
 	out[#out + 1] = L["Saved realms: %s."]:format(#s > 0 and table.concat(s, "; ") or L["none"])

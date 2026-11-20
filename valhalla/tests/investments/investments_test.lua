@@ -4794,5 +4794,115 @@ do
   ok(I.realm == keepDB.realms.Forever, "(the test's own data back)")
 end
 
+print("== 1.2.30: a character keeps its saved realm whatever the game calls it; 1.2.29's realm repaired once")
+do
+  local Sc = I.Scan
+  local keep = { db = _G.ValhallaInvestDB, realm = _G.GetRealmName, unit = _G.UnitName, char = mod.char }
+  local R8, R5, TB = "CAMWOW US2 Realm 8 PvP", "CAMWOW US2 Realm 5 PvE", "Thunderbuns"
+  _G.GetRealmName = function() return "" end
+  _G.GetNormalizedRealmName = function() return "" end
+  local me = "Vaelan"
+  _G.UnitName = function() return me end
+  _G.UnitFullName = function() return me, TB end
+  _G.GetRealmID = function() return 91 end
+  local AT = W.now - 600          -- (1.2.29's merge: 10 min ago)
+  local base8, baseTB = math.floor(W.now / 60) - 20000, math.floor(W.now / 60) - 30
+  -- the 17:45 save's shape: the saved realm, and 1.2.29's realm (the blank realm merged in, a list made since)
+  local function Fixture()
+    return { account = { realmMerges = { { from = "", into = TB, at = AT, scans = 1, items = 2, chars = 1, lists = 0, targets = 0, merchants = 0 } } }, realms = {
+      [R8] = {
+        targets = {}, merchants = { [6790] = { name = "Innkeeper", items = { [1] = 10 } } }, scanLast = { at = AT - 9000 }, ahLast = "Alliance",
+        ah = { Alliance = { base = base8, scans = { { t = 100, kind = "full", n = 5, items = 2 }, { t = 19900, kind = "full", n = 6, items = 2 } },
+          cur = { [15347] = "2599,6,6,19900", [7610] = "5000,1,1,19900" }, hist = { [15347] = "100:2599:6:6;19900:2599:6:6", [7610] = "19900:5000:1:1" } },
+          Neutral = { base = base8, scans = {}, cur = { [1] = "1,1,1,0" }, hist = {} } },
+        chars = { Vaelan = { bags = { [1] = 1 }, bagsSeen = AT - 15000, bank = { [2] = 2 }, bankSeen = AT - 15000, nextList = 8, activeList = "none", draft = { items = {} },
+          lists = { { id = 7, name = "Reagent Buy Targets", created = 1, items = { { id = 3821, n = 20 } } } }, want = {}, mail = {}, known = {} } } },
+      [TB] = {
+        targets = {}, merchants = {}, scanLast = { at = AT - 1500 }, ahLast = "Alliance",
+        ah = { Alliance = { base = baseTB, scans = { { t = 0, kind = "full", n = 199897, items = 2 } }, cur = { [15347] = "2222,9,9,0", [250607] = "23800,6,6,0" },
+          hist = { [15347] = "0:2222:9:9", [250607] = "0:23800:6:6" } } },
+        chars = { Vaelan = { bags = { [3] = 3 }, bagsSeen = AT + 1, bank = { [4] = 4 }, bankSeen = AT - 1300, nextList = 2, activeList = 1, draft = { items = {} },
+          lists = { { id = 1, name = "List 1", created = AT + 100, items = { { id = 3821, n = 20 }, { id = 3820, n = 20 }, { id = 8838, n = 20 } } } }, want = {}, mail = {}, known = {} } } },
+    } }
+  end
+  local function Targets(db) local t = db.realms[R8].targets for i = 1, 21 do t[100 + i] = { house = "Alliance", sell = i, added = AT - 20000, set = AT - 20000 } end end
+  local function Keys(db) local t = {} for k in pairs(db.realms) do t[#t + 1] = "[" .. k .. "]" end table.sort(t) return table.concat(t, ",") end
+  local function N(t) local k = 0 for _ in pairs(t or {}) do k = k + 1 end return k end
+  -- 1. Vaelan, the first 1.2.30 load: 1.2.29's realm (remembered) merged into the saved one and gone
+  _G.ValhallaInvestDB = Fixture() Targets(_G.ValhallaInvestDB)
+  local vaelan = { realm = TB }
+  mod.char = vaelan
+  I.InitDB()
+  local db = _G.ValhallaInvestDB
+  local r = db.realms[R8]
+  ok(Keys(db) == "[" .. R8 .. "]" and I.realm == r and I.realmInfo.why == "the saved realm with this character", "Vaelan: the saved realm, 1.2.29's \"Thunderbuns\" gone", Keys(db) .. " " .. tostring(I.realmInfo and I.realmInfo.why))
+  ok(N(r.targets) == 21, "the Watchlist: 21", N(r.targets))
+  local A = r.ah.Alliance
+  local shift = baseTB - base8
+  ok(#A.scans == 3 and A.scans[3].t == shift and A.scans[3].n == 199897 and A.scans[1].t == 100,
+    "today's scan added after the old ones (time order, the old base)")
+  ok(A.hist[15347] == "100:2599:6:6;19900:2599:6:6;" .. shift .. ":2222:9:9" and A.cur[15347] == "2222,9,9," .. shift and A.cur[7610] == "5000,1,1,19900",
+    "history in time order; the newer price", A.hist[15347])
+  local c = r.chars.Vaelan
+  ok(c.bags[3] == 3 and c.bagsSeen == AT + 1 and c.bank[4] == 4, "the newer bags and bank")
+  ok(#c.lists == 2 and c.lists[1].name == "Reagent Buy Targets" and c.lists[2].name == "List 1" and c.lists[2].id == 8 and c.nextList == 9,
+    "Reagent Buy Targets kept; List 1 added as a second list (a new id)")
+  ok(vaelan.realm == R8 and vaelan.aliases and vaelan.aliases[TB] == R8, "remembered: the saved realm; the alias Thunderbuns = it")
+  local log = db.account.realmMerges
+  ok(#log == 2 and log[1].repaired and log[2].from == TB and log[2].into == R8 and log[2].v and log[2].lists == 1 and log[2].scans == 1 and log[2].why:find("1.2.29", 1, true),
+    "recorded: the repair; 1.2.29's merge marked repaired")
+  Sc.PruneAll()
+  ok(#A.scans >= 2 and A.scans[#A.scans].n == 199897 and next(A.hist) ~= nil and Sc.TotalSize() <= (I.S.histCapMB or 3) * 1048576,
+    "the 3 MB / 7 day prune after it: under the cap, today's scan and history kept", #A.scans)
+  -- 2. no second repair; the alias finds it at once
+  I.InitDB()
+  ok(#db.account.realmMerges == 2 and Keys(db) == "[" .. R8 .. "]" and I.realm == db.realms[R8] and I.realmInfo.why:find("(alias)", 1, true),
+    "the next load: nothing merged again; found by the alias", I.realmInfo.why)
+  -- 3. Tentri (its own saved realm, Realm 5): the game says Thunderbuns too, Tentri keeps Realm 5
+  db.realms[R5] = { chars = { Tentri = { bagsSeen = 5, bags = {} } }, targets = { [9] = { house = "Alliance", sell = 1, added = 1, set = 1 } } }
+  me = "Tentri"
+  local tentri = {}
+  mod.char = tentri
+  I.InitDB()
+  ok(I.realm == db.realms[R5] and I.char == db.realms[R5].chars.Tentri and not db.realms[R8].chars.Tentri and Keys(db) == "[" .. R5 .. "],[" .. R8 .. "]"
+    and tentri.aliases[TB] == R5 and vaelan.aliases[TB] == R8, "Tentri: its own Realm 5 (never mixed with Vaelan's); its alias its own", Keys(db))
+  -- a character with nothing saved: a new realm under the game's name, never one of another's
+  me = "Newbie" mod.char = {}
+  I.InitDB()
+  ok(I.realm == db.realms[TB] and N(db.realms[TB].chars) == 1 and db.realms[TB].chars.Newbie and not db.realms[R8].chars.Newbie, "a new character: a new realm (the game's name)")
+  me = "Vaelan" mod.char = vaelan
+  I.InitDB()
+  ok(I.realm == db.realms[R8] and not db.realms[TB].chars.Vaelan, "Vaelan again: Realm 8 (the new Thunderbuns isn't its)")
+  -- 4. Tentri logs in first (before Vaelan's repair): the repair still runs, Tentri never joins 1.2.29's realm
+  _G.ValhallaInvestDB = Fixture() Targets(_G.ValhallaInvestDB) db = _G.ValhallaInvestDB
+  me, mod.char = "Tentri", {}
+  I.InitDB()
+  ok(not (db.realms[TB] and db.realms[TB].chars.Vaelan) and #db.realms[R8].chars.Vaelan.lists == 2 and I.realm == db.realms[TB] and N(db.realms[TB].chars) == 1,
+    "Tentri first: 1.2.29's realm repaired into Vaelan's; Tentri alone in a new one")
+  -- 5. safety: a realm 1.2.29 merged into that holds older data of its own isn't touched
+  _G.ValhallaInvestDB = Fixture() db = _G.ValhallaInvestDB
+  table.insert(db.realms[TB].ah.Alliance.scans, 1, { t = -5000, kind = "full", n = 1, items = 1 })
+  me, mod.char = "Vaelan", { realm = TB }
+  I.InitDB()
+  ok(db.realms[TB] and db.realms[TB].chars.Vaelan and #db.account.realmMerges == 1, "a realm with data from before 1.2.29: left alone (not 1.2.29's mistake)")
+  -- 6. the report: raw answers, the alias, kept in the diagnostic
+  _G.ValhallaInvestDB = Fixture() Targets(_G.ValhallaInvestDB) db = _G.ValhallaInvestDB
+  me, mod.char = "Vaelan", { realm = TB }
+  I.InitDB()
+  ns.printed = {}
+  Slash("invest", "realm")
+  local d = db.diag[#db.diag]
+  local all = table.concat(ns.printed, " | ")
+  ok(d.kind == "realm" and d.realm.raw.GetRealmName == '""' and d.realm.raw.UnitFullName == '"Vaelan", "Thunderbuns"' and d.realm.raw.GetRealmID == "91"
+    and d.realm.raw["C_RealmList.GetRealmInfo"] and d.realm.aliases[1].said == TB and d.realm.aliases[1].key == R8,
+    "the diagnostic keeps the raw answers and the alias", tostring(d.realm.raw.UnitFullName))
+  ok(all:find('Alias: the game\'s "Thunderbuns" is the saved "' .. R8 .. '"', 1, true) and all:find('Raw: GetRealmName = ""', 1, true) and all:find('Merged "Thunderbuns" into', 1, true),
+    "its lines in chat", all)
+  _G.ValhallaInvestDB, _G.GetRealmName, _G.UnitName, mod.char = keep.db, keep.realm, keep.unit, keep.char
+  _G.GetNormalizedRealmName, _G.UnitFullName, _G.GetRealmID = nil, nil, nil
+  I.InitDB()
+  ok(I.realm == keep.db.realms.Forever, "(the test's own data back)")
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end

@@ -20,6 +20,9 @@
 --                       GetRealmName's first, then GetNormalizedRealmName's, then UnitFullName's; {} while the game
 --                       hasn't said (WoW Forever 1.60.1.71037 gives "" at login)
 --   U.PlainRealm(r)     a realm as compared: no spaces, hyphens or apostrophes, lower case ("" for none)
+--   U.RealmRaw()        (1.2.30) the game's raw answers, as text (U.REALM_RAW's keys): GetRealmName,
+--                       GetNormalizedRealmName, UnitFullName("player"), GetRealmID, C_RealmList.GetRealmInfo(id),
+--                       GetCurrentRegion ("(no API)", "(error)", "(secret)", strings quoted: "" shows as "")
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -97,6 +100,38 @@ function U.RealmNames()
 	Add("GetRealmName", U.Call(GetRealmName))
 	Add("GetNormalizedRealmName", U.Call(GetNormalizedRealmName))
 	Add("UnitFullName", select(2, U.Call(UnitFullName, "player")))
+	return out
+end
+
+U.REALM_RAW = { "GetRealmName", "GetNormalizedRealmName", "UnitFullName", "GetRealmID", "C_RealmList.GetRealmInfo", "GetCurrentRegion" }
+local function Shown(v)
+	if v == nil then return "nil" end
+	if Value(v) == nil then return "(secret)" end
+	if type(v) == "string" then return ("%q"):format(v) end
+	if type(v) == "table" then
+		local t = {}
+		for k, x in pairs(v) do if type(x) ~= "table" and type(x) ~= "function" then t[#t + 1] = tostring(k) .. "=" .. Shown(x) end end
+		table.sort(t)
+		return "{" .. table.concat(t, ", ") .. "}"
+	end
+	return tostring(v)
+end
+function U.RealmRaw()
+	local out = {}
+	local function Get(key, fn, ...)
+		if type(fn) ~= "function" then out[key] = "(no API)" return end
+		local got = { pcall(fn, ...) }
+		if not got[1] then out[key] = "(error)" return end
+		local t = {}
+		for i = 2, math.max(2, table.maxn(got)) do t[#t + 1] = Shown(got[i]) end
+		out[key] = table.concat(t, ", ")
+	end
+	Get("GetRealmName", GetRealmName)
+	Get("GetNormalizedRealmName", GetNormalizedRealmName)
+	Get("UnitFullName", UnitFullName, "player")
+	Get("GetRealmID", GetRealmID)
+	Get("C_RealmList.GetRealmInfo", C_RealmList and C_RealmList.GetRealmInfo, U.Call(GetRealmID))
+	Get("GetCurrentRegion", GetCurrentRegion)
 	return out
 end
 
