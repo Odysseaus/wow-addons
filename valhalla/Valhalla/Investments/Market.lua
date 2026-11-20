@@ -879,7 +879,25 @@ end
 -- game's own stack size (GetItemInfo's max stack: 20 for most herbs and cloth, 5 or 10 for some, 1 for what doesn't
 -- stack). An item the game hasn't sent yet: no size (a blank cell), asked for, the list redrawn when it comes (M.Fetch).
 M.STACK_TIP = "Per stack: Profit/item x one full stack of the item (the game's stack size, e.g. 20). An item that doesn't stack counts 1 (doesn't stack (1)). Blank until the game has sent the item. Have and Can Make/Own stay as they are."
+-- (1.2.26) a list filtered by name (q: lower case, trimmed): the rows that match, and the ids whose names the
+-- game hasn't sent yet (left out for now, to be asked for: 1.2.25 never asked, so they never showed)
+function M.NameFilter(all, field, q)
+	local list, nameless = {}, {}
+	for _, e in ipairs(all) do
+		local name = V.ItemData(e[field])
+		if q == "" or (name or ""):lower():find(q, 1, true) then list[#list + 1] = e
+		elseif not name then nameless[#nameless + 1] = e[field] end
+	end
+	return list, nameless
+end
 function M.PerStack() return I.S and I.S.craftPerStack and true or false end
+-- (1.2.26) Harvest's tooltip with Per stack: the AH lines (unless the tooltip already has them) and the stack line
+function M.StackTip(id, each)
+	local t = {}
+	if not V.AHLinesInTooltip() then for _, line in ipairs(M.Lines(id) or {}) do t[#t + 1] = line end end
+	t[#t + 1] = M.StackLine(id, each)
+	return t
+end
 function M.Stack(id)
 	if not id then return nil end
 	local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
@@ -1802,15 +1820,14 @@ local function BuildCraft(f, page)
 	local function SetList(list, key, field, sortList)
 		local q = (f.filter:GetText() or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
 		local all = list
-		list = {}
-		for _, e in ipairs(all) do
-			if q == "" or (V.ItemData(e[field]) or ""):lower():find(q, 1, true) then list[#list + 1] = e end
-		end
+		local nameless
+		list, nameless = M.NameFilter(all, field, q)
 		f.filterCount:SetText(q ~= "" and L["%d of %d"]:format(#list, #all) or "")
 		M.SortList(list, sortList)
 		local ids = {}
 		-- (1.2.6) Per stack: every item's stack size (the game's item data), asked for; redrawn as they come
 		if M.NeedsData(sortList) or M.PerStack() then for _, e in ipairs(list) do ids[#ids + 1] = e[field] end end
+		for _, id in ipairs(nameless) do ids[#ids + 1] = id end   -- (1.2.26: names not in yet, asked for: matched once in)
 		M.Fetch(f, ids, function() page:Refresh(true) end, -34)
 		key = key .. "|" .. q .. "|" .. M.SortTag(sortList)
 		if key ~= f.listKey then f.offset, f.listKey = 0, key end
@@ -1885,7 +1902,7 @@ local function BuildCraft(f, page)
 				if e then
 					local c = r.harvest
 					r.addID = e.id M.PlaceAdd(r, "harvest")   -- (1.2.7)
-					r.cell:SetItem(e.id, M.PerStack() and function(id) local t = M.Lines(id) or {} t[#t + 1] = M.StackLine(id, e.each) return t end or M.Lines)
+					r.cell:SetItem(e.id, M.PerStack() and function(id) return M.StackTip(id, e.each) end or M.Lines)
 					c.sell:SetText(Money(e.low))
 					Signed(c.each, e.each)
 					c.listed:SetText(e.low and tostring(e.units) or "-")
@@ -1953,7 +1970,7 @@ M.TIPS = {
 	crafted = { L["Crafted"], L["Only items a profession makes."] },
 	harvested = { L["Harvested"], L["Only herbs, ore, skins and fish you gather."] },
 	topProf = { L["Profession"], L["Only this profession's items. * = yours."] },
-	topLevel = { L["Level"], L["Only items needing skill in this range. Items with no known level are left out."] },
+	topLevel = { L["Level"], L["Only items needing skill in this range. Items with no known level stay listed, marked \"?\"."] },
 	search = { L["Search"], L["Show only names containing this text. Shift-click an item to fill it in."] },
 	bags = { L["Bags only"], L["Count only what's in your bags."] },
 	bank = { L["Bags + bank"], L["Count your bags and your bank (as you last saw it)."] },

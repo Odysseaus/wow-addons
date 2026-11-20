@@ -22,7 +22,7 @@ for line in toc:gmatch("[^\r\n]+") do
 end
 local order = table.concat(files, ",")
 ok(order == "Invest,Scan,Tabs,Views,Market,Watch,Tooltip,Data/Forever/Recipes,Data/Forever/TopSkills,Craft,Trainer,Merchant,AHPanel", "TOC: Watch.lua right after Market.lua, before Tooltip.lua", order)
-ok(toc:find("## Version: 1.2.25", 1, true) ~= nil, "TOC: version 1.2.25")
+ok(toc:find("## Version: 1.2.26", 1, true) ~= nil, "TOC: version 1.2.26")
 
 local ns = { modules = {}, version = "v1.2.16", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
 ns.L = setmetatable({}, { __index = function(_, k) return k end })

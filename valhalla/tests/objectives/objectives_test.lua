@@ -261,6 +261,7 @@ O.SetOn(false)
 ok((W.combatChanges or 0) == 0, "nothing in combat")
 W.combat = false Fire("PLAYER_REGEN_ENABLED")
 ok(has(W.watches, 2), "given back after combat", list(W.watches))
+ok(O.events and not (rawget(O.events, "_events") or {}).PLAYER_REGEN_ENABLED, "1.2.26: given back: PLAYER_REGEN_ENABLED not heard any more while off")
 
 ---------------------------------------------------------------------------
 print("== 12. a client where a new watch goes to the end")

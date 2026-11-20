@@ -115,6 +115,9 @@ function V.LoadItem(id, done)
 	return true
 end
 
+-- (1.2.0) the AH lines already under every item tooltip (the tooltip processor's)
+function V.AHLinesInTooltip() return I.Tooltip and I.Tooltip.hooked == "processor" and I.Tooltip.On() and true or false end
+
 -- the game's tooltip for an item, and our lines under it
 function V.ItemTooltip(owner, id, extra)
 	if not (GameTooltip and id) then return end
@@ -123,7 +126,7 @@ function V.ItemTooltip(owner, id, extra)
 	if link and GameTooltip.SetHyperlink then GameTooltip:SetHyperlink(link)
 	elseif GameTooltip.SetItemByID then GameTooltip:SetItemByID(id) end
 	-- (1.2.0) the AH lines already under every item tooltip: AH Market's own lines not added again
-	if extra and I.Market and extra == I.Market.Lines and I.Tooltip and I.Tooltip.hooked == "processor" and I.Tooltip.On() then extra = nil end
+	if extra and I.Market and extra == I.Market.Lines and V.AHLinesInTooltip() then extra = nil end
 	if extra then
 		for _, line in ipairs(extra(id) or {}) do GameTooltip:AddLine(line, 0.7, 0.7, 0.7, true) end
 	end
@@ -238,36 +241,42 @@ function V.ItemMenuEntries(id)
 	return out
 end
 V.MENU_MAX = 4
+-- (1.2.26) a small menu under an item (the item menu, the list chooser: one builder): a heading, n item
+-- buttons; a click anywhere else closes it, so does its item going away (the window closed, the row reused)
+-- (1.2.25's list chooser had neither: it stayed up after AH Market closed)
+function V.PopupMenu(name, n)
+	local m = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
+	m:SetWidth(240)
+	m:SetFrameStrata("DIALOG")
+	T.SkinFlat(m, 0.98)
+	m:EnableMouse(true)
+	m.head = Text(m, 11, GREY)
+	m.head:SetPoint("TOPLEFT", 8, -6)
+	m.head:SetPoint("RIGHT", m, "RIGHT", -8, 0)
+	m.head:SetJustifyH("LEFT")
+	m.items = {}
+	for i = 1, n do
+		local it = V.Button(m, "", 232, 20, nil, "item")
+		it:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 22)
+		it:Hide()
+		m.items[i] = it
+	end
+	m:SetScript("OnEvent", function(self)
+		if not (self.IsMouseOver and self:IsMouseOver()) then self:Hide() end
+	end)
+	m:SetScript("OnShow", function(self) pcall(self.RegisterEvent, self, "GLOBAL_MOUSE_DOWN") end)
+	m:SetScript("OnHide", function(self) if self.UnregisterEvent then self:UnregisterEvent("GLOBAL_MOUSE_DOWN") end end)
+	m:SetScript("OnUpdate", function(self)
+		local a = self.anchor
+		if not (a and a:IsVisible()) or (self.id and a.id ~= nil and a.id ~= self.id) then self:Hide() end
+	end)
+	m:Hide()
+	return m
+end
 function V.ItemMenu(anchor, id)
 	local m = V.itemMenu
 	if not m then
-		m = CreateFrame("Frame", "ValhallaItemMenu", UIParent, "BackdropTemplate")
-		m:SetWidth(240)
-		m:SetFrameStrata("DIALOG")
-		T.SkinFlat(m, 0.98)
-		m:EnableMouse(true)
-		m.head = Text(m, 11, GREY)
-		m.head:SetPoint("TOPLEFT", 8, -6)
-		m.head:SetPoint("RIGHT", m, "RIGHT", -8, 0)
-		m.head:SetJustifyH("LEFT")
-		m.items = {}
-		for i = 1, V.MENU_MAX do
-			local it = V.Button(m, "", 232, 20, nil, "item")
-			it:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 22)
-			it:Hide()
-			m.items[i] = it
-		end
-		-- a click anywhere else closes it; so does its item going away (the window closed, the row reused)
-		m:SetScript("OnEvent", function(self)
-			if not (self.IsMouseOver and self:IsMouseOver()) then self:Hide() end
-		end)
-		m:SetScript("OnShow", function(self) pcall(self.RegisterEvent, self, "GLOBAL_MOUSE_DOWN") end)
-		m:SetScript("OnHide", function(self) if self.UnregisterEvent then self:UnregisterEvent("GLOBAL_MOUSE_DOWN") end end)
-		m:SetScript("OnUpdate", function(self)
-			local a = self.anchor
-			if not (a and a:IsVisible()) or (self.id and a.id ~= nil and a.id ~= self.id) then self:Hide() end
-		end)
-		m:Hide()
+		m = V.PopupMenu("ValhallaItemMenu", V.MENU_MAX)
 		V.itemMenu = m
 	end
 	if m:IsShown() and m.anchor == anchor and m.id == id then m:Hide() return m end
@@ -575,23 +584,7 @@ end
 function V.ListChooser()
 	local m = V.chooser
 	if m then return m end
-	m = CreateFrame("Frame", "ValhallaListChooser", UIParent, "BackdropTemplate")
-	m:SetWidth(240)
-	m:SetFrameStrata("DIALOG")
-	T.SkinFlat(m, 0.98)
-	m:EnableMouse(true)
-	m.head = Text(m, 11, GREY)
-	m.head:SetPoint("TOPLEFT", 8, -6)
-	m.head:SetPoint("RIGHT", m, "RIGHT", -8, 0)
-	m.head:SetJustifyH("LEFT")
-	m.items = {}
-	for i = 1, V.PICK_MAX + 1 do
-		local it = V.Button(m, "", 232, 20, nil, "item")
-		it:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 22)
-		it:Hide()
-		m.items[i] = it
-	end
-	m:Hide()
+	m = V.PopupMenu("ValhallaListChooser", V.PICK_MAX + 1)
 	V.chooser = m
 	return m
 end

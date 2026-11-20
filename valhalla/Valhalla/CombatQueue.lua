@@ -41,22 +41,24 @@ Q.released = false      -- (that hold has passed SAFETY seconds: the gate is ope
 Q.warned = false
 
 local function Now() return GetTime and GetTime() or 0 end
--- a yes/no from the game: a secret (or failing) answer counts as yes (blocked)
-local function Yes(fn, ...)
+-- a yes/no from the game: a secret answer counts as yes (blocked); a failing call as failed (1.2.26: the combat
+-- checks pass false, so a broken one never holds for good; the secret auras check passes true, held as secret:
+-- the safety net below still opens it after SAFETY seconds)
+local function Yes(fn, failed, ...)
 	if type(fn) ~= "function" then return false end
 	local ok, v = pcall(fn, ...)
-	if not ok then return false end
+	if not ok then return failed and true or false end
 	if issecretvalue and issecretvalue(v) then return true end
 	return v and true or false
 end
 
-function Q.InCombat() return Yes(InCombatLockdown) end
+function Q.InCombat() return Yes(InCombatLockdown, false) end
 function Q.Why()
 	local t = {}
-	if Yes(InCombatLockdown) then t[#t + 1] = "combat" end
-	if Yes(UnitAffectingCombat, "player") and #t == 0 then t[#t + 1] = "combat (unit)" end
+	if Yes(InCombatLockdown, false) then t[#t + 1] = "combat" end
+	if Yes(UnitAffectingCombat, false, "player") and #t == 0 then t[#t + 1] = "combat (unit)" end
 	local CS = rawget(_G, "C_Secrets")
-	if type(CS) == "table" and Yes(CS.ShouldAurasBeSecret) then t[#t + 1] = "secret auras" end
+	if type(CS) == "table" and Yes(CS.ShouldAurasBeSecret, true) then t[#t + 1] = "secret auras" end
 	if Now() < (Q.settleUntil or 0) then t[#t + 1] = "settling after combat" end
 	return t
 end

@@ -429,10 +429,15 @@ local function GroupEnter(pin)
 	GameTooltip:Show()
 end
 
+local groupShown = false   -- (1.2.26) any group pins up (off with none up: the 0.5 s refresh does nothing)
 local function RefreshGroup()
 	if not groupSet then return end
+	local on = mod.db.group and mod.IsStitched() and IsInGroup()
+	if not on and not groupShown then return end
 	S.ClearPinSet(groupSet)
-	if not mod.db.group or not mod.IsStitched() or not IsInGroup() then return end
+	groupShown = false
+	if not on then return end
+	groupShown = true
 	local host = mod.HostMap()
 	local raid = IsInRaid()
 	for i = 1, raid and 40 or 4 do

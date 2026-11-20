@@ -93,9 +93,10 @@ end
 
 -- the name shown on the map: never the realm (WoW Forever's realm names read "CAMWOWUS1Realm2PvP"),
 -- one from another realm marked " (*)" as the game's own lists do
+-- (1.2.26: 1.2.25 had it backwards, marking your own realm's: Short() drops only your own realm)
 local function Shown(full)
 	local name = full:match("^[^%-]+") or full
-	if Short(full) ~= full then name = name .. (FOREIGN_SERVER_LABEL or " (*)") end
+	if full:find("-", 1, true) and Realm() ~= "" and Short(full) == full then name = name .. (FOREIGN_SERVER_LABEL or " (*)") end
 	return name
 end
 
@@ -222,9 +223,11 @@ local function Here()
 	return best, x, y
 end
 
+local tickHandle   -- (1.2.26) the 2 s look, running only while sharing (1.2.25: from login, for good)
 local function Tick()
 	if not mod.db.friendsShare then
 		if sharing then sharing = false last.at, last.text = -math.huge, nil Broadcast("L0") end
+		if tickHandle then tickHandle:Cancel() tickHandle = nil end
 		return
 	end
 	local m, x, y = Here()
@@ -317,7 +320,7 @@ end
 
 local scanning = false
 local function QueueScan()
-	if scanning then return end
+	if scanning or not (mod.db.friends or mod.db.friendsShare) then return end   -- (1.2.26: both off: no scans)
 	scanning = true
 	C_Timer.After(1, function() scanning = false Timed("friends and guild scanned", Scan) end)
 end
@@ -468,6 +471,7 @@ function mod.RefreshFriends()
 	dirty = true
 	if map and map:IsShown() then Redraw() end
 	if mod.db.friendsShare or sharing then Tick() end   -- (turned on: sent at once; off: they're told)
+	if mod.db.friendsShare and not tickHandle and C_Timer and C_Timer.NewTicker then tickHandle = C_Timer.NewTicker(TICK, Tick) end
 end
 
 --------------------------------------------------------------------------------
@@ -536,7 +540,7 @@ function mod:SetupFriends(worldMap)
 		"BN_FRIEND_ACCOUNT_ONLINE", "BN_FRIEND_ACCOUNT_OFFLINE", "GROUP_ROSTER_UPDATE" }) do
 		ns.RegisterEvent(me, e, QueueScan)
 	end
-	C_Timer.NewTicker(TICK, Tick)
+	if mod.db.friendsShare then tickHandle = C_Timer.NewTicker(TICK, Tick) end
 	C_Timer.After(5, function() AskRosters() QueueScan() end)
 	-- while the map is open: what arrived drawn each second, the rosters asked for now and then
 	local wait, redrawIn, rosterIn = 0, REDRAW_EVERY, 0

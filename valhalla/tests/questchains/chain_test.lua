@@ -722,6 +722,35 @@ do
   ok(Z.Apply() == 1 and not Folded(head) and not CQ.Pending(), "put back at once (" .. tostring(head) .. " open), nothing queued", #W.zc)
   C_Secrets = nil
 end
+print("== 13. (1.2.26) the log's arrange (the game's rows' layoutIndex / topPadding, its Layout) waits on the gate")
+do
+  local secret = false
+  C_Secrets = { ShouldAurasBeSecret = function() return secret end }
+  W.combat = false
+  CQ.Flush()
+  QuestLogQuests_Update()
+  local want = Order()
+  local before = contents.layouts
+  secret = true
+  QuestLogQuests_Update()
+  ok(contents.layouts == before and CQ.Pending("questlog:arrange"), "secret auras: the game's update arranged nothing of ours (no Layout), one arrange queued", contents.layouts - before)
+  ok(Order() ~= want, "the game's own order shown meanwhile", Order())
+  QuestLogQuests_Update()
+  local n = 0 for _, k in ipairs(CQ.order) do if k == "questlog:arrange" then n = n + 1 end end
+  ok(n == 1, "queued once, however many updates", n)
+  secret = false
+  CQ.Flush()
+  ok(not CQ.Pending("questlog:arrange") and contents.layouts == before + 1 and Order() == want, "clear: arranged once (" .. want .. ")", Order())
+  W.combat = true
+  QuestLogQuests_Update()
+  ok(Order() ~= want and CQ.Pending("questlog:arrange"), "in combat: queued too")
+  W.combat = false
+  CQ.Flush()
+  ok(Order() == want and not CQ.Pending(), "combat over: arranged")
+  QuestLogQuests_Update()
+  ok(Order() == want and not CQ.Pending(), "clear: at once, as before")
+  C_Secrets = nil
+end
 
 C_QuestLog.GetInfo = baseInfo
 _G.QuestLogQuests_Update = gameUpdate

@@ -4,6 +4,21 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.26", date = "2026-11-20", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aThe quest log is left alone in combat|r: Valhalla's quest log order (Ready to Turn In, zones) used to be laid out straight from the game's own update, even in combat and while auras are secret, a likely cause of the \"secret while tainted by 'Valhalla'\" errors. It now waits like the tracker does and is laid out once combat ends.",
+		"A pin code whose notes have spaces now shares every pin with its whole note (it stopped at the first space and dropped the pins after it). Codes from 1.2.25 still read in full.",
+		"Deleting a pin (Delete, Alt-click, Clear All) closes its note box and turns the Quill off if it was drawing on that pin.",
+		"What's new: the list of versions scrolls, and picking an older one (Older) scrolls to it, instead of running off the window.",
+		"Friends on the map: the (*) mark shows on players from another realm, not on your own realm's.",
+		"The unexplored areas' covers are reused when they're made again (exploring, changing their colour) instead of new ones piling up each time.",
+		"Investments: looting or trading an item no longer clears what's waiting for you in the mail; only taking it from the mailbox does.",
+		"Investments: crafts and harvests with an item whose name hasn't loaded yet stay listed (and load), instead of disappearing from a name search.",
+		"Paint and the Quill: opening the map in combat no longer errors on their keyboard catcher; it applies when combat ends.",
+		"Investments: a crafted item that binds on pickup is no longer ranked while the game hasn't loaded it (checked again shortly), and recipe costs update when a vendor's price changes.",
+		"Investments: the list chooser closes when you click elsewhere, like the item menu; a Per-stack tooltip no longer shows the auction lines twice; the top-level filter's tip says what it does (items with no known level stay listed, marked \"?\").",
+		"Other addons' switches in Valhalla's menu sit under their own section's heading.",
+		"The map's gap minimap no longer errors at the edge of a continent; Friends, group pins and the tracker's map pins do less work when they're off or unchanged; switching Investments off at the auction house stops its name loading.",
+	} },
 	{ version = "1.2.25", date = "2026-11-19", heads = { [1] = "Fixed", [3] = "Changed", }, items = {
 		"|cff6e2c0aWaypoints, zone tracking and quest log zones stuck since 1.2.24|r: 1.2.24 asked the game whether this client has secret values at all (always yes here), so Valhalla's changes to the quest tracker waited for good, even out of combat: a dropped map pin set no waypoint arrow, and quests weren't tracked or untracked by zone. It now asks whether your auras are secret right now, so out of combat they apply at once again.",
 		"If the game keeps auras secret out of combat for more than 30 seconds, Valhalla's waiting changes go ahead anyway, with one line in chat (once a session). In combat, and for 3 seconds after, they still wait.",

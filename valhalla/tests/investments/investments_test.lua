@@ -654,8 +654,16 @@ W.Fire("AUCTION_HOUSE_CLOSED")
 W.Fire("ITEM_PURCHASED", 6256)
 ok(I.MailOf(6256) == 0, "something not on a list: not tracked")
 ns.printed = {}
+-- (1.2.26) the same item looted (or traded) with the mailbox closed: still in the mail
+W.bags[3] = { { 2321, 4 } }
+W.Fire("BAG_UPDATE_DELAYED")
+ok(I.MailOf(2321) == 10, "1.2.26: 4 looted with the mailbox closed: still 10 in the mail", I.MailOf(2321))
+W.bags[3] = nil
+W.Fire("BAG_UPDATE_DELAYED")
+I.mailOpen = true   -- (the mailbox open: what reaches the bags is mail taken out)
 W.bags[3] = { { 2321, 10 } }
 W.Fire("BAG_UPDATE_DELAYED")
+I.mailOpen = false
 ok(I.MailOf(2321) == 0 and I.LineOf(ML, 2321) and I.LineOf(ML, 2321).n == 10 and not Printed("bought") and I.LineRow(I.LineOf(ML, 2321)).need == 0, "looted: out of the mail; the line stays (Done)")
 local ml2 = LastLines()
 ok(ml2.name._text == "Fine Thread" and ml2.count._text == "Done", "on the page: Done")
@@ -4430,6 +4438,86 @@ print("== 1.2.16: Investments opens on AH Market; AH Market's inner tab kept acr
   ok(p5.current == "top", "none saved: Top 10")
   T.Select("map")
 end)()
+
+print("== 1.2.26: the review's fixes (Investments)")
+do
+  local Mk, V, Cr, St = I.Market, I.Views, I.Craft, ns.Style
+  -- B7: the Craft / Harvest name filter
+  W.uncached[2589] = true
+  local list, nameless = Mk.NameFilter({ { id = 2589 }, { id = 2770 } }, "id", "copper")
+  ok(#list == 1 and list[1].id == 2770 and #nameless == 1 and nameless[1] == 2589, "B7: a name not in yet: left out for now and asked for")
+  W.uncached[2589] = nil
+  list = Mk.NameFilter({ { id = 2589 }, { id = 2770 } }, "id", "linen")
+  ok(#list == 1 and list[1].id == 2589, "B7: once in: matched")
+  ok(#Mk.NameFilter({ { id = 2589 }, { id = 2770 } }, "id", "") == 2, "B7: no filter: every row")
+  -- B11: bind on pickup / not loaded; a vendor price in the cache key
+  local res = {}
+  W.uncached[2321] = true
+  ok(Cr.IsBoP(2321, res) == false and res.unloaded == 1, "B11: an output not loaded: counted (worked out again later), not skipped")
+  W.uncached[2321] = nil
+  W.bind = { [2321] = 1 }
+  ok(Cr.IsBoP(2321, {}) == true, "B11: loaded, bound on pickup: skipped")
+  W.bind = nil
+  local res2 = {}
+  ok(Cr.IsBoP(2321, res2) == false and not res2.unloaded, "B11: loaded, not bound: kept, nothing counted")
+  local opts = { owned = "market" }
+  local k1 = Cr.CacheKey("Forever", "nothing", opts)
+  I.merchantGen = (I.merchantGen or 0) + 1
+  ok(Cr.CacheKey("Forever", "nothing", opts) ~= k1, "B11: a vendor price learned: Craft's cache key changes")
+  local ck = Cr.CacheKey("Forever", "nothing", opts)
+  local old = { rows = {}, recheckAt = W.now - 1, rechecks = 1 }
+  Cr.results[ck] = old
+  local got = Cr.Get("Forever", "nothing", opts)
+  ok(got == old and Cr.Running(), "B11: due again: worked out again, the old ranking shown meanwhile")
+  for _ = 1, 400 do if not Cr.Running() then break end Cr.Tick() end
+  ok(Cr.results[ck] ~= old and not Cr.Running(), "B11: the new ranking kept")
+  Cr.results[ck] = nil
+  -- B12: the list chooser closes when its item goes away (and on a click elsewhere)
+  local anchor = CreateFrame("Button", nil, UIParent)
+  anchor:Show()
+  local m = V.ChooseList(anchor, 2589)
+  ok(m:IsShown() and rawget(m, "_events") and m._events.GLOBAL_MOUSE_DOWN, "B12: the chooser shown, listening for a click elsewhere")
+  anchor:Hide()
+  W.Run(m, "OnUpdate")
+  ok(not m:IsShown() and not m._events.GLOBAL_MOUSE_DOWN, "B12: its anchor gone (AH Market closed): closed")
+  ok(V.ItemMenu and V.PopupMenu, "B12: one builder for the item menu and the chooser")
+  -- B13: Harvest's Per stack tooltip, the AH lines once
+  local tip, was = I.Tooltip, I.Tooltip.On
+  local hooked = tip.hooked
+  tip.hooked, tip.On = "processor", function() return true end
+  local t = Mk.StackTip(2589, 100)
+  ok(#t == 1, "B13: the tooltip has the AH lines already: the stack line only", #t)
+  tip.hooked = "script"
+  t = Mk.StackTip(2589, 100)
+  ok(#t >= 2, "B13: else the AH lines and the stack line", #t)
+  tip.hooked, tip.On = hooked, was
+  -- B14
+  ok(Mk.TIPS.topLevel[2]:find("stay listed", 1, true), "B14: the Level tip says unknown levels stay, marked ?")
+  -- B18: the name loader stops when Investments is turned off
+  I.NameLoader.mode = "search"
+  mod:OnDisable()
+  ok(not I.NameLoader.Running() and not I.ahOpen, "B18: turned off: the name loader stopped")
+  mod:OnEnable()
+  -- B9: keys passed on: never in combat, put back after it
+  local regs = {}
+  ns.RegisterEvent = function(owner, e, fn) regs[e] = fn return true end
+  ns.UnregisterEvent = function(owner, e) regs[e] = nil end
+  local f = CreateFrame("Frame", nil, UIParent)
+  local calls = {}
+  f.SetPropagateKeyboardInput = function(self, on) if W.combat then error("blocked in combat") end calls[#calls + 1] = on end
+  W.combat = true
+  ok(St.KeysThrough(f) == false and #calls == 0 and regs.PLAYER_REGEN_ENABLED, "B9: in combat: not called (no error), waits for combat's end")
+  W.combat = false
+  regs.PLAYER_REGEN_ENABLED()
+  ok(calls[1] == true and not regs.PLAYER_REGEN_ENABLED, "B9: combat over: keys passed on again")
+  St.KeysThrough(f, false)
+  W.combat = true
+  f:Hide() f:Show()
+  W.combat = false
+  regs.PLAYER_REGEN_ENABLED()
+  ok(calls[#calls] == false, "B9: the latest asked is what's put back")
+  ns.RegisterEvent, ns.UnregisterEvent = nil, nil
+end
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end

@@ -580,13 +580,13 @@ local function CreateCatcher()
 	catcher:SetScript("OnMouseWheel", function(_, delta) mod.WheelZoom(delta) end)
 	catcher:SetScript("OnUpdate", Move)
 	catcher:EnableKeyboard(true)
-	catcher:SetPropagateKeyboardInput(true)
+	ns.Style.KeysThrough(catcher)   -- (1.2.26: never in combat; put back after it)
 	catcher:SetScript("OnKeyDown", function(self, key)
 		local undo = key == "Z" and IsControlKeyDown()
 		if (undo or key == "ESCAPE") and not InCombatLockdown() then
-			self:SetPropagateKeyboardInput(false)
+			ns.Style.KeysThrough(self, false)
 			if undo then Undo() RefreshTray() else mod:ToggleSketch(false) end
-			C_Timer.After(0, function() if not InCombatLockdown() then self:SetPropagateKeyboardInput(true) end end)
+			C_Timer.After(0, function() ns.Style.KeysThrough(self) end)
 		end
 	end)
 end

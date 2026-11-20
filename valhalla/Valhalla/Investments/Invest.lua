@@ -333,9 +333,10 @@ function I.AddMail(id, n)
 end
 
 -- items reaching the bags come off what's in the mail; old mail (returned by now) is dropped
+-- (1.2.26: only while the mailbox is open: loot or a trade of the same item isn't mail taken out)
 function I.MailArrived(old, new)
 	for id, m in pairs(I.char.mail) do
-		local gain = (new[id] or 0) - (old[id] or 0)
+		local gain = I.mailOpen and (new[id] or 0) - (old[id] or 0) or 0
 		if gain > 0 then m.n = m.n - gain end
 		if m.n <= 0 or (m.t and Now() - m.t > I.MAIL_DAYS * 86400) then I.char.mail[id] = nil end
 	end
@@ -981,6 +982,7 @@ function I.CacheMerchant()
 		if id then
 			local info = C_MerchantFrame and C_MerchantFrame.GetItemInfo and Call(C_MerchantFrame.GetItemInfo, i)
 			local price = type(info) == "table" and Value(info.price) or 0
+			if m.items[id] ~= (price or 0) then I.merchantGen = (I.merchantGen or 0) + 1 end   -- (1.2.26: Craft's cache key)
 			m.items[id] = price or 0
 			count = count + 1
 		end
@@ -1125,6 +1127,8 @@ end
 function mod:OnDisable()
 	if I.AHCheck then I.AHCheck.Stop("stopped: Investments turned off") end
 	if I.Scan then I.Scan.Stop() end
+	NL.Stop()   -- (1.2.26: the name loader too; no AUCTION_HOUSE_CLOSED comes once the events are off)
+	I.ahOpen, I.mailOpen = false, false
 	if events then events:UnregisterAllEvents() end
 	if I.Tabs then I.Tabs.Disable() end
 	if I.Merchant then I.Merchant.Disable() end

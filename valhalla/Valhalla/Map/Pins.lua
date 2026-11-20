@@ -100,7 +100,11 @@ local function Follow(p)
 end
 
 -- a pin gone: no longer followed, its drawing with it (mod.RefreshPins after)
+-- (1.2.26: every way a pin goes - Delete, Alt-click, Clear All - ends its drawing and its editor first, as Close
+-- does: 1.2.25's left the quill on, saving strokes under a pin no longer there)
 local function Drop(p)
+	if editor and editor.pin == p then editor.pin = nil editor:Hide() end
+	if mod.SketchPin and mod.SketchPin() == p then mod:ToggleSketch(false) end
 	if Followed(p) then mod.ClearPin() end
 	Remove(p)
 	if mod.DropSketches then mod.DropSketches(p.id) end
@@ -239,7 +243,8 @@ local function Share(pins, to)
 		target or SHARE_TO[to] or "?")
 end
 
-local function Escape(note) return (note:gsub("[%%,;]", function(c) return ("%%%02X"):format(c:byte()) end)) end
+-- (1.2.26: a space too: 1.2.25's codes were read up to the first space, a note with one cut short and every pin after it lost)
+local function Escape(note) return (note:gsub("[%%,; ]", function(c) return ("%%%02X"):format(c:byte()) end)) end
 local function Unescape(note) return (note:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)) end
 
 local function CodeOf(pins)
@@ -272,8 +277,10 @@ local function AddAll(pins, from)
 end
 
 local function FromCode(text)
-	local body = tostring(text or ""):match(CODE:gsub("%p", "%%%0") .. "(%S+)")
-	if not body then return end
+	-- (1.2.26: the rest of the line, spaces and all: codes from 1.2.25 left a note's spaces as they were)
+	local body = tostring(text or ""):match(CODE:gsub("%p", "%%%0") .. "([^\r\n]+)")
+	body = body and strtrim(body)
+	if not body or body == "" then return end
 	local pins = {}
 	for part in body:gmatch("[^;]+") do
 		local m, x, y, color, note = strsplit(",", part, 5)

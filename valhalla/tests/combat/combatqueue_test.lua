@@ -251,5 +251,23 @@ secret = false
 Advance(Q.SETTLE)
 C_Secrets = nil
 
+print("== 15. (1.2.26) a failing secret-auras check counts as secret (the safety net still opens it); a failing combat check doesn't hold")
+do
+  C_Secrets = { ShouldAurasBeSecret = function() error("broken") end }
+  local ran = false
+  ok(Q.Blocked() == true and Q.Why()[1] == "secret auras", "ShouldAurasBeSecret errors: held as secret auras", table.concat(Q.Why(), ","))
+  Q.Run("broken", function() ran = true end)
+  ok(not ran and Q.Pending("broken"), "a call waits")
+  Advance(Q.SAFETY + Q.SETTLE + 1)
+  ok(ran and not Q.Pending(), "after the safety net's " .. Q.SAFETY .. " s: run")
+  C_Secrets = nil
+  Advance(Q.SETTLE)
+  local gameICL = InCombatLockdown
+  InCombatLockdown = function() error("broken") end
+  ran = false
+  ok(Q.Run("icl", function() ran = true end) == true and ran, "InCombatLockdown errors: not held (never for good)")
+  InCombatLockdown = gameICL
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

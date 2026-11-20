@@ -410,13 +410,22 @@ function QC.OnUpdate()
 		if not ok then QC.lastError = tostring(err) end
 	end
 	-- (1.2.11: the zones in order, the Ready section; an error said once, never breaking the game's log)
-	if QC.Arrange then
-		local ok, err = pcall(QC.Arrange)
-		if not ok then
-			QC.lastError = tostring(err)
-			if not QC.errorSaid then QC.errorSaid = true ns:Print("%s", L["Quest log order: an error (%s). The game's own order is kept."]:format(QC.lastError)) end
-		end
+	QC.ArrangeSoon()
+end
+
+-- (1.2.26) the arrange writes the game's quest log rows' layoutIndex / topPadding and lays the log out again:
+-- only when CombatQueue.lua's gate is clear (combat, secret auras, the settle after combat); else queued under
+-- one key, run once clear (the log as it is then)
+function QC.ArrangeSafe()
+	if not QC.Arrange then return end
+	local ok, err = pcall(QC.Arrange)
+	if not ok then
+		QC.lastError = tostring(err)
+		if not QC.errorSaid then QC.errorSaid = true ns:Print("%s", L["Quest log order: an error (%s). The game's own order is kept."]:format(QC.lastError)) end
 	end
+end
+function QC.ArrangeSoon()
+	return Defer("questlog:arrange", QC.ArrangeSafe)
 end
 
 function QC.Hook()
@@ -540,7 +549,7 @@ local function ReadyHeader(parent)
 	end
 	local function Toggle()
 		if mod.db then mod.db.readyLogCollapsed = not mod.db.readyLogCollapsed end
-		QC.Arrange()
+		QC.ArrangeSoon()
 	end
 	if native and f.SetClickHandler then f:SetClickHandler(function(_, button) if button == "LeftButton" then Toggle() end end)
 	else f:SetScript("OnClick", Toggle) end

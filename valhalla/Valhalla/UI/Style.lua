@@ -1047,6 +1047,32 @@ APPLY.scroll = function(w, vh, th)
 	end
 end
 function Style.ScrollBar(sf) if sf then pcall(Track, sf, "scroll", nil, false) end return sf end
+-- (1.2.26) a frame's keys passed on to the game (on: true unless false). SetPropagateKeyboardInput can't be called
+-- in combat: then it's done once combat ends (the latest asked), and on the frame's next show; never an error
+-- (1.2.25 called it in combat at the map's first setup, and a keyboard catcher could keep every key after combat)
+Style.keysWant = setmetatable({}, { __mode = "k" })
+function Style.KeysThrough(frame, on)
+	if not (frame and frame.SetPropagateKeyboardInput) then return false end
+	on = on ~= false
+	Style.keysWant[frame] = on
+	if not Style.keysHooked[frame] and frame.HookScript then
+		Style.keysHooked[frame] = true
+		frame:HookScript("OnShow", function(self) if Style.keysWant[self] ~= nil then Style.KeysThrough(self, Style.keysWant[self]) end end)
+	end
+	if InCombatLockdown and InCombatLockdown() then Style.KeysLater() return false end
+	return pcall(frame.SetPropagateKeyboardInput, frame, on)
+end
+Style.keysHooked = setmetatable({}, { __mode = "k" })
+function Style.KeysLater()
+	if Style.keysWaiting or not ns.RegisterEvent then return end
+	Style.keysWaiting = true
+	ns.RegisterEvent(Style.keysWant, "PLAYER_REGEN_ENABLED", function()
+		Style.keysWaiting = nil
+		ns.UnregisterEvent(Style.keysWant, "PLAYER_REGEN_ENABLED")
+		for f, want in pairs(Style.keysWant) do pcall(f.SetPropagateKeyboardInput, f, want) end
+	end)
+end
+
 function Style.UIScroll(parent, name)
 	local sf = CreateFrame("ScrollFrame", name, parent, "UIPanelScrollFrameTemplate")
 	return Style.ScrollBar(sf)

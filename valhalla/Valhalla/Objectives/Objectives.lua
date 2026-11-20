@@ -1297,6 +1297,8 @@ function O.OnEvent(event, a1, a2, ...)
 		if event == "QUEST_LOG_UPDATE" then O.ProgressDue(now) end
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if S.restorePending then O.Restore() end
+		-- (1.2.26) turned off: this was only for the restore; once it's done, not heard again
+		if not mod.enabled and not S.restorePending and O.events then O.events:UnregisterEvent("PLAYER_REGEN_ENABLED") end
 	end
 	S.layoutDirty, S.readyDirty = true, true
 end
@@ -1423,7 +1425,10 @@ function O.LayoutPins()
 	local T = rawget(_G, "ObjectiveTrackerFrame")
 	local blocks = Visible(T) and O.Blocks() or {}
 	local n = 0
-	local blank = {}
+	-- (1.2.26: five times a second: the last pass's table reused, no key strings; strata and level set on a change)
+	local blank = S.blankSpare or {}
+	S.blankSpare = nil
+	for k in pairs(blank) do blank[k] = nil end
 	for _, it in ipairs(blocks) do
 		local b = it.b
 		-- (1.2.2) a row whose title reads empty (its quest's data not in when the tracker drew it): no pin;
@@ -1438,20 +1443,21 @@ function O.LayoutPins()
 			local p = UI.pins[n] or MakePin(UIParent)
 			UI.pins[n] = p
 			local poi = Visible(rawget(b, "poiButton")) and b.poiButton or nil
-			local key = tostring(b) .. ":" .. it.q .. ":" .. tostring(poi)
-			if p.key ~= key then
-				p.key = key
+			if p.key ~= b or p.keyQ ~= it.q or p.keyPoi ~= poi then
+				p.key, p.keyQ, p.keyPoi = b, it.q, poi
 				p:ClearAllPoints()
 				p:SetPoint("RIGHT", poi or rawget(b, "HeaderText") or b, "LEFT", -2, 0)
 			end
-			p:SetFrameStrata(b:GetFrameStrata() or "LOW")
-			p:SetFrameLevel((b:GetFrameLevel() or 1) + 5)
+			local strata, level = b:GetFrameStrata() or "LOW", (b:GetFrameLevel() or 1) + 5
+			if p.keyStrata ~= strata then p.keyStrata = strata p:SetFrameStrata(strata) end
+			if p.keyLevel ~= level then p.keyLevel = level p:SetFrameLevel(level) end
 			PaintPin(p, it.q)
 			p:Show()
 		end
 	end
 	for i = n + 1, #UI.pins do UI.pins[i]:Hide() UI.pins[i].key = nil end
 	for id in pairs(S.redraw) do if not blank[id] then S.redraw[id] = nil end end
+	S.blankSpare = S.blank ~= blank and S.blank or nil
 	S.blank = blank
 	return n
 end
@@ -1786,6 +1792,7 @@ function mod:OnEnable()
 	if not events then
 		events = CreateFrame("Frame")
 		events:SetScript("OnEvent", function(_, event, ...) O.OnEvent(event, ...) end)
+		O.events = events
 	end
 	for _, e in ipairs(O.EVENTS) do pcall(events.RegisterEvent, events, e) end
 	if O.SyncOn() then for _, e in ipairs(O.SYNC_EVENTS) do pcall(events.RegisterEvent, events, e) end end

@@ -343,8 +343,9 @@ local function UpdateGapMinimap(conts, u, v, hu, hv, alpha)
 					if fid and n < GAP_MAX and set[tx * 64 + ty] then
 						local u0, v0 = S.FromYards(cont, (32 - ty) * TILE, (32 - tx) * TILE)
 						local u1, v1 = S.FromYards(cont, (31 - ty) * TILE, (31 - tx) * TILE)
-						local cu, cv = (u0 + u1) / 2, (v0 + v1) / 2
-						do
+						-- (1.2.26: a corner off the yard box: the tile skipped, as UpdateMinimap does; 1.2.25 errored)
+						if u0 and u1 then
+							local cu, cv = (u0 + u1) / 2, (v0 + v1) / 2
 							n = n + 1
 							local key = TileKey(cont, tx, ty)
 							wanted[key] = true
