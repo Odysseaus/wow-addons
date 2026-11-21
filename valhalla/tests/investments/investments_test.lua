@@ -4904,5 +4904,121 @@ do
   ok(I.realm == keep.db.realms.Forever, "(the test's own data back)")
 end
 
+print("== 1.2.31: Dungeon Journal's dungeon map put away on the window's other tabs, back on Map & Quest Log")
+do
+  -- the real code: Map/Dungeons.lua's mod.DungeonJournalAway and Map/Panel.lua's mod.TabAway (as written)
+  local vroot = arg[1] or (((arg[0] or ""):match("^(.*[/\\])") or "./") .. "../../Valhalla/")
+  local function Src(file) local f = assert(io.open(vroot .. file)) local s = f:read("*a") f:close() return s end
+  local function Chunk(src, head)
+    local a = assert(src:find("\n" .. head, 1, true), head) + 1
+    local b = assert(src:find("\nend\n", a, true), head)
+    return src:sub(a, b + 4)
+  end
+  local wm = ns.modules.worldmap
+  local keepAway = wm.TabAway
+  local env = setmetatable({ mod = wm, menu = nil }, { __index = _G })
+  for _, c in ipairs({ Chunk(Src("Map/Dungeons.lua"), "function mod.DungeonJournalAway(away)"), Chunk(Src("Map/Panel.lua"), "function mod.TabAway(away)") }) do
+    local fn = assert(loadstring(c)) setfenv(fn, env) fn()
+  end
+  ok(wm.TabAway ~= keepAway and type(wm.DungeonJournalAway) == "function", "(the real TabAway and DungeonJournalAway)")
+  -- a Dungeon Journal as its WorldMapOverlay.lua works: its backdrop, World Map button and wing buttons WorldMapFrame's
+  local map = WorldMapFrame
+  local backdrop = CreateFrame("Frame", nil, map) backdrop:Hide()
+  local toggle = CreateFrame("Button", "ForeverDungeonJournalWorldMapToggle", map) toggle:Hide()
+  local wings = {}
+  for i, w in ipairs({ "Graveyard", "Library", "Armory", "Cathedral" }) do wings[i] = CreateFrame("Button", nil, map) wings[i].fdjWing = w wings[i]:Hide() end
+  map.GetChildren = function() return backdrop, toggle, wings[1], wings[2], wings[3], wings[4] end
+  local inDungeon, attached, wantWorld = true, false, false
+  local n = { detach = 0, refresh = 0 }
+  local dj = {}
+  local function Buttons(show)
+    if show then toggle:Show() else toggle:Hide() end
+    for _, b in ipairs(wings) do if show and attached then b:Show() else b:Hide() end end
+  end
+  function dj.IsWorldMapOverlayAttached() return attached end
+  function dj.DetachWorldMapOverlay() n.detach = n.detach + 1 attached = false backdrop:Hide() end
+  function dj.RefreshWorldMapOverlay()
+    n.refresh = n.refresh + 1
+    if not map:IsShown() or not inDungeon then attached = false backdrop:Hide() Buttons(false) return end
+    attached = not wantWorld
+    if attached then backdrop:Show() else backdrop:Hide() end
+    Buttons(true)
+  end
+  _G.ForeverDungeonJournal_NS = dj
+  local function Off() return not attached and not backdrop:IsShown() and not toggle:IsShown() and not wings[1]:IsShown() and not wings[4]:IsShown() end
+  local function On() return attached and backdrop:IsShown() and toggle:IsShown() and wings[1]:IsShown() and wings[4]:IsShown() end
+  map:Show() Tick() if T.Current() ~= "map" then T.Select("map") end
+  dj.RefreshWorldMapOverlay()   -- (its own, on the map's OnShow)
+  ok(On(), "(in Scarlet Monastery: its map over the big map)")
+  -- 1. and 2.
+  local good1, good2 = true, true
+  for _, key in ipairs({ "invest", "talents", "professions", "settings" }) do
+    local d, r = n.detach, n.refresh
+    T.Select(key)
+    if not (n.detach == d + 1 and Off() and T.Host():IsShown()) then good1 = false print("  (" .. key .. ")") end
+    d = n.detach
+    T.Select("map")
+    if not (n.refresh == r + 1 and n.detach == d and On() and not T.Host():IsShown()) then good2 = false print("  (" .. key .. " back)") end
+  end
+  ok(good1, "1. Investments, Talents, Professions, Settings: its map detached once, its World Map and wing buttons hidden")
+  ok(good2, "2. back on Map & Quest Log: its own refresh once, its map and buttons back (nothing detached by it)")
+  -- 3. it puts itself back while on another tab (entering a dungeon with the map open, its journal closing)
+  T.Select("invest")
+  local d, r = n.detach, n.refresh
+  dj.RefreshWorldMapOverlay()
+  dj.RefreshWorldMapOverlay()
+  ok(Off() and n.detach == d + 2 and n.refresh == r + 2, "3. it comes back by itself on Investments: away again each time (no loop)", n.detach - d)
+  T.Select("map")
+  ok(On() and n.refresh == r + 3, "   and back on Map & Quest Log after that")
+  -- 4. outside a dungeon: nothing to put away, nothing called
+  inDungeon = false
+  dj.RefreshWorldMapOverlay()
+  d, r = n.detach, n.refresh
+  T.Select("invest") T.Select("map")
+  ok(n.detach == d and n.refresh == r and not toggle:IsShown() and not backdrop:IsShown(), "4. outside a dungeon: neither detached nor refreshed")
+  -- 5. its World Map choice kept
+  inDungeon, wantWorld = true, true
+  dj.RefreshWorldMapOverlay()
+  d = n.detach
+  T.Select("invest")
+  ok(not toggle:IsShown() and n.detach == d, "5. on its World Map: its button hidden on Investments, nothing to detach")
+  T.Select("map")
+  ok(wantWorld and not attached and not backdrop:IsShown() and toggle:IsShown(), "   back: still its World Map (the choice kept), its button back")
+  wantWorld = false
+  dj.RefreshWorldMapOverlay()
+  -- 6. no Dungeon Journal, or one without these functions
+  local okNone = pcall(function()
+    _G.ForeverDungeonJournal_NS = nil
+    T.Select("invest") assert(T.Host():IsShown()) T.Select("map") assert(not T.Host():IsShown())
+    _G.ForeverDungeonJournal_NS = { DB = {} }
+    toggle:Show()
+    T.Select("invest") assert(T.Host():IsShown() and not toggle:IsShown()) T.Select("map") assert(not T.Host():IsShown() and toggle:IsShown())
+    _G.ForeverDungeonJournal_NS = { IsWorldMapOverlayAttached = function() error("x") end, DetachWorldMapOverlay = 1, RefreshWorldMapOverlay = function() error("y") end }
+    T.Select("invest") T.Select("map")
+  end)
+  ok(okNone, "6. no Dungeon Journal / one without these functions / one that errors: no error, the tabs as in 1.2.30")
+  _G.ForeverDungeonJournal_NS = dj
+  dj.RefreshWorldMapOverlay()
+  -- 7. the window closed on Investments, then opened again
+  T.Select("invest")
+  map:Hide() attached = false backdrop:Hide()   -- (its own OnHide: Detach)
+  Tick()
+  r = n.refresh
+  map:Show() Tick()
+  dj.RefreshWorldMapOverlay()   -- (its own OnShow)
+  ok(T.Current() == "map" and On() and next(wm.djAway.hidden) == nil and n.refresh <= r + 2, "7. closed on Investments, opened again: Map & Quest Log, its map and buttons back, nothing left hidden")
+  -- 8. full screen: Map & Quest Log only, its map left alone
+  d = n.detach
+  map:Maximize()
+  T.Select("invest")
+  ok(T.Current() == "map" and n.detach == d and On(), "8. full screen: no other tab, its map untouched")
+  map:Minimize()
+  -- (the box's own again)
+  wm.TabAway, wm.DungeonJournalAway, wm.djAway = keepAway, nil, nil
+  map.GetChildren = nil
+  _G.ForeverDungeonJournal_NS, _G.ForeverDungeonJournalWorldMapToggle = nil, nil
+  T.Select("map")
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 if fail > 0 then os.exit(1) end

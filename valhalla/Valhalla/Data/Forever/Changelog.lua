@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.31", date = "2026-11-20", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aDungeon Journal's dungeon map no longer covers the other tabs|r: inside a dungeon, its map (with its World Map and Scarlet Monastery wing buttons, Hide quests and Boss icons) stayed over Investments, Talents, Professions and Settings. It's now put away when you leave Map & Quest Log, and back on Map & Quest Log it's just as you left it (the same wing and floor, or its World Map if you'd picked that). Without Dungeon Journal nothing changes.",
+	} },
 	{ version = "1.2.30", date = "2026-11-20", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
 		"|cff6e2c0aYour Watchlist, AH history and Top 10 are back (again)|r: on WoW Forever 1.60.1.71037 the game now names your realm only through UnitFullName (\"Thunderbuns\"), a name none of your saved data had, and 1.2.29 started a new, empty realm under it. Nothing was deleted.",
 		"On the first load, the realm 1.2.29 made is merged into your saved realm (\"CAMWOW US2 Realm 8 PvP\"): today's scan in time order, the newer bag and bank counts, and \"List 1\" as a second list next to \"Reagent Buy Targets\". Then it is removed. This runs once, only for a realm 1.2.29 made that holds nothing older.",

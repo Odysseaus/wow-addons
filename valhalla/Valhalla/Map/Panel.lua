@@ -1099,8 +1099,9 @@ SetOpen = function(on)
 end
 
 -- the Valhalla window's other tabs (Investments/Tabs.lua, v0.3.5): the menu put away there (not forgotten:
--- back on Map & Quest Log if it was open)
+-- back on Map & Quest Log if it was open); and Dungeon Journal's dungeon map (Dungeons.lua, 1.2.31)
 function mod.TabAway(away)
+	if mod.DungeonJournalAway then pcall(mod.DungeonJournalAway, away) end   -- (1.2.31: Dungeon Journal's dungeon map too)
 	if not menu then return end
 	if away then menu:Hide()
 	elseif mod.db.menuOpen and map and map:IsShown() and not menu:IsShown() then SetOpen(true) end

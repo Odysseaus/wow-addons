@@ -1118,6 +1118,47 @@ local function OpenJournal(inst, quests)
 	return (pcall(open, key))
 end
 
+-- (1.2.31) its own dungeon map on the big map, inside a dungeon (its WorldMapOverlay): a child of the map
+-- window itself, raised over other map add-ons, so it stayed over the window's other tabs (Investments,
+-- Talents, Professions, Settings: Investments/Tabs.lua). Put away there through its own functions (its map
+-- back in its journal, its World Map and Scarlet wing buttons hidden), and if it puts itself back while
+-- there (entering a dungeon, its journal closing), away again; back on Map & Quest Log its own refresh
+-- brings it back as it was (wing, floor, its World Map choice). Called by mod.TabAway (Panel.lua); with no
+-- Dungeon Journal, or one without these functions, nothing
+function mod.DungeonJournalAway(away)
+	local dj, map = _G.ForeverDungeonJournal_NS, _G.WorldMapFrame
+	if type(dj) ~= "table" or not map then return end
+	local st = mod.djAway or { hidden = {} }
+	mod.djAway = st
+	st.away = away and true or false
+	local function PutAway()
+		if type(dj.IsWorldMapOverlayAttached) == "function" and type(dj.DetachWorldMapOverlay) == "function" then
+			local okOn, on = pcall(dj.IsWorldMapOverlayAttached)
+			if okOn and on and pcall(dj.DetachWorldMapOverlay) then st.put = true end
+		end
+		local list = { _G.ForeverDungeonJournalWorldMapToggle }
+		if map.GetChildren then
+			for _, c in ipairs({ map:GetChildren() }) do if type(c) == "table" and c.fdjWing then list[#list + 1] = c end end
+		end
+		for _, b in pairs(list) do
+			if type(b) == "table" and b.IsShown and b:IsShown() then b:Hide() st.hidden[b] = true end
+		end
+	end
+	if away then
+		if not st.hooked and type(dj.RefreshWorldMapOverlay) == "function" and hooksecurefunc then
+			st.hooked = true
+			hooksecurefunc(dj, "RefreshWorldMapOverlay", function() if st.away then pcall(PutAway) end end)
+		end
+		pcall(PutAway)
+	elseif st.put or next(st.hidden) then
+		local was = st.hidden
+		st.put, st.hidden = nil, {}
+		if type(dj.RefreshWorldMapOverlay) ~= "function" or not pcall(dj.RefreshWorldMapOverlay) then
+			for b in pairs(was) do pcall(b.Show, b) end   -- (no refresh of its own: its buttons as they were)
+		end
+	end
+end
+
 local function Open(inst, pin)
 	if chooser then chooser:Hide() end
 	if mod.db.entranceClick == "journal" and OpenJournal(inst) then return end
