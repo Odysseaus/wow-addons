@@ -75,6 +75,15 @@ end
 
 -- the page: one version's notes, its name and when, each change a paragraph by a bullet; or the
 -- credits ("credits")
+-- (1.2.26) the versions' list scrolled so row n shows
+local function ScrollListTo(sf, n)
+	local top, h = (n - 1) * (ROW_H + 2), sf:GetHeight() or 0
+	if h <= 0 then return end
+	local cur = sf:GetVerticalScroll() or 0
+	if top < cur then sf:SetVerticalScroll(top)
+	elseif top + ROW_H + 8 > cur + h then sf:SetVerticalScroll(math.min(sf:GetVerticalScrollRange() or 0, top + ROW_H + 8 - h)) end
+end
+
 local function ShowPage(n)
 	local log = ns.MapChangelog or {}
 	local credits = n == "credits"
@@ -155,6 +164,7 @@ local function ShowPage(n)
 	-- the list: this one lit; Newer and Older as far as there are
 	for _, row in ipairs(frame.rows) do
 		local on = row.n == n
+		if on and frame.listScroll then ScrollListTo(frame.listScroll, n) end   -- (1.2.26: the version shown in view)
 		row.lit:SetShown(on)
 		row.label:SetTextColor(on and 1 or GOLD[1], on and 1 or GOLD[2], on and 1 or GOLD[3])
 		row.count:SetTextColor(on and 1 or GOLD[1], on and 1 or GOLD[2], on and 1 or GOLD[3])
@@ -239,11 +249,19 @@ local function Build()
 	headCount:SetTextColor(0.7, 0.62, 0.5)
 	headCount:SetText(L["%d versions"]:format(#log))
 	frame.rows = {}
+	-- (1.2.26) the versions scroll: 1.2.25 drew every one (60 and counting) down the list and past the window
+	local listScroll = ns.Style.UIScroll(list)
+	listScroll:SetPoint("TOPLEFT", 0, -40)
+	listScroll:SetPoint("BOTTOMRIGHT", -24, 4)
+	local rowsChild = CreateFrame("Frame", nil, listScroll)
+	rowsChild:SetSize(LIST_W - 24, #log * (ROW_H + 2) + 8)
+	listScroll:SetScrollChild(rowsChild)
+	frame.listScroll, frame.rowsChild = listScroll, rowsChild
 	for n, sec in ipairs(log) do
-		local row = CreateFrame("Button", nil, list)
+		local row = CreateFrame("Button", nil, rowsChild)
 		row:SetHeight(ROW_H)
-		row:SetPoint("TOPLEFT", 8, -44 - (n - 1) * (ROW_H + 2))
-		row:SetPoint("TOPRIGHT", -8, -44 - (n - 1) * (ROW_H + 2))
+		row:SetPoint("TOPLEFT", 8, -4 - (n - 1) * (ROW_H + 2))
+		row:SetPoint("TOPRIGHT", -8, -4 - (n - 1) * (ROW_H + 2))
 		row.n = n
 		row.lit = row:CreateTexture(nil, "BACKGROUND")
 		row.lit:SetAllPoints()

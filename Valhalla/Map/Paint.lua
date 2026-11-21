@@ -37,12 +37,11 @@ local tool = { kind = 1, size = 40 }
 local painting = false
 local map, sc, catcher, bar, notesSet, editor, list, export
 local stroke                    -- the stroke being drawn: { note, points, adding, x, y (where it began, px) }
-local panning
 local Redraw, UpdateBar, RefreshList
 
 local function DB() return mod.db.paint end
 local function KindOf(note) return KIND[note.kind] or KINDS[2] end
-local function Round(x, k) k = k or 1e5 return math.floor(x * k + 0.5) / k end
+local Round = ns.Util.Round
 local function Hex(c) return ("%02x%02x%02x"):format(c[1] * 255, c[2] * 255, c[3] * 255) end
 
 local function ZoneAt(u, v)
@@ -50,10 +49,7 @@ local function ZoneAt(u, v)
 	return chain[#chain]
 end
 
-local function ZoneName(id)
-	local info = id and C_Map.GetMapInfo(id)
-	return info and info.name or "?"
-end
+local ZoneName = ns.Util.ZoneName
 
 -- older saves: layer mark-up strokes and plain notes, folded into notes once
 local function Migrate()
@@ -74,7 +70,7 @@ local function Migrate()
 		if not n.u and n.strokes then
 			local su, sv, c = 0, 0, 0
 			for _, p in ipairs(n.strokes) do for i = 1, #p, 2 do su, sv, c = su + p[i], sv + p[i + 1], c + 1 end end
-			if c > 0 then n.u, n.v = Round(su / c), Round(sv / c) end
+			if c > 0 then n.u, n.v = Round(su / c, 1e5), Round(sv / c, 1e5) end
 		end
 	end
 end
@@ -253,7 +249,7 @@ end
 local function AddPoint(u, v)
 	local p = stroke.points
 	local n = #p
-	u, v = Round(u), Round(v)
+	u, v = Round(u, 1e5), Round(v, 1e5)
 	p[n + 1], p[n + 2] = u, v
 	local r, g, b = unpack(KindOf(stroke.note).color)
 	if n == 0 then S.AddMark(u, v, stroke.note.radius, r, g, b, AREA_ALPHA)
@@ -308,7 +304,7 @@ local function EndStroke()
 	else
 		local su, sv = 0, 0
 		for i = 1, #p, 2 do su, sv = su + p[i], sv + p[i + 1] end
-		note.u, note.v = Round(su / (#p / 2)), Round(sv / (#p / 2))
+		note.u, note.v = Round(su / (#p / 2), 1e5), Round(sv / (#p / 2), 1e5)
 	end
 	EditNote(note, true)
 end
@@ -527,18 +523,10 @@ local function CreateBar()
 	exportButton:SetPoint("LEFT", listButton, "RIGHT", 4, 0)
 	local undo = Button(bar, 54, L["Undo"], Undo, L["Take back the last note (Ctrl-Z)"])
 	undo:SetPoint("LEFT", exportButton, "RIGHT", 4, 0)
-	local clear = Button(bar, 54, L["Clear"], function(self)
-		if self.armed then
-			wipe(DB().notes)
-			Redraw()
-			self.armed = nil
-			self:SetText(L["Clear"])
-		else
-			self.armed = true
-			self:SetText(L["Sure?"])
-			C_Timer.After(3, function() self.armed = nil self:SetText(L["Clear"]) end)
-		end
-	end, L["Remove every note (click twice)"])
+	local clear = Button(bar, 54, L["Clear"], ns.Parts.TwoClick(L["Clear"], function()
+		wipe(DB().notes)
+		Redraw()
+	end), L["Remove every note (click twice)"])
 	clear:SetPoint("LEFT", undo, "RIGHT", 4, 0)
 	local done = Button(bar, 54, L["Done"], function() mod:TogglePaint(false) end)
 	done:SetPoint("LEFT", clear, "RIGHT", 4, 0)
@@ -554,39 +542,9 @@ local function CreateBar()
 end
 
 local function CreateCatcher()
-	catcher = CreateFrame("Frame", nil, sc)
-	catcher:SetAllPoints(sc)
-	catcher:SetFrameLevel(math.min(sc:GetFrameLevel() + 9200, 9940))
-	catcher:EnableMouse(true)
-	catcher:EnableMouseWheel(true)
-	catcher:Hide()
-	catcher:SetScript("OnMouseDown", function(_, button)
-		if button == "LeftButton" then
-			StartStroke()
-		elseif button == "RightButton" then
-			panning = true
-			sc:OnMouseDown("LeftButton")   -- Blizzard's own drag-to-pan
-		end
-	end)
-	catcher:SetScript("OnMouseUp", function(_, button)
-		if button == "LeftButton" then
-			EndStroke()
-		elseif panning then
-			panning = false
-			sc.mouseButtonInfo.LeftButton.down = false
-		end
-	end)
-	catcher:SetScript("OnMouseWheel", function(_, delta) mod.WheelZoom(delta) end)
-	catcher:SetScript("OnUpdate", StrokeUpdate)
-	catcher:EnableKeyboard(true)
-	catcher:SetPropagateKeyboardInput(true)
-	catcher:SetScript("OnKeyDown", function(self, key)
-		if key == "Z" and IsControlKeyDown() and not InCombatLockdown() then
-			self:SetPropagateKeyboardInput(false)
-			Undo()
-			C_Timer.After(0, function() if not InCombatLockdown() then self:SetPropagateKeyboardInput(true) end end)
-		end
-	end)
+	catcher = ns.Parts.MapCatcher(sc, { down = StartStroke, up = EndStroke, update = StrokeUpdate,
+		wheel = function(delta) mod.WheelZoom(delta) end,
+		key = function(key) if key == "Z" and IsControlKeyDown() then return Undo end end })
 end
 
 --------------------------------------------------------------------------------

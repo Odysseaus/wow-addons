@@ -146,14 +146,20 @@ end
 function mod.ExtraMenuRows(row)
 	local out = {}
 	for _, tab in ipairs({ "show", "look", "more" }) do
-		local heads = {}
+		-- (1.2.26) each section's toggles together, sections in the order they first came (1.2.25 put a toggle
+		-- whose section came again after another under that other's heading)
+		local heads, order = {}, {}
 		for _, t in ipairs(toggles) do
 			if t.tab == tab then
 				local head = t.section or ns.L["Other addons"]
-				if not heads[head] then
-					heads[head] = true
-					out[#out + 1] = { head, tab = tab }
-				end
+				if not heads[head] then heads[head] = {} order[#order + 1] = head end
+				local list = heads[head]
+				list[#list + 1] = t
+			end
+		end
+		for _, head in ipairs(order) do
+			out[#out + 1] = { head, tab = tab }
+			for _, t in ipairs(heads[head]) do
 				local icon = t.icon and { texture = t.icon } or { texture = "Interface\\Icons\\INV_Misc_Gear_01", icon = true }
 				out[#out + 1] = row(t.label, "ext." .. t.owner .. "." .. t.id, icon,
 					function() local ok, v = pcall(t.get) return ok and v and true or false end,

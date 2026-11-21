@@ -46,12 +46,9 @@ local RefreshList, Edit, ShowDrawing   -- (below)
 
 local function DB() return mod.db.pins end
 
-local function ZoneName(id)
-	local info = id and C_Map.GetMapInfo(id)
-	return info and info.name or "?"
-end
+local ZoneName = ns.Util.ZoneName
 
-local function Round(v) return math.floor(v * 1e4 + 0.5) / 1e4 end
+local Round = ns.Util.Round
 
 -- a note as plain text: no control characters, no escape codes ("|": links, colours), cut short
 -- (not mid-character)
@@ -82,7 +79,7 @@ end
 
 local function Add(mapID, x, y, note, color, from)
 	local db = DB()
-	local p = { id = db.nextId, map = mapID, x = Round(x), y = Round(y), note = Clean(note),
+	local p = { id = db.nextId, map = mapID, x = Round(x, 1e4), y = Round(y, 1e4), note = Clean(note),
 		color = COLORS[color or 1] and color or 1, from = from, at = time() }
 	db.nextId = db.nextId + 1
 	tinsert(db.list, p)
@@ -100,7 +97,11 @@ local function Follow(p)
 end
 
 -- a pin gone: no longer followed, its drawing with it (mod.RefreshPins after)
+-- (1.2.26: every way a pin goes - Delete, Alt-click, Clear All - ends its drawing and its editor first, as Close
+-- does: 1.2.25's left the quill on, saving strokes under a pin no longer there)
 local function Drop(p)
+	if editor and editor.pin == p then editor.pin = nil editor:Hide() end
+	if mod.SketchPin and mod.SketchPin() == p then mod:ToggleSketch(false) end
 	if Followed(p) then mod.ClearPin() end
 	Remove(p)
 	if mod.DropSketches then mod.DropSketches(p.id) end
@@ -124,7 +125,7 @@ local function PinEnter(self)
 	if not p then return end
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(p.note ~= "" and p.note or L["Map pin"], 1, 0.82, 0, true)
-	GameTooltip:AddLine(("%s  %.1f, %.1f"):format(ZoneName(p.map), p.x * 100, p.y * 100), 1, 1, 1)
+	GameTooltip:AddLine(ns.Util.Place(p.map, p.x, p.y), 1, 1, 1)
 	if p.from then GameTooltip:AddLine(L["Shared by %s"]:format(p.from), 0.6, 0.8, 1) end
 	if Followed(p) then GameTooltip:AddLine(L["Followed (the waypoint)"], 0.5, 0.95, 0.4) end
 	GameTooltip:AddLine(L["Click to edit its note, follow, share or delete it"], 0.6, 0.6, 0.6)
@@ -138,7 +139,10 @@ end
 -- pin for the link, then put back as it was), with its note; else its note and place, as text
 local function ChatLink(p)
 	local link
-	if C_Map.GetUserWaypointHyperlink and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates
+	-- (1.2.24) the waypoint swap changes the game's super-track: not while CombatQueue.lua's gate holds (combat,
+	-- secret auras, the settle after combat); the note and place as text then
+	local held = ns.Combat and ns.Combat.Blocked and ns.Combat.Blocked()
+	if not held and C_Map.GetUserWaypointHyperlink and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates
 		and (not C_Map.CanSetUserWaypointOnMap or C_Map.CanSetUserWaypointOnMap(p.map)) then
 		local before = C_Map.GetUserWaypoint and C_Map.GetUserWaypoint()
 		if pcall(C_Map.SetUserWaypoint, UiMapPoint.CreateFromCoordinates(p.map, p.x, p.y)) then
@@ -191,18 +195,7 @@ end
 -- "%", "," and ";" written %XX, the pins joined by ";")
 --------------------------------------------------------------------------------
 
-local queue = {}                -- { message, channel, target }
-local sender = CreateFrame("Frame")
-sender:Hide()
-local wait = 0
-sender:SetScript("OnUpdate", function(self, elapsed)
-	wait = wait - elapsed
-	if wait > 0 then return end
-	local m = tremove(queue, 1)
-	if not m then self:Hide() return end
-	wait = SEND_GAP
-	pcall(C_ChatInfo.SendAddonMessage, PREFIX, m[1], m[2], m[3])
-end)
+local Send = ns.Parts.Sender(PREFIX, SEND_GAP).Send   -- (1.2.26: Friends' sender too, UI/Parts.lua)
 
 local function Message(p)
 	local head = ("P1\t%d\t%.4f\t%.4f\t%d\t"):format(p.map, p.x, p.y, p.color or 1)
@@ -230,13 +223,13 @@ local SHARE_TO = { group = L["your group"], guild = L["your guild"] }
 local function Share(pins, to)
 	local channel, target = Channel(to)
 	if not channel or not (C_ChatInfo and C_ChatInfo.SendAddonMessage) or #pins == 0 then return end
-	for _, p in ipairs(pins) do queue[#queue + 1] = { Message(p), channel, target } end
-	sender:Show()
+	for _, p in ipairs(pins) do Send(nil, Message(p), channel, target) end
 	ns:Print(L["Sharing %d map pin(s) with %s (players with Valhalla are asked whether to add them)."], #pins,
 		target or SHARE_TO[to] or "?")
 end
 
-local function Escape(note) return (note:gsub("[%%,;]", function(c) return ("%%%02X"):format(c:byte()) end)) end
+-- (1.2.26: a space too: 1.2.25's codes were read up to the first space, a note with one cut short and every pin after it lost)
+local function Escape(note) return (note:gsub("[%%,; ]", function(c) return ("%%%02X"):format(c:byte()) end)) end
 local function Unescape(note) return (note:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)) end
 
 local function CodeOf(pins)
@@ -251,7 +244,7 @@ end
 local function Valid(m, x, y, color, note)
 	m, x, y, color = tonumber(m), tonumber(x), tonumber(y), tonumber(color)
 	if not (m and x and y) or x < 0 or x > 1 or y < 0 or y > 1 or not S.Rect(m) then return end
-	return { map = m, x = Round(x), y = Round(y), color = COLORS[color or 1] and color or 1, note = Clean(note) }
+	return { map = m, x = Round(x, 1e4), y = Round(y, 1e4), color = COLORS[color or 1] and color or 1, note = Clean(note) }
 end
 
 -- pins not already here (the same place and note): added; how many
@@ -269,8 +262,10 @@ local function AddAll(pins, from)
 end
 
 local function FromCode(text)
-	local body = tostring(text or ""):match(CODE:gsub("%p", "%%%0") .. "(%S+)")
-	if not body then return end
+	-- (1.2.26: the rest of the line, spaces and all: codes from 1.2.25 left a note's spaces as they were)
+	local body = tostring(text or ""):match(CODE:gsub("%p", "%%%0") .. "([^\r\n]+)")
+	body = body and strtrim(body)
+	if not body or body == "" then return end
 	local pins = {}
 	for part in body:gmatch("[^;]+") do
 		local m, x, y, color, note = strsplit(",", part, 5)
@@ -688,7 +683,7 @@ local function BuildList()
 			if not p then return end
 			GameTooltip:SetOwner(self, "ANCHOR_LEFT")
 			GameTooltip:AddLine(p.note ~= "" and p.note or L["Map pin"], 1, 0.82, 0, true)
-			GameTooltip:AddLine(("%s  %.1f, %.1f"):format(ZoneName(p.map), p.x * 100, p.y * 100), 1, 1, 1)
+			GameTooltip:AddLine(ns.Util.Place(p.map, p.x, p.y), 1, 1, 1)
 			if p.from then GameTooltip:AddLine(L["Shared by %s"]:format(p.from), 0.6, 0.8, 1) end
 			GameTooltip:AddLine(L["Click to go there, right-click to open its card"], 0.6, 0.6, 0.6)
 			GameTooltip:AddLine(L["Shift-click: share in chat"], 0.6, 0.6, 0.6)

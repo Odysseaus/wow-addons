@@ -26,8 +26,7 @@ local C = { ready = true }
 I.Craft = C
 local function S() return I.Scan end
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
-local function Now() return time and time() or 0 end
-local function MS() return (debugprofilestop and debugprofilestop()) or Now() * 1000 end
+local Now, MS = ns.Util.Time, ns.Util.MS
 
 C.SHOWN = 10                -- the Top 10
 C.EVERY = 5                 -- recipes between looks at the clock (a recipe's read costs an unknown few us)
@@ -46,12 +45,7 @@ C.PARENT = { [2937] = 171, [2938] = 164, [2939] = 185, [2940] = 333, [2941] = 20
 C.BYNAME = {}
 for id, name in pairs(C.SKILL) do C.BYNAME[name:lower()] = id end
 
-local function Call(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local got = { pcall(fn, ...) }
-	if not got[1] then return nil end
-	return unpack(got, 2, table.maxn(got))
-end
+local Call = ns.Util.CallAll
 
 -- "id,id,..." as numbers (v0.4.1.1: kept by string, the bundle's lists are long; read-only to callers)
 local splits, nsplits = {}, 0
@@ -273,10 +267,6 @@ function C.Unit(house, id)
 	if v then return v, "vendor" end
 end
 
-local function BindType(id)
-	local got = { pcall(GetItemInfo, id) }
-	return got[1] and got[15] or nil
-end
 
 -- what you have: bags (+ bank); withBank "none" (v0.4.2.8, Craft's Count: None): nothing counted
 function C.Have(withBank)
@@ -325,6 +315,19 @@ function C.Price(house, sch, opts, have)
 	return e
 end
 
+-- (1.2.26) bound on pickup: skipped; an output whose item data isn't in yet (no bind type) is counted
+-- (res.unloaded) and asked for, and the ranking is worked out again a little later (C.Get)
+function C.IsBoP(id, res)
+	local got = { pcall(GetItemInfo, id) }
+	local b = got[1] and got[15] or nil
+	if got[1] and got[2] == nil and id then   -- (no name: not loaded; a loaded item's bind type may be 0 or nil)
+		res.unloaded = (res.unloaded or 0) + 1
+		if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
+	end
+	return b == 1
+end
+C.RECHECK, C.RECHECKS = 10, 3   -- (1.2.26) seconds before a ranking with unloaded outputs is worked out again; at most
+
 -- a profession ranked at a house: { rows (the Top 10), missing, unlisted, skipped, unknown, total, known }
 function C.Rank(house, key, opts, step)
 	local p = C.Profession(key)
@@ -341,7 +344,7 @@ function C.Rank(house, key, opts, step)
 			res.skipped = res.skipped + 1
 		elseif opts.knownOnly and not (known[id] or C.IsKnown(id)) then
 			-- (not this character's)
-		elseif BindType(sch.out) == 1 then
+		elseif C.IsBoP(sch.out, res) then
 			res.skipped = res.skipped + 1
 		else
 			res.total = res.total + 1
@@ -360,8 +363,9 @@ function C.Rank(house, key, opts, step)
 	return res
 end
 
--- under a craft row's tooltip: the reagents, the cut, the sale, the deposit
-function C.Lines(e, house)
+-- under a craft row's tooltip: the reagents, the cut, the sale, the deposit. (1.2.27) hit(id): a reagent Craft's
+-- filter matched: its line gold, "(matches your search)"
+function C.Lines(e, house, hit)
 	local Money, out = S().Money, {}
 	local function Name(id) return (I.Views and I.Views.ItemData(id)) or L["Item #%d"]:format(id) end
 	out[#out + 1] = L["Valhalla craft (%s): %s per craft (makes %s)"]:format(house, e.profit and Money(e.profit) or "-", tostring(e.qty))
@@ -372,7 +376,9 @@ function C.Lines(e, house)
 		local said = {}
 		if how then said[#said + 1] = how end
 		if price then said[#said + 1] = price end
-		out[#out + 1] = ("  %s: %s = %s"):format(Name(r.id), table.concat(said, ", "), Money(r.cost))
+		local line = ("  %s: %s = %s"):format(Name(r.id), table.concat(said, ", "), Money(r.cost))
+		if hit and hit(r.id) then line = "|cffffd100" .. line .. "|r  " .. L["(matches your search)"] end
+		out[#out + 1] = line
 	end
 	if e.total then out[#out + 1] = L["Total for the %d you can make: %s"]:format(e.can, Money(e.total)) end
 	if e.sell then
@@ -395,7 +401,7 @@ function C.CacheKey(house, key, opts)
 	local p = C.Profession(key)
 	local own = opts.owned ~= "market" and ("%s:%s"):format(tostring(I.char.bagsSeen), opts.bank and tostring(I.char.bankSeen) or "-") or ""
 	return ("%s|%s|%d|%s|%s|%s|%d|%s|%s|%d"):format(tostring(house), tostring(key), m and #m.scans or 0, tostring(opts.owned), tostring(opts.bank),
-		tostring(opts.knownOnly), p and #p.ids or 0, own, tostring(KnownStore()[key] and #KnownStore()[key] or 0), C.gen)
+		tostring(opts.knownOnly), p and #p.ids or 0, own, tostring(KnownStore()[key] and #KnownStore()[key] or 0), C.gen) .. "|" .. tostring(I.merchantGen or 0)   -- (1.2.26: a vendor price learned)
 end
 
 function C.Tick()
@@ -412,7 +418,11 @@ function C.Tick()
 			C.lastError = tostring(err)
 			if geterrorhandler then geterrorhandler()(err) end
 		else
-			C.results[job.cacheKey] = job.res
+			local res = job.res
+			if res and (res.unloaded or 0) > 0 and (job.rechecks or 0) < C.RECHECKS then
+				res.recheckAt, res.rechecks = Now() + C.RECHECK, (job.rechecks or 0) + 1   -- (1.2.26)
+			end
+			C.results[job.cacheKey] = res
 			C.last = { maxMs = job.maxMs, frames = job.frames }
 		end
 		I.Changed()
@@ -425,9 +435,10 @@ end
 function C.Get(house, key, opts)
 	local ck = C.CacheKey(house, key, opts)
 	local res = C.results[ck]
-	if res then return res end
-	if C.job and C.job.cacheKey == ck then return nil, C.job.done, C.job.of end
-	local job = { cacheKey = ck, maxMs = 0, frames = 0, done = 0, of = 0 }
+	if res and not (res.recheckAt and Now() >= res.recheckAt) then return res end
+	if C.job and C.job.cacheKey == ck then if res then return res end return nil, C.job.done, C.job.of end
+	-- (1.2.26: a ranking with outputs not loaded then: worked out again, the old one shown meanwhile)
+	local job = { cacheKey = ck, maxMs = 0, frames = 0, done = 0, of = 0, rechecks = res and res.rechecks or 0 }
 	job.co = coroutine.create(function()
 		job.res = C.Rank(house, key, opts, function(i, n)
 			job.done, job.of = i, n
@@ -439,6 +450,7 @@ function C.Get(house, key, opts)
 		if not driver then driver = CreateFrame("Frame") end
 		driver:SetScript("OnUpdate", C.Tick)
 	end
+	if res then res.recheckAt = nil return res end
 	return nil, 0, 0
 end
 

@@ -109,24 +109,21 @@ O.CITY = {
 local PIN_ON = ns.Media.path .. "Textures\\ValhallaPinOn"
 local PIN_OFF = ns.Media.path .. "Textures\\ValhallaPinOff"
 
-local function Now() return GetTime and GetTime() or 0 end
-local function InCombat() return InCombatLockdown and InCombatLockdown() and true or false end
-local function OnTaxi() return UnitOnTaxi and UnitOnTaxi("player") and true or false end
-local function Plain(v) return ns.Safe and ns.Safe.Value(v) or v end
-local function Call(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b = pcall(fn, ...)
-	if ok then return Plain(a), Plain(b) end
+local Now = ns.Util.Clock
+-- (1.2.24) "in combat" here is CombatQueue.lua's gate: combat, the player in combat, the game's secret
+-- restrictions, or the few seconds after combat; watch, super-track and re-track changes all wait on it
+local InCombat = ns.Util.InCombat
+local function GateWhy()
+	local C = ns.Combat
+	if C and C.Why then return C.Why() end
+	return InCombat() and { "combat" } or {}
 end
+local function OnTaxi() return UnitOnTaxi and UnitOnTaxi("player") and true or false end
+local Plain, Call = ns.Util.Value, ns.Util.Call
 -- (1.2.23) the game's tracker changed only out of combat (CombatQueue.lua: in combat it waits until combat
 -- ends, the same quest's or the super-track's last change kept); straight away when that isn't loaded
 local TRACK_NOTE = "Tracking changed in combat: it applies when combat ends."
-local function Defer(key, fn, note)
-	local C = ns.Combat
-	if C and C.Run then return C.Run(key, fn, note and L[note]) end
-	fn()
-	return true
-end
+local Defer = ns.Util.Defer
 O.Defer = Defer
 
 --------------------------------------------------------------------------------
@@ -204,9 +201,20 @@ function O.DataReady(id)
 	if have and Call(have, id) then return true end
 	return false
 end
+-- (1.2.25) never while CombatQueue.lua's gate holds (combat, secret auras, the settle after combat), and at
+-- most once a quest every REQUEST_GAP seconds (it was asked every tick while a tracker row's title read empty)
+O.REQUEST_GAP = 10
 function O.RequestData(id)
 	local CQ = C_QuestLog
-	if id and CQ and CQ.RequestLoadQuestByID then Call(CQ.RequestLoadQuestByID, id) end
+	if not (id and CQ and CQ.RequestLoadQuestByID) then return false end
+	if InCombat() then return false end
+	S.requested = S.requested or {}
+	local now = Now()
+	local last = S.requested[id]
+	if last and now - last < O.REQUEST_GAP then return false end
+	S.requested[id] = now
+	Call(CQ.RequestLoadQuestByID, id)
+	return true
 end
 -- what places a quest (a change: placed again)
 local function KeyOfPlace(e) return tostring(e.header) .. "|" .. tostring(e.tag) end
@@ -246,7 +254,7 @@ end
 
 local function MapInfo(id) return C_Map and C_Map.GetMapInfo and Call(C_Map.GetMapInfo, id) end
 
-local function Trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+local Trim = ns.Util.Trim
 -- a zone name, compared without case and a leading "The "
 local function ZCanon(s)
 	if type(s) ~= "string" then return nil end
@@ -1275,6 +1283,8 @@ function O.OnEvent(event, a1, a2, ...)
 		if event == "QUEST_LOG_UPDATE" then O.ProgressDue(now) end
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if S.restorePending then O.Restore() end
+		-- (1.2.26) turned off: this was only for the restore; once it's done, not heard again
+		if not mod.enabled and not S.restorePending and O.events then O.events:UnregisterEvent("PLAYER_REGEN_ENABLED") end
 	end
 	S.layoutDirty, S.readyDirty = true, true
 end
@@ -1297,7 +1307,13 @@ end
 
 -- turned off: the quests Valhalla untracked are tracked again (the game's own tracking from then on)
 function O.Restore()
-	if InCombat() then S.restorePending = true return false end
+	if InCombat() then
+		S.restorePending = true
+		-- (1.2.24) also through the queue: secret auras end with no PLAYER_REGEN_ENABLED
+		local C = ns.Combat
+		if C and C.Run then C.Run("objectives:restore", function() if S.restorePending then O.Restore() end end) end
+		return false
+	end
 	S.restorePending = nil
 	local c = Char()
 	local log = O.ReadLog()
@@ -1395,7 +1411,10 @@ function O.LayoutPins()
 	local T = rawget(_G, "ObjectiveTrackerFrame")
 	local blocks = Visible(T) and O.Blocks() or {}
 	local n = 0
-	local blank = {}
+	-- (1.2.26: five times a second: the last pass's table reused, no key strings; strata and level set on a change)
+	local blank = S.blankSpare or {}
+	S.blankSpare = nil
+	for k in pairs(blank) do blank[k] = nil end
 	for _, it in ipairs(blocks) do
 		local b = it.b
 		-- (1.2.2) a row whose title reads empty (its quest's data not in when the tracker drew it): no pin;
@@ -1404,26 +1423,27 @@ function O.LayoutPins()
 		local text = type(ht) == "table" and ht.GetText and ht:GetText()
 		if type(ht) == "table" and (type(text) ~= "string" or text == "") then
 			blank[it.q] = true
-			if not S.blank[it.q] then O.RequestData(it.q) end
+			O.RequestData(it.q)   -- (1.2.25: gated, at most once a quest every REQUEST_GAP s: asked again if skipped)
 		else
 			n = n + 1
 			local p = UI.pins[n] or MakePin(UIParent)
 			UI.pins[n] = p
 			local poi = Visible(rawget(b, "poiButton")) and b.poiButton or nil
-			local key = tostring(b) .. ":" .. it.q .. ":" .. tostring(poi)
-			if p.key ~= key then
-				p.key = key
+			if p.key ~= b or p.keyQ ~= it.q or p.keyPoi ~= poi then
+				p.key, p.keyQ, p.keyPoi = b, it.q, poi
 				p:ClearAllPoints()
 				p:SetPoint("RIGHT", poi or rawget(b, "HeaderText") or b, "LEFT", -2, 0)
 			end
-			p:SetFrameStrata(b:GetFrameStrata() or "LOW")
-			p:SetFrameLevel((b:GetFrameLevel() or 1) + 5)
+			local strata, level = b:GetFrameStrata() or "LOW", (b:GetFrameLevel() or 1) + 5
+			if p.keyStrata ~= strata then p.keyStrata = strata p:SetFrameStrata(strata) end
+			if p.keyLevel ~= level then p.keyLevel = level p:SetFrameLevel(level) end
 			PaintPin(p, it.q)
 			p:Show()
 		end
 	end
 	for i = n + 1, #UI.pins do UI.pins[i]:Hide() UI.pins[i].key = nil end
 	for id in pairs(S.redraw) do if not blank[id] then S.redraw[id] = nil end end
+	S.blankSpare = S.blank ~= blank and S.blank or nil
 	S.blank = blank
 	return n
 end
@@ -1758,6 +1778,7 @@ function mod:OnEnable()
 	if not events then
 		events = CreateFrame("Frame")
 		events:SetScript("OnEvent", function(_, event, ...) O.OnEvent(event, ...) end)
+		O.events = events
 	end
 	for _, e in ipairs(O.EVENTS) do pcall(events.RegisterEvent, events, e) end
 	if O.SyncOn() then for _, e in ipairs(O.SYNC_EVENTS) do pcall(events.RegisterEvent, events, e) end end
@@ -1847,7 +1868,7 @@ function O.Why(id)
 		out[#out + 1] = ("  watch: %s%s"):format(watched[id] and "tracked" or "not tracked",
 			wt ~= nil and (" (watch type " .. tostring(wt) .. (wt == 0 and ", automatic" or wt == 1 and ", manual" or "") .. ")") or "")
 		local hold = {}
-		if InCombat() then hold[#hold + 1] = "combat" end
+		for _, w in ipairs(GateWhy()) do hold[#hold + 1] = w end
 		if OnTaxi() then hold[#hold + 1] = "flight" end
 		if S.loading then hold[#hold + 1] = "loading screen" end
 		out[#out + 1] = ("  watch changes: %s; queued %d%s"):format(#hold > 0 and ("on hold (" .. table.concat(hold, ", ") .. ")") or "not on hold",
@@ -1927,7 +1948,7 @@ end
 
 local function BlockedWhy()
 	local t = {}
-	if InCombat() then t[#t + 1] = "combat" end
+	for _, w in ipairs(GateWhy()) do t[#t + 1] = w end
 	if OnTaxi() then t[#t + 1] = "taxi" end
 	if S.loading then t[#t + 1] = "loading" end
 	if S.fullDue then t[#t + 1] = "zone plan due" end
@@ -2003,7 +2024,7 @@ end
 
 -- /valhalla objectives [on|off|why [questID]|sync on|off|show]
 function mod:Slash(arg)
-	arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+	arg = Trim(arg):lower()
 	local word, rest = arg:match("^(%S+)%s*(.-)$")
 	if word == "sync" then
 		if rest == "on" then

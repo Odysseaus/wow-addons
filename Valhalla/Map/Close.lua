@@ -88,10 +88,7 @@ if ns.MapWorld and ns.MapWorld.minimap then
 	end
 end
 
-local function Smooth(x, r)
-	local t = math.max(0, math.min(1, (x - r[1]) / (r[2] - r[1])))
-	return t * t * (3 - 2 * t)
-end
+local Smooth = ns.Util.Smooth
 
 -- the game maps (continent 0 / 1 ...) of the continent the view's centre is on: looked up again only once
 -- the centre has moved a little (the game's lookup makes tables, and this runs every frame of a pan or zoom)
@@ -343,8 +340,9 @@ local function UpdateGapMinimap(conts, u, v, hu, hv, alpha)
 					if fid and n < GAP_MAX and set[tx * 64 + ty] then
 						local u0, v0 = S.FromYards(cont, (32 - ty) * TILE, (32 - tx) * TILE)
 						local u1, v1 = S.FromYards(cont, (31 - ty) * TILE, (31 - tx) * TILE)
-						local cu, cv = (u0 + u1) / 2, (v0 + v1) / 2
-						do
+						-- (1.2.26: a corner off the yard box: the tile skipped, as UpdateMinimap does; 1.2.25 errored)
+						if u0 and u1 then
+							local cu, cv = (u0 + u1) / 2, (v0 + v1) / 2
 							n = n + 1
 							local key = TileKey(cont, tx, ty)
 							wanted[key] = true

@@ -42,22 +42,11 @@ QC.GREY = { 0.5, 0.5, 0.5 }
 QC.IN_LOG = { 0.25, 1, 0.25 }
 QC.URL = "https://www.wowhead.com/forever/quest=%d"
 
-local function Call(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b, c = pcall(fn, ...)
-	if ok then return a, b, c end
-	return nil
-end
+local Call = ns.Util.Call
 
 -- (1.2.23) the game's tracker and quest log changed only out of combat (CombatQueue.lua): in combat it waits
-local function InCombat() return InCombatLockdown and InCombatLockdown() and true or false end
-local function Defer(key, fn, note)
-	local C = ns.Combat
-	if C and C.Run then return C.Run(key, fn, note and L[note]) end
-	if InCombat() then return false end
-	fn()
-	return true
-end
+-- (1.2.24: CombatQueue.lua's gate: combat, the player in combat, secret auras, the settle after combat)
+local InCombat, Defer = ns.Util.InCombat, ns.Util.Defer
 
 --------------------------------------------------------------------------------
 -- The data: ns.QuestChainData = { meta = {...}, chains = { chain, ... } }
@@ -405,13 +394,22 @@ function QC.OnUpdate()
 		if not ok then QC.lastError = tostring(err) end
 	end
 	-- (1.2.11: the zones in order, the Ready section; an error said once, never breaking the game's log)
-	if QC.Arrange then
-		local ok, err = pcall(QC.Arrange)
-		if not ok then
-			QC.lastError = tostring(err)
-			if not QC.errorSaid then QC.errorSaid = true ns:Print("%s", L["Quest log order: an error (%s). The game's own order is kept."]:format(QC.lastError)) end
-		end
+	QC.ArrangeSoon()
+end
+
+-- (1.2.26) the arrange writes the game's quest log rows' layoutIndex / topPadding and lays the log out again:
+-- only when CombatQueue.lua's gate is clear (combat, secret auras, the settle after combat); else queued under
+-- one key, run once clear (the log as it is then)
+function QC.ArrangeSafe()
+	if not QC.Arrange then return end
+	local ok, err = pcall(QC.Arrange)
+	if not ok then
+		QC.lastError = tostring(err)
+		if not QC.errorSaid then QC.errorSaid = true ns:Print("%s", L["Quest log order: an error (%s). The game's own order is kept."]:format(QC.lastError)) end
 	end
+end
+function QC.ArrangeSoon()
+	return Defer("questlog:arrange", QC.ArrangeSafe)
 end
 
 function QC.Hook()
@@ -535,7 +533,7 @@ local function ReadyHeader(parent)
 	end
 	local function Toggle()
 		if mod.db then mod.db.readyLogCollapsed = not mod.db.readyLogCollapsed end
-		QC.Arrange()
+		QC.ArrangeSoon()
 	end
 	if native and f.SetClickHandler then f:SetClickHandler(function(_, button) if button == "LeftButton" then Toggle() end end)
 	else f:SetScript("OnClick", Toggle) end
@@ -574,8 +572,11 @@ function QC.RowClick(row, button)
 			end
 		end, "Tracking changed in combat: it applies when combat ends.")
 	elseif button == "LeftButton" or button == nil then
-		local show = rawget(_G, "QuestMapFrame_ShowQuestDetails")
-		if type(show) == "function" then show(q) end
+		-- (1.2.24) the game's quest details (they move the tracker's selection) wait on the gate too
+		Defer("details", function()
+			local show = rawget(_G, "QuestMapFrame_ShowQuestDetails")
+			if type(show) == "function" then show(q) end
+		end, "Quest details open when combat ends.")
 	end
 end
 
@@ -999,7 +1000,7 @@ function QC.Coverage()
 end
 
 function mod:Slash(arg)
-	arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+	arg = ns.Util.Trim(arg):lower()
 	if arg == "on" then QC.SetView(true) elseif arg == "off" then QC.SetView(false) end
 	if arg == "coverage" or arg == "on" or arg == "off" or arg == "" then
 		for _, line in ipairs((QC.Coverage())) do ns:Print("%s", line) end

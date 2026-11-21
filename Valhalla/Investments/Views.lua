@@ -115,6 +115,9 @@ function V.LoadItem(id, done)
 	return true
 end
 
+-- (1.2.0) the AH lines already under every item tooltip (the tooltip processor's)
+function V.AHLinesInTooltip() return I.Tooltip and I.Tooltip.hooked == "processor" and I.Tooltip.On() and true or false end
+
 -- the game's tooltip for an item, and our lines under it
 function V.ItemTooltip(owner, id, extra)
 	if not (GameTooltip and id) then return end
@@ -123,7 +126,7 @@ function V.ItemTooltip(owner, id, extra)
 	if link and GameTooltip.SetHyperlink then GameTooltip:SetHyperlink(link)
 	elseif GameTooltip.SetItemByID then GameTooltip:SetItemByID(id) end
 	-- (1.2.0) the AH lines already under every item tooltip: AH Market's own lines not added again
-	if extra and I.Market and extra == I.Market.Lines and I.Tooltip and I.Tooltip.hooked == "processor" and I.Tooltip.On() then extra = nil end
+	if extra and I.Market and extra == I.Market.Lines and V.AHLinesInTooltip() then extra = nil end
 	if extra then
 		for _, line in ipairs(extra(id) or {}) do GameTooltip:AddLine(line, 0.7, 0.7, 0.7, true) end
 	end
@@ -238,36 +241,42 @@ function V.ItemMenuEntries(id)
 	return out
 end
 V.MENU_MAX = 4
+-- (1.2.26) a small menu under an item (the item menu, the list chooser: one builder): a heading, n item
+-- buttons; a click anywhere else closes it, so does its item going away (the window closed, the row reused)
+-- (1.2.25's list chooser had neither: it stayed up after AH Market closed)
+function V.PopupMenu(name, n)
+	local m = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
+	m:SetWidth(240)
+	m:SetFrameStrata("DIALOG")
+	T.SkinFlat(m, 0.98)
+	m:EnableMouse(true)
+	m.head = Text(m, 11, GREY)
+	m.head:SetPoint("TOPLEFT", 8, -6)
+	m.head:SetPoint("RIGHT", m, "RIGHT", -8, 0)
+	m.head:SetJustifyH("LEFT")
+	m.items = {}
+	for i = 1, n do
+		local it = V.Button(m, "", 232, 20, nil, "item")
+		it:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 22)
+		it:Hide()
+		m.items[i] = it
+	end
+	m:SetScript("OnEvent", function(self)
+		if not (self.IsMouseOver and self:IsMouseOver()) then self:Hide() end
+	end)
+	m:SetScript("OnShow", function(self) pcall(self.RegisterEvent, self, "GLOBAL_MOUSE_DOWN") end)
+	m:SetScript("OnHide", function(self) if self.UnregisterEvent then self:UnregisterEvent("GLOBAL_MOUSE_DOWN") end end)
+	m:SetScript("OnUpdate", function(self)
+		local a = self.anchor
+		if not (a and a:IsVisible()) or (self.id and a.id ~= nil and a.id ~= self.id) then self:Hide() end
+	end)
+	m:Hide()
+	return m
+end
 function V.ItemMenu(anchor, id)
 	local m = V.itemMenu
 	if not m then
-		m = CreateFrame("Frame", "ValhallaItemMenu", UIParent, "BackdropTemplate")
-		m:SetWidth(240)
-		m:SetFrameStrata("DIALOG")
-		T.SkinFlat(m, 0.98)
-		m:EnableMouse(true)
-		m.head = Text(m, 11, GREY)
-		m.head:SetPoint("TOPLEFT", 8, -6)
-		m.head:SetPoint("RIGHT", m, "RIGHT", -8, 0)
-		m.head:SetJustifyH("LEFT")
-		m.items = {}
-		for i = 1, V.MENU_MAX do
-			local it = V.Button(m, "", 232, 20, nil, "item")
-			it:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 22)
-			it:Hide()
-			m.items[i] = it
-		end
-		-- a click anywhere else closes it; so does its item going away (the window closed, the row reused)
-		m:SetScript("OnEvent", function(self)
-			if not (self.IsMouseOver and self:IsMouseOver()) then self:Hide() end
-		end)
-		m:SetScript("OnShow", function(self) pcall(self.RegisterEvent, self, "GLOBAL_MOUSE_DOWN") end)
-		m:SetScript("OnHide", function(self) if self.UnregisterEvent then self:UnregisterEvent("GLOBAL_MOUSE_DOWN") end end)
-		m:SetScript("OnUpdate", function(self)
-			local a = self.anchor
-			if not (a and a:IsVisible()) or (self.id and a.id ~= nil and a.id ~= self.id) then self:Hide() end
-		end)
-		m:Hide()
+		m = V.PopupMenu("ValhallaItemMenu", V.MENU_MAX)
 		V.itemMenu = m
 	end
 	if m:IsShown() and m.anchor == anchor and m.id == id then m:Hide() return m end
@@ -385,7 +394,8 @@ function V.Grid(rows, x0)
 end
 
 -- choose one: { {value, label}, ... } (its boxes in measured columns: V.Grid)
-function V.Radio(parent, label, options, get, set)
+-- (1.2.28) x0: the first box's x (150 by default, the rows' columns; 0: no title before the boxes)
+function V.Radio(parent, label, options, get, set, x0)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetSize(420, 18)
 	local title = Text(f, 12)
@@ -398,7 +408,7 @@ function V.Radio(parent, label, options, get, set)
 		box.value = o[1]
 		f.boxes[#f.boxes + 1] = box
 	end
-	V.Grid({ { frame = f, boxes = f.boxes } }, 150)
+	V.Grid({ { frame = f, boxes = f.boxes } }, x0 or 150)
 	function f.Update() for _, box in ipairs(f.boxes) do box.Update() end end
 	return f
 end
@@ -467,7 +477,7 @@ local function Header(parent, text)
 	return h
 end
 
-local function Trim(t) return (tostring(t or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
+local Trim = ns.Util.Trim
 
 local function Wheel(f, scroll)
 	f:EnableMouseWheel(true)
@@ -575,23 +585,7 @@ end
 function V.ListChooser()
 	local m = V.chooser
 	if m then return m end
-	m = CreateFrame("Frame", "ValhallaListChooser", UIParent, "BackdropTemplate")
-	m:SetWidth(240)
-	m:SetFrameStrata("DIALOG")
-	T.SkinFlat(m, 0.98)
-	m:EnableMouse(true)
-	m.head = Text(m, 11, GREY)
-	m.head:SetPoint("TOPLEFT", 8, -6)
-	m.head:SetPoint("RIGHT", m, "RIGHT", -8, 0)
-	m.head:SetJustifyH("LEFT")
-	m.items = {}
-	for i = 1, V.PICK_MAX + 1 do
-		local it = V.Button(m, "", 232, 20, nil, "item")
-		it:SetPoint("TOPLEFT", 4, -22 - (i - 1) * 22)
-		it:Hide()
-		m.items[i] = it
-	end
-	m:Hide()
+	m = V.PopupMenu("ValhallaListChooser", V.PICK_MAX + 1)
 	V.chooser = m
 	return m
 end
@@ -684,6 +678,147 @@ local function Icon(parent, x)
 	return t
 end
 
+-- (1.2.26) an item search box's dropdown, shared by the Shopping List and the Watchlist (two copies before; the
+-- Watchlist's had no 1.2.8 steady rows). (1.2.8) the search runs 0.3 s after the last key; for the same text the
+-- rows stay as they are (names that come in later only fill rows below, at most once a second); the dropdown
+-- closes (the names it asked for stop) on Escape (the text kept), when the box loses focus, a click outside it,
+-- or `owner` hiding. 1.2.7 searched on every key, rebuilt its index on every name that came, and asked for every
+-- missing name at once: slow, and the rows kept moving.
+--   Row(id) -> the row's button label, its OnClick. Sets owner.results (the dropdown), .frozen, .found,
+--   .searchOpen, .searches, .closer, .Results, .CloseSearch, .OpenSearch, .Typed, .NamesSoon; returns
+--   { Results, Compute, Open, Close, frozen }
+-- (1.2.27) fn() once, `delay` seconds (a number, or a function giving it) after the last call of what this returns;
+-- at once without C_Timer. The Shopping List's 0.3 s typing wait, Craft's filter and the Invest Amount use it.
+function V.Debounce(delay, fn)
+	local gen = 0
+	return function()
+		gen = gen + 1
+		local g = gen
+		local function Go() if g == gen then fn() end end
+		local d = type(delay) == "function" and delay() or delay
+		if C_Timer and C_Timer.After then C_Timer.After(d, Go) else Go() end
+	end
+end
+
+V.searchBoxes = setmetatable({}, { __mode = "k" })   -- owner -> its NamesSoon (I.OnSearchName calls each)
+function V.ItemSearch(owner, search, level, Row)
+	local res = CreateFrame("Frame", nil, owner, "BackdropTemplate")
+	res:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -2)
+	res:SetSize(380, 8 + V.RESULTS * 22)
+	res:SetFrameLevel((owner:GetFrameLevel() or 1) + level)
+	T.Skin(res, 0.98)
+	res:EnableMouse(true)
+	res.rows = {}
+	for i = 1, V.RESULTS do
+		local r = CreateFrame("Frame", nil, res)
+		r:SetHeight(20)
+		r:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 22)
+		r:SetPoint("RIGHT", res, "RIGHT", -4, 0)
+		r.icon = Icon(r, 2)
+		r.name = Text(r, 12)
+		r.name:SetPoint("LEFT", 24, 0)
+		r.name:SetWidth(260)
+		r.name:SetJustifyH("LEFT")
+		r.act = V.Button(r, L["Add"], 70, 18)
+		r.act:SetPoint("RIGHT", 0, 0)
+		r:Hide()
+		res.rows[i] = r
+	end
+	res:Hide()
+	owner.results = res
+	local frozen = { text = nil, ids = {} }
+	owner.frozen = frozen
+	local function Compute(text)
+		if text == "" then frozen.text, frozen.ids = nil, {} return {} end
+		local fresh = I.SearchItems(text, V.RESULTS)
+		if frozen.text ~= text then frozen.text, frozen.ids = text, fresh return fresh end
+		local ids, have = {}, {}
+		for _, id in ipairs(frozen.ids) do ids[#ids + 1] = id have[id] = true end
+		for _, id in ipairs(fresh) do
+			if #ids >= V.RESULTS then break end
+			if not have[id] then ids[#ids + 1] = id have[id] = true end
+		end
+		frozen.ids = ids
+		return ids
+	end
+	local closer
+	local function Close()
+		owner.searchOpen = false
+		res:Hide()
+		if closer then closer:UnregisterAllEvents() end
+		if I.NameLoader then I.NameLoader.Stop("search") end
+	end
+	local function Open()
+		if not owner.searchOpen then
+			owner.searchOpen = true
+			if closer then pcall(closer.RegisterEvent, closer, "GLOBAL_MOUSE_DOWN") end
+		end
+		if I.NameLoader then I.NameLoader.Start("search") end
+	end
+	local function Results()
+		local text = Trim(search:GetText())
+		if text == "" then frozen.text, frozen.ids = nil, {} owner.found = {} Close() return owner.found end
+		local ids = Compute(text)
+		owner.found = ids
+		owner.searches = (owner.searches or 0) + 1
+		for i, r in ipairs(res.rows) do
+			local id = ids[i]
+			if id then
+				r.id = id
+				r.icon:SetTexture(I.ItemIcon(id))
+				r.name:SetText(I.ItemName(id))
+				local label, click = Row(id)
+				r.act.text:SetText(label)
+				r.act:SetScript("OnClick", click)
+				r:Show()
+			else
+				r.id = nil
+				r:Hide()
+			end
+		end
+		res:SetHeight(8 + math.max(1, #ids) * 22)
+		res:SetShown(owner.searchOpen and #ids > 0 or false)
+		return ids
+	end
+	-- typing: one search 0.3 s after the last key
+	local Typed = V.Debounce(function() return V.SEARCH_DELAY end, function()
+		if Trim(search:GetText()) ~= "" then Open() end
+		Results()
+	end)
+	-- names coming in (asked for by the open box): the rows filled in at most once a second
+	local namesSoon = false
+	local function NamesSoon()
+		if namesSoon or not owner.searchOpen then return end
+		namesSoon = true
+		local function Again() namesSoon = false if owner.searchOpen then Results() end end
+		if C_Timer and C_Timer.After then C_Timer.After(V.NAMES_EVERY, Again) else Again() end
+	end
+	V.searchBoxes[owner] = function() owner.NamesSoon() end
+	I.OnSearchName = function() for _, fn in pairs(V.searchBoxes) do fn() end end
+	closer = CreateFrame("Frame")
+	closer:SetScript("OnEvent", function()
+		if not owner.searchOpen then return end
+		local over = (search.IsMouseOver and search:IsMouseOver()) or (res:IsShown() and res.IsMouseOver and res:IsMouseOver())
+		if not over then search:ClearFocus() Close() end
+	end)
+	owner.closer = closer
+	owner.Results, owner.CloseSearch, owner.OpenSearch, owner.Typed, owner.NamesSoon = Results, Close, Open, Typed, NamesSoon
+	search:SetScript("OnTextChanged", function() owner.Typed() end)
+	search:HookScript("OnEditFocusGained", function() if Trim(search:GetText()) ~= "" then Open() Results() end end)
+	-- (focus lost: closed a moment later, unless the pointer is on the dropdown: its Add buttons still work)
+	search:HookScript("OnEditFocusLost", function()   -- (hooked: the look's own focus handlers kept)
+		local function Check()
+			if search.HasFocus and search:HasFocus() then return end
+			if res:IsShown() and res.IsMouseOver and res:IsMouseOver() then return end
+			Close()
+		end
+		if C_Timer and C_Timer.After then C_Timer.After(0.2, Check) else Check() end
+	end)
+	search:SetScript("OnEscapePressed", function(self) Close() self:ClearFocus() end)   -- (1.2.8: the text kept)
+	owner:HookScript("OnHide", Close)
+	return { Results = Results, Compute = Compute, Open = Open, Close = Close, frozen = frozen }
+end
+
 local function BuildList(page)
 	Header(page, L["Shopping List"])
 	-- the builder
@@ -712,133 +847,15 @@ local function BuildList(page)
 	sHint:SetPoint("LEFT", search, "RIGHT", 8, 0)
 	sHint:SetText(L["Type a name (or shift-click or drop an item here)"])
 	-- what the search found: Add, or Remove if it's in the list already
-	local res = CreateFrame("Frame", nil, page, "BackdropTemplate")
-	res:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -2)
-	res:SetSize(380, 8 + V.RESULTS * 22)
-	res:SetFrameLevel((page:GetFrameLevel() or 1) + 20)
-	T.Skin(res, 0.98)
-	res:EnableMouse(true)
-	res.rows = {}
-	for i = 1, V.RESULTS do
-		local r = CreateFrame("Frame", nil, res)
-		r:SetHeight(20)
-		r:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 22)
-		r:SetPoint("RIGHT", res, "RIGHT", -4, 0)
-		r.icon = Icon(r, 2)
-		r.name = Text(r, 12)
-		r.name:SetPoint("LEFT", 24, 0)
-		r.name:SetWidth(260)
-		r.name:SetJustifyH("LEFT")
-		r.act = V.Button(r, L["Add"], 70, 18)
-		r.act:SetPoint("RIGHT", 0, 0)
-		r:Hide()
-		res.rows[i] = r
-	end
-	res:Hide()
-	page.results = res
-	-- (1.2.8) the search box: the search runs 0.3 s after the last key; for the same text the rows stay as they
-	-- are (names that come in later only fill rows below, at most once a second); the dropdown closes (the
-	-- names it asked for stop) on Escape (the text kept), when the box loses focus, a click outside it, or the
-	-- page hiding. 1.2.7 searched on every key, rebuilt its index on every name that came, and asked for every
-	-- missing name at once: slow, and the rows kept moving.
-	local frozen = { text = nil, ids = {} }
-	local function Compute(text)
-		if text == "" then frozen.text, frozen.ids = nil, {} return {} end
-		local fresh = I.SearchItems(text, V.RESULTS)
-		if frozen.text ~= text then frozen.text, frozen.ids = text, fresh return fresh end
-		local ids, have = {}, {}
-		for _, id in ipairs(frozen.ids) do ids[#ids + 1] = id have[id] = true end
-		for _, id in ipairs(fresh) do
-			if #ids >= V.RESULTS then break end
-			if not have[id] then ids[#ids + 1] = id have[id] = true end
+	local box
+	box = V.ItemSearch(page, search, 20, function(id)
+		local label = I.LineOf(I.Draft(), id) ~= nil and L["Remove"] or L["Add"]
+		return label, function()
+			if I.LineOf(I.Draft(), id) then I.DraftRemove(id) else I.DraftAdd(id, 1) end   -- (1.2.7: added as 1)
+			box.Results()
 		end
-		frozen.ids = ids
-		return ids
-	end
-	page.frozen = frozen
-	local closer
-	local function Close()
-		page.searchOpen = false
-		res:Hide()
-		if closer then closer:UnregisterAllEvents() end
-		if I.NameLoader then I.NameLoader.Stop("search") end
-	end
-	local function Open()
-		if not page.searchOpen then
-			page.searchOpen = true
-			if closer then pcall(closer.RegisterEvent, closer, "GLOBAL_MOUSE_DOWN") end
-		end
-		if I.NameLoader then I.NameLoader.Start("search") end
-	end
-	page.CloseSearch, page.OpenSearch = Close, Open
-	local function Results()
-		local text = Trim(search:GetText())
-		if text == "" then frozen.text, frozen.ids = nil, {} page.found = {} Close() return end
-		local ids = Compute(text)
-		page.found = ids
-		page.searches = (page.searches or 0) + 1
-		for i, r in ipairs(res.rows) do
-			local id = ids[i]
-			if id then
-				r.id = id
-				r.icon:SetTexture(I.ItemIcon(id))
-				r.name:SetText(I.ItemName(id))
-				local inDraft = I.LineOf(I.Draft(), id) ~= nil
-				r.act.text:SetText(inDraft and L["Remove"] or L["Add"])
-				r.act:SetScript("OnClick", function()
-					if I.LineOf(I.Draft(), id) then I.DraftRemove(id) else I.DraftAdd(id, 1) end   -- (1.2.7: added as 1)
-					Results()
-				end)
-				r:Show()
-			else
-				r.id = nil
-				r:Hide()
-			end
-		end
-		res:SetHeight(8 + math.max(1, #ids) * 22)
-		res:SetShown(page.searchOpen and #ids > 0 or false)
-	end
-	page.Results = Results
-	-- typing: one search 0.3 s after the last key
-	local typeGen = 0
-	function page.Typed()
-		typeGen = typeGen + 1
-		local g = typeGen
-		local function Go()
-			if g ~= typeGen then return end
-			if Trim(search:GetText()) ~= "" then Open() end
-			Results()
-		end
-		if C_Timer and C_Timer.After then C_Timer.After(V.SEARCH_DELAY, Go) else Go() end
-	end
-	-- names coming in (asked for by the open box): the rows filled in at most once a second
-	local namesSoon = false
-	function page.NamesSoon()
-		if namesSoon or not page.searchOpen then return end
-		namesSoon = true
-		local function Again() namesSoon = false if page.searchOpen then Results() end end
-		if C_Timer and C_Timer.After then C_Timer.After(V.NAMES_EVERY, Again) else Again() end
-	end
-	I.OnSearchName = function() page.NamesSoon() end
-	closer = CreateFrame("Frame")
-	closer:SetScript("OnEvent", function()
-		if not page.searchOpen then return end
-		local over = (search.IsMouseOver and search:IsMouseOver()) or (res:IsShown() and res.IsMouseOver and res:IsMouseOver())
-		if not over then search:ClearFocus() Close() end
 	end)
-	page.closer = closer
-	search:SetScript("OnTextChanged", function() page.Typed() end)
-	search:HookScript("OnEditFocusGained", function() if Trim(search:GetText()) ~= "" then Open() Results() end end)
-	-- (focus lost: closed a moment later, unless the pointer is on the dropdown: its Add buttons still work)
-	search:HookScript("OnEditFocusLost", function()   -- (hooked: the look's own focus handlers kept)
-		local function Check()
-			if search:HasFocus() then return end
-			if res:IsShown() and res.IsMouseOver and res:IsMouseOver() then return end
-			Close()
-		end
-		if C_Timer and C_Timer.After then C_Timer.After(0.2, Check) else Check() end
-	end)
-	page:HookScript("OnHide", Close)
+	local frozen, Compute, Results = box.frozen, box.Compute, box.Results
 	local function AddTop()
 		-- (Enter before the search ran: it runs now)
 		local text = Trim(search:GetText())
@@ -854,7 +871,6 @@ local function BuildList(page)
 	end
 	page.AddTop = AddTop
 	search:SetScript("OnEnterPressed", AddTop)
-	search:SetScript("OnEscapePressed", function(self) Close() self:ClearFocus() end)   -- (1.2.8: the text kept)
 	-- shift-click while the search box (or a quantity box) has the cursor: that item, into the list (no split box)
 	local function TakeItem(_, link)
 		if type(link) ~= "string" or not link:find("|Hitem:", 1, true) then return false end

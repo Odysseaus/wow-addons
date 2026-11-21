@@ -43,10 +43,8 @@ S.STOP_CONFIRM = 3                                -- (1.2.20) Stop: a second pre
 S.TRIM_CHUNK = 500                                -- (1.2.20) history lines trimmed between clock checks
 
 local Call = I.Call
-local Value = ns.Safe and ns.Safe.Value or function(v) return v end
-local function Now() return time and time() or 0 end
-local function T() return (GetTimePreciseSec and GetTimePreciseSec()) or (debugprofilestop and debugprofilestop() / 1000) or Now() end
-local function MS() return (debugprofilestop and debugprofilestop()) or T() * 1000 end
+local Value = ns.Util.Value
+local Now, T, MS = ns.Util.Time, ns.Util.T, ns.Util.MS
 local ABORT = {}
 -- (1.2.20) a whole number as text, any size (the game's %d stops at 2^31)
 local function N(x) return ("%.0f"):format(math.floor(tonumber(x) or 0)) end
@@ -60,6 +58,7 @@ S.N = N
 
 function S.Houses()
 	local r = I.realm
+	if not r then return {} end   -- (1.2.29: the realm not known yet: nothing saved, nothing made)
 	r.ah = type(r.ah) == "table" and r.ah or {}
 	return r.ah
 end
@@ -138,6 +137,51 @@ local function CurLine(min, units, auctions, tmin)
 	return N(min) .. "," .. N(units) .. "," .. (auctions == "q" and "q" or N(auctions)) .. "," .. N(tmin)
 end
 S.CurLine = CurLine
+
+-- (1.2.29) another saved market of the same house into m (a realm 1.2.28 saved under a blank name): its scans, and
+-- every item's points, in time order on m's base (a point in an hour another has: the later-saved one, as a scan
+-- writes them; a quick point never over a full one), and the newer "now" line. Returns the scans and items brought in
+local POINT = "(%-?%d+):(%d+):(%d+):([%dq]+)"
+function S.MergeMarket(m, o)
+	m.scans, m.cur, m.hist = m.scans or {}, m.cur or {}, m.hist or {}
+	local shift = (tonumber(o.base) or m.base) - m.base
+	local scans, items = {}, 0
+	for k, sc in ipairs(m.scans) do scans[#scans + 1] = { sc = sc, t = sc.t, k = k } end
+	for k, sc in ipairs(o.scans or {}) do
+		local c = {}
+		for f, v in pairs(sc) do c[f] = v end
+		c.t = (tonumber(sc.t) or 0) + shift
+		scans[#scans + 1] = { sc = c, t = c.t, k = #m.scans + k }
+	end
+	table.sort(scans, function(a, b) if a.t ~= b.t then return a.t < b.t end return a.k < b.k end)
+	local brought = #scans - #m.scans
+	m.scans = {}
+	for i, s in ipairs(scans) do m.scans[i] = s.sc end
+	for id, line in pairs(o.hist or {}) do
+		local pts = {}
+		local function Read(s, sh)
+			for t, min, units, auctions in tostring(s or ""):gmatch(POINT) do
+				pts[#pts + 1] = { t = tonumber(t) + sh, min = min, units = units, auctions = auctions == "q" and "q" or auctions, k = #pts }
+			end
+		end
+		Read(m.hist[id], 0)
+		Read(line, shift)
+		table.sort(pts, function(a, b) if a.t ~= b.t then return a.t < b.t end return a.k < b.k end)
+		local s
+		for _, p in ipairs(pts) do s = WithPoint(s, p.t, p.min, p.units, p.auctions) end
+		m.hist[id] = s
+		items = items + 1
+	end
+	for id, line in pairs(o.cur or {}) do
+		local min, units, auctions, t = tostring(line):match("^(%d+),(%d+),([%dq]+),(%-?%d+)$")
+		if min then
+			t = tonumber(t) + shift
+			local old = m.cur[id] and tonumber(m.cur[id]:match(",(%-?%d+)$"))
+			if not old or t >= old then m.cur[id] = CurLine(min, units, auctions, t) end
+		end
+	end
+	return brought, items
+end
 
 -- the size of a house's saved market (bytes, about what SavedVariables writes)
 function S.Size(m)

@@ -29,7 +29,7 @@ local function UnitWorld(unit)
 	local pos = Safe.Call(C_Map.GetPlayerMapPosition, best, unit)
 	if not pos then return end
 	local x, y = Safe.XY(pos)
-	if Safe.IsSecret(x) or Safe.IsSecret(y) or not x or not y or (x == 0 and y == 0) then return end
+	if not x or not y or (x == 0 and y == 0) then return end
 	local u, v = mod.ToWorld(best, x, y)
 	return u, v, best
 end
@@ -47,7 +47,7 @@ function mod:FindMe(keepZoom)
 		local pos = host and Safe.Call(C_Map.GetPlayerMapPosition, host, "player")
 		if pos then
 			local x, y = Safe.XY(pos)
-			if not Safe.IsSecret(x) and x and y and (x ~= 0 or y ~= 0) then u, v = mod.ToWorld(host, x, y) best = host end
+			if x and y and (x ~= 0 or y ~= 0) then u, v = mod.ToWorld(host, x, y) best = host end
 		end
 	end
 	if not u then
@@ -156,8 +156,20 @@ local function ClearTomTom()
 	tomtomPoint = nil
 end
 
+-- (1.2.24) the game's waypoint (set or cleared) changes its super-track, which lays the quest tracker out from
+-- Valhalla's code: it waits on CombatQueue.lua's gate (combat, secret auras, the settle after combat),
+-- one queued change under "waypoint", the last kept (a clear after a set: cleared)
+local WAYPOINT_NOTE = "The waypoint is set when combat ends."
+local function Gate(fn)
+	local C = ns.Combat
+	if C and C.Run then return C.Run("waypoint", fn, L[WAYPOINT_NOTE]) end
+	if InCombatLockdown() then return false end
+	fn()
+	return true
+end
+
 local function ClearPin()
-	if C_Map.ClearUserWaypoint then pcall(C_Map.ClearUserWaypoint) end
+	Gate(function() if C_Map.ClearUserWaypoint then pcall(C_Map.ClearUserWaypoint) end end)
 	mod.char.pin = nil
 	ClearTomTom()
 	RefreshWaypoint()
@@ -209,9 +221,8 @@ function RefreshWaypoint()
 	local pin = S.AddPin(wpSet, u, v, WAYPOINT)
 	pin:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		local info = C_Map.GetMapInfo(mapID)
 		GameTooltip:AddLine(L["Waypoint"], 1, 0.82, 0)
-		GameTooltip:AddLine(("%s  %.1f, %.1f"):format(info and info.name or "", x * 100, y * 100), 1, 1, 1)
+		GameTooltip:AddLine(ns.Util.Place(mapID, x, y), 1, 1, 1)
 		GameTooltip:AddLine(L["Click to stop following it"], 0.6, 0.6, 0.6)
 		if not own then GameTooltip:AddLine(L["Shift-click: share in chat"], 0.6, 0.6, 0.6) end
 		GameTooltip:Show()
@@ -223,6 +234,9 @@ end
 -- the waypoint followed to a point on a map: Blizzard's if it takes it, else ours; and TomTom's.
 -- `title`: TomTom's name for it (the map's name, else)
 function mod.TrackPoint(mapID, x, y, title)
+	Gate(function() mod.TrackPointNow(mapID, x, y, title) end)
+end
+function mod.TrackPointNow(mapID, x, y, title)
 	local info = C_Map.GetMapInfo(mapID)
 	local blizzard = false
 	if C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates
@@ -323,7 +337,7 @@ local function Go(p)
 end
 
 local function Results(text)
-	text = (text or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+	text = ns.Util.Trim(text):lower()
 	local out = {}
 	if #text < 2 then return out end
 	for _, p in ipairs(Places()) do
@@ -414,10 +428,15 @@ local function GroupEnter(pin)
 	GameTooltip:Show()
 end
 
+local groupShown = false   -- (1.2.26) any group pins up (off with none up: the 0.5 s refresh does nothing)
 local function RefreshGroup()
 	if not groupSet then return end
+	local on = mod.db.group and mod.IsStitched() and IsInGroup()
+	if not on and not groupShown then return end
 	S.ClearPinSet(groupSet)
-	if not mod.db.group or not mod.IsStitched() or not IsInGroup() then return end
+	groupShown = false
+	if not on then return end
+	groupShown = true
 	local host = mod.HostMap()
 	local raid = IsInRaid()
 	for i = 1, raid and 40 or 4 do
@@ -477,11 +496,15 @@ function mod:RefreshNav()
 	RefreshGroup()
 end
 
+-- the reopen choices, in order (1.2.26: the options' select and the menu's rows, Panel.lua, both from this)
+mod.REOPEN_VIEWS = { { "player", L["Center on player"] }, { "zoom", L["Center on player, keep zoom"] }, { "always", L["Always remember"] },
+	{ "visible", L["Remember while visible"] } }
+
 function mod:NavOptions(opts, get, set, off)
+	local values, sorting = {}, {}
+	for i, c in ipairs(mod.REOPEN_VIEWS) do values[c[1]], sorting[i] = c[2], c[1] end
 	opts.reopenView = { type = "select", name = L["When reopening the map"], order = 11,
-		get = mod.GetReopenView, set = set, disabled = off,
-		values = { player = L["Center on player"], zoom = L["Center on player, keep zoom"], always = L["Always remember"],
-			visible = L["Remember while visible"] }, sorting = { "player", "zoom", "always", "visible" },
+		get = mod.GetReopenView, set = set, disabled = off, values = values, sorting = sorting,
 		desc = L["Choose one behavior. Center on player: always open on you. Center on player, keep zoom: open on you, at the zoom you closed the map at. Always remember: restore your previous position and zoom, even after changing zones. Remember while visible: restore only if your current location is inside the previous view, even across zone boundaries. Otherwise, open on you. Maps opened for a quest still show the quest's area."] }
 	opts.group = { type = "toggle", name = L["Party and raid members"], order = 35, get = get, set = set, disabled = off,
 		desc = L["Class-coloured dots for your group anywhere on the stitched map."] }

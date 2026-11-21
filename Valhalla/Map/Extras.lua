@@ -24,9 +24,7 @@ d.zoomHidePins = true           -- other addons' icons (Questie's ...) hidden wh
 local map, sc, bar
 local labelProvider                     -- Blizzard's area label
 
-local function SetCVarSafe(name, value)
-	if C_CVar and C_CVar.SetCVar then pcall(C_CVar.SetCVar, name, value) elseif SetCVar then pcall(SetCVar, name, value) end
-end
+local SetCVarSafe = ns.Util.SetCVar
 
 -- Game settings Valhalla holds while it runs: Blizzard's map coordinates while Valhalla's own show (they'd
 -- double them), and the game's map fade (Valhalla's is the one that runs). The player's own values are
@@ -131,7 +129,6 @@ local function UpdateCoords(_, elapsed)
 	local pos = best and C_Map.GetPlayerMapPosition(best, "player")
 	local px, py
 	if pos then px, py = ns.Safe.XY(pos) end
-	if ns.Safe.IsSecret(px) or ns.Safe.IsSecret(py) then px, py = nil, nil end
 	bar.player.at:SetText(Coord(px, py))
 
 	if sc:IsMouseOver() or mod.PadCursor() then

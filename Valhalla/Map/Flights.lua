@@ -126,7 +126,7 @@ local flight            -- the flight: { key, from, to, dest, legs = { { a, b, n
 local watch = 0         -- (a newer flight stops older watchers)
 local popup, editing
 
-local function Round(x) return math.floor(x + 0.5) end
+local Round = ns.Util.Round
 T.Clock = function(secs) secs = math.max(0, Round(secs)) return ("%d:%02d"):format(math.floor(secs / 60), secs % 60) end
 
 -- the game's node ID for a flight master's slot (its own list), else by name among this faction's
@@ -174,6 +174,9 @@ end
 
 -- the popup ------------------------------------------------------------------
 
+-- a node's name without its zone: "Stormwind, Elwynn", the client's own "暴风城，艾尔文森林" too.
+-- The full-width comma is searched as plain text: Lua patterns work on bytes, so a class holding it
+-- would cut at one of its three UTF-8 bytes, in the middle of a neighbouring character.
 local function ShortName(name)
 	local s = (name or ""):match("^[^,]+") or name or ""
 	local i = s:find("，", 1, true)
@@ -626,18 +629,7 @@ local function Route(from, to, knownOnly)
 	return legs
 end
 
-local function Clock(secs)
-	return ("%d:%02d"):format(math.floor(secs / 60), math.floor(secs % 60))
-end
-
--- a node's name without its zone: "Stormwind, Elwynn", the client's own "暴风城，艾尔文森林" too.
--- The full-width comma is searched as plain text: Lua patterns work on bytes, so a class holding it
--- would cut at one of its three UTF-8 bytes, in the middle of a neighbouring character.
-local function Short(name)
-	local s = name:match("^[^,]+") or name
-	local i = s:find("，", 1, true)
-	return i and s:sub(1, i - 1) or s
-end
+local Clock, Short = T.Clock, ShortName   -- (1.2.26: one of each, the popup's)
 
 -- each leg's time: measured, or estimated from its length
 local function LegTime(path)
