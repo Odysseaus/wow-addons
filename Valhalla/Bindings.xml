@@ -1,0 +1,13 @@
+<!-- Key bindings: the game's Keybindings > Valhalla. Each runs an action of the map's menu
+     (Panel.lua's Valhalla_Binding), opening the map first if it's closed; their names are set there.
+     A section of its own (as Leatrix Plus has), each name starting Valhalla: so a search finds them -->
+<Bindings>
+	<Binding name="VALHALLA_FIND" category="Valhalla">Valhalla_Binding("find")</Binding>
+	<Binding name="VALHALLA_PIN" category="Valhalla">Valhalla_Binding("pin")</Binding>
+	<Binding name="VALHALLA_PINS" category="Valhalla">Valhalla_Binding("pins")</Binding>
+	<Binding name="VALHALLA_QUILL" category="Valhalla">Valhalla_Binding("quill")</Binding>
+	<Binding name="VALHALLA_QUESTLOG" category="Valhalla">Valhalla_Binding("questlog")</Binding>
+	<Binding name="VALHALLA_MENU" category="Valhalla">Valhalla_Binding("menu")</Binding>
+	<!-- (v0.4.2.8) the window on its Investments tab, or closed when it's there (Invest.lua; I by default, if free) -->
+	<Binding name="VALHALLA_INVEST" category="Valhalla">Valhalla_ToggleInvest()</Binding>
+</Bindings>

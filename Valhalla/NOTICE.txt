@@ -1,0 +1,7 @@
+Valhalla
+========
+
+Valhalla is Odysseaus's personal fork of OpenMap v0.8.2 by OpenMap contributors,
+used under the MIT License (see LICENSE.txt). Third-party library and art licences are in LICENSES/
+and Media/Textures/Forever/NOTICE.md; the credits in Credits.lua are OpenMap's and are kept as-is.
+Upstream: https://github.com/openmap-world/openmap
