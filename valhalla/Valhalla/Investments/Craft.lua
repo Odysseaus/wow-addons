@@ -247,7 +247,7 @@ function C.Resolve(id)
 					else at[rid] = { id = rid, n = n } reagents[#reagents + 1] = at[rid] end
 				end
 			end
-			r = { id = id, out = out, qty = qty, name = s.name, reagents = reagents }
+			r = { id = id, out = out, qty = qty, qmin = qmin, qmax = qmax, name = s.name, reagents = reagents }
 		end
 	end
 	C.schem[id] = r
@@ -284,10 +284,11 @@ function C.Deposit(sch)
 	return math.max(C.DEPOSIT_MIN, math.floor(v * sch.qty * C.DEPOSIT_RATE * C.DEPOSIT_HOURS / 12))
 end
 
--- one craft at a house: { sell, net, cost, profit, each, margin, can, parts, missing } (sell nil: not listed)
+-- one craft at a house: { sell, net, cost, costEach, profit, each, margin, can, parts, missing } (sell nil: not
+-- listed). cost and profit are per craft; costEach, sell and each per item made (qty a craft)
 function C.Price(house, sch, opts, have)
 	local cut = S().Cut(house)
-	local e = { id = sch.id, out = sch.out, qty = sch.qty, parts = {}, missing = {} }
+	local e = { id = sch.id, out = sch.out, qty = sch.qty, qmin = sch.qmin, qmax = sch.qmax, parts = {}, missing = {} }
 	e.sell, e.c = S().Lowest(house, sch.out)
 	e.listed = e.c and e.c.units or 0
 	local cost, can = 0, nil
@@ -306,6 +307,7 @@ function C.Price(house, sch, opts, have)
 	end
 	e.can = can or 0
 	e.cost = cost
+	e.costEach = cost / sch.qty   -- (1.2.32: Cost/item, the column: one craft's reagents over how many it makes)
 	if e.sell then
 		e.net = e.sell * sch.qty * (1 - cut)
 		e.profit = e.net - cost
@@ -363,6 +365,15 @@ function C.Rank(house, key, opts, step)
 	return res
 end
 
+-- (1.2.32) after a craft's name, how many one craft makes when more than 1: " x2", a range " x1-3"; nil for 1
+function C.MakesMark(e)
+	local lo, hi = tonumber(e.qmin) or e.qty, tonumber(e.qmax) or e.qty
+	if not lo or not hi or (lo == 1 and hi == 1) then return nil end
+	local function Num(v) return v == math.floor(v) and ("%d"):format(v) or ("%.1f"):format(v) end
+	if lo == hi then return " x" .. Num(lo) end
+	return " x" .. Num(lo) .. "-" .. Num(hi)
+end
+
 -- under a craft row's tooltip: the reagents, the cut, the sale, the deposit. (1.2.27) hit(id): a reagent Craft's
 -- filter matched: its line gold, "(matches your search)"
 function C.Lines(e, house, hit)
@@ -379,6 +390,11 @@ function C.Lines(e, house, hit)
 		local line = ("  %s: %s = %s"):format(Name(r.id), table.concat(said, ", "), Money(r.cost))
 		if hit and hit(r.id) then line = "|cffffd100" .. line .. "|r  " .. L["(matches your search)"] end
 		out[#out + 1] = line
+	end
+	if e.costEach and e.qty ~= 1 then
+		out[#out + 1] = L["Cost per item: %s (%s for the %s one craft makes)"]:format(Money(e.costEach), Money(e.cost), tostring(e.qty))
+	elseif e.costEach then
+		out[#out + 1] = L["Cost per item: %s"]:format(Money(e.costEach))
 	end
 	if e.total then out[#out + 1] = L["Total for the %d you can make: %s"]:format(e.can, Money(e.total)) end
 	if e.sell then

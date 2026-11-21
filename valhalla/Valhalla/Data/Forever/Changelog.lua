@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.32", date = "2026-11-21", heads = { [1] = "Changed", }, items = {
+		"|cff6e2c0aCraft: Cost/item|r (was Cost to Make): what one item costs to make, the craft's reagents divided by how many one craft makes. Every row now adds up: Profit/item = Sell at less the AH's cut, less Cost/item. (Ghost Dye makes 2: it showed the cost of two next to the price of one; the profit and margin were right.)",
+		"A craft that makes more than one shows it after its name: \"x2\", or a range like \"x1-3\". Its tooltip keeps the craft's lines and adds Cost per item, with the whole craft's cost. Sorting by Cost/item sorts per item; the ranking, Total, Invest Amount, Per stack and Harvest are unchanged.",
+	} },
 	{ version = "1.2.31", date = "2026-11-20", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aDungeon Journal's dungeon map no longer covers the other tabs|r: inside a dungeon, its map (with its World Map and Scarlet Monastery wing buttons, Hide quests and Boss icons) stayed over Investments, Talents, Professions and Settings. It's now put away when you leave Map & Quest Log, and back on Map & Quest Log it's just as you left it (the same wing and floor, or its World Map if you'd picked that). Without Dungeon Journal nothing changes.",
 	} },

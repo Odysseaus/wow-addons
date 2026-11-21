@@ -1830,6 +1830,11 @@ do
   local inShown = false for _, id in ipairs(Sc.shown or {}) do if id == X then inShown = true end end
   ok(inShown, "the unpriced reagent goes to the quick scan")
   ok(table.concat(row.Lines(), " "):find("Deposit if unsold", 1, true), "hover: the craft's lines under the game's tooltip")
+  do   -- (1.2.32) 4. the drawn rows: Cost/item, and " xN" after a craft that makes more than 1
+    local r2 for _, r in ipairs(cf.rows) do if r:IsShown() and r.cell.id == 910002 then r2 = r end end
+    ok(r2 and r2.cell.suffix == " x2-4" and r2.e.qty == 3 and r2.cost._text == Sc.Money(r2.e.cost / 3) and row.cell.suffix == nil and row.cost._text == Sc.Money(row.e.cost),
+      "1.2.32 #4: makes 2-4: \" x2-4\" after its name, Cost/item = the craft's cost / 3; makes 1: no mark, the craft's cost", r2 and (tostring(r2.cell.suffix) .. " " .. r2.cost._text))
+  end
   local jobs = Cr.job
   mp:Refresh()
   ok(not Cr.Running() and jobs == nil, "cached: drawn again without working it out again")
@@ -2638,11 +2643,11 @@ print("== 35. v0.4.2.6: columns under their headers, every header sorts (kept), 
   ok(Names(mf.list) == "Peacebloom,Linen Cloth,Copper Ore", "again: Z-A", Names(mf.list))
   W.Click(mf.head.buttons[2])
   ok(mf.list[1].n == 5 and mf.list[3].n == 2 and mf.rows[1].n._text == "5", "Have: most first, drawn so")
-  -- Craft: Cost to Make; Harvest: Crafts' columns, no Cost
+  -- Craft: Cost/item (1.2.32, was Cost to Make); Harvest: Crafts' columns, no Cost
   mp:ShowSub("craft")
   local cf = mp.subs.craft
   local cl = {} for _, b in ipairs(cf.head.craft) do cl[#cl + 1] = b.text._text end
-  ok(table.concat(cl, "|") == "Craft (makes)|Cost to Make|Sell at|Profit/item|Margin|Listed|Can Make/Own|Total|Add SL", "Crafts' headers: Cost to Make (1.0.1: no Known; 1.2.6: Can Make/Own)", table.concat(cl, "|"))
+  ok(table.concat(cl, "|") == "Craft (makes)|Cost/item|Sell at|Profit/item|Margin|Listed|Can Make/Own|Total|Add SL", "Crafts' headers: Cost/item (1.0.1: no Known; 1.2.6: Can Make/Own; 1.2.32: per item)", table.concat(cl, "|"))
   al, why = Aligned(cf.head.craftStrip, cf.rows[1], cf.rows[1].craft)
   ok(al, "Crafts: every header over its own column", why)
   local keepGP, keepGPI = GetProfessions, GetProfessionInfo
@@ -3295,15 +3300,15 @@ print("== 39. 1.0.1: Reagents Market | Owned (Owned: vendor moved to Market), Cr
     and Mk.TIPS.craftCount[2]:find("Owned brings", 1, true), "tooltips: Owned, the Invest Amount (Market only), Count")
   -- (1.0.1) a relayout that sends a title to two lines (or back) wraps it to match (was: two lines wide, one line drawn)
   local head = cf.head.craftStrip
-  local cost
-  for _, b in ipairs(head.buttons) do if b.key == "cost" then cost = b end end
+  local cost   -- (1.2.32: Cost/item has no space; Can Make/Own is the title that wraps now)
+  for _, b in ipairs(head.buttons) do if b.key == "can" then cost = b end end
   local keepH = head.h
   head.h, head.sig = Mk.HEAD_H2, nil
   local wide = {} for _, c in ipairs(Mk.COLS.craft) do wide[c.key] = "1" end
   wide.total = ("9"):rep(70)   -- (narrow values, one very wide column: the titles must give room)
   Mk.Relayout(cf, head, "craft", "craft", wide)
   local twoOk = true for _, b in ipairs(head.buttons) do if (b.text._wrap and true or false) ~= (b.col.two and true or false) then twoOk = false end end
-  ok(twoOk and cost.col.two and cost.text._wrap == true, "a relayout to two lines: the title wraps (Cost to / Make)")
+  ok(twoOk and cost.col.two and cost.text._wrap == true, "a relayout to two lines: the title wraps (Can Make/ / Own)")
   head.h, head.sig = Mk.HEAD_H, nil
   Mk.Relayout(cf, head, "craft", "craft", wide)
   local one = true for _, b in ipairs(head.buttons) do if b.col.two or b.text._wrap then one = false end end
@@ -4902,6 +4907,75 @@ do
   _G.GetNormalizedRealmName, _G.UnitFullName, _G.GetRealmID = nil, nil, nil
   I.InitDB()
   ok(I.realm == keep.db.realms.Forever, "(the test's own data back)")
+end
+
+print("== 1.2.32: Craft's Cost/item (a craft's cost over how many it makes), the xN mark, the tooltip's Cost per item")
+do
+  local Cr, Sc = I.Craft, I.Scan
+  local keep = { low = Sc.Lowest, cut = Sc.Cut, vendor = I.VendorPrice }
+  local price, cuts = {}, { Alliance = 0.05, Neutral = 0.15 }
+  Sc.Lowest = function(house, id) local p = price[id] if p then return p, { units = 486 } end return nil, nil end
+  Sc.Cut = function(house) return cuts[house] or 0.05 end
+  I.VendorPrice = function() return nil end
+  local GM, PD, CV, GD, FR, FX = 8845, 4342, 8925, 9210, 279970, 990001
+  price[GM], price[PD], price[CV], price[GD], price[FR], price[FX] = 3700, 2311, 390, 6095, 1840, 1001
+  local ghost = { id = 11473, out = GD, qty = 2, qmin = 2, qmax = 2, reagents = { { id = GM, n = 2 }, { id = PD, n = 1 }, { id = CV, n = 1 } } }
+  local ferm = { id = 1250775, out = FR, qty = 1, qmin = 1, qmax = 1, reagents = { { id = FX, n = 1 } } }
+  local mk = { owned = "market" }
+  local function Near(a, b, d) return a and b and math.abs(a - b) <= (d or 1e-9) end
+  -- 1. Ghost Dye's shape: makes 2
+  local g = Cr.Price("Alliance", ghost, mk, {})
+  ok(g.cost == 10101 and Near(g.profit, 2 * 6095 * 0.95 - 10101) and Near(g.each, (2 * 6095 * 0.95 - 10101) / 2) and Near(g.costEach, 10101 / 2)
+    and Sc.Money(g.each) == "7s 40c" and Near(g.margin, (2 * 6095 * 0.95 - 10101) / 10101) and math.floor(g.margin * 100 + 0.5) == 15,
+    "#1 Ghost Dye (makes 2): 14s 79c a craft, 7s 40c an item, Cost/item 50s 51c (5050.5c), margin 15%", Sc.Money(g.costEach))
+  -- 2. Fermenter's shape: makes 1
+  local f = Cr.Price("Alliance", ferm, mk, {})
+  ok(f.cost == 1001 and f.costEach == 1001 and Near(f.each, 1840 * 0.95 - 1001) and Sc.Money(f.each) == "7s 47c" and math.floor(f.margin * 100 + 0.5) == 75,
+    "#2 Fermenter (makes 1): 7s 47c an item, Cost/item = the craft's 10s 01c, margin 75%")
+  -- 3. every row adds up: Profit/item = Sell at x (1 - cut) - Cost/item, for 1, 2 and 3 a craft, 5% and 15%
+  local costCol, eachCol
+  for _, c in ipairs(I.Market.COLS.craft) do if c.key == "cost" then costCol = c elseif c.key == "each" then eachCol = c end end
+  local adds = true
+  for _, q in ipairs({ { 1, 1 }, { 2, 2 }, { 2, 4 } }) do
+    for house, cut in pairs(cuts) do
+      local sch = { id = 1, out = GD, qty = (q[1] + q[2]) / 2, qmin = q[1], qmax = q[2], reagents = { { id = GM, n = 3 }, { id = CV, n = 1 } } }
+      local e = Cr.Price(house, sch, mk, {})
+      local shown = costCol.value(e)
+      if not (Near(shown, e.cost / sch.qty) and Near(eachCol.value(e), e.sell * (1 - cut) - shown, 1)) then adds = false print("  (" .. q[1] .. "-" .. q[2] .. " " .. house .. ")") end
+    end
+  end
+  ok(adds, "#3 makes 1, 2, 2-4; the 5% and 15% cuts: Cost/item = cost / qty, Profit/item = Sell at x (1 - cut) - Cost/item")
+  -- 4. the mark (and the drawn rows, in Craft's test above)
+  ok(Cr.MakesMark(f) == nil and Cr.MakesMark(g) == " x2" and Cr.MakesMark({ qty = 3, qmin = 2, qmax = 4 }) == " x2-4" and Cr.MakesMark({ qty = 1.5, qmin = 1, qmax = 2 }) == " x1-2"
+    and Cr.MakesMark({ qty = 5 }) == " x5" and Cr.MakesMark({ qty = 1 }) == nil, "#4 the mark: none for 1, \" x2\", a range \" x2-4\"")
+  local hc = I.Market.HeadTip("craft", "cost")
+  ok(hc:find("one craft's reagents, divided by how many it makes", 1, true) and I.Market.HeadTip("craft", "each"):find("less Cost/item", 1, true)
+    and I.Market.HeadTip("craft", "name"):find("x2 after the name", 1, true), "#4 the headers' tips say Cost/item is per item, and what x2 means")
+  -- 5. sorting on Cost/item: per item (the 2-a-craft dye, dearer a craft, cheaper an item, comes first going up)
+  local one = Cr.Price("Alliance", { id = 2, out = GD, qty = 1, qmin = 1, qmax = 1, reagents = { { id = GM, n = 2 } } }, mk, {})   -- 7400 a craft and an item
+  ok(g.cost > one.cost and costCol.value(g) < costCol.value(one), "#5 sorting by Cost/item: per item (10101 for 2 < 7400 for 1)")
+  local res = { g, f, one }
+  table.sort(res, function(a, b) return a.profit > b.profit end)
+  ok(res[1] == g and Near(g.profit, 1479.5), "#5 the ranking: still by the craft's profit")
+  -- 6. the tooltip: per craft as before, plus Cost per item
+  local lines = table.concat(Cr.Lines(g, "Alliance"), "\n")
+  local flines = table.concat(Cr.Lines(f, "Alliance"), "\n")
+  ok(lines:find("per craft (makes 2)", 1, true) and lines:find("Ghost", 1, true) == nil and lines:find("Cost per item: 50s 51c (1g 01s 01c for the 2 one craft makes)", 1, true)
+    and lines:find("Sells at 60s 95c each x 2, less the 5% cut", 1, true) and flines:find("Cost per item: 10s 01c", 1, true) and not flines:find("for the 1", 1, true),
+    "#6 the tooltip: the craft's lines, and Cost per item (with the craft's cost when it makes more than 1)", lines)
+  -- 7. unchanged: Total (profit a craft x crafts), Can Make/Own, Per stack, Harvest
+  local have = { [GM] = 4, [PD] = 2, [CV] = 2 }
+  local gh = Cr.Price("Alliance", ghost, mk, have)
+  ok(gh.can == 2 and gh.cost == 10101 and Near(gh.profit, 1479.5), "#7 can make counts crafts, the cost and profit per craft (as before)")
+  local keepOwn = I.Market.Own I.Market.Own = function() return 3 end
+  gh.total = gh.profit * gh.can
+  local co, own, can = I.Market.CanOwn(gh)
+  I.Market.Own = keepOwn
+  ok(co == own + can and own == 3, "#7 Can Make/Own: own + can make, as in 1.2.31 (left: crafts, not items)")
+  ok(I.Market.StackTotal and select(2, pcall(I.Market.StackTotal, g.each, GD)) ~= false, "#7 Per stack: from Profit/item, as before")
+  local hcols = {} for _, c in ipairs(I.Market.COLS.harvest) do hcols[#hcols + 1] = c.key end
+  ok(table.concat(hcols, ",") == "name,sell,each,listed,have,total,addsl", "#7 Harvest's columns unchanged (no cost)")
+  Sc.Lowest, Sc.Cut, I.VendorPrice = keep.low, keep.cut, keep.vendor
 end
 
 print("== 1.2.31: Dungeon Journal's dungeon map put away on the window's other tabs, back on Map & Quest Log")
