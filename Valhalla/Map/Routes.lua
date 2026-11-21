@@ -38,10 +38,7 @@ local function KindOn(route)
 	return not key or mod.db[key] ~= false
 end
 
-local function Smooth(x, r)
-	local t = math.max(0, math.min(1, (x - r[1]) / (r[2] - r[1])))
-	return t * t * (3 - 2 * t)
-end
+local Smooth = ns.Util.Smooth
 
 local function Faction(sail)
 	if sail[1] == "zeppelin" then return "Horde" end

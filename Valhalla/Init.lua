@@ -78,6 +78,13 @@ local function Slash(msg)
 		if T and T.Debug then T.Debug() else ns:Print("%s", ns.L["Flight timer: not loaded."]) end
 		return
 	end
+	-- /valhalla combat (1.2.25): CombatQueue.lua's gate, what waits, and the last calls run (time and key)
+	if objWord == "combat" then
+		local C = ns.Combat
+		if C and C.Report then for _, line in ipairs(C.Report()) do ns:Print("%s", line) end
+		else ns:Print("%s", "Combat queue: not loaded.") end
+		return
+	end
 	-- /valhalla chain [coverage|on|off] (1.1.0): the quest log's Chain quest view (Objectives/QuestChains.lua)
 	if objWord == "chain" or objWord == "chains" then
 		local chains = ns:GetModule("chains")

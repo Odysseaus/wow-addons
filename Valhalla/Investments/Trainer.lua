@@ -24,7 +24,7 @@ R.UNMATCHED_KEEP = 40
 R.QUIET = 1           -- (seconds after a read when the window's updates are taken as our own filter switching)
 R.MAX_READS = 6       -- (reads for one opening of the window, at most)
 
-local function Now() return time and time() or 0 end
+local Now = ns.Util.Time
 
 -- a skill's name (the trainer's "Requires Alchemy (90)") to its skill line
 function R.ProfOf(name)

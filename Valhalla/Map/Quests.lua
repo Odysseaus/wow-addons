@@ -81,9 +81,16 @@ local function Click(pin)
 	-- (in combat with the gamepad's UI, Blizzard's quest details would set the pad's buttons from
 	-- Valhalla's code, which combat blocks: they wait, as a dungeon's map does)
 	if mod.PadWaits and mod.PadWaits() then return end
-	local log = map and map.QuestLog
-	local details = G("QuestMapFrame_ShowQuestDetails")
-	if log and log:IsShown() and details and not (map.IsMaximized and map:IsMaximized()) then details(q.id) end
+	-- (1.2.24) the game's quest details wait on CombatQueue.lua's gate (combat, secret auras, the settle
+	-- after combat); when they run, the log beside a windowed map is looked at again
+	local function Details()
+		local log = map and map.QuestLog
+		local details = G("QuestMapFrame_ShowQuestDetails")
+		if log and log:IsShown() and details and not (map.IsMaximized and map:IsMaximized()) then details(q.id) end
+	end
+	local C = ns.Combat
+	if C and C.Run then C.Run("details", Details, L["Quest details open when combat ends."])
+	elseif not InCombatLockdown() then Details() end
 end
 
 -- the state mark over a pin's badge (made once: pins are pooled, and this set's are only ever quests)

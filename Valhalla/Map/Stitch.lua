@@ -356,6 +356,13 @@ local PlaceRecord, ForEachPiece
 local function Record(region, x, y, w, h)
 	-- a region in a shifted frame (the blur's copies) hangs from that frame
 	local parent = region:GetParent()
+	-- (1.2.26) a region placed again (an unexplored cover's, reused): its record moved, not a second one
+	local old = region.omRec
+	if old then
+		old[2], old[3], old[4], old[5] = x, y, w, h
+		PlaceRecord(old)
+		return
+	end
 	local rec = { region, x, y, w, h, rel = parent and parent.omShift and parent or nil }
 	placed[#placed + 1] = rec
 	region.omRec = rec
@@ -1816,12 +1823,7 @@ end
 
 -- SetZoom's fades: 0..1 across `range` ({ from, to }, or from, to) of the zoom now. (Out here,
 -- and the names' fades a table kept, so a zoom step makes no garbage: it runs every frame of one)
-local function Smooth(range, to)
-	local from = range
-	if to == nil then from, to = range[1], range[2] end
-	local t = math.max(0, math.min(1, (zoomNow - from) / (to - from)))
-	return t * t * (3 - 2 * t)
-end
+local function Smooth(range, to) return ns.Util.Smooth(zoomNow, range, to) end
 local fades = {}
 
 function S.SetZoom(zoom, scale)
@@ -2210,7 +2212,7 @@ local Shade = { zones = {}, on = false, REACH = 64, DIM = { 0.38, 0.39, 0.43, 0.
 -- every shade texture made (tinted), coloured again when it changes. DIMK: DIM at that strength
 Shade.k, Shade.tinted, Shade.DIMK = 1, {}, { 0.38, 0.39, 0.43, 0.8 }
 function Shade.Tint(tex)
-	Shade.tinted[#Shade.tinted + 1] = tex
+	if not tex.omTinted then tex.omTinted = true Shade.tinted[#Shade.tinted + 1] = tex end   -- (1.2.26: once, reused or not)
 	tex:SetColorTexture(UNDISCOVERED[1], UNDISCOVERED[2], UNDISCOVERED[3], UNDISCOVERED[4] * Shade.k)
 end
 -- color: the shade's colour ({ r, g, b }: Options' Darkening colour, #9), or nil for the game-like
@@ -2558,25 +2560,77 @@ end
 
 -- a zone's blank art over its hidden rectangles, drawn as its base art is (PlaceBase: on its territory,
 -- its colour-matched copy through its border band too)
+-- (1.2.26) a zone's cover: one frame, made once, its textures and masks reused each time it's made again (frames
+-- are never freed: 1.2.25 made a new frame and new textures on every explore update and colour change)
+Shade.Hide.frames = {}
+function Shade.Hide.CoverFrame(mapID)
+	local f = Shade.Hide.frames[mapID]
+	if not f then
+		f = CreateFrame("Frame", nil, Shade.Hide.root)
+		f:SetAllPoints(root)
+		f.used, f.spare, f.masks = {}, { tint = {}, art = {} }, {}
+		Shade.Hide.frames[mapID] = f
+	end
+	return f
+end
+-- its textures put away (hidden, unanchored, masks off) for the next make
+function Shade.Hide.Release(f)
+	for i = #f.used, 1, -1 do
+		local tex = f.used[i]
+		for _, m in ipairs(tex.coverMasks or NONE) do tex:RemoveMaskTexture(m) end
+		tex.coverMasks = nil
+		tex:Hide()
+		tex:ClearAllPoints()
+		local pool = f.spare[tex.coverKind]
+		pool[#pool + 1] = tex
+		f.used[i] = nil
+	end
+end
+function Shade.Hide.CoverTex(f, kind, sub)
+	local tex = tremove(f.spare[kind])
+	if tex then
+		tex:SetDrawLayer("ARTWORK", sub or 0)
+		tex:SetVertexColor(1, 1, 1, 1)
+		tex:Show()
+	else
+		tex = f:CreateTexture(nil, "ARTWORK", nil, sub or 0)
+		tex.coverKind = kind
+	end
+	f.used[#f.used + 1] = tex
+	return tex
+end
+function Shade.Hide.CoverMask(tex, mask)
+	if not mask then return end
+	tex:AddMaskTexture(mask)
+	tex.coverMasks = tex.coverMasks or {}
+	tex.coverMasks[#tex.coverMasks + 1] = mask
+end
+function Shade.Hide.CoverZoneMask(f, key, make)
+	local m = f.masks[key]
+	if m == nil then m = make() or false f.masks[key] = m end
+	return m or nil
+end
+
 function Shade.Hide.Build(mapID, rects, un, grade)
 	local p = Place(mapID)
 	local files = p and ArtFiles(mapID)
 	if not files or #files == 0 then return false end
-	local f = CreateFrame("Frame", nil, Shade.Hide.root)
-	f:SetAllPoints(root)
+	local f = Shade.Hide.CoverFrame(mapID)
+	Shade.Hide.Release(f)
 	if Shade.Hide.mode == "dim" then
 		-- (the shade on the zone's land alone, as a zone not found at all is shaded: the sea it paints left be)
-		local land = ZoneMask(f, p, ZONELAND)
+		local land = Shade.Hide.CoverZoneMask(f, "land", function() return ZoneMask(f, p, ZONELAND) end)
 		for _, r in ipairs(rects) do
-			local tex = f:CreateTexture(nil, "ARTWORK")
+			local tex = Shade.Hide.CoverTex(f, "tint")
 			Shade.Tint(tex)
 			Record(tex, p.left + r[1] * p.sx, p.top + r[2] * p.sy, (r[3] - r[1]) * p.sx, (r[4] - r[2]) * p.sy)
-			if land then tex:AddMaskTexture(land) end
+			Shade.Hide.CoverMask(tex, land)
 		end
 		return { frame = f, un = un, grade = grade }
 	end
-	local band, territory = ZoneMask(f, p, BAND), ZoneMask(f, p, TERRITORY)
-	local mask = territory or Feather(f, p, FEATHER)
+	local band = Shade.Hide.CoverZoneMask(f, "band", function() return ZoneMask(f, p, BAND) end)
+	local territory = Shade.Hide.CoverZoneMask(f, "territory", function() return ZoneMask(f, p, TERRITORY) end)
+	local mask = territory or Shade.Hide.CoverZoneMask(f, "feather", function() return Feather(f, p, FEATHER) end)
 	local m = ns.MapGrade and ns.MapGrade[mapID]
 	local strength, desat = gradeNow[1], gradeNow[2]
 	local tw, th = p.layer.tileWidth, p.layer.tileHeight
@@ -2590,14 +2644,14 @@ function Shade.Hide.Build(mapID, rects, un, grade)
 				local x1, y1 = math.min(r[3], (k + 1) * tw), math.min(r[4], (j + 1) * th)
 				if file and x1 > x0 and y1 > y0 then
 					for copy = 1, band and 2 or 1 do
-						local tex = f:CreateTexture(nil, "ARTWORK", nil, copy - 1)
+						local tex = Shade.Hide.CoverTex(f, "art", copy - 1)
 						tex:SetTexture(file, nil, nil, "TRILINEAR")
 						tex:SetTexCoord((x0 - k * tw) / tw, (x1 - k * tw) / tw, (y0 - j * th) / th, (y1 - j * th) / th)
 						Record(tex, p.left + x0 * p.sx, p.top + y0 * p.sy, (x1 - x0) * p.sx, (y1 - y0) * p.sy)
-						tex:AddMaskTexture(mask)
+						Shade.Hide.CoverMask(tex, mask)
 						tex:SetDesaturation(desat)
 						if copy == 2 then
-							tex:AddMaskTexture(band)
+							Shade.Hide.CoverMask(tex, band)
 							if m then tex:SetVertexColor(1 + (m[1] - 1) * strength, 1 + (m[2] - 1) * strength, 1 + (m[3] - 1) * strength, 1) end
 						end
 					end
@@ -2626,7 +2680,7 @@ function Shade.Hide.Show(mapID)
 		local rects, un = Shade.Hide.Rects(mapID)
 		local grade = mode .. ":" .. gradeNow[1] .. ":" .. gradeNow[2]
 		if z and (z.un ~= un or z.grade ~= grade) then
-			if z.frame then z.frame:Hide() end
+			if z.frame then z.frame:Hide() Shade.Hide.Release(z.frame) end   -- (1.2.26: kept, made again in place)
 			z = nil
 		end
 		if not z then

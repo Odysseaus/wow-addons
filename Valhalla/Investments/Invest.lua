@@ -39,6 +39,7 @@ I.SETTINGS = {
 	-- Craft (v0.4.1): reagents "market" (all bought) | "free" (Owned: what you own costs nothing; 1.0.1: "vendor" gone,
 	-- moved to "market"); only the recipes this character knows
 	craftOwned = "market", craftKnownOnly = false, craftPerStack = false,   -- (1.2.6: Craft Show: Per stack)
+	craftSearch = "name",                                       -- (1.2.28: Craft's search looks in "name" (Item Name) | "all" (name or reagent))
 	quietDavesSack = true,                                      -- (1.2.9: Dave's Sack's own AH scans turned off: only Valhalla scans the AH)
 	-- Top 10's filter (v0.4.2.3): "all" | "craft" | "harvest"; the profession (skill line, 0: any); the level bracket
 	topKind = "all", topProf = 0, topBracket = "all", topView = "movers",
@@ -60,14 +61,7 @@ I.MAIL_DAYS = 30                                                -- (the game ret
 I.UNDO_KEEP = 5
 I.ITEMS = { linen = 2589, copperOre = 2770, peacebloom = 2447 }   -- (diag: Linen Cloth, Copper Ore, Peacebloom)
 
-local function Now() return time and time() or 0 end
-local Value = ns.Safe and ns.Safe.Value or function(v) return v end
-local function Call(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b, c, d = pcall(fn, ...)
-	if not ok then return nil end
-	return Value(a), Value(b), Value(c), Value(d)
-end
+local Now, Value, Call, Trim = ns.Util.Time, ns.Util.Value, ns.Util.Call, ns.Util.Trim
 I.Call = Call
 
 --------------------------------------------------------------------------------
@@ -97,15 +91,139 @@ function I.InitDB()
 	db.diag = type(db.diag) == "table" and db.diag or {}
 	db.account = type(db.account) == "table" and db.account or {}
 	db.realms = type(db.realms) == "table" and db.realms or {}
-	local realm = Call(GetRealmName) or "?"
-	local name = Call(UnitName, "player") or "?"
-	local r = db.realms[realm] or {}
-	db.realms[realm] = r
-	r.chars = r.chars or {}
-	r.merchants = r.merchants or {}
-	local c = r.chars[name] or {}
-	r.chars[name] = c
 	db.account.names = type(db.account.names) == "table" and db.account.names or {}   -- (1.2.7: item names seen, for the search)
+	I.db = db
+	I.RepairRealms()   -- (1.2.30)
+	I.UseRealm(I.FindRealm())   -- (1.2.29: none yet while the game hasn't named the realm: I.WhenRealm waits)
+	I.S = db.settings
+	I.S.buyGuard, I.S.buyDebug = nil, nil   -- (1.2.10: the cart's price guard and buy debug are gone)
+	-- (1.0.1) Reagents: Owned: vendor is gone: Market; Craft's Known column is gone: its sort, the default
+	if I.S.craftOwned ~= "market" and I.S.craftOwned ~= "free" then I.S.craftOwned = "market" end
+	if I.S.craftSearch ~= "all" and I.S.craftSearch ~= "name" then I.S.craftSearch = "name" end   -- (1.2.28)
+	if type(I.S.sortCraft) == "string" and I.S.sortCraft:match("^known:") then I.S.sortCraft = "each:desc" end
+	return db
+end
+
+--------------------------------------------------------------------------------
+-- The realm the saved data goes under (1.2.29). WoW Forever 1.60.1.71037 gives "" for the realm at login: 1.2.28
+-- and before then saved under an empty realm, and the Watchlist, the scans and the lists looked gone. Now no realm
+-- is "" or "?": until the game names it (I.WhenRealm waits, then falls back), nothing reads or writes realms[...].
+--------------------------------------------------------------------------------
+
+I.JUNK_REALM = { [""] = true, ["?"] = true }
+I.REALM_WAIT, I.REALM_RETRY = 10, 5   -- (seconds asking the game, once a second; then the fallbacks, every 5 s)
+local Plain = ns.Util.PlainRealm
+
+-- (1.2.30) the one-time repair of 1.2.29's mistake: WoW Forever 71037's UnitFullName gives a name ("Thunderbuns")
+-- no saved realm has, and 1.2.29 made a realm of it (merging 1.2.28's blank realm into it) beside the character's
+-- saved one. Such a realm: 1.2.29 merged into it (its record has no version), nothing in it from before that but
+-- what the merge brought (no older scans or Watchlist items than the record counts), one character, and another
+-- saved realm has that character: merged into that one (its bags seen last) and gone, whoever logs in (so another
+-- character never joins it); recorded in account.realmMerges, 1.2.29's record marked repaired (never again)
+local function OnlyMerged(r, e)
+	local scans, targets = 0, 0
+	for _, m in pairs(type(r.ah) == "table" and r.ah or {}) do
+		for _, sc in ipairs(type(m) == "table" and m.scans or {}) do if I.Scan.AbsTime(m, sc.t) < (e.at or 0) then scans = scans + 1 end end
+	end
+	for _, t in pairs(type(r.targets) == "table" and r.targets or {}) do if type(t) == "table" and (tonumber(t.added) or 0) < (e.at or 0) then targets = targets + 1 end end
+	return scans <= (e.scans or 0) and targets <= (e.targets or 0)
+end
+function I.RepairRealms()
+	local db = I.db
+	local log = type(db.account.realmMerges) == "table" and db.account.realmMerges or {}
+	local made = {}
+	for _, e in ipairs(log) do if type(e) == "table" and e.into and not e.v and not e.repaired then made[e.into] = e end end
+	local fixed = {}
+	for k, e in pairs(made) do
+		local r = db.realms[k]
+		local only = type(r) == "table" and type(r.chars) == "table" and next(r.chars)
+		if only and next(r.chars, only) == nil and not I.JUNK_REALM[k] and OnlyMerged(r, e) then
+			local into, seen
+			for key, o in pairs(db.realms) do
+				local c = key ~= k and not I.JUNK_REALM[key] and type(o) == "table" and type(o.chars) == "table" and o.chars[only]
+				if type(c) == "table" and (not into or (tonumber(c.bagsSeen) or 0) > seen) then into, seen = key, tonumber(c.bagsSeen) or 0 end
+			end
+			if into then
+				local n = I.MergeRealm(db.realms[into], r)
+				n.from, n.into, n.at, n.v, n.why = k, into, Now(), ns.version, "repair: made by 1.2.29 for " .. only
+				db.realms[k] = nil
+				fixed[#fixed + 1] = n
+			end
+		end
+	end
+	for _, e in ipairs(log) do if type(e) == "table" and not e.v and not db.realms[e.into] then e.repaired = true end end
+	I.LogMerges(fixed)
+	return fixed
+end
+
+-- the saved realms with this character, its bags seen last first
+local function Mine(me)
+	local out = {}
+	for key, r in pairs(I.db.realms) do
+		local c = not I.JUNK_REALM[key] and type(r) == "table" and type(r.chars) == "table" and r.chars[me]
+		if type(c) == "table" then out[#out + 1] = { key = key, seen = tonumber(c.bagsSeen) or 0 } end
+	end
+	table.sort(out, function(a, b) if a.seen ~= b.seen then return a.seen > b.seen end return a.key < b.key end)
+	return out
+end
+
+-- the realm's key, why, your name, and the game's name for it when that's another (kept as an alias). (1.2.30) A
+-- character with saved data keeps its realm whatever the game calls it now: 1. a saved realm with this character
+-- under a name the game gives (any spelling) or an alias of it; 2. the realm this character used before
+-- (ValhallaCharDB); 3. the saved realm with this character (its bags seen last); 4. only then the game's name (a new
+-- realm). The game silent: nil until final (after the wait: 2 and 3). Characters of other realms never mix: each
+-- has its own saved realm, aliases are per character
+function I.FindRealm(final)
+	local db = I.db
+	local me = Call(UnitName, "player")
+	if type(me) ~= "string" or me == "" or not db then return nil end
+	local names = ns.Util.RealmNames()
+	if not names[1] and not final then return nil end
+	local mine, has = Mine(me), {}
+	for _, m in ipairs(mine) do has[m.key] = true end
+	local aliases = mod.char and type(mod.char.aliases) == "table" and mod.char.aliases or {}
+	for _, n in ipairs(names) do
+		for _, m in ipairs(mine) do
+			if Plain(m.key) == Plain(n.name) then return m.key, n.how .. (m.key ~= n.name and (" (saved as \"" .. m.key .. "\")") or ""), me end
+		end
+		if has[aliases[n.name]] then return aliases[n.name], n.how .. " \"" .. n.name .. "\" (alias)", me, n.name end
+	end
+	local said = names[1] and names[1].name
+	local kept = mod.char and mod.char.realm
+	if has[kept] then return kept, "the realm this character last used (ValhallaCharDB)", me, said end
+	if mine[1] then return mine[1].key, "the saved realm with this character", me, said end
+	for _, n in ipairs(names) do
+		for key in pairs(db.realms) do
+			if not I.JUNK_REALM[key] and Plain(key) == Plain(n.name) then return key, n.how, me end
+		end
+	end
+	if said then return said, names[1].how .. " (a new realm)", me end
+end
+
+-- this realm and character from now on (key nil: none yet); a realm saved under "", "?" or another spelling of
+-- this one, holding this character (or none), merged in first (I.MergeRealm) and gone
+function I.UseRealm(key, why, me, said)
+	if not key or I.JUNK_REALM[key] then I.realm, I.char, I.realmInfo = nil, nil, nil return false end
+	local db = I.db
+	local r = type(db.realms[key]) == "table" and db.realms[key] or {}
+	db.realms[key] = r
+	local merged = {}
+	local strays = {}
+	for k, o in pairs(db.realms) do
+		if k ~= key and (I.JUNK_REALM[k] or Plain(k) == Plain(key)) and type(o) == "table"
+			and (type(o.chars) ~= "table" or not next(o.chars) or o.chars[me]) then strays[#strays + 1] = k end
+	end
+	table.sort(strays)
+	for _, k in ipairs(strays) do
+		local n = I.MergeRealm(r, db.realms[k])
+		n.from, n.into, n.at, n.v = k, key, Now(), ns.version
+		db.realms[k] = nil
+		merged[#merged + 1] = n
+	end
+	r.chars = type(r.chars) == "table" and r.chars or {}
+	r.merchants = type(r.merchants) == "table" and r.merchants or {}
+	local c = r.chars[me] or {}
+	r.chars[me] = c
 	-- (1.2.10) the 1.2.7-1.2.9 checkout cart, its purchase log and buy debug log: cleared on load (the game's own
 	-- save then writes them gone; nothing else in WTF touched)
 	c.cart, c.buys, c.buyDebug = nil, nil, nil
@@ -113,14 +231,208 @@ function I.InitDB()
 	c.bank = c.bank or {}
 	c.want = c.want or {}
 	c.mail = c.mail or {}
-	I.db, I.realm, I.char, I.me = db, r, c, name
+	I.realm, I.char, I.me = r, c, me
 	I.MigrateLists(c)
-	I.S = db.settings
-	I.S.buyGuard, I.S.buyDebug = nil, nil   -- (1.2.10: the cart's price guard and buy debug are gone)
-	-- (1.0.1) Reagents: Owned: vendor is gone: Market; Craft's Known column is gone: its sort, the default
-	if I.S.craftOwned ~= "market" and I.S.craftOwned ~= "free" then I.S.craftOwned = "market" end
-	if type(I.S.sortCraft) == "string" and I.S.sortCraft:match("^known:") then I.S.sortCraft = "each:desc" end
-	return db
+	if mod.char then
+		mod.char.realm = key
+		if said and said ~= key then   -- (1.2.30: the game's name for this character's saved realm)
+			mod.char.aliases = type(mod.char.aliases) == "table" and mod.char.aliases or {}
+			mod.char.aliases[said] = key
+		end
+	end
+	I.realmInfo = { key = key, why = why, at = Now(), tries = I.realmTries or 0, names = ns.Util.RealmNames() }
+	I.LogMerges(merged)
+	return true
+end
+
+-- merges kept: /valhalla invest realm and the diagnostic show them after a /reload
+function I.LogMerges(merged)
+	if #merged == 0 then return end
+	local log = type(I.db.account.realmMerges) == "table" and I.db.account.realmMerges or {}
+	I.db.account.realmMerges = log
+	for _, n in ipairs(merged) do log[#log + 1] = n end
+	while #log > I.DIAG_KEEP do table.remove(log, 1) end
+end
+
+-- a character's saved data from src into d: the newer bags and bank (by when seen), mail and known (src's over d's
+-- when newer or missing), wants and anything d lacks; lists: src's with items not already in d (same name and
+-- items) added with new ids; the draft when d's is empty. Returns the lists added
+local function ListSame(a, b)
+	if a.name ~= b.name or #(a.items or {}) ~= #(b.items or {}) then return false end
+	local n = {}
+	for _, it in ipairs(a.items or {}) do n[it.id] = (n[it.id] or 0) + (tonumber(it.n) or 0) end
+	for _, it in ipairs(b.items or {}) do n[it.id] = (n[it.id] or 0) - (tonumber(it.n) or 0) end
+	for _, v in pairs(n) do if v ~= 0 then return false end end
+	return true
+end
+function I.MergeChar(d, s)
+	if (tonumber(s.bagsSeen) or 0) > (tonumber(d.bagsSeen) or 0) then d.bags, d.bagsSeen = s.bags, s.bagsSeen end
+	if (tonumber(s.bankSeen) or 0) > (tonumber(d.bankSeen) or 0) then
+		d.bank, d.bankBags, d.bankInfo, d.bankSeen = s.bank, s.bankBags, s.bankInfo, s.bankSeen
+	end
+	d.mail = type(d.mail) == "table" and d.mail or {}
+	for id, m in pairs(type(s.mail) == "table" and s.mail or {}) do
+		local o = d.mail[id]
+		if type(o) ~= "table" or (tonumber(m.t) or 0) > (tonumber(o.t) or 0) then d.mail[id] = m end
+	end
+	d.known = type(d.known) == "table" and d.known or {}
+	for k, v in pairs(type(s.known) == "table" and s.known or {}) do d.known[k] = v end
+	d.want = type(d.want) == "table" and d.want or {}
+	for k, v in pairs(type(s.want) == "table" and s.want or {}) do if d.want[k] == nil then d.want[k] = v end end
+	local added = 0
+	if type(s.lists) == "table" then
+		d.lists = type(d.lists) == "table" and d.lists or {}
+		local top = 0
+		for _, l in ipairs(d.lists) do top = math.max(top, tonumber(l.id) or 0) end
+		d.nextList = math.max(tonumber(d.nextList) or 1, top + 1)
+		for _, l in ipairs(s.lists) do
+			local dup = #(l.items or {}) == 0
+			for _, o in ipairs(d.lists) do if dup or ListSame(o, l) then dup = true break end end
+			if not dup then
+				local was = l.id
+				l.id = d.nextList
+				d.nextList = d.nextList + 1
+				d.lists[#d.lists + 1] = l
+				if d.activeList == nil and s.activeList == was then d.activeList = l.id end
+				added = added + 1
+			end
+		end
+	end
+	if (type(d.draft) ~= "table" or #(d.draft.items or {}) == 0) and type(s.draft) == "table" and #(s.draft.items or {}) > 0 then d.draft = s.draft end
+	for k, v in pairs(s) do if d[k] == nil then d[k] = v end end
+	return added
+end
+
+-- a realm's saved data from src into dst: the Watchlist (the same item in both: the one set last), merchants and
+-- their prices d lacks, each house's market (I.Scan.MergeMarket: scans and points in time order, the newer "now"),
+-- the last scan's note when newer, each character (I.MergeChar). Returns what came in
+function I.MergeRealm(dst, src)
+	local n = { targets = 0, lists = 0, scans = 0, items = 0, chars = 0, merchants = 0 }
+	if type(src.targets) == "table" then
+		dst.targets = type(dst.targets) == "table" and dst.targets or {}
+		for id, t in pairs(src.targets) do
+			local o = dst.targets[id]
+			if type(t) == "table" then
+				if type(o) ~= "table" then dst.targets[id] = t n.targets = n.targets + 1
+				elseif (tonumber(t.set or t.added) or 0) > (tonumber(o.set or o.added) or 0) then dst.targets[id] = t end
+			end
+		end
+	end
+	if type(src.merchants) == "table" then
+		dst.merchants = type(dst.merchants) == "table" and dst.merchants or {}
+		for npc, m in pairs(src.merchants) do
+			local o = dst.merchants[npc]
+			if type(o) ~= "table" then dst.merchants[npc] = m n.merchants = n.merchants + 1
+			elseif type(m) == "table" then
+				o.items = type(o.items) == "table" and o.items or {}
+				for i, p in pairs(type(m.items) == "table" and m.items or {}) do if o.items[i] == nil then o.items[i] = p end end
+			end
+		end
+	end
+	if type(src.ah) == "table" then
+		dst.ah = type(dst.ah) == "table" and dst.ah or {}
+		for house, m in pairs(src.ah) do
+			if type(m) == "table" then
+				if type(dst.ah[house]) ~= "table" then
+					dst.ah[house] = m
+					n.scans = n.scans + #(m.scans or {})
+					for _ in pairs(m.hist or {}) do n.items = n.items + 1 end
+				else
+					local s, i = I.Scan.MergeMarket(dst.ah[house], m)
+					n.scans, n.items = n.scans + s, n.items + i
+				end
+			end
+		end
+	end
+	if dst.ahLast == nil then dst.ahLast = src.ahLast end
+	if type(src.scanLast) == "table" and (type(dst.scanLast) ~= "table" or (tonumber(src.scanLast.at) or 0) > (tonumber(dst.scanLast.at) or 0)) then
+		dst.scanLast = src.scanLast
+	end
+	if type(src.chars) == "table" then
+		dst.chars = type(dst.chars) == "table" and dst.chars or {}
+		for name, c in pairs(src.chars) do
+			if type(c) == "table" then
+				if type(dst.chars[name]) ~= "table" then dst.chars[name] = c n.chars = n.chars + 1
+				else n.lists = n.lists + I.MergeChar(dst.chars[name], c) end
+			end
+		end
+	end
+	return n
+end
+
+-- start(): now when the realm is known, else once it is: asked again at PLAYER_ENTERING_WORLD and every second for
+-- I.REALM_WAIT seconds, then with the fallbacks (I.FindRealm(true)) every I.REALM_RETRY seconds
+local waiting
+function I.RealmPending() return waiting ~= nil end
+function I.WhenRealm(start)
+	if I.realm then start() return true end
+	if waiting then waiting.start = start return false end
+	waiting = { start = start }
+	I.realmTries = 0
+	local f = CreateFrame("Frame")
+	local function Try(final)
+		if not waiting then return true end
+		I.realmTries = I.realmTries + 1
+		local key, why, me, said = I.FindRealm(final)
+		if not key then return false end
+		local go = waiting.start
+		waiting = nil
+		f:UnregisterAllEvents()
+		I.UseRealm(key, why, me, said)
+		go()
+		return true
+	end
+	pcall(f.RegisterEvent, f, "PLAYER_ENTERING_WORLD")
+	f:SetScript("OnEvent", function() Try(false) end)
+	local function Tick(n)
+		if Try(n >= I.REALM_WAIT) then return end
+		if C_Timer and C_Timer.After then C_Timer.After(n >= I.REALM_WAIT and I.REALM_RETRY or 1, function() Tick(n + 1) end) end
+	end
+	if C_Timer and C_Timer.After then C_Timer.After(1, function() Tick(1) end) end
+	return false
+end
+
+-- /valhalla invest realm: which realm, why, what the game says now, the saved realms, what was merged
+function I.RealmReport()
+	local function Count(t) local k = 0 for _ in pairs(type(t) == "table" and t or {}) do k = k + 1 end return k end
+	local info = I.realmInfo or {}
+	local now = {}
+	for _, n in ipairs(ns.Util.RealmNames()) do now[#now + 1] = n.how .. " = \"" .. n.name .. "\"" end
+	local saved = {}
+	for key, r in pairs(I.db and I.db.realms or {}) do
+		local scans = 0
+		for _, m in pairs(type(r) == "table" and type(r.ah) == "table" and r.ah or {}) do scans = scans + #(type(m) == "table" and m.scans or {}) end
+		saved[#saved + 1] = { key = key, chars = Count(r.chars), targets = Count(r.targets), scans = scans }
+	end
+	table.sort(saved, function(a, b) return a.key < b.key end)
+	local merges = I.db and I.db.account and I.db.account.realmMerges or {}
+	local aliases = {}
+	for said, key in pairs(mod.char and type(mod.char.aliases) == "table" and mod.char.aliases or {}) do aliases[#aliases + 1] = { said = said, key = key } end
+	table.sort(aliases, function(a, b) return a.said < b.said end)
+	return { key = info.key, why = info.why, at = info.at, tries = info.tries, waiting = I.RealmPending(), now = now, saved = saved, merges = merges,
+		aliases = aliases, raw = ns.Util.RealmRaw(), me = Call(UnitName, "player") }   -- (1.2.30: aliases; the game's raw answers)
+end
+function I.RealmLines(rep)
+	local out = {}
+	if rep.key then
+		out[1] = L["Realm: \"%s\" (%s; asked %d times)."]:format(rep.key, rep.why or "?", rep.tries or 0)
+	else
+		out[1] = rep.waiting and L["Realm: not known yet; waiting for the game to name it."] or L["Realm: not known."]
+	end
+	out[#out + 1] = L["The game says now: %s."]:format(#rep.now > 0 and table.concat(rep.now, ", ") or L["nothing (blank)"])
+	local raw = {}
+	for _, k in ipairs(ns.Util.REALM_RAW) do if rep.raw and rep.raw[k] then raw[#raw + 1] = k .. " = " .. rep.raw[k] end end
+	out[#out + 1] = L["Raw: %s."]:format(table.concat(raw, "; "))
+	for _, a in ipairs(rep.aliases or {}) do out[#out + 1] = L["Alias: the game's \"%s\" is the saved \"%s\"."]:format(a.said, a.key) end
+	local s = {}
+	for _, r in ipairs(rep.saved) do s[#s + 1] = L["\"%s\": %d characters, %d on the Watchlist, %d scans"]:format(r.key, r.chars, r.targets, r.scans) end
+	out[#out + 1] = L["Saved realms: %s."]:format(#s > 0 and table.concat(s, "; ") or L["none"])
+	if #rep.merges == 0 then out[#out + 1] = L["Nothing merged."] end
+	for _, m in ipairs(rep.merges) do
+		out[#out + 1] = L["Merged \"%s\" into \"%s\" (%s): %d Watchlist items, %d lists, %d scans, %d items' history, %d characters, %d merchants."]:format(
+			m.from, m.into, date and date("%Y-%m-%d %H:%M", m.at or 0) or "", m.targets, m.lists, m.scans, m.items, m.chars, m.merchants)
+	end
+	return out
 end
 
 --------------------------------------------------------------------------------
@@ -164,7 +476,7 @@ end
 
 function I.ParseItem(text)
 	if type(text) == "number" then return text end
-	text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	text = Trim(text)
 	if text == "" then return nil end
 	local id = text:match("item:(%d+)") or text:match("^(%d+)$")
 	if id then return tonumber(id) end
@@ -333,9 +645,10 @@ function I.AddMail(id, n)
 end
 
 -- items reaching the bags come off what's in the mail; old mail (returned by now) is dropped
+-- (1.2.26: only while the mailbox is open: loot or a trade of the same item isn't mail taken out)
 function I.MailArrived(old, new)
 	for id, m in pairs(I.char.mail) do
-		local gain = (new[id] or 0) - (old[id] or 0)
+		local gain = I.mailOpen and (new[id] or 0) - (old[id] or 0) or 0
 		if gain > 0 then m.n = m.n - gain end
 		if m.n <= 0 or (m.t and Now() - m.t > I.MAIL_DAYS * 86400) then I.char.mail[id] = nil end
 	end
@@ -398,8 +711,6 @@ end
 --   draft = { name, items = { { id, n, name } }, editing = list id }
 -- (v0.3.2's keep and short on lines, if saved, are left as they are and not used: v0.3.3 has no Keep.)
 --------------------------------------------------------------------------------
-
-local function Trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 
 -- the first time: the old wants become one list, "My List" (the wants themselves are left as they were)
 function I.MigrateLists(c)
@@ -733,10 +1044,18 @@ function I.SearchWords(text)
 	for x in tostring(text or ""):lower():gmatch("%S+") do w[#w + 1] = x end
 	return w
 end
-local function MatchAll(low, words)
-	for _, w in ipairs(words) do if not low:find(w, 1, true) then return false end end
+-- every word in `low` (plain find); (1.2.27) or, word by word, in any of `more` (Craft's search: the reagents' names)
+local function MatchAll(low, words, more)
+	for _, w in ipairs(words) do
+		if not low:find(w, 1, true) then
+			local hit = false
+			for _, k in ipairs(more or {}) do if k:find(w, 1, true) then hit = true break end end
+			if not hit then return false end
+		end
+	end
 	return true
 end
+I.MatchAll = MatchAll
 -- the big pool's ids (scans, recipes, Top 10, names): built once a session (1.2.8); a name that comes in is added
 -- (I.IndexName), and the ids a scan finds (I.IndexAddMarket). Each item's sort key is fixed once (I.SortKey).
 local function IndexPut(x, id, n)
@@ -981,6 +1300,7 @@ function I.CacheMerchant()
 		if id then
 			local info = C_MerchantFrame and C_MerchantFrame.GetItemInfo and Call(C_MerchantFrame.GetItemInfo, i)
 			local price = type(info) == "table" and Value(info.price) or 0
+			if m.items[id] ~= (price or 0) then I.merchantGen = (I.merchantGen or 0) + 1 end   -- (1.2.26: Craft's cache key)
 			m.items[id] = price or 0
 			count = count + 1
 		end
@@ -1107,6 +1427,10 @@ end
 local events
 function mod:OnEnable()
 	I.InitDB()
+	I.WhenRealm(I.Start)   -- (1.2.29: the rest once the realm is known; nothing touches realms[...] before)
+end
+function I.Start()
+	if not mod.enabled then return end
 	if not events then
 		events = CreateFrame("Frame")
 		events:SetScript("OnEvent", function(_, event, a1, a2) I.OnEvent(event, a1, a2) end)
@@ -1125,6 +1449,8 @@ end
 function mod:OnDisable()
 	if I.AHCheck then I.AHCheck.Stop("stopped: Investments turned off") end
 	if I.Scan then I.Scan.Stop() end
+	NL.Stop()   -- (1.2.26: the name loader too; no AUCTION_HOUSE_CLOSED comes once the events are off)
+	I.ahOpen, I.mailOpen = false, false
 	if events then events:UnregisterAllEvents() end
 	if I.Tabs then I.Tabs.Disable() end
 	if I.Merchant then I.Merchant.Disable() end
@@ -1244,6 +1570,7 @@ function I.Diag(arg)
 		d.recipes = { all = type(all) == "table" and #all or nil, filtered = type(filtered) == "table" and #filtered or nil }
 	end
 	d.recipeProbe = I.RecipeProbe()
+	d.realm = I.RealmReport()   -- (1.2.29)
 	local log = I.db.diag
 	table.insert(log, d)
 	while #log > I.DIAG_KEEP do table.remove(log, 1) end
@@ -1390,8 +1717,7 @@ AC.NEUTRAL_ZONE = { ["Tanaris"] = true, ["Stranglethorn Vale"] = true, ["Cape of
 AC.NEUTRAL_MAP = { [1446] = true, [1434] = true, [1452] = true }
 
 local ABORT = {}
-local function T() return (GetTimePreciseSec and GetTimePreciseSec()) or (debugprofilestop and debugprofilestop() / 1000) or Now() end
-local function MS() return (debugprofilestop and debugprofilestop()) or T() * 1000 end
+local T, MS = ns.Util.T, ns.Util.MS
 local function R2(x) return x and math.floor(x * 100 + 0.5) / 100 end
 local SORTS = { { sortOrder = 0, reverseSort = false } }   -- (Enum.AuctionHouseSortOrder.Price)
 
@@ -1897,8 +2223,10 @@ local function Say(fmt, ...) ns:Print(fmt, ...) end
 _G.BINDING_NAME_VALHALLA_INVEST = "Valhalla: " .. L["Investments"]
 I.KEY, I.KEY_ACTION = "I", "VALHALLA_INVEST"
 
+local WAITING = "Investments is waiting for the game to name your realm (/valhalla invest realm)."
 function _G.Valhalla_ToggleInvest()
 	if not mod.enabled then Say(L["Investments is off. /valhalla invest on"]) return end
+	if not I.realm then Say("%s", L[WAITING]) return end
 	local T = I.Tabs
 	if not T then return end
 	local map = _G.WorldMapFrame
@@ -1933,12 +2261,19 @@ end
 
 function mod:Slash(word, arg)
 	arg = arg or ""
-	local low = arg:lower():gsub("^%s+", ""):gsub("%s+$", "")
+	local low = Trim(arg):lower()
 	if word == "invest" then
 		local sub, rest = low:match("^(%S*)%s*(.-)$")
 		if sub == "on" then I.SetOn(true) Say(L["Investments and the window's tabs: on."]) return end
 		if sub == "off" then I.SetOn(false) Say(L["Investments and the window's tabs: off (the map is as before). /valhalla invest on brings them back."]) return end
 		if not mod.enabled then Say(L["Investments is off. /valhalla invest on"]) return end
+		if sub == "realm" then   -- (1.2.29) which realm and why; kept in the diagnostic (a /reload writes it)
+			local rep = I.realm and I.Diag("realm").realm or I.RealmReport()
+			for _, line in ipairs(I.RealmLines(rep)) do Say("%s", line) end
+			if I.realm then Say("%s", L["Saved in ValhallaInvestDB.diag (/reload writes it to disk)."]) end
+			return
+		end
+		if not I.realm then Say("%s", L[WAITING]) return end
 		if sub == "scan" then
 			if rest == "stop" then I.Scan.Stop() else I.Scan.Toggle() end
 			return
@@ -1976,6 +2311,7 @@ function mod:Slash(word, arg)
 		return
 	end
 	if not mod.enabled then Say(L["Investments is off. /valhalla invest on"]) return end
+	if not I.realm then Say("%s", L[WAITING]) return end
 	if word == "undo" then
 		local what = I.Undo()
 		if what then Say(L["Put back: %s."], what) else Say("%s", L["Nothing to undo."]) end

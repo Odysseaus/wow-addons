@@ -120,7 +120,7 @@ function Q.PlayerView()
 	if not best or not S.Rect(best) then return end
 	local pos = C_Map.GetPlayerMapPosition(best, "player")
 	local x, y = Safe.XY(pos)
-	if not x or not y or Safe.IsSecret(x) or Safe.IsSecret(y) then return end
+	if not x or not y then return end
 	local u, v = mod.ToWorld(best, x, y)
 	return u, v, mod.FitZoom(best)
 end

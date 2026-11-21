@@ -290,9 +290,7 @@ end
 -- screen's refresh waits for the next, so times snap to 16.7 or 33.3 ms and hide what each part costs
 local UNCAP = { vsync = "0", maxFPS = "200" }
 local capped                    -- the settings as they were: name -> value
-local function SetCVarSafe(name, value)
-	if C_CVar and C_CVar.SetCVar then pcall(C_CVar.SetCVar, name, value) elseif SetCVar then pcall(SetCVar, name, value) end
-end
+local SetCVarSafe = ns.Util.SetCVar
 local function Uncap()
 	capped = {}
 	for name, value in pairs(UNCAP) do

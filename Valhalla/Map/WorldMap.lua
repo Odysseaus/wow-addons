@@ -592,7 +592,7 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
 		local p = best and S.Rect(best) and C_Map.GetPlayerMapPosition(best, "player")
 		local x, y
 		if p then x, y = ns.Safe.XY(p) end
-		if not ns.Safe.IsSecret(x) and not ns.Safe.IsSecret(y) and x and y then
+		if x and y then
 			local u, v = ToWorld(best, x, y)
 			S.SetPlayer(u, v, ns.Safe.Call(GetPlayerFacing))
 		else
@@ -1214,7 +1214,9 @@ local function Setup()
 			if not mapID or mapID == WORLD or not UiMapPoint then return end
 			if C_Map.CanSetUserWaypointOnMap and not C_Map.CanSetUserWaypointOnMap(mapID) then return end
 			local x, y = FromWorld(mapID, u, v)
-			pcall(C_Map.SetUserWaypoint, UiMapPoint.CreateFromCoordinates(mapID, x, y))
+			-- (1.2.24) Valhalla's move of the waypoint waits on CombatQueue.lua's gate (the game's own stays till then)
+			local function Place() pcall(C_Map.SetUserWaypoint, UiMapPoint.CreateFromCoordinates(mapID, x, y)) end
+			if ns.Combat and ns.Combat.Run then ns.Combat.Run("waypoint", Place) else Place() end
 		end)
 	end
 	if map.NavigateToParentMap then

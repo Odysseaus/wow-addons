@@ -57,7 +57,6 @@ local map, sc, set, liveSet, catcher, tray   -- (liveSet: the stroke being drawn
 local drawing = false
 local forPin                    -- the map pin what's drawn is attached to (Pins.lua's Draw)
 local stroke                    -- the stroke being drawn: { record, x, y (where it began, px) }
-local panning
 local Redraw, RefreshTray
 -- a drawing for something else (Report.lua's): its own strokes, shown with yours but never kept;
 -- the tools, inks and nibs yours (its ink starts red)
@@ -65,7 +64,7 @@ local session
 local held                      -- a finished session's strokes, still shown till its owner's done with them (HoldSketch)
 
 local function DB() return session and session.db or mod.db.sketch end
-local function Round(x) return math.floor(x * 1e5 + 0.5) / 1e5 end
+local Round = ns.Util.Round
 
 --------------------------------------------------------------------------------
 -- Drawing the strokes: each line with a faint halo under it, so ink reads on dark land and light
@@ -218,7 +217,7 @@ local function Start()
 	local db = DB()
 	if db.tool == "erase" then Erase(u, v, pu, pv) return end
 	if #db.strokes >= 2000 then ns:Print(L["That's a lot of drawing: take some off (Undo, the eraser, Clear) before drawing more."]) return end
-	local st = { tool = db.tool, ink = db.ink, size = db.size, pts = { Round(u), Round(v) }, pin = forPin and forPin.id or nil }
+	local st = { tool = db.tool, ink = db.ink, size = db.size, pts = { Round(u, 1e5), Round(v, 1e5) }, pin = forPin and forPin.id or nil }
 	if db.tool == "mark" then
 		st.mark = db.mark
 		st.id = db.nextId
@@ -242,11 +241,11 @@ local function Move()
 	if stroke.record.tool == "quill" then
 		-- (the newest piece only: the stroke so far stays as drawn)
 		if #p >= MAX_POINTS * 2 or not liveSet then return end
-		p[#p + 1], p[#p + 2] = Round(u), Round(v)
+		p[#p + 1], p[#p + 2] = Round(u, 1e5), Round(v, 1e5)
 		local n = #p
 		Ink(stroke.record, liveSet, { p[n - 3], p[n - 2], p[n - 1], p[n] })
 	else
-		p[3], p[4] = Round(u), Round(v)        -- (the other end, where the cursor is)
+		p[3], p[4] = Round(u, 1e5), Round(v, 1e5)        -- (the other end, where the cursor is)
 		RedrawLive()
 	end
 end
@@ -501,20 +500,12 @@ local function CreateTray()
 	x = x + 14
 	local undo = TextButton(64, L["Undo"], Undo, L["Take back the last drawing (Ctrl-Z)"])
 	undo:SetPoint("TOPLEFT", x, y - 1)
-	local clear = TextButton(64, L["Clear"], function(self)
-		if self.armed then
-			local list = DB().strokes
-			for i = #list, 1, -1 do if not forPin or list[i].pin == forPin.id then tremove(list, i) end end
-			Redraw()
-			RefreshTray()
-			self.armed = nil
-			self:SetText(L["Clear"])
-		else
-			self.armed = true
-			self:SetText(L["Sure?"])
-			C_Timer.After(3, function() self.armed = nil self:SetText(L["Clear"]) end)
-		end
-	end, L["Take off every drawing (this pin's, when drawing on one): click twice"])
+	local clear = TextButton(64, L["Clear"], ns.Parts.TwoClick(L["Clear"], function()
+		local list = DB().strokes
+		for i = #list, 1, -1 do if not forPin or list[i].pin == forPin.id then tremove(list, i) end end
+		Redraw()
+		RefreshTray()
+	end), L["Take off every drawing (this pin's, when drawing on one): click twice"])
 	clear:SetPoint("TOPLEFT", undo, "BOTTOMLEFT", 0, -2)
 	x = x + 64 + 8
 	-- done: the drawing kept (drawing on a pin: the pin's card done too, its note and colour kept)
@@ -554,41 +545,12 @@ local function CreateTray()
 end
 
 local function CreateCatcher()
-	catcher = CreateFrame("Frame", nil, sc)
-	catcher:SetAllPoints(sc)
-	catcher:SetFrameLevel(math.min(sc:GetFrameLevel() + 9200, 9940))
-	catcher:EnableMouse(true)
-	catcher:EnableMouseWheel(true)
-	catcher:Hide()
-	catcher:SetScript("OnMouseDown", function(_, button)
-		if button == "LeftButton" then
-			Start()
-		elseif button == "RightButton" then
-			panning = true
-			sc:OnMouseDown("LeftButton")   -- Blizzard's own drag-to-pan
-		end
-	end)
-	catcher:SetScript("OnMouseUp", function(_, button)
-		if button == "LeftButton" then
-			Finish()
-			RefreshTray()
-		elseif panning then
-			panning = false
-			sc.mouseButtonInfo.LeftButton.down = false
-		end
-	end)
-	catcher:SetScript("OnMouseWheel", function(_, delta) mod.WheelZoom(delta) end)
-	catcher:SetScript("OnUpdate", Move)
-	catcher:EnableKeyboard(true)
-	catcher:SetPropagateKeyboardInput(true)
-	catcher:SetScript("OnKeyDown", function(self, key)
-		local undo = key == "Z" and IsControlKeyDown()
-		if (undo or key == "ESCAPE") and not InCombatLockdown() then
-			self:SetPropagateKeyboardInput(false)
-			if undo then Undo() RefreshTray() else mod:ToggleSketch(false) end
-			C_Timer.After(0, function() if not InCombatLockdown() then self:SetPropagateKeyboardInput(true) end end)
-		end
-	end)
+	catcher = ns.Parts.MapCatcher(sc, { down = Start, up = function() Finish() RefreshTray() end, update = Move,
+		wheel = function(delta) mod.WheelZoom(delta) end,
+		key = function(key)
+			if key == "Z" and IsControlKeyDown() then return function() Undo() RefreshTray() end end
+			if key == "ESCAPE" then return function() mod:ToggleSketch(false) end end
+		end })
 end
 
 --------------------------------------------------------------------------------

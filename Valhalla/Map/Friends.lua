@@ -55,32 +55,29 @@ local sharing = false               -- (a place sent since sharing began: they'r
 -- Names
 --------------------------------------------------------------------------------
 
--- your realm as UnitFullName gives it
-local function ApiRealm()
-	if not UnitFullName then return end
-	local ok, _, r = pcall(UnitFullName, "player")
-	if ok and not Safe.IsSecret(r) and type(r) == "string" and r ~= "" then return r end
-end
-
+-- your realm as names spell it (no spaces): GetNormalizedRealmName's, else UnitFullName's, else GetRealmName's without
+-- its spaces and hyphens; "" while the game hasn't said (early in a login: asked again later). (1.2.29) the names
+-- from ns.Util.RealmNames, Investments' too
+local PREFER = { GetNormalizedRealmName = 1, UnitFullName = 2, GetRealmName = 3 }
 local function Realm()
 	if not realm then
-		local r = Safe.Call(GetNormalizedRealmName)
-		if type(r) ~= "string" or r == "" then r = ApiRealm() end
-		if type(r) ~= "string" or r == "" then r = (Safe.Call(GetRealmName) or ""):gsub("[%s%-]", "") end
-		if r == "" then return "" end   -- (not known yet, early in a login: asked again later)
+		local names = ns.Util.RealmNames()
+		table.sort(names, function(a, b) return PREFER[a.how] < PREFER[b.how] end)
+		local r = names[1] and names[1].name:gsub("[%s%-]", "") or ""
+		if r == "" then return "" end
 		realm = r
 	end
 	return realm
 end
 
--- a realm as compared: no spaces, hyphens or apostrophes, any case
-local function Plain(rlm) return (rlm:gsub("[%s%-']", "")):lower() end
+local Plain = ns.Util.PlainRealm
 
 -- "Name-Realm" for a name as the game gives it (on your own realm it comes without one)
 local function Full(name, rlm)
 	if Safe.IsSecret(name) or type(name) ~= "string" or name == "" then return end
 	if name:find("-", 1, true) then return name end
 	if type(rlm) == "string" and rlm ~= "" then return name .. "-" .. rlm:gsub("[%s%-]", "") end
+	if Realm() == "" then return end   -- (1.2.29: never "Name-": your realm not known yet)
 	return name .. "-" .. Realm()
 end
 
@@ -93,9 +90,10 @@ end
 
 -- the name shown on the map: never the realm (WoW Forever's realm names read "CAMWOWUS1Realm2PvP"),
 -- one from another realm marked " (*)" as the game's own lists do
+-- (1.2.26: 1.2.25 had it backwards, marking your own realm's: Short() drops only your own realm)
 local function Shown(full)
 	local name = full:match("^[^%-]+") or full
-	if Short(full) ~= full then name = name .. (FOREIGN_SERVER_LABEL or " (*)") end
+	if full:find("-", 1, true) and Realm() ~= "" and Short(full) == full then name = name .. (FOREIGN_SERVER_LABEL or " (*)") end
 	return name
 end
 
@@ -113,9 +111,8 @@ local function IsMe(full)
 	if name ~= me then return false end
 	if rlm == "" then return true end
 	rlm = Plain(rlm)
-	for _, mine in ipairs({ Realm(), Safe.Call(GetNormalizedRealmName) or "", Safe.Call(GetRealmName) or "", ApiRealm() or "" }) do
-		if type(mine) == "string" and not Safe.IsSecret(mine) and mine ~= "" and Plain(mine) == rlm then return true end
-	end
+	if Realm() ~= "" and Plain(Realm()) == rlm then return true end
+	for _, n in ipairs(ns.Util.RealmNames()) do if Plain(n.name) == rlm then return true end end
 	return false
 end
 
@@ -142,10 +139,7 @@ local function ClassColor(class)
 	return 1, 1, 1
 end
 
-local function ZoneName(id)
-	local info = id and C_Map.GetMapInfo(id)
-	return info and info.name or "?"
-end
+local ZoneName = ns.Util.ZoneName
 
 -- a zone's uiMapID from its name, as the guild roster and friends list give it (a dungeon's
 -- name, or a place not on the world map: none)
@@ -169,30 +163,7 @@ end
 -- Sending: one message a SEND_GAP, one waiting for each place it goes (a newer one replaces it)
 --------------------------------------------------------------------------------
 
-local outbox, order = {}, {}        -- key -> { text, channel, target, bn }; the keys in turn
-local sender = CreateFrame("Frame")
-sender:Hide()
-local wait = 0
-sender:SetScript("OnUpdate", function(self, elapsed)
-	wait = wait - elapsed
-	if wait > 0 then return end
-	local key = tremove(order, 1)
-	if not key then self:Hide() return end
-	local m = outbox[key]
-	outbox[key] = nil
-	wait = SEND_GAP
-	if m.bn then
-		if BNSendGameData then pcall(BNSendGameData, m.bn, PREFIX, m.text) end
-	elseif C_ChatInfo and C_ChatInfo.SendAddonMessage then
-		pcall(C_ChatInfo.SendAddonMessage, PREFIX, m.text, m.channel, m.target)
-	end
-end)
-
-local function Send(key, text, channel, target, bn)
-	if not outbox[key] then order[#order + 1] = key end
-	outbox[key] = { text = text, channel = channel, target = target, bn = bn }
-	sender:Show()
-end
+local Send = ns.Parts.Sender(PREFIX, SEND_GAP).Send   -- (1.2.26: Pins' sender too, UI/Parts.lua)
 
 local function ToFriend(full, text)
 	local f = friends[full]
@@ -217,14 +188,16 @@ local function Here()
 	local p = Safe.Call(C_Map.GetPlayerMapPosition, best, "player")
 	if not p then return end
 	local x, y = Safe.XY(p)
-	if Safe.IsSecret(x) or Safe.IsSecret(y) or type(x) ~= "number" or type(y) ~= "number" then return end
+	if type(x) ~= "number" or type(y) ~= "number" then return end
 	if x <= 0 and y <= 0 then return end        -- (0, 0: the game doesn't know)
 	return best, x, y
 end
 
+local tickHandle   -- (1.2.26) the 2 s look, running only while sharing (1.2.25: from login, for good)
 local function Tick()
 	if not mod.db.friendsShare then
 		if sharing then sharing = false last.at, last.text = -math.huge, nil Broadcast("L0") end
+		if tickHandle then tickHandle:Cancel() tickHandle = nil end
 		return
 	end
 	local m, x, y = Here()
@@ -317,7 +290,7 @@ end
 
 local scanning = false
 local function QueueScan()
-	if scanning then return end
+	if scanning or not (mod.db.friends or mod.db.friendsShare) then return end   -- (1.2.26: both off: no scans)
 	scanning = true
 	C_Timer.After(1, function() scanning = false Timed("friends and guild scanned", Scan) end)
 end
@@ -396,7 +369,7 @@ local function DotEnter(pin)
 	GameTooltip:AddLine(Shown(d.full), ClassColor(d.p.class or (r and r.class)))
 	local level = d.p.level or (r and r.level)
 	if level and level > 0 then GameTooltip:AddLine((LEVEL or "Level") .. " " .. level, 1, 1, 1) end
-	GameTooltip:AddLine(("%s  %.1f, %.1f"):format(ZoneName(d.p.map), d.p.x * 100, d.p.y * 100), 1, 1, 1)
+	GameTooltip:AddLine(ns.Util.Place(d.p.map, d.p.x, d.p.y), 1, 1, 1)
 	GameTooltip:AddLine(Tag(d.p.guild), 0.6, 0.8, 1)
 	local ago = GetTime() - d.p.at
 	if ago >= 20 then GameTooltip:AddLine(L["Updated %d s ago"]:format(ago), 0.6, 0.6, 0.6) end
@@ -468,6 +441,7 @@ function mod.RefreshFriends()
 	dirty = true
 	if map and map:IsShown() then Redraw() end
 	if mod.db.friendsShare or sharing then Tick() end   -- (turned on: sent at once; off: they're told)
+	if mod.db.friendsShare and not tickHandle and C_Timer and C_Timer.NewTicker then tickHandle = C_Timer.NewTicker(TICK, Tick) end
 end
 
 --------------------------------------------------------------------------------
@@ -536,7 +510,7 @@ function mod:SetupFriends(worldMap)
 		"BN_FRIEND_ACCOUNT_ONLINE", "BN_FRIEND_ACCOUNT_OFFLINE", "GROUP_ROSTER_UPDATE" }) do
 		ns.RegisterEvent(me, e, QueueScan)
 	end
-	C_Timer.NewTicker(TICK, Tick)
+	if mod.db.friendsShare then tickHandle = C_Timer.NewTicker(TICK, Tick) end
 	C_Timer.After(5, function() AskRosters() QueueScan() end)
 	-- while the map is open: what arrived drawn each second, the rosters asked for now and then
 	local wait, redrawIn, rosterIn = 0, REDRAW_EVERY, 0

@@ -38,7 +38,7 @@ function K.Focused()
 	end
 end
 
-local function Now() return GetTime and GetTime() or 0 end
+local Now = ns.Util.Clock
 
 -- after the game's ChatFrameUtil.InsertLink (a shift-clicked item, anywhere)
 function K.OnInsertLink(text)

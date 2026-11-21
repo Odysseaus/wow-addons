@@ -4,6 +4,58 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.31", date = "2026-11-20", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aDungeon Journal's dungeon map no longer covers the other tabs|r: inside a dungeon, its map (with its World Map and Scarlet Monastery wing buttons, Hide quests and Boss icons) stayed over Investments, Talents, Professions and Settings. It's now put away when you leave Map & Quest Log, and back on Map & Quest Log it's just as you left it (the same wing and floor, or its World Map if you'd picked that). Without Dungeon Journal nothing changes.",
+	} },
+	{ version = "1.2.30", date = "2026-11-20", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
+		"|cff6e2c0aYour Watchlist, AH history and Top 10 are back (again)|r: on WoW Forever 1.60.1.71037 the game now names your realm only through UnitFullName (\"Thunderbuns\"), a name none of your saved data had, and 1.2.29 started a new, empty realm under it. Nothing was deleted.",
+		"On the first load, the realm 1.2.29 made is merged into your saved realm (\"CAMWOW US2 Realm 8 PvP\"): today's scan in time order, the newer bag and bank counts, and \"List 1\" as a second list next to \"Reagent Buy Targets\". Then it is removed. This runs once, only for a realm 1.2.29 made that holds nothing older.",
+		"A character with saved data now keeps its saved realm whatever the game calls it. The game's new name is remembered for that character as an alias. A character on another realm keeps its own realm, so characters are never mixed.",
+		"/valhalla invest realm also shows and saves the game's raw answers (GetRealmName, GetNormalizedRealmName, UnitFullName, GetRealmID, realm-list info) and the alias.",
+	} },
+	{ version = "1.2.29", date = "2026-11-20", heads = { [1] = "Fixed", [5] = "New", }, items = {
+		"|cff6e2c0aYour Watchlist, AH history, Top 10 and lists are back|r: WoW Forever's 1.60.1.71037 update gives a blank realm name at login, and 1.2.28 then saved under an empty realm, so they looked gone (nothing was deleted). Valhalla now waits for the game to name the realm, and never saves under a blank one.",
+		"On the first load, what was saved under the blank realm is merged into your realm: today's scans and history in time order, the newer prices, any Watchlist items or lists added since (each once), the newer bag and bank counts. Then the blank realm is removed.",
+		"If the game still gives no realm name after 10 seconds, Valhalla uses the realm this character last used, or the saved realm that has this character.",
+		"Friends on the map: no \"Name-\" with a blank realm while the realm isn't known yet.",
+		"|cff6e2c0a/valhalla invest realm|r: which realm Valhalla uses and why, what the game says, the saved realms and what was merged. It is kept in the saved diagnostic (/reload writes it).",
+	} },
+	{ version = "1.2.28", date = "2026-11-20", heads = { [1] = "Changed", [3] = "Fixed", }, items = {
+		"|cff6e2c0aCraft's search: All or Item Name|r: two tick boxes right of the search box, one always ticked. Item Name (the default) looks only in the item's name, the text as you type it, as before 1.2.27. All finds every word you type in the item's name or its reagents' names, as in 1.2.27. Your choice is kept between sessions. Harvest always searches the item's name, so the boxes are hidden there.",
+		"The search box's hint says where it looks: \"item name\" or \"name or reagent\".",
+		"Fishing's Harvest list now has the catches the game files as Other: Stonescale Eel, Lightning Eel, Oily Blackmouth, Firefin Snapper, Small Barnacled Clam, Thick-shelled Clam and Big-mouth Clam (searching \"eel\" found nothing before).",
+	} },
+	{ version = "1.2.27", date = "2026-11-20", heads = { [1] = "Changed", }, items = {
+		"|cff6e2c0aCraft's search finds reagents too|r: every word you type (any order, any case) must be in the crafted item's name or in one of its reagents' names, so \"thread\" lists every craft that uses a thread, and \"bandage linen\" finds Linen Bandage. Hover a row: the reagents that matched are marked \"(matches your search)\".",
+		"The list updates 0.3 seconds after you stop typing, as the Shopping List's search does. Reagent names the game hasn't sent yet are asked for, and their crafts show once they arrive.",
+		"Harvest's search is as before: the item's name containing what you type.",
+	} },
+	{ version = "1.2.26", date = "2026-11-20", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aThe quest log is left alone in combat|r: Valhalla's quest log order (Ready to Turn In, zones) used to be laid out straight from the game's own update, even in combat and while auras are secret, a likely cause of the \"secret while tainted by 'Valhalla'\" errors. It now waits like the tracker does and is laid out once combat ends.",
+		"A pin code whose notes have spaces now shares every pin with its whole note (it stopped at the first space and dropped the pins after it). Codes from 1.2.25 still read in full.",
+		"Deleting a pin (Delete, Alt-click, Clear All) closes its note box and turns the Quill off if it was drawing on that pin.",
+		"What's new: the list of versions scrolls, and picking an older one (Older) scrolls to it, instead of running off the window.",
+		"Friends on the map: the (*) mark shows on players from another realm, not on your own realm's.",
+		"The unexplored areas' covers are reused when they're made again (exploring, changing their colour) instead of new ones piling up each time.",
+		"Investments: looting or trading an item no longer clears what's waiting for you in the mail; only taking it from the mailbox does.",
+		"Investments: crafts and harvests with an item whose name hasn't loaded yet stay listed (and load), instead of disappearing from a name search.",
+		"Paint and the Quill: opening the map in combat no longer errors on their keyboard catcher; it applies when combat ends.",
+		"Investments: a crafted item that binds on pickup is no longer ranked while the game hasn't loaded it (checked again shortly), and recipe costs update when a vendor's price changes.",
+		"Investments: the list chooser closes when you click elsewhere, like the item menu; a Per-stack tooltip no longer shows the auction lines twice; the top-level filter's tip says what it does (items with no known level stay listed, marked \"?\").",
+		"Other addons' switches in Valhalla's menu sit under their own section's heading.",
+		"Investments: the Watchlist's item search works like the Shopping List's: its rows stay put while item names load (new ones go below), and a click outside closes it.",
+		"The map's gap minimap no longer errors at the edge of a continent; Friends, group pins and the tracker's map pins do less work when they're off or unchanged; switching Investments off at the auction house stops its name loading.",
+	} },
+	{ version = "1.2.25", date = "2026-11-19", heads = { [1] = "Fixed", [3] = "Changed", }, items = {
+		"|cff6e2c0aWaypoints, zone tracking and quest log zones stuck since 1.2.24|r: 1.2.24 asked the game whether this client has secret values at all (always yes here), so Valhalla's changes to the quest tracker waited for good, even out of combat: a dropped map pin set no waypoint arrow, and quests weren't tracked or untracked by zone. It now asks whether your auras are secret right now, so out of combat they apply at once again.",
+		"If the game keeps auras secret out of combat for more than 30 seconds, Valhalla's waiting changes go ahead anyway, with one line in chat (once a session). In combat, and for 3 seconds after, they still wait.",
+		"Valhalla asks the game for a quest's details (for a tracker row whose title hasn't loaded) only out of combat, and at most once every 10 seconds per quest. /valhalla combat shows whether Valhalla's changes are waiting, why, and the last ones made (time and what).",
+	} },
+	{ version = "1.2.24", date = "2026-11-18", heads = { [1] = "Fixed", [3] = "Changed", }, items = {
+		"|cff6e2c0a\"Auras cannot be accessed when secret while tainted by 'Valhalla'\" again|r: 1.2.23 held Valhalla's quest tracker changes only while the game said you were in combat. They now also wait while you're in combat by any other measure, while the game keeps auras secret, and for 3 seconds after combat ends, then run only if all of that is still clear (checked again every 3 seconds if not).",
+		"Following a map pin (setting or clearing the game's waypoint) and a quest's details opened from the map or a quest chain row now wait the same way, with one line in chat.",
+		"After combat, quest tracking you changed in combat, the zone-by-zone tracking and the quest log zones apply about 3 seconds later than before.",
+	} },
 	{ version = "1.2.23", date = "2026-11-17", heads = { [1] = "Fixed", [4] = "Changed", }, items = {
 		"|cff6e2c0a\"Auras cannot be accessed when secret while tainted by 'Valhalla'\" in combat|r: a spec or talent change in combat lays out the game's quest tracker, which reads your auras, and in combat that read errored when Valhalla's own changes to the tracker had just come before. In combat Valhalla now leaves the quest tracker and quest log alone and makes its changes once combat ends.",
 		"Quest log zones you've clicked stay as you left them, as in 1.2.22; in combat the game's own way shows until combat ends, then yours come back.",
