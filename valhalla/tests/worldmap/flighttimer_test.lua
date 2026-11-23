@@ -357,6 +357,8 @@ do
   ok(druid[62] and not druid[63] and hdruid[63] and not hdruid[62], "a druid: Nighthaven's flight master on the map (their faction's)")
   ok(not warrior[62] and not warrior[63] and not hwarrior[62] and not hwarrior[63], "a warrior: no Nighthaven flight master")
   ok(warrior[2] and druid[2] and hwarrior[3203] and not warrior[3274] and not hwarrior[3275], "the rest as before (Stormwind; Rog'mar for the Horde); no Powderfuse Port")
+  ok(warrior[559] and warrior[3242] and hwarrior[559] and hwarrior[3242], "both factions: Mount Hyjal's Summit of Eternity (559) and Tainted Foothills (3242)")
+  ok(not warrior[84] and not warrior[85] and not druid[86] and not hwarrior[87], "no Eastern Plaguelands tower flight master (84-87)")
   -- the timer next to where Powderfuse Port's was: Farholde Keep to Lakeshire, measured as any other
   Nodes({ { id = 3276, name = "Farholde Keep, Riverglades", kind = "CURRENT" }, { id = 5, name = LS } })
   W.routes = { [2] = { { 1, 2 } } }
@@ -381,6 +383,34 @@ do
   ok(boats == 2 and sails == 1, "Powderfuse Port's boat stays (both ways, its sailing)", boats .. " " .. sails)
   local routes = io.open(root .. "Map/Routes.lua"):read("*a")
   ok(routes:find('["Steamwheedle Port - Powderfuse Port"] = true', 1, true), "Routes.lua: its boat still drawn as a neutral goblin port's")
+end
+
+print("== 11. (1.2.34) OpenMap v0.8.10's flight data: the tower nodes gone, Mount Hyjal's two in, routes included")
+do
+  local FD = ns.MapFlights
+  ok(FD.nodes[84] == nil and FD.nodes[85] == nil and FD.nodes[86] == nil and FD.nodes[87] == nil, "FlightData: Plaguewood, Northpass, Eastwall and Crown Guard gone")
+  local tower = 0
+  for _, path in ipairs(FD.paths) do
+    for _, id in ipairs({ 84, 85, 86, 87 }) do
+      if path[1] == id or path[2] == id then tower = tower + 1 end
+    end
+  end
+  ok(tower == 0, "no route to or from the tower nodes", tower)
+  local summit, tainted = FD.nodes[559], FD.nodes[3242]
+  ok(summit and summit[1] == "Summit of Eternity, Mount Hyjal" and summit[2] == 1 and summit[3] == 5283.2 and summit[4] == -3306.7 and summit[5] == 3, "559 Summit of Eternity, on Kalimdor, both factions")
+  ok(tainted and tainted[1] == "Tainted Foothills, Mount Hyjal" and tainted[2] == 1 and tainted[3] == 4393.5 and tainted[4] == -2836.4 and tainted[5] == 3, "3242 Tainted Foothills, on Kalimdor, both factions")
+  local have = {}
+  for _, path in ipairs(FD.paths) do have[path[1] .. ">" .. path[2]] = path end
+  local want = { "559>3242", "3242>559", "53>3242", "3242>53", "52>3242", "3242>52" }
+  local missing = {}
+  for _, key in ipairs(want) do if not have[key] then missing[#missing + 1] = key end end
+  ok(#missing == 0, "routes both ways: Summit and Tainted Foothills, and Tainted Foothills to both Everlooks (52, 53)", table.concat(missing, ","))
+  ok(FD.nodes[52] and FD.nodes[53] and FD.nodes[3203] and FD.nodes[3276], "Everlook, Rog'mar and Farholde Keep stay")
+  local dangling = 0
+  for _, path in ipairs(FD.paths) do
+    if not FD.nodes[path[1]] or not FD.nodes[path[2]] then dangling = dangling + 1 end
+  end
+  ok(dangling == 0, "every flight path's ends are still nodes", dangling)
 end
 
 print(("\n%d passed, %d failed"):format(pass, fail))

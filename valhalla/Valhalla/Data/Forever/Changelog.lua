@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.34", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aFlight masters|r: none at Eastern Plaguelands' towers (Plaguewood, Northpass, Eastwall and Crown Guard). They are in the game's flight tables, but no character can learn them and no flight master stands there. Mount Hyjal's two are on the map: Summit of Eternity and Tainted Foothills, with the routes between them and to Everlook.",
+		"|cff6e2c0aThe map keeps your settings|r: a view worked out while the map was still 0 pixels across (a divide by zero) is never put up, so it can't leave the map blank. A saved window place, size or scale that isn't a real number is forgotten. On logout any such number is taken out of your saved settings, so one bad number can't make the game throw the whole file away and put every setting back to its default.",
+	} },
 	{ version = "1.2.32", date = "2026-11-21", heads = { [1] = "Changed", }, items = {
 		"|cff6e2c0aCraft: Cost/item|r (was Cost to Make): what one item costs to make, the craft's reagents divided by how many one craft makes. Every row now adds up: Profit/item = Sell at less the AH's cut, less Cost/item. (Ghost Dye makes 2: it showed the cost of two next to the price of one; the profit and margin were right.)",
 		"A craft that makes more than one shows it after its name: \"x2\", or a range like \"x1-3\". Its tooltip keeps the craft's lines and adds Cost per item, with the whole craft's cost. Sorting by Cost/item sorts per item; the ranking, Total, Invest Amount, Per stack and Harvest are unchanged.",

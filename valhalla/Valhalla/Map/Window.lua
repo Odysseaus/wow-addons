@@ -55,6 +55,12 @@ end
 
 local function Apply()
 	if not map or Maximized() or ours or moveAny or sizing then return end
+	-- (1.2.34) a place or size saved that isn't one, NaN or infinite, or no size at all: forgotten, or the
+	-- map would open from it and the next logout would write a number the game can't read back
+	local w0, s0 = mod.db.window, mod.db.windowSize
+	if w0 and not ns.Safe.Finite(w0[3], w0[4]) then mod.db.window = false end
+	if s0 and not (ns.Safe.Finite(s0[1], s0[2]) and s0[1] >= 1 and s0[2] >= 1) then mod.db.windowSize = false end
+	if not ns.Safe.Finite(mod.db.windowScale) or mod.db.windowScale <= 0 then mod.db.windowScale = 1 end
 	ours = true
 	local w = mod.db.window
 	if w then
@@ -88,7 +94,7 @@ end
 
 local function Save()
 	local point, _, relPoint, x, y = map:GetPoint(1)
-	if point then mod.db.window = { point, relPoint, x, y } end
+	if point and ns.Safe.Finite(x, y) then mod.db.window = { point, relPoint, x, y } end   -- (1.2.34) never a NaN
 end
 
 function mod:ResetWindow()
@@ -165,8 +171,11 @@ local function Grip(corner)
 			if mod.EndResize then mod.EndResize() end
 			return
 		end
-		mod.db.windowSize = { math.floor(map:GetWidth() + 0.5), math.floor(map:GetHeight() + 0.5) }
-		Save()
+		local sw, sh = map:GetWidth(), map:GetHeight()
+		if ns.Safe.Finite(sw, sh) and sw >= 1 and sh >= 1 then   -- (1.2.34) a 0 px drag is not a size to keep
+			mod.db.windowSize = { math.floor(sw + 0.5), math.floor(sh + 0.5) }
+			Save()
+		end
 		if map:IsShown() then Refit() end   -- (laid out at the scale the drag showed: WorldMap.lua)
 		if mod.EndResize then mod.EndResize() end
 	end
@@ -181,6 +190,7 @@ local function Grip(corner)
 		if math.abs(map:GetScale() - start.scale) > 0.001 then Finish() return end
 		local x, y = GetCursorPosition()
 		local s = map:GetEffectiveScale()
+		if not ns.Safe.Finite(s) or s <= 0 then return end   -- (1.2.34) no scale yet: a drag by it would be infinite
 		local dx = (x - start.x) / s
 		local w = math.max(MIN_W, start.w + (left and -dx or dx))
 		local h = math.max(MIN_H, start.h - (y - start.y) / s)

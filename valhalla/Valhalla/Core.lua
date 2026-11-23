@@ -57,6 +57,17 @@ function Safe.XY(vec)
 	return Safe.Value(x), Safe.Value(y)
 end
 
+-- a plain number that's neither NaN nor infinite (a view worked out while the map is 0 px across
+-- divides by zero: one such view put into the map left it blank, and one such number saved with the
+-- settings is text the game can't read back, so the whole file is lost: 1.2.34, OpenMap v0.8.10 #260 #261 #306)
+function Safe.Finite(...)
+	for i = 1, select("#", ...) do
+		local n = select(i, ...)
+		if type(n) ~= "number" or Safe.IsSecret(n) or n ~= n or n == math.huge or n == -math.huge then return false end
+	end
+	return true
+end
+
 -- calls fn(...) and returns its first result when it is plain, else nil
 function Safe.Call(fn, ...)
 	if type(fn) ~= "function" then return nil end
@@ -138,6 +149,28 @@ function ns:InitDB()
 		ValhallaDB[key] = Fill(ValhallaDB[key] or {}, mod.defaults)
 		ValhallaCharDB[key] = ValhallaCharDB[key] or {}
 		mod.db, mod.char = ValhallaDB[key], ValhallaCharDB[key]
+	end
+	-- (1.2.34) and as you log out: a NaN or infinite number in the saved settings is written as text the game
+	-- can't read back, and the whole file is lost, every setting back to its default on the next login
+	if not ns.scrubOwner then
+		ns.scrubOwner = {}
+		ns.RegisterEvent(ns.scrubOwner, "PLAYER_LOGOUT", function()
+			ns.ScrubSaved(ValhallaDB)
+			ns.ScrubSaved(ValhallaCharDB)
+			ns.ScrubSaved(ValhallaInvestDB)
+		end)
+	end
+end
+
+-- every number in a saved table (and the tables in it) that isn't finite, removed
+function ns.ScrubSaved(t, seen)
+	if type(t) ~= "table" then return end
+	seen = seen or {}
+	if seen[t] then return end
+	seen[t] = true
+	for k, v in pairs(t) do
+		if type(v) == "number" and not Safe.Finite(v) then t[k] = nil
+		elseif type(v) == "table" then ns.ScrubSaved(v, seen) end
 	end
 end
 

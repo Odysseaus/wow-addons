@@ -13,6 +13,13 @@ function Safe.IsSecret() return false end
 function Safe.Value(v) return v end
 function Safe.XY(vec) if type(vec) ~= "table" then return end return vec.x, vec.y end
 function Safe.Call(fn, ...) if type(fn) ~= "function" then return nil end local ok, v = pcall(fn, ...) if ok then return v end end
+function Safe.Finite(...)
+  for i = 1, select("#", ...) do
+    local n = select(i, ...)
+    if type(n) ~= "number" or n ~= n or n == math.huge or n == -math.huge then return false end
+  end
+  return true
+end
 ns.Safe = Safe
 function ns:Print(fmt, ...) W.printed[#W.printed + 1] = select("#", ...) > 0 and fmt:format(...) or fmt end
 function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m.defaults or {} self.modules[key] = m return m end
