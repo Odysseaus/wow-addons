@@ -288,6 +288,8 @@ local function Plane(host, cont)
   local f = CreateFrame("Frame", nil, host)
   f:SetSize(1, 1)
   if f.EnableMouse then f:EnableMouse(false) end
+  -- one level above the close-up host, and no higher: the city floor is raised above this after layout
+  if f.SetFrameLevel and host.GetFrameLevel then f:SetFrameLevel((host:GetFrameLevel() or 0) + 1) end
   f:Hide()
   P = { host = host, f = f, tiles = {}, free = {}, cont = cont, a = 0 }
   C.planes[cont] = P
@@ -485,6 +487,7 @@ function C.Layout(ctx)
             P.sc, P.Ox, P.Oy = sc, Ox, Oy
           end
           if P.a ~= a then P.f:SetAlpha(a) P.a = a end
+          if host.GetFrameLevel and P.f.SetFrameLevel then P.f:SetFrameLevel((host:GetFrameLevel() or 0) + 1) end
           P.f:Show()
           seen[cont] = true
           -- release the tiles that left the view, build the ones that came in

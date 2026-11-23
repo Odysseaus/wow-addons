@@ -106,6 +106,12 @@ local function Run()
   data.mapName, data.mapType = hi and hi.name, hi and hi.mapType
   lines[#lines + 1] = string.format("map 2: you: map %s \"%s\" (%s)", tostring(here), tostring(hi and hi.name), hi and TypeName(hi.mapType) or "?")
   lines[#lines + 1] = px and string.format("map 2 pos: %s, %s", Pct(px), Pct(py)) or "map 2 pos: not available here (instance or no API)"
+  -- 0.5.2b.20: which map an open will frame, beside the player's map and Forever's displayable map
+  local MT = NS.MapTab
+  if MT and MT.OpenProbeLine then
+    local okO, openLine = pcall(MT.OpenProbeLine)
+    if okO and type(openLine) == "string" then lines[#lines + 1] = openLine end
+  end
 
   -- 3: the tree up to the top
   local chain, id, guard = {}, here, 0

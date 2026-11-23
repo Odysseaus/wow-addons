@@ -1,6 +1,5 @@
--- Dark Matter 0.5.2a.1: the docked quest panel. While the Map tab is showing, the quest log sits as its own panel
--- docked to the right of the Dark Matter window, like the game's map + quest log: locked in place (it is a child of the
--- window, so it moves and scales with it), themed in every theme, open or closed as saved in DarkMatterDB.questPanel.
+-- Dark Matter 0.5.2b.28: the quest column inside Map & Quest Logs. It is a child of that section, so it moves
+-- and scales with the window. It is not a separate tab and not a panel you hide.
 -- Top: the stock quest log's search bar (the game's SearchBoxTemplate and its "Quests: n/max" box, built from the game's
 -- own template and atlases where this client has them). Below: the same quest list as the Quests tab (Tab_Quests views,
 -- shared QuestState). A row click opens that quest's detail (the Quests tab's detail code) with a Back button.
@@ -27,8 +26,42 @@ local function RightReach()
 end
 function P.Extent() return RightReach() + P.gap + P.w end
 
+local TOP, PAD = 76, 14
+local function FitScroll(S, sh)
+  if not (S and S.frame) then return end
+  S.h = sh
+  S.frame:SetHeight(sh)
+  if S.scroll then S.scroll:SetHeight(sh) end
+  if S.Update then S:Update() end
+end
+local function LayoutColumn()
+  if not frame then return end
+  local h = NS.Num(frame:GetHeight())
+  if not h or h < 120 then return end
+  local b = (NS.theme and NS.theme.m and NS.theme.m.listBorder) or 5
+  local inner = math.max(40, h - TOP - PAD)
+  if lp then
+    lp:SetHeight(inner)
+    if lp.SetClipsChildren then lp:SetClipsChildren(true) end
+  end
+  if dp then dp:SetHeight(inner) end
+  -- the list was built at the full window height; keep it inside this panel's border
+  if view and view.list then FitScroll(view.list, math.max(40, inner - 2 * b)) end
+  if det and det.scroll then
+    local headH = (NS.QL and NS.QL.DetailHead and NS.QL.DetailHead(28)) or (110 + 28)
+    FitScroll(det.scroll, math.max(40, inner - 2 * b - headH))
+  end
+end
 local function Place()
   if not frame then return end
+  if P.embedded and P.host then
+    frame:SetParent(P.host)
+    frame:ClearAllPoints()
+    frame:SetAllPoints(P.host)
+    if frame.SetClipsChildren then frame:SetClipsChildren(true) end
+    LayoutColumn()
+    return
+  end
   local win = frame:GetParent()
   frame:ClearAllPoints()
   frame:SetPoint("TOPLEFT", win, "TOPRIGHT", RightReach() + P.gap, 0)
@@ -137,11 +170,52 @@ local function ShowDetail(q)
   lp:Hide()
   dp:Show()
   T().ShowDetail(q, det)
-  if det.scroll and det.scroll.SetScroll then pcall(det.scroll.SetScroll, det.scroll, 0) end
+  if det.scroll and det.scroll.ScrollTo then pcall(det.scroll.ScrollTo, det.scroll, 0) end
 end
 P.ShowList, P.ShowDetail = ShowList, ShowDetail
 
+-- 0.5.2b.46: a finished read of the log for the quest on screen. true = it is there, false = it is not,
+-- nil = the count or an entry could not be read. A log index is not consulted.
+local function LogHas(id)
+  local CQ = _G.C_QuestLog
+  if type(CQ) ~= "table" or type(CQ.GetNumQuestLogEntries) ~= "function" or type(CQ.GetInfo) ~= "function" then return nil end
+  local ok, n = pcall(CQ.GetNumQuestLogEntries)
+  n = ok and NS.Num(n) or nil
+  if not n or n < 0 then return nil end
+  for i = 1, n do
+    local rowOk, row = pcall(CQ.GetInfo, i)
+    if not rowOk or row == nil then return nil end
+    row = NS.Tbl(row)
+    if not row then return nil end
+    if NS.Num(row.questID) == id then return true end
+  end
+  return false
+end
+function P.CheckRemoved()
+  if not (dp and dp.IsShown and dp:IsShown() and det and type(det.quest) == "table") then return end
+  local id = NS.Num(det.quest.questID)
+  if not id then return end
+  if LogHas(id) ~= false then return end
+  ShowList()
+end
+
+function P.Embed(host)
+  if not host then return nil end
+  P.embedded = true
+  P.host = host
+  P.mapShown = true
+  local f = P.Build(host)
+  if not f then return nil end
+  Place()
+  f:Show()
+  if view then view.Refresh() end
+  UpdateCount()
+  return f
+end
 function P.Build(win)
+  -- 0.5.2b.27: a rebuilt window leaves the old panel on a hidden parent. Show() there never appears until /reload.
+  local parent = frame and frame.GetParent and frame:GetParent()
+  if parent and win and parent ~= win then P.Drop() end
   if frame then return frame end
   local t = T()
   if not (win and t and t.NewView) then return nil end
@@ -150,29 +224,18 @@ function P.Build(win)
   f:SetSize(P.w, m.h)
   f:SetFrameLevel(win:GetFrameLevel() + 2)
   f:EnableMouse(true) -- locked: it does not move by itself, it follows the window
+  if f.SetClipsChildren then f:SetClipsChildren(true) end
   f:Hide()
   frame = f
   P.frame = f
   Place()
   UI.Slate(f, "slateShade", "BACKGROUND", 0)
   f.border = UI.NineSlice(f, "frame", m.frameCorner, "BORDER", 2)
-  -- head: title + close (the game's close button in the WoW theme, our own elsewhere)
+  -- head: title. The window's own close button is the only X. This column has none.
   local title = UI.Text(f, "OVERLAY", 14, "gold", "CENTER")
   title:SetPoint("TOP", f, "TOP", 0, -14)
   title:SetText("Quest Log")
   f.title = title
-  local close = NS.Stock.FromTemplate("Button", f, "UIPanelCloseButton")
-  if not close then
-    close = CreateFrame("Button", nil, f)
-    close:SetSize(24, 24)
-    local ct = close:CreateTexture(nil, "ARTWORK")
-    ct:SetAllPoints(close)
-    NS.OnSkin(function() NS.SetPiece(ct, "xbtn") end)
-  end
-  if (NS.Num(close:GetWidth()) or 0) <= 0 then close:SetSize(28, 28) end
-  close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
-  close:SetScript("OnClick", function() P.SetOpen(false) end)
-  f.close = close
   local pad = 14
   local cw = P.w - 2 * pad
   sbar = BuildSearchBar(f, cw)
@@ -184,6 +247,7 @@ function P.Build(win)
   local h = m.h - top - pad
   -- the list (same rows, watch boxes and selection as the Quests tab)
   lp = UI.Panel(f, cw - G, h)
+  if lp.SetClipsChildren then lp:SetClipsChildren(true) end
   lp:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -top)
   view = t.NewView(lp, cw - G - 2 * b, h - 2 * b, b, -b, {
     onPick = function(q) ShowDetail(q) end,
@@ -219,7 +283,7 @@ end
 function P.Sync(mapShown)
   if mapShown ~= nil then P.mapShown = mapShown end
   local want = P.mapShown and P.Wanted()
-  if want and not frame then P.Build(_G.DarkMatterFrame) end
+  if want and not frame then P.Build((P.embedded and P.host) or _G.DarkMatterFrame) end
   if not frame then return end
   if want then
     Place()
@@ -231,15 +295,37 @@ function P.Sync(mapShown)
     frame:Hide()
     if T() and T().Events then T().Events(false, "panel") end
   end
-  if NS.WindowClampExtra then NS.WindowClampExtra(want and P.Extent() or 0) end
+  if NS.WindowClampExtra then NS.WindowClampExtra((want and not P.embedded) and P.Extent() or 0) end
   if NS.MapTab and NS.MapTab.SetPanelIcon then NS.MapTab.SetPanelIcon() end
 end
 function P.SetOpen(on)
+  -- 0.5.2b.28: the column is part of Map & Quest Logs. It is not a panel you close.
+  if P.embedded then
+    if NS.db then NS.db.questPanel = true end
+    if on == false then ShowList() end
+    P.Sync()
+    return
+  end
   if NS.db then NS.db.questPanel = on and true or false end
   P.Sync()
 end
 function P.Toggle() P.SetOpen(not P.Wanted()) end
 function P.IsShown() return frame ~= nil and frame:IsShown() end
+-- 0.5.2b.27: while the Map tab is on screen and the panel is wanted, make sure it is actually showing.
+-- A missed OnShow, or a panel left on the previous window, used to stay blank until /reload.
+function P.Ensure()
+  local win = _G.DarkMatterFrame
+  local cur = NS.windowParts and NS.windowParts.current
+  local mapOn = win and win.IsShown and win:IsShown() and (cur == "map" or (cur == nil and NS.db and NS.db.tab == "map"))
+  if not (mapOn and P.Wanted()) then return false end
+  local parent = frame and frame.GetParent and frame:GetParent()
+  local home = (P.embedded and P.host) or win
+  if parent and home and parent ~= home then P.Drop() end
+  P.mapShown = true
+  if not (frame and frame:IsShown()) then P.Sync(true)
+  elseif T() and T().Events then T().Events(true, "panel") end
+  return frame ~= nil and frame:IsShown()
+end
 -- the window is being built again: the panel hung off the old one
 function P.Drop()
   if frame then frame:Hide() end

@@ -584,6 +584,10 @@ function UI.RailTab(parent, label, glyphKey)
   t.text:SetShadowOffset(1, -1)
   t.text:SetShadowColor(0, 0, 0, 0.9)
   t.text:SetPoint("LEFT", t.icon, "RIGHT", 8, 0)
+  t.text:SetWidth(math.max(20, m.tabW - 12 - m.tabIcon - 8))
+  if t.text.SetWordWrap then t.text:SetWordWrap(true) end
+  if t.text.SetJustifyV then t.text:SetJustifyV("MIDDLE") end
+  if t.text.SetMaxLines then t.text:SetMaxLines(2) end
   t.text:SetText(label)
   t.glyphKey = glyphKey
   t.active = false

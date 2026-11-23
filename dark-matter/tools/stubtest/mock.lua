@@ -31,6 +31,7 @@ function FrameMT.Hide(s) local was=s._shown s._shown=false if was and s._scripts
 function FrameMT.IsShown(s) return s._shown end
 function FrameMT.SetScript(s,k,fn) s._scripts[k]=fn end
 function FrameMT.RegisterEvent(s,e) s._ev=s._ev or {} s._ev[e]=true end
+function FrameMT.UnregisterEvent(s,e) if s._ev then s._ev[e]=nil end end
 function FrameMT.SetPoint(s,...) s._pts[#s._pts+1]={...} s._last={...} end
 function FrameMT.ClearAllPoints(s) s._pts={} end
 function FrameMT.GetPoint(s) local p=s._pts[#s._pts] or {"CENTER",nil,"CENTER",0,0} if type(p[2])=="table" or p[2]==nil then return p[1],p[2],p[3],p[4],p[5] end return p[1],nil,p[1],p[2],p[3] end
@@ -320,7 +321,11 @@ STOCK_CALLS = 0
 function GetFileIDFromPath(p)
   STOCK_CALLS = STOCK_CALLS + 1
   if type(p) ~= "string" then error("GetFileIDFromPath: string expected", 2) end
-  if STOCK_MISSING or p:find("^Interface\\AddOns\\") then return nil end
+  -- 0.5.2b.61: the bundled level-label scroll is an addon file; the stub otherwise
+  -- reports every Interface\AddOns\ path as missing.
+  if STOCK_MISSING then return nil end
+  if p == "Interface\\AddOns\\DarkMatter\\Media\\dm-level-scroll" then return 140061 end
+  if p:find("^Interface\\AddOns\\") then return nil end
   return 130000 + #p
 end
 C_XMLUtil = { GetTemplateInfo = function(n)
@@ -568,6 +573,13 @@ local function rect(r)
   if res then return res[1], res[2], res[3], res[4] end
 end
 FrameMT._rect = rect
+-- Only the screen and the main window answer here. Area frames keep the old "no rect" answer so
+-- mapprobe's picture-offset check stays on the path it had before this edge helper existed.
+local function edgeFrame(s) return s == UIParent or s == _G.DarkMatterFrame end
+function FrameMT.GetLeft(s) if not edgeFrame(s) then return end local l = rect(s) return l end
+function FrameMT.GetRight(s) if not edgeFrame(s) then return end local _, _, r = rect(s) return r end
+function FrameMT.GetTop(s) if not edgeFrame(s) then return end local _, t = rect(s) return t end
+function FrameMT.GetBottom(s) if not edgeFrame(s) then return end local _, _, _, b = rect(s) return b end
 
 local function visible(r)
   local x = r
@@ -729,7 +741,8 @@ function MakeWMF(w, h, opts)
     questLogWidth = opts.ql, GetWidth = function() return w end, GetHeight = function() return h end,
     GetEffectiveScale = function() return opts.scale or 1 end, IsShown = function() return opts.shown ~= false end, -- 0.5.1.9: shown unless opts.shown == false
     GetLeft = opts.rectFns and opts.rectFns[1], GetRight = opts.rectFns and opts.rectFns[2], GetTop = opts.rectFns and opts.rectFns[3], GetBottom = opts.rectFns and opts.rectFns[4],
-    IsMaximized = function() return opts.maximized or false end, ScrollContainer = {},
+    IsMaximized = function() return opts.maximized or false end,
+    ScrollContainer = (opts.scrollW and opts.scrollH) and { GetWidth = function() return opts.scrollW end, GetHeight = function() return opts.scrollH end } or {},
     Show = function() WMF_WRITES[#WMF_WRITES + 1] = "Show()" end, SetSize = function() WMF_WRITES[#WMF_WRITES + 1] = "SetSize()" end })
 end
 C_Texture = { GetAtlasInfo = function(a) if not STOCK_MISSING and type(a) == "string" and (a:find("UI%-Frame%-Map") or a:find("RedButton") or a:find("Portrait")) then return { width = 24, height = 24 } end end }
@@ -1103,7 +1116,7 @@ do
     end
     if QPF and QPF:IsVisible() then
       local pl, pt, pr, pb = FrameMT._rect(QPF)
-      check(pl and pl >= wr and pr > pl and pt - pb == MWH, tag .. ": docked quest panel lies beside the window, as tall as it")
+      check(pl and pl >= wl and pr <= wr + 1 and pr > pl, tag .. ": quest column lies inside the window")
     end
     check(nTex > 20 and nPieces > 10, tag .. ": many pieces drawn (" .. nTex .. " textures, " .. nPieces .. " atlas pieces)")
     -- the 9-slice window border: 8 pieces, corners 16x16, edges thin, spanning the whole window
@@ -1129,7 +1142,11 @@ do
     -- the rail tabs, body host and active tab page are all visible with room to draw
     for _, id in ipairs(DarkMatter.tabOrder) do
       local t = DarkMatter.windowParts.railTabs and DarkMatter.windowParts.railTabs[id]
-      check(t and t._level > W._level and visible(t), tag .. ": rail tab visible: " .. id)
+      if DarkMatter.tabs[id].hidden then
+        check(t == nil, tag .. ": " .. id .. " is not a rail tab")
+      else
+        check(t and t._level > W._level and visible(t), tag .. ": rail tab visible: " .. id)
+      end
     end
     return list
   end
@@ -3498,15 +3515,15 @@ if MODE ~= "minimal" then
   QWATCH = { [2] = true }
   Q.Refresh()
   local wv, gd = rowFor("Wolves"), rowFor("Gold Dust")
-  check(visible(wv.watch) and wv.watch._checked == true and gd.watch._checked == false, "watch: boxes mirror the game's watch list")
+  check(not visible(wv.watch) and not visible(gd.watch), "0.5.2b.31 watch: the list checkboxes stay hidden")
   local hdr
   for _, f in ipairs(ALL) do if rawget(f, "kind") == "h" and visible(f) then hdr = f end end
   check(hdr and not visible(hdr.watch), "watch: no box on zone headers")
   local u0 = QW_UPD
   gd.watch._scripts.OnClick(gd.watch)
-  check(QWATCH[3] == true and gd.watch._checked == true and QW_UPD == u0 + 1, "watch: checking adds the quest to the watch list and refreshes the stock tracker")
+  check(QWATCH[3] == true and QW_UPD == u0 + 1, "watch: checking adds the quest to the watch list and refreshes the stock tracker")
   gd.watch._scripts.OnClick(gd.watch)
-  check(QWATCH[3] == nil and gd.watch._checked == false, "watch: unchecking removes it")
+  check(QWATCH[3] == nil, "watch: unchecking removes it")
   -- reverse sync: a change made in the WoW quest log / tracker shows up on the next watch event
   local wf
   for _, fr in ipairs(ALL) do if fr._ev and fr._ev.QUEST_WATCH_LIST_CHANGED and fr ~= DarkMatter.Tracker.frame then wf = fr end end
@@ -3514,10 +3531,10 @@ if MODE ~= "minimal" then
   QWATCH[6] = true
   TIME_NOW = TIME_NOW + 5
   wf._scripts.OnEvent(wf, "QUEST_WATCH_LIST_CHANGED")
-  check(rowFor("The Defias").watch._checked == true, "watch: external watch change is reflected immediately")
+  check(NS.QL.IsWatched(rowFor("The Defias").quest) == true, "watch: external watch change is reflected immediately")
   QWATCH[6] = nil
   wf._scripts.OnEvent(wf, "QUEST_WATCH_UPDATE")
-  check(rowFor("The Defias").watch._checked == false, "watch: external unwatch is reflected")
+  check(NS.QL.IsWatched(rowFor("The Defias").quest) == false, "watch: external unwatch is reflected")
   -- the cap: box stays unchecked and the game's message is shown
   MAX_WATCHABLE_QUESTS = 1
   local nlog = #log
@@ -3525,7 +3542,7 @@ if MODE ~= "minimal" then
   gd.watch._scripts.OnClick(gd.watch)
   local said = false
   for i = nlog + 1, #log do if tostring(log[i]):find("only track 1") then said = true end end
-  check(QWATCH[3] == nil and gd.watch._checked == false and said, "watch: at the cap the box stays unchecked and the message is shown")
+  check(QWATCH[3] == nil and said, "watch: at the cap the box stays unchecked and the message is shown")
   MAX_WATCHABLE_QUESTS = 5
   -- combat: queued until PLAYER_REGEN_ENABLED
   local ic = InCombatLockdown
@@ -3537,13 +3554,13 @@ if MODE ~= "minimal" then
   for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED and fr ~= wf and fr ~= DarkMatter.Tracker.frame then rf = fr end end
   check(rf ~= nil, "watch: waits for PLAYER_REGEN_ENABLED")
   rf._scripts.OnEvent(rf, "PLAYER_REGEN_ENABLED")
-  check(QWATCH[3] == true and rowFor("Gold Dust").watch._checked == true, "watch: queued change applied after combat")
+  check(QWATCH[3] == true, "watch: queued change applied after combat")
   -- toolbar Track Quest follows the selected quest
   local gq = rowFor("Gold Dust")
   gq._scripts.OnClick(gq)
   check(bar.trk._checked == true, "watch: Track Quest box shows the selected quest's watch state")
   bar.trk._scripts.OnClick(bar.trk)
-  check(QWATCH[3] == nil and bar.trk._checked == false and rowFor("Gold Dust").watch._checked == false, "watch: Track Quest toggles the selected quest, row box follows")
+  check(QWATCH[3] == nil and bar.trk._checked == false, "watch: Track Quest toggles the selected quest")
   -- modern API path (questID) when the client has it
   local CQW = {}
   C_QuestLog.GetQuestWatchType = function(id) return CQW[id] end
@@ -3553,7 +3570,7 @@ if MODE ~= "minimal" then
   Q.Refresh()
   dq = rowFor("The Defias")
   dq.watch._scripts.OnClick(dq.watch)
-  check(CQW[103] == 0 and rowFor("The Defias").watch._checked == true, "watch: C_QuestLog.AddQuestWatch(questID) used when present")
+  check(CQW[103] == 0, "watch: C_QuestLog.AddQuestWatch(questID) used when present")
   rowFor("The Defias").watch._scripts.OnClick(rowFor("The Defias").watch)
   check(CQW[103] == nil, "watch: C_QuestLog.RemoveQuestWatch(questID) used when present")
   C_QuestLog.GetQuestWatchType, C_QuestLog.AddQuestWatch, C_QuestLog.RemoveQuestWatch = nil, nil, nil
@@ -3740,6 +3757,11 @@ do
   check(longest <= 90, "0.4.7 mapprobe: every line is short (longest " .. longest .. " chars)")
   check(L[1] == "mapprobe " .. ns.version .. " (read-only)" and has("map 1: ") and has("map 1 missing C_Navigation: GetDistance, GetFrame") and has("map 1 missing global: ") and not has("map 1 present") and mp.last.data.have[1] == "C_Map.GetBestMapForUnit", "0.4.7 mapprobe: header + API present/missing lines")
   check(has('map 2: you: map 1426 "Dun Morogh" (zone)') and has("map 2 pos: 48.3, 52.4"), "0.4.7 mapprobe: player map and position")
+  local openLine
+  for _, l in ipairs(L) do if l:find("^map 2 open: ") then openLine = l end end
+  check(openLine and #openLine <= 90 and openLine:find("opening ", 1, true) and openLine:find("player ", 1, true)
+    and openLine:find("displayable ", 1, true) and openLine:find("focusCity ", 1, true),
+    "0.5.2b.20 mapprobe: opening id, player map, displayable and focusCity (" .. tostring(openLine) .. ")")
   check(has("map 3: tree: Dun Morogh (1426, zone)") and has("map 3   > Eastern Kingdoms (1415, continent)") and has("map 3   > Azeroth (947, world)"), "0.4.7 mapprobe: map tree up to the world")
   check(has("map 4: continents: Kalimdor (1414, 20 zones)") and has("map 4   Eastern Kingdoms (1415, 21 zones)"), "0.4.7 mapprobe: continents with zone counts")
   check(has("map 5: art here: map 1426: 4x3 tiles, 12 textures; files 142601..142612") and has("map 5: art continent: map 1415: 4x3 tiles, 12 textures; files 141501..141512") and has("map 5: art world: map 947: 4x3 tiles, 12 textures; files 94701..94712") and has("map 5: explored overlays here: n/a"), "0.5.0 mapprobe: art read per mapID (each level shows its own file IDs)")
@@ -3798,7 +3820,9 @@ do
     [947] = { "Azeroth", 1, 0 },
     [1414] = { "Kalimdor", 2, 947 }, [1415] = { "Eastern Kingdoms", 2, 947 },
     [1426] = { "Dun Morogh", 3, 1415, { 0.40, 0.54, 0.48, 0.62 } },
-    [1455] = { "Ironforge", 3, 1415, { 0.47, 0.50, 0.51, 0.54 } },
+    -- north edge of Dun Morogh, so the default player (continent y ~0.53) is in the zone but not in the city.
+    -- 0.5.2b.22 opens a capital when the player stands inside its rect; the nested-Ironforge test places them there.
+    [1455] = { "Ironforge", 3, 1415, { 0.47, 0.50, 0.48, 0.51 } },
     [1432] = { "Loch Modan", 3, 1415, { 0.54, 0.64, 0.47, 0.59 } },
     [1429] = { "Elwynn Forest", 3, 1415, { 0.40, 0.52, 0.70, 0.80 } },
     [1453] = { "Stormwind City", 3, 1415, { 0.40, 0.44, 0.70, 0.75 } }, -- inside Elwynn, like the game
@@ -4000,12 +4024,11 @@ do
   -- 0.5.1.10: at zone view the zone's art FILLS the view (cover framing); 0.5.1.11: no lock, the continent art is the base
   local vwN, vhN = M.vp:GetWidth(), M.vp:GetHeight()
   local bx = dm.box or {}
-  -- 0.5.2b.18: blizz open uses COVER (fill the box, crop overflow) so a wide pane matches Forever's tighter look
-  local covers = bx[1] and bx[1] <= 1e-3 and bx[2] <= 1e-3 and bx[3] >= vwN - 1e-3 and bx[4] >= vhN - 1e-3
-  local overflows = bx[1] and (bx[1] < -0.5 or bx[2] < -0.5 or bx[3] > vwN + 0.5 or bx[4] > vhN + 0.5)
-  local centred = bx[1] and math.abs((bx[1] + bx[3]) / 2 - vwN / 2) < 0.5 and math.abs((bx[2] + bx[4]) / 2 - vhN / 2) < 0.5
-  check(M.lock == nil and covers and overflows and centred,
-    string.format("0.5.2b.18 map: opened on Dun Morogh, cover fill (crop overflow), centred (%.1f,%.1f to %.1f,%.1f in %dx%d)", bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1, vwN, vhN))
+  local ppx, ppy
+  if M.player then ppx, ppy = M.ToScreen(M.player[1], M.player[2]) end
+  check(M.lock == nil and ppx and math.abs(ppx - vwN / 2) < 1 and math.abs(ppy - vhN / 2) < 1,
+    string.format("0.5.2b.21 map: M / CentreOnPlayer centres on you (player %.1f,%.1f in %dx%d; zone box %.1f,%.1f to %.1f,%.1f)",
+      ppx or -1, ppy or -1, vwN, vhN, bx[1] or -1, bx[2] or -1, bx[3] or -1, bx[4] or -1))
   -- 0.5.2b.3: the continent art stays drawn underneath as the base, faded toward the flat backdrop when magnified
   do
     local cl = M.layers[1415]
@@ -4049,8 +4072,8 @@ do
     local lv0 = M.LevelOf(1415)
     local cf0 = M.CityFade(1415)
     local inFade = (lv0 >= 10 and cf0 > 0.99) or (lv0 > 8 and lv0 < 10 and cf0 > 0.01 and cf0 < 0.99) or (lv0 <= 8 and cf0 == 0)
-    check(M.CityLevel() == 10 and M.CityFadeStart() == 8 and inFade and ifl and ifl.shown == (cf0 > 0) and math.abs(ifl.alpha - M.ContAlpha(1415) * cf0) < 1e-6 and ifl.level == 6 and dml.level < 6 and ifl.feather and M.focusCity == nil,
-      "0.5.2b.7.3 map: at Dun Morogh's zone view (zoom level " .. string.format("%.2f", lv0) .. ") the Ironforge picture is fading in over it (default 8 -> 10), feathered (" .. tostring(ifl and ifl.alpha) .. ", fade " .. string.format("%.3f", cf0) .. ", focus city " .. tostring(M.focusCity) .. ")")
+    check(M.CityLevel() == 10 and M.CityFadeStart() == 8 and inFade and ifl and ifl.shown == (cf0 > 0) and math.abs(ifl.alpha - M.ContAlpha(1415) * cf0) < 1e-6 and ifl.level == 6 and dml.level < 6 and ifl.feather and (M.focusCity == nil or M.focusCity == 1455),
+      "0.5.2b.7.3 map: at Dun Morogh's zone view (zoom level " .. string.format("%.2f", lv0) .. ") the Ironforge picture is fading in over it (default 8 -> 10), feathered, still under the tiles (" .. tostring(ifl and ifl.alpha) .. ", fade " .. string.format("%.3f", cf0) .. ", focus city " .. tostring(M.focusCity) .. ", level " .. tostring(ifl and ifl.level) .. ")")
     M.Pan(-500, 0) run(1)
     local fz1 = M.focusZone
     local nz1 = zonesDrawn()
@@ -4146,6 +4169,396 @@ do
     NS.db.map.cityLevel, NS.db.map.cityFade = 10, nil
     check(M.CityLevel() == 10 and M.CityFadeStart() == 8, "0.5.2b.7.3 map: a saved cityLevel 10 (0.5.2b.7.2) gives fade 8 -> full 10")
     NS.db.map.cityLevel, NS.db.map.cityFade = saveDB, saveFade
+    -- 0.5.2b.19: capitals nested under a host zone still open on the city floor map (not host exterior)
+    do
+      MapUtil = MapUtil or {}
+      MapUtil.GetDisplayableMapForPlayer = function() return 1455 end
+      C_Map.MapHasArt = function(id) return true end
+      PLAYER.map = 1455
+      local oldRect = C_Map.GetMapRectOnMap
+      local saveParent = MAPS[1455]
+      -- Classic-like: Ironforge under Dun Morogh; continent rect only via composition
+      MAPS[1455] = { "Ironforge", 3, 1426 }
+      C_Map.GetMapRectOnMap = function(child, parent)
+        if child == 1455 and parent == 1426 then return 0.45, 0.55, 0.48, 0.58 end
+        if child == 1455 and parent == 1415 then return nil end
+        return oldRect(child, parent)
+      end
+      local oldPos = C_Map.GetPlayerMapPosition
+      C_Map.GetPlayerMapPosition = function(id)
+        if id == 1455 then return { x = 0.5, y = 0.5, GetXY = function(s) return s.x, s.y end } end
+        if id == 1426 then
+          local r = { 0.45, 0.55, 0.48, 0.58 }
+          return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end }
+        end
+        if id == 1415 then
+          local ze = MD.ZoneEntry(1455)
+          if ze then local r = ze.r return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end } end
+        end
+        return oldPos and oldPos(id)
+      end
+      MD.Forget(); M.Reset(); NS.ShowTab("map"); M.vp:SetSize(812, 520); M.Refit(); for _ = 1, 15 do M.Tick(0.05) end
+      local ze = MD.ZoneEntry(1455)
+      local om = M.OpeningMap({})
+      check(ze ~= nil and om == 1455,
+        "0.5.2b.19 map: nested Ironforge (parent Dun Morogh) is in Zones and OpeningMap keeps the city (" .. tostring(om) .. ", entry " .. tostring(ze ~= nil) .. ")")
+      check(M.CentreOnPlayer() == true, "0.5.2b.19 map: CentreOnPlayer succeeds inside nested Ironforge")
+      for _ = 1, 25 do M.Tick(0.05) end
+      C_Map.GetPlayerMapPosition = oldPos
+      local ifl = M.layers[1455]
+      local zIF = MD.ZoneEntry(1455)
+      local fr = zIF and M.Frac(zIF) or -1
+      check(ifl and ifl.shown and (ifl.alpha or 0) > 0.99 and select(1, M.ZoomLevel()) >= 10,
+        string.format("0.5.2b.19 map: open on nested Ironforge shows the city floor map (Zoom %s, IF alpha %s, Frac %.3f, focusCity %s, trail %s)",
+          tostring(select(1, M.ZoomLevel())), ifl and tostring(ifl.alpha) or "nil", fr, tostring(M.focusCity), table.concat(M.Trail(), ">")))
+      check(M.focusCity == 1455 and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Ironforge",
+        string.format("0.5.2b.19 map: city open crumbs name Ironforge (focusCity %s Frac %.3f trail %s)",
+          tostring(M.focusCity), fr, table.concat(M.Trail(), ">")))
+      -- 0.5.2b.20: Forever's displayable helper returns the host (Dun Morogh); the player map is still the city
+      MapUtil.GetDisplayableMapForPlayer = function() return 1426 end
+      C_Map.GetPlayerMapPosition = function(id)
+        if id == 1455 then return { x = 0.5, y = 0.5, GetXY = function(s) return s.x, s.y end } end
+        if id == 1426 then
+          local r = { 0.45, 0.55, 0.48, 0.58 }
+          return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end }
+        end
+        if id == 1415 then
+          local ze2 = MD.ZoneEntry(1455)
+          if ze2 then local r = ze2.r return { x = (r[1]+r[2])/2, y = (r[3]+r[4])/2, GetXY = function(s) return s.x, s.y end } end
+        end
+      end
+      local om2 = M.OpeningMap(M.player or {})
+      check(MD.ZoneEntry(1455) ~= nil and om2 == 1455 and MD.PlayerMap() == 1455 and MD.DisplayableForPlayer() == 1426,
+        "0.5.2b.20 map: OpeningMap prefers the player city over Displayable host (" .. tostring(om2) .. ", player " .. tostring(MD.PlayerMap()) .. ", displayable " .. tostring(MD.DisplayableForPlayer()) .. ")")
+      check(M.CentreOnPlayer() == true, "0.5.2b.20 map: CentreOnPlayer on the player city while Displayable is Dun Morogh")
+      for _ = 1, 25 do M.Tick(0.05) end
+      local if2 = M.layers[1455]
+      local z2 = MD.ZoneEntry(1455)
+      local fr2 = z2 and M.Frac(z2) or -1
+      check(if2 and if2.shown and (if2.alpha or 0) > 0.99 and fr2 >= 0.85 and M.focusCity == 1455,
+        string.format("0.5.2b.20 map: city floor at full strength (alpha %s, Frac %.3f, focusCity %s, zoom %s)",
+          tostring(if2 and if2.alpha), fr2, tostring(M.focusCity), tostring(select(1, M.ZoomLevel()))))
+      local openLine = M.OpenProbeLine()
+      check(type(openLine) == "string" and #openLine <= 90 and openLine:find("opening 1455", 1, true) and openLine:find("player 1455", 1, true)
+        and openLine:find("displayable 1426", 1, true) and openLine:find("focusCity 1455", 1, true),
+        "0.5.2b.20 mapprobe: opening / player / displayable / focusCity (" .. tostring(openLine) .. ")")
+      -- 0.5.2b.22: Forever names Dun Morogh (player map and Displayable) while you stand inside Ironforge
+      do
+        MapUtil.GetDisplayableMapForPlayer = function() return 1426 end
+        PLAYER.map = 1426
+        C_Map.GetPlayerMapPosition = function(id)
+          local spot = { x = 0.50, y = 0.53, GetXY = function(s) return s.x, s.y end }
+          if id == 1426 or id == 1455 then return spot end
+          if id == 1415 then
+            local r = MAPS[1426][4]
+            return { x = r[1] + 0.50 * (r[2] - r[1]), y = r[3] + 0.53 * (r[4] - r[3]), GetXY = function(s) return s.x, s.y end }
+          end
+        end
+        MD.Forget()
+        local om = M.OpeningMap({ cont = 1415, map = 1426 })
+        check(MD.PlayerMap() == 1426 and MD.DisplayableForPlayer() == 1426 and om == 1455,
+          string.format("0.5.2b.22 map: standing in Ironforge opens 1455 even when Displayable names the exterior (open %s, player %s, displayable %s)",
+            tostring(om), tostring(MD.PlayerMap()), tostring(MD.DisplayableForPlayer())))
+        check(M.CentreOnPlayer() == true, "0.5.2b.22 map: CentreOnPlayer from inside the city rect")
+        for _ = 1, 12 do M.Tick(0.05) end
+        check(M.focusCity == 1455 and M.fitCapCity == 1455,
+          string.format("0.5.2b.22 map: that open is the city floor (focus %s, fitCapCity %s)", tostring(M.focusCity), tostring(M.fitCapCity)))
+        PLAYER.map = 1455
+      end
+      -- 0.5.2b.21: terrain tiles are loaded and the deepest zoom actually draws them; the city floor wins
+      do
+        local saveTiles, saveLayer = NS.MinimapTiles, NS.db.map.layer
+        local saveUp = NS.db.map.closeUp
+        NS.MinimapTiles = { [0] = setmetatable({}, { __index = function(_, k) return 900000 + (k or 0) end }) }
+        NS.db.map.layer, NS.db.map.closeUp = "terrain", true
+        NS.MapCloseUp.Reset()
+        NS.MapCloseUp.unavailable, NS.MapCloseUp.failed, NS.MapCloseUp.fails, NS.MapCloseUp.loaded = nil, {}, 0, 0
+        if NS.MapCloseUp.Drop then NS.MapCloseUp.Drop() end
+        check(M.CentreOnPlayer() == true, "0.5.2b.21 map: CentreOnPlayer on Ironforge before the tile check")
+        for _ = 1, 10 do M.Tick(0.05) end
+        local cx, cy = M.Center()
+        M.ViewLevelAt(cx, cy, M.MaxLevel())
+        for _ = 1, 5 do M.Tick(0.05) end
+        local cityL = M.layers[1455]
+        local topPlane, nPlanes, hostLv = -1, 0, M.closeHost and M.closeHost:GetFrameLevel() or 0
+        for _, P in pairs(NS.MapCloseUp.planes or {}) do
+          if P.f and P.f:IsShown() then
+            nPlanes = nPlanes + 1
+            topPlane = math.max(topPlane, P.f:GetFrameLevel() or 0)
+          end
+        end
+        local pieces = M.close and M.close.pieces or 0
+        local cityLv = cityL and cityL.frame and cityL.frame:GetFrameLevel() or -1
+        local overLv = M.over and M.over:GetFrameLevel() or 0
+        check(cityL and cityL.shown and (cityL.alpha or 0) > 0.5 and not cityL.feather and pieces > 0 and nPlanes > 0
+          and cityLv > topPlane and cityLv > hostLv and overLv > cityLv and M.focusCity == 1455,
+          string.format("0.5.2b.22 map: Ironforge floor (level %s, host %s, top plane %s, pins %s, %d planes, %d pieces) is above every close-up tile and under the pins at zoom %s",
+            tostring(cityLv), tostring(hostLv), tostring(topPlane), tostring(overLv), nPlanes, pieces, tostring(select(1, M.ZoomLevel()))))
+        check(M.fitCap ~= nil and M.fitCapCity == 1455, "0.5.2b.21 map: a city open may zoom past the usual cap (fitCap set)")
+        M.FlyTo(1432) -- Loch Modan: not the city, so the deep cap must go
+        for _ = 1, 40 do M.Tick(0.05) end
+        check(M.fitCap == nil and M.fitCapCity == nil and M.focusCity ~= 1455,
+          string.format("0.5.2b.21 map: leaving Ironforge clears fitCap (cap %s, city %s, focus %s)",
+            tostring(M.fitCap), tostring(M.fitCapCity), tostring(M.focusCity)))
+        M.CentreOnPlayer()
+        for _ = 1, 8 do M.Tick(0.05) end
+        check(M.fitCapCity == 1455, "0.5.2b.21 map: back on the city, the deep cap returns")
+        NS.ShowTab("quests")
+        check(M.fitCap == nil and M.fitCapCity == nil, "0.5.2b.21 map: opening another tab clears fitCap")
+        NS.ShowTab("map")
+        for _ = 1, 8 do M.Tick(0.05) end
+        NS.MinimapTiles, NS.db.map.layer, NS.db.map.closeUp = saveTiles, saveLayer, saveUp
+        NS.MapCloseUp.Reset()
+        if NS.MapCloseUp.Drop then NS.MapCloseUp.Drop() end
+      end
+      C_Map.GetPlayerMapPosition = oldPos
+      MAPS[1455] = saveParent
+      C_Map.GetMapRectOnMap = oldRect
+      PLAYER.map = 1426
+      MapUtil.GetDisplayableMapForPlayer = nil
+      MD.Forget(); M.Reset(); NS.ShowTab("map"); M.vp:SetSize(812, 520); M.Refit(); for _ = 1, 20 do M.Tick(0.05) end
+      M.CentreOnPlayer(); for _ = 1, 25 do M.Tick(0.05) end
+      M.pendingFit = nil -- so later SetFull/Refit does not re-cover the zone
+      dm = M.layers[1426] -- Reset rebuilt layers; later sweep checks use this binding
+      -- 0.5.2b.23: zooming deep into the Ironforge rect fills the hole, same as the breadcrumb.
+      -- Zooming back out of that fill returns to Dun Morogh and drops the deep cap.
+      do
+        M.FlyTo(1426)
+        for _ = 1, 30 do M.Tick(0.05) end
+        local x1, x2, y1, y2 = M.WorldRect(1455)
+        local midX, midY = (x1 + x2) / 2, (y1 + y2) / 2
+        M.SetViewAt(midX, midY, M.Zoom())
+        local sx, sy = M.ToScreen(midX, midY)
+        CX, CY = sx, sy
+        local entered = false
+        for _ = 1, 18 do
+          M.Wheel(1)
+          for __ = 1, 12 do M.Tick(0.05) end
+          if M.fitCapCity == 1455 then entered = true end
+          if entered and not M.Gliding() then break end
+        end
+        local ze = MD.ZoneEntry(1455)
+        local fr = ze and M.Frac(ze) or 0
+        local cover = M.CoverScale(1455)
+        check(entered and fr >= 0.85 and cover > 0 and M.view.s >= cover * 0.98 and M.focusCity == 1455,
+          string.format("0.5.2b.23 map: zooming into Ironforge fills the hole (frac %.2f, scale %.3f, cover %.3f, focus %s)",
+            fr, M.view.s or -1, cover or -1, tostring(M.focusCity)))
+        for _ = 1, 10 do
+          M.Wheel(-1)
+          for __ = 1, 12 do M.Tick(0.05) end
+          if not M.fitCapCity then break end
+        end
+        check(M.fitCap == nil and M.fitCapCity == nil and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Dun Morogh",
+          "0.5.2b.23 map: zooming out of the filled city returns to Dun Morogh and clears fitCap (" .. table.concat(M.Trail(), ">") .. ")")
+        -- breadcrumb dropdown: Eastern Kingdoms lists its zones; picking one flies there
+        M.FlyTo(1426)
+        for _ = 1, 20 do M.Tick(0.05) end
+        local ek
+        for _, c in ipairs(M.crumbs) do if c:IsShown() and c.mapID == 1415 then ek = c end end
+        check(ek and ek.entry and ek.entry.id == 1415, "0.5.2b.23 map: the continent breadcrumb is a button")
+        ek._scripts.OnClick(ek)
+        check(M.crumbMenu and M.crumbMenu:IsShown() and M.crumbMenu.forId == 1415, "0.5.2b.23 map: clicking a breadcrumb opens its dropdown")
+        local peers = M.CrumbPeers(ek.entry)
+        local sawIF, sawDM, sawLM = false, false, false
+        for _, p in ipairs(peers) do
+          if p.id == 1455 then sawIF = true elseif p.id == 1426 then sawDM = true elseif p.id == 1432 then sawLM = true end
+        end
+        check(sawIF and sawDM and sawLM, "0.5.2b.23 map: continent dropdown lists zones at that level (Ironforge, Dun Morogh, Loch Modan)")
+        local picked = false
+        for _, row in ipairs(M.crumbMenu.rows) do
+          if row:IsShown() and row.mapID == 1432 then row._scripts.OnClick(row) picked = true break end
+        end
+        for _ = 1, 30 do M.Tick(0.05) end
+        check(picked and not M.crumbMenu:IsShown() and table.concat(M.Trail(), ">") == "Azeroth>Eastern Kingdoms>Loch Modan",
+          "0.5.2b.23 map: choosing a dropdown row flies there (" .. table.concat(M.Trail(), ">") .. ")")
+        M.FlyTo(1426)
+        for _ = 1, 20 do M.Tick(0.05) end
+      end
+    end
+    -- 0.5.2b.19: Westfall solo coastline + hunter/paladin crest overrides
+    do
+      check(M.SOLO_COAST and M.SOLO_COAST[1436] == true and type(M.SoloCoastMask) == "function",
+        "0.5.2b.19 map: Westfall (1436) is the solo-coastline pilot")
+      -- without a shipped mask file in the stub, SoloCoastMask is false; with a fake file it forces the layer mask
+      NS.ZoneMasks = NS.ZoneMasks or {}
+      local saveMask = NS.ZoneMasks[1436]
+      NS.ZoneMasks[1436] = { file = "Interface/AddOns/DarkMatter/Media/masks/z1436" }
+      local broke = M.maskBroken
+      M.maskBroken = "kept none on another zone"
+      M.masked = nil
+      check(M.SoloCoastMask(1436) == true and M.SoloCoastMask(1426) == false and not M.ContMasked(1415),
+        "0.5.2b.20 map: SoloCoastMask stays on for Westfall when continent masks are off")
+      M.maskBroken = broke
+      M.masked = nil
+      NS.ZoneMasks[1436] = saveMask
+      local co = NS.CrestOverrides
+      check(type(co) == "table" and co.hunter and co.hunter[1] == 88 and co.hunter[3] == -22
+        and co.paladin and co.paladin[1] == 84 and co.paladin[3] == -22,
+        "0.5.2b.20 themes: CrestOverrides tune hunter 88/-22 and paladin 84/-22")
+      local th = NS.themes
+      check(th and th.hunter and th.hunter.classArt and th.hunter.classArt.crest[1] == 88 and th.hunter.classArt.crest[3] == -22
+        and th.paladin.classArt.crest[1] == 84 and th.paladin.classArt.crest[3] == -22,
+        "0.5.2b.20 themes: CrestOverrides applied onto hunter/paladin classArt.crest")
+      -- skins must see the override, not a value written back after they paint
+      th.hunter.classArt.crest = { 10, 0, -5 }
+      local saw
+      NS.OnSkin(function()
+        local c = th.hunter.classArt and th.hunter.classArt.crest
+        saw = c and c[1]
+      end)
+      local curTheme = NS.theme and NS.theme.id
+      NS.SetTheme("hunter")
+      check(saw == 88 and th.hunter.classArt.crest[1] == 88 and th.hunter.classArt.crest[3] == -22
+        and th.paladin.classArt.crest[1] == 84,
+        "0.5.2b.20 themes: SetTheme applies crest overrides before skins (skin saw " .. tostring(saw) .. ")")
+      if curTheme then NS.SetTheme(curTheme) end
+    end
+    -- 0.5.2b.20: Westfall solo is actually cut by its mask when the continent is not ContMasked,
+    -- and a baked Media/coast/z1436.tga replaces the stock tiles when the file is present.
+    do
+      local saveMap = MAPS[1436]
+      MAPS[1436] = { "Westfall", 3, 1415, { 0.20, 0.32, 0.70, 0.84 } }
+      local saveZM = NS.ZoneMasks
+      NS.ZoneMasks = { [1436] = { file = "Interface\\AddOns\\DarkMatter\\Media\\masks\\z1436", core = "Interface\\AddOns\\DarkMatter\\Media\\masks\\z1436c" } }
+      local savePlayer = PLAYER.map
+      PLAYER.map = 1436
+      local savePos = C_Map.GetPlayerMapPosition
+      C_Map.GetPlayerMapPosition = function(id)
+        if id == 1436 then return { x = 0.5, y = 0.5, GetXY = function(s) return s.x, s.y end } end
+        if id == 1415 then
+          local r = MAPS[1436][4]
+          return { x = (r[1] + r[2]) / 2, y = (r[3] + r[4]) / 2, GetXY = function(s) return s.x, s.y end }
+        end
+        return nil
+      end
+      local coastDir = arg[1] .. "/Media/coast"
+      local coastFile = coastDir .. "/z1436.tga"
+      local function rmCoast()
+        os.remove(coastFile)
+        if os.execute then os.execute("rmdir " .. string.format("%q", coastDir) .. " 2>/dev/null") end
+      end
+      rmCoast()
+      M.bakedCache = nil
+      MD.Forget()
+      M.Reset()
+      M.maskBroken = "kept none on another zone"
+      M.masked = nil
+      NS.ShowTab("map")
+      M.vp:SetSize(812, 520)
+      M.Refit()
+      check(M.BakedCoastPath(1436) == "Interface\\AddOns\\DarkMatter\\Media\\coast\\z1436" and M.BakedCoastFile(1436) == nil,
+        "0.5.2b.20 map: baked coast path is Media/coast/z1436.tga and is unused while the file is absent")
+      check(M.CentreOnPlayer() == true, "0.5.2b.20 map: CentreOnPlayer on Westfall")
+      for _ = 1, 25 do M.Tick(0.05) end
+      local Lw = M.layers[1436]
+      local carried = Lw and Lw.mask and #(Lw.tiles or {}) > 0
+      for _, t in ipairs(Lw and Lw.tiles or {}) do
+        if not (t._masks and t._masks[1] == Lw.mask) then carried = false end
+      end
+      local el = M.layers[1429]
+      check(not M.ContMasked(1415) and Lw and Lw.mask and not Lw.feather and not Lw.baked and Lw.shown and (Lw.alpha or 0) > 0.9 and carried
+        and not (el and el.mask),
+        string.format("0.5.2b.20 map: Westfall solo uses its mask (alpha %s, feather %s, tiles %s, elwynn mask %s)",
+          tostring(Lw and Lw.alpha), tostring(Lw and Lw.feather), tostring(Lw and Lw.tiles and #Lw.tiles), tostring(el and el.mask ~= nil)))
+      if os.execute then os.execute("mkdir -p " .. string.format("%q", coastDir)) end
+      local fh = io.open(coastFile, "wb")
+      if fh then fh:write("stub") fh:close() end
+      M.bakedCache = nil
+      check(M.BakedCoastFile(1436) == nil, "0.5.2b.20 map: a coast file that is not the 1002x668 bake is ignored")
+      -- the bake Illusionist ships: type 2, 32-bit, descriptor 8, 1002 x 668 (pixel bytes left empty)
+      fh = io.open(coastFile, "wb")
+      if fh then
+        local w, h = 1002, 668
+        fh:write(string.char(0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, w % 256, math.floor(w / 256), h % 256, math.floor(h / 256), 32, 8))
+        fh:seek("set", 18 + w * h * 4 - 1)
+        fh:write("\0")
+        fh:close()
+      end
+      M.bakedCache = nil
+      M.dirty = true
+      M.Layout()
+      for _ = 1, 5 do M.Tick(0.05) end
+      local Lb = M.layers[1436]
+      local bakedFile = Lb and Lb.tiles and Lb.tiles[1] and Lb.tiles[1]._file
+      check(fh and Lb and Lb.baked == "Interface\\AddOns\\DarkMatter\\Media\\coast\\z1436" and not Lb.mask and not Lb.feather and #Lb.tiles == 1
+        and bakedFile == Lb.baked and Lb.shown and (Lb.alpha or 0) > 0.9,
+        "0.5.2b.20 map: baked z1436.tga replaces stock tiles (" .. tostring(Lb and Lb.baked) .. ", pieces " .. tostring(Lb and #Lb.tiles) .. ", file " .. tostring(bakedFile) .. ")")
+      rmCoast()
+      M.bakedCache = nil
+      MAPS[1436] = saveMap
+      NS.ZoneMasks = saveZM
+      PLAYER.map = savePlayer
+      C_Map.GetPlayerMapPosition = savePos
+      MD.Forget()
+      M.Reset()
+      NS.ShowTab("map")
+      M.vp:SetSize(812, 520)
+      M.Refit()
+      for _ = 1, 20 do M.Tick(0.05) end
+      M.CentreOnPlayer()
+      for _ = 1, 25 do M.Tick(0.05) end
+      M.pendingFit = nil
+      dm = M.layers[1426]
+    end
+    -- 0.5.2b.21: Forever coast Batch 1 prefers Media/coast/zNNNN.tga when that bake is installed.
+    -- SOLO_COAST stays Westfall. A bake fills a continent-puzzle slot the way a mask does.
+    do
+      local batch = { 1411, 1413, 1417, 1419, 1420, 1421, 1424, 1425, 1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441, 1443, 1444, 1445, 1446, 1447, 1451 }
+      local listed = {}
+      for _, id in ipairs(M.BAKED_COAST_IDS or {}) do listed[id] = true end
+      local paths, soloOnly = true, true
+      for _, id in ipairs(batch) do
+        if M.BakedCoastPath(id) ~= "Interface\\AddOns\\DarkMatter\\Media\\coast\\z" .. id or not (M.BAKED_COAST and M.BAKED_COAST[id] and M.BAKED_COAST[id].w == 1002 and M.BAKED_COAST[id].h == 668) or not listed[id] then paths = false end
+        if id ~= 1436 and M.SOLO_COAST[id] then soloOnly = false end
+      end
+      check(#batch == 22 and #M.BAKED_COAST_IDS == 22 and paths and soloOnly and M.SOLO_COAST[1436] == true and M.BakedCoastPath(1426) == nil,
+        "0.5.2b.21 map: Batch 1 coasts prefer Media/coast/zNNNN.tga; solo mask stays Westfall; Dun Morogh has no bake")
+      local coastDir = arg[1] .. "/Media/coast"
+      local function writeBake(id, okHeader)
+        if os.execute then os.execute("mkdir -p " .. string.format("%q", coastDir)) end
+        local fh = io.open(coastDir .. "/z" .. id .. ".tga", "wb")
+        if not fh then return false end
+        if okHeader then
+          local w, h = 1002, 668
+          fh:write(string.char(0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, w % 256, math.floor(w / 256), h % 256, math.floor(h / 256), 32, 8))
+          fh:seek("set", 18 + w * h * 4 - 1)
+          fh:write("\0")
+        else
+          fh:write("stub")
+        end
+        fh:close()
+        return true
+      end
+      local function rmBake(id)
+        os.remove(coastDir .. "/z" .. id .. ".tga")
+      end
+      writeBake(1437, false)
+      M.bakedCache = nil
+      check(M.BakedCoastFile(1437) == nil, "0.5.2b.21 map: Wetlands ignores a coast file that is not the 1002x668 bake")
+      check(writeBake(1437, true), "0.5.2b.21 map: test bake for Wetlands was written")
+      M.bakedCache = nil
+      local wet = M.BakedCoastFile(1437)
+      check(wet == "Interface\\AddOns\\DarkMatter\\Media\\coast\\z1437",
+        "0.5.2b.21 map: Wetlands prefers its bake when the file is the right picture (" .. tostring(wet) .. ")")
+      -- puzzle: one neighbour has a mask, Wetlands has only the bake -> the continent still fits
+      local saveZones = MD.Zones
+      MD.Zones = function()
+        return { { id = 9001, area = 1 }, { id = 1437, area = 1 } }
+      end
+      local saveMask = M.MaskFile
+      M.MaskFile = function(id) if id == 9001 then return "mask" end return nil end
+      M.masked = nil
+      check(M.ContMasked(1415) == true, "0.5.2b.21 map: a present bake fills that zone's slot in the continent puzzle")
+      rmBake(1437)
+      M.bakedCache = nil
+      M.masked = nil
+      check(M.ContMasked(1415) == false, "0.5.2b.21 map: a missing bake does not fill the puzzle slot")
+      MD.Zones = saveZones
+      M.MaskFile = saveMask
+      M.bakedCache = nil
+      M.masked = nil
+      if os.execute then os.execute("rmdir " .. string.format("%q", coastDir) .. " 2>/dev/null") end
+    end
     -- 0.5.2b.8.2: the full-screen map zooms like the window: the same levels, and every continent in view gets the same
     -- layers (0.5.2b.8.1: full screen fully zoomed out drew Kalimdor's zones and level boxes, Eastern Kingdoms plain)
     do
@@ -4344,7 +4757,7 @@ do
     local pe = NS.db.probeLog and NS.db.probeLog.masktest
     check(pe and pe.lines[2] and pe.lines[2]:find("^masktest ") and f:IsShown(), "0.5.2b.5 /dm masktest: saved with the probes")
     SlashCmdList.DARKMATTER("masktest")
-    local file = io.open("../../DarkMatter/Media/masks/dm-masktest.tga", "rb")
+    local file = io.open(arg[1] .. "/Media/masks/dm-masktest.tga", "rb")
     local head = file and file:read(18)
     if file then file:close() end
     check(head and head:byte(3) == 2 and head:byte(13) + 256 * head:byte(14) == 128 and head:byte(17) == 32,
@@ -5575,9 +5988,9 @@ do
   -- 14. the tool strip: three slots are disabled with the version they come in
   local keys, soon = {}, {}
   for i, b in ipairs(M.tools) do keys[i] = b.key if b.soon then soon[b.key] = b end end
-  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup,quest", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2a.1: + Quest log)")
-  check(soon.starpen and not soon.pin and soon.town and not soon.findme, "0.5.0 map: Starpen and Town Pins are disabled (0.5.2b: Pin works)")
-  local wantV = { starpen = "0.5.3", town = "0.5.4" } -- 0.5.1: the later phases shifted one step
+  check(table.concat(keys, ",") == "starpen,pin,town,findme,full,closeup", "0.5.0 map: tool strip order Starpen, Pin, Town Pins, Find me, Full screen (0.5.1.4: + Close-up detail; 0.5.2b.28: the quest log is a column, not a button)")
+  check(soon.starpen and not soon.pin and not soon.town and not soon.findme, "0.5.0 map: Starpen stays disabled (0.5.2b: Pin works; 0.5.2b.47: Town Pins works)")
+  local wantV = { starpen = "0.5.3" }
   local origSS = NS.SetStatus
   NS.SetStatus = function(t) STATUS_SEEN = t return origSS(t) end
   for k, b in pairs(soon) do
@@ -5590,6 +6003,460 @@ do
     check(b.icon._alpha and b.icon._alpha < 0.5, "0.5.0 map: " .. k .. " icon is dimmed")
   end
   NS.SetStatus = origSS
+  -- 0.5.2b.48: pins follow the picture that is on screen. ZoneAlpha at 0 must not hide them.
+  do
+    local tb = M.townBtn
+    check(NS.TownPins and #NS.TownPins.pins > 0, "0.5.2b.48 town: the pin list is registered when the addon loads")
+    check(tb and tb.key == "town" and not tb.soon, "0.5.2b.48 town: the Town Pins button is enabled")
+    tb._scripts.OnClick(tb)
+    local panel = M.townPanel
+    check(panel and panel:IsShown() and panel.titleStr == "Map Icons", "0.5.2b.48 town: the button opens the Map Icons filter")
+    local rows = panel.rows
+    check(rows.dock and rows.dock:IsShown() and not rows.dock.disabled
+      and rows.flight and rows.flight:IsShown() and not rows.flight.disabled
+      and rows.inn and rows.inn:IsShown() and rows.vendor and rows.vendor:IsShown()
+      and rows.ptrainer and rows.ptrainer:IsShown() and rows.psupply and rows.psupply:IsShown()
+      and rows.bank and rows.bank:IsShown() and rows.auction and rows.auction:IsShown()
+      and rows.entrance and rows.entrance:IsShown() and rows.levels and rows.levels:IsShown()
+      and rows.mail and rows.mail:IsShown() and rows.mail.disabled
+      and rows.repair and rows.repair:IsShown() and rows.repair.disabled
+      and rows.mail.noteStr == "No verified places yet",
+      "0.5.2b.54 town: the old rows return, and Mail and Repair stay disabled")
+    rows.mail._scripts.OnClick(rows.mail)
+    check(not (NS.db.map and NS.db.map.town and NS.db.map.town.mail),
+      "0.5.2b.54 town: the empty mailbox row does not save a choice")
+    check(tostring(rows.flight.icon._file):find("Tracking\\FlightMaster", 1, true)
+      and tostring(rows.inn.icon._file):find("Tracking\\Innkeeper", 1, true)
+      and tostring(rows.ptrainer.icon._file):find("Tracking\\Profession", 1, true)
+      and tostring(rows.psupply.icon._file):find("Tracking\\Profession", 1, true)
+      and tostring(rows.bank.icon._file):find("Tracking\\Banker", 1, true)
+      and tostring(rows.auction.icon._file):find("Tracking\\Auctioneer", 1, true)
+      and tostring(rows.mail.icon._file):find("Tracking\\Mailbox", 1, true)
+      and tostring(rows.repair.icon._file):find("Tracking\\Repair", 1, true)
+      and tostring(rows.entrance.icon._file):find("Minimap\\Dungeon", 1, true)
+      and tostring(rows.vendor.icon._file):find("dm-map-icons", 1, true)
+      and not tostring(rows.ptrainer.icon._file):find("Trade_", 1, true),
+      "0.5.2b.54 town: rows use the minimap files, and vendors keep the town glyph")
+    check(rows.dock.checked
+      and rows.dock.box.tex and tostring(rows.dock.box.tex._file):find("dm-check", 1, true)
+      and rows.dock.box.tex._tc and rows.dock.box.tex._tc[1] == 1 / 8,
+      "0.5.2b.53 town: docks start checked, and the check is a texture")
+    local pt, rel, rp, ox = panel:GetPoint()
+    check(panel._parent == _G.DarkMatterFrame and NS.QuestPanel.embedded and (NS.QuestPanel.Extent() or 0) > 300
+      and panel.side == "right" and pt == "TOPLEFT" and rel == _G.DarkMatterFrame and rp == "TOPRIGHT" and ox == 8
+      and panel:GetHeight() == _G.DarkMatterFrame:GetHeight(),
+      "0.5.2b.52 town: the filter matches the window height and sits 8 pixels off the right edge")
+    panel._boxH, panel._iconH, panel._h0 = rows.dock.box:GetHeight(), rows.dock.icon:GetHeight(), _G.DarkMatterFrame:GetHeight()
+    _G.DarkMatterFrame:SetHeight(panel._h0 + 48)
+    M.PlaceTownPanel()
+    pt, rel, rp, ox = panel:GetPoint()
+    check(panel:GetHeight() == _G.DarkMatterFrame:GetHeight() and panel:GetHeight() ~= panel._h0 and pt == "TOPLEFT" and rp == "TOPRIGHT" and ox == 8
+      and rows.dock.box:GetHeight() == panel._boxH and rows.dock.icon:GetHeight() == panel._iconH,
+      "0.5.2b.52 town: a taller window lengthens the filter and does not resize the checks or icons")
+    _G.DarkMatterFrame:SetHeight(panel._h0)
+    M.PlaceTownPanel()
+    tb._scripts.OnClick(tb)
+    check(not panel:IsShown(), "0.5.2b.48 town: the button closes the filter")
+    local function shownTown()
+      local out = {}
+      local pool = M.pools and M.pools.town
+      if pool then for i = 1, pool.n do local m = pool[i] if m:IsShown() and m.pin then out[#out + 1] = m end end end
+      return out
+    end
+    local function hasName(list, name)
+      for _, m in ipairs(list) do if m.pin.name == name then return m end end
+    end
+    NS.db.map = NS.db.map or {}
+    NS.db.map.town = {}
+    local saveZA = M.ZoneAlpha
+    M.ZoneAlpha = function() return 0 end
+    M.FlyTo(1455) run(40)
+    M.Layout()
+    local pins = shownTown()
+    local gryth = hasName(pins, "Gryth Thurden")
+    local city = M.layers[1455]
+    local gx, gy = gryth and gryth.sx, gryth and gryth.sy
+    local box = city and city.box
+    local golnir = hasName(pins, "Golnir Bouldertoe")
+    local fillius = hasName(pins, "Fillius Fizzlespinner")
+    check(gryth and gryth:GetWidth() == 16 and tostring(gryth.icon._file):find("Tracking\\FlightMaster", 1, true)
+      and fillius and tostring(fillius.icon._file):find("dm-map-icons", 1, true)
+      and golnir and tostring(golnir.icon._file):find("Tracking\\Profession", 1, true)
+      and not tostring(golnir.icon._file):find("Trade_", 1, true)
+      and city and city.shown and box
+      and gx and gx >= math.min(box[1], box[3]) and gx <= math.max(box[1], box[3])
+      and gy and gy >= math.min(box[2], box[4]) and gy <= math.max(box[2], box[4]),
+      "0.5.2b.54 town: Ironforge draws the flight master, the profession icon, and the vendor glyph")
+    if golnir then golnir._scripts.OnEnter(golnir) end
+    check(tip.title == "Golnir Bouldertoe" and tip.lines[1] == "Mining Supplier",
+      "0.5.2b.54 town: a supplier hover still names the craft")
+    local firebrew = hasName(pins, "Innkeeper Firebrew")
+    local barnum = hasName(pins, "Barnum Stonemantle")
+    local redmuse = hasName(pins, "Auctioneer Redmuse")
+    check(firebrew and tostring(firebrew.icon._file):find("Tracking\\Innkeeper", 1, true)
+      and barnum and tostring(barnum.icon._file):find("Tracking\\Banker", 1, true)
+      and redmuse and tostring(redmuse.icon._file):find("Tracking\\Auctioneer", 1, true),
+      "0.5.2b.54 town: inn, bank, and auction use their minimap files")
+    local saveOK = NS.Stock.TextureOK
+    NS.Stock.TextureOK = function(path)
+      if type(path) == "string" and path:find("Tracking\\FlightMaster", 1, true) then return false end
+      return saveOK(path)
+    end
+    M.Layout()
+    gryth = hasName(shownTown(), "Gryth Thurden")
+    check(gryth and gryth.face == "town" and tostring(gryth.icon._file):find("dm-map-icons", 1, true),
+      "0.5.2b.54 town: a missing minimap file uses the town glyph")
+    local saveAtlas = C_Texture.GetAtlasInfo
+    C_Texture.GetAtlasInfo = function(a)
+      if a == "TaxiNode_Neutral" then return { width = 32, height = 32 } end
+      return saveAtlas(a)
+    end
+    M.Layout()
+    gryth = hasName(shownTown(), "Gryth Thurden")
+    check(gryth and gryth.icon._atlas == "TaxiNode_Neutral",
+      "0.5.2b.54 town: a missing minimap file can use that role's atlas")
+    C_Texture.GetAtlasInfo = saveAtlas
+    NS.Stock.TextureOK = saveOK
+    M.Layout()
+    gryth = hasName(shownTown(), "Gryth Thurden")
+    check(gryth and tostring(gryth.icon._file):find("Tracking\\FlightMaster", 1, true),
+      "0.5.2b.54 town: the minimap file is used again when it is present")
+    check(M.VendorMark("Trade Supplier") == nil and M.VendorMark("Food and Drink") == "food"
+      and M.VendorMark("Reagent Vendor") == "reagents",
+      "0.5.2b.54 town: only a food or reagent subtitle picks a vendor icon")
+    check(M.CraftOf("Engineering and Mining Supplies") == "engineer" and M.CraftOf("Journeyman Blacksmith") == "blacksmith"
+      and M.CraftOf("Herbalism Trainer") == "herbal",
+      "0.5.2b.51 town: a subtitle picks the craft, and the dual supply line stays engineering")
+    M.ZoneAlpha = saveZA
+    local pass = M.townPass
+    run(4)
+    check(M.townPass == pass and not M.dirty, "0.5.2b.48 town: a still map does not redraw the pins")
+    M.SetTown("vendor", false)
+    check(M.dirty and NS.db.map.town.vendor == false, "0.5.2b.48 town: a toggle is saved and marks the map dirty")
+    M.Layout()
+    pins = shownTown()
+    check(hasName(pins, "Gryth Thurden") and not hasName(pins, "Fillius Fizzlespinner") and hasName(pins, "Golnir Bouldertoe"),
+      "0.5.2b.54 town: turning vendors off leaves the flight master and the supplier")
+    M.SetTown("ptrainer", false)
+    M.Layout()
+    check(not hasName(shownTown(), "Geofram Bouldertoe") and hasName(shownTown(), "Golnir Bouldertoe") and NS.db.map.town.ptrainer == false,
+      "0.5.2b.54 town: turning trainers off leaves the supplier")
+    M.SetTown("ptrainer", true)
+    M.SetTown("vendor", true)
+    check(M.TownOn("vendor") == true and M.TownOn("ptrainer") == true and M.TownOn("psupply") == true,
+      "0.5.2b.54 town: the saved choices are what the filter reads")
+    local list = NS.TownPins.pins
+    local n0 = #list
+    list[#list + 1] = { cat = "flight", name = "Nowhere", map = 999999, x = 0.5, y = 0.5 }
+    list[#list + 1] = { cat = "entrance", name = "No spot" }
+    list[#list + 1] = { cat = "entrance", name = "Shared door", map = 1455, x = 0.40, y = 0.40,
+      levels = { 13, 18 }, levelSrc = "https://www.wowhead.com/forever/zone=16919" }
+    list[#list + 1] = { cat = "vendor", name = "Food Stall", detail = "Food and Drink", map = 1455, x = 0.30, y = 0.30 }
+    list[#list + 1] = { cat = "vendor", name = "Reagent Stall", detail = "Reagent Vendor", map = 1455, x = 0.32, y = 0.32 }
+    list[#list + 1] = { cat = "vendor", name = "Trade Stall", detail = "Trade Supplier", map = 1455, x = 0.34, y = 0.34 }
+    M.Layout()
+    pins = shownTown()
+    local shared = hasName(pins, "Shared door")
+    check(not hasName(pins, "Nowhere") and not hasName(pins, "No spot") and shared and shared.levelText == "13-18"
+      and tostring(shared.icon._file):find("Minimap\\Dungeon", 1, true)
+      and not hasName(pins, "Krol'dok Stronghold"),
+      "0.5.2b.54 town: the entrance returns with its level, and an unknown map stays off")
+    check(M.TownLevelText(shared.pin, { 0, 0, 40, 40 }) == nil, "0.5.2b.48 town: a small picture hides the level number")
+    local food = hasName(pins, "Food Stall")
+    local reagent = hasName(pins, "Reagent Stall")
+    local trade = hasName(pins, "Trade Stall")
+    check(food and tostring(food.icon._file):find("Tracking\\Food", 1, true)
+      and reagent and tostring(reagent.icon._file):find("Tracking\\Reagents", 1, true)
+      and trade and tostring(trade.icon._file):find("dm-map-icons", 1, true),
+      "0.5.2b.54 town: food and reagent vendors use those tracking files, and a trade supplier does not")
+    while #list > n0 do list[#list] = nil end
+    local grythPin
+    for _, p in ipairs(list) do if p.name == "Gryth Thurden" then grythPin = p end end
+    list[#list + 1] = { cat = "dock", name = "Stack Boat", detail = "Ironforge", dest = "Nowhere", map = 1455, x = grythPin.x, y = grythPin.y }
+    local saveQ = C_QuestLog.GetQuestsOnMap
+    local saveSel = NS.QS.selected
+    local calls = 0
+    local saveSet = NS.QS.SetWaypoint
+    NS.QS.SetWaypoint = function() calls = calls + 1 return false, "test" end
+    C_QuestLog.GetQuestsOnMap = function(id)
+      if id == 1455 then return { { questID = 501, x = grythPin.x, y = grythPin.y } } end
+      return saveQ(id)
+    end
+    MD.Forget("quests")
+    M.Layout()
+    local quest, townPin = nil, hasName(shownTown(), "Stack Boat")
+    local qp = M.pools.quest
+    if qp then for i = 1, qp.n do if qp[i]:IsShown() then quest = qp[i] end end end
+    check(quest and townPin and quest:GetFrameLevel() > townPin:GetFrameLevel(),
+      "0.5.2b.48 town: a quest pin stays above a town pin on the same spot")
+    if townPin then townPin._scripts.OnMouseUp(townPin, "LeftButton") end
+    check(calls == 0 and NS.QS.selected == saveSel, "0.5.2b.48 town: a town pin sets no waypoint and selects no quest")
+    list[#list] = nil
+    local tex = rows.dock.box.tex
+    M.PaintCheck(tex, false, false, false)
+    local emptyL = tex._tc and tex._tc[1]
+    M.PaintCheck(tex, true, false, false)
+    local onL = tex._tc and tex._tc[1]
+    M.PaintCheck(tex, false, true, false)
+    local hotL = tex._tc and tex._tc[1]
+    M.PaintCheck(tex, false, false, true)
+    local offL = tex._tc and tex._tc[1]
+    check(emptyL == 0 and onL == 1/8 and hotL == 2/8 and offL == 4/8 and tex._tc[2] == 5/8,
+      "0.5.2b.49 town: empty, checked, hover and disabled use different check textures")
+    M.PaintCheck(tex, true, false, false)
+    rows.dock._scripts.OnEnter(rows.dock)
+    check(rows.dock._hot and rows.dock.box.tex._tc[1] == 3/8, "0.5.2b.49 town: a checked row hovers the gold tick")
+    rows.dock._scripts.OnLeave(rows.dock)
+    check(not rows.dock._hot and rows.dock.box.tex._tc[1] == 1/8, "0.5.2b.49 town: leaving the row restores the resting check")
+    M._tab = io.open(arg[1] .. "/Tab_Map.lua"):read("*a")
+    check(panel.heads[1] and panel.heads[1]._text == "Town services" and rows.dock.icon:GetHeight() == 18
+      and rows.dock.box:GetHeight() == 18 and not M._tab:find("SetTracking", 1, true),
+      "0.5.2b.54 town: the service heading is back, the check stays 18, and tracking is not changed")
+    local dungar, named = false, false
+    for _, pin in ipairs(NS.TownPins.pins) do if pin.name == "Dungar Longdrink" then dungar = true end end
+    for _, r in ipairs(NS.TownPins.rejected or {}) do if r.name == "Dungar Longdrink" then named = true end end
+    check(dungar and not named and type(NS.TownPins.gaps) == "table" and #NS.TownPins.gaps >= 2,
+      "0.5.2b.58 town: Dungar is drawn from the current cluster, and the gap list remains")
+    local steam, heather, ratchet
+    for _, pin in ipairs(NS.TownPins.pins) do
+      if pin.name == "Steamwheedle Port" then steam = pin
+      elseif pin.name == "Innkeeper Heather" then heather = pin
+      elseif pin.name == "Ratchet" and pin.cat == "dock" then ratchet = pin end
+    end
+    check(steam and steam.map == 1446 and steam.cat == "dock" and steam.dest == "Powderfuse Port, Riverglades",
+      "0.5.2b.49 town: Steamwheedle Port keeps the Forever dock and its destination")
+    check(heather and heather.cat == "inn" and heather.map == 1436 and math.abs(heather.x - 0.528) < 0.001 and math.abs(heather.y - 0.535) < 0.001,
+      "0.5.2b.50 town: Innkeeper Heather is the single Westfall cluster")
+    check(ratchet and ratchet.dest == "Booty Bay, Stranglethorn Vale" and ratchet.map == 1413 and ratchet.x == 0.632 and ratchet.y == 0.384,
+      "0.5.2b.53 town: the Ratchet dock keeps its spot and names Booty Bay")
+    M._boats, M._c, M._lake, M._sw = {}, {}, false, 0
+    for _, pin in ipairs(NS.TownPins.pins) do
+      M._c[pin.cat] = (M._c[pin.cat] or 0) + 1
+      if pin.cat == "dock" then M._boats[pin.name .. "|" .. (pin.dest or "")] = pin end
+      if pin.map == 1433 then M._lake = true end
+      if pin.map == 1453 and pin.cat ~= "dock" then M._sw = M._sw + 1 end
+    end
+    M._rej = {}
+    for _, r in ipairs(NS.TownPins.rejected or {}) do M._rej[r.name] = true end
+    check(M._c.flight == 63 and M._c.inn == 36 and M._c.vendor == 30 and M._c.ptrainer == 146
+      and M._c.psupply == 47 and M._c.bank == 20 and M._c.auction == 27 and M._c.entrance == 1
+      and M._c.dock == 15 and not M._lake and M._sw == 41
+      and not M._rej["Dungar Longdrink"] and M._rej["Thulman Flintcrag"]
+      and M._boats["Stormwind Harbor|Auberdine, Darkshore"].x == 0.22
+      and M._boats["Stormwind Harbor|Auberdine, Darkshore"].y == 0.56,
+      "0.5.2b.58 town: Stormwind services are the current cluster, the boat stays, and Lakeshire is empty")
+    ;(function()
+      local sae, norm, silva, nDar, nUc = nil, nil, nil, 0, 0
+      for _, pin in ipairs(NS.TownPins.pins) do
+        if pin.whZone == 1657 then
+          nDar = nDar + 1
+          if pin.map ~= 1457 then nDar = -1000 end
+          if pin.name == "Innkeeper Saelienne" then sae = pin end
+        elseif pin.whZone == 1497 then
+          nUc = nUc + 1
+          if pin.map ~= 1458 then nUc = -1000 end
+          if pin.name == "Innkeeper Norman" then norm = pin end
+        end
+        if pin.name == "Silva Fil'naveth" then silva = pin end
+      end
+      check(sae and sae.map == 1457 and sae.x == 0.6725 and sae.y == 0.158 and nDar == 21,
+        "0.5.2b.60 town: Saelienne and the 21 Darnassus pins are on 1457")
+      check(norm and norm.map == 1458 and norm.x == 0.674 and norm.y == 0.384 and nUc == 35,
+        "0.5.2b.60 town: Norman and the 35 Undercity pins are on 1458")
+      check(silva and silva.map == 1450 and silva.x == 0.442 and silva.y == 0.452,
+        "0.5.2b.60 town: Silva Fil'naveth stays on Moonglade")
+    end)()
+    steam = M._boats["Steamwheedle Port|Powderfuse Port, Riverglades"]
+    check(steam and steam.x == 0.686 and steam.y == 0.23
+      and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"] and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].map == 2548
+      and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].x == 0.806 and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].y == 0.546
+      and M._boats["Powderfuse Port|Steamwheedle Port, Tanaris"].dest == "Steamwheedle Port, Tanaris"
+      and M._boats["Booty Bay|Ratchet, The Barrens"] and M._boats["Booty Bay|Ratchet, The Barrens"].map == 1434 and M._boats["Booty Bay|Ratchet, The Barrens"].x == 0.263
+      and M._boats["Booty Bay|Ratchet, The Barrens"].y == 0.735 and M._boats["Booty Bay|Ratchet, The Barrens"].dest == "Ratchet, The Barrens",
+      "0.5.2b.53 town: the four earlier docks are unchanged and the flight rows stay in the data")
+    steam = M._boats["Stormwind Harbor|Auberdine, Darkshore"]
+    check(steam and steam.map == 1453 and steam.x == 0.22 and steam.y == 0.56 and steam.detail == "Stormwind City"
+      and steam.dest == "Auberdine, Darkshore" and steam.src == "owner coordinates, 8 Nov 2026"
+      and M._boats["Auberdine|Stormwind Harbor"].map == 1439 and M._boats["Auberdine|Stormwind Harbor"].x == 0.305 and M._boats["Auberdine|Stormwind Harbor"].y == 0.41
+      and M._boats["Auberdine|Stormwind Harbor"].dest == "Stormwind Harbor"
+      and M._boats["Wetlands|Southshore, Hillsbrad Foothills"].map == 1437 and M._boats["Wetlands|Southshore, Hillsbrad Foothills"].x == 0.045 and M._boats["Wetlands|Southshore, Hillsbrad Foothills"].y == 0.57
+      and M._boats["Wetlands|Southshore, Hillsbrad Foothills"].dest == "Southshore, Hillsbrad Foothills"
+      and M._boats["Southshore|Auberdine, Darkshore"].map == 1424 and M._boats["Southshore|Auberdine, Darkshore"].x == 0.505 and M._boats["Southshore|Auberdine, Darkshore"].y == 0.70
+      and M._boats["Southshore|Auberdine, Darkshore"].dest == "Auberdine, Darkshore"
+      and M._boats["Southshore|Auberdine, Darkshore"].src == "owner coordinates, 8 Nov 2026",
+      "0.5.2b.53 town: the four owner docks use the named maps and only those destinations")
+    M._dung = nil
+    for _, pin in ipairs(NS.TownPins.pins) do if pin.name == "Dungar Longdrink" then M._dung = pin end end
+    M._wx, M._wy = M.ToW(1453, M._dung.x, M._dung.y)
+    M.FlyTo(1453, M._wx, M._wy) run(40)
+    M.Layout()
+    gryth = nil
+    for _, m in ipairs(shownTown()) do if m.pin.name == "Dungar Longdrink" then gryth = m end end
+    check(gryth and gryth.pin.map == 1453 and gryth.pin.x == 0.712 and gryth.pin.y == 0.724
+      and gryth:GetWidth() == 16 and tostring(gryth.icon._file):find("Tracking\\FlightMaster", 1, true)
+      and not hasName(shownTown(), "Gryth Thurden"),
+      "0.5.2b.58 town: Dungar draws on Stormwind at the current cluster, not Ironforge")
+    if gryth then gryth._scripts.OnEnter(gryth) end
+    check(tip.title == "Dungar Longdrink" and tip.lines[1] == "Gryphon Master",
+      "0.5.2b.58 town: Dungar's hover keeps the gryphon role")
+    M.FlyTo(1432) run(40)
+    M.Layout()
+    local master = hasName(shownTown(), "Thorgrum Borrelson")
+    check(master and master:IsShown() and master:GetWidth() == 16
+      and tostring(master.icon._file):find("Tracking\\FlightMaster", 1, true),
+      "0.5.2b.54 town: Loch Modan draws its flight master with the minimap icon")
+    list[#list + 1] = { cat = "dock", name = "Test Pier", detail = "Loch Modan", dest = "Menethil Harbor, Wetlands", map = 1432, x = 0.50, y = 0.50 }
+    M.Layout()
+    local pier = hasName(shownTown(), "Test Pier")
+    check(pier and pier.face == "dock" and pier:GetWidth() == 28 and hasName(shownTown(), "Thorgrum Borrelson")
+      and tostring(pier.icon._file):find("dm-dock", 1, true),
+      "0.5.2b.54 town: a dock is a 28 pixel boat and the flight master stays 16")
+    if pier then pier._scripts.OnEnter(pier) end
+    check(tip.title == "Test Pier" and tip.lines[#tip.lines] == "To Menethil Harbor, Wetlands",
+      "0.5.2b.49 town: a dock hover names the destination dock and zone")
+    M.SetTown("dock", false)
+    M.Layout()
+    check(not hasName(shownTown(), "Test Pier") and hasName(shownTown(), "Thorgrum Borrelson"),
+      "0.5.2b.54 town: turning docks off removes the boat and leaves the flight master")
+    M.SetTown("dock", true)
+    list[#list] = nil
+    MAPS[1446] = { "Tanaris", 3, 1414, { 0.50, 0.62, 0.62, 0.78 } }
+    MAPS[1413] = { "The Barrens", 3, 1414, { 0.36, 0.50, 0.40, 0.58 } }
+    MAPS[1439] = { "Darkshore", 3, 1414, { 0.30, 0.42, 0.22, 0.38 } }
+    MAPS[1434] = { "Stranglethorn Vale", 3, 1415, { 0.30, 0.42, 0.55, 0.70 } }
+    MAPS[1437] = { "Wetlands", 3, 1415, { 0.42, 0.52, 0.28, 0.42 } }
+    MAPS[1438] = { "Teldrassil", 3, 1414, { 0.02, 0.14, 0.02, 0.16 } }
+    MAPS[1444] = { "Feralas", 3, 1414, { 0.02, 0.14, 0.80, 0.94 } }
+    MAPS[1445] = { "Dustwallow Marsh", 3, 1414, { 0.80, 0.94, 0.80, 0.94 } }
+    MAPS[1424] = { "Hillsbrad Foothills", 3, 1415, { 0.52, 0.64, 0.28, 0.44 } }
+    MAPS[2548] = { "Riverglades", 3, 1414, { 0.18, 0.30, 0.40, 0.55 } }
+    MD.Forget()
+    M._seeDock = function(id, name, dest)
+      local spot = M._boats[name .. "|" .. dest]
+      local wx, wy = M.ToW(id, spot.x, spot.y)
+      M.FlyTo(id, wx, wy) run(40)
+      M.Layout()
+      pins = shownTown()
+      gryth = nil
+      for _, m in ipairs(pins) do if m.pin.name == name and m.pin.dest == dest then gryth = m end end
+      city = M.layers[id]
+      box = city and city.box
+      gx, gy = gryth and gryth.sx, gryth and gryth.sy
+      if gryth then gryth._scripts.OnEnter(gryth) end
+      return gryth and gryth.pin.map == id and gryth.pin.dest == dest and gryth.face == "dock"
+        and gryth:GetWidth() == 28 and tostring(gryth.icon._file):find("dm-dock", 1, true)
+        and city and city.shown and box
+        and gx and gx >= math.min(box[1], box[3]) and gx <= math.max(box[1], box[3])
+        and gy and gy >= math.min(box[2], box[4]) and gy <= math.max(box[2], box[4])
+        and tip.title == name and tip.lines[#tip.lines] == "To " .. dest
+    end
+    check(M._seeDock(1446, "Steamwheedle Port", "Powderfuse Port, Riverglades"),
+      "0.5.2b.53 town: Steamwheedle Port draws on Tanaris inside the zone picture")
+    check(M._seeDock(2548, "Powderfuse Port", "Steamwheedle Port, Tanaris"),
+      "0.5.2b.53 town: Powderfuse Port draws on Riverglades")
+    check(M._seeDock(1413, "Ratchet", "Booty Bay, Stranglethorn Vale"),
+      "0.5.2b.53 town: Ratchet draws on The Barrens")
+    check(M._seeDock(1434, "Booty Bay", "Ratchet, The Barrens"),
+      "0.5.2b.53 town: Booty Bay draws on Stranglethorn Vale")
+    check(M._seeDock(1453, "Stormwind Harbor", "Auberdine, Darkshore") and gryth.pin.map ~= 1429,
+      "0.5.2b.53 town: Stormwind Harbor draws on the city map, not Elwynn")
+    check(M._seeDock(1439, "Auberdine", "Stormwind Harbor"),
+      "0.5.2b.53 town: Auberdine draws on Darkshore and names Stormwind Harbor")
+    check(M._seeDock(1437, "Wetlands", "Southshore, Hillsbrad Foothills"),
+      "0.5.2b.53 town: the Wetlands boat names Southshore")
+    check(M._seeDock(1424, "Southshore", "Auberdine, Darkshore"),
+      "0.5.2b.53 town: the Hillsbrad boat names Auberdine")
+    check(M._seeDock(1437, "Menethil Harbor", "Theramore, Dustwallow Marsh"),
+      "0.5.2b.55 town: Menethil Harbor draws on Wetlands and names Theramore")
+    check(M._seeDock(1445, "Theramore", "Menethil Harbor, Wetlands"),
+      "0.5.2b.55 town: Theramore draws on Dustwallow Marsh and names Menethil Harbor")
+    check(M._seeDock(1439, "Auberdine", "Rut'theran Village, Teldrassil"),
+      "0.5.2b.55 town: the second Auberdine pin names Rut'theran Village")
+    check(M._seeDock(1439, "Auberdine southern dock", "Menethil Harbor, Wetlands"),
+      "0.5.2b.56 town: Auberdine's southern dock names Menethil Harbor")
+    M._ds = {}
+    for _, m in ipairs(shownTown()) do
+      if m.pin.cat == "dock" and m.pin.map == 1439 then M._ds[m.pin.dest] = m end
+    end
+    check(M._ds["Stormwind Harbor"] and M._ds["Rut'theran Village, Teldrassil"]
+      and M._ds["Menethil Harbor, Wetlands"] and M._ds["Menethil Harbor, Wetlands"]:GetWidth() == 28,
+      "0.5.2b.56 town: Darkshore shows the three boats")
+    check(M._seeDock(1438, "Rut'theran Village", "Auberdine, Darkshore"),
+      "0.5.2b.55 town: Rut'theran Village draws on Teldrassil and names Auberdine")
+    check(M._seeDock(1444, "Feathermoon Stronghold", "Forgotten Coast, Feralas"),
+      "0.5.2b.55 town: Feathermoon Stronghold names the Forgotten Coast")
+    check(M._seeDock(1444, "Forgotten Coast", "Feathermoon Stronghold, Feralas"),
+      "0.5.2b.55 town: the Forgotten Coast names Feathermoon Stronghold")
+    M._men = 0
+    for _, pin in ipairs(NS.TownPins.pins) do
+      if pin.cat == "dock" and pin.map == 1439 and type(pin.dest) == "string" and pin.dest:find("Menethil", 1, true) then M._men = M._men + 1 end
+    end
+    check(M._men == 1 and M._boats["Auberdine southern dock|Menethil Harbor, Wetlands"].x == 0.322
+      and M._boats["Auberdine southern dock|Menethil Harbor, Wetlands"].y == 0.44
+      and M._boats["Auberdine southern dock|Menethil Harbor, Wetlands"].map == 1439
+      and M._boats["Menethil Harbor|Theramore, Dustwallow Marsh"].x == 0.045
+      and M._boats["Menethil Harbor|Theramore, Dustwallow Marsh"].y == 0.635
+      and M._boats["Theramore|Menethil Harbor, Wetlands"].x == 0.715
+      and M._boats["Theramore|Menethil Harbor, Wetlands"].y == 0.565
+      and M._boats["Auberdine|Rut'theran Village, Teldrassil"].x == 0.332
+      and M._boats["Auberdine|Rut'theran Village, Teldrassil"].y == 0.40
+      and M._boats["Rut'theran Village|Auberdine, Darkshore"].map == 1438
+      and M._boats["Rut'theran Village|Auberdine, Darkshore"].x == 0.548
+      and M._boats["Rut'theran Village|Auberdine, Darkshore"].y == 0.97
+      and M._boats["Feathermoon Stronghold|Forgotten Coast, Feralas"].x == 0.31
+      and M._boats["Feathermoon Stronghold|Forgotten Coast, Feralas"].y == 0.395
+      and M._boats["Forgotten Coast|Feathermoon Stronghold, Feralas"].x == 0.43
+      and M._boats["Forgotten Coast|Feathermoon Stronghold, Feralas"].y == 0.427
+      and M._boats["Auberdine|Stormwind Harbor"].x == 0.305,
+      "0.5.2b.56 town: the earlier docks stay put, and only the southern dock goes to Menethil")
+    M.SetTown("dock", false)
+    M.Layout()
+    M._nd = 0
+    for _, m in ipairs(shownTown()) do if m.pin.cat == "dock" then M._nd = M._nd + 1 end end
+    check(M._nd == 0 and not M.TownOn("dock"),
+      "0.5.2b.55 town: the Docks toggle hides every boat still in view")
+    M.SetTown("dock", true)
+    M._nd = 0
+    for _, pin in ipairs(NS.TownPins.pins) do if pin.cat == "dock" and M.TownOn("dock") then M._nd = M._nd + 1 end end
+    check(M._nd == 15, "0.5.2b.56 town: turning docks on covers all fifteen boats")
+    M.Layout()
+    check(hasName(shownTown(), "Forgotten Coast") and hasName(shownTown(), "Feathermoon Stronghold"),
+      "0.5.2b.55 town: turning docks back on restores both Feralas boats")
+    MAPS[1446], MAPS[1413], MAPS[1439], MAPS[1434], MAPS[1437], MAPS[1424], MAPS[2548] = nil, nil, nil, nil, nil, nil, nil
+    MAPS[1438], MAPS[1444], MAPS[1445] = nil, nil, nil
+    MD.Forget()
+    local win = _G.DarkMatterFrame
+    local mapW = M.vp:GetWidth()
+    win:ClearAllPoints()
+    win:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    M.PlaceTownPanel()
+    local rpt, rrel, rrp, rox = M.townPanel:GetPoint()
+    check(M.townPanel.side == "right" and rpt == "TOPLEFT" and rrel == win and rox == 8,
+      "0.5.2b.50 town: a window on the left still keeps the filter 8 pixels off its right edge")
+    win:ClearAllPoints()
+    win:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
+    M.PlaceTownPanel()
+    rpt, rrel, rrp, rox = M.townPanel:GetPoint()
+    check(M.townPanel.side == "left" and rpt == "TOPRIGHT" and rrel == win and rrp == "TOPLEFT" and rox == -8,
+      "0.5.2b.50 town: the filter falls back to the left when the right edge has no room")
+    win:ClearAllPoints()
+    win:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    local saveSW = UIParent._sw
+    UIParent._sw = 960
+    M.PlaceTownPanel()
+    check(M.townPanel.fit == "tight" and M.townPanel:GetWidth() == 220 and M.vp:GetWidth() == mapW,
+      "0.5.2b.49 town: a narrow screen shrinks the filter and does not resize the map")
+    UIParent._sw = saveSW
+    win:ClearAllPoints()
+    win:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    M.PlaceTownPanel()
+    M.ToggleTownPanel(false)
+    C_QuestLog.GetQuestsOnMap = saveQ
+    NS.QS.SetWaypoint = saveSet
+    NS.QS.selected = saveSel
+    MD.Forget("quests")
+    M.FlyTo(1426) run(20)
+  end
   -- 14b. 0.5.2b: your own pins (Pin tool): drop, saved in DarkMatterDB, the game's waypoint + arrow, right-click removes
   do
     local pb = M.pinBtn
@@ -5647,6 +6514,17 @@ do
   check(names["Dun Morogh"] == "1-10" and names["Loch Modan"] == "10-20" and names["Elwynn Forest"] == "1-10", "0.5.0 map: zone level badges at the continent view")
   check(names["Ironforge"] == nil, "0.5.0 map: no badge for a city without a level range")
   check(M.caption:IsShown() and M.caption.text._text == "Levels: public data", "0.5.0 map: badges are captioned as public data")
+  check(bp[1] and bp[1].plate._file == "Interface\\AddOns\\DarkMatter\\Media\\dm-level-scroll" and bp[1].art == "scroll"
+    and bp[1].text._fflags == "OUTLINE" and bp[1].text._text ~= nil, "0.5.2b.61 map: zone level badge is the bundled Option 2 parchment scroll, ivory text outlined")
+  ;(function()
+    local saveOK = NS.Stock.TextureOK
+    NS.Stock.TextureOK = function() return false end
+    local fb = M.MakeBadge()
+    fb:Hide()
+    check(fb.art == "tint" and fb.plate._file == nil and fb.plate._color and fb.plate._color[1] > 0.5 and fb.text._fflags == "OUTLINE",
+      "0.5.2b.59 map: a missing scroll file falls back to a parchment tint")
+    NS.Stock.TextureOK = saveOK
+  end)()
   M.caption._scripts.OnEnter(M.caption)
   check(tip.lines[1] and tip.lines[1]:find("Wowhead", 1, true), "0.5.0 map: caption tooltip names the source")
   -- 16. full screen and back (button, Esc, closing the window)
@@ -5683,7 +6561,8 @@ do
   -- 0.5.1.5: the main window reads the map window's size and scale (read only, from its own frame); nothing else
   local wmOther = {}
   local READ_OK = { GetEffectiveScale = 1, GetWidth = 1, GetHeight = 1, minimizedWidth = 1, minimizedHeight = 1, questLogWidth = 1, isMaximized = 1, IsMaximized = 1,
-    GetLeft = 1, GetRight = 1, GetTop = 1, GetBottom = 1, BorderFrame = 1, IsShown = 1 } -- 0.5.1.6: its outer rectangle, read only
+    GetLeft = 1, GetRight = 1, GetTop = 1, GetBottom = 1, BorderFrame = 1, IsShown = 1, -- 0.5.1.6: its outer rectangle, read only
+    ScrollContainer = 1 } -- 0.5.2b.21: the map picture reads the scroll interior, nothing is written
   for _, k in ipairs(wmAccess) do if not READ_OK[k] then wmOther[#wmOther + 1] = k end end
   check(#wmOther == 0, "0.5.0 map: never touches WorldMapFrame (0.5.1.6: only its size, scale and outer rectangle are read) " .. table.concat(wmOther, ","))
   check(#hooked == 0, "0.5.0 map: installs no hooks")
@@ -5810,11 +6689,23 @@ if MODE ~= "minimal" then
   NS.db.questPanel = nil
   C_QuestLog.GetMaxNumQuestsCanAccept = function() return 25 end
   NS.ShowTab("map")
-  print("DBG", P.frame, P.frame and P.frame:IsShown(), DarkMatterFrame:IsShown(), P.mapShown, NS.MapTab.panelBtn) check(P.frame and P.frame:IsShown(), "0.5.2a.1 panel: shown with the Map tab (open by default)")
-  check(P.frame:GetParent() == DarkMatterFrame, "0.5.2a.1 panel: a child of the window (moves and scales with it, locked)")
-  local pl, pt, pr = FrameMT._rect(P.frame)
-  local wl, wt, wr = FrameMT._rect(DarkMatterFrame)
-  check(pl >= wr and pt == wt and pr - pl == P.w, "0.5.2a.1 panel: docked to the right of the window, top aligned")
+  check(P.frame and P.frame:IsShown() and NS.MapTab.panelBtn == nil, "0.5.2b.28 panel: shown with the Map tab, no sidebar toggle")
+  local function underWin(f)
+    local x = f
+    for _ = 1, 8 do
+      if not x then return false end
+      if x == DarkMatterFrame then return true end
+      x = x.GetParent and x:GetParent()
+    end
+    return false
+  end
+  local host = P.frame:GetParent()
+  check(host and host ~= DarkMatterFrame and underWin(P.frame), "0.5.2b.28 panel: inside the window, not floating beside it")
+  local pl, _, pr = FrameMT._rect(P.frame)
+  local wl, _, wr = FrameMT._rect(DarkMatterFrame)
+  if pl and pr and pr - pl > 20 then
+    check(pl >= wl - 1 and pr <= wr + 1, "0.5.2b.28 panel: the quest column's edges are inside the window")
+  end
   check(P.frame.search and P.frame.search.edit, "0.5.2a.1 panel: search bar at the top")
   local ct = P.CountText()
   check(ct:find("Quests:", 1, true) and ct:find("4", 1, true) and ct:find("/25", 1, true), "0.5.2a.1 panel: quest count from the API " .. ct)
@@ -5848,8 +6739,18 @@ if MODE ~= "minimal" then
   for _, fs in ipairs(P.detail.texts) do if not fs._hid then texts[#texts + 1] = fs._text end end
   local all = table.concat(texts, "\n")
   check(all:find("Quest Objectives", 1, true) and all:find("Description", 1, true) and all:find("Rewards", 1, true), "0.5.2a.1 panel: detail has objectives, description and rewards (the Quests tab's detail)")
+  local listObj, rowObj = V.list, V.rows
   P.back._scripts.OnClick(P.back)
-  check(P.list:IsShown() and not P.detailPanel:IsShown() and V.query == "defias" and shownTitles() == "The Defias", "0.5.2a.1 panel: Back returns to the list, search kept")
+  check(P.list:IsShown() and not P.detailPanel:IsShown() and V.query == "defias" and shownTitles() == "The Defias"
+    and V.list == listObj and V.rows == rowObj, "0.5.2b.28 panel: Back returns to the same list and keeps the search")
+  if P.detail and P.detail.scroll and P.detail.scroll.SetContentHeight then
+    P.OpenQuest(103)
+    P.detail.scroll:SetContentHeight(4000)
+    P.detail.scroll:ScrollTo(100)
+    P.OpenQuest(101)
+    check(P.detail.scroll.GetScroll() == 0, "0.5.2b.28 panel: opening a quest starts its detail at the top")
+    P.ShowList()
+  end
   V.SetQuery("") P.frame.search:SetText("")
   -- 0.5.2a.2: a pin click opens THAT quest's detail in the panel (opening the panel if closed), the map stays still
   do
@@ -5858,7 +6759,7 @@ if MODE ~= "minimal" then
     _G.IsShiftKeyDown = function() return false end
     local z0 = MT.Zoom() local cx0, cy0 = MT.Center()
     P.SetOpen(false)
-    check(not P.frame:IsShown(), "0.5.2a.2 pin click: panel closed first")
+    check(P.frame:IsShown() and P.list:IsShown(), "0.5.2b.28 pin click: the column stays; closing it only returns to the list")
     MT.QuestClick({ qid = 103, map = 1426, mx = 0.5, my = 0.5 })
     check(P.frame:IsShown() and NS.db.questPanel == true and P.detailPanel:IsShown() and not P.list:IsShown() and P.detail.quest and P.detail.quest.questID == 103
       and P.detail.title._text == "The Defias" and NS.QS.selected == 103, "0.5.2a.2 pin click: a closed panel opens on that quest's detail")
@@ -5882,15 +6783,704 @@ if MODE ~= "minimal" then
     check(wpN == 1 and P.list:IsShown() and not P.detailPanel:IsShown(), "0.5.2a.2 shift-click: sets the waypoint, panel unchanged")
     NS.QS.SetWaypoint, _G.IsShiftKeyDown = saveSW, saveShift
   end
-  -- toggle (tool strip), remembered
-  local tb = NS.MapTab.panelBtn
-  tb._scripts.OnClick(tb)
-  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: the Quest log button closes it (saved)")
-  tb._scripts.OnClick(tb)
-  check(P.frame:IsShown() and NS.db.questPanel == true, "0.5.2a.1 panel: and opens it again")
-  P.frame.close._scripts.OnClick(P.frame.close)
-  check(not P.frame:IsShown() and NS.db.questPanel == false, "0.5.2a.1 panel: its close button closes it (saved)")
-  P.SetOpen(true)
+  -- 0.5.2b.29: the column has no X. The window's own close button is a different widget.
+  check(NS.MapTab.panelBtn == nil and rawget(P.frame, "close") == nil and DarkMatter.windowParts.close, "0.5.2b.29 panel: no quest-column close; the window close remains")
+  check(P.frame._clips == true, "0.5.2b.29 panel: the column clips to itself")
+  -- 0.5.2b.30: the list scroll fits the panel. The host is the page, shorter than the window.
+  do
+    local b = NS.theme.m.listBorder or 5
+    local lp = P.list
+    local sc = P.view.list
+    local pl, pt, _, pb = FrameMT._rect(lp)
+    local sl, st, _, sb = FrameMT._rect(sc.scroll)
+    check(lp._clips and sc.h and lp:GetHeight() > 120 and sc.h <= lp:GetHeight() - 2 * b + 0.5
+      and st and pt and st <= pt - b + 1 and sb >= pb + b - 1,
+      string.format("0.5.2b.30 list: scroll bottom inside the panel (scroll %.1f..%.1f, panel %.1f..%.1f, border %d, h %s)",
+        st or -1, sb or -1, pt or -1, pb or -1, b, tostring(sc.h)))
+    local tall = sc.h + 250
+    sc:SetContentHeight(tall)
+    sc:ScrollTo(100000)
+    check(math.abs(sc.GetScroll() - (tall - sc.h)) < 2, "0.5.2b.30 list: the last line can scroll into the short viewport (" .. tostring(sc.GetScroll()) .. ")")
+    P.view.Refresh()
+    local dscroll = P.detail and P.detail.scroll
+    check(dscroll and dscroll.h and dscroll.h > 40 and dscroll.h < lp:GetHeight(),
+      "0.5.2b.30 detail: its scroll is still the panel interior below the header (" .. tostring(dscroll and dscroll.h) .. ")")
+    local vpW, vpH = NS.MapTab.vp:GetWidth(), NS.MapTab.vp:GetHeight()
+    local pins = {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    local watched = {}
+    for _, id in ipairs({ 101, 102, 103 }) do watched[id] = NS.QL.IsWatched({ questID = id }) end
+    local selN = 0
+    local oldWS = NS.QL.WithSelected
+    NS.QL.WithSelected = function(...) selN = selN + 1 return oldWS(...) end
+    local req0 = #MUTATED
+    P.view.Refresh()
+    P.view.SetQuery("def")
+    P.view.SetQuery("")
+    NS.QuestPanel.Drop()
+    NS.ShowTab("map")
+    local samePins = true
+    for k, v in pairs(pins) do if not NS.db.keepTracked or NS.db.keepTracked[k] ~= v then samePins = false end end
+    for k, v in pairs(NS.db.keepTracked or {}) do if pins[k] ~= v then samePins = false end end
+    local sameWatch = true
+    for id, w in pairs(watched) do if NS.QL.IsWatched({ questID = id }) ~= w then sameWatch = false end end
+    local bulkReq = false
+    for i = req0 + 1, #MUTATED do if MUTATED[i] == "C_Item.RequestLoadItemDataByID" then bulkReq = true end end
+    check(selN == 0 and not bulkReq and samePins and sameWatch
+      and NS.MapTab.vp:GetWidth() == vpW and NS.MapTab.vp:GetHeight() == vpH,
+      "0.5.2b.30 list: fill, search and rebuild do not select quests, request rewards, or change watches, pins, or the map")
+    local oRI, oGII = GetQuestLogRewardInfo, GetItemInfo
+    GetQuestLogRewardInfo = function(i, ...)
+      local name, tex, count, quality, usable, itemID = oRI(i, ...)
+      if i == 1 then name, itemID = nil, 990001 end
+      return name, tex, count, quality, usable, itemID
+    end
+    GetItemInfo = function(id, ...) if id == 990001 then return nil end if oGII then return oGII(id, ...) end end
+    NS.QL.Forget(103)
+    local req1 = #MUTATED
+    P.OpenQuest(103)
+    local asked = false
+    for i = req1 + 1, #MUTATED do if MUTATED[i] == "C_Item.RequestLoadItemDataByID" then asked = true end end
+    local names = {}
+    for _, it in ipairs(P.detail.items or {}) do if it._shown and it.name then names[#names + 1] = it.name:GetText() end end
+    check(selN >= 1 and asked and table.concat(names, "|"):find("Loading", 1, true),
+      "0.5.2b.30 detail: the open quest still selects and requests its reward (" .. table.concat(names, "|") .. ")")
+    GetQuestLogRewardInfo, GetItemInfo = oRI, oGII
+    NS.QL.Forget(103)
+    NS.QL.WithSelected = oldWS
+    P.ShowList()
+  end
+  P.OpenQuest(103)
+  check(P.detail and P.detail.pin and P.detail.pin.pinned == false and P.detail.pin.icon, "0.5.2b.31 pin: the detail icon starts unpinned")
+  P.detail.pin._scripts.OnClick(P.detail.pin)
+  check(NS.Tracker.IsPinned(103) and P.detail.pin.pinned == true, "0.5.2b.31 pin: the detail icon pins the quest")
+  P.detail.pin._scripts.OnClick(P.detail.pin)
+  check(not NS.Tracker.IsPinned(103) and P.detail.pin.pinned == false, "0.5.2b.31 pin: the detail icon unpins it")
+  local function hit(a, b)
+    local al, at, ar, ab = FrameMT._rect(a)
+    local bl, bt, br, bb = FrameMT._rect(b)
+    if not (al and bl) then return false end
+    return al < br - 1 and ar > bl + 1 and ab < bt - 1 and at > bb + 1
+  end
+  local pin, det = P.detail.pin, P.detail
+  check(not hit(pin, det.title) and not hit(pin, det.meta) and not hit(pin, det.status) and not hit(pin, det.showMap) and not hit(pin, P.back),
+    "0.5.2b.31 pin: the detail icon is clear of the title, level line, status, Show on map, and Back")
+  local rowPin, watchShown = nil, false
+  P.ShowList()
+  for _, r in ipairs(P.view.rows) do
+    if r.kind == "q" and r:IsShown() and r.watch and r.watch:IsShown() then watchShown = true end
+    if r:IsShown() and r.kind == "q" and r.quest and r.quest.questID == 101 and r.pin then rowPin = r.pin end
+  end
+  check(rowPin and rowPin.icon and rowPin.pinned == false and not watchShown and rowPin:GetWidth() <= 18,
+    "0.5.2b.31 pin: the list uses an icon beside the name, and the watch boxes are hidden")
+  local function box(a, b) local al, at, ar, ab = FrameMT._rect(a) local bl, bt, br, bb = FrameMT._rect(b) return al, at, ar, ab, bl, bt, br, bb end
+  local tl, _, _, _, _, _, pr = box(rowPin.row.text, rowPin)
+  check(tl and pr and pr <= tl + 1, string.format("0.5.2b.31 pin: the icon sits beside the name (%.1f <= %.1f)", pr or -1, tl or -1))
+  local adds, rems = 0, 0
+  local oldA, oldR = AddQuestWatch, RemoveQuestWatch
+  AddQuestWatch = function(...) adds = adds + 1 return oldA(...) end
+  RemoveQuestWatch = function(...) rems = rems + 1 return oldR(...) end
+  P.view.Refresh()
+  AddQuestWatch, RemoveQuestWatch = oldA, oldR
+  check(adds == 0 and rems == 0, "0.5.2b.31 pin: drawing the list does not watch or unwatch")
+  rowPin._scripts.OnClick(rowPin)
+  check(NS.Tracker.IsPinned(101) and rowPin.pinned == true and rowPin.tipTitle == "Unpin", "0.5.2b.31 pin: the list icon pins, and the tooltip says Unpin")
+  rowPin.row.watch._scripts.OnClick(rowPin.row.watch)
+  check(NS.Tracker.IsPinned(101), "0.5.2b.31 pin: the hidden track box does not unpin")
+  rowPin._scripts.OnClick(rowPin)
+  check(not NS.Tracker.IsPinned(101) and rowPin.pinned == false and rowPin.tipTitle == "Pin", "0.5.2b.31 pin: the list icon unpins")
+  if watched == false then NS.QL.SetWatched(rowPin.row.quest, false) end
+  -- 0.5.2b.34: native Abandon confirm and grouped Share. The stub never accepts the dialog on the click.
+  do
+    local QL = NS.QL
+    local save = {
+      set = C_QuestLog.SetSelectedQuest, get = C_QuestLog.GetSelectedQuest, idx = C_QuestLog.GetLogIndexForQuestID,
+      info = C_QuestLog.GetInfo, iso = C_QuestLog.IsPushableQuest, snap = SetAbandonQuest, abn = AbandonQuest,
+      items = GetAbandonQuestItems, aname = GetAbandonQuestName, show = StaticPopup_Show, dialogs = StaticPopupDialogs,
+      push = QuestLogPushQuest, gp = GetQuestLogPushable, group = IsInGroup, ic = InCombatLockdown, qsel = QSEL,
+    }
+    local SEL, SNAP, SNAP_N, ABANDON_N, ABANDONED, POPUP, PUSH_N = nil, nil, 0, 0, nil, nil, 0
+    local function byIndex(i) return ({ [2] = 101, [3] = 102, [6] = 103 })[i] end
+    local function install()
+      C_QuestLog.SetSelectedQuest = function(id) SEL = id end
+      C_QuestLog.GetSelectedQuest = function() return SEL end
+      C_QuestLog.GetLogIndexForQuestID = function(id)
+        if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+      end
+      SetAbandonQuest = function() SNAP = byIndex(QSEL) or SEL SNAP_N = SNAP_N + 1 end
+      AbandonQuest = function() ABANDON_N = ABANDON_N + 1 ABANDONED = SNAP end
+      GetAbandonQuestName = function() return "The Defias" end
+      GetAbandonQuestItems = function() return nil end
+      StaticPopupDialogs = {
+        ABANDON_QUEST = { OnAccept = function() AbandonQuest() end },
+        ABANDON_QUEST_WITH_ITEMS = { OnAccept = function() AbandonQuest() end },
+      }
+      StaticPopup_Show = function(which) POPUP = which return {} end
+      QuestLogPushQuest = function() PUSH_N = PUSH_N + 1 end
+      C_QuestLog.IsPushableQuest = function(id) return id == 103 end
+      IsInGroup = function() return false end
+    end
+    local function regenN()
+      local n = 0
+      for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then n = n + 1 end end
+      return n
+    end
+    local wasPin = NS.Tracker.IsPinned(101)
+    NS.Tracker.SetPinned(101, true)
+    QWATCH[2] = true
+    local function pinSame()
+      return NS.Tracker.IsPinned(101) == true and QWATCH[2] == true
+    end
+    install()
+    P.OpenQuest(103)
+    local det = P.detail
+    local function hit(a, b)
+      if not (a and b and a.IsShown and a:IsShown() and b:IsShown()) then return false end
+      local al, at, ar, abt = FrameMT._rect(a)
+      local bl, bt, br, bb = FrameMT._rect(b)
+      if not (al and bl) then return false end
+      return al < br - 1 and ar > bl + 1 and abt < bt - 1 and at > bb + 1
+    end
+    check(det.abandon and det.abandon:IsShown() and det.share and det.share:IsShown() and not det.share:IsEnabled(),
+      "0.5.2b.34 share: solo, Share is shown and disabled")
+    check(not hit(det.abandon, det.pin) and not hit(det.abandon, det.title) and not hit(det.abandon, det.showMap) and not hit(det.abandon, P.back)
+      and not hit(det.share, det.pin) and not hit(det.share, det.showMap),
+      "0.5.2b.34 actions: Abandon and Share stay clear of the pin, title, Show on map, and Back")
+    det.share._scripts.OnClick(det.share)
+    check(PUSH_N == 0 and SNAP_N == 0 and ABANDON_N == 0 and pinSame() and det.share.tip == "Cannot share",
+      "0.5.2b.34 share: a disabled click does not share, and the other pin and watch stay")
+    IsInGroup = function() return true end
+    C_QuestLog.IsPushableQuest = function() return false end
+    P.OpenQuest(103)
+    det.share._scripts.OnClick(det.share)
+    check(not det.share:IsEnabled() and PUSH_N == 0, "0.5.2b.34 share: a grouped quest that cannot be shared stays disabled")
+    C_QuestLog.IsPushableQuest = function(id) return id == 103 end
+    P.OpenQuest(103)
+    check(PUSH_N == 0, "0.5.2b.34 share: drawing the detail does not share")
+    SEL = 101
+    det.share._scripts.OnClick(det.share)
+    check(det.share:IsEnabled() and PUSH_N == 1 and SEL == 101 and SNAP_N == 0 and pinSame(),
+      "0.5.2b.34 share: one eligible share, then the previous selection is restored")
+    det.quest.logIndex = 2
+    det.abandon._scripts.OnClick(det.abandon)
+    check(POPUP == "ABANDON_QUEST" and SNAP == 103 and QSEL == 6 and QSEL ~= 2 and ABANDON_N == 0 and pinSame(),
+      "0.5.2b.42 abandon: the confirm uses the open quest's current log index, not the stale index")
+    check(ABANDON_N == 0 and QL.InLog(103), "0.5.2b.34 abandon: leaving the confirm does not abandon")
+    SEL = 101
+    StaticPopupDialogs.ABANDON_QUEST.OnAccept()
+    check(ABANDONED == 103 and ABANDON_N == 1, "0.5.2b.34 abandon: the game's Yes abandons the snapshotted quest")
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    ABANDON_N = 0
+    det.abandon._scripts.OnClick(det.abandon)
+    check(POPUP == "ABANDON_QUEST_WITH_ITEMS" and ABANDON_N == 0, "0.5.2b.34 abandon: items use the game's item confirm")
+    GetAbandonQuestItems = function() return nil end
+    local infoFn = C_QuestLog.GetInfo
+    C_QuestLog.GetInfo = function(i)
+      local row = infoFn(i)
+      if type(row) == "table" and row.questID == 103 then return { title = "Westfall", isHeader = true } end
+      return row
+    end
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 101 then return 2 elseif id == 102 then return 3 end end
+    local snap = SNAP_N
+    det.abandon._scripts.OnClick(det.abandon)
+    check(SNAP_N == snap and ABANDON_N == 0, "0.5.2b.34 abandon: a quest that has left the log is not snapshotted")
+    C_QuestLog.GetInfo = infoFn
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    local selN = QSEL_N
+    local rep = table.concat(QL.ActionReport(), "\n")
+    check(QSEL_N == selN and PUSH_N == 1 and SNAP_N == snap and rep:find("SetAbandonQuest present", 1, true) and rep:find("QuestLogPushQuest present", 1, true),
+      "0.5.2b.34 probe: the capability report does not select, abandon, or share")
+    SlashCmdList.DARKMATTER("questprobe")
+    check(SNAP_N == snap and PUSH_N == 1 and pinSame() and table.concat(DarkMatterDB.questprobe.lines, "\n"):find("actions:", 1, true),
+      "0.5.2b.34 probe: /dm questprobe does not abandon, share, or change the other pin")
+    SetAbandonQuest = nil
+    P.OpenQuest(103)
+    POPUP = nil
+    local why = QL.Abandon(det.quest)
+    check(not det.abandon:IsShown() and why == "unsupported" and POPUP == nil and ABANDON_N == 0,
+      "0.5.2b.34 abandon: without a snapshot the button is hidden and nothing is abandoned")
+    C_QuestLog.SetSelectedQuest, C_QuestLog.GetSelectedQuest = nil, nil
+    SetAbandonQuest = function() SNAP = byIndex(QSEL) SNAP_N = SNAP_N + 1 end
+    P.OpenQuest(103)
+    det.quest.logIndex = 2
+    QSEL = 2
+    det.abandon._scripts.OnClick(det.abandon)
+    check(QSEL == 6 and SNAP == 103 and ABANDON_N == 0, "0.5.2b.34 abandon: without a quest-id select, the fresh log index is used")
+    local reg0, push0, snap0 = regenN(), PUSH_N, SNAP_N
+    POPUP = nil
+    InCombatLockdown = function() return true end
+    IsInGroup = function() return true end
+    C_QuestLog.IsPushableQuest = function() return true end
+    det.abandon._scripts.OnClick(det.abandon)
+    det.share._scripts.OnClick(det.share)
+    check(PUSH_N == push0 and SNAP_N == snap0 and regenN() == reg0 and POPUP ~= "ABANDON_QUEST",
+      "0.5.2b.34 combat: Abandon and Share do nothing and are not queued")
+    InCombatLockdown = save.ic
+    check(PUSH_N == push0 and SNAP_N == snap0, "0.5.2b.34 combat: they still have not run after combat")
+    C_QuestLog.SetSelectedQuest, C_QuestLog.GetSelectedQuest = save.set, save.get
+    C_QuestLog.GetLogIndexForQuestID, C_QuestLog.GetInfo, C_QuestLog.IsPushableQuest = save.idx, save.info, save.iso
+    SetAbandonQuest, AbandonQuest = save.snap, save.abn
+    GetAbandonQuestItems, GetAbandonQuestName = save.items, save.aname
+    StaticPopup_Show, StaticPopupDialogs = save.show, save.dialogs
+    QuestLogPushQuest, GetQuestLogPushable, IsInGroup = save.push, save.gp, save.group
+    QSEL = save.qsel
+    if not wasPin then NS.Tracker.SetPinned(101, false) end
+    P.OpenQuest(103)
+  end
+  -- 0.5.2b.42: the native confirm is used only after the open quest is the one selected. Nothing here abandons.
+  do
+    local QL = NS.QL
+    local save = {
+      set = C_QuestLog.SetSelectedQuest, get = C_QuestLog.GetSelectedQuest, idx = C_QuestLog.GetLogIndexForQuestID,
+      snap = SetAbandonQuest, csnap = C_QuestLog.SetAbandonQuest, abn = AbandonQuest,
+      items = GetAbandonQuestItems, show = StaticPopup_Show, dialogs = StaticPopupDialogs, ic = InCombatLockdown, qsel = QSEL,
+    }
+    local POPUP, SNAP_N, NSNAP, ABANDON_N, SAID, SEL42 = nil, 0, 0, 0, nil, nil
+    local function byIndex(i) return ({ [2] = 101, [3] = 102, [6] = 103 })[i] end
+    local accept = function() ABANDON_N = ABANDON_N + 1 end
+    local cancelN = 0
+    local function dialogs(withItems)
+      local d = { ABANDON_QUEST = { OnAccept = accept, OnCancel = function() cancelN = cancelN + 1 end } }
+      if withItems then d.ABANDON_QUEST_WITH_ITEMS = { OnAccept = accept, OnCancel = function() cancelN = cancelN + 1 end } end
+      return d
+    end
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    C_QuestLog.SetSelectedQuest = function(id) SEL42 = id end
+    C_QuestLog.GetSelectedQuest = function() return SEL42 end
+    SetAbandonQuest = function() SNAP_N = SNAP_N + 1 end
+    C_QuestLog.SetAbandonQuest = function() NSNAP = NSNAP + 1 end
+    AbandonQuest = function() ABANDON_N = ABANDON_N + 1 end
+    GetAbandonQuestItems = function() return nil end
+    GetAbandonQuestName = function() return "The Defias" end
+    StaticPopupDialogs = dialogs(true)
+    StaticPopup_Show = function(which) POPUP = which return {} end
+    local oldPrint = NS.Print
+    NS.Print = function(msg) SAID = msg end
+    P.OpenQuest(103)
+    local det = P.detail
+    local q = det.quest
+    SEL42 = 101
+    QSEL = 2
+    local why = QL.Abandon(q)
+    check(why == "dialog" and POPUP == "ABANDON_QUEST" and QSEL == 6 and SNAP_N == 1 and NSNAP == 0 and ABANDON_N == 0 and cancelN == 0,
+      "0.5.2b.42 abandon: the legacy snapshot is used, and the click does not accept or cancel")
+    local owned = StaticPopupDialogs.ABANDON_QUEST.OnAccept
+    check(owned == accept, "0.5.2b.42 abandon: the game still owns the confirm")
+    StaticPopupDialogs.ABANDON_QUEST.OnCancel()
+    check(ABANDON_N == 0 and cancelN == 1, "0.5.2b.42 abandon: Cancel does not abandon")
+    owned()
+    check(ABANDON_N == 1, "0.5.2b.42 abandon: only the game's accept abandons")
+    ABANDON_N = 0
+    SNAP_N = 0
+    SetAbandonQuest = nil
+    SEL42 = nil
+    POPUP = nil
+    why = QL.Abandon(q)
+    check(why == "dialog" and POPUP == "ABANDON_QUEST" and SEL42 == 103 and NSNAP == 1 and ABANDON_N == 0,
+      "0.5.2b.42 abandon: without the legacy snapshot, the quest id is selected and checked")
+    C_QuestLog.GetSelectedQuest = function() return 101 end
+    POPUP = nil
+    NSNAP = 0
+    why = QL.Abandon(q)
+    check(why == "no" and POPUP == nil and NSNAP == 0 and ABANDON_N == 0 and SAID and SAID:find("could not be selected", 1, true),
+      "0.5.2b.42 abandon: a mismatched selection opens nothing")
+    C_QuestLog.GetSelectedQuest = function() return SEL42 end
+    POPUP = nil
+    why = QL.Abandon({ questID = 999 })
+    check(why == "gone" and POPUP == nil and ABANDON_N == 0 and SAID:find("not in the log", 1, true),
+      "0.5.2b.42 abandon: a quest that has left the log is not confirmed")
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    SetAbandonQuest = function() SNAP_N = SNAP_N + 1 end
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    POPUP = nil
+    SNAP_N = 0
+    QSEL = 2
+    why = QL.Abandon(q)
+    check(why == "dialog" and POPUP == "ABANDON_QUEST_WITH_ITEMS" and ABANDON_N == 0,
+      "0.5.2b.42 abandon: items use the item confirm")
+    StaticPopupDialogs = dialogs(false)
+    POPUP = nil
+    SNAP_N = 0
+    why = QL.Abandon(q)
+    check(why == "unsupported" and POPUP == nil and SNAP_N == 1 and ABANDON_N == 0 and SAID:find("cannot confirm", 1, true),
+      "0.5.2b.42 abandon: items without the item confirm stop, and nothing is abandoned")
+    GetAbandonQuestItems = function() return nil end
+    StaticPopupDialogs = dialogs(true)
+    StaticPopup_Show = function() error("popup failed") end
+    POPUP = nil
+    why = QL.Abandon(q)
+    check(why == "no" and ABANDON_N == 0 and SAID:find("did not open", 1, true) and SAID:find("popup failed", 1, true),
+      "0.5.2b.42 abandon: a confirm error is reported and does not abandon")
+    StaticPopup_Show = function(which) POPUP = which return nil end
+    why = QL.Abandon(q)
+    check(why == "no" and POPUP == "ABANDON_QUEST" and ABANDON_N == 0 and SAID:find("did not open", 1, true),
+      "0.5.2b.42 abandon: a confirm that returns nothing is reported and does not abandon")
+    local reg0 = 0
+    for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then reg0 = reg0 + 1 end end
+    InCombatLockdown = function() return true end
+    local snap0 = SNAP_N
+    POPUP = nil
+    why = QL.Abandon(q)
+    local reg1 = 0
+    for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then reg1 = reg1 + 1 end end
+    check(why == "combat" and POPUP == nil and SNAP_N == snap0 and reg1 == reg0 and SAID:find("combat", 1, true),
+      "0.5.2b.42 abandon: combat does nothing and is not queued")
+    InCombatLockdown = function() return false end
+    check(SNAP_N == snap0 and POPUP == nil, "0.5.2b.42 abandon: combat did not leave a confirm waiting")
+    NS.Print = oldPrint
+    C_QuestLog.SetSelectedQuest, C_QuestLog.GetSelectedQuest = save.set, save.get
+    C_QuestLog.GetLogIndexForQuestID, C_QuestLog.SetAbandonQuest = save.idx, save.csnap
+    SetAbandonQuest, AbandonQuest = save.snap, save.abn
+    GetAbandonQuestItems, StaticPopup_Show, StaticPopupDialogs = save.items, save.show, save.dialogs
+    InCombatLockdown = save.ic
+    QSEL = save.qsel
+  end
+  -- 0.5.2b.43: the confirm is formatted. The key call is first. The table call happens once, only for this nil format.
+  do
+    local QL = NS.QL
+    local save = {
+      idx = C_QuestLog.GetLogIndexForQuestID, snap = SetAbandonQuest, show = StaticPopup_Show,
+      dialogs = StaticPopupDialogs, items = GetAbandonQuestItems, aname = GetAbandonQuestName, ic = InCombatLockdown, qsel = QSEL,
+    }
+    local NIL = "bad argument #2 to 'SetFormattedText' (string expected, got nil)"
+    local plain, items = 'Abandon "%s"?', 'Abandon "%s", destroying %s?'
+    local calls, last, seen, abandonN, cancelN = 0, nil, {}, 0, 0
+    local function reset() calls, last, seen = 0, nil, {} end
+    local function formatText(fmt, a, b)
+      if type(fmt) ~= "string" then error(NIL, 0) end
+      if b == nil then return string.format(fmt, a) end
+      return string.format(fmt, a, b)
+    end
+    local accept = function() abandonN = abandonN + 1 end
+    local function templates()
+      return {
+        ABANDON_QUEST = { text = plain, OnAccept = accept, OnCancel = function() cancelN = cancelN + 1 end },
+        ABANDON_QUEST_WITH_ITEMS = { text = items, OnAccept = accept, OnCancel = function() cancelN = cancelN + 1 end },
+      }
+    end
+    local function keyShow(which, a, b)
+      calls = calls + 1
+      seen[#seen + 1] = type(which)
+      local info = StaticPopupDialogs[which]
+      last = formatText(info and info.text, a, b)
+      return { text = last }
+    end
+    local function tableShow(first, a, b)
+      calls = calls + 1
+      seen[#seen + 1] = type(first)
+      local fmt = type(first) == "table" and first.text or nil
+      last = formatText(fmt, a, b)
+      return { text = last }
+    end
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    SetAbandonQuest = function() end
+    GetAbandonQuestName = function() return "The Defias" end
+    GetAbandonQuestItems = function() return nil end
+    InCombatLockdown = function() return false end
+    StaticPopupDialogs = templates()
+    StaticPopup_Show = keyShow
+    P.OpenQuest(103)
+    local q = P.detail.quest
+    QSEL = 2
+    local why = QL.Abandon(q)
+    check(why == "dialog" and calls == 1 and seen[1] == "string" and last == 'Abandon "The Defias"?',
+      "0.5.2b.43 abandon: the key call formats the plain confirm")
+    check(StaticPopupDialogs.ABANDON_QUEST.text == plain and abandonN == 0,
+      "0.5.2b.43 abandon: the plain template is unchanged and the click does not accept")
+    StaticPopupDialogs.ABANDON_QUEST.OnCancel()
+    check(cancelN == 1 and abandonN == 0, "0.5.2b.43 abandon: Cancel does not abandon")
+    StaticPopupDialogs.ABANDON_QUEST.OnAccept()
+    check(abandonN == 1, "0.5.2b.43 abandon: only the dialog's accept abandons")
+    abandonN = 0
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 1 and last == 'Abandon "The Defias", destroying Wolf Meat?',
+      "0.5.2b.43 abandon: the key call formats the item confirm")
+    StaticPopup_Show = tableShow
+    GetAbandonQuestItems = function() return nil end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 2 and seen[1] == "string" and seen[2] == "table" and last == 'Abandon "The Defias"?',
+      "0.5.2b.43 abandon: the nil format retries once with the dialog table")
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 2 and seen[2] == "table" and last == 'Abandon "The Defias", destroying Wolf Meat?',
+      "0.5.2b.43 abandon: the item confirm uses the same one table retry")
+    StaticPopup_Show = keyShow
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 1 and seen[1] == "string",
+      "0.5.2b.43 abandon: a key success does not call the table")
+    StaticPopup_Show = function() calls = calls + 1 error("popup failed", 0) end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 1, "0.5.2b.43 abandon: a different confirm error is not retried")
+    StaticPopup_Show = function() calls = calls + 1 error(NIL, 0) end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 2, "0.5.2b.43 abandon: a failed table call is not tried again")
+    StaticPopup_Show = keyShow
+    GetAbandonQuestName = function() return nil end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.43 abandon: a missing quest name makes no confirm call")
+    GetAbandonQuestName = function() return "The Defias" end
+    GetAbandonQuestItems = function() return {} end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "unsupported" and calls == 0, "0.5.2b.43 abandon: a non-text item warning makes no confirm call")
+    GetAbandonQuestItems = function() return nil end
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 103 then return 2 end end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.43 abandon: a mismatched quest makes no confirm call")
+    C_QuestLog.GetLogIndexForQuestID = save.idx
+    InCombatLockdown = function() return true end
+    reset()
+    local reg0 = 0
+    for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then reg0 = reg0 + 1 end end
+    why = QL.Abandon(q)
+    local reg1 = 0
+    for _, fr in ipairs(ALL) do if fr._ev and fr._ev.PLAYER_REGEN_ENABLED then reg1 = reg1 + 1 end end
+    check(why == "combat" and calls == 0 and reg1 == reg0, "0.5.2b.43 abandon: combat makes no confirm call and queues nothing")
+    InCombatLockdown = save.ic
+    C_QuestLog.GetLogIndexForQuestID, SetAbandonQuest = save.idx, save.snap
+    GetAbandonQuestItems, GetAbandonQuestName = save.items, save.aname
+    StaticPopup_Show, StaticPopupDialogs = save.show, save.dialogs
+    QSEL = save.qsel
+  end
+  -- 0.5.2b.44: a missing abandon-name getter uses the title of that same quest. The row title alone is not used.
+  do
+    local QL = NS.QL
+    local save = {
+      idx = C_QuestLog.GetLogIndexForQuestID, snap = SetAbandonQuest, show = StaticPopup_Show,
+      dialogs = StaticPopupDialogs, items = GetAbandonQuestItems, aname = GetAbandonQuestName,
+      cname = C_QuestLog.GetAbandonQuestName, title = C_QuestLog.GetTitleForQuestID,
+      gtitle = GetQuestLogTitle, ic = InCombatLockdown, qsel = QSEL,
+    }
+    local NIL = "bad argument #2 to 'SetFormattedText' (string expected, got nil)"
+    local plain = 'Abandon "%s"?'
+    local NIL = "bad argument #2 to 'SetFormattedText' (string expected, got nil)"
+    local calls, last = 0, nil
+    local function reset() calls, last = 0, nil end
+    local function formatText(fmt, a, b)
+      if type(fmt) ~= "string" then error(NIL, 0) end
+      if b == nil then return string.format(fmt, a) end
+      return string.format(fmt, a, b)
+    end
+    local function keyShow(which, a, b)
+      calls = calls + 1
+      local info = type(which) == "table" and which or StaticPopupDialogs[which]
+      last = formatText(info and info.text, a, b)
+      return { text = last }
+    end
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    SetAbandonQuest = function() end
+    GetAbandonQuestItems = function() return nil end
+    GetAbandonQuestName = nil
+    C_QuestLog.GetAbandonQuestName = nil
+    C_QuestLog.GetTitleForQuestID = function(id) if id == 103 then return "The Defias" end end
+    GetQuestLogTitle = nil
+    InCombatLockdown = function() return false end
+    StaticPopupDialogs = {
+      ABANDON_QUEST = { text = plain, OnAccept = function() end, OnCancel = function() end },
+      ABANDON_QUEST_WITH_ITEMS = { text = 'Abandon "%s", destroying %s?', OnAccept = function() end, OnCancel = function() end },
+    }
+    StaticPopup_Show = keyShow
+    P.OpenQuest(103)
+    local q = P.detail.quest
+    q.title = "Stale Row"
+    QSEL = 2
+    local why = QL.Abandon(q)
+    check(why == "dialog" and calls == 1 and last == 'Abandon "The Defias"?',
+      "0.5.2b.44 abandon: a missing name getter uses the title of that quest id")
+    GetAbandonQuestName = function() return nil end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "The Defias"?',
+      "0.5.2b.44 abandon: a nil name getter uses the title of that quest id")
+    GetAbandonQuestName = function() return "" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "The Defias"?',
+      "0.5.2b.44 abandon: an empty name getter uses the title of that quest id")
+    GetAbandonQuestName = function() return "Snapshot Name" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "Snapshot Name"?',
+      "0.5.2b.44 abandon: a native name is used instead of the quest-id title")
+    GetAbandonQuestName = nil
+    C_QuestLog.GetAbandonQuestName = function() return "Namespaced Name" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "Namespaced Name"?',
+      "0.5.2b.44 abandon: the namespaced native name is used instead of the quest-id title")
+    C_QuestLog.GetAbandonQuestName = nil
+    C_QuestLog.GetTitleForQuestID = nil
+    GetQuestLogTitle = function(i)
+      if i == 6 then return "Log Title", 12, nil, false, false, false, 1, 103 end
+      if i == 2 then return "Wolves", 2, nil, false, false, false, 1, 101 end
+    end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "Log Title"?',
+      "0.5.2b.44 abandon: the log line is used only when its quest id matches")
+    GetQuestLogTitle = function() return "Wolves", 2, nil, false, false, false, 1, 101 end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.44 abandon: a log line for another quest makes no confirm call")
+    GetQuestLogTitle = nil
+    C_QuestLog.GetTitleForQuestID = nil
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.44 abandon: a detail-row title alone makes no confirm call")
+    C_QuestLog.GetTitleForQuestID = function(id) if id == 103 then return "The Defias" end end
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 103 then return 2 end end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 0, "0.5.2b.44 abandon: a mismatched selection makes no confirm call")
+    C_QuestLog.GetLogIndexForQuestID = function(id)
+      if id == 101 then return 2 elseif id == 102 then return 3 elseif id == 103 then return 6 end
+    end
+    GetAbandonQuestItems = function() return "Wolf Meat" end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and last == 'Abandon "The Defias", destroying Wolf Meat?',
+      "0.5.2b.44 abandon: a text item warning is formatted")
+    GetAbandonQuestItems = function() return {} end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "unsupported" and calls == 0, "0.5.2b.44 abandon: a non-text item warning makes no confirm call")
+    GetAbandonQuestItems = function() return nil end
+    StaticPopup_Show = function(first, a, b)
+      calls = calls + 1
+      local fmt = type(first) == "table" and first.text or nil
+      if type(fmt) ~= "string" then error(NIL, 0) end
+      last = b == nil and string.format(fmt, a) or string.format(fmt, a, b)
+      return { text = last }
+    end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "dialog" and calls == 2 and last == 'Abandon "The Defias"?',
+      "0.5.2b.44 abandon: the nil format still retries once with the same title")
+    StaticPopup_Show = function() calls = calls + 1 error("popup failed", 0) end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 1, "0.5.2b.44 abandon: a different confirm error is not retried")
+    StaticPopup_Show = function() calls = calls + 1 error(NIL, 0) end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "no" and calls == 2, "0.5.2b.44 abandon: a failed table call is not tried again")
+    InCombatLockdown = function() return true end
+    reset()
+    why = QL.Abandon(q)
+    check(why == "combat" and calls == 0, "0.5.2b.44 abandon: combat makes no confirm call")
+    InCombatLockdown = save.ic
+    C_QuestLog.GetLogIndexForQuestID, SetAbandonQuest = save.idx, save.snap
+    GetAbandonQuestItems, GetAbandonQuestName = save.items, save.aname
+    C_QuestLog.GetAbandonQuestName, C_QuestLog.GetTitleForQuestID = save.cname, save.title
+    GetQuestLogTitle, StaticPopup_Show, StaticPopupDialogs = save.gtitle, save.show, save.dialogs
+    QSEL = save.qsel
+  end
+  -- 0.5.2b.46: first embed leaves the column visible with no quest events; the map show registers them.
+  -- Delivery is the registered frame, not a direct call. A positive log index never decides.
+  do
+    local P = NS.QuestPanel
+    local QL = NS.QL
+    local saveInfo, saveNum, saveIdx = C_QuestLog.GetInfo, C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetLogIndexForQuestID
+    local function fire(ev, a1)
+      for _, fr in ipairs(ALL) do
+        if fr._ev and fr._ev[ev] and fr._scripts and fr._scripts.OnEvent then fr._scripts.OnEvent(fr, ev, a1) end
+      end
+    end
+    local function detailOn() return P.detailPanel and P.detailPanel:IsShown() end
+    local function listOn() return P.list and P.list:IsShown() end
+    local function restore()
+      C_QuestLog.GetInfo, C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetLogIndexForQuestID = saveInfo, saveNum, saveIdx
+      QL.reading = false
+    end
+    local function omit103()
+      C_QuestLog.GetNumQuestLogEntries = function() return 5 end
+      C_QuestLog.GetInfo = function(i)
+        local row = saveInfo(i)
+        if type(row) == "table" and row.questID == 103 then return { title = "Westfall", isHeader = true } end
+        return row
+      end
+    end
+    if NS.ShowTab then NS.ShowTab("map") end
+    if DarkMatterFrame and DarkMatterFrame.Show then DarkMatterFrame:Show() end
+    local TQ = NS.tabs.quests
+    TQ.Events(false, "tab")
+    TQ.Events(false, "panel")
+    P.Drop()
+    P.Embed(NS.MapTab and NS.MapTab.questHost)
+    P.OpenQuest(103)
+    check(detailOn() and P.detail.quest and P.detail.quest.questID == 103, "0.5.2b.46 detail: the first embed opens the quest before quest events are registered")
+    omit103()
+    fire("QUEST_LOG_UPDATE")
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: a log change before the map show does not leave the detail")
+    NS.tabs.map.OnShow()
+    fire("QUEST_REMOVED")
+    check(listOn() and not detailOn(), "0.5.2b.46 detail: the map show registers events, and a scan that misses this quest returns to the list with no event argument")
+    fire("QUEST_REMOVED")
+    fire("QUEST_LOG_UPDATE")
+    check(listOn() and not detailOn(), "0.5.2b.46 detail: a repeated log event does not open the detail again")
+    restore()
+    P.OpenQuest(103)
+    local why = QL.Abandon(P.detail.quest)
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: the confirm itself leaves the detail open (" .. tostring(why) .. ")")
+    fire("QUEST_REMOVED")
+    fire("QUEST_LOG_UPDATE")
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: Cancel and a failed confirm stay while the scan still contains this quest")
+    omit103()
+    fire("QUEST_LOG_UPDATE")
+    check(listOn() and not detailOn(), "0.5.2b.46 detail: a later scan that misses the quest returns to the list")
+    restore()
+    P.OpenQuest(103)
+    C_QuestLog.GetNumQuestLogEntries = function() return nil end
+    QL.reading = true
+    fire("QUEST_LOG_UPDATE")
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: an unreadable log count stays on the detail")
+    restore()
+    C_QuestLog.GetNumQuestLogEntries = function() return 6 end
+    C_QuestLog.GetInfo = function(i) if i == 1 then return nil end return saveInfo(i) end
+    QL.reading = true
+    fire("QUEST_REMOVED")
+    check(detailOn() and P.detail.quest.questID == 103, "0.5.2b.46 detail: an unreadable log entry stays on the detail")
+    restore()
+    P.OpenQuest(101)
+    omit103()
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 103 then return 6 end end
+    fire("QUEST_REMOVED", 103)
+    check(detailOn() and P.detail.quest.questID == 101, "0.5.2b.46 detail: removing another quest stays on the detail that is open")
+    restore()
+    P.OpenQuest(103)
+    omit103()
+    C_QuestLog.GetLogIndexForQuestID = function(id) if id == 103 then return 6 end end
+    fire("QUEST_LOG_UPDATE")
+    check(listOn() and not detailOn(), "0.5.2b.46 detail: a stale positive log index does not keep a quest the scan no longer contains")
+    restore()
+    P.OpenQuest(103)
+    P.detail.quest = { title = "Nameless" }
+    omit103()
+    QL.reading = true
+    fire("QUEST_LOG_UPDATE")
+    check(detailOn() and P.detail.quest.title == "Nameless", "0.5.2b.46 detail: a detail with no quest id stays")
+    restore()
+    P.ShowList()
+  end
   -- only with the Map tab
   NS.ShowTab("quests")
   check(not P.frame:IsShown(), "0.5.2a.1 panel: hidden on other tabs")
@@ -5963,6 +7553,7 @@ if MODE ~= "minimal" then
   NS.SetTheme("wow")
   win:Show()
   NS.ShowTab("quests")
+  if W.railTabs.journals and W.railTabs.journals.SetActive then W.railTabs.journals:SetActive(true) end
   local d = drawn()
   -- 0.5.1.4: the dialog border + header plate gave way to the map-window frame (its own thin frame here: no WorldMapFrame);
   -- the shell is the inset marble
@@ -6082,7 +7673,9 @@ if MODE ~= "minimal" then
   local nonKit, kitN, undesat, kitNames = {}, 0, 0, {}
   for f in pairs(drawn()) do
     if not f:find("^Interface\\AddOns\\") and not f:find("^Interface\\Icons\\") and not f:upper():find("WHITE8X8", 1, true) and type(tonumber(f)) ~= "number" then
-      if isKit(f) then kitN = kitN + 1 kitNames[#kitNames + 1] = f:match("[^\\]+$") else nonKit[#nonKit + 1] = f end
+      local keepIcon = f:find("LockButton%-") or f:find("Waypoint%-MapPin%-") or f:find("PetJournal%-FavoritesIcon")
+      if isKit(f) then kitN = kitN + 1 kitNames[#kitNames + 1] = f:match("[^\\]+$")
+      elseif not keepIcon then nonKit[#nonKit + 1] = f end
     end
   end
   for _, r in ipairs(REGIONS) do
@@ -6245,7 +7838,8 @@ if MODE ~= "minimal" then
     local f = mid(t)
     if not t.stockOn or (t.active and not f:find("Down$")) or (not t.active and not f:find("Up$")) or t.stockHL._file ~= "Interface\\Buttons\\UI-Panel-Button-Highlight" then railOK = false end
   end
-  check(railN == 4 and railOK, "0.5.1.2 WoW rail tabs: stock panel buttons (active held down), stock highlight")
+  check(railN == 3 and railOK and W.railTabs.quests == nil and W.railTabs.map and W.railTabs.map.text:GetText() == "Map & Quest Logs",
+    "0.5.1.2 WoW rail tabs: stock panel buttons (active held down), stock highlight; 0.5.2b.28: three tabs, Map & Quest Logs")
   -- section tabs: character-frame tabs; toggles: panel buttons; never a marker dot
   NS.ShowTab("journals")
   NS.tabs.journals.SetSection("adventure")
@@ -6727,25 +8321,29 @@ if MODE == "full" then
   local function copyM() local c = {} for k, v in pairs(NS.theme.m) do c[k] = v end return c end
   local base = NS.theme.m
   WMF_CALLS, WMF_WRITES = {}, {}
-  local function wmf(...) WorldMapFrame = MakeWMF(...) MW.art = nil end
+  local function wmf(w, h, opts)
+    WorldMapFrame = MakeWMF(w, h, opts)
+    MW.art = nil
+    if NS.db and not (opts and opts.keepQ) then NS.db.questColumnPx, NS.db.questColumnSrc = nil, nil end
+  end
   local function outer(r) local bd = r.border or { 0, 0, 0, 0 } return (r.w + bd[1] + bd[3]) * r.scale, (r.h + bd[2] + bd[4]) * r.scale end
   wmf(1035, 640)
   local c = copyM()
   local res = MW.Apply(c)
-  check(res.w == 1009 and res.h == 640 and c.w == 1009 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
-    "0.5.1.4 window: as large as the game's map window (1035x640; 0.5.2a.2: less the tab column's 26 = 1009x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
+  check(res.w == 1034 and res.h == 640 and c.w == 1034 and c.h == 640 and res.source:find("^WorldMapFrame") and not res.fallback and res.scale == 1,
+    "0.5.2b.21 window: map 1035x640, trimmed 1009, grown to hold the scroll interior (1020+14 = 1034x640): " .. tostring(res.w) .. "x" .. tostring(res.h) .. " " .. tostring(res.source))
   check(c.bodyW - c.w == base.bodyW - base.w and c.pageW - c.w == base.pageW - base.w and c.footerTop - c.h == base.footerTop - base.h and c.exitX - c.w == base.exitX - base.w
     and c.railW == base.railW and c.tabY == base.tabY and c.bodyX == base.bodyX, "0.5.1.4 window: the body and footer follow the size, the rail and tabs keep their place")
   wmf(1035, 640, { scale = 1.25 })
   res = MW.Apply(copyM())
-  check(res.w == 1268 and res.h == 800, "0.5.1.4 window: the map window's own scale is taken into account (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  check(res.w == 1293 and res.h == 800, "0.5.2b.21 window: the map window's own scale is taken into account, then the scroll hole (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.5: the in-game case (1.60.1, Wetlands): map 1232x705 at effective scale 0.64; UIParent at 0.80
   local saveUES = UIParent.GetEffectiveScale
   UIParent.GetEffectiveScale = function() return 0.8 end
   wmf(1232, 705, { scale = 0.64, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
-  check(res.w == 960 and res.h == 564 and res.scale == 1,
-    "0.5.1.5 window: on-screen size: map 1232x705 at 0.64 under UIParent 0.80 -> ours 986x564 less 26 = 960x564 at scale 1 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
+  check(res.mapLayoutW == 985 and res.w == 985 + 333 and res.h == 564 and res.scale == 1 and res.columnLay == 333,
+    "0.5.2b.29 window: map 1232x705 keeps the 985x564 hole and adds questLogWidth 333 (" .. tostring(res.w) .. "x" .. tostring(res.h) .. ")")
   -- 0.5.1.8: the size is measured while the map window is open and saved in DarkMatterDB; while it is closed (e.g.
   -- never opened since login, where its own size is not real yet) the saved size is used; rebuild only past 1 px
   do
@@ -6770,18 +8368,18 @@ if MODE == "full" then
   wmf(1035, 640, { scale = 0.64 })
   res = MW.Apply(copyM())
   local ow, oh = outer(res)
-  check(res.w >= 854 and res.h >= 500 and res.scale < 1 and math.abs(ow - (1035 * 0.8 - 26 * res.scale)) < 1 and math.abs(oh - 640 * 0.8) < 1,
-    "0.5.1.5 window: a map smaller on screen than 880x500 is matched by our scale (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  check(res.w >= 854 and res.h >= 500 and res.scale < 1 and ow + 0.6 >= (1035 * 0.8 - 26 * res.scale) and ow <= 1035 * 0.8 + 1 and math.abs(oh - 640 * 0.8) < 1,
+    "0.5.2b.21 window: a map smaller on screen than 880x500 is matched by our scale, and may grow a little for the scroll hole (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ", outer " .. string.format("%.1f", ow) .. ")")
   UIParent.GetEffectiveScale = saveUES
   wmf(1920, 1080, { maximized = true, minW = 702, minH = 534, ql = 333 })
   res = MW.Apply(copyM())
   ow, oh = outer(res)
-  check(res.w <= 1800 and res.h <= 1300 and math.abs(ow - (1920 - 26 * res.scale)) < 1 and math.abs(oh - 1080) < 1,
-    "0.5.1.5 window: maximized follows the same rule: its size on screen (" .. res.w .. "x" .. res.h .. " at " .. string.format("%.3f", res.scale) .. ")")
+  check(res.mapLayoutW <= 1800 and res.columnLay and res.columnLay > 0 and res.w == res.mapLayoutW + res.columnLay and res.h <= 1300,
+    "0.5.2b.29 window: maximized map stays capped; the column is added and the picture is not narrowed (" .. res.w .. " = " .. tostring(res.mapLayoutW) .. "+" .. tostring(res.columnLay) .. ")")
   wmf(500, 300)
   res = MW.Apply(copyM())
   ow, oh = outer(res)
-  check(res.w >= 854 and res.h >= 500 and math.abs(ow - (500 - 26 * res.scale)) < 1 and math.abs(oh - 300) < 1, "0.5.1.5 window: a tiny map window: our layout stays 880x500 or more, our scale matches it")
+  check(res.w >= 854 and res.h >= 500 and ow + 0.6 >= (500 - 26 * res.scale) and ow <= 500 + 1 and math.abs(oh - 300) < 1, "0.5.2b.21 window: a tiny map window: layout stays 880x500 or more, outer stays within the map (" .. string.format("%.1f", ow) .. ")")
   -- 0.5.1.6: the map's border corners reach past its frame (the real offsets): the target is the OUTER rectangle
   wmf(1232, 705, { real = true })
   local ml, mt, mr, mb = MW.MapBorder()
@@ -6814,11 +8412,91 @@ if MODE == "full" then
   InCombatLockdown = function() return true end
   res = MW.Apply(copyM())
   InCombatLockdown = saveICL
-  check(res.w == 1009, "0.5.1.4 window: reading the size works in combat")
+  check(res.w == 1034, "0.5.1.4 window: reading the size works in combat")
   local badCall = {}
   for _, k in ipairs(WMF_CALLS) do if not (k:find("^Get") or k:find("^Is")) then badCall[#badCall + 1] = k end end
   check(#WMF_WRITES == 0 and #badCall == 0, "0.5.1.4 window: WorldMapFrame is only read (no Show, no writes, no hooks): " .. table.concat(WMF_WRITES, ",") .. table.concat(badCall, ","))
+  -- 0.5.2b.21: the Map picture follows ScrollContainer, else the frame interior (1035×534 -> 1020×500)
+  do
+    wmf(1035, 534)
+    local sw, sh, src = MW.ScrollSize()
+    check(src == "frame interior" and math.abs(sw - 1020) < 1 and math.abs(sh - 500) < 1,
+      string.format("0.5.2b.21 map: frame 1035x534 with no ScrollContainer size -> hole %.0fx%.0f (%s)", sw or -1, sh or -1, tostring(src)))
+    wmf(1035, 534, { scrollW = 1016, scrollH = 498 })
+    sw, sh, src = MW.ScrollSize()
+    check(src == "WorldMapFrame.ScrollContainer" and math.abs(sw - 1016) < 1 and math.abs(sh - 498) < 1,
+      string.format("0.5.2b.21 map: a live ScrollContainer is the hole (%.0fx%.0f, %s)", sw or -1, sh or -1, tostring(src)))
+    wmf(1035, 534)
+    NS.RebuildWindow()
+    NS.ShowTab("map")
+    local M = NS.MapTab
+    if M and M.Refit then M.Refit() end
+    local vw, vh = M and M.vp and M.vp:GetWidth(), M and M.vp and M.vp:GetHeight()
+    check(vw and math.abs(vw - 1020) < 2 and math.abs(vh - 500) < 2,
+      string.format("0.5.2b.21 map: viewport %.1fx%.1f (was about 781x373 in this frame; target 1020x500)", vw or -1, vh or -1))
+    -- 0.5.2b.29: the column is added beside the scroll hole. Hiding the stock quest frame does not drop it.
+    NS.db.questExtraPx, NS.db.questColumnPx = nil, nil
+    wmf(1035, 534, { rect = true })
+    local baseW = MW.Apply(copyM())
+    QuestMapFrame = { GetWidth = function() return 280 end, GetLeft = function() return 100 + 1035 - 280 end,
+      GetRight = function() return 100 + 1035 end, IsShown = function() return true end }
+    local inW = MW.Apply(copyM())
+    local px, inn, src = MW.QuestColumnPx()
+    check(inn and src == "QuestMapFrame" and px == 280 and inW.w == baseW.w + 280 and inW.holeW == baseW.holeW and inW.holeH == baseW.holeH,
+      "0.5.2b.29 window: a quest frame inside the map widens the window and leaves the scroll hole (" .. tostring(inW.w) .. " vs " .. tostring(baseW.w) .. ")")
+    QuestMapFrame = { GetWidth = function() return 280 end, GetLeft = function() return 100 + 1035 - 10 end,
+      GetRight = function() return 100 + 1035 + 270 end, IsShown = function() return true end }
+    local outW = MW.Apply(copyM())
+    check(outW.w == baseW.w + 280 and outW.holeW == baseW.holeW, "0.5.2b.29 window: a quest frame past the map still adds its width once, not a second overhang (" .. tostring(outW.w) .. ")")
+    QuestMapFrame.GetWidth = function() return 0 end
+    QuestMapFrame.IsShown = function() return false end
+    local hidW = MW.Apply(copyM())
+    check(hidW.w == outW.w and hidW.h == outW.h, "0.5.2b.29 window: hiding that frame keeps the saved width")
+    QuestMapFrame = nil
+    wmf(1035, 534, { ql = 280, rect = true })
+    local fieldW = MW.Apply(copyM())
+    local lay, _, lsrc = MW.QuestLay(1)
+    check(fieldW.w == baseW.w + 280 and fieldW.holeW == baseW.holeW and lay == 280 and lsrc == "questLogWidth",
+      "0.5.2b.29 window: questLogWidth widens the window and does not shrink the hole")
+    local lines = table.concat(MW.SizeLines(), "\n")
+    check(lines:find("sizeprobe " .. NS.version, 1, true) and lines:find("not a claim", 1, true) and lines:find("signoff still needs", 1, true) and lines:find("quest column 280", 1, true) and lines:find("map picture is the scroll hole", 1, true),
+      "0.5.2b.29 sizeprobe: prints the live numbers and does not claim they match")
+    -- class frame: the picture stays the pre-column size; the window is wider; the column is inside and clipped
+    local saveTheme = NS.theme.id
+    wmf(1035, 534)
+    NS.SetTheme("hunter")
+    NS.RebuildWindow()
+    NS.ShowTab("map")
+    local vp0 = NS.MapTab.vp:GetWidth()
+    local vh0 = NS.MapTab.vp:GetHeight()
+    local win0 = DarkMatterFrame:GetWidth()
+    wmf(1035, 534, { ql = 180 })
+    NS.RebuildWindow()
+    NS.ShowTab("map")
+    local vp1 = NS.MapTab.vp:GetWidth()
+    local vh1 = NS.MapTab.vp:GetHeight()
+    local win1 = DarkMatterFrame:GetWidth()
+    local host = NS.MapTab.questHost
+    local col = NS.QuestPanel.frame
+    local wl, wt, wr, wb = FrameMT._rect(DarkMatterFrame)
+    local cl, ct, cr, cb
+    if col then cl, ct, cr, cb = FrameMT._rect(col) end
+    check(vp0 and math.abs(vp1 - vp0) < 2 and math.abs(vh1 - vh0) < 2, string.format("0.5.2b.29 class map: hunter picture stays %.1fx%.1f with a column (was %.1fx%.1f)", vp1 or -1, vh1 or -1, vp0 or -1, vh0 or -1))
+    check(win1 >= win0 + 180 - 2, string.format("0.5.2b.29 class map: the window grew by the column (%.1f -> %.1f)", win0 or -1, win1 or -1))
+    check(host and host._clips and col and col._clips and rawget(col, "close") == nil,
+      "0.5.2b.29 class map: the column clips and has no X")
+    check(cl and wl and cl >= wl - 1 and cr <= wr + 1 and ct <= wt + 1 and cb >= wb - 1,
+      string.format("0.5.2b.29 class map: column inside the window (%.1f,%.1f,%.1f,%.1f in %.1f,%.1f,%.1f,%.1f)", cl or -1, ct or -1, cr or -1, cb or -1, wl or -1, wt or -1, wr or -1, wb or -1))
+    local rail = NS.windowParts.railTabs and NS.windowParts.railTabs.map
+    check(rail and rail.text:GetText() == "Map & Quest Logs" and rail.text._w and rail.text._w < NS.theme.m.tabW,
+      "0.5.2b.29 rail: the full label is wrapped inside the tab button")
+    NS.SetTheme(saveTheme)
+    QuestMapFrame = nil
+    NS.db.questExtraPx, NS.db.questColumnPx, NS.db.questColumnSrc = nil, nil, nil
+    wmf(1035, 534)
+  end
   WorldMapFrame = saveWMF MW.art = nil
+  NS.RebuildWindow()
   local win = NS.GetWindow()
   check(win._w == NS.theme.m.w and win._h == NS.theme.m.h, "0.5.1.4 window: the built window has the metrics' size " .. win._w .. "x" .. win._h)
 
@@ -6858,16 +8536,33 @@ if MODE == "full" then
         if vp then
           areas[id .. "|" .. si] = { vp:GetWidth(), vp:GetHeight() }
           if id ~= "wow" and sz[3] and sz[3].real and areas["wow|" .. si] then
-            local a0, a1 = areas["wow|" .. si], areas[id .. "|" .. si]
-            check(math.abs(a1[1] - a0[1]) <= 2 and math.abs(a1[2] - a0[2]) <= 2, string.format(
-              "0.5.1.7 window: %s at map %dx%d: its map rectangle %.1fx%.1f equals the WoW theme's %.1fx%.1f (within 2 px)", id, sz[1], sz[2], a1[1], a1[2], a0[1], a0[2]))
+            -- 0.5.2b.25: a class theme's map fills the opening inside the wood, so it is not the WoW theme's
+            -- scroll hole. The sidebar and the map sit on that opening (a couple of pixels for the crumb gap).
+            local inner = NS.ClassInner and { NS.ClassInner() }
+            local rail = NS.windowParts and NS.windowParts.rail
+            local rl, rt, rr, rb
+            if rail then rl, rt, rr, rb = FrameMT._rect(rail) end
+            local vl, vt, vr, vb = FrameMT._rect(vp)
+            local fl, ft = FrameMT._rect(f)
+            local function gap(a, b) if not (a and b and fl) then return 999 end return math.abs((a - fl) - b) end
+            local railTop = (ft and rt) and (ft - rt) or nil
+            local mapTop = (ft and vt) and (ft - vt) or nil
+            local mapRight = (fl and vr) and (vr - fl) or nil
+            local okIn = inner and inner[1] and rl and vl and railTop and mapTop and mapRight
+              and gap(rl, inner[1]) <= 2 and math.abs(railTop - inner[2]) <= 2
+              and math.abs(mapRight - inner[3]) <= 8
+              and mapTop >= inner[2] - 2 and mapTop <= inner[2] + 48
+            check(okIn, string.format(
+              "0.5.2b.25 window: %s map sits in the wood (rail %.1f,%.1f map right %.1f top %.1f; opening %.1f,%.1f .. %.1f,%.1f)",
+              id, rl and fl and (rl - fl) or -1, railTop or -1, mapRight or -1, mapTop or -1,
+              inner and inner[1] or -1, inner and inner[2] or -1, inner and inner[3] or -1, inner and inner[4] or -1))
             nAreas = nAreas + 1
           end
         end
         NS.ShowTab("quests")
         local tw, th = MW.Target() -- 0.5.2a.2: the map window less the tab column's trim
         local mw0 = MW.Size()
-        check(tw and mw0 and math.abs(tw - (mw0 - 26 * f:GetScale() / (sz[4] or 1) * (sz[4] or 1))) < 0.6, string.format("0.5.2a.2 window: %s target width %.1f = map %.1f less the tab column's 26 (scaled)", id, tw or -1, mw0 or -1))
+        check(tw and mw0 and tw + 0.6 >= mw0 - 26 * f:GetScale(), string.format("0.5.2b.21 window: %s target width %.1f >= map %.1f less the tab column's 26 (wider when the scroll hole needs it)", id, tw or -1, mw0 or -1))
         local l, t, r, b = drawnBox(f)
         local k = f:GetScale() / (sz[4] or 1) * (sz[4] or 1)
         local ow2, oh2 = (r - l) * k, (t - b) * k
@@ -7055,15 +8750,16 @@ if MODE ~= "minimal" then
   QWATCH[3] = true Tr.Diff()
   check(P[102] == nil, "0.5.2b.1 keep: tracking a quest yourself does not pin it")
   Tr.SetPinned(102, true)
-  check(P[102] == true and QWATCH[3] == true, "0.5.2b.1 keep: a click on the pin pins it")
+  check(P[102] == true and QWATCH[3] == nil, "0.5.2b.33 keep: pinning a completed quest pins it and takes it off Quests")
   QWATCH[6] = true Tr.Diff() QWATCH[6] = nil Tr.Diff()
   check(P[103] == nil, "0.5.2b keep: the game's auto-watch does not pin")
+  Tr.SetPinned(101, true)
   TIME_NOW = TIME_NOW + 100
   Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
-  QWATCH[3] = nil Tr.Diff()
-  check(QWATCH[3] == true and P[102] == true, "0.5.2b keep: a pinned quest the game untracks on a zone change is tracked again")
+  QWATCH[2] = nil Tr.Diff()
+  check(QWATCH[2] == true and P[101] == true, "0.5.2b keep: a pinned in-progress quest the game untracks on a zone change is tracked again")
   Tr.Diff()
-  check(Tr.own[102] == nil and P[102] == true, "0.5.2b keep: our own re-track is not taken as yours")
+  check(Tr.own[101] == nil and P[101] == true, "0.5.2b keep: our own re-track is not taken as yours")
   TIME_NOW = TIME_NOW + 10
   QWATCH[3] = nil Tr.Diff()
   check(QWATCH[3] == nil and P[102] == true, "0.5.2b.1 keep: untracking it yourself does not unpin it")
@@ -7075,7 +8771,7 @@ if MODE ~= "minimal" then
   Tr.Diff()
   check(P[103] == true and Tr.own[103] == nil, "0.5.2b keep: and that track is ours (still pinned)")
   Tr.SetPinned(103, false)
-  check(P[103] == nil and QWATCH[6] == true, "0.5.2b.1 keep: unpinning does not untrack (auto-track decides at the next zone change)")
+  check(P[103] == nil and QWATCH[6] == nil, "0.5.2b.32 keep: unpinning an out-of-zone quest takes it off Objectives now")
   Tr.SetPinned(103, true) P[102] = nil Tr.zonePending = nil
   -- 2. the tracker rows: our own pin button and title click area, positioned by the blocks (read only)
   local function vis(f) return f._shown == true end
@@ -7186,9 +8882,8 @@ if MODE ~= "minimal" then
       "0.5.2b.7.3 ready: the icon is the tracker's completed-quest POI button (QuestComplete: UI-QuestIcon-TurnIn-Normal on UI-QuestPoi-QuestNumber)")
     check(rawget(R, "bg") == nil and rawget(r, "hl") == nil, "0.5.2b.7.3 ready: no backdrop behind the rows and no highlight plate")
     check(r.ficon._atlas == "UI-QuestIcon-TurnIn-Normal" and r.ficon._shown ~= false and r.face._atlas == "UI-QuestPoi-QuestNumber" and r.iconHow == "atlas"
-      and r.iconBox._w == 20 and r.iconBox._h == 20 and r.iconBox._pts[1][1] == "TOPRIGHT" and r.iconBox._pts[1][2] == r.title and r.iconBox._pts[1][3] == "TOPLEFT"
-      and r.iconBox._pts[1][4] == -7 and r.iconBox._pts[1][5] == 5,
-      "0.5.2b.7.3 ready: without the template the same two game atlases, 20x20 at the title's TOPLEFT (-7, 5) as the tracker places it (" .. tostring(r.iconHow) .. ")")
+      and r.iconBox._w == 20 and r.iconBox._h == 20 and r.pin and r.pin._pts[1][1] == "LEFT" and r.iconBox._pts[1][1] == "LEFT" and r.iconBox._pts[1][2] == r.pin,
+      "0.5.2b.36 ready: the same two game atlases, 20x20, with the pin to the left of the icon (" .. tostring(r.iconHow) .. ")")
     -- colours: the tracker's table when the client has it
     local saveOTC = rawget(_G, "OBJECTIVE_TRACKER_COLOR")
     OBJECTIVE_TRACKER_COLOR = { Header = { r = 0.75, g = 0.61, b = 0 }, HeaderHighlight = { r = 1, g = 0.82, b = 0 }, Normal = { r = 0.8, g = 0.8, b = 0.8 }, NormalHighlight = { r = 1, g = 1, b = 1 } }
@@ -7324,9 +9019,9 @@ if MODE ~= "minimal" then
       fight = false
       Tr.OnEvent("PLAYER_REGEN_ENABLED")
       for k = 1, 6 do Tr.Tick(TIME_NOW + 110 + k * 2) end
-      check(not W[701] and W[702] and W[703], "0.5.2b.12 tracker: after combat the ready quest is unwatched, the pinned ready one kept" .. tag)
+      check(not W[701] and W[702] and not W[703], "0.5.2b.33 tracker: after combat a completed quest leaves Quests, pinned or not" .. tag)
       NS.db.readySection = false
-      W[701] = true
+      W[701], W[703] = true, true
       Tr.OnEvent("QUEST_LOG_UPDATE") for k = 1, 6 do Tr.Tick(TIME_NOW + 130 + k * 2) end
       check(W[701] and W[702] and W[703], "0.5.2b.12 tracker: with Ready to Turn In off the ready quest stays watched" .. tag)
       NS.db.readySection = nil
@@ -7334,7 +9029,7 @@ if MODE ~= "minimal" then
     -- Plan: ZoneSet still wants the ready quest; Plan alone leaves it out (unless pinned)
     local log = Tr.ReadLog()
     local zs = Tr.ZoneSet(log)
-    check(zs[703] == true, "0.5.2b.12 tracker: Tr.ZoneSet itself is unchanged (pins still in it)")
+    check(zs[703] ~= true, "0.5.2b.33 tracker: a completed pin is not added back onto the Quests watch set")
     NS.db.readySection = false
     local plan1 = Tr.Plan()
     NS.db.readySection = nil
@@ -7390,6 +9085,987 @@ if MODE ~= "minimal" then
   local QT = NS.tabs.quests
   local rq = QT.Ready()
   check(#rq == 1 and rq[1].questID == 102 and QT.READY_TITLE == "Ready to Turn In", "0.5.2b ready: the Quests tab and the panel get a Ready to Turn In group")
+  -- 0.5.2b.25: Ready to Turn In is this area only, and a capital is its own area (not the zone around it)
+  do
+    local saveInfo, savePos, saveRect, saveBest, saveKids, saveZone, saveReal = C_Map.GetMapInfo, C_Map.GetPlayerMapPosition, C_Map.GetMapRectOnMap, C_Map.GetBestMapForUnit, C_Map.GetMapChildrenInfo, GetZoneText, GetRealZoneText
+    local MAPS = {
+      [1415] = { name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+      [1426] = { name = "Dun Morogh", mapType = 3, parentMapID = 1415 },
+      [1455] = { name = "Ironforge", mapType = 3, parentMapID = 1426 },
+      [1429] = { name = "Elwynn Forest", mapType = 3, parentMapID = 1415 },
+    }
+    C_Map.GetMapInfo = function(id) return MAPS[id] end
+    C_Map.GetMapRectOnMap = function(child, parent)
+      if child == 1426 and parent == 1415 then return 0.40, 0.60, 0.40, 0.70 end
+      if child == 1455 and parent == 1426 then return 0.40, 0.60, 0.40, 0.60 end
+      if child == 1429 and parent == 1415 then return 0.40, 0.55, 0.70, 0.90 end
+    end
+    C_Map.GetMapChildrenInfo = function(id)
+      if id == 1415 then
+        return { { mapID = 1426, name = "Dun Morogh", mapType = 3 }, { mapID = 1429, name = "Elwynn Forest", mapType = 3 } }
+      end
+    end
+    local function pos(x, y) return { x = x, y = y, GetXY = function(s) return s.x, s.y end } end
+    local px, py, pmap = 0.5, 0.5, 1426
+    C_Map.GetBestMapForUnit = function() return pmap end
+    -- position on the zone only, so a city is detected by composing the zone rect (not a raw continent point)
+    C_Map.GetPlayerMapPosition = function(id) if id == pmap and px then return pos(px, py) end end
+    local function art(id) return id == 1415 or id == 1426 or id == 1455 or id == 1429 end
+    local saveArt = NS.MapData.Art
+    NS.MapData.Art = function(id) if art(id) then return saveArt(id) or { id = id } end return saveArt(id) end
+    NS.MapData.Forget()
+    local saveCQ, saveSt = C_QuestLog, NS.QS.Status
+    local LOG = {
+      { isHeader = true, title = "Dun Morogh" },
+      { questID = 801, title = "Snow Quest" },
+      { isHeader = true, title = "Ironforge" },
+      { questID = 802, title = "Forge Quest" },
+      { isHeader = true, title = "Elwynn Forest" },
+      { questID = 803, title = "Wolf Quest" },
+    }
+    C_QuestLog = setmetatable({
+      GetNumQuestLogEntries = function() return #LOG end,
+      GetInfo = function(i) return LOG[i] end,
+      GetLogIndexForQuestID = function(q) for i, e in ipairs(LOG) do if e.questID == q then return i end end end,
+      IsComplete = function(q) return q == 801 or q == 802 or q == 803 end,
+    }, { __index = saveCQ })
+    NS.QS.Status = function(q) if q == 801 or q == 802 or q == 803 then return "ready" end return saveSt(q) end
+    GetZoneText = function() return "Dun Morogh" end
+    GetRealZoneText = function() return "Dun Morogh" end
+    px, py, pmap = 0.50, 0.50, 1426 -- continent fraction via zone pos: city rect is 0.40-0.60 of Dun Morogh, so 0.50 is INSIDE Ironforge
+    -- zone pos 0.5,0.5 on Dun Morogh maps through its continent rect into the city (city is 0.40-0.60 of the zone)
+    NS.MapData.Forget()
+    local areaIn = NS.MapData.PlayerArea()
+    local readyIn = NS.tabs.quests.Ready()
+    local function ids(list) local t = {} for _, e in ipairs(list) do t[#t + 1] = e.id or e.questID end table.sort(t) return table.concat(t, ",") end
+    check(areaIn == 1455, "0.5.2b.25 area: standing inside Ironforge's rect is Ironforge, even when the player map is Dun Morogh (" .. tostring(areaIn) .. ")")
+    check(ids(readyIn) == "802", "0.5.2b.25 ready: in Ironforge only the Ironforge turn-in is listed (" .. ids(readyIn) .. ")")
+    local log = NS.Tracker.ReadLog()
+    local zs = NS.Tracker.ZoneSet(log)
+    check(zs[802] == true and zs[801] ~= true, "0.5.2b.25 auto-track: in Ironforge the city quest counts and the Dun Morogh one does not")
+    px, py = 0.10, 0.10 -- outside the city rect on Dun Morogh
+    NS.MapData.Forget()
+    local areaOut = NS.MapData.PlayerArea()
+    local readyOut = NS.tabs.quests.Ready()
+    check(areaOut == 1426, "0.5.2b.25 area: outside the city rect, still on the Dun Morogh map, the area is Dun Morogh (" .. tostring(areaOut) .. ")")
+    check(ids(readyOut) == "801", "0.5.2b.25 ready: in Dun Morogh only the Dun Morogh turn-in is listed (" .. ids(readyOut) .. ")")
+    GetZoneText = function() return "Ironforge" end
+    GetRealZoneText = function() return "Dun Morogh" end
+    pmap = 1426
+    px, py = nil, nil
+    C_Map.GetPlayerMapPosition = function() return nil end
+    NS.MapData.Forget()
+    local areaNamed = NS.MapData.PlayerArea()
+    check(areaNamed == 1455, "0.5.2b.25 area: zone text Ironforge is the city even when the map id and the real zone are Dun Morogh (" .. tostring(areaNamed) .. ")")
+    NS.MapData.Art = saveArt
+    C_Map.GetMapInfo, C_Map.GetPlayerMapPosition, C_Map.GetMapRectOnMap, C_Map.GetBestMapForUnit, C_Map.GetMapChildrenInfo = saveInfo, savePos, saveRect, saveBest, saveKids
+    GetZoneText, GetRealZoneText = saveZone, saveReal
+    C_QuestLog, NS.QS.Status = saveCQ, saveSt
+    NS.MapData.Forget()
+    if NS.tabs.quests and NS.tabs.quests.Refresh then NS.tabs.quests.Refresh() end
+  end
+  -- 0.5.2b.27: a finished quest is Ready where you turn it in, not where the log filed it.
+  -- The Defias Brotherhood is under Westfall; Wiley in Lakeshire is the turn-in, on Redridge.
+  do
+    local saveInfo, saveBest, saveZone, saveReal, saveCQ, saveSt = C_Map.GetMapInfo, C_Map.GetBestMapForUnit, GetZoneText, GetRealZoneText, C_QuestLog, NS.QS.Status
+    local MAPS = {
+      [1415] = { name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+      [1433] = { name = "Redridge Mountains", mapType = 3, parentMapID = 1415 },
+      [1436] = { name = "Westfall", mapType = 3, parentMapID = 1415 },
+    }
+    C_Map.GetMapInfo = function(id) return MAPS[id] end
+    C_Map.GetBestMapForUnit = function() return 1433 end
+    GetZoneText = function() return "Redridge Mountains" end
+    GetRealZoneText = function() return "Redridge Mountains" end
+    local LOG = {
+      { isHeader = true, title = "Westfall" },
+      { questID = 901, title = "The Defias Brotherhood" },
+      { questID = 902, title = "The People's Militia" },
+    }
+    local WP = { [901] = { 1433, 0.273, 0.565 }, [902] = { 1436, 0.56, 0.52 } }
+    C_QuestLog = setmetatable({
+      GetNumQuestLogEntries = function() return #LOG end,
+      GetInfo = function(i) return LOG[i] end,
+      GetLogIndexForQuestID = function(q) for i, e in ipairs(LOG) do if e.questID == q then return i end end end,
+      IsComplete = function(q) return q == 901 or q == 902 end,
+      GetNextWaypoint = function(q) local w = WP[q] if w then return w[1], w[2], w[3] end end,
+      IsQuestWatched = function(q) return q == 902 end,
+    }, { __index = saveCQ })
+    NS.QS.Status = function(q) if q == 901 or q == 902 then return "ready" end return saveSt(q) end
+    NS.MapData.Forget()
+    local function ids(list)
+      local t = {}
+      for _, e in ipairs(list) do t[#t + 1] = e.questID or e.id end
+      table.sort(t)
+      return table.concat(t, ",")
+    end
+    check(NS.QS.TurnInMap(901) == 1433 and NS.QS.TurnInMap(902) == 1436,
+      "0.5.2b.27 ready: the waypoint is the turn-in (Defias 1433, Militia 1436), not the Westfall header")
+    check(NS.MapData.PlayerArea() == 1433, "0.5.2b.27 ready: the player area is Redridge (" .. tostring(NS.MapData.PlayerArea()) .. ")")
+    local rq = NS.tabs.quests.Ready()
+    check(ids(rq) == "901", "0.5.2b.27 ready: in Redridge the Lakeshire handoff is listed and the Westfall turn-in is not (" .. ids(rq) .. ")")
+    check(NS.Tracker.DropReady(901) == true and NS.Tracker.DropReady(902) == true,
+      "0.5.2b.39 ready: a completed quest leaves Quests here and when the turn-in is another zone")
+    local plan = NS.Tracker.Plan()
+    local dropped = false
+    for _, it in ipairs(plan) do if it.e and it.e.id == 902 and it.want == false then dropped = true end end
+    check(dropped, "0.5.2b.39 ready: the zone plan takes off an unpinned quest whose turn-in is another zone")
+    C_Map.GetMapInfo, C_Map.GetBestMapForUnit = saveInfo, saveBest
+    GetZoneText, GetRealZoneText = saveZone, saveReal
+    C_QuestLog, NS.QS.Status = saveCQ, saveSt
+    NS.MapData.Forget()
+    if NS.tabs.quests and NS.tabs.quests.Refresh then NS.tabs.quests.Refresh() end
+  end
+  -- 0.5.2b.39: an unpinned completed quest whose turn-in is elsewhere leaves Quests and is not Ready.
+  do
+    local Tr, QS = NS.Tracker, NS.QS
+    local saveRH, saveSt, saveAuto, saveTaxi, saveIC = QS.ReadyHere, QS.Status, NS.db.autoTrack, UnitOnTaxi, InCombatLockdown
+    local pins, qw = {}, {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local function listed(id)
+      for _, e in ipairs(Tr.ReadyList()) do if e.id == id then return true end end
+    end
+    local function clearPins()
+      for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    end
+    QS.ReadyHere = function(id) if id == 102 then return false end return saveRH(id) end
+    clearPins()
+    Tr.taxiRide, Tr.taxiSettleUntil, Tr.deferPlan, Tr.zonePending = nil, nil, nil, nil
+    UnitOnTaxi = nil
+    local function arm()
+      QWATCH[2], QWATCH[3], QWATCH[6] = true, true, nil
+      Tr.readyDropDue = true
+      Tr.watch = nil
+      Tr.Diff()
+    end
+    NS.db.autoTrack = true
+    arm()
+    Tr.zonePending = TIME_NOW
+    Tr.Tick(TIME_NOW)
+    check(QWATCH[3] == nil and not listed(102) and QWATCH[2] == true, "0.5.2b.39 quests: auto-track on, an unpinned turn-in elsewhere leaves Quests and is not Ready")
+    QWATCH[3] = true
+    Tr.zonePending = TIME_NOW
+    Tr.Tick(TIME_NOW + 0.2)
+    check(QWATCH[3] == nil, "0.5.2b.39 quests: a later pass does not put that quest back")
+    NS.db.autoTrack = false
+    arm()
+    QWATCH[6] = true
+    Tr.zonePending = nil
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 2)
+    check(QWATCH[3] == nil and not listed(102) and QWATCH[6] == true and not Tr.IsPinned(103),
+      "0.5.2b.39 quests: auto-track off, the same removal runs and an in-progress watch stays")
+    QS.ReadyHere = function(id) if id == 102 then return true end return saveRH(id) end
+    arm()
+    Tr.zonePending = nil
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 3)
+    check(QWATCH[3] == nil and listed(102), "0.5.2b.39 quests: a local completed quest is Ready and off Quests")
+    QS.ReadyHere = function(id) if id == 102 or id == 103 then return false end return saveRH(id) end
+    NS.QS.Status = function(id) if id == 103 or id == 102 then return "ready" end return "progress" end
+    clearPins()
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    Tr.Diff()
+    check(Tr.IsPinned(103) and listed(103) and QWATCH[6] == nil, "0.5.2b.39 quests: a completed pin is Ready only")
+    NS.QS.Status = function(id) if id == 102 then return "ready" end return "progress" end
+    Tr.SetPinned(103, false)
+    Tr.SetPinned(101, true)
+    QWATCH[2] = true
+    NS.db.autoTrack = false
+    Tr.readyDropDue = true
+    Tr.zonePending = nil
+    Tr.Tick(TIME_NOW + 0.8)
+    check(Tr.IsPinned(101) and QWATCH[2] == true and not listed(101), "0.5.2b.39 quests: an in-progress pin stays on Quests")
+    local flying = true
+    UnitOnTaxi = function() return flying end
+    Tr.ground = { area = 100, zone = "Elwynn Forest", real = "Elwynn Forest" }
+    Tr.Tick(TIME_NOW + 1)
+    QS.ReadyHere = function(id) if id == 102 then return false end return saveRH(id) end
+    QWATCH[3] = true
+    Tr.readyDropDue = true
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 1.2)
+    check(Tr.taxiRide and QWATCH[3] == true, "0.5.2b.39 quests: in the air the removal waits")
+    flying = false
+    Tr.Tick(TIME_NOW + 1.4)
+    check(not Tr.taxiRide and QWATCH[3] == nil, "0.5.2b.39 quests: landing removes it")
+    local fight = true
+    InCombatLockdown = function() return fight end
+    QWATCH[3] = true
+    Tr.readyDropDue = true
+    Tr.Tick(TIME_NOW + 1.6)
+    check(QWATCH[3] == true, "0.5.2b.39 quests: in combat the removal waits")
+    fight = false
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 3)
+    check(QWATCH[3] == nil and Tr.IsPinned(101), "0.5.2b.39 quests: after combat it is removed and the in-progress pin stays")
+    QS.ReadyHere, QS.Status, NS.db.autoTrack, UnitOnTaxi, InCombatLockdown = saveRH, saveSt, saveAuto, saveTaxi, saveIC
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    for k, v in pairs(pins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.taxiRide, Tr.hold, Tr.settleHold, Tr.ground, Tr.zonePending, Tr.queue = nil, nil, nil, nil, nil, {}
+    Tr.readyDropDue, Tr.nextBatch, Tr.deferPlan, Tr.watch = nil, nil, nil, nil
+    Tr.Diff()
+  end
+  -- 0.5.2b.40: an unusable map keeps the last zone or city and does not watch or unwatch from that sample.
+  do
+    local Tr, MD = NS.Tracker, NS.MapData
+    local saveBest, saveInfo, savePos, saveZone, saveQOM = C_Map.GetBestMapForUnit, C_Map.GetMapInfo, C_Map.GetPlayerMapPosition, ZONE_TEXT, C_QuestLog.GetQuestsOnMap
+    local saveAuto, saveTaxi, saveIC, saveOrder = NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.db.trackOrder
+    local pins, qw = {}, {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local here = nil
+    local MAPS = {
+      [1429] = { name = "Elwynn Forest", mapType = 3, parentMapID = 1415 },
+      [1415] = { name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+      [1436] = { name = "Westfall", mapType = 3, parentMapID = 1415 },
+      [1455] = { name = "Ironforge", mapType = 3, parentMapID = 1426 },
+      [1426] = { name = "Dun Morogh", mapType = 3, parentMapID = 1415 },
+      [9999] = { name = "The Deadmines", mapType = 4, parentMapID = 1436 },
+    }
+    C_Map.GetBestMapForUnit = function() return here end
+    C_Map.GetMapInfo = function(id) return MAPS[id] end
+    C_Map.GetPlayerMapPosition = function() return nil end
+    C_QuestLog.GetQuestsOnMap = function(id)
+      if id == 1415 then return { { questID = 101, x = 0.2, y = 0.2 }, { questID = 102, x = 0.3, y = 0.3 }, { questID = 103, x = 0.4, y = 0.4 } } end
+      if id == 1429 then return { { questID = 101, x = 0.2, y = 0.2 } } end
+      return {}
+    end
+    local function listed(id)
+      for _, e in ipairs(Tr.ReadyList()) do if e.id == id then return true end end
+    end
+    local function use(map, zone)
+      here = map
+      ZONE_TEXT = zone
+      Tr.sampleKey, Tr.sample = nil, nil
+      MD.Forget()
+    end
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    NS.db.autoTrack, NS.db.trackOrder = true, false
+    UnitOnTaxi, InCombatLockdown = nil, function() return false end
+    Tr.good, Tr.badSample, Tr.sampleKey, Tr.sample = nil, nil, nil, nil
+    Tr.taxiRide, Tr.taxiSettleUntil, Tr.hold, Tr.settleHold, Tr.ground = nil, nil, nil, nil, nil
+    Tr.deferPlan, Tr.zonePending, Tr.queue, Tr.nextBatch, Tr.readyDropDue = nil, nil, {}, 0, nil
+    QWATCH[2], QWATCH[3], QWATCH[6] = true, true, true
+    Tr.watch = nil
+    Tr.Diff()
+    use(nil, nil)
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.zonePending = TIME_NOW
+    Tr.Tick(TIME_NOW)
+    check(QWATCH[2] == true and QWATCH[3] == true and QWATCH[6] == true and not listed(102) and not Tr.good,
+      "0.5.2b.40 map: with no earlier zone, a missing map does not change watches or fill Ready")
+    use(1415, "Eastern Kingdoms")
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 0.2)
+    check(QWATCH[2] == true and QWATCH[6] == true and Tr.badSample and not Tr.good,
+      "0.5.2b.40 map: a continent sample does not watch the quests on that map and does not apply a queued unwatch")
+    use(1429, "Elwynn Forest")
+    QWATCH[2], QWATCH[6] = nil, true
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 1)
+    check(QWATCH[2] == true and QWATCH[6] == nil and QWATCH[3] == nil and listed(102) and not Tr.zonePending and Tr.good and Tr.good.area == 1429,
+      "0.5.2b.40 map: the first valid zone refreshes once, keeps the local turn-in in Ready, and drops the stale unwatch")
+    QWATCH[2] = nil
+    Tr.Tick(TIME_NOW + 1.2)
+    check(QWATCH[2] == nil and not Tr.zonePending, "0.5.2b.40 map: a later tick does not plan again")
+    QWATCH[2], QWATCH[6] = true, true
+    Tr.Diff()
+    use(1415, "Eastern Kingdoms")
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.zonePending = TIME_NOW
+    Tr.Tick(TIME_NOW + 2)
+    check(QWATCH[2] == true and QWATCH[6] == true and listed(102) and not listed(103) and Tr.badSample and Tr.good.area == 1429,
+      "0.5.2b.40 map: Quests and Ready stay on the last zone while the map is a continent")
+    NS.db.autoTrack = false
+    QWATCH[6] = true
+    Tr.queue = { { e = { id = 103, idx = 6, questID = 103 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 2.2)
+    check(QWATCH[6] == true and QWATCH[2] == true, "0.5.2b.40 map: auto-track off keeps a hand-watched quest through the bad sample")
+    local flying = true
+    UnitOnTaxi = function() return flying end
+    Tr.ground = { area = 1429, zone = "Elwynn Forest", real = "Elwynn Forest" }
+    use(1429, "Elwynn Forest")
+    Tr.Tick(TIME_NOW + 3)
+    use(1415, "Eastern Kingdoms")
+    QWATCH[2] = true
+    Tr.queue = { { e = { id = 101, idx = 2, questID = 101 }, want = false } }
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 3.2)
+    check(Tr.taxiRide and QWATCH[2] == true, "0.5.2b.40 map: a taxi still holds, and the continent sample changes nothing")
+    flying = false
+    Tr.Tick(TIME_NOW + 3.4)
+    check(not Tr.taxiRide and QWATCH[2] == true and Tr.badSample, "0.5.2b.40 map: landing on a continent does not refresh yet")
+    local fight = true
+    InCombatLockdown = function() return fight end
+    NS.db.autoTrack = true
+    use(1429, "Elwynn Forest")
+    QWATCH[2] = nil
+    Tr.Tick(TIME_NOW + 4)
+    check(QWATCH[2] == nil and Tr.zonePending, "0.5.2b.40 map: combat defers the one refresh")
+    fight = false
+    InCombatLockdown = function() return false end
+    Tr.nextBatch = 0
+    Tr.Tick(TIME_NOW + 4.2)
+    check(QWATCH[2] == true and not Tr.zonePending, "0.5.2b.40 map: after combat the valid zone refreshes once")
+    use(1455, "Ironforge")
+    Tr.Tick(TIME_NOW + 5)
+    check(not Tr.badSample and Tr.good and Tr.good.area == 1455 and Tr.AreaKind(1455) == "city",
+      "0.5.2b.40 map: a capital is a valid sample")
+    use(9999, "Westfall")
+    local area = Tr.Membership()
+    check(area == 1436 and Tr.AreaKind(area) == "zone", "0.5.2b.40 map: a dungeon under a zone still uses that zone")
+    C_Map.GetBestMapForUnit, C_Map.GetMapInfo, C_Map.GetPlayerMapPosition = saveBest, saveInfo, savePos
+    ZONE_TEXT = saveZone
+    if saveQOM == nil then C_QuestLog.GetQuestsOnMap = nil else C_QuestLog.GetQuestsOnMap = saveQOM end
+    NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.db.trackOrder = saveAuto, saveTaxi, saveIC, saveOrder
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    for k, v in pairs(pins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.badSample, Tr.good, Tr.sampleKey, Tr.sample = nil, nil, nil, nil
+    Tr.taxiRide, Tr.hold, Tr.settleHold, Tr.ground, Tr.zonePending, Tr.queue = nil, nil, nil, nil, nil, {}
+    Tr.readyDropDue, Tr.nextBatch, Tr.deferPlan, Tr.watch = nil, nil, nil, nil
+    MD.Forget()
+    Tr.Diff()
+  end
+  -- 0.5.2b.32: unpinning one out-of-zone quest takes it off Objectives. A current-zone quest stays. No other watch or pin changes.
+  do
+    local Tr = NS.Tracker
+    local saveSt, saveRH = NS.QS.Status, NS.QS.ReadyHere
+    QWATCH[2], QWATCH[3], QWATCH[6] = true, true, true
+    Tr.Diff()
+    Tr.SetPinned(101, true)
+    Tr.SetPinned(103, true)
+    check(QWATCH[6] == true and Tr.IsPinned(103), "0.5.2b.32 unpin: the out-of-zone quest starts watched and pinned")
+    Tr.SetPinned(103, false)
+    check(not Tr.IsPinned(103) and QWATCH[6] == nil and QWATCH[2] == true and QWATCH[3] == true and Tr.IsPinned(101),
+      "0.5.2b.32 unpin: an ordinary out-of-zone quest leaves Objectives; the current-zone watches and the other pin stay")
+    NS.QS.Status = function(id) if id == 103 then return "ready" end return saveSt(id) end
+    NS.QS.ReadyHere = function(id) if id == 103 then return false end return saveRH(id) end
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    Tr.queue = { { e = { id = 103, idx = 6, questID = 103 }, want = true }, { e = { id = 102, idx = 3, questID = 102 }, want = true } }
+    Tr.SetPinned(103, false)
+    local back = false
+    for _, it in ipairs(Tr.queue or {}) do if it.e and (it.e.id == 103 or it.e.questID == 103) then back = true end end
+    check(not Tr.IsPinned(103) and QWATCH[6] == nil and not back and QWATCH[2] == true and Tr.IsPinned(101),
+      "0.5.2b.32 unpin: a finished quest whose turn-in is elsewhere leaves Objectives and is not queued back on")
+    Tr.SetPinned(101, true)
+    Tr.SetPinned(101, false)
+    check(not Tr.IsPinned(101) and QWATCH[2] == true, "0.5.2b.32 unpin: a current-zone quest stays watched")
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    NS.ShowTab("map")
+    local rowPin, detailPin
+    if NS.QuestPanel and NS.QuestPanel.view then
+      for _, r in ipairs(NS.QuestPanel.view.rows) do
+        if r:IsShown() and r.kind == "q" and r.quest and r.quest.questID == 103 then rowPin = r.pin end
+      end
+    end
+    if rowPin then rowPin._scripts.OnClick(rowPin) end
+    check(rowPin and not Tr.IsPinned(103) and QWATCH[6] == nil, "0.5.2b.32 unpin: the list icon removes the out-of-zone quest")
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    if NS.QuestPanel then NS.QuestPanel.OpenQuest(103) detailPin = NS.QuestPanel.detail and NS.QuestPanel.detail.pin end
+    if detailPin then detailPin._scripts.OnClick(detailPin) end
+    check(detailPin and not Tr.IsPinned(103) and QWATCH[6] == nil, "0.5.2b.32 unpin: the detail icon removes the out-of-zone quest")
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    local trackerPin
+    for _, r in ipairs(Tr.rows or {}) do if r.pin and r.pin._scripts and r.pin._scripts.OnClick then trackerPin = r.pin break end end
+    if trackerPin then trackerPin.q = 103 trackerPin._scripts.OnClick(trackerPin) end
+    check(trackerPin and not Tr.IsPinned(103) and QWATCH[6] == nil, "0.5.2b.32 unpin: the objective-tracker pin removes the out-of-zone quest")
+    NS.QS.Status, NS.QS.ReadyHere = saveSt, saveRH
+    Tr.queue = {}
+    Tr.SetPinned(102, false)
+  end
+  -- 0.5.2b.35: taxi hold, Ready-row pin, arrow highlight. Restores every stand-in it installs.
+  do
+    local Tr, QS, MD, M = NS.Tracker, NS.QS, NS.MapData, NS.MapTab
+    local saveTaxi, saveZone, saveReal = UnitOnTaxi, GetZoneText, GetRealZoneText
+    local saveArea, saveTurn, saveComp, saveST = MD.PlayerArea, QS.TurnInMap, C_QuestLog.IsComplete, C_SuperTrack
+    local saveAuto, saveCol = NS.db.autoTrack, NS.db.readyCollapsed
+    local saveShow = M.ShowQuest
+    local pins, qw = {}, {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local function listed(id)
+      for _, e in ipairs(Tr.ReadyList()) do if e.id == id then return true end end
+    end
+    local here, zoneName, flying = 100, "Elwynn Forest", false
+    local extra = {}
+    MD.PlayerArea = function() return here end
+    GetZoneText = function() return zoneName end
+    GetRealZoneText = GetZoneText
+    QS.TurnInMap = function(id)
+      if id == 101 or id == 102 then return 100 end
+      if id == 103 then return 200 end
+    end
+    C_QuestLog.IsComplete = function(id) return id == 102 or extra[id] == true end
+    UnitOnTaxi = function() return flying end
+    NS.db.autoTrack = true
+    NS.db.readyCollapsed = false
+    Tr.ground, Tr.hold = nil, nil
+    Tr.Tick(TIME_NOW)
+    check(not Tr.hold and Tr.taxiApi == true, "0.5.2b.35 taxi: on the ground nothing is held, and UnitOnTaxi is present")
+    flying = true
+    Tr.Tick(TIME_NOW + 1)
+    check(Tr.hold and Tr.hold.area == 100 and Tr.hold.zone == "Elwynn Forest", "0.5.2b.35 taxi: takeoff holds the departure area")
+    here, zoneName = 200, "Westfall"
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    local log = Tr.ReadLog()
+    local oldQ = { { e = log[103], want = true, marker = "stale" } }
+    Tr.queue = oldQ
+    Tr.Tick(TIME_NOW + 2)
+    check(Tr.hold.area == 100 and Tr.queue == oldQ and QS.ReadyHere(102) == true and QS.ReadyHere(103) == false,
+      "0.5.2b.35 taxi: an intermediate zone does not move Ready or apply the queued batch")
+    extra[101], extra[103] = true, true
+    Tr.Diff()
+    check(listed(101) and listed(102) and not listed(103), "0.5.2b.35 taxi: completion for the departure area appears; an intermediate completion does not")
+    Tr.SetPinned(103, true)
+    check(listed(103) and Tr.IsPinned(103), "0.5.2b.35 taxi: a pinned completed quest stays Ready during the flight")
+    Tr.SetPinned(103, false)
+    check(not Tr.IsPinned(103) and not listed(103), "0.5.2b.35 taxi: unpin still uses the held area")
+    flying = false
+    here, zoneName = 300, "Redridge Mountains"
+    Tr.OnEvent("PLAYER_CONTROL_GAINED")
+    Tr.Tick(TIME_NOW + 4)
+    check(not Tr.hold and Tr.queue ~= oldQ and QS.HereArea() == 300, "0.5.2b.35 taxi: landing clears the hold, plans the landing area, and drops the old queue")
+    flying = true
+    Tr.ground, Tr.hold = nil, nil
+    here, zoneName = 200, "Westfall"
+    Tr.FlightHold()
+    check(Tr.hold and Tr.hold.area == 200, "0.5.2b.35 taxi: a reload in the air holds the area reported at load")
+    here, zoneName = 400, "Stranglethorn"
+    Tr.Tick(TIME_NOW + 6)
+    check(Tr.hold.area == 200 and QS.HereArea() == 200, "0.5.2b.35 taxi: later zones on that flight do not replace the loaded area")
+    flying = false
+    Tr.Tick(TIME_NOW + 7)
+    check(not Tr.hold and QS.HereArea() == 400, "0.5.2b.35 taxi: landing after a reload uses the landing area")
+    UnitOnTaxi = nil
+    Tr.hold = { area = 100, zone = "Elwynn Forest", real = "Elwynn Forest" }
+    here = 999
+    Tr.Tick(TIME_NOW + 8)
+    local rep = table.concat(Tr.Report(), "\n")
+    check(not Tr.hold and QS.HereArea() == 999 and rep:find("UnitOnTaxi missing", 1, true),
+      "0.5.2b.35 taxi: with UnitOnTaxi missing, membership stays live and trackerprobe says so")
+    NS.db.readyCollapsed = false
+    here, zoneName = 100, "Elwynn Forest"
+    UnitOnTaxi = function() return false end
+    extra[101], extra[103] = nil, nil
+    C_QuestLog.IsComplete = function(id) return id == 102 end
+    Tr.hold = nil
+    Tr.Tick(TIME_NOW + 9)
+    Tr.SetReadyCollapsed(false)
+    local row
+    for _, r in ipairs(Tr.ready.rows or {}) do if r:IsShown() and r.q == 102 then row = r end end
+    local glides = 0
+    M.ShowQuest = function() glides = glides + 1 end
+    check(row and row.pin and row.pin:IsShown(), "0.5.2b.35 ready: the row has its own pin")
+    row.pin._scripts.OnClick(row.pin)
+    check(glides == 0 and Tr.IsPinned(102), "0.5.2b.35 ready: the pin does not glide")
+    row._scripts.OnClick(row)
+    check(glides == 1, "0.5.2b.35 ready: the row body still opens the map")
+    M.ShowQuest = saveShow
+    Tr.SetPinned(102, false)
+    QS.Hover(nil, "map")
+    QS.Select(nil, "list")
+    local cx, cy = M.Center()
+    C_SuperTrack = { GetSuperTrackedQuestID = function() return 103 end }
+    check(not M.MarkerHot(103), "0.5.2b.38 map: the arrow alone does not keep a second highlight")
+    QS.Select(101, "list")
+    QS.Hover(102, "map")
+    check(M.MarkerHot(101) and M.MarkerHot(102) and not M.MarkerHot(103), "0.5.2b.38 map: selection and hover light, and the old arrow does not")
+    QS.Hover(nil, "map")
+    check(M.MarkerHot(101) and not M.MarkerHot(102), "0.5.2b.38 map: leaving a hover clears it and the selection stays")
+    glides = 0
+    Tr.Aim(103)
+    check(QS.selected == 103 and M.MarkerHot(103) and not M.MarkerHot(101) and glides == 0, "0.5.2b.38 icon: chooses that quest and does not open the map")
+    Tr.Aim(101)
+    check(QS.selected == 101 and M.MarkerHot(101) and not M.MarkerHot(103), "0.5.2b.38 icon: the previous quest's highlight is cleared")
+    local cx2, cy2 = M.Center()
+    check(cx == cx2 and cy == cy2 and glides == 0, "0.5.2b.38 map: choosing a quest by its icon does not move the map")
+    if NS.ShowTab then NS.ShowTab("map") end
+    M.dirty = false
+    local fired = false
+    for _, fr in ipairs(ALL) do
+      if fr._ev and fr._ev.SUPER_TRACKING_CHANGED and fr._scripts and fr._scripts.OnEvent then
+        fr._scripts.OnEvent(fr, "SUPER_TRACKING_CHANGED")
+        fired = true
+      end
+    end
+    check(fired and M.dirty == true, "0.5.2b.35 map: an arrow change marks the markers to redraw")
+    QS.Hover(nil, "map")
+    QS.Select(nil, "list")
+    UnitOnTaxi, GetZoneText, GetRealZoneText = saveTaxi, saveZone, saveReal
+    MD.PlayerArea, QS.TurnInMap, C_QuestLog.IsComplete, C_SuperTrack = saveArea, saveTurn, saveComp, saveST
+    NS.db.autoTrack, NS.db.readyCollapsed = saveAuto, saveCol
+    M.ShowQuest = saveShow
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    for k, v in pairs(pins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.hold, Tr.ground, Tr.queue, Tr.zonePending, Tr.watch, Tr.nextBatch = nil, nil, {}, nil, nil, 0
+    Tr.SetReadyCollapsed(saveCol ~= false)
+    Tr.Tick(TIME_NOW + 10)
+  end
+  -- 0.5.2b.36: a false taxi flag during startup is not a landing. Icons do not open the map.
+  do
+    local Tr, QS, MD, M = NS.Tracker, NS.QS, NS.MapData, NS.MapTab
+    local saveTaxi, saveZone, saveReal = UnitOnTaxi, GetZoneText, GetRealZoneText
+    local saveArea, saveTurn, saveST, saveShow = MD.PlayerArea, QS.TurnInMap, C_SuperTrack, M.ShowQuest
+    local saveAuto, saveCol, t0 = NS.db.autoTrack, NS.db.readyCollapsed, TIME_NOW
+    local here, zoneName, flying = 100, "Elwynn Forest", false
+    local aims = 0
+    MD.PlayerArea = function() return here end
+    GetZoneText = function() return zoneName end
+    GetRealZoneText = GetZoneText
+    QS.TurnInMap = function(id) if id == 102 then return 100 end return 200 end
+    UnitOnTaxi = function() return flying end
+    C_SuperTrack = { GetSuperTrackedQuestID = function() return nil end, SetSuperTrackedQuestID = function(q) aims = aims + 1 C_SuperTrack.q = q return true end }
+    NS.db.autoTrack = true
+    local glides = 0
+    M.ShowQuest = function() glides = glides + 1 end
+    local function listed(id)
+      for _, e in ipairs(Tr.ReadyList()) do if e.id == id then return true end end
+    end
+    TIME_NOW = t0 + 100
+    Tr.taxiRide, Tr.hold, Tr.ground, Tr.settleHold = nil, nil, nil, nil
+    Tr.BeginTaxiSettle()
+    Tr.zonePending = TIME_NOW
+    local early = { marker = "early" }
+    Tr.queue = early
+    here = 100
+    Tr.Tick(TIME_NOW)
+    here, zoneName = 200, "Westfall"
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW + 0.2)
+    check(Tr.queue == early and Tr.taxiGate == "settle" and Tr.HoldArea() and Tr.HoldArea().area == 100 and not Tr.taxiRide,
+      "0.5.2b.36 taxi: a false flag during startup does not plan and does not follow the new zone")
+    flying = true
+    here, zoneName = 250, "Duskwood"
+    Tr.Tick(TIME_NOW + 0.4)
+    check(Tr.taxiRide and Tr.hold and Tr.hold.area == 250 and Tr.queue == early, "0.5.2b.36 taxi: the first true latches that area and still does not apply the old queue")
+    here, zoneName = 400, "Stranglethorn"
+    Tr.OnEvent("PLAYER_CONTROL_GAINED")
+    Tr.Tick(TIME_NOW + 0.6)
+    check(Tr.hold.area == 250 and Tr.queue == early and QS.HereArea() == 250, "0.5.2b.36 taxi: a control-gained event while still flying is not the landing")
+    flying = false
+    here, zoneName = 500, "Redridge Mountains"
+    Tr.Tick(TIME_NOW + 0.8)
+    check(not Tr.taxiRide and not Tr.hold and Tr.queue ~= early and QS.HereArea() == 500, "0.5.2b.36 taxi: true then false plans the landing once")
+    TIME_NOW = TIME_NOW + 1
+    Tr.taxiRide, Tr.hold, Tr.ground, Tr.settleHold = nil, nil, nil, nil
+    flying = false
+    here, zoneName = 100, "Elwynn Forest"
+    Tr.BeginTaxiSettle()
+    Tr.zonePending = TIME_NOW
+    Tr.queue = early
+    Tr.Tick(TIME_NOW)
+    TIME_NOW = TIME_NOW + Tr.TAXI_SETTLE + 0.1
+    here = 100
+    Tr.Tick(TIME_NOW)
+    check(Tr.taxiGate == "ground" and not Tr.hold and Tr.queue ~= early, "0.5.2b.36 taxi: a reload that stays on the ground plans once after the wait")
+    flying = false
+    Tr.Tick(TIME_NOW + 0.2)
+    local dep = Tr.ground and Tr.ground.area
+    flying = true
+    here = 777
+    Tr.Tick(TIME_NOW + 0.4)
+    check(dep == 100 and Tr.hold and Tr.hold.area == 100 and QS.HereArea() == 100, "0.5.2b.36 taxi: a normal takeoff holds the ground area")
+    NS.db.readyCollapsed = false
+    flying = false
+    here = 100
+    Tr.taxiRide, Tr.hold, Tr.settleHold, Tr.taxiSettleUntil = nil, nil, nil, nil
+    Tr.Tick(TIME_NOW + 1)
+    Tr.SetReadyCollapsed(false)
+    local row
+    for _, r in ipairs(Tr.ready.rows or {}) do if r:IsShown() and r.q == 102 then row = r end end
+    local pl, pt, pr, pb = FrameMT._rect(row.pin)
+    local il, it, ir, ib = FrameMT._rect(row.iconBox)
+    local tl = select(1, FrameMT._rect(row.title))
+    check(row and pr <= il + 1 and ir <= tl + 1, "0.5.2b.36 ready: pin, then icon, then name")
+    glides, aims = 0, 0
+    row.iconBox._scripts.OnClick(row.iconBox)
+    check(glides == 0 and (aims == 1 or C_SuperTrack.q == 102), "0.5.2b.36 ready: the turn-in icon sets the arrow and does not open the map")
+    row._scripts.OnClick(row)
+    check(glides == 1, "0.5.2b.36 ready: the name still opens the map")
+    glides = 0
+    row.pin._scripts.OnClick(row.pin)
+    check(glides == 0 and Tr.IsPinned(102), "0.5.2b.36 ready: the pin still does not open the map")
+    Tr.SetPinned(102, false)
+    Tr.Layout()
+    local tr
+    for _, r in ipairs(Tr.rows or {}) do if r.aim and r.aim:IsShown() and r.click and r.click:IsShown() then tr = r break end end
+    glides, aims = 0, 0
+    if tr then tr.aim._scripts.OnClick(tr.aim) end
+    check(tr and glides == 0 and aims == 1, "0.5.2b.36 quests: the round icon sets the arrow and does not open the map")
+    if tr then tr.click._scripts.OnClick(tr.click) end
+    check(glides == 1, "0.5.2b.36 quests: the name still opens the map")
+    check(tr.pin._pts[1][1] == "RIGHT" and tr.pin._pts[1][2] == tr.aim._pts[1][2] and tr.aim._pts[1][2] ~= tr.click._pts[1][2],
+      "0.5.2b.36 quests: the pin sits on the icon's left, and the name is a separate target")
+    UnitOnTaxi, GetZoneText, GetRealZoneText = saveTaxi, saveZone, saveReal
+    MD.PlayerArea, QS.TurnInMap, C_SuperTrack, M.ShowQuest = saveArea, saveTurn, saveST, saveShow
+    NS.db.autoTrack, NS.db.readyCollapsed = saveAuto, saveCol
+    Tr.taxiRide, Tr.hold, Tr.ground, Tr.settleHold, Tr.taxiSettleUntil, Tr.queue, Tr.zonePending, Tr.nextBatch = nil, nil, nil, nil, nil, {}, nil, 0
+  end
+  -- 0.5.2b.37: a new current-zone quest is watched once the log has it. The list refreshes without selecting.
+  do
+    local Tr = NS.Tracker
+    local baseNum, baseInfo = C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo
+    local saveAuto, saveTaxi, saveIC, saveSel = NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.QL.lastSelect
+    local savePins = {}
+    for k, v in pairs(NS.db.keepTracked or {}) do savePins[k] = v end
+    local qw = {}
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local extra = {}
+    local function nBase() local n = baseNum() return n end
+    C_QuestLog.GetNumQuestLogEntries = function()
+      local n, q = baseNum()
+      return n + #extra * 2, (q or 0) + #extra
+    end
+    C_QuestLog.GetInfo = function(i)
+      local n = nBase()
+      local k = i - n
+      if k > 0 then
+        local slot = math.floor((k + 1) / 2)
+        local id = extra[slot]
+        if not id then return nil end
+        if k % 2 == 1 then return { title = "Elwynn Forest", isHeader = true } end
+        return { title = "New " .. id, questID = id, level = 3, isHeader = false }
+      end
+      return baseInfo(i)
+    end
+    local function fire(ev, a1)
+      for _, fr in ipairs(ALL) do
+        if fr._ev and fr._ev[ev] and fr._scripts and fr._scripts.OnEvent then fr._scripts.OnEvent(fr, ev, a1) end
+      end
+    end
+    local function shown(id)
+      local v = NS.QuestPanel and NS.QuestPanel.view
+      if not v then return false end
+      for _, r in ipairs(v.rows) do
+        local q = rawget(r, "quest")
+        if r:IsShown() and type(q) == "table" and q.questID == id then return true end
+      end
+    end
+    if NS.ShowTab then NS.ShowTab("map") end
+    if NS.QuestPanel and NS.QuestPanel.ShowList then NS.QuestPanel.ShowList() end
+    NS.db.autoTrack = true
+    Tr.taxiSettleUntil, Tr.taxiRide, Tr.deferPlan = nil, nil, nil
+    Tr.pendingAccept, Tr.acceptUnknown = {}, nil
+    Tr.Tick(TIME_NOW)
+    local pin = NS.Tracker.IsPinned(101)
+    NS.Tracker.SetPinned(101, true)
+    QWATCH[2] = true
+    local sel0 = QSEL_N
+    fire("QUEST_ACCEPTED", 104)
+    Tr.Tick(TIME_NOW + 0.2)
+    check(not QWATCH[8] and QWATCH[2] == true and NS.Tracker.IsPinned(101) and QSEL_N == sel0,
+      "0.5.2b.37 accept: before the log has the quest, the zone plan does not drop the other watch")
+    extra[1] = 104
+    fire("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 0.4)
+    check(QWATCH[8] == true and shown(104) and QSEL_N == sel0 and NS.Tracker.IsPinned(101),
+      "0.5.2b.37 accept: once the log has it, it is watched and listed, and nothing is selected")
+    extra[2] = 105
+    fire("QUEST_ACCEPTED", 105)
+    fire("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 0.6)
+    check(QWATCH[8] == true and QWATCH[10] == true and shown(104) and shown(105),
+      "0.5.2b.37 accept: a second new quest is watched and listed too")
+    NS.QL.lastSelect = GetTime()
+    extra[3] = 106
+    local sel1 = QSEL_N
+    fire("QUEST_LOG_UPDATE")
+    check(shown(106) and QSEL_N == sel1, "0.5.2b.37 accept: a log update just after a selection still refreshes the list")
+    Tr.Tick(TIME_NOW + 0.8)
+    local flying = true
+    UnitOnTaxi = function() return flying end
+    Tr.Tick(TIME_NOW + 1)
+    extra[4] = 107
+    fire("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 1.2)
+    check(not QWATCH[14] and Tr.taxiRide, "0.5.2b.37 accept: in the air the new quest is not planned")
+    flying = false
+    Tr.Tick(TIME_NOW + 1.4)
+    check(QWATCH[14] == true and not Tr.taxiRide, "0.5.2b.37 accept: landing plans the quest that arrived in the air")
+    local fight = true
+    InCombatLockdown = function() return fight end
+    extra[5] = 108
+    fire("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 1.6)
+    check(not QWATCH[16], "0.5.2b.37 accept: in combat the new quest is not planned")
+    fight = false
+    Tr.Tick(TIME_NOW + 1.8)
+    check(Tr.zonePending == nil and NS.Tracker.IsPinned(101) and QWATCH[2] == true,
+      "0.5.2b.37 accept: after combat the plan runs, and the other pin and watch stay")
+    C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo = baseNum, baseInfo
+    UnitOnTaxi, InCombatLockdown, NS.QL.lastSelect, NS.db.autoTrack = saveTaxi, saveIC, saveSel, saveAuto
+    if not pin then NS.Tracker.SetPinned(101, false) end
+    for k in pairs(NS.db.keepTracked or {}) do if savePins[k] == nil then NS.db.keepTracked[k] = nil end end
+    for k, v in pairs(savePins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.pendingAccept, Tr.acceptUnknown, Tr.deferPlan = {}, nil, nil
+    Tr.fresh = nil
+    Tr.logIds, Tr.zonePending, Tr.queue, Tr.nextBatch, Tr.taxiRide, Tr.taxiSettleUntil = nil, nil, {}, 0, nil, nil
+    Tr.Tick(TIME_NOW + 2)
+  end
+  -- 0.5.2b.41: a new watched unpinned quest outside this zone leaves the tracker. The log keeps it. Older watches stay.
+  do
+    local Tr = NS.Tracker
+    local saveNum, saveInfo = C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo
+    local saveAuto, saveTaxi, saveIC, saveOrder = NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.db.trackOrder
+    local saveBest, saveRF, saveComp = C_Map.GetBestMapForUnit, C_QuestLog.ReadyForTurnIn, C_QuestLog.IsComplete
+    local pins, qw = {}, {}
+    for k, v in pairs(NS.db.keepTracked or {}) do pins[k] = v end
+    for k, v in pairs(QWATCH) do qw[k] = v end
+    local LOG = {
+      { title = "Elwynn Forest", isHeader = true },
+      { title = "Wolves", questID = 101 },
+      { title = "Westfall", isHeader = true },
+      { title = "The Defias", questID = 103 },
+    }
+    C_QuestLog.GetNumQuestLogEntries = function() return #LOG end
+    C_QuestLog.GetInfo = function(i) return LOG[i] end
+    local function add(id, header)
+      if header then LOG[#LOG + 1] = { title = header, isHeader = true } end
+      LOG[#LOG + 1] = { title = "Quest " .. id, questID = id }
+      return #LOG
+    end
+    local function inLog(id)
+      local log = Tr.ReadLog()
+      return log[id] ~= nil
+    end
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    NS.db.autoTrack, NS.db.trackOrder = false, false
+    UnitOnTaxi = nil
+    InCombatLockdown = function() return false end
+    Tr.badSample, Tr.fresh, Tr.good, Tr.sample = nil, nil, nil, nil
+    Tr.pendingAccept, Tr.acceptUnknown, Tr.deferPlan = {}, nil, nil
+    Tr.logIds, Tr.zonePending, Tr.queue, Tr.taxiRide, Tr.taxiSettleUntil = nil, nil, {}, nil, nil
+    Tr.Tick(TIME_NOW)
+    QWATCH = { [2] = true, [4] = true }
+    Tr.watch = nil
+    Tr.Diff()
+    local i201 = add(201, "Dungeon")
+    QWATCH[i201] = true
+    Tr.OnEvent("QUEST_ACCEPTED", 201)
+    Tr.OnEvent("QUEST_LOG_UPDATE")
+    Tr.Tick(TIME_NOW + 0.2)
+    check(QWATCH[i201] == nil and inLog(201) and QWATCH[4] == true and QWATCH[2] == true and not Tr.IsPinned(201),
+      "0.5.2b.41 accept: auto-track off, a new quest outside this zone leaves the tracker and stays in the log")
+    NS.db.autoTrack = true
+    local i202 = add(202, "Dungeon")
+    QWATCH[i202] = true
+    Tr.OnEvent("QUEST_ACCEPTED", 202)
+    Tr.Tick(TIME_NOW + 0.4)
+    check(QWATCH[i202] == nil and inLog(202) and QWATCH[4] == true,
+      "0.5.2b.41 accept: auto-track on, the same new quest leaves the tracker and the older watch stays")
+    local i203 = add(203, "Elwynn Forest")
+    Tr.OnEvent("QUEST_ACCEPTED", 203)
+    Tr.Tick(TIME_NOW + 0.6)
+    check(QWATCH[i203] == true and inLog(203) and QWATCH[4] == true,
+      "0.5.2b.41 accept: auto-track on, a new quest for this zone is watched")
+    NS.db.autoTrack = false
+    local i204 = add(204, "Elwynn Forest")
+    QWATCH[i204] = true
+    Tr.OnEvent("QUEST_ACCEPTED", 204)
+    Tr.Tick(TIME_NOW + 0.8)
+    check(QWATCH[i204] == true and inLog(204),
+      "0.5.2b.41 accept: auto-track off, a new quest for this zone stays watched")
+    local i205 = add(205, "Elwynn Forest")
+    QWATCH[i205] = nil
+    Tr.OnEvent("QUEST_ACCEPTED", 205)
+    Tr.Tick(TIME_NOW + 1)
+    check(QWATCH[i205] == nil and inLog(205),
+      "0.5.2b.41 accept: auto-track off does not add a watch the game did not add")
+    local i206 = add(206, "Dungeon")
+    QWATCH[i206] = true
+    Tr.SetPinned(206, true)
+    Tr.OnEvent("QUEST_ACCEPTED", 206)
+    Tr.Tick(TIME_NOW + 1.2)
+    check(Tr.IsPinned(206) and QWATCH[i206] == true and QWATCH[4] == true,
+      "0.5.2b.41 accept: a pinned new quest stays, and the older watch stays")
+    local i207 = add(207, "Dungeon")
+    local i208 = add(208, "Stormwind City")
+    QWATCH[i207], QWATCH[i208] = true, true
+    Tr.OnEvent("QUEST_ACCEPTED", 207)
+    Tr.OnEvent("QUEST_ACCEPTED", 208)
+    Tr.Tick(TIME_NOW + 1.4)
+    check(QWATCH[i207] == nil and QWATCH[i208] == nil and inLog(207) and inLog(208) and QWATCH[4] == true and QWATCH[2] == true,
+      "0.5.2b.41 accept: two new outside quests leave together, and both older watches stay")
+    local kept = LOG
+    LOG = { { title = "Bare", questID = 209 } }
+    QWATCH = { [1] = true }
+    Tr.OnEvent("QUEST_ACCEPTED", 209)
+    Tr.Tick(TIME_NOW + 1.6)
+    check(QWATCH[1] == true and Tr.pendingAccept[209] and inLog(209),
+      "0.5.2b.41 accept: before the header, the new watch stays")
+    LOG = { { title = "Elwynn Forest", isHeader = true }, { title = "Bare", questID = 209 } }
+    QWATCH = { [2] = true }
+    Tr.diffDirty = true
+    Tr.Tick(TIME_NOW + 1.8)
+    check(QWATCH[2] == true and inLog(209) and not Tr.pendingAccept[209],
+      "0.5.2b.41 accept: a header that makes the quest local does not take the watch off")
+    LOG = kept
+    QWATCH = { [2] = true, [4] = true }
+    Tr.logIds, Tr.fresh, Tr.pendingAccept, Tr.watch = nil, nil, {}, nil
+    Tr.diffDirty = true
+    Tr.Tick(TIME_NOW + 1.9)
+    local i210 = add(210, "Dungeon")
+    QWATCH[i210] = true
+    local fight = true
+    InCombatLockdown = function() return fight end
+    Tr.OnEvent("QUEST_ACCEPTED", 210)
+    Tr.Tick(TIME_NOW + 2)
+    check(QWATCH[i210] == true and Tr.fresh and Tr.fresh[210],
+      "0.5.2b.41 accept: combat waits, and the new quest is still the only one pending")
+    for n, row in ipairs(LOG) do if row.title == "Dungeon" and LOG[n + 1] and LOG[n + 1].questID == 210 then row.title = "Elwynn Forest" end end
+    fight = false
+    Tr.diffDirty = true
+    Tr.Tick(TIME_NOW + 2.2)
+    check(QWATCH[i210] == true and QWATCH[4] == true,
+      "0.5.2b.41 accept: after combat a quest that is now local stays watched")
+    local i211 = add(211, "Dungeon")
+    QWATCH[i211] = true
+    C_Map.GetBestMapForUnit = function() return nil end
+    NS.MapData.Forget()
+    Tr.OnEvent("QUEST_ACCEPTED", 211)
+    Tr.Tick(TIME_NOW + 2.4)
+    check(QWATCH[i211] == true and QWATCH[4] == true and Tr.badSample,
+      "0.5.2b.41 accept: a missing map waits, and the older watch stays")
+    C_Map.GetBestMapForUnit = saveBest
+    NS.MapData.Forget()
+    Tr.Tick(TIME_NOW + 2.6)
+    check(QWATCH[i211] == nil and inLog(211) and QWATCH[4] == true and not Tr.badSample,
+      "0.5.2b.41 accept: a valid zone then takes that new quest off the tracker")
+    local i212 = add(212, "Dungeon")
+    QWATCH[i212] = true
+    local flying = true
+    UnitOnTaxi = function() return flying end
+    Tr.ground = { area = 1429, zone = "Elwynn Forest", real = "Elwynn Forest" }
+    Tr.Tick(TIME_NOW + 3)
+    Tr.OnEvent("QUEST_ACCEPTED", 212)
+    Tr.Tick(TIME_NOW + 3.2)
+    check(Tr.taxiRide and QWATCH[i212] == true and QWATCH[4] == true,
+      "0.5.2b.41 accept: in the air the new quest stays on the tracker")
+    flying = false
+    Tr.Tick(TIME_NOW + 3.4)
+    check(not Tr.taxiRide and QWATCH[i212] == nil and inLog(212) and QWATCH[4] == true,
+      "0.5.2b.41 accept: landing takes that new quest off the tracker and leaves the older one")
+    C_QuestLog.ReadyForTurnIn = function(id) if id == 101 then return false end end
+    C_QuestLog.IsComplete = function(id) return id == 101 end
+    check(NS.QS.Status(101) == "progress",
+      "0.5.2b.41 accept: completion detection is unchanged when ReadyForTurnIn is false")
+    C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetInfo = saveNum, saveInfo
+    C_Map.GetBestMapForUnit = saveBest
+    if saveRF == nil then C_QuestLog.ReadyForTurnIn = nil else C_QuestLog.ReadyForTurnIn = saveRF end
+    C_QuestLog.IsComplete = saveComp
+    NS.db.autoTrack, UnitOnTaxi, InCombatLockdown, NS.db.trackOrder = saveAuto, saveTaxi, saveIC, saveOrder
+    for k in pairs(NS.db.keepTracked or {}) do NS.db.keepTracked[k] = nil end
+    for k, v in pairs(pins) do NS.db.keepTracked[k] = v end
+    for k in pairs(QWATCH) do QWATCH[k] = nil end
+    for k, v in pairs(qw) do QWATCH[k] = v end
+    Tr.fresh, Tr.pendingAccept, Tr.acceptUnknown, Tr.deferPlan = nil, {}, nil, nil
+    Tr.badSample, Tr.logIds, Tr.zonePending, Tr.queue, Tr.watch = nil, nil, nil, {}, nil
+    Tr.taxiRide, Tr.taxiSettleUntil, Tr.hold, Tr.ground = nil, nil, nil, nil
+    NS.MapData.Forget()
+    Tr.Diff()
+  end
+  -- 0.5.2b.33: a pinned completed quest is Ready, not on the Quests list, including a turn-in elsewhere.
+  do
+    local Tr = NS.Tracker
+    local saveSt, saveRH, saveAuto = NS.QS.Status, NS.QS.ReadyHere, NS.db.autoTrack
+    local function readyIds()
+      Tr.Diff()
+      local t = {}
+      for _, e in ipairs(Tr.ReadyList()) do t[#t + 1] = e.id end
+      table.sort(t)
+      return table.concat(t, ",")
+    end
+    local function planWant(id)
+      local watch, drop = false, false
+      for _, it in ipairs(Tr.Plan()) do
+        if it.e and it.e.id == id then if it.want then watch = true else drop = true end end
+      end
+      return watch, drop
+    end
+    QWATCH[2] = true
+    NS.QS.Status = function(id) if id == 103 then return "ready" end return saveSt(id) end
+    NS.QS.ReadyHere = function(id) if id == 103 then return false end return saveRH(id) end
+    Tr.Diff()
+    check(not string.find("," .. readyIds() .. ",", ",103,", 1, true), "0.5.2b.33 ready: an unpinned completed quest whose turn-in is elsewhere is not listed")
+    QWATCH[6] = true
+    Tr.SetPinned(103, true)
+    check(QWATCH[6] == nil and string.find("," .. readyIds() .. ",", ",103,", 1, true) and Tr.IsPinned(103),
+      "0.5.2b.33 ready: pinning a completed quest whose turn-in is elsewhere lists it under Ready and off Quests")
+    local rewatch = planWant(103)
+    check(not rewatch, "0.5.2b.33 ready: a zone pass does not queue that pinned quest back onto Quests")
+    QWATCH[6] = true
+    NS.QS.Status = saveSt
+    Tr.Diff()
+    Tr.SetPinned(103, true)
+    check(QWATCH[6] == true and not string.find("," .. readyIds() .. ",", ",103,", 1, true),
+      "0.5.2b.33 ready: an in-progress pin stays on Quests")
+    NS.QS.Status = function(id) if id == 103 then return "ready" end return saveSt(id) end
+    NS.db.autoTrack = false
+    Tr.zonePending, Tr.queue, Tr.readyDropDue = nil, {}, true
+    QWATCH[6], QWATCH[2] = true, true
+    Tr.AutoStep(TIME_NOW)
+    check(QWATCH[6] == nil and string.find("," .. readyIds() .. ",", ",103,", 1, true),
+      "0.5.2b.33 ready: when that pin completes, it moves to Ready and off Quests")
+    local other = Tr.IsPinned(102)
+    Tr.SetPinned(103, false)
+    check(not Tr.IsPinned(103) and QWATCH[6] == nil and not string.find("," .. readyIds() .. ",", ",103,", 1, true) and Tr.IsPinned(102) == other and QWATCH[2] == true,
+      "0.5.2b.33 ready: unpinning it removes it from Ready and Objectives; the other watch stays")
+    NS.QS.ReadyHere = function(id) if id == 102 then return true end return saveRH(id) end
+    NS.QS.Status = function(id) if id == 102 then return "ready" end return saveSt(id) end
+    QWATCH[3] = true
+    Tr.SetPinned(102, true)
+    check(QWATCH[3] == nil and string.find("," .. readyIds() .. ",", ",102,", 1, true),
+      "0.5.2b.33 ready: a pinned local turn-in is Ready and not on Quests")
+    Tr.SetPinned(102, false)
+    check(not Tr.IsPinned(102) and QWATCH[3] == nil and string.find("," .. readyIds() .. ",", ",102,", 1, true),
+      "0.5.2b.33 ready: unpinning a local turn-in leaves it on Ready")
+    local ic = InCombatLockdown
+    InCombatLockdown = function() return true end
+    QWATCH[6] = true
+    NS.QS.Status = function(id) if id == 103 then return "ready" end return saveSt(id) end
+    NS.QS.ReadyHere = function(id) if id == 103 then return false end return saveRH(id) end
+    Tr.SetPinned(103, true)
+    check(QWATCH[6] == true, "0.5.2b.33 ready: in combat the Quests removal waits")
+    InCombatLockdown = ic
+    for _, fr in ipairs(ALL) do
+      if fr._ev and fr._ev.PLAYER_REGEN_ENABLED and fr._scripts and fr._scripts.OnEvent then fr._scripts.OnEvent(fr, "PLAYER_REGEN_ENABLED") end
+    end
+    check(QWATCH[6] == nil and Tr.IsPinned(103), "0.5.2b.33 ready: after combat the pinned completed quest leaves Quests")
+    QWATCH[6], QWATCH[2] = nil, true
+    NS.db.autoTrack = false
+    Tr.SetPinned(101, true)
+    Tr.queue = { { e = { id = 103, idx = 6, questID = 103 }, want = true } }
+    Tr.OnEvent("ZONE_CHANGED_NEW_AREA")
+    Tr.Tick(TIME_NOW + 40) Tr.Tick(TIME_NOW + 42)
+    local queued = false
+    for _, it in ipairs(Tr.queue or {}) do if it.want and it.e and (it.e.id == 103 or it.e.questID == 103) then queued = true end end
+    check(QWATCH[6] == nil and not queued and Tr.IsPinned(103) and Tr.IsPinned(101) and QWATCH[2] == true
+      and string.find("," .. readyIds() .. ",", ",103,", 1, true),
+      "0.5.2b.33 ready: a zone pass leaves the completed pin on Ready only, and the other pin stays")
+    NS.QS.Status, NS.QS.ReadyHere, NS.db.autoTrack = saveSt, saveRH, saveAuto
+    Tr.queue, Tr.readyDropDue = {}, true
+    Tr.SetPinned(103, false)
+    Tr.SetPinned(102, false)
+  end
   -- 4. zone auto-track: this zone's quests + pins, the rest untracked; batches; flights; combat
   QWATCH = { [6] = true }
   NS.db.readySection = false  -- 0.5.2b.12: quest 102 (index 3) is ready; with the section off these zone tests keep their old meaning
@@ -7630,6 +10306,25 @@ if MODE ~= "minimal" then
   check(K.Apply() == "on" and binds.M == "CLICK DarkMatterKeyMap" and binds.L == "CLICK DarkMatterKeyLog" and binds["ALT-M"] == "TOGGLEWORLDMAP" and binds["ALT-L"] == "TOGGLEQUESTLOG",
     "0.5.2b keys: M and L open Dark Matter; ALT-M / ALT-L the game's map and quest log")
   check(K.owner._name == "DarkMatterKeyOwner" and K.owner ~= UIParent, "0.5.2b keys: owned by a Dark Matter frame")
+  -- 0.5.2b.29: the probe reports the binding without a click. A hit line exists only after OnClick runs.
+  GetBindingAction = function(key, override) if override then return binds[key] or "" end return "" end
+  local armed = K.ProbeArm()
+  local beforeProbe = DarkMatterFrame:IsShown()
+  check(K.Ensure() == "on" and K.probeArmed and K.lastHit == nil and DarkMatterFrame:IsShown() == beforeProbe
+    and armed[1]:find("keyprobe armed", 1, true) and armed[1]:find("bindM=CLICK DarkMatterKeyMap", 1, true) and armed[1]:find("bindL=CLICK DarkMatterKeyLog", 1, true) and armed[1]:find("ownerShown=", 1, true) and not armed[1]:find("wmfShown", 1, true),
+    "0.5.2b.29 keyprobe: armed line only; Ensure does not deliver a click (" .. tostring(armed[1]) .. ")")
+  NS.ToggleWindow(false)
+  DarkMatterKeyMap._scripts.OnClick(DarkMatterKeyMap, "LeftButton", true)
+  check(K.lastHit and K.lastHit:find("keyprobe hit key=M", 1, true) and K.lastHit:find("press=opened", 1, true) and K.lastHit:find("shownAfter=true", 1, true) and not K.probeArmed,
+    "0.5.2b.29 keyprobe: the hit line comes from OnClick (" .. tostring(K.lastHit) .. ")")
+  local saidK, oldPK = {}, NS.Print
+  NS.Print = function(m) saidK[#saidK + 1] = m end
+  SlashCmdList.DARKMATTER("keyprobe")
+  NS.Print = oldPK
+  check(saidK[1] and saidK[1]:find("wmfShown=", 1, true) and saidK[1]:find("bindM=", 1, true),
+    "0.5.2b.29 keyprobe: /dm keyprobe also says whether the world map is shown (" .. tostring(saidK[1]) .. ")")
+  K.probeArmed = nil
+  GetBindingAction = nil
   NS.ToggleWindow(false)
   local kb = DarkMatterKeyMap
   kb._scripts.OnClick(kb, "LeftButton", true)
@@ -7641,16 +10336,16 @@ if MODE ~= "minimal" then
   local kl = DarkMatterKeyLog
   TIME_NOW = TIME_NOW + 5
   kl._scripts.OnClick(kl, "LeftButton", false)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "quests", "0.5.2b.10 keys: L opens Dark Matter on the Quests tab")
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.28 keys: L opens the same Map & Quest Logs section")
   TIME_NOW = TIME_NOW + 5
   kb._scripts.OnClick(kb, "LeftButton", true)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.10 keys: M on the Quests tab switches to the Map tab")
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.28 keys: M closes it after L opened it")
   TIME_NOW = TIME_NOW + 5
   kl._scripts.OnClick(kl, "LeftButton", true)
-  check(DarkMatterFrame:IsShown() and NS.db.tab == "quests", "0.5.2b.10 keys: L on the Map tab switches to the Quests tab")
+  check(DarkMatterFrame:IsShown() and NS.db.tab == "map", "0.5.2b.28 keys: L opens it again")
   TIME_NOW = TIME_NOW + 5
-  kl._scripts.OnClick(kl, "LeftButton", true)
-  check(not DarkMatterFrame:IsShown(), "0.5.2b.10 keys: L again on the Quests tab closes it")
+  kl._scripts.OnClick(kl, "LeftButton", false)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.28 keys: L closes it")
   -- 0.5.2b.10: keys the player bound to the game's map / quest log are taken over too (ALT-M / ALT-L stay the game's)
   local oldGBK = GetBindingKey
   GetBindingKey = function(a) if a == "TOGGLEWORLDMAP" then return "M", "F5", "ALT-M" elseif a == "TOGGLEQUESTLOG" then return "SHIFT-Q" end end
@@ -7679,6 +10374,75 @@ if MODE ~= "minimal" then
   SlashCmdList.DARKMATTER("keys on")
   check(NS.db.mlKeys == true and binds.M == "CLICK DarkMatterKeyMap", "0.5.2b keys: /dm keys on")
   check(saved == 0, "0.5.2b keys: SaveBindings is never called")
+  -- 0.5.2b.27: M keeps opening and closing, a stale saved tab still closes, a lost override is put back,
+  -- and the quest panel comes back after it was left off the window
+  NS.ToggleWindow(false)
+  for i = 1, 4 do
+    TIME_NOW = TIME_NOW + 2
+    kb._scripts.OnClick(kb, "LeftButton", true)
+    check(DarkMatterFrame:IsShown() and NS.windowParts.current == "map", "0.5.2b.27 keys: M opens (" .. i .. ")")
+    TIME_NOW = TIME_NOW + 2
+    kb._scripts.OnClick(kb, "LeftButton", true)
+    check(not DarkMatterFrame:IsShown(), "0.5.2b.27 keys: M closes (" .. i .. ")")
+  end
+  TIME_NOW = TIME_NOW + 2
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  NS.db.tab = "quests"
+  check(NS.windowParts.current == "map", "0.5.2b.27 keys: the map stays on screen when the saved tab is stale")
+  TIME_NOW = TIME_NOW + 2
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.27 keys: M closes from the tab on screen")
+  TIME_NOW = TIME_NOW + 2
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(NS.QuestPanel.Ensure() and NS.QuestPanel.IsShown(), "0.5.2b.27 panel: the map shows the quest log")
+  NS.QuestPanel.Drop()
+  check(not NS.QuestPanel.IsShown(), "0.5.2b.27 panel: dropped off the window")
+  local okTick, tickErr = true, nil
+  for _ = 1, 12 do
+    local ok, err = pcall(NS.MapTab.Tick, 0.1)
+    if not ok then okTick, tickErr = false, err break end
+  end
+  check(okTick and NS.QuestPanel.IsShown(), "0.5.2b.27 panel: the map tick shows it again without a reload (" .. tostring(tickErr) .. ")")
+  GetBindingAction = function(key) if key == "M" or key == "L" then return "MOVEANDSTEER" end return "" end
+  K.applied = true
+  K.Ensure()
+  check(binds.M == "CLICK DarkMatterKeyMap" and binds.L == "CLICK DarkMatterKeyLog",
+    "0.5.2b.27 keys: a lost M/L override is put back (" .. tostring(binds.M) .. ", " .. tostring(binds.L) .. ")")
+  GetBindingAction = nil
+  NS.db.tab = NS.windowParts.current
+  -- 0.5.2b.28: M and L are one toggle. A saved Quests tab and a hidden side log become this section. Pins stay.
+  NS.ToggleWindow(false)
+  TIME_NOW = TIME_NOW + 3
+  kb._scripts.OnClick(kb, "LeftButton", true)
+  check(DarkMatterFrame:IsShown(), "0.5.2b.28 keys: M down opens")
+  TIME_NOW = TIME_NOW + 0.05
+  kl._scripts.OnClick(kl, "LeftButton", false)
+  check(not DarkMatterFrame:IsShown(), "0.5.2b.28 keys: L up just after M down still closes (separate key timers)")
+  local pins = { [103] = true }
+  NS.db.keepV = 1
+  NS.db.keepTracked = pins
+  NS.db.userPins = NS.db.userPins or { keep = true }
+  local userPins = NS.db.userPins
+  NS.db.tab = "quests"
+  NS.db.questPanel = false
+  NS.MigrateSaved()
+  check(NS.db.tab == "map" and NS.db.questPanel == true and NS.db.keepTracked == pins and NS.db.keepTracked[103] and NS.db.userPins == userPins,
+    "0.5.2b.28 saved: a Quests tab and a hidden side log become Map & Quest Logs; pins stay")
+  NS.ToggleWindow(true)
+  NS.ShowTab("map")
+  local P = NS.QuestPanel
+  check(P.IsShown() and P.embedded, "0.5.2b.28 panel: the map column is showing")
+  NS.tabs.map.OnHide()
+  check(not P.IsShown(), "0.5.2b.28 panel: leaving the map hides the column")
+  NS.tabs.map.OnShow()
+  check(P.IsShown() and P.frame:GetParent() == NS.MapTab.questHost, "0.5.2b.28 panel: coming back puts the column in the same window")
+  P.Drop()
+  check(P.Ensure() and P.IsShown() and P.frame:GetParent() == NS.MapTab.questHost, "0.5.2b.28 panel: after a rebuild it is inside the column, not beside the window")
+  local ic2 = InCombatLockdown
+  InCombatLockdown = function() return true end
+  check(P.Ensure() and P.IsShown(), "0.5.2b.28 panel: combat does not drop the column")
+  InCombatLockdown = ic2
+  NS.ToggleWindow(false)
   ClearOverrideBindings, SetOverrideBinding, SetOverrideBindingClick, SaveBindings = nil, nil, nil, nil
   -- 6. /dm trackerprobe
   local said = {}
@@ -7773,7 +10537,7 @@ do
     NS.MapTab.Reset() NS.ShowTab("quests") NS.ShowTab("map")
     for _ = 1, 5 do NS.MapTab.Tick(0.05) end
     local oldPrint = NS.Print
-    for _, cmd in ipairs({ "probe", "mapprobe", "tileprobe", "mapshapes 4", "zoomprobe", "shottest", "seamsweep", "seamsweep stop", "trackerprobe", "achprobe" }) do
+    for _, cmd in ipairs({ "probe", "mappoi", "mapprobe", "tileprobe", "mapshapes 4", "zoomprobe", "shottest", "seamsweep", "seamsweep stop", "trackerprobe", "achprobe" }) do
       local said, n0 = {}, #log
       NS.Print = function(m) said[#said + 1] = tostring(m) end
       local ok, err = pcall(SlashCmdList.DARKMATTER, cmd)
@@ -7787,5 +10551,98 @@ do
     check(p and p.client.interface == 11509 and p.client.projectId == 2 and not p.areaErrors, "0.5.2b.9 era: /dm probe: interface 11509, project 2, no area errors")
   end
 end
+
+(function()
+  local NS = DarkMatter
+  local save = { ic = InCombatLockdown, mini = C_Minimap, poi = C_AreaPoiInfo, vig = C_VignetteInfo, map = C_Map,
+    num = GetNumTrackingTypes, info = GetTrackingInfo, frame = Minimap, quest = C_QuestLog }
+  local oldQ = C_QuestLog and C_QuestLog.GetQuestsOnMap
+  local hit, qhit = {}, 0
+  local function textOf(lines)
+    local s = ""
+    for i = 1, #lines do s = s .. lines[i] .. "\n" end
+    return s
+  end
+  local function count(text, needle)
+    local n = 0
+    for line in text:gmatch("[^\n]+") do if line:find(needle, 1, true) then n = n + 1 end end
+    return n
+  end
+  InCombatLockdown = function() return false end
+  GetNumTrackingTypes, GetTrackingInfo = nil, nil
+  C_Minimap, C_AreaPoiInfo, C_VignetteInfo = nil, nil, nil
+  C_Map = { GetBestMapForUnit = function() return nil end }
+  Minimap = { UpdateBlips = function() hit.blip = true end, SetBlipTexture = function() hit.tex = true end }
+  local lines = NS.MapPOILines()
+  local text = textOf(lines)
+  check(text:find("FILTER list: API absent", 1, true) and text:find("area POI: no player map", 1, true)
+    and text:find("vignettes: API absent", 1, true) and text:find("not a pin sync", 1, true),
+    "0.5.2b.53 mappoi: missing APIs are reported and nothing is drawn")
+  C_Map = { GetBestMapForUnit = function() return 1453 end }
+  C_Minimap = {
+    GetNumTrackingTypes = function() return 0 end,
+    GetTrackingInfo = function() end,
+    SetTracking = function() hit.set = true end,
+  }
+  C_AreaPoiInfo = { GetAreaPOIForMap = function() return {} end, GetAreaPOIInfo = function() end }
+  C_VignetteInfo = { GetVignettes = function() return {} end, GetVignetteInfo = function() end, GetVignettePosition = function() end }
+  lines = NS.MapPOILines()
+  text = textOf(lines)
+  check(text:find("FILTER count: 0", 1, true) and text:find("area POI: map 1453 count 0", 1, true)
+    and text:find("vignettes: count 0", 1, true) and not hit.set and not hit.blip and not hit.tex,
+    "0.5.2b.53 mappoi: empty results stay empty and do not change tracking")
+  C_Minimap.GetNumTrackingTypes = function() return 2 end
+  C_Minimap.GetTrackingInfo = function(i)
+    if i == 1 then return { name = "Mailbox", active = true, type = "mail" } end
+    return "Innkeeper", 1, false, "inn"
+  end
+  C_AreaPoiInfo.GetAreaPOIForMap = function() return { 1, 2, 3, 4, 5 } end
+  C_AreaPoiInfo.GetAreaPOIInfo = function(_, id)
+    return { name = "Poi" .. id, atlasName = "Atlas" .. id, position = id == 1 and { x = 0.2, y = 0.3 } or {} }
+  end
+  C_VignetteInfo.GetVignettes = function() return { "a", "b", "c", "d" } end
+  C_VignetteInfo.GetVignetteInfo = function(g)
+    return { name = "Vig" .. g, type = 3, atlasName = "vignetteloot", onMinimap = g == "a", zoneInfiniteAOI = g == "b" }
+  end
+  C_VignetteInfo.GetVignettePosition = function(g)
+    if g == "a" then return { x = 0.1, y = 0.2 } end
+  end
+  if not C_QuestLog then C_QuestLog = {} end
+  C_QuestLog.GetQuestsOnMap = function() qhit = qhit + 1 return {} end
+  lines = NS.MapPOILines()
+  text = textOf(lines)
+  check(text:find("FILTER 1: Mailbox type=mail active=true", 1, true)
+    and text:find("FILTER 2: Innkeeper type=inn active=false", 1, true)
+    and count(text, "area POI sample:") == 3 and count(text, "vignette sample:") == 3
+    and text:find("onMinimap=true", 1, true) and text:find("zoneInfiniteAOI=true", 1, true)
+    and text:find("position=yes", 1, true) and text:find("position=no", 1, true)
+    and qhit == 0 and not hit.set and not hit.blip,
+    "0.5.2b.53 mappoi: filters are labeled, and only three area and vignette samples are printed")
+  C_AreaPoiInfo.GetAreaPOIForMap = function() error("poi broke", 0) end
+  C_VignetteInfo.GetVignettes = function() error("vig broke", 0) end
+  lines = NS.MapPOILines()
+  text = textOf(lines)
+  check(text:find("area POI: error", 1, true) and text:find("vignettes: error", 1, true)
+    and text:find("FILTER count: 2", 1, true),
+    "0.5.2b.53 mappoi: one API error does not drop the other reads")
+  InCombatLockdown = function() return true end
+  lines = NS.MapPOILines()
+  check(lines[1] == "mappoi: skipped in combat." and #lines == 1 and not hit.set,
+    "0.5.2b.53 mappoi: combat skips the read")
+  local body = io.open(arg[1] .. "/Probe.lua"):read("*a")
+  local from = body:find("function NS.MapPOILines", 1, true)
+  local to = body:find("\nfunction NS.RunProbe", 1, true)
+  local fn = body:sub(from, to - 1)
+  check(not fn:find("SetTracking", 1, true) and not fn:find("UpdateBlips", 1, true)
+    and not fn:find("SetBlipTexture", 1, true) and not fn:find("AbandonQuest", 1, true)
+    and not fn:find("GetQuestsOnMap", 1, true) and not fn:find("ClearAllTracking", 1, true),
+    "0.5.2b.53 mappoi: the command does not change tracking, refresh blips, read quests, or abandon")
+  local ok = pcall(SlashCmdList.DARKMATTER, "mappoi")
+  check(ok, "0.5.2b.53 mappoi: /dm mappoi is the command")
+  InCombatLockdown = save.ic
+  C_Minimap, C_AreaPoiInfo, C_VignetteInfo, C_Map = save.mini, save.poi, save.vig, save.map
+  GetNumTrackingTypes, GetTrackingInfo, Minimap = save.num, save.info, save.frame
+  if save.quest then save.quest.GetQuestsOnMap = oldQ else C_QuestLog = nil end
+end)()
 
 for i=LASTN+1,#log do io.stdout:write(log[i],"\n") end

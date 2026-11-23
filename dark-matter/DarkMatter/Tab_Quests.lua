@@ -17,7 +17,7 @@ local list, empty
 local groups, total = {}, 0
 local T_READY = "Ready to Turn In"
 local selectedId, selQuest
-local pending = false
+local pending, sched = false, false
 local quietUntil = 0
 local ev
 local bar = {}
@@ -83,7 +83,9 @@ local function ReadLog()
   for _, g in ipairs(groups) do
     for _, q in ipairs(g.quests) do
       local st = q.questID and NS.QS and NS.QS.Status(q.questID)
-      if st == "ready" or (st == nil and q.complete) then ready[#ready + 1] = q end
+      -- 0.5.2b.25: only turn-ins for the area you are in (a city counts as its own area, not the zone around it)
+      local here = not (q.questID and NS.QS and NS.QS.ReadyHere) or NS.QS.ReadyHere(q.questID)
+      if here and (st == "ready" or (st == nil and q.complete)) then ready[#ready + 1] = q end
     end
   end
   if #ready > 0 then table.insert(groups, 1, { title = T_READY, quests = ready, ready = true }) end
@@ -117,6 +119,29 @@ local function BoxState(q, canWatch)
   if not (canWatch and type(q) == "table") then return nil end
   if NS.Tracker and NS.Tracker.CheckState then return NS.Tracker.CheckState(q) end
   return QL.IsWatched(q), false
+end
+local function PaintKeep(btn, id)
+  if not btn then return end
+  local on = NS.Tracker and id and NS.Tracker.IsPinned(id) and true or false
+  btn.pinned = on
+  local style = NS.Tracker and NS.Tracker.KeepStyle and NS.Tracker.KeepStyle()
+  local role = on and (style and style.on or "keepPin") or (style and style.off or "keepPinOff")
+  if btn.icon and NS.QS and NS.QS.PaintIcon(btn.icon, role) then
+    btn.icon:Show()
+    if btn.icon.SetAlpha then btn.icon:SetAlpha(on and 1 or 0.45) end
+  elseif btn.icon then
+    btn.icon:Hide()
+  end
+  btn.tipTitle = on and "Unpin" or "Pin"
+  btn.tipText = on and "Pinned: it stays in the tracker in every zone. Click to unpin."
+    or "Not pinned. Click to pin: it then stays in the tracker in every zone."
+end
+local function PinTip(self)
+  if not GameTooltip then return end
+  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+  GameTooltip:SetText(self.tipTitle or "Pin", 1, 0.82, 0)
+  if self.tipText then GameTooltip:AddLine(self.tipText, 1, 1, 1, true) end
+  GameTooltip:Show()
 end
 local function OnWatchClick(self)
   local r = self.row
@@ -169,6 +194,22 @@ local function GetRow(V, i)
   end)
   r.watch:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
   r.watch.row = r
+  r.watch:Hide()
+  -- 0.5.2b.31: a pin icon beside the name. The watch box stays hidden; tracking rules are unchanged.
+  r.pin = CreateFrame("Button", nil, r)
+  r.pin:SetSize(16, 16)
+  r.pin.icon = r.pin:CreateTexture(nil, "OVERLAY")
+  r.pin.icon:SetAllPoints(r.pin)
+  r.pin.row = r
+  r.pin:SetScript("OnClick", function(self)
+    local q = self.row and self.row.quest
+    local id = type(q) == "table" and q.questID
+    if not id or not (NS.Tracker and NS.Tracker.SetPinned) then return end
+    NS.Tracker.SetPinned(id, not NS.Tracker.IsPinned(id))
+    PaintKeep(self, id)
+  end)
+  r.pin:SetScript("OnEnter", PinTip)
+  r.pin:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
   r.small = r:CreateFontString(nil, "OVERLAY")
   NS.SetFont(r.small, 12, "")
   r.small:SetShadowOffset(1, -1)
@@ -271,6 +312,7 @@ local function Detail(q, d)
   d.title:SetShadowColor(0, 0, 0, sh)
   d.meta:SetShadowColor(0, 0, 0, sh)
   d.status:SetShadowColor(0, 0, 0, sh)
+  if d.pin and type(q) == "table" then PaintKeep(d.pin, q.questID) end
   local nt, ni, y = 0, 0, -4
   local function line(text, size, key, gapAbove)
     nt = nt + 1
@@ -314,7 +356,24 @@ local function Detail(q, d)
     if col == 1 then y = y - 44 end
   end
 
+  local function PaintActions(quest)
+    local ab, shb = d.abandon, d.share
+    if not (ab and shb) then return end
+    if not quest then ab:Hide() shb:Hide() return end
+    if QL.AbandonSupported() then ab:Show() ab.tip = "Abandon" else ab:Hide() end
+    if QL.Has("QuestLogPushQuest") then
+      shb:Show()
+      local ok = QL.CanShare(quest)
+      if ok then shb:Enable() shb:SetAlpha(1) shb.tip = "Share" else shb:Disable() shb:SetAlpha(0.45) shb.tip = "Cannot share" end
+    else
+      shb:Hide()
+    end
+    shb:ClearAllPoints()
+    if ab:IsShown() then shb:SetPoint("LEFT", ab, "RIGHT", 6, 0)
+    else shb:SetPoint("TOPLEFT", d.panel, "TOPLEFT", 14, -(82 + (d.top or 0))) end
+  end
   if not q then
+    PaintActions(nil)
     d.title:SetText(qtext ~= "" and "No matching quests" or (total == 0 and "No quests" or ""))
     d.meta:SetText("")
     d.status:SetText("")
@@ -383,6 +442,7 @@ local function Detail(q, d)
       if (det.reqMoney or 0) > 0 then line("Required money: " .. QL.Money(det.reqMoney), 13, "listSoft") end
       if not any then line("No rewards listed for this quest.", 13, "listSoft") end
     end
+    PaintActions(q)
   end
   for i = nt + 1, #d.texts do d.texts[i]:Hide() end
   for i = ni + 1, #d.items do d.items[i]:Hide() d.items[i].entry = nil end
@@ -429,7 +489,7 @@ local function FillRows(V)
     selectedId = sel and (sel.questID or sel.title) or (searching and selectedId or nil)
   end
   if QS and sel and sel.questID and V.auto then QS.selected = sel.questID end -- the Map tab lights the selected quest's markers
-  local canWatch = QL.CanWatch()
+  if QS and QS.ForgetIcons then QS.ForgetIcons() end
   local nrows = #rows
   for i = 1, math.max(nrows, #V.rows) do
     local r = V.rows[i]
@@ -445,6 +505,7 @@ local function FillRows(V)
       if data.kind == "h" then
         r.icon:Show()
         r.watch:Hide()
+        if r.pin then r.pin:Hide() end
         NS.SetPiece(r.icon, (collapsed[data.group.title] and not searching) and "coin_plus" or "coin_minus")
         r.small:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
         r.text:ClearAllPoints()
@@ -458,18 +519,16 @@ local function FillRows(V)
         local q = data.quest
         isSel = ((q.questID or q.title) == selectedId)
         r.icon:Hide()
-        local watched, partly = BoxState(q, canWatch)
-        if canWatch and watched ~= nil then
-          r.watch:Show()
-          r.watch:SetChecked(watched and true or false)
-          r.watch:SetAlpha(partly and 0.5 or 1)
-          r.small:SetPoint("RIGHT", r.watch, "LEFT", -2, 0)
-        else
-          r.watch:Hide()
-          r.small:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
+        r.watch:Hide()
+        if r.pin then
+          r.pin:ClearAllPoints()
+          r.pin:SetPoint("LEFT", r, "LEFT", m.rowPad, 0)
+          r.pin:Show()
+          PaintKeep(r.pin, q.questID)
         end
+        r.small:SetPoint("RIGHT", r, "RIGHT", -m.rowPad, 0)
         r.text:ClearAllPoints()
-        r.text:SetPoint("LEFT", r, "LEFT", m.rowPad + 14, 0)
+        r.text:SetPoint("LEFT", r.pin or r, r.pin and "RIGHT" or "LEFT", r.pin and 4 or (m.rowPad + 14), 0)
         r.text:SetPoint("RIGHT", r.small, "LEFT", -6, 0)
         r.text:SetText(q.title)
         r.text:SetTextColor(NS.Color(isSel and "liOn" or Difficulty(q.level)))
@@ -502,7 +561,12 @@ local function FillRows(V)
   return sel, matched, searching
 end
 
-local function Live(V) return V == main or (V.host and V.host:IsVisible()) end
+local function Live(V)
+  if V == main or (V.host and V.host:IsVisible()) then return true end
+  -- 0.5.2b.28: the map column stays filled while the map is up, even before a column width is known
+  local P = NS.QuestPanel
+  return P and P.view == V and P.embedded and P.mapShown and P.frame and P.frame:IsShown()
+end
 
 -- read the log once and redraw every view that is showing (the Quests tab's always, it keeps the selection)
 local function Refresh()
@@ -544,12 +608,23 @@ local function AnyLive()
   return false
 end
 
+local acceptWait, acceptTries = {}, 0
 local function Schedule()
-  if pending then return end
+  -- 0.5.2b.37: an event during the wait is kept. The list is only reread; nothing is selected.
   pending = true
+  if sched then return end
+  sched = true
   C_Timer.After(0.25, function()
+    sched = false
+    if not pending then return end
     pending = false
     if AnyLive() then Refresh() end
+    local now, again = Now(), false
+    for id, til in pairs(acceptWait) do
+      if FindQuest(id) or now >= til or acceptTries >= 8 then acceptWait[id] = nil
+      else again = true end
+    end
+    if again then acceptTries = acceptTries + 1 Schedule() else acceptTries = 0 end
   end)
 end
 
@@ -569,9 +644,15 @@ local function Events(on, who)
       end
       -- 0.4.6: quest data we asked for (C_QuestLog.RequestLoadQuestByID) arrived: read that quest again
       if e == "QUEST_DATA_LOAD_RESULT" then local id = NS.Num(a1) if id then QL.Forget(id) end end
-      if QL.reading then return end
-      -- our own brief selection (detail read, reward tooltip) fires QUEST_LOG_UPDATE: skip that echo
-      if e == "QUEST_LOG_UPDATE" and (Now() < quietUntil or Now() - (QL.lastSelect or -99) < 0.5) then return end
+      if e == "QUEST_ACCEPTED" then
+        local id = NS.Num(a1)
+        if id then acceptWait[id] = Now() + 2 end
+      end
+      -- 0.5.2b.46: the open detail returns to the list when a complete log scan no longer contains it. The event argument is not used.
+      if (e == "QUEST_REMOVED" or e == "QUEST_LOG_UPDATE") and NS.QuestPanel and NS.QuestPanel.CheckRemoved then NS.QuestPanel.CheckRemoved() end
+      -- 0.5.2b.37: a selection or a reward tooltip still refreshes the list. The refresh does not select.
+      -- While a read is in progress, remember the event and let the wait run after it.
+      if QL.reading then pending = true return end
       Schedule()
     end)
   end
@@ -626,11 +707,11 @@ local function NewDetail(dp, w, h, top)
   local d = { texts = {}, items = {}, panel = dp }
   d.title = UI.Text(dp, "OVERLAY", 17, "gold", "LEFT")
   d.title:SetPoint("TOPLEFT", dp, "TOPLEFT", 14, -14 - top)
-  d.title:SetWidth(w - 28)
+  d.title:SetWidth(math.max(40, w - 14 - 8 - 18 - 8))
   d.title:SetWordWrap(false)
   d.meta = UI.Text(dp, "OVERLAY", 12, "listSoft", "LEFT")
   d.meta:SetPoint("TOPLEFT", d.title, "BOTTOMLEFT", 0, -6)
-  d.meta:SetWidth(w - 28)
+  d.meta:SetWidth(math.max(40, w - 14 - 8 - 18 - 8))
   d.status = UI.Text(dp, "OVERLAY", 13, "mid", "LEFT")
   d.status:SetPoint("TOPLEFT", d.meta, "BOTTOMLEFT", 0, -8)
   d.status:SetWidth(w - 28 - 124)
@@ -645,7 +726,42 @@ local function NewDetail(dp, w, h, top)
     NS.MapTab.ShowQuest(q, true)
   end)
   d.showMap = sm
-  local headH = 82 + top
+  d.top = top
+  local function ActionTip(self)
+    if not GameTooltip or not self.tip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(self.tip)
+    GameTooltip:Show()
+  end
+  local ab = UI.Button(dp, "Abandon", 84, 22, "red", 11)
+  ab:SetPoint("TOPLEFT", dp, "TOPLEFT", 14, -(82 + top))
+  ab:SetScript("OnClick", function() if d.quest then QL.Abandon(d.quest) end end)
+  ab:SetScript("OnEnter", ActionTip)
+  ab:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  ab:Hide()
+  d.abandon = ab
+  local sh = UI.Button(dp, "Share", 64, 22, "red", 11)
+  sh:SetPoint("LEFT", ab, "RIGHT", 6, 0)
+  sh:SetScript("OnClick", function() if d.quest then QL.Share(d.quest) end end)
+  sh:SetScript("OnEnter", ActionTip)
+  sh:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  sh:Hide()
+  d.share = sh
+  local pin = CreateFrame("Button", nil, dp)
+  pin:SetSize(18, 18)
+  pin.icon = pin:CreateTexture(nil, "OVERLAY")
+  pin.icon:SetAllPoints(pin)
+  pin:SetPoint("TOPRIGHT", dp, "TOPRIGHT", -8, -(14 + top))
+  pin:SetScript("OnClick", function()
+    local q = d.quest and d.quest.questID
+    if not q or not (NS.Tracker and NS.Tracker.SetPinned) then return end
+    NS.Tracker.SetPinned(q, not NS.Tracker.IsPinned(q))
+    PaintKeep(pin, q)
+  end)
+  pin:SetScript("OnEnter", PinTip)
+  pin:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  d.pin = pin
+  local headH = QL.DetailHead(top)
   d.scroll = UI.Scroll(dp, w - 2 * b, h - 2 * b - headH, dp)
   d.scroll.frame:SetPoint("TOPLEFT", dp, "TOPLEFT", b, -(b + headH))
   d.scroll.step = 60
@@ -655,7 +771,7 @@ local function NewDetail(dp, w, h, top)
 end
 
 NS.RegisterTab({
-  id = "quests", name = "Quests", glyph = "quests",
+  id = "quests", name = "Quests", glyph = "quests", hidden = true,
   Build = function(body)
     local m = NS.theme.m
     ROW_H = m.rowH

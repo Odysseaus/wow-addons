@@ -1,8 +1,8 @@
 ## Interface: 11509
 ## Title: Dark Matter
-## Notes: Dark Matter 0.5.2b.9: map: painted zone art at every zoom level, the close-up tiles only in the last wheel step (deepest level), the same in every zone and window size (/dm tileprobe, /dm zoomprobe); Classic Era loads DarkMatter_Vanilla.toc as a test bench for the shared map code. Earlier: the same zoom levels and layers in the window and in full screen (/dm zoomprobe), softer zone seams, two-pass zone masks.
+## Notes: Dark Matter 0.5.2b.61: zone level labels use the Option 2 parchment scroll.
 ## Author: Odysseaus
-## Version: 0.5.2b.18
+## Version: 0.5.2b.61
 ## IconTexture: Interface\AddOns\DarkMatter\Media\dm-icon
 ## SavedVariables: DarkMatterDB
 ## SavedVariablesPerCharacter: DarkMatterCharDB
@@ -15,6 +15,7 @@ Atlas_WoW.lua
 Theme_WoW.lua
 Theme_Classes.lua
 Theme_ClassStock.lua
+Theme_CrestOverrides.lua
 Widgets.lua
 ProbeWindow.lua
 MapWindow.lua
@@ -38,6 +39,7 @@ MapCloseUp.lua
 Data_ZoneLevels.lua
 Data_ZoneMasks.lua
 Data_ZoneSeams.lua
+Data_Town.lua
 Tab_Map.lua
 MapExtras.lua
 MapShapes.lua
