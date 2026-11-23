@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.35", date = "2026-11-23", heads = { [1] = "Fixed", [2] = "Note", }, items = {
+		"|cff6e2c0aLevel-up and the quest tracker|r: for about 2 seconds after you level, Valhalla waits before it changes which quests are tracked, which quest you are following, or the quest log's order. That is when the game lays the interface out and reads your auras.",
+		"A short log of that wait is kept with your settings, the last 40 lines: each level-up, and each of those changes once it actually runs. It is in ValhallaDB under taintLog.",
+	} },
 	{ version = "1.2.34", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aFlight masters|r: none at Eastern Plaguelands' towers (Plaguewood, Northpass, Eastwall and Crown Guard). They are in the game's flight tables, but no character can learn them and no flight master stands there. Mount Hyjal's two are on the map: Summit of Eternity and Tainted Foothills, with the routes between them and to Everlook.",
 		"|cff6e2c0aThe map keeps your settings|r: a view worked out while the map was still 0 pixels across (a divide by zero) is never put up, so it can't leave the map blank. A saved window place, size or scale that isn't a real number is forgotten. On logout any such number is taken out of your saved settings, so one bad number can't make the game throw the whole file away and put every setting back to its default.",

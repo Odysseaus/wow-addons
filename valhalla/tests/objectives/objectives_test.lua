@@ -1472,5 +1472,25 @@ do
   C_Secrets = nil
 end
 
+print("== 61. (1.2.35) a level-up holds a re-track for about 2 seconds, then it runs")
+do
+  local CQ = ns.Combat
+  W.combat = false
+  C_Secrets = nil
+  W.clock = W.clock + 10
+  local adds, removes = W.calls.add, W.calls.remove
+  CQ.LevelUp(7)
+  ok(CQ.Blocked() and CQ.Why()[1] == "level-up", "the gate holds after level 7", table.concat(CQ.Why(), ","))
+  local lever = O.Retrack()
+  ok(lever and CQ.Pending("watch:" .. tostring(lever)) and W.calls.add == adds and W.calls.remove == removes,
+    "a re-track during the hold: no AddQuestWatch or RemoveQuestWatch", tostring(lever) .. " " .. list(W.watches))
+  W.clock = W.clock + CQ.LEVEL - 0.1
+  ok(CQ.Blocked() and W.calls.add == adds, "just before 2 seconds: still no watch call")
+  W.clock = W.clock + 0.2
+  local n = CQ.Flush()
+  ok(not CQ.Blocked() and n >= 1 and not CQ.Pending() and W.calls.add == adds + 1 and W.calls.remove == removes,
+    "after about 2 seconds: the re-track runs once", n .. " " .. list(W.watches))
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)
