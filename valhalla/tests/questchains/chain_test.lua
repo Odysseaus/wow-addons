@@ -779,5 +779,37 @@ end
 C_QuestLog.GetInfo = baseInfo
 _G.QuestLogQuests_Update = gameUpdate
 
+print("== 15. (1.2.37) /valhalla chain coverage saves the last 3 runs on this character")
+do
+  W.Reset()
+  W.faction, W.class = "Alliance", "WARRIOR"
+  ns.QuestChainData.forever = { 45, 87, 71, 47, 27, 40 }
+  W.AddQuest(45, "Elwynn Forest", "Discover Rolf's Fate", 10)
+  W.AddQuest(87, "Elwynn Forest", "Goldtooth", 9)
+  W.AddQuest(27, "Moonglade", "A Lesson to Learn", 16)
+  W.AddQuest(999, "Elwynn Forest", "Not On Wowhead", 5)
+  mod.char = {}
+  ValhallaCharDB = { chains = mod.char }
+  ns.printed = {}
+  mod:Slash("coverage")
+  local run = mod.char.coverage and mod.char.coverage[1]
+  local by = {}
+  for _, q in ipairs(run and run.quests or {}) do by[q.id] = q.status end
+  ok(by[45] == "chain" and by[87] == "noSeries" and by[27] == "otherChain" and by[999] == "unread",
+    "coverage: chain, noSeries, otherChain, unread", string.format("45=%s 87=%s 27=%s 999=%s", tostring(by[45]), tostring(by[87]), tostring(by[27]), tostring(by[999])))
+  ok(mod.char.coverage == ValhallaCharDB.chains.coverage, "coverage: stored on ValhallaCharDB.chains.coverage (SavedVariablesPerCharacter)")
+  ok(run and run.quests[1].name == "Discover Rolf's Fate" and type(run.at) == "number", "coverage: each quest keeps its name, and the run has a time")
+  ok(ns.printed[3] and ns.printed[3]:find("Goldtooth (87): no series on Wowhead", 1, true)
+    and ns.printed[3]:find("Not On Wowhead (999): not on Wowhead Forever's list", 1, true)
+    and ns.printed[3]:find("A Lesson to Learn (27): another chain", 1, true), "coverage: the chat line names each kind", tostring(ns.printed[3]))
+  local first = mod.char.coverage[1]
+  mod:Slash("coverage")
+  mod:Slash("coverage")
+  ok(#mod.char.coverage == 3 and mod.char.coverage[3] == first, "coverage: three runs, oldest last")
+  mod:Slash("coverage")
+  ok(#mod.char.coverage == 3 and mod.char.coverage[1] ~= first and mod.char.coverage[3] ~= first, "coverage: a fourth run drops the oldest and keeps three")
+  ns.QuestChainData.forever = nil
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

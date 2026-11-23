@@ -1005,18 +1005,55 @@ end
 -- /valhalla chain coverage
 --------------------------------------------------------------------------------
 
+-- a quest in this character's log: chain (in one of this character's chains), noSeries (its Wowhead
+-- page was read and had no Series box), unread (not on Wowhead Forever's quest list), otherChain
+-- (on that list, but not this character's chain and not a page we read with no Series box).
+local NOTE = {
+	noSeries = ": no series on Wowhead",
+	unread = ": not on Wowhead Forever's list",
+	otherChain = ": another chain",
+}
+
+local function Status(id, none, forever, haveList)
+	if QC.Of(id) then return "chain" end
+	if none[id] then return "noSeries" end
+	if haveList and not forever[id] then return "unread" end
+	return "otherChain"
+end
+
 function QC.Coverage()
+	QC.Load()
 	local C = rawget(_G, "C_QuestLog")
 	local with, without, names = 0, 0, {}
-	local none = {}   -- quests whose Wowhead page was read and has no Series box
+	local none, forever, haveList = {}, {}, false
 	local data = ns.QuestChainData
-	for _, q in ipairs(type(data) == "table" and type(data.noSeries) == "table" and data.noSeries or {}) do none[q] = true end
+	if type(data) == "table" then
+		for _, q in ipairs(type(data.noSeries) == "table" and data.noSeries or {}) do none[q] = true end
+		if type(data.forever) == "table" then
+			haveList = true
+			for _, q in ipairs(data.forever) do forever[q] = true end
+		end
+	end
+	local saved = {}
 	local n = C and C.GetNumQuestLogEntries and Call(C.GetNumQuestLogEntries) or 0
 	for i = 1, n do
 		local info = Call(C.GetInfo, i)
 		if type(info) == "table" and not info.isHeader and info.questID and not info.isHidden then
-			if QC.Of(info.questID) then with = with + 1 else without = without + 1 names[#names + 1] = ("%s (%d)%s"):format(info.title or "?", info.questID, none[info.questID] and L[": no series on Wowhead"] or "") end
+			local status = Status(info.questID, none, forever, haveList)
+			saved[#saved + 1] = { id = info.questID, name = info.title or "?", status = status }
+			if status == "chain" then with = with + 1
+			else
+				without = without + 1
+				names[#names + 1] = ("%s (%d)%s"):format(info.title or "?", info.questID, NOTE[status] and L[NOTE[status]] or "")
+			end
 		end
+	end
+	if type(mod.char) == "table" then
+		local runs = mod.char.coverage
+		if type(runs) ~= "table" then runs = {} mod.char.coverage = runs end
+		local now = (type(time) == "function" and time()) or (os and os.time and os.time()) or 0
+		table.insert(runs, 1, { at = now, quests = saved })
+		while #runs > 3 do table.remove(runs) end
 	end
 	local meta = type(ns.QuestChainData) == "table" and ns.QuestChainData.meta or {}
 	local out = {

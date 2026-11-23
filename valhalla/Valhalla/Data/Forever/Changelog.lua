@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.37", date = "2026-11-23", heads = { [1] = "Changed", [2] = "New", }, items = {
+		"|cff6e2c0aQuest chains|r: rebuilt from Wowhead WoW Forever's Series boxes only. 755 chains, 2,618 quests. A page that had no Series box still gives that quest no chain button.",
+		"|cff6e2c0a/valhalla chain coverage|r: your quest log, each quest chain, no series, not on Wowhead Forever's list, or another chain. The last 3 runs are saved with this character (ValhallaCharDB, under chains).",
+	} },
 	{ version = "1.2.36", date = "2026-11-23", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
 		"|cff6e2c0aQuest log order|r: the zones stay alphabetical, and the Ready section stays in the log, only while the quest log is open. Valhalla lays those rows out again only when that order actually changed. While the log is closed, the game's rows are left alone.",
 		"The level-up log (ValhallaDB, taintLog) keeps the last 10 lines of each kind: a level-up, a tracked quest, following a quest, the quest log's order. One kind filling the log no longer drops the others.",
