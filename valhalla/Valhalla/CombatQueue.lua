@@ -16,7 +16,7 @@
 -- anyway (one chat line a session), until that hold ends; so nothing waits for good out of combat.
 -- (1.2.35) a level-up holds the gate for LEVEL seconds (PLAYER_LEVEL_UP). The game lays Edit Mode out then and
 -- reads auras from the tracker's anchor callback; watch, super-track and quest-log changes wait, then flush.
--- Each level-up, and every queued call that actually runs, is appended to ValhallaDB.taintLog (LOG_MAX lines).
+-- Each level-up, and every queued call that actually runs, is appended to ValhallaDB.taintLog (LOG_PER_KEY lines of that key).
 --
 --   ns.Combat.Run(key, fn, note)   fn() now when clear and nothing queued (true); else queued under key (false):
 --                                   a later Run with the same key replaces it (last write wins, moved to the end).
@@ -38,7 +38,7 @@ Q.SETTLE = 3
 Q.SAFETY = 30
 Q.LEVEL = 2            -- (1.2.35) seconds the gate stays shut after PLAYER_LEVEL_UP
 Q.HISTORY = 40
-Q.LOG_MAX = 40         -- (1.2.35) ValhallaDB.taintLog, oldest dropped
+Q.LOG_PER_KEY = 10     -- (1.2.36) ValhallaDB.taintLog[key], the last this many of that key
 Q.levelUntil = 0
 Q.SAFETY_NOTE = "The game is keeping auras secret out of combat: Valhalla's waiting quest tracker changes go ahead after 30 seconds."
 Q.history = {}
@@ -91,28 +91,47 @@ function Q.Blocked()
 	return #why > 0
 end
 
--- (1.2.35) one line in ValhallaDB.taintLog. Numbers here are finite, so Core's logout scrub keeps the log
--- and only removes a NaN beside it. No table yet (before ADDON_LOADED): nothing saved.
+-- (1.2.35, per key in 1.2.36) ValhallaDB.taintLog[key] is that key's lines, newest last, LOG_PER_KEY kept.
+-- A 1.2.35 list (entries in order, each with .key) is split into those buckets once. Numbers are finite,
+-- so Core's logout scrub keeps the log and only removes a NaN beside it. No table yet: nothing saved.
 local function AurasSecret()
 	local CS = rawget(_G, "C_Secrets")
 	return type(CS) == "table" and Yes(CS.ShouldAurasBeSecret, true) or false
 end
+local function Buckets(log)
+	if type(log) ~= "table" then return {} end
+	if type(log[1]) == "table" and log[1].key then
+		local buckets = {}
+		for _, e in ipairs(log) do
+			local k = tostring(e.key or "?")
+			local b = buckets[k] or {}
+			buckets[k] = b
+			b[#b + 1] = e
+			while #b > Q.LOG_PER_KEY do table.remove(b, 1) end
+		end
+		return buckets
+	end
+	return log
+end
 function Q.Trace(key, how, extra)
 	local db = rawget(_G, "ValhallaDB")
 	if type(db) ~= "table" then return end
-	local log = db.taintLog
-	if type(log) ~= "table" then log = {} db.taintLog = log end
+	local log = Buckets(db.taintLog)
+	db.taintLog = log
+	key = tostring(key)
+	local bucket = log[key]
+	if type(bucket) ~= "table" then bucket = {} log[key] = bucket end
 	local why = Q.Why()
 	local e = {
 		t = Now(), clock = date and date("%H:%M:%S") or "",
-		key = tostring(key), how = how, why = why,
+		key = key, how = how, why = why,
 		combat = Q.InCombat() and true or false, secret = AurasSecret() and true or false,
 	}
 	if type(extra) == "table" then
 		for k, v in pairs(extra) do e[k] = v end
 	end
-	log[#log + 1] = e
-	while #log > Q.LOG_MAX do table.remove(log, 1) end
+	bucket[#bucket + 1] = e
+	while #bucket > Q.LOG_PER_KEY do table.remove(bucket, 1) end
 end
 local function Record(key, how)
 	local h = Q.history

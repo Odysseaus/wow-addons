@@ -290,23 +290,29 @@ ok(#ran == 0 and Q.Blocked(), "just before 2 seconds: still held, nothing run")
 Advance(0.1)
 ok(table.concat(ran, ",") == "watch,super,log" and not Q.Pending(), "after about 2 seconds: flushed in order", table.concat(ran, ","))
 local saved = ValhallaDB.taintLog
-ok(type(saved) == "table" and saved[1].key == "PLAYER_LEVEL_UP" and saved[1].how == "level-up" and saved[1].level == 7,
-	"PLAYER_LEVEL_UP saved, with the level", saved and saved[1] and saved[1].key)
-ok(saved[1].combat == false and saved[1].secret == false and type(saved[1].t) == "number" and type(saved[1].why) == "table" and type(saved[1].clock) == "string",
+local ups = saved and saved["PLAYER_LEVEL_UP"]
+ok(type(ups) == "table" and ups[1].key == "PLAYER_LEVEL_UP" and ups[1].how == "level-up" and ups[1].level == 7,
+	"PLAYER_LEVEL_UP saved, with the level", ups and ups[1] and ups[1].key)
+ok(ups[1].combat == false and ups[1].secret == false and type(ups[1].t) == "number" and type(ups[1].why) == "table" and type(ups[1].clock) == "string",
 	"time, gate reasons, in-combat and auras-secret are on the line")
-ok(saved[2] and saved[2].key == "watch:1" and saved[2].how == "queued", "the watch change saved as queued", saved[2] and saved[2].how)
+local watched = saved["watch:1"]
+ok(watched and watched[1].key == "watch:1" and watched[1].how == "queued", "the watch change saved as queued", watched and watched[1] and watched[1].how)
 ok(Q.Run("supertrack", function() end) == true, "clear again: a call runs now")
-local nowLine = ValhallaDB.taintLog[#ValhallaDB.taintLog]
-ok(nowLine.key == "supertrack" and nowLine.how == "now", "a straight-away run saved as now", nowLine.how)
-for i = 1, Q.LOG_MAX + 5 do Q.Run("pad:" .. i, function() end) end
-ok(#ValhallaDB.taintLog == Q.LOG_MAX and ValhallaDB.taintLog[Q.LOG_MAX].key == "pad:" .. (Q.LOG_MAX + 5),
-	"the saved log keeps the last " .. Q.LOG_MAX, #ValhallaDB.taintLog)
+local supers = ValhallaDB.taintLog["supertrack"]
+ok(supers and supers[#supers].how == "now", "a straight-away run saved as now", supers and supers[#supers] and supers[#supers].how)
+print("== 17. (1.2.36) each key keeps its own last " .. Q.LOG_PER_KEY .. " lines")
+for i = 1, 50 do Q.Run("questlog:arrange", function() end) end
+local arranged = ValhallaDB.taintLog["questlog:arrange"]
+ok(type(arranged) == "table" and #arranged == Q.LOG_PER_KEY and arranged[Q.LOG_PER_KEY].how == "now",
+	"fifty quest-log arranges keep only the last " .. Q.LOG_PER_KEY, arranged and #arranged)
+ok(ValhallaDB.taintLog["watch:1"] and ValhallaDB.taintLog["watch:1"][1].key == "watch:1", "an older watch: line is still there")
+ok(ValhallaDB.taintLog["PLAYER_LEVEL_UP"] and ValhallaDB.taintLog["PLAYER_LEVEL_UP"][1].level == 7, "the level-up line is still there")
 do
 	local prev = _G.Valhalla
 	CreateFrame = function()
 		return { SetScript = function() end, RegisterEvent = function() return true end, UnregisterEvent = function() end }
 	end
-	GetAddOnMetadata = function() return "1.2.35" end
+	GetAddOnMetadata = function() return "1.2.36" end
 	C_AddOns = { GetAddOnMetadata = GetAddOnMetadata }
 	local cns = { Client = "Forever" }
 	assert(loadfile(root .. "Core.lua"))("Valhalla", cns)
@@ -314,8 +320,9 @@ do
 	cns.ScrubSaved(ValhallaDB)
 	ok(ValhallaDB.bad == nil, "logout scrub removes a NaN beside the log")
 	local kept = ValhallaDB.taintLog
-	ok(type(kept) == "table" and #kept == Q.LOG_MAX and kept[Q.LOG_MAX].key == "pad:" .. (Q.LOG_MAX + 5) and type(kept[1].key) == "string",
-		"logout scrub keeps taintLog", kept and kept[1] and kept[1].key)
+	ok(type(kept) == "table" and type(kept["PLAYER_LEVEL_UP"]) == "table" and kept["PLAYER_LEVEL_UP"][1].level == 7
+		and #kept["questlog:arrange"] == Q.LOG_PER_KEY and kept["watch:1"][1].key == "watch:1",
+		"logout scrub keeps each key's lines", kept and kept["watch:1"] and kept["watch:1"][1].key)
 	_G.Valhalla = prev
 end
 

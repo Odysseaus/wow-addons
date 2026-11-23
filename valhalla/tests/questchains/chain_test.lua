@@ -290,6 +290,8 @@ ok(back and not Shown(ButtonOf(RowOf(45))), "module off: the ticks back, no butt
 
 ---------------------------------------------------------------------------
 print("== 8. (1.2.11) the zones in alphabetical order; the Ready to Turn In section")
+_G.QuestMapFrame = W.NewFrame("Frame")
+QuestMapFrame:Show()
 -- the game's log as QuestMapFrame.lua builds it: headers (questLogIndex, layoutIndex, topPadding), rows,
 -- objective lines (anchored to their row, no layoutIndex), quest icons; Contents:Layout() counted
 mod.enabled = true mod:OnEnable()
@@ -751,6 +753,27 @@ do
   QuestLogQuests_Update()
   ok(Order() == want and not CQ.Pending(), "clear: at once, as before")
   C_Secrets = nil
+end
+
+print("== 14. (1.2.36) arrange only while the quest log is visible; Layout only when the order differs")
+do
+  QC.SetReady(false)
+  W.collapsed["Elwynn Forest"] = false
+  W.order = { 301, 201, 45, 401, 101, 102 }
+  QuestMapFrame:Show()
+  QuestLogQuests_Update()
+  local n = contents.layouts
+  QuestLogQuests_Update()
+  ok(contents.layouts == n, "order already alphabetical: a second update does not lay the log out again", tostring(contents.layouts - n))
+  ok(Order():find("^H:Darkshore") == 1, "zones stay alphabetical", Order())
+  QuestMapFrame:Hide()
+  local before = contents.layouts
+  QuestLogQuests_Update()
+  ok(contents.layouts == before and not CQ.Pending("questlog:arrange"), "log hidden: no arrange, no Layout")
+  QuestMapFrame:Show()
+  W.order = { 401, 301, 101, 102, 201, 45 }
+  QuestLogQuests_Update()
+  ok(contents.layouts == before + 1 and Order():find("^H:Darkshore") == 1, "order really differs and the log is open: one Layout, still alphabetical", Order())
 end
 
 C_QuestLog.GetInfo = baseInfo

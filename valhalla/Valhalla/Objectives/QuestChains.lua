@@ -394,7 +394,20 @@ function QC.OnUpdate()
 		if not ok then QC.lastError = tostring(err) end
 	end
 	-- (1.2.11: the zones in order, the Ready section; an error said once, never breaking the game's log)
+	-- (1.2.36: only while the quest log is open. Closed, the game's rows are left alone)
 	QC.ArrangeSoon()
+end
+
+-- the quest log open: beside the map, or over it full screen (the same frames WorldMap.lua's QuestLogShown uses)
+function QC.LogVisible()
+	local qm = rawget(_G, "QuestMapFrame")
+	if type(qm) == "table" then
+		local shown = qm.IsVisible or qm.IsShown
+		if type(shown) == "function" then return shown(qm) and true or false end
+	end
+	local wm = rawget(_G, "WorldMapFrame")
+	if type(wm) == "table" and type(wm.IsSidePanelShown) == "function" and wm:IsSidePanelShown() then return true end
+	return false
 end
 
 -- (1.2.26) the arrange writes the game's quest log rows' layoutIndex / topPadding and lays the log out again:
@@ -409,6 +422,7 @@ function QC.ArrangeSafe()
 	end
 end
 function QC.ArrangeSoon()
+	if not QC.LogVisible() then return end   -- (1.2.36)
 	return Defer("questlog:arrange", QC.ArrangeSafe)
 end
 
@@ -662,6 +676,7 @@ end
 
 -- after the game's update (and on our setting / collapse changes): the order, the Ready section
 function QC.Arrange()
+	if not QC.LogVisible() then return false end   -- (1.2.36: queued, then the log closed)
 	local SF = rawget(_G, "QuestScrollFrame")
 	local contents = Contents()
 	if not (SF and contents and SF.headerFramePool and SF.titleFramePool and SF.headerFramePool.EnumerateActive) then return false end
@@ -781,8 +796,23 @@ function QC.Arrange()
 		end
 	elseif ours.header then ours.header:Hide() end
 	for i = nShown + 1, #ours.rows do ours.rows[i]:Hide() end
+	QC.lastSeq = seq
+	-- (1.2.36) the rows already in this order: don't write the game's fields and don't lay them out again
+	local function SameOrder()
+		local cur = {}
+		for i, s in ipairs(seq) do cur[i] = { f = s.f, i = i, li = rawget(s.f, "layoutIndex") } end
+		table.sort(cur, function(a, b)
+			local ai, bi = a.li or -1, b.li or -1
+			if ai ~= bi then return ai < bi end
+			return a.i < b.i
+		end)
+		for i, s in ipairs(seq) do
+			if cur[i].f ~= s.f or type(cur[i].li) ~= "number" then return false end
+		end
+		return true
+	end
+	if SameOrder() then return true end
 	-- layoutIndex / topPadding (the game's own spacing for each pair), then the layout again
-	local changed = false
 	local prev = nil
 	for i, s in ipairs(seq) do
 		local f = s.f
@@ -790,12 +820,11 @@ function QC.Arrange()
 		local pad
 		if i == 1 then pad = (s.kind == "Header" and firstPad) or SPACE["None" .. s.kind] or 0
 		else pad = SPACE[prev .. s.kind] or 0 end
-		if rawget(f, "layoutIndex") ~= li then f.layoutIndex = li changed = true end
-		if rawget(f, "topPadding") ~= pad then f.topPadding = pad changed = true end
+		f.layoutIndex = li
+		f.topPadding = pad
 		prev = s.kind
 	end
-	QC.lastSeq = seq
-	if changed and type(contents.Layout) == "function" then pcall(contents.Layout, contents) end
+	if type(contents.Layout) == "function" then pcall(contents.Layout, contents) end
 	return true
 end
 

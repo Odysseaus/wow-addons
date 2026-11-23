@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.36", date = "2026-11-23", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"|cff6e2c0aQuest log order|r: the zones stay alphabetical, and the Ready section stays in the log, only while the quest log is open. Valhalla lays those rows out again only when that order actually changed. While the log is closed, the game's rows are left alone.",
+		"The level-up log (ValhallaDB, taintLog) keeps the last 10 lines of each kind: a level-up, a tracked quest, following a quest, the quest log's order. One kind filling the log no longer drops the others.",
+	} },
 	{ version = "1.2.35", date = "2026-11-23", heads = { [1] = "Fixed", [2] = "Note", }, items = {
 		"|cff6e2c0aLevel-up and the quest tracker|r: for about 2 seconds after you level, Valhalla waits before it changes which quests are tracked, which quest you are following, or the quest log's order. That is when the game lays the interface out and reads your auras.",
 		"A short log of that wait is kept with your settings, the last 40 lines: each level-up, and each of those changes once it actually runs. It is in ValhallaDB under taintLog.",
