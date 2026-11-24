@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.42", date = "2026-11-23", heads = { [1] = "Changed", }, items = {
+		"|cff6e2c0aMap settings follow the character|r: townsfolk, professions, the minimap, flight masters and the other map switches are saved for each character. The first time, they start as the account had them. Pins, sketches, flight times, the window's place and the diagnostics stay shared.",
+	} },
 	{ version = "1.2.41", date = "2026-11-23", heads = { [1] = "Changed", }, items = {
 		"|cff6e2c0aClass trainers|r: every class is on the map, including pet, portal and demon trainers. The other faction's trainers stay hidden.",
 		"Profession icons take the shape of the thing they are (a spool, an anvil, food, the round seal) when the client can mask them. Otherwise they stay the square icon.",
