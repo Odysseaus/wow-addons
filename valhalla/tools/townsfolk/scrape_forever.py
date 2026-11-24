@@ -34,12 +34,27 @@ CLASS_TITLE = {
     'mage trainer': 'MAGE', 'warlock trainer': 'WARLOCK', 'druid trainer': 'DRUID',
     'portal trainer': 'MAGE', 'pet trainer': 'HUNTER', 'demon trainer': 'WARLOCK',
 }
-PROF_TITLE = {
-    'alchemy trainer', 'blacksmithing trainer', 'enchanting trainer', 'engineering trainer',
-    'herbalism trainer', 'leatherworking trainer', 'mining trainer', 'skinning trainer',
-    'tailoring trainer', 'fishing trainer', 'cooking trainer', 'first aid trainer',
-    'riding trainer', 'jewelcrafting trainer', 'inscription trainer',
+# The craft named by a Forever title. Longer keys first so "leatherworking" wins over nothing shorter.
+PROF_KEYS = (
+    ('blacksmith', 'blacksmithing'), ('enchant', 'enchanting'), ('engineer', 'engineering'),
+    ('leather', 'leatherworking'), ('tailor', 'tailoring'), ('alchem', 'alchemy'),
+    ('herbal', 'herbalism'), ('skinning', 'skinning'), ('skinner', 'skinning'),
+    ('mining', 'mining'), ('miner', 'mining'), ('fishing', 'fishing'), ('fisherman', 'fishing'),
+    ('cooking', 'cooking'), ('cook', 'cooking'), ('first aid', 'firstaid'),
+)
+# The whole title, when Forever does not say "Trainer" but this is the trainer.
+CRAFT_NAME = {
+    'herbalist': 'herbalism', 'miner': 'mining', 'skinner': 'skinning',
+    'cook': 'cooking', 'fisherman': 'fishing',
 }
+RANK = ('journeyman ', 'expert ', 'artisan ', 'master ')
+# Merchants that stay vendors and use the Repair icon. Not blacksmithing supplies (those are the profession).
+REPAIR_VENDOR = (
+    'weapon merchant', 'weapons merchant', 'weapon vendor', 'weapons vendor',
+    'bow merchant', 'bow & gun', 'bow & arrow', 'bowyer', 'gunsmith', 'thrown weapon',
+    'armor crafter', 'armorer', 'armorsmith', 'weaponsmith', 'light armor & weapons',
+    'two handed weapon', 'two-handed weapon',
+)
 SKIP_TITLE = (
     'flight master', 'gryphon master', 'wind rider', 'bat handler', 'hippogryph',
     'dragonhawk master', 'weapon master',
@@ -105,12 +120,24 @@ def classify(name, lines):
     if 'food' in tl or 'drink' in tl or tl in ('bartender', 'baker', 'butcher'):
         return 'food', title, None
     if tl in CLASS_TITLE:
-        return 'classTrainer', title, CLASS_TITLE[tl]
-    if tl in PROF_TITLE:
-        return 'profTrainer', title, 'PROF'
+        return 'classTrainer', title, CLASS_TITLE[tl], None
+    prof = None
+    for key, name in PROF_KEYS:
+        if key in tl:
+            prof = name
+            break
+    trainer = tl.endswith(' trainer') or ' trainer' in tl or any(tl.startswith(r) for r in RANK) or tl in CRAFT_NAME
+    if prof and trainer:
+        return prof, title, None, None
+    if prof == 'blacksmithing' and ('suppl' in tl):
+        return 'blacksmithing', title, None, 'repair'
+    if prof and any(w in tl for w in ('suppl', 'vendor', 'merchant', 'goods')):
+        return prof, title, None, None
+    if any(w in tl for w in REPAIR_VENDOR):
+        return 'vendor', title, None, 'repair'
     # the title itself has to say they sell something. A name that merely contains "vendor" does not.
     if any(w in tl for w in ('vendor', 'merchant', 'supplier', 'supplies', 'goods')):
-        return 'vendor', title, None
+        return 'vendor', title, None, None
     return None
 
 def points(data):
@@ -178,10 +205,12 @@ def scan(kind, ranges, through_key, st, outfh):
                 got = classify(data.get('name'), cells(data.get('tooltip')))
                 zone, pts = points(data)
                 if got and pts and zone and not (kind == 'npc' and got[0] == 'mailbox') and not (kind == 'object' and got[0] != 'mailbox'):
-                    typ, title, tag = got
+                    typ, title, tag = got[0], got[1], got[2]
+                    icon = got[3] if len(got) > 3 else None
                     rec = {
                         'kind': kind, 'id': i, 'name': data.get('name'), 'title': title,
-                        'type': typ, 'trainerTag': tag, 'faction': faction_of(cells(data.get('tooltip'))),
+                        'type': typ, 'trainerTag': tag, 'icon': icon,
+                        'faction': faction_of(cells(data.get('tooltip'))),
                         'zone': zone, 'points': pts,
                         'url': 'https://nether.wowhead.com/forever/tooltip/%s/%d' % (kind, i),
                         'tooltip': data.get('tooltip'),

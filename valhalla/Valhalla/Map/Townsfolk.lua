@@ -10,42 +10,60 @@ local _, ns = ...
 local S = ns.MapStitch
 local mod = ns:GetModule("worldmap")
 
--- kind -> look, the zoom it shows from, and what picks its NPCs
+-- kind -> look, the zoom it shows from, and what picks its NPCs.
+-- (1.2.40) every townsfolk icon is the learned flight master's size (22). Rares stay 18.
+local PIN = 22
+local PROF_FALLBACK = "Interface\\Minimap\\Tracking\\Profession"
+local function Prof(key, name, icon)
+	return { key = key, name = ns.L[name], flag = key:upper(), zoom = 8,
+		look = { texture = "Interface\\Icons\\" .. icon, fallback = PROF_FALLBACK, size = PIN } }
+end
 local KINDS = {
 	{ key = "vendor", name = ns.L["Vendors"], flag = "VENDOR", zoom = 8,
-		look = { texture = "Interface\\GossipFrame\\VendorGossipIcon", size = 14 } },
+		look = { texture = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
 	{ key = "food", name = ns.L["Food and drink"], flag = "FOOD", zoom = 8,
-		look = { texture = "Interface\\Minimap\\Tracking\\Food", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = 14 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Food", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
 	{ key = "reagent", name = ns.L["Reagents"], flag = "REAGENT", zoom = 8,
-		look = { texture = "Interface\\Minimap\\Tracking\\Reagents", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = 14 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Reagents", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
 	{ key = "repair", name = ns.L["Repair"], flag = "REPAIR", zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Repair", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Repair", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
 	{ key = "innkeeper", name = ns.L["Innkeepers"], flag = "INNKEEPER", zoom = 4,
-		look = { texture = "Interface\\Minimap\\Tracking\\Innkeeper", fallback = "Interface\\GossipFrame\\BinderGossipIcon", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Innkeeper", fallback = "Interface\\GossipFrame\\BinderGossipIcon", size = PIN } },
 	{ key = "banker", name = ns.L["Bankers"], flag = "BANKER", zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Banker", fallback = "Interface\\GossipFrame\\BankerGossipIcon", size = 16 } },
-	-- mailboxes: objects, not NPCs (Questie's list of them, Townsfolk.GetMailboxes)
+		look = { texture = "Interface\\Minimap\\Tracking\\Banker", fallback = "Interface\\GossipFrame\\BankerGossipIcon", size = PIN } },
 	{ key = "mailbox", name = ns.L["Mailboxes"], mailbox = true, zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Mailbox", fallback = "Interface\\Icons\\INV_Letter_15", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Mailbox", fallback = "Interface\\Icons\\INV_Letter_15", size = PIN } },
 	{ key = "auctioneer", name = ns.L["Auctioneers"], flag = "AUCTIONEER", zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Auctioneer", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Auctioneer", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
 	{ key = "stable", name = ns.L["Stable masters"], flag = "STABLEMASTER", zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\StableMaster", fallback = "Interface\\GossipFrame\\PetitionGossipIcon", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\StableMaster", fallback = "Interface\\GossipFrame\\PetitionGossipIcon", size = PIN } },
 	{ key = "classTrainer", name = ns.L["Class trainers"], flag = "TRAINER", class = true, zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Class", fallback = "Interface\\GossipFrame\\TrainerGossipIcon", size = 16 } },
-	{ key = "profTrainer", name = ns.L["Profession trainers"], flag = "TRAINER", profession = true, zoom = 8,
-		look = { texture = "Interface\\Minimap\\Tracking\\Profession", fallback = "Interface\\GossipFrame\\TrainerGossipIcon", size = 14 } },
-	-- spirit healers: the game ships no graveyard table for this client, so they come from
-	-- Questie's NPC spawns too (the Spirit Healer NPC; both factions use the same ones)
+		look = { texture = "Interface\\Minimap\\Tracking\\Class", fallback = "Interface\\GossipFrame\\TrainerGossipIcon", size = PIN } },
+	Prof("alchemy", "Alchemy", "Trade_Alchemy"),
+	Prof("blacksmithing", "Blacksmithing", "Trade_BlackSmithing"),
+	Prof("enchanting", "Enchanting", "Trade_Engraving"),
+	Prof("engineering", "Engineering", "Trade_Engineering"),
+	Prof("herbalism", "Herbalism", "Trade_Herbalism"),
+	Prof("leatherworking", "Leatherworking", "Trade_LeatherWorking"),
+	Prof("mining", "Mining", "Trade_Mining"),
+	Prof("skinning", "Skinning", "INV_Misc_Pelt_Wolf_01"),
+	Prof("tailoring", "Tailoring", "Trade_Tailoring"),
+	Prof("cooking", "Cooking", "INV_Misc_Food_15"),
+	Prof("firstaid", "First Aid", "Spell_Holy_SealOfSacrifice"),
+	Prof("fishing", "Fishing", "Trade_Fishing"),
 	{ key = "spirit", name = ns.L["Spirit healers"], ids = { [6491] = true }, zoom = 3, hostile = true,
-		look = { atlas = "poi-soulspiritghost", texture = "Interface\\Minimap\\ObjectIcons", size = 16 } },
+		look = { atlas = "poi-soulspiritghost", texture = "Interface\\Minimap\\ObjectIcons", size = PIN } },
 	{ key = "rare", name = ns.L["Rare mobs"], rare = true, zoom = 3, hostile = true,
 		look = { atlas = "VignetteKillElite", texture = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8", size = 18 } },
 }
+mod.PROFESSIONS = { "alchemy", "blacksmithing", "enchanting", "engineering", "herbalism", "leatherworking",
+	"mining", "skinning", "tailoring", "cooking", "firstaid", "fishing" }
+mod.REPAIR_LOOK = { texture = "Interface\\Minimap\\Tracking\\Repair", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN }
 mod.TOWNSFOLK = KINDS
 
 local d = mod.defaults
 d.townsfolkMaster = false       -- (1.2.39) one switch for every townsfolk type. Each type has its own checkbox too.
+d.townsfolkMinimap = true       -- (1.2.40) the same townsfolk on the minimap. Off hides only the minimap pins.
 d.townsfolk = {}
 for _, k in ipairs(KINDS) do d.townsfolk[k.key] = false end
 
@@ -59,6 +77,7 @@ local ENGLISH_CLASS_NAMES = {
 	SHAMAN = "Shaman", MAGE = "Mage", WARLOCK = "Warlock", DRUID = "Druid", DEATHKNIGHT = "Death Knight",
 	MONK = "Monk", DEMONHUNTER = "Demon Hunter", EVOKER = "Evoker",
 }
+mod.TOWNSFOLK_CLASSES = ENGLISH_CLASS_NAMES
 local told = false              -- said once this session that Questie isn't installed
 
 -- another addon's NPC database in Questie's shape (ValhallaAPI.RegisterTownsfolkProvider): { db, zones,
@@ -208,10 +227,12 @@ local function Build(kinds, done, forRare)
 			if uiMapID then l, r, t, b = S.Rect(uiMapID) end
 			if not l then NoteMiss(uiMapID or areaID)
 			else
-				NoteIcon(k.look)
+				local look = (info and info.icon == "repair") and mod.REPAIR_LOOK or k.look
+				NoteIcon(look)
+				if look.fallback then NoteIcon({ texture = look.fallback }) end
 				for _, c in ipairs(coords) do
 					if c[1] and c[1] >= 0 then
-						local pin = S.AddPin(set, l + c[1] / 100 * (r - l), t + c[2] / 100 * (b - t), k.look, info)
+						local pin = S.AddPin(set, l + c[1] / 100 * (r - l), t + c[2] / 100 * (b - t), look, info)
 						pin:SetScript("OnEnter", PinEnter)
 						pin:SetScript("OnLeave", GameTooltip_Hide)
 					end
@@ -286,6 +307,7 @@ local function Build(kinds, done, forRare)
 				local info = {
 					name = QDB.QueryNPCSingle(id, "name") or "?", sub = QDB.QueryNPCSingle(id, "subName"),
 					min = QDB.QueryNPCSingle(id, "minLevel"), max = QDB.QueryNPCSingle(id, "maxLevel"), rank = RANK[rank],
+					icon = QDB.QueryNPCSingle(id, "pinIcon"),
 				}
 				for _, k in ipairs(want) do
 					-- (not spirit healers or rare mobs: one NPC at many places, each a place of its own)
@@ -317,7 +339,19 @@ local function Build(kinds, done, forRare)
 end
 
 -- shows / hides each kind; builds the ones turned on for the first time
+-- (1.2.40) the old single "Profession trainers" box, on, turns every profession on once. The old key stays.
+function mod.MigrateTownsfolk()
+	local db = mod.db
+	if not db or type(db.townsfolk) ~= "table" or db.townsfolkProfMigrated then return end
+	if db.townsfolk.profTrainer then
+		for _, key in ipairs(mod.PROFESSIONS) do db.townsfolk[key] = true end
+	end
+	db.townsfolkProfMigrated = true
+end
+
 function mod:RefreshTownsfolk()
+	mod.MigrateTownsfolk()
+	if mod.UpdateTownsfolkMinimap then mod:UpdateTownsfolkMinimap() end
 	if not S.IsBuilt() then return end
 	local master = self.db.townsfolkMaster and true or false
 	local questieUp = _G.QuestieLoader ~= nil
@@ -366,7 +400,10 @@ end
 
 -- Valhalla's own Forever file, in the shape Build already reads (Questie's fields).
 local FLAGS = { vendor = 1, repair = 2, innkeeper = 4, banker = 8, auctioneer = 16, stable = 32,
-	classTrainer = 64, profTrainer = 64, food = 128, reagent = 256 }
+	classTrainer = 64, food = 128, reagent = 256,
+	alchemy = 512, blacksmithing = 1024, enchanting = 2048, engineering = 4096,
+	herbalism = 8192, leatherworking = 16384, mining = 32768, skinning = 65536,
+	tailoring = 131072, cooking = 262144, firstaid = 524288, fishing = 1048576 }
 function mod.InstallTownsfolkData(data)
 	local records = type(data) == "table" and data.records
 	if type(records) ~= "table" then return end
@@ -387,10 +424,11 @@ function mod.InstallTownsfolkData(data)
 				local e = byId[r.id]
 				if not e then
 					e = { name = r.name or "?", sub = r.title, faction = r.faction or "AH",
-						tag = r.trainerTag, flags = 0, spawns = {} }
+						tag = r.trainerTag, icon = r.icon, flags = 0, spawns = {} }
 					byId[r.id] = e
 					pointers[r.id] = true
 				end
+				if r.icon == "repair" then e.icon = "repair" end
 				local bitv = FLAGS[r.type]
 				if bitv then e.flags = bit.bor(e.flags, bitv) end
 				if r.type == "spirit" then spirit[r.id] = true end
@@ -408,7 +446,10 @@ function mod.InstallTownsfolkData(data)
 		db = {
 			NPCPointers = pointers,
 			npcFlags = { VENDOR = 1, REPAIR = 2, INNKEEPER = 4, BANKER = 8, AUCTIONEER = 16,
-				STABLEMASTER = 32, TRAINER = 64, FOOD = 128, REAGENT = 256 },
+				STABLEMASTER = 32, TRAINER = 64, FOOD = 128, REAGENT = 256,
+				ALCHEMY = 512, BLACKSMITHING = 1024, ENCHANTING = 2048, ENGINEERING = 4096,
+				HERBALISM = 8192, LEATHERWORKING = 16384, MINING = 32768, SKINNING = 65536,
+				TAILORING = 131072, COOKING = 262144, FIRSTAID = 524288, FISHING = 1048576 },
 			QueryNPCSingle = function(id, field)
 				local e = byId[id]
 				if not e then return nil end
@@ -418,6 +459,7 @@ function mod.InstallTownsfolkData(data)
 				if field == "spawns" then return e.spawns end
 				if field == "friendlyToFaction" then return e.faction or "" end
 				if field == "trainerTag" then return e.tag end
+				if field == "pinIcon" then return e.icon end
 				if field == "rank" then return 0 end
 			end,
 			QueryObjectSingle = function(id, field)

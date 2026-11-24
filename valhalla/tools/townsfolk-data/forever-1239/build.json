@@ -1,20 +1,33 @@
 {
-  "no_map": 0,
-  "npcs": 1036,
+  "no_map": 1,
+  "npcs": 1316,
   "placed": {
+    "alchemy": 52,
     "auctioneer": 33,
     "banker": 30,
+    "blacksmithing": 42,
     "classTrainer": 268,
+    "cooking": 31,
+    "enchanting": 31,
+    "engineering": 47,
+    "firstaid": 13,
+    "fishing": 53,
     "food": 68,
+    "herbalism": 27,
     "innkeeper": 48,
+    "leatherworking": 93,
     "mailbox": 50,
-    "profTrainer": 69,
+    "mining": 24,
     "reagent": 30,
     "repair": 1,
+    "skinning": 18,
     "spirit": 8,
     "stable": 48,
-    "vendor": 524
+    "tailoring": 55,
+    "vendor": 419
   },
   "records": 0,
-  "unmapped_zone": {}
+  "unmapped_zone": {
+    "Blackrock Spire (1583)": 1
+  }
 }

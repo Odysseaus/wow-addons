@@ -118,6 +118,7 @@ def main():
                 'id': rec['id'], 'name': rec['name'], 'title': rec.get('title') or '',
                 'faction': rec.get('faction') or 'AH', 'map': ui, 'x': x, 'y': y,
                 'type': rec['type'], 'trainerTag': rec.get('trainerTag') or '',
+                'icon': rec.get('icon') or '',
                 'kind': rec['kind'], 'walked': walked,
             })
     counts = {}
@@ -142,9 +143,10 @@ def main():
     ]
     for r in out_recs:
         tag = (', trainerTag = %s' % lua_str(r['trainerTag'])) if r['trainerTag'] else ''
-        lines.append('\t\t{ id = %d, name = %s, title = %s, faction = %s, map = %d, x = %s, y = %s, type = %s%s },' % (
+        icon = (', icon = %s' % lua_str(r['icon'])) if r.get('icon') else ''
+        lines.append('\t\t{ id = %d, name = %s, title = %s, faction = %s, map = %d, x = %s, y = %s, type = %s%s%s },' % (
             r['id'], lua_str(r['name']), lua_str(r['title']), lua_str(r['faction']),
-            r['map'], ('%g' % r['x']), ('%g' % r['y']), lua_str(r['type']), tag))
+            r['map'], ('%g' % r['x']), ('%g' % r['y']), lua_str(r['type']), tag, icon))
     lines.append('\t},')
     lines.append('}')
     open(OUT, 'w', encoding='utf-8').write('\n'.join(lines) + '\n')

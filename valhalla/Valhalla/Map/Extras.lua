@@ -354,10 +354,21 @@ local QUESTIE_BASE = 2015               -- the fixed frame level Questie's map i
 -- keeping their order among themselves (quest finishers in front ...)
 -- (questie: Questie's own order kept, from QUESTIE_BASE; another copy's icon just over the art)
 local function Lift(icon, questie)
+	-- (1.2.40) above Valhalla's pin root: townsfolk are root+3, quest badges root+5, so Questie sits at root+6
+	local base = S.PinRootLevel and S.PinRootLevel()
 	local top = S.artTop
-	if not top or not icon.GetFrameLevel or not icon.SetFixedFrameLevel then return end
+	if not icon.GetFrameLevel or not icon.SetFixedFrameLevel then return end
 	local level = icon:GetFrameLevel()
-	if level > top then return end
+	if base then
+		local want = base + 6
+		if questie then want = want + math.max(0, (tonumber(level) or 0) - QUESTIE_BASE) end
+		if level == want then return end
+		icon:SetFixedFrameLevel(false)
+		icon:SetFrameLevel(want)
+		icon:SetFixedFrameLevel(true)
+		return
+	end
+	if not top or level > top then return end
 	icon:SetFixedFrameLevel(false)
 	icon:SetFrameLevel(questie and level - QUESTIE_BASE + top + 1 or top + 1)
 	icon:SetFixedFrameLevel(true)

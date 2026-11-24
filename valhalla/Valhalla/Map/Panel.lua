@@ -258,10 +258,14 @@ local function Rows()
 		rows[#rows + 1] = row(L["Townsfolk"], "townsfolkMaster", Icon("INV_Misc_Note_01"),
 			function() return db.townsfolkMaster and true or false end,
 			function(v) db.townsfolkMaster = v and true or false mod:RefreshTownsfolk() end)
+		rows[#rows + 1] = row(L["Minimap"], "townsfolkMinimap", Icon("Spell_Nature_FarSight"),
+			function() return db.townsfolkMinimap ~= false end,
+			function(v) db.townsfolkMinimap = v and true or false if mod.UpdateTownsfolkMinimap then mod:UpdateTownsfolkMinimap() end end)
 		local groups = {
 			{ L["Services"], { "innkeeper", "repair", "mailbox", "banker", "auctioneer", "stable", "spirit" } },
 			{ L["Vendors"], { "vendor", "food", "reagent" } },
-			{ L["Trainers"], { "classTrainer", "profTrainer" } },
+			{ L["Professions"], mod.PROFESSIONS or {} },
+			{ L["Trainers"], { "classTrainer" } },
 		}
 		for _, g in ipairs(groups) do
 			rows[#rows + 1] = { g[1] }

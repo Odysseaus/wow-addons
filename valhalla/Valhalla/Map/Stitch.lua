@@ -2118,6 +2118,12 @@ end
 function S.PlayerShown() return arrow ~= nil and arrow:IsShown() end
 
 -- our arrow over every icon on the map, at frame level `level` (WorldMap.lua: with Blizzard's own)
+-- (1.2.40) the frame level of Valhalla's pin root, so other icons can sit above townsfolk (root + 3)
+-- without writing a level onto a Blizzard pin
+function S.PinRootLevel()
+	return pinRoot and pinRoot.GetFrameLevel and pinRoot:GetFrameLevel() or nil
+end
+
 function S.RaiseArrow(level)
 	local f = arrow and arrow:GetParent()
 	if f and f:GetFrameLevel() ~= level then f:SetFrameLevel(level) end

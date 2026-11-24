@@ -127,28 +127,33 @@ function mod:RefreshQuests()
 	local hl, hr, ht, hb
 	if host then hl, hr, ht, hb = S.Rect(host) end
 	local seen = {}
+	local live = {}
+	-- (1.2.40) the map underneath is included too, so its in-progress and complete badges sit on
+	-- Valhalla's quest set (level 5), above townsfolk (level 3). A quest already drawn on that map
+	-- is not drawn again from a neighbour. Blizzard's own pins are not moved or hidden.
 	for _, mapID in ipairs(Maps()) do
-		if mapID ~= host then
-			for _, q in ipairs(C_QuestLog.GetQuestsOnMap(mapID) or NONE) do
-				local id = q.questID
-				if id and q.x and q.y and not q.isMapIndicatorQuest and (not G("HaveQuestData") or G("HaveQuestData")(id))
-					and not (continent and id == tracked) then
-					local u, v = mod.ToWorld(mapID, q.x, q.y)
-					local key = u and (id .. ":" .. math.floor(u / SAME) .. ":" .. math.floor(v / SAME))
-					local onHost = u and hostQuests[id] and hl and u >= hl and u <= hr and v >= ht and v <= hb
-					if key and not seen[key] and not onHost then
-						seen[key] = true
-						local complete = C_QuestLog.IsComplete and C_QuestLog.IsComplete(id) or false
-						local pin = S.AddPin(set, u, v, BADGE, { id = id, complete = complete, map = mapID })
-						Mark(pin, complete)
-						pin:SetScript("OnEnter", Enter)
-						pin:SetScript("OnLeave", GameTooltip_Hide)
-						pin.OnClick = Click
-					end
+		for _, q in ipairs(C_QuestLog.GetQuestsOnMap(mapID) or NONE) do
+			local id = q.questID
+			if id and q.x and q.y and not q.isMapIndicatorQuest and (not G("HaveQuestData") or G("HaveQuestData")(id))
+				and not (continent and id == tracked) then
+				local u, v = mod.ToWorld(mapID, q.x, q.y)
+				local key = u and (id .. ":" .. math.floor(u / SAME) .. ":" .. math.floor(v / SAME))
+				local onHost = mapID ~= host and u and hostQuests[id] and hl and u >= hl and u <= hr and v >= ht and v <= hb
+				if key and not seen[key] and not onHost then
+					seen[key] = true
+					local complete = C_QuestLog.IsComplete and C_QuestLog.IsComplete(id) or false
+					local pin = S.AddPin(set, u, v, BADGE, { id = id, complete = complete, map = mapID })
+					Mark(pin, complete)
+					pin:SetScript("OnEnter", Enter)
+					pin:SetScript("OnLeave", GameTooltip_Hide)
+					pin.OnClick = Click
+					live[#live + 1] = { map = mapID, x = q.x, y = q.y, complete = complete, id = id }
 				end
 			end
 		end
 	end
+	mod.liveQuests = live
+	if mod.UpdateTownsfolkMinimap then mod:UpdateTownsfolkMinimap() end
 end
 
 -- (a burst of quest log updates: one refresh)

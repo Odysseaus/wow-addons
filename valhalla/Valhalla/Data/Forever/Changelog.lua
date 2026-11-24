@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.40", date = "2026-11-23", heads = { [1] = "New", [2] = "Changed", }, items = {
+		"|cff6e2c0aProfession trainers|r: each profession has its own checkbox, trainers and suppliers together, with that profession's icon. Journeyman, Expert, Artisan and Master trainers are included, so the tailor in Ironforge and in Stormwind is on the map. Blacksmithing supplies use the repair icon and sit with Blacksmithing. Weapon and armor merchants stay under Vendors and use the repair icon too.",
+		"Townsfolk icons match the flight master's size. The same pins show on the minimap (its own checkbox, on at first). Quest icons on the map draw above townsfolk.",
+	} },
 	{ version = "1.2.39", date = "2026-11-23", heads = { [1] = "New", }, items = {
 		"|cff6e2c0aTownsfolk|r: inns, repair, mailboxes, banks, auctioneers, stables, spirit healers, vendors, and class and profession trainers, from Wowhead WoW Forever. Each type has its own checkbox, and one Townsfolk switch turns them all on or off. Flight masters stay on their own switch. No other addon is required.",
 	} },
