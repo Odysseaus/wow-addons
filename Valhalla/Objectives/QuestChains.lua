@@ -394,7 +394,20 @@ function QC.OnUpdate()
 		if not ok then QC.lastError = tostring(err) end
 	end
 	-- (1.2.11: the zones in order, the Ready section; an error said once, never breaking the game's log)
+	-- (1.2.36: only while the quest log is open. Closed, the game's rows are left alone)
 	QC.ArrangeSoon()
+end
+
+-- the quest log open: beside the map, or over it full screen (the same frames WorldMap.lua's QuestLogShown uses)
+function QC.LogVisible()
+	local qm = rawget(_G, "QuestMapFrame")
+	if type(qm) == "table" then
+		local shown = qm.IsVisible or qm.IsShown
+		if type(shown) == "function" then return shown(qm) and true or false end
+	end
+	local wm = rawget(_G, "WorldMapFrame")
+	if type(wm) == "table" and type(wm.IsSidePanelShown) == "function" and wm:IsSidePanelShown() then return true end
+	return false
 end
 
 -- (1.2.26) the arrange writes the game's quest log rows' layoutIndex / topPadding and lays the log out again:
@@ -409,6 +422,7 @@ function QC.ArrangeSafe()
 	end
 end
 function QC.ArrangeSoon()
+	if not QC.LogVisible() then return end   -- (1.2.36)
 	return Defer("questlog:arrange", QC.ArrangeSafe)
 end
 
@@ -629,10 +643,40 @@ local function Note(parent, h)
 	return n
 end
 
+-- (1.2.38) this Arrange showed or hid a row, the Ready header, a Ready row, or a note: lay out even when
+-- the indices that remain would already sort into place. A hidden frame keeps no layoutIndex, so it cannot
+-- sit on the number we then give to a row that is still shown.
+local showedOrHid = false
+local function DropIndex(f)
+	if type(f) == "table" and rawget(f, "layoutIndex") ~= nil then f.layoutIndex = nil end
+end
+local function HideFromLayout(f)
+	if type(f) ~= "table" then return end
+	if f.IsShown and f:IsShown() then f:Hide() showedOrHid = true end
+	DropIndex(f)
+end
+local function ShowInLayout(f)
+	if type(f) ~= "table" then return end
+	if f.IsShown and not f:IsShown() then showedOrHid = true end
+	f:Show()
+end
+
 local function HideOurs()
-	if ours.header then ours.header:Hide() end
-	for _, r in ipairs(ours.rows) do r:Hide() end
-	for _, n in pairs(ours.notes) do n:Hide() end
+	if ours.header then HideFromLayout(ours.header) end
+	for _, r in ipairs(ours.rows) do HideFromLayout(r) end
+	for _, n in pairs(ours.notes) do HideFromLayout(n) end
+end
+
+-- the game folded this row's zone (QuestLogQuests_Update hid it): do not show it again
+local function ZoneFolded(row)
+	local idx = rawget(row, "questLogIndex")
+	local C = rawget(_G, "C_QuestLog")
+	if not (type(idx) == "number" and type(C) == "table" and C.GetInfo) then return false end
+	for i = idx, 1, -1 do
+		local info = Call(C.GetInfo, i)
+		if type(info) == "table" and info.isHeader then return info.isCollapsed and true or false end
+	end
+	return false
 end
 
 -- a ready quest's row: hidden with its objective lines and its quest icon (shown again when no longer)
@@ -650,18 +694,22 @@ local function SetRowShown(row, show)
 	if show then
 		if hiddenByUs[row] then
 			hiddenByUs[row] = nil
-			row:Show()
-			Each(function(f) if hiddenByUs[f] then hiddenByUs[f] = nil f:Show() end end)
+			if not ZoneFolded(row) then
+				ShowInLayout(row)
+				Each(function(f) if hiddenByUs[f] then hiddenByUs[f] = nil ShowInLayout(f) end end)
+			end
 		end
 	elseif row:IsShown() then
 		hiddenByUs[row] = true
-		row:Hide()
-		Each(function(f) if f:IsShown() then hiddenByUs[f] = true f:Hide() end end)
+		HideFromLayout(row)
+		Each(function(f) if f:IsShown() then hiddenByUs[f] = true HideFromLayout(f) end end)
 	end
 end
 
 -- after the game's update (and on our setting / collapse changes): the order, the Ready section
 function QC.Arrange()
+	showedOrHid = false
+	if not QC.LogVisible() then return false end   -- (1.2.36: queued, then the log closed)
 	local SF = rawget(_G, "QuestScrollFrame")
 	local contents = Contents()
 	if not (SF and contents and SF.headerFramePool and SF.titleFramePool and SF.headerFramePool.EnumerateActive) then return false end
@@ -682,7 +730,7 @@ function QC.Arrange()
 		end
 	end
 	for r in SF.titleFramePool:EnumerateActive() do
-		if rawget(r, "layoutIndex") and (r:IsShown() or hiddenByUs[r]) then
+		if r:IsShown() or (hiddenByUs[r] and rawget(r, "layoutIndex")) then
 			-- (a campaign's quests sit above the normal section: only rows under a zone header move)
 			rows[#rows + 1] = r
 		end
@@ -729,13 +777,13 @@ function QC.Arrange()
 		end
 		if allReady and not collapsed and left == 0 then
 			local n = Note(contents, g.head)
-			n:Show()
+			ShowInLayout(n)
 			used[n] = true
 			Add(n, "Quest")
 		end
 		for _, r in ipairs(g.rows) do if r:IsShown() then Add(r, "Quest") end end
 	end
-	for h, n in pairs(ours.notes) do if not used[n] then n:Hide() end end
+	for h, n in pairs(ours.notes) do if not used[n] then HideFromLayout(n) end end
 	-- the Ready section
 	local nShown = 0
 	if readyOn then
@@ -744,7 +792,7 @@ function QC.Arrange()
 		ShowTitle(hdr, L["Ready to Turn In (%d)"]:format(#ready))
 		if rawget(hdr, "valhallaNative") then pcall(hdr.UpdateCollapsedState, hdr, collapsed) end
 		hdr.collapsed = collapsed
-		hdr:Show()
+		ShowInLayout(hdr)
 		Add(hdr, "Header")
 		if not collapsed then
 			-- (by zone name, then as in the log)
@@ -765,7 +813,7 @@ function QC.Arrange()
 				local th = (r.Text.GetStringHeight and r.Text:GetStringHeight()) or 12
 				local sh = sub ~= "" and (((r.Sub.GetStringHeight and r.Sub:GetStringHeight()) or 12) + 3) or 4
 				r:SetHeight(8 + (tonumber(th) or 12) + sh + 6)
-				r:Show()
+				ShowInLayout(r)
 				Add(r, "Quest")
 				nShown = i
 				-- the chain button, as on the game's rows (Chain quest view on)
@@ -779,23 +827,38 @@ function QC.Arrange()
 				elseif buttons[r] then buttons[r]:Hide() end
 			end
 		end
-	elseif ours.header then ours.header:Hide() end
-	for i = nShown + 1, #ours.rows do ours.rows[i]:Hide() end
-	-- layoutIndex / topPadding (the game's own spacing for each pair), then the layout again
-	local changed = false
-	local prev = nil
+	elseif ours.header then HideFromLayout(ours.header) end
+	for i = nShown + 1, #ours.rows do HideFromLayout(ours.rows[i]) end
+	QC.lastSeq = seq
+	-- (1.2.38) lay out unless every shown frame already has the index and the padding we would write,
+	-- and this pass did not show or hide anything. A shared index is not a match.
+	local function PadAt(i, kind, prev)
+		if i == 1 then
+			if kind == "Header" then return firstPad end
+			return SPACE["None" .. kind] or 0
+		end
+		return SPACE[(prev or "") .. kind] or 0
+	end
+	local function Placed()
+		local prev
+		for i, s in ipairs(seq) do
+			local f = s.f
+			if not f:IsShown() then return false end
+			if rawget(f, "layoutIndex") ~= base + i - 1 then return false end
+			if rawget(f, "topPadding") ~= PadAt(i, s.kind, prev) then return false end
+			prev = s.kind
+		end
+		return true
+	end
+	if not showedOrHid and Placed() then return true end
+	local prev
 	for i, s in ipairs(seq) do
 		local f = s.f
-		local li = base + i - 1
-		local pad
-		if i == 1 then pad = (s.kind == "Header" and firstPad) or SPACE["None" .. s.kind] or 0
-		else pad = SPACE[prev .. s.kind] or 0 end
-		if rawget(f, "layoutIndex") ~= li then f.layoutIndex = li changed = true end
-		if rawget(f, "topPadding") ~= pad then f.topPadding = pad changed = true end
+		f.layoutIndex = base + i - 1
+		f.topPadding = PadAt(i, s.kind, prev)
 		prev = s.kind
 	end
-	QC.lastSeq = seq
-	if changed and type(contents.Layout) == "function" then pcall(contents.Layout, contents) end
+	if type(contents.Layout) == "function" then pcall(contents.Layout, contents) end
 	return true
 end
 
@@ -976,18 +1039,55 @@ end
 -- /valhalla chain coverage
 --------------------------------------------------------------------------------
 
+-- a quest in this character's log: chain (in one of this character's chains), noSeries (its Wowhead
+-- page was read and had no Series box), unread (not on Wowhead Forever's quest list), otherChain
+-- (on that list, but not this character's chain and not a page we read with no Series box).
+local NOTE = {
+	noSeries = ": no series on Wowhead",
+	unread = ": not on Wowhead Forever's list",
+	otherChain = ": another chain",
+}
+
+local function Status(id, none, forever, haveList)
+	if QC.Of(id) then return "chain" end
+	if none[id] then return "noSeries" end
+	if haveList and not forever[id] then return "unread" end
+	return "otherChain"
+end
+
 function QC.Coverage()
+	QC.Load()
 	local C = rawget(_G, "C_QuestLog")
 	local with, without, names = 0, 0, {}
-	local none = {}   -- quests whose Wowhead page was read and has no Series box
+	local none, forever, haveList = {}, {}, false
 	local data = ns.QuestChainData
-	for _, q in ipairs(type(data) == "table" and type(data.noSeries) == "table" and data.noSeries or {}) do none[q] = true end
+	if type(data) == "table" then
+		for _, q in ipairs(type(data.noSeries) == "table" and data.noSeries or {}) do none[q] = true end
+		if type(data.forever) == "table" then
+			haveList = true
+			for _, q in ipairs(data.forever) do forever[q] = true end
+		end
+	end
+	local saved = {}
 	local n = C and C.GetNumQuestLogEntries and Call(C.GetNumQuestLogEntries) or 0
 	for i = 1, n do
 		local info = Call(C.GetInfo, i)
 		if type(info) == "table" and not info.isHeader and info.questID and not info.isHidden then
-			if QC.Of(info.questID) then with = with + 1 else without = without + 1 names[#names + 1] = ("%s (%d)%s"):format(info.title or "?", info.questID, none[info.questID] and L[": no series on Wowhead"] or "") end
+			local status = Status(info.questID, none, forever, haveList)
+			saved[#saved + 1] = { id = info.questID, name = info.title or "?", status = status }
+			if status == "chain" then with = with + 1
+			else
+				without = without + 1
+				names[#names + 1] = ("%s (%d)%s"):format(info.title or "?", info.questID, NOTE[status] and L[NOTE[status]] or "")
+			end
 		end
+	end
+	if type(mod.char) == "table" then
+		local runs = mod.char.coverage
+		if type(runs) ~= "table" then runs = {} mod.char.coverage = runs end
+		local now = (type(time) == "function" and time()) or (os and os.time and os.time()) or 0
+		table.insert(runs, 1, { at = now, quests = saved })
+		while #runs > 3 do table.remove(runs) end
 	end
 	local meta = type(ns.QuestChainData) == "table" and ns.QuestChainData.meta or {}
 	local out = {

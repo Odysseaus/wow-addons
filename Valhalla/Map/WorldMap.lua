@@ -134,7 +134,8 @@ local function ScaleFor(mapID, zoom) return zoom * FitPx() / K(mapID) end
 local function FitZoom(mapID)
 	local W, H = S.Size()
 	local l, r, t, b = S.Rect(mapID)
-	return math.min(sc:GetWidth() / ((r - l) * W), sc:GetHeight() / ((b - t) * H)) / FitPx()
+	local z = math.min(sc:GetWidth() / ((r - l) * W), sc:GetHeight() / ((b - t) * H)) / FitPx()
+	return ns.Safe.Finite(z) and z > 0 and z or 1                 -- (1.2.34) the map 0 px across yet: 0 / 0
 end
 
 -- world point (normalized) <-> the current map's normalized point
@@ -150,8 +151,12 @@ end
 -- the view: world centre (normalized) and zoom
 local function View()
 	local mapID = map:GetMapID()
-	local u, v = ToWorld(mapID, sc:GetCurrentScrollX() or 0.5, sc:GetCurrentScrollY() or 0.5)
-	return u, v, ZoomFor(mapID, sc:GetCanvasScale())
+	local x, y = sc:GetCurrentScrollX() or 0.5, sc:GetCurrentScrollY() or 0.5
+	if not ns.Safe.Finite(x, y) then x, y = 0.5, 0.5 end          -- (1.2.34) a scroll left NaN: the map's middle
+	local u, v = ToWorld(mapID, x, y)
+	local zoom = ZoomFor(mapID, sc:GetCanvasScale())
+	if not ns.Safe.Finite(zoom) or zoom <= 0 then zoom = 1 end    -- (1.2.34) the map 0 px across yet
+	return u, v, zoom
 end
 
 -- puts the view at once (Blizzard's InstantPanAndZoom drifts the pan toward the old one)
@@ -175,6 +180,9 @@ local function Clocked(name, t0)
 end
 
 local function SetView(scale, x, y)
+	-- (1.2.34) never a view that isn't one: NaN or a zero scale, from a size of 0 while the map is laid out,
+	-- stuck the map on a blank view, every later view worked out from it NaN too
+	if not ns.Safe.Finite(scale, x, y) or scale <= 0 then return end
 	sc.currentScale, sc.targetScale, sc.zoomTarget = scale, scale, scale
 	sc.Child:SetScale(scale)
 	sc:CalculateScrollExtents()
