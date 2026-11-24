@@ -160,7 +160,7 @@ local MAP_TOGGLE = {
 	darkenColor = true, routes = true, foundOnly = true, colorMatch = true, desaturate = true,
 	unexplored = true, gapFills = true, maxZoom = true, chart = true, padMap = true,
 	townsfolkMaster = true, townsfolkMinimap = true, townsfolk = true,
-	townsfolkProfMigrated = true, townsfolkClassAll = true,
+	townsfolkProfMigrated = true, townsfolkClassAll = true, townsfolkSize = true,
 	allQuests = true, coords = true, zoneLevels = true, moveFade = true, mapFpsCap = true,
 	zoomHidePins = true, questFly = true, questFlySpeed = true, questFlyLanding = true,
 	questFlyShort = true, group = true, friends = true, friendsShare = true,

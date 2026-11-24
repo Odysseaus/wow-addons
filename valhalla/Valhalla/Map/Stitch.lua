@@ -848,7 +848,7 @@ function S.AddPin(set, u, v, look, data)
 	local size = look.size or 16
 	pin:SetParent(PinCell(set, u, v))
 	pin:SetSize(size, size)
-	pin:SetScale(S.iconScale or 1)           -- (the menu's Icon size: S.SetIconScale)
+	pin:SetScale((S.iconScale or 1) * (set.iconScale or 1))   -- (the menu's Icon size: S.SetIconScale; a set's own: S.SetPinSetScale)
 	pin:SetFrameLevel(set.frame:GetFrameLevel())
 	pin.anchor = Anchor(u * W, v * H)
 	pin:ClearAllPoints()
@@ -969,8 +969,15 @@ function S.SetIconScale(k)
 	if k == (S.iconScale or 1) then return end
 	S.iconScale = k
 	for _, set in pairs(sets) do
-		for _, pin in ipairs(set.pins) do pin:SetScale(k) end
+		for _, pin in ipairs(set.pins) do pin:SetScale(k * (set.iconScale or 1)) end
 	end
+end
+-- (1.2.47) one set's icons at `k` times the menu's Icon size (Townsfolk's Icon size: Townsfolk.lua). Our own pins only.
+function S.SetPinSetScale(set, k)
+	k = tonumber(k) or 1
+	if not set or k == (set.iconScale or 1) then return end
+	set.iconScale = k
+	for _, pin in ipairs(set.pins) do pin:SetScale((S.iconScale or 1) * k) end
 end
 
 function S.SetPlacesFrom(zoom)

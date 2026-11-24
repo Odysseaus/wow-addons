@@ -293,6 +293,18 @@ local function Rows()
 			end
 		end
 		if questie then rows[#rows + 1] = folk(L["Rare mobs"], "rare") end
+		-- (1.2.47) their icons' size on the world map, this character's: one of the three ticked, as a radio
+		if mod.TOWNSFOLK_SIZES and mod.SetTownsfolkSize then
+			rows[#rows + 1] = { L["Icon size on the world map"] }
+			local names = { large = L["Large"], medium = L["Medium"], small = L["Small"] }
+			for _, s in ipairs(mod.TOWNSFOLK_SIZES) do
+				rows[#rows + 1] = row(names[s.key], "townsfolkSize." .. s.key, Icon("INV_Misc_Spyglass_01"),
+					function() return mod.TownsfolkSize() == s.key end,
+					function(v)
+						if v then mod.SetTownsfolkSize(s.key) elseif mod.RefreshPanel then mod:RefreshPanel() end
+					end)
+			end
+		end
 	end
 	-- the look
 	-- (darkened or hidden; neither ticked: shown as they are. Darkened takes the colour-matched zones' land

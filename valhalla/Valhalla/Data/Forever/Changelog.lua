@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.47", date = "2026-11-24", heads = { [1] = "New", }, items = {
+		"|cff6e2c0aTownsfolk icon size|r: in the menu's Townsfolk section, Icon size on the world map: Large (as before), Medium or Small. This character's own choice, applied at once. The minimap's pins, quest icons, boats and dungeons keep their size.",
+	} },
 	{ version = "1.2.46", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
 		"Clicking a quest icon on the map works as in the quest log: it selects the quest, a second click clears it, Shift-click stops tracking it. The map stays where it is.",
 		"|cff6e2c0aMinimap|r: inns, banks, mailboxes, auctioneers, stable masters, repair, food, reagents and class trainers are shown by the game's own minimap tracking, never twice. Their checkboxes turn the game's tracking on and off, and the world map's pins follow them. Profession trainers have one tick for the minimap; suppliers, vendors, spirit healers and rares stay Valhalla's.",

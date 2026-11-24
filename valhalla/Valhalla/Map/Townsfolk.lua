@@ -74,6 +74,31 @@ d.townsfolkMaster = false       -- (1.2.39) one switch for every townsfolk type.
 d.townsfolkMinimap = true       -- (1.2.40) the same townsfolk on the minimap. Off hides only the minimap pins.
 d.townsfolk = {}
 for _, k in ipairs(KINDS) do d.townsfolk[k.key] = false end
+-- (1.2.47) the townsfolk icons' size on the world map, this character's: Large (as before), Medium, Small.
+-- Each times the menu's Icon size. Not the minimap's pins, quest icons, boats or dungeons.
+d.townsfolkSize = "large"
+mod.TOWNSFOLK_SIZES = { { key = "large", scale = 1 }, { key = "medium", scale = 0.8 }, { key = "small", scale = 0.65 } }
+local SIZE_SCALE = {}
+for _, s in ipairs(mod.TOWNSFOLK_SIZES) do SIZE_SCALE[s.key] = s.scale end
+function mod.TownsfolkSize()
+	local v = mod.db and mod.db.townsfolkSize
+	return SIZE_SCALE[v] and v or "large"
+end
+function mod.TownsfolkScale() return SIZE_SCALE[mod.TownsfolkSize()] end
+-- every townsfolk set's pins at the chosen size, live
+function mod.ApplyTownsfolkSize()
+	local k = mod.TownsfolkScale()
+	for _, kind in ipairs(KINDS) do
+		local set = S.GetPinSet and S.GetPinSet("tf_" .. kind.key)
+		if set and S.SetPinSetScale then S.SetPinSetScale(set, k) end
+	end
+end
+function mod.SetTownsfolkSize(v)
+	if not SIZE_SCALE[v] or not mod.db then return end
+	mod.db.townsfolkSize = v
+	mod.ApplyTownsfolkSize()
+	if mod.RefreshPanel then mod:RefreshPanel() end
+end
 
 local built = {}                -- kind key -> true once its pins exist
 local building = false
@@ -277,6 +302,7 @@ local function Build(kinds, done, forRare)
 	-- `walker`: one NPC's, a path walked taken as one place (Middle)
 	local function Pins(k, spawns, info, walker)
 		local set = S.PinSet("tf_" .. k.key, k.zoom, 3)
+		set.iconScale = mod.TownsfolkScale()   -- (1.2.47: the pins made now at Townsfolk's Icon size)
 		for areaID, coords in pairs(spawns) do
 			if walker and #coords > WANDER then coords = Middle(coords) end
 			local uiMapID = ZoneDB:GetUiMapIdByAreaId(areaID)
@@ -430,6 +456,7 @@ function mod:RefreshTownsfolk()
 		local set = S.GetPinSet("tf_" .. k.key)
 		if set then S.SetPinSetOn(set, on and true or false) end
 	end
+	mod.ApplyTownsfolkSize()
 	-- one pass of townsfolk, then a later pass for rares (they read Questie, not our file)
 	local rest = {}
 	for _, k in ipairs(todo) do if not k.rare then rest[#rest + 1] = k end end
