@@ -133,21 +133,24 @@ local migrated = true
 for _, key in ipairs(mod.PROFESSIONS) do if mod.db.townsfolk[key] ~= true then migrated = false end end
 ok(migrated and mod.db.townsfolk.profTrainer == true and mod.db.townsfolkProfMigrated == true, "profTrainer on turns all twelve professions on once and keeps the old key")
 
-print("== 4. (1.2.41) every class trainer, profession masks")
+print("== 4. (1.2.41) every class trainer; (1.2.43) profession pictures, no mask")
 function UnitClass() return "Warlock", "WARLOCK" end
 function UnitFactionGroup() return "Alliance" end
 mod.db.townsfolkMaster = true
 for _, k in ipairs(mod.TOWNSFOLK) do mod.db.townsfolk[k.key] = false end
 mod.db.townsfolk.classTrainer = true
-local masked, sized, fallback = true, true, true
+local shaped, sized, fallback, noMask = 0, true, true, true
 for _, k in ipairs(mod.TOWNSFOLK) do
-	if k.look and k.look.mask then
-		if not k.look.mask:find("TownsfolkMasks\\" .. k.key .. ".tga", 1, true) then masked = false end
+	if k.look and k.look.square then
+		shaped = shaped + 1
+		if k.look.mask then noMask = false end
 		if k.look.size ~= 22 then sized = false end
 		if k.look.fallback ~= "Interface\\Minimap\\Tracking\\Profession" then fallback = false end
+		if not k.look.texture:find("Media\\Townsfolk\\" .. k.key .. ".tga", 1, true) then shaped = -100 end
+		if not k.look.square:find("Interface\\Icons\\", 1, true) then shaped = -100 end
 	end
 end
-ok(masked and sized and fallback, "each profession keeps size 22, the Profession fallback, and its own mask")
+ok(shaped == 12 and sized and fallback and noMask, "twelve professions: shaped file, square icon, Profession fallback, no mask", shaped)
 added = 0
 mod.InstallTownsfolkData({ records = {
 	{ id = 1901, name = "Kelstrum", title = "Warrior Trainer", faction = "A", type = "classTrainer", trainerTag = "WARRIOR", map = 1455, x = 67, y = 88 },
@@ -163,35 +166,57 @@ mod.db.townsfolkClassAll = nil
 mod.MigrateTownsfolk()
 mod:RefreshTownsfolk()
 ok(added == drawn + 5, "clearing the old class set once draws every class again", added - drawn)
+local function Gate(fn)
+	local prev = CreateFrame
+	CreateFrame = function(...)
+		local f = prev(...)
+		local make = f.CreateTexture
+		f.CreateTexture = function(...)
+			local t = make(...)
+			t.SetTexture = function(_, path) return fn(path) end
+			return t
+		end
+		return f
+	end
+	return function() CreateFrame = prev end
+end
+local tailorLook
+for _, k in ipairs(mod.TOWNSFOLK) do if k.key == "tailoring" then tailorLook = k.look end end
 for _, k in ipairs(mod.TOWNSFOLK) do mod.db.townsfolk[k.key] = false end
 mod.db.townsfolk.tailoring = true
+local restore = Gate(function(path) if path:find("Media\\Townsfolk\\", 1, true) then return false end return true end)
 added = 0
 mod.InstallTownsfolkData({ records = {
 	{ id = 5153, name = "Jormund", title = "Expert Tailor", faction = "A", type = "tailoring", map = 1455, x = 43, y = 29 },
 } })
-ok(ValhallaDB.townsfolkIcons["Interface\\Icons\\Trade_Tailoring"] == "square", "no SetMask: the square icon is what was used",
-	ValhallaDB.townsfolkIcons["Interface\\Icons\\Trade_Tailoring"])
-local plain = CreateFrame
-CreateFrame = function(...)
-	local f = plain(...)
-	local make = f.CreateTexture
-	f.CreateTexture = function(...)
-		local t = make(...)
-		t.SetMask = function() return true end
-		t.GetParent = function() return f end
-		return t
-	end
-	f.CreateMaskTexture = function() return { SetAllPoints = function() end, SetTexture = function() return true end } end
-	return f
-end
+restore()
+ok(ValhallaDB.townsfolkIcons[tailorLook.texture] == tailorLook.square,
+	"shaped file missing: the square icon is what was used", ValhallaDB.townsfolkIcons[tailorLook.texture])
+local smith
+for _, k in ipairs(mod.TOWNSFOLK) do if k.key == "blacksmithing" then smith = k.look end end
 mod.db.townsfolk.tailoring = false
-mod.db.townsfolk.alchemy = true
+mod.db.townsfolk.blacksmithing = true
+restore = Gate(function() return true end)
 mod.InstallTownsfolkData({ records = {
-	{ id = 1, name = "Alchemist", title = "Expert Alchemist", faction = "A", type = "alchemy", map = 1455, x = 40, y = 30 },
+	{ id = 2, name = "Smith", title = "Expert Blacksmith", faction = "A", type = "blacksmithing", map = 1455, x = 40, y = 30 },
 } })
-ok(ValhallaDB.townsfolkIcons["Interface\\Icons\\Trade_Alchemy"] == "mask", "SetMask: the silhouette path is what was used",
-	ValhallaDB.townsfolkIcons["Interface\\Icons\\Trade_Alchemy"])
-CreateFrame = plain
+restore()
+ok(ValhallaDB.townsfolkIcons[smith.texture] == smith.texture, "shaped file present: that file is what was used",
+	ValhallaDB.townsfolkIcons[smith.texture])
+local eng
+for _, k in ipairs(mod.TOWNSFOLK) do if k.key == "engineering" then eng = k.look end end
+mod.db.townsfolk.blacksmithing = false
+mod.db.townsfolk.engineering = true
+restore = Gate(function(path)
+	if path:find("Media\\Townsfolk\\", 1, true) or path:find("Interface\\Icons\\", 1, true) then return false end
+	return true
+end)
+mod.InstallTownsfolkData({ records = {
+	{ id = 3, name = "Eng", title = "Expert Engineer", faction = "A", type = "engineering", map = 1455, x = 40, y = 30 },
+} })
+restore()
+ok(ValhallaDB.townsfolkIcons[eng.texture] == eng.fallback, "square icon missing too: the Profession symbol is what was used",
+	ValhallaDB.townsfolkIcons[eng.texture])
 
 ns.Safe = { Call = function(fn, ...) return fn(...) end, IsSecret = function() return false end }
 Minimap = { GetWidth = function() return 140 end, GetZoom = function() return 0 end }
@@ -199,7 +224,8 @@ function GetCVar(n) return n == "rotateMinimap" and "0" or "0" end
 function IsIndoors() return false end
 C_Map = C_Map or {}
 function C_Map.GetBestMapForUnit() return 1453 end
-function C_Map.GetPlayerMapPosition() return { GetXY = function() return 0.5, 0.5 end } end
+local playerMX, playerMY = 0.5, 0.5
+function C_Map.GetPlayerMapPosition() return { x = playerMX, y = playerMY, GetXY = function() return playerMX, playerMY end } end
 function C_Map.GetWorldPosFromMapPos(mapID, vec)
 	local x, y = 0, 0
 	if vec.GetXY then x, y = vec:GetXY() elseif vec.x then x, y = vec.x, vec.y end
@@ -255,28 +281,42 @@ ns.TownsfolkData = { records = {
 mod.liveQuests = {}
 mod.db.townsfolkMinimap = true
 mod.db.townsfolk.innkeeper = true
-local pe, pn = 500, 500
-function UnitPosition() return pn, pe, 0, 0 end
+playerMX, playerMY = 0.5, 0.5
 mod.db.townsfolk.vendor = true
 mod:UpdateTownsfolkMinimap()
 mod.db.townsfolk.vendor = false
 mod:UpdateTownsfolkMinimap()
 local eastX = lastX
-pe = 600
+playerMX = 0.6
 mod:UpdateTownsfolkMinimap()
 ok(type(eastX) == "number" and type(lastX) == "number" and lastX < eastX, "walking east moves the pin the other way", tostring(eastX) .. " -> " .. tostring(lastX))
-pe, pn = 500, 300
+playerMX, playerMY = 0.5, 0.3
 mod:UpdateTownsfolkMinimap()
 local northY = lastY
-pn = 400
+playerMY = 0.4
 mod:UpdateTownsfolkMinimap()
 ok(type(northY) == "number" and type(lastY) == "number" and lastY < northY, "walking north moves the pin the other way", tostring(northY) .. " -> " .. tostring(lastY))
-pe, pn = 500, 500
+playerMX, playerMY = 0.5, 0.5
 function GetCVar(n) return n == "rotateMinimap" and "1" or "0" end
 function GetPlayerFacing() return -math.pi / 2 end
 mod:UpdateTownsfolkMinimap()
 ok(type(lastY) == "number" and lastY > 20 and math.abs(lastX) < 1, "facing east, a pin to the east sits above the arrow", tostring(lastX) .. "," .. tostring(lastY))
 function GetCVar() return "0" end
+-- continent ids disagree, and the yard width is not real: a pin on this map is still drawn
+function C_Map.GetWorldPosFromMapPos(mapID, vec)
+	local x, y = 0, 0
+	if vec.GetXY then x, y = vec:GetXY() elseif vec.x then x, y = vec.x, vec.y end
+	return (x < 0.5) and 3 or 8, { x = x, y = y }
+end
+playerMX, playerMY = 0.5, 0.5
+shows = 0
+mod:UpdateTownsfolkMinimap()
+ok(shows == 1, "no real yard width, and the corners disagree: the pin on this map is still drawn", shows)
+function C_Map.GetWorldPosFromMapPos(mapID, vec)
+	local x, y = 0, 0
+	if vec.GetXY then x, y = vec:GetXY() elseif vec.x then x, y = vec.x, vec.y end
+	return 0, { x = x * 1000, y = y * 1000 }
+end
 
 -- host map quests are drawn
 function InCombatLockdown() return false end
@@ -293,22 +333,48 @@ mod.PadWaits = function() return false end
 mod.ToWorld = function(_, x, y) return x, y end
 mod.db.allQuests = true
 S.Look = function() end
-local questPins, questSize, markSize = 0
+S.iconScale = 2
+local questPins, badgeSize, markSize, pinScale, poiAtlas = 0
 local oldAdd = S.AddPin
 S.AddPin = function(set, ...)
 	questPins = questPins + 1
 	local look = select(3, ...)
-	questSize = look and look.size
+	poiAtlas = look and look.atlas
 	local pin = oldAdd(set, ...)
+	pin.SetScale = function(self, s) pinScale = s end
+	pin.SetSize = function(_, w) badgeSize = w end
+	pin.Icon = { ClearAllPoints = function() end, SetPoint = function() end, SetSize = function(_, w) markSize = w end }
 	pin.CreateTexture = function()
-		return { SetPoint = function() end, SetSize = function(_, w) markSize = w end, Show = function() end }
+		return { SetPoint = function() end, SetSize = function() end, Show = function() end }
 	end
 	return pin
 end
+local prevCreate = CreateFrame
+CreateFrame = function(kind, name, parent, template)
+	if template == "ObjectiveTrackerPOIButtonTemplate" or template == "POIButtonTemplate" then
+		local display = { w = 18, atlas = "UI-QuestPoi-Progress", GetWidth = function(self) return self.w end, GetAtlas = function(self) return self.atlas end }
+		return {
+			Display = display, Hide = function() end,
+			GetWidth = function() return 24 end,
+			SetStyle = function(self, style) self.style = style end,
+			UpdateButtonStyle = function(self)
+				self.Display.atlas = self.style == 3 and "UI-QuestPoi-Bang" or "UI-QuestPoi-Progress"
+				self.Display.w = 18
+			end,
+		}
+	end
+	return prevCreate(kind, name, parent, template)
+end
+POIButtonUtil = { Style = { QuestInProgress = 5, QuestComplete = 3 } }
 assert(loadfile(root .. "Map/Quests.lua"))("Valhalla", ns)
 mod:RefreshQuests()
 ok(questPins == 1, "a quest on the host map is drawn above the townsfolk layer", questPins)
-ok(questSize == 20 and markSize == 20, "the quest badge and its in-progress mark are 20, the quest log's size", tostring(questSize) .. " " .. tostring(markSize))
+ok(badgeSize == 20 and markSize and math.abs(markSize / badgeSize - 18 / 24) < 0.001,
+	"the mark is the same share of the badge as the log button's display", tostring(markSize) .. "/" .. tostring(badgeSize))
+ok(poiAtlas == "UI-QuestPoi-Bang" and pinScale == 1, "one combined atlas, and the Icon size slider does not scale it", tostring(poiAtlas) .. " " .. tostring(pinScale))
+ok(ValhallaDB.questPoi and ValhallaDB.questPoi.button == 24 and ValhallaDB.questPoi.complete == 18 and ValhallaDB.questPoi.inProgress == 18,
+	"the measured log widths are saved", ValhallaDB.questPoi and ValhallaDB.questPoi.button)
+CreateFrame = prevCreate
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

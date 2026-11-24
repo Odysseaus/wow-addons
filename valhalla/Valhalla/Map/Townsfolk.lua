@@ -14,11 +14,13 @@ local mod = ns:GetModule("worldmap")
 -- (1.2.40) every townsfolk icon is the learned flight master's size (22). Rares stay 18.
 local PIN = 22
 local PROF_FALLBACK = "Interface\\Minimap\\Tracking\\Profession"
-local MASK = "Interface\\AddOns\\Valhalla\\Media\\TownsfolkMasks\\"
+local PROF_ART = (ns.Media and ns.Media.path or "Interface\\AddOns\\Valhalla\\Media\\") .. "Townsfolk\\"
+-- (1.2.43) our own shaped picture, when that file is in the addon. It is not, yet: the square
+-- spell icon is used, and the profession symbol if that is missing too. No mask.
 local function Prof(key, name, icon)
 	return { key = key, name = ns.L[name], flag = key:upper(), zoom = 8,
-		look = { texture = "Interface\\Icons\\" .. icon, fallback = PROF_FALLBACK, size = PIN,
-			mask = MASK .. key .. ".tga" } }
+		look = { texture = PROF_ART .. key .. ".tga", square = "Interface\\Icons\\" .. icon,
+			fallback = PROF_FALLBACK, size = PIN } }
 end
 local KINDS = {
 	{ key = "vendor", name = ns.L["Vendors"], flag = "VENDOR", zoom = 8,
@@ -195,56 +197,22 @@ local function NoteIcon(look)
 		end
 		if f and f.Hide then f:Hide() end
 	end
-	-- (1.2.41) a profession mask, when the client can apply it. Otherwise the square icon. The path is saved.
-	if look.mask then
-		local how = "square"
-		if ok and CreateFrame then
+	-- (1.2.43) which picture loaded: our shaped file, the square icon, or the profession symbol
+	if look.square then
+		local function loads(path)
+			if not path or not CreateFrame then return false end
 			local f = CreateFrame("Frame")
-			local tex = f and f.CreateTexture and f:CreateTexture()
-			if tex and mod.MaskTownsfolk and mod.MaskTownsfolk(tex, look) then how = "mask" end
+			local t = f and f.CreateTexture and f:CreateTexture()
+			local good, res = false, nil
+			if t and t.SetTexture then good, res = pcall(t.SetTexture, t, path) end
 			if f and f.Hide then f:Hide() end
+			return good and res ~= false
 		end
-		icons[key] = how
+		local used = (loads(look.texture) and look.texture) or (loads(look.square) and look.square) or (loads(look.fallback) and look.fallback)
+		icons[key] = used or false
 	else
 		icons[key] = ok and true or false
 	end
-end
-
--- the profession silhouette (Media/TownsfolkMasks). SetMask, or a mask texture on the icon's parent.
--- False: the caller keeps the square icon. The game's own Interface\Icons texture is what shows through.
-function mod.MaskTownsfolk(tex, look)
-	local path = type(look) == "table" and look.mask
-	if not (tex and path) then return false end
-	local function loads(file)
-		if not CreateFrame then return false end
-		local f = CreateFrame("Frame")
-		local t = f and f.CreateTexture and f:CreateTexture()
-		local good, res = false, nil
-		if t and t.SetTexture then good, res = pcall(t.SetTexture, t, file) end
-		if f and f.Hide then f:Hide() end
-		return good and res ~= false
-	end
-	if not loads(path) then return false end
-	if tex.SetMask then
-		local ok = pcall(tex.SetMask, tex, path)
-		if ok then return true end
-	end
-	local parent = tex.GetParent and tex:GetParent()
-	if not (parent and parent.CreateMaskTexture and tex.AddMaskTexture) then return false end
-	if not tex.valhallaMask then
-		local ok, mask = pcall(parent.CreateMaskTexture, parent)
-		if not (ok and mask) then return false end
-		tex.valhallaMask = mask
-	end
-	local mask = tex.valhallaMask
-	if not (mask.SetAllPoints and mask.SetTexture) then return false end
-	mask:SetAllPoints(tex)
-	if not pcall(mask.SetTexture, mask, path) then return false end
-	if not tex.valhallaMasked then
-		if not pcall(tex.AddMaskTexture, tex, mask) then return false end
-		tex.valhallaMasked = true
-	end
-	return true
 end
 
 local function Build(kinds, done, forRare)

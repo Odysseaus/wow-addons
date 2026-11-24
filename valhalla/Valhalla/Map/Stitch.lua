@@ -750,28 +750,47 @@ function S.PinSet(key, minZoom, level)
 	return set
 end
 
--- sets a texture from a look: { atlas = } or { texture =, coords = }; an atlas this
--- client lacks falls back to the texture, a missing texture to `fallback`
+-- sets a texture from a look: { atlas = } or { texture =, square =, fallback =, coords = };
+-- an atlas this client lacks falls back through the textures. A mask is cleared before any
+-- tex coord is set: Forever refuses SetTexCoord while one remains.
 local function Look(tex, look)
+	local function masked()
+		if tex.GetNumMaskTextures then
+			local n = tex:GetNumMaskTextures()
+			if type(n) == "number" and n > 0 then return true end
+		end
+		return tex.valhallaMasked and true or false
+	end
+	if masked() then
+		if tex.GetNumMaskTextures and tex.GetMaskTexture and tex.RemoveMaskTexture then
+			local n = tex:GetNumMaskTextures()
+			if type(n) == "number" then
+				for i = n, 1, -1 do
+					local mask = tex:GetMaskTexture(i)
+					if mask then pcall(tex.RemoveMaskTexture, tex, mask) end
+				end
+			end
+		end
+		if tex.SetMask then pcall(tex.SetMask, tex, nil) end
+		tex.valhallaMasked, tex.valhallaMask = nil, nil
+	end
 	tex:SetTexCoord(0, 1, 0, 1)
 	tex:SetVertexColor(1, 1, 1, 1)
 	if look.atlas and (not C_Texture or not C_Texture.GetAtlasInfo or C_Texture.GetAtlasInfo(look.atlas)) then
 		tex:SetAtlas(look.atlas)
 	else
-		local ok = tex:SetTexture(look.texture or look.fallback or "Interface\\Minimap\\ObjectIcons")
-		if ok == false and look.fallback then tex:SetTexture(look.fallback) end
-		if look.coords then tex:SetTexCoord(unpack(look.coords)) end
+		local used
+		for _, path in ipairs({ look.texture, look.square, look.fallback, "Interface\\Minimap\\ObjectIcons" }) do
+			if path then
+				local ok = tex:SetTexture(path)
+				if ok ~= false then used = path break end
+			end
+		end
+		if look.coords and used == look.texture then tex:SetTexCoord(unpack(look.coords)) end
 	end
 	if look.color then tex:SetVertexColor(unpack(look.color)) end
 	tex:SetRotation(look.rotation or 0)
-	-- (1.2.41) a profession's own silhouette over the game's icon. No mask: the square icon stays.
-	local masked = false
-	if look.mask then
-		local wm = ns.GetModule and ns:GetModule("worldmap")
-		if wm and wm.MaskTownsfolk then masked = wm.MaskTownsfolk(tex, look) and true or false end
-		if not masked and tex.SetMask then pcall(tex.SetMask, tex, nil) end
-	end
-	return masked
+	return false
 end
 S.Look = Look
 

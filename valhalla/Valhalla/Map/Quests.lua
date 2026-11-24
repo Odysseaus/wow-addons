@@ -16,9 +16,10 @@ local function G(name) return _G[name] end
 
 mod.defaults.allQuests = true   -- the quests in your log from every zone (off: Blizzard's, the zone's own map only)
 
-local BADGE = { atlas = "UI-QuestPoi-QuestNumber", texture = "Interface\\GossipFrame\\ActiveQuestIcon", size = 20 }
-local IN_PROGRESS = { atlas = "Quest-In-Progress-Icon-yellow", texture = "Interface\\GossipFrame\\IncompleteQuestIcon" }
-local TURN_IN = { atlas = "UI-QuestPoi-QuestBangTurnIn", texture = "Interface\\GossipFrame\\ActiveQuestIcon" }
+-- the outer size already matches the quest log. One texture, the log button's own picture,
+-- at the same share of that button as the log's display. Not a number plate with a small mark on top.
+local POI_OUTER = 20
+local POI_TEMPLATES = { "ObjectiveTrackerPOIButtonTemplate", "POIButtonTemplate" }
 local SAME = 0.002              -- world (normalized): one quest's icons this close are one
 local EVERY = 0.5               -- seconds: the quest log changes in bursts
 local NONE = {}
@@ -93,20 +94,85 @@ local function Click(pin)
 	elseif not InCombatLockdown() then Details() end
 end
 
--- the state mark over a pin's badge (made once: pins are pooled, and this set's are only ever quests)
-local function Mark(pin, complete)
-	if not pin.questMark then
-		pin.questMark = pin:CreateTexture(nil, "OVERLAY")
-		pin.questMark:SetPoint("CENTER")
+-- once: the log button's width, its display's width, and the atlas that style paints
+local function AtlasOf(tex)
+	if tex and tex.GetAtlas then
+		local name = tex:GetAtlas()
+		if type(name) == "string" and name ~= "" then return name end
 	end
-	local m = pin.questMark
-	m:SetSize(BADGE.size, BADGE.size)
-	S.Look(m, complete and TURN_IN or IN_PROGRESS)
-	m:Show()
+end
+
+local function ReadStyle(button, style)
+	if not (button and button.SetStyle and style) then return end
+	pcall(button.SetStyle, button, style)
+	if button.UpdateButtonStyle then pcall(button.UpdateButtonStyle, button) end
+	local display = button.Display or button.Icon
+	local atlas = AtlasOf(display)
+	if not atlas and button.GetNormalTexture then atlas = AtlasOf(button:GetNormalTexture()) end
+	local bw = tonumber(button.GetWidth and button:GetWidth()) or 0
+	local dw = tonumber(display and display.GetWidth and display:GetWidth()) or 0
+	return bw, dw, atlas
+end
+
+local function MeasureQuestPoi()
+	if mod.questPoiInfo then return mod.questPoiInfo end
+	local info = {
+		button = 0, inProgress = 0, complete = 0, ratioIn = 1, ratioDone = 1,
+		inProgressAtlas = "Quest-In-Progress-Icon-yellow", completeAtlas = "UI-QuestPoi-QuestBang",
+	}
+	local button
+	if CreateFrame then
+		for _, template in ipairs(POI_TEMPLATES) do
+			local ok, made = pcall(CreateFrame, "Button", nil, UIParent, template)
+			if ok and type(made) == "table" and made.SetStyle then button = made break end
+		end
+	end
+	if button then
+		if button.Hide then button:Hide() end
+		local styles = rawget(_G, "POIButtonUtil")
+		styles = styles and styles.Style or {}
+		local bw, dw, atlas = ReadStyle(button, styles.QuestInProgress or 5)
+		if bw and bw > 0 then info.button = bw end
+		if dw and dw > 0 then info.inProgress = dw end
+		if atlas then info.inProgressAtlas = atlas end
+		if bw and dw and bw > 0 and dw > 0 then info.ratioIn = dw / bw end
+		local bw2, dw2, atlas2 = ReadStyle(button, styles.QuestComplete or 3)
+		if bw2 and bw2 > 0 then info.button = bw2 end
+		if dw2 and dw2 > 0 then info.complete = dw2 end
+		if atlas2 then info.completeAtlas = atlas2 end
+		if bw2 and dw2 and bw2 > 0 and dw2 > 0 then info.ratioDone = dw2 / bw2 end
+	end
+	mod.questPoiInfo = info
+	local db = rawget(_G, "ValhallaDB")
+	if type(db) == "table" then db.questPoi = info end
+	return info
+end
+
+local function PoiLook(complete, info)
+	return {
+		atlas = complete and info.completeAtlas or info.inProgressAtlas,
+		texture = complete and "Interface\\GossipFrame\\ActiveQuestIcon" or "Interface\\GossipFrame\\IncompleteQuestIcon",
+		size = POI_OUTER,
+	}
+end
+
+-- one picture, the share of the badge the log's display uses. The Icon size slider does not apply.
+local function FitQuest(pin, complete, info)
+	local ratio = complete and info.ratioDone or info.ratioIn
+	if type(ratio) ~= "number" or ratio <= 0 then ratio = 1 end
+	pin:SetScale(1)
+	pin:SetSize(POI_OUTER, POI_OUTER)
+	if pin.Icon then
+		pin.Icon:ClearAllPoints()
+		pin.Icon:SetPoint("CENTER")
+		pin.Icon:SetSize(POI_OUTER * ratio, POI_OUTER * ratio)
+	end
+	if pin.questMark and pin.questMark.Hide then pin.questMark:Hide() end
 end
 
 function mod:RefreshQuests()
 	dirty = false
+	local poi = MeasureQuestPoi()
 	if not set and S.IsBuilt() then set = S.PinSet("quests", 1, 5) end   -- (built as the map first opens)
 	if not set then return end
 	S.ClearPinSet(set)
@@ -142,8 +208,8 @@ function mod:RefreshQuests()
 				if key and not seen[key] and not onHost then
 					seen[key] = true
 					local complete = C_QuestLog.IsComplete and C_QuestLog.IsComplete(id) or false
-					local pin = S.AddPin(set, u, v, BADGE, { id = id, complete = complete, map = mapID })
-					Mark(pin, complete)
+					local pin = S.AddPin(set, u, v, PoiLook(complete, poi), { id = id, complete = complete, map = mapID })
+					FitQuest(pin, complete, poi)
 					pin:SetScript("OnEnter", Enter)
 					pin:SetScript("OnLeave", GameTooltip_Hide)
 					pin.OnClick = Click

@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.43", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
+		"Profession icons no longer use a mask. They stay the square icon until their own pictures are added.",
+		"Quest icons on the map use the same picture as the quest log, filling the badge the way the log does.",
+		"Townsfolk on the minimap stay on the place you are looking at. Find me no longer errors after a profession icon has been drawn.",
+	} },
 	{ version = "1.2.42", date = "2026-11-23", heads = { [1] = "Changed", }, items = {
 		"|cff6e2c0aMap settings follow the character|r: townsfolk, professions, the minimap, flight masters and the other map switches are saved for each character. The first time, they start as the account had them. Pins, sketches, flight times, the window's place and the diagnostics stay shared.",
 	} },
