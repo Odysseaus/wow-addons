@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.38", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aQuest log order|r: turning Show Ready to Turn In on or off lays the quest log out again, so a quest row is not left on top of another row or a zone header. The zones stay alphabetical. While the log is closed, it is still left alone.",
+	} },
 	{ version = "1.2.37", date = "2026-11-23", heads = { [1] = "Changed", [2] = "New", }, items = {
 		"|cff6e2c0aQuest chains|r: rebuilt from Wowhead WoW Forever's Series boxes only. 755 chains, 2,618 quests. A page that had no Series box still gives that quest no chain button.",
 		"|cff6e2c0a/valhalla chain coverage|r: your quest log, each quest chain, no series, not on Wowhead Forever's list, or another chain. The last 3 runs are saved with this character (ValhallaCharDB, under chains).",

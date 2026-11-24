@@ -643,10 +643,40 @@ local function Note(parent, h)
 	return n
 end
 
+-- (1.2.38) this Arrange showed or hid a row, the Ready header, a Ready row, or a note: lay out even when
+-- the indices that remain would already sort into place. A hidden frame keeps no layoutIndex, so it cannot
+-- sit on the number we then give to a row that is still shown.
+local showedOrHid = false
+local function DropIndex(f)
+	if type(f) == "table" and rawget(f, "layoutIndex") ~= nil then f.layoutIndex = nil end
+end
+local function HideFromLayout(f)
+	if type(f) ~= "table" then return end
+	if f.IsShown and f:IsShown() then f:Hide() showedOrHid = true end
+	DropIndex(f)
+end
+local function ShowInLayout(f)
+	if type(f) ~= "table" then return end
+	if f.IsShown and not f:IsShown() then showedOrHid = true end
+	f:Show()
+end
+
 local function HideOurs()
-	if ours.header then ours.header:Hide() end
-	for _, r in ipairs(ours.rows) do r:Hide() end
-	for _, n in pairs(ours.notes) do n:Hide() end
+	if ours.header then HideFromLayout(ours.header) end
+	for _, r in ipairs(ours.rows) do HideFromLayout(r) end
+	for _, n in pairs(ours.notes) do HideFromLayout(n) end
+end
+
+-- the game folded this row's zone (QuestLogQuests_Update hid it): do not show it again
+local function ZoneFolded(row)
+	local idx = rawget(row, "questLogIndex")
+	local C = rawget(_G, "C_QuestLog")
+	if not (type(idx) == "number" and type(C) == "table" and C.GetInfo) then return false end
+	for i = idx, 1, -1 do
+		local info = Call(C.GetInfo, i)
+		if type(info) == "table" and info.isHeader then return info.isCollapsed and true or false end
+	end
+	return false
 end
 
 -- a ready quest's row: hidden with its objective lines and its quest icon (shown again when no longer)
@@ -664,18 +694,21 @@ local function SetRowShown(row, show)
 	if show then
 		if hiddenByUs[row] then
 			hiddenByUs[row] = nil
-			row:Show()
-			Each(function(f) if hiddenByUs[f] then hiddenByUs[f] = nil f:Show() end end)
+			if not ZoneFolded(row) then
+				ShowInLayout(row)
+				Each(function(f) if hiddenByUs[f] then hiddenByUs[f] = nil ShowInLayout(f) end end)
+			end
 		end
 	elseif row:IsShown() then
 		hiddenByUs[row] = true
-		row:Hide()
-		Each(function(f) if f:IsShown() then hiddenByUs[f] = true f:Hide() end end)
+		HideFromLayout(row)
+		Each(function(f) if f:IsShown() then hiddenByUs[f] = true HideFromLayout(f) end end)
 	end
 end
 
 -- after the game's update (and on our setting / collapse changes): the order, the Ready section
 function QC.Arrange()
+	showedOrHid = false
 	if not QC.LogVisible() then return false end   -- (1.2.36: queued, then the log closed)
 	local SF = rawget(_G, "QuestScrollFrame")
 	local contents = Contents()
@@ -697,7 +730,7 @@ function QC.Arrange()
 		end
 	end
 	for r in SF.titleFramePool:EnumerateActive() do
-		if rawget(r, "layoutIndex") and (r:IsShown() or hiddenByUs[r]) then
+		if r:IsShown() or (hiddenByUs[r] and rawget(r, "layoutIndex")) then
 			-- (a campaign's quests sit above the normal section: only rows under a zone header move)
 			rows[#rows + 1] = r
 		end
@@ -744,13 +777,13 @@ function QC.Arrange()
 		end
 		if allReady and not collapsed and left == 0 then
 			local n = Note(contents, g.head)
-			n:Show()
+			ShowInLayout(n)
 			used[n] = true
 			Add(n, "Quest")
 		end
 		for _, r in ipairs(g.rows) do if r:IsShown() then Add(r, "Quest") end end
 	end
-	for h, n in pairs(ours.notes) do if not used[n] then n:Hide() end end
+	for h, n in pairs(ours.notes) do if not used[n] then HideFromLayout(n) end end
 	-- the Ready section
 	local nShown = 0
 	if readyOn then
@@ -759,7 +792,7 @@ function QC.Arrange()
 		ShowTitle(hdr, L["Ready to Turn In (%d)"]:format(#ready))
 		if rawget(hdr, "valhallaNative") then pcall(hdr.UpdateCollapsedState, hdr, collapsed) end
 		hdr.collapsed = collapsed
-		hdr:Show()
+		ShowInLayout(hdr)
 		Add(hdr, "Header")
 		if not collapsed then
 			-- (by zone name, then as in the log)
@@ -780,7 +813,7 @@ function QC.Arrange()
 				local th = (r.Text.GetStringHeight and r.Text:GetStringHeight()) or 12
 				local sh = sub ~= "" and (((r.Sub.GetStringHeight and r.Sub:GetStringHeight()) or 12) + 3) or 4
 				r:SetHeight(8 + (tonumber(th) or 12) + sh + 6)
-				r:Show()
+				ShowInLayout(r)
 				Add(r, "Quest")
 				nShown = i
 				-- the chain button, as on the game's rows (Chain quest view on)
@@ -794,34 +827,35 @@ function QC.Arrange()
 				elseif buttons[r] then buttons[r]:Hide() end
 			end
 		end
-	elseif ours.header then ours.header:Hide() end
-	for i = nShown + 1, #ours.rows do ours.rows[i]:Hide() end
+	elseif ours.header then HideFromLayout(ours.header) end
+	for i = nShown + 1, #ours.rows do HideFromLayout(ours.rows[i]) end
 	QC.lastSeq = seq
-	-- (1.2.36) the rows already in this order: don't write the game's fields and don't lay them out again
-	local function SameOrder()
-		local cur = {}
-		for i, s in ipairs(seq) do cur[i] = { f = s.f, i = i, li = rawget(s.f, "layoutIndex") } end
-		table.sort(cur, function(a, b)
-			local ai, bi = a.li or -1, b.li or -1
-			if ai ~= bi then return ai < bi end
-			return a.i < b.i
-		end)
+	-- (1.2.38) lay out unless every shown frame already has the index and the padding we would write,
+	-- and this pass did not show or hide anything. A shared index is not a match.
+	local function PadAt(i, kind, prev)
+		if i == 1 then
+			if kind == "Header" then return firstPad end
+			return SPACE["None" .. kind] or 0
+		end
+		return SPACE[(prev or "") .. kind] or 0
+	end
+	local function Placed()
+		local prev
 		for i, s in ipairs(seq) do
-			if cur[i].f ~= s.f or type(cur[i].li) ~= "number" then return false end
+			local f = s.f
+			if not f:IsShown() then return false end
+			if rawget(f, "layoutIndex") ~= base + i - 1 then return false end
+			if rawget(f, "topPadding") ~= PadAt(i, s.kind, prev) then return false end
+			prev = s.kind
 		end
 		return true
 	end
-	if SameOrder() then return true end
-	-- layoutIndex / topPadding (the game's own spacing for each pair), then the layout again
-	local prev = nil
+	if not showedOrHid and Placed() then return true end
+	local prev
 	for i, s in ipairs(seq) do
 		local f = s.f
-		local li = base + i - 1
-		local pad
-		if i == 1 then pad = (s.kind == "Header" and firstPad) or SPACE["None" .. s.kind] or 0
-		else pad = SPACE[prev .. s.kind] or 0 end
-		f.layoutIndex = li
-		f.topPadding = pad
+		f.layoutIndex = base + i - 1
+		f.topPadding = PadAt(i, s.kind, prev)
 		prev = s.kind
 	end
 	if type(contents.Layout) == "function" then pcall(contents.Layout, contents) end

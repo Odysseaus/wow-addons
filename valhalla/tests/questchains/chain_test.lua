@@ -776,6 +776,52 @@ do
   ok(contents.layouts == before + 1 and Order():find("^H:Darkshore") == 1, "order really differs and the log is open: one Layout, still alphabetical", Order())
 end
 
+print("== 16. (1.2.38) Ready off lays out; a shared index is not already ordered; a hidden log does not arrange")
+do
+  local alpha = "H:Darkshore Q:301 H:Elwynn Forest Q:201 Q:45 H:Redridge Mountains Q:401 H:Westfall Q:101 Q:102"
+  QuestMapFrame:Show()
+  W.collapsed = {}
+  W.order = { 301, 201, 45, 401, 101, 102 }
+  QC.SetReady(false)
+  QuestLogQuests_Update()
+  local beforeOn = contents.layouts
+  QC.SetReady(true)
+  ok(contents.layouts > beforeOn and QC.ours.header and QC.ours.header:IsShown(), "Ready on: the section is shown and the log was laid out", contents.layouts - beforeOn)
+  local beforeOff = contents.layouts
+  QC.SetReady(false)
+  local seen, dup = {}, false
+  for _, s in ipairs(QC.lastSeq or {}) do
+    local li = rawget(s.f, "layoutIndex")
+    if seen[li] then dup = true end
+    seen[li] = true
+  end
+  ok(contents.layouts > beforeOff, "Ready off: laid out again", tostring(contents.layouts - beforeOff))
+  ok(QC.ours.header and not QC.ours.header:IsShown() and rawget(QC.ours.header, "layoutIndex") == nil, "Ready header hidden, its layoutIndex cleared")
+  ok(RowOf(102):IsShown() and RowOf(45):IsShown() and RowOf(201):IsShown(), "the game's rows are shown again")
+  ok(Order() == alpha and not dup, "zones alphabetical, no two frames share an index", Order())
+  -- two frames share an index, in an order a tie-break would still call sorted
+  local n = contents.layouts
+  local a, b = QC.lastSeq[1].f, QC.lastSeq[2].f
+  b.layoutIndex = a.layoutIndex
+  QC.Arrange()
+  seen, dup = {}, false
+  for _, s in ipairs(QC.lastSeq or {}) do
+    local li = rawget(s.f, "layoutIndex")
+    if seen[li] then dup = true end
+    seen[li] = true
+  end
+  ok(contents.layouts == n + 1 and not dup, "a shared index that sorts into order still lays out, and the indices are unique again", tostring(contents.layouts - n))
+  n = contents.layouts
+  QC.Arrange()
+  ok(contents.layouts == n, "already correct: a second pass does not lay out again", tostring(contents.layouts - n))
+  QuestMapFrame:Hide()
+  n = contents.layouts
+  QC.Arrange()
+  QuestLogQuests_Update()
+  ok(contents.layouts == n and not CQ.Pending("questlog:arrange"), "a hidden log does not arrange")
+  QuestMapFrame:Show()
+end
+
 C_QuestLog.GetInfo = baseInfo
 _G.QuestLogQuests_Update = gameUpdate
 
