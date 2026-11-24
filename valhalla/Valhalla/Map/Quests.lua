@@ -58,7 +58,7 @@ local function Enter(pin)
 			if text and not finished then GameTooltip:AddLine((_G.QUEST_DASH or "- ") .. text, 1, 1, 1, true) end
 		end
 	end
-	GameTooltip:AddLine(L["Click: select this quest, as in the quest log. Shift-click: stop tracking it."], 0.6, 0.6, 0.6)
+	GameTooltip:AddLine(L["Click: show this quest's area and its waypoint; click again to clear it."], 0.6, 0.6, 0.6)
 	GameTooltip:Show()
 	Hover(pin, true)
 end
@@ -68,44 +68,70 @@ local function Leave(pin)
 	GameTooltip_Hide()
 end
 
--- (1.2.46) a click is the game's own: POIButtonMixin.OnClick on this pin's button, as Blizzard's map quest pins
--- (QuestPinMixin:OnMouseClickAction), the quest log's and the tracker's quest buttons do. Selected: cleared;
--- else a chat link when typing, Shift on a watched quest untracks it, an unwatched one is watched, then
--- super-tracked. The view stays where it is and no details open. While CombatQueue's gate is closed (combat,
--- secret auras, the settle after combat) the click waits and runs once it opens, as Valhalla's other tracking calls.
+-- (1.2.48) a click selects the quest, as the Objectives panel's quest button does (O.PoiClick): super-tracked
+-- already: cleared, the "off" sound; else super-tracked, the "on" sound. That alone shows its quest area and
+-- the minimap's waypoint. Never a watch added or removed (the Objectives panel
+-- keeps its own zone rules and pins), no chat link, nothing for Shift, no map move, no details. While
+-- CombatQueue's gate is closed (combat, secret auras, the settle after combat) the change waits and runs once
+-- it opens. Each click is logged to ValhallaDB.questClickDiag with the super-track and the watch before and after.
 local CLICK_LOG = 20
-local function NoteClick(q, how, before, ok, err)
+local function Watched(id)
+	local f = C_QuestLog and C_QuestLog.GetQuestWatchType
+	if f then
+		local w = ns.Safe and ns.Safe.Call(f, id)
+		return w ~= nil
+	end
+	f = rawget(_G, "IsQuestWatched")
+	local index = C_QuestLog and C_QuestLog.GetLogIndexForQuestID and ns.Safe and ns.Safe.Call(C_QuestLog.GetLogIndexForQuestID, id)
+	if f and index then return (ns.Safe.Call(f, index)) and true or false end
+end
+local function Super()
+	local get = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID
+	return get and ns.Safe and ns.Safe.Call(get) or nil
+end
+local function NoteClick(q, how, before, watchedBefore, act, ok, err)
 	local db = rawget(_G, "ValhallaDB")
 	if type(db) ~= "table" then return end
 	local log = db.questClickDiag
 	if type(log) ~= "table" then log = {} db.questClickDiag = log end
-	local get = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID
-	local after = get and ns.Safe and ns.Safe.Call(get) or nil
 	log[#log + 1] = {
-		quest = q, how = how, before = before, after = after, ok = ok, err = err and tostring(err) or nil,
-		shift = IsShiftKeyDown and IsShiftKeyDown() and true or false,
+		quest = q, how = how, act = act, before = before, after = Super(), ok = ok, err = err and tostring(err) or nil,
+		watchedBefore = watchedBefore, watchedAfter = Watched(q),
 		clock = date and date("%H:%M:%S") or nil,
 	}
 	while #log > CLICK_LOG do table.remove(log, 1) end
 end
 
+local function Sound(on)
+	local kit = rawget(_G, "SOUNDKIT")
+	local id = kit and (on and kit.IG_MAINMENU_OPTION_CHECKBOX_ON or kit.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+	if PlaySound and id then pcall(PlaySound, id) end
+end
+
 local function Click(pin)
 	local q = pin.data
-	local b = pin.poi
-	local game = rawget(_G, "POIButtonMixin")
-	if not (q and b and game and game.OnClick) then return end
-	local get = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID
-	local before = get and ns.Safe and ns.Safe.Call(get) or nil
+	if not (q and q.id and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID) then return end
+	local id = q.id
+	local before = Super()
+	local watchedBefore = Watched(id)
+	local act = before == id and "clear" or "select"
+	Sound(act == "select")
 	local function Run(how)
-		local ok, err = pcall(game.OnClick, b, "LeftButton")
-		NoteClick(q.id, how, before, ok, not ok and err or nil)
+		local ok, err
+		if act == "clear" then
+			if C_SuperTrack.ClearAllSuperTracked then ok, err = pcall(C_SuperTrack.ClearAllSuperTracked)
+			else ok, err = pcall(C_SuperTrack.SetSuperTrackedQuestID, 0) end
+		else
+			ok, err = pcall(C_SuperTrack.SetSuperTrackedQuestID, id)
+		end
+		NoteClick(id, how, before, watchedBefore, act, ok, not ok and err or nil)
 	end
 	local C = ns.Combat
 	if C and C.Run then
 		local now = true
 		local ran = C.Run("supertrack", function() Run(now and "now" or "queued") end, L["Tracking changed in combat: it applies when combat ends."])
 		now = false
-		if not ran then NoteClick(q.id, "waiting", before, true) end
+		if not ran then NoteClick(id, "waiting", before, watchedBefore, act, true) end
 	elseif not (InCombatLockdown and InCombatLockdown()) then
 		Run("now")
 	end

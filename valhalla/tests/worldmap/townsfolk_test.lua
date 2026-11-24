@@ -520,9 +520,21 @@ local qSrc = assert(io.open(root .. "Map/Quests.lua")):read("*a")
 ok(not qSrc:find("QuestBang", 1, true) and not qSrc:find("GossipFrame", 1, true) and not qSrc:find("MeasureQuestPoi", 1, true)
 	and not qSrc:find("questPoi", 1, true) and not qSrc:find("SetFrameLevel", 1, true) and not qSrc:find("layoutIndex", 1, true),
 	"no measuring, no QuestBang or Gossip fallback, no frame level or layout writes")
--- (1.2.46) a click is the game's own POIButtonMixin.OnClick on the pin's button
-local gameClicks = {}
-POIButtonMixin = { OnClick = function(self, button) gameClicks[#gameClicks + 1] = { self = self, button = button } end }
+-- (1.2.48) a click super-tracks the quest or clears it; never a watch change, link, Shift case, move or details
+local gameClicks, watchCalls, links, sounds, cleared = 0, 0, 0, {}, 0
+POIButtonMixin = { OnClick = function() gameClicks = gameClicks + 1 end }
+local watched = { [42] = true }               -- 42 watched, 43 not
+C_QuestLog.GetQuestWatchType = function(id) return watched[id] and 0 or nil end
+C_QuestLog.AddQuestWatch = function(id) watchCalls = watchCalls + 1 watched[id] = true end
+C_QuestLog.RemoveQuestWatch = function(id) watchCalls = watchCalls + 1 watched[id] = nil end
+AddQuestWatch, RemoveQuestWatch = C_QuestLog.AddQuestWatch, C_QuestLog.RemoveQuestWatch
+ChatFrameUtil = { TryInsertQuestLinkForQuestID = function() links = links + 1 return true end }
+SOUNDKIT = { IG_MAINMENU_OPTION_CHECKBOX_ON = 856, IG_MAINMENU_OPTION_CHECKBOX_OFF = 857 }
+PlaySound = function(id) sounds[#sounds + 1] = id end
+C_SuperTrack.SetSuperTrackedQuestID = function(id) superQ = id end
+C_SuperTrack.ClearAllSuperTracked = function() superQ = 0 cleared = cleared + 1 end
+local shift = false
+IsShiftKeyDown = function() return shift end
 local glided, flew, details = 0, 0, 0
 S.GlideToWorld = function() glided = glided + 1 end
 mod.QuestIconClick = function() flew = flew + 1 return true end
@@ -531,25 +543,47 @@ ns.Combat = nil
 ValhallaDB.questClickDiag = nil
 byQ = {}
 for _, p in ipairs(qset.pins) do if p.poi then byQ[p.data.id] = p end end
+superQ = 42
 byQ[43].OnClick(byQ[43])
-ok(#gameClicks == 1 and gameClicks[1].self == byQ[43].poi and gameClicks[1].button == "LeftButton",
-	"a click runs the game's POIButtonMixin.OnClick on our button, left button")
-ok(glided == 0 and flew == 0 and details == 0, "the view does not move and no details open", glided .. flew .. details)
+ok(superQ == 43 and sounds[1] == 856, "a click on a quest not super-tracked: super-tracked, the 'on' sound", tostring(superQ) .. " " .. tostring(sounds[1]))
 local cd = ValhallaDB.questClickDiag and ValhallaDB.questClickDiag[1]
-ok(cd and cd.quest == 43 and cd.how == "now" and cd.ok == true and cd.before == 42, "the click is logged to questClickDiag",
-	cd and (tostring(cd.quest) .. " " .. tostring(cd.ok) .. " " .. tostring(cd.before) .. " " .. tostring(cd.err)))
--- the gate closed (combat): the game's click waits and runs when it opens
+ok(cd and cd.quest == 43 and cd.how == "now" and cd.act == "select" and cd.ok == true and cd.before == 42 and cd.after == 43,
+	"logged to questClickDiag: select, before 42, after 43",
+	cd and (tostring(cd.quest) .. " " .. tostring(cd.act) .. " " .. tostring(cd.ok) .. " " .. tostring(cd.before) .. " " .. tostring(cd.after)))
+ok(cd and cd.watchedBefore == false and cd.watchedAfter == false, "an unwatched quest stays unwatched (logged before and after)")
+byQ[43].OnClick(byQ[43])
+ok(superQ == 0 and cleared == 1 and sounds[2] == 857 and ValhallaDB.questClickDiag[2].act == "clear",
+	"a second click clears the super-track, the 'off' sound", tostring(superQ) .. " " .. tostring(sounds[2]))
+shift = true
+byQ[42].OnClick(byQ[42])
+byQ[42].OnClick(byQ[42])
+shift = false
+cd = ValhallaDB.questClickDiag[4]
+ok(superQ == 0 and cd.act == "clear" and cd.watchedBefore == true and cd.watchedAfter == true and watched[42],
+	"Shift-click is a plain click: a watched quest stays watched")
+ok(watchCalls == 0, "a click never changes watches (no AddQuestWatch / RemoveQuestWatch)", watchCalls)
+ok(gameClicks == 0 and links == 0, "the game's POIButtonMixin.OnClick isn't called; no chat link", gameClicks .. " " .. links)
+ok(glided == 0 and flew == 0 and details == 0, "the view does not move and no details open", glided .. flew .. details)
+-- the gate closed (combat): the change waits and runs when it opens
 local queued
 ns.Combat = { Run = function(key, fn) if key == "supertrack" then queued = fn return false end end }
 byQ[42].OnClick(byQ[42])
-ok(#gameClicks == 1 and queued and ValhallaDB.questClickDiag[2].how == "waiting", "in combat the click waits (CombatQueue)")
+ok(superQ == 0 and queued and ValhallaDB.questClickDiag[5].how == "waiting", "in combat the click waits (CombatQueue)")
 queued()
-ok(#gameClicks == 2 and gameClicks[2].self == byQ[42].poi and ValhallaDB.questClickDiag[3].how == "queued", "and runs once the gate opens")
+ok(superQ == 42 and ValhallaDB.questClickDiag[6].how == "queued", "and runs once the gate opens")
 ns.Combat = { Run = function(key, fn) fn() return true end }
 byQ[42].OnClick(byQ[42])
-ok(#gameClicks == 3 and ValhallaDB.questClickDiag[4].how == "now", "an open gate: at once, logged as now")
+ok(superQ == 0 and ValhallaDB.questClickDiag[7].how == "now", "an open gate: at once, logged as now")
+ok(watchCalls == 0 and watched[42] and not watched[43], "after every click: the watches as they were")
+for i = 1, 25 do byQ[43].OnClick(byQ[43]) end
+ok(#ValhallaDB.questClickDiag == 20, "questClickDiag keeps the last 20", #ValhallaDB.questClickDiag)
+ok(not qSrc:find("AddQuestWatch", 1, true) and not qSrc:find("RemoveQuestWatch", 1, true) and not qSrc:find("POIButtonMixin", 1, true)
+	and not qSrc:find("TryInsertQuestLink", 1, true) and not qSrc:find("ShowQuestDetails", 1, true),
+	"Quests.lua names no watch call, the game's click, a chat link or quest details")
 ns.Combat = nil
 mod.QuestIconClick = nil
+POIButtonMixin, ChatFrameUtil, PlaySound, SOUNDKIT, AddQuestWatch, RemoveQuestWatch = nil, nil, nil, nil, nil, nil
+superQ = 42
 -- a client without the template: no quest icons (not a look that isn't the log's)
 noTemplate = true
 qset.pins, qset.pool = {}, {}

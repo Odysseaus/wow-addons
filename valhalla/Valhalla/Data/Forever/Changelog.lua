@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.48", date = "2026-11-24", heads = { [1] = "Changed", }, items = {
+		"Clicking a quest icon on the map shows that quest's area and its minimap waypoint; a second click clears it. It no longer tracks or untracks the quest, links it in chat or does anything different with Shift: the Objectives panel keeps its own zone rules and pins.",
+	} },
 	{ version = "1.2.47", date = "2026-11-24", heads = { [1] = "New", }, items = {
 		"|cff6e2c0aTownsfolk icon size|r: in the menu's Townsfolk section, Icon size on the world map: Large (as before), Medium or Small. This character's own choice, applied at once. The minimap's pins, quest icons, boats and dungeons keep their size.",
 	} },

@@ -1493,5 +1493,34 @@ do
     "after about 2 seconds: the re-track runs once", n .. " " .. list(W.watches))
 end
 
+print("== 62. (1.2.48) a super-track by itself (the map quest icon's click) never adds another zone's quest")
+do
+  W.Reset()
+  C_Secrets = nil
+  W.clock = W.clock + 30
+  W.AddQuest(1, "Stormwind City", "Rethban Ore", 15, false, true)
+  W.AddQuest(4, "Westfall", "Harvest Watchers", 12, false, false)
+  W.AddQuest(7, "Duskwood", "Night Watch", 25, true, false)       -- ready, unwatched, unpinned
+  Restart()
+  Go(1453)
+  local watches0 = list(W.watches)
+  local adds, removes = W.calls.add, W.calls.remove
+  ok(eq(W.watches, { 1 }), "Stormwind: only its own quest", watches0)
+  W.super = 4 Fire("SUPER_TRACKING_CHANGED") Run(3)
+  ok(list(W.watches) == watches0 and W.calls.add == adds and W.calls.remove == removes,
+    "super-tracking the Westfall quest: Quests unchanged, no watch call", list(W.watches))
+  W.super = 7 Fire("SUPER_TRACKING_CHANGED") Run(3)
+  ok(not has(ReadyIds(), 7) and list(W.watches) == watches0 and W.calls.add == adds,
+    "super-tracking a ready Duskwood quest: not in Ready, not watched", list(ReadyIds()) .. list(W.watches))
+  W.super = 0 Fire("SUPER_TRACKING_CHANGED") Run(3)
+  Fire("ZONE_CHANGED") Run(3)
+  ok(list(W.watches) == watches0 and W.calls.add == adds and W.calls.remove == removes, "cleared, and a later zone pass: still unchanged")
+  W.super = 4 Fire("SUPER_TRACKING_CHANGED") Go(1453)
+  ok(eq(W.watches, { 1 }) and W.calls.add == adds, "a full zone plan while it is super-tracked: still not added", list(W.watches))
+  O.SetPinned(4, true) Run(1)
+  ok(has(W.watches, 4), "the quest pin toggle still adds it (the existing rule)", list(W.watches))
+  O.SetPinned(4, false) Run(1)
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)
