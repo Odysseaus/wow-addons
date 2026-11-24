@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.45", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
+		"Quest icons on the map are the quest log's own buttons: in progress, ready to turn in, campaign and the tracked quest's glow look exactly as in the quest log and Objectives.",
+		"Townsfolk on the minimap stay on their spot as you walk: they move every frame, at the minimap's own zoom and the zone's real size.",
+	} },
 	{ version = "1.2.44", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
 		"Profession icons use the new pictures when they really loaded, and the square icon when a file is missing. A checkbox turns them on and off.",
 		"Quest icons keep the quest log's size on every zone, including when you point at one. Townsfolk on the minimap stay on the ground as you walk, and quest question marks are not added there.",

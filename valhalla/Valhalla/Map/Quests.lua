@@ -16,10 +16,11 @@ local function G(name) return _G[name] end
 
 mod.defaults.allQuests = true   -- the quests in your log from every zone (off: Blizzard's, the zone's own map only)
 
--- the outer size already matches the quest log. One texture, the log button's own picture,
--- at the same share of that button as the log's display. Not a number plate with a small mark on top.
-local POI_OUTER = 20
-local POI_TEMPLATES = { "ObjectiveTrackerPOIButtonTemplate", "POIButtonTemplate" }
+-- (1.2.45) each icon is Valhalla's own instance of the quest button the quest log and Objectives tracker
+-- draw (UI/Parts.lua: Parts.QuestPoi), styled as the tracker styles it, so in progress, complete, campaign
+-- and the super-tracked glow are the game's own pictures. The click and hover are Valhalla's (the pin's).
+local POI_OUTER = 20            -- the button's own size (POIButtonTemplate)
+local PIN_LOOK = { size = POI_OUTER }   -- (the pin's own texture is not shown)
 local SAME = 0.002              -- world (normalized): one quest's icons this close are one
 local EVERY = 0.5               -- seconds: the quest log changes in bursts
 local NONE = {}
@@ -35,6 +36,11 @@ local function Maps()
 		if S.Rect(info.mapID) then maps[#maps + 1] = info.mapID end
 	end
 	return maps
+end
+
+local function Hover(pin, on)
+	local hi = pin.poi and pin.poi.HighlightTexture
+	if hi and hi.SetShown then hi:SetShown(on) end
 end
 
 local function Enter(pin)
@@ -54,6 +60,12 @@ local function Enter(pin)
 	end
 	GameTooltip:AddLine(L["Click: track this quest and zoom to it"], 0.6, 0.6, 0.6)
 	GameTooltip:Show()
+	Hover(pin, true)
+end
+
+local function Leave(pin)
+	Hover(pin, false)
+	GameTooltip_Hide()
 end
 
 -- a click: the quest tracked (as Blizzard's own quest icons do) and the view in on it, the map kept as it is,
@@ -94,115 +106,41 @@ local function Click(pin)
 	elseif not InCombatLockdown() then Details() end
 end
 
--- once: the log button's width, its display's width, and the atlas that style paints
-local function AtlasOf(tex)
-	if tex and tex.GetAtlas then
-		local name = tex:GetAtlas()
-		if type(name) == "string" and name ~= "" then return name end
-	end
+-- the game's button on a pin, made once per pooled pin. The mouse stays on the pin (its Enter and Click);
+-- the button's own hover picture is shown from there.
+local poiMissing = false
+local function QuestButton(pin)
+	if pin.poi or poiMissing then return pin.poi end
+	local b = ns.Parts and ns.Parts.QuestPoi and ns.Parts.QuestPoi(pin)
+	if not b then poiMissing = true return end
+	b:ClearAllPoints()
+	b:SetPoint("CENTER", pin, "CENTER")
+	if b.EnableMouse then b:EnableMouse(false) end
+	pin.poi = b
+	return b
 end
 
-local function ReadStyle(button, style)
-	if not (button and button.SetStyle and style) then return end
-	pcall(button.SetStyle, button, style)
-	if button.UpdateButtonStyle then pcall(button.UpdateButtonStyle, button) end
-	local display = button.Display or button.Icon
-	local atlas = AtlasOf(display)
-	if not atlas and button.GetNormalTexture then atlas = AtlasOf(button:GetNormalTexture()) end
-	local bw = tonumber(button.GetWidth and button:GetWidth()) or 0
-	local dw = tonumber(display and display.GetWidth and display:GetWidth()) or 0
-	return bw, dw, atlas
-end
-
-local function MeasureQuestPoi()
-	if mod.questPoiInfo then return mod.questPoiInfo end
-	-- what is drawn when the template reading is not usable: the full 20 px badge
-	local info = {
-		button = POI_OUTER, inProgress = POI_OUTER, complete = POI_OUTER, ratioIn = 1, ratioDone = 1,
-		inProgressAtlas = "Quest-In-Progress-Icon-yellow", completeAtlas = "UI-QuestPoi-QuestBang",
-	}
-	local button
-	if CreateFrame then
-		for _, template in ipairs(POI_TEMPLATES) do
-			local ok, made = pcall(CreateFrame, "Button", nil, UIParent, template)
-			if ok and type(made) == "table" and made.SetStyle then button = made break end
-		end
+-- the style Blizzard's map pins and log rows ask for (POIButtonUtil.GetStyle: complete, disabled, in progress)
+local function StyleOf(id, complete)
+	local U = rawget(_G, "POIButtonUtil")
+	if U and U.GetStyle then
+		local ok, style = pcall(U.GetStyle, id)
+		if ok and style then return style end
 	end
-	local raw = {}
-	if button then
-		if button.Hide then button:Hide() end
-		local styles = rawget(_G, "POIButtonUtil")
-		styles = styles and styles.Style or {}
-		local bw, dw, atlas = ReadStyle(button, styles.QuestInProgress or 5)
-		local bw2, dw2, atlas2 = ReadStyle(button, styles.QuestComplete or 3)
-		raw = {
-			button = (bw2 and bw2 > 0 and bw2) or bw or 0,
-			inProgress = dw or 0, complete = dw2 or 0,
-			inProgressAtlas = atlas, completeAtlas = atlas2,
-			ratioIn = (bw and dw and bw > 0 and dw > 0) and dw / bw or 0,
-			ratioDone = (bw2 and dw2 and bw2 > 0 and dw2 > 0) and dw2 / bw2 or 0,
-		}
-	end
-	local plate = "UI-QuestPoi-QuestNumber"
-	local function sane(row)
-		if not row or (row.button or 0) < 8 then return false end
-		if (row.inProgress or 0) < 8 or (row.complete or 0) < 8 then return false end
-		if (row.ratioIn or 0) < 0.5 or (row.ratioDone or 0) < 0.5 then return false end
-		if row.inProgressAtlas == plate and row.completeAtlas == plate then return false end
-		return true
-	end
-	local used
-	if sane(raw) then
-		used = {
-			button = raw.button, inProgress = raw.inProgress, complete = raw.complete,
-			ratioIn = raw.ratioIn, ratioDone = raw.ratioDone,
-			inProgressAtlas = raw.inProgressAtlas, completeAtlas = raw.completeAtlas,
-		}
-		info = used
-	end
-	mod.questPoiInfo = info
-	local db = rawget(_G, "ValhallaDB")
-	if type(db) == "table" then
-		db.questPoi = { rejected = not sane(raw) and raw or false, used = info }
-	end
-	return info
-end
-
-local function PoiLook(complete, info)
-	return {
-		atlas = complete and info.completeAtlas or info.inProgressAtlas,
-		texture = complete and "Interface\\GossipFrame\\ActiveQuestIcon" or "Interface\\GossipFrame\\IncompleteQuestIcon",
-		size = POI_OUTER,
-	}
-end
-
--- one picture, the share of the badge the log's display uses. The Icon size slider does not apply.
-local function FitQuest(pin, complete, info)
-	local ratio = complete and info.ratioDone or info.ratioIn
-	if type(ratio) ~= "number" or ratio <= 0 then ratio = 1 end
-	pin:SetScale(1)
-	pin:SetSize(POI_OUTER, POI_OUTER)
-	local mark = POI_OUTER * ratio
-	local function fit(tex)
-		if not tex then return end
-		tex:ClearAllPoints()
-		tex:SetPoint("CENTER")
-		tex:SetSize(mark, mark)
-	end
-	fit(pin.Icon)
-	fit(pin.Highlight)
-	if pin.questMark and pin.questMark.Hide then pin.questMark:Hide() end
+	local styles = U and U.Style or NONE
+	return complete and (styles.QuestComplete or 3) or (styles.QuestInProgress or 2)
 end
 
 function mod:RefreshQuests()
 	dirty = false
-	local poi = MeasureQuestPoi()
 	if not set and S.IsBuilt() then set = S.PinSet("quests", 1, 5) end   -- (built as the map first opens)
 	if not set then return end
 	S.ClearPinSet(set)
 	-- (and as Blizzard's own quests: not with the map's Quest Objectives off, its questPOI)
 	local on = mod.db.allQuests ~= false and mod.IsStitched() and C_QuestLog.GetQuestsOnMap ~= nil
 		and not (GetCVarBool and not GetCVarBool("questPOI"))
+	-- (no quest button template on this client: nothing is drawn, rather than a look that isn't the log's)
+	on = on and not poiMissing
 	S.SetPinSetOn(set, on)
 	if not on then return end
 	-- the map underneath: Blizzard draws its quests (a continent, only the super-tracked one)
@@ -232,10 +170,21 @@ function mod:RefreshQuests()
 				if key and not seen[key] and not onHost then
 					seen[key] = true
 					local complete = C_QuestLog.IsComplete and C_QuestLog.IsComplete(id) or false
-					local pin = S.AddPin(set, u, v, PoiLook(complete, poi), { id = id, complete = complete, map = mapID })
-					FitQuest(pin, complete, poi)
+					local pin = S.AddPin(set, u, v, PIN_LOOK, { id = id, complete = complete, map = mapID })
+					pin:SetScale(1)                 -- (the Icon size slider does not apply: the log's size)
+					pin:SetSize(POI_OUTER, POI_OUTER)
+					pin.Icon:SetAlpha(0)            -- (the pin is the mouse target; the game's button is the picture)
+					pin.Highlight:SetAlpha(0)
+					local b = QuestButton(pin)
+					if b then
+						ns.Parts.PaintQuestPoi(b, id, StyleOf(id, complete), id == tracked)
+						Hover(pin, false)
+						b:Show()
+					else
+						pin:Hide()
+					end
 					pin:SetScript("OnEnter", Enter)
-					pin:SetScript("OnLeave", GameTooltip_Hide)
+					pin:SetScript("OnLeave", Leave)
 					pin.OnClick = Click
 					live[#live + 1] = { map = mapID, x = q.x, y = q.y, complete = complete, id = id }
 				end

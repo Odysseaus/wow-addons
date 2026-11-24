@@ -1,18 +1,19 @@
 --------------------------------------------------------------------------------
 -- Townsfolk on the minimap (1.2.40). Valhalla's own buttons, parented to Minimap, pooled.
 -- The same account-wide master and per-type checkboxes as the world map, plus Minimap
--- (on at first). Only pins inside the minimap's radius are shown. Quest badges from the
--- log, when both are drawn, use a higher frame level. No Blizzard pin is moved.
+-- (on at first). Only pins inside the minimap's radius are shown. No Blizzard pin is moved.
+--
+-- (1.2.45) placed the way the game's own hybrid minimap places its map (Blizzard_HybridMinimap.lua):
+-- the minimap's map (C_Minimap.GetUiMapID), that map's size in yards (C_Map.GetMapWorldSize), the
+-- minimap's radius in yards (C_Minimap.GetViewRadius, read again on MINIMAP_UPDATE_ZOOM), and moved
+-- every frame, so a pin stays on its spot as you walk. The list of pins near you is rebuilt every 0.5 s.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
 local mod = ns:GetModule("worldmap")
 local Safe = ns.Safe
 
--- The client's minimap radii in yards, the sizes the minimap texture has used since classic:
--- outdoor zoom 0 is about 466.67 yards across the radius, indoor starts at 300.
-local R_OUT = { [0] = 466.6667, 400, 333.3333, 266.6667, 200, 133.3333 }
-local R_IN = { [0] = 300, 240, 180, 120, 80, 50 }
+local REBUILD = 0.5             -- seconds between rebuilds of the minimap's map and its pins
 
 local frame
 local pool, used = {}, {}
@@ -26,15 +27,6 @@ local function Combat()
 	if UnitAffectingCombat and UnitAffectingCombat("player") then return true end
 	local C = ns.Combat
 	return C and C.Blocked and C.Blocked() or false
-end
-
-local function Radius()
-	local zoom = Minimap and Minimap.GetZoom and Minimap:GetZoom() or 0
-	zoom = tonumber(zoom) or 0
-	if zoom < 0 then zoom = 0 elseif zoom > 5 then zoom = 5 end
-	local indoor = IsIndoors and IsIndoors()
-	local t = indoor and R_IN or R_OUT
-	return t[zoom] or t[0]
 end
 
 local function LookFor(kind, icon)
@@ -69,38 +61,42 @@ local function Norm(x, y)
 	return x, y
 end
 
--- yards across this map, from the same world rectangle and yard table the world map uses.
--- Not from GetWorldPosFromMapPos of the two corners: on this client that width is not the map's.
-local function MapSpan(mapID)
-	local S = ns.MapStitch
-	if not (S and S.Rect and S.ToYards) then return nil, nil, "rejected" end
-	local l, r, t, b = S.Rect(mapID)
-	if not (type(l) == "number" and type(r) == "number" and r > l and type(b) == "number" and b > t) then
-		return nil, nil, "rejected"
-	end
-	local u, v = (l + r) / 2, (t + b) / 2
-	local step = 0.02
-	local function yards(uu, vv)
-		for _, cont in ipairs({ 0, 1 }) do
-			local x, y = S.ToYards(cont, uu, vv)
-			if type(x) == "number" and type(y) == "number" then return x, y, cont end
-		end
-	end
-	local x0, y0, cont = yards(u, v)
-	if not x0 then return nil, nil, "rejected" end
-	local x1, y1 = S.ToYards(cont, u + (r - l) * step, v)
-	local x2, y2 = S.ToYards(cont, u, v + (b - t) * step)
-	local function stepYards(ax, ay, bx, by)
-		if type(ax) ~= "number" or type(bx) ~= "number" or type(ay) ~= "number" or type(by) ~= "number" then return end
-		return math.sqrt((bx - ax) ^ 2 + (by - ay) ^ 2) / step
-	end
-	local spanX, spanY = stepYards(x0, y0, x1, y1), stepYards(x0, y0, x2, y2)
-	if not spanX or not spanY or (spanX <= 2 and spanY <= 2) then return nil, nil, "rejected" end
-	return spanX, spanY, "rect"
+-- a call's first results, each plain (nil for a secret), nil when it errors (Util.Call: both of
+-- GetMapWorldSize's numbers, not only the first)
+local function Call(fn, ...)
+	local U = ns.Util
+	if U and U.Call then return U.Call(fn, ...) end
+	if type(fn) ~= "function" then return end
+	local ok, a, b = pcall(fn, ...)
+	if not ok then return end
+	if Secret(a) then a = nil end
+	if Secret(b) then b = nil end
+	return a, b
+end
+
+-- a plain positive number (not secret, not NaN or infinite), else nil
+local function Plain(v)
+	if type(v) ~= "number" or Secret(v) or v ~= v or v <= 0 or v == math.huge then return end
+	return v
+end
+
+-- the minimap's radius in yards, as the game's hybrid minimap reads it
+local radius, radiusSource
+local function ReadRadius()
+	local r = C_Minimap and C_Minimap.GetViewRadius and Plain(Call(C_Minimap.GetViewRadius))
+	radius, radiusSource = r, r and "view" or "none"
+end
+
+-- a map's width and height in yards
+local function WorldSize(mapID)
+	if not (mapID and C_Map and C_Map.GetMapWorldSize) then return end
+	local w, h = Call(C_Map.GetMapWorldSize, mapID)
+	w, h = Plain(w), Plain(h)
+	if w and h then return w, h end
 end
 
 local diagNext = 0
-local function NoteDiag(mapID, px, py, spanX, spanY, source, pin)
+local function NoteDiag(cur, px, py, pin)
 	local now = (GetTime and GetTime()) or 0
 	if diagNext == -1 then return end
 	if diagNext > 0 and now < diagNext then return end
@@ -110,8 +106,9 @@ local function NoteDiag(mapID, px, py, spanX, spanY, source, pin)
 	local log = db.minimapDiag
 	if type(log) ~= "table" then log = {} db.minimapDiag = log end
 	log[#log + 1] = {
-		map = mapID, x = px, y = py,
-		spanX = spanX, spanY = spanY, source = source,
+		map = cur.map, mapSource = cur.mapSource, x = px, y = py,
+		spanX = cur.w, spanY = cur.h, source = "worldsize",
+		radius = radius, radiusSource = radiusSource, width = Minimap.GetWidth and Minimap:GetWidth() or nil,
 		pinX = pin and pin.px, pinY = pin and pin.py, pinMap = pin and pin.map,
 	}
 	while #log > 20 do table.remove(log, 1) end
@@ -151,21 +148,27 @@ local function Button(poolList)
 	return b
 end
 
+-- the buttons for a list of points (p.px, p.py: offsets from the minimap's centre). A button is set up
+-- (parent, level, picture) only when it gets a new point; every frame only its offset changes.
 local function Place(list, poolList, usedList, level)
 	for i, p in ipairs(list) do
 		local b = usedList[i]
 		if not b then b = Button(poolList) usedList[i] = b end
-		b:SetParent(Minimap)
-		b:SetFrameLevel(level)
-		b:SetSize(12, 12)
-		if p.look and ns.MapStitch and ns.MapStitch.Look then ns.MapStitch.Look(b.icon, p.look) end
-		b.name, b.title = p.name, p.title
+		if b.p ~= p then
+			b.p = p
+			b:SetParent(Minimap)
+			b:SetFrameLevel(level)
+			b:SetSize(12, 12)
+			if p.look and ns.MapStitch and ns.MapStitch.Look then ns.MapStitch.Look(b.icon, p.look) end
+			b.name, b.title = p.name, p.title
+		end
 		b:ClearAllPoints()
 		b:SetPoint("CENTER", Minimap, "CENTER", p.px, p.py)
 		b:Show()
 	end
 	for i = #list + 1, #usedList do
 		usedList[i]:Hide()
+		usedList[i].p = nil
 		poolList[#poolList + 1] = usedList[i]
 		usedList[i] = nil
 	end
@@ -176,89 +179,107 @@ local function HideAll()
 	Place({}, qpool, qused, 6)
 end
 
-function mod:UpdateTownsfolkMinimap()
-	if not Minimap or Combat() then return end
-	if not (mod.db and mod.db.townsfolkMaster and mod.db.townsfolkMinimap ~= false) then HideAll() return end
-	local function Call(fn, ...)
-		if Safe and Safe.Call then return Safe.Call(fn, ...) end
-		if type(fn) ~= "function" then return end
-		local ok, a = pcall(fn, ...)
-		if ok then return a end
+-- the minimap's map and the pins on it, rebuilt every REBUILD seconds (and when a setting changes).
+-- The minimap's own map first; when no pin is on it, the map the game says you're on.
+local cur                       -- { map, mapSource, w, h, pts }
+local function Refresh()
+	cur = nil
+	if not (mod.db and mod.db.townsfolkMaster and mod.db.townsfolkMinimap ~= false) then return end
+	local want = {}
+	for _, k in ipairs(mod.TOWNSFOLK or {}) do if Wanted(k.key) then want[#want + 1] = k.key end end
+	local sig = table.concat(want, ",")
+	if sig ~= stamp then stamp = sig Rebuild() end
+	if not radius then ReadRadius() end
+	local mini = C_Minimap and C_Minimap.GetUiMapID and Call(C_Minimap.GetUiMapID)
+	local best = C_Map and C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player")
+	local fallback
+	for _, c in ipairs({ { mini, "minimap" }, { best, "best" } }) do
+		local mapID = c[1]
+		if type(mapID) == "number" and not Secret(mapID) then
+			local w, h = WorldSize(mapID)
+			if w then
+				local pts = {}
+				for _, p in ipairs(points) do if p.map == mapID then pts[#pts + 1] = p end end
+				local entry = { map = mapID, mapSource = c[2], w = w, h = h, pts = pts }
+				if #pts > 0 then cur = entry return end
+				fallback = fallback or entry
+			end
+		end
 	end
-	-- where you stand on the map, as a fraction. Pins on that same map are drawn from there.
-	local mapID = C_Map and C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player")
-	local pos = mapID and Call(C_Map.GetPlayerMapPosition, mapID, "player")
+	cur = fallback
+end
+
+-- every frame: where you stand on that map, and each pin's offset from the arrow in minimap pixels
+local function Position()
+	if not Minimap then return end
+	if Combat() then HideAll() return end
+	if not (cur and radius) or #cur.pts == 0 then HideAll() return end
+	local pos = Call(C_Map.GetPlayerMapPosition, cur.map, "player")
 	if not pos then HideAll() return end
 	local rawX, rawY
 	if pos.GetXY then rawX, rawY = pos:GetXY() else rawX, rawY = pos.x, pos.y end
 	if Secret(rawX) or Secret(rawY) then HideAll() return end
 	local px, py = Norm(rawX, rawY)
 	if not px then HideAll() return end
-	local spanX, spanY, spanSource = MapSpan(mapID)
-	local want = {}
-	if mod.db.townsfolkMaster then
-		for _, k in ipairs(mod.TOWNSFOLK or {}) do if Wanted(k.key) then want[#want + 1] = k.key end end
-	end
-	local sig = table.concat(want, ",")
-	if sig ~= stamp then stamp = sig Rebuild() end
-	local radius = Radius()
 	local rot = GetCVar and GetCVar("rotateMinimap") == "1"
 	local face = 0
 	if rot and GetPlayerFacing then
 		local f = GetPlayerFacing()
-		if type(f) == "number" and not (Safe and Safe.IsSecret and Safe.IsSecret(f)) then face = f end
+		if type(f) == "number" and not Secret(f) then face = f end
 	end
+	local s, c = math.sin(face), math.cos(face)
 	local half = (Minimap:GetWidth() or 140) / 2
-	local near, qnear = {}, {}
-	local function take(src, dest)
-		for _, p in ipairs(src) do
-			if p.map == mapID then
-				-- map x grows east, map y grows south. Screen +y is up.
-				local dx, dy = p.x - px, py - p.y
-				if spanX then
-					dx, dy = dx * spanX, dy * spanY
-				else
-					-- no real yard width: still place from the map position. A quarter of the map fills the radius.
-					dx, dy = dx / 0.25 * radius, dy / 0.25 * radius
-				end
-				-- facing 0 is north and increases counterclockwise, so a point straight ahead sits above the arrow
-				if rot then
-					local s, c = math.sin(face), math.cos(face)
-					dx, dy = dx * c + dy * s, -dx * s + dy * c
-				end
-				if dx * dx + dy * dy <= radius * radius then
-					p.px = dx / radius * half
-					p.py = dy / radius * half
-					dest[#dest + 1] = p
-				end
-			end
+	local perYard = half / radius   -- (= Minimap:GetWidth() / (2 * the view radius))
+	local near = {}
+	for _, p in ipairs(cur.pts) do
+		-- map x grows east, map y grows south. Screen +y is up.
+		local dx, dy = (p.x - px) * cur.w, (py - p.y) * cur.h
+		-- facing 0 is north and increases counterclockwise, so a point straight ahead sits above the arrow
+		if rot then dx, dy = dx * c + dy * s, -dx * s + dy * c end
+		if dx * dx + dy * dy <= radius * radius then
+			p.px, p.py = dx * perYard, dy * perYard
+			near[#near + 1] = p
 		end
 	end
-	take(points, near)
-	-- in-progress quest question marks are not drawn here. The world map has those.
 	Place(near, pool, used, 4)
+	-- in-progress quest question marks are not drawn here. The world map has those.
 	Place({}, qpool, qused, 6)
-	NoteDiag(mapID, px, py, spanX, spanY, spanSource, near[1])
+	NoteDiag(cur, px, py, near[1])
+end
+
+-- a full update now (a setting changed, the quest log changed)
+function mod:UpdateTownsfolkMinimap()
+	if not Minimap or Combat() then return end
+	if not (mod.db and mod.db.townsfolkMaster and mod.db.townsfolkMinimap ~= false) then cur = nil HideAll() return end
+	Refresh()
+	Position()
 end
 
 local function Boot()
 	if frame or not Minimap or Combat() then return end
 	frame = CreateFrame("Frame", nil, Minimap)
+	frame.t = REBUILD
 	frame:SetScript("OnUpdate", function(_, dt)
-		frame.t = (frame.t or 0) + dt
-		if frame.t < 0.2 then return end
-		frame.t = 0
-		if mod.UpdateTownsfolkMinimap then mod:UpdateTownsfolkMinimap() end
+		frame.t = (frame.t or 0) + (dt or 0)
+		if frame.t >= REBUILD then
+			frame.t = 0
+			if Combat() then HideAll() return end
+			ReadRadius()
+			Refresh()
+		end
+		Position()
 	end)
 end
 if CreateFrame then
 	local w = CreateFrame("Frame")
 	w:SetScript("OnEvent", function(_, event)
+		if event == "MINIMAP_UPDATE_ZOOM" then ReadRadius() return end
 		if event == "PLAYER_LOGIN" or event == "PLAYER_REGEN_ENABLED" then Boot() end
 	end)
 	if w.RegisterEvent then
 		w:RegisterEvent("PLAYER_LOGIN")
 		w:RegisterEvent("PLAYER_REGEN_ENABLED")
+		pcall(w.RegisterEvent, w, "MINIMAP_UPDATE_ZOOM")
 	end
 	Boot()
 end

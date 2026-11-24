@@ -237,46 +237,51 @@ noted = ValhallaDB.townsfolkIcons[eng.texture]
 ok(type(noted) == "table" and noted.path == eng.fallback, "square icon missing too: the Profession symbol is what was used",
 	noted and noted.path)
 
-ns.Safe = { Call = function(fn, ...) return fn(...) end, IsSecret = function() return false end }
+---------------------------------------------------------------------------
+print("== 5. (1.2.45) the minimap: the game's view radius and map size, moved every frame")
+local secretX = false
+ns.Safe = { Call = function(fn, ...) return fn(...) end, IsSecret = function(v) return secretX and v == "SECRET" end }
+local clock = 100
+function GetTime() return clock end
 Minimap = { GetWidth = function() return 140 end, GetZoom = function() return 0 end }
-function GetCVar(n) return n == "rotateMinimap" and "0" or "0" end
+function GetCVar(n) return "0" end
 function IsIndoors() return false end
+local miniMapID, viewR = 1453, 200
+C_Minimap = { GetUiMapID = function() return miniMapID end, GetViewRadius = function() return viewR end }
 C_Map = C_Map or {}
 function C_Map.GetBestMapForUnit() return 1453 end
+function C_Map.GetMapWorldSize(id) if id == 1453 then return 1000, 800 end return 0, 0 end
 local playerMX, playerMY = 0.5, 0.5
-function C_Map.GetPlayerMapPosition() return { x = playerMX, y = playerMY, GetXY = function() return playerMX, playerMY end } end
--- not a straight scale: the two corners are not the map's yard width. The old span would cull a nearby pin.
-function C_Map.GetWorldPosFromMapPos(mapID, vec)
-	local x, y = 0, 0
-	if vec.GetXY then x, y = vec:GetXY() elseif vec.x then x, y = vec.x, vec.y end
-	return (x < 0.5) and 1 or 9, { x = x * x * 80000, y = math.sin(y * 6) * 40000 }
+function C_Map.GetPlayerMapPosition()
+	local x = secretX and "SECRET" or playerMX
+	return { x = x, y = playerMY, GetXY = function() return x, playerMY end }
 end
-S.ToYards = function(_, u, v) return u * 1000, v * 1000 end
-function CreateVector2D(x, y) return { x = x, y = y, GetXY = function(self) return self.x, self.y end } end
-local levels = {}
-local lastX, lastY
-local oldCreate = CreateFrame
+-- frames that keep their scripts, their offset and whether they are shown
+local mm = { frames = {}, onUpdate = nil, onEvent = nil, events = {} }
+local function Shown()
+	local list = {}
+	for _, f in ipairs(mm.frames) do if f._shown and f._x then list[#list + 1] = f end end
+	return list
+end
 CreateFrame = function(kind, name, parent)
-	local f = oldCreate(kind, name, parent)
-	f.SetFrameLevel = function(self, n) levels[self] = n end
-	f.GetFrameLevel = function(self) return levels[self] or 1 end
-	f.SetParent = function() end
-	f.ClearAllPoints = function() end
-	f.SetPoint = function(self, _, _, _, x, y) self._x, self._y = x, y lastX, lastY = x, y end
-	f.SetSize = function() end
+	local f = { _scripts = {} }
+	function f:SetScript(n, fn) self._scripts[n] = fn if n == "OnUpdate" then mm.onUpdate = fn elseif n == "OnEvent" then mm.onEvent = fn end end
+	function f:RegisterEvent(e) mm.events[e] = true end
+	function f:CreateTexture() return { SetAllPoints = function() end, SetTexture = function() return true end } end
+	function f:SetParent(p) self._parent = p end
+	function f:SetFrameLevel(n) self._level = n end
+	function f:SetSize() end
+	function f:ClearAllPoints() end
+	function f:SetPoint(_, rel, _, x, y) self._rel, self._x, self._y = rel, x, y end
+	function f:Show() self._shown = true end
+	function f:Hide() self._shown = false end
+	mm.frames[#mm.frames + 1] = f
 	return f
 end
-local shows, levelsSeen = 0, {}
-local baseCreate = CreateFrame
-CreateFrame = function(...)
-	local f = baseCreate(...)
-	local show = f.Show
-	f.Show = function(self) shows = shows + 1 if show then show(self) end end
-	local setLevel = f.SetFrameLevel
-	f.SetFrameLevel = function(self, n) levelsSeen[#levelsSeen + 1] = n if setLevel then setLevel(self, n) end end
-	return f
-end
+S.Look = function() end
+local function Frame(dt) mm.onUpdate(nil, dt or 0.016) end
 assert(loadfile(root .. "Map/TownsfolkMinimap.lua"))("Valhalla", ns)
+ok(type(mm.onUpdate) == "function" and mm.events.MINIMAP_UPDATE_ZOOM, "an every-frame updater on the minimap, and the zoom event is watched")
 ns.TownsfolkData = { records = {
 	{ id = 1, name = "Near", title = "Innkeeper", faction = "AH", type = "innkeeper", map = 1453, x = 51, y = 50 },
 	{ id = 2, name = "Far", title = "Innkeeper", faction = "AH", type = "innkeeper", map = 1453, x = 100, y = 100 },
@@ -286,143 +291,255 @@ mod.db.townsfolkMinimap = true
 for k in pairs(mod.db.townsfolk) do mod.db.townsfolk[k] = false end
 mod.db.townsfolk.innkeeper = true
 mod.liveQuests = { { map = 1453, x = 0.5, y = 0.5, complete = false, id = 7 } }
-shows, levelsSeen = 0, {}
 mod:UpdateTownsfolkMinimap()
-local folk, quest = false, false
-for _, n in ipairs(levelsSeen) do if n == 4 then folk = true elseif n == 6 then quest = true end end
-ok(shows == 1 and folk and not quest, "minimap cull keeps the near pin; a quest question mark is not drawn", shows)
-local diag = ValhallaDB.minimapDiag and ValhallaDB.minimapDiag[1]
-ok(type(diag) == "table" and diag.map == 1453 and diag.source == "rect" and type(diag.x) == "number" and type(diag.pinX) == "number",
-	"a minimap sample is saved for the next reload", diag and diag.source)
-mod.db.townsfolkMinimap = false
-shows = 0
-mod:UpdateTownsfolkMinimap()
-ok(shows == 0, "minimap checkbox off draws nothing")
-
+local on = Shown()
+local function near(a, b) return type(a) == "number" and math.abs(a - b) < 1e-6 end
+-- 0.01 of a 1000-yard map = 10 yards east; 140 px across a 200-yard radius: 70/200 px a yard = 3.5 px
+ok(#on == 1 and on[1]._rel == Minimap and on[1]._level == 4, "the near innkeeper is drawn on the minimap; the far one is outside the radius; no quest mark", #on)
+ok(on[1] and near(on[1]._x, 3.5) and near(on[1]._y, 0), "10 yards east at a 200-yard view radius on a 140 px minimap is 3.5 px right", on[1] and on[1]._x)
+local diag = ValhallaDB.minimapDiag and ValhallaDB.minimapDiag[#ValhallaDB.minimapDiag]
+ok(type(diag) == "table" and diag.map == 1453 and diag.mapSource == "minimap" and diag.source == "worldsize"
+	and diag.spanX == 1000 and diag.spanY == 800 and diag.radius == 200 and diag.radiusSource == "view" and near(diag.pinX, 3.5),
+	"the sample saved for the next reload has the map, its yards, the view radius and its source", diag and diag.radiusSource)
+-- every frame, not every 0.2 s: one frame after a step the pin is already back on its spot
+local pin = on[1]
+playerMX = 0.505
+Frame(0.016)
+ok(near(pin._x, 1.75), "one frame after a 5-yard step east the pin is 5 yards closer (moved that same frame)", pin._x)
+local fixed = true
+for i = 1, 40 do
+	playerMX, playerMY = 0.5 + i * 0.0002, 0.5 - i * 0.0001
+	Frame(0.016)
+	local groundX = pin._x + (playerMX - 0.5) * 1000 * 0.35
+	local groundY = pin._y + (0.5 - playerMY) * 800 * 0.35
+	if not (near(groundX, 3.5) and near(groundY, 0)) then fixed = false end
+end
+ok(fixed, "walking for 40 frames: pin offset plus your own movement is the same spot every frame (it stays on the ground)")
+playerMX, playerMY = 0.5, 0.5
+Frame(0.016)
+-- the minimap's zoom: read again on the game's event, used on the next frame
+viewR = 100
+Frame(0.016)
+ok(near(pin._x, 3.5), "the radius is not re-read every frame", pin._x)
+mm.onEvent(nil, "MINIMAP_UPDATE_ZOOM")
+Frame(0.016)
+ok(near(pin._x, 7), "after MINIMAP_UPDATE_ZOOM a 100-yard radius puts the same pin twice as far out", pin._x)
+viewR = 200
+mm.onEvent(nil, "MINIMAP_UPDATE_ZOOM")
+-- the pin list is rebuilt every 0.5 s: a checkbox change shows up then
+mod.db.townsfolk.innkeeper = false
+Frame(0.1)
+ok(#Shown() == 1, "between rebuilds the same pins are moved, not rebuilt", #Shown())
+Frame(0.5)
+ok(#Shown() == 0, "the 0.5 s rebuild drops a type whose checkbox was turned off", #Shown())
+mod.db.townsfolk.innkeeper = true
+Frame(0.5)
+ok(#Shown() == 1, "and brings it back when turned on again", #Shown())
+-- the minimap's map has no pins (or no size): the map the game says you're on
+miniMapID = 9999
+clock = clock + 10
+Frame(0.5)
+diag = ValhallaDB.minimapDiag[#ValhallaDB.minimapDiag]
+ok(#Shown() == 1 and diag.mapSource == "best" and diag.map == 1453, "a minimap map with no pins falls back to the best map", diag.mapSource)
+miniMapID = 1453
+Frame(0.5)
+-- walking east and north: the pin goes the other way
 ns.TownsfolkData = { records = {
 	{ id = 3, name = "East", title = "Innkeeper", faction = "AH", type = "innkeeper", map = 1453, x = 70, y = 50 },
 } }
-mod.liveQuests = {}
-mod.db.townsfolkMinimap = true
-mod.db.townsfolk.innkeeper = true
-playerMX, playerMY = 0.5, 0.5
 mod.db.townsfolk.vendor = true
 mod:UpdateTownsfolkMinimap()
 mod.db.townsfolk.vendor = false
 mod:UpdateTownsfolkMinimap()
-local eastX = lastX
+pin = Shown()[1]
+local eastX = pin and pin._x
 playerMX = 0.6
-mod:UpdateTownsfolkMinimap()
-ok(type(eastX) == "number" and type(lastX) == "number" and lastX < eastX, "walking east moves the pin the other way", tostring(eastX) .. " -> " .. tostring(lastX))
--- map y grows south. Start south of the pin and walk north: the pin moves down, not with you.
-playerMX, playerMY = 0.5, 0.7
-mod:UpdateTownsfolkMinimap()
-local northY = lastY
-playerMY = 0.6
-mod:UpdateTownsfolkMinimap()
-ok(type(northY) == "number" and type(lastY) == "number" and lastY < northY, "walking north moves the pin the other way", tostring(northY) .. " -> " .. tostring(lastY))
+Frame(0.016)
+ok(type(eastX) == "number" and pin._x < eastX, "walking east moves the pin the other way", tostring(eastX) .. " -> " .. tostring(pin and pin._x))
+playerMX, playerMY = 0.6, 0.6
+Frame(0.016)
+local northY = pin._y
+playerMY = 0.55
+Frame(0.016)
+ok(pin._y < northY, "walking north moves the pin down", tostring(northY) .. " -> " .. tostring(pin._y))
+-- rotating minimap: facing east, a pin to the east is straight ahead
 playerMX, playerMY = 0.5, 0.5
 function GetCVar(n) return n == "rotateMinimap" and "1" or "0" end
 function GetPlayerFacing() return -math.pi / 2 end
-mod:UpdateTownsfolkMinimap()
-ok(type(lastY) == "number" and lastY > 20 and math.abs(lastX) < 1, "facing east, a pin to the east sits above the arrow", tostring(lastX) .. "," .. tostring(lastY))
+Frame(0.016)
+ok(near(pin._y, 200 * 0.35) and math.abs(pin._x) < 1e-6, "facing east, a pin 200 yards east sits straight above the arrow", tostring(pin._x) .. "," .. tostring(pin._y))
 function GetCVar() return "0" end
--- the broken world-position call stays broken. The pin is still placed from the map's own yards.
-playerMX, playerMY = 0.5, 0.5
-shows = 0
+Frame(0.016)
+-- combat: hidden, back after
+function InCombatLockdown() return true end
+Frame(0.016)
+ok(#Shown() == 0, "in combat the minimap pins are hidden, not left behind", #Shown())
+function InCombatLockdown() return false end
+Frame(0.5)
+ok(#Shown() == 1, "out of combat they come back", #Shown())
+-- a secret position: nothing drawn
+secretX = true
+Frame(0.016)
+ok(#Shown() == 0, "a secret player position draws nothing")
+secretX = false
+Frame(0.016)
+-- no view radius from the game: nothing drawn, no guessed table
+C_Minimap.GetViewRadius = nil
+mm.onEvent(nil, "MINIMAP_UPDATE_ZOOM")
+Frame(0.016)
+ok(#Shown() == 0, "without the game's view radius nothing is drawn (no radius table)", #Shown())
+C_Minimap.GetViewRadius = function() return viewR end
+mm.onEvent(nil, "MINIMAP_UPDATE_ZOOM")
+Frame(0.016)
+ok(#Shown() == 1, "with it again, the pin is back", #Shown())
+mod.db.townsfolkMinimap = false
 mod:UpdateTownsfolkMinimap()
-ok(shows == 1, "a non-linear world-position call does not throw the pin off the minimap", shows)
+ok(#Shown() == 0, "minimap checkbox off draws nothing")
+mod.db.townsfolkMinimap = true
 ns.TownsfolkData = { records = {
 	{ id = 9, name = "Tailor", title = "Expert Tailor", faction = "AH", type = "tailoring", map = 1453, x = 51, y = 50 },
 } }
 for k in pairs(mod.db.townsfolk) do mod.db.townsfolk[k] = false end
 mod.db.townsfolk.tailoring = true
-shows = 0
 mod:UpdateTownsfolkMinimap()
-local tailorOn = shows
+local tailorOn = #Shown()
 mod.db.townsfolk.tailoring = false
 mod:UpdateTownsfolkMinimap()
-ok(tailorOn >= 1 and shows == tailorOn, "the profession checkbox shows the minimap pin, and off leaves it hidden", tailorOn)
+ok(tailorOn == 1 and #Shown() == 0, "the profession checkbox shows the minimap pin, and off hides it", tailorOn)
+local mmSrc = assert(io.open(root .. "Map/TownsfolkMinimap.lua")):read("*a")
+ok(not mmSrc:find("R_OUT", 1, true) and not mmSrc:find("466.6667", 1, true) and not mmSrc:find("MapSpan", 1, true)
+	and mmSrc:find("C_Minimap.GetViewRadius", 1, true) and mmSrc:find("C_Map.GetMapWorldSize", 1, true),
+	"no hand-made radius table or Stitch span left; the game's view radius and map size are used")
 
--- host map quests are drawn
+---------------------------------------------------------------------------
+print("== 6. (1.2.45) quest icons: the Objectives tracker's own button, styled as the tracker styles it")
 function InCombatLockdown() return false end
 Enum = Enum or { UIMapType = { Continent = 2, Zone = 3 } }
 function C_Map.GetMapChildrenInfo() return { { mapID = 1453 }, { mapID = 1429 } } end
 function C_Map.GetMapInfo() return { mapType = 3 } end
+GameTooltip.SetText = function() end
+local completeQ = { [42] = true }
 C_QuestLog = {
 	GetQuestsOnMap = function(id)
 		if id == 1453 then return { { questID = 42, x = 0.2, y = 0.3 } } end
 		if id == 1429 then return { { questID = 43, x = 0.4, y = 0.4 } } end
 		return {}
 	end,
-	IsComplete = function() return true end,
+	IsComplete = function(id) return completeQ[id] or false end,
 }
+local superQ = 43
+C_SuperTrack = { GetSuperTrackedQuestID = function() return superQ end }
 mod.HostMap = function() return 1453 end
 mod.IsStitched = function() return true end
 mod.PadWaits = function() return false end
 mod.ToWorld = function(_, x, y) return x, y end
 mod.db.allQuests = true
-S.Look = function() end
 S.iconScale = 2
-local questPins, badgeSize, markSize, hiSize, pinScale, poiAtlas = 0
-local oldAdd = S.AddPin
-S.AddPin = function(set, ...)
-	questPins = questPins + 1
-	local look = select(3, ...)
-	poiAtlas = look and look.atlas
-	local pin = oldAdd(set, ...)
-	pin.SetScale = function(self, s) pinScale = s end
-	pin.SetSize = function(_, w) badgeSize = w end
-	pin.Icon = { ClearAllPoints = function() end, SetPoint = function() end, SetSize = function(_, w) markSize = w end }
-	pin.Highlight = { ClearAllPoints = function() end, SetPoint = function() end, SetSize = function(_, w) hiSize = w end }
-	pin.CreateTexture = function()
-		return { SetPoint = function() end, SetSize = function() end, Show = function() end }
-	end
+-- a pooled pin set, as Stitch's: a cleared pin is reused
+local qset = { pins = {}, pool = {} }
+S.PinSet = function() return qset end
+S.ClearPinSet = function(set) for _, p in ipairs(set.pins) do p._shown = false set.pool[#set.pool + 1] = p end set.pins = {} end
+S.SetPinSetOn = function(set, on) set.on = on end
+local looks = {}
+S.AddPin = function(set, u, v, look, data)
+	looks[#looks + 1] = look
+	local pin = table.remove(set.pool) or {
+		_scripts = {},
+		SetScript = function(self, n, fn) self._scripts[n] = fn end,
+		SetScale = function(self, k) self._scale = k end,
+		SetSize = function(self, w) self._size = w end,
+		Hide = function(self) self._shown = false end,
+		Icon = { SetAlpha = function(self, a) self.a = a end },
+		Highlight = { SetAlpha = function(self, a) self.a = a end },
+	}
+	pin.u, pin.v, pin.data, pin._shown = u, v, data, true
+	set.pins[#set.pins + 1] = pin
 	return pin
 end
-local poiBad = false
-local prevCreate = CreateFrame
+local noTemplate = false
+local made = 0
 CreateFrame = function(kind, name, parent, template)
-	if template == "ObjectiveTrackerPOIButtonTemplate" or template == "POIButtonTemplate" then
-		local display = { w = 18, atlas = "UI-QuestPoi-Progress", GetWidth = function(self) return self.w end, GetAtlas = function(self) return self.atlas end }
-		return {
-			Display = display, Hide = function() end,
-			GetWidth = function() return 24 end,
-			SetStyle = function(self, style) self.style = style end,
-			UpdateButtonStyle = function(self)
-				if poiBad then
-					self.Display.atlas = "UI-QuestPoi-QuestNumber"
-					self.Display.w = 1
-				else
-					self.Display.atlas = self.style == 3 and "UI-QuestPoi-Bang" or "UI-QuestPoi-Progress"
-					self.Display.w = 18
-				end
-			end,
-		}
+	local f = { _scripts = {}, SetScript = function(self, n, fn) self._scripts[n] = fn end, RegisterEvent = function() end,
+		Hide = function() end, Show = function() end }
+	if (template == "ObjectiveTrackerPOIButtonTemplate" or template == "POIButtonTemplate") and not noTemplate then
+		made = made + 1
+		f._template, f._parent, f._styled = template, parent, 0
+		f.SetQuestID = function(self, q) self._q = q end
+		f.SetStyle = function(self, st) self._style = st end
+		f.SetSelected = function(self, v) self._selected = v end
+		f.UpdateButtonStyle = function(self) self._styled = self._styled + 1 end
+		f.EnableMouse = function(self, on) self._mouse = on end
+		f.ClearAllPoints = function() end
+		f.SetPoint = function(self, p, rel) self._anchor = rel end
+		f.Show = function(self) self._shown = true end
+		f.HighlightTexture = { SetShown = function(self, on) self.on = on end }
 	end
-	return prevCreate(kind, name, parent, template)
+	return f
 end
-POIButtonUtil = { Style = { QuestInProgress = 5, QuestComplete = 3 } }
+POIButtonUtil = { Style = { QuestInProgress = 2, QuestComplete = 3 }, GetStyle = function(id) return completeQ[id] and 3 or 2 end }
+ns.Util = nil
+assert(loadfile(root .. "UI/Parts.lua"))("Valhalla", ns)
 assert(loadfile(root .. "Map/Quests.lua"))("Valhalla", ns)
 mod:RefreshQuests()
-ok(questPins == 2, "a quest on the host map and one in the next zone are both drawn", questPins)
-ok(badgeSize == 20 and markSize and hiSize == markSize and math.abs(markSize / badgeSize - 18 / 24) < 0.001,
-	"the mark matches the log display, and the hover picture is the same size", tostring(markSize) .. "/" .. tostring(hiSize))
-ok(poiAtlas == "UI-QuestPoi-Bang" and pinScale == 1, "one combined atlas, and the Icon size slider does not scale it", tostring(poiAtlas) .. " " .. tostring(pinScale))
-ok(ValhallaDB.questPoi and ValhallaDB.questPoi.used and ValhallaDB.questPoi.used.button == 24
-	and ValhallaDB.questPoi.used.complete == 18 and ValhallaDB.questPoi.rejected == false,
-	"a real log measurement is the one that was used", ValhallaDB.questPoi and ValhallaDB.questPoi.used and ValhallaDB.questPoi.used.button)
-poiBad = true
-mod.questPoiInfo = nil
-questPins = 0
+local byQ = {}
+for _, p in ipairs(qset.pins) do if p.poi then byQ[p.poi._q] = p end end
+ok(#qset.pins == 2 and byQ[42] and byQ[43], "a quest on the host map and one in the next zone are both drawn", #qset.pins)
+ok(byQ[42] and byQ[42].poi._template == "ObjectiveTrackerPOIButtonTemplate" and byQ[42].poi._parent == byQ[42] and byQ[42].poi._anchor == byQ[42],
+	"each icon is Valhalla's own ObjectiveTrackerPOIButtonTemplate button, on the pin")
+ok(byQ[42] and byQ[42].poi._style == 3 and byQ[43].poi._style == 2, "complete and in progress: the style POIButtonUtil.GetStyle gives (as the map and log)",
+	tostring(byQ[42] and byQ[42].poi._style) .. " " .. tostring(byQ[43] and byQ[43].poi._style))
+ok(byQ[43] and byQ[43].poi._selected == true and byQ[42].poi._selected == false, "the super-tracked quest's button is selected (the game's glow)")
+ok(byQ[42] and byQ[42].poi._styled == 1 and byQ[43].poi._styled == 1, "UpdateButtonStyle paints each once")
+ok(byQ[42] and byQ[42]._scale == 1 and byQ[42]._size == 20 and byQ[42].Icon.a == 0 and byQ[42].Highlight.a == 0 and byQ[42].poi._mouse == false,
+	"the pin is 20 px at scale 1, its own picture hidden, and the mouse stays on the pin")
+local anyArt = false
+for _, l in ipairs(looks) do if l.atlas or l.texture then anyArt = true end end
+ok(not anyArt, "no atlas or texture of Valhalla's own is given to a quest pin")
+byQ[43]._scripts.OnEnter(byQ[43])
+ok(byQ[43].poi.HighlightTexture.on == true, "hover shows the button's own highlight")
+byQ[43]._scripts.OnLeave(byQ[43])
+ok(byQ[43].poi.HighlightTexture.on == false, "leaving hides it")
+-- super-tracking moves: the pooled buttons are restyled, a new button is not made
+superQ = 42
+local before = made
 mod:RefreshQuests()
-ok(questPins == 2 and badgeSize == 20 and markSize == 20 and hiSize == 20,
-	"a 1 px display reading does not shrink the pin, on either map", tostring(markSize))
-ok(ValhallaDB.questPoi and ValhallaDB.questPoi.rejected and ValhallaDB.questPoi.rejected.complete == 1
-	and ValhallaDB.questPoi.used.ratioDone == 1,
-	"the rejected 1 px reading is saved, and the full badge is what was used",
-	ValhallaDB.questPoi and ValhallaDB.questPoi.rejected and ValhallaDB.questPoi.rejected.complete)
-CreateFrame = prevCreate
+byQ = {}
+for _, p in ipairs(qset.pins) do if p.poi then byQ[p.poi._q] = p end end
+ok(made == before and byQ[42] and byQ[42].poi._selected == true and byQ[43].poi._selected == false,
+	"after super-tracking changes, the same buttons are restyled (selected moves)", made - before)
+before = made
+mod:RefreshQuests()
+local right = 0
+for _, p in ipairs(qset.pins) do
+	local q = p.poi and p.poi._q
+	if q and p.data.id == q and p.poi._style == (completeQ[q] and 3 or 2) and p.poi._selected == (q == superQ) then right = right + 1 end
+end
+ok(made == before and right == 2, "a pooled pin given another quest is repainted for that quest", right)
+local qSrc = assert(io.open(root .. "Map/Quests.lua")):read("*a")
+ok(not qSrc:find("QuestBang", 1, true) and not qSrc:find("GossipFrame", 1, true) and not qSrc:find("MeasureQuestPoi", 1, true)
+	and not qSrc:find("questPoi", 1, true) and not qSrc:find("SetFrameLevel", 1, true) and not qSrc:find("layoutIndex", 1, true),
+	"no measuring, no QuestBang or Gossip fallback, no frame level or layout writes")
+-- a client without the template: no quest icons (not a look that isn't the log's)
+noTemplate = true
+qset.pins, qset.pool = {}, {}
+assert(loadfile(root .. "Map/Quests.lua"))("Valhalla", ns)
+mod:RefreshQuests()
+local visible = 0
+for _, p in ipairs(qset.pins) do if p._shown then visible = visible + 1 end end
+mod:RefreshQuests()
+ok(visible == 0 and qset.on == false, "no POI button template: nothing is drawn, and the quest set is off", visible)
+noTemplate = false
+
+print("== 7. (1.2.45) Parts.PaintQuestPoi: restyled only when the quest, style or selection changed")
+local b = ns.Parts.QuestPoi({})
+ok(b and b.native and b.template == "ObjectiveTrackerPOIButtonTemplate", "Parts.QuestPoi: the tracker's template first")
+ns.Parts.PaintQuestPoi(b, 5, 2, false)
+ns.Parts.PaintQuestPoi(b, 5, 2, false)
+ok(b._styled == 1 and b._q == 5, "the same paint twice: one UpdateButtonStyle", b._styled)
+ns.Parts.PaintQuestPoi(b, 5, 3, false)
+ns.Parts.PaintQuestPoi(b, 5, 3, true)
+ns.Parts.PaintQuestPoi(b, 6, 3, true)
+ok(b._styled == 4 and b._q == 6 and b._style == 3 and b._selected == true, "style, selection and quest changes each restyle", b._styled)
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

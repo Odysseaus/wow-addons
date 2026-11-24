@@ -1522,11 +1522,7 @@ function O.PaintPoi(b)
 	local sel = super == b.q
 	if b.native then
 		local U = rawget(_G, "POIButtonUtil")
-		local style = U and U.Style and U.Style.QuestComplete or 3
-		if b.painted ~= b.q then pcall(b.SetQuestID, b, b.q) end
-		pcall(b.SetStyle, b, style)
-		pcall(b.SetSelected, b, sel)
-		if b.painted ~= b.q or b.sel ~= sel then pcall(b.UpdateButtonStyle, b) end
+		ns.Parts.PaintQuestPoi(b, b.q, U and U.Style and U.Style.QuestComplete or 3, sel)
 	else
 		if not Atlas(b.icon, "UI-QuestIcon-TurnIn-Normal") then
 			b.icon:SetTexture("Interface\\GossipFrame\\ActiveQuestIcon") b.icon:Show()
@@ -1539,20 +1535,16 @@ function O.PaintPoi(b)
 	b:Show()
 end
 
-local POI_TEMPLATES = { "ObjectiveTrackerPOIButtonTemplate", "POIButtonTemplate" }
 local function MakePoi(row)
-	for _, t in ipairs(POI_TEMPLATES) do
-		local ok, b = pcall(CreateFrame, "Button", nil, row, t)
-		-- (a mixin's methods sit on the frame itself: SetQuestID there means the template took)
-		if ok and type(b) == "table" and type(rawget(b, "SetQuestID")) == "function" then
-			b.native, b.template = true, t
-			b:SetScript("OnClick", O.PoiClick)
-			if b.RegisterForClicks then b:RegisterForClicks("LeftButtonUp") end
-			return b
-		end
+	-- (the game's button: UI/Parts.lua, shared with the world map's quest icons)
+	local b = ns.Parts.QuestPoi(row)
+	if b then
+		b:SetScript("OnClick", O.PoiClick)
+		if b.RegisterForClicks then b:RegisterForClicks("LeftButtonUp") end
+		return b
 	end
 	-- (no template: drawn the same size, the same toggle)
-	local b = CreateFrame("Button", nil, row)
+	b = CreateFrame("Button", nil, row)
 	b:SetSize(20, 20)
 	b.icon = b:CreateTexture(nil, "ARTWORK")
 	b.icon:SetPoint("CENTER")

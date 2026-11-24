@@ -20,6 +20,7 @@ function ns:Print(fmt, ...) ns.printed[#ns.printed + 1] = select("#", ...) > 0 a
 function ns:NewModule(key, spec) local m = spec or {} m.key = key m.defaults = m.defaults or {} if m.defaults.enabled == nil then m.defaults.enabled = true end self.modules[key] = m return m end
 function ns:GetModule(key) return self.modules[key] end
 assert(loadfile(root .. "Util.lua"))("Valhalla", ns)   -- (1.2.26: the shared helpers, after Core.lua)
+assert(loadfile(root .. "UI/Parts.lua"))("Valhalla", ns)   -- (1.2.45: the quest POI button the map shares)
 assert(loadfile(root .. "Objectives/Objectives.lua"))("Valhalla", ns)
 assert(loadfile(root .. "Objectives/QuestLogPins.lua"))("Valhalla", ns)
 local mod = ns:GetModule("objectives")
