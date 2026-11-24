@@ -780,10 +780,22 @@ local function Look(tex, look)
 		tex:SetAtlas(look.atlas)
 	else
 		local used
-		for _, path in ipairs({ look.texture, look.square, look.fallback, "Interface\\Minimap\\ObjectIcons" }) do
-			if path then
-				local ok = tex:SetTexture(path)
-				if ok ~= false then used = path break end
+		local wm = ns.GetModule and ns:GetModule("worldmap")
+		if look.shipped and look.texture and wm and wm.ArtLoaded then
+			local w = wm.ArtLoaded(tex, look.texture)
+			if w then used = look.texture end
+		end
+		if not used then
+			local paths = {}
+			if not look.shipped then paths[#paths + 1] = look.texture end
+			paths[#paths + 1] = look.square
+			paths[#paths + 1] = look.fallback
+			paths[#paths + 1] = "Interface\\Minimap\\ObjectIcons"
+			for _, path in ipairs(paths) do
+				if path then
+					local ok = tex:SetTexture(path)
+					if ok ~= false then used = path break end
+				end
 			end
 		end
 		if look.coords and used == look.texture then tex:SetTexCoord(unpack(look.coords)) end

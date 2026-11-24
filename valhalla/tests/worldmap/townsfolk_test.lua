@@ -150,7 +150,10 @@ for _, k in ipairs(mod.TOWNSFOLK) do
 		if not k.look.square:find("Interface\\Icons\\", 1, true) then shaped = -100 end
 	end
 end
-ok(shaped == 12 and sized and fallback and noMask, "twelve professions: shaped file, square icon, Profession fallback, no mask", shaped)
+local shipped = 0
+for _ in pairs(mod.TOWNSFOLK_ART) do shipped = shipped + 1 end
+ok(shaped == 12 and shipped == 12 and sized and fallback and noMask,
+	"twelve shipped pictures: shaped file, square icon, Profession fallback, no mask", shaped)
 added = 0
 mod.InstallTownsfolkData({ records = {
 	{ id = 1901, name = "Kelstrum", title = "Warrior Trainer", faction = "A", type = "classTrainer", trainerTag = "WARRIOR", map = 1455, x = 67, y = 88 },
@@ -173,7 +176,9 @@ local function Gate(fn)
 		local make = f.CreateTexture
 		f.CreateTexture = function(...)
 			local t = make(...)
-			t.SetTexture = function(_, path) return fn(path) end
+			t.SetTexture = function(self, path) self._path = path return fn(path, self) end
+			t.GetWidth = function(self) return self._w or 0 end
+			t.GetHeight = function(self) return self._h or self._w or 0 end
 			return t
 		end
 		return f
@@ -184,30 +189,43 @@ local tailorLook
 for _, k in ipairs(mod.TOWNSFOLK) do if k.key == "tailoring" then tailorLook = k.look end end
 for _, k in ipairs(mod.TOWNSFOLK) do mod.db.townsfolk[k.key] = false end
 mod.db.townsfolk.tailoring = true
-local restore = Gate(function(path) if path:find("Media\\Townsfolk\\", 1, true) then return false end return true end)
+ValhallaDB.townsfolkIcons["Interface\\Icons\\Trade_Tailoring"] = "mask"
+local restore = Gate(function(path, tex)
+	-- this client says every path loaded. A missing picture still has no size.
+	if path:find("Media\\Townsfolk\\", 1, true) then tex._w, tex._h = 0, 0 else tex._w, tex._h = 64, 64 end
+	return true
+end)
 added = 0
 mod.InstallTownsfolkData({ records = {
 	{ id = 5153, name = "Jormund", title = "Expert Tailor", faction = "A", type = "tailoring", map = 1455, x = 43, y = 29 },
 } })
 restore()
-ok(ValhallaDB.townsfolkIcons[tailorLook.texture] == tailorLook.square,
-	"shaped file missing: the square icon is what was used", ValhallaDB.townsfolkIcons[tailorLook.texture])
+ok(added == 1, "tailoring on: the tailor pin is created", added)
+local noted = ValhallaDB.townsfolkIcons[tailorLook.texture]
+ok(type(noted) == "table" and noted.path == tailorLook.square and noted.width == 64,
+	"SetTexture true but width 0: the square icon is what was used", noted and noted.path)
+ok(ValhallaDB.townsfolkIcons["Interface\\Icons\\Trade_Tailoring"] == nil, "a stale mask entry is dropped")
 local smith
 for _, k in ipairs(mod.TOWNSFOLK) do if k.key == "blacksmithing" then smith = k.look end end
 mod.db.townsfolk.tailoring = false
 mod.db.townsfolk.blacksmithing = true
-restore = Gate(function() return true end)
+restore = Gate(function(path, tex)
+	tex._w, tex._h = path:find("Media\\Townsfolk\\", 1, true) and 128 or 64, path:find("Media\\Townsfolk\\", 1, true) and 128 or 64
+	return true
+end)
 mod.InstallTownsfolkData({ records = {
 	{ id = 2, name = "Smith", title = "Expert Blacksmith", faction = "A", type = "blacksmithing", map = 1455, x = 40, y = 30 },
 } })
 restore()
-ok(ValhallaDB.townsfolkIcons[smith.texture] == smith.texture, "shaped file present: that file is what was used",
-	ValhallaDB.townsfolkIcons[smith.texture])
+noted = ValhallaDB.townsfolkIcons[smith.texture]
+ok(type(noted) == "table" and noted.path == smith.texture and noted.width == 128,
+	"shaped file with a real size: that file is what was used", noted and noted.width)
 local eng
 for _, k in ipairs(mod.TOWNSFOLK) do if k.key == "engineering" then eng = k.look end end
 mod.db.townsfolk.blacksmithing = false
 mod.db.townsfolk.engineering = true
-restore = Gate(function(path)
+restore = Gate(function(path, tex)
+	tex._w, tex._h = 32, 32
 	if path:find("Media\\Townsfolk\\", 1, true) or path:find("Interface\\Icons\\", 1, true) then return false end
 	return true
 end)
@@ -215,8 +233,9 @@ mod.InstallTownsfolkData({ records = {
 	{ id = 3, name = "Eng", title = "Expert Engineer", faction = "A", type = "engineering", map = 1455, x = 40, y = 30 },
 } })
 restore()
-ok(ValhallaDB.townsfolkIcons[eng.texture] == eng.fallback, "square icon missing too: the Profession symbol is what was used",
-	ValhallaDB.townsfolkIcons[eng.texture])
+noted = ValhallaDB.townsfolkIcons[eng.texture]
+ok(type(noted) == "table" and noted.path == eng.fallback, "square icon missing too: the Profession symbol is what was used",
+	noted and noted.path)
 
 ns.Safe = { Call = function(fn, ...) return fn(...) end, IsSecret = function() return false end }
 Minimap = { GetWidth = function() return 140 end, GetZoom = function() return 0 end }
@@ -226,11 +245,13 @@ C_Map = C_Map or {}
 function C_Map.GetBestMapForUnit() return 1453 end
 local playerMX, playerMY = 0.5, 0.5
 function C_Map.GetPlayerMapPosition() return { x = playerMX, y = playerMY, GetXY = function() return playerMX, playerMY end } end
+-- not a straight scale: the two corners are not the map's yard width. The old span would cull a nearby pin.
 function C_Map.GetWorldPosFromMapPos(mapID, vec)
 	local x, y = 0, 0
 	if vec.GetXY then x, y = vec:GetXY() elseif vec.x then x, y = vec.x, vec.y end
-	return 0, { x = x * 1000, y = y * 1000 }
+	return (x < 0.5) and 1 or 9, { x = x * x * 80000, y = math.sin(y * 6) * 40000 }
 end
+S.ToYards = function(_, u, v) return u * 1000, v * 1000 end
 function CreateVector2D(x, y) return { x = x, y = y, GetXY = function(self) return self.x, self.y end } end
 local levels = {}
 local lastX, lastY
@@ -269,7 +290,10 @@ shows, levelsSeen = 0, {}
 mod:UpdateTownsfolkMinimap()
 local folk, quest = false, false
 for _, n in ipairs(levelsSeen) do if n == 4 then folk = true elseif n == 6 then quest = true end end
-ok(shows == 2 and folk and quest, "minimap cull keeps the near pin and the quest badge above it; the far pin is hidden", shows)
+ok(shows == 1 and folk and not quest, "minimap cull keeps the near pin; a quest question mark is not drawn", shows)
+local diag = ValhallaDB.minimapDiag and ValhallaDB.minimapDiag[1]
+ok(type(diag) == "table" and diag.map == 1453 and diag.source == "rect" and type(diag.x) == "number" and type(diag.pinX) == "number",
+	"a minimap sample is saved for the next reload", diag and diag.source)
 mod.db.townsfolkMinimap = false
 shows = 0
 mod:UpdateTownsfolkMinimap()
@@ -290,10 +314,11 @@ local eastX = lastX
 playerMX = 0.6
 mod:UpdateTownsfolkMinimap()
 ok(type(eastX) == "number" and type(lastX) == "number" and lastX < eastX, "walking east moves the pin the other way", tostring(eastX) .. " -> " .. tostring(lastX))
-playerMX, playerMY = 0.5, 0.3
+-- map y grows south. Start south of the pin and walk north: the pin moves down, not with you.
+playerMX, playerMY = 0.5, 0.7
 mod:UpdateTownsfolkMinimap()
 local northY = lastY
-playerMY = 0.4
+playerMY = 0.6
 mod:UpdateTownsfolkMinimap()
 ok(type(northY) == "number" and type(lastY) == "number" and lastY < northY, "walking north moves the pin the other way", tostring(northY) .. " -> " .. tostring(lastY))
 playerMX, playerMY = 0.5, 0.5
@@ -302,29 +327,34 @@ function GetPlayerFacing() return -math.pi / 2 end
 mod:UpdateTownsfolkMinimap()
 ok(type(lastY) == "number" and lastY > 20 and math.abs(lastX) < 1, "facing east, a pin to the east sits above the arrow", tostring(lastX) .. "," .. tostring(lastY))
 function GetCVar() return "0" end
--- continent ids disagree, and the yard width is not real: a pin on this map is still drawn
-function C_Map.GetWorldPosFromMapPos(mapID, vec)
-	local x, y = 0, 0
-	if vec.GetXY then x, y = vec:GetXY() elseif vec.x then x, y = vec.x, vec.y end
-	return (x < 0.5) and 3 or 8, { x = x, y = y }
-end
+-- the broken world-position call stays broken. The pin is still placed from the map's own yards.
 playerMX, playerMY = 0.5, 0.5
 shows = 0
 mod:UpdateTownsfolkMinimap()
-ok(shows == 1, "no real yard width, and the corners disagree: the pin on this map is still drawn", shows)
-function C_Map.GetWorldPosFromMapPos(mapID, vec)
-	local x, y = 0, 0
-	if vec.GetXY then x, y = vec:GetXY() elseif vec.x then x, y = vec.x, vec.y end
-	return 0, { x = x * 1000, y = y * 1000 }
-end
+ok(shows == 1, "a non-linear world-position call does not throw the pin off the minimap", shows)
+ns.TownsfolkData = { records = {
+	{ id = 9, name = "Tailor", title = "Expert Tailor", faction = "AH", type = "tailoring", map = 1453, x = 51, y = 50 },
+} }
+for k in pairs(mod.db.townsfolk) do mod.db.townsfolk[k] = false end
+mod.db.townsfolk.tailoring = true
+shows = 0
+mod:UpdateTownsfolkMinimap()
+local tailorOn = shows
+mod.db.townsfolk.tailoring = false
+mod:UpdateTownsfolkMinimap()
+ok(tailorOn >= 1 and shows == tailorOn, "the profession checkbox shows the minimap pin, and off leaves it hidden", tailorOn)
 
 -- host map quests are drawn
 function InCombatLockdown() return false end
 Enum = Enum or { UIMapType = { Continent = 2, Zone = 3 } }
-function C_Map.GetMapChildrenInfo() return { { mapID = 1453 } } end
+function C_Map.GetMapChildrenInfo() return { { mapID = 1453 }, { mapID = 1429 } } end
 function C_Map.GetMapInfo() return { mapType = 3 } end
 C_QuestLog = {
-	GetQuestsOnMap = function(id) if id == 1453 then return { { questID = 42, x = 0.2, y = 0.3 } } end return {} end,
+	GetQuestsOnMap = function(id)
+		if id == 1453 then return { { questID = 42, x = 0.2, y = 0.3 } } end
+		if id == 1429 then return { { questID = 43, x = 0.4, y = 0.4 } } end
+		return {}
+	end,
 	IsComplete = function() return true end,
 }
 mod.HostMap = function() return 1453 end
@@ -334,7 +364,7 @@ mod.ToWorld = function(_, x, y) return x, y end
 mod.db.allQuests = true
 S.Look = function() end
 S.iconScale = 2
-local questPins, badgeSize, markSize, pinScale, poiAtlas = 0
+local questPins, badgeSize, markSize, hiSize, pinScale, poiAtlas = 0
 local oldAdd = S.AddPin
 S.AddPin = function(set, ...)
 	questPins = questPins + 1
@@ -344,11 +374,13 @@ S.AddPin = function(set, ...)
 	pin.SetScale = function(self, s) pinScale = s end
 	pin.SetSize = function(_, w) badgeSize = w end
 	pin.Icon = { ClearAllPoints = function() end, SetPoint = function() end, SetSize = function(_, w) markSize = w end }
+	pin.Highlight = { ClearAllPoints = function() end, SetPoint = function() end, SetSize = function(_, w) hiSize = w end }
 	pin.CreateTexture = function()
 		return { SetPoint = function() end, SetSize = function() end, Show = function() end }
 	end
 	return pin
 end
+local poiBad = false
 local prevCreate = CreateFrame
 CreateFrame = function(kind, name, parent, template)
 	if template == "ObjectiveTrackerPOIButtonTemplate" or template == "POIButtonTemplate" then
@@ -358,8 +390,13 @@ CreateFrame = function(kind, name, parent, template)
 			GetWidth = function() return 24 end,
 			SetStyle = function(self, style) self.style = style end,
 			UpdateButtonStyle = function(self)
-				self.Display.atlas = self.style == 3 and "UI-QuestPoi-Bang" or "UI-QuestPoi-Progress"
-				self.Display.w = 18
+				if poiBad then
+					self.Display.atlas = "UI-QuestPoi-QuestNumber"
+					self.Display.w = 1
+				else
+					self.Display.atlas = self.style == 3 and "UI-QuestPoi-Bang" or "UI-QuestPoi-Progress"
+					self.Display.w = 18
+				end
 			end,
 		}
 	end
@@ -368,12 +405,23 @@ end
 POIButtonUtil = { Style = { QuestInProgress = 5, QuestComplete = 3 } }
 assert(loadfile(root .. "Map/Quests.lua"))("Valhalla", ns)
 mod:RefreshQuests()
-ok(questPins == 1, "a quest on the host map is drawn above the townsfolk layer", questPins)
-ok(badgeSize == 20 and markSize and math.abs(markSize / badgeSize - 18 / 24) < 0.001,
-	"the mark is the same share of the badge as the log button's display", tostring(markSize) .. "/" .. tostring(badgeSize))
+ok(questPins == 2, "a quest on the host map and one in the next zone are both drawn", questPins)
+ok(badgeSize == 20 and markSize and hiSize == markSize and math.abs(markSize / badgeSize - 18 / 24) < 0.001,
+	"the mark matches the log display, and the hover picture is the same size", tostring(markSize) .. "/" .. tostring(hiSize))
 ok(poiAtlas == "UI-QuestPoi-Bang" and pinScale == 1, "one combined atlas, and the Icon size slider does not scale it", tostring(poiAtlas) .. " " .. tostring(pinScale))
-ok(ValhallaDB.questPoi and ValhallaDB.questPoi.button == 24 and ValhallaDB.questPoi.complete == 18 and ValhallaDB.questPoi.inProgress == 18,
-	"the measured log widths are saved", ValhallaDB.questPoi and ValhallaDB.questPoi.button)
+ok(ValhallaDB.questPoi and ValhallaDB.questPoi.used and ValhallaDB.questPoi.used.button == 24
+	and ValhallaDB.questPoi.used.complete == 18 and ValhallaDB.questPoi.rejected == false,
+	"a real log measurement is the one that was used", ValhallaDB.questPoi and ValhallaDB.questPoi.used and ValhallaDB.questPoi.used.button)
+poiBad = true
+mod.questPoiInfo = nil
+questPins = 0
+mod:RefreshQuests()
+ok(questPins == 2 and badgeSize == 20 and markSize == 20 and hiSize == 20,
+	"a 1 px display reading does not shrink the pin, on either map", tostring(markSize))
+ok(ValhallaDB.questPoi and ValhallaDB.questPoi.rejected and ValhallaDB.questPoi.rejected.complete == 1
+	and ValhallaDB.questPoi.used.ratioDone == 1,
+	"the rejected 1 px reading is saved, and the full badge is what was used",
+	ValhallaDB.questPoi and ValhallaDB.questPoi.rejected and ValhallaDB.questPoi.rejected.complete)
 CreateFrame = prevCreate
 
 print(("\n%d passed, %d failed"):format(pass, fail))

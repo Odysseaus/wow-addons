@@ -62,14 +62,6 @@ local function Secret(v)
 	return Safe and Safe.IsSecret and Safe.IsSecret(v) or false
 end
 
-local function VecXY(world)
-	if type(world) ~= "table" then return end
-	local x, y
-	if world.GetXY then x, y = world:GetXY() else x, y = world.x, world.y end
-	if type(x) ~= "number" or type(y) ~= "number" or Secret(x) or Secret(y) then return end
-	return x, y
-end
-
 -- 0-100 records and 0-1 map positions, both as a fraction of the map
 local function Norm(x, y)
 	if type(x) ~= "number" or type(y) ~= "number" then return end
@@ -77,21 +69,52 @@ local function Norm(x, y)
 	return x, y
 end
 
--- yards across this map, from its (0,0) corner to (1,1). Nil when that width is not yards
--- (a map fraction, or the call fails). Continent ids are not compared.
+-- yards across this map, from the same world rectangle and yard table the world map uses.
+-- Not from GetWorldPosFromMapPos of the two corners: on this client that width is not the map's.
 local function MapSpan(mapID)
-	if not (C_Map and C_Map.GetWorldPosFromMapPos and CreateVector2D) then return end
-	local function corner(x, y)
-		local ok, _, world = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(x, y))
-		if not ok or type(world) ~= "table" then return end
-		return VecXY(world)
+	local S = ns.MapStitch
+	if not (S and S.Rect and S.ToYards) then return nil, nil, "rejected" end
+	local l, r, t, b = S.Rect(mapID)
+	if not (type(l) == "number" and type(r) == "number" and r > l and type(b) == "number" and b > t) then
+		return nil, nil, "rejected"
 	end
-	local x0, y0 = corner(0, 0)
-	local x1, y1 = corner(1, 1)
-	if not (x0 and x1) then return end
-	local dx, dy = math.abs(x1 - x0), math.abs(y1 - y0)
-	if dx <= 2 and dy <= 2 then return end
-	return dx, dy
+	local u, v = (l + r) / 2, (t + b) / 2
+	local step = 0.02
+	local function yards(uu, vv)
+		for _, cont in ipairs({ 0, 1 }) do
+			local x, y = S.ToYards(cont, uu, vv)
+			if type(x) == "number" and type(y) == "number" then return x, y, cont end
+		end
+	end
+	local x0, y0, cont = yards(u, v)
+	if not x0 then return nil, nil, "rejected" end
+	local x1, y1 = S.ToYards(cont, u + (r - l) * step, v)
+	local x2, y2 = S.ToYards(cont, u, v + (b - t) * step)
+	local function stepYards(ax, ay, bx, by)
+		if type(ax) ~= "number" or type(bx) ~= "number" or type(ay) ~= "number" or type(by) ~= "number" then return end
+		return math.sqrt((bx - ax) ^ 2 + (by - ay) ^ 2) / step
+	end
+	local spanX, spanY = stepYards(x0, y0, x1, y1), stepYards(x0, y0, x2, y2)
+	if not spanX or not spanY or (spanX <= 2 and spanY <= 2) then return nil, nil, "rejected" end
+	return spanX, spanY, "rect"
+end
+
+local diagNext = 0
+local function NoteDiag(mapID, px, py, spanX, spanY, source, pin)
+	local now = (GetTime and GetTime()) or 0
+	if diagNext == -1 then return end
+	if diagNext > 0 and now < diagNext then return end
+	diagNext = now > 0 and (now + 3) or -1
+	local db = rawget(_G, "ValhallaDB")
+	if type(db) ~= "table" then return end
+	local log = db.minimapDiag
+	if type(log) ~= "table" then log = {} db.minimapDiag = log end
+	log[#log + 1] = {
+		map = mapID, x = px, y = py,
+		spanX = spanX, spanY = spanY, source = source,
+		pinX = pin and pin.px, pinY = pin and pin.py, pinMap = pin and pin.map,
+	}
+	while #log > 20 do table.remove(log, 1) end
 end
 
 local function Rebuild()
@@ -171,7 +194,7 @@ function mod:UpdateTownsfolkMinimap()
 	if Secret(rawX) or Secret(rawY) then HideAll() return end
 	local px, py = Norm(rawX, rawY)
 	if not px then HideAll() return end
-	local spanX, spanY = MapSpan(mapID)
+	local spanX, spanY, spanSource = MapSpan(mapID)
 	local want = {}
 	if mod.db.townsfolkMaster then
 		for _, k in ipairs(mod.TOWNSFOLK or {}) do if Wanted(k.key) then want[#want + 1] = k.key end end
@@ -190,7 +213,8 @@ function mod:UpdateTownsfolkMinimap()
 	local function take(src, dest)
 		for _, p in ipairs(src) do
 			if p.map == mapID then
-				local dx, dy = p.x - px, p.y - py
+				-- map x grows east, map y grows south. Screen +y is up.
+				local dx, dy = p.x - px, py - p.y
 				if spanX then
 					dx, dy = dx * spanX, dy * spanY
 				else
@@ -211,19 +235,10 @@ function mod:UpdateTownsfolkMinimap()
 		end
 	end
 	take(points, near)
-	quests = {}
-	for _, q in ipairs(mod.liveQuests or {}) do
-		local qx, qy = Norm(q.x, q.y)
-		if qx and q.map then
-			quests[#quests + 1] = {
-				map = q.map, x = qx, y = qy, name = q.complete and "Ready to turn in" or "Quest", title = "",
-				look = { texture = q.complete and "Interface\\GossipFrame\\ActiveQuestIcon" or "Interface\\GossipFrame\\IncompleteQuestIcon" },
-			}
-		end
-	end
-	take(quests, qnear)
+	-- in-progress quest question marks are not drawn here. The world map has those.
 	Place(near, pool, used, 4)
-	Place(qnear, qpool, qused, 6)
+	Place({}, qpool, qused, 6)
+	NoteDiag(mapID, px, py, spanX, spanY, spanSource, near[1])
 end
 
 local function Boot()

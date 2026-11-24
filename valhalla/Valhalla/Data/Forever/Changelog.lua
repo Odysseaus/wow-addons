@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.44", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
+		"Profession icons use the new pictures when they really loaded, and the square icon when a file is missing. A checkbox turns them on and off.",
+		"Quest icons keep the quest log's size on every zone, including when you point at one. Townsfolk on the minimap stay on the ground as you walk, and quest question marks are not added there.",
+	} },
 	{ version = "1.2.43", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
 		"Profession icons no longer use a mask. They stay the square icon until their own pictures are added.",
 		"Quest icons on the map use the same picture as the quest log, filling the badge the way the log does.",

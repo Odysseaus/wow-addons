@@ -15,12 +15,16 @@ local mod = ns:GetModule("worldmap")
 local PIN = 22
 local PROF_FALLBACK = "Interface\\Minimap\\Tracking\\Profession"
 local PROF_ART = (ns.Media and ns.Media.path or "Interface\\AddOns\\Valhalla\\Media\\") .. "Townsfolk\\"
--- (1.2.43) our own shaped picture, when that file is in the addon. It is not, yet: the square
--- spell icon is used, and the profession symbol if that is missing too. No mask.
+-- the shaped pictures that are actually in the addon. A path not on this list is not loaded.
+mod.TOWNSFOLK_ART = {
+	alchemy = true, blacksmithing = true, cooking = true, enchanting = true,
+	engineering = true, firstaid = true, fishing = true, herbalism = true,
+	leatherworking = true, mining = true, skinning = true, tailoring = true,
+}
 local function Prof(key, name, icon)
 	return { key = key, name = ns.L[name], flag = key:upper(), zoom = 8,
 		look = { texture = PROF_ART .. key .. ".tga", square = "Interface\\Icons\\" .. icon,
-			fallback = PROF_FALLBACK, size = PIN } }
+			fallback = PROF_FALLBACK, size = PIN, shipped = mod.TOWNSFOLK_ART[key] and true or false } }
 end
 local KINDS = {
 	{ key = "vendor", name = ns.L["Vendors"], flag = "VENDOR", zoom = 8,
@@ -174,6 +178,19 @@ local function NoteMiss(mapID)
 	local key = tostring(mapID)
 	m.maps[key] = (tonumber(m.maps[key]) or 0) + 1
 end
+-- a shaped picture is loaded only when its name is one of the twelve and the texture has a real size.
+-- SetTexture's return is not enough: this client returns true for a file that is not there.
+function mod.ArtLoaded(tex, path)
+	local name = type(path) == "string" and path:match("Townsfolk\\([%w_]+)%.tga$")
+	if not (name and mod.TOWNSFOLK_ART[name] and tex and tex.SetTexture) then return end
+	local ok, res = pcall(tex.SetTexture, tex, path)
+	if not (ok and res ~= false) then return end
+	local w = tex.GetWidth and tex:GetWidth()
+	local h = tex.GetHeight and tex:GetHeight()
+	if type(w) ~= "number" or type(h) ~= "number" or w <= 0 or h <= 0 then return end
+	return w
+end
+
 local iconNoted = {}
 local function NoteIcon(look)
 	local db = Saved()
@@ -197,19 +214,41 @@ local function NoteIcon(look)
 		end
 		if f and f.Hide then f:Hide() end
 	end
-	-- (1.2.43) which picture loaded: our shaped file, the square icon, or the profession symbol
+	for k, v in pairs(icons) do if v == "mask" then icons[k] = nil end end
+	-- (1.2.44) SetTexture's return is not enough: a missing file can still return true.
+	-- A shaped picture counts only when it is one of the twelve shipped files and has a real size.
 	if look.square then
-		local function loads(path)
-			if not path or not CreateFrame then return false end
+		local function probe(path)
+			if not path or not CreateFrame then return end
 			local f = CreateFrame("Frame")
 			local t = f and f.CreateTexture and f:CreateTexture()
-			local good, res = false, nil
+			local good, res, width = false, nil, 0
 			if t and t.SetTexture then good, res = pcall(t.SetTexture, t, path) end
+			if good and res ~= false then
+				local w = t.GetWidth and t:GetWidth()
+				local h = t.GetHeight and t:GetHeight()
+				width = (type(w) == "number" and type(h) == "number" and w > 0 and h > 0) and w or 0
+			end
 			if f and f.Hide then f:Hide() end
-			return good and res ~= false
+			if good and res ~= false then return width, true end
 		end
-		local used = (loads(look.texture) and look.texture) or (loads(look.square) and look.square) or (loads(look.fallback) and look.fallback)
-		icons[key] = used or false
+		local width, used
+		if CreateFrame then
+			local f = CreateFrame("Frame")
+			local t = f and f.CreateTexture and f:CreateTexture()
+			width = t and mod.ArtLoaded(t, look.texture)
+			if f and f.Hide then f:Hide() end
+		end
+		if width then used = look.texture end
+		if not used then
+			local w, hit = probe(look.square)
+			if hit then width, used = w, look.square end
+		end
+		if not used then
+			local w, hit = probe(look.fallback)
+			if hit then width, used = w, look.fallback end
+		end
+		icons[key] = { path = used or false, width = width or 0 }
 	else
 		icons[key] = ok and true or false
 	end

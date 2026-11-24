@@ -127,24 +127,43 @@ local function MeasureQuestPoi()
 			if ok and type(made) == "table" and made.SetStyle then button = made break end
 		end
 	end
+	local raw = {}
 	if button then
 		if button.Hide then button:Hide() end
 		local styles = rawget(_G, "POIButtonUtil")
 		styles = styles and styles.Style or {}
 		local bw, dw, atlas = ReadStyle(button, styles.QuestInProgress or 5)
-		if bw and bw > 0 then info.button = bw end
-		if dw and dw > 0 then info.inProgress = dw end
-		if atlas then info.inProgressAtlas = atlas end
-		if bw and dw and bw > 0 and dw > 0 then info.ratioIn = dw / bw end
 		local bw2, dw2, atlas2 = ReadStyle(button, styles.QuestComplete or 3)
-		if bw2 and bw2 > 0 then info.button = bw2 end
-		if dw2 and dw2 > 0 then info.complete = dw2 end
-		if atlas2 then info.completeAtlas = atlas2 end
-		if bw2 and dw2 and bw2 > 0 and dw2 > 0 then info.ratioDone = dw2 / bw2 end
+		raw = {
+			button = (bw2 and bw2 > 0 and bw2) or bw or 0,
+			inProgress = dw or 0, complete = dw2 or 0,
+			inProgressAtlas = atlas, completeAtlas = atlas2,
+			ratioIn = (bw and dw and bw > 0 and dw > 0) and dw / bw or 0,
+			ratioDone = (bw2 and dw2 and bw2 > 0 and dw2 > 0) and dw2 / bw2 or 0,
+		}
+	end
+	local plate = "UI-QuestPoi-QuestNumber"
+	local function sane(row)
+		if not row or (row.button or 0) < 8 then return false end
+		if (row.inProgress or 0) < 8 or (row.complete or 0) < 8 then return false end
+		if (row.ratioIn or 0) < 0.5 or (row.ratioDone or 0) < 0.5 then return false end
+		if row.inProgressAtlas == plate and row.completeAtlas == plate then return false end
+		return true
+	end
+	local used
+	if sane(raw) then
+		used = {
+			button = raw.button, inProgress = raw.inProgress, complete = raw.complete,
+			ratioIn = raw.ratioIn, ratioDone = raw.ratioDone,
+			inProgressAtlas = raw.inProgressAtlas, completeAtlas = raw.completeAtlas,
+		}
+		info = used
 	end
 	mod.questPoiInfo = info
 	local db = rawget(_G, "ValhallaDB")
-	if type(db) == "table" then db.questPoi = info end
+	if type(db) == "table" then
+		db.questPoi = { rejected = not sane(raw) and raw or false, used = info }
+	end
 	return info
 end
 
@@ -162,11 +181,15 @@ local function FitQuest(pin, complete, info)
 	if type(ratio) ~= "number" or ratio <= 0 then ratio = 1 end
 	pin:SetScale(1)
 	pin:SetSize(POI_OUTER, POI_OUTER)
-	if pin.Icon then
-		pin.Icon:ClearAllPoints()
-		pin.Icon:SetPoint("CENTER")
-		pin.Icon:SetSize(POI_OUTER * ratio, POI_OUTER * ratio)
+	local mark = POI_OUTER * ratio
+	local function fit(tex)
+		if not tex then return end
+		tex:ClearAllPoints()
+		tex:SetPoint("CENTER")
+		tex:SetSize(mark, mark)
 	end
+	fit(pin.Icon)
+	fit(pin.Highlight)
 	if pin.questMark and pin.questMark.Hide then pin.questMark:Hide() end
 end
 
