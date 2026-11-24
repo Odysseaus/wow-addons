@@ -248,9 +248,20 @@ local function Rows()
 	local client = ns.ClientMaps or {}
 	local kinds = {}
 	for _, k in ipairs(mod.TOWNSFOLK or {}) do kinds[k.key] = k end
+	-- (1.2.46) a type the game's own minimap tracks: the checkbox is that tracking (read and set: TownsfolkMinimap.lua),
+	-- and its world map pins follow the same tick
 	local function folk(label, key)
 		return row(label, "townsfolk." .. key, kinds[key] and kinds[key].look or Icon("INV_Misc_QuestionMark"),
-			function() return db.townsfolk[key] end, function(v) db.townsfolk[key] = v and true or false mod:RefreshTownsfolk() end)
+			function()
+				local game = mod.GameTrackingOn and mod.GameTrackingOn(key)
+				if game ~= nil then return game end
+				return db.townsfolk[key]
+			end,
+			function(v)
+				db.townsfolk[key] = v and true or false
+				if mod.SetGameTracking then mod.SetGameTracking(key, v) end
+				mod:RefreshTownsfolk()
+			end)
 	end
 	-- (1.2.39) the checkboxes are always here. The master switch is account-wide, with the other map icons.
 	-- Rare mobs still need Questie itself; this pass does not ship them.
@@ -265,7 +276,7 @@ local function Rows()
 		local groups = {
 			{ L["Services"], { "innkeeper", "repair", "mailbox", "banker", "auctioneer", "stable", "spirit" } },
 			{ L["Vendors"], { "vendor", "food", "reagent" } },
-			{ L["Professions"], mod.PROFESSIONS or {} },
+			{ L["Professions"], mod.PROFESSIONS or {}, professions = true },
 			{ L["Trainers"], { "classTrainer" } },
 		}
 		for _, g in ipairs(groups) do
@@ -273,6 +284,12 @@ local function Rows()
 			for _, key in ipairs(g[2]) do
 				local k = kinds[key]
 				if k then rows[#rows + 1] = folk(k.name, key) end
+			end
+			-- (1.2.46) the game's minimap tracks every profession's trainers as one type: its own tick here
+			if g.professions and mod.GameTracked and mod.GameTracked("profTrainer") then
+				rows[#rows + 1] = row(L["Profession trainers on the minimap"], "townsfolk.profTrainer", Icon("INV_Misc_Book_11"),
+					function() return mod.GameTrackingOn("profTrainer") or false end,
+					function(v) mod.SetGameTracking("profTrainer", v) end)
 			end
 		end
 		if questie then rows[#rows + 1] = folk(L["Rare mobs"], "rare") end

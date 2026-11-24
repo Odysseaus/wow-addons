@@ -102,7 +102,6 @@ L["Click, then click another flight master: the route and its time"] = "클릭�
 L["Click, then click the map to add a map pin, with a note if you like (Ctrl-click the map does it any time). Right-click: stop following the waypoint."] = "클릭한 다음 지도를 클릭하면 지도 핀을 추가합니다. 원하면 메모도 달 수 있습니다 (언제든 지도를 Ctrl 클릭해도 됩니다). 오른쪽 클릭: 이동 지점 추적 해제."
 L["Click: show the route"] = "클릭: 경로 표시"
 L["Click: the map and its menu"] = "클릭: 지도와 메뉴"
-L["Click: track this quest and zoom to it"] = "클릭: 이 퀘스트를 추적하고 확대"
 L["Clicking a dungeon entrance opens"] = "던전 입구 클릭 시 열기"
 L["Close"] = "닫기"
 L["Code"] = "코드"

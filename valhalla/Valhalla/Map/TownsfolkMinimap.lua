@@ -7,6 +7,11 @@
 -- the minimap's map (C_Minimap.GetUiMapID), that map's size in yards (C_Map.GetMapWorldSize), the
 -- minimap's radius in yards (C_Minimap.GetViewRadius, read again on MINIMAP_UPDATE_ZOOM), and moved
 -- every frame, so a pin stays on its spot as you walk. The list of pins near you is rebuilt every 0.5 s.
+--
+-- (1.2.46) the types the game's own minimap tracking already shows (food, reagents, repair, inns, banks,
+-- mailboxes, auctioneers, stable masters, class and profession trainers) are never drawn here: their
+-- checkboxes read and set the game's tracking (C_Minimap) instead. A client without that tracking keeps
+-- Valhalla's own pins for them.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -114,6 +119,147 @@ local function NoteDiag(cur, px, py, pin)
 	while #log > 20 do table.remove(log, 1) end
 end
 
+-- (1.2.46) the game's own minimap tracking. Valhalla type -> the game's filter (Enum.MinimapTrackingFilter,
+-- with this client's values: MinimapConstantsDocumentation.lua). profTrainer: the profession records that
+-- are trainers (a supplier's title says Supplies, Vendor, Merchant or Goods; those stay Valhalla's).
+local GAME = {
+	food = { "VenderFood", 16 }, reagent = { "VendorReagent", 256 }, repair = { "Repair", 512 },
+	innkeeper = { "Innkeeper", 32 }, banker = { "Banker", 2 }, mailbox = { "Mailbox", 64 },
+	auctioneer = { "Auctioneer", 1 }, stable = { "Stablemaster", 2048 },
+	classTrainer = { "TrainerClass", 8388608 }, profTrainer = { "TrainerProfession", 128 },
+}
+mod.GAME_TRACKING = GAME
+local SUPPLIER = { "Suppl", "Vendor", "Merchant", "Goods" }
+
+function mod.IsProfessionSupplier(title)
+	title = type(title) == "string" and title or ""
+	for _, w in ipairs(SUPPLIER) do if title:find(w, 1, true) then return true end end
+	return false
+end
+
+-- the game type a townsfolk record is, or nil (Valhalla's alone)
+function mod.TownsfolkGameKey(r)
+	local kind = r and r.type
+	if not kind then return end
+	if GAME[kind] and kind ~= "profTrainer" then return kind end
+	if kind == "vendor" and r.icon == "repair" then return "repair" end
+	for _, p in ipairs(mod.PROFESSIONS or {}) do
+		if p == kind then return (not mod.IsProfessionSupplier(r.title)) and "profTrainer" or nil end
+	end
+end
+
+local function FilterID(key)
+	local g = GAME[key]
+	local E = Enum and Enum.MinimapTrackingFilter
+	return E and E[g[1]] or g[2]
+end
+
+-- key -> the game's tracking index. Kept once the game has given its list (it has none until its
+-- tracking events: Minimap.lua), asked again after MINIMAP_UPDATE_TRACKING and SPELLS_CHANGED.
+local indexOf
+local function TrackingAPI()
+	return C_Minimap and C_Minimap.GetNumTrackingTypes and C_Minimap.GetTrackingFilter and C_Minimap.GetTrackingInfo
+		and C_Minimap.SetTracking and true or false
+end
+local function Indexes()
+	if indexOf then return indexOf end
+	local t, any = {}, false
+	if TrackingAPI() then
+		local n = Call(C_Minimap.GetNumTrackingTypes)
+		local byFilter = {}
+		for i = 1, (type(n) == "number" and n or 0) do
+			local f = Call(C_Minimap.GetTrackingFilter, i)
+			local id = type(f) == "table" and f.filterID
+			if type(id) == "number" and not Secret(id) then byFilter[id] = i end
+		end
+		for key in pairs(GAME) do
+			t[key] = byFilter[FilterID(key)]
+			if t[key] then any = true end
+		end
+	end
+	if any then indexOf = t end
+	return t
+end
+
+-- the game's tracking index when the game's minimap shows this type, else nil
+function mod.GameTracked(key)
+	if not GAME[key] then return end
+	return Indexes()[key]
+end
+
+-- whether the game's minimap tracks this type now; nil: not the game's (Valhalla's own checkbox)
+function mod.GameTrackingOn(key)
+	local i = mod.GameTracked(key)
+	if not i then return end
+	local info = Call(C_Minimap.GetTrackingInfo, i)
+	local on = type(info) == "table" and info.active
+	if on == nil or Secret(on) then return end
+	return on and true or false
+end
+
+-- the game's tracking for this type on or off (C_Minimap.SetTracking, as its tracking menu sets it). Not
+-- protected (MinimapDocumentation.lua), but it is held by CombatQueue's gate like Valhalla's other calls
+-- into the game's UI state. false: not the game's.
+function mod.SetGameTracking(key, on)
+	if not mod.GameTracked(key) then return false end
+	local function Set()
+		local i = mod.GameTracked(key)
+		if i then pcall(C_Minimap.SetTracking, i, on and true or false) end
+	end
+	local C = ns.Combat
+	if C and C.Run then C.Run("tracking." .. key, Set, ns.L["Minimap tracking changed in combat: it applies when combat ends."])
+	elseif not Combat() then Set() end
+	return true
+end
+
+-- what the game's tracking list is, for the next reload (ValhallaDB.minimapTrackingDiag)
+local function NoteTracking()
+	local db = rawget(_G, "ValhallaDB")
+	if type(db) ~= "table" then return end
+	local d = { api = TrackingAPI(), clock = date and date("%Y-%m-%d %H:%M:%S") or nil, entries = {}, mapping = {} }
+	if d.api then
+		local n = Call(C_Minimap.GetNumTrackingTypes)
+		for i = 1, (type(n) == "number" and n or 0) do
+			local info = Call(C_Minimap.GetTrackingInfo, i)
+			local f = Call(C_Minimap.GetTrackingFilter, i)
+			local e = { index = i }
+			if type(info) == "table" then
+				e.name = not Secret(info.name) and info.name or nil
+				e.active = not Secret(info.active) and info.active or nil
+				e.type = not Secret(info.type) and info.type or nil
+				e.subType = not Secret(info.subType) and info.subType or nil
+			end
+			if type(f) == "table" then e.filter = not Secret(f.filterID) and f.filterID or nil end
+			d.entries[#d.entries + 1] = e
+		end
+	end
+	for key in pairs(GAME) do
+		d.mapping[key] = { filter = FilterID(key), index = mod.GameTracked(key) or false, active = mod.GameTrackingOn(key) }
+	end
+	db.minimapTrackingDiag = d
+end
+
+-- the game's tracking changed (its menu, or ours): the checkboxes follow it. The same checkbox governs the
+-- type's world map pins, so those follow too.
+local function SyncFromGame()
+	indexOf = nil
+	local db = mod.db
+	if db and type(db.townsfolk) == "table" then
+		local changed = false
+		for key in pairs(GAME) do
+			local on = mod.GameTrackingOn(key)
+			if on ~= nil and key ~= "profTrainer" and (db.townsfolk[key] and true or false) ~= on then
+				db.townsfolk[key] = on
+				changed = true
+			end
+		end
+		if changed and mod.RefreshTownsfolk then mod:RefreshTownsfolk() end
+		if mod.RefreshPanel then pcall(mod.RefreshPanel, mod) end
+	end
+	NoteTracking()
+end
+mod.SyncGameTracking = SyncFromGame
+
 local function Rebuild()
 	local data = ns.TownsfolkData
 	local list = {}
@@ -122,7 +268,8 @@ local function Rebuild()
 			if Wanted(r.type) and Kept(r) then
 				local x, y = Norm(r.x, r.y)
 				if x and r.map then
-					list[#list + 1] = { map = r.map, x = x, y = y, name = r.name, title = r.title, look = LookFor(r.type, r.icon) }
+					list[#list + 1] = { map = r.map, x = x, y = y, name = r.name, title = r.title, look = LookFor(r.type, r.icon),
+						game = mod.TownsfolkGameKey(r) }
 				end
 			end
 		end
@@ -199,7 +346,10 @@ local function Refresh()
 			local w, h = WorldSize(mapID)
 			if w then
 				local pts = {}
-				for _, p in ipairs(points) do if p.map == mapID then pts[#pts + 1] = p end end
+				for _, p in ipairs(points) do
+					-- (the game's minimap draws this type itself: never a second pin)
+					if p.map == mapID and not (p.game and mod.GameTracked(p.game)) then pts[#pts + 1] = p end
+				end
 				local entry = { map = mapID, mapSource = c[2], w = w, h = h, pts = pts }
 				if #pts > 0 then cur = entry return end
 				fallback = fallback or entry
@@ -274,12 +424,16 @@ if CreateFrame then
 	local w = CreateFrame("Frame")
 	w:SetScript("OnEvent", function(_, event)
 		if event == "MINIMAP_UPDATE_ZOOM" then ReadRadius() return end
+		if event == "MINIMAP_UPDATE_TRACKING" or event == "SPELLS_CHANGED" then SyncFromGame() return end
 		if event == "PLAYER_LOGIN" or event == "PLAYER_REGEN_ENABLED" then Boot() end
+		if event == "PLAYER_LOGIN" then SyncFromGame() end
 	end)
 	if w.RegisterEvent then
 		w:RegisterEvent("PLAYER_LOGIN")
 		w:RegisterEvent("PLAYER_REGEN_ENABLED")
 		pcall(w.RegisterEvent, w, "MINIMAP_UPDATE_ZOOM")
+		pcall(w.RegisterEvent, w, "MINIMAP_UPDATE_TRACKING")
+		pcall(w.RegisterEvent, w, "SPELLS_CHANGED")
 	end
 	Boot()
 end

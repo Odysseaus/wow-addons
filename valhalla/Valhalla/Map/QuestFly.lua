@@ -28,7 +28,7 @@ d.questFlyShort = "auto"        -- "auto" (zoom out by distance: a short hop gli
 
 local Q = {}
 mod.QuestFly = Q
-Q.LANDING_LEAST = 6             -- never further out than this on landing (Quests.lua's icons' ZOOM_TO)
+Q.LANDING_LEAST = 6             -- never further out than this on landing
 Q.ZONE_FIT = 1.05               -- Whole zone: just over the zone's fit (the map underneath stays the quest's zone)
 Q.CLOSE_FIT = 2                 -- Close-up: about twice the zone's fit
 Q.SHORT_OUT = 2                 -- Always zoom out: the trip rises at least this many times out
@@ -243,20 +243,6 @@ local function Watch(self)
 	if p.frames >= Q.RETRY_FRAMES or n ~= p.n then pending = nil self:Hide() end
 end
 Q.Watch = function() if watcher then Watch(watcher) end end
-
--- Valhalla's quest icon on the map (Quests.lua): fly (or jump) there; false: as before (its 0.4 s glide)
-function mod.QuestIconClick(q, u, v, mapID)
-	local mode = Q.Mode()
-	if mode == "blizzard" or not mod.IsStitched() then return false end
-	local zone = (mapID and S.Rect(mapID)) and mapID or ZoneAt(u, v)
-	local zoom = Q.Landing("poi", zone)
-	if mode == "jump" then
-		mod.ShowNow(u, v, zoom)
-		Ping(q)
-		return true
-	end
-	return Fly(q, nil, { u, v, zoom }) ~= nil
-end
 
 -- a Ready to Turn In row clicked in combat with the map open (Objectives.lua: Blizzard's details aren't
 -- opened by Valhalla in combat): the flight alone

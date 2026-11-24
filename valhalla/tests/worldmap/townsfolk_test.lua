@@ -278,6 +278,7 @@ CreateFrame = function(kind, name, parent)
 	mm.frames[#mm.frames + 1] = f
 	return f
 end
+local mmCreate = CreateFrame
 S.Look = function() end
 local function Frame(dt) mm.onUpdate(nil, dt or 0.016) end
 assert(loadfile(root .. "Map/TownsfolkMinimap.lua"))("Valhalla", ns)
@@ -519,6 +520,36 @@ local qSrc = assert(io.open(root .. "Map/Quests.lua")):read("*a")
 ok(not qSrc:find("QuestBang", 1, true) and not qSrc:find("GossipFrame", 1, true) and not qSrc:find("MeasureQuestPoi", 1, true)
 	and not qSrc:find("questPoi", 1, true) and not qSrc:find("SetFrameLevel", 1, true) and not qSrc:find("layoutIndex", 1, true),
 	"no measuring, no QuestBang or Gossip fallback, no frame level or layout writes")
+-- (1.2.46) a click is the game's own POIButtonMixin.OnClick on the pin's button
+local gameClicks = {}
+POIButtonMixin = { OnClick = function(self, button) gameClicks[#gameClicks + 1] = { self = self, button = button } end }
+local glided, flew, details = 0, 0, 0
+S.GlideToWorld = function() glided = glided + 1 end
+mod.QuestIconClick = function() flew = flew + 1 return true end
+QuestMapFrame_ShowQuestDetails = function() details = details + 1 end
+ns.Combat = nil
+ValhallaDB.questClickDiag = nil
+byQ = {}
+for _, p in ipairs(qset.pins) do if p.poi then byQ[p.data.id] = p end end
+byQ[43].OnClick(byQ[43])
+ok(#gameClicks == 1 and gameClicks[1].self == byQ[43].poi and gameClicks[1].button == "LeftButton",
+	"a click runs the game's POIButtonMixin.OnClick on our button, left button")
+ok(glided == 0 and flew == 0 and details == 0, "the view does not move and no details open", glided .. flew .. details)
+local cd = ValhallaDB.questClickDiag and ValhallaDB.questClickDiag[1]
+ok(cd and cd.quest == 43 and cd.how == "now" and cd.ok == true and cd.before == 42, "the click is logged to questClickDiag",
+	cd and (tostring(cd.quest) .. " " .. tostring(cd.ok) .. " " .. tostring(cd.before) .. " " .. tostring(cd.err)))
+-- the gate closed (combat): the game's click waits and runs when it opens
+local queued
+ns.Combat = { Run = function(key, fn) if key == "supertrack" then queued = fn return false end end }
+byQ[42].OnClick(byQ[42])
+ok(#gameClicks == 1 and queued and ValhallaDB.questClickDiag[2].how == "waiting", "in combat the click waits (CombatQueue)")
+queued()
+ok(#gameClicks == 2 and gameClicks[2].self == byQ[42].poi and ValhallaDB.questClickDiag[3].how == "queued", "and runs once the gate opens")
+ns.Combat = { Run = function(key, fn) fn() return true end }
+byQ[42].OnClick(byQ[42])
+ok(#gameClicks == 3 and ValhallaDB.questClickDiag[4].how == "now", "an open gate: at once, logged as now")
+ns.Combat = nil
+mod.QuestIconClick = nil
 -- a client without the template: no quest icons (not a look that isn't the log's)
 noTemplate = true
 qset.pins, qset.pool = {}, {}
@@ -540,6 +571,112 @@ ns.Parts.PaintQuestPoi(b, 5, 3, false)
 ns.Parts.PaintQuestPoi(b, 5, 3, true)
 ns.Parts.PaintQuestPoi(b, 6, 3, true)
 ok(b._styled == 4 and b._q == 6 and b._style == 3 and b._selected == true, "style, selection and quest changes each restyle", b._styled)
+
+print("== 8. (1.2.46) the game's own minimap tracking: never a second pin, the checkbox is the game's")
+CreateFrame = mmCreate
+-- every record is the game's type or Valhalla's; professions split into trainers and suppliers
+local tdata = {}
+assert(loadfile(root .. "Data/Forever/Townsfolk.lua"))("Valhalla", tdata)
+local profs = {}
+for _, k in ipairs(mod.PROFESSIONS) do profs[k] = true end
+local trainers, suppliers = 0, 0
+for _, r in ipairs(tdata.TownsfolkData.records) do
+	if profs[r.type] then
+		if mod.TownsfolkGameKey(r) == "profTrainer" then trainers = trainers + 1 else suppliers = suppliers + 1 end
+	end
+end
+ok(trainers > 200 and suppliers > 150, "profession records: trainers are the game's type, suppliers stay Valhalla's", trainers .. "/" .. suppliers)
+ok(mod.TownsfolkGameKey({ type = "tailoring", title = "Expert Tailor" }) == "profTrainer"
+	and mod.TownsfolkGameKey({ type = "tailoring", title = "Tailoring Supplies" }) == nil
+	and mod.TownsfolkGameKey({ type = "innkeeper" }) == "innkeeper"
+	and mod.TownsfolkGameKey({ type = "vendor", icon = "repair" }) == "repair"
+	and mod.TownsfolkGameKey({ type = "vendor" }) == nil
+	and mod.TownsfolkGameKey({ type = "spirit" }) == nil and mod.TownsfolkGameKey({ type = "rare" }) == nil
+	and mod.TownsfolkGameKey({ type = "classTrainer" }) == "classTrainer" and mod.TownsfolkGameKey({ type = "food" }) == "food",
+	"the type table: inns, repair (and repair vendors), class and profession trainers, food are the game's; vendors, suppliers, spirits, rares are not")
+-- the game's tracking list (this client's filter values)
+local track = {
+	{ name = "Innkeeper", filterID = 32, active = true },
+	{ name = "Profession Trainer", filterID = 128, active = false },
+	{ name = "Flight Master", filterID = 8, active = true },
+	{ name = "Food & Drink", filterID = 16, active = true },
+}
+local setCalls = {}
+C_Minimap.GetNumTrackingTypes = function() return #track end
+C_Minimap.GetTrackingFilter = function(i) return track[i] and { filterID = track[i].filterID } end
+C_Minimap.GetTrackingInfo = function(i) local t = track[i] return t and { name = t.name, active = t.active, type = "townsfolk", subType = 0 } end
+C_Minimap.SetTracking = function(i, on) setCalls[#setCalls + 1] = { i, on } track[i].active = on end
+mod.db.townsfolkMaster, mod.db.townsfolkMinimap = true, true
+for k in pairs(mod.db.townsfolk) do mod.db.townsfolk[k] = false end
+local refreshed = 0
+mod.RefreshTownsfolk = function() refreshed = refreshed + 1 end
+mm.onEvent(nil, "MINIMAP_UPDATE_TRACKING")
+ok(mod.db.townsfolk.innkeeper == true and mod.db.townsfolk.food == true and refreshed == 1,
+	"MINIMAP_UPDATE_TRACKING: the checkboxes take the game's state, the world map is refreshed", tostring(mod.db.townsfolk.innkeeper))
+local td = ValhallaDB.minimapTrackingDiag
+ok(td and td.api == true and #td.entries == 4 and td.entries[1].name == "Innkeeper" and td.entries[1].filter == 32 and td.entries[1].active == true
+	and td.mapping.innkeeper.index == 1 and td.mapping.profTrainer.index == 2 and td.mapping.banker.index == false and td.mapping.banker.filter == 2,
+	"minimapTrackingDiag: the game's entries, names, filters, active, and the type mapping")
+ok(mod.GameTrackingOn("innkeeper") == true and mod.GameTrackingOn("profTrainer") == false and mod.GameTrackingOn("banker") == nil
+	and mod.GameTrackingOn("vendor") == nil, "the game's state per type; nil for a type the game doesn't track")
+-- the minimap: no second innkeeper, no trainer; suppliers, vendors and the game-less types stay
+ns.TownsfolkData = { records = {
+	{ id = 1, name = "Inn", title = "Innkeeper", faction = "AH", type = "innkeeper", map = 1453, x = 51, y = 50 },
+	{ id = 2, name = "Bank", title = "Banker", faction = "AH", type = "banker", map = 1453, x = 51, y = 51 },
+	{ id = 3, name = "Tailor", title = "Expert Tailor", faction = "AH", type = "tailoring", map = 1453, x = 50, y = 51 },
+	{ id = 4, name = "Cloth", title = "Tailoring Supplies", faction = "AH", type = "tailoring", map = 1453, x = 49, y = 50 },
+	{ id = 5, name = "Goods", title = "General Goods", faction = "AH", type = "vendor", map = 1453, x = 50, y = 49 },
+} }
+mod.db.townsfolk.banker, mod.db.townsfolk.tailoring, mod.db.townsfolk.vendor = true, true, true
+playerMX, playerMY = 0.5, 0.5
+mod:UpdateTownsfolkMinimap()
+local names = {}
+for _, f in ipairs(Shown()) do names[#names + 1] = f.name end
+table.sort(names)
+ok(table.concat(names, ",") == "Bank,Cloth,Goods", "drawn: the banker (no game entry), the supplier and the vendor; not the game's innkeeper or trainer",
+	table.concat(names, ","))
+-- the checkbox sets the game's tracking (out of the gate: at once; held while it's closed)
+ns.Combat = nil
+ok(mod.SetGameTracking("innkeeper", false) == true and setCalls[1] and setCalls[1][1] == 1 and setCalls[1][2] == false,
+	"turning the innkeeper tick off calls C_Minimap.SetTracking(its index, false)")
+ok(mod.SetGameTracking("vendor", true) == false and #setCalls == 1, "a type the game doesn't track: not the game's call")
+local held
+ns.Combat = { Run = function(key, fn) held = { key, fn } return false end }
+mod.SetGameTracking("innkeeper", true)
+ok(#setCalls == 1 and held and held[1] == "tracking.innkeeper", "in combat the game's tracking change waits in CombatQueue")
+held[2]()
+ok(#setCalls == 2 and setCalls[2][2] == true, "and is made when the gate opens")
+ns.Combat = nil
+-- the menu's checkbox (Panel.lua's folk row, as written)
+local panelSrc = assert(io.open(root .. "Map/Panel.lua")):read("*a")
+local fa = panelSrc:find("\tlocal function folk(label, key)", 1, true)
+local fb = fa and panelSrc:find("\n\tend\n", fa, true)
+local folk
+if fa and fb then
+	local chunk = "local db, row, kinds, mod, Icon = ...\n" .. panelSrc:sub(fa, fb + 5) .. "\nreturn folk"
+	folk = assert(loadstring(chunk))(mod.db, function(label, id, icon, get, set) return { label, get, set, id = id } end, {}, mod,
+		function() return {} end)
+end
+local innRow, vendorRow = folk and folk("Innkeepers", "innkeeper"), folk and folk("Vendors", "vendor")
+track[1].active = true
+mod.db.townsfolk.innkeeper = false
+ok(innRow and innRow[2]() == true, "the innkeeper tick shows the game's tracking, not Valhalla's saved value")
+innRow[3](false)
+ok(track[1].active == false and mod.db.townsfolk.innkeeper == false, "unticking it turns the game's innkeeper tracking off (and the world map's pins with it)")
+mod.db.townsfolk.vendor = false
+ok(vendorRow and vendorRow[2]() == false and (vendorRow[3](true) or true) and mod.db.townsfolk.vendor == true and #setCalls == 3,
+	"a Valhalla-only type keeps Valhalla's own tick", #setCalls)
+-- no tracking API: Valhalla's own control and pins, as before
+C_Minimap.GetNumTrackingTypes = nil
+mm.onEvent(nil, "MINIMAP_UPDATE_TRACKING")
+mod.db.townsfolk.innkeeper = true
+ok(mod.GameTracked("innkeeper") == nil and innRow[2]() == true and ValhallaDB.minimapTrackingDiag.api == false,
+	"without the game's tracking API: the tick is Valhalla's again")
+mod:UpdateTownsfolkMinimap()
+names = {}
+for _, f in ipairs(Shown()) do names[#names + 1] = f.name end
+table.sort(names)
+ok(table.concat(names, ","):find("Inn", 1, true) ~= nil, "and the innkeeper pin is Valhalla's again", table.concat(names, ","))
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

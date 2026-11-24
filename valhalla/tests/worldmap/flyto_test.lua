@@ -435,18 +435,8 @@ do
   ok(map:GetMapID() == mapBefore, "no map switch underneath till combat ends")
   QuestMapFrame_ReturnFromQuestDetails() W.Ticks(2)
   W.combat = false
-  -- an icon on the map
-  local pu, pv = ToWorld(1434, 0.35, 0.10)
-  ok(mod.QuestIconClick(201, pu, pv, 1434) and mod.Flying() == 201, "a quest icon: flies (not the 0.4 s glide)")
-  Land()
-  local u, v, z = View()
-  ok(near(u, pu, 1e-6) and near(z, math.max(6, 1.05 * Fit(1434)), 1e-6), "to the icon, at the landing zoom")
-  mod.db.questFly = "blizzard"
-  ok(mod.QuestIconClick(201, pu, pv, 1434) == false, "As Blizzard: the icon keeps its old glide (Quests.lua)")
-  mod.db.questFly = "jump"
-  local before = #W.pings
-  ok(mod.QuestIconClick(201, 0.7, 0.66, nil) and not mod.Flying(), "Jump: straight there")
-  ok(#W.pings == before + 1 and W.pings[#W.pings].q == 201, "and pinged")
+  -- (1.2.46) a quest icon on the map is the game's own click (Quests.lua), not a flight
+  ok(mod.QuestIconClick == nil, "no fly-to for map quest icons")
   Defaults()
   -- Ready to Turn In in combat (Objectives.lua calls this; Blizzard's details wait)
   W.combat = true

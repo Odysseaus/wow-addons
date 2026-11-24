@@ -58,7 +58,7 @@ local function Enter(pin)
 			if text and not finished then GameTooltip:AddLine((_G.QUEST_DASH or "- ") .. text, 1, 1, 1, true) end
 		end
 	end
-	GameTooltip:AddLine(L["Click: track this quest and zoom to it"], 0.6, 0.6, 0.6)
+	GameTooltip:AddLine(L["Click: select this quest, as in the quest log. Shift-click: stop tracking it."], 0.6, 0.6, 0.6)
 	GameTooltip:Show()
 	Hover(pin, true)
 end
@@ -68,42 +68,47 @@ local function Leave(pin)
 	GameTooltip_Hide()
 end
 
--- a click: the quest tracked (as Blizzard's own quest icons do) and the view in on it, the map kept as it is,
--- full screen or windowed. (It opened the quest's details, and Blizzard opens those in the windowed map
--- with its quest log: full screen was left.) With the quest log beside the map, its details there too
-local ZOOM_TO = 6
+-- (1.2.46) a click is the game's own: POIButtonMixin.OnClick on this pin's button, as Blizzard's map quest pins
+-- (QuestPinMixin:OnMouseClickAction), the quest log's and the tracker's quest buttons do. Selected: cleared;
+-- else a chat link when typing, Shift on a watched quest untracks it, an unwatched one is watched, then
+-- super-tracked. The view stays where it is and no details open. While CombatQueue's gate is closed (combat,
+-- secret auras, the settle after combat) the click waits and runs once it opens, as Valhalla's other tracking calls.
+local CLICK_LOG = 20
+local function NoteClick(q, how, before, ok, err)
+	local db = rawget(_G, "ValhallaDB")
+	if type(db) ~= "table" then return end
+	local log = db.questClickDiag
+	if type(log) ~= "table" then log = {} db.questClickDiag = log end
+	local get = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID
+	local after = get and ns.Safe and ns.Safe.Call(get) or nil
+	log[#log + 1] = {
+		quest = q, how = how, before = before, after = after, ok = ok, err = err and tostring(err) or nil,
+		shift = IsShiftKeyDown and IsShiftKeyDown() and true or false,
+		clock = date and date("%H:%M:%S") or nil,
+	}
+	while #log > CLICK_LOG do table.remove(log, 1) end
+end
+
 local function Click(pin)
 	local q = pin.data
-	if not q then return end
-	if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then
-		-- (1.2.23) in combat: tracked once combat ends (CombatQueue.lua); the view still goes to it
-		local function Track()
-			if C_QuestLog.AddQuestWatch and not (C_QuestLog.GetQuestWatchType and C_QuestLog.GetQuestWatchType(q.id)) then
-				pcall(C_QuestLog.AddQuestWatch, q.id)
-			end
-			pcall(C_SuperTrack.SetSuperTrackedQuestID, q.id)
-		end
-		local C = ns.Combat
-		if C and C.Run then C.Run("supertrack", Track, L["Tracking changed in combat: it applies when combat ends."])
-		elseif not InCombatLockdown() then Track() end
-	end
-	-- (v0.4.2.4) the quest fly-to's way there (QuestFly.lua: fly, or jump, by the setting); As Blizzard: the glide
-	if not (mod.QuestIconClick and mod.QuestIconClick(q.id, pin.u, pin.v, q.map)) and S.GlideToWorld then
-		S.GlideToWorld(pin.u, pin.v, ZOOM_TO)
-	end
-	-- (in combat with the gamepad's UI, Blizzard's quest details would set the pad's buttons from
-	-- Valhalla's code, which combat blocks: they wait, as a dungeon's map does)
-	if mod.PadWaits and mod.PadWaits() then return end
-	-- (1.2.24) the game's quest details wait on CombatQueue.lua's gate (combat, secret auras, the settle
-	-- after combat); when they run, the log beside a windowed map is looked at again
-	local function Details()
-		local log = map and map.QuestLog
-		local details = G("QuestMapFrame_ShowQuestDetails")
-		if log and log:IsShown() and details and not (map.IsMaximized and map:IsMaximized()) then details(q.id) end
+	local b = pin.poi
+	local game = rawget(_G, "POIButtonMixin")
+	if not (q and b and game and game.OnClick) then return end
+	local get = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID
+	local before = get and ns.Safe and ns.Safe.Call(get) or nil
+	local function Run(how)
+		local ok, err = pcall(game.OnClick, b, "LeftButton")
+		NoteClick(q.id, how, before, ok, not ok and err or nil)
 	end
 	local C = ns.Combat
-	if C and C.Run then C.Run("details", Details, L["Quest details open when combat ends."])
-	elseif not InCombatLockdown() then Details() end
+	if C and C.Run then
+		local now = true
+		local ran = C.Run("supertrack", function() Run(now and "now" or "queued") end, L["Tracking changed in combat: it applies when combat ends."])
+		now = false
+		if not ran then NoteClick(q.id, "waiting", before, true) end
+	elseif not (InCombatLockdown and InCombatLockdown()) then
+		Run("now")
+	end
 end
 
 -- the game's button on a pin, made once per pooled pin. The mouse stays on the pin (its Enter and Click);
