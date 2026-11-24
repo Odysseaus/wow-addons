@@ -580,6 +580,53 @@ ok(#ValhallaDB.questClickDiag == 20, "questClickDiag keeps the last 20", #Valhal
 ok(not qSrc:find("AddQuestWatch", 1, true) and not qSrc:find("RemoveQuestWatch", 1, true) and not qSrc:find("POIButtonMixin", 1, true)
 	and not qSrc:find("TryInsertQuestLink", 1, true) and not qSrc:find("ShowQuestDetails", 1, true),
 	"Quests.lua names no watch call, the game's click, a chat link or quest details")
+-- (1.2.49) a map selection is shown in the quest log: its header expanded, scrolled to; closed: when it opens
+local expandedQ, scrolledQ, onShow = {}, {}, nil
+local logShown = true
+QuestMapFrame = { IsVisible = function() return logShown end, HookScript = function(_, ev, fn) if ev == "OnShow" then onShow = fn end end }
+QuestScrollFrame = { ExpandHeaderForQuest = function(_, id) expandedQ[#expandedQ + 1] = id end,
+	ScrollToQuest = function(_, id) scrolledQ[#scrolledQ + 1] = id end }
+local timerWas = C_Timer
+C_Timer = { After = function(_, fn) fn() end }
+ns.Combat = nil
+superQ = 0
+byQ[43].OnClick(byQ[43])
+ok(superQ == 43 and expandedQ[1] == 43 and scrolledQ[1] == 43, "log open: the selected quest's header expanded and scrolled to",
+	tostring(expandedQ[1]) .. " " .. tostring(scrolledQ[1]))
+ok(ValhallaDB.questClickDiag[#ValhallaDB.questClickDiag].reveal == "now", "logged: reveal now")
+byQ[43].OnClick(byQ[43])
+ok(superQ == 0 and #expandedQ == 1, "a click that clears: nothing revealed")
+logShown = false
+byQ[42].OnClick(byQ[42])
+ok(#expandedQ == 1 and ValhallaDB.questClickDiag[#ValhallaDB.questClickDiag].reveal == "deferred" and onShow, "log closed: waits for it to open")
+logShown = true
+onShow()
+ok(expandedQ[2] == 42 and scrolledQ[2] == 42, "the log opens: shown then", tostring(expandedQ[2]))
+onShow()
+ok(#expandedQ == 2, "once only")
+logShown = false
+byQ[43].OnClick(byQ[43]) byQ[43].OnClick(byQ[43])   -- selected, then cleared before the log opens
+logShown = true
+onShow()
+ok(#expandedQ == 2, "no longer selected when the log opens: nothing")
+local held
+ns.Combat = { Run = function(key, fn) if key == "questlog:reveal" then held = fn return false end fn() return true end }
+byQ[42].OnClick(byQ[42]) byQ[42].OnClick(byQ[42]) byQ[42].OnClick(byQ[42])
+ok(held and #expandedQ == 2, "in combat: the reveal waits (CombatQueue)")
+held()
+ok(expandedQ[3] == 42, "and runs once the gate opens")
+QuestScrollFrame.ExpandHeaderForQuest = nil
+ExpandQuestHeader = function(h) expandedQ[#expandedQ + 1] = "h" .. h end
+C_QuestLog.GetHeaderIndexForQuest = function() return 7 end
+C_QuestLog.GetInfo = function(i) return { isHeader = true, isCollapsed = true } end
+ns.Combat = nil
+superQ = 0
+byQ[43].OnClick(byQ[43])
+ok(expandedQ[4] == "h7", "no ExpandHeaderForQuest: the game's ExpandQuestHeader on its folded header", tostring(expandedQ[4]))
+ok(not qSrc:find("layoutIndex", 1, true) and not qSrc:find("SetFrameLevel", 1, true), "no layout or frame level writes")
+QuestMapFrame, QuestScrollFrame, ExpandQuestHeader = nil, nil, nil
+C_QuestLog.GetHeaderIndexForQuest, C_QuestLog.GetInfo = nil, nil
+C_Timer = timerWas
 ns.Combat = nil
 mod.QuestIconClick = nil
 POIButtonMixin, ChatFrameUtil, PlaySound, SOUNDKIT, AddQuestWatch, RemoveQuestWatch = nil, nil, nil, nil, nil, nil

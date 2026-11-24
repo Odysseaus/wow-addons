@@ -540,7 +540,33 @@ function O.Here()
 	for k in pairs(here.names) do names[#names + 1] = k end
 	table.sort(names)
 	here.key = tostring(zone) .. (inst and (":inst" .. tostring(here.instID or "") .. ":") or bg and ":bg:" or ":") .. table.concat(names, "|")
+	O.ApplyFreeze(here)
 	return here
+end
+
+-- (1.2.49) a super-track (select or deselect, from any source) never adds a quest to the panel or takes one
+-- off: the game's map data for a quest changes when it is selected (its pins, waypoint, local marker), so
+-- the quests whose selection changed keep the marker data they had just before, for as long as you stay
+-- in this place (here.key). Somewhere else: read afresh (the zone rules). Pins still decide first (Classify).
+function O.Freeze(id)
+	local here = S.here
+	if not (id and id ~= 0 and here) or here.inst then return end
+	if S.freezeKey ~= here.key then S.freeze, S.freezeKey = {}, here.key end
+	S.freeze = S.freeze or {}
+	if S.freeze[id] == nil then
+		S.freeze[id] = { marker = here.marker[id] or false, onMap = here.onMap[id] or false,
+			pins = here.pins[id] or false, guard = here.guard[id] or false }
+	end
+end
+function O.ApplyFreeze(here)
+	if not S.freeze then return end
+	if S.freezeKey ~= here.key then S.freeze, S.freezeKey = nil, nil return end
+	for id, f in pairs(S.freeze) do
+		here.marker[id] = f.marker or nil
+		here.onMap[id] = f.onMap or nil
+		here.pins[id] = f.pins or nil
+		here.guard[id] = f.guard or nil
+	end
 end
 
 -- v0.2.2: a quest from another zone with a real marker here (an objective while in progress, its turn-in once
@@ -711,14 +737,57 @@ function O.ReadyList(log, here)
 	return out
 end
 
-local function Add(id) Defer("watch:" .. tostring(id), function() Call(C_QuestLog.AddQuestWatch, id) end) end
-local function Remove(id) Defer("watch:" .. tostring(id), function() Call(C_QuestLog.RemoveQuestWatch, id) end) end
+-- (1.2.49) every watch change Valhalla makes, as it runs: ValhallaDB.objectives.opsLog (the last OPS_LOG)
+O.OPS_LOG = 60
+function O.NoteOp(id, what, why)
+	local db = mod.db
+	if type(db) ~= "table" then return end
+	local log = db.opsLog
+	if type(log) ~= "table" then log = {} db.opsLog = log end
+	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+	log[#log + 1] = { clock = date and date("%H:%M:%S") or nil, quest = id, op = what, why = why or "?",
+		super = super, event = S.lastEvent }
+	while #log > O.OPS_LOG do table.remove(log, 1) end
+end
+O.KEEP_SUPER = 2                -- seconds: a super-track the game clears after our own watch removal is put back
+O.OWN_ADD = 2                   -- seconds: a watch added by Valhalla is its own (not a game's, below)
+local function Add(id, why)
+	Defer("watch:" .. tostring(id), function()
+		S.ownAt = S.ownAt or {}
+		S.ownAt[id] = Now()
+		O.NoteOp(id, "add", why)
+		Call(C_QuestLog.AddQuestWatch, id)
+	end)
+end
+-- (1.2.49) a removal of the super-tracked quest's watch makes the game clear the super-track
+-- (SuperTrackEventMixin:OnQuestWatchChanged): it is put back when that clear comes (O.KeepSuper)
+local function Remove(id, why)
+	Defer("watch:" .. tostring(id), function()
+		local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+		if super == id then S.keepSuper = { id = id, untilT = Now() + O.KEEP_SUPER } end
+		O.NoteOp(id, "remove", why)
+		Call(C_QuestLog.RemoveQuestWatch, id)
+	end)
+end
+-- the selection kept: the game cleared it after our own removal (within KEEP_SUPER)
+function O.KeepSuper(super, now)
+	local k = S.keepSuper
+	if not k then return false end
+	if now > k.untilT then S.keepSuper = nil return false end
+	if super and super ~= 0 then return false end
+	S.keepSuper = nil
+	O.NoteOp(k.id, "super", "the game cleared the selection after Valhalla's watch change: put back")
+	Defer("supertrack", function() Call(C_SuperTrack.SetSuperTrackedQuestID, k.id) end, TRACK_NOTE)
+	return true
+end
+-- a selection the player changes themselves is theirs: nothing is put back
+function O.ForgetKeepSuper() S.keepSuper = nil end
 
-local function Queue(id, add)
+local function Queue(id, add, why, hidden)
 	for _, op in ipairs(S.ops) do
-		if op.id == id then op.add = add return end
+		if op.id == id then op.add, op.why, op.hidden = add, why, hidden return end
 	end
-	S.ops[#S.ops + 1] = { id = id, add = add }
+	S.ops[#S.ops + 1] = { id = id, add = add, why = why, hidden = hidden }
 end
 
 -- a full plan: on arriving somewhere, a pin changed, the module turned on
@@ -733,10 +802,10 @@ function O.PlanFull()
 	local _, watched = O.WatchOrder()
 	S.ops = {}
 	for id in pairs(watched) do
-		if log[id] and not want[id] then Queue(id, false) end
+		if log[id] and not want[id] then Queue(id, false, "zone plan: not this place's") end
 	end
 	for _, e in ipairs(target) do
-		if not watched[e.id] then Queue(e.id, true) end
+		if not watched[e.id] then Queue(e.id, true, O.IsPinned(e.id) and "zone plan: pinned" or "zone plan: this place's") end
 	end
 	O.SweepPins(log, n)
 	S.keys = {}
@@ -789,6 +858,29 @@ function O.RefreshMarkers(now)
 	return gained, lost
 end
 
+-- (1.2.49) a quest log icon (the game's POIButton: an unwatched quest is watched, then selected) changes
+-- nothing in the panel: a watch the game added (not Valhalla's own) with the same quest selected within
+-- GAME_WATCH_PAIR seconds is taken back, the quest left as hidden or not as it was; the selection stays
+-- (O.KeepSuper). The panel's quests come from the zone rules and pins only.
+O.GAME_WATCH_PAIR = 1
+O.GAME_WATCH_WAIT = 2
+function O.GameWatches(now, watched, log)
+	local skip = {}
+	for id, g in pairs(S.gameAdd or {}) do
+		local sel = S.superAt and S.superAt[id]
+		if sel and math.abs(sel - g.t) <= O.GAME_WATCH_PAIR then
+			S.gameAdd[id] = nil
+			if watched[id] and log[id] then
+				skip[id] = true
+				Queue(id, false, "quest log icon: the game's watch, not the panel's", g.hidden or false)
+			end
+		elseif now - g.t > O.GAME_WATCH_WAIT then
+			S.gameAdd[id] = nil
+		end
+	end
+	return skip
+end
+
 function O.PlanPartial()
 	if not S.here then return end
 	local log, n = O.ReadLog()
@@ -801,6 +893,7 @@ function O.PlanPartial()
 	local _, watched = O.WatchOrder()
 	local count, added = 0, false
 	for _ in pairs(watched) do count = count + 1 end
+	local skip = O.GameWatches(now, watched, log)
 	-- (1.2.2) a quest whose header or tag changed since it was placed (its data came in late): placed again
 	local changed = {}
 	for id, e in pairs(log) do
@@ -811,12 +904,14 @@ function O.PlanPartial()
 	for id in pairs(S.keys) do if not log[id] then S.keys[id] = nil end end
 	for id, e in pairs(log) do
 		local listed = O.Listed(e, here)
-		if watched[id] and e.ready then
-			Queue(id, false)   -- (ready: shown in Ready to Turn In when listed, never in Quests)
+		if skip[id] then
+			-- (1.2.49: the quest log icon's watch, taken back above)
+		elseif watched[id] and e.ready then
+			Queue(id, false, "ready: Ready to Turn In, not Quests")   -- (ready: shown in Ready to Turn In when listed, never in Quests)
 		elseif watched[id] and (lost[id] or changed[id]) and not listed then
-			Queue(id, false)   -- (its marker here is gone, or now it says it's another place's: nothing to do here)
+			Queue(id, false, lost[id] and "its marker here is gone" or "its place changed")   -- (its marker here is gone, or now it says it's another place's: nothing to do here)
 		elseif not watched[id] and not e.ready and listed and (c.hidden[id] or gained[id]) and count < O.MAX_WATCHES then
-			Queue(id, true) count = count + 1 added = true
+			Queue(id, true, gained[id] and "a marker here" or "listed again") count = count + 1 added = true
 		end
 	end
 	-- new quests: placed once their entry (and zone header) is there
@@ -829,14 +924,14 @@ function O.PlanPartial()
 				S.keys[id] = KeyOfPlace(e)
 				if O.Listed(e, here) then
 					if e.ready then
-						if watched[id] then Queue(id, false) end
+						if watched[id] then Queue(id, false, "new and ready") end
 					elseif not watched[id] and count < O.MAX_WATCHES then
-						Queue(id, true) count = count + 1 added = true
+						Queue(id, true, "new: this place's") count = count + 1 added = true
 					else
 						added = true   -- (tracked by the game: put in its place)
 					end
 				elseif watched[id] then
-					Queue(id, false)   -- another zone's: out until you get there
+					Queue(id, false, "new: another place's")   -- another zone's: out until you get there
 				else
 					c.hidden[id] = true
 				end
@@ -951,7 +1046,7 @@ function O.Retrack(any)
 	local side = mod.db and mod.db.watchSide
 	local lever = (side == "front" and order[1]) or (side == "end" and order[#order]) or any or order[1]
 	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
-	Remove(lever) Add(lever)
+	Remove(lever, "re-track (the tracker reads again)") Add(lever, "re-track (the tracker reads again)")
 	if super and super ~= 0 and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID
 		and Call(C_SuperTrack.GetSuperTrackedQuestID) ~= super then
 		Defer("supertrack", function() Call(C_SuperTrack.SetSuperTrackedQuestID, super) end)
@@ -1021,12 +1116,12 @@ function O.RunOps()
 			local count = 0
 			for _ in pairs(watched) do count = count + 1 end
 			if not watched[op.id] and count < O.MAX_WATCHES then
-				Add(op.id)
+				Add(op.id, op.why)
 			end
 			c.hidden[op.id] = nil
 		else
-			Remove(op.id)
-			c.hidden[op.id] = true
+			Remove(op.id, op.why)
+			if op.hidden == nil then c.hidden[op.id] = true else c.hidden[op.id] = op.hidden or nil end
 		end
 		done = done + 1
 	end
@@ -1089,22 +1184,22 @@ function O.Reorder()
 	local side = mod.db and mod.db.watchSide
 	if side == "front" or side == "end" then
 		local fix = O.OrderFix(order, want, side)
-		for _, id in ipairs(fix) do Remove(id) end
-		for _, id in ipairs(fix) do Add(id) end
+		for _, id in ipairs(fix) do Remove(id, "re-sort") end
+		for _, id in ipairs(fix) do Add(id, "re-sort") end
 	else
 		-- not known yet: all off, then two back on show which end a new one goes to
-		for _, id in ipairs(order) do Remove(id) end
-		Add(want[1]) Add(want[2])
+		for _, id in ipairs(order) do Remove(id, "re-sort") end
+		Add(want[1], "re-sort") Add(want[2], "re-sort")
 		local now = O.WatchOrder()
 		if now[1] == want[1] and now[2] == want[2] then
 			side = "end"
-			for i = 3, #want do Add(want[i]) end
+			for i = 3, #want do Add(want[i], "re-sort") end
 		elseif now[1] == want[2] and now[2] == want[1] then
 			side = "front"
-			Remove(want[1]) Remove(want[2])
-			for i = #want, 1, -1 do Add(want[i]) end
+			Remove(want[1], "re-sort") Remove(want[2], "re-sort")
+			for i = #want, 1, -1 do Add(want[i], "re-sort") end
 		else
-			for i = 3, #want do Add(want[i]) end   -- (the list didn't read back at once: checked next time)
+			for i = 3, #want do Add(want[i], "re-sort") end   -- (the list didn't read back at once: checked next time)
 		end
 		if side and mod.db then mod.db.watchSide = side end
 	end
@@ -1193,6 +1288,28 @@ function O.Step(now)
 	if S.reorderDue and now >= S.reorderDue then return O.Reorder() end
 end
 
+-- (1.2.49) the selection changed: the quests it left and reached keep their marker data here (O.Freeze);
+-- the game's clear after our own removal is put back (O.KeepSuper)
+function O.SuperChanged(now)
+	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+	if S.lastSuper and S.lastSuper ~= 0 then O.Freeze(S.lastSuper) end
+	if super and super ~= 0 then
+		O.Freeze(super)
+		S.superAt = S.superAt or {}
+		S.superAt[super] = now
+		if S.gameAdd and S.gameAdd[super] then S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE end
+	end
+	O.KeepSuper(super, now)
+	S.lastSuper = super
+end
+-- a watch added: Valhalla's own (O.OWN_ADD), or the game's (a quest log icon, the Track button...)
+function O.WatchAdded(id, now)
+	local own = S.ownAt and S.ownAt[id]
+	if own and now - own <= O.OWN_ADD then return end
+	S.gameAdd = S.gameAdd or {}
+	S.gameAdd[id] = { t = now, hidden = Char().hidden[id] and true or false }
+end
+
 -- a zone change / arrival / landing: a full plan once settled
 function O.ZoneDue(now)
 	S.fullDue = (now or Now()) + O.SETTLE
@@ -1228,6 +1345,9 @@ end
 
 function O.OnEvent(event, a1, a2, ...)
 	local now = Now()
+	if not O.PROGRESS_EVENTS[event] and event ~= "CHAT_MSG_LOOT" and event ~= "ITEM_PUSH" then S.lastEvent = event end
+	if event == "SUPER_TRACKING_CHANGED" then O.SuperChanged(now) end
+	if event == "QUEST_WATCH_LIST_CHANGED" and a1 and a2 == true then O.WatchAdded(a1, now) end
 	if O.SYNC_SKIP[event] == nil and O.SyncOn() then O.SyncEvent(event, a1, a2, now) end
 	if O.PROGRESS_EVENTS[event] then
 		if event ~= "UNIT_QUEST_LOG_CHANGED" or a1 == "player" then O.ProgressDue(now) end
@@ -1325,7 +1445,7 @@ function O.Restore()
 	table.sort(ids, function(a, b) return a.idx < b.idx end)
 	for _, e in ipairs(ids) do
 		if count >= O.MAX_WATCHES then break end
-		Add(e.id) count = count + 1
+		Add(e.id, "turned off: given back") count = count + 1
 	end
 	c.hidden = {}
 	return true
@@ -1498,6 +1618,7 @@ function O.PoiClick(self, button)
 		local ok, done = pcall(CU.TryInsertQuestLinkForQuestID, q)
 		if ok and done then return end
 	end
+	O.ForgetKeepSuper()
 	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
 	if super == q then
 		if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF) end

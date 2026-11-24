@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.49", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "New", }, items = {
+		"Selecting or deselecting a quest (map, quest log, Objectives panel) no longer adds quests to the Objectives panel or takes them off: it follows the zone rules and your quest pins only.",
+		"Clicking a quest's icon in the quest log no longer puts it in the Objectives panel, and a completed quest stays selected.",
+		"Selecting a quest on the map shows it in the quest log: its zone is opened and the log scrolls to it (when the log next opens, if it's closed).",
+	} },
 	{ version = "1.2.48", date = "2026-11-24", heads = { [1] = "Changed", }, items = {
 		"Clicking a quest icon on the map shows that quest's area and its minimap waypoint; a second click clears it. It no longer tracks or untracks the quest, links it in chat or does anything different with Shift: the Objectives panel keeps its own zone rules and pins.",
 	} },

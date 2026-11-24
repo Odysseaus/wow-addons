@@ -36,14 +36,14 @@ local function eq(a, b) if #a ~= #b then return false end for i = 1, #a do if a[
 local function has(t, x) for _, v in ipairs(t) do if v == x then return true end end return false end
 
 -- the game's side of an event (its tracker's own handlers), then ours
-local function Fire(event, a1)
+local function Fire(event, a1, a2)
   if event == "QUEST_ACCEPTED" and W.autoWatch then C_QuestLog.AddQuestWatch(a1) end
   if event == "ZONE_CHANGED_NEW_AREA" then -- C_QuestLog.SortQuestWatches: some other order
     local r = {} for i = #W.watches, 1, -1 do r[#r + 1] = W.watches[i] end W.watches = r
   end
   -- delivered as the game does: to frames that registered the event
   for _, f in ipairs(W.frames) do
-    if rawget(f, "_events") and f._events[event] and f._scripts.OnEvent then f._scripts.OnEvent(f, event, a1) end
+    if rawget(f, "_events") and f._events[event] and f._scripts.OnEvent then f._scripts.OnEvent(f, event, a1, a2) end
   end
 end
 -- the module's ticker, while it runs
@@ -1520,6 +1520,105 @@ do
   O.SetPinned(4, true) Run(1)
   ok(has(W.watches, 4), "the quest pin toggle still adds it (the existing rule)", list(W.watches))
   O.SetPinned(4, false) Run(1)
+end
+
+print("== 63. (1.2.49) a selection never changes the panel; a quest log icon's watch is taken back, the selection kept")
+do
+  W.Reset()
+  C_Secrets = nil
+  W.clock = W.clock + 30
+  -- the game: a watch removed from the selected quest clears the selection (SuperTrackEventMixin), and fires
+  local rawRemove, rawAdd = C_QuestLog.RemoveQuestWatch, C_QuestLog.AddQuestWatch
+  C_QuestLog.RemoveQuestWatch = function(id)
+    rawRemove(id)
+    Fire("QUEST_WATCH_LIST_CHANGED", id, false)
+    if W.super == id then W.super = 0 Fire("SUPER_TRACKING_CHANGED") end
+  end
+  C_QuestLog.AddQuestWatch = function(id)
+    local ok = rawAdd(id)
+    if ok then Fire("QUEST_WATCH_LIST_CHANGED", id, true) end
+    return ok
+  end
+  -- the quest log's icon (POIButtonMixin.OnClick): unwatched -> watched, then selected
+  local function LogIcon(id)
+    if W.super == id then W.super = 0 Fire("SUPER_TRACKING_CHANGED") return end
+    if not has(W.watches, id) then C_QuestLog.AddQuestWatch(id) end
+    W.super = id Fire("SUPER_TRACKING_CHANGED")
+  end
+  local function Select(id) W.super = id Fire("SUPER_TRACKING_CHANGED") end
+  local function OpsFor(id, op)
+    local n, why = 0, nil
+    for _, e in ipairs(mod.db.opsLog or {}) do if e.quest == id and (not op or e.op == op) then n = n + 1 why = e.why end end
+    return n, why
+  end
+  W.AddQuest(1, "Stormwind City", "Rethban Ore", 15, false, true)
+  W.AddQuest(4, "Westfall", "Harvest Watchers", 12, false, false)
+  W.AddQuest(5, "Duskwood", "Night Watch", 25, false, false)
+  W.AddQuest(8, "Elwynn Forest", "Ready Here", 10, true, false)
+  W.onMap[1429] = { 5 }                         -- Duskwood quest 5: a real marker on Elwynn (listed here, E1)
+  Restart()
+  Go(1453)
+  ok(eq(W.watches, { 1, 5 }) or eq(W.watches, { 5, 1 }), "Stormwind: its own quest and the one with a marker here", list(W.watches))
+  local c = mod.char
+
+  print("-- A: a selection's map data changes nothing")
+  local before = list(W.watches)
+  Select(4) W.onMap[1429] = { 5, 4 } Fire("QUEST_POI_UPDATE") Run(4)
+  ok(list(W.watches) == before, "selecting Westfall's quest gives it a marker here: not added", list(W.watches))
+  Select(5) W.waypoints["5:1429"] = true Fire("QUEST_POI_UPDATE") Run(4)
+  ok(list(W.watches) == before, "selecting the listed quest turns its marker into a waypoint: not removed", list(W.watches))
+  W.super = 0 Fire("SUPER_TRACKING_CHANGED") Fire("QUEST_POI_UPDATE") Run(4)
+  ok(list(W.watches) == before, "deselected: still as it was", list(W.watches))
+  O.SetPinned(4, true) Run(2)
+  ok(has(W.watches, 4), "the quest pin toggle still adds another zone's quest", list(W.watches))
+  O.SetPinned(4, false) Run(2)
+  ok(not has(W.watches, 4), "unpinned: out again (its marker before the selection: none)", list(W.watches))
+  W.onMap[1429] = { 5 } W.waypoints["5:1429"] = nil
+  Go(1436) Go(1453)
+  ok(O.S.freeze == nil or next(O.S.freeze) == nil or O.S.freezeKey == O.S.here.key, "a zone change reads afresh")
+
+  print("-- B: the quest log's icon")
+  W.super = 0 Fire("SUPER_TRACKING_CHANGED") Run(1)
+  before = list(W.watches)
+  local hidden4 = c.hidden[4]
+  LogIcon(4) Run(3)
+  ok(list(W.watches) == before, "another zone's quest in progress: the game's watch is taken back", list(W.watches))
+  ok(W.super == 4, "and the selection sticks (put back after the game's clear)", tostring(W.super))
+  local n, why = OpsFor(4, "remove")
+  ok(n >= 1 and why and why:find("quest log icon", 1, true), "logged: removed, as the quest log icon's watch", tostring(why))
+  ok(c.hidden[4] == hidden4, "its hidden mark is as before", tostring(c.hidden[4]))
+  LogIcon(8) Run(3)
+  ok(list(W.watches) == before and W.super == 8 and has(ReadyIds(), 8), "a ready quest here: not in Quests, still in Ready, selection sticks",
+    list(W.watches) .. " " .. tostring(W.super) .. " " .. list(ReadyIds()))
+  LogIcon(1) Run(3)
+  ok(list(W.watches) == before and W.super == 1, "a quest already in the panel: only selected", list(W.watches))
+  LogIcon(1) Run(2)
+  ok(W.super == 0, "clicked again: deselected (the player's own, not put back)", tostring(W.super))
+  local adds = W.calls.add
+  O.SetPinned(4, true) Run(2)
+  ok(has(W.watches, 4) and W.calls.add > adds, "the pin toggle is still the way to add it", list(W.watches))
+  LogIcon(4) Run(3)
+  ok(has(W.watches, 4) and W.super == 4, "a pinned quest's icon: stays, selected", list(W.watches))
+  O.SetPinned(4, false) Run(2)
+  ok(not has(W.watches, 4), "unpinned: out", list(W.watches))
+
+  print("-- B: Valhalla's own watch changes keep the selection")
+  Select(1) Run(1)
+  local lever = O.Retrack(1) Run(1)
+  ok(W.super == 1 and has(W.watches, 1), "a re-track of the selected quest: still selected", tostring(lever) .. " " .. tostring(W.super))
+  local _, w2 = OpsFor(1, "super")
+  ok(w2 ~= nil, "logged: the selection put back")
+
+  print("-- C: the decision log")
+  local e = mod.db.opsLog and mod.db.opsLog[#mod.db.opsLog]
+  ok(e and e.clock and e.quest and e.op and e.why and e.event ~= nil, "each entry: time, quest, op, reason, event",
+    e and (tostring(e.clock) .. " " .. tostring(e.quest) .. " " .. tostring(e.op) .. " " .. tostring(e.why) .. " " .. tostring(e.event)))
+  local seenSuper = false
+  for _, x in ipairs(mod.db.opsLog) do if x.super ~= nil then seenSuper = true end end
+  ok(seenSuper, "and the selected quest at the time")
+  for i = 1, 70 do O.NoteOp(1, "add", "test " .. i) end
+  ok(#mod.db.opsLog == 60 and mod.db.opsLog[60].why == "test 70", "the last 60 are kept", #mod.db.opsLog)
+  C_QuestLog.RemoveQuestWatch, C_QuestLog.AddQuestWatch = rawRemove, rawAdd
 end
 
 print(("\n%d passed, %d failed"):format(pass, fail))

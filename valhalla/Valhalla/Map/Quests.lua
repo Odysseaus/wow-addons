@@ -108,6 +108,50 @@ local function Sound(on)
 	if PlaySound and id then pcall(PlaySound, id) end
 end
 
+-- (1.2.49) a quest selected on the map is shown in the quest log: its zone header expanded if folded (the
+-- game's QuestScrollFrame:ExpandHeaderForQuest, else ExpandQuestHeader) and the log scrolled to it
+-- (QuestScrollFrame:ScrollToQuest, the frame after). Not remembered as opened (Objectives/QuestChains.lua's
+-- zone memory saves clicks only). Through CombatQueue; the log closed: when it next opens, if the quest is
+-- still the selected one. Nothing is written on the game's frames.
+local reveal, revealHooked
+local function Reveal(id)
+	if not id or Super() ~= id then return "not selected" end
+	local G = ns.Combat
+	if G and G.Blocked and G.Blocked() then return "held" end   -- (only ever run through the gate: RunReveal)
+	local C = rawget(_G, "C_QuestLog")
+	local sf = rawget(_G, "QuestScrollFrame")
+	local expanded = false
+	if sf and type(sf.ExpandHeaderForQuest) == "function" then
+		expanded = pcall(sf.ExpandHeaderForQuest, sf, id)
+	elseif C and C.GetHeaderIndexForQuest and rawget(_G, "ExpandQuestHeader") then
+		local h = ns.Safe.Call(C.GetHeaderIndexForQuest, id)
+		local info = h and C.GetInfo and ns.Safe.Call(C.GetInfo, h)
+		if type(info) == "table" and info.isCollapsed then expanded = pcall(ExpandQuestHeader, h) end
+	end
+	if sf and type(sf.ScrollToQuest) == "function" and C_Timer and C_Timer.After then
+		C_Timer.After(0, function() if Super() == id then pcall(sf.ScrollToQuest, sf, id) end end)
+	end
+	return expanded and "expanded" or "shown"
+end
+local function RunReveal()
+	local id = reveal
+	reveal = nil
+	local C = ns.Combat
+	local function go() local r = Reveal(id) local db = rawget(_G, "ValhallaDB") if type(db) == "table" then db.questRevealLast = { quest = id, result = r } end end
+	if C and C.Run then C.Run("questlog:reveal", go)
+	elseif not (InCombatLockdown and InCombatLockdown()) then go() end
+end
+function mod.RevealQuestInLog(id)
+	reveal = id
+	local log = rawget(_G, "QuestMapFrame")
+	if log and log.IsVisible and log:IsVisible() then RunReveal() return "now" end
+	if log and log.HookScript and not revealHooked then
+		revealHooked = true
+		log:HookScript("OnShow", function() if reveal then RunReveal() end end)
+	end
+	return "deferred"
+end
+
 local function Click(pin)
 	local q = pin.data
 	if not (q and q.id and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID) then return end
@@ -116,6 +160,9 @@ local function Click(pin)
 	local watchedBefore = Watched(id)
 	local act = before == id and "clear" or "select"
 	Sound(act == "select")
+	local O = ns.GetModule and ns:GetModule("objectives")
+	O = O and O.O
+	if O and O.ForgetKeepSuper then O.ForgetKeepSuper() end   -- (the player's own selection: Objectives puts nothing back)
 	local function Run(how)
 		local ok, err
 		if act == "clear" then
@@ -125,6 +172,11 @@ local function Click(pin)
 			ok, err = pcall(C_SuperTrack.SetSuperTrackedQuestID, id)
 		end
 		NoteClick(id, how, before, watchedBefore, act, ok, not ok and err or nil)
+		if ok and act == "select" then
+			local r = mod.RevealQuestInLog(id)
+			local log = rawget(_G, "ValhallaDB") and ValhallaDB.questClickDiag
+			if type(log) == "table" and log[#log] then log[#log].reveal = r end
+		end
 	end
 	local C = ns.Combat
 	if C and C.Run then
