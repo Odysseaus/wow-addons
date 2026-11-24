@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Valhalla 1.2.39: Data/Forever/Townsfolk.lua from tools/townsfolk-data/forever-1239/results.jsonl.
+# Valhalla 1.2.39 (1.2.51: one pin per NPC per map): Data/Forever/Townsfolk.lua from tools/townsfolk-data/forever-1239/results.jsonl.
 # A Wowhead zone id is kept only when its Forever tooltip name matches a map Valhalla already
 # draws (Levels.lua, Fishing.lua, Banners.lua). No classic coordinates are copied in.
 import json, os, re, urllib.request
@@ -77,6 +77,79 @@ def place(pts, spirit):
         return [best], True
     return reps, False
 
+# (1.2.51) one pin per NPC per map. Groups of the tooltip's points within NEAR map-percent are one spot,
+# at their centre. Left with groups further apart, the NPC's Classic tooltip decides: the group with no
+# Classic point is the Forever one, kept (Lakeshire: the Forever-only points sit on the inn, checked in
+# game 2026-11-24). No single Forever-only group: the group with the most points (a tie: nearest the
+# middle). Mailboxes (one object id, many boxes) and spirit healers keep every spot; the 6-spot rule as before.
+NEAR = 2.5
+SAME = 0.25
+CLASSIC_URL = 'https://nether.wowhead.com/classic/tooltip/npc/%d'
+
+def groups(pts, eps):
+    left = [tuple(p) for p in pts]
+    out = []
+    while left:
+        g = [left.pop()]
+        grew = True
+        while grew:
+            grew = False
+            i = 0
+            while i < len(left):
+                q = left[i]
+                if any((q[0] - a[0]) ** 2 + (q[1] - a[1]) ** 2 <= eps * eps for a in g):
+                    g.append(left.pop(i))
+                    grew = True
+                else:
+                    i += 1
+        out.append(g)
+    return out
+
+def centre(g):
+    return (round(sum(p[0] for p in g) / len(g), 2), round(sum(p[1] for p in g) / len(g), 2))
+
+def classic_points(rec, cache):
+    key = str(rec['id'])
+    if key not in cache:
+        try:
+            req = urllib.request.Request(CLASSIC_URL % rec['id'], headers={'User-Agent': UA})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.loads(r.read().decode())
+            mp = data.get('map') or {}
+            pts = []
+            for group in (mp.get('coords') or {}).values():
+                for c in group or []:
+                    if isinstance(c, (list, tuple)) and len(c) >= 2: pts.append([float(c[0]), float(c[1])])
+            cache[key] = {'zone': mp.get('zone'), 'points': pts}
+        except Exception:
+            cache[key] = None
+    return cache[key]
+
+def place_one(rec, classic_cache, stats):
+    pts = rec.get('points') or []
+    if rec['type'] in ('spirit', 'mailbox') or rec['kind'] != 'npc':
+        reps, walked = place(pts, rec['type'] == 'spirit')
+        return reps, walked, 'kept all'
+    if len(cluster(pts)) > 6:
+        reps, walked = place(pts, False)
+        return reps, walked, 'walk rule'
+    gs = groups(pts, NEAR)
+    if len(gs) <= 1:
+        return [centre(gs[0])] if gs else [], False, 'one spot' if len(cluster(pts)) <= 1 else 'near merged'
+    cl = classic_points(rec, classic_cache)
+    pick, how = None, None
+    if cl and cl.get('zone') == rec.get('zone') and cl.get('points'):
+        cpts = cl['points']
+        fo = [g for g in gs if not any(any(abs(p[0] - c[0]) <= SAME and abs(p[1] - c[1]) <= SAME for c in cpts) for p in g)]
+        if len(fo) == 1:
+            pick, how = fo[0], 'forever-only'
+    if pick is None:
+        sx = sum(p[0] for p in pts) / len(pts)
+        sy = sum(p[1] for p in pts) / len(pts)
+        pick = sorted(gs, key=lambda g: (-len(g), (centre(g)[0] - sx) ** 2 + (centre(g)[1] - sy) ** 2))[0]
+        how = 'most points'
+    return [centre(pick)], False, how
+
 def lua_str(s):
     return '"' + (s or '').replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ') + '"'
 
@@ -99,6 +172,9 @@ def main():
         if z not in zone_of:
             zone_of[z] = zone_name(z, cache)
     json.dump({str(k): v for k, v in cache.items()}, open(cache_path, 'w'), indent=2, sort_keys=True)
+    classic_path = os.path.join(PACK, 'classic.json')
+    classic_cache = json.load(open(classic_path, encoding='utf-8')) if os.path.exists(classic_path) else {}
+    how_counts = {}
     out_recs = []
     for rec in sorted(seen.values(), key=lambda r: (r['type'], r['id'])):
         name = zone_of.get(rec.get('zone'))
@@ -109,7 +185,8 @@ def main():
             failures['unmapped_zone'][key] = failures['unmapped_zone'].get(key, 0) + 1
             continue
         ui = next(iter(uis))
-        pts, walked = place(rec.get('points') or [], rec['type'] == 'spirit')
+        pts, walked, how = place_one(rec, classic_cache, how_counts)
+        how_counts[how] = how_counts.get(how, 0) + 1
         if not pts:
             failures['no_map'] += 1
             continue
@@ -121,6 +198,8 @@ def main():
                 'icon': rec.get('icon') or '',
                 'kind': rec['kind'], 'walked': walked,
             })
+    json.dump(classic_cache, open(classic_path, 'w'), indent=1, sort_keys=True)
+    failures['how'] = how_counts
     counts = {}
     for r in out_recs:
         counts[r['type']] = counts.get(r['type'], 0) + 1
@@ -132,9 +211,11 @@ def main():
         '-- Generated by tools/townsfolk/build_townsfolk.py; regenerate rather than edit.',
         '-- Source: Wowhead WoW Forever tooltips, https://nether.wowhead.com/forever/tooltip/{npc|object}/<id>.',
         '-- A point is kept only when that tooltip names the service and gives a spawn, and the',
-        '-- tooltip\'s zone name is one of Valhalla\'s maps. Points within 1 map-percent are one',
-        '-- spot. An NPC with more than 6 spots in a zone, other than a spirit healer, keeps the',
-        '-- spot nearest the middle (the same walk rule as Map/Townsfolk.lua).',
+        '-- tooltip\'s zone name is one of Valhalla\'s maps. (1.2.51) One pin per NPC per map: its points',
+        '-- within 2.5 map-percent are one spot, at their centre; spots further apart keep the one with no',
+        '-- Classic tooltip point (the Forever one), else the one with the most points. Mailboxes and',
+        '-- spirit healers keep every spot (1 map-percent apart). An NPC with more than 6 spots in a zone,',
+        '-- other than a spirit healer, keeps the spot nearest the middle (Map/Townsfolk.lua\'s walk rule).',
         '',
         'local _, ns = ...',
         '',
@@ -152,6 +233,7 @@ def main():
     open(OUT, 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
     print('records', len(out_recs))
     print('counts', json.dumps(counts, sort_keys=True))
+    print('how', json.dumps(how_counts, sort_keys=True))
     print('unmapped', json.dumps(failures['unmapped_zone'], sort_keys=True))
 
 if __name__ == '__main__':

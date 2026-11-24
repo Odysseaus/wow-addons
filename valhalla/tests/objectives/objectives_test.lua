@@ -628,15 +628,16 @@ ok(W.log.measured[50] == 50 and W.log.measured[51] == 50, "titles moved to x 50 
 ok(LogRow(51)._height == 8 + 24 + 6, "the long title measured at the narrower width: 2 lines in the row's height", tostring(LogRow(51)._height))
 local poi = SF.Contents:FindButtonByQuestID(50)
 local lp = poi._points[#poi._points]
-ok(lp[1] == "TOPLEFT" and lp[2] == LogRow(50) and lp[4] == 25 and lp[5] == -4, "quest icon moved to x 25")
+ok(lp[1] == "TOPLEFT" and lp[2] == LogRow(50) and lp[3] == 6 and lp[4] == -4 and #poi._points == 1, "(1.2.51) the game's quest icon left where the game put it (x 6): never moved by Valhalla")
 local p50 = PinOf(LogRow(50))
 local pp = p50._points[1]
-ok(p50._w == 17 and pp[1] == "TOPLEFT" and pp[2] == LogRow(50) and pp[4] == 4 and pp[5] == -6 and p50._shown, "pin: 17 px at (4, -6), left of the icon")
+ok(p50._w == 17 and pp[1] == "TOPLEFT" and pp[2] == LogRow(50) and pp[4] == 28 and pp[5] == -6 and p50._shown, "pin: 17 px at (28, -6), right of the icon")
+ok(6 + 20 <= 28 and 28 + 17 <= 31 + O.LogPins.SHIFT, "no overlap: icon x 6-26, pin 28-45, title from x 50")
 ok(p50.icon._tex:find("ValhallaPinOff"), "Pin 2 art, off")
 W.noPOI = { [52] = true }
 QuestLogQuests_Update()
 local p52 = PinOf(LogRow(52))
-ok(p52 and p52._shown and p52._points[1][4] == 4, "a row with no quest icon: the pin in the same place")
+ok(p52 and p52._shown and p52._points[1][4] == 28, "a row with no quest icon: the pin in the same place")
 W.noPOI = nil
 
 print("== 32. pooled rows: each update's quest")
@@ -1659,8 +1660,12 @@ do
   _G.GetQuestUiMapID = function(q) return 1436 + q end
   local shift, chat = false, false
   _G.IsShiftKeyDown = function() return shift end
+  local canOpen = true
   _G.ChatFrameUtil = { GetActiveWindow = function() return chat and {} or nil end,
-    TryInsertQuestLinkForQuestID = function() if chat and shift then W.linked = (W.linked or 0) + 1 return true end return false end }
+    TryInsertQuestLinkForQuestID = function() if chat and shift then W.linked = (W.linked or 0) + 1 return true end return false end,
+    OpenChat = function(text) if canOpen then chat = true W.opened = (W.opened or 0) + 1 end end,
+    InsertLink = function(link) if chat and link then W.linked = (W.linked or 0) + 1 W.lastLink = link return true end return false end }
+  _G.GetQuestLink = function(q) return "|Hquest:" .. q .. "|h[Q" .. q .. "]|h" end
 
   W.AddQuest(1, "Stormwind City", "Rethban Ore", 15, false, true)
   W.AddQuest(4, "Westfall", "Harvest Watchers", 12, false, false)
@@ -1756,25 +1761,40 @@ do
   ok(list(W.watches) == before and W.super == 4, "the gate opens: taken back, still selected", list(W.watches) .. " " .. tostring(W.super))
   Click(4)
 
-  print("-- Shift-click does nothing")
-  shift = true
+  print("-- (1.2.51) Shift-click: the quest's link in chat, nothing else")
+  shift = true chat = false
   W.super = 0
-  flights = {}
+  flights = {} trackerSaw = {}
   local snap = list(W.watches)
+  local adds0, removes0 = W.calls.add, W.calls.remove
+  local n0, o0 = W.linked or 0, W.opened or 0
   Click(4)
-  ok(list(W.watches) == snap and W.super == 0 and Diag().act == "shift: undone" and #flights == 0, "an unwatched quest: watch and selection undone",
-    list(W.watches) .. " " .. tostring(W.super) .. " " .. tostring(Diag().undo))
+  ok((W.opened or 0) == o0 + 1 and (W.linked or 0) == n0 + 1, "chat closed: opened, the game links it", tostring(W.opened) .. " " .. tostring(W.linked))
+  ok(list(W.watches) == snap and W.super == 0 and W.calls.add == adds0 and W.calls.remove == removes0 and #flights == 0,
+    "an unwatched quest: no watch call at all, no selection, no flight", list(W.watches) .. " " .. tostring(W.super))
+  local d = Diag()
+  ok(d.act == "shift: link" and d.link == "game" and d.chatOpened == true and d.undo == "nothing changed" and d.fly == "no (Shift)",
+    "diag: shift: link, the game's, chat opened, nothing to undo", tostring(d.link) .. " " .. tostring(d.undo))
+  chat = false n0 = W.linked or 0
   Click(1)
-  ok(has(W.watches, 1) and W.super == 0, "a watched quest: the game's untrack undone (still in the panel)", list(W.watches))
-  ok(Diag().undo:find("untrack undone (same-call)", 1, true), "diag says so", Diag().undo)
+  ok(has(W.watches, 1) and W.calls.remove == removes0 and W.super == 0 and (W.linked or 0) == n0 + 1,
+    "a watched quest: never untracked, linked", list(W.watches))
+  ok(trackerSaw[#trackerSaw] == snap, "the panel at the click's end: unchanged", tostring(trackerSaw[#trackerSaw]))
+  chat = true n0 = W.linked or 0
   W.super = 1
   Click(1)
-  ok(W.super == 1 and has(W.watches, 1), "the selected quest: its clear undone", tostring(W.super))
-  chat = true
-  local n0 = W.linked or 0
+  ok(W.super == 1 and has(W.watches, 1) and (W.linked or 0) == n0 + 1 and Diag().link == "valhalla",
+    "the selected quest (the game clears it first): selected again, linked by Valhalla", tostring(W.super) .. " " .. tostring(Diag().link))
+  print("-- Shift-click when the chat line can't be opened: the game's untrack / track undone in the same event")
+  chat, canOpen = false, false
+  W.super = 0 trackerSaw = {}
+  Click(1)
+  ok(has(W.watches, 1) and trackerSaw[#trackerSaw] == snap and Diag().undo:find("untrack undone (same-call)", 1, true),
+    "a watched quest: re-added inside the same event, the panel unchanged at the click's end", tostring(Diag().undo))
+  ok(Diag().link == "none (no chat line)", "no link possible: logged", tostring(Diag().link))
   Click(4)
-  ok((W.linked or 0) == n0 + 1 and Diag().undo:find("chat link", 1, true), "an open chat line: the game's link stays (reported, not undone)", tostring(Diag().undo))
-  chat, shift = false, false
+  ok(list(W.watches) == snap and W.super == 0 and Diag().takeBack == "same-call", "an unwatched quest: watch and selection undone", tostring(Diag().undo))
+  canOpen, chat, shift = true, false, false
   W.super = 0
 
   print("-- Quest click: As Blizzard")

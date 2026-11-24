@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.51", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"Shift-clicking a quest's icon in the quest log only puts the quest's link in chat (the chat line opens if it's closed): nothing is tracked, untracked or selected.",
+		"Townsfolk: one icon per NPC on the world map and minimap. Lakeshire, Bloodhoof Village and the cities no longer show pairs; Lakeshire's icons sit where the NPCs stand.",
+		"The quest log's quest icons stay where the game puts them; Valhalla's pin now sits just right of the icon.",
+	} },
 	{ version = "1.2.50", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
 		"Clicking a quest's icon in the quest log (in progress or completed) no longer flashes it into the Objectives panel, keeps it selected, and flies the map to it again (your Quest click setting).",
 		"Shift-clicking a quest's icon in the quest log does nothing now (a chat link still goes into an open chat line: that part is the game's).",

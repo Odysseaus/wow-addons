@@ -1325,8 +1325,11 @@ end
 -- (it draws once a frame, when dirty) and before the game selects the quest: no clear follows. Else right
 -- after the click ("post-click": the clear that follows is put back, O.KeepSuper); else 1.2.49's pass
 -- (O.GameWatches, "late"). In combat it waits on CombatQueue's gate ("queued"). A plain click then flies the
--- map there (QuestFly.lua's Q.Go, the Quest click setting). Shift-click does nothing: whatever the game did
--- (untrack, track, select, clear) is undone; a chat link it put into an open chat line can't be.
+-- map there (QuestFly.lua's Q.Go, the Quest click setting). (1.2.51) Shift-click only links the quest in chat:
+-- the chat line is opened just before the game's click when it's closed (ChatFrameUtil.OpenChat), so the
+-- game's own first step (ChatFrameUtil.TryInsertQuestLinkForQuestID) links it and returns, touching nothing
+-- else. A selected quest (the game clears it before the link) is selected again and linked by Valhalla;
+-- whatever else the game did anyway (untrack, track, select) is undone, the watch inside the same event.
 --------------------------------------------------------------------------------
 O.ICON_DIAG = 30
 local function Super() return C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID) or 0 end
@@ -1351,8 +1354,30 @@ function O.IconPre(q, button)
 	if not (q and mod.enabled) then S.icon = nil return end
 	if button and button ~= "LeftButton" then S.icon = nil return end
 	O.ForgetKeepSuper()   -- (the player's own selection)
-	S.icon = { q = q, t = Now(), inClick = true, shift = IsShiftKeyDown and IsShiftKeyDown() and true or false,
-		watched = Watched(q), super = Super(), chat = ChatOpen() }
+	local shift = IsShiftKeyDown and IsShiftKeyDown() and true or false
+	local chat = ChatOpen()
+	local opened = false
+	if shift and not chat then opened = O.OpenChat() chat = ChatOpen() end
+	S.icon = { q = q, t = Now(), inClick = true, shift = shift, watched = Watched(q), super = Super(), chat = chat,
+		chatOpened = opened and chat or false }
+end
+-- (1.2.51) the game's chat line, opened empty (its own function), for a Shift-click's link
+function O.OpenChat()
+	local CU = rawget(_G, "ChatFrameUtil")
+	local open = (type(CU) == "table" and CU.OpenChat) or rawget(_G, "ChatFrame_OpenChat")
+	if type(open) ~= "function" then return false end
+	return (pcall(open, "")) and true or false
+end
+-- the quest's link into the chat line (the game's GetQuestLink and InsertLink); true: inserted
+function O.InsertQuestLink(q)
+	local get = rawget(_G, "GetQuestLink")
+	local link = type(get) == "function" and Call(get, q) or nil
+	if not link then return false end
+	local CU = rawget(_G, "ChatFrameUtil")
+	local insert = (type(CU) == "table" and CU.InsertLink) or rawget(_G, "ChatEdit_InsertLink")
+	if type(insert) ~= "function" then return false end
+	local ok, done = pcall(insert, link)
+	return ok and done and true or false
 end
 -- Valhalla's own watch call for the click; true: it ran (else waits on the gate)
 local function IconWatch(ic, add, why)
@@ -1403,8 +1428,12 @@ function O.IconPost(q)
 	local watched, super = Watched(q), Super()
 	local entry = { clock = date and date("%H:%M:%S") or nil, quest = q, shift = ic.shift or nil }
 	if ic.shift then
-		entry.act = "shift: undone"
+		entry.act = "shift: link"
+		entry.chatOpened = ic.chatOpened or false
 		local undo = {}
+		-- the game took its link step (chat open, nothing changed) or not (selected: cleared first; else
+		-- untracked / tracked): then Valhalla links it after undoing the rest
+		local gameLinked = ic.chat and ic.super ~= q and super == ic.super and watched == ic.watched and not ic.took and not ic.rewatched
 		if not ic.watched and watched and not ic.took then
 			ic.took, ic.queued = "post-click", not IconWatch(ic, false, "quest log icon Shift-click: the game's watch undone")
 		end
@@ -1423,9 +1452,9 @@ function O.IconPost(q)
 			if not ran then ic.queued = true end
 			undo[#undo + 1] = "selection put back to " .. tostring(was)
 		end
-		if ic.chat and super == ic.super and watched == ic.watched and not ic.took and not ic.rewatched then
-			undo[#undo + 1] = "chat link: the game's, not undone"
-		end
+		if gameLinked then entry.link = "game"
+		elseif O.InsertQuestLink(q) then entry.link = "valhalla"
+		else entry.link = "none (no chat line)" end
 		entry.undo = #undo > 0 and table.concat(undo, "; ") or "nothing changed"
 		entry.takeBack = ic.took or "none"
 		entry.queued = ic.queued or false
