@@ -89,10 +89,10 @@ ok(eq(W.watches, { 2, 6, 3 }), "Goldshire Inn (micro map) -> Elwynn Forest only"
 W.map = 1453 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
 ok(eq(W.watches, { 2, 6, 3, 1 }), "back in Stormwind", list(W.watches))
 
-print("== 1c. (v0.2.2, E1) another zone's quest: listed for a real marker here, not for a waypoint")
+print("== 1c. (1.2.52) another zone's quest: never listed for an objective marker here, nor for a waypoint")
 W.onMap[1429] = { 5 }
 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
-ok(has(W.watches, 5), "a Dun Morogh quest with a real objective marker on Elwynn's map is listed in Stormwind (E1; v0.2.1 said not)", list(W.watches))
+ok(not has(W.watches, 5), "1.2.52: a Dun Morogh quest with a real objective marker on Elwynn's map is not listed in Stormwind", list(W.watches))
 W.waypoints["5:1429"] = true
 Fire("ZONE_CHANGED_NEW_AREA") Run(2)
 ok(not has(W.watches, 5), "the same pin as a waypoint: not listed (the v0.2.1 rule)", list(W.watches))
@@ -479,7 +479,7 @@ ok(mod.enabled, "why changes nothing (still on)")
 ---------------------------------------------------------------------------
 local function Why(id) local n0 = #ns.printed mod:Slash("why " .. id) return table.concat(ns.printed, "\n", n0 + 1) end
 
-print("== 25. another zone's quest with a real objective marker here is listed")
+print("== 25. (1.2.52) another zone's quest with a real objective marker here is NOT listed (was v0.2.2)")
 W.Reset()
 W.AddQuest(40, "Stormwind City", "A Noble Brew", 30, false, true)
 W.AddQuest(41, "Wetlands", "Crocs of the Sky", 22, false, true)
@@ -487,11 +487,11 @@ W.AddQuest(42, "Duskwood", "Eight-Legged Menaces", 24, false, true)
 Restart()
 W.onMap[1437] = { { questID = 40, mapID = 1437 } }
 Arrive(1437)
-ok(eq(W.watches, { 41, 40 }), "Wetlands: A Noble Brew (Stormwind header) for its Musquash Root marker", list(W.watches))
-ok(Why(40):find("is another zone, but it has an objective marker here"), "why: 'an objective marker here'")
+ok(eq(W.watches, { 41 }), "Wetlands: A Noble Brew (Stormwind header) not listed for its Musquash Root marker", list(W.watches))
+ok(Why(40):find("header \"Stormwind City\" is another zone", 1, true) and not Why(40):find("but it has an objective marker here", 1, true), "why: another zone (the marker doesn't count)")
 W.onMap[1431] = { { questID = 40, mapID = 1431 } }
 Arrive(1431)
-ok(eq(W.watches, { 42, 40 }), "Duskwood: and for its Tear of Tilloa marker", list(W.watches))
+ok(eq(W.watches, { 42 }), "Duskwood: nor for its Tear of Tilloa marker", list(W.watches))
 W.onMap[1437] = { 40 } W.waypoints["40:1437"] = true
 Arrive(1437)
 ok(eq(W.watches, { 41 }), "only a waypoint pin: not listed", list(W.watches))
@@ -507,7 +507,7 @@ ok(eq(W.watches, { 41 }), "a real pin, but the next waypoint is Duskwood: not li
 ok(Why(40):find("next waypoint is on map 1431"), "why: the next-waypoint guard")
 W.next[40] = 1437
 Go(1431) Go(1437)
-ok(has(W.watches, 40), "next waypoint on this map: listed", list(W.watches))
+ok(not has(W.watches, 40), "next waypoint on this map: still not listed", list(W.watches))
 W.next[40] = nil W.noLocal[40] = true
 Go(1431) Go(1437)
 ok(not has(W.watches, 40), "the game says no local marker on the map you stand on: not listed", list(W.watches))
@@ -516,7 +516,7 @@ W.noLocal[40] = nil
 print("== 25b. E1: a capital's surrounding zone counts (no local-marker check there)")
 W.onMap[1429] = { { questID = 42, mapID = 1429 } } W.noLocal[42] = true
 Arrive(1453)
-ok(has(W.watches, 42), "Stormwind: a Duskwood quest with a real marker in Elwynn", list(W.watches))
+ok(not has(W.watches, 42), "Stormwind: a Duskwood quest with a real marker in Elwynn: not listed", list(W.watches))
 W.onMap[1429] = nil W.onMap[1453] = { { questID = 42, mapID = 1453 } }
 Go(1436) Go(1453)
 ok(not has(W.watches, 42), "on Stormwind's own map without the game's local marker: not listed", list(W.watches))
@@ -570,25 +570,25 @@ W.AddQuest(41, "Wetlands", "Crocs of the Sky", 22, false, true)
 W.AddQuest(45, "Duskwood", "Wolves at Our Heels", 20, false, false)
 W.onMap[1437] = { { questID = 40, mapID = 1437 } }
 Restart() Arrive(1437)
-ok(has(W.watches, 40), "listed for its marker", list(W.watches))
+ok(not has(W.watches, 40), "1.2.52: not listed for its marker", list(W.watches))
 W.onMap[1437] = {}
 Fire("QUEST_POI_UPDATE") Run(0.7)
-ok(has(W.watches, 40), "one miss: kept", list(W.watches))
+ok(not has(W.watches, 40), "one miss: still out", list(W.watches))
 W.onMap[1437] = { { questID = 40, mapID = 1437 } }
 Run(1.2)
-ok(has(W.watches, 40) and not (O.S.miss and O.S.miss[40]), "seen again: kept, count starts over", list(W.watches))
+ok(not has(W.watches, 40) and not (O.S.miss and O.S.miss[40]), "seen again: still out, the miss count starts over", list(W.watches))
 W.onMap[1437] = {}
 Fire("QUEST_POI_UPDATE") Run(0.7)
-ok(has(W.watches, 40), "a new first miss: kept", list(W.watches))
+ok(not has(W.watches, 40), "a new first miss: still out", list(W.watches))
 Run(1.5)
 ok(not has(W.watches, 40), "second miss a second later: out (the root looted)", list(W.watches))
 W.onMap[1437] = { { questID = 45, mapID = 1437 } }
 Fire("QUEST_POI_UPDATE") Run(1.2)
-ok(has(W.watches, 45), "a marker appearing here: tracked at once", list(W.watches))
+ok(not has(W.watches, 45), "a marker appearing here: never tracked (1.2.52)", list(W.watches))
 W.combat = true W.combatChanges = 0
 W.onMap[1437] = {}
 Fire("QUEST_POI_UPDATE") Run(3)
-ok(has(W.watches, 45) and W.combatChanges == 0, "in combat: nothing changes", list(W.watches))
+ok(not has(W.watches, 45) and W.combatChanges == 0, "in combat: nothing changes", list(W.watches))
 W.combat = false Fire("PLAYER_REGEN_ENABLED") Run(3)
 ok(not has(W.watches, 45), "after combat: two misses, out", list(W.watches))
 W.onMap[1437] = { { questID = 45, mapID = 1437 } }
@@ -596,7 +596,7 @@ Fire("QUEST_POI_UPDATE") Run(1.2)
 W.taxi = true local c0 = W.calls.add + W.calls.remove
 W.onMap[1437] = {}
 Fire("QUEST_POI_UPDATE") Run(3)
-ok(W.calls.add + W.calls.remove == c0 and has(W.watches, 45), "on a taxi: nothing changes", list(W.watches))
+ok(W.calls.add + W.calls.remove == c0 and not has(W.watches, 45), "on a taxi: nothing changes", list(W.watches))
 W.taxi = false
 
 print("== 30. the 25 limit with marker quests")
@@ -606,7 +606,7 @@ W.AddQuest(400, "Stormwind City", "Low Marker", 5, false, false)
 W.AddQuest(401, "Duskwood", "High Marker", 40, false, false)
 W.onMap[1437] = { { questID = 400, mapID = 1437 }, { questID = 401, mapID = 1437 } }
 Restart() Arrive(1437)
-ok(#W.watches == 25 and has(W.watches, 400) and not has(W.watches, 401) and has(W.watches, 324), "25 tracked: the lowest levels, a marker quest mixed in, the level-40 one off", tostring(#W.watches))
+ok(#W.watches == 24 and not has(W.watches, 400) and not has(W.watches, 401) and has(W.watches, 324), "24 tracked: the zone's own; no marker quest (1.2.52)", tostring(#W.watches))
 
 ---------------------------------------------------------------------------
 print("== 31. quest-log pins")
@@ -1559,7 +1559,7 @@ do
   W.onMap[1429] = { 5 }                         -- Duskwood quest 5: a real marker on Elwynn (listed here, E1)
   Restart()
   Go(1453)
-  ok(eq(W.watches, { 1, 5 }) or eq(W.watches, { 5, 1 }), "Stormwind: its own quest and the one with a marker here", list(W.watches))
+  ok(eq(W.watches, { 1 }), "Stormwind: its own quest only (1.2.52: the Duskwood quest's marker here doesn't count)", list(W.watches))
   local c = mod.char
 
   print("-- A: a selection's map data changes nothing")
@@ -1661,11 +1661,24 @@ do
   local shift, chat = false, false
   _G.IsShiftKeyDown = function() return shift end
   local canOpen = true
-  _G.ChatFrameUtil = { GetActiveWindow = function() return chat and {} or nil end,
-    TryInsertQuestLinkForQuestID = function() if chat and shift then W.linked = (W.linked or 0) + 1 return true end return false end,
-    OpenChat = function(text) if canOpen then chat = true W.opened = (W.opened or 0) + 1 end end,
-    InsertLink = function(link) if chat and link then W.linked = (W.linked or 0) + 1 W.lastLink = link return true end return false end }
+  -- the chat line (an EditBox): Insert at the cursor, GetText / SetText, the cursor
+  local box = { text = "", cursor = 0 }
+  function box:Insert(t) self.text = self.text:sub(1, self.cursor) .. t .. self.text:sub(self.cursor + 1) self.cursor = self.cursor + #t end
+  function box:GetText() return self.text end
+  function box:SetText(t) self.text = t self.cursor = #t end
+  function box:GetCursorPosition() return self.cursor end
+  function box:SetCursorPosition(c) self.cursor = c end
+  -- (1.2.52) in game the line opened empty closed again before the game's click (it deactivates on losing
+  -- focus while empty: ChatFrameEditBoxMixin:OnEditFocusLost); loseFocus models that between PreClick and OnClick
+  local loseFocus = false
+  _G.ChatFrameUtil = { GetActiveWindow = function() return chat and box or nil end,
+    TryInsertQuestLinkForQuestID = function(q)
+      if chat and shift then W.linked = (W.linked or 0) + 1 box:Insert(GetQuestLink(q)) return true end return false end,
+    OpenChat = function(text) if canOpen then chat = true box:SetText(text or "") W.opened = (W.opened or 0) + 1 end end,
+    InsertLink = function(link) if chat and link then W.linked = (W.linked or 0) + 1 W.lastLink = link box:Insert(link) return true end return false end }
   _G.GetQuestLink = function(q) return "|Hquest:" .. q .. "|h[Q" .. q .. "]|h" end
+  local function Links(q) local n, i = 0, 1 local l = GetQuestLink(q)
+    while true do local a, b = box.text:find(l, i, true) if not a then return n end n, i = n + 1, b + 1 end end
 
   W.AddQuest(1, "Stormwind City", "Rethban Ore", 15, false, true)
   W.AddQuest(4, "Westfall", "Harvest Watchers", 12, false, false)
@@ -1684,6 +1697,7 @@ do
     local b = Btn(id)
     local h = rawget(b, "_hooks") or {}
     for _, fn in ipairs(h.PreClick or {}) do fn(b, "LeftButton", false) end
+    if loseFocus and chat and box.text == "" then chat = false end   -- (OnEditFocusLost on an empty line)
     if W.super == id then
       C_SuperTrack.ClearAllSuperTracked()
     elseif not ChatFrameUtil.TryInsertQuestLinkForQuestID(id) then
@@ -1769,12 +1783,29 @@ do
   local adds0, removes0 = W.calls.add, W.calls.remove
   local n0, o0 = W.linked or 0, W.opened or 0
   Click(4)
-  ok((W.opened or 0) == o0 + 1 and (W.linked or 0) == n0 + 1, "chat closed: opened, the game links it", tostring(W.opened) .. " " .. tostring(W.linked))
+  ok((W.opened or 0) == o0 + 1 and (W.linked or 0) == n0 + 1 and Links(4) == 1, "chat closed: opened, the link in it once (ours; the game's copy taken out)",
+    tostring(W.opened) .. " " .. tostring(W.linked) .. " " .. box.text)
   ok(list(W.watches) == snap and W.super == 0 and W.calls.add == adds0 and W.calls.remove == removes0 and #flights == 0,
     "an unwatched quest: no watch call at all, no selection, no flight", list(W.watches) .. " " .. tostring(W.super))
   local d = Diag()
-  ok(d.act == "shift: link" and d.link == "game" and d.chatOpened == true and d.undo == "nothing changed" and d.fly == "no (Shift)",
-    "diag: shift: link, the game's, chat opened, nothing to undo", tostring(d.link) .. " " .. tostring(d.undo))
+  ok(d.act == "shift: link" and d.link == "valhalla (pre-click; the game's copy taken out)" and d.chatOpened == true and d.undo == "nothing changed"
+    and d.fly == "no (Shift)" and d.gameWatch == nil, "diag: shift: link (pre-click), chat opened, no game watch call, nothing to undo", tostring(d.link) .. " " .. tostring(d.undo))
+  print("-- (1.2.52) Shift-click, chat closed, the line closing again on losing focus (as in game): the watch list never changes")
+  loseFocus = true
+  for _, q in ipairs({ 4, 1 }) do
+    chat = false box:SetText("")
+    local snapQ, a0, r0 = list(W.watches), W.calls.add, W.calls.remove
+    trackerSaw = {}
+    W.super = 0
+    Click(q)
+    ok(W.calls.add == a0 and W.calls.remove == r0 and list(W.watches) == snapQ and trackerSaw[1] == snapQ,
+      ("quest %d (%s): no AddQuestWatch / RemoveQuestWatch at all, the panel the same at the click's end"):format(q, q == 1 and "watched" or "not watched"),
+      list(W.watches) .. " add " .. (W.calls.add - a0) .. " remove " .. (W.calls.remove - r0))
+    ok(chat and Links(q) == 1 and W.super == 0 and Diag().link:find("pre-click", 1, true) and Diag().gameWatch == nil,
+      ("quest %d: the line stayed open, the link in it once, nothing selected"):format(q), box.text .. " " .. tostring(Diag().link))
+  end
+  loseFocus = false
+  chat = false box:SetText("")
   chat = false n0 = W.linked or 0
   Click(1)
   ok(has(W.watches, 1) and W.calls.remove == removes0 and W.super == 0 and (W.linked or 0) == n0 + 1,

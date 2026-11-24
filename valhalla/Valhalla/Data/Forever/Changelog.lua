@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.52", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"Shift-clicking a quest's icon in the quest log with the chat closed opens the chat with the quest's link in it, and the Objectives panel no longer flickers (nothing is tracked or untracked).",
+		"The Objectives panel lists only this zone's quests (as the quest log files them) and your pinned ones: another zone's quest no longer joins because its objective area reaches here (e.g. Westfall's Goretusk Liver Pie and Westfall Stew in Redridge). Ready to Turn In still lists a ready quest you can hand in here.",
+	} },
 	{ version = "1.2.51", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
 		"Shift-clicking a quest's icon in the quest log only puts the quest's link in chat (the chat line opens if it's closed): nothing is tracked, untracked or selected.",
 		"Townsfolk: one icon per NPC on the world map and minimap. Lakeshire, Bloodhoof Village and the cities no longer show pairs; Lakeshire's icons sit where the NPCs stand.",

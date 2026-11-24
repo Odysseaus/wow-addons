@@ -10,6 +10,7 @@
 --    only inside their dungeon; Ready rows use the game's own quest icon button; /vh objectives why.
 --  * v0.2.2: another zone's quest with a real objective (or, ready, turn-in) marker here is listed too
 --    (O.Marker); pins in the game's quest log as well (QuestLogPins.lua), one store for all.
+--    1.2.52: objective markers no longer count (only a ready quest's turn-in marker, for Ready to Turn In).
 --
 -- How: Valhalla never edits, hooks or re-parents anything of the game's tracker. It only decides which
 -- quests are tracked (C_QuestLog.AddQuestWatch / RemoveQuestWatch) and in what order (re-tracking), and
@@ -684,8 +685,12 @@ function O.Classify(e, here, placeOnly)
 	end
 	-- "X: Zone" counts as that zone
 	local suffix = h and h:match("^[^:]+:%s*(.+)$")
+	-- (1.2.52) another zone's quest is never listed for an objective marker here (the game's quest areas reach
+	-- into other zones: Goretusk Liver Pie, Westfall Stew in Redridge): the panel is the zone's quests under
+	-- its header in the log, plus pinned ones. Only a READY quest's turn-in marker here still counts (Ready to
+	-- Turn In's rule: hand it in where you are)
 	local function Marked(text)
-		if here.inst or O.IsDungeonQuest(e) or not here.marker[e.id] then return false end
+		if not e.ready or here.inst or O.IsDungeonQuest(e) or not here.marker[e.id] then return false end
 		return true, ("%s, but it has %s here"):format(text, e.ready and "a turn-in marker" or "an objective marker")
 	end
 	if suffix and O.IsZoneName(suffix) then
@@ -1330,6 +1335,12 @@ end
 -- game's own first step (ChatFrameUtil.TryInsertQuestLinkForQuestID) links it and returns, touching nothing
 -- else. A selected quest (the game clears it before the link) is selected again and linked by Valhalla;
 -- whatever else the game did anyway (untrack, track, select) is undone, the watch inside the same event.
+-- (1.2.52) In game the chat line opened empty didn't last until the game's click (1.2.51: with the chat closed
+-- the quest was tracked and taken back). The chat line deactivates itself when it loses focus while empty
+-- (ChatFrameEditBoxMixin:OnEditFocusLost / ShouldDeactivateChatOnEditFocusLost: GetText() == ""), so the
+-- link goes into the line in PreClick, right after it opens ("pre-click"): not empty, it stays open, and the
+-- game's TryInsertQuestLinkForQuestID finds it, links and returns before any watch call. The game's second
+-- copy of the link is taken out after the click (the line put back to the text after ours).
 --------------------------------------------------------------------------------
 O.ICON_DIAG = 30
 local function Super() return C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID) or 0 end
@@ -1356,10 +1367,64 @@ function O.IconPre(q, button)
 	O.ForgetKeepSuper()   -- (the player's own selection)
 	local shift = IsShiftKeyDown and IsShiftKeyDown() and true or false
 	local chat = ChatOpen()
-	local opened = false
-	if shift and not chat then opened = O.OpenChat() chat = ChatOpen() end
+	local opened, pre = false, nil
+	local chatLink = shift and O.ChatLinkClick() or false
+	if shift and not chat then
+		opened = O.OpenChat()
+		chat = ChatOpen()
+		if chat then pre = O.PreLink(q) end
+	end
 	S.icon = { q = q, t = Now(), inClick = true, shift = shift, watched = Watched(q), super = Super(), chat = chat,
-		chatOpened = opened and chat or false }
+		chatOpened = opened and chat or false, pre = pre, chatLink = chatLink }
+end
+-- (1.2.52) the game links a Shift-click only for its chat-link modifier (IsModifiedClick("CHATLINK"), Shift unless rebound)
+function O.ChatLinkClick()
+	local f = rawget(_G, "IsModifiedClick")
+	if type(f) ~= "function" then return true end
+	local ok, v = pcall(f, "CHATLINK")
+	return ok and v and true or false
+end
+-- (1.2.52) the quest's link into the chat line just opened (PreClick): the line is not empty, so it stays open
+-- until the game's click. Returns what's needed to take out the game's copy after the click
+local function ActiveBox()
+	local CU = rawget(_G, "ChatFrameUtil")
+	local get = (type(CU) == "table" and CU.GetActiveWindow) or rawget(_G, "ChatEdit_GetActiveWindow")
+	if type(get) ~= "function" then return nil end
+	local ok, w = pcall(get)
+	return ok and type(w) == "table" and w or nil
+end
+function O.PreLink(q)
+	local get = rawget(_G, "GetQuestLink")
+	local link = type(get) == "function" and Call(get, q) or nil
+	local box = ActiveBox()
+	if not (link and box and type(box.Insert) == "function" and type(box.GetText) == "function") then return nil end
+	local ok = pcall(box.Insert, box, link)
+	if not ok then return nil end
+	local okT, after = pcall(box.GetText, box)
+	local okC, cursor = false, nil
+	if type(box.GetCursorPosition) == "function" then okC, cursor = pcall(box.GetCursorPosition, box) end
+	return { box = box, link = link, after = okT and after or nil, cursor = okC and cursor or nil }
+end
+local function Count(text, part)
+	local n, i = 0, 1
+	while true do
+		local a, b = text:find(part, i, true)
+		if not a then return n end
+		n, i = n + 1, b + 1
+	end
+end
+-- (1.2.52) after the click: the game's copy of the link (a second one) taken out; "valhalla (pre-click)" and what happened
+function O.PreLinkAfter(pre)
+	local box = pre.box
+	local okT, now = pcall(box.GetText, box)
+	if not (okT and type(now) == "string" and type(pre.after) == "string") then return "valhalla (pre-click)" end
+	if now == pre.after then return "valhalla (pre-click)" end
+	if Count(now, pre.link) == Count(pre.after, pre.link) + 1 and type(box.SetText) == "function" then
+		pcall(box.SetText, box, pre.after)
+		if pre.cursor and type(box.SetCursorPosition) == "function" then pcall(box.SetCursorPosition, box, pre.cursor) end
+		return "valhalla (pre-click; the game's copy taken out)"
+	end
+	return "valhalla (pre-click)"
 end
 -- (1.2.51) the game's chat line, opened empty (its own function), for a Shift-click's link
 function O.OpenChat()
@@ -1402,6 +1467,7 @@ end
 function O.IconWatchEvent(id, added)
 	local ic = S.icon
 	if not (ic and ic.inClick and id == ic.q) or ic.busy then return false end
+	if ic.shift and not ic.watchEv then ic.watchEv, ic.chatAtWatch = added and "add" or "remove", ChatOpen() end
 	if added == true and not ic.watched and not ic.took then
 		ic.busy = true
 		ic.took, ic.queued = "same-call", not IconWatch(ic, false, "quest log icon: the game's watch, taken back at once")
@@ -1430,10 +1496,12 @@ function O.IconPost(q)
 	if ic.shift then
 		entry.act = "shift: link"
 		entry.chatOpened = ic.chatOpened or false
+		entry.chatLink = ic.chatLink
+		if ic.watchEv then entry.gameWatch = ic.watchEv .. (ic.chatAtWatch and " (chat line open)" or " (chat line closed)") end
 		local undo = {}
 		-- the game took its link step (chat open, nothing changed) or not (selected: cleared first; else
 		-- untracked / tracked): then Valhalla links it after undoing the rest
-		local gameLinked = ic.chat and ic.super ~= q and super == ic.super and watched == ic.watched and not ic.took and not ic.rewatched
+		local gameLinked = not ic.pre and ic.chat and ic.super ~= q and super == ic.super and watched == ic.watched and not ic.took and not ic.rewatched
 		if not ic.watched and watched and not ic.took then
 			ic.took, ic.queued = "post-click", not IconWatch(ic, false, "quest log icon Shift-click: the game's watch undone")
 		end
@@ -1452,7 +1520,8 @@ function O.IconPost(q)
 			if not ran then ic.queued = true end
 			undo[#undo + 1] = "selection put back to " .. tostring(was)
 		end
-		if gameLinked then entry.link = "game"
+		if ic.pre then entry.link = O.PreLinkAfter(ic.pre)
+		elseif gameLinked then entry.link = "game"
 		elseif O.InsertQuestLink(q) then entry.link = "valhalla"
 		else entry.link = "none (no chat line)" end
 		entry.undo = #undo > 0 and table.concat(undo, "; ") or "nothing changed"
