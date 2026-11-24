@@ -116,8 +116,9 @@ end
 
 local function MeasureQuestPoi()
 	if mod.questPoiInfo then return mod.questPoiInfo end
+	-- what is drawn when the template reading is not usable: the full 20 px badge
 	local info = {
-		button = 0, inProgress = 0, complete = 0, ratioIn = 1, ratioDone = 1,
+		button = POI_OUTER, inProgress = POI_OUTER, complete = POI_OUTER, ratioIn = 1, ratioDone = 1,
 		inProgressAtlas = "Quest-In-Progress-Icon-yellow", completeAtlas = "UI-QuestPoi-QuestBang",
 	}
 	local button
