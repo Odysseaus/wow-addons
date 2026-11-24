@@ -14,9 +14,11 @@ local mod = ns:GetModule("worldmap")
 -- (1.2.40) every townsfolk icon is the learned flight master's size (22). Rares stay 18.
 local PIN = 22
 local PROF_FALLBACK = "Interface\\Minimap\\Tracking\\Profession"
+local MASK = "Interface\\AddOns\\Valhalla\\Media\\TownsfolkMasks\\"
 local function Prof(key, name, icon)
 	return { key = key, name = ns.L[name], flag = key:upper(), zoom = 8,
-		look = { texture = "Interface\\Icons\\" .. icon, fallback = PROF_FALLBACK, size = PIN } }
+		look = { texture = "Interface\\Icons\\" .. icon, fallback = PROF_FALLBACK, size = PIN,
+			mask = MASK .. key .. ".tga" } }
 end
 local KINDS = {
 	{ key = "vendor", name = ns.L["Vendors"], flag = "VENDOR", zoom = 8,
@@ -193,7 +195,56 @@ local function NoteIcon(look)
 		end
 		if f and f.Hide then f:Hide() end
 	end
-	icons[key] = ok and true or false
+	-- (1.2.41) a profession mask, when the client can apply it. Otherwise the square icon. The path is saved.
+	if look.mask then
+		local how = "square"
+		if ok and CreateFrame then
+			local f = CreateFrame("Frame")
+			local tex = f and f.CreateTexture and f:CreateTexture()
+			if tex and mod.MaskTownsfolk and mod.MaskTownsfolk(tex, look) then how = "mask" end
+			if f and f.Hide then f:Hide() end
+		end
+		icons[key] = how
+	else
+		icons[key] = ok and true or false
+	end
+end
+
+-- the profession silhouette (Media/TownsfolkMasks). SetMask, or a mask texture on the icon's parent.
+-- False: the caller keeps the square icon. The game's own Interface\Icons texture is what shows through.
+function mod.MaskTownsfolk(tex, look)
+	local path = type(look) == "table" and look.mask
+	if not (tex and path) then return false end
+	local function loads(file)
+		if not CreateFrame then return false end
+		local f = CreateFrame("Frame")
+		local t = f and f.CreateTexture and f:CreateTexture()
+		local good, res = false, nil
+		if t and t.SetTexture then good, res = pcall(t.SetTexture, t, file) end
+		if f and f.Hide then f:Hide() end
+		return good and res ~= false
+	end
+	if not loads(path) then return false end
+	if tex.SetMask then
+		local ok = pcall(tex.SetMask, tex, path)
+		if ok then return true end
+	end
+	local parent = tex.GetParent and tex:GetParent()
+	if not (parent and parent.CreateMaskTexture and tex.AddMaskTexture) then return false end
+	if not tex.valhallaMask then
+		local ok, mask = pcall(parent.CreateMaskTexture, parent)
+		if not (ok and mask) then return false end
+		tex.valhallaMask = mask
+	end
+	local mask = tex.valhallaMask
+	if not (mask.SetAllPoints and mask.SetTexture) then return false end
+	mask:SetAllPoints(tex)
+	if not pcall(mask.SetTexture, mask, path) then return false end
+	if not tex.valhallaMasked then
+		if not pcall(tex.AddMaskTexture, tex, mask) then return false end
+		tex.valhallaMasked = true
+	end
+	return true
 end
 
 local function Build(kinds, done, forRare)
@@ -201,7 +252,6 @@ local function Build(kinds, done, forRare)
 	if not QDB then return done(false) end
 	local flags = QDB.npcFlags or {}
 	local faction = UnitFactionGroup("player") == "Horde" and "H" or "A"
-	local myClass = select(2, UnitClass("player"))
 	-- a trainer's class from its subname, by class token: Questie's subnames are English ("Warrior
 	-- Trainer") whatever the client's language, or translated by Questie, so both are looked for, in
 	-- lower case ("Maître des guerriers"); longest first (Demon Hunter before Hunter)
@@ -294,9 +344,10 @@ local function Build(kinds, done, forRare)
 							if sub:find(c[1], 1, true) then cls = c[2] break end
 						end
 						local tag = QDB.QueryNPCSingle(id, "trainerTag")
+					-- (1.2.41) every class, including Pet, Portal and Demon trainers. Profession tags stay out.
 					if type(tag) == "string" then
-						if k.class then hit = tag ~= "PROF" and tag == myClass else hit = tag == "PROF" end
-					elseif k.class then hit = cls ~= nil and cls == myClass else hit = cls == nil end
+						if k.class then hit = tag ~= "PROF" else hit = tag == "PROF" end
+					elseif k.class then hit = cls ~= nil else hit = cls == nil end
 					end
 				end
 				if hit then want[#want + 1] = k end
@@ -342,11 +393,20 @@ end
 -- (1.2.40) the old single "Profession trainers" box, on, turns every profession on once. The old key stays.
 function mod.MigrateTownsfolk()
 	local db = mod.db
-	if not db or type(db.townsfolk) ~= "table" or db.townsfolkProfMigrated then return end
-	if db.townsfolk.profTrainer then
-		for _, key in ipairs(mod.PROFESSIONS) do db.townsfolk[key] = true end
+	if not db or type(db.townsfolk) ~= "table" then return end
+	if not db.townsfolkProfMigrated then
+		if db.townsfolk.profTrainer then
+			for _, key in ipairs(mod.PROFESSIONS) do db.townsfolk[key] = true end
+		end
+		db.townsfolkProfMigrated = true
 	end
-	db.townsfolkProfMigrated = true
+	-- (1.2.41) the set built for one class is dropped once, so every class is drawn
+	if not db.townsfolkClassAll then
+		db.townsfolkClassAll = true
+		built.classTrainer = nil
+		local set = S.GetPinSet and S.GetPinSet("tf_classTrainer")
+		if set and S.ClearPinSet then S.ClearPinSet(set) end
+	end
 end
 
 function mod:RefreshTownsfolk()

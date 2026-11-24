@@ -16,7 +16,7 @@ local function G(name) return _G[name] end
 
 mod.defaults.allQuests = true   -- the quests in your log from every zone (off: Blizzard's, the zone's own map only)
 
-local BADGE = { atlas = "UI-QuestPoi-QuestNumber", texture = "Interface\\GossipFrame\\ActiveQuestIcon", size = 22 }
+local BADGE = { atlas = "UI-QuestPoi-QuestNumber", texture = "Interface\\GossipFrame\\ActiveQuestIcon", size = 20 }
 local IN_PROGRESS = { atlas = "Quest-In-Progress-Icon-yellow", texture = "Interface\\GossipFrame\\IncompleteQuestIcon" }
 local TURN_IN = { atlas = "UI-QuestPoi-QuestBangTurnIn", texture = "Interface\\GossipFrame\\ActiveQuestIcon" }
 local SAME = 0.002              -- world (normalized): one quest's icons this close are one
@@ -99,8 +99,8 @@ local function Mark(pin, complete)
 		pin.questMark = pin:CreateTexture(nil, "OVERLAY")
 		pin.questMark:SetPoint("CENTER")
 	end
-	local m, size = pin.questMark, BADGE.size * 0.6
-	m:SetSize(size, size)
+	local m = pin.questMark
+	m:SetSize(BADGE.size, BADGE.size)
 	S.Look(m, complete and TURN_IN or IN_PROGRESS)
 	m:Show()
 end

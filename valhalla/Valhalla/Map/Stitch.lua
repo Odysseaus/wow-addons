@@ -764,6 +764,14 @@ local function Look(tex, look)
 	end
 	if look.color then tex:SetVertexColor(unpack(look.color)) end
 	tex:SetRotation(look.rotation or 0)
+	-- (1.2.41) a profession's own silhouette over the game's icon. No mask: the square icon stays.
+	local masked = false
+	if look.mask then
+		local wm = ns.GetModule and ns:GetModule("worldmap")
+		if wm and wm.MaskTownsfolk then masked = wm.MaskTownsfolk(tex, look) and true or false end
+		if not masked and tex.SetMask then pcall(tex.SetMask, tex, nil) end
+	end
+	return masked
 end
 S.Look = Look
 

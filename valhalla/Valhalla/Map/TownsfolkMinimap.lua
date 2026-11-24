@@ -37,19 +37,6 @@ local function Radius()
 	return t[zoom] or t[0]
 end
 
-local function World(mapID, x, y)
-	if not (C_Map and C_Map.GetWorldPosFromMapPos and CreateVector2D) then return end
-	if not (type(mapID) == "number" and type(x) == "number" and type(y) == "number") then return end
-	if x > 1 then x, y = x / 100, y / 100 end
-	local ok, cont, world = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(x, y))
-	if not (ok and type(cont) == "number" and type(world) == "table") then return end
-	local wx, wy
-	if world.GetXY then wx, wy = world:GetXY() else wx, wy = world.x, world.y end
-	if type(wx) ~= "number" or type(wy) ~= "number" then return end
-	if Safe and Safe.IsSecret and (Safe.IsSecret(wx) or Safe.IsSecret(wy) or Safe.IsSecret(cont)) then return end
-	return cont, wx, wy
-end
-
 local function LookFor(kind, icon)
 	if icon == "repair" and mod.REPAIR_LOOK then return mod.REPAIR_LOOK end
 	for _, k in ipairs(mod.TOWNSFOLK or {}) do
@@ -63,25 +50,59 @@ local function Wanted(key)
 	return db.townsfolk and db.townsfolk[key] and true or false
 end
 
--- the same people the world map draws: your faction, and only your own class's trainers
+-- the same people the world map draws: your faction, and every class
 local function Kept(r)
 	local fac = (UnitFactionGroup and UnitFactionGroup("player") == "Horde") and "H" or "A"
 	local f = r.faction or "AH"
 	if type(f) == "string" and not f:find(fac, 1, true) then return false end
-	if r.type ~= "classTrainer" then return true end
-	local _, token = UnitClass and UnitClass("player")
-	local classes = mod.TOWNSFOLK_CLASSES
-	local mine = token and classes and classes[token]
-	if type(mine) ~= "string" then return false end
-	local title = (r.title or ""):lower()
-	local best, bestName = 0, nil
-	for _, n in pairs(classes) do
-		if type(n) == "string" then
-			local ln = n:lower()
-			if title:find(ln, 1, true) and #ln > best then best, bestName = #ln, n end
+	return true
+end
+
+local function Secret(v)
+	return Safe and Safe.IsSecret and Safe.IsSecret(v) or false
+end
+
+local function VecXY(world)
+	if type(world) ~= "table" then return end
+	local x, y
+	if world.GetXY then x, y = world:GetXY() else x, y = world.x, world.y end
+	if type(x) ~= "number" or type(y) ~= "number" or Secret(x) or Secret(y) then return end
+	return x, y
+end
+
+-- map position -> continent yards (east, north). The vector's order is whichever one
+-- S.FromYards puts back on this map, the same choice an entrance uses. A result that is
+-- still a map fraction is not yards, and is dropped.
+local function MapYards(mapID, x, y)
+	if not (C_Map and C_Map.GetWorldPosFromMapPos and CreateVector2D) then return end
+	if not (type(mapID) == "number" and type(x) == "number" and type(y) == "number") then return end
+	if x > 1 then x, y = x / 100, y / 100 end
+	local ok, cont, world = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(x, y))
+	if not (ok and type(cont) == "number" and not Secret(cont) and type(world) == "table") then return end
+	local a, b = VecXY(world)
+	if not a then return end
+	local function asYards(pair)
+		if math.abs(pair[1]) <= 2 and math.abs(pair[2]) <= 2 then return end
+		return pair[1], pair[2]
+	end
+	local stitch = ns.MapStitch
+	if stitch and stitch.FromYards and mod.ToWorld then
+		local u, v = mod.ToWorld(mapID, x, y)
+		if type(u) == "number" and type(v) == "number" then
+			local best, bestD
+			for _, try in ipairs({ { a, b }, { b, a } }) do
+				local tu, tv = stitch.FromYards(cont, try[1], try[2])
+				local dist = type(tu) == "number" and type(tv) == "number" and ((tu - u) ^ 2 + (tv - v) ^ 2)
+				if dist and (not bestD or dist < bestD) then best, bestD = try, dist end
+			end
+			if not best then return end
+			local east, north = asYards(best)
+			if east then return cont, east, north end
+			return
 		end
 	end
-	return bestName ~= nil and bestName:lower() == mine:lower()
+	local east, north = asYards({ a, b })
+	if east then return cont, east, north end
 end
 
 local function Rebuild()
@@ -90,9 +111,9 @@ local function Rebuild()
 	if type(data) == "table" and type(data.records) == "table" and mod.db and mod.db.townsfolkMaster and mod.db.townsfolkMinimap ~= false then
 		for _, r in ipairs(data.records) do
 			if Wanted(r.type) and Kept(r) then
-				local cont, wx, wy = World(r.map, r.x, r.y)
+				local cont, east, north = MapYards(r.map, r.x, r.y)
 				if cont then
-					list[#list + 1] = { cont = cont, wx = wx, wy = wy, name = r.name, title = r.title, look = LookFor(r.type, r.icon) }
+					list[#list + 1] = { cont = cont, east = east, north = north, name = r.name, title = r.title, look = LookFor(r.type, r.icon) }
 				end
 			end
 		end
@@ -152,15 +173,25 @@ function mod:UpdateTownsfolkMinimap()
 		local ok, a = pcall(fn, ...)
 		if ok then return a end
 	end
-	local mapID = C_Map and C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player")
-	local pos = mapID and Call(C_Map.GetPlayerMapPosition, mapID, "player")
-	if not pos then HideAll() return end
-	local px, py
-	if pos.GetXY then px, py = pos:GetXY() else px, py = pos.x, pos.y end
-	if type(px) ~= "number" or type(py) ~= "number" then HideAll() return end
-	if Safe and Safe.IsSecret and (Safe.IsSecret(px) or Safe.IsSecret(py)) then HideAll() return end
-	local cont, wx, wy = World(mapID, px, py)
-	if not cont then HideAll() return end
+	-- UnitPosition is yards: north, east, z, instance. A secret, or no reading, falls back to the map.
+	local cont, east, north
+	if UnitPosition then
+		local ok, ny, ex, _, inst = pcall(UnitPosition, "player")
+		if ok and type(ny) == "number" and type(ex) == "number" and type(inst) == "number"
+			and not (Secret(ny) or Secret(ex) or Secret(inst)) then
+			cont, east, north = inst, ex, ny
+		end
+	end
+	if not cont then
+		local mapID = C_Map and C_Map.GetBestMapForUnit and Call(C_Map.GetBestMapForUnit, "player")
+		local pos = mapID and Call(C_Map.GetPlayerMapPosition, mapID, "player")
+		if not pos then HideAll() return end
+		local px, py
+		if pos.GetXY then px, py = pos:GetXY() else px, py = pos.x, pos.y end
+		if type(px) ~= "number" or type(py) ~= "number" or Secret(px) or Secret(py) then HideAll() return end
+		cont, east, north = MapYards(mapID, px, py)
+		if not cont then HideAll() return end
+	end
 	local want = {}
 	if mod.db.townsfolkMaster then
 		for _, k in ipairs(mod.TOWNSFOLK or {}) do if Wanted(k.key) then want[#want + 1] = k.key end end
@@ -179,11 +210,11 @@ function mod:UpdateTownsfolkMinimap()
 	local function take(src, dest)
 		for _, p in ipairs(src) do
 			if p.cont == cont then
-				local dx, dy = p.wx - wx, p.wy - wy
+				local dx, dy = p.east - east, p.north - north
+				-- facing 0 is north and increases counterclockwise, so a point straight ahead sits above the arrow
 				if rot then
-					local ang = math.atan2(dx, dy) - face
-					local hyp = math.sqrt(dx * dx + dy * dy)
-					dx, dy = math.sin(ang) * hyp, math.cos(ang) * hyp
+					local s, c = math.sin(face), math.cos(face)
+					dx, dy = dx * c + dy * s, -dx * s + dy * c
 				end
 				if dx * dx + dy * dy <= radius * radius then
 					p.px = dx / radius * half
@@ -196,10 +227,10 @@ function mod:UpdateTownsfolkMinimap()
 	take(points, near)
 	quests = {}
 	for _, q in ipairs(mod.liveQuests or {}) do
-		local c, qx, qy = World(q.map, q.x, q.y)
+		local c, qx, qy = MapYards(q.map, q.x, q.y)
 		if c then
 			quests[#quests + 1] = {
-				cont = c, wx = qx, wy = qy, name = q.complete and "Ready to turn in" or "Quest", title = "",
+				cont = c, east = qx, north = qy, name = q.complete and "Ready to turn in" or "Quest", title = "",
 				look = { texture = q.complete and "Interface\\GossipFrame\\ActiveQuestIcon" or "Interface\\GossipFrame\\IncompleteQuestIcon" },
 			}
 		end

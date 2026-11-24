@@ -44,7 +44,8 @@ end
 -- Returns whether it's a square spell icon (framed like an action button) or a map symbol.
 local function Icon(name) return { texture = "Interface\\Icons\\" .. name, icon = true } end
 local function SetIcon(tex, look)
-	S.Look(tex, look)
+	local masked = S.Look(tex, look)
+	if masked then return false end
 	local atlas = look.atlas and (not C_Texture or not C_Texture.GetAtlasInfo or C_Texture.GetAtlasInfo(look.atlas))
 	local square = look.icon and not atlas
 	if square then tex:SetTexCoord(0.08, 0.92, 0.08, 0.92) end   -- (the spell icons' own frame cut off)
