@@ -4,6 +4,29 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.38", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aQuest log order|r: turning Show Ready to Turn In on or off lays the quest log out again, so a quest row is not left on top of another row or a zone header. The zones stay alphabetical. While the log is closed, it is still left alone.",
+	} },
+	{ version = "1.2.37", date = "2026-11-23", heads = { [1] = "Changed", [2] = "New", }, items = {
+		"|cff6e2c0aQuest chains|r: rebuilt from Wowhead WoW Forever's Series boxes only. 755 chains, 2,618 quests. A page that had no Series box still gives that quest no chain button.",
+		"|cff6e2c0a/valhalla chain coverage|r: your quest log, each quest chain, no series, not on Wowhead Forever's list, or another chain. The last 3 runs are saved with this character (ValhallaCharDB, under chains).",
+	} },
+	{ version = "1.2.36", date = "2026-11-23", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"|cff6e2c0aQuest log order|r: the zones stay alphabetical, and the Ready section stays in the log, only while the quest log is open. Valhalla lays those rows out again only when that order actually changed. While the log is closed, the game's rows are left alone.",
+		"The level-up log (ValhallaDB, taintLog) keeps the last 10 lines of each kind: a level-up, a tracked quest, following a quest, the quest log's order. One kind filling the log no longer drops the others.",
+	} },
+	{ version = "1.2.35", date = "2026-11-23", heads = { [1] = "Fixed", [2] = "Note", }, items = {
+		"|cff6e2c0aLevel-up and the quest tracker|r: for about 2 seconds after you level, Valhalla waits before it changes which quests are tracked, which quest you are following, or the quest log's order. That is when the game lays the interface out and reads your auras.",
+		"A short log of that wait is kept with your settings, the last 40 lines: each level-up, and each of those changes once it actually runs. It is in ValhallaDB under taintLog.",
+	} },
+	{ version = "1.2.34", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
+		"|cff6e2c0aFlight masters|r: none at Eastern Plaguelands' towers (Plaguewood, Northpass, Eastwall and Crown Guard). They are in the game's flight tables, but no character can learn them and no flight master stands there. Mount Hyjal's two are on the map: Summit of Eternity and Tainted Foothills, with the routes between them and to Everlook.",
+		"|cff6e2c0aThe map keeps your settings|r: a view worked out while the map was still 0 pixels across (a divide by zero) is never put up, so it can't leave the map blank. A saved window place, size or scale that isn't a real number is forgotten. On logout any such number is taken out of your saved settings, so one bad number can't make the game throw the whole file away and put every setting back to its default.",
+	} },
+	{ version = "1.2.32", date = "2026-11-21", heads = { [1] = "Changed", }, items = {
+		"|cff6e2c0aCraft: Cost/item|r (was Cost to Make): what one item costs to make, the craft's reagents divided by how many one craft makes. Every row now adds up: Profit/item = Sell at less the AH's cut, less Cost/item. (Ghost Dye makes 2: it showed the cost of two next to the price of one; the profit and margin were right.)",
+		"A craft that makes more than one shows it after its name: \"x2\", or a range like \"x1-3\". Its tooltip keeps the craft's lines and adds Cost per item, with the whole craft's cost. Sorting by Cost/item sorts per item; the ranking, Total, Invest Amount, Per stack and Harvest are unchanged.",
+	} },
 	{ version = "1.2.31", date = "2026-11-20", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aDungeon Journal's dungeon map no longer covers the other tabs|r: inside a dungeon, its map (with its World Map and Scarlet Monastery wing buttons, Hide quests and Boss icons) stayed over Investments, Talents, Professions and Settings. It's now put away when you leave Map & Quest Log, and back on Map & Quest Log it's just as you left it (the same wing and floor, or its World Map if you'd picked that). Without Dungeon Journal nothing changes.",
 	} },

@@ -25,7 +25,7 @@ M.SUBS = {
 	{ key = "mine", label = L["My items"], tip = "What you have in your bags (and bank, as last seen): each item's vendor price, its AH price after the cut, which is better, and what they're all worth. Click a row for its history." },
 	{ key = "history", label = L["History"], tip = "One item's lowest AH price at each of your scans (one point an hour at most), over a Day or a Week, as lines or bars. Hover a point for its price, time, units listed and scan type. Click an item on any other tab to show it here." },
 	{ key = "results", label = L["Scan results"], tip = "Every item in your last full scan of this Auction House: lowest price, quantity, auctions and 7-day change. Click a column to sort, search by name, click a row for its history." },
-	{ key = "craft", label = L["Craft"], tip = "What a profession makes (or gathers, with Harvest), priced from your last full scan: cost to make, sell price, profit per item, margin, units listed, and how many you can make with the total profit. Hover a row for its reagents." },
+	{ key = "craft", label = L["Craft"], tip = "What a profession makes (or gathers, with Harvest), priced from your last full scan: cost per item, sell price, profit per item, margin, units listed, and how many you can make with the total profit. Hover a row for its reagents." },
 	-- (1.2.14) Watch.lua builds it: your own buy and sell targets, like limit orders, checked after every scan
 	{ key = "watch", label = L["Watchlist"], tip = "Items you watch, each with a buy target (BUY when the AH's lowest is at or below it) and a sell target (SELL when the lowest is at or above it). Checked after every scan at the Auction House; a popup lists what's met. Add an item by name here, alt-click any item, or right-click one > Set target..." },
 }
@@ -158,7 +158,7 @@ M.COLS = {
 	},
 	craft = {
 		{ key = "name", label = L["Craft (makes)"], x = 2, w = 176, justify = "LEFT", item = true, first = "asc", value = function(e) return NameOf(e.out) end },
-		{ key = "cost", label = L["Cost to Make"], x = 182, w = 72, value = function(e) return e.cost end },
+		{ key = "cost", label = L["Cost/item"], x = 182, w = 72, value = function(e) return e.costEach end },   -- (1.2.32: per item, was per craft)
 		{ key = "sell", label = L["Sell at"], x = 258, w = 72, value = function(e) return e.sell end },
 		{ key = "each", label = L["Profit/item"], x = 334, w = 80, value = function(e) return e.each end },
 		{ key = "margin", label = L["Margin"], x = 418, w = 46, value = function(e) return e.margin end },
@@ -755,11 +755,11 @@ M.HEAD_TIPS = {
 		total = "Have x the better of the two prices.",
 	},
 	craft = {
-		name = "The recipe, by what it makes. Hover a row for its reagents and costs.",
-		cost = function() return "What one craft's reagents cost. " .. (REAGENTS[I.S.craftOwned or "market"] or REAGENTS.market) end,
+		name = "The recipe, by what it makes (x2 after the name: one craft makes 2). Hover a row for its reagents and costs.",
+		cost = function() return "What one item costs to make: one craft's reagents, divided by how many it makes (x2 after the name). The tooltip has the craft's whole cost. " .. (REAGENTS[I.S.craftOwned or "market"] or REAGENTS.market) end,
 		sell = "The AH's lowest buyout for one of what it makes.",
-		each = function() return "Per item made: the sale less the AH's " .. CutPct() .. " cut, less the cost to make." end,
-		margin = "Profit as a share of the cost to make. \"-\": the reagents cost nothing.",
+		each = function() return "Per item made: Sell at less the AH's " .. CutPct() .. " cut, less Cost/item." end,
+		margin = "Profit as a share of the cost to make (per item or per craft: the same). \"-\": the reagents cost nothing.",
 		listed = "Units of it on the AH now.",
 		can = "Own + Can make. Own: how many of the item you already have (per Count: None 0, Bags only, Bags + bank). Can make: with Owned, how many crafts your reagents make; with Market, how many the Invest Amount buys (0 without one). Hover a number for its split: Own N + Can make M. Total counts Can make only.",
 		total = function() return "Owned: Profit per craft x Can make (yours cost nothing). Market with an Invest Amount: the sale after the AH's " .. CutPct() .. " cut x Can make, less the gold spent." end,
@@ -1949,6 +1949,7 @@ local function BuildCraft(f, page)
 				if e then
 					local c = r.harvest
 					r.addID = e.id M.PlaceAdd(r, "harvest")   -- (1.2.7)
+					r.cell.suffix = nil   -- (the craft rows' " xN")
 					r.cell:SetItem(e.id, M.PerStack() and function(id) return M.StackTip(id, e.each) end or M.Lines)
 					c.sell:SetText(Money(e.low))
 					Signed(c.each, e.each)
@@ -1982,9 +1983,10 @@ local function BuildCraft(f, page)
 			local e = i <= f.per and f.list[f.offset + i]
 			r.e, r.house = e or nil, house
 			if e then
+				r.cell.suffix = I.Craft.MakesMark(e)   -- (1.2.32: " x2" when a craft makes more than 1)
 				r.cell:SetItem(e.out, r.Lines)
 				r.addID = e.out M.PlaceAdd(r, "craft")   -- (1.2.7)
-				r.cost:SetText(S().Money(e.cost))
+				r.cost:SetText(S().Money(e.costEach))
 				r.sell:SetText(S().Money(e.sell))
 				Signed(r.each, e.each)
 				r.margin:SetText(e.margin and ("%d%%"):format(math.floor(e.margin * 100 + 0.5)) or "-")
