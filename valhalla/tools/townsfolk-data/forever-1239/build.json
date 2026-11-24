@@ -1,0 +1,20 @@
+{
+  "no_map": 0,
+  "npcs": 1036,
+  "placed": {
+    "auctioneer": 33,
+    "banker": 30,
+    "classTrainer": 268,
+    "food": 68,
+    "innkeeper": 48,
+    "mailbox": 50,
+    "profTrainer": 69,
+    "reagent": 30,
+    "repair": 1,
+    "spirit": 8,
+    "stable": 48,
+    "vendor": 524
+  },
+  "records": 0,
+  "unmapped_zone": {}
+}

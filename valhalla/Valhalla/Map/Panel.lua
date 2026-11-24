@@ -245,22 +245,32 @@ local function Rows()
 	-- (they all come from Questie's NPC database, or one like it another addon gives: without, only the
 	-- heading, saying so; a client may have none of it at all, retail: Client.lua)
 	local client = ns.ClientMaps or {}
-	local folkDB = mod.HasTownsfolk and mod.HasTownsfolk()
-	if client.townsfolk ~= false then
-		rows[#rows + 1] = { folkDB and L["Townsfolk"] or L["Townsfolk (needs Questie)"] }
-	end
 	local kinds = {}
 	for _, k in ipairs(mod.TOWNSFOLK or {}) do kinds[k.key] = k end
 	local function folk(label, key)
 		return row(label, "townsfolk." .. key, kinds[key] and kinds[key].look or Icon("INV_Misc_QuestionMark"),
-			function() return db.townsfolk[key] end, function(v) db.townsfolk[key] = v mod:RefreshTownsfolk() end)
+			function() return db.townsfolk[key] end, function(v) db.townsfolk[key] = v and true or false mod:RefreshTownsfolk() end)
 	end
-	if folkDB and client.townsfolk ~= false then
-		for _, k in ipairs(mod.TOWNSFOLK or {}) do
-			if not k.rare and k.key ~= "spirit" then rows[#rows + 1] = folk(k.name, k.key) end
+	-- (1.2.39) the checkboxes are always here. The master switch is account-wide, with the other map icons.
+	-- Rare mobs still need Questie itself; this pass does not ship them.
+	if client.townsfolk ~= false then
+		rows[#rows + 1] = { L["Townsfolk"] }
+		rows[#rows + 1] = row(L["Townsfolk"], "townsfolkMaster", Icon("INV_Misc_Note_01"),
+			function() return db.townsfolkMaster and true or false end,
+			function(v) db.townsfolkMaster = v and true or false mod:RefreshTownsfolk() end)
+		local groups = {
+			{ L["Services"], { "innkeeper", "repair", "mailbox", "banker", "auctioneer", "stable", "spirit" } },
+			{ L["Vendors"], { "vendor", "food", "reagent" } },
+			{ L["Trainers"], { "classTrainer", "profTrainer" } },
+		}
+		for _, g in ipairs(groups) do
+			rows[#rows + 1] = { g[1] }
+			for _, key in ipairs(g[2]) do
+				local k = kinds[key]
+				if k then rows[#rows + 1] = folk(k.name, key) end
+			end
 		end
-		rows[#rows + 1] = folk(L["Spirit healers"], "spirit")
-		rows[#rows + 1] = folk(L["Rare mobs"], "rare")
+		if questie then rows[#rows + 1] = folk(L["Rare mobs"], "rare") end
 	end
 	-- the look
 	-- (darkened or hidden; neither ticked: shown as they are. Darkened takes the colour-matched zones' land

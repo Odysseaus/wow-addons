@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.39", date = "2026-11-23", heads = { [1] = "New", }, items = {
+		"|cff6e2c0aTownsfolk|r: inns, repair, mailboxes, banks, auctioneers, stables, spirit healers, vendors, and class and profession trainers, from Wowhead WoW Forever. Each type has its own checkbox, and one Townsfolk switch turns them all on or off. Flight masters stay on their own switch. No other addon is required.",
+	} },
 	{ version = "1.2.38", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aQuest log order|r: turning Show Ready to Turn In on or off lays the quest log out again, so a quest row is not left on top of another row or a zone header. The zones stay alphabetical. While the log is closed, it is still left alone.",
 	} },

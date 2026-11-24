@@ -1,0 +1,36 @@
+{
+  "blocked": false,
+  "errors": 0,
+  "finished": true,
+  "kept": {
+    "auctioneer": 28,
+    "banker": 27,
+    "classTrainer": 233,
+    "food": 63,
+    "innkeeper": 45,
+    "mailbox": 42,
+    "profTrainer": 58,
+    "reagent": 25,
+    "repair": 1,
+    "spirit": 1,
+    "stable": 45,
+    "vendor": 468
+  },
+  "list_pages": "www.wowhead.com/forever/npcs returned HTTP 202 (AWS WAF challenge, empty of NPC rows)",
+  "no_spawn": {
+    "auctioneer": 3,
+    "banker": 2,
+    "classTrainer": 36,
+    "food": 6,
+    "mailbox": 14,
+    "profTrainer": 14,
+    "reagent": 4,
+    "spirit": 13,
+    "stable": 4,
+    "vendor": 41
+  },
+  "notes": [],
+  "npc_through": 262500,
+  "object_through": 200000,
+  "source": "https://nether.wowhead.com/forever/tooltip/{npc|object}/<id>"
+}
