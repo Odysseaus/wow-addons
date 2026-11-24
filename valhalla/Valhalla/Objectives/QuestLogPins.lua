@@ -70,6 +70,36 @@ local function PoiOf(row, q)
 	return nil
 end
 
+-- (1.2.50) the game's quest icon on a row, heard, never replaced: HookScript PreClick notes the click before
+-- POIButtonMixin:OnClick runs, HookScript OnClick after it (Objectives.lua O.IconPre / O.IconPost). Pooled
+-- buttons: hooked once each; the quest read at click time.
+local iconHooked = setmetatable({}, { __mode = "k" })
+local function IconQuest(b)
+	local q = rawget(b, "questID")
+	if q == nil and type(b.GetQuestID) == "function" then
+		local ok, v = pcall(b.GetQuestID, b)
+		if ok then q = v end
+	end
+	return type(q) == "number" and q or nil
+end
+function LP.IconPre(b, button)
+	if not on then return end
+	local ok, err = pcall(O.IconPre, IconQuest(b), button)
+	if not ok and geterrorhandler then geterrorhandler()(err) end
+end
+function LP.IconPost(b)
+	if not on then return end
+	local ok, err = pcall(O.IconPost, IconQuest(b))
+	if not ok and geterrorhandler then geterrorhandler()(err) end
+end
+function LP.HookIcon(b)
+	if not b or iconHooked[b] or type(b.HookScript) ~= "function" then return end
+	iconHooked[b] = true
+	b:HookScript("PreClick", LP.IconPre)
+	b:HookScript("OnClick", LP.IconPost)
+end
+function LP.IconHooked(b) return iconHooked[b] == true end
+
 local function PinFor(row)
 	local p = pins[row]
 	if not p then
@@ -91,6 +121,7 @@ function LP.OnUpdate()
 		if on and q then
 			local poi = PoiOf(row, q)
 			if poi then poi:SetPoint("TOPLEFT", row, "TOPLEFT", LP.POI_X + LP.SHIFT, LP.POI_Y) end
+			LP.HookIcon(poi)
 			local p = PinFor(row)
 			O.PaintPin(p, q)
 			p:Show()

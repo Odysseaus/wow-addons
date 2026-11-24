@@ -4,6 +4,11 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.50", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"Clicking a quest's icon in the quest log (in progress or completed) no longer flashes it into the Objectives panel, keeps it selected, and flies the map to it again (your Quest click setting).",
+		"Shift-clicking a quest's icon in the quest log does nothing now (a chat link still goes into an open chat line: that part is the game's).",
+		"Pinned quests' pins glow in the quest log and the Objectives panel; unpinned pins are dimmer.",
+	} },
 	{ version = "1.2.49", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "New", }, items = {
 		"Selecting or deselecting a quest (map, quest log, Objectives panel) no longer adds quests to the Objectives panel or takes them off: it follows the zone rules and your quest pins only.",
 		"Clicking a quest's icon in the quest log no longer puts it in the Objectives panel, and a completed quest stays selected.",

@@ -32,6 +32,11 @@ function Frame.GetTop() return 700 end
 function Frame.GetBottom(self) return rawget(self, "_bottom") or 500 end
 function Frame.SetAtlas(self, a) self._atlas = a end
 function Frame.SetTexture(self, t) self._tex = t end
+-- (1.2.50) script hooks (HookScript: run after the frame's own), blend, colour, alpha
+function Frame.HookScript(self, k, fn) local h = rawget(self, "_hooks") or {} self._hooks = h h[k] = h[k] or {} table.insert(h[k], fn) end
+function Frame.SetBlendMode(self, m) self._blend = m end
+function Frame.SetVertexColor(self, r, g, b) self._color = { r, g, b } end
+function Frame.SetAlpha(self, a) self._alpha = a end
 function Frame.RegisterEvent(self, e) local t = rawget(self, "_events") or {} self._events = t t[e] = true end
 function Frame.UnregisterAllEvents(self) self._events = {} end
 function Frame.UnregisterEvent(self, e) local t = rawget(self, "_events") if t then t[e] = nil end end

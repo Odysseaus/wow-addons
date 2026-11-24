@@ -1621,5 +1621,197 @@ do
   C_QuestLog.RemoveQuestWatch, C_QuestLog.AddQuestWatch = rawRemove, rawAdd
 end
 
+print("== 64. (1.2.50) the quest log icon: Blizzard's button, heard; its watch taken back in the same call; flight; Shift does nothing; pin glow")
+do
+  W.Reset()
+  C_Secrets = nil
+  W.clock = W.clock + 30
+  _G.ValhallaDB = {}
+  local rawRemove, rawAdd = C_QuestLog.RemoveQuestWatch, C_QuestLog.AddQuestWatch
+  local rawSet, rawClear = C_SuperTrack.SetSuperTrackedQuestID, C_SuperTrack.ClearAllSuperTracked
+  local async = false          -- the game firing QUEST_WATCH_LIST_CHANGED after the click instead of inside it
+  local pendingEv = {}
+  local function WatchEv(id, added) if async then pendingEv[#pendingEv + 1] = { id, added } else Fire("QUEST_WATCH_LIST_CHANGED", id, added) end end
+  local trackerSaw = {}        -- what the tracker would draw at the frame's end: the watches once the click is over
+  local clears = 0
+  local function SuperEv() if W.super == 0 then clears = clears + 1 end Fire("SUPER_TRACKING_CHANGED") end
+  C_QuestLog.RemoveQuestWatch = function(id)
+    local was = has(W.watches, id)
+    rawRemove(id)
+    if was then
+      WatchEv(id, false)
+      if W.super == id then W.super = 0 SuperEv() end   -- (SuperTrackEventMixin:OnQuestWatchChanged)
+    end
+  end
+  C_QuestLog.AddQuestWatch = function(id) local r = rawAdd(id) if r then WatchEv(id, true) end return r end
+  C_SuperTrack.SetSuperTrackedQuestID = function(id) rawSet(id) SuperEv() end
+  C_SuperTrack.ClearAllSuperTracked = function() rawClear() SuperEv() end
+  -- CombatQueue's gate: held while W.combat, run when it opens
+  local held = {}
+  ns.Combat = { Run = function(key, fn) if W.combat then held[key] = fn return false end fn() return true end,
+    Blocked = function() return W.combat end }
+  local function GateOpens() W.combat = false for k, fn in pairs(held) do held[k] = nil fn() end end
+  -- the world map's quest flight (Map/QuestFly.lua Q.Go)
+  local flights = {}
+  local mode = "fly"
+  ns.modules.worldmap = { QuestFly = { Mode = function() return mode end,
+    Go = function(q, mapID, how) flights[#flights + 1] = { q = q, map = mapID, how = how } return mode ~= "blizzard" end } }
+  _G.GetQuestUiMapID = function(q) return 1436 + q end
+  local shift, chat = false, false
+  _G.IsShiftKeyDown = function() return shift end
+  _G.ChatFrameUtil = { GetActiveWindow = function() return chat and {} or nil end,
+    TryInsertQuestLinkForQuestID = function() if chat and shift then W.linked = (W.linked or 0) + 1 return true end return false end }
+
+  W.AddQuest(1, "Stormwind City", "Rethban Ore", 15, false, true)
+  W.AddQuest(4, "Westfall", "Harvest Watchers", 12, false, false)
+  W.AddQuest(8, "Elwynn Forest", "Ready Here", 10, true, false)
+  W.AddQuest(9, "Duskwood", "Ready There", 26, true, false)
+  local SF = W.NewQuestLog()
+  Restart()
+  Go(1453)
+  -- (the log's update and our post-hook after it: an earlier section's wrapper sits on the global the hook saw)
+  local function Layout() QuestLogQuests_Update() O.LogPins.OnUpdate() end
+  Layout()
+  local c = mod.char
+  local function Btn(id) return SF.Contents:FindButtonByQuestID(id) end
+  -- Blizzard's click (POIButtonMixin:OnClick, POIButton.lua:444-480) with the frame's hooks: PreClick, OnClick, then ours after
+  local function Click(id)
+    local b = Btn(id)
+    local h = rawget(b, "_hooks") or {}
+    for _, fn in ipairs(h.PreClick or {}) do fn(b, "LeftButton", false) end
+    if W.super == id then
+      C_SuperTrack.ClearAllSuperTracked()
+    elseif not ChatFrameUtil.TryInsertQuestLinkForQuestID(id) then
+      local stop = false
+      if has(W.watches, id) then
+        if shift then C_QuestLog.RemoveQuestWatch(id) stop = true end
+      else
+        C_QuestLog.AddQuestWatch(id)
+      end
+      if not stop then C_SuperTrack.SetSuperTrackedQuestID(id) end
+    end
+    for _, fn in ipairs(h.OnClick or {}) do fn(b, "LeftButton", false) end
+    trackerSaw[#trackerSaw + 1] = list(W.watches)
+    if async then local p = pendingEv pendingEv = {} for _, e in ipairs(p) do Fire("QUEST_WATCH_LIST_CHANGED", e[1], e[2]) end end
+  end
+  local function Diag() local d = ValhallaDB.questLogIconDiag return d and d[#d] end
+
+  ok(Btn(4) and O.LogPins.IconHooked(Btn(4)) and #Btn(4)._hooks.PreClick == 1 and #Btn(4)._hooks.OnClick == 1,
+    "the game's quest icon: hooked (HookScript PreClick + OnClick), not replaced")
+  ok(Btn(4)._scripts.OnClick == nil and Btn(4)._scripts.PreClick == nil, "no script of the game's set by Valhalla")
+  Layout()
+  ok(#Btn(4)._hooks.PreClick == 1, "a pooled button is hooked once, however often the log is laid out")
+
+  print("-- in progress, another zone's: never in the panel, selected, flown to")
+  local before = list(W.watches)
+  local adds, removes = W.calls.add, W.calls.remove
+  clears = 0 trackerSaw = {} flights = {}
+  local ops0 = #(mod.db.opsLog or {})
+  Click(4)
+  ok(trackerSaw[1] == before, "at the click's end (when the tracker draws) the panel is as before", tostring(trackerSaw[1]))
+  ok(W.super == 4 and clears == 0, "selected, and never cleared on the way", tostring(W.super) .. " clears " .. clears)
+  local d = Diag()
+  ok(d and d.quest == 4 and d.act == "select" and d.takeBack == "same-call" and d.queued == false, "diag: select, taken back in the same call",
+    d and (tostring(d.act) .. " " .. tostring(d.takeBack)))
+  ok(#flights == 1 and flights[1].q == 4 and flights[1].map == 1440 and flights[1].how == "icon" and d.fly == "flew",
+    "the map flies there: Q.Go(q, GetQuestUiMapID(q), \"icon\")", d and tostring(d.fly))
+  Run(4)
+  ok(list(W.watches) == before and W.super == 4, "later passes: still not in the panel, still selected", list(W.watches))
+  local nOps, why = 0, nil
+  for i = ops0 + 1, #(mod.db.opsLog or {}) do local e = mod.db.opsLog[i] if e.quest == 4 then nOps = nOps + 1 why = e.why end end
+  ok(nOps == 1 and why:find("taken back at once", 1, true), "opsLog: one removal, the icon's", tostring(why))
+  ok(c.hidden[4] == nil or c.hidden[4] == true, "hidden mark untouched")
+
+  print("-- clicked again: cleared, no flight, panel untouched")
+  flights = {}
+  Click(4)
+  d = Diag()
+  ok(W.super == 0 and d.act == "clear" and #flights == 0 and list(W.watches) == before, "deselected, nothing else", d and d.act)
+
+  print("-- completed (ready) quests, here and elsewhere")
+  Click(8) Run(3)
+  ok(list(W.watches) == before and W.super == 8 and Diag().takeBack == "same-call" and Diag().fly == "flew", "ready here: not in Quests, selected, flown to")
+  Click(9) Run(3)
+  ok(list(W.watches) == before and W.super == 9 and Diag().takeBack == "same-call", "ready in Duskwood: the same")
+
+  print("-- already in the panel: only selected")
+  Click(1) Run(2)
+  ok(list(W.watches) == before and W.super == 1 and Diag().takeBack:find("already", 1, true), "Stormwind's own quest: stays, selected", Diag().takeBack)
+
+  print("-- the game's events after the click (not inside it): taken back right after, the clear put back")
+  async = true clears = 0 trackerSaw = {}
+  Click(4)
+  ok(trackerSaw[1] == before and W.super == 4, "post-click: the panel as before at the frame's end, selected", tostring(trackerSaw[1]) .. " " .. tostring(W.super))
+  ok(Diag().takeBack == "post-click", "diag: post-click", Diag().takeBack)
+  Run(4)
+  ok(list(W.watches) == before and W.super == 4, "and the late pass leaves it be", list(W.watches))
+  async = false
+  Click(4)   -- (clear)
+
+  print("-- in combat: the take-back waits on the gate")
+  W.combat = true
+  Click(4)
+  ok(Diag().queued == true and Diag().takeBack == "same-call" and has(W.watches, 4), "combat: queued (the game's watch stays until the gate opens)", tostring(Diag().queued))
+  GateOpens() Run(3)
+  ok(list(W.watches) == before and W.super == 4, "the gate opens: taken back, still selected", list(W.watches) .. " " .. tostring(W.super))
+  Click(4)
+
+  print("-- Shift-click does nothing")
+  shift = true
+  W.super = 0
+  flights = {}
+  local snap = list(W.watches)
+  Click(4)
+  ok(list(W.watches) == snap and W.super == 0 and Diag().act == "shift: undone" and #flights == 0, "an unwatched quest: watch and selection undone",
+    list(W.watches) .. " " .. tostring(W.super) .. " " .. tostring(Diag().undo))
+  Click(1)
+  ok(has(W.watches, 1) and W.super == 0, "a watched quest: the game's untrack undone (still in the panel)", list(W.watches))
+  ok(Diag().undo:find("untrack undone (same-call)", 1, true), "diag says so", Diag().undo)
+  W.super = 1
+  Click(1)
+  ok(W.super == 1 and has(W.watches, 1), "the selected quest: its clear undone", tostring(W.super))
+  chat = true
+  local n0 = W.linked or 0
+  Click(4)
+  ok((W.linked or 0) == n0 + 1 and Diag().undo:find("chat link", 1, true), "an open chat line: the game's link stays (reported, not undone)", tostring(Diag().undo))
+  chat, shift = false, false
+  W.super = 0
+
+  print("-- Quest click: As Blizzard")
+  mode = "blizzard" flights = {}
+  Click(4)
+  ok(Diag().fly == "no (blizzard)" and W.super == 4, "no flight, still selected", Diag().fly)
+  Click(4)
+  mode = "fly"
+
+  print("-- the diag keeps the last 30")
+  for _ = 1, 40 do Click(4) end
+  ok(#ValhallaDB.questLogIconDiag == 30, "30 kept", #ValhallaDB.questLogIconDiag)
+  local e = Diag()
+  ok(e.clock and e.quest and e.act and e.takeBack and e.queued ~= nil and e.fly, "each: time, quest, select/clear, take-back, queued, flight")
+
+  print("-- the pin's glow (G1)")
+  local p = O.MakePin(UIParent)
+  ok(p.glow and p.glow._atlas == "UI-QuestPoi-OuterGlow" and p.glow._blend == "ADD" and p.glow._w == 28 and p.glow._h == 28,
+    "UI-QuestPoi-OuterGlow, ADD, 28x28")
+  ok(p.glow._color[1] == 1 and p.glow._color[2] == 0.9 and p.glow._color[3] == 0.55 and p.glow._alpha == 0.85, "colour (1, 0.9, 0.55) at 0.85")
+  O.PaintPin(p, 4)
+  ok(not p.glow._shown and p.icon._alpha == 0.55, "unpinned: no glow, dimmed to 0.55")
+  mod.char.pinned[4] = true
+  O.PaintPin(p, 4)
+  ok(p.glow._shown and p.icon._alpha == 1, "pinned: glows, full")
+  mod.char.pinned[4] = nil
+  local gi = C_Texture.GetAtlasInfo
+  C_Texture.GetAtlasInfo = function() return nil end
+  local p2 = O.MakePin(UIParent)
+  ok(rawget(p2.glow, "_atlas") == nil and p2.glow._tex == "Interface\\WorldMap\\UI-QuestPoi-IconGlow", "no atlas: UI-QuestPoi-IconGlow")
+  C_Texture.GetAtlasInfo = gi
+
+  C_QuestLog.RemoveQuestWatch, C_QuestLog.AddQuestWatch = rawRemove, rawAdd
+  C_SuperTrack.SetSuperTrackedQuestID, C_SuperTrack.ClearAllSuperTracked = rawSet, rawClear
+  ns.Combat = nil
+  ns.modules.worldmap = nil
+end
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)
