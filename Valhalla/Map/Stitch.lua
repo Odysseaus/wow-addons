@@ -750,20 +750,59 @@ function S.PinSet(key, minZoom, level)
 	return set
 end
 
--- sets a texture from a look: { atlas = } or { texture =, coords = }; an atlas this
--- client lacks falls back to the texture, a missing texture to `fallback`
+-- sets a texture from a look: { atlas = } or { texture =, square =, fallback =, coords = };
+-- an atlas this client lacks falls back through the textures. A mask is cleared before any
+-- tex coord is set: Forever refuses SetTexCoord while one remains.
 local function Look(tex, look)
+	local function masked()
+		if tex.GetNumMaskTextures then
+			local n = tex:GetNumMaskTextures()
+			if type(n) == "number" and n > 0 then return true end
+		end
+		return tex.valhallaMasked and true or false
+	end
+	if masked() then
+		if tex.GetNumMaskTextures and tex.GetMaskTexture and tex.RemoveMaskTexture then
+			local n = tex:GetNumMaskTextures()
+			if type(n) == "number" then
+				for i = n, 1, -1 do
+					local mask = tex:GetMaskTexture(i)
+					if mask then pcall(tex.RemoveMaskTexture, tex, mask) end
+				end
+			end
+		end
+		if tex.SetMask then pcall(tex.SetMask, tex, nil) end
+		tex.valhallaMasked, tex.valhallaMask = nil, nil
+	end
 	tex:SetTexCoord(0, 1, 0, 1)
 	tex:SetVertexColor(1, 1, 1, 1)
 	if look.atlas and (not C_Texture or not C_Texture.GetAtlasInfo or C_Texture.GetAtlasInfo(look.atlas)) then
 		tex:SetAtlas(look.atlas)
 	else
-		local ok = tex:SetTexture(look.texture or look.fallback or "Interface\\Minimap\\ObjectIcons")
-		if ok == false and look.fallback then tex:SetTexture(look.fallback) end
-		if look.coords then tex:SetTexCoord(unpack(look.coords)) end
+		local used
+		local wm = ns.GetModule and ns:GetModule("worldmap")
+		if look.shipped and look.texture and wm and wm.ArtLoaded then
+			local w = wm.ArtLoaded(tex, look.texture)
+			if w then used = look.texture end
+		end
+		if not used then
+			local paths = {}
+			if not look.shipped then paths[#paths + 1] = look.texture end
+			paths[#paths + 1] = look.square
+			paths[#paths + 1] = look.fallback
+			paths[#paths + 1] = "Interface\\Minimap\\ObjectIcons"
+			for _, path in ipairs(paths) do
+				if path then
+					local ok = tex:SetTexture(path)
+					if ok ~= false then used = path break end
+				end
+			end
+		end
+		if look.coords and used == look.texture then tex:SetTexCoord(unpack(look.coords)) end
 	end
 	if look.color then tex:SetVertexColor(unpack(look.color)) end
 	tex:SetRotation(look.rotation or 0)
+	return false
 end
 S.Look = Look
 
@@ -809,7 +848,7 @@ function S.AddPin(set, u, v, look, data)
 	local size = look.size or 16
 	pin:SetParent(PinCell(set, u, v))
 	pin:SetSize(size, size)
-	pin:SetScale(S.iconScale or 1)           -- (the menu's Icon size: S.SetIconScale)
+	pin:SetScale((S.iconScale or 1) * (set.iconScale or 1))   -- (the menu's Icon size: S.SetIconScale; a set's own: S.SetPinSetScale)
 	pin:SetFrameLevel(set.frame:GetFrameLevel())
 	pin.anchor = Anchor(u * W, v * H)
 	pin:ClearAllPoints()
@@ -930,8 +969,15 @@ function S.SetIconScale(k)
 	if k == (S.iconScale or 1) then return end
 	S.iconScale = k
 	for _, set in pairs(sets) do
-		for _, pin in ipairs(set.pins) do pin:SetScale(k) end
+		for _, pin in ipairs(set.pins) do pin:SetScale(k * (set.iconScale or 1)) end
 	end
+end
+-- (1.2.47) one set's icons at `k` times the menu's Icon size (Townsfolk's Icon size: Townsfolk.lua). Our own pins only.
+function S.SetPinSetScale(set, k)
+	k = tonumber(k) or 1
+	if not set or k == (set.iconScale or 1) then return end
+	set.iconScale = k
+	for _, pin in ipairs(set.pins) do pin:SetScale((S.iconScale or 1) * k) end
 end
 
 function S.SetPlacesFrom(zoom)
@@ -2118,6 +2164,12 @@ end
 function S.PlayerShown() return arrow ~= nil and arrow:IsShown() end
 
 -- our arrow over every icon on the map, at frame level `level` (WorldMap.lua: with Blizzard's own)
+-- (1.2.40) the frame level of Valhalla's pin root, so other icons can sit above townsfolk (root + 3)
+-- without writing a level onto a Blizzard pin
+function S.PinRootLevel()
+	return pinRoot and pinRoot.GetFrameLevel and pinRoot:GetFrameLevel() or nil
+end
+
 function S.RaiseArrow(level)
 	local f = arrow and arrow:GetParent()
 	if f and f:GetFrameLevel() ~= level then f:SetFrameLevel(level) end

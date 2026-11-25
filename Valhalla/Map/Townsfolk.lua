@@ -1,47 +1,104 @@
 --------------------------------------------------------------------------------
--- Townsfolk and rare mobs on the world map, from Questie's NPC database
--- (npcFlags, rank, spawns), or another addon's database of the same shape
--- (ValhallaAPI.RegisterTownsfolkProvider). Each kind is a pin set, built the first time it's
--- turned on (a few hundred NPCs a frame, so nothing stalls).
+-- Townsfolk on the world map. Valhalla's own Forever data (Data/Forever/Townsfolk.lua) is
+-- registered as the provider, so the pins do not need Questie. Another addon may still register
+-- a database of the same shape (ValhallaAPI.RegisterTownsfolkProvider). Rare mobs stay on
+-- Questie's database when Questie itself is installed. Each kind is a pin set, built the first
+-- time it's turned on (a few hundred NPCs a frame, so nothing stalls).
 --------------------------------------------------------------------------------
 
 local _, ns = ...
 local S = ns.MapStitch
 local mod = ns:GetModule("worldmap")
 
--- kind -> look, the zoom it shows from, and what picks its NPCs
+-- kind -> look, the zoom it shows from, and what picks its NPCs.
+-- (1.2.40) every townsfolk icon is the learned flight master's size (22). Rares stay 18.
+local PIN = 22
+local PROF_FALLBACK = "Interface\\Minimap\\Tracking\\Profession"
+local PROF_ART = (ns.Media and ns.Media.path or "Interface\\AddOns\\Valhalla\\Media\\") .. "Townsfolk\\"
+-- the shaped pictures that are actually in the addon. A path not on this list is not loaded.
+mod.TOWNSFOLK_ART = {
+	alchemy = true, blacksmithing = true, cooking = true, enchanting = true,
+	engineering = true, firstaid = true, fishing = true, herbalism = true,
+	leatherworking = true, mining = true, skinning = true, tailoring = true,
+}
+local function Prof(key, name, icon)
+	return { key = key, name = ns.L[name], flag = key:upper(), zoom = 8,
+		look = { texture = PROF_ART .. key .. ".tga", square = "Interface\\Icons\\" .. icon,
+			fallback = PROF_FALLBACK, size = PIN, shipped = mod.TOWNSFOLK_ART[key] and true or false } }
+end
 local KINDS = {
 	{ key = "vendor", name = ns.L["Vendors"], flag = "VENDOR", zoom = 8,
-		look = { texture = "Interface\\GossipFrame\\VendorGossipIcon", size = 14 } },
+		look = { texture = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
+	{ key = "food", name = ns.L["Food and drink"], flag = "FOOD", zoom = 8,
+		look = { texture = "Interface\\Minimap\\Tracking\\Food", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
+	{ key = "reagent", name = ns.L["Reagents"], flag = "REAGENT", zoom = 8,
+		look = { texture = "Interface\\Minimap\\Tracking\\Reagents", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
 	{ key = "repair", name = ns.L["Repair"], flag = "REPAIR", zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Repair", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Repair", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
 	{ key = "innkeeper", name = ns.L["Innkeepers"], flag = "INNKEEPER", zoom = 4,
-		look = { texture = "Interface\\Minimap\\Tracking\\Innkeeper", fallback = "Interface\\GossipFrame\\BinderGossipIcon", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Innkeeper", fallback = "Interface\\GossipFrame\\BinderGossipIcon", size = PIN } },
 	{ key = "banker", name = ns.L["Bankers"], flag = "BANKER", zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Banker", fallback = "Interface\\GossipFrame\\BankerGossipIcon", size = 16 } },
-	-- mailboxes: objects, not NPCs (Questie's list of them, Townsfolk.GetMailboxes)
+		look = { texture = "Interface\\Minimap\\Tracking\\Banker", fallback = "Interface\\GossipFrame\\BankerGossipIcon", size = PIN } },
 	{ key = "mailbox", name = ns.L["Mailboxes"], mailbox = true, zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Mailbox", fallback = "Interface\\Icons\\INV_Letter_15", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Mailbox", fallback = "Interface\\Icons\\INV_Letter_15", size = PIN } },
 	{ key = "auctioneer", name = ns.L["Auctioneers"], flag = "AUCTIONEER", zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Auctioneer", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\Auctioneer", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN } },
 	{ key = "stable", name = ns.L["Stable masters"], flag = "STABLEMASTER", zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\StableMaster", fallback = "Interface\\GossipFrame\\PetitionGossipIcon", size = 16 } },
+		look = { texture = "Interface\\Minimap\\Tracking\\StableMaster", fallback = "Interface\\GossipFrame\\PetitionGossipIcon", size = PIN } },
 	{ key = "classTrainer", name = ns.L["Class trainers"], flag = "TRAINER", class = true, zoom = 6,
-		look = { texture = "Interface\\Minimap\\Tracking\\Class", fallback = "Interface\\GossipFrame\\TrainerGossipIcon", size = 16 } },
-	{ key = "profTrainer", name = ns.L["Profession trainers"], flag = "TRAINER", profession = true, zoom = 8,
-		look = { texture = "Interface\\Minimap\\Tracking\\Profession", fallback = "Interface\\GossipFrame\\TrainerGossipIcon", size = 14 } },
-	-- spirit healers: the game ships no graveyard table for this client, so they come from
-	-- Questie's NPC spawns too (the Spirit Healer NPC; both factions use the same ones)
+		look = { texture = "Interface\\Minimap\\Tracking\\Class", fallback = "Interface\\GossipFrame\\TrainerGossipIcon", size = PIN } },
+	Prof("alchemy", "Alchemy", "Trade_Alchemy"),
+	Prof("blacksmithing", "Blacksmithing", "Trade_BlackSmithing"),
+	Prof("enchanting", "Enchanting", "Trade_Engraving"),
+	Prof("engineering", "Engineering", "Trade_Engineering"),
+	Prof("herbalism", "Herbalism", "Trade_Herbalism"),
+	Prof("leatherworking", "Leatherworking", "Trade_LeatherWorking"),
+	Prof("mining", "Mining", "Trade_Mining"),
+	Prof("skinning", "Skinning", "INV_Misc_Pelt_Wolf_01"),
+	Prof("tailoring", "Tailoring", "Trade_Tailoring"),
+	Prof("cooking", "Cooking", "INV_Misc_Food_15"),
+	Prof("firstaid", "First Aid", "Spell_Holy_SealOfSacrifice"),
+	Prof("fishing", "Fishing", "Trade_Fishing"),
 	{ key = "spirit", name = ns.L["Spirit healers"], ids = { [6491] = true }, zoom = 3, hostile = true,
-		look = { atlas = "poi-soulspiritghost", texture = "Interface\\Minimap\\ObjectIcons", size = 16 } },
+		look = { atlas = "poi-soulspiritghost", texture = "Interface\\Minimap\\ObjectIcons", size = PIN } },
 	{ key = "rare", name = ns.L["Rare mobs"], rare = true, zoom = 3, hostile = true,
 		look = { atlas = "VignetteKillElite", texture = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8", size = 18 } },
 }
+mod.PROFESSIONS = { "alchemy", "blacksmithing", "enchanting", "engineering", "herbalism", "leatherworking",
+	"mining", "skinning", "tailoring", "cooking", "firstaid", "fishing" }
+mod.REPAIR_LOOK = { texture = "Interface\\Minimap\\Tracking\\Repair", fallback = "Interface\\GossipFrame\\VendorGossipIcon", size = PIN }
 mod.TOWNSFOLK = KINDS
 
 local d = mod.defaults
+d.townsfolkMaster = false       -- (1.2.39) one switch for every townsfolk type. Each type has its own checkbox too.
+d.townsfolkMinimap = true       -- (1.2.40) the same townsfolk on the minimap. Off hides only the minimap pins.
 d.townsfolk = {}
 for _, k in ipairs(KINDS) do d.townsfolk[k.key] = false end
+-- (1.2.47) the townsfolk icons' size on the world map, this character's: Large (as before), Medium, Small.
+-- Each times the menu's Icon size. Not the minimap's pins, quest icons, boats or dungeons.
+d.townsfolkSize = "large"
+mod.TOWNSFOLK_SIZES = { { key = "large", scale = 1 }, { key = "medium", scale = 0.8 }, { key = "small", scale = 0.65 } }
+local SIZE_SCALE = {}
+for _, s in ipairs(mod.TOWNSFOLK_SIZES) do SIZE_SCALE[s.key] = s.scale end
+function mod.TownsfolkSize()
+	local v = mod.db and mod.db.townsfolkSize
+	return SIZE_SCALE[v] and v or "large"
+end
+function mod.TownsfolkScale() return SIZE_SCALE[mod.TownsfolkSize()] end
+-- every townsfolk set's pins at the chosen size, live
+function mod.ApplyTownsfolkSize()
+	local k = mod.TownsfolkScale()
+	for _, kind in ipairs(KINDS) do
+		local set = S.GetPinSet and S.GetPinSet("tf_" .. kind.key)
+		if set and S.SetPinSetScale then S.SetPinSetScale(set, k) end
+	end
+end
+function mod.SetTownsfolkSize(v)
+	if not SIZE_SCALE[v] or not mod.db then return end
+	mod.db.townsfolkSize = v
+	mod.ApplyTownsfolkSize()
+	if mod.RefreshPanel then mod:RefreshPanel() end
+end
 
 local built = {}                -- kind key -> true once its pins exist
 local building = false
@@ -53,6 +110,7 @@ local ENGLISH_CLASS_NAMES = {
 	SHAMAN = "Shaman", MAGE = "Mage", WARLOCK = "Warlock", DRUID = "Druid", DEATHKNIGHT = "Death Knight",
 	MONK = "Monk", DEMONHUNTER = "Demon Hunter", EVOKER = "Evoker",
 }
+mod.TOWNSFOLK_CLASSES = ENGLISH_CLASS_NAMES
 local told = false              -- said once this session that Questie isn't installed
 
 -- another addon's NPC database in Questie's shape (ValhallaAPI.RegisterTownsfolkProvider): { db, zones,
@@ -77,8 +135,10 @@ function mod.HasTownsfolk()
 	return provider ~= nil or _G.QuestieLoader ~= nil or (loaded and loaded("Questie")) and true or false
 end
 
-local function Questie()
-	if provider then return provider.db, provider.zones end
+local function Questie(forRare)
+	-- rares stay on Questie's own database. Everything else prefers the registered provider
+	-- (Valhalla's Forever file, or another addon).
+	if not forRare and provider then return provider.db, provider.zones, provider end
 	local loader = _G.QuestieLoader
 	if not loader then return end
 	local ok, db = pcall(loader.ImportModule, loader, "QuestieDB")
@@ -106,8 +166,17 @@ local function Middle(coords)
 	return { best }
 end
 
+local function InCombat()
+	if InCombatLockdown and InCombatLockdown() then return true end
+	if UnitAffectingCombat and UnitAffectingCombat("player") then return true end
+	local C = ns.Combat
+	return C and C.Blocked and C.Blocked() or false
+end
+-- our own pins only. In combat the game's tooltip is left alone (it reads secret values).
 local function PinEnter(pin)
+	if InCombat() then return end
 	local n = pin.data
+	if not (GameTooltip and GameTooltip.SetOwner) then return end
 	GameTooltip:SetOwner(pin, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(n.name, 1, 0.82, 0)
 	if n.sub then GameTooltip:AddLine(n.sub, 1, 1, 1) end
@@ -119,12 +188,102 @@ local function PinEnter(pin)
 end
 
 -- every wanted NPC, sorted into kinds; then pins for the kinds that are on
-local function Build(kinds, done)
-	local QDB, ZoneDB = Questie()
+local function Saved()
+	local db = rawget(_G, "ValhallaDB")
+	if type(db) ~= "table" then return nil end
+	return db
+end
+local function NoteMiss(mapID)
+	local db = Saved()
+	if not db then return end
+	local m = db.townsfolkMiss
+	if type(m) ~= "table" then m = { spawns = 0, maps = {} } db.townsfolkMiss = m end
+	m.spawns = (tonumber(m.spawns) or 0) + 1
+	m.maps = type(m.maps) == "table" and m.maps or {}
+	local key = tostring(mapID)
+	m.maps[key] = (tonumber(m.maps[key]) or 0) + 1
+end
+-- a shaped picture is loaded only when its name is one of the twelve and the texture has a real size.
+-- SetTexture's return is not enough: this client returns true for a file that is not there.
+function mod.ArtLoaded(tex, path)
+	local name = type(path) == "string" and path:match("Townsfolk\\([%w_]+)%.tga$")
+	if not (name and mod.TOWNSFOLK_ART[name] and tex and tex.SetTexture) then return end
+	local ok, res = pcall(tex.SetTexture, tex, path)
+	if not (ok and res ~= false) then return end
+	local w = tex.GetWidth and tex:GetWidth()
+	local h = tex.GetHeight and tex:GetHeight()
+	if type(w) ~= "number" or type(h) ~= "number" or w <= 0 or h <= 0 then return end
+	return w
+end
+
+local iconNoted = {}
+local function NoteIcon(look)
+	local db = Saved()
+	if not db or type(look) ~= "table" then return end
+	local key = look.atlas or look.texture
+	if not key or iconNoted[key] then return end
+	iconNoted[key] = true
+	local icons = db.townsfolkIcons
+	if type(icons) ~= "table" then icons = {} db.townsfolkIcons = icons end
+	local ok = false
+	if look.atlas and C_Texture and type(C_Texture.GetAtlasInfo) == "function" then
+		local good, info = pcall(C_Texture.GetAtlasInfo, look.atlas)
+		ok = good and type(info) == "table"
+	end
+	if not ok and look.texture and CreateFrame then
+		local f = CreateFrame("Frame")
+		local tex = f and f.CreateTexture and f:CreateTexture()
+		if tex and tex.SetTexture then
+			local good, res = pcall(tex.SetTexture, tex, look.texture)
+			ok = good and res ~= false
+		end
+		if f and f.Hide then f:Hide() end
+	end
+	for k, v in pairs(icons) do if v == "mask" then icons[k] = nil end end
+	-- (1.2.44) SetTexture's return is not enough: a missing file can still return true.
+	-- A shaped picture counts only when it is one of the twelve shipped files and has a real size.
+	if look.square then
+		local function probe(path)
+			if not path or not CreateFrame then return end
+			local f = CreateFrame("Frame")
+			local t = f and f.CreateTexture and f:CreateTexture()
+			local good, res, width = false, nil, 0
+			if t and t.SetTexture then good, res = pcall(t.SetTexture, t, path) end
+			if good and res ~= false then
+				local w = t.GetWidth and t:GetWidth()
+				local h = t.GetHeight and t:GetHeight()
+				width = (type(w) == "number" and type(h) == "number" and w > 0 and h > 0) and w or 0
+			end
+			if f and f.Hide then f:Hide() end
+			if good and res ~= false then return width, true end
+		end
+		local width, used
+		if CreateFrame then
+			local f = CreateFrame("Frame")
+			local t = f and f.CreateTexture and f:CreateTexture()
+			width = t and mod.ArtLoaded(t, look.texture)
+			if f and f.Hide then f:Hide() end
+		end
+		if width then used = look.texture end
+		if not used then
+			local w, hit = probe(look.square)
+			if hit then width, used = w, look.square end
+		end
+		if not used then
+			local w, hit = probe(look.fallback)
+			if hit then width, used = w, look.fallback end
+		end
+		icons[key] = { path = used or false, width = width or 0 }
+	else
+		icons[key] = ok and true or false
+	end
+end
+
+local function Build(kinds, done, forRare)
+	local QDB, ZoneDB = Questie(forRare)
 	if not QDB then return done(false) end
 	local flags = QDB.npcFlags or {}
 	local faction = UnitFactionGroup("player") == "Horde" and "H" or "A"
-	local myClass = select(2, UnitClass("player"))
 	-- a trainer's class from its subname, by class token: Questie's subnames are English ("Warrior
 	-- Trainer") whatever the client's language, or translated by Questie, so both are looked for, in
 	-- lower case ("Maître des guerriers"); longest first (Demon Hunter before Hunter)
@@ -143,15 +302,20 @@ local function Build(kinds, done)
 	-- `walker`: one NPC's, a path walked taken as one place (Middle)
 	local function Pins(k, spawns, info, walker)
 		local set = S.PinSet("tf_" .. k.key, k.zoom, 3)
+		set.iconScale = mod.TownsfolkScale()   -- (1.2.47: the pins made now at Townsfolk's Icon size)
 		for areaID, coords in pairs(spawns) do
 			if walker and #coords > WANDER then coords = Middle(coords) end
 			local uiMapID = ZoneDB:GetUiMapIdByAreaId(areaID)
 			local l, r, t, b
 			if uiMapID then l, r, t, b = S.Rect(uiMapID) end
-			if l then
+			if not l then NoteMiss(uiMapID or areaID)
+			else
+				local look = (info and info.icon == "repair") and mod.REPAIR_LOOK or k.look
+				NoteIcon(look)
+				if look.fallback then NoteIcon({ texture = look.fallback }) end
 				for _, c in ipairs(coords) do
 					if c[1] and c[1] >= 0 then
-						local pin = S.AddPin(set, l + c[1] / 100 * (r - l), t + c[2] / 100 * (b - t), k.look, info)
+						local pin = S.AddPin(set, l + c[1] / 100 * (r - l), t + c[2] / 100 * (b - t), look, info)
 						pin:SetScript("OnEnter", PinEnter)
 						pin:SetScript("OnLeave", GameTooltip_Hide)
 					end
@@ -212,7 +376,11 @@ local function Build(kinds, done)
 						for _, c in ipairs(classNames) do
 							if sub:find(c[1], 1, true) then cls = c[2] break end
 						end
-						if k.class then hit = cls ~= nil and cls == myClass else hit = cls == nil end
+						local tag = QDB.QueryNPCSingle(id, "trainerTag")
+					-- (1.2.41) every class, including Pet, Portal and Demon trainers. Profession tags stay out.
+					if type(tag) == "string" then
+						if k.class then hit = tag ~= "PROF" else hit = tag == "PROF" end
+					elseif k.class then hit = cls ~= nil else hit = cls == nil end
 					end
 				end
 				if hit then want[#want + 1] = k end
@@ -223,6 +391,7 @@ local function Build(kinds, done)
 				local info = {
 					name = QDB.QueryNPCSingle(id, "name") or "?", sub = QDB.QueryNPCSingle(id, "subName"),
 					min = QDB.QueryNPCSingle(id, "minLevel"), max = QDB.QueryNPCSingle(id, "maxLevel"), rank = RANK[rank],
+					icon = QDB.QueryNPCSingle(id, "pinIcon"),
 				}
 				for _, k in ipairs(want) do
 					-- (not spirit healers or rare mobs: one NPC at many places, each a place of its own)
@@ -254,15 +423,45 @@ local function Build(kinds, done)
 end
 
 -- shows / hides each kind; builds the ones turned on for the first time
+-- (1.2.40) the old single "Profession trainers" box, on, turns every profession on once. The old key stays.
+function mod.MigrateTownsfolk()
+	local db = mod.db
+	if not db or type(db.townsfolk) ~= "table" then return end
+	if not db.townsfolkProfMigrated then
+		if db.townsfolk.profTrainer then
+			for _, key in ipairs(mod.PROFESSIONS) do db.townsfolk[key] = true end
+		end
+		db.townsfolkProfMigrated = true
+	end
+	-- (1.2.41) the set built for one class is dropped once, so every class is drawn
+	if not db.townsfolkClassAll then
+		db.townsfolkClassAll = true
+		built.classTrainer = nil
+		local set = S.GetPinSet and S.GetPinSet("tf_classTrainer")
+		if set and S.ClearPinSet then S.ClearPinSet(set) end
+	end
+end
+
 function mod:RefreshTownsfolk()
+	mod.MigrateTownsfolk()
+	if mod.UpdateTownsfolkMinimap then mod:UpdateTownsfolkMinimap() end
 	if not S.IsBuilt() then return end
+	local master = self.db.townsfolkMaster and true or false
+	local questieUp = _G.QuestieLoader ~= nil
 	local todo = {}
 	for _, k in ipairs(KINDS) do
-		local on = self.db.townsfolk[k.key]
+		local on = master and self.db.townsfolk[k.key] and true or false
+		if k.rare and not questieUp then on = false end   -- (rares stay on Questie; this pass does not invent them)
 		if on and not built[k.key] then todo[#todo + 1] = k end
 		local set = S.GetPinSet("tf_" .. k.key)
-		if set then S.SetPinSetOn(set, on) end
+		if set then S.SetPinSetOn(set, on and true or false) end
 	end
+	mod.ApplyTownsfolkSize()
+	-- one pass of townsfolk, then a later pass for rares (they read Questie, not our file)
+	local rest = {}
+	for _, k in ipairs(todo) do if not k.rare then rest[#rest + 1] = k end end
+	if #rest > 0 then todo = rest end
+	local forRare = todo[1] and todo[1].rare or false
 	if #todo == 0 or building then return end
 	-- no Questie at all (not just its database still loading): nothing to wait for
 	if not mod.HasTownsfolk() then
@@ -290,5 +489,89 @@ function mod:RefreshTownsfolk()
 		end
 		tries = 0
 		self:RefreshTownsfolk()
-	end)
+	end, forRare)
 end
+
+-- Valhalla's own Forever file, in the shape Build already reads (Questie's fields).
+local FLAGS = { vendor = 1, repair = 2, innkeeper = 4, banker = 8, auctioneer = 16, stable = 32,
+	classTrainer = 64, food = 128, reagent = 256,
+	alchemy = 512, blacksmithing = 1024, enchanting = 2048, engineering = 4096,
+	herbalism = 8192, leatherworking = 16384, mining = 32768, skinning = 65536,
+	tailoring = 131072, cooking = 262144, firstaid = 524288, fishing = 1048576 }
+function mod.InstallTownsfolkData(data)
+	local records = type(data) == "table" and data.records
+	if type(records) ~= "table" then return end
+	local byId, pointers, objects, spirit = {}, {}, {}, {}
+	for _, r in ipairs(records) do
+		if type(r) == "table" and type(r.id) == "number" and type(r.map) == "number"
+			and type(r.x) == "number" and type(r.y) == "number" then
+			if r.type == "mailbox" then
+				local e = objects[r.id]
+				if not e then
+					e = { name = r.name or "Mailbox", faction = r.faction or "AH", spawns = {} }
+					objects[r.id] = e
+				end
+				local list = e.spawns[r.map] or {}
+				e.spawns[r.map] = list
+				list[#list + 1] = { r.x, r.y }
+			else
+				local e = byId[r.id]
+				if not e then
+					e = { name = r.name or "?", sub = r.title, faction = r.faction or "AH",
+						tag = r.trainerTag, icon = r.icon, flags = 0, spawns = {} }
+					byId[r.id] = e
+					pointers[r.id] = true
+				end
+				if r.icon == "repair" then e.icon = "repair" end
+				local bitv = FLAGS[r.type]
+				if bitv then e.flags = bit.bor(e.flags, bitv) end
+				if r.type == "spirit" then spirit[r.id] = true end
+				if r.trainerTag then e.tag = r.trainerTag end
+				local list = e.spawns[r.map] or {}
+				e.spawns[r.map] = list
+				list[#list + 1] = { r.x, r.y }
+			end
+		end
+	end
+	for _, k in ipairs(KINDS) do
+		if k.key == "spirit" then k.ids = spirit end
+	end
+	mod.SetTownsfolkProvider({
+		db = {
+			NPCPointers = pointers,
+			npcFlags = { VENDOR = 1, REPAIR = 2, INNKEEPER = 4, BANKER = 8, AUCTIONEER = 16,
+				STABLEMASTER = 32, TRAINER = 64, FOOD = 128, REAGENT = 256,
+				ALCHEMY = 512, BLACKSMITHING = 1024, ENCHANTING = 2048, ENGINEERING = 4096,
+				HERBALISM = 8192, LEATHERWORKING = 16384, MINING = 32768, SKINNING = 65536,
+				TAILORING = 131072, COOKING = 262144, FIRSTAID = 524288, FISHING = 1048576 },
+			QueryNPCSingle = function(id, field)
+				local e = byId[id]
+				if not e then return nil end
+				if field == "name" then return e.name end
+				if field == "subName" then return e.sub end
+				if field == "npcFlags" then return e.flags end
+				if field == "spawns" then return e.spawns end
+				if field == "friendlyToFaction" then return e.faction or "" end
+				if field == "trainerTag" then return e.tag end
+				if field == "pinIcon" then return e.icon end
+				if field == "rank" then return 0 end
+			end,
+			QueryObjectSingle = function(id, field)
+				local e = objects[id]
+				if not e then return nil end
+				if field == "spawns" then return e.spawns end
+				if field == "name" then return e.name end
+			end,
+		},
+		zones = { GetUiMapIdByAreaId = function(_, id) return id end },
+		mailboxes = function(fac)
+			local out = {}
+			for id, e in pairs(objects) do
+				local f = e.faction or "AH"
+				if f == "AH" or f == fac then out[#out + 1] = id end
+			end
+			return out
+		end,
+	})
+end
+if type(ns.TownsfolkData) == "table" then mod.InstallTownsfolkData(ns.TownsfolkData) end

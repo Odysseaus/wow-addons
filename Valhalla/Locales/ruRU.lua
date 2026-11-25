@@ -102,7 +102,6 @@ L["Click, then click another flight master: the route and its time"] = "Щелк
 L["Click, then click the map to add a map pin, with a note if you like (Ctrl-click the map does it any time). Right-click: stop following the waypoint."] = "Щелкните, затем щелкните по карте, чтобы поставить метку на карте, при желании с заметкой (Ctrl+щелчок по карте делает это в любой момент). Щелчок правой кнопкой мыши: перестать отслеживать путевую точку."
 L["Click: show the route"] = "Щелчок: показать маршрут"
 L["Click: the map and its menu"] = "Щелчок: карта и ее меню"
-L["Click: track this quest and zoom to it"] = "Щелчок: отслеживать задание и приблизить"
 L["Clicking a dungeon entrance opens"] = "Щелчок по входу в подземелье открывает"
 L["Close"] = "Закрыть"
 L["Code"] = "Код"

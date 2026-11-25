@@ -102,7 +102,6 @@ L["Click, then click another flight master: the route and its time"] = "点击�
 L["Click, then click the map to add a map pin, with a note if you like (Ctrl-click the map does it any time). Right-click: stop following the waypoint."] = "点击后再点击地图即可添加地图标记，可附带备注（随时按住Ctrl点击地图也可以）。右键点击：停止追踪路径点。"
 L["Click: show the route"] = "点击：显示航线"
 L["Click: the map and its menu"] = "点击：打开地图及其菜单"
-L["Click: track this quest and zoom to it"] = "点击：追踪此任务并放大到它"
 L["Clicking a dungeon entrance opens"] = "点击地下城入口时打开"
 L["Close"] = "关闭"
 L["Code"] = "代码"
