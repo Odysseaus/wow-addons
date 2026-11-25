@@ -1660,7 +1660,6 @@ do
   _G.GetQuestUiMapID = function(q) return 1436 + q end
   local shift, chat = false, false
   _G.IsShiftKeyDown = function() return shift end
-  local canOpen = true
   -- the chat line (an EditBox): Insert at the cursor, GetText / SetText, the cursor
   local box = { text = "", cursor = 0 }
   function box:Insert(t) self.text = self.text:sub(1, self.cursor) .. t .. self.text:sub(self.cursor + 1) self.cursor = self.cursor + #t end
@@ -1668,13 +1667,10 @@ do
   function box:SetText(t) self.text = t self.cursor = #t end
   function box:GetCursorPosition() return self.cursor end
   function box:SetCursorPosition(c) self.cursor = c end
-  -- (1.2.52) in game the line opened empty closed again before the game's click (it deactivates on losing
-  -- focus while empty: ChatFrameEditBoxMixin:OnEditFocusLost); loseFocus models that between PreClick and OnClick
-  local loseFocus = false
   _G.ChatFrameUtil = { GetActiveWindow = function() return chat and box or nil end,
     TryInsertQuestLinkForQuestID = function(q)
       if chat and shift then W.linked = (W.linked or 0) + 1 box:Insert(GetQuestLink(q)) return true end return false end,
-    OpenChat = function(text) if canOpen then chat = true box:SetText(text or "") W.opened = (W.opened or 0) + 1 end end,
+    OpenChat = function(text) chat = true box:SetText(text or "") W.opened = (W.opened or 0) + 1 end,   -- (never called since 1.2.54)
     InsertLink = function(link) if chat and link then W.linked = (W.linked or 0) + 1 W.lastLink = link box:Insert(link) return true end return false end }
   _G.GetQuestLink = function(q) return "|Hquest:" .. q .. "|h[Q" .. q .. "]|h" end
   local function Links(q) local n, i = 0, 1 local l = GetQuestLink(q)
@@ -1697,7 +1693,6 @@ do
     local b = Btn(id)
     local h = rawget(b, "_hooks") or {}
     for _, fn in ipairs(h.PreClick or {}) do fn(b, "LeftButton", false) end
-    if loseFocus and chat and box.text == "" then chat = false end   -- (OnEditFocusLost on an empty line)
     if W.super == id then
       C_SuperTrack.ClearAllSuperTracked()
     elseif not ChatFrameUtil.TryInsertQuestLinkForQuestID(id) then
@@ -1775,89 +1770,154 @@ do
   ok(list(W.watches) == before and W.super == 4, "the gate opens: taken back, still selected", list(W.watches) .. " " .. tostring(W.super))
   Click(4)
 
-  print("-- (1.2.51) Shift-click: the quest's link in chat, nothing else")
-  shift = true chat = false
+  -- (1.2.54) the mouse: over the quest log, the Objectives panel or elsewhere (MouseIsOver, GetMouseFoci)
+  local over, focus = nil, nil
+  local QMF, OTF = W.NewFrame("Frame"), W.NewFrame("Frame")
+  QMF._shown, OTF._shown, SF._shown = true, true, true
+  local savedQMF, savedOTF = rawget(_G, "QuestMapFrame"), rawget(_G, "ObjectiveTrackerFrame")
+  _G.QuestMapFrame, _G.ObjectiveTrackerFrame = QMF, OTF
+  _G.MouseIsOver = function(f) return over ~= nil and (f == over or (over == SF and f == QMF)) end
+  _G.GetMouseFoci = function() return { focus } end
+  local function Named(n) local f = W.NewFrame("Button") f.GetDebugName = function() return n end return f end
+
+  print("-- (1.2.54) Shift-click on the game's quest log icon, chat closed: nothing at all (no link, no chat opened)")
+  shift = true chat = false box:SetText("") over = SF focus = Btn(4)
   W.super = 0
   flights = {} trackerSaw = {}
   local snap = list(W.watches)
-  local adds0, removes0 = W.calls.add, W.calls.remove
   local n0, o0 = W.linked or 0, W.opened or 0
   Click(4)
-  ok((W.opened or 0) == o0 + 1 and (W.linked or 0) == n0 + 1 and Links(4) == 1, "chat closed: opened, the link in it once (ours; the game's copy taken out)",
-    tostring(W.opened) .. " " .. tostring(W.linked) .. " " .. box.text)
-  ok(list(W.watches) == snap and W.super == 0 and W.calls.add == adds0 and W.calls.remove == removes0 and #flights == 0,
-    "an unwatched quest: no watch call at all, no selection, no flight", list(W.watches) .. " " .. tostring(W.super))
+  ok((W.opened or 0) == o0 and (W.linked or 0) == n0 and box.text == "" and not chat, "chat closed: the chat line never opened, no link", tostring(W.opened) .. " " .. box.text)
+  ok(list(W.watches) == snap and trackerSaw[1] == snap and W.super == 0 and #flights == 0,
+    "an unwatched quest: the panel the same at the click's end, nothing selected, no flight", list(W.watches) .. " " .. tostring(W.super))
   local d = Diag()
-  ok(d.act == "shift: link" and d.link == "valhalla (pre-click; the game's copy taken out)" and d.chatOpened == true and d.undo == "nothing changed"
-    and d.fly == "no (Shift)" and d.gameWatch == nil, "diag: shift: link (pre-click), chat opened, no game watch call, nothing to undo", tostring(d.link) .. " " .. tostring(d.undo))
-  print("-- (1.2.52) Shift-click, chat closed, the line closing again on losing focus (as in game): the watch list never changes")
-  loseFocus = true
-  for _, q in ipairs({ 4, 1 }) do
-    chat = false box:SetText("")
-    local snapQ, a0, r0 = list(W.watches), W.calls.add, W.calls.remove
-    trackerSaw = {}
-    W.super = 0
-    Click(q)
-    ok(W.calls.add == a0 and W.calls.remove == r0 and list(W.watches) == snapQ and trackerSaw[1] == snapQ,
-      ("quest %d (%s): no AddQuestWatch / RemoveQuestWatch at all, the panel the same at the click's end"):format(q, q == 1 and "watched" or "not watched"),
-      list(W.watches) .. " add " .. (W.calls.add - a0) .. " remove " .. (W.calls.remove - r0))
-    ok(chat and Links(q) == 1 and W.super == 0 and Diag().link:find("pre-click", 1, true) and Diag().gameWatch == nil,
-      ("quest %d: the line stayed open, the link in it once, nothing selected"):format(q), box.text .. " " .. tostring(Diag().link))
-  end
-  loseFocus = false
-  chat = false box:SetText("")
-  chat = false n0 = W.linked or 0
+  ok(d.act == "shift: nothing" and d.link == "none (chat closed: nothing)" and d.chat == "closed" and d.fly == "no (Shift)",
+    "diag: shift: nothing, chat closed", tostring(d.act) .. " " .. tostring(d.link))
+  trackerSaw = {}
   Click(1)
-  ok(has(W.watches, 1) and W.calls.remove == removes0 and W.super == 0 and (W.linked or 0) == n0 + 1,
-    "a watched quest: never untracked, linked", list(W.watches))
-  ok(trackerSaw[#trackerSaw] == snap, "the panel at the click's end: unchanged", tostring(trackerSaw[#trackerSaw]))
-  chat = true n0 = W.linked or 0
+  ok(has(W.watches, 1) and trackerSaw[1] == snap and W.super == 0 and (W.linked or 0) == n0 and not chat,
+    "a watched quest: the game's untrack undone in the same event, nothing linked, chat still closed", tostring(Diag().undo))
+  ok(Diag().undo:find("untrack undone (same-call)", 1, true), "diag: untrack undone (same-call)", tostring(Diag().undo))
+  print("-- Shift-click on the icon with the chat line already open: the game's own link, nothing else")
+  chat = true box:SetText("")
+  n0 = W.linked or 0
+  local a0, r0 = W.calls.add, W.calls.remove
+  Click(4)
+  ok(Links(4) == 1 and (W.linked or 0) == n0 + 1 and W.calls.add == a0 and W.calls.remove == r0 and list(W.watches) == snap and Diag().link == "game",
+    "chat open: linked by the game, no watch call", tostring(Diag().link))
   W.super = 1
   Click(1)
-  ok(W.super == 1 and has(W.watches, 1) and (W.linked or 0) == n0 + 1 and Diag().link == "valhalla",
-    "the selected quest (the game clears it first): selected again, linked by Valhalla", tostring(W.super) .. " " .. tostring(Diag().link))
-  print("-- Shift-click when the chat line can't be opened: the game's untrack / track undone in the same event")
-  chat, canOpen = false, false
-  W.super = 0 trackerSaw = {}
-  Click(1)
-  ok(has(W.watches, 1) and trackerSaw[#trackerSaw] == snap and Diag().undo:find("untrack undone (same-call)", 1, true),
-    "a watched quest: re-added inside the same event, the panel unchanged at the click's end", tostring(Diag().undo))
-  ok(Diag().link == "none (no chat line)", "no link possible: logged", tostring(Diag().link))
-  Click(4)
-  ok(list(W.watches) == snap and W.super == 0 and Diag().takeBack == "same-call", "an unwatched quest: watch and selection undone", tostring(Diag().undo))
-  canOpen, chat, shift = true, false, false
-  W.super = 0
+  ok(W.super == 1 and has(W.watches, 1) and Links(1) == 1 and Diag().link == "valhalla",
+    "the selected quest (the game clears it first): selected again, its link put in the open line", tostring(W.super) .. " " .. tostring(Diag().link))
+  chat = false box:SetText("") W.super = 0
 
-  print("-- (1.2.53) our pin: Shift-click links the quest, never pins or unpins; every pin click logged")
+  print("-- (1.2.54) the Shift guard: the game's other Shift paths over the quest log / Objectives panel, chat closed")
+  local function GuardCase(label, surfFrame, focusName, fn, expSurface, expAction)
+    W.clock = W.clock + 2   -- (clicks apart: a quest Valhalla just changed isn't guarded for O.GUARD_OWN)
+    over, focus = surfFrame, Named(focusName)
+    local snapG, ops0 = list(W.watches), #(mod.db.opsLog or {})
+    trackerSaw = {}
+    fn()
+    trackerSaw[#trackerSaw + 1] = list(W.watches)   -- (the frame's end, when the tracker draws)
+    local g = Diag()
+    ok(trackerSaw[1] == snapG, label .. ": the panel the same at the click's end", trackerSaw[1] .. " vs " .. snapG)
+    ok(g.source == "guard" and g.surface == expSurface and g.frame == focusName and g.action == expAction and g.queued == false,
+      label .. ": logged (guard, " .. expSurface .. ", " .. focusName .. ", " .. expAction .. ")", tostring(g.source) .. " " .. tostring(g.surface) .. " " .. tostring(g.frame) .. " " .. tostring(g.action))
+    local why
+    for i = ops0 + 1, #(mod.db.opsLog or {}) do why = mod.db.opsLog[i].why end
+    ok(why and why:find("Shift-click outside chat", 1, true), label .. ": opsLog says why", tostring(why))
+    Run(3)
+    ok(list(W.watches) == snapG, label .. ": later passes leave it be", list(W.watches))
+    return g
+  end
+  -- QuestMapLogTitleButton_OnClick with Shift: ToggleTracking (QuestMapFrame.lua)
+  local function TitleShift(q) if has(W.watches, q) then C_QuestLog.RemoveQuestWatch(q) else C_QuestLog.AddQuestWatch(q) end end
+  GuardCase("title row, unwatched quest", SF, "QuestScrollFrame.Contents.QuestLogTitle4", function() TitleShift(4) end, "quest log", "track undone")
+  GuardCase("title row, watched quest", SF, "QuestScrollFrame.Contents.QuestLogTitle1", function() TitleShift(1) end, "quest log", "untrack undone")
+  -- the tracker's quest header with Shift (QUESTWATCHTOGGLE): untracks; the selected one loses its selection
+  W.super = 1
+  local g = GuardCase("tracker header, the selected quest", OTF, "ObjectiveTrackerFrame.QuestHeader.Block1", function() C_QuestLog.RemoveQuestWatch(1) end, "side panel", "untrack undone")
+  ok(W.super == 1 and g.selection == "put back to 1", "tracker header: the selection the game cleared is put back", tostring(W.super) .. " " .. tostring(g.selection))
+  -- the tracker's quest icon (POIButton) with Shift on a watched quest: untracked
+  W.super = 0
+  g = GuardCase("tracker quest icon", OTF, "ObjectiveTrackerFrame.Block1.poiButton", function() C_QuestLog.RemoveQuestWatch(1) end, "side panel", "untrack undone")
+  ok(W.super == 0 and g.selection == nil, "nothing selected, nothing to put back")
+  -- a game track that also selects (as the tracker / log icons do): the selection put back
+  W.super = 0
+  g = GuardCase("track + select", SF, "QuestScrollFrame.Contents.Row", function() C_QuestLog.AddQuestWatch(4) C_SuperTrack.SetSuperTrackedQuestID(4) end, "quest log", "track undone")
+  ok(W.super == 0 and g.selection == "put back to 0", "the game's selection undone too", tostring(W.super))
+  print("-- what the guard leaves alone")
+  local function NotGuarded(label, fn, check)
+    local n = #(ValhallaDB.questLogIconDiag or {})
+    fn()
+    ok(#(ValhallaDB.questLogIconDiag or {}) == n and check(), label, list(W.watches))
+  end
+  over, focus = SF, Named("QuestScrollFrame.Contents.QuestLogTitle4")
+  shift = false
+  NotGuarded("no Shift: the game's track stands", function() TitleShift(4) end, function() return has(W.watches, 4) end)
+  TitleShift(4) Run(3)
+  shift, chat = true, true
+  NotGuarded("chat line open: the game's track stands (its own business)", function() TitleShift(4) end, function() return has(W.watches, 4) end)
+  TitleShift(4) Run(3) chat = false
+  over, focus = nil, Named("WorldFrame")
+  NotGuarded("mouse elsewhere (not the quest log or the panel): stands", function() TitleShift(4) end, function() return has(W.watches, 4) end)
+  TitleShift(4) Run(3)
+  QMF._shown, SF._shown = false, false over = SF
+  NotGuarded("the quest log hidden: stands", function() TitleShift(4) end, function() return has(W.watches, 4) end)
+  TitleShift(4) Run(3)
+  QMF._shown, SF._shown = true, true
+  -- Valhalla's own watch calls (its zone plan, the icon take-back): never undone
+  over, focus = OTF, Named("ObjectiveTrackerFrame")
+  NotGuarded("Valhalla's own add: never undone", function() O.OwnWatchCall(C_QuestLog.AddQuestWatch, 4) end, function() return has(W.watches, 4) end)
+  NotGuarded("Valhalla's own remove: never undone", function() O.OwnWatchCall(C_QuestLog.RemoveQuestWatch, 4) end, function() return not has(W.watches, 4) end)
+  ok(not O.ShiftGuard(4, true, W.clock) and true, "a quest Valhalla just changed: not guarded right after (async events)")
+  W.clock = W.clock + 5
+  Run(3)
+  print("-- the guard in combat: the undo waits on the gate")
+  W.combat = true
+  over, focus = SF, Named("QuestScrollFrame.Contents.QuestLogTitle4")
+  local snapC = list(W.watches)
+  TitleShift(4)
+  ok(Diag().source == "guard" and Diag().queued == true and has(W.watches, 4), "combat: logged, queued", tostring(Diag().queued))
+  GateOpens() Run(3)
+  ok(list(W.watches) == snapC, "the gate opens: undone", list(W.watches))
+  W.clock = W.clock + 5
+  over, focus = nil, nil
+  shift = false
+
+  print("-- (1.2.54) our pin: Shift-click with the chat closed does nothing; with it open the game's own link; never pins")
+  _G.ChatFrameUtil.TryInsertQuestLinkForQuestID = function(q)
+    if chat and shift then W.linked = (W.linked or 0) + 1 W.native = (W.native or 0) + 1 box:Insert(GetQuestLink(q)) return true end return false end
   for _, surf in ipairs({ "quest log", "side panel" }) do
     local pin = O.MakePin(UIParent, surf ~= "side panel" and surf or nil)
     O.PaintPin(pin, 4)
     local Pclick = pin._scripts.OnClick
-    -- chat closed, the line closing again on losing focus while empty (as in game)
-    loseFocus, shift, chat = true, true, false box:SetText("")
+    shift, chat = true, false box:SetText("")
     W.super = 0
     local snapP, a0, r0, ops0 = list(W.watches), W.calls.add, W.calls.remove, #(mod.db.opsLog or {})
+    local o1, l1 = W.opened or 0, W.linked or 0
     Pclick(pin, "LeftButton")
-    if loseFocus and chat and box.text == "" then chat = false end
     Run(3)
     ok(not O.IsPinned(4) and list(W.watches) == snapP and W.calls.add == a0 and W.calls.remove == r0 and #(mod.db.opsLog or {}) == ops0,
       surf .. ": Shift-click, chat closed: not pinned, the panel unchanged, no watch call, nothing in opsLog", list(W.watches))
-    ok(chat and Links(4) == 1, surf .. ": the chat line opened with the quest's link in it once", box.text)
+    ok(not chat and (W.opened or 0) == o1 and (W.linked or 0) == l1 and box.text == "", surf .. ": chat not opened, no link", box.text)
     local d = Diag()
-    ok(d.source == "pin" and d.surface == surf and d.shift == true and d.toggled == false and d.act == "shift: link"
-      and d.link == "valhalla" and d.chatOpened == true and d.quest == 4,
-      surf .. ": diag: source pin, its surface, shift, not toggled, linked, chat opened", tostring(d.surface) .. " " .. tostring(d.link))
-    -- chat already open: linked again, still not toggled
+    ok(d.source == "pin" and d.surface == surf and d.shift == true and d.toggled == false and d.act == "shift: nothing"
+      and d.link == "none (chat closed: nothing)" and d.quest == 4,
+      surf .. ": diag: source pin, its surface, shift, not toggled, nothing", tostring(d.surface) .. " " .. tostring(d.link))
+    -- chat already open: the game's own TryInsertQuestLinkForQuestID
+    chat = true
+    local nat = W.native or 0
     Pclick(pin, "LeftButton")
-    ok(not O.IsPinned(4) and Links(4) == 2 and Diag().link == "valhalla" and Diag().chatOpened == false and Diag().toggled == false,
-      surf .. ": Shift-click with the chat open: linked, not toggled", box.text)
+    ok(not O.IsPinned(4) and Links(4) == 1 and (W.native or 0) == nat + 1 and Diag().link == "game" and Diag().act == "shift: link" and Diag().toggled == false,
+      surf .. ": Shift-click with the chat open: the game's link, not toggled", box.text)
     -- pinned quest: Shift-click doesn't unpin
-    mod.char.pinned[4] = true
+    mod.char.pinned[4] = true chat = false
     Pclick(pin, "LeftButton")
     ok(O.IsPinned(4) and Diag().toggled == false, surf .. ": a pinned quest: Shift-click doesn't unpin")
     mod.char.pinned[4] = nil
     -- a plain click still pins and unpins, and is logged
-    loseFocus, shift, chat = false, false, false box:SetText("")
+    shift, chat = false, false box:SetText("")
     Pclick(pin, "LeftButton")
     ok(O.IsPinned(4) and Diag().act == "pin" and Diag().toggled == true and Diag().shift == false and Diag().source == "pin",
       surf .. ": a plain click pins it (logged: pin, toggled)", tostring(Diag().act))
@@ -1867,6 +1927,15 @@ do
     ok(not O.IsPinned(4) and Diag().act == "unpin", surf .. ": a right-click does nothing, logs nothing")
     Run(3)
   end
+  print("-- 1.2.52/1.2.53's chat opening and pre-click link: gone")
+  do
+    local f = io.open((arg and arg[0] or ""):gsub("tests/objectives/objectives_test.lua$", "") .. "Valhalla/Objectives/Objectives.lua")
+    local src = f and f:read("*a") or "" if f then f:close() end
+    ok(not src:find("OpenChat", 1, true) and not src:find("ChatFrame_OpenChat", 1, true) and not src:find("PreLink", 1, true) and O.OpenChat == nil and O.PreLink == nil,
+      "no OpenChat / PreLink left in Objectives.lua")
+      end
+  _G.QuestMapFrame, _G.ObjectiveTrackerFrame = savedQMF, savedOTF
+  _G.MouseIsOver, _G.GetMouseFoci = nil, nil
   do
     local f = io.open((arg and arg[0] or ""):gsub("tests/objectives/objectives_test.lua$", "") .. "Valhalla/Objectives/QuestLogPins.lua")
     local src = f and f:read("*a") or "" if f then f:close() end
@@ -1874,7 +1943,7 @@ do
   end
   Click(4) ok(Diag().source == "icon" and Diag().surface == "quest log", "the game's icon: logged as source icon, quest log", tostring(Diag().source))
   Click(4)
-  chat, shift, loseFocus = false, false, false box:SetText("")
+  chat, shift = false, false box:SetText("")
   W.super = 0
   print("-- Quest click: As Blizzard")
   mode = "blizzard" flights = {}

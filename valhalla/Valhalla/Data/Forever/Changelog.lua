@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.54", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"Shift-clicking anything in the quest log or the Objectives panel with the chat closed (a quest's title, its icon, the panel's quest header or icon) no longer tracks or untracks the quest: the Objectives panel stays as it was, and a selection the click changed is put back.",
+		"Shift-click no longer opens the chat line or puts a link in it when the chat is closed. With the chat line already open, Shift-click puts the quest's link in it as the game does, including on a quest's pin; the pin is never pinned or unpinned by a Shift-click.",
+	} },
 	{ version = "1.2.53", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
 		"Shift-clicking a quest's pin (in the quest log or the Objectives panel) no longer pins or unpins it, so the Objectives panel doesn't change: it puts the quest's link in chat instead, opening the chat line if it's closed.",
 	} },

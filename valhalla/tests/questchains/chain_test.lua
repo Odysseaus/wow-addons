@@ -429,7 +429,7 @@ r1._scripts.OnClick(r1, "LeftButton")
 ok(opened == 201 and tracked == nil, "left-click: the quest opens (as the game's row)")
 _G.IsShiftKeyDown = function() return true end
 r1._scripts.OnClick(r1, "LeftButton")
-ok(tracked == 201, "Shift-click: tracked (as the game's row)")
+ok(tracked == nil and opened == 201, "(1.2.54) Shift-click, chat closed: nothing (not tracked, nothing opened)")
 _G.IsShiftKeyDown = function() return false end
 print("-- chain buttons on Ready rows (Chain quest view on)")
 QC.SetView(true)
@@ -675,23 +675,24 @@ end
 ok(okAll, "every saved zone as he left it after the flush")
 W.zc = {}
 ok(Z.Apply() == 0 and #W.zc == 0, "out of combat, nothing different: no calls (as 1.2.22)")
--- Shift-click on a chain row: the game's track toggle, in combat queued
+-- (1.2.54) Shift-click on a chain row: nothing with the chat closed (in or out of combat); the game's link when open
 local tracked = {}
 local gameTrack, shift, cfu = rawget(_G, "QuestMapQuestOptions_TrackQuest"), rawget(_G, "IsShiftKeyDown"), rawget(_G, "ChatFrameUtil")
 _G.QuestMapQuestOptions_TrackQuest = function(q) tracked[#tracked + 1] = q end
 _G.IsShiftKeyDown = function() return true end
-_G.ChatFrameUtil = nil
+local chatOpen, linked = false, {}
+_G.ChatFrameUtil = { TryInsertQuestLinkForQuestID = function(q) if chatOpen then linked[#linked + 1] = q return true end return false end }
 ns.printed = {}
 W.combat = true
 QC.RowClick({ questID = 101 }, "LeftButton")
-QC.RowClick({ questID = 101 }, "LeftButton")
-local said = 0 for _, p in ipairs(ns.printed) do if p:find("applies when combat ends", 1, true) then said = said + 1 end end
-ok(#tracked == 0 and CQ.Pending("watch:101") and said == 1, "Shift-click in combat: not tracked yet, queued, told once", #tracked .. " " .. said)
+ok(#tracked == 0 and not CQ.Pending("watch:101") and #ns.printed == 0, "Shift-click in combat, chat closed: nothing, nothing queued", #tracked)
 W.combat = false
 CQ.Flush()
-ok(#tracked == 1 and tracked[1] == 101, "combat over: the game's track toggle once (the last click kept)", #tracked)
 QC.RowClick({ questID = 101 }, "LeftButton")
-ok(#tracked == 2 and not CQ.Pending(), "out of combat: straight away")
+ok(#tracked == 0 and not CQ.Pending() and #linked == 0, "out of combat, chat closed: nothing")
+chatOpen = true
+QC.RowClick({ questID = 101 }, "LeftButton")
+ok(#tracked == 0 and #linked == 1 and linked[1] == 101, "chat open: the game's link, not tracked")
 _G.QuestMapQuestOptions_TrackQuest, _G.IsShiftKeyDown, _G.ChatFrameUtil = gameTrack, shift, cfu
 ok(Frame.protectedCalls == 0 and W.blockedSetters == 0, "nothing protected, no blocked setters")
 
