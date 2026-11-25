@@ -26,6 +26,12 @@ local EVERY = 0.5               -- seconds: the quest log changes in bursts
 local NONE = {}
 local set, map, maps
 local dirty = false
+-- (1.2.56) a quest event while the map was closed: the icons are redrawn as it opens, in that same frame
+-- (until 1.2.55 the events were dropped while it was closed and the redraw came EVERY after it opened, so
+-- the icons it was closed with showed first: a completed quest jumped to its turn-in half a second late)
+local changedHidden = true      -- (true: the first opening draws them)
+local drawnHost                 -- the map underneath when they were last drawn
+local poiNote = false           -- (questMapDiag: the next redraw is the opening's QUEST_POI_UPDATE one)
 
 -- the maps the quests are read from: the stitched zones and cities (a city's quests are its zone's
 -- too, at the same place: one icon, SAME)
@@ -217,7 +223,8 @@ end
 function mod:RefreshQuests()
 	dirty = false
 	if not set and S.IsBuilt() then set = S.PinSet("quests", 1, 5) end   -- (built as the map first opens)
-	if not set then return end
+	if not set then return false end
+	drawnHost = mod.HostMap and mod.HostMap() or nil
 	S.ClearPinSet(set)
 	-- (and as Blizzard's own quests: not with the map's Quest Objectives off, its questPOI)
 	local on = mod.db.allQuests ~= false and mod.IsStitched() and C_QuestLog.GetQuestsOnMap ~= nil
@@ -225,7 +232,7 @@ function mod:RefreshQuests()
 	-- (no quest button template on this client: nothing is drawn, rather than a look that isn't the log's)
 	on = on and not poiMissing
 	S.SetPinSetOn(set, on)
-	if not on then return end
+	if not on then return true end
 	-- the map underneath: Blizzard draws its quests (a continent, only the super-tracked one)
 	local host = mod.HostMap()
 	local hostInfo = host and C_Map.GetMapInfo(host)
@@ -276,6 +283,8 @@ function mod:RefreshQuests()
 	end
 	mod.liveQuests = live
 	if mod.UpdateTownsfolkMinimap then mod:UpdateTownsfolkMinimap() end
+	if poiNote and mod.QuestMapDiagDrawn then poiNote = false mod.QuestMapDiagDrawn("poi") end
+	return true
 end
 
 -- (a burst of quest log updates: one refresh)
@@ -285,6 +294,95 @@ local function Soon()
 	C_Timer.After(EVERY, function() if dirty then mod:RefreshQuests() end end)
 end
 
+--------------------------------------------------------------------------------
+-- (1.2.56) questMapDiag (ValhallaDB, the last QMD_KEEP): read only. A quest in your zone turning complete
+-- while the map is closed: its position then (and the last one before the map opens), then its position at
+-- the redraw as the map opens and at the first QUEST_POI_UPDATE redraw after that. It shows whether the
+-- game had the turn-in place before the map opened.
+--------------------------------------------------------------------------------
+local QMD_KEEP = 20
+local QMD_POI_WINDOW = 10       -- seconds after opening: a QUEST_POI_UPDATE redraw is the opening's
+local wasComplete               -- questID -> complete, in your zone (nil: not read yet)
+local openedAt
+local function Now() return GetTime and GetTime() or 0 end
+local function Clock() return date and date("%H:%M:%S") or nil end
+local function DiagLog()
+	local db = rawget(_G, "ValhallaDB")
+	if type(db) ~= "table" then return nil end
+	if type(db.questMapDiag) ~= "table" then db.questMapDiag = {} end
+	return db.questMapDiag
+end
+local function Pos(mapID, id)
+	if not (mapID and C_QuestLog and C_QuestLog.GetQuestsOnMap) then return nil end
+	local ok, list = pcall(C_QuestLog.GetQuestsOnMap, mapID)
+	if not ok or type(list) ~= "table" then return nil end
+	for _, q in ipairs(list) do
+		if q.questID == id and q.x and q.y then return { x = math.floor(q.x * 10000 + 0.5) / 10000, y = math.floor(q.y * 10000 + 0.5) / 10000 } end
+	end
+	return nil
+end
+local function Same(a, b) return a ~= nil and b ~= nil and a.x == b.x and a.y == b.y end
+function mod.QuestMapDiagClosed()
+	local here = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+	if not (here and C_QuestLog and C_QuestLog.GetQuestsOnMap and C_QuestLog.IsComplete) then return end
+	local ok, list = pcall(C_QuestLog.GetQuestsOnMap, here)
+	if not ok or type(list) ~= "table" then return end
+	local log = DiagLog()
+	local first = wasComplete == nil
+	wasComplete = wasComplete or {}
+	for _, q in ipairs(list) do
+		local id = q.questID
+		if id then
+			local done = C_QuestLog.IsComplete(id) and true or false
+			if log then
+				if done and wasComplete[id] == false and not first then
+					log[#log + 1] = { quest = id, map = here, clock = Clock(), t = Now(), closed = Pos(here, id) }
+					while #log > QMD_KEEP do table.remove(log, 1) end
+				elseif done then
+					-- the last position before the map opens (the game may move it after the first event)
+					for i = #log, 1, -1 do
+						local e = log[i]
+						if e.quest == id and not e.open then e.closedLast = Pos(here, id) break end
+					end
+				end
+			end
+			wasComplete[id] = done
+		end
+	end
+end
+-- which: "open" (the redraw as the map opens) or "poi" (a QUEST_POI_UPDATE redraw just after)
+function mod.QuestMapDiagDrawn(which)
+	local log = DiagLog()
+	if not log then return end
+	for _, e in ipairs(log) do
+		if which == "open" and not e.open then
+			e.open = Pos(e.map, e.quest) or false
+			e.openClock = Clock()
+			e.sameAtOpen = Same(e.closedLast or e.closed, e.open or nil)
+		elseif which == "poi" and e.open ~= nil and e.poi == nil and e.openT == openedAt then
+			e.poi = Pos(e.map, e.quest) or false
+			e.sameAtPoi = Same(e.open or nil, e.poi or nil)
+		end
+		if which == "open" and e.openT == nil then e.openT = openedAt end
+	end
+end
+
+-- (1.2.56) the map opening: redrawn at once when a quest event came while it was closed, and looked at again
+-- next frame in case its map underneath is set later in that frame. OnMapChanged still redraws (Soon).
+local function Opened()
+	openedAt = Now()
+	if changedHidden then
+		if mod:RefreshQuests() then changedHidden = false end
+		mod.QuestMapDiagDrawn("open")
+	end
+	if C_Timer and C_Timer.After then
+		C_Timer.After(0, function()
+			if map and map:IsShown() and drawnHost ~= (mod.HostMap and mod.HostMap() or nil) then mod:RefreshQuests() end
+		end)
+	end
+end
+mod.QuestsOpened = Opened
+
 function mod:SetupQuests(worldMap)
 	map = worldMap
 	local events = CreateFrame("Frame")
@@ -293,8 +391,17 @@ function mod:SetupQuests(worldMap)
 	end
 	events:SetScript("OnEvent", function(_, event, cvar)
 		if event == "CVAR_UPDATE" and cvar ~= "questPOI" then return end
-		if map:IsShown() then Soon() end
+		if map:IsShown() then
+			-- (the opening's POI update: redrawn after the burst as any, its positions then noted)
+			if event == "QUEST_POI_UPDATE" and openedAt and Now() - openedAt <= QMD_POI_WINDOW then poiNote = true end
+			Soon()
+		else
+			changedHidden = true          -- (no work while closed: drawn as it opens)
+			if event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE" then mod.QuestMapDiagClosed() end
+		end
 	end)
 	hooksecurefunc(map, "OnMapChanged", Soon)
-	map:HookScript("OnShow", Soon)
+	map:HookScript("OnShow", Opened)
+	-- (questMapDiag: what's complete as the map closes is the baseline; only a completion after that is noted)
+	map:HookScript("OnHide", function() wasComplete = nil mod.QuestMapDiagClosed() end)
 end

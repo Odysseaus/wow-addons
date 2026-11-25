@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.56", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
+		"Quest icons on the map are up to date the moment you open it: a quest completed (or changed) while the map was closed shows at its new place at once, instead of its old place for half a second first.",
+	} },
 	{ version = "1.2.55", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
 		"Shift-clicking a quest's title in the quest log, or a quest's header or icon in the Objectives panel, with the chat closed really leaves the panel as it was now: 1.2.54's guard couldn't tell where the mouse was in Forever, so the quest was untracked and stayed out of the panel.",
 	} },
