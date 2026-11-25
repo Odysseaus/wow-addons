@@ -1429,34 +1429,64 @@ end
 -- mouse is over the quest log or the Objectives panel (the game's quest title row: ToggleTracking; the tracker's
 -- quest header: QUESTWATCHTOGGLE; its quest icon; anything else there) is undone inside that same event, before
 -- the tracker draws. A selection the game changes in that same click is put back (O.GuardSuper). Logged in
--- questLogIconDiag (source "guard"). Nothing of the game's is hooked, moved or written: the event and
--- MouseIsOver only.
+-- questLogIconDiag (source "guard"). Nothing of the game's is hooked, moved or written: the event and the
+-- mouse read only. (1.2.55) The mouse is read with the frame's own IsMouseOver (Forever has no global
+-- MouseIsOver: 1.2.54's guard never saw the mouse, so it never acted), and as a backup the frame under the
+-- mouse (GetMouseFoci) inside one of those frames. A game watch change with Shift down and the chat closed
+-- that the guard leaves is logged too (source "guard-miss": what failed, the frame under the mouse).
 --------------------------------------------------------------------------------
 O.GUARD_FRAMES = { { "quest log", "QuestMapFrame" }, { "quest log", "QuestScrollFrame" }, { "side panel", "ObjectiveTrackerFrame" } }
 O.GUARD_SUPER = 0.3     -- seconds: a selection change this soon after a guarded watch change is the same click's
 O.GUARD_OWN = 0.5       -- seconds: a quest Valhalla itself just added / removed is never guarded
-function O.MouseSurface()
-	local over = rawget(_G, "MouseIsOver")
-	if type(over) ~= "function" then return nil end
-	for _, g in ipairs(O.GUARD_FRAMES) do
-		local f = rawget(_G, g[2])
-		if type(f) == "table" and type(f.IsVisible) == "function" and f:IsVisible() then
-			local ok, yes = pcall(over, f)
-			if ok and yes then return g[1], g[2] end
-		end
-	end
-	return nil
-end
-function O.FocusName()
-	local f
+local function MouseFocus()
 	local foci = rawget(_G, "GetMouseFoci")
 	if type(foci) == "function" then
 		local ok, t = pcall(foci)
-		f = ok and type(t) == "table" and t[1] or nil
-	else
-		local one = rawget(_G, "GetMouseFocus")
-		if type(one) == "function" then local ok, v = pcall(one) f = ok and v or nil end
+		return ok and type(t) == "table" and t[1] or nil
 	end
+	local one = rawget(_G, "GetMouseFocus")
+	if type(one) == "function" then local ok, v = pcall(one) return ok and v or nil end
+	return nil
+end
+local function Inside(f, root)
+	for _ = 1, 60 do
+		if type(f) ~= "table" then return false end
+		if f == root then return true end
+		if type(f.GetParent) ~= "function" then return false end
+		local ok, p = pcall(f.GetParent, f)
+		f = ok and p or nil
+	end
+	return false
+end
+-- the surface under the mouse: "quest log" / "side panel", the frame's name and how it was seen ("IsMouseOver"
+-- or "focus"); nil and a note of each frame when neither
+function O.MouseSurface()
+	local seen = {}
+	for _, g in ipairs(O.GUARD_FRAMES) do
+		local f = rawget(_G, g[2])
+		if type(f) == "table" and type(f.IsVisible) == "function" and f:IsVisible() then
+			local over = nil
+			if type(f.IsMouseOver) == "function" then
+				local ok, yes = pcall(f.IsMouseOver, f)
+				over = ok and yes and true or false
+			end
+			if over then return g[1], g[2], "IsMouseOver" end
+			seen[#seen + 1] = g[2] .. (over == nil and ": no IsMouseOver" or ": not over")
+		else
+			seen[#seen + 1] = g[2] .. (type(f) == "table" and ": hidden" or ": missing")
+		end
+	end
+	local focus = MouseFocus()
+	if focus then
+		for _, g in ipairs(O.GUARD_FRAMES) do
+			local f = rawget(_G, g[2])
+			if type(f) == "table" and type(f.IsVisible) == "function" and f:IsVisible() and Inside(focus, f) then return g[1], g[2], "focus" end
+		end
+	end
+	return nil, table.concat(seen, "; ")
+end
+function O.FocusName()
+	local f = MouseFocus()
 	if type(f) ~= "table" then return "?" end
 	for _, m in ipairs({ "GetDebugName", "GetName" }) do
 		if type(f[m]) == "function" then
@@ -1467,13 +1497,25 @@ function O.FocusName()
 	return "(unnamed)"
 end
 function O.ShiftGuard(id, added, now)
-	if not (id and mod.enabled) or S.guardBusy then return false end
+	if not id or S.guardBusy then return false end
+	if not mod.enabled then
+		if IsShiftKeyDown and IsShiftKeyDown() and not ChatOpen() then
+			O.IconDiag({ clock = date and date("%H:%M:%S") or nil, source = "guard-miss", quest = id, shift = true,
+				action = added and "track left" or "untrack left", failed = "Objectives off", frame = O.FocusName() })
+		end
+		return false
+	end
 	if (S.ownCall or 0) > 0 then return false end
 	local own = S.ownAny and S.ownAny[id]
 	if own and now - own <= O.GUARD_OWN then return false end
 	if not (IsShiftKeyDown and IsShiftKeyDown()) or ChatOpen() then return false end
-	local surface, root = O.MouseSurface()
-	if not surface then return false end
+	local surface, root, how = O.MouseSurface()
+	if not surface then
+		O.IconDiag({ clock = date and date("%H:%M:%S") or nil, source = "guard-miss", quest = id, shift = true,
+			action = added and "track left" or "untrack left", failed = "mouse not over the quest log or the panel",
+			frames = root, frame = O.FocusName() })
+		return false
+	end
 	local was = S.guard and now - S.guard.t <= O.GUARD_SUPER and S.guard.super or Super()
 	S.guardBusy = true
 	local why = added and "Shift-click outside chat: the game's track undone" or "Shift-click outside chat: the game's untrack undone"
@@ -1484,7 +1526,7 @@ function O.ShiftGuard(id, added, now)
 	end, TRACK_NOTE)
 	S.guardBusy = nil
 	S.guard = { t = now, super = was, q = id }
-	O.IconDiag({ clock = date and date("%H:%M:%S") or nil, source = "guard", surface = surface, root = root,
+	O.IconDiag({ clock = date and date("%H:%M:%S") or nil, source = "guard", surface = surface, root = root, seenBy = how,
 		frame = O.FocusName(), quest = id, shift = true, action = added and "track undone" or "untrack undone",
 		queued = not ran })
 	return true

@@ -1770,15 +1770,23 @@ do
   ok(list(W.watches) == before and W.super == 4, "the gate opens: taken back, still selected", list(W.watches) .. " " .. tostring(W.super))
   Click(4)
 
-  -- (1.2.54) the mouse: over the quest log, the Objectives panel or elsewhere (MouseIsOver, GetMouseFoci)
+  -- (1.2.54) the mouse: over the quest log, the Objectives panel or elsewhere. (1.2.55) Forever has no global
+  -- MouseIsOver: only each frame's IsMouseOver and GetMouseFoci
   local over, focus = nil, nil
   local QMF, OTF = W.NewFrame("Frame"), W.NewFrame("Frame")
   QMF._shown, OTF._shown, SF._shown = true, true, true
   local savedQMF, savedOTF = rawget(_G, "QuestMapFrame"), rawget(_G, "ObjectiveTrackerFrame")
   _G.QuestMapFrame, _G.ObjectiveTrackerFrame = QMF, OTF
-  _G.MouseIsOver = function(f) return over ~= nil and (f == over or (over == SF and f == QMF)) end
+  _G.MouseIsOver = nil
+  local noOver = false   -- (IsMouseOver says no everywhere: the focus backup alone)
+  for _, f in ipairs({ QMF, SF, OTF }) do
+    f.IsMouseOver = function(self) return not noOver and over ~= nil and (self == over or (over == SF and self == QMF)) end
+  end
   _G.GetMouseFoci = function() return { focus } end
-  local function Named(n) local f = W.NewFrame("Button") f.GetDebugName = function() return n end return f end
+  local savedSFParent = rawget(SF, "GetParent")
+  SF.GetParent = function() return QMF end   -- (QuestScrollFrame sits in QuestMapFrame)
+  local function Named(n, parent) local f = W.NewFrame("Button") f.GetDebugName = function() return n end
+    f.GetParent = function() return parent end return f end
 
   print("-- (1.2.54) Shift-click on the game's quest log icon, chat closed: nothing at all (no link, no chat opened)")
   shift = true chat = false box:SetText("") over = SF focus = Btn(4)
@@ -1846,11 +1854,70 @@ do
   W.super = 0
   g = GuardCase("track + select", SF, "QuestScrollFrame.Contents.Row", function() C_QuestLog.AddQuestWatch(4) C_SuperTrack.SetSuperTrackedQuestID(4) end, "quest log", "track undone")
   ok(W.super == 0 and g.selection == "put back to 0", "the game's selection undone too", tostring(W.super))
+  print("-- (1.2.55) the global MouseIsOver is never used; IsMouseOver first, the frame under the mouse as a backup")
+  ok(rawget(_G, "MouseIsOver") == nil, "no global MouseIsOver in these tests (as in Forever)")
+  _G.MouseIsOver = function() error("MouseIsOver must not be called") end
+  g = GuardCase("seen by IsMouseOver", SF, "QuestScrollFrame.Contents.QuestLogTitle4", function() TitleShift(4) end, "quest log", "track undone")
+  ok(g.seenBy == "IsMouseOver", "diag: seen by IsMouseOver", tostring(g.seenBy))
+  _G.MouseIsOver = nil
+  noOver = true
+  local block = Named("ObjectiveTrackerFrame.QuestHeader", OTF)
+  W.clock = W.clock + 2
+  over, focus = nil, Named("ObjectiveTrackerFrame.QuestHeader.Block1.HeaderText", block)
+  local snapF = list(W.watches)
+  C_QuestLog.RemoveQuestWatch(1)
+  ok(list(W.watches) == snapF and Diag().source == "guard" and Diag().surface == "side panel" and Diag().seenBy == "focus"
+    and Diag().frame == "ObjectiveTrackerFrame.QuestHeader.Block1.HeaderText",
+    "IsMouseOver says no, the frame under the mouse is inside the panel: guarded (seen by focus)", tostring(Diag().seenBy))
+  W.clock = W.clock + 2
+  focus = Named("QuestScrollFrame.Contents.QuestLogTitle4", Named("QuestScrollFrame.Contents", SF))
+  TitleShift(4)
+  ok(list(W.watches) == snapF and Diag().surface == "quest log" and Diag().seenBy == "focus", "and inside the quest log", tostring(Diag().frames))
+  noOver = false
+  Run(3)
+  print("-- (1.2.55) guard-miss: a game watch change with Shift down and the chat closed that the guard leaves")
+  W.clock = W.clock + 2
+  over, focus = nil, Named("WorldMapFrame.ScrollContainer.QuestPin", Named("WorldMapFrame"))
+  TitleShift(4)
+  local m = Diag()
+  ok(has(W.watches, 4) and m.source == "guard-miss" and m.quest == 4 and m.action == "track left"
+    and m.failed == "mouse not over the quest log or the panel" and m.frame == "WorldMapFrame.ScrollContainer.QuestPin",
+    "mouse elsewhere: left, logged (guard-miss, what failed, the frame under the mouse)", tostring(m.failed) .. " " .. tostring(m.frame))
+  ok(m.frames and m.frames:find("QuestMapFrame: not over", 1, true) and m.frames:find("ObjectiveTrackerFrame: not over", 1, true),
+    "each frame's state noted", tostring(m.frames))
+  QMF._shown, SF._shown = false, false
+  W.clock = W.clock + 2
+  TitleShift(4)
+  ok(Diag().source == "guard-miss" and Diag().frames:find("QuestMapFrame: hidden", 1, true) and Diag().action == "untrack left",
+    "the quest log hidden: noted as hidden", tostring(Diag().frames))
+  QMF._shown, SF._shown = true, true
+  TitleShift(4) Run(3)
+  W.clock = W.clock + 2
+  local nd = #ValhallaDB.questLogIconDiag
+  O.OwnWatchCall(C_QuestLog.AddQuestWatch, 4)
+  ok(#ValhallaDB.questLogIconDiag == nd, "Valhalla's own change: no guard-miss")
+  O.OwnWatchCall(C_QuestLog.RemoveQuestWatch, 4)
+  shift = false W.clock = W.clock + 2
+  TitleShift(4)
+  ok(#ValhallaDB.questLogIconDiag == nd, "no Shift: no guard-miss")
+  TitleShift(4) Run(3)
+  shift, chat = true, true W.clock = W.clock + 2
+  TitleShift(4)
+  ok(#ValhallaDB.questLogIconDiag == nd, "chat open: no guard-miss")
+  TitleShift(4) Run(3)
+  chat = false W.clock = W.clock + 2
   print("-- what the guard leaves alone")
   local function NotGuarded(label, fn, check)
     local n = #(ValhallaDB.questLogIconDiag or {})
     fn()
     ok(#(ValhallaDB.questLogIconDiag or {}) == n and check(), label, list(W.watches))
+  end
+  -- (1.2.55) left by the guard with Shift down and the chat closed: logged as a guard-miss
+  local function Missed(label, fn, check)
+    local n = #(ValhallaDB.questLogIconDiag or {})
+    fn()
+    local d = ValhallaDB.questLogIconDiag[#ValhallaDB.questLogIconDiag]
+    ok(check() and d.source == "guard-miss" and (n == 30 or #ValhallaDB.questLogIconDiag == n + 1), label .. " (a guard-miss logged)", list(W.watches))
   end
   over, focus = SF, Named("QuestScrollFrame.Contents.QuestLogTitle4")
   shift = false
@@ -1860,10 +1927,10 @@ do
   NotGuarded("chat line open: the game's track stands (its own business)", function() TitleShift(4) end, function() return has(W.watches, 4) end)
   TitleShift(4) Run(3) chat = false
   over, focus = nil, Named("WorldFrame")
-  NotGuarded("mouse elsewhere (not the quest log or the panel): stands", function() TitleShift(4) end, function() return has(W.watches, 4) end)
+  Missed("mouse elsewhere (not the quest log or the panel): stands", function() TitleShift(4) end, function() return has(W.watches, 4) end)
   TitleShift(4) Run(3)
   QMF._shown, SF._shown = false, false over = SF
-  NotGuarded("the quest log hidden: stands", function() TitleShift(4) end, function() return has(W.watches, 4) end)
+  Missed("the quest log hidden: stands", function() TitleShift(4) end, function() return has(W.watches, 4) end)
   TitleShift(4) Run(3)
   QMF._shown, SF._shown = true, true
   -- Valhalla's own watch calls (its zone plan, the icon take-back): never undone
@@ -1936,6 +2003,7 @@ do
       end
   _G.QuestMapFrame, _G.ObjectiveTrackerFrame = savedQMF, savedOTF
   _G.MouseIsOver, _G.GetMouseFoci = nil, nil
+  SF.GetParent = savedSFParent
   do
     local f = io.open((arg and arg[0] or ""):gsub("tests/objectives/objectives_test.lua$", "") .. "Valhalla/Objectives/QuestLogPins.lua")
     local src = f and f:read("*a") or "" if f then f:close() end
