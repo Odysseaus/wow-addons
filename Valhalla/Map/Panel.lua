@@ -44,7 +44,8 @@ end
 -- Returns whether it's a square spell icon (framed like an action button) or a map symbol.
 local function Icon(name) return { texture = "Interface\\Icons\\" .. name, icon = true } end
 local function SetIcon(tex, look)
-	S.Look(tex, look)
+	local masked = S.Look(tex, look)
+	if masked then return false end
 	local atlas = look.atlas and (not C_Texture or not C_Texture.GetAtlasInfo or C_Texture.GetAtlasInfo(look.atlas))
 	local square = look.icon and not atlas
 	if square then tex:SetTexCoord(0.08, 0.92, 0.08, 0.92) end   -- (the spell icons' own frame cut off)
@@ -245,22 +246,65 @@ local function Rows()
 	-- (they all come from Questie's NPC database, or one like it another addon gives: without, only the
 	-- heading, saying so; a client may have none of it at all, retail: Client.lua)
 	local client = ns.ClientMaps or {}
-	local folkDB = mod.HasTownsfolk and mod.HasTownsfolk()
-	if client.townsfolk ~= false then
-		rows[#rows + 1] = { folkDB and L["Townsfolk"] or L["Townsfolk (needs Questie)"] }
-	end
 	local kinds = {}
 	for _, k in ipairs(mod.TOWNSFOLK or {}) do kinds[k.key] = k end
+	-- (1.2.46) a type the game's own minimap tracks: the checkbox is that tracking (read and set: TownsfolkMinimap.lua),
+	-- and its world map pins follow the same tick
 	local function folk(label, key)
 		return row(label, "townsfolk." .. key, kinds[key] and kinds[key].look or Icon("INV_Misc_QuestionMark"),
-			function() return db.townsfolk[key] end, function(v) db.townsfolk[key] = v mod:RefreshTownsfolk() end)
+			function()
+				local game = mod.GameTrackingOn and mod.GameTrackingOn(key)
+				if game ~= nil then return game end
+				return db.townsfolk[key]
+			end,
+			function(v)
+				db.townsfolk[key] = v and true or false
+				if mod.SetGameTracking then mod.SetGameTracking(key, v) end
+				mod:RefreshTownsfolk()
+			end)
 	end
-	if folkDB and client.townsfolk ~= false then
-		for _, k in ipairs(mod.TOWNSFOLK or {}) do
-			if not k.rare and k.key ~= "spirit" then rows[#rows + 1] = folk(k.name, k.key) end
+	-- (1.2.39) the checkboxes are always here. The master switch is account-wide, with the other map icons.
+	-- Rare mobs still need Questie itself; this pass does not ship them.
+	if client.townsfolk ~= false then
+		rows[#rows + 1] = { L["Townsfolk"] }
+		rows[#rows + 1] = row(L["Townsfolk"], "townsfolkMaster", Icon("INV_Misc_Note_01"),
+			function() return db.townsfolkMaster and true or false end,
+			function(v) db.townsfolkMaster = v and true or false mod:RefreshTownsfolk() end)
+		rows[#rows + 1] = row(L["Minimap"], "townsfolkMinimap", Icon("Spell_Nature_FarSight"),
+			function() return db.townsfolkMinimap ~= false end,
+			function(v) db.townsfolkMinimap = v and true or false if mod.UpdateTownsfolkMinimap then mod:UpdateTownsfolkMinimap() end end)
+		local groups = {
+			{ L["Services"], { "innkeeper", "repair", "mailbox", "banker", "auctioneer", "stable", "spirit" } },
+			{ L["Vendors"], { "vendor", "food", "reagent" } },
+			{ L["Professions"], mod.PROFESSIONS or {}, professions = true },
+			{ L["Trainers"], { "classTrainer" } },
+		}
+		for _, g in ipairs(groups) do
+			rows[#rows + 1] = { g[1] }
+			for _, key in ipairs(g[2]) do
+				local k = kinds[key]
+				if k then rows[#rows + 1] = folk(k.name, key) end
+			end
+			-- (1.2.46) the game's minimap tracks every profession's trainers as one type: its own tick here
+			if g.professions and mod.GameTracked and mod.GameTracked("profTrainer") then
+				rows[#rows + 1] = row(L["Profession trainers on the minimap"], "townsfolk.profTrainer", Icon("INV_Misc_Book_11"),
+					function() return mod.GameTrackingOn("profTrainer") or false end,
+					function(v) mod.SetGameTracking("profTrainer", v) end)
+			end
 		end
-		rows[#rows + 1] = folk(L["Spirit healers"], "spirit")
-		rows[#rows + 1] = folk(L["Rare mobs"], "rare")
+		if questie then rows[#rows + 1] = folk(L["Rare mobs"], "rare") end
+		-- (1.2.47) their icons' size on the world map, this character's: one of the three ticked, as a radio
+		if mod.TOWNSFOLK_SIZES and mod.SetTownsfolkSize then
+			rows[#rows + 1] = { L["Icon size on the world map"] }
+			local names = { large = L["Large"], medium = L["Medium"], small = L["Small"] }
+			for _, s in ipairs(mod.TOWNSFOLK_SIZES) do
+				rows[#rows + 1] = row(names[s.key], "townsfolkSize." .. s.key, Icon("INV_Misc_Spyglass_01"),
+					function() return mod.TownsfolkSize() == s.key end,
+					function(v)
+						if v then mod.SetTownsfolkSize(s.key) elseif mod.RefreshPanel then mod:RefreshPanel() end
+					end)
+			end
+		end
 	end
 	-- the look
 	-- (darkened or hidden; neither ticked: shown as they are. Darkened takes the colour-matched zones' land

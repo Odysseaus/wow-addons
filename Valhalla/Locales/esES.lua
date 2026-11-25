@@ -102,7 +102,6 @@ L["Click, then click another flight master: the route and its time"] = "Haz clic
 L["Click, then click the map to add a map pin, with a note if you like (Ctrl-click the map does it any time). Right-click: stop following the waypoint."] = "Haz clic y luego en el mapa para añadir una marca de mapa, con una nota si quieres (Ctrl+clic en el mapa lo hace en cualquier momento). Clic derecho: dejar de seguir el punto de ruta."
 L["Click: show the route"] = "Clic: mostrar la ruta"
 L["Click: the map and its menu"] = "Clic: el mapa y su menú"
-L["Click: track this quest and zoom to it"] = "Clic: seguir esta misión y acercar el mapa"
 L["Clicking a dungeon entrance opens"] = "Clic en la entrada de una mazmorra abre"
 L["Close"] = "Cerrar"
 L["Code"] = "Código"

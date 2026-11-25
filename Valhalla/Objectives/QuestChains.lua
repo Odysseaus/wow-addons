@@ -577,14 +577,8 @@ function QC.RowClick(row, button)
 			local ok, did = pcall(CF.TryInsertQuestLinkForQuestID, q)
 			if ok and did then return end
 		end
-		Defer("watch:" .. tostring(q), function()
-			local track = rawget(_G, "QuestMapQuestOptions_TrackQuest")
-			if type(track) == "function" then track(q)
-			else
-				local C = rawget(_G, "C_QuestLog")
-				if C and C.GetQuestWatchType and Call(C.GetQuestWatchType, q) ~= nil then Call(C.RemoveQuestWatch, q) elseif C then Call(C.AddQuestWatch, q) end
-			end
-		end, "Tracking changed in combat: it applies when combat ends.")
+		-- (1.2.54) Shift-click with the chat closed: nothing (it toggled tracking: the Objectives panel changed)
+		return
 	elseif button == "LeftButton" or button == nil then
 		-- (1.2.24) the game's quest details (they move the tracker's selection) wait on the gate too
 		Defer("details", function()

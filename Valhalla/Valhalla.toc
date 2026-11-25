@@ -16,7 +16,7 @@
 ## AddonCompartmentFunc: Valhalla_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: Valhalla_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Valhalla_OnAddonCompartmentLeave
-## Version: 1.2.38
+## Version: 1.2.55
 ## SavedVariables: ValhallaDB, ValhallaInvestDB
 ## SavedVariablesPerCharacter: ValhallaCharDB
 ## OptionalDeps: Questie, Leatrix_Maps, BetterMaps, HighFidelityWorldMap, HiddenMaps, Mapster, Magnify
@@ -64,6 +64,7 @@ Data\Forever\Grade.lua
 Data\Forever\Levels.lua
 Data\Forever\Fishing.lua
 Data\Forever\FlightData.lua
+Data\Forever\Townsfolk.lua
 Data\Forever\Minimap.lua
 Data\Forever\MinimapLOD.lua
 Data\Forever\Caves.lua
@@ -90,6 +91,7 @@ Map\Extras.lua
 Map\Flights.lua
 Map\Routes.lua
 Map\Townsfolk.lua
+Map\TownsfolkMinimap.lua
 Map\Quests.lua
 Map\QuestFly.lua
 Map\Dungeons.lua

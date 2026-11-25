@@ -5,6 +5,9 @@
 --
 -- Settings: ValhallaDB (account), ValhallaCharDB (per character), filled from
 -- the module's defaults (missing keys only, so new defaults reach old saves).
+-- (1.2.42) the world map's display toggles are per character. The first time a
+-- character has none, they are copied from the account. Pins, sketches, paint,
+-- flight times, window position and diagnostics stay on the account.
 --------------------------------------------------------------------------------
 
 local ADDON, ns = ...
@@ -139,6 +142,64 @@ local function Fill(t, defaults)
 	return t
 end
 
+local function DeepCopy(v, seen)
+	if type(v) ~= "table" then return v end
+	seen = seen or {}
+	if seen[v] then return seen[v] end
+	local out = {}
+	seen[v] = out
+	for k, val in pairs(v) do out[DeepCopy(k, seen)] = DeepCopy(val, seen) end
+	return out
+end
+
+-- world-map choices that follow the character. Everything else in ValhallaDB.worldmap
+-- (pins, sketches, paint, measured flight times, the window's place, diagnostics) stays shared.
+local MAP_TOGGLE = {
+	autoSwitch = true, hoverHighlight = true, icons = true, boats = true, zeppelins = true,
+	flight = true, playerArrow = true, iconsFrom = true, iconScale = true, darkening = true,
+	darkenColor = true, routes = true, foundOnly = true, colorMatch = true, desaturate = true,
+	unexplored = true, gapFills = true, maxZoom = true, chart = true, padMap = true,
+	townsfolkMaster = true, townsfolkMinimap = true, townsfolk = true,
+	townsfolkProfMigrated = true, townsfolkClassAll = true, townsfolkSize = true,
+	allQuests = true, coords = true, zoneLevels = true, moveFade = true, mapFpsCap = true,
+	zoomHidePins = true, questFly = true, questFlySpeed = true, questFlyLanding = true,
+	questFlyShort = true, group = true, friends = true, friendsShare = true,
+	dungeonBosses = true, dungeonQuests = true, questSource = true, entranceClick = true,
+	dungeonCard = true, dungeonLevels = true, dungeonTab = true,
+	minimap = true, minimapMix = true, minimapDeep = true, minimapFrom = true,
+	cityMinimap = true, soften = true, underground = true, gapMinimap = true,
+	minimapButton = true, tabRail = true, mapButtons = true, flightTimer = true,
+}
+
+local function MapDB(account, char)
+	return setmetatable({}, {
+		__index = function(_, k)
+			if MAP_TOGGLE[k] then return char[k] end
+			return account[k]
+		end,
+		__newindex = function(_, k, v)
+			if MAP_TOGGLE[k] then char[k] = v else account[k] = v end
+		end,
+	})
+end
+
+-- the character's first time: copy the account's toggles. A table that is already
+-- there is kept (learned flights, the character's own pins). A second login does not copy again.
+local function SeedMapToggles(account, char, defaults)
+	if not char.mapSeeded then
+		for k, v in pairs(account) do
+			if MAP_TOGGLE[k] and char[k] == nil then char[k] = DeepCopy(v) end
+		end
+		char.mapSeeded = true
+	end
+	for k, v in pairs(defaults) do
+		if MAP_TOGGLE[k] then
+			if char[k] == nil then char[k] = DeepCopy(v)
+			elseif type(char[k]) == "table" and type(v) == "table" then Fill(char[k], v) end
+		end
+	end
+end
+
 function ns:InitDB()
 	ValhallaDB = ValhallaDB or {}
 	ValhallaCharDB = ValhallaCharDB or {}
@@ -147,8 +208,17 @@ function ns:InitDB()
 		-- (an old save's settings carried to the keys that replace them, before the defaults fill those)
 		if not mod.fresh and mod.Migrate then mod.Migrate(ValhallaDB[key]) end
 		ValhallaDB[key] = Fill(ValhallaDB[key] or {}, mod.defaults)
-		ValhallaCharDB[key] = ValhallaCharDB[key] or {}
-		mod.db, mod.char = ValhallaDB[key], ValhallaCharDB[key]
+		if key == "worldmap" then
+			local absent = ValhallaCharDB[key] == nil
+			local char = ValhallaCharDB[key]
+			if type(char) ~= "table" then char = {} end
+			if absent then ValhallaCharDB[key] = char end
+			SeedMapToggles(ValhallaDB[key], char, mod.defaults)
+			mod.db, mod.char = MapDB(ValhallaDB[key], char), char
+		else
+			ValhallaCharDB[key] = ValhallaCharDB[key] or {}
+			mod.db, mod.char = ValhallaDB[key], ValhallaCharDB[key]
+		end
 	end
 	-- (1.2.34) and as you log out: a NaN or infinite number in the saved settings is written as text the game
 	-- can't read back, and the whole file is lost, every setting back to its default on the next login

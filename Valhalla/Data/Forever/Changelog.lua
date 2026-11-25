@@ -4,6 +4,73 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.55", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
+		"Shift-clicking a quest's title in the quest log, or a quest's header or icon in the Objectives panel, with the chat closed really leaves the panel as it was now: 1.2.54's guard couldn't tell where the mouse was in Forever, so the quest was untracked and stayed out of the panel.",
+	} },
+	{ version = "1.2.54", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"Shift-clicking anything in the quest log or the Objectives panel with the chat closed (a quest's title, its icon, the panel's quest header or icon) no longer tracks or untracks the quest: the Objectives panel stays as it was, and a selection the click changed is put back.",
+		"Shift-click no longer opens the chat line or puts a link in it when the chat is closed. With the chat line already open, Shift-click puts the quest's link in it as the game does, including on a quest's pin; the pin is never pinned or unpinned by a Shift-click.",
+	} },
+	{ version = "1.2.53", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
+		"Shift-clicking a quest's pin (in the quest log or the Objectives panel) no longer pins or unpins it, so the Objectives panel doesn't change: it puts the quest's link in chat instead, opening the chat line if it's closed.",
+	} },
+	{ version = "1.2.52", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"Shift-clicking a quest's icon in the quest log with the chat closed opens the chat with the quest's link in it, and the Objectives panel no longer flickers (nothing is tracked or untracked).",
+		"The Objectives panel lists only this zone's quests (as the quest log files them) and your pinned ones: another zone's quest no longer joins because its objective area reaches here (e.g. Westfall's Goretusk Liver Pie and Westfall Stew in Redridge). Ready to Turn In still lists a ready quest you can hand in here.",
+	} },
+	{ version = "1.2.51", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"Shift-clicking a quest's icon in the quest log only puts the quest's link in chat (the chat line opens if it's closed): nothing is tracked, untracked or selected.",
+		"Townsfolk: one icon per NPC on the world map and minimap. Lakeshire, Bloodhoof Village and the cities no longer show pairs; Lakeshire's icons sit where the NPCs stand.",
+		"The quest log's quest icons stay where the game puts them; Valhalla's pin now sits just right of the icon.",
+	} },
+	{ version = "1.2.50", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"Clicking a quest's icon in the quest log (in progress or completed) no longer flashes it into the Objectives panel, keeps it selected, and flies the map to it again (your Quest click setting).",
+		"Shift-clicking a quest's icon in the quest log does nothing now (a chat link still goes into an open chat line: that part is the game's).",
+		"Pinned quests' pins glow in the quest log and the Objectives panel; unpinned pins are dimmer.",
+	} },
+	{ version = "1.2.49", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "New", }, items = {
+		"Selecting or deselecting a quest (map, quest log, Objectives panel) no longer adds quests to the Objectives panel or takes them off: it follows the zone rules and your quest pins only.",
+		"Clicking a quest's icon in the quest log no longer puts it in the Objectives panel, and a completed quest stays selected.",
+		"Selecting a quest on the map shows it in the quest log: its zone is opened and the log scrolls to it (when the log next opens, if it's closed).",
+	} },
+	{ version = "1.2.48", date = "2026-11-24", heads = { [1] = "Changed", }, items = {
+		"Clicking a quest icon on the map shows that quest's area and its minimap waypoint; a second click clears it. It no longer tracks or untracks the quest, links it in chat or does anything different with Shift: the Objectives panel keeps its own zone rules and pins.",
+	} },
+	{ version = "1.2.47", date = "2026-11-24", heads = { [1] = "New", }, items = {
+		"|cff6e2c0aTownsfolk icon size|r: in the menu's Townsfolk section, Icon size on the world map: Large (as before), Medium or Small. This character's own choice, applied at once. The minimap's pins, quest icons, boats and dungeons keep their size.",
+	} },
+	{ version = "1.2.46", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
+		"Clicking a quest icon on the map works as in the quest log: it selects the quest, a second click clears it, Shift-click stops tracking it. The map stays where it is.",
+		"|cff6e2c0aMinimap|r: inns, banks, mailboxes, auctioneers, stable masters, repair, food, reagents and class trainers are shown by the game's own minimap tracking, never twice. Their checkboxes turn the game's tracking on and off, and the world map's pins follow them. Profession trainers have one tick for the minimap; suppliers, vendors, spirit healers and rares stay Valhalla's.",
+	} },
+	{ version = "1.2.45", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
+		"Quest icons on the map are the quest log's own buttons: in progress, ready to turn in, campaign and the tracked quest's glow look exactly as in the quest log and Objectives.",
+		"Townsfolk on the minimap stay on their spot as you walk: they move every frame, at the minimap's own zoom and the zone's real size.",
+	} },
+	{ version = "1.2.44", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
+		"Profession icons use the new pictures when they really loaded, and the square icon when a file is missing. A checkbox turns them on and off.",
+		"Quest icons keep the quest log's size on every zone, including when you point at one. Townsfolk on the minimap stay on the ground as you walk, and quest question marks are not added there.",
+	} },
+	{ version = "1.2.43", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
+		"Profession icons no longer use a mask. They stay the square icon until their own pictures are added.",
+		"Quest icons on the map use the same picture as the quest log, filling the badge the way the log does.",
+		"Townsfolk on the minimap stay on the place you are looking at. Find me no longer errors after a profession icon has been drawn.",
+	} },
+	{ version = "1.2.42", date = "2026-11-23", heads = { [1] = "Changed", }, items = {
+		"|cff6e2c0aMap settings follow the character|r: townsfolk, professions, the minimap, flight masters and the other map switches are saved for each character. The first time, they start as the account had them. Pins, sketches, flight times, the window's place and the diagnostics stay shared.",
+	} },
+	{ version = "1.2.41", date = "2026-11-23", heads = { [1] = "Changed", }, items = {
+		"|cff6e2c0aClass trainers|r: every class is on the map, including pet, portal and demon trainers. The other faction's trainers stay hidden.",
+		"Profession icons take the shape of the thing they are (a spool, an anvil, food, the round seal) when the client can mask them. Otherwise they stay the square icon.",
+		"Quest icons on the map match the quest log. Minimap townsfolk stay on the spot in the world as you walk.",
+	} },
+	{ version = "1.2.40", date = "2026-11-23", heads = { [1] = "New", [2] = "Changed", }, items = {
+		"|cff6e2c0aProfession trainers|r: each profession has its own checkbox, trainers and suppliers together, with that profession's icon. Journeyman, Expert, Artisan and Master trainers are included, so the tailor in Ironforge and in Stormwind is on the map. Blacksmithing supplies use the repair icon and sit with Blacksmithing. Weapon and armor merchants stay under Vendors and use the repair icon too.",
+		"Townsfolk icons match the flight master's size. The same pins show on the minimap (its own checkbox, on at first). Quest icons on the map draw above townsfolk.",
+	} },
+	{ version = "1.2.39", date = "2026-11-23", heads = { [1] = "New", }, items = {
+		"|cff6e2c0aTownsfolk|r: inns, repair, mailboxes, banks, auctioneers, stables, spirit healers, vendors, and class and profession trainers, from Wowhead WoW Forever. Each type has its own checkbox, and one Townsfolk switch turns them all on or off. Flight masters stay on their own switch. No other addon is required.",
+	} },
 	{ version = "1.2.38", date = "2026-11-23", heads = { [1] = "Fixed", }, items = {
 		"|cff6e2c0aQuest log order|r: turning Show Ready to Turn In on or off lays the quest log out again, so a quest row is not left on top of another row or a zone header. The zones stay alphabetical. While the log is closed, it is still left alone.",
 	} },

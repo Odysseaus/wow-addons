@@ -16,9 +16,11 @@ local function G(name) return _G[name] end
 
 mod.defaults.allQuests = true   -- the quests in your log from every zone (off: Blizzard's, the zone's own map only)
 
-local BADGE = { atlas = "UI-QuestPoi-QuestNumber", texture = "Interface\\GossipFrame\\ActiveQuestIcon", size = 22 }
-local IN_PROGRESS = { atlas = "Quest-In-Progress-Icon-yellow", texture = "Interface\\GossipFrame\\IncompleteQuestIcon" }
-local TURN_IN = { atlas = "UI-QuestPoi-QuestBangTurnIn", texture = "Interface\\GossipFrame\\ActiveQuestIcon" }
+-- (1.2.45) each icon is Valhalla's own instance of the quest button the quest log and Objectives tracker
+-- draw (UI/Parts.lua: Parts.QuestPoi), styled as the tracker styles it, so in progress, complete, campaign
+-- and the super-tracked glow are the game's own pictures. The click and hover are Valhalla's (the pin's).
+local POI_OUTER = 20            -- the button's own size (POIButtonTemplate)
+local PIN_LOOK = { size = POI_OUTER }   -- (the pin's own texture is not shown)
 local SAME = 0.002              -- world (normalized): one quest's icons this close are one
 local EVERY = 0.5               -- seconds: the quest log changes in bursts
 local NONE = {}
@@ -36,6 +38,11 @@ local function Maps()
 	return maps
 end
 
+local function Hover(pin, on)
+	local hi = pin.poi and pin.poi.HighlightTexture
+	if hi and hi.SetShown then hi:SetShown(on) end
+end
+
 local function Enter(pin)
 	local q = pin.data
 	if not q then return end
@@ -51,58 +58,160 @@ local function Enter(pin)
 			if text and not finished then GameTooltip:AddLine((_G.QUEST_DASH or "- ") .. text, 1, 1, 1, true) end
 		end
 	end
-	GameTooltip:AddLine(L["Click: track this quest and zoom to it"], 0.6, 0.6, 0.6)
+	GameTooltip:AddLine(L["Click: show this quest's area and its waypoint; click again to clear it."], 0.6, 0.6, 0.6)
 	GameTooltip:Show()
+	Hover(pin, true)
 end
 
--- a click: the quest tracked (as Blizzard's own quest icons do) and the view in on it, the map kept as it is,
--- full screen or windowed. (It opened the quest's details, and Blizzard opens those in the windowed map
--- with its quest log: full screen was left.) With the quest log beside the map, its details there too
-local ZOOM_TO = 6
+local function Leave(pin)
+	Hover(pin, false)
+	GameTooltip_Hide()
+end
+
+-- (1.2.48) a click selects the quest, as the Objectives panel's quest button does (O.PoiClick): super-tracked
+-- already: cleared, the "off" sound; else super-tracked, the "on" sound. That alone shows its quest area and
+-- the minimap's waypoint. Never a watch added or removed (the Objectives panel
+-- keeps its own zone rules and pins), no chat link, nothing for Shift, no map move, no details. While
+-- CombatQueue's gate is closed (combat, secret auras, the settle after combat) the change waits and runs once
+-- it opens. Each click is logged to ValhallaDB.questClickDiag with the super-track and the watch before and after.
+local CLICK_LOG = 20
+local function Watched(id)
+	local f = C_QuestLog and C_QuestLog.GetQuestWatchType
+	if f then
+		local w = ns.Safe and ns.Safe.Call(f, id)
+		return w ~= nil
+	end
+	f = rawget(_G, "IsQuestWatched")
+	local index = C_QuestLog and C_QuestLog.GetLogIndexForQuestID and ns.Safe and ns.Safe.Call(C_QuestLog.GetLogIndexForQuestID, id)
+	if f and index then return (ns.Safe.Call(f, index)) and true or false end
+end
+local function Super()
+	local get = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID
+	return get and ns.Safe and ns.Safe.Call(get) or nil
+end
+local function NoteClick(q, how, before, watchedBefore, act, ok, err)
+	local db = rawget(_G, "ValhallaDB")
+	if type(db) ~= "table" then return end
+	local log = db.questClickDiag
+	if type(log) ~= "table" then log = {} db.questClickDiag = log end
+	log[#log + 1] = {
+		quest = q, how = how, act = act, before = before, after = Super(), ok = ok, err = err and tostring(err) or nil,
+		watchedBefore = watchedBefore, watchedAfter = Watched(q),
+		clock = date and date("%H:%M:%S") or nil,
+	}
+	while #log > CLICK_LOG do table.remove(log, 1) end
+end
+
+local function Sound(on)
+	local kit = rawget(_G, "SOUNDKIT")
+	local id = kit and (on and kit.IG_MAINMENU_OPTION_CHECKBOX_ON or kit.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+	if PlaySound and id then pcall(PlaySound, id) end
+end
+
+-- (1.2.49) a quest selected on the map is shown in the quest log: its zone header expanded if folded (the
+-- game's QuestScrollFrame:ExpandHeaderForQuest, else ExpandQuestHeader) and the log scrolled to it
+-- (QuestScrollFrame:ScrollToQuest, the frame after). Not remembered as opened (Objectives/QuestChains.lua's
+-- zone memory saves clicks only). Through CombatQueue; the log closed: when it next opens, if the quest is
+-- still the selected one. Nothing is written on the game's frames.
+local reveal, revealHooked
+local function Reveal(id)
+	if not id or Super() ~= id then return "not selected" end
+	local G = ns.Combat
+	if G and G.Blocked and G.Blocked() then return "held" end   -- (only ever run through the gate: RunReveal)
+	local C = rawget(_G, "C_QuestLog")
+	local sf = rawget(_G, "QuestScrollFrame")
+	local expanded = false
+	if sf and type(sf.ExpandHeaderForQuest) == "function" then
+		expanded = pcall(sf.ExpandHeaderForQuest, sf, id)
+	elseif C and C.GetHeaderIndexForQuest and rawget(_G, "ExpandQuestHeader") then
+		local h = ns.Safe.Call(C.GetHeaderIndexForQuest, id)
+		local info = h and C.GetInfo and ns.Safe.Call(C.GetInfo, h)
+		if type(info) == "table" and info.isCollapsed then expanded = pcall(ExpandQuestHeader, h) end
+	end
+	if sf and type(sf.ScrollToQuest) == "function" and C_Timer and C_Timer.After then
+		C_Timer.After(0, function() if Super() == id then pcall(sf.ScrollToQuest, sf, id) end end)
+	end
+	return expanded and "expanded" or "shown"
+end
+local function RunReveal()
+	local id = reveal
+	reveal = nil
+	local C = ns.Combat
+	local function go() local r = Reveal(id) local db = rawget(_G, "ValhallaDB") if type(db) == "table" then db.questRevealLast = { quest = id, result = r } end end
+	if C and C.Run then C.Run("questlog:reveal", go)
+	elseif not (InCombatLockdown and InCombatLockdown()) then go() end
+end
+function mod.RevealQuestInLog(id)
+	reveal = id
+	local log = rawget(_G, "QuestMapFrame")
+	if log and log.IsVisible and log:IsVisible() then RunReveal() return "now" end
+	if log and log.HookScript and not revealHooked then
+		revealHooked = true
+		log:HookScript("OnShow", function() if reveal then RunReveal() end end)
+	end
+	return "deferred"
+end
+
 local function Click(pin)
 	local q = pin.data
-	if not q then return end
-	if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then
-		-- (1.2.23) in combat: tracked once combat ends (CombatQueue.lua); the view still goes to it
-		local function Track()
-			if C_QuestLog.AddQuestWatch and not (C_QuestLog.GetQuestWatchType and C_QuestLog.GetQuestWatchType(q.id)) then
-				pcall(C_QuestLog.AddQuestWatch, q.id)
-			end
-			pcall(C_SuperTrack.SetSuperTrackedQuestID, q.id)
+	if not (q and q.id and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID) then return end
+	local id = q.id
+	local before = Super()
+	local watchedBefore = Watched(id)
+	local act = before == id and "clear" or "select"
+	Sound(act == "select")
+	local O = ns.GetModule and ns:GetModule("objectives")
+	O = O and O.O
+	if O and O.ForgetKeepSuper then O.ForgetKeepSuper() end   -- (the player's own selection: Objectives puts nothing back)
+	local function Run(how)
+		local ok, err
+		if act == "clear" then
+			if C_SuperTrack.ClearAllSuperTracked then ok, err = pcall(C_SuperTrack.ClearAllSuperTracked)
+			else ok, err = pcall(C_SuperTrack.SetSuperTrackedQuestID, 0) end
+		else
+			ok, err = pcall(C_SuperTrack.SetSuperTrackedQuestID, id)
 		end
-		local C = ns.Combat
-		if C and C.Run then C.Run("supertrack", Track, L["Tracking changed in combat: it applies when combat ends."])
-		elseif not InCombatLockdown() then Track() end
-	end
-	-- (v0.4.2.4) the quest fly-to's way there (QuestFly.lua: fly, or jump, by the setting); As Blizzard: the glide
-	if not (mod.QuestIconClick and mod.QuestIconClick(q.id, pin.u, pin.v, q.map)) and S.GlideToWorld then
-		S.GlideToWorld(pin.u, pin.v, ZOOM_TO)
-	end
-	-- (in combat with the gamepad's UI, Blizzard's quest details would set the pad's buttons from
-	-- Valhalla's code, which combat blocks: they wait, as a dungeon's map does)
-	if mod.PadWaits and mod.PadWaits() then return end
-	-- (1.2.24) the game's quest details wait on CombatQueue.lua's gate (combat, secret auras, the settle
-	-- after combat); when they run, the log beside a windowed map is looked at again
-	local function Details()
-		local log = map and map.QuestLog
-		local details = G("QuestMapFrame_ShowQuestDetails")
-		if log and log:IsShown() and details and not (map.IsMaximized and map:IsMaximized()) then details(q.id) end
+		NoteClick(id, how, before, watchedBefore, act, ok, not ok and err or nil)
+		if ok and act == "select" then
+			local r = mod.RevealQuestInLog(id)
+			local log = rawget(_G, "ValhallaDB") and ValhallaDB.questClickDiag
+			if type(log) == "table" and log[#log] then log[#log].reveal = r end
+		end
 	end
 	local C = ns.Combat
-	if C and C.Run then C.Run("details", Details, L["Quest details open when combat ends."])
-	elseif not InCombatLockdown() then Details() end
+	if C and C.Run then
+		local now = true
+		local ran = C.Run("supertrack", function() Run(now and "now" or "queued") end, L["Tracking changed in combat: it applies when combat ends."])
+		now = false
+		if not ran then NoteClick(id, "waiting", before, watchedBefore, act, true) end
+	elseif not (InCombatLockdown and InCombatLockdown()) then
+		Run("now")
+	end
 end
 
--- the state mark over a pin's badge (made once: pins are pooled, and this set's are only ever quests)
-local function Mark(pin, complete)
-	if not pin.questMark then
-		pin.questMark = pin:CreateTexture(nil, "OVERLAY")
-		pin.questMark:SetPoint("CENTER")
+-- the game's button on a pin, made once per pooled pin. The mouse stays on the pin (its Enter and Click);
+-- the button's own hover picture is shown from there.
+local poiMissing = false
+local function QuestButton(pin)
+	if pin.poi or poiMissing then return pin.poi end
+	local b = ns.Parts and ns.Parts.QuestPoi and ns.Parts.QuestPoi(pin)
+	if not b then poiMissing = true return end
+	b:ClearAllPoints()
+	b:SetPoint("CENTER", pin, "CENTER")
+	if b.EnableMouse then b:EnableMouse(false) end
+	pin.poi = b
+	return b
+end
+
+-- the style Blizzard's map pins and log rows ask for (POIButtonUtil.GetStyle: complete, disabled, in progress)
+local function StyleOf(id, complete)
+	local U = rawget(_G, "POIButtonUtil")
+	if U and U.GetStyle then
+		local ok, style = pcall(U.GetStyle, id)
+		if ok and style then return style end
 	end
-	local m, size = pin.questMark, BADGE.size * 0.6
-	m:SetSize(size, size)
-	S.Look(m, complete and TURN_IN or IN_PROGRESS)
-	m:Show()
+	local styles = U and U.Style or NONE
+	return complete and (styles.QuestComplete or 3) or (styles.QuestInProgress or 2)
 end
 
 function mod:RefreshQuests()
@@ -113,6 +222,8 @@ function mod:RefreshQuests()
 	-- (and as Blizzard's own quests: not with the map's Quest Objectives off, its questPOI)
 	local on = mod.db.allQuests ~= false and mod.IsStitched() and C_QuestLog.GetQuestsOnMap ~= nil
 		and not (GetCVarBool and not GetCVarBool("questPOI"))
+	-- (no quest button template on this client: nothing is drawn, rather than a look that isn't the log's)
+	on = on and not poiMissing
 	S.SetPinSetOn(set, on)
 	if not on then return end
 	-- the map underneath: Blizzard draws its quests (a continent, only the super-tracked one)
@@ -127,28 +238,44 @@ function mod:RefreshQuests()
 	local hl, hr, ht, hb
 	if host then hl, hr, ht, hb = S.Rect(host) end
 	local seen = {}
+	local live = {}
+	-- (1.2.40) the map underneath is included too, so its in-progress and complete badges sit on
+	-- Valhalla's quest set (level 5), above townsfolk (level 3). A quest already drawn on that map
+	-- is not drawn again from a neighbour. Blizzard's own pins are not moved or hidden.
 	for _, mapID in ipairs(Maps()) do
-		if mapID ~= host then
-			for _, q in ipairs(C_QuestLog.GetQuestsOnMap(mapID) or NONE) do
-				local id = q.questID
-				if id and q.x and q.y and not q.isMapIndicatorQuest and (not G("HaveQuestData") or G("HaveQuestData")(id))
-					and not (continent and id == tracked) then
-					local u, v = mod.ToWorld(mapID, q.x, q.y)
-					local key = u and (id .. ":" .. math.floor(u / SAME) .. ":" .. math.floor(v / SAME))
-					local onHost = u and hostQuests[id] and hl and u >= hl and u <= hr and v >= ht and v <= hb
-					if key and not seen[key] and not onHost then
-						seen[key] = true
-						local complete = C_QuestLog.IsComplete and C_QuestLog.IsComplete(id) or false
-						local pin = S.AddPin(set, u, v, BADGE, { id = id, complete = complete, map = mapID })
-						Mark(pin, complete)
-						pin:SetScript("OnEnter", Enter)
-						pin:SetScript("OnLeave", GameTooltip_Hide)
-						pin.OnClick = Click
+		for _, q in ipairs(C_QuestLog.GetQuestsOnMap(mapID) or NONE) do
+			local id = q.questID
+			if id and q.x and q.y and not q.isMapIndicatorQuest and (not G("HaveQuestData") or G("HaveQuestData")(id))
+				and not (continent and id == tracked) then
+				local u, v = mod.ToWorld(mapID, q.x, q.y)
+				local key = u and (id .. ":" .. math.floor(u / SAME) .. ":" .. math.floor(v / SAME))
+				local onHost = mapID ~= host and u and hostQuests[id] and hl and u >= hl and u <= hr and v >= ht and v <= hb
+				if key and not seen[key] and not onHost then
+					seen[key] = true
+					local complete = C_QuestLog.IsComplete and C_QuestLog.IsComplete(id) or false
+					local pin = S.AddPin(set, u, v, PIN_LOOK, { id = id, complete = complete, map = mapID })
+					pin:SetScale(1)                 -- (the Icon size slider does not apply: the log's size)
+					pin:SetSize(POI_OUTER, POI_OUTER)
+					pin.Icon:SetAlpha(0)            -- (the pin is the mouse target; the game's button is the picture)
+					pin.Highlight:SetAlpha(0)
+					local b = QuestButton(pin)
+					if b then
+						ns.Parts.PaintQuestPoi(b, id, StyleOf(id, complete), id == tracked)
+						Hover(pin, false)
+						b:Show()
+					else
+						pin:Hide()
 					end
+					pin:SetScript("OnEnter", Enter)
+					pin:SetScript("OnLeave", Leave)
+					pin.OnClick = Click
+					live[#live + 1] = { map = mapID, x = q.x, y = q.y, complete = complete, id = id }
 				end
 			end
 		end
 	end
+	mod.liveQuests = live
+	if mod.UpdateTownsfolkMinimap then mod:UpdateTownsfolkMinimap() end
 end
 
 -- (a burst of quest log updates: one refresh)

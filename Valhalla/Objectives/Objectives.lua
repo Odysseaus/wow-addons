@@ -10,6 +10,7 @@
 --    only inside their dungeon; Ready rows use the game's own quest icon button; /vh objectives why.
 --  * v0.2.2: another zone's quest with a real objective (or, ready, turn-in) marker here is listed too
 --    (O.Marker); pins in the game's quest log as well (QuestLogPins.lua), one store for all.
+--    1.2.52: objective markers no longer count (only a ready quest's turn-in marker, for Ready to Turn In).
 --
 -- How: Valhalla never edits, hooks or re-parents anything of the game's tracker. It only decides which
 -- quests are tracked (C_QuestLog.AddQuestWatch / RemoveQuestWatch) and in what order (re-tracking), and
@@ -85,6 +86,11 @@ O.NEW_GAP = 0.4
 O.REORDER_TRIES = 3             -- re-order attempts per change before giving up until the next one
 O.READY_MAX = 12                -- rows shown in Ready to Turn In
 O.PIN_SIZE = 17
+O.PIN_OFF_ALPHA = 0.55          -- (1.2.50: was 0.8) an unpinned pin, dimmer
+O.GLOW_ATLAS = "UI-QuestPoi-OuterGlow"   -- (1.2.50) a pinned pin's glow: the game's selected quest icon's
+O.GLOW_FILE = "Interface\\WorldMap\\UI-QuestPoi-IconGlow"   -- (its file, when the atlas is missing)
+O.GLOW_SIZE = 28
+O.GLOW_COLOR = { 1, 0.9, 0.55, 0.85 }
 O.MARKER_MISSES = 2             -- a quest listed for its marker here goes after this many misses in a row...
 O.MARKER_GAP = 0.9              -- ...this many seconds apart (POI data can read empty for a moment)
 O.ROW_H = 32
@@ -540,7 +546,33 @@ function O.Here()
 	for k in pairs(here.names) do names[#names + 1] = k end
 	table.sort(names)
 	here.key = tostring(zone) .. (inst and (":inst" .. tostring(here.instID or "") .. ":") or bg and ":bg:" or ":") .. table.concat(names, "|")
+	O.ApplyFreeze(here)
 	return here
+end
+
+-- (1.2.49) a super-track (select or deselect, from any source) never adds a quest to the panel or takes one
+-- off: the game's map data for a quest changes when it is selected (its pins, waypoint, local marker), so
+-- the quests whose selection changed keep the marker data they had just before, for as long as you stay
+-- in this place (here.key). Somewhere else: read afresh (the zone rules). Pins still decide first (Classify).
+function O.Freeze(id)
+	local here = S.here
+	if not (id and id ~= 0 and here) or here.inst then return end
+	if S.freezeKey ~= here.key then S.freeze, S.freezeKey = {}, here.key end
+	S.freeze = S.freeze or {}
+	if S.freeze[id] == nil then
+		S.freeze[id] = { marker = here.marker[id] or false, onMap = here.onMap[id] or false,
+			pins = here.pins[id] or false, guard = here.guard[id] or false }
+	end
+end
+function O.ApplyFreeze(here)
+	if not S.freeze then return end
+	if S.freezeKey ~= here.key then S.freeze, S.freezeKey = nil, nil return end
+	for id, f in pairs(S.freeze) do
+		here.marker[id] = f.marker or nil
+		here.onMap[id] = f.onMap or nil
+		here.pins[id] = f.pins or nil
+		here.guard[id] = f.guard or nil
+	end
 end
 
 -- v0.2.2: a quest from another zone with a real marker here (an objective while in progress, its turn-in once
@@ -653,8 +685,12 @@ function O.Classify(e, here, placeOnly)
 	end
 	-- "X: Zone" counts as that zone
 	local suffix = h and h:match("^[^:]+:%s*(.+)$")
+	-- (1.2.52) another zone's quest is never listed for an objective marker here (the game's quest areas reach
+	-- into other zones: Goretusk Liver Pie, Westfall Stew in Redridge): the panel is the zone's quests under
+	-- its header in the log, plus pinned ones. Only a READY quest's turn-in marker here still counts (Ready to
+	-- Turn In's rule: hand it in where you are)
 	local function Marked(text)
-		if here.inst or O.IsDungeonQuest(e) or not here.marker[e.id] then return false end
+		if not e.ready or here.inst or O.IsDungeonQuest(e) or not here.marker[e.id] then return false end
 		return true, ("%s, but it has %s here"):format(text, e.ready and "a turn-in marker" or "an objective marker")
 	end
 	if suffix and O.IsZoneName(suffix) then
@@ -711,14 +747,67 @@ function O.ReadyList(log, here)
 	return out
 end
 
-local function Add(id) Defer("watch:" .. tostring(id), function() Call(C_QuestLog.AddQuestWatch, id) end) end
-local function Remove(id) Defer("watch:" .. tostring(id), function() Call(C_QuestLog.RemoveQuestWatch, id) end) end
+-- (1.2.49) every watch change Valhalla makes, as it runs: ValhallaDB.objectives.opsLog (the last OPS_LOG)
+O.OPS_LOG = 60
+function O.NoteOp(id, what, why)
+	local db = mod.db
+	if type(db) ~= "table" then return end
+	local log = db.opsLog
+	if type(log) ~= "table" then log = {} db.opsLog = log end
+	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+	log[#log + 1] = { clock = date and date("%H:%M:%S") or nil, quest = id, op = what, why = why or "?",
+		super = super, event = S.lastEvent }
+	while #log > O.OPS_LOG do table.remove(log, 1) end
+end
+-- (1.2.54) Valhalla's own watch call: marked while it runs (and the quest's time noted), so the Shift guard
+-- (O.ShiftGuard) never undoes Valhalla's own changes
+function O.OwnWatchCall(fn, id)
+	S.ownCall = (S.ownCall or 0) + 1
+	S.ownAny = S.ownAny or {}
+	S.ownAny[id] = Now()
+	local ok, err = pcall(fn, id)
+	S.ownCall = S.ownCall - 1
+	if not ok and geterrorhandler then geterrorhandler()(err) end
+end
+O.KEEP_SUPER = 2                -- seconds: a super-track the game clears after our own watch removal is put back
+O.OWN_ADD = 2                   -- seconds: a watch added by Valhalla is its own (not a game's, below)
+local function Add(id, why)
+	Defer("watch:" .. tostring(id), function()
+		S.ownAt = S.ownAt or {}
+		S.ownAt[id] = Now()
+		O.NoteOp(id, "add", why)
+		O.OwnWatchCall(C_QuestLog.AddQuestWatch, id)
+	end)
+end
+-- (1.2.49) a removal of the super-tracked quest's watch makes the game clear the super-track
+-- (SuperTrackEventMixin:OnQuestWatchChanged): it is put back when that clear comes (O.KeepSuper)
+local function Remove(id, why)
+	Defer("watch:" .. tostring(id), function()
+		local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+		if super == id then S.keepSuper = { id = id, untilT = Now() + O.KEEP_SUPER } end
+		O.NoteOp(id, "remove", why)
+		O.OwnWatchCall(C_QuestLog.RemoveQuestWatch, id)
+	end)
+end
+-- the selection kept: the game cleared it after our own removal (within KEEP_SUPER)
+function O.KeepSuper(super, now)
+	local k = S.keepSuper
+	if not k then return false end
+	if now > k.untilT then S.keepSuper = nil return false end
+	if super and super ~= 0 then return false end
+	S.keepSuper = nil
+	O.NoteOp(k.id, "super", "the game cleared the selection after Valhalla's watch change: put back")
+	Defer("supertrack", function() Call(C_SuperTrack.SetSuperTrackedQuestID, k.id) end, TRACK_NOTE)
+	return true
+end
+-- a selection the player changes themselves is theirs: nothing is put back
+function O.ForgetKeepSuper() S.keepSuper = nil end
 
-local function Queue(id, add)
+local function Queue(id, add, why, hidden)
 	for _, op in ipairs(S.ops) do
-		if op.id == id then op.add = add return end
+		if op.id == id then op.add, op.why, op.hidden = add, why, hidden return end
 	end
-	S.ops[#S.ops + 1] = { id = id, add = add }
+	S.ops[#S.ops + 1] = { id = id, add = add, why = why, hidden = hidden }
 end
 
 -- a full plan: on arriving somewhere, a pin changed, the module turned on
@@ -733,10 +822,10 @@ function O.PlanFull()
 	local _, watched = O.WatchOrder()
 	S.ops = {}
 	for id in pairs(watched) do
-		if log[id] and not want[id] then Queue(id, false) end
+		if log[id] and not want[id] then Queue(id, false, "zone plan: not this place's") end
 	end
 	for _, e in ipairs(target) do
-		if not watched[e.id] then Queue(e.id, true) end
+		if not watched[e.id] then Queue(e.id, true, O.IsPinned(e.id) and "zone plan: pinned" or "zone plan: this place's") end
 	end
 	O.SweepPins(log, n)
 	S.keys = {}
@@ -789,6 +878,29 @@ function O.RefreshMarkers(now)
 	return gained, lost
 end
 
+-- (1.2.49) a quest log icon (the game's POIButton: an unwatched quest is watched, then selected) changes
+-- nothing in the panel: a watch the game added (not Valhalla's own) with the same quest selected within
+-- GAME_WATCH_PAIR seconds is taken back, the quest left as hidden or not as it was; the selection stays
+-- (O.KeepSuper). The panel's quests come from the zone rules and pins only.
+O.GAME_WATCH_PAIR = 1
+O.GAME_WATCH_WAIT = 2
+function O.GameWatches(now, watched, log)
+	local skip = {}
+	for id, g in pairs(S.gameAdd or {}) do
+		local sel = S.superAt and S.superAt[id]
+		if sel and math.abs(sel - g.t) <= O.GAME_WATCH_PAIR then
+			S.gameAdd[id] = nil
+			if watched[id] and log[id] then
+				skip[id] = true
+				Queue(id, false, "quest log icon: the game's watch, not the panel's", g.hidden or false)
+			end
+		elseif now - g.t > O.GAME_WATCH_WAIT then
+			S.gameAdd[id] = nil
+		end
+	end
+	return skip
+end
+
 function O.PlanPartial()
 	if not S.here then return end
 	local log, n = O.ReadLog()
@@ -801,6 +913,7 @@ function O.PlanPartial()
 	local _, watched = O.WatchOrder()
 	local count, added = 0, false
 	for _ in pairs(watched) do count = count + 1 end
+	local skip = O.GameWatches(now, watched, log)
 	-- (1.2.2) a quest whose header or tag changed since it was placed (its data came in late): placed again
 	local changed = {}
 	for id, e in pairs(log) do
@@ -811,12 +924,14 @@ function O.PlanPartial()
 	for id in pairs(S.keys) do if not log[id] then S.keys[id] = nil end end
 	for id, e in pairs(log) do
 		local listed = O.Listed(e, here)
-		if watched[id] and e.ready then
-			Queue(id, false)   -- (ready: shown in Ready to Turn In when listed, never in Quests)
+		if skip[id] then
+			-- (1.2.49: the quest log icon's watch, taken back above)
+		elseif watched[id] and e.ready then
+			Queue(id, false, "ready: Ready to Turn In, not Quests")   -- (ready: shown in Ready to Turn In when listed, never in Quests)
 		elseif watched[id] and (lost[id] or changed[id]) and not listed then
-			Queue(id, false)   -- (its marker here is gone, or now it says it's another place's: nothing to do here)
+			Queue(id, false, lost[id] and "its marker here is gone" or "its place changed")   -- (its marker here is gone, or now it says it's another place's: nothing to do here)
 		elseif not watched[id] and not e.ready and listed and (c.hidden[id] or gained[id]) and count < O.MAX_WATCHES then
-			Queue(id, true) count = count + 1 added = true
+			Queue(id, true, gained[id] and "a marker here" or "listed again") count = count + 1 added = true
 		end
 	end
 	-- new quests: placed once their entry (and zone header) is there
@@ -829,14 +944,14 @@ function O.PlanPartial()
 				S.keys[id] = KeyOfPlace(e)
 				if O.Listed(e, here) then
 					if e.ready then
-						if watched[id] then Queue(id, false) end
+						if watched[id] then Queue(id, false, "new and ready") end
 					elseif not watched[id] and count < O.MAX_WATCHES then
-						Queue(id, true) count = count + 1 added = true
+						Queue(id, true, "new: this place's") count = count + 1 added = true
 					else
 						added = true   -- (tracked by the game: put in its place)
 					end
 				elseif watched[id] then
-					Queue(id, false)   -- another zone's: out until you get there
+					Queue(id, false, "new: another place's")   -- another zone's: out until you get there
 				else
 					c.hidden[id] = true
 				end
@@ -951,7 +1066,7 @@ function O.Retrack(any)
 	local side = mod.db and mod.db.watchSide
 	local lever = (side == "front" and order[1]) or (side == "end" and order[#order]) or any or order[1]
 	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
-	Remove(lever) Add(lever)
+	Remove(lever, "re-track (the tracker reads again)") Add(lever, "re-track (the tracker reads again)")
 	if super and super ~= 0 and C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID
 		and Call(C_SuperTrack.GetSuperTrackedQuestID) ~= super then
 		Defer("supertrack", function() Call(C_SuperTrack.SetSuperTrackedQuestID, super) end)
@@ -1021,12 +1136,12 @@ function O.RunOps()
 			local count = 0
 			for _ in pairs(watched) do count = count + 1 end
 			if not watched[op.id] and count < O.MAX_WATCHES then
-				Add(op.id)
+				Add(op.id, op.why)
 			end
 			c.hidden[op.id] = nil
 		else
-			Remove(op.id)
-			c.hidden[op.id] = true
+			Remove(op.id, op.why)
+			if op.hidden == nil then c.hidden[op.id] = true else c.hidden[op.id] = op.hidden or nil end
 		end
 		done = done + 1
 	end
@@ -1089,22 +1204,22 @@ function O.Reorder()
 	local side = mod.db and mod.db.watchSide
 	if side == "front" or side == "end" then
 		local fix = O.OrderFix(order, want, side)
-		for _, id in ipairs(fix) do Remove(id) end
-		for _, id in ipairs(fix) do Add(id) end
+		for _, id in ipairs(fix) do Remove(id, "re-sort") end
+		for _, id in ipairs(fix) do Add(id, "re-sort") end
 	else
 		-- not known yet: all off, then two back on show which end a new one goes to
-		for _, id in ipairs(order) do Remove(id) end
-		Add(want[1]) Add(want[2])
+		for _, id in ipairs(order) do Remove(id, "re-sort") end
+		Add(want[1], "re-sort") Add(want[2], "re-sort")
 		local now = O.WatchOrder()
 		if now[1] == want[1] and now[2] == want[2] then
 			side = "end"
-			for i = 3, #want do Add(want[i]) end
+			for i = 3, #want do Add(want[i], "re-sort") end
 		elseif now[1] == want[2] and now[2] == want[1] then
 			side = "front"
-			Remove(want[1]) Remove(want[2])
-			for i = #want, 1, -1 do Add(want[i]) end
+			Remove(want[1], "re-sort") Remove(want[2], "re-sort")
+			for i = #want, 1, -1 do Add(want[i], "re-sort") end
 		else
-			for i = 3, #want do Add(want[i]) end   -- (the list didn't read back at once: checked next time)
+			for i = 3, #want do Add(want[i], "re-sort") end   -- (the list didn't read back at once: checked next time)
 		end
 		if side and mod.db then mod.db.watchSide = side end
 	end
@@ -1193,6 +1308,314 @@ function O.Step(now)
 	if S.reorderDue and now >= S.reorderDue then return O.Reorder() end
 end
 
+-- (1.2.49) the selection changed: the quests it left and reached keep their marker data here (O.Freeze);
+-- the game's clear after our own removal is put back (O.KeepSuper)
+function O.SuperChanged(now)
+	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
+	if S.lastSuper and S.lastSuper ~= 0 then O.Freeze(S.lastSuper) end
+	if super and super ~= 0 then
+		O.Freeze(super)
+		S.superAt = S.superAt or {}
+		S.superAt[super] = now
+		if S.gameAdd and S.gameAdd[super] then S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE end
+	end
+	O.KeepSuper(super, now)
+	S.lastSuper = super
+end
+-- a watch added: Valhalla's own (O.OWN_ADD), or the game's (a quest log icon, the Track button...)
+function O.WatchAdded(id, now)
+	local own = S.ownAt and S.ownAt[id]
+	if own and now - own <= O.OWN_ADD then return end
+	if O.IconOwns and O.IconOwns(id, now) then return end   -- (1.2.50: the quest log icon's, already taken back)
+	S.gameAdd = S.gameAdd or {}
+	S.gameAdd[id] = { t = now, hidden = Char().hidden[id] and true or false }
+end
+
+--------------------------------------------------------------------------------
+-- (1.2.50) the quest log's quest icon: Blizzard's own POI button, kept (QuestLogPins.lua hooks it with
+-- HookScript PreClick / OnClick only). POIButtonMixin:OnClick watches an unwatched quest and then selects it
+-- (Blizzard_POIButton POIButton.lua:466-474). Its watch is taken back inside that same call, from the
+-- QUEST_WATCH_LIST_CHANGED it fires (Blizzard dispatches it inside AddQuestWatch: QuestMapFrame.lua's
+-- SetHeaderQuestsTracked brackets its calls with ignoreQuestWatchListChanged), so before the tracker draws
+-- (it draws once a frame, when dirty) and before the game selects the quest: no clear follows. Else right
+-- after the click ("post-click": the clear that follows is put back, O.KeepSuper); else 1.2.49's pass
+-- (O.GameWatches, "late"). In combat it waits on CombatQueue's gate ("queued"). A plain click then flies the
+-- map there (QuestFly.lua's Q.Go, the Quest click setting). (1.2.54) Shift-click: nothing with the chat closed
+-- (the game's track / untrack and selection undone, the watch inside the same event); with the chat line open
+-- the game's own link (ChatFrameUtil.TryInsertQuestLinkForQuestID). 1.2.52/1.2.53's chat opening is gone.
+--------------------------------------------------------------------------------
+O.ICON_DIAG = 30
+local function Super() return C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID) or 0 end
+local function Watched(q) local _, set = O.WatchOrder() return set[q] ~= nil end
+local function ChatOpen()
+	local CU = rawget(_G, "ChatFrameUtil")
+	local get = (type(CU) == "table" and CU.GetActiveWindow) or rawget(_G, "ChatEdit_GetActiveWindow")
+	if type(get) ~= "function" then return false end
+	local ok, w = pcall(get)
+	return ok and w ~= nil or false
+end
+function O.IconDiag(entry)
+	local db = rawget(_G, "ValhallaDB")
+	if type(db) ~= "table" then return end
+	local log = db.questLogIconDiag
+	if type(log) ~= "table" then log = {} db.questLogIconDiag = log end
+	log[#log + 1] = entry
+	while #log > O.ICON_DIAG do table.remove(log, 1) end
+end
+-- the click about to run (PreClick): what the game will change is read against this
+function O.IconPre(q, button)
+	if not (q and mod.enabled) then S.icon = nil return end
+	if button and button ~= "LeftButton" then S.icon = nil return end
+	O.ForgetKeepSuper()   -- (the player's own selection)
+	local shift = IsShiftKeyDown and IsShiftKeyDown() and true or false
+	S.icon = { q = q, t = Now(), inClick = true, shift = shift, watched = Watched(q), super = Super(), chat = ChatOpen() }
+end
+-- the quest's link into the open chat line (the game's GetQuestLink and InsertLink); true: inserted
+function O.InsertQuestLink(q)
+	local get = rawget(_G, "GetQuestLink")
+	local link = type(get) == "function" and Call(get, q) or nil
+	if not link then return false end
+	local CU = rawget(_G, "ChatFrameUtil")
+	local insert = (type(CU) == "table" and CU.InsertLink) or rawget(_G, "ChatEdit_InsertLink")
+	if type(insert) ~= "function" then return false end
+	local ok, done = pcall(insert, link)
+	return ok and done and true or false
+end
+-- Valhalla's own watch call for the click; true: it ran (else waits on the gate)
+local function IconWatch(ic, add, why)
+	local ran
+	if add then
+		ran = Defer("watch:" .. tostring(ic.q), function()
+			S.ownAt = S.ownAt or {}
+			S.ownAt[ic.q] = Now()
+			O.NoteOp(ic.q, "add", why)
+			O.OwnWatchCall(C_QuestLog.AddQuestWatch, ic.q)
+		end, TRACK_NOTE)
+	else
+		ran = Defer("watch:" .. tostring(ic.q), function()
+			if Super() == ic.q then S.keepSuper = { id = ic.q, untilT = Now() + O.KEEP_SUPER } end
+			O.NoteOp(ic.q, "remove", why)
+			O.OwnWatchCall(C_QuestLog.RemoveQuestWatch, ic.q)
+		end, TRACK_NOTE)
+	end
+	return ran and true or false
+end
+-- QUEST_WATCH_LIST_CHANGED during the click (inside the game's AddQuestWatch / RemoveQuestWatch); true: handled
+function O.IconWatchEvent(id, added)
+	local ic = S.icon
+	if not (ic and ic.inClick and id == ic.q) or ic.busy then return false end
+	if ic.shift and not ic.watchEv then ic.watchEv, ic.chatAtWatch = added and "add" or "remove", ChatOpen() end
+	if added == true and not ic.watched and not ic.took then
+		ic.busy = true
+		ic.took, ic.queued = "same-call", not IconWatch(ic, false, "quest log icon: the game's watch, taken back at once")
+		ic.busy = nil
+		return true
+	elseif added == false and ic.shift and ic.watched and not ic.rewatched then
+		ic.busy = true
+		ic.rewatched, ic.queued = "same-call", not IconWatch(ic, true, "quest log icon Shift-click: the game's untrack undone")
+		ic.busy = nil
+		return true
+	end
+	return false
+end
+-- a watch the click's own handling took back or put back: not a game watch for 1.2.49's pass
+function O.IconOwns(id, now)
+	local ic = S.icon
+	return ic and ic.q == id and (ic.took or ic.rewatched) and now - ic.t <= O.GAME_WATCH_WAIT or false
+end
+--------------------------------------------------------------------------------
+-- (1.2.54) the Shift guard: Shift-click with the chat closed does nothing to the panel, from any surface. A watch
+-- change (QUEST_WATCH_LIST_CHANGED) not made by Valhalla, while Shift is down, the chat line isn't open and the
+-- mouse is over the quest log or the Objectives panel (the game's quest title row: ToggleTracking; the tracker's
+-- quest header: QUESTWATCHTOGGLE; its quest icon; anything else there) is undone inside that same event, before
+-- the tracker draws. A selection the game changes in that same click is put back (O.GuardSuper). Logged in
+-- questLogIconDiag (source "guard"). Nothing of the game's is hooked, moved or written: the event and the
+-- mouse read only. (1.2.55) The mouse is read with the frame's own IsMouseOver (Forever has no global
+-- MouseIsOver: 1.2.54's guard never saw the mouse, so it never acted), and as a backup the frame under the
+-- mouse (GetMouseFoci) inside one of those frames. A game watch change with Shift down and the chat closed
+-- that the guard leaves is logged too (source "guard-miss": what failed, the frame under the mouse).
+--------------------------------------------------------------------------------
+O.GUARD_FRAMES = { { "quest log", "QuestMapFrame" }, { "quest log", "QuestScrollFrame" }, { "side panel", "ObjectiveTrackerFrame" } }
+O.GUARD_SUPER = 0.3     -- seconds: a selection change this soon after a guarded watch change is the same click's
+O.GUARD_OWN = 0.5       -- seconds: a quest Valhalla itself just added / removed is never guarded
+local function MouseFocus()
+	local foci = rawget(_G, "GetMouseFoci")
+	if type(foci) == "function" then
+		local ok, t = pcall(foci)
+		return ok and type(t) == "table" and t[1] or nil
+	end
+	local one = rawget(_G, "GetMouseFocus")
+	if type(one) == "function" then local ok, v = pcall(one) return ok and v or nil end
+	return nil
+end
+local function Inside(f, root)
+	for _ = 1, 60 do
+		if type(f) ~= "table" then return false end
+		if f == root then return true end
+		if type(f.GetParent) ~= "function" then return false end
+		local ok, p = pcall(f.GetParent, f)
+		f = ok and p or nil
+	end
+	return false
+end
+-- the surface under the mouse: "quest log" / "side panel", the frame's name and how it was seen ("IsMouseOver"
+-- or "focus"); nil and a note of each frame when neither
+function O.MouseSurface()
+	local seen = {}
+	for _, g in ipairs(O.GUARD_FRAMES) do
+		local f = rawget(_G, g[2])
+		if type(f) == "table" and type(f.IsVisible) == "function" and f:IsVisible() then
+			local over = nil
+			if type(f.IsMouseOver) == "function" then
+				local ok, yes = pcall(f.IsMouseOver, f)
+				over = ok and yes and true or false
+			end
+			if over then return g[1], g[2], "IsMouseOver" end
+			seen[#seen + 1] = g[2] .. (over == nil and ": no IsMouseOver" or ": not over")
+		else
+			seen[#seen + 1] = g[2] .. (type(f) == "table" and ": hidden" or ": missing")
+		end
+	end
+	local focus = MouseFocus()
+	if focus then
+		for _, g in ipairs(O.GUARD_FRAMES) do
+			local f = rawget(_G, g[2])
+			if type(f) == "table" and type(f.IsVisible) == "function" and f:IsVisible() and Inside(focus, f) then return g[1], g[2], "focus" end
+		end
+	end
+	return nil, table.concat(seen, "; ")
+end
+function O.FocusName()
+	local f = MouseFocus()
+	if type(f) ~= "table" then return "?" end
+	for _, m in ipairs({ "GetDebugName", "GetName" }) do
+		if type(f[m]) == "function" then
+			local ok, n = pcall(f[m], f)
+			if ok and type(n) == "string" and n ~= "" then return n end
+		end
+	end
+	return "(unnamed)"
+end
+function O.ShiftGuard(id, added, now)
+	if not id or S.guardBusy then return false end
+	if not mod.enabled then
+		if IsShiftKeyDown and IsShiftKeyDown() and not ChatOpen() then
+			O.IconDiag({ clock = date and date("%H:%M:%S") or nil, source = "guard-miss", quest = id, shift = true,
+				action = added and "track left" or "untrack left", failed = "Objectives off", frame = O.FocusName() })
+		end
+		return false
+	end
+	if (S.ownCall or 0) > 0 then return false end
+	local own = S.ownAny and S.ownAny[id]
+	if own and now - own <= O.GUARD_OWN then return false end
+	if not (IsShiftKeyDown and IsShiftKeyDown()) or ChatOpen() then return false end
+	local surface, root, how = O.MouseSurface()
+	if not surface then
+		O.IconDiag({ clock = date and date("%H:%M:%S") or nil, source = "guard-miss", quest = id, shift = true,
+			action = added and "track left" or "untrack left", failed = "mouse not over the quest log or the panel",
+			frames = root, frame = O.FocusName() })
+		return false
+	end
+	local was = S.guard and now - S.guard.t <= O.GUARD_SUPER and S.guard.super or Super()
+	S.guardBusy = true
+	local why = added and "Shift-click outside chat: the game's track undone" or "Shift-click outside chat: the game's untrack undone"
+	local ran = Defer("watch:" .. tostring(id), function()
+		if not added then S.ownAt = S.ownAt or {} S.ownAt[id] = Now() end   -- (our re-add: not a game's add)
+		O.NoteOp(id, added and "remove" or "add", why)
+		O.OwnWatchCall(added and C_QuestLog.RemoveQuestWatch or C_QuestLog.AddQuestWatch, id)
+	end, TRACK_NOTE)
+	S.guardBusy = nil
+	S.guard = { t = now, super = was, q = id }
+	O.IconDiag({ clock = date and date("%H:%M:%S") or nil, source = "guard", surface = surface, root = root, seenBy = how,
+		frame = O.FocusName(), quest = id, shift = true, action = added and "track undone" or "untrack undone",
+		queued = not ran })
+	return true
+end
+-- the selection the guarded click changed, put back (the game selects after tracking; an untracked selected
+-- quest loses its selection)
+function O.GuardSuper(now)
+	local g = S.guard
+	if not g then return end
+	if now - g.t > O.GUARD_SUPER then S.guard = nil return end
+	local cur = Super()
+	if cur == g.super then return end
+	local was = g.super
+	Defer("supertrack", function()
+		if was and was ~= 0 then Call(C_SuperTrack.SetSuperTrackedQuestID, was)
+		elseif C_SuperTrack.ClearAllSuperTracked then Call(C_SuperTrack.ClearAllSuperTracked)
+		else Call(C_SuperTrack.SetSuperTrackedQuestID, 0) end
+	end, TRACK_NOTE)
+	local d = rawget(_G, "ValhallaDB") and ValhallaDB.questLogIconDiag
+	local last = type(d) == "table" and d[#d]
+	if type(last) == "table" and last.source == "guard" and last.quest == g.q then last.selection = "put back to " .. tostring(was) end
+end
+
+-- the click has run (OnClick post-hook)
+function O.IconPost(q)
+	local ic = S.icon
+	if not (ic and ic.q == q and ic.inClick) then return end
+	ic.inClick = false
+	local watched, super = Watched(q), Super()
+	local entry = { clock = date and date("%H:%M:%S") or nil, source = "icon", surface = "quest log", quest = q, shift = ic.shift or nil }
+	if ic.shift then
+		entry.act = ic.chat and "shift: link" or "shift: nothing"
+		entry.chat = ic.chat and "open" or "closed"
+		if ic.watchEv then entry.gameWatch = ic.watchEv .. (ic.chatAtWatch and " (chat line open)" or " (chat line closed)") end
+		local undo = {}
+		-- the game took its link step (chat open, nothing changed) or not (selected: cleared first; else
+		-- untracked / tracked): then Valhalla links it after undoing the rest
+		local gameLinked = ic.chat and ic.super ~= q and super == ic.super and watched == ic.watched and not ic.took and not ic.rewatched
+		if not ic.watched and watched and not ic.took then
+			ic.took, ic.queued = "post-click", not IconWatch(ic, false, "quest log icon Shift-click: the game's watch undone")
+		end
+		if ic.watched and not watched and not ic.rewatched then
+			ic.rewatched, ic.queued = "post-click", not IconWatch(ic, true, "quest log icon Shift-click: the game's untrack undone")
+		end
+		if ic.took then undo[#undo + 1] = "watch taken back (" .. ic.took .. ")" end
+		if ic.rewatched then undo[#undo + 1] = "untrack undone (" .. ic.rewatched .. ")" end
+		if super ~= ic.super then
+			local was = ic.super
+			local ran = Defer("supertrack", function()
+				if was and was ~= 0 then Call(C_SuperTrack.SetSuperTrackedQuestID, was)
+				elseif C_SuperTrack.ClearAllSuperTracked then Call(C_SuperTrack.ClearAllSuperTracked)
+				else Call(C_SuperTrack.SetSuperTrackedQuestID, 0) end
+			end, TRACK_NOTE)
+			if not ran then ic.queued = true end
+			undo[#undo + 1] = "selection put back to " .. tostring(was)
+		end
+		if not ic.chat then entry.link = "none (chat closed: nothing)"
+		elseif gameLinked then entry.link = "game"
+		elseif O.InsertQuestLink(q) then entry.link = "valhalla"
+		else entry.link = "none (no chat line)" end
+		entry.undo = #undo > 0 and table.concat(undo, "; ") or "nothing changed"
+		entry.takeBack = ic.took or "none"
+		entry.queued = ic.queued or false
+		entry.fly = "no (Shift)"
+		O.IconDiag(entry)
+		return
+	end
+	entry.act = (ic.super == q) and "clear" or (super == q and "select" or "none")
+	if not ic.watched and watched and not ic.took then
+		ic.took, ic.queued = "post-click", not IconWatch(ic, false, "quest log icon: the game's watch, taken back after the click")
+	end
+	entry.takeBack = ic.took or (ic.watched and "none (already in the panel)" or "none (no watch added)")
+	entry.queued = ic.queued or false
+	if entry.act == "select" then
+		local wm = ns.GetModule and ns:GetModule("worldmap")
+		local Q = wm and wm.QuestFly
+		if Q and Q.Go then
+			local mapID = GetQuestUiMapID and Call(GetQuestUiMapID, q) or nil
+			local ok, moved = pcall(Q.Go, q, mapID, "icon")
+			entry.fly = not ok and ("error: " .. tostring(moved)) or (moved and "flew" or ("no (" .. (Q.Mode and Q.Mode() or "?") .. ")"))
+		else
+			entry.fly = "no (world map off)"
+		end
+	else
+		entry.fly = "no (" .. entry.act .. ")"
+	end
+	O.IconDiag(entry)
+end
+
 -- a zone change / arrival / landing: a full plan once settled
 function O.ZoneDue(now)
 	S.fullDue = (now or Now()) + O.SETTLE
@@ -1228,6 +1651,13 @@ end
 
 function O.OnEvent(event, a1, a2, ...)
 	local now = Now()
+	if not O.PROGRESS_EVENTS[event] and event ~= "CHAT_MSG_LOOT" and event ~= "ITEM_PUSH" then S.lastEvent = event end
+	if event == "SUPER_TRACKING_CHANGED" then O.SuperChanged(now) O.GuardSuper(now) end
+	-- (1.2.50) a quest log icon click under way: its watch taken back (or a Shift untrack undone) at once
+	if event == "QUEST_WATCH_LIST_CHANGED" and a1 and O.IconWatchEvent(a1, a2) then S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE return end
+	-- (1.2.54) Shift-click outside chat over the quest log / Objectives panel: undone at once
+	if event == "QUEST_WATCH_LIST_CHANGED" and a1 and (a2 == true or a2 == false) and O.ShiftGuard(a1, a2, now) then S.partialDue = S.partialDue or now + O.LOG_DEBOUNCE return end
+	if event == "QUEST_WATCH_LIST_CHANGED" and a1 and a2 == true then O.WatchAdded(a1, now) end
 	if O.SYNC_SKIP[event] == nil and O.SyncOn() then O.SyncEvent(event, a1, a2, now) end
 	if O.PROGRESS_EVENTS[event] then
 		if event ~= "UNIT_QUEST_LOG_CHANGED" or a1 == "player" then O.ProgressDue(now) end
@@ -1325,7 +1755,7 @@ function O.Restore()
 	table.sort(ids, function(a, b) return a.idx < b.idx end)
 	for _, e in ipairs(ids) do
 		if count >= O.MAX_WATCHES then break end
-		Add(e.id) count = count + 1
+		Add(e.id, "turned off: given back") count = count + 1
 	end
 	c.hidden = {}
 	return true
@@ -1359,18 +1789,60 @@ local function PinTip(self)
 	GameTooltip:SetText(O.IsPinned(self.q) and L["Unpin"] or L["Pin: keep in list"], 1, 0.82, 0)
 	GameTooltip:Show()
 end
-local function PinClick(self)
-	if not self.q then return end
+-- (1.2.53) Shift + left-click on our pin never pins or unpins (in game a Shift-click here changed the panel:
+-- opsLog 19:17 "zone plan: pinned" then "not this place's"). (1.2.54) With the chat closed it does nothing; with
+-- the chat line open the quest's link goes in the game's way (ChatFrameUtil.TryInsertQuestLinkForQuestID).
+-- Every pin click is logged in questLogIconDiag (source "pin", its surface, Shift, toggled, link)
+function O.PinLink(q)
+	if not ChatOpen() then return "none (chat closed: nothing)" end
+	local CU = rawget(_G, "ChatFrameUtil")
+	local try = (type(CU) == "table" and CU.TryInsertQuestLinkForQuestID) or rawget(_G, "ChatEdit_TryInsertQuestLinkForQuestID")
+	if type(try) == "function" then
+		local ok, done = pcall(try, q)
+		if ok and done then return "game" end
+	end
+	return O.InsertQuestLink(q) and "game (InsertLink)" or "none (no link)"
+end
+local function PinClick(self, button)
+	local q = self.q
+	if not q then return end
+	if button and button ~= "LeftButton" then return end
+	local shift = IsShiftKeyDown and IsShiftKeyDown() and true or false
+	local entry = { clock = date and date("%H:%M:%S") or nil, source = "pin", surface = self.surface or "side panel", quest = q, shift = shift }
+	if shift then
+		entry.toggled = false
+		entry.link = O.PinLink(q)
+		entry.act = entry.link:find("^none") and "shift: nothing" or "shift: link"
+		O.IconDiag(entry)
+		return
+	end
 	if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
-	O.SetPinned(self.q, not O.IsPinned(self.q))
+	local on = not O.IsPinned(q)
+	O.SetPinned(q, on)
+	entry.act, entry.toggled = on and "pin" or "unpin", true
+	O.IconDiag(entry)
 	if GameTooltip and GameTooltip:IsOwned(self) then PinTip(self) end
 end
 
-local function MakePin(parent)
+local function MakePin(parent, surface)
 	local b = CreateFrame("Button", nil, parent or UIParent)
+	b.surface = surface or "side panel"   -- (1.2.53: for the click log)
 	b:SetSize(O.PIN_SIZE, O.PIN_SIZE)
 	b.icon = b:CreateTexture(nil, "ARTWORK")
 	b.icon:SetAllPoints()
+	-- (1.2.50) pinned: the game's selected-quest glow round our pin (only our own button's texture)
+	b.glow = b:CreateTexture(nil, "BACKGROUND")
+	b.glow:SetSize(O.GLOW_SIZE, O.GLOW_SIZE)
+	b.glow:SetPoint("CENTER")
+	if not (C_Texture and C_Texture.GetAtlasInfo) or C_Texture.GetAtlasInfo(O.GLOW_ATLAS) then
+		b.glow:SetAtlas(O.GLOW_ATLAS)
+	else
+		b.glow:SetTexture(O.GLOW_FILE)
+	end
+	b.glow:SetBlendMode("ADD")
+	b.glow:SetVertexColor(O.GLOW_COLOR[1], O.GLOW_COLOR[2], O.GLOW_COLOR[3])
+	b.glow:SetAlpha(O.GLOW_COLOR[4])
+	b.glow:Hide()
 	b:RegisterForClicks("LeftButtonUp")
 	b:SetScript("OnClick", PinClick)
 	b:SetScript("OnEnter", PinTip)
@@ -1384,7 +1856,8 @@ local function PaintPin(b, q)
 	if b.on ~= on then
 		b.on = on
 		b.icon:SetTexture(on and PIN_ON or PIN_OFF)
-		b.icon:SetAlpha(on and 1 or 0.8)
+		b.icon:SetAlpha(on and 1 or O.PIN_OFF_ALPHA)
+		if b.glow then b.glow:SetShown(on) end
 	end
 end
 O.PaintPin = PaintPin
@@ -1498,6 +1971,7 @@ function O.PoiClick(self, button)
 		local ok, done = pcall(CU.TryInsertQuestLinkForQuestID, q)
 		if ok and done then return end
 	end
+	O.ForgetKeepSuper()
 	local super = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID and Call(C_SuperTrack.GetSuperTrackedQuestID)
 	if super == q then
 		if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF) end
@@ -1522,11 +1996,7 @@ function O.PaintPoi(b)
 	local sel = super == b.q
 	if b.native then
 		local U = rawget(_G, "POIButtonUtil")
-		local style = U and U.Style and U.Style.QuestComplete or 3
-		if b.painted ~= b.q then pcall(b.SetQuestID, b, b.q) end
-		pcall(b.SetStyle, b, style)
-		pcall(b.SetSelected, b, sel)
-		if b.painted ~= b.q or b.sel ~= sel then pcall(b.UpdateButtonStyle, b) end
+		ns.Parts.PaintQuestPoi(b, b.q, U and U.Style and U.Style.QuestComplete or 3, sel)
 	else
 		if not Atlas(b.icon, "UI-QuestIcon-TurnIn-Normal") then
 			b.icon:SetTexture("Interface\\GossipFrame\\ActiveQuestIcon") b.icon:Show()
@@ -1539,20 +2009,16 @@ function O.PaintPoi(b)
 	b:Show()
 end
 
-local POI_TEMPLATES = { "ObjectiveTrackerPOIButtonTemplate", "POIButtonTemplate" }
 local function MakePoi(row)
-	for _, t in ipairs(POI_TEMPLATES) do
-		local ok, b = pcall(CreateFrame, "Button", nil, row, t)
-		-- (a mixin's methods sit on the frame itself: SetQuestID there means the template took)
-		if ok and type(b) == "table" and type(rawget(b, "SetQuestID")) == "function" then
-			b.native, b.template = true, t
-			b:SetScript("OnClick", O.PoiClick)
-			if b.RegisterForClicks then b:RegisterForClicks("LeftButtonUp") end
-			return b
-		end
+	-- (the game's button: UI/Parts.lua, shared with the world map's quest icons)
+	local b = ns.Parts.QuestPoi(row)
+	if b then
+		b:SetScript("OnClick", O.PoiClick)
+		if b.RegisterForClicks then b:RegisterForClicks("LeftButtonUp") end
+		return b
 	end
 	-- (no template: drawn the same size, the same toggle)
-	local b = CreateFrame("Button", nil, row)
+	b = CreateFrame("Button", nil, row)
 	b:SetSize(20, 20)
 	b.icon = b:CreateTexture(nil, "ARTWORK")
 	b.icon:SetPoint("CENTER")

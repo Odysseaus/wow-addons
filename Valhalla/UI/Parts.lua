@@ -10,6 +10,12 @@
 --                                    the tool's (run out of combat, the key not passed on), else the key goes to
 --                                    the game (Style.KeysThrough: never set in combat).
 --   Parts.TwoClick(label, fn)        a button's OnClick for "click twice": the first shows "Sure?" for 3 s.
+--   Parts.QuestPoi(parent)           (1.2.45) Valhalla's own instance of the quest POI button the game's Objectives
+--                                    tracker uses (ObjectiveTrackerPOIButtonTemplate, else POIButtonTemplate); nil when
+--                                    this client has neither. Its click and hover are the caller's.
+--   Parts.PaintQuestPoi(b, q, style, selected)  that button styled as the tracker styles it (SetQuestID, SetStyle,
+--                                    SetSelected, UpdateButtonStyle): the in-progress, complete, campaign... look and
+--                                    the super-tracked glow are the game's own. Restyled only when one of them changed.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -100,4 +106,31 @@ function Parts.TwoClick(label, fn)
 			C_Timer.After(3, function() self.armed = nil self:SetText(label) end)
 		end
 	end
+end
+
+-- (1.2.45) the quest log's and Objectives tracker's own quest button. A mixin's methods sit on the frame
+-- itself: SetQuestID there means the template took.
+local POI_TEMPLATES = { "ObjectiveTrackerPOIButtonTemplate", "POIButtonTemplate" }
+function Parts.QuestPoi(parent)
+	if not CreateFrame then return end
+	for _, t in ipairs(POI_TEMPLATES) do
+		local ok, b = pcall(CreateFrame, "Button", nil, parent, t)
+		if ok and type(b) == "table" and type(rawget(b, "SetQuestID")) == "function" then
+			b.native, b.template = true, t
+			return b
+		end
+	end
+end
+
+function Parts.PaintQuestPoi(b, q, style, selected)
+	if not (b and q) then return end
+	selected = selected and true or false
+	local quest = b.painted ~= q
+	if quest then pcall(b.SetQuestID, b, q) end
+	if quest or b.paintedStyle ~= style or b.sel ~= selected then
+		pcall(b.SetStyle, b, style)
+		pcall(b.SetSelected, b, selected)
+		pcall(b.UpdateButtonStyle, b)
+	end
+	b.painted, b.paintedStyle, b.sel = q, style, selected
 end
