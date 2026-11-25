@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.53", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
+		"Shift-clicking a quest's pin (in the quest log or the Objectives panel) no longer pins or unpins it, so the Objectives panel doesn't change: it puts the quest's link in chat instead, opening the chat line if it's closed.",
+	} },
 	{ version = "1.2.52", date = "2026-11-24", heads = { [1] = "Fixed", [2] = "Changed", }, items = {
 		"Shift-clicking a quest's icon in the quest log with the chat closed opens the chat with the quest's link in it, and the Objectives panel no longer flickers (nothing is tracked or untracked).",
 		"The Objectives panel lists only this zone's quests (as the quest log files them) and your pinned ones: another zone's quest no longer joins because its objective area reaches here (e.g. Westfall's Goretusk Liver Pie and Westfall Stew in Redridge). Ready to Turn In still lists a ready quest you can hand in here.",

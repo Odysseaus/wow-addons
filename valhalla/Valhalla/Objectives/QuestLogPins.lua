@@ -105,7 +105,7 @@ function LP.IconHooked(b) return iconHooked[b] == true end
 local function PinFor(row)
 	local p = pins[row]
 	if not p then
-		p = O.MakePin(row)
+		p = O.MakePin(row, "quest log")
 		p:SetPoint("TOPLEFT", row, "TOPLEFT", LP.PIN_X, LP.PIN_Y)
 		pins[row] = p
 	end

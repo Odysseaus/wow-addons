@@ -1828,6 +1828,54 @@ do
   canOpen, chat, shift = true, false, false
   W.super = 0
 
+  print("-- (1.2.53) our pin: Shift-click links the quest, never pins or unpins; every pin click logged")
+  for _, surf in ipairs({ "quest log", "side panel" }) do
+    local pin = O.MakePin(UIParent, surf ~= "side panel" and surf or nil)
+    O.PaintPin(pin, 4)
+    local Pclick = pin._scripts.OnClick
+    -- chat closed, the line closing again on losing focus while empty (as in game)
+    loseFocus, shift, chat = true, true, false box:SetText("")
+    W.super = 0
+    local snapP, a0, r0, ops0 = list(W.watches), W.calls.add, W.calls.remove, #(mod.db.opsLog or {})
+    Pclick(pin, "LeftButton")
+    if loseFocus and chat and box.text == "" then chat = false end
+    Run(3)
+    ok(not O.IsPinned(4) and list(W.watches) == snapP and W.calls.add == a0 and W.calls.remove == r0 and #(mod.db.opsLog or {}) == ops0,
+      surf .. ": Shift-click, chat closed: not pinned, the panel unchanged, no watch call, nothing in opsLog", list(W.watches))
+    ok(chat and Links(4) == 1, surf .. ": the chat line opened with the quest's link in it once", box.text)
+    local d = Diag()
+    ok(d.source == "pin" and d.surface == surf and d.shift == true and d.toggled == false and d.act == "shift: link"
+      and d.link == "valhalla" and d.chatOpened == true and d.quest == 4,
+      surf .. ": diag: source pin, its surface, shift, not toggled, linked, chat opened", tostring(d.surface) .. " " .. tostring(d.link))
+    -- chat already open: linked again, still not toggled
+    Pclick(pin, "LeftButton")
+    ok(not O.IsPinned(4) and Links(4) == 2 and Diag().link == "valhalla" and Diag().chatOpened == false and Diag().toggled == false,
+      surf .. ": Shift-click with the chat open: linked, not toggled", box.text)
+    -- pinned quest: Shift-click doesn't unpin
+    mod.char.pinned[4] = true
+    Pclick(pin, "LeftButton")
+    ok(O.IsPinned(4) and Diag().toggled == false, surf .. ": a pinned quest: Shift-click doesn't unpin")
+    mod.char.pinned[4] = nil
+    -- a plain click still pins and unpins, and is logged
+    loseFocus, shift, chat = false, false, false box:SetText("")
+    Pclick(pin, "LeftButton")
+    ok(O.IsPinned(4) and Diag().act == "pin" and Diag().toggled == true and Diag().shift == false and Diag().source == "pin",
+      surf .. ": a plain click pins it (logged: pin, toggled)", tostring(Diag().act))
+    Pclick(pin, "LeftButton")
+    ok(not O.IsPinned(4) and Diag().act == "unpin" and Diag().toggled == true, surf .. ": and unpins it (logged)", tostring(Diag().act))
+    Pclick(pin, "RightButton")
+    ok(not O.IsPinned(4) and Diag().act == "unpin", surf .. ": a right-click does nothing, logs nothing")
+    Run(3)
+  end
+  do
+    local f = io.open((arg and arg[0] or ""):gsub("tests/objectives/objectives_test.lua$", "") .. "Valhalla/Objectives/QuestLogPins.lua")
+    local src = f and f:read("*a") or "" if f then f:close() end
+    ok(src:find('O.MakePin(row, "quest log")', 1, true) ~= nil, "the quest log's pins are made with surface \"quest log\" (QuestLogPins.lua)")
+  end
+  Click(4) ok(Diag().source == "icon" and Diag().surface == "quest log", "the game's icon: logged as source icon, quest log", tostring(Diag().source))
+  Click(4)
+  chat, shift, loseFocus = false, false, false box:SetText("")
+  W.super = 0
   print("-- Quest click: As Blizzard")
   mode = "blizzard" flights = {}
   Click(4)

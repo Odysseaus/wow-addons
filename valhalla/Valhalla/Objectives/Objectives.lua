@@ -1492,7 +1492,7 @@ function O.IconPost(q)
 	if not (ic and ic.q == q and ic.inClick) then return end
 	ic.inClick = false
 	local watched, super = Watched(q), Super()
-	local entry = { clock = date and date("%H:%M:%S") or nil, quest = q, shift = ic.shift or nil }
+	local entry = { clock = date and date("%H:%M:%S") or nil, source = "icon", surface = "quest log", quest = q, shift = ic.shift or nil }
 	if ic.shift then
 		entry.act = "shift: link"
 		entry.chatOpened = ic.chatOpened or false
@@ -1724,15 +1724,40 @@ local function PinTip(self)
 	GameTooltip:SetText(O.IsPinned(self.q) and L["Unpin"] or L["Pin: keep in list"], 1, 0.82, 0)
 	GameTooltip:Show()
 end
-local function PinClick(self)
-	if not self.q then return end
+-- (1.2.53) Shift + left-click on our pin never pins or unpins (in game a Shift-click here changed the panel:
+-- opsLog 19:17 "zone plan: pinned" then "not this place's"): it puts the quest's link in chat instead, the chat
+-- line opened first when it's closed (O.OpenChat, then the link straight into that line: O.PreLink, as 1.2.52's
+-- pre-click). Every pin click is logged in questLogIconDiag (source "pin", its surface, Shift, toggled, link)
+function O.PinLink(q)
+	if ChatOpen() then return O.InsertQuestLink(q) and "valhalla" or "none (no link)", false end
+	local opened = O.OpenChat()
+	if not ChatOpen() then return "none (no chat line)", false end
+	if O.PreLink(q) then return "valhalla", opened end
+	return O.InsertQuestLink(q) and "valhalla" or "none (no link)", opened
+end
+local function PinClick(self, button)
+	local q = self.q
+	if not q then return end
+	if button and button ~= "LeftButton" then return end
+	local shift = IsShiftKeyDown and IsShiftKeyDown() and true or false
+	local entry = { clock = date and date("%H:%M:%S") or nil, source = "pin", surface = self.surface or "side panel", quest = q, shift = shift }
+	if shift then
+		entry.act, entry.toggled = "shift: link", false
+		entry.link, entry.chatOpened = O.PinLink(q)
+		O.IconDiag(entry)
+		return
+	end
 	if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
-	O.SetPinned(self.q, not O.IsPinned(self.q))
+	local on = not O.IsPinned(q)
+	O.SetPinned(q, on)
+	entry.act, entry.toggled = on and "pin" or "unpin", true
+	O.IconDiag(entry)
 	if GameTooltip and GameTooltip:IsOwned(self) then PinTip(self) end
 end
 
-local function MakePin(parent)
+local function MakePin(parent, surface)
 	local b = CreateFrame("Button", nil, parent or UIParent)
+	b.surface = surface or "side panel"   -- (1.2.53: for the click log)
 	b:SetSize(O.PIN_SIZE, O.PIN_SIZE)
 	b.icon = b:CreateTexture(nil, "ARTWORK")
 	b.icon:SetAllPoints()
