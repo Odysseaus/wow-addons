@@ -95,14 +95,14 @@ local function Super()
 	local get = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID
 	return get and ns.Safe and ns.Safe.Call(get) or nil
 end
-local function NoteClick(q, how, before, watchedBefore, act, ok, err)
+local function NoteClick(q, how, before, watchedBefore, act, ok, err, src)
 	local db = rawget(_G, "ValhallaDB")
 	if type(db) ~= "table" then return end
 	local log = db.questClickDiag
 	if type(log) ~= "table" then log = {} db.questClickDiag = log end
 	log[#log + 1] = {
 		quest = q, how = how, act = act, before = before, after = Super(), ok = ok, err = err and tostring(err) or nil,
-		watchedBefore = watchedBefore, watchedAfter = Watched(q),
+		watchedBefore = watchedBefore, watchedAfter = Watched(q), src = src,
 		clock = date and date("%H:%M:%S") or nil,
 	}
 	while #log > CLICK_LOG do table.remove(log, 1) end
@@ -177,7 +177,7 @@ local function Click(pin)
 		else
 			ok, err = pcall(C_SuperTrack.SetSuperTrackedQuestID, id)
 		end
-		NoteClick(id, how, before, watchedBefore, act, ok, not ok and err or nil)
+		NoteClick(id, how, before, watchedBefore, act, ok, not ok and err or nil, q.src)
 		if ok and act == "select" then
 			local r = mod.RevealQuestInLog(id)
 			local log = rawget(_G, "ValhallaDB") and ValhallaDB.questClickDiag
@@ -189,10 +189,107 @@ local function Click(pin)
 		local now = true
 		local ran = C.Run("supertrack", function() Run(now and "now" or "queued") end, L["Tracking changed in combat: it applies when combat ends."])
 		now = false
-		if not ran then NoteClick(id, "waiting", before, watchedBefore, act, true) end
+		if not ran then NoteClick(id, "waiting", before, watchedBefore, act, true, nil, q.src) end
 	elseif not (InCombatLockdown and InCombatLockdown()) then
 		Run("now")
 	end
+end
+
+--------------------------------------------------------------------------------
+-- (1.2.57) the game's own quest pins (QuestPinTemplate, on the map underneath: its quests and the selected
+-- quest's waypoint) click as Valhalla's do. Called from the map's global pin mouse handler (Map/WorldMap.lua:
+-- OnBlizzardPinAction, after the Ctrl / pin-mode drop), which Blizzard runs before a pin's own action
+-- (MapCanvasPinMixin:OnClick / OnMouseDown) and stops it when this returns true. A left-button mouse down
+-- or click on a quest pin: the game's action is stopped (no watch, no super-track, no ping, no sound, no
+-- chat link of its own); on the click, Valhalla's Click for its quest (select / clear, through CombatQueue),
+-- or with Shift a chat link when the chat is already open (closed: nothing). Mouse up and other buttons go
+-- through. Only read from the game's pins: nothing set on them. Each is noted in ValhallaDB.questPinDiag.
+--------------------------------------------------------------------------------
+local PIN_TEMPLATE = "QuestPinTemplate"
+local PIN_DIAG_KEEP = 20
+local function Read(t, k)
+	if type(t) ~= "table" then return nil end
+	local ok, v = pcall(function() return t[k] end)
+	return ok and v or nil
+end
+local function Call(t, m)
+	local f = Read(t, m)
+	if type(f) ~= "function" then return nil end
+	local ok, v = pcall(f, t)
+	return ok and v or nil
+end
+local function PinDiag(entry)
+	local db = rawget(_G, "ValhallaDB")
+	if type(db) ~= "table" then return end
+	local log = db.questPinDiag
+	if type(log) ~= "table" then log = {} db.questPinDiag = log end
+	entry.clock = date and date("%H:%M:%S") or nil
+	log[#log + 1] = entry
+	while #log > PIN_DIAG_KEEP do table.remove(log, 1) end
+end
+local function ChatOpen()
+	local CU = rawget(_G, "ChatFrameUtil")
+	local get = (type(CU) == "table" and CU.GetActiveWindow) or rawget(_G, "ChatEdit_GetActiveWindow")
+	if type(get) ~= "function" then return false end
+	local ok, w = pcall(get)
+	return ok and w ~= nil or false
+end
+local function LinkIfChat(id)
+	if not ChatOpen() then return "nothing (chat closed)" end
+	local CU = rawget(_G, "ChatFrameUtil")
+	local try = (type(CU) == "table" and CU.TryInsertQuestLinkForQuestID) or rawget(_G, "ChatEdit_TryInsertQuestLinkForQuestID")
+	if type(try) ~= "function" or not id then return "no link" end
+	local ok, done = pcall(try, id)
+	return ok and done and "link" or "no link"
+end
+local function Describe(f)
+	if type(f) ~= "table" then return tostring(f) end
+	return tostring(Call(f, "GetDebugName") or Call(f, "GetName") or Read(f, "pinTemplate") or "frame")
+end
+-- the quest pin the mouse is on: the mouse focus (the topmost), else (logged as a miss) a shown quest pin
+-- that the mouse is over though the focus is something else
+local function GameQuestPin(m)
+	local foci = rawget(_G, "GetMouseFoci") and select(2, pcall(GetMouseFoci))
+	local focus = type(foci) == "table" and foci[1] or nil
+	if Read(focus, "pinTemplate") == PIN_TEMPLATE then return focus, "focus" end
+	local enum = Read(m, "EnumeratePinsByTemplate")
+	if type(enum) == "function" then
+		local ok, iter, st, ctl = pcall(enum, m, PIN_TEMPLATE)
+		if ok and type(iter) == "function" then
+			for pin in iter, st, ctl do
+				if Call(pin, "IsShown") and Call(pin, "IsMouseOver") then return pin, "over", focus end
+			end
+		end
+	end
+	return nil, nil, focus
+end
+local function PinAction(m, action, button)
+	if button ~= "LeftButton" then return false end
+	local MA = rawget(_G, "MapCanvasMixin") and MapCanvasMixin.MouseAction
+	if type(MA) ~= "table" or (action ~= MA.Down and action ~= MA.Click) then return false end
+	local pin, how, focus = GameQuestPin(m)
+	if not pin then return false end
+	local id = Read(pin, "questID")
+	local click = action == MA.Click
+	if click then
+		local entry = { quest = id, how = how, waypoint = Read(pin, "isWaypoint") and true or nil }
+		if how ~= "focus" then entry.act = "guard-miss" entry.focus = Describe(focus) end
+		if IsShiftKeyDown and IsShiftKeyDown() then
+			entry.shift = LinkIfChat(id)
+		elseif id then
+			entry.click = Super() == id and "clear" or "select"
+			Click({ data = { id = id, src = "game" } })
+		else
+			entry.click = "no quest"
+		end
+		PinDiag(entry)
+	end
+	return true
+end
+function mod.GameQuestPinAction(m, action, button)
+	local ok, stop = pcall(PinAction, m, action, button)
+	if not ok then PinDiag({ act = "error", err = tostring(stop) }) return false end   -- (an error: the game's own click)
+	return stop and true or false
 end
 
 -- the game's button on a pin, made once per pooled pin. The mouse stays on the pin (its Enter and Click);
@@ -246,17 +343,18 @@ function mod:RefreshQuests()
 	if host then hl, hr, ht, hb = S.Rect(host) end
 	local seen = {}
 	local live = {}
-	-- (1.2.40) the map underneath is included too, so its in-progress and complete badges sit on
-	-- Valhalla's quest set (level 5), above townsfolk (level 3). A quest already drawn on that map
-	-- is not drawn again from a neighbour. Blizzard's own pins are not moved or hidden.
+	-- (1.2.57) the map underneath is skipped again, as before 1.2.40: its quests are the game's own pins
+	-- only (one icon each, the game's tooltip with the level), and a click on those is Valhalla's
+	-- (mod.GameQuestPinAction). A quest already drawn by the game there is not drawn again from a
+	-- neighbour. Blizzard's own pins are not moved or hidden.
 	for _, mapID in ipairs(Maps()) do
-		for _, q in ipairs(C_QuestLog.GetQuestsOnMap(mapID) or NONE) do
+		for _, q in ipairs(mapID ~= host and C_QuestLog.GetQuestsOnMap(mapID) or NONE) do
 			local id = q.questID
 			if id and q.x and q.y and not q.isMapIndicatorQuest and (not G("HaveQuestData") or G("HaveQuestData")(id))
 				and not (continent and id == tracked) then
 				local u, v = mod.ToWorld(mapID, q.x, q.y)
 				local key = u and (id .. ":" .. math.floor(u / SAME) .. ":" .. math.floor(v / SAME))
-				local onHost = mapID ~= host and u and hostQuests[id] and hl and u >= hl and u <= hr and v >= ht and v <= hb
+				local onHost = u and hostQuests[id] and hl and u >= hl and u <= hr and v >= ht and v <= hb
 				if key and not seen[key] and not onHost then
 					seen[key] = true
 					local complete = C_QuestLog.IsComplete and C_QuestLog.IsComplete(id) or false

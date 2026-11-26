@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.57", date = "2026-11-26", heads = { [1] = "Changed", }, items = {
+		"Quest icons on the zone you're looking at are the game's own again, one per quest (its tooltip with the quest's level), with no Valhalla copy on top. Clicking one does what Valhalla's quest icons do: it selects the quest, showing its area and the minimap waypoint, and a second click clears it. It never tracks or untracks a quest. Shift-click adds the quest's link only when the chat is already open. Quests in the neighbouring zones keep Valhalla's icons.",
+	} },
 	{ version = "1.2.56", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
 		"Quest icons on the map are up to date the moment you open it: a quest completed (or changed) while the map was closed shows at its new place at once, instead of its old place for half a second first.",
 	} },

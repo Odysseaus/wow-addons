@@ -44,7 +44,7 @@ local S = {
 		return pin
 	end,
 }
-local host = 1433
+local host = 1436                -- (1.2.57: the map underneath gets no Valhalla copies; the quests are on 1433, a neighbour)
 local mod = { defaults = {}, db = { allQuests = true } }
 mod.HostMap = function() return host end
 mod.IsStitched = function() return true end
@@ -127,10 +127,10 @@ print("== 4. the map underneath set later in the opening frame: looked at again 
 Close()
 draws = 0
 Open()
-host = 1436
+host = 1437
 Advance(0)
 ok(draws == 1, "the host changed after the opening: redrawn next frame", draws)
-host = 1433
+host = 1436
 Advance(1)
 
 print("== 5. the open map: a burst waits EVERY (one redraw); OnMapChanged still redraws")

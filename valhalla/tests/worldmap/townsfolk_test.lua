@@ -430,7 +430,7 @@ C_QuestLog = {
 }
 local superQ = 43
 C_SuperTrack = { GetSuperTrackedQuestID = function() return superQ end }
-mod.HostMap = function() return 1453 end
+mod.HostMap = function() return 1519 end   -- (1.2.57: the map underneath gets no copies, so both zones here are neighbours)
 mod.IsStitched = function() return true end
 mod.PadWaits = function() return false end
 mod.ToWorld = function(_, x, y) return x, y end
@@ -484,7 +484,7 @@ assert(loadfile(root .. "Map/Quests.lua"))("Valhalla", ns)
 mod:RefreshQuests()
 local byQ = {}
 for _, p in ipairs(qset.pins) do if p.poi then byQ[p.poi._q] = p end end
-ok(#qset.pins == 2 and byQ[42] and byQ[43], "a quest on the host map and one in the next zone are both drawn", #qset.pins)
+ok(#qset.pins == 2 and byQ[42] and byQ[43], "a quest in each of two neighbouring zones: both drawn", #qset.pins)
 ok(byQ[42] and byQ[42].poi._template == "ObjectiveTrackerPOIButtonTemplate" and byQ[42].poi._parent == byQ[42] and byQ[42].poi._anchor == byQ[42],
 	"each icon is Valhalla's own ObjectiveTrackerPOIButtonTemplate button, on the pin")
 ok(byQ[42] and byQ[42].poi._style == 3 and byQ[43].poi._style == 2, "complete and in progress: the style POIButtonUtil.GetStyle gives (as the map and log)",
@@ -578,8 +578,15 @@ ok(watchCalls == 0 and watched[42] and not watched[43], "after every click: the 
 for i = 1, 25 do byQ[43].OnClick(byQ[43]) end
 ok(#ValhallaDB.questClickDiag == 20, "questClickDiag keeps the last 20", #ValhallaDB.questClickDiag)
 ok(not qSrc:find("AddQuestWatch", 1, true) and not qSrc:find("RemoveQuestWatch", 1, true) and not qSrc:find("POIButtonMixin", 1, true)
-	and not qSrc:find("TryInsertQuestLink", 1, true) and not qSrc:find("ShowQuestDetails", 1, true),
-	"Quests.lua names no watch call, the game's click, a chat link or quest details")
+	and not qSrc:find("ShowQuestDetails", 1, true),
+	"Quests.lua names no watch call, the game's click or quest details")
+-- (1.2.57) the one chat link: Shift on a game quest pin, only with the chat already open (LinkIfChat)
+local _, linkCount = qSrc:gsub("TryInsertQuestLink", "")
+local linkFn = qSrc:match("local function LinkIfChat%(id%)(.-)\nend\n")
+local _, inFn = (linkFn or ""):gsub("TryInsertQuestLink", "")
+ok(linkCount >= 1 and inFn == linkCount and linkFn and linkFn:find("if not ChatOpen() then return", 1, true)
+	and linkFn:find("if not ChatOpen() then return", 1, true) < linkFn:find("TryInsertQuestLink", 1, true),
+	"Quests.lua's only chat link is LinkIfChat's, after its chat-open check", linkCount)
 -- (1.2.49) a map selection is shown in the quest log: its header expanded, scrolled to; closed: when it opens
 local expandedQ, scrolledQ, onShow = {}, {}, nil
 local logShown = true
