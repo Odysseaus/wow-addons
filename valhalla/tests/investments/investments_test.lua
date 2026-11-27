@@ -1058,7 +1058,7 @@ do
   function GetSubZoneText() return "The Commons" end
   function GetRealZoneText() return "Ironforge" end
   function UnitFactionGroup() return "Alliance" end
-  I.realm.ah = nil
+  I.db.account.ah = {}
   I.db.account.replicateAt = nil
   W.replicateThrottled = false
   W.throttleReady = true
@@ -1068,7 +1068,7 @@ do
   A.Refresh()
   local ck = A.Panel().check
   ok(ck.button.text._text == "Scan" and ck.status._text:find("Full scan ready"), "the AH list: one Scan button, 'Full scan ready'", ck.status._text)
-  ok(Sc.House() == "Alliance" and I.realm.ahLast == "Alliance", "this house: Alliance (remembered for AH Market)")
+  ok(Sc.House() == "Alliance" and I.db.account.ahLast == "Alliance", "this house: Alliance (remembered for AH Market)")
   ns.printed = {}
   W.Click(ck.button)
   local run = Sc.run
@@ -1150,12 +1150,12 @@ do
 
   print("-- (1.2.20) huge prices, a save in one go, Stop asks first, the last attempt, the 3 MB trim, the house followed")
   ;(function()   -- (its own function: the main chunk is at its 200 locals)
-    local keepAlliance, keepHouse, keepLast, keepRealmLast = I.realm.ah.Alliance, I.S.marketHouse, Sc.last, I.realm.scanLast
-    local keepHordeM, keepNeutralM = I.realm.ah.Horde, I.realm.ah.Neutral
+    local keepAlliance, keepHouse, keepLast, keepRealmLast = I.db.account.ah.Alliance, I.S.marketHouse, Sc.last, I.db.account.scanLast
+    local keepHordeM, keepNeutralM = I.db.account.ah.Horde, I.db.account.ah.Neutral
     local keepInfo = CA.GetReplicateItemInfo
     local keepSearch, keepFull, keepResults = CA.SearchForItemKeys, CA.HasFullBrowseResults, CA.GetBrowseResults
     local keepNow, keepClock = W.now, W.clock
-    I.realm.ah.Alliance = nil
+    I.db.account.ah.Alliance = nil
     W.Fire("AUCTION_HOUSE_SHOW")   -- (the Alliance AH, open again)
     local rows, names = {}, { [9001] = "Bad Idea Blade", [9002] = "Linen Cloth", [9003] = "Copper Ore" }
     CA.GetReplicateItemInfo = function(i)
@@ -1232,7 +1232,7 @@ do
     am.cur[9100], am.hist[9100] = nil, nil
     -- 7. the 3 MB trim: the oldest scans sharing a time (as in a real market) no longer stall it
     local tm7 = { base = am.base, scans = {}, cur = {}, hist = {} }
-    I.realm.ah.Horde = tm7
+    I.db.account.ah.Horde = tm7
     for _, t in ipairs({ 0, 0, 0, 0, 16, 60, 120, 180, 240, 300 }) do tm7.scans[#tm7.scans + 1] = { t = t, kind = "full", n = 1, items = 1 } end
     for id = 1, 1500 do
       local h = {}
@@ -1247,7 +1247,7 @@ do
       "over the cap, oldest scans at one time: under it in a few passes (a running total), the newest scan kept", ("%d passes, %d -> %d"):format(passes, size0, after))
     ok(steps >= passes * 2, "  trimmed a little at a time (a scan yields there between frames)", steps)
     I.S.histCapMB = 3
-    I.realm.ah.Horde = keepHordeM
+    I.db.account.ah.Horde = keepHordeM
     -- 8. ...and the 7 days still go first
     local tm8 = { base = am.base, scans = { { t = tm - 8 * 1440, kind = "full" }, { t = tm, kind = "full" } }, cur = {}, hist = { [1] = ("%d:5:1:1;%d:6:1:1"):format(tm - 8 * 1440, tm) } }
     Sc.Prune(tm8)
@@ -1273,7 +1273,7 @@ do
     ok(not Sc.Running() and r9.state == "stopped" and Printed("Full scan stopped. Nothing saved."), "  and a second within 3 s stops it")
     -- 10. the last attempt shown (and kept over a /reload) until a scan finishes
     local la = Sc.LastAttemptText()
-    ok(la and la:find("^Last attempt: full scan stopped just now %(Alliance%): you stopped it%. Nothing saved%.") and I.realm.scanLast.state == "stopped", "the last attempt and why, saved for the realm", la)
+    ok(la and la:find("^Last attempt: full scan stopped just now %(Alliance%): you stopped it%. Nothing saved%.") and I.db.account.scanLast.state == "stopped", "the last attempt and why, saved account-wide", la)
     Sc.last = nil
     local nListeners, keepShown = #I.listeners, Sc.shown
     local host = CreateFrame("Frame", nil, nil) I.Views.BuildMarket(host)
@@ -1300,7 +1300,7 @@ do
     ok(Mk.House() == "Neutral" and Sc.House() == "Neutral", "  at Booty Bay's AH: Neutral", Mk.House())
     FullScan({ { id = 9002, count = 1, buyout = 7 } })
     ok(Mk.House() == "Neutral" and Sc.Cur("Neutral", 9002).min == 7 and Mk.Lines(9002)[1]:find("Neutral"), "  scanned there: Neutral's prices shown, in the tooltip too", Mk.Lines(9002)[1])
-    I.realm.ah.Neutral = keepNeutralM
+    I.db.account.ah.Neutral = keepNeutralM
     function GetSubZoneText() return "The Commons" end
     function GetRealZoneText() return "Ironforge" end
     W.Fire("AUCTION_HOUSE_SHOW")
@@ -1308,8 +1308,8 @@ do
     -- put back what the tests after read
     CA.GetReplicateItemInfo = keepInfo
     CA.SearchForItemKeys, CA.HasFullBrowseResults, CA.GetBrowseResults = keepSearch, keepFull, keepResults
-    I.realm.ah.Alliance = keepAlliance
-    I.S.marketHouse, Sc.last, I.realm.scanLast = keepHouse, keepLast, keepRealmLast
+    I.db.account.ah.Alliance = keepAlliance
+    I.S.marketHouse, Sc.last, I.db.account.scanLast = keepHouse, keepLast, keepRealmLast
     W.now, I.db.account.replicateAt = keepNow, nil
     W.clock = keepClock   -- (the stub clock as it was: the later budget tests count 0.2 ms steps, and 40 x 0.2 rounds differently past 32,768)
     I.NameLoader.Stop("background")
@@ -1350,7 +1350,7 @@ do
   W.Fire("AUCTION_HOUSE_CLOSED")
   function GetSubZoneText() return "The Commons" end
   function GetRealZoneText() return "Ironforge" end
-  I.realm.ahLast = "Horde"
+  I.db.account.ahLast = "Horde"
   ok(Mk.House() == "Neutral" and I.S.marketHouse == "Neutral", "(1.2.20) AH Market's house: the Auction House you visited last (Booty Bay: Neutral)", Mk.House())
   I.S.marketHouse = "Horde"   -- (picked with the Horde button: kept in the settings)
 
@@ -4765,20 +4765,24 @@ do
   ok(NoJunk(db) and Keys(db) == "[" .. REALM .. "],[Tentri's]", "the blank and '?' realms merged in and gone (another character's realm left alone)", Keys(db))
   ok(N(r.targets) == 4 and r.targets[13422].buy == 100 and r.targets[2589].buy == 12 and r.targets[249424].sell == 1500 and r.targets[777],
     "the Watchlist: every item once; the same item in both: the one set last")
-  local A = r.ah.Alliance
+  local A = db.account.ah.Alliance
   ok(#A.scans == 3 and A.scans[1].t == 6393 and A.scans[2].t == 14224 and A.scans[3].t == shift and A.scans[3].n == 199897 and A.base == 29905762,
-    "scans: all three, in time order, on the old base")
+    "scans: all three, in time order, on the old base, in the shared account store")
   ok(A.hist[15347] == "6393:2599:6:6;14224:2599:6:6;" .. shift .. ":2222:9:9" and A.hist[250607] == shift .. ":23800:6:6", "history: the points in time order, moved to the old base", A.hist[15347])
-  ok(A.cur[15347] == "2222,9,9," .. shift and A.cur[7610] == "5000,1,1,14224" and A.cur[250607] == "23800,6,6," .. shift and r.ah.Neutral.cur[1] == "1,1,1,0",
+  ok(A.cur[15347] == "2222,9,9," .. shift and A.cur[7610] == "5000,1,1,14224" and A.cur[250607] == "23800,6,6," .. shift and db.account.ah.Neutral.cur[1] == "1,1,1,0",
     "now prices: the newer wins; the rest kept; Neutral as it was", A.cur[15347])
+  ok(r.ah == nil and r.scanLast == nil and db.account.shareMigrated == "1.2.58" and db.account.scanLast.at == 200,
+    "1.2.58: realm AH cleared; scanLast and shareMigrated on the account")
   ok(Sc.Cur("Alliance", 15347).min == 2222 and #Sc.Points("Alliance", 15347) == 3, "AH Market reads the merged market")
   local c = r.chars.Odysseaus
+  ok(N(c.targets) == 4 and c.targets[2589].buy == 12,
+    "1.2.58: Odysseaus's Watchlist is this character's copy of the merged targets")
   ok(c.bags[3] == 3 and c.bags[1] == nil and c.bagsSeen == 200 and c.bank[2] == 2 and c.bankSeen == 100 and c.known[182] == 1,
     "the character: the newer bags, the bank kept (none newer), known kept")
   ok(#c.lists == 2 and c.lists[1].id == 7 and c.lists[2].name == "New" and c.lists[2].id == 8 and c.nextList == 9 and c.activeList == "none",
     "lists: the same list once, the new one added with a new id")
-  ok(r.merchants[6790].items[1] == 10 and r.merchants[6790].items[2] == 5 and r.merchants[99] and r.scanLast.at == 200,
-    "merchants: added and filled in; the last scan's note the newer one")
+  ok(r.merchants[6790].items[1] == 10 and r.merchants[6790].items[2] == 5 and r.merchants[99] and db.account.scanLast.at == 200,
+    "merchants: added and filled in; the last scan's note the newer one (account.scanLast)")
   local log = db.account.realmMerges
   ok(type(log) == "table" and #log == 2 and log[1].from == "" and log[1].targets == 1 and log[1].scans == 1 and log[1].lists == 1 and log[2].from == "?" and log[2].into == REALM,
     "what was merged: kept in the saved data")
@@ -4841,13 +4845,13 @@ do
   local db = _G.ValhallaInvestDB
   local r = db.realms[R8]
   ok(Keys(db) == "[" .. R8 .. "]" and I.realm == r and I.realmInfo.why == "the saved realm with this character", "Vaelan: the saved realm, 1.2.29's \"Thunderbuns\" gone", Keys(db) .. " " .. tostring(I.realmInfo and I.realmInfo.why))
-  ok(N(r.targets) == 21, "the Watchlist: 21", N(r.targets))
-  local A = r.ah.Alliance
+  ok(N(r.targets) == 21 and N(r.chars.Vaelan.targets) == 21, "the Watchlist: 21 (copied onto Vaelan)", N(r.chars.Vaelan.targets))
+  local A = db.account.ah.Alliance
   local shift = baseTB - base8
-  ok(#A.scans == 3 and A.scans[3].t == shift and A.scans[3].n == 199897 and A.scans[1].t == 100,
-    "today's scan added after the old ones (time order, the old base)")
-  ok(A.hist[15347] == "100:2599:6:6;19900:2599:6:6;" .. shift .. ":2222:9:9" and A.cur[15347] == "2222,9,9," .. shift and A.cur[7610] == "5000,1,1,19900",
-    "history in time order; the newer price", A.hist[15347])
+  ok(A and r.ah == nil and A.scans[#A.scans].t == shift and A.scans[#A.scans].n == 199897,
+    "today's scan is last in the shared store (the 7-day prune at migrate may drop older points)", A and #A.scans)
+  ok(A.hist[15347] == "19900:2599:6:6;" .. shift .. ":2222:9:9" and A.cur[15347] == "2222,9,9," .. shift and A.cur[7610] == "5000,1,1,19900",
+    "history in time order after the 7-day prune; the newer price", A.hist[15347])
   local c = r.chars.Vaelan
   ok(c.bags[3] == 3 and c.bagsSeen == AT + 1 and c.bank[4] == 4, "the newer bags and bank")
   ok(#c.lists == 2 and c.lists[1].name == "Reagent Buy Targets" and c.lists[2].name == "List 1" and c.lists[2].id == 8 and c.nextList == 9,

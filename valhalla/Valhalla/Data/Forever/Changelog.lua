@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.58", date = "2026-11-27", heads = { [1] = "Changed", }, items = {
+		"Auction House scans (Top 10, Scan Results and History) are shared by every character: one market each for the Alliance, Horde and Neutral houses. Watchlist targets stay this character's. Scans that had been saved under different names for the same realm are brought together once, so an alt sees the same prices without scanning again.",
+	} },
 	{ version = "1.2.57", date = "2026-11-26", heads = { [1] = "Changed", }, items = {
 		"Quest icons on the zone you're looking at are the game's own again, one per quest (its tooltip with the quest's level), with no Valhalla copy on top. Clicking one does what Valhalla's quest icons do: it selects the quest, showing its area and the minimap waypoint, and a second click clears it. It never tracks or untracks a quest. Shift-click adds the quest's link only when the chat is already open. Quests in the neighbouring zones keep Valhalla's icons.",
 	} },

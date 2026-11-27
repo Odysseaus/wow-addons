@@ -76,12 +76,15 @@ local function Fill(t, d)
 	return t
 end
 
--- (1.2.14) realms[realm].targets = { [itemID] = { house, buy, sell, set, added, lastMet, lastSig, lastPrice, alerted } }: the
--- Watchlist (Watch.lua), kept until changed
--- ValhallaInvestDB: { v, settings, diag = { ... }, account = { bank, bankSeen, bankInfo },
+-- (1.2.58) Watchlist: realms[realm].chars[name].targets[itemID] = { house, buy, sell, set, added, lastMet,
+--   lastSig, lastPrice, alerted } (this character). Auction House markets: account.ah[house] = { base, scans,
+--   cur, hist }, plus account.scanLast and account.ahLast, shared by every character. (1.2.57 and before:
+--   realms[realm].targets and realms[realm].ah[house], which split when the game named the realm two ways.)
+-- ValhallaInvestDB: { v, settings, diag = { ... }, account = { bank, bankSeen, bankInfo, names, ah, scanLast,
+--   ahLast, replicateAt, shareMigrated, shareMigrateDiag },
 --   realms = { [realm] = { chars = { [name] = { bags, bank, bankSeen, bankInfo, want (v0.3.1's, kept, unused),
 --     lists = { { id, name, created, items = { { id, n, name } } } }, activeList (an id or "none"), nextList, draft,
---     mail = { [itemID] = { n, t, bought } } } }, merchants = { [npcID] = { name, items = { [itemID] = price } } } } } }
+--     mail = { [itemID] = { n, t, bought } }, targets } } }, merchants = { [npcID] = { name, items = { [itemID] = price } } } } } }
 function I.InitDB()
 	local db = type(_G.ValhallaInvestDB) == "table" and _G.ValhallaInvestDB or {}
 	_G.ValhallaInvestDB = db
@@ -93,9 +96,10 @@ function I.InitDB()
 	db.realms = type(db.realms) == "table" and db.realms or {}
 	db.account.names = type(db.account.names) == "table" and db.account.names or {}   -- (1.2.7: item names seen, for the search)
 	I.db = db
+	I.S = db.settings
 	I.RepairRealms()   -- (1.2.30)
 	I.UseRealm(I.FindRealm())   -- (1.2.29: none yet while the game hasn't named the realm: I.WhenRealm waits)
-	I.S = db.settings
+	I.ShareMigrate()   -- (1.2.58: after UseRealm so junk-realm merges finish first; then one shared AH, Watchlist per character)
 	I.S.buyGuard, I.S.buyDebug = nil, nil   -- (1.2.10: the cart's price guard and buy debug are gone)
 	-- (1.0.1) Reagents: Owned: vendor is gone: Market; Craft's Known column is gone: its sort, the default
 	if I.S.craftOwned ~= "market" and I.S.craftOwned ~= "free" then I.S.craftOwned = "market" end
@@ -231,6 +235,9 @@ function I.UseRealm(key, why, me, said)
 	c.bank = c.bank or {}
 	c.want = c.want or {}
 	c.mail = c.mail or {}
+	if I.db.account.shareMigrated then
+		c.targets = type(c.targets) == "table" and c.targets or {}   -- (1.2.58: after the migrate; empty if this character is new)
+	end
 	I.realm, I.char, I.me = r, c, me
 	I.MigrateLists(c)
 	if mod.char then
@@ -303,12 +310,14 @@ function I.MergeChar(d, s)
 	return added
 end
 
--- a realm's saved data from src into dst: the Watchlist (the same item in both: the one set last), merchants and
--- their prices d lacks, each house's market (I.Scan.MergeMarket: scans and points in time order, the newer "now"),
--- the last scan's note when newer, each character (I.MergeChar). Returns what came in
+-- a realm's saved data from src into dst: merchants and their prices d lacks, each character (I.MergeChar).
+-- (1.2.58) After the shared-AH migrate, each house's market and the last scan go into account.ah / account.scanLast
+-- (I.TakeAH), not back onto a realm. Before that, the Watchlist, markets and last scan still merge on the realm
+-- (RepairRealms / a first UseRealm). Returns what came in
 function I.MergeRealm(dst, src)
 	local n = { targets = 0, lists = 0, scans = 0, items = 0, chars = 0, merchants = 0 }
-	if type(src.targets) == "table" then
+	local shared = I.db and I.db.account and I.db.account.shareMigrated
+	if type(src.targets) == "table" and not shared then
 		dst.targets = type(dst.targets) == "table" and dst.targets or {}
 		for id, t in pairs(src.targets) do
 			local o = dst.targets[id]
@@ -330,23 +339,36 @@ function I.MergeRealm(dst, src)
 		end
 	end
 	if type(src.ah) == "table" then
-		dst.ah = type(dst.ah) == "table" and dst.ah or {}
-		for house, m in pairs(src.ah) do
-			if type(m) == "table" then
-				if type(dst.ah[house]) ~= "table" then
-					dst.ah[house] = m
-					n.scans = n.scans + #(m.scans or {})
-					for _ in pairs(m.hist or {}) do n.items = n.items + 1 end
-				else
-					local s, i = I.Scan.MergeMarket(dst.ah[house], m)
-					n.scans, n.items = n.scans + s, n.items + i
+		if shared then
+			local s, i = I.TakeAH(src.ah)
+			n.scans, n.items = n.scans + s, n.items + i
+		else
+			dst.ah = type(dst.ah) == "table" and dst.ah or {}
+			for house, m in pairs(src.ah) do
+				if type(m) == "table" then
+					if type(dst.ah[house]) ~= "table" then
+						dst.ah[house] = m
+						n.scans = n.scans + #(m.scans or {})
+						for _ in pairs(m.hist or {}) do n.items = n.items + 1 end
+					else
+						local s, i = I.Scan.MergeMarket(dst.ah[house], m)
+						n.scans, n.items = n.scans + s, n.items + i
+					end
 				end
 			end
 		end
 	end
-	if dst.ahLast == nil then dst.ahLast = src.ahLast end
-	if type(src.scanLast) == "table" and (type(dst.scanLast) ~= "table" or (tonumber(src.scanLast.at) or 0) > (tonumber(dst.scanLast.at) or 0)) then
-		dst.scanLast = src.scanLast
+	if shared then
+		local acct = I.db.account
+		if acct.ahLast == nil then acct.ahLast = src.ahLast end
+		if type(src.scanLast) == "table" and (type(acct.scanLast) ~= "table" or (tonumber(src.scanLast.at) or 0) > (tonumber(acct.scanLast.at) or 0)) then
+			acct.scanLast = src.scanLast
+		end
+	else
+		if dst.ahLast == nil then dst.ahLast = src.ahLast end
+		if type(src.scanLast) == "table" and (type(dst.scanLast) ~= "table" or (tonumber(src.scanLast.at) or 0) > (tonumber(dst.scanLast.at) or 0)) then
+			dst.scanLast = src.scanLast
+		end
 	end
 	if type(src.chars) == "table" then
 		dst.chars = type(dst.chars) == "table" and dst.chars or {}
@@ -358,6 +380,113 @@ function I.MergeRealm(dst, src)
 		end
 	end
 	return n
+end
+
+-- (1.2.58) a house's market into the shared account store (time-shifted onto the store's base; the newer "now")
+function I.TakeAH(srcAh)
+	local acct = I.db and I.db.account
+	if not (acct and I.Scan and I.Scan.MergeMarket) then return 0, 0 end
+	acct.ah = type(acct.ah) == "table" and acct.ah or {}
+	local scans, items = 0, 0
+	if type(srcAh) ~= "table" then return 0, 0 end
+	for house, m in pairs(srcAh) do
+		if type(m) == "table" and I.Scan.IsHouse(house) then
+			if type(acct.ah[house]) ~= "table" then
+				acct.ah[house] = { base = tonumber(m.base) or math.floor((ns.Util.Time and ns.Util.Time() or 0) / 60), scans = {}, cur = {}, hist = {} }
+			end
+			local s, i = I.Scan.MergeMarket(acct.ah[house], m)
+			scans, items = scans + s, items + i
+		end
+	end
+	return scans, items
+end
+
+local function CopyTargets(src)
+	local out = {}
+	if type(src) ~= "table" then return out end
+	for id, t in pairs(src) do
+		if type(t) == "table" then
+			local c = {}
+			for k, v in pairs(t) do c[k] = v end
+			out[id] = c
+		end
+	end
+	return out
+end
+
+local function CountKeys(t)
+	local n = 0
+	if type(t) == "table" then for _ in pairs(t) do n = n + 1 end end
+	return n
+end
+
+-- (1.2.58) one-time: every realm's Auction House markets into account.ah (per house), the newest scanLast
+-- kept, history trimmed to histDays / histCapMB; each existing character gets a copy of that realm's
+-- Watchlist (a realm with none: an empty list). Idempotent (account.shareMigrated). Writes
+-- account.shareMigrateDiag. Then drops realm.ah / scanLast / ahLast so a realm-name split cannot fork scans again.
+function I.ShareMigrate()
+	local db = I.db
+	if not (db and db.account) then return end
+	db.account.ah = type(db.account.ah) == "table" and db.account.ah or {}
+	if db.account.shareMigrated then return db.account.shareMigrateDiag end
+	local buckets, targetsMoved = {}, {}
+	local function ConsiderLast(l)
+		if type(l) == "table" and (type(db.account.scanLast) ~= "table" or (tonumber(l.at) or 0) > (tonumber(db.account.scanLast.at) or 0)) then
+			db.account.scanLast = l
+		end
+	end
+	ConsiderLast(db.account.scanLast)
+	if db.account.ahLast == nil then
+		-- filled below from realms / scanLast
+	end
+	for key, r in pairs(type(db.realms) == "table" and db.realms or {}) do
+		if type(r) == "table" then
+			local had = (type(r.ah) == "table" and next(r.ah)) or type(r.scanLast) == "table"
+			if had then buckets[#buckets + 1] = tostring(key) end
+			if type(r.ah) == "table" then I.TakeAH(r.ah) end
+			if r.ahLast and db.account.ahLast == nil then db.account.ahLast = r.ahLast end
+			ConsiderLast(r.scanLast)
+			if type(r.chars) == "table" then
+				for name, c in pairs(r.chars) do
+					if type(c) == "table" and c.targets == nil then
+						c.targets = CopyTargets(r.targets)
+						targetsMoved[name] = CountKeys(c.targets)
+					end
+				end
+			end
+		end
+	end
+	table.sort(buckets)
+	if type(db.account.scanLast) == "table" and I.Scan and I.Scan.IsHouse(db.account.scanLast.house) then
+		db.account.ahLast = db.account.scanLast.house
+	end
+	if I.Scan and I.Scan.PruneAll then I.Scan.PruneAll() end
+	local houses = {}
+	for h, m in pairs(db.account.ah) do
+		if type(m) == "table" then
+			local lastAt, lastN, lastItems, lastKind
+			if I.Scan and I.Scan.LastScan then
+				local sc, at = I.Scan.LastScan(h, "full")
+				if not sc then sc, at = I.Scan.LastScan(h) end
+				if sc then lastAt, lastN, lastItems, lastKind = at, sc.n, sc.items, sc.kind end
+			end
+			houses[h] = { scans = #(m.scans or {}), items = CountKeys(m.cur), lastAt = lastAt, lastN = lastN, lastItems = lastItems, lastKind = lastKind, base = m.base }
+		end
+	end
+	db.account.shareMigrateDiag = {
+		at = ns.Util.Time and ns.Util.Time() or nil,
+		version = "1.2.58",
+		buckets = buckets,
+		houses = houses,
+		scanLast = db.account.scanLast,
+		targetsMoved = targetsMoved,
+		histSize = I.Scan and I.Scan.TotalSize and I.Scan.TotalSize() or nil,
+	}
+	db.account.shareMigrated = "1.2.58"
+	for _, r in pairs(db.realms or {}) do
+		if type(r) == "table" then r.ah, r.scanLast, r.ahLast = nil, nil, nil end
+	end
+	return db.account.shareMigrateDiag
 end
 
 -- start(): now when the realm is known, else once it is: asked again at PLAYER_ENTERING_WORLD and every second for
@@ -400,9 +529,16 @@ function I.RealmReport()
 	for _, n in ipairs(ns.Util.RealmNames()) do now[#now + 1] = n.how .. " = \"" .. n.name .. "\"" end
 	local saved = {}
 	for key, r in pairs(I.db and I.db.realms or {}) do
-		local scans = 0
-		for _, m in pairs(type(r) == "table" and type(r.ah) == "table" and r.ah or {}) do scans = scans + #(type(m) == "table" and m.scans or {}) end
-		saved[#saved + 1] = { key = key, chars = Count(r.chars), targets = Count(r.targets), scans = scans }
+		local scans, targets = 0, 0
+		-- (1.2.58) scans live on account.ah; a character's Watchlist is chars[name].targets
+		for _, m in pairs((I.db.account and type(I.db.account.ah) == "table" and I.db.account.ah) or (type(r) == "table" and r.ah) or {}) do
+			scans = scans + #(type(m) == "table" and m.scans or {})
+		end
+		if type(r) == "table" and type(r.chars) == "table" then
+			for _, c in pairs(r.chars) do targets = targets + Count(type(c) == "table" and c.targets) end
+		end
+		if targets == 0 then targets = Count(type(r) == "table" and r.targets) end
+		saved[#saved + 1] = { key = key, chars = Count(type(r) == "table" and r.chars), targets = targets, scans = scans }
 	end
 	table.sort(saved, function(a, b) return a.key < b.key end)
 	local merges = I.db and I.db.account and I.db.account.realmMerges or {}
@@ -1082,7 +1218,7 @@ function I.NameIndex()
 	I.nameIndex = x
 	local names = (I.db and I.db.account and I.db.account.names) or {}
 	for id in pairs(names) do IndexAdd(x, id) end
-	for _, m in pairs(I.realm and type(I.realm.ah) == "table" and I.realm.ah or {}) do
+	for _, m in pairs((I.Scan and I.Scan.Houses and I.Scan.Houses()) or {}) do
 		if type(m) == "table" then for id in pairs(m.cur or {}) do IndexAdd(x, id) end end
 	end
 	local C = I.Craft
@@ -1372,8 +1508,9 @@ function I.OnEvent(event, a1, a2)
 		I.ahOpen = true
 		if I.DavesSack and I.S.quietDavesSack ~= false and I.DavesSack.state ~= "off" then pcall(I.DavesSack.Apply) end   -- (1.2.9: from the next visit)
 		if I.Scan then
-			I.realm.ahLast = I.Scan.House()
-			I.Scan.Follow(I.realm.ahLast)   -- (1.2.20: AH Market and the tooltips follow the house you're at)
+			local h = I.Scan.House()
+			if I.db and I.db.account and I.Scan.IsHouse(h) then I.db.account.ahLast = h end
+			I.Scan.Follow(h)   -- (1.2.20: AH Market and the tooltips follow the house you're at)
 		end
 		if I.AH then I.AH.Show() end
 		I.Changed()

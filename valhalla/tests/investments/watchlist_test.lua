@@ -22,7 +22,7 @@ for line in toc:gmatch("[^\r\n]+") do
 end
 local order = table.concat(files, ",")
 ok(order == "Invest,Scan,Tabs,Views,Market,Watch,Tooltip,Data/Forever/Recipes,Data/Forever/TopSkills,Craft,Trainer,Merchant,AHPanel", "TOC: Watch.lua right after Market.lua, before Tooltip.lua", order)
-ok(toc:find("## Version: 1.2.57", 1, true) ~= nil, "TOC: version 1.2.57")
+ok(toc:find("## Version: 1.2.58", 1, true) ~= nil, "TOC: version 1.2.58")
 
 local ns = { modules = {}, version = "v1.2.16", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
 ns.L = setmetatable({}, { __index = function(_, k) return k end })
@@ -96,13 +96,14 @@ ok(s8 == "near" and d8 == "sell" and p8 == 9, "both near: the closer one (sell 8
 ok(Wt.SignalText({ sig = "buy" }) == "BUY" and Wt.SignalText({ sig = "sell" }) == "SELL" and Wt.SignalText({ sig = "near", pct = 4, side = "buy" }) == "Near 4% (buy)" and Wt.SignalText({}) == "-", "Signal column: BUY, SELL, Near 4% (buy), -")
 ok(Wt.SignalRank({ sig = "buy" }) < Wt.SignalRank({ sig = "sell" }) and Wt.SignalRank({ sig = "sell" }) < Wt.SignalRank({ sig = "near", pct = 1 }) and Wt.SignalRank({}) == nil, "sorted: BUY, SELL, nearest, none last")
 
-print("== 4. saved: realms[realm].targets[id], per house, kept until changed")
+print("== 4. saved: realms[realm].chars[name].targets[id], this character, per house, kept until changed")
 Mk.house = nil
 I.S.marketHouse = "Horde"
 I.ahOpen = false
 local t = Wt.Set(2589, 150, nil)
-local saved = ValhallaInvestDB.realms.Forever.targets[2589]
-ok(saved == t and t.buy == 150 and t.sell == nil and t.house == "Horde" and t.set == W.now, "Set: in ValhallaInvestDB.realms.Forever.targets, the house AH Market shows (not at the AH)")
+local me = (UnitName and UnitName("player")) or "Odysseaus"
+local saved = ValhallaInvestDB.realms.Forever.chars[me] and ValhallaInvestDB.realms.Forever.chars[me].targets[2589]
+ok(saved == t and t.buy == 150 and t.sell == nil and t.house == "Horde" and t.set == W.now, "Set: in ValhallaInvestDB.realms.Forever.chars[me].targets, the house AH Market shows (not at the AH)")
 function GetSubZoneText() return "The Commons" end
 function GetRealZoneText() return "Ironforge" end
 function UnitFactionGroup() return "Alliance" end
