@@ -4,6 +4,10 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.60", date = "2026-11-27", heads = { [1] = "Changed", [2] = "New", }, items = {
+		"Flight times: Valhalla now ships with built-in flight times, so a known route counts down at takeoff on every character, even a new one, instead of showing Learning. A route is learned only the first time it's flown and is never overwritten after that. Routes with stops are saved by their whole path, and an unknown route with stops is estimated from its legs (about 15 seconds less for each stop). Times saved by earlier versions are kept and still used.",
+		"/valhalla flighttimes shows how many flight times are built in and how many you've learned. /valhalla flighttimes export saves your learned times, so they can be added to the built-in times in a later version.",
+	} },
 	{ version = "1.2.59", date = "2026-11-27", heads = { [1] = "Changed", }, items = {
 		"Quest log: Valhalla's pin is back on the left of each quest's icon, as before 1.2.51 and as in the Objectives panel.",
 	} },

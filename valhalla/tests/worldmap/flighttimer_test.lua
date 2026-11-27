@@ -94,6 +94,7 @@ local function NewNS()
   function ns:GetModule(k) return self.modules[k] end
   assert(loadfile(root .. "Util.lua"))("Valhalla", ns)   -- (1.2.26: the shared helpers, after Core.lua)
   assert(loadfile(root .. "Data/Forever/FlightData.lua"))("Valhalla", ns)
+  ns.MapFlights.baseline = {}   -- (1.2.60: learning tested without the built-in times; flightbaseline_test.lua has those)
   return ns, mod
 end
 local function Fill(t, d) for k, v in pairs(d) do if t[k] == nil then if type(v) == "table" then t[k] = Fill({}, v) else t[k] = v end end end return t end
@@ -178,8 +179,8 @@ ok(p1 and p1[1] == "TOP" and p1[2] == UIParent and p1[3] == "TOP" and p1[4] == 0
 Run(48)
 W.taxi = false
 Run(0.2)
-ok(DB.flightRoutes["2>4"] == 78, "landed after 78 s: the whole route saved by node IDs (2>4)", DB.flightRoutes["2>4"])
-ok(DB.flightTimes[SW .. "|" .. WF] == 78, "and the direct leg by name, as before (the map's route times)")
+ok(DB.flightLearned["2>4"] == 78, "landed after 78 s: learned by its exact path of node IDs (2>4)", DB.flightLearned["2>4"])
+ok(DB.flightTimes[SW .. "|" .. WF] == nil and DB.flightRoutes["2>4"] == nil, "(1.2.60) the old tables not written when the IDs are known")
 ok(P():IsShown(), "just landed: still shown a moment")
 Run(1.5 + 1.2)
 ok(not P():IsShown() and P():GetAlpha() == 1, "then faded away")
@@ -193,7 +194,7 @@ ok(P().time._text == "0:48" and math.abs(P().bar._value - 30.2 / 78) < 0.01, "30
 Run(60)
 ok(P().time._text == "Landing soon (+0:12)" and P().bar._value == 1, "past the time: Landing soon (+0:12)", P().time._text)
 W.taxi = false Run(0.2)
-ok(DB.flightRoutes["2>4"] == 90, "landed: the route's time measured again (90)")
+ok(DB.flightLearned["2>4"] == 78 and T.lastLearn.secs == 90 and T.lastLearn.result == "kept", "(1.2.60) landed at 90: measured, the learned 78 kept (learned once)")
 Run(3)
 
 print("== 4. a route with stops: whole route, else every leg; else Learning")
@@ -202,26 +203,26 @@ TakeTaxiNode(3) Run(1) W.taxi = true Run(0.2)
 ok(P().title._text == "Lakeshire" and P().status._text == "Learning", "Stormwind > Lakeshire by Sentinel Hill, one leg not measured: Learning (no guess)", P().status._text)
 ok(not P().time._text:find("stop"), "no stop count")
 Run(200) W.taxi = false Run(0.2) Run(3)
-ok(DB.flightRoutes["2>5"] == 200 and DB.flightTimes[SW .. "|" .. LS] == nil, "the whole route saved (2>5: 200); not as a direct leg")
+ok(DB.flightLearned["2>4>5"] == 200 and DB.flightLearned["2>5"] == nil and DB.flightTimes[SW .. "|" .. LS] == nil, "learned by its whole path (2>4>5: 200); not by its two ends, not as a direct leg")
 TakeTaxiNode(3) Run(1) W.taxi = true Run(0.2)
 ok(P().time._text == "3:20", "flown again: counts down from the whole route's 3:20", P().time._text)
 W.taxi = false Run(0.2) Run(3)
-DB.flightRoutes["2>5"] = nil
+DB.flightLearned["2>4>5"] = nil
 DB.flightTimes[WF .. "|" .. LS] = 130
 TakeTaxiNode(3) Run(1) W.taxi = true Run(0.2)
-ok(P().time._text == T.Clock(DB.flightRoutes["2>4"] + 130), "no whole route, every leg measured: their sum (" .. T.Clock(DB.flightRoutes["2>4"] + 130) .. ")", P().time._text)
+ok(P().time._text == T.Clock(78 + 130 - T.STOP), "no whole path, every leg known: their sum less 15 s a stop (" .. T.Clock(78 + 130 - T.STOP) .. ")", P().time._text)
 W.taxi = false Run(0.2) Run(3)
 
 print("== 5. landing early, never taking off")
-local before = DB.flightRoutes["2>12"]
+local before = DB.flightLearned["2>12"]
 TakeTaxiNode(4) Run(1) W.taxi = true Run(10)
 TaxiRequestEarlyLanding()
 Run(5) W.taxi = false Run(0.2) Run(3)
-ok(before == nil and DB.flightRoutes["2>12"] == nil and DB.flightTimes[SW .. "|" .. DS] == nil, "landed early: not saved")
+ok(before == nil and DB.flightLearned["2>12"] == nil and DB.flightTimes[SW .. "|" .. DS] == nil, "landed early: not saved")
 TakeTaxiNode(4) Run(12)
 ok(not P():IsShown() and CHAR.flightNow == nil, "clicked but never took off: no popup, forgotten after 10 s")
 Fly(4, 116)
-ok(DB.flightRoutes["2>12"] == 116, "the next flight there is measured (116)")
+ok(DB.flightLearned["2>12"] == 116, "the next flight there is measured (116)")
 Run(3)
 
 print("== 6. the setting off: no popup, still measured")
@@ -235,7 +236,7 @@ ok(P():IsShown(), "switched on mid-flight: it shows")
 DB.flightTimer = false mod.RefreshFlightTimer()
 ok(not P():IsShown(), "off mid-flight: it goes")
 Run(60) W.taxi = false Run(0.2)
-ok(DB.flightRoutes["2>4"] == 80, "and the flight still measured (80)", DB.flightRoutes["2>4"])
+ok(T.lastLearn.secs == 80 and DB.flightLearned["2>4"] == 78, "and the flight still measured (80; the learned 78 kept)", T.lastLearn.secs)
 DB.flightTimer = true
 Run(3)
 
@@ -246,9 +247,9 @@ W.timers = {}
 W.wall = W.wall + 3 W.clock = W.clock + 3          -- (the reload)
 T = Load()
 ok(P() and P():IsShown() and P().title._text == "Sentinel Hill", "after the /reload: the popup again, the same flight")
-ok(P().time._text == T.Clock(80 - 33), "and the countdown where it was (33 s in: " .. T.Clock(80 - 33) .. ")", P().time._text)
+ok(P().time._text == T.Clock(78 - 33), "and the countdown where it was (33 s in: " .. T.Clock(78 - 33) .. ")", P().time._text)
 Run(47) W.taxi = false Run(0.2)
-ok(DB.flightRoutes["2>4"] == 80, "landed: measured across the reload (80)", DB.flightRoutes["2>4"])
+ok(T.lastLearn and T.lastLearn.secs == 80 and DB.flightLearned["2>4"] == 78, "landed: measured across the reload (80; 78 kept)", T.lastLearn and T.lastLearn.secs)
 Run(3)
 TakeTaxiNode(2) Run(1) W.taxi = true Run(20.2)
 W.timers = {}
@@ -256,7 +257,7 @@ W.wall = W.wall + 120 W.clock = W.clock + 120      -- (logged out, back two minu
 T = Load()
 ok(P() and P():IsShown(), "logged back in still flying: shown")
 Run(10) W.taxi = false Run(0.2)
-ok(DB.flightRoutes["2>4"] == 80, "but not measured (the time away isn't the flight's)")
+ok(T.lastLearn == nil and DB.flightLearned["2>4"] == 78, "but not measured (the time away isn't the flight's)")
 Run(3)
 W.taxi = false
 CHAR.flightNow = { key = "2>4", epoch = W.wall - 10, seen = W.wall }
@@ -364,7 +365,7 @@ do
   W.routes = { [2] = { { 1, 2 } } }
   ns.events.TAXIMAP_OPENED()
   Fly(2, 64)
-  ok(DB.flightRoutes["3276>5"] == 64, "Farholde Keep to Lakeshire: timed and saved by node IDs (3276>5)", DB.flightRoutes["3276>5"])
+  ok(DB.flightLearned["3276>5"] == 64, "Farholde Keep to Lakeshire: timed and saved by node IDs (3276>5)", DB.flightLearned["3276>5"])
   Run(3)
   -- a flight master the game still lists there (an old save, a client's own list): by name, no error
   local errs = #W.errors

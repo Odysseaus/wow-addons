@@ -75,6 +75,7 @@ local function Session(o)
     "Map/WorldMap.lua", "Map/Flights.lua", "Init.lua" }
   for _, f in ipairs(files) do assert(loadfile(root .. f))("Valhalla", ns) end
   T = ns.MapFlights.Timer
+  ns.MapFlights.baseline = {}   -- (1.2.60: learning tested without the built-in times; flightbaseline_test.lua has those)
   W.Fire("ADDON_LOADED", "Valhalla")
   if o.beforeLogin then o.beforeLogin() end
   W.Fire("PLAYER_LOGIN")
@@ -98,7 +99,7 @@ ok(mod.enabled and T.setup and T.hooked, "map on: the timer set up at login, Tak
 ok(ValhallaDB.worldmap.flightTimer == true, "the setting on at first (a fresh install)")
 local shown, title = Fly(78)
 ok(shown and title == "Sentinel Hill", "a flight: the popup at takeoff", tostring(title))
-ok(ValhallaDB.worldmap.flightRoutes["2>4"] == 78, "and timed once (one hook, not two: the time saved once and right)", ValhallaDB.worldmap.flightRoutes["2>4"])
+ok(ValhallaDB.worldmap.flightLearned["2>4"] == 78, "and timed once (one hook, not two: the time saved once and right)", ValhallaDB.worldmap.flightLearned["2>4"])
 -- (a second hook would run OnTakeTaxi twice: count the timer's watchers by setting up again)
 ok(ns.loadMs.parts.Flights ~= nil, "the map's setup ran its Flights part too (SetupFlights)")
 ok(T.hooks == 1, "TakeTaxiNode hooked once (login and the map's setup both asked)", T.hooks)
@@ -110,9 +111,9 @@ print("== 2. the map off (Enable Valhalla unticked): the timer all the same")
 db1.worldmap.enabled = false
 mod = Session({ db = db1, char = char1 })
 ok(not mod.enabled and T.setup and T.hooked, "map off: the timer set up at login anyway")
-db1.worldmap.flightRoutes["2>4"] = nil
+db1.worldmap.flightLearned["2>4"] = nil
 shown, title = Fly(80)
-ok(shown and title == "Sentinel Hill" and db1.worldmap.flightRoutes["2>4"] == 80, "a flight shows and is timed", tostring(db1.worldmap.flightRoutes["2>4"]))
+ok(shown and title == "Sentinel Hill" and db1.worldmap.flightLearned["2>4"] == 80, "a flight shows and is timed", tostring(db1.worldmap.flightLearned["2>4"]))
 db1.worldmap.enabled = true
 
 print("== 3. the Gamepad UI on (Valhalla leaves the map to Blizzard): the timer all the same")
@@ -129,9 +130,9 @@ ok(Popup() and Popup():IsShown() and Popup().title._text == "In flight (reloaded
 ok(Popup().status._text == "Learning" and Popup().time._text == "0:01", "the time since (0:01), Learning; no countdown", Popup().time._text)
 Tick(30)
 ok(Popup().time._text == "0:31", "it goes on (0:31)", Popup().time._text)
-local before = 0 for _ in pairs(db1.worldmap.flightRoutes) do before = before + 1 end
+local before = 0 for _ in pairs(db1.worldmap.flightLearned) do before = before + 1 end
 W.taxi = false Tick(3)
-local after = 0 for _ in pairs(db1.worldmap.flightRoutes) do after = after + 1 end
+local after = 0 for _ in pairs(db1.worldmap.flightLearned) do after = after + 1 end
 ok(after == before and not Popup():IsShown(), "landed: nothing saved (not the whole flight), faded")
 
 print("== 5. a click not heard: control lost on a taxi; a stun isn't a flight")
@@ -234,14 +235,14 @@ ok(W.took == took0, "no TakeTaxiNode (the gossip's flight)")
 ok(g.shown and g.title == "Rut'theran Village" and g.status == "Learning", "the popup: Rut'theran Village, Learning (never flown)", tostring(g.title) .. " " .. tostring(g.status))
 ok(g.said and g.said:find("In the air: " .. RT .. ", route 62>27, Learning", 1, true) and g.said:find("saved on landing", 1, true)
   and not g.said:find("unknown", 1, true), "/valhalla flight: route 62>27, saved on landing, not unknown", g.said)
-ok(db1.worldmap.flightRoutes["62>27"] == 70, "landed: 62>27 saved (70 s)", db1.worldmap.flightRoutes["62>27"])
-ok(db1.worldmap.flightTimes[NH .. "|" .. RT] == 70, "and the direct leg by name (the map's route times)")
+ok(db1.worldmap.flightLearned["62>27"] == 70, "landed: 62>27 saved (70 s)", db1.worldmap.flightLearned["62>27"])
+ok(db1.worldmap.flightTimes[NH .. "|" .. RT] == nil, "(1.2.60) not in the old name table (the node IDs are known)")
 ok(char1.worldmap.flightsKnown and char1.worldmap.flightsKnown[NH], "Nighthaven learned (flown from)")
 ok(char1.worldmap.flightNow == nil, "nothing left in the air")
 
 g = Gossip(72)
 ok(g.shown and g.title == "Rut'theran Village" and g.time == "1:10" and g.status == "" and g.bar, "the second flight: counts down from 1:10, the bar", tostring(g.time) .. " " .. tostring(g.status))
-ok(db1.worldmap.flightRoutes["62>27"] == 72, "and measured again (72)", db1.worldmap.flightRoutes["62>27"])
+ok(db1.worldmap.flightLearned["62>27"] == 70 and T.lastLearn.secs == 72 and T.lastLearn.result == "kept", "and measured again (72), the learned 70 kept", T.lastLearn.secs)
 
 -- a /reload in the air: the same flight goes on, still saved on landing
 W.taxi = true W.Fire("PLAYER_CONTROL_LOST") Tick(20.3)
@@ -250,23 +251,24 @@ mod = Session({ db = db1, char = char1, onTaxi = true, reload = true, wall = tim
 Who("DRUID", "Alliance", 7795.8, -2401.5, 1)
 ok(Popup():IsShown() and Popup().title._text == "Rut'theran Village", "after the /reload: Rut'theran Village again", Popup().title._text)
 Tick(47) W.taxi = false Tick(3)
-local r62 = db1.worldmap.flightRoutes["62>27"]
-ok(r62 and r62 >= 70 and r62 <= 71, "landed: measured across the reload (20 s + 2 s away + the rest: 70-71)", r62)
+local r62 = T.lastLearn and T.lastLearn.secs
+ok(r62 and r62 >= 70 and r62 <= 71 and T.lastLearn.key == "62>27", "landed: measured across the reload (20 s + 2 s away + the rest: 70-71)", r62)
 
 -- the map's own position when UnitPosition gives nothing (either order of the two)
 Who("DRUID", "Alliance")
 C_Map.GetWorldPosFromMapPos = function() return 1, { x = -2401.5, y = 7795.8 } end
 g = Gossip(71)
-ok(g.title == "Rut'theran Village" and db1.worldmap.flightRoutes["62>27"] == 71, "no UnitPosition: the map's world position (other order) finds it too", tostring(g.title))
+ok(g.title == "Rut'theran Village" and T.lastLearn.key == "62>27" and T.lastLearn.secs == 71 and db1.worldmap.flightLearned["62>27"] == 70, "no UnitPosition: the map's world position (other order) finds it too", tostring(g.title))
 C_Map.GetWorldPosFromMapPos = nil
 
 -- not a druid; too far; the wrong continent; a secret position: unknown and unsaved, as 1.2.13
 local function Unknown(label)
-  local before, times = Count(db1.worldmap.flightRoutes), Count(db1.worldmap.flightTimes)
-  local r = db1.worldmap.flightRoutes["62>27"]
+  local before, times, learned = Count(db1.worldmap.flightRoutes), Count(db1.worldmap.flightTimes), Count(db1.worldmap.flightLearned)
+  local r = db1.worldmap.flightLearned["62>27"]
   local gg = Gossip(40, 5)
   ok(gg.title == "In flight" and gg.status == "Learning" and gg.said and gg.said:find("route nil", 1, true) and gg.said:find("unknown, not saved", 1, true)
-    and Count(db1.worldmap.flightRoutes) == before and Count(db1.worldmap.flightTimes) == times and db1.worldmap.flightRoutes["62>27"] == r,
+    and Count(db1.worldmap.flightRoutes) == before and Count(db1.worldmap.flightTimes) == times and Count(db1.worldmap.flightLearned) == learned
+    and db1.worldmap.flightLearned["62>27"] == r,
     label .. ": \"In flight\", Learning, unknown, nothing saved", tostring(gg.title) .. " | " .. tostring(gg.said))
 end
 Who("WARRIOR", "Alliance", 7795.8, -2401.5, 1) Unknown("a warrior at Nighthaven")
@@ -281,9 +283,9 @@ Who("DRUID", "Alliance") Unknown("a druid, no position at all")
 -- a Horde druid at Bunthen Plainswind (node 63): Thunder Bluff, 63>22
 Who("DRUID", "Horde", 7787.7, -2404.1, 1)
 g = Gossip(260)
-ok(g.title == "Thunder Bluff" and db1.worldmap.flightRoutes["63>22"] == 260 and db1.worldmap.flightTimes[NH .. "|" .. TB] == 260,
-  "a Horde druid: Thunder Bluff, 63>22 saved (260)", tostring(g.title) .. " " .. tostring(db1.worldmap.flightRoutes["63>22"]))
-ok(db1.worldmap.flightRoutes["62>27"] == 71, "the Alliance route untouched")
+ok(g.title == "Thunder Bluff" and db1.worldmap.flightLearned["63>22"] == 260,
+  "a Horde druid: Thunder Bluff, 63>22 saved (260)", tostring(g.title) .. " " .. tostring(db1.worldmap.flightLearned["63>22"]))
+ok(db1.worldmap.flightLearned["62>27"] == 70, "the Alliance route untouched")
 Who("DRUID", "Alliance", 7787.7, -2404.1, 1)
 g = Gossip(30)
 ok(g.title == "Rut'theran Village", "an Alliance druid there: the Alliance node's flight, not the Horde's", tostring(g.title))
@@ -292,7 +294,7 @@ db1.worldmap.flightRoutes["62>27"] = 71
 -- a click heard at a flight master still wins (control lost doesn't take it over)
 Who("DRUID", "Alliance", 7795.8, -2401.5, 1)
 shown, title = Fly(30)
-ok(shown and title == "Sentinel Hill" and db1.worldmap.flightRoutes["2>4"] == 30, "a heard click near Nighthaven: its own route (2>4)", tostring(title))
+ok(shown and title == "Sentinel Hill" and T.lastLearn.key == "2>4" and T.lastLearn.secs == 30, "a heard click near Nighthaven: its own route (2>4)", tostring(title))
 W.Fire("PLAYER_CONTROL_LOST") Tick(3)
 UnitClass, UnitPosition = nil, nil
 UnitFactionGroup = function() return "Alliance" end

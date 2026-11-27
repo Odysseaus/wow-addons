@@ -107,8 +107,12 @@ end
 -- The flight timer (1.2.12): a popup from takeoff to landing. A route flown before (the whole route, or
 -- every leg of it) counts down from its measured time; one never flown shows the time so far and
 -- "Learning", and is measured as it lands. Nothing is guessed from distances.
---   mod.db.flightRoutes["fromID>toID"] = seconds, the whole route (any stops), by the game's node IDs
---   mod.db.flightTimes["from|to"]      = seconds, direct legs by name (as before; the map's routes use them)
+--   mod.db.flightLearned["a>b>c"]      = seconds, (1.2.60) learned by the exact path of the game's node IDs
+--                                        ("a>b" one leg, "a>b>c" with stops), learned once: never overwritten
+--   F.baseline["a>b>c"]                = seconds, (1.2.60) built in (Data/Forever/FlightData.lua), read only
+--   mod.db.flightRoutes["fromID>toID"] = seconds, (before 1.2.60) whole routes by their two ends: kept, read
+--                                        as a fallback only (one leg: copied to flightLearned)
+--   mod.db.flightTimes["from|to"]      = seconds, (before 1.2.60) direct legs by name: a fallback only
 --   mod.char.flightNow                 = the flight in the air (resumed after a /reload)
 -- Only our own plain frames: nothing protected, so it works in combat. It moves only while Edit Mode is
 -- open (Edit Mode's own Enter / Exit events); Blizzard's Edit Mode frames are never written.
@@ -117,8 +121,10 @@ end
 mod.defaults.flightTimer = true      -- (1.2.12) the flight timer popup
 mod.defaults.flightRoutes = {}       -- (1.2.12) whole routes' measured seconds, "fromID>toID"
 mod.defaults.flightTimerPos = false  -- (1.2.12) where it was moved to: { point, relativePoint, x, y }; false: TOP 0, -110
+mod.defaults.flightLearned = {}      -- (1.2.60) learned seconds by exact path of node IDs ("a>b", "a>b>c"), account-wide
 
-local T = { TICK = 0.1, FADE_HOLD = 1.5, FADE = 1, MIN_SECS = 5, RELOAD_GAP = 10, WAIT = 10, W = 250, H = 58 }
+local T = { TICK = 0.1, FADE_HOLD = 1.5, FADE = 1, MIN_SECS = 5, RELOAD_GAP = 10, WAIT = 10, W = 250, H = 58,
+	STOP = 15 }   -- (1.2.60) seconds a stop saves against its two legs flown alone (no landing between them)
 F.Timer = T
 T.POS = { "TOP", "TOP", 0, -110 }
 
@@ -156,20 +162,89 @@ local function Key(a, b, nameA, nameB)
 end
 T.Key = Key
 
--- the time a route takes, measured: the whole route, else (with stops) every leg measured; else nil
+-- (1.2.60) a flight's exact path, "a>b>c", from its legs' node IDs; nil when one isn't known or they don't join
+local function PathKey(legs)
+	if type(legs) ~= "table" or #legs == 0 then return nil end
+	local parts = {}
+	for i, leg in ipairs(legs) do
+		local a, b = leg[1], leg[2]
+		if type(a) ~= "number" or type(b) ~= "number" then return nil end
+		if i == 1 then parts[1] = a elseif parts[#parts] ~= a then return nil end
+		parts[#parts + 1] = b
+	end
+	return table.concat(parts, ">")
+end
+T.PathKey = PathKey
+local function Baseline(k)
+	local b = F.baseline
+	return k and type(b) == "table" and b[k] or nil
+end
+T.Baseline = Baseline
+
+-- one leg's seconds: learned, built in, then the old tables (by node IDs, then by names); else nil
+local function LegSecs(a, b, nameA, nameB)
+	local db = mod.db
+	local k = type(a) == "number" and type(b) == "number" and (a .. ">" .. b) or nil
+	local t = k and (db.flightLearned[k] or Baseline(k) or db.flightRoutes[k])
+	if t then return t end
+	if nameA and nameB then return db.flightRoutes[nameA .. ">" .. nameB] or db.flightTimes[nameA .. "|" .. nameB] end
+end
+T.LegSecs = LegSecs
+
+-- the time a flight takes: its exact path learned, else built in; else (with stops) every leg's time less STOP
+-- a stop; else the old whole-route time by its two ends; else nil (Learning)
 function T.Expected(f)
 	local db = mod.db
-	local t = f.key and db.flightRoutes[f.key]
+	local pk = PathKey(f.legs)
+	local t = pk and (db.flightLearned[pk] or Baseline(pk))
 	if t then return t end
-	if #f.legs == 0 then return end
-	local sum = 0
-	for _, leg in ipairs(f.legs) do
-		local lt = db.flightRoutes[Key(leg[1], leg[2], leg[3], leg[4]) or ""]
-			or (leg[3] and leg[4] and db.flightTimes[leg[3] .. "|" .. leg[4]])
-		if not lt then return end
-		sum = sum + lt
+	local legs = f.legs or {}
+	if #legs > 0 then
+		local sum, all = 0, true
+		for _, leg in ipairs(legs) do
+			local lt = LegSecs(leg[1], leg[2], leg[3], leg[4])
+			if not lt then all = false break end
+			sum = sum + lt
+		end
+		if all then return math.max(1, sum - T.STOP * (#legs - 1)) end
 	end
-	return sum
+	return f.key and db.flightRoutes[f.key] or nil
+end
+
+-- (1.2.60) a flight landed: learned only when its exact path has no time yet (learned or built in). Without
+-- node IDs, the old name keys, each only when missing. Returns what it did.
+function T.Learn(f, secs)
+	local db = mod.db
+	local s = Round(secs)
+	local pk = PathKey(f.legs)
+	if pk then
+		if db.flightLearned[pk] == nil and Baseline(pk) == nil then db.flightLearned[pk] = s return "learned" end
+		return "kept"
+	end
+	local did = "kept"
+	if f.key and db.flightRoutes[f.key] == nil then db.flightRoutes[f.key] = s did = "learned (names)" end
+	if f.direct and f.fromName and f.dest and db.flightTimes[f.fromName .. "|" .. f.dest] == nil then
+		db.flightTimes[f.fromName .. "|" .. f.dest] = s
+		did = "learned (names)"
+	end
+	return did
+end
+
+-- (1.2.60) the old single-leg times by node IDs (flightRoutes "a>b" where a flies straight to b) copied to
+-- flightLearned when it has none and none is built in; the old tables are left as they are
+function T.Migrate()
+	local db = mod.db
+	if not (db and type(db.flightRoutes) == "table" and type(db.flightLearned) == "table") then return 0 end
+	local direct = {}
+	for _, p in ipairs(F.paths or {}) do direct[p[1] .. ">" .. p[2]] = true end
+	local n = 0
+	for k, v in pairs(db.flightRoutes) do
+		if direct[k] and type(v) == "number" and db.flightLearned[k] == nil and Baseline(k) == nil then
+			db.flightLearned[k] = v
+			n = n + 1
+		end
+	end
+	return n
 end
 
 -- the popup ------------------------------------------------------------------
@@ -351,9 +426,7 @@ end
 local function Landed(now)
 	local secs = now - flight.start
 	if not flight.early and not flight.noSave and secs > T.MIN_SECS then
-		if flight.key then mod.db.flightRoutes[flight.key] = Round(secs) end
-		-- (direct legs, by name, as before: the map's route times read them)
-		if flight.direct and flight.fromName and flight.dest then mod.db.flightTimes[flight.fromName .. "|" .. flight.dest] = Round(secs) end
+		T.lastLearn = { key = PathKey(flight.legs) or flight.key, secs = Round(secs), result = T.Learn(flight, secs) }
 	end
 	flight = nil
 	T.flight = nil
@@ -545,6 +618,7 @@ end
 local function SetupTimer()
 	if T.setup then return end
 	T.setup = true
+	T.migrated = T.Migrate()   -- (1.2.60)
 	if TakeTaxiNode then hooksecurefunc("TakeTaxiNode", OnTakeTaxi) T.hooked = true T.hooks = (T.hooks or 0) + 1 end
 	if TaxiRequestEarlyLanding then
 		hooksecurefunc("TaxiRequestEarlyLanding", function() if flight then flight.early = true Save() end end)
@@ -588,6 +662,42 @@ function T.Debug()
 	local p = db.flightTimerPos
 	ns:Print(L["Popup: %s, at %s; routes timed: %d"], popup and (popup:IsShown() and "shown" or "hidden") or "not made yet",
 		type(p) == "table" and table.concat({ tostring(p[1]), tostring(p[2]), tostring(p[3]), tostring(p[4]) }, " ") or "TOP 0 -110", n)
+end
+
+-- (1.2.60) /valhalla flighttimes [export]: how many times are known; export: every learned time by exact path
+-- (node IDs), with its faction, the build and the date, kept in ValhallaDB.flightExport for the built-in
+-- table (tools/flight-times/build_baseline.py). The old tables' two-end and name keys are not exported.
+local function Count(t) local n = 0 for _ in pairs(type(t) == "table" and t or {}) do n = n + 1 end return n end
+function T.Export()
+	local db = mod.db or {}
+	local version, build
+	if GetBuildInfo then version, build = GetBuildInfo() end
+	local out = { version = ns.version, build = version and (tostring(version) .. "." .. tostring(build)) or nil,
+		date = date and date("%Y-%m-%d %H:%M") or nil, faction = UnitFactionGroup and UnitFactionGroup("player") or nil,
+		times = {}, factions = {}, baseline = Count(F.baseline) }
+	local n = 0
+	for k, s in pairs(db.flightLearned or {}) do
+		if type(k) == "string" and type(s) == "number" and k:match("^%d+>%d+[%d>]*$") then
+			out.times[k] = s
+			local node = F.nodes[tonumber(k:match("^(%d+)"))]
+			out.factions[k] = node and node[5] or 0
+			n = n + 1
+		end
+	end
+	out.count = n
+	local root = rawget(_G, "ValhallaDB")
+	if type(root) == "table" then root.flightExport = out end
+	return out
+end
+function T.TimesReport(arg)
+	local db, L = mod.db or {}, ns.L
+	if arg == "export" then
+		local out = T.Export()
+		ns:Print(L["Flight times exported: %d learned (by flight master IDs), saved as you log out or /reload (ValhallaDB.flightExport)."], out.count)
+		return
+	end
+	ns:Print(L["Flight times: %d built in, %d learned on this account, %d older (fallback only). /valhalla flighttimes export to export."],
+		Count(F.baseline), Count(db.flightLearned), Count(db.flightRoutes) + Count(db.flightTimes))
 end
 
 --------------------------------------------------------------------------------
@@ -634,7 +744,7 @@ local Clock, Short = T.Clock, ShortName   -- (1.2.26: one of each, the popup's)
 -- each leg's time: measured, or estimated from its length
 local function LegTime(path)
 	local a, b = F.nodes[path[1]], F.nodes[path[2]]
-	local t = mod.db.flightTimes[a[1] .. "|" .. b[1]]
+	local t = T.LegSecs(path[1], path[2], a[1], b[1])   -- (1.2.60: learned, built in, then the old tables)
 	return t or path[3] / SPEED, t ~= nil
 end
 

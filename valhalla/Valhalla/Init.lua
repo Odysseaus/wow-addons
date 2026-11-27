@@ -72,6 +72,13 @@ local function Slash(msg)
 		if objectives then objectives:Slash(objArg) end
 		return
 	end
+	-- /valhalla flighttimes [export] (1.2.60): the known flight times; export: the learned ones, by flight
+	-- master IDs, to ValhallaDB.flightExport for the built-in table (Map/Flights.lua)
+	if objWord == "flighttimes" or objWord == "flighttime" then
+		local T = ns.MapFlights and ns.MapFlights.Timer
+		if T and T.TimesReport then T.TimesReport(objArg) else ns:Print("%s", ns.L["Flight timer: not loaded."]) end
+		return
+	end
 	-- /valhalla flight (1.2.13): the flight timer's state, for a report (Map/Flights.lua)
 	if objWord == "flight" or objWord == "flights" then
 		local T = ns.MapFlights and ns.MapFlights.Timer
