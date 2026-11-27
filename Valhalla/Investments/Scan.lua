@@ -51,16 +51,18 @@ local function N(x) return ("%.0f"):format(math.floor(tonumber(x) or 0)) end
 S.N = N
 
 --------------------------------------------------------------------------------
--- Markets: ValhallaInvestDB.realms[realm].ah[house] = { base, scans = { {t, kind, n, items, secs, ms} },
+-- Markets (1.2.58): ValhallaInvestDB.account.ah[house] = { base, scans = { {t, kind, n, items, secs, ms} },
 --   cur = { [id] = "min,units,auctions,t" }, hist = { [id] = "t:min:units:auctions;..." } }
--- (t: minutes since base; a quick point's auctions is "q"; min 0 = none listed)
+-- Shared by every character (one Alliance / Horde / Neutral market). t: minutes since base;
+-- a quick point's auctions is "q"; min 0 = none listed. account.scanLast / account.ahLast sit beside it.
+-- (1.2.57 and before: realms[realm].ah[house], which split when the game named the realm two ways.)
 --------------------------------------------------------------------------------
 
 function S.Houses()
-	local r = I.realm
-	if not r then return {} end   -- (1.2.29: the realm not known yet: nothing saved, nothing made)
-	r.ah = type(r.ah) == "table" and r.ah or {}
-	return r.ah
+	local acct = I.db and I.db.account
+	if not acct then return {} end
+	acct.ah = type(acct.ah) == "table" and acct.ah or {}
+	return acct.ah
 end
 
 function S.Market(house, make)
@@ -535,9 +537,9 @@ local function Finish(r, state, text, reason)
 	Unlisten()
 	if driver then driver:SetScript("OnUpdate", nil) end
 	r.state = state
-	-- (1.2.20) kept for this realm (AH Market's status shows a scan that didn't finish, and why, also after a /reload)
+	-- (1.2.58) kept account-wide (AH Market's status shows a scan that didn't finish, and why, also after a /reload)
 	S.last = { kind = r.kind, state = state, text = text, reason = reason, at = Now(), house = r.house, saved = r.saved or nil }
-	if I.realm then I.realm.scanLast = S.last end
+	if I.db and I.db.account then I.db.account.scanLast = S.last end
 	-- (1.2.20) AH Market follows the house you scanned at
 	if r.saved and S.IsHouse(r.house) then S.Follow(r.house) end
 	if text then ns:Print("%s", text) end
@@ -632,7 +634,7 @@ end
 
 -- (1.2.20) a scan that didn't finish (this realm, kept over a /reload), for AH Market's status: nil once one finished
 function S.LastAttemptText()
-	local l = S.last or (I.realm and I.realm.scanLast)
+	local l = S.last or (I.db and I.db.account and I.db.account.scanLast)
 	if type(l) ~= "table" or l.state == "done" or not l.at then return nil end
 	local what = l.kind == "full" and L["full scan"] or L["quick scan"]
 	local how = l.state == "error" and L["stopped by an error"] or l.state == "closed" and L["stopped"] or l.state == "stopped" and L["stopped"] or L["failed"]

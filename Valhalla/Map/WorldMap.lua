@@ -1109,11 +1109,16 @@ local function OnPinMouseUp(pin, button)
 end
 
 -- a click on one of Blizzard's map icons goes to its pin handlers, not the canvas's: dropping a
--- pin works there too (Blizzard's own only took Ctrl-clicks, never the menu's pin button)
-local function OnBlizzardPinAction(_, action, button)
-	if not Dropping(button) then return false end
-	if action == MapCanvasMixin.MouseAction.Click then DropAtCursor() end
-	return action ~= MapCanvasMixin.MouseAction.Up
+-- pin works there too (Blizzard's own only took Ctrl-clicks, never the menu's pin button).
+-- (1.2.57) Otherwise a left click on one of the game's quest pins is Valhalla's quest click, not the
+-- game's (Map/Quests.lua: mod.GameQuestPinAction); every other pin and button is left to the game.
+local function OnBlizzardPinAction(canvas, action, button)
+	if Dropping(button) then
+		if action == MapCanvasMixin.MouseAction.Click then DropAtCursor() end
+		return action ~= MapCanvasMixin.MouseAction.Up
+	end
+	if mod.GameQuestPinAction then return mod.GameQuestPinAction(canvas or map, action, button) end
+	return false
 end
 
 -- one part of the setup, its time kept (ns.loadMs.parts: /valhalla status)
