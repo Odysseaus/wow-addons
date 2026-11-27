@@ -5,8 +5,9 @@
 -- The price is the listed lowest buyout per unit (Scan.lua's S.Lowest: the dump filter if it's on), never after
 -- the AH's cut. Either target may be blank. Each item's targets belong to one house (Alliance, Horde, Neutral:
 -- the one you're at, else the one AH Market shows) and stay until you change or remove them.
--- Saved: ValhallaInvestDB.realms[realm].targets[itemID] = { house, buy, sell, set, added, lastMet, lastSig,
---   lastPrice, alerted } (copper).
+-- Saved (1.2.58): ValhallaInvestDB.realms[realm].chars[name].targets[itemID] = { house, buy, sell, set,
+--   added, lastMet, lastSig, lastPrice, alerted } (copper). This character's list (not shared).
+-- (1.2.57 and before: realms[realm].targets, shared by every character on that realm key.)
 -- Where: AH Market > Watchlist (add by name, Edit, columns Item, Lowest, Buy <= target, Sell >= target, Signal,
 -- Last met); alt-click any item (it goes on the list, its targets open); right-click any item > Set target...;
 -- a Target line under item tooltips (Tooltip.lua), green when met.
@@ -39,10 +40,10 @@ W.GREEN, W.SELL, W.NEAR, W.GREY = { 0.3, 0.9, 0.3 }, { 1, 0.6, 0.2 }, { 0.85, 0.
 --------------------------------------------------------------------------------
 
 function W.Store()
-	local r = I.realm
-	if not r then return {} end
-	if type(r.targets) ~= "table" then r.targets = {} end
-	return r.targets
+	local c = I.char
+	if not c then return {} end
+	if type(c.targets) ~= "table" then c.targets = {} end
+	return c.targets
 end
 function W.Get(id)
 	id = tonumber(id)

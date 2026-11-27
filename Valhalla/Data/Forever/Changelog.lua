@@ -4,6 +4,18 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.59", date = "2026-11-27", heads = { [1] = "Changed", }, items = {
+		"Quest log: Valhalla's pin is back on the left of each quest's icon, as before 1.2.51 and as in the Objectives panel.",
+	} },
+	{ version = "1.2.58", date = "2026-11-27", heads = { [1] = "Changed", }, items = {
+		"Auction House scans (Top 10, Scan Results and History) are shared by every character: one market each for the Alliance, Horde and Neutral houses. Watchlist targets stay this character's. Scans that had been saved under different names for the same realm are brought together once, so an alt sees the same prices without scanning again.",
+	} },
+	{ version = "1.2.57", date = "2026-11-26", heads = { [1] = "Changed", }, items = {
+		"Quest icons on the zone you're looking at are the game's own again, one per quest (its tooltip with the quest's level), with no Valhalla copy on top. Clicking one does what Valhalla's quest icons do: it selects the quest, showing its area and the minimap waypoint, and a second click clears it. It never tracks or untracks a quest. Shift-click adds the quest's link only when the chat is already open. Quests in the neighbouring zones keep Valhalla's icons.",
+	} },
+	{ version = "1.2.56", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
+		"Quest icons on the map are up to date the moment you open it: a quest completed (or changed) while the map was closed shows at its new place at once, instead of its old place for half a second first.",
+	} },
 	{ version = "1.2.55", date = "2026-11-24", heads = { [1] = "Fixed", }, items = {
 		"Shift-clicking a quest's title in the quest log, or a quest's header or icon in the Objectives panel, with the chat closed really leaves the panel as it was now: 1.2.54's guard couldn't tell where the mouse was in Forever, so the quest was untracked and stayed out of the panel.",
 	} },

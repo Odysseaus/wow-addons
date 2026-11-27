@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
 -- Objectives (v0.2.2): the quest pins in the game's quest log too (the log beside Valhalla's map is the
--- game's own QuestMapFrame). A pin right of each quest's quest icon, the same store and art as the All
+-- game's own QuestMapFrame). A pin left of each quest's quest icon, the same store and art as the All
 -- Objectives pins (O.SetPinned / O.OnPinsChanged): pinned here, pinned there, both ways.
 --
 -- How (Blizzard_UIPanels_Game QuestMapFrame.lua): a quest's row comes from QuestScrollFrame.titleFramePool
@@ -8,13 +8,14 @@
 -- right after it's taken, and its quest icon (a POI button) put at (6, -4) on every update. So:
 --   * a secure hook on the pool's Acquire moves each row's title right (x 31 -> 50) before the game sets
 --     and measures it, so the row's height is right the first time (a moved anchor stays with the row);
---   * a secure hook after QuestLogQuests_Update paints our pin at (28, -6): right of the game's quest icon
---     (20 px at x 6, where the game puts it; 1.2.51: no longer moved to x 25), left of the moved title.
+--   * a secure hook after QuestLogQuests_Update moves the quest icon to x 25 and paints our pin at (4, -6),
+--     left of it (1.2.59: as before 1.2.51, on Odysseaus's ask; the game puts the icon back at x 6 on every
+--     update, so it's moved again after each one).
 -- Nothing else: no fields written on the game's frames (our pins live in a table of our own, as children
 -- of the rows so the log's scroll frame clips them), no Blizzard function called, no mouse pass-through
 -- setters (blocked in combat once map code has met an addon's: Map/Combat.lua). Headers (their own pools)
 -- get no pin. Turned off with the objectives module (/valhalla objectives off): no pins, and the titles
--- go back as the rows are next laid out.
+-- and icons go back as the rows are next laid out.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -27,8 +28,8 @@ O.LogPins = LP
 LP.SHIFT = 19            -- the room made: the pin (17) and a gap (2)
 LP.TEXT_X, LP.TEXT_Y = 31, -8
 LP.POI_X, LP.POI_Y = 6, -4
-LP.POI_W = 20            -- the game's quest icon (POIButtonTemplate 20x20): x 6 to 26, never moved by Valhalla
-LP.PIN_X, LP.PIN_Y = 28, -6   -- (1.2.51) our pin right of it, x 28 to 45, before the title at x 50
+LP.POI_W = 20            -- the game's quest icon (POIButtonTemplate 20x20): moved to x 25 to 45
+LP.PIN_X, LP.PIN_Y = 4, -6    -- (1.2.59) our pin left of it, x 4 to 21; the title from x 50
 
 local on = false
 local hooked = false
@@ -122,6 +123,7 @@ function LP.OnUpdate()
 		local q = row.questID
 		if on and q then
 			local poi = PoiOf(row, q)
+			if poi then poi:SetPoint("TOPLEFT", row, "TOPLEFT", LP.POI_X + LP.SHIFT, LP.POI_Y) end
 			LP.HookIcon(poi)
 			local p = PinFor(row)
 			O.PaintPin(p, q)
