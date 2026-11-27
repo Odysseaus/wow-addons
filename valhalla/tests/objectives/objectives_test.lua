@@ -628,16 +628,16 @@ ok(W.log.measured[50] == 50 and W.log.measured[51] == 50, "titles moved to x 50 
 ok(LogRow(51)._height == 8 + 24 + 6, "the long title measured at the narrower width: 2 lines in the row's height", tostring(LogRow(51)._height))
 local poi = SF.Contents:FindButtonByQuestID(50)
 local lp = poi._points[#poi._points]
-ok(lp[1] == "TOPLEFT" and lp[2] == LogRow(50) and lp[3] == 6 and lp[4] == -4 and #poi._points == 1, "(1.2.51) the game's quest icon left where the game put it (x 6): never moved by Valhalla")
+ok(lp[1] == "TOPLEFT" and lp[2] == LogRow(50) and lp[3] == "TOPLEFT" and lp[4] == 25 and lp[5] == -4, "(1.2.59) the game's quest icon moved right to x 25 after the update (as before 1.2.51)", tostring(lp[4]))
 local p50 = PinOf(LogRow(50))
 local pp = p50._points[1]
-ok(p50._w == 17 and pp[1] == "TOPLEFT" and pp[2] == LogRow(50) and pp[4] == 28 and pp[5] == -6 and p50._shown, "pin: 17 px at (28, -6), right of the icon")
-ok(6 + 20 <= 28 and 28 + 17 <= 31 + O.LogPins.SHIFT, "no overlap: icon x 6-26, pin 28-45, title from x 50")
+ok(p50._w == 17 and pp[1] == "TOPLEFT" and pp[2] == LogRow(50) and pp[4] == 4 and pp[5] == -6 and p50._shown, "pin: 17 px at (4, -6), left of the icon")
+ok(4 + 17 <= 6 + O.LogPins.SHIFT and 6 + O.LogPins.SHIFT + 20 <= 31 + O.LogPins.SHIFT and O.LogPins.PIN_X == 4, "no overlap: pin x 4-21, icon 25-45, title from x 50")
 ok(p50.icon._tex:find("ValhallaPinOff"), "Pin 2 art, off")
 W.noPOI = { [52] = true }
 QuestLogQuests_Update()
 local p52 = PinOf(LogRow(52))
-ok(p52 and p52._shown and p52._points[1][4] == 28, "a row with no quest icon: the pin in the same place")
+ok(p52 and p52._shown and p52._points[1][4] == 4, "a row with no quest icon: the pin in the same place")
 W.noPOI = nil
 
 print("== 32. pooled rows: each update's quest")

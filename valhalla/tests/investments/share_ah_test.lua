@@ -13,7 +13,7 @@ local function N(t) local k = 0 for _ in pairs(t or {}) do k = k + 1 end return 
 
 print("== 1.2.58 load")
 local toc = assert(io.open(root .. "Valhalla.toc")):read("*a")
-ok(toc:find("## Version: 1.2.58", 1, true) ~= nil, "TOC: version 1.2.58")
+ok(toc:find("## Version: 1.2.59", 1, true) ~= nil, "TOC: version 1.2.59")
 
 local ns = { modules = {}, version = "v1.2.58", Media = { path = "Interface\\AddOns\\Valhalla\\Media\\" } }
 ns.L = setmetatable({}, { __index = function(_, k) return k end })

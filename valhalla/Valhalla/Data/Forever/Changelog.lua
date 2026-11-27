@@ -4,6 +4,9 @@
 local _, ns = ...
 
 ns.MapChangelog = {
+	{ version = "1.2.59", date = "2026-11-27", heads = { [1] = "Changed", }, items = {
+		"Quest log: Valhalla's pin is back on the left of each quest's icon, as before 1.2.51 and as in the Objectives panel.",
+	} },
 	{ version = "1.2.58", date = "2026-11-27", heads = { [1] = "Changed", }, items = {
 		"Auction House scans (Top 10, Scan Results and History) are shared by every character: one market each for the Alliance, Horde and Neutral houses. Watchlist targets stay this character's. Scans that had been saved under different names for the same realm are brought together once, so an alt sees the same prices without scanning again.",
 	} },
